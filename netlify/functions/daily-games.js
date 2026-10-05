@@ -36,6 +36,7 @@ const crypto = require("crypto");
 const { getDb, ensureUniqueIndex } = require("./_db");
 const { hasAccount, canWrite, refuseWrite, roleOf, WRITE_SCOPES, usernameFromToken, UNAUTHORIZED, AUTH_UNAVAILABLE, isAuthUnavailable } = require("./_auth");
 const { livePlayerFrom } = require("./_player");
+const { nickedAmong } = require("./_publicid");
 const { SECURITY_HEADERS } = require("./_headers");
 // Points here are totals, the day's score plus its speed bonus, as every
 // public board and the Profile count them (see _speed.js). forgetDay is the
@@ -406,7 +407,22 @@ async function route(event, db, scores, resets) {
             };
         }
 
-        const shown = seesIds ? filtered : filtered.map(p => Object.assign({}, p, { id: standIn(p.id) }));
+        /* Without the site scope, no avatar either (5 Oct 2026, the bug
+           scan): a Discord avatar's address is cdn.discordapp.com/avatars/
+           <the Discord id>/…, so the stand-in hid the id in one field and
+           the avatar gave it away in the next. And a player with no
+           nickname has a Discord name on their rows, which a viewer is not
+           shown anywhere else in the Warren (players-admin.js): they are
+           listed as "No nickname" instead. */
+        let shown = filtered;
+        if (!seesIds) {
+            const nicked = await nickedAmong(db, filtered.map(p => p.id)).catch(() => null);
+            shown = filtered.map(p => Object.assign({}, p, {
+                id: standIn(p.id),
+                avatar: null,
+                name: nicked && nicked.has(String(p.id)) ? p.name : "No nickname"
+            }));
+        }
         return json(200, { today: today(), games: GAMES, players: shown, detail });
     }
 

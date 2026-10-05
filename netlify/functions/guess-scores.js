@@ -55,7 +55,7 @@ const { dayIsOpen, dayClosesAt, rangeBounds } = require("./_daily");
    the two games and the combined board cut at the same place. See launchCut
    and isRealDay there. */
 const { launchCut, afterLaunch, fromLaunch, isRealDay, boardDay, filedScore,
-    practiceOf, practiceReply, pastPractice, boardReply, freshFor, plainBoard } = require("./daily-scores");
+    practiceOf, practiceReply, pastPractice, boardReply, freshFor, plainBoard, nonCanonical, nickedOnly } = require("./daily-scores");
 const { clientNet } = require("./_net");
 const speed = require("./_speed");
 const deals = require("./_deal");
@@ -256,11 +256,11 @@ function progressView(dealRounds, moves) {
    beside it for anything that wants the split. No time on a span's rows:
    a month of times added up says nothing a reader could use, and days that
    were never timed would count as instant. */
-async function board(col, from, to, limit, cut) {
+async function board(col, from, to, limit, cut, only = {}) {
     const rows = await col.aggregate([
         // afterLaunch: nothing submitted before the launch instant — see
         // launchCut in daily-scores.js.
-        { $match: { day: { $gte: from, $lte: to }, ...afterLaunch(cut) } },
+        { $match: { day: { $gte: from, $lte: to }, ...afterLaunch(cut), ...only } },
         { $sort: { day: 1, at: 1 } },
         { $group: {
             _id: "$playerId",
@@ -338,6 +338,9 @@ exports.handler = async (event) => {
     // ---------- read the boards ----------
     if (event.httpMethod === "GET") {
         const params = event.queryStringParameters || {};
+        // One address per board — see nonCanonical in daily-scores.js.
+        const odd = nonCanonical(event, params, ["game"]);
+        if (odd) return odd;
         if (params.deal === "1") return dealReply(db, event, params);
 
         const day = (params.day || todayIso()).slice(0, 10);
@@ -362,6 +365,8 @@ exports.handler = async (event) => {
             // Every span from launch day on, and every row from the launch
             // instant on (launchCut); a day before it has no board.
             launch = await launchCut(db);
+            // Nicknamed players only, before the cut: see nickedOnly in daily-scores.js.
+            const only = await nickedOnly(db);
             const before = Boolean(launch) && day < launch.day;
 
             /* All four boards in one request rather than one per tab. They
@@ -372,10 +377,10 @@ exports.handler = async (event) => {
                 // The day's own board keeps its per-player rows rather than
                 // being grouped, because it carries the grid for the
                 // head-to-head and there is nothing to sum over one day.
-                before ? [] : dayBoard(col, { day, ...afterLaunch(launch) }, BOARD_READ),
-                board(col, fromLaunch(week.from, launch), week.to, BOARD_READ, launch),
-                board(col, fromLaunch(month.from, launch), month.to, BOARD_READ, launch),
-                board(col, fromLaunch(all.from, launch), all.to, BOARD_READ, launch)
+                before ? [] : dayBoard(col, { day, ...afterLaunch(launch), ...only }, BOARD_READ),
+                board(col, fromLaunch(week.from, launch), week.to, BOARD_READ, launch, only),
+                board(col, fromLaunch(month.from, launch), month.to, BOARD_READ, launch, only),
+                board(col, fromLaunch(all.from, launch), all.to, BOARD_READ, launch, only)
             ]);
 
             /* The public id in place of the Discord one on every row, and

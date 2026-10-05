@@ -220,8 +220,14 @@
         input.addEventListener("input", () => {
             const typed = slugify(input.value);
             const named = slugify(titleInput.value);
-            st.following = !input.value.trim() || typed === named || (!!typed && typed === projected(named))
-                || (!st.nameMoved && typed === current && st.startFollowing);
+            const toName = !input.value.trim() || typed === named || (!!typed && typed === projected(named));
+            st.following = toName || (!st.nameMoved && typed === current && st.startFollowing);
+            /* Emptied, or typed as the name, on a record whose address was
+               set by hand (5 Oct 2026, the bug scan): it is meant to follow
+               the name from now on, so it is worked out from the name, as
+               "Follow the name instead" does. Without this the field snapped
+               back to the hand-set address on blur and saved it unchanged. */
+            if (toName && !(st.startFollowing && typed === current)) st.nameMoved = true;
             say();
         });
         // Tidied into what will actually be saved once the typing is done,

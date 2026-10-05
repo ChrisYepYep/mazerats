@@ -216,6 +216,11 @@
                         Sign in and choose a nickname to get on the boards.
                         <button type="button" class="guess-btn" data-boards-signin>Sign in with Discord</button>
                     </div>`;
+        } else if (!who.nick) {
+            // The boards are nickname holders only (4 Oct 2026), and that,
+            // not a lack of points, is why they are not on it (5 Oct 2026,
+            // the bug scan: they were told they had not played).
+            foot = `<p class="guess-board-note boards-you">Choose a nickname to get on the boards. Your scores count from the moment you have one.</p>`;
         } else if (!list.some(isMe)) {
             // A board shorter than ten is everybody who scored, so being off
             // it means not having played, not having been beaten.

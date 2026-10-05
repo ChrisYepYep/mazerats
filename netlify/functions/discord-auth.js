@@ -598,7 +598,12 @@ exports.handler = async (event) => {
         try {
             if (!db) throw new Error("no database");
             const players = db.collection("players");
-            await ensureUniqueIndex(players, "id");
+            /* Its own failure is not the sign-in's (5 Oct 2026, the bug scan):
+               an index that could not be built threw here and the upsert
+               below never ran, so a new player had no row and their first
+               `me` signed them out, every time. The index is asked for again
+               on the next sign-in; the write goes ahead now. */
+            await ensureUniqueIndex(players, "id").catch(e => console.error("discord-auth: could not build the players id index", e));
             const now = new Date().toISOString();
             /* The nickname half (28 Sept 2026; see player-nick.js).
 

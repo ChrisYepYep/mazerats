@@ -886,6 +886,7 @@ window.AdminRecolour = (function () {
         on("delete", "click", () => oneAtATime(remove));
         on("undo", "click", undo);
         on("reset", "click", async () => {
+            if (writing) { say("Wait for the save to finish first.", "bad"); return; }
             if (!await ask("Put every colour back to the site's own? This does not touch anything already saved.", { danger: true })) return;
             state.palette = EMPTY(); state.history = []; state.dirty = true;
             Recolour.clear(); if (state.live) applyLive(); render();
@@ -1363,6 +1364,10 @@ window.AdminRecolour = (function () {
 
     // The loader's value: "", "theme:<id>" or "saved:<id>".
     async function loadChoice(value) {
+        /* Not while a save is out (5 Oct 2026, the bug scan): the save's
+           answer adopted ITS palette's name and id over the colours just
+           loaded, so the next Save put one palette's colours on another. */
+        if (writing) { say("Wait for the save to finish, then load it.", "bad"); render(); return; }
         if (state.dirty && !await ask("You have unsaved changes to " + esc(describe()) + ". Load another anyway? Your changes will be lost.", { danger: true })) { render(); return; }
         const seq = ++state.loading;
         const cut = String(value || "").indexOf(":");

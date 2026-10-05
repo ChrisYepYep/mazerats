@@ -194,7 +194,7 @@ function isLive(ev, now) {
     const start = ev && ev.date ? Date.parse(ev.date) : NaN;
     if (!Number.isFinite(start)) return false;
     let end = ev.endDate ? Date.parse(ev.endDate) : NaN;
-    if (!Number.isFinite(end) || end < start) end = start + DEFAULT_EVENT_MS;
+    if (!Number.isFinite(end) || end <= start) end = start + DEFAULT_EVENT_MS;   // as js/event-status.js
     return start <= now && now < end;
 }
 
@@ -218,7 +218,7 @@ function spanOf(ev) {
     const start = ev && ev.date ? Date.parse(ev.date) : NaN;
     if (!Number.isFinite(start)) return null;
     let end = ev.endDate ? Date.parse(ev.endDate) : NaN;
-    if (!Number.isFinite(end) || end < start) end = start + DEFAULT_EVENT_MS;
+    if (!Number.isFinite(end) || end <= start) end = start + DEFAULT_EVENT_MS;   // as js/event-status.js
     return { start, end };
 }
 
@@ -511,7 +511,9 @@ async function handleList(event, db, q) {
     const full = (WRITE_SCOPES[role] || []).includes("site");
     const projection = full
         ? { _id: 0, net: 0, sender: 0, clientRef: 0 }
-        : { _id: 0, net: 0, sender: 0, clientRef: 0, ip: 0, "from.id": 0 };
+        // And their Discord name and handle (5 Oct 2026): the Warren shows
+        // the other roles nicknames only.
+        : { _id: 0, net: 0, sender: 0, clientRef: 0, ip: 0, "from.id": 0, "from.name": 0, "from.username": 0 };
 
     const entries = db.collection(COLLECTION);
     let cursor = entries.find(filter, { projection }).sort({ createdAt: -1 });

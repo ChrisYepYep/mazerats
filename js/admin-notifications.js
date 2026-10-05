@@ -346,23 +346,58 @@
         }
     });
 
+    /* One read at a time, but a read asked for while one is out is not
+       dropped: it runs when that one lands (5 Oct 2026, the bug scan — the
+       read after a Send or a Withdraw was lost behind a Refresh, and the
+       older answer drew a withdrawn notice as still live). loadGen throws
+       away an answer that set off before a reset. */
+    let loadGen = 0;
+    let again = false;
     async function load() {
-        if (!token() || loading) return;
+        if (!token()) return;
+        if (loading) { again = true; return; }
+        const mine = ++loadGen;
         loading = true;
         loadError = "";
         renderList();
         try {
             const data = await Api.getNotifications(token());
+            if (mine !== loadGen) return;
             notices = (data && data.notices) || [];
         } catch (err) {
-            if (sessionGone(err)) { loading = false; return; }
+            if (mine !== loadGen) return;
+            if (sessionGone(err)) return;
             loadError = errText(err);
+        } finally {
+            if (mine === loadGen) loading = false;
         }
-        loading = false;
         renderList();
+        if (again) { again = false; load(); }
     }
 
     if (refreshBtn) refreshBtn.addEventListener("click", () => load());
+
+    /* Called by js/admin.js (resetAccountPanels) on a logout or when
+       another account signs in (5 Oct 2026, the bug scan): the last
+       admin's draft, chosen players and sent list — names and all — were
+       left for whoever signed in next, view-only accounts included. */
+    function reset() {
+        loadGen++;
+        loading = false;
+        again = false;
+        notices = null;
+        loadError = "";
+        audience = "all";
+        chosen = [];
+        draft = "";
+        results = [];
+        searchGen++;
+        busy = false;
+        if (composeEl) composeEl.innerHTML = "";
+        if (listEl) listEl.innerHTML = "";
+        if (!panel.hidden && token()) onShown();
+    }
+    window.AdminNotifications = { reset };
 
     function onShown() {
         if (panel.hidden || !token()) return;

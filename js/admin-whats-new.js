@@ -225,7 +225,9 @@
             render();
         } catch (err) {
             if (gen !== loadGen) return;
-            if (sessionGone(err)) { listEl.innerHTML = '<p class="admin-empty">Sign in again to see What\'s New.</p>'; return; }
+            // Loaded again when next shown, after signing back in (5 Oct
+            // 2026, the bug scan — it stayed on this line for good).
+            if (sessionGone(err)) { mounted = false; listEl.innerHTML = '<p class="admin-empty">Sign in again to see What\'s New.</p>'; return; }
             listEl.innerHTML = `<p class="admin-empty">Could not load What's New: ${esc(err.message)} <button type="button" class="ctl-btn" data-wn-retry>Try again</button></p>`;
             const retry = listEl.querySelector("[data-wn-retry]");
             if (retry) retry.addEventListener("click", load);

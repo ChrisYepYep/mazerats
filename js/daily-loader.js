@@ -200,6 +200,11 @@
         if (window.Daily && typeof Daily.waiting === "function") Daily.waiting(body, true, "Loading the game");
     }
 
+    function clearFailed(name) {
+        const body = document.getElementById(GAMES[name].body);
+        if (body) body.querySelectorAll(".daily-loading--failed").forEach(p => p.remove());
+    }
+
     // Every one, not the first: a failed line and a "still loading" line
     // can both be present after a retry.
     function clearLoading(name) {
@@ -252,6 +257,11 @@
             if (window.Account && Account.known && typeof Account.mayPlay === "function" && !Account.mayPlay({ daily: true })) return;
 
             const overlay = openShell(name);
+            /* A failure left from an earlier try goes first (5 Oct 2026, the
+               bug scan): it stopped the loading bar showing (sayLoading
+               looks for any .daily-loading), and outlived the load that
+               then worked, stretched over the splash and its Play button. */
+            clearFailed(name);
             const slow = setTimeout(() => sayLoading(name), SLOW_AFTER);
 
             load(name).then(() => {

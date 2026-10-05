@@ -501,6 +501,10 @@ document.addEventListener("DOMContentLoaded", () => {
         const sendBtn = document.getElementById("ci-send");
         sendBtn.disabled = true;
         if (!clientRef) clientRef = newClientRef();
+        // The form this send came from. Left behind (Back, another page,
+        // the console shut, and a new form begun) before the send lands, the
+        // page that is showing by then is not this send's to change.
+        const sentRef = clientRef;
         try {
             let done = 0;
             const items = [];
@@ -537,15 +541,19 @@ document.addEventListener("DOMContentLoaded", () => {
             else body.id = rest.join(":");
             await postJson(LEADS_URL, body);
             if (type !== "new" && data()) data().noteLead(rtype, body.id);
+            /* Left behind while it was sending (5 Oct 2026, the bug scan):
+               it used to wipe the new form being typed in and force the
+               Thanks page over whatever was showing. It went through; the
+               page that is showing now stays as it is. */
+            if (clientRef !== sentRef) return;
             target = null;
             renderInfo();
             /* Credit only promised when there is a name to credit (28 Sept
-               2026): a Habbo name typed in, or the Discord name a signed-in
-               sender is noted under — the same two names dead-end-leads.js
-               falls back through when a lead is credited. It promised credit
-               to everybody, anonymous senders included, which the policy
-               does not, and ran two sentences together with a comma. */
-            const named = !!body.habboName || !!signedIn();
+               2026): a Habbo name typed in, or the sender's nickname — the
+               same two names dead-end-leads.js falls back through when a
+               lead is credited. Never the Discord name (5 Oct 2026), so a
+               signed-in sender with no nickname is not promised it. */
+            const named = !!body.habboName || !!(window.Account && Account.current && Account.current.nick);
             Console.showThanks("A person reads every submission. Anything that fills a gap will be added to the archive"
                 + (named ? ", with credit to you." : ".") + " Thank you!");
         } catch (err) {

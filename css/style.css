@@ -19744,7 +19744,10 @@ body.is-logging-out * {
    for a view-only account. The blanket viewer rule greys every
    .btn-enter-mini on the page (it is aimed at the maze forms' toggles),
    which would leave a view-only reader unable to switch to Resolved. */
-body.is-viewer .admin-panel[data-panel="errors"] .ctl-seg .btn-enter-mini {
+/* And Missing Pieces' New/Accepted/Rejected/All (5 Oct 2026, the bug
+   scan): a view-only account was stuck on New. */
+body.is-viewer .admin-panel[data-panel="errors"] .ctl-seg .btn-enter-mini,
+body.is-viewer #dead-end-lead-tabs .btn-enter-mini {
     opacity: 1;
     cursor: var(--cursor-pointer);
     pointer-events: auto;

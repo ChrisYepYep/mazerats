@@ -438,17 +438,25 @@ document.addEventListener("DOMContentLoaded", () => {
         pref.tone = "";
         sayNick(pref.msg);
         render();
+        /* With a time limit, and against the profile it began on (5 Oct
+           2026, the bug scan): a save that never answered left the three
+           controls disabled and "Saving..." up until a reload, and one that
+           answered after the account changed wrote into a null profile. */
+        const forData = data;
+        const abort = typeof AbortController === "function" ? new AbortController() : null;
+        const limit = abort ? setTimeout(() => abort.abort(), 15000) : 0;
         try {
             const res = await fetch(SAVE_URL, {
                 method: "PUT",
                 credentials: "same-origin",
                 headers: { "Content-Type": "application/json", Accept: "application/json" },
-                body: JSON.stringify({ profile: patch })
+                body: JSON.stringify({ profile: patch }),
+                signal: abort ? abort.signal : undefined
             });
             const body = await res.json().catch(() => ({}));
             if (!res.ok) throw new Error(body && body.error ? body.error : "");
             const p = body && body.profile;
-            if (p) {
+            if (p && data === forData && data) {
                 data.favourite = p.favourite;
                 data.badge = p.badge;
                 /* Only when this save was the visibility switch (4 Oct 2026,
@@ -466,8 +474,11 @@ document.addEventListener("DOMContentLoaded", () => {
             // The window behind the console draws it again.
             if (window.ArchiveProgress && typeof ArchiveProgress.changed === "function") ArchiveProgress.changed();
         } catch (e) {
-            pref.msg = (e && e.message) || "That couldn't be saved just now. Try again in a moment.";
+            pref.msg = e && e.name === "AbortError" ? "That took too long. Try again in a moment."
+                : (e && e.message) || "That couldn't be saved just now. Try again in a moment.";
             pref.tone = "error";
+        } finally {
+            clearTimeout(limit);
         }
         pref.busy = false;
         sayNick(pref.msg);
@@ -557,7 +568,7 @@ document.addEventListener("DOMContentLoaded", () => {
             <div class="console-profile-who" data-crumb-private>
                 ${face}
                 <div>
-                    <p class="console-profile-name">${esc(Account.nameOf ? Account.nameOf(me) : me.name)}</p>
+                    <p class="console-profile-name">${esc(me.nick || "A Maze Rat")}</p>
                     ${d && d.since ? `<p class="console-profile-since">Rat since ${esc(since(d.since))}</p>` : ""}
                 </div>
             </div>

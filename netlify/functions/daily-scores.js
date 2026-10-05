@@ -169,12 +169,54 @@ async function freshFor(db, event, collection, match) {
 }
 
 // The same board without `mine` (or `fresh`), for the edge to answer.
-function plainBoard(event, params) {
+function plainBoard(event, params, drop = ["mine", "fresh"]) {
     let path = "";
     try { path = new URL(event.rawUrl).pathname; } catch (e) { path = event.path || ""; }
-    const qs = Object.keys(params || {}).filter(k => k !== "mine" && k !== "fresh")
+    const qs = Object.keys(params || {}).filter(k => !drop.includes(k))
         .map(k => `${encodeURIComponent(k)}=${encodeURIComponent(params[k])}`).join("&");
     return { statusCode: 302, headers: { ...SECURITY_HEADERS, "Cache-Control": "private, no-store", Location: path + (qs ? "?" + qs : "") }, body: "" };
+}
+
+/* ONE ADDRESS PER BOARD (5 Oct 2026, the bug scan). The edge keys on the
+   raw values of BOARD_VARY's parameters, but the handlers read them
+   loosely — `day` cut to ten characters, any `deal` but "1" ignored, and
+   Guess the Maze ignoring `game` altogether — so the same board could be
+   asked for under endless addresses, each a cache miss and a full set of
+   aggregations. Anything not in the exact form is refused (a day) or sent
+   to the exact form (302), which the edge does keep. `ignored` names the
+   parameters a board does not use at all. Null when the address is fine. */
+function nonCanonical(event, params, ignored = []) {
+    if (params.day !== undefined && !/^\d{4}-\d{2}-\d{2}$/.test(String(params.day))) {
+        return json(400, { error: "Bad day" });
+    }
+    const stray = ignored.filter(k => params[k] !== undefined);
+    if (params.deal !== undefined && params.deal !== "1") stray.push("deal");
+    return stray.length ? plainBoard(event, params, stray) : null;
+}
+
+/* NICKNAMED PLAYERS ONLY, IN THE QUERY (5 Oct 2026, the bug scan). The
+   boards drop every player with no nickname (withoutBanned in _bans.js),
+   but did it after the read's cut, so a board whose top places were taken
+   by launch-week players who never chose one came out short while the
+   nicknamed players under them never showed. A $match on the nicknamed
+   ids puts the rule before the cut; withoutBanned still runs after, for
+   the bans and as the last word. Remembered for a minute per instance;
+   a players read that fails filters nothing here and leaves it to
+   withoutBanned, which fails closed. Shared with guess-scores.js. */
+const NICKED_TTL_MS = 60 * 1000;
+let nickedMemo = null;
+let nickedAt = 0;
+async function nickedOnly(db) {
+    if (nickedMemo && Date.now() - nickedAt < NICKED_TTL_MS) return nickedMemo;
+    try {
+        const ids = await db.collection("players").distinct("id", { nick: { $type: "string", $ne: "" } });
+        nickedMemo = { playerId: { $in: ids.map(String) } };
+        nickedAt = Date.now();
+        return nickedMemo;
+    } catch (e) {
+        console.error("daily-scores: could not read who has a nickname; the boards filter after the read", e);
+        return {};
+    }
 }
 
 let ensured = false;
@@ -369,9 +411,9 @@ function boardDay(day) {
    bonus) second, and `points` in the answer IS that total — the same rule
    and the same shape as board() in guess-scores.js, where the reasoning is
    written out (RIGHT ANSWERS FIRST). */
-async function board(col, game, from, to, cut) {
+async function board(col, game, from, to, cut, only = {}) {
     const rows = await col.aggregate([
-        { $match: { game, day: { $gte: from, $lte: to }, ...afterLaunch(cut) } },
+        { $match: { game, day: { $gte: from, $lte: to }, ...afterLaunch(cut), ...only } },
         { $sort: { day: 1, at: 1 } },
         {
             $group: {
@@ -524,7 +566,8 @@ async function combinedBoards(db, event, params) {
         // Every span starts no earlier than launch day, and no row counts
         // that was submitted before the launch instant — see launchCut.
         const launch = await launchCut(db);
-        const span = (from, to) => ({ day: { $gte: fromLaunch(from, launch), $lte: to }, ...afterLaunch(launch) });
+        const only = await nickedOnly(db);
+        const span = (from, to) => ({ day: { $gte: fromLaunch(from, launch), $lte: to }, ...afterLaunch(launch), ...only });
         // A day before launch has no board at all; asked by span, it is empty.
         const oneDay = span(day, day);
 
@@ -591,6 +634,8 @@ exports.handler = async (event) => {
     const params = event.queryStringParameters || {};
 
     if (event.httpMethod === "GET") {
+        const odd = nonCanonical(event, params);
+        if (odd) return odd;
         const game = String(params.game || "");
 
         /* ---------- the day across all three games ----------
@@ -650,12 +695,13 @@ exports.handler = async (event) => {
             // Every span from launch day on, and every row from the launch
             // instant on — see launchCut. A day before it has no board at all.
             launch = await launchCut(db);
+            const only = await nickedOnly(db);
             const before = Boolean(launch) && day < launch.day;
             [todayRows, weekRows, monthRows, allRows] = await Promise.all([
-                before ? [] : dayBoard(col, { game, day, ...afterLaunch(launch) }),
-                board(col, game, fromLaunch(week.from, launch), week.to, launch),
-                board(col, game, fromLaunch(month.from, launch), month.to, launch),
-                board(col, game, fromLaunch(all.from, launch), all.to, launch)
+                before ? [] : dayBoard(col, { game, day, ...afterLaunch(launch), ...only }),
+                board(col, game, fromLaunch(week.from, launch), week.to, launch, only),
+                board(col, game, fromLaunch(month.from, launch), month.to, launch, only),
+                board(col, game, fromLaunch(all.from, launch), all.to, launch, only)
             ]);
             /* `points` is the total, as on every board; `ms` the time taken,
                null when the day was never timed. Then every list through
@@ -1202,3 +1248,5 @@ module.exports.scoreClaim = scoreClaim;
    withErrorReporting in _errors.js. Last, so it wraps the handler as finally
    defined above; what the handler answers is unchanged. */
 exports.handler = require("./_errors").withErrorReporting("daily-scores", exports.handler);
+module.exports.nonCanonical = nonCanonical;
+module.exports.nickedOnly = nickedOnly;

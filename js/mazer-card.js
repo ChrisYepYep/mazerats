@@ -542,7 +542,13 @@
        and go. */
     async function open(getData) {
         if (showing) return;
-        showing = { close() {} };
+        /* Until the window is up (fonts first), Escape or a close cancels the
+           opening rather than doing nothing (5 Oct 2026, the bug scan): it
+           went to the window behind, and the card then opened over nothing. */
+        let cancelled = false;
+        const pending = { close() { cancelled = true; if (showing === pending) showing = null; } };
+        showing = pending;
+        const behind = document.querySelector(".modal-overlay.open");
         const returnTo = document.activeElement;
         let data = null;
         try { data = getData(); } catch (e) { /* shown as a jam when printing */ }
@@ -595,6 +601,8 @@
 
         // The card's height decides the stage's; the theme does not change it.
         if (document.fonts) await Promise.all([document.fonts.load(FONT), document.fonts.load(BOLD)]).catch(() => {});
+        // Shut meanwhile, or the window it opened over was.
+        if (cancelled || (behind && !behind.classList.contains("open"))) { if (showing === pending) showing = null; return; }
         // With the motto or without, whichever is taller: ticking it must
         // not change the window.
         let H = 200;

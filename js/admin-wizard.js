@@ -178,6 +178,9 @@ window.AdminWizard = (function () {
        nothing; marking the loose ones tells you exactly what you have opened
        up and not yet put back. */
     const isLocked = record => !record || record.locked !== false;
+    // The zoom the inspector was last drawn at, and its pending redraw (onView).
+    let inspectorZoom = NaN;
+    let inspectorFrame = 0;
 
     /* Unlocking is a save of its own rather than a pending change. The point
        of a lock is that it is reliable — one that lived only in the browser
@@ -264,9 +267,14 @@ window.AdminWizard = (function () {
        when the server certainly did not keep it. See the imageFile branch
        of onInspectorInput. */
     async function saveOneAnswer(kind, record) {
+        /* Where it was when the save went out (5 Oct 2026, the bug scan): a
+           move made while this was in flight is not in it, so it stays on
+           the unsaved pile, as savePositions already does with its own. */
+        const where = r => JSON.stringify([r.x, r.y, r.points || null, r.w, r.h]);
+        const sent = where(record);
         try {
             await ctx.api.updateWizardItem(ctx.token(), kind, record);
-            pending.delete(`${kind}:${record.id}`);
+            if (where(record) === sent) pending.delete(`${kind}:${record.id}`);
             updateDirty();
             return { ok: true };
         } catch (err) {
@@ -1034,7 +1042,9 @@ window.AdminWizard = (function () {
            Only the SELECTED trail, so clicking a different one still
            selects that one rather than quietly reshaping this one; and
            never while locked, or the lock would have a hole in it. */
-        const onSelectedTrail = selected && selected.kind === "path" && !locked && !addToSelection
+        // Not the second click of a double-click (5 Oct 2026, the bug scan):
+        // double-clicking a trail to lock it also dropped a bend on it.
+        const onSelectedTrail = selected && selected.kind === "path" && !locked && !addToSelection && e.detail < 2
             && !isLocked(find("path", selected.id))
             && (e.target.closest(".wiz-handle-line") || (trail && trail.dataset.id === selected.id));
 
@@ -1209,6 +1219,8 @@ window.AdminWizard = (function () {
             const path = find("path", handle.dataset.pathId);
             const index = Number(handle.dataset.index);
             if (!path) return;
+            // The locks cover bends too (5 Oct 2026, the bug scan).
+            if (locked || isLocked(path)) return say(locked ? "The map is locked. Unlock it to change trails." : "That trail is locked.", "");
             if (path.points.length <= 2) return say("A trail needs at least two points.", "bad");
             if (index === 0 || index === path.points.length - 1) {
                 return say("That is an end of the trail — it follows its room. Repoint it below instead.", "");
@@ -1340,7 +1352,7 @@ window.AdminWizard = (function () {
             </div>
 
             <div class="admin-wiz-inspector-grid">
-                ${positionFields(record)}
+                ${selected.kind === "path" ? "" : positionFields(record)}
                 ${selected.kind === "room" ? roomFields(record) : ""}
                 ${selected.kind === "path" ? trailFields(record) : ""}
                 ${selected.kind === "layer" ? layerFields(record) : ""}
@@ -1720,7 +1732,19 @@ window.AdminWizard = (function () {
         }
 
         const raw = e.target.value;
-        record[field] = raw === "" ? null : Number(raw);
+        /* A position typed in follows the same rules as one dragged (5 Oct
+           2026, the bug scan): nothing moves on a locked map or a locked
+           thing, an empty or non-number box puts the old value back rather
+           than saving the room with no position, and it stays on the map. */
+        if (field === "x" || field === "y") {
+            const n = Number(raw);
+            if (locked || isLocked(record)) { e.target.value = record[field]; return say(locked ? "The map is locked. Unlock it to move things." : "That is locked. Double-click it on the map to unlock it.", ""); }
+            if (raw === "" || !Number.isFinite(n)) { e.target.value = record[field]; return; }
+            record[field] = Math.max(0, Math.min(100, n));
+            e.target.value = record[field];
+        } else {
+            record[field] = raw === "" ? null : Number(raw);
+        }
 
         if (field === "x" || field === "y") {
             const el = view.elementFor(selected.kind, selected.id);
@@ -1781,6 +1805,13 @@ window.AdminWizard = (function () {
         // line up, and a picture lined up by its middle rarely looks it.
         const rooms = records.filter(x => x.p.kind === "room");
         if (rooms.length < 2) return true;
+        /* The same locks the group drag and the arrow keys keep (5 Oct
+           2026, the bug scan): lining up moved locked rooms, on a locked
+           map too. */
+        if (/^(align|spread)-/.test(name)) {
+            if (locked) { say("The map is locked. Unlock it to move things.", ""); return true; }
+            if (rooms.some(x => isLocked(x.record))) { say("Something picked is locked. Unlock it first, or leave it out of the group.", ""); return true; }
+        }
 
         if (name === "align-x" || name === "align-y") {
             const axis = name === "align-x" ? "x" : "y";
@@ -1863,7 +1894,21 @@ window.AdminWizard = (function () {
         if (act.dataset.act === "delete") return deleteSelected();
         if (act.dataset.act === "hide") return toggleHidden(record);
         if (act.dataset.act === "centre") {
-            return view.flyTo(record.x, record.y, Math.max(view.getZoom(), 2.2));
+            /* A trail has no x/y of its own (5 Oct 2026, the bug scan): it
+               flew to undefined, every pan after it was NaN, and a room
+               dragged then was saved with no position. It centres on the
+               middle of its points instead; anything without a place to go
+               does nothing. */
+            let x = record.x, y = record.y;
+            if (Array.isArray(record.points) && record.points.length) {
+                const pts = record.points.filter(p => Array.isArray(p) && Number.isFinite(p[0]) && Number.isFinite(p[1]));
+                if (pts.length) {
+                    x = pts.reduce((s, p) => s + p[0], 0) / pts.length;
+                    y = pts.reduce((s, p) => s + p[1], 0) / pts.length;
+                }
+            }
+            if (!Number.isFinite(x) || !Number.isFinite(y)) return say("That has no place on the map to centre on.");
+            return view.flyTo(x, y, Math.max(view.getZoom(), 2.2));
         }
         if (act.dataset.act === "reverse") {
             const from = record.from;
@@ -2160,6 +2205,12 @@ window.AdminWizard = (function () {
             .slice()
             .sort((a, b) => (a.floor || "").localeCompare(b.floor || "") || a.name.localeCompare(b.name));
 
+        /* The open room form is carried over rather than rebuilt (5 Oct
+           2026, the bug scan): the list redraws on every selection, padlock,
+           Hide and search keystroke, and a fresh form threw away whatever
+           was being typed into it. Kept only while it is the same record —
+           after a reload from the server it is built anew from the new one. */
+        const keptForm = els.roomList.querySelector(".admin-wiz-row.is-open .admin-wiz-row-form > *");
         els.roomList.innerHTML = "";
         if (!rooms.length) {
             els.roomList.innerHTML = `<p class="admin-empty">${data.rooms.length ? "No room by that name." : "No rooms on this map yet."}</p>`;
@@ -2202,7 +2253,13 @@ window.AdminWizard = (function () {
             if (openRoomId === room.id) {
                 row.classList.add("is-open");
                 const holder = row.querySelector(".admin-wiz-row-form");
-                holder.appendChild(buildRoomForm(room));
+                if (keptForm && keptForm._room === room) {
+                    holder.appendChild(keptForm);
+                } else {
+                    const form = buildRoomForm(room);
+                    form._room = room;
+                    holder.appendChild(form);
+                }
             }
             els.roomList.appendChild(row);
         }
@@ -3255,9 +3312,22 @@ window.AdminWizard = (function () {
                 // The band buttons read "from here", so they have to know
                 // where "here" is. And a layer's grip is positioned in
                 // per cent of a box that has just changed scale.
+                /* Redrawn only when the zoom has moved, at most once a frame,
+                   and never under somebody typing in it (5 Oct 2026, the bug
+                   scan): it was rebuilt on every frame of a pan, which threw
+                   away a half-typed Floor or Name whose change had not fired
+                   yet. A pan alone changes nothing the inspector shows. */
                 if (selected) {
-                    renderInspector();
                     if (selected.kind === "layer") positionGrip(find("layer", selected.id));
+                    if (Math.abs(z - inspectorZoom) > 0.0005 && !inspectorFrame) {
+                        inspectorFrame = requestAnimationFrame(() => {
+                            inspectorFrame = 0;
+                            const typing = els.inspector.contains(document.activeElement) && /^(INPUT|SELECT|TEXTAREA)$/.test(document.activeElement.tagName);
+                            if (typing) return;
+                            inspectorZoom = view.getZoom();
+                            renderInspector();
+                        });
+                    }
                 }
             },
             onPointerDown

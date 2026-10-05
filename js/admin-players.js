@@ -1608,7 +1608,11 @@
             /* A review's 409 (29 Sept 2026) is the player having changed
                their nickname since this was loaded: its own sentence, and
                the detail read again so the new name is what is on screen. */
-            if (err && err.status === 409 && err.data && err.data.changed) {
+            /* And a motto review's 409 (5 Oct 2026, the bug scan): the motto
+               changed, or another admin dealt with it, since this was
+               loaded. It was worded as a nickname clash. The server's own
+               words, and the detail read again. */
+            if (err && err.status === 409 && (Object.prototype.hasOwnProperty.call(change, "motto") || (err.data && err.data.changed))) {
                 const text = "Not saved: " + errText(err);
                 say(ref, text, true);
                 // Said again once the re-read has redrawn the detail.

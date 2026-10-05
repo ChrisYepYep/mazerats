@@ -93,6 +93,11 @@
        (see choose). `posted` is whether the finished day reached the
        server, kept WITH the day so a submission that failed is tried again
        on the next open rather than forgotten with the visit. */
+    // Whether the server's recorded picks are the ones in hand, tile for tile.
+    function samePicks(recorded, picks) {
+        return recorded.length === picks.length && recorded.every((p, i) => picks[i] && picks[i].tile === p.tile && Boolean(picks[i].right) === Boolean(p.right));
+    }
+
     function blankDay(forDay) {
         return { day: forDay || window.Daily.today(), picks: [], done: false, mode: null, posted: false };
     }
@@ -1405,7 +1410,13 @@
             await window.Daily.claimReset("odd");
             state = blankDay(reply.day);
         } else if (recorded && recorded.length &&
-                (accountDay ? recorded.length !== state.picks.length : recorded.length >= state.picks.length)) {
+                /* An account day takes the server's record whenever it
+                   differs, not only when its length does (5 Oct 2026, the
+                   bug scan): on a shared computer the copy in this browser
+                   can be another player's same-length day, which was kept
+                   and shown as theirs. Guess the Maze's applyRecorded
+                   always takes it. */
+                (accountDay ? !samePicks(recorded, state.picks) : recorded.length >= state.picks.length)) {
             state.picks = recorded.map(p => ({ tile: p.tile, right: Boolean(p.right) }));
             state.mode = "account";
             state.done = state.picks.length >= deal.rounds.length;

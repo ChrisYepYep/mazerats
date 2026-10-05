@@ -842,8 +842,8 @@ async function handleReview(event, db) {
            same shape the admin's own contributor form writes (see
            js/admin.js, "console: contributors") — mazes[] and events[]
            of ids, types[], a manual `extra`, and `count` as their sum. The
-           name is the Habbo name they gave, falling back to their Discord
-           one; an existing contributor is matched on it case-insensitively
+           name is the one typed, else the Habbo name they gave, else their
+           nickname (never their Discord name; see below); an existing contributor is matched on it case-insensitively
            so a lead does not create a second copy of a regular.
 
            Credited once per lead, ever. `credited` is claimed on the lead
@@ -854,19 +854,22 @@ async function handleReview(event, db) {
         if (body.credit && lead.credited) {
             out.alreadyCredited = lead.credited;
         } else if (body.credit) {
-            /* The last fallback is the sender's name as the site shows it —
-               their nickname, read now from their players row, when they
-               have one (28 Sept 2026; see player-nick.js). A credit is
-               public, and `from.name` is their Discord name, kept for the
-               admins; a player who chose a nickname chose not to be
-               credited in public by that. */
-            let senderName = lead.from && lead.from.name;
+            /* The last fallback is the sender's nickname, read now from
+               their players row (28 Sept 2026; see player-nick.js). Never
+               `from.name`, their Discord name, which is kept for the admins
+               only (5 Oct 2026, the bug scan: nicknames apply to the whole
+               site, and a player with none, or a players read that failed,
+               fell through to it and put it on the public Contributors
+               list). No Habbo name, no nickname, no credit name: the admin
+               is asked to type one. */
+            let senderName = "";
             if (lead.from && lead.from.id) {
                 const who = await db.collection("players").findOne({ id: lead.from.id }, { projection: { _id: 0, nick: 1 } }).catch(() => null);
-                if (who && who.nick) senderName = who.nick;
+                if (who && typeof who.nick === "string" && who.nick) senderName = who.nick;
             }
             // Trimmed again after the cut, which can leave a space at the end.
             const name = (text(body.creditName).trim() || lead.habboName || senderName || "").slice(0, HABBO_NAME_MAX).trim();
+            if (!name) out.creditNeedsName = true;
             const claim = name ? await leads.updateOne({ id, credited: null }, { $set: { credited: name } }) : null;
             if (claim && !claim.modifiedCount) out.alreadyCredited = true;
             if (claim && claim.modifiedCount) try {
@@ -1036,7 +1039,9 @@ exports.handler = async (event) => {
             // `net` is limiter bookkeeping (see handleLead), shown to nobody.
             const projection = full
                 ? { _id: 0, sender: 0, net: 0 }
-                : { _id: 0, sender: 0, net: 0, ip: 0, "from.id": 0 };
+                // And their Discord name and handle (5 Oct 2026): the
+                // Warren shows the other roles nicknames only.
+                : { _id: 0, sender: 0, net: 0, ip: 0, "from.id": 0, "from.name": 0, "from.username": 0 };
             const list = await db.collection("dead_end_leads")
                 .find(filter, { projection })
                 .sort({ createdAt: -1 })

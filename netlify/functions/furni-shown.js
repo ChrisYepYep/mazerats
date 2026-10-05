@@ -21,8 +21,11 @@ exports.handler = async (event) => {
     const c = CLASS.test(String(q.c || "")) ? String(q.c) : "";
     if (!OLD.test(u)) return { statusCode: 400, headers: SECURITY_HEADERS, body: "" };
     let to = "";
-    try { to = await shownPicture(u, c); } catch (e) { console.error("furni-shown: could not work it out", e); }
-    if (!to) return { statusCode: 404, headers: { ...SECURITY_HEADERS, "Cache-Control": "public, max-age=3600" }, body: "" };
+    let failed = false;
+    try { to = await shownPicture(u, c); } catch (e) { failed = true; console.error("furni-shown: could not work it out", e); }
+    // A failure to work it out is not a "no picture" to keep for an hour
+    // (5 Oct 2026, the bug scan): asked again next time.
+    if (!to) return { statusCode: 404, headers: { ...SECURITY_HEADERS, "Cache-Control": failed ? "no-store" : "public, max-age=3600" }, body: "" };
     return {
         statusCode: 302,
         headers: { ...SECURITY_HEADERS, Location: to, "Cache-Control": "public, max-age=86400" },

@@ -121,14 +121,14 @@ async function mine(event, db) {
     const query = player
         ? { withdrawn: { $ne: true }, $or: [{ audience: "all", at: { $gte: since } }, { audience: "players", to: String(player.id) }] }
         : { withdrawn: { $ne: true }, audience: "all", at: { $gte: since } };
+    // Their own lists first: what they have deleted is left out IN the
+    // query (5 Oct 2026, the bug scan), so deleted notices do not use up
+    // the fifty and push an older unread one out of reach.
+    const row = player ? await db.collection("players").findOne({ id: String(player.id) }, { projection: { _id: 0, noticesSeen: 1, noticesDeleted: 1 } }) : null;
+    const deletedIds = row && Array.isArray(row.noticesDeleted) ? row.noticesDeleted.filter(n => typeof n === "string") : [];
+    if (deletedIds.length) query.nid = { $nin: deletedIds };
     // The newest fifty, then oldest first for the queue of unread ones.
-    const [newest, row] = await Promise.all([
-        col.find(query, { projection: { _id: 0, nid: 1, text: 1, at: 1 } }).sort({ at: -1 }).limit(50).toArray(),
-        player ? db.collection("players").findOne({ id: String(player.id) }, { projection: { _id: 0, noticesSeen: 1, noticesDeleted: 1 } }) : null
-    ]);
-    // Deleted from their own list (the console's Delete): gone for them alone.
-    const deleted = new Set(row && Array.isArray(row.noticesDeleted) ? row.noticesDeleted : []);
-    const kept = newest.filter(r => !deleted.has(r.nid));
+    const kept = await col.find(query, { projection: { _id: 0, nid: 1, text: 1, at: 1 } }).sort({ at: -1 }).limit(50).toArray();
     const rows = kept.slice().reverse();
     const seen = new Set(row && Array.isArray(row.noticesSeen) ? row.noticesSeen : []);
     /* ?all=1 (5 Oct 2026, the owner's): every notice the caller has been

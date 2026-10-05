@@ -600,8 +600,9 @@
 /* A room nobody has walked yet — the ?? marks on the drawing. Dimmed and
    dashed so the map is honest about which parts of itself are unfinished
    rather than presenting a guess with the same confidence as a fact. */
+/* The dimming itself is applyBands' (js/wizard-map.js), which sets every
+   room's opacity inline and so always beat a 0.7 here. */
 .wiz-room[data-status="unwalked"] {
-    opacity: 0.7;
     border: 1px dashed rgba(92, 64, 48, 0.5);
 }
 

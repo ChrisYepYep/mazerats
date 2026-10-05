@@ -665,7 +665,11 @@ const DUMMY_HASH = "$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy
 async function passwordMatches(password, admin) {
     const hash = (admin && admin.passwordHash) || DUMMY_HASH;
     const ok = await bcrypt.compare(password, hash);
-    return Boolean(admin) && ok;
+    /* Only a row with a hash of its own can match (5 Oct 2026, the bug
+       scan). DUMMY_HASH is bcrypt's widely published documentation example,
+       so a row with no hash (one added by hand in Atlas) compared against it
+       let anybody in with the example's well-known password. */
+    return Boolean(admin && typeof admin.passwordHash === "string" && admin.passwordHash) && ok;
 }
 
 /* A fresh tokenVersion for an account row — see tokenIsCurrent in _auth.js.

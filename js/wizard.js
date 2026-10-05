@@ -38,6 +38,10 @@ document.addEventListener("DOMContentLoaded", () => {
 
     const view = WizardMap({
         stage,
+        // A code part-typed over the map: its hyphen is not a zoom-out (see
+        // the whisper below). `buffer` is declared further down and asked
+        // only on a keypress, long after it exists.
+        typing: () => typeof buffer === "string" && buffer.length > 0,
         canvas: document.getElementById("wiz-canvas"),
         /* The sheet's "(1)", "(2)", "(3)" stay in the editor and never reach
            a reader — see roomName in js/wizard-map.js for why the number is
@@ -420,6 +424,9 @@ document.addEventListener("DOMContentLoaded", () => {
         if (e.key !== "Escape") return;
         if (modal.classList.contains("open")) closeRoom();
         else if (resultsEl && !resultsEl.hidden) hideResults();
+        // And the touch screens' secret sheet (5 Oct 2026, the bug scan):
+        // a tablet with a keyboard could not put it away with Escape.
+        else if (secretSheet && !secretSheet.hidden) setSheet(false);
     });
 
     function roomIdFromPath() {
@@ -1958,13 +1965,21 @@ document.addEventListener("DOMContentLoaded", () => {
 
     // ---------- loading ----------
 
+    /* The frame stays see-through until a load succeeds (.is-ready), and
+       the message lives inside it, so a failure that did not also show the
+       frame said nothing at all (5 Oct 2026, the bug scan). */
+    function failedToLoad() {
+        stage.classList.add("is-ready");
+        statusEl.hidden = false;
+        statusEl.textContent = "The map could not be loaded. Try again in a moment.";
+    }
+
     async function load() {
         let data;
         try {
             data = await Api.getWizardMap();
         } catch (err) {
-            statusEl.hidden = false;
-            statusEl.textContent = "The map could not be loaded. Try again in a moment.";
+            failedToLoad();
             return;
         }
 
@@ -2060,5 +2075,6 @@ document.addEventListener("DOMContentLoaded", () => {
         stage.classList.add("is-ready");
     }
 
-    load();
+    // Bad data that throws while drawing is a failed load too.
+    load().catch(err => { console.error(err); failedToLoad(); });
 });

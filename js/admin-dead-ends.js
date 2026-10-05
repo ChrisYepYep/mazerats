@@ -518,7 +518,10 @@
         // A player's chosen nickname before their Discord name (28 Sept
         // 2026): the credit is public, and the nickname is the name they
         // asked the site to show. dead-end-leads.js keeps `from.nick` current.
-        const creditName = lead.habboName || (lead.from && (lead.from.nick || lead.from.name)) || "";
+        // Never the Discord name (5 Oct 2026): a credit is public, and
+        // nicknames apply to the whole site. No Habbo name and no nickname
+        // leaves the box empty for the admin to fill.
+        const creditName = lead.habboName || (lead.from && lead.from.nick) || "";
         /* What an earlier accept already did. A lead accepted, reopened and
            accepted again opened this form with both boxes ticked, inviting a
            second copy of the screenshots and a second credit. The server now
@@ -595,6 +598,9 @@
                was loaded at sign-in, and editing the person just credited
                from that copy saved the old record back over the credit. */
             document.dispatchEvent(new CustomEvent("mazerats:contributors-changed"));
+        }
+        if (out && out.creditNeedsName) {
+            await tell("Accepted, but nobody was credited: this lead has no Habbo name and its sender has no nickname. Type a name in the credit box and accept it again to credit them.");
         }
         if (out && out.promoted && out.promoted.length && leadStatus === "new") {
             flash("Accepted. The copied screenshots are listed under Accepted.");

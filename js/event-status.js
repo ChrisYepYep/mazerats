@@ -82,7 +82,9 @@
            All of this is plain millisecond arithmetic on the instants, so
            it is UTC throughout and never touches the visitor's timezone. */
         let end = endIso ? new Date(endIso) : null;
-        if (!end || isNaN(end) || end < start) end = new Date(start.getTime() + DEFAULT_EVENT_MS);
+        // <=, not < (5 Oct 2026, the bug scan): an end typed the same as the
+        // start made a zero-length event that went straight to Past.
+        if (!end || isNaN(end) || end <= start) end = new Date(start.getTime() + DEFAULT_EVENT_MS);
 
         const now = Date.now();
         const cutoff = archiveCutoff();

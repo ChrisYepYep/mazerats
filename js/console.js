@@ -85,7 +85,9 @@ document.addEventListener("DOMContentLoaded", () => {
             // of specificity, forcing it back to a plain block.
             el.style.display = key !== name ? "none" : (key === "thanks" || key === "notice" || key === "notices" ? "flex" : "block");
         });
-        const litTab = CONTACT_PAGES.includes(name) ? "contact" : PROFILE_PAGES.includes(name) ? "me" : name;
+        // On a page with no Profile landing (fallinfurni.html) the tab is
+        // still data-page="profile" (5 Oct 2026, the bug scan: it never lit).
+        const litTab = CONTACT_PAGES.includes(name) ? "contact" : PROFILE_PAGES.includes(name) ? (pages.me ? "me" : "profile") : name;
         tabButtons.forEach(btn => btn.classList.toggle("active", btn.dataset.page === litTab));
         // All four pages share one scrollable container (#console-screen-
         // scroll) — its scrollTop otherwise carries over from whichever
@@ -452,7 +454,9 @@ document.addEventListener("DOMContentLoaded", () => {
             signedAsEl.hidden = false;
             // A comma, not a dash: this line is set in Volter Goldfish, which
             // draws U+2014 as a musical note (see PICTURE_GLYPHS in js/site.js).
-            signedAsEl.textContent = `Sending as ${player.name}, signed in with Discord.`;
+            // The nickname, never the Discord name (5 Oct 2026, the owner's),
+            // as the event entry form has it.
+            signedAsEl.textContent = `Sending as ${player.nick || "you"}, signed in with Discord.`;
         } else {
             discordField.hidden = false;
             signedAsEl.hidden = true;
@@ -638,9 +642,16 @@ document.addEventListener("DOMContentLoaded", () => {
 
     function paintEntryIdentity(player) {
         if (!entrySignedAs) return;
-        entrySignedAs.hidden = !player;
-        // A comma, not a dash: Volter draws U+2014 as a picture.
-        entrySignedAs.textContent = player ? `Sending as ${player.name}, signed in with Discord.` : "";
+        /* Shown signed out too (5 Oct 2026, the owner's wording): only an
+           entry sent signed in can be told it was approved (the console
+           notification; see event-entries.js), so a signed-out entrant is
+           told so before sending. Signed in, the nickname, never the Discord
+           name (nicknames apply to the whole site). A comma, not a dash:
+           Volter draws U+2014 as a picture. */
+        entrySignedAs.hidden = false;
+        entrySignedAs.textContent = player
+            ? `Sending as ${player.nick || "you"}, signed in with Discord. We'll let you know when it's approved.`
+            : "Sign in with Discord to be notified when your entry's approved.";
     }
     if (window.Account) {
         paintEntryIdentity(Account.current);
@@ -1214,7 +1225,10 @@ if (typeof renderPrivacySections === "function") {
         if (!noticesListEl) return;
         const mine = ++historyGen;
         noticesListEl.innerHTML = `<p class="console-blurb">Loading...</p>`;
-        fetch(NOTICE_URL + "?all=1", { credentials: "same-origin", headers: { Accept: "application/json" }, cache: "no-store" })
+        // With a time limit (5 Oct 2026, the bug scan): one that never
+        // answered left "Loading..." up until the page was left.
+        const limit = typeof AbortSignal !== "undefined" && AbortSignal.timeout ? AbortSignal.timeout(15000) : undefined;
+        fetch(NOTICE_URL + "?all=1", { credentials: "same-origin", headers: { Accept: "application/json" }, cache: "no-store", signal: limit })
             .then(res => (res.ok ? res.json() : Promise.reject(new Error(String(res.status)))))
             .then(data => {
                 if (mine !== historyGen) return;
@@ -1274,12 +1288,31 @@ if (typeof renderPrivacySections === "function") {
 
     // After the page has settled, then whenever who is signed in changes —
     // the old queue dropped at once (see checkGen).
-    setTimeout(checkNotices, 1500);
+    /* Only when the player has CHANGED (5 Oct 2026, the bug scan). Account
+       announces on every answer — a nickname saved, a retry, "online", a
+       re-check — and each one used to empty the queue and pull a player off
+       the notification they were reading. A real change also clears the
+       Notifications list, which used to stay on screen after a sign-out
+       with the last player's own notices in it (and a list read still on
+       its way is dropped, historyGen). The first answer only asks if the
+       load-time check has not already. */
+    let noticedFor;   // undefined until Account's first answer
+    const whoNow = () => (window.Account && Account.current && Account.current.id != null ? String(Account.current.id) : null);
+    setTimeout(() => { if (!noticeCheckedAt) checkNotices(); }, 1500);
     if (window.Account && typeof Account.onChange === "function") {
         Account.onChange(() => {
+            const id = whoNow();
+            if (id === noticedFor) return;
+            const first = noticedFor === undefined;
+            noticedFor = id;
+            if (first) { if (!noticeCheckedAt) checkNotices(); return; }
             notices = [];
             paintNoticeIcon();
             if (noticePageShowing()) leaveNotices();
+            historyGen++;
+            pickNotice(null);
+            if (noticesListEl) noticesListEl.innerHTML = "";
+            if (pages.notices && pages.notices.style.display !== "none") showPage(landingPage());
             checkNotices();
         });
     }

@@ -86,6 +86,11 @@
                 if (gen !== signOutGen && data && data.player) return Account.refresh();
                 Account.current = data && data.player ? data.player : null;
                 Account.unsure = false;
+                // Answered: the next failure, however much later, gets its
+                // own retry (5 Oct 2026, the bug scan — only the visit's
+                // first failure ever did, so a later one left a signed-in
+                // player shown signed out until a reload).
+                meRetried = false;
                 /* A ban rides on the same answer, beside the player rather
                    than inside it, because it is given to signed-out
                    visitors too (a blocked network). Null for nearly

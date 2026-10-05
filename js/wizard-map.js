@@ -324,6 +324,8 @@ window.WizardMap = function WizardMap(options) {
        Used by search, by the exits inside a room's sheet, by a /wizard/<id>
        link arriving cold, and by the editor's room list. */
     function flyTo(xPct, yPct, toZoom, { smooth = true, rate = 0 } = {}) {
+        // A place that is not a number would leave the pan NaN for good.
+        if (!Number.isFinite(xPct) || !Number.isFinite(yPct)) return;
         const { w, h } = stageSize();
         const target = toZoom == null ? wantZoom
             : Math.max(map.minZoom || 1, Math.min(map.maxZoom || 6, toZoom));
@@ -401,6 +403,10 @@ window.WizardMap = function WizardMap(options) {
         for (const entry of banded) {
             let opacity = bandOpacity(entry.item);
             if (entry.item.opacity != null) opacity *= Number(entry.item.opacity);
+            /* An unwalked room's dimming, which the stylesheet asks for
+               (wizard.css, data-status="unwalked") but this inline opacity
+               always overrode (5 Oct 2026, the bug scan): applied here. */
+            if (entry.item.status === "unwalked") opacity *= 0.7;
             /* The editor shows what a band hides, at a ghost of its
                strength: a name you have set to appear at 3× is a name you
                have to be able to find again at 1× in order to change your
@@ -1780,7 +1786,9 @@ window.WizardMap = function WizardMap(options) {
             glideTo(wantZoom, wantPanX + moves[e.key][0], wantPanY + moves[e.key][1]);
         } else if (e.key === "+" || e.key === "=") {
             zoomBy(1.4);
-        } else if (e.key === "-" || e.key === "_") {
+        } else if ((e.key === "-" || e.key === "_") && !(options.typing && options.typing())) {
+            // Not while a code is being typed over the map, which can have a
+            // hyphen in it (5 Oct 2026, the bug scan: each one zoomed out).
             zoomBy(1 / 1.4);
         }
     });

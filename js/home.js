@@ -1536,10 +1536,16 @@ document.addEventListener("DOMContentLoaded", () => {
 
             row.addEventListener("pointerenter", startWarm, { passive: true });
             row.addEventListener("pointerleave", stopWarm, { passive: true });
-            // Keyboard and touch get it without the dwell: arriving on a row
-            // by either is already a deliberate act, not a mouse passing over.
+            // Keyboard gets it without the dwell: arriving on a row by it is
+            // already a deliberate act, not a mouse passing over.
             row.addEventListener("focus", () => warmGallery(items[i]));
-            row.addEventListener("touchstart", () => warmGallery(items[i]), { passive: true });
+            /* Touch with the dwell, called off if the finger moves (5 Oct
+               2026, the bug scan): scrolling a list on a phone puts a finger
+               down on row after row, and each one started a full-size
+               picture and a dozen thumbnails before anything was chosen. A
+               tap still warms it; a scroll does not. */
+            row.addEventListener("touchstart", startWarm, { passive: true });
+            row.addEventListener("touchmove", stopWarm, { passive: true });
         });
     }
 
@@ -5277,7 +5283,9 @@ document.addEventListener("DOMContentLoaded", () => {
             // readers without drawing anything.
             btn.setAttribute("aria-label", `Details for ${entry.name || "this furni"}`);
             const img = document.createElement("img");
-            img.src = entry.icon;
+            // The sprite when there is no icon (5 Oct 2026, the bug scan): a
+            // furni the new API has no icon for came through as an empty one.
+            img.src = entry.icon || entry.sprite;
             img.alt = "";
             // NOT lazy. The row caps at twelve icons and scrolls, so the
             // browser considered everything past the twelfth off-screen and
@@ -7013,6 +7021,9 @@ document.addEventListener("DOMContentLoaded", () => {
         img.addEventListener("load", () => resetPhotoZoom(frame));
 
         box.addEventListener("wheel", e => {
+            // A sideways swipe or tilt (no up or down in it) is not a zoom
+            // (5 Oct 2026, the bug scan: it zoomed out), and is left alone.
+            if (!e.deltaY) return;
             // Otherwise the page scrolls behind the frame at the same time.
             e.preventDefault();
             const [x, y] = pointIn(e);
@@ -7731,7 +7742,10 @@ document.addEventListener("DOMContentLoaded", () => {
         if (hours < 24) return hours + (hours === 1 ? " hour ago" : " hours ago");
         const days = Math.floor(hours / 24);
         if (days < 30) return days + (days === 1 ? " day ago" : " days ago");
-        return formatMazeDate(then.toISOString().slice(0, 10)) || "a while ago";
+        // The visitor's own calendar day, not UTC's (5 Oct 2026, the bug
+        // scan: seen just after midnight read as the day before).
+        const pad = n => String(n).padStart(2, "0");
+        return formatMazeDate(`${then.getFullYear()}-${pad(then.getMonth() + 1)}-${pad(then.getDate())}`) || "a while ago";
     }
 
     // mirrored flips the card: avatar on the right, text to its left. Used
@@ -9685,7 +9699,9 @@ document.addEventListener("DOMContentLoaded", () => {
         const hl = highlightsOf(list);
 
         // ---- who ----
-        const name = d ? (d.name || "Someone") : me ? (me.displayName || me.name || "Someone") : "Your archive";
+        // Never the Discord name, even your own (5 Oct 2026, the bug scan):
+        // the nickname, or what your profile is called without one.
+        const name = d ? (d.name || "A Maze Rat") : me ? (me.nick || "A Maze Rat") : "Your archive";
         const habbo = d && d.habbo;
         /* The Habbo, never the Discord picture (the owner's call): a
            player without a linked Habbo gets the boards' blank face. */
@@ -10520,8 +10536,11 @@ document.addEventListener("DOMContentLoaded", () => {
             if (record) { openRecord(m[1], record, {}); return true; }
         }
         // The archive itself, as it is: already here. "/" is the landing
-        // page, and /home with a search wants the page loaded with it.
-        return path === "/home" && !u.search;
+        // page, and /home with a search wants the page loaded with it. So
+        // does /home with a #hash (5 Oct 2026, the bug scan): an old-style
+        // /home#maze-<id> link counted as "already here" and did nothing;
+        // given to the browser, the hashchange opens it.
+        return path === "/home" && !u.search && !u.hash;
     }
 
     /* Pulls the account's ticks down as soon as we know who is signed in,
@@ -10696,7 +10715,9 @@ document.addEventListener("DOMContentLoaded", () => {
         // Open a record's window from the console's list.
         openRecord(type, id) {
             const raw = type === "event" ? EVENTS.find(e => e.id === id) : ROOMS.find(r => r.id === id);
-            if (raw) openModal(normalize(raw, type === "event"));
+            // Through openRecord (5 Oct 2026, the bug scan), so the archive
+            // moves to the tab the record is in, as every other way in does.
+            if (raw) openRecord(type === "event" ? "event" : "maze", raw, {});
         },
         onChange(fn) { if (typeof fn === "function") deadEndsListeners.push(fn); }
     };
@@ -11319,6 +11340,9 @@ document.addEventListener("DOMContentLoaded", () => {
             img.className = "welcome-promo-img";
             img.alt = "";
             img.decoding = "async";
+            // Handled below, as on the landing page's copy (welcome.js): a
+            // failure counted, not filed as an error (5 Oct 2026, the bug scan).
+            img.setAttribute("data-fallback", "drop");
             img.addEventListener("error", () => {
                 broken.add(ev.id);
                 draw();
@@ -11893,8 +11917,17 @@ document.addEventListener("DOMContentLoaded", () => {
         return !!(og && /^Not in the archive$/.test(og.getAttribute("content") || ""));
     })();
 
+    /* Whether the list a record of this kind lives in came from the live
+       archive (5 Oct 2026, the bug scan): any degraded list counted, so the
+       events list being down meant a deleted maze's address was never
+       called missing, and never put back to /home. */
+    function liveListFor(kind) {
+        const d = Api._degraded;
+        return !(d && d.has(kind === "event" ? "event data" : "room data"));
+    }
+
     function tellAddressMissing(kind) {
-        const liveArchive = !(Api._degraded && Api._degraded.size);
+        const liveArchive = liveListFor(kind);
         if (!SERVED_AS_MISSING && !liveArchive) return;
         const what = kind === "event" ? "event" : "maze";
 
@@ -11967,7 +12000,7 @@ document.addEventListener("DOMContentLoaded", () => {
                notice's "Try again", a reload, then reloaded /home. The same
                test tellAddressMissing makes: the share function's own 404,
                or a miss in the live archive. */
-            const liveArchive = !(Api._degraded && Api._degraded.size);
+            const liveArchive = liveListFor(asked.kind);
             const missProven = liveArchive || (!asked.legacy && SERVED_AS_MISSING);
             /* A dead old #maze-/#event- hash too (3 Oct 2026), on load or
                when followed on the page: it was left in place, so the

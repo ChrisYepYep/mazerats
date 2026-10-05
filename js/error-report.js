@@ -286,8 +286,18 @@
                     for (var i = 0; i < cls.length && out.length < 6; i++) if (cls[i]) out.push(roots[r][0] + "." + cls[i].slice(0, 40));
                 }
                 if (document.querySelectorAll) {
+                    /* Only what is really showing (5 Oct 2026, the bug scan):
+                       aria-modal is set on the site's dialogs whether they
+                       are open or not, so every report listed every dialog
+                       on the page as open and pushed the one that was off
+                       the end of the list. A dialog counts when it is
+                       rendered; the .open classes are trusted as they are. */
                     var open = document.querySelectorAll(".open[id], .is-open[id], dialog[open], [aria-modal=\"true\"]");
-                    for (var j = 0; j < open.length && out.length < 12; j++) out.push(describe(open[j]));
+                    for (var j = 0; j < open.length && out.length < 12; j++) {
+                        var w = open[j];
+                        if (w.getAttribute("aria-modal") === "true" && !/\b(?:is-)?open\b/.test(w.className || "") && !(w.getClientRects && w.getClientRects().length)) continue;
+                        out.push(describe(w));
+                    }
                 }
             } catch (e) { /* what was gathered will do */ }
             return out;

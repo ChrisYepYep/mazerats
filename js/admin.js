@@ -624,7 +624,12 @@ document.addEventListener("DOMContentLoaded", () => {
         if (adoptedToken && adoptedToken === adminToken && Date.now() - adoptedAt < ADOPT_GRACE_MS) {
             if (adoptedRecheck) return;
             const held = adminToken;
-            adoptedRecheck = Api.verifySession(held).then(r => !!r, () => false).then(ok => {
+            /* Only a 401 or 403 is "refused" (5 Oct 2026, the bug scan): a
+               blip on the check (a timeout, a 500, a 503) is not an answer,
+               and taking it as one signed this tab — and, through the
+               shared token, every other tab — out of a session that was
+               fine. A blip leaves the session as it is. */
+            adoptedRecheck = Api.verifySession(held).then(r => !!r, err => !(err && (err.status === 401 || err.status === 403))).then(ok => {
                 adoptedRecheck = null;
                 if (adminToken !== held) return;
                 if (!ok) { adoptedToken = ""; lockOut(); }
@@ -711,7 +716,18 @@ document.addEventListener("DOMContentLoaded", () => {
        their own name. The forms are closed without deleting their uploads:
        those were the other account's, and a view-only successor could not
        delete them anyway, so they are left rather than half-cleaned. */
+    /* The lists already drawn from the last account's reads (5 Oct 2026,
+       the bug scan): the arrays were emptied, but what they had drawn stayed
+       in the DOM until the next account's reads came back — an owner's
+       contact messages and bans, unredacted, in front of a viewer who had
+       signed in over a lock-out. */
+    function clearRenderedLists() {
+        [adminsListEl, contactMessagesListEl, bansListEl].forEach(el => { if (el) el.innerHTML = ""; });
+        Object.keys(COLLECTIONS).forEach(key => { const l = COLLECTIONS[key].listEl; if (l) l.innerHTML = ""; });
+    }
+
     function resetAccountPanels() {
+        clearRenderedLists();
         ffClear();
         clearActivity();
         refusedUploads.clear();
@@ -726,6 +742,8 @@ document.addEventListener("DOMContentLoaded", () => {
         // The Event Entries panel (js/admin-entries.js, 30 Sept 2026).
         if (window.AdminEntries) window.AdminEntries.reset();
         if (window.AdminWhatsNew) window.AdminWhatsNew.reset();
+        // The Notifications panel (js/admin-notifications.js, 5 Oct 2026).
+        if (window.AdminNotifications) window.AdminNotifications.reset();
         // The Bans tab's Add a ban and open Change forms (29 Sept 2026).
         resetBanForms();
         // The Recolour editor's palette and preview (1 Oct 2026) — the same
@@ -954,17 +972,14 @@ document.addEventListener("DOMContentLoaded", () => {
         // and the panels in their own files (both reload when next shown,
         // as whoever is signed in by then).
         lastSignedInAs = "";
-        ffClear();
-        clearActivity();
-        if (window.AdminDeadEnds) window.AdminDeadEnds.reset();
-        if (window.AdminGuides) window.AdminGuides.reset();
-        if (window.AdminErrors) window.AdminErrors.reset();
-        if (window.AdminPlayers) window.AdminPlayers.reset();
-        if (window.AdminEntries) window.AdminEntries.reset();
-        if (window.AdminWhatsNew) window.AdminWhatsNew.reset();
-        // The palette editor, asked about above (1 Oct 2026): its edits and
-        // its preview were still there for whoever signed in next.
-        if (recolour && typeof recolour.reset === "function") recolour.reset();
+        /* Everything an account switch clears, cleared here too (5 Oct
+           2026, the bug scan): this kept its own shorter list, which left
+           the Bans tab's half-filled forms and the Notifications draft for
+           whoever signed in next. The palette editor, asked about above
+           (1 Oct 2026), is in it. */
+        resetAccountPanels();
+        workingBans = [];
+        clearRenderedLists();
         loginModal.classList.add("open");
         loginError.style.display = "none";
         loginForm.reset();
@@ -2710,13 +2725,13 @@ document.addEventListener("DOMContentLoaded", () => {
                 const dragHandle = row.querySelector(".admin-related-drag-handle");
                 dragHandle.addEventListener("dragstart", e => {
                     e.dataTransfer.effectAllowed = "move";
-                    e.dataTransfer.setData("text/plain", String(i));
+                    e.dataTransfer.setData("application/x-mazerats-related", String(i));
                     row.classList.add("dragging");
                 });
                 dragHandle.addEventListener("dragend", () => row.classList.remove("dragging"));
 
                 row.addEventListener("dragover", e => {
-                    if (e.dataTransfer.types.includes("Files")) return;
+                    if (!e.dataTransfer.types.includes("application/x-mazerats-related")) return;
                     e.preventDefault();
                     e.dataTransfer.dropEffect = "move";
                     const before = e.clientY < row.getBoundingClientRect().top + row.offsetHeight / 2;
@@ -2727,11 +2742,11 @@ document.addEventListener("DOMContentLoaded", () => {
                     row.classList.remove("drag-over-top", "drag-over-bottom");
                 });
                 row.addEventListener("drop", e => {
-                    if (e.dataTransfer.types.includes("Files")) return;
+                    if (!e.dataTransfer.types.includes("application/x-mazerats-related")) return;
                     e.preventDefault();
                     row.classList.remove("drag-over-top", "drag-over-bottom");
-                    const from = Number(e.dataTransfer.getData("text/plain"));
-                    if (Number.isNaN(from) || from === i) return;
+                    const from = Number(e.dataTransfer.getData("application/x-mazerats-related"));
+                    if (!Number.isInteger(from) || from < 0 || from >= draft.length || from === i) return;
                     const before = e.clientY < row.getBoundingClientRect().top + row.offsetHeight / 2;
                     let to = before ? i : i + 1;
                     if (from < to) to--;
@@ -4345,7 +4360,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 const dragHandle = row.querySelector(".admin-gallery-drag-handle");
                 dragHandle.addEventListener("dragstart", e => {
                     e.dataTransfer.effectAllowed = "move";
-                    e.dataTransfer.setData("text/plain", String(i));
+                    e.dataTransfer.setData("application/x-mazerats-gallery", String(i));
                     row.classList.add("dragging");
                 });
                 dragHandle.addEventListener("dragend", () => {
@@ -4362,7 +4377,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 // scrambling the room order and re-rendering the list out
                 // from under the upload that was actually in progress.
                 row.addEventListener("dragover", e => {
-                    if (e.dataTransfer.types.includes("Files")) return;
+                    if (!e.dataTransfer.types.includes("application/x-mazerats-gallery")) return;
                     e.preventDefault();
                     e.dataTransfer.dropEffect = "move";
                     const before = e.clientY < row.getBoundingClientRect().top + row.offsetHeight / 2;
@@ -4373,11 +4388,11 @@ document.addEventListener("DOMContentLoaded", () => {
                     row.classList.remove("drag-over-top", "drag-over-bottom");
                 });
                 row.addEventListener("drop", e => {
-                    if (e.dataTransfer.types.includes("Files")) return;
+                    if (!e.dataTransfer.types.includes("application/x-mazerats-gallery")) return;
                     e.preventDefault();
                     row.classList.remove("drag-over-top", "drag-over-bottom");
-                    const from = Number(e.dataTransfer.getData("text/plain"));
-                    if (Number.isNaN(from) || from === i) return;
+                    const from = Number(e.dataTransfer.getData("application/x-mazerats-gallery"));
+                    if (!Number.isInteger(from) || from < 0 || from >= draft.length || from === i) return;
                     const before = e.clientY < row.getBoundingClientRect().top + row.offsetHeight / 2;
                     let to = before ? i : i + 1;
                     if (from < to) to--;
@@ -4493,6 +4508,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
             addBtn.disabled = true;
             status.style.display = "block";
+            let added = 0;
             try {
                 for (let n = 0; n < files.length; n++) {
                     const file = files[n];
@@ -4501,16 +4517,23 @@ document.addEventListener("DOMContentLoaded", () => {
                     noteUpload(formEl, url);
                     const label = explicitLabel || deriveGalleryLabel(file.name);
                     draft.push({ image: url, label, bonus: false, runThrough: false, oldVersions: [] });
+                    added++;
                     renderGalleryList();
                 }
-                fileInput.value = "";
                 labelInput.value = "";
                 status.style.display = "none";
             } catch (err) {
                 if (err.status === 401) { lockOut(); return; }
-                status.textContent = err.message || "Upload failed.";
+                // Which ones are in, so the rest can be picked again alone.
+                status.textContent = (added ? `${added} of ${files.length} added — the rest didn't upload: ` : "") + (err.message || "Upload failed.");
             } finally {
                 addBtn.disabled = false;
+                /* Cleared whatever happened (5 Oct 2026, the bug scan), as
+                   the Related Images batch is: the files that did upload are
+                   already in the list, and pressing Add again with the whole
+                   batch still chosen added them a second time. */
+                fileInput.value = "";
+                resetDropzoneText(fileInput);
             }
         });
 
@@ -7261,6 +7284,13 @@ document.addEventListener("DOMContentLoaded", () => {
             if (!await showConfirmDialog("The launch date (" + escapeHtml(bothZones(currentLaunchAt)) +
                 ") is still ahead. " + escapeHtml(bothZones(iso)) +
                 " has already passed, so the boards will count from it straight away: every score since then goes onto them. Save it?", { danger: true })) return;
+        } else if (isNaN(storedAt) && Date.parse(iso) <= Date.now()) {
+            /* A FIRST launch date already gone (5 Oct 2026, the bug scan):
+               it starts the cut at once, so every score before that moment
+               drops off the boards — the same effect the questions above ask
+               about, set without one. */
+            if (!await showConfirmDialog(escapeHtml(bothZones(iso)) +
+                " has already passed. The boards will count from it straight away, and every score from before it drops off them. Save it?", { danger: true })) return;
         }
         const controls = [launchAtInput, launchAtSave, launchAtClear].filter(Boolean);
         controls.forEach(c => c.disabled = true);
@@ -8054,6 +8084,7 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     }
 
+    let furniPollFailures = 0;   // failed reads in a row (see the catch)
     async function pollFurniProgress() {
         // Signed out (or locked out) since the timer was set: nothing to
         // ask, and asking with no token is just a 401 — see lockOut.
@@ -8061,6 +8092,7 @@ document.addEventListener("DOMContentLoaded", () => {
         const askedWith = adminToken;
         try {
             const p = await Api.furniScanStatus(adminToken);
+            furniPollFailures = 0;
             // The session ended while this was in flight; its answer is
             // for a page that is no longer signed in.
             if (adminToken !== askedWith) return;
@@ -8130,7 +8162,15 @@ document.addEventListener("DOMContentLoaded", () => {
             // 503: the database could not be asked who this is (_auth.js's
             // AUTH_UNAVAILABLE). A blip, not an answer — keep polling.
             if (err.status === 503) return;
+            /* Nor one failed read (5 Oct 2026, the bug scan): a 500 or a
+               timeout stopped the polling for good, with the bar frozen
+               part-way and nothing said, while the scan carried on. It keeps
+               asking through a few, and says so if they go on. */
+            furniPollFailures++;
+            if (furniPollFailures < 8) return;
             stopFurniPolling();
+            furniScanStatus.textContent = "Lost track of the scan's progress. It may still be running — press Scan again later to see where it got to.";
+            return;
         }
     }
 
@@ -8409,7 +8449,15 @@ document.addEventListener("DOMContentLoaded", () => {
     function showPanel(name) {
         if (!adminNavEl) return;
         adminPanelEls.forEach(panel => {
-            panel.hidden = panel.dataset.panel !== name;
+            const show = panel.dataset.panel === name;
+            /* Shown again even when it was already showing (5 Oct 2026, the
+               bug scan). The panels in files of their own (Missing Pieces,
+               Guides and the rest) load when they see `hidden` change, and
+               signing back in onto the panel you were on changed nothing:
+               they had been reset at the logout and stayed blank. Two
+               changes in one go are one redraw and no flicker. */
+            if (show && !panel.hidden) panel.hidden = true;
+            panel.hidden = !show;
         });
         shownPanel = name;
         // The floating Save/Cancel follows its form's panel — see syncFloatingBar.
@@ -9253,21 +9301,33 @@ document.addEventListener("DOMContentLoaded", () => {
         bansBusy = true;
         addSay("Banning…");
         let done = 0;
+        let already = 0;
         let failed = null;
         for (const body of bodies) {
             try {
                 await Api.createBan(adminToken, body);
                 done++;
             } catch (err) {
+                /* Already banned, on an account-and-network ban, is a part
+                   that is done, not a stop (5 Oct 2026, the bug scan): after
+                   the network half failed once, pressing Ban again hit the
+                   account ban it had made, stopped there, and never tried
+                   the network. A 409 with no id is "no network on file". */
+                if (bodies.length > 1 && err.status === 409 && err.data && err.data.id && !err.data.noNetHash) { already++; continue; }
                 failed = { body, err };
                 break;
             }
         }
         bansBusy = false;
-        if (failed && failed.err.status === 401) { lockOut(); return; }
+        if (failed && failed.err.status === 401) {
+            // The part that went through is kept, and said, once signed back in.
+            if (done) bansSay(`Their account is banned, but not their network: you were signed out. Sign in and press Ban again for the network.`);
+            lockOut();
+            return;
+        }
         if (!failed) {
             bansAdd = null;
-            bansSay("Banned: " + who + ".");
+            bansSay("Banned: " + who + "." + (already ? ` (${already === 1 ? "One part was" : "Both parts were"} already in place.)` : ""));
         } else {
             // 409 is either "no network on file" (noNetHash) or "already banned".
             const why = failed.err.status === 409 && failed.err.data && failed.err.data.noNetHash ? kit.NO_NET
