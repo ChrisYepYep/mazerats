@@ -392,12 +392,25 @@ function cleanContext(ctx) {
 
 /* One report, from the browser (fromClient) or from withErrorReporting. Null
    when there is nothing worth keeping. */
+// The same list as js/error-report.js's: change one, change both.
+const BROWSER_OWN = /__firefox__|__gCrWeb|\bethereum\b|webkit\.messageHandlers/;
 function cleanReport(r, { fromClient = true } = {}) {
     if (!r || typeof r !== "object" || Array.isArray(r)) return null;
     const kind = str(r.kind, 12);
     if (fromClient ? !CLIENT_KINDS.has(kind) : !KINDS.includes(kind)) return null;
     const message = scrub(r.message, 500);
     if (!message) return null;
+    /* A browser's own scripts' errors (5 Oct 2026): js/error-report.js stops
+       sending them (BROWSER_OWN and injected() there), but a page opened
+       before that version keeps the old one until it is reloaded, and goes
+       on sending them, repeats and all. Turned away here as well, by the
+       same two signs: the browser's own names in the message, or a place
+       on line 1 of a page rather than in a script file. */
+    if (fromClient && (kind === "error" || kind === "rejection")) {
+        if (BROWSER_OWN.test(message)) return null;
+        const src = String(r.source || "");
+        if (src && (int(r.line, 0, 1e7) || 0) <= 1 && !/\.m?js(?:[?#]|$)/i.test(src)) return null;
+    }
     const out = {
         kind,
         message,

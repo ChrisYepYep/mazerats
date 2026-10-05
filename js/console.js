@@ -83,7 +83,7 @@ document.addEventListener("DOMContentLoaded", () => {
             // so its OK button can be pinned to the bottom — an inline
             // style here would otherwise beat that rule outright regardless
             // of specificity, forcing it back to a plain block.
-            el.style.display = key !== name ? "none" : (key === "thanks" || key === "notice" ? "flex" : "block");
+            el.style.display = key !== name ? "none" : (key === "thanks" || key === "notice" || key === "notices" ? "flex" : "block");
         });
         const litTab = CONTACT_PAGES.includes(name) ? "contact" : PROFILE_PAGES.includes(name) ? "me" : name;
         tabButtons.forEach(btn => btn.classList.toggle("active", btn.dataset.page === litTab));
@@ -542,6 +542,40 @@ document.addEventListener("DOMContentLoaded", () => {
        and from the side menu. Those two are stubs until console-info.js has
        run, which is at DOMContentLoaded like this file — nothing can press
        a button before then. */
+    /* THE CONSOLE'S SOUNDS (5 Oct 2026, the owner's): Habbo's own console
+       sounds, cut from his clip — "sent" when a console form goes through
+       (showThanks, below: Contact Us, Add Maze Info, an event entry), and
+       "notice" when a notification arrives (checkNotices). Both are loud as
+       recorded, so they play well down. A browser lets a page make no sound
+       until the visitor has clicked, tapped or typed on it: one refused is
+       kept and played at the first of those instead (a notification that
+       came while they were away, met on their way back in). */
+    const SOUND_VOLUME = 0.3;
+    const SOUNDS = { sent: "assets/sounds/console-sent.wav", notice: "assets/sounds/console-notice.wav" };
+    const soundEls = {};
+    let soundWaiting = null;
+    function playSound(name) {
+        if (!SOUNDS[name] || typeof Audio !== "function") return;
+        const el = soundEls[name] || (soundEls[name] = new Audio(SOUNDS[name]));
+        el.volume = SOUND_VOLUME;
+        try { el.currentTime = 0; } catch (e) { /* not loaded yet */ }
+        const played = el.play();
+        if (played && typeof played.catch === "function") {
+            played.catch(err => { if (err && err.name === "NotAllowedError") waitForGesture(name); });
+        }
+    }
+    function waitForGesture(name) {
+        if (soundWaiting) { soundWaiting = name; return; }
+        soundWaiting = name;
+        const go = () => {
+            ["pointerdown", "keydown", "touchend"].forEach(t => document.removeEventListener(t, go, true));
+            const n = soundWaiting;
+            soundWaiting = null;
+            playSound(n);
+        };
+        ["pointerdown", "keydown", "touchend"].forEach(t => document.addEventListener(t, go, true));
+    }
+
     const MazeConsole = window.MazeConsole = {
         open(page) {
             if (modal.style.display === "block") showPage(page || "contact");
@@ -555,6 +589,9 @@ document.addEventListener("DOMContentLoaded", () => {
             if (thanksMessageEl) thanksMessageEl.textContent = text || THANKS_DEFAULT;
             if (thanksNoteEl) { thanksNoteEl.textContent = note || ""; thanksNoteEl.hidden = !note; }
             showPage("thanks");
+            // Only ever reached once a form has gone through, so a failed
+            // send makes no sound.
+            playSound("sent");
         },
         resetThanks() {
             if (thanksMessageEl) thanksMessageEl.textContent = THANKS_DEFAULT;
@@ -1007,7 +1044,10 @@ if (typeof renderPrivacySections === "function") {
        while. */
     const NOTICE_URL = "/.netlify/functions/notifications";
     const NOTICE_SEEN_KEY = "mazerats_notices_seen";
-    const NOTICE_RECHECK_MS = 5 * 60 * 1000;
+    // Asked every minute while the tab is in view; on coming back to the
+    // tab, at once if the last answer is over 15 seconds old (see LIVE below).
+    const NOTICE_POLL_MS = 60 * 1000;
+    const NOTICE_RECHECK_MS = 15 * 1000;
     const ICON = "assets/img/console-icon.png";
     const ICON_ALERT = "assets/img/console-icon-alert.gif";
     const noticeTextEl = document.getElementById("console-notice-text");
@@ -1023,6 +1063,31 @@ if (typeof renderPrivacySections === "function") {
             const list = localSeen().filter(x => x !== nid);
             list.push(nid);
             localStorage.setItem(NOTICE_SEEN_KEY, JSON.stringify(list.slice(-100)));
+        } catch (e) { /* private mode: the account still has it, if signed in */ }
+    }
+    /* Deleted from the Notifications list (5 Oct 2026, the owner's): for
+       this visitor only. Signed in, the account keeps it (noticesDeleted);
+       the browser keeps it as well, which is all a signed-out visitor has. */
+    // The notices the arrival sound has already played for (checkNotices).
+    const NOTICE_CHIMED_KEY = "mazerats_notices_chimed";
+    function localChimed() {
+        try { return JSON.parse(localStorage.getItem(NOTICE_CHIMED_KEY) || "[]") || []; } catch (e) { return []; }
+    }
+    function rememberChimed(nids) {
+        try {
+            const list = localChimed().filter(x => !nids.includes(x)).concat(nids);
+            localStorage.setItem(NOTICE_CHIMED_KEY, JSON.stringify(list.slice(-100)));
+        } catch (e) { /* private mode: it may play again on the next visit */ }
+    }
+    const NOTICE_DELETED_KEY = "mazerats_notices_deleted";
+    function localDeleted() {
+        try { return JSON.parse(localStorage.getItem(NOTICE_DELETED_KEY) || "[]") || []; } catch (e) { return []; }
+    }
+    function rememberDeleted(nid) {
+        try {
+            const list = localDeleted().filter(x => x !== nid);
+            list.push(nid);
+            localStorage.setItem(NOTICE_DELETED_KEY, JSON.stringify(list.slice(-100)));
         } catch (e) { /* private mode: the account still has it, if signed in */ }
     }
 
@@ -1083,9 +1148,17 @@ if (typeof renderPrivacySections === "function") {
             .then(res => (res.ok ? res.json() : null))
             .then(data => {
                 if (mine !== checkGen || !data || !Array.isArray(data.notices)) return;
-                const seen = new Set(localSeen());
+                const seen = new Set([...localSeen(), ...localDeleted()]);
                 notices = data.notices.filter(n => n && n.nid && !seen.has(n.nid));
                 paintNoticeIcon();
+                // The sound, once for each notice however often it is asked
+                // about: a reload or another tab does not play it again.
+                const chimed = new Set(localChimed());
+                const fresh = notices.filter(n => !chimed.has(n.nid));
+                if (fresh.length) {
+                    rememberChimed(fresh.map(n => n.nid));
+                    playSound("notice");
+                }
                 // On the notice page: what it shows follows the new queue.
                 if (noticePageShowing() && (!notices.length || notices[0].nid !== shownNid)) showNotice();
             })
@@ -1119,9 +1192,25 @@ if (typeof renderPrivacySections === "function") {
         const t = Date.parse(iso);
         return Number.isFinite(t) ? new Date(t).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }) : "";
     };
+    const noticesDeleteBtn = document.getElementById("console-notices-delete");
+    const NO_NOTICES = `<p class="console-blurb console-notices-empty">No notifications yet.</p>`;
     let historyGen = 0;
+    /* One notice picked at a time (5 Oct 2026, the owner's): a click draws a
+       border round it and brings up Delete; a second click on it, or Back,
+       lets it go. */
+    let pickedNid = null;
+    function pickNotice(nid) {
+        pickedNid = nid;
+        if (noticesListEl) noticesListEl.querySelectorAll(".console-notices-item").forEach(el => {
+            const on = el.dataset.nid === nid;
+            el.classList.toggle("is-picked", on);
+            el.setAttribute("aria-pressed", String(on));
+        });
+        if (noticesDeleteBtn) noticesDeleteBtn.hidden = !nid;
+    }
     function showNoticeHistory() {
         showPage("notices");
+        pickNotice(null);
         if (!noticesListEl) return;
         const mine = ++historyGen;
         noticesListEl.innerHTML = `<p class="console-blurb">Loading...</p>`;
@@ -1129,24 +1218,58 @@ if (typeof renderPrivacySections === "function") {
             .then(res => (res.ok ? res.json() : Promise.reject(new Error(String(res.status)))))
             .then(data => {
                 if (mine !== historyGen) return;
-                const list = (data && Array.isArray(data.notices)) ? data.notices : [];
+                const gone = new Set(localDeleted());
+                const list = ((data && Array.isArray(data.notices)) ? data.notices : []).filter(n => n && n.nid && !gone.has(n.nid));
                 noticesListEl.innerHTML = list.length
                     ? list.map(n => `
-                        <div class="console-notices-item">
-                            <p class="console-notices-day">${fmtNoticeDay(n.at)}</p>
-                            <p class="console-notices-text">${noticeHtml(n.text)}</p>
-                        </div>`).join('<div class="console-dotline"></div>')
-                    : `<p class="console-blurb console-notices-empty">No notifications yet.</p>`;
+                        <button type="button" class="console-notices-item" data-nid="${n.nid}" aria-pressed="false">
+                            <span class="console-notices-day">${fmtNoticeDay(n.at)}</span>
+                            <span class="console-notices-text">${noticeHtml(n.text)}</span>
+                        </button>`).join('<div class="console-dotline"></div>')
+                    : NO_NOTICES;
             })
             .catch(() => {
                 if (mine !== historyGen) return;
                 noticesListEl.innerHTML = `<p class="console-blurb">Your notifications couldn't be loaded just now. Try again in a moment.</p>`;
             });
     }
+    if (noticesListEl) {
+        noticesListEl.addEventListener("click", e => {
+            const item = e.target.closest(".console-notices-item");
+            if (item) pickNotice(item.dataset.nid === pickedNid ? null : item.dataset.nid);
+        });
+    }
+    if (noticesDeleteBtn) {
+        noticesDeleteBtn.addEventListener("click", () => {
+            const nid = pickedNid;
+            const item = nid && noticesListEl && noticesListEl.querySelector(`.console-notices-item[data-nid="${nid}"]`);
+            if (!item) { pickNotice(null); return; }
+            // The dotted line that went with it: the one before, or for the
+            // first notice, the one after.
+            const line = item.previousElementSibling || item.nextElementSibling;
+            if (line && line.classList.contains("console-dotline")) line.remove();
+            item.remove();
+            if (!noticesListEl.querySelector(".console-notices-item")) noticesListEl.innerHTML = NO_NOTICES;
+            pickNotice(null);
+            rememberDeleted(nid);
+            rememberSeen(nid);
+            // Out of the unread queue too, so the console icon settles.
+            const i = notices.findIndex(x => x.nid === nid);
+            if (i >= 0) { notices.splice(i, 1); paintNoticeIcon(); }
+            fetch(NOTICE_URL, {
+                method: "POST",
+                credentials: "same-origin",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ deleted: [nid] })
+            }).catch(() => { /* the browser has it; the account learns next time */ });
+            const back = document.getElementById("console-notices-back");
+            if (back) back.focus({ preventScroll: true });
+        });
+    }
     const onClick = (id, fn) => { const el = document.getElementById(id); if (el) el.addEventListener("click", fn); };
     onClick("console-choice-notices", showNoticeHistory);
     onClick("console-choice-edit", () => showPage("profile"));
-    onClick("console-notices-back", () => showPage(landingPage()));
+    onClick("console-notices-back", () => { pickNotice(null); showPage(landingPage()); });
     onClick("console-profile-back", () => showPage(landingPage()));
 
     // After the page has settled, then whenever who is signed in changes —
@@ -1160,6 +1283,17 @@ if (typeof renderPrivacySections === "function") {
             checkNotices();
         });
     }
+    /* LIVE (5 Oct 2026, the owner's): asked again every NOTICE_POLL_MS while
+       the tab is in view, so a notification sent from the Warren turns up
+       within a minute without a reload. Nothing is asked while the tab is
+       hidden; coming back to it asks at once, if the last answer is more
+       than NOTICE_RECHECK_MS old. */
+    // A short tick rather than one of NOTICE_POLL_MS: the checks made on
+    // load and on signing in set the clock, and a tick a whole interval
+    // long fell just short of it each time and waited a second interval.
+    setInterval(() => {
+        if (document.visibilityState === "visible" && Date.now() - noticeCheckedAt >= NOTICE_POLL_MS) checkNotices();
+    }, 10 * 1000);
     document.addEventListener("visibilitychange", () => {
         if (document.visibilityState === "visible" && Date.now() - noticeCheckedAt > NOTICE_RECHECK_MS) checkNotices();
     });

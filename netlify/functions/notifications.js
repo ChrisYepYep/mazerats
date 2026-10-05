@@ -25,6 +25,10 @@
                          oldest first. Signed out, the everyone-notices.
    POST { seen: [nid] }  marks them seen (signed in; signed out is a 200
                          that changes nothing — the browser keeps its own).
+   POST { deleted: [nid] }  takes them off the caller's own list for good
+                         (noticesDeleted on their players row; the console's
+                         Delete, 5 Oct 2026), and marks them seen. Signed
+                         out, the browser keeps that too.
    With the Warren's admin token (Authorization), ?admin=1:
      GET                 the latest LIST_MAX sent, each with how many have
                          seen it, and for chosen players who they were.
@@ -120,16 +124,19 @@ async function mine(event, db) {
     // The newest fifty, then oldest first for the queue of unread ones.
     const [newest, row] = await Promise.all([
         col.find(query, { projection: { _id: 0, nid: 1, text: 1, at: 1 } }).sort({ at: -1 }).limit(50).toArray(),
-        player ? db.collection("players").findOne({ id: String(player.id) }, { projection: { _id: 0, noticesSeen: 1 } }) : null
+        player ? db.collection("players").findOne({ id: String(player.id) }, { projection: { _id: 0, noticesSeen: 1, noticesDeleted: 1 } }) : null
     ]);
-    const rows = newest.slice().reverse();
+    // Deleted from their own list (the console's Delete): gone for them alone.
+    const deleted = new Set(row && Array.isArray(row.noticesDeleted) ? row.noticesDeleted : []);
+    const kept = newest.filter(r => !deleted.has(r.nid));
+    const rows = kept.slice().reverse();
     const seen = new Set(row && Array.isArray(row.noticesSeen) ? row.noticesSeen : []);
     /* ?all=1 (5 Oct 2026, the owner's): every notice the caller has been
        sent, read or not, newest first — the console's Notifications page. */
     if ((event.queryStringParameters || {}).all === "1") {
         return json(200, {
             signedIn: !!player,
-            notices: newest.slice(0, HISTORY_MAX).map(r => ({ ...r, seen: seen.has(r.nid) }))
+            notices: kept.slice(0, HISTORY_MAX).map(r => ({ ...r, seen: seen.has(r.nid) }))
         });
     }
     return json(200, { signedIn: !!player, notices: rows.filter(r => !seen.has(r.nid)) });
@@ -140,10 +147,19 @@ async function markSeen(event, db) {
     if (String(event.body || "").length > MAX_BODY) return json(413, { error: "Too large" });
     let body;
     try { body = JSON.parse(event.body || "{}"); } catch (e) { return json(400, { error: "Invalid request body" }); }
-    const nids = Array.isArray(body && body.seen) ? body.seen.filter(n => typeof n === "string" && NID_SHAPE.test(n)).slice(0, 50) : [];
-    if (!nids.length) return json(400, { error: "seen is a list of notice ids." });
+    const idsIn = list => (Array.isArray(list) ? list.filter(n => typeof n === "string" && NID_SHAPE.test(n)).slice(0, 50) : []);
+    const gone = idsIn(body && body.deleted);
+    // A deleted notice is read as well, so it never comes back as unread.
+    const nids = [...new Set([...idsIn(body && body.seen), ...gone])];
+    if (!nids.length) return json(400, { error: "seen or deleted is a list of notice ids." });
     const player = await livePlayerFrom(db, event);
     if (!player) return json(200, { ok: true, kept: "browser" });
+    if (gone.length) {
+        const players = db.collection("players");
+        const who = { id: String(player.id) };
+        await players.updateOne(who, { $pull: { noticesDeleted: { $in: gone } } });
+        await players.updateOne(who, { $push: { noticesDeleted: { $each: gone, $slice: -SEEN_KEEP } } });
+    }
     /* Two updates, each atomic, rather than read-then-write (the bug scan,
        5 Oct 2026): two tabs pressing OK on different notices at once each
        wrote back the list as it read it, and one lost the other's. Taken

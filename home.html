@@ -28,7 +28,7 @@
          on Netlify, and sent with every report so the Errors tab can say
          which deploy a failure started with. -->
     <meta name="mazerats:build" content="dev">
-    <script src="/js/error-report.js?v=2"></script>
+    <script src="/js/error-report.js?v=3"></script>
     <!-- The charset comes before even the gate. A browser only honours a
          charset declaration inside the first 1024 bytes of the document;
          past that it has already guessed an encoding and may re-parse the
@@ -1139,12 +1139,13 @@
                     </div>
                     <!-- Every notification this visitor has been sent, newest first
                          (netlify/functions/notifications.js ?all=1). -->
-                    <div class="console-page" id="console-page-notices" style="display:none;">
+                    <div class="console-page console-page-notices" id="console-page-notices" style="display:none;">
                         <h3 class="console-page-title">Notifications</h3>
                         <div class="console-hashline" aria-hidden="true"></div>
                         <div class="console-notices-list" id="console-notices-list"></div>
-                        <div class="console-contact-actions">
+                        <div class="console-contact-actions console-notices-actions">
                             <button type="button" class="console-btn console-btn-cancel" id="console-notices-back">Back</button>
+                            <button type="button" class="console-btn" id="console-notices-delete" hidden>Delete</button>
                         </div>
                     </div>
                     <div class="console-page" id="console-page-profile" style="display:none;">
@@ -1698,7 +1699,7 @@
     <script src="js/home.js?v=2"></script>
     <script src="js/custom-scrollbar.js?v=2"></script>
     <script src="js/letter-jump.js?v=2"></script>
-    <script src="js/console.js?v=2"></script>
+    <script src="js/console.js?v=4"></script>
     <!-- The console's Add Maze Info form and Missing Pieces list. After
          console.js, whose page switching it uses (window.MazeConsole). -->
     <script src="js/console-info.js?v=2"></script>

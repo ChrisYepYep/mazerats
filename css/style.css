@@ -9156,8 +9156,61 @@ body[data-page="admin"] .search-box input {
 .console-page-notice .console-btn-ok { margin-top: 0; }
 
 /* THE NOTIFICATIONS LIST (5 Oct 2026; js/console.js): each notice under its
-   day, a dotted line between them, as the Contributors list sets its rows. */
-.console-notices-item { padding: 4px 0; }
+   day, a dotted line between them, as the Contributors list sets its rows.
+
+   Back and Delete stay at the foot of the screen (the owner's): the page
+   fills the screen, so with a short list the row sits at the bottom, and
+   with a long one it is stuck there while the notices scroll under it and
+   stop a few pixels above the buttons. The row hides what passes under it
+   with the screen's own 4px tile, laid to line up with the screen's: the
+   row's foot is the screen's foot, 198px down (200 less the border), and
+   tiles from the top meet a whole tile at 200, so the row's tile is set 2px
+   below its foot. Its sides run out to the scroll box's edges (past the
+   page's 11px and 10px), where the tile starts at 0. No bottom padding on
+   the page, or a short list's row would sit 4px higher than a long one's. */
+.console-page.console-page-notices {
+    flex-direction: column;
+    min-height: 100%;
+    padding-bottom: 0;
+}
+.console-notices-list { flex: 1 0 auto; }
+.console-contact-actions.console-notices-actions {
+    position: sticky;
+    bottom: 0;
+    /* No z-index (the owner's, 5 Oct 2026): one put the row over the
+       screen's inner shadow too (.console-screen-shadow, later in the
+       markup). Positioned and unnumbered, it still paints over the notices
+       scrolling under it, none of which is positioned, and under the glass. */
+    align-items: flex-end;
+    margin: 0 -10px 0 -11px;
+    padding: 5px 10px 6px 11px;
+    background-image: url('../assets/img/console/cnsl-bg-tile.png');
+    background-repeat: repeat;
+    background-position: left 0 bottom -2px;
+    image-rendering: pixelated;
+}
+/* A notice is a button: picked, it gets a 1px border (the owner's) and
+   Delete comes up. The border is always there, clear until picked, so
+   picking one moves nothing; it runs 4px out either side of the text,
+   which stays in line with the title. */
+.console-notices-item {
+    display: block;
+    width: calc(100% + 8px);
+    margin: 0 -4px;
+    padding: 3px;
+    border: 1px solid transparent;
+    border-radius: 2px;
+    background: transparent;
+    text-align: left;
+    color: inherit;
+    font: inherit;
+    cursor: var(--cursor-pointer);
+}
+.console-notices-item:hover { background: rgba(238, 238, 238, 0.08); }
+.console-notices-item.is-picked { border-color: #eeeeee; }
+.console-notices-item:focus-visible { outline: 1px dotted #eeeeee; outline-offset: 1px; }
+.console-notices-day,
+.console-notices-text { display: block; }
 .console-notices-day {
     margin: 0 0 2px;
     font-family: 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace;
@@ -11000,14 +11053,16 @@ body[data-page="admin"] #activity-sessions {
    between them (intro, dates, counts) use inks that pass on the frame
    itself — see .updatelog below. The furni browser followed it the same
    day, for the same reason: its tiles and room shots are cards on the
-   frame, and its headings and notes take the frame's inks. */
+   frame, and its headings and notes take the frame's inks.
+
+   The timeline followed on 5 Oct 2026 (the owner's: "match the What's New
+   section… the background/container"): no panel either. Its entries are
+   cards on the frame, as What's New's are (.timeline-entry-body below),
+   and the dates, year headings and notes between them take the frame's
+   inks. The rule kept only for the room round it. */
 .chrome-list:has(> .timeline) {
     margin: 10px 10px 6px;
-    padding: 14px 14px 16px;
-    background: var(--chrome-row);
-    border: 1px solid var(--chrome-border);
-    border-radius: 8px;
-    box-shadow: 2px 2px 0 rgba(0, 0, 0, 0.4);
+    padding: 4px 4px 16px;
 }
 
 /* ---------- the timeline ---------- */
@@ -11024,7 +11079,9 @@ body[data-page="admin"] #activity-sessions {
     font-weight: 400;
     font-size: 0.5625rem;
     line-height: 1.5;
-    color: var(--parchment-dim);
+    /* On the frame now, not a dark panel: --parchment, as What's New's
+       dates (.updatelog-date). */
+    color: var(--parchment);
 }
 
 .timeline-year {
@@ -11058,7 +11115,7 @@ body[data-page="admin"] #activity-sessions {
 .timeline-year-note {
     font-family: 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace;
     font-size: 0.5625rem;
-    color: var(--parchment-dim);
+    color: var(--parchment);
 }
 
 .timeline-list {
@@ -11077,7 +11134,8 @@ body[data-page="admin"] #activity-sessions {
     grid-template-columns: var(--tl-date) 13px 1fr;
     align-items: start;
     gap: 0 var(--tl-gap);
-    padding: 7px 0;
+    /* 3px each: the cards stand 6px apart, near What's New's 5px. */
+    padding: 3px 0;
 }
 
 .timeline-date {
@@ -11085,8 +11143,10 @@ body[data-page="admin"] #activity-sessions {
     font-size: 0.5625rem;
     line-height: 1.9;
     text-align: right;
-    color: var(--parchment-dim);
+    color: var(--parchment);
     font-variant-numeric: tabular-nums;
+    /* Level with the card's first line: its 1px border and 5px padding. */
+    padding-top: 6px;
 }
 
 /* The dot. The line between the dots is drawn by each entry but the last
@@ -11097,7 +11157,8 @@ body[data-page="admin"] #activity-sessions {
     position: relative;
     width: 7px;
     height: 7px;
-    margin-top: 6px;
+    /* 6px to the date's middle, and 6px more for the card's border and padding. */
+    margin-top: 12px;
     border-radius: 50%;
     background: var(--amber);
     justify-self: center;
@@ -11108,19 +11169,23 @@ body[data-page="admin"] #activity-sessions {
    was capped at 60px — and stopped short under any entry taller than
    that: most of them on a phone, where the names wrap, and a third on a
    wide screen. Drawn from the entry instead it runs from under this dot
-   (the entry's 7px padding, the dot's 6px margin and its own 7px) to the
-   top of the next one (13px into the next entry), however tall this one
-   is. --tl-date and --tl-gap are the grid's own date column and gap, so
+   (the entry's 3px padding, the dot's 12px margin and its own 7px) to
+   the top of the next one (15px into the next entry), however tall this
+   one is. --tl-date and --tl-gap are the grid's own date column and gap, so
    the line sits on the middle of the dot column. */
 .timeline-entry { position: relative; }
 .timeline-entry:not(:last-child)::after {
     content: "";
     position: absolute;
     left: calc(var(--tl-date, 84px) + var(--tl-gap, 10px) + 6px);
-    top: 20px;
-    bottom: -13px;
+    top: 22px;
+    bottom: -15px;
     width: 1px;
-    background: var(--border);
+    /* Amber with a dark edge, as What's New's thread (.updatelog-entries):
+       the old --border line was drawn for the dark panel and all but
+       vanished on the frame. */
+    background: var(--amber);
+    box-shadow: 1px 0 0 rgba(0, 0, 0, 0.35);
     pointer-events: none;
 }
 
@@ -11131,8 +11196,17 @@ body[data-page="admin"] #activity-sessions {
     box-shadow: inset 0 0 0 2px var(--amber);
 }
 
+/* The card (5 Oct 2026, the owner's): What's New's entry ground, edge,
+   corner and drop shadow (.updatelog-entry), so the two read as the same
+   list on the same frame. Its inks are the ones it always had on the old
+   dark panel. */
 .timeline-entry-body {
     min-width: 0;
+    padding: 5px 9px;
+    background: rgba(0, 0, 0, 0.25);
+    border: 1px solid var(--chrome-border);
+    border-radius: 8px;
+    box-shadow: 2px 2px 0 rgba(0, 0, 0, 0.4);
 }
 
 /* The bold face asked for by name rather than by weight — it is already a
@@ -11195,10 +11269,11 @@ body[data-page="admin"] #activity-sessions {
 }
 
 .timeline-entry-note {
-    /* Was #8a7d68, which was 2.2:1 on the frame and still 4.0:1 on the dark
-       ground above. The grey the site's other quiet lines use (5.4:1), one
-       step under the builder line's parchment so the two still read apart. */
-    color: var(--unknown-text);
+    /* On a card now (5 Oct 2026), where --unknown-text is 4.0:1, as it is
+       on What's New's; its --parchment-dim, as .updatelog-meta. Two lines
+       of description under a name still read apart from the one-line
+       "Event hosted by". */
+    color: var(--parchment-dim);
     /* Two lines is a summary; four is the archive entry, which is one click
        away and better placed to hold it. */
     display: -webkit-box;
@@ -11214,11 +11289,13 @@ body[data-page="admin"] #activity-sessions {
    little smaller. */
 @media (max-width: 640px) {
     .timeline-year-number { font-size: 1.15rem; }
-    /* Room for the names: the box's own margin and padding trimmed, and
-       the date column to the width of "3 Oct 2026" (a longer date wraps,
-       as "10 Sept 2024" already does on the desktop's 84px). */
-    .chrome-list:has(> .timeline) { margin: 8px 4px 6px; padding: 12px 8px 14px; }
+    /* Room for the names: the list's margin and padding trimmed (there is
+       no panel to pad since 5 Oct 2026), the cards' own sides a little
+       narrower, and the date column to the width of "3 Oct 2026" (a longer
+       date wraps, as "10 Sept 2024" already does on the desktop's 84px). */
+    .chrome-list:has(> .timeline) { margin: 8px 2px 6px; padding: 4px 2px 14px; }
     .timeline-entry { --tl-date: 72px; --tl-gap: 8px; }
+    .timeline-entry-body { padding: 5px 7px; }
 }
 
 /* The divider between a year's counts. Roboto, because Volter Goldfish
@@ -11673,7 +11750,10 @@ body[data-page="admin"] #activity-sessions {
     font-family: 'Silkscreen', monospace;
     font-size: 1.15rem;
     line-height: 1.1;
-    color: var(--amber-bright);
+    /* On the frame since 5 Oct 2026 (the panel went; see .chrome-list:has(>
+       .timeline)), where --amber-bright is 3.9:1 and these are not big
+       enough to pass at that; --parchment is 5.6:1. */
+    color: var(--parchment);
     /* The four figures line up under one another at a glance. */
     font-variant-numeric: tabular-nums;
 }
@@ -11714,14 +11794,18 @@ body[data-page="admin"] #activity-sessions {
     color: var(--parchment-dim);
 }
 
+/* On the frame (5 Oct 2026): the answer in --parchment (5.6:1) and the
+   qualifier in --parchment-dim (4.5:1), where --amber-bright was 3.9:1 and
+   --unknown-text 3.0:1. The label is --parchment-dim too, but in a column
+   of its own, so the three still read apart. */
 .archive-fact > strong {
     font-weight: 400;
-    color: var(--amber-bright);
+    color: var(--parchment);
 }
 
 .archive-fact > em {
     font-style: normal;
-    color: var(--unknown-text);
+    color: var(--parchment-dim);
 }
 
 /* What the timeline cannot show, said under the summary rather than left
@@ -11731,7 +11815,8 @@ body[data-page="admin"] #activity-sessions {
     font-family: 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace;
     font-size: 0.5625rem;
     line-height: 1.6;
-    color: var(--unknown-text);
+    /* On the frame: --unknown-text is 3.0:1 there. */
+    color: var(--parchment-dim);
 }
 
 @media (max-width: 700px) {

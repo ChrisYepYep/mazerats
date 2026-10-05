@@ -84,6 +84,18 @@
            runs in the page and its errors land here; a blocked analytics
            script is the ad blocker working as intended. Counted, not sent. */
         var EXTENSION = /(?:chrome|moz|safari|safari-web|ms-browser)-extension:\/\//;
+        /* And a browser's OWN scripts (5 Oct 2026): Firefox for iPhone (which
+           reports itself as Safari) and the wallet add-ons run code in the
+           page that comes from no file at all, so it is put down to the
+           page's address, line 1 — where every page here has its doctype and
+           no script can be. Told apart by that, or by the browser's own
+           names in the message (__firefox__, Chrome for iPhone's __gCrWeb,
+           a wallet's window.ethereum). Counted, not sent. */
+        var BROWSER_OWN = /__firefox__|__gCrWeb|\bethereum\b|webkit\.messageHandlers/;
+        function injected(message, file, line) {
+            if (BROWSER_OWN.test(message || "")) return true;
+            return !!file && line <= 1 && !/\.m?js(?:[?#]|$)/i.test(file);
+        }
         /* Also not ours (29 Sept 2026): a player's picture that the picture's
            owner would not draw. Habbo's imager (habbo-imaging on www or on
            an Origins hotel, and images.habbo.com, which it redirects to)
@@ -364,6 +376,7 @@
             // A cross-origin script's error, with every detail withheld by the browser.
             if (/^Script error\.?$/.test(message) && !e.lineno) { ignored++; return; }
             var top = file ? { source: file, line: e.lineno || 0, col: e.colno || 0 } : topFrame(stack);
+            if (injected(message, top.source, top.line)) { ignored++; return; }
             capture("error", { message: message || "Unknown error", source: top.source, line: top.line, col: top.col, stack: stack });
         }
 
@@ -409,6 +422,7 @@
             }
             if (EXTENSION.test(stack || "")) { ignored++; return; }
             var top = topFrame(stack);
+            if (injected(message, top.source, top.line)) { ignored++; return; }
             capture("rejection", { message: message || "Unhandled rejection", source: top.source, line: top.line, col: top.col, stack: stack });
         }
 

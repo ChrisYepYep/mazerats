@@ -9,7 +9,7 @@
    completely inert until js/site.js puts that attribute on <html>. The
    classic palette is not defined here and is not affected by anything in it.
 
-   1084 rules, 1756 declarations, hues 350 (surfaces) / 212 (accents).
+   1089 rules, 1764 declarations, hues 350 (surfaces) / 212 (accents).
 */
 :root[data-theme="crimson"] {
     --bg-black: #080506;
@@ -1918,6 +1918,28 @@ html[data-theme="crimson"]::-webkit-scrollbar-button {
     color: #eeeeee;
 }
 
+[data-theme="crimson"] .console-contact-actions.console-notices-actions {
+    background-image: url('../assets/img/console/cnsl-bg-tile.png');
+}
+
+[data-theme="crimson"] .console-notices-item {
+    border: 1px solid transparent;
+    background: transparent;
+    color: inherit;
+}
+
+[data-theme="crimson"] .console-notices-item:hover {
+    background: rgba(238, 238, 238, 0.08);
+}
+
+[data-theme="crimson"] .console-notices-item.is-picked {
+    border-color: #eeeeee;
+}
+
+[data-theme="crimson"] .console-notices-item:focus-visible {
+    outline: 1px dotted #eeeeee;
+}
+
 [data-theme="crimson"] .console-notices-day {
     color: #eeeeee;
 }
@@ -2326,14 +2348,8 @@ html[data-theme="crimson"]::-webkit-scrollbar-button {
     color: var(--parchment);
 }
 
-[data-theme="crimson"] .chrome-list:has(> .timeline) {
-    background: var(--chrome-row);
-    border: 1px solid var(--chrome-border);
-    box-shadow: 2px 2px 0 rgba(0, 0, 0, 0.4);
-}
-
 [data-theme="crimson"] .timeline-summary {
-    color: var(--parchment-dim);
+    color: var(--parchment);
 }
 
 [data-theme="crimson"] .timeline-year-number {
@@ -2341,11 +2357,11 @@ html[data-theme="crimson"]::-webkit-scrollbar-button {
 }
 
 [data-theme="crimson"] .timeline-year-note {
-    color: var(--parchment-dim);
+    color: var(--parchment);
 }
 
 [data-theme="crimson"] .timeline-date {
-    color: var(--parchment-dim);
+    color: var(--parchment);
 }
 
 [data-theme="crimson"] .timeline-dot {
@@ -2353,12 +2369,19 @@ html[data-theme="crimson"]::-webkit-scrollbar-button {
 }
 
 [data-theme="crimson"] .timeline-entry:not(:last-child)::after {
-    background: var(--border);
+    background: var(--amber);
+    box-shadow: 1px 0 0 rgba(0, 0, 0, 0.35);
 }
 
 [data-theme="crimson"] .timeline-entry-event .timeline-dot {
     background: var(--bg-panel);
     box-shadow: inset 0 0 0 2px var(--amber);
+}
+
+[data-theme="crimson"] .timeline-entry-body {
+    background: rgba(0, 0, 0, 0.25);
+    border: 1px solid var(--chrome-border);
+    box-shadow: 2px 2px 0 rgba(0, 0, 0, 0.4);
 }
 
 [data-theme="crimson"] .timeline-open {
@@ -2378,7 +2401,7 @@ html[data-theme="crimson"]::-webkit-scrollbar-button {
 }
 
 [data-theme="crimson"] .timeline-entry-note {
-    color: var(--unknown-text);
+    color: var(--parchment-dim);
 }
 
 [data-theme="crimson"] .row-when {
@@ -2504,7 +2527,7 @@ html[data-theme="crimson"]::-webkit-scrollbar-button {
 }
 
 [data-theme="crimson"] .archive-stat-n {
-    color: var(--amber-bright);
+    color: var(--parchment);
 }
 
 [data-theme="crimson"] .archive-stat-l {
@@ -2516,15 +2539,15 @@ html[data-theme="crimson"]::-webkit-scrollbar-button {
 }
 
 [data-theme="crimson"] .archive-fact > strong {
-    color: var(--amber-bright);
+    color: var(--parchment);
 }
 
 [data-theme="crimson"] .archive-fact > em {
-    color: var(--unknown-text);
+    color: var(--parchment-dim);
 }
 
 [data-theme="crimson"] .timeline-omission {
-    color: var(--unknown-text);
+    color: var(--parchment-dim);
 }
 
 [data-theme="crimson"] .furni-band-head {
