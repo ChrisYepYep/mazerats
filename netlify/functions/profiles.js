@@ -51,6 +51,7 @@ const { SECURITY_HEADERS } = require("./_headers");
 const { figuresFor } = require("./player-profile");
 const { originsProfileFor, cachedOriginsProfiles, creatorMatcher, lookupOriginsName } = require("./habbo");
 const { mottoHit } = require("./player-nick");
+const { guessFor } = require("./_habbo-guess");
 
 // The Origins hotels a typed name is looked for on (habbo.js, ORIGINS_HOSTS).
 const HOTELS = ["COM", "ES", "BR"];
@@ -363,12 +364,18 @@ async function profile(db, id, self) {
     if (!self && (hidden || figures.banned.has(String(id)))) return null;
 
     const h = habboOf(row);
+    /* No link: the Habbo of their nickname's name, if Origins has one
+       (_habbo-guess.js, 5 Oct 2026, the owner's), shown unverified — its
+       avatar and motto, never the badges a Habbo name earns below. Bounded
+       as the Origins wait is. */
+    const guess = h ? null : await Promise.race([guessFor(db, row), new Promise(r => setTimeout(() => r(null), SEARCH_HABBO_MS))]);
+    const shownHabbo = h || guess;
     /* Origins is waited on for SEARCH_HABBO_MS at most, as a search waits
        (4 Oct 2026): an Origins outage added its whole 6s timeout to every
        profile of a linked player. Past it, the profile is drawn without the
        Habbo this once; the lookup finishes and is cached for the next. */
-    const habbo = h
-        ? Promise.race([originsProfileFor(db, h.hotel, h.name), new Promise(r => setTimeout(() => r(null), SEARCH_HABBO_MS))])
+    const habbo = shownHabbo
+        ? Promise.race([originsProfileFor(db, shownHabbo.hotel, shownHabbo.name), new Promise(r => setTimeout(() => r(null), SEARCH_HABBO_MS))])
         : null;
     const [origins, listed, credits] = await Promise.all([
         habbo,
@@ -396,6 +403,12 @@ async function profile(db, id, self) {
            answered in time (4 Oct 2026, the bug scan): with Origins slow,
            `habbo` is null and a linked player was told to link one. */
         habboLinked: !!h,
+        // A guessed Habbo, not yet shown to be theirs (see above).
+        habboUnverified: !h && !!guess,
+        /* Their own: the guess and where it stands, for Edit Profile's
+           "Is this your Habbo?" (js/console-profile.js). "declined" is
+           told to them as "new" was not — they are only offered to verify. */
+        ...(self && !h && guess ? { habboGuess: { name: guess.name, hotel: guess.hotel, asked: guess.state === "declined" } } : {}),
         habbo: origins ? {
             name: origins.name,
             motto: motto.motto,

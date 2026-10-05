@@ -52,6 +52,25 @@ const MAX_BODY = 16 * 1024;
 const ID_SHAPE = /^[A-Za-z0-9_-]{1,64}$/;
 const NID_SHAPE = /^[0-9a-f]{16}$/;
 
+/* AN EVERYONE-NOTICE'S OPTIONS (5 Oct 2026, the owner's), all optional:
+     activeDays  how long it is offered: one of ACTIVE_DAYS, or 0 for until
+                 withdrawn (`endless`). Stored as `until`. Default 30, as
+                 BROADCAST_DAYS was for every one before.
+     startAt     a later moment to go live (scheduled); stored as `at`, so a
+                 scheduled notice sorts and reads as of when it starts, with
+                 `sentAt` the moment it was written.
+     who         WHO_KINDS: everyone; signed in or out only; new players (first
+                 signed in after it starts); players with no nickname; players
+                 whose Habbo is not verified (no link, _habbo-guess.js).
+     quiet       not an alert: no icon, no sound, not opened on the console —
+                 only in their Notifications list.
+   A notice from before these has none of them, and is read as it always
+   was: everyone, alert, for BROADCAST_DAYS. */
+const ACTIVE_DAYS = [1, 3, 7, 14, 21, 30];
+const WHO_KINDS = ["everyone", "signedIn", "signedOut", "newPlayers", "noNick", "unverified"];
+const SCHEDULE_MAX_MS = 90 * 24 * 60 * 60 * 1000;
+const DAY_MS = 24 * 60 * 60 * 1000;
+
 const json = (statusCode, data) => ({
     statusCode,
     headers: { ...SECURITY_HEADERS, "Cache-Control": "no-store" },
@@ -87,7 +106,14 @@ function sameOrigin(event) {
     }
 }
 
-const cleanText = t => String(t == null ? "" : t).replace(/\s+/g, " ").trim();
+/* Line breaks kept (the owner's, 5 Oct 2026: a new line typed in the
+   Warren was flattened to a space). Spaces within a line still close up,
+   each line is trimmed, and no more than one empty line runs together. */
+const cleanText = t => String(t == null ? "" : t)
+    .replace(/\r\n?/g, "\n")
+    .split("\n").map(line => line.replace(/\s+/g, " ").trim()).join("\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
 const broadcastSince = () => new Date(Date.now() - BROADCAST_DAYS * 24 * 60 * 60 * 1000).toISOString();
 
 /* Sends one notice to the players named, from anywhere on the server. Never
@@ -118,17 +144,42 @@ async function mine(event, db) {
     const player = await livePlayerFrom(db, event);
     const col = db.collection(COLLECTION);
     const since = broadcastSince();
+    const now = new Date().toISOString();
+    /* Live everyone-notices: started (a scheduled one is not shown early),
+       and not ended — by its own `until`, never for an endless one, or, for
+       one from before the options, BROADCAST_DAYS after it. */
+    const liveAll = { audience: "all", at: { $lte: now }, $or: [
+        { until: { $gt: now } },
+        { endless: true },
+        { until: { $exists: false }, endless: { $ne: true }, at: { $gte: since } }
+    ] };
     const query = player
-        ? { withdrawn: { $ne: true }, $or: [{ audience: "all", at: { $gte: since } }, { audience: "players", to: String(player.id) }] }
-        : { withdrawn: { $ne: true }, audience: "all", at: { $gte: since } };
+        ? { withdrawn: { $ne: true }, $or: [liveAll, { audience: "players", to: String(player.id) }] }
+        : { withdrawn: { $ne: true }, ...liveAll };
     // Their own lists first: what they have deleted is left out IN the
     // query (5 Oct 2026, the bug scan), so deleted notices do not use up
     // the fifty and push an older unread one out of reach.
-    const row = player ? await db.collection("players").findOne({ id: String(player.id) }, { projection: { _id: 0, noticesSeen: 1, noticesDeleted: 1 } }) : null;
+    const row = player ? await db.collection("players").findOne({ id: String(player.id) }, { projection: { _id: 0, noticesSeen: 1, noticesDeleted: 1, joinedAt: 1, nick: 1, habbo: 1 } }) : null;
     const deletedIds = row && Array.isArray(row.noticesDeleted) ? row.noticesDeleted.filter(n => typeof n === "string") : [];
     if (deletedIds.length) query.nid = { $nin: deletedIds };
     // The newest fifty, then oldest first for the queue of unread ones.
-    const kept = await col.find(query, { projection: { _id: 0, nid: 1, text: 1, at: 1 } }).sort({ at: -1 }).limit(50).toArray();
+    const fetched = await col.find(query, { projection: { _id: 0, nid: 1, text: 1, at: 1, audience: 1, who: 1, quiet: 1 } }).sort({ at: -1 }).limit(50).toArray();
+    // Who each everyone-notice is for (WHO_KINDS), against this visitor.
+    const joined = row && Date.parse(row.joinedAt);
+    const hasNick = !!(row && typeof row.nick === "string" && row.nick);
+    const verified = !!(row && row.habbo && typeof row.habbo.name === "string" && row.habbo.name);
+    const forThem = n => {
+        if (n.audience !== "all") return true;
+        switch (n.who) {
+            case "signedIn": return !!player;
+            case "signedOut": return !player;
+            case "newPlayers": return !!player && Number.isFinite(joined) && joined >= Date.parse(n.at);
+            case "noNick": return !!player && !hasNick;
+            case "unverified": return !!player && !verified;
+            default: return true;
+        }
+    };
+    const kept = fetched.filter(forThem).map(n => ({ nid: n.nid, text: n.text, at: n.at, ...(n.quiet ? { quiet: true } : {}) }));
     const rows = kept.slice().reverse();
     const seen = new Set(row && Array.isArray(row.noticesSeen) ? row.noticesSeen : []);
     /* ?all=1 (5 Oct 2026, the owner's): every notice the caller has been
@@ -139,7 +190,8 @@ async function mine(event, db) {
             notices: kept.slice(0, HISTORY_MAX).map(r => ({ ...r, seen: seen.has(r.nid) }))
         });
     }
-    return json(200, { signedIn: !!player, notices: rows.filter(r => !seen.has(r.nid)) });
+    // The queue of unread alerts: a quiet one is only ever in the list above.
+    return json(200, { signedIn: !!player, notices: rows.filter(r => !seen.has(r.nid) && !r.quiet) });
 }
 
 async function markSeen(event, db) {
@@ -177,6 +229,25 @@ async function markSeen(event, db) {
    account is shown who a notice went to by nickname only, with no Discord
    id or Discord name — as the Players tab does (seesIds in players-admin.js;
    the bug scan, 5 Oct 2026). */
+/* WHO HAS READ ONE (5 Oct 2026, the owner's: a sent notification in the
+   Warren opens to show its readers). Signed-in readers only — a signed-out
+   visitor's read is kept in their browser alone. The roles that see ids get
+   each player's nickname or Discord name; the rest nicknames only, as
+   adminList draws its "to" list. Newest first is not known (the read list
+   keeps no times), so by name. At most READERS_MAX. */
+const READERS_MAX = 300;
+async function adminReaders(db, nid, seesIds) {
+    if (!NID_SHAPE.test(nid)) return json(400, { error: "Which notification?" });
+    const rows = await db.collection("players")
+        .find({ noticesSeen: nid }, { projection: { _id: 0, id: 1, nick: 1, name: 1, username: 1 } })
+        .limit(READERS_MAX + 1).toArray();
+    const readers = rows.slice(0, READERS_MAX).map(p => seesIds
+        ? { name: p.nick || p.name || p.username || "Someone", nick: !!p.nick }
+        : { name: p.nick || "A player with no nickname", nick: !!p.nick })
+        .sort((a, b) => a.name.localeCompare(b.name, "en", { sensitivity: "base" }));
+    return json(200, { readers, more: rows.length > READERS_MAX });
+}
+
 async function adminList(db, seesIds) {
     await ensureIndexes(db);
     const rows = await db.collection(COLLECTION).find({}, { projection: { _id: 0 } }).sort({ at: -1 }).limit(LIST_MAX).toArray();
@@ -199,6 +270,12 @@ async function adminList(db, seesIds) {
             by: r.by || null,
             withdrawn: r.withdrawn === true,
             seen: counts[i],
+            // The everyone-notice options (see ACTIVE_DAYS), as stored.
+            sentAt: r.sentAt || null,
+            until: r.until || null,
+            endless: r.endless === true,
+            who: r.who || "everyone",
+            quiet: r.quiet === true,
             to: r.audience === "players" ? (r.to || []).map(id => (seesIds
                 ? { id, name: nameOf.get(String(id)) || "A player no longer here" }
                 : { id: null, name: nickOf.get(String(id)) || "A player" })) : null
@@ -223,12 +300,35 @@ async function adminSend(event, db) {
         const found = await db.collection("players").countDocuments({ id: { $in: to } });
         if (found !== to.length) return json(400, { error: "Some of those players aren't here any more. Choose them again." });
     }
+    /* The everyone options (ACTIVE_DAYS above). Checked whole: a bad value
+       is refused, not quietly read as the default. */
+    let opts = {};
+    if (audience === "all") {
+        const days = body.activeDays === undefined ? 30 : Number(body.activeDays);
+        if (!(days === 0 || ACTIVE_DAYS.includes(days))) return json(400, { error: "How long it's active for isn't one of the choices." });
+        const whoKind = body.who === undefined ? "everyone" : String(body.who);
+        if (!WHO_KINDS.includes(whoKind)) return json(400, { error: "Who it's for isn't one of the choices." });
+        let start = Date.now();
+        if (body.startAt) {
+            const t = Date.parse(String(body.startAt));
+            if (!Number.isFinite(t)) return json(400, { error: "That start time can't be read." });
+            if (t - Date.now() > SCHEDULE_MAX_MS) return json(400, { error: "Schedule it within the next 90 days." });
+            if (t > Date.now()) start = t;
+        }
+        opts = {
+            at: new Date(start).toISOString(),
+            ...(days ? { until: new Date(start + days * DAY_MS).toISOString() } : { endless: true }),
+            ...(whoKind !== "everyone" ? { who: whoKind } : {}),
+            ...(body.quiet === true ? { quiet: true } : {})
+        };
+    }
     await ensureIndexes(db);
     const who = usernameFromToken(event) || "unknown";
     const nid = crypto.randomBytes(8).toString("hex");
+    const sentAt = new Date().toISOString();
     await db.collection(COLLECTION).insertOne({
         nid, text, audience, ...(audience === "players" ? { to } : {}),
-        kind: "admin", at: new Date().toISOString(), by: who
+        kind: "admin", at: sentAt, sentAt, by: who, ...opts
     });
     await record(event, "write", {
         username: who, session: sessionOf(event), method: "POST", endpoint: "notifications",
@@ -277,7 +377,11 @@ exports.handler = async (event) => {
                 const role = await roleOf(event);
                 if (role === null) return UNAUTHORIZED;
                 if (!["owner", "admin", "viewer"].includes(role)) return forbidden("This account can't see notifications.");
-                return await adminList(db, (WRITE_SCOPES[role] || []).includes("site"));
+                const seesIds = (WRITE_SCOPES[role] || []).includes("site");
+                // ?readers=<nid>: who has read one (the Warren's row, opened).
+                const readersOf = (event.queryStringParameters || {}).readers;
+                if (readersOf !== undefined) return await adminReaders(db, String(readersOf), seesIds);
+                return await adminList(db, seesIds);
             }
             if (method === "POST") return await adminSend(event, db);
             return await adminWithdraw(event, db);

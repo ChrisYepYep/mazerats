@@ -1001,6 +1001,10 @@ const Api = {
     getNotifications(token) {
         return this._write("/.netlify/functions/notifications?admin=1", "GET", token);
     },
+    // Who has read one (5 Oct 2026): { readers: [{ name, nick }], more }.
+    getNotificationReaders(token, nid) {
+        return this._write("/.netlify/functions/notifications?admin=1&readers=" + encodeURIComponent(nid), "GET", token);
+    },
     sendNotification(token, body) {
         return this._write("/.netlify/functions/notifications?admin=1", "POST", token, body);
     },

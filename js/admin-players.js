@@ -449,7 +449,7 @@
     const navCount = document.getElementById("players-nav-count");
 
     // "banned" (29 Sept 2026): banned or cooling down, account or network.
-    const FILTERS = [["all", "All"], ["flagged", "Flagged"], ["clash", "Name clash"], ["motto", "Motto flagged"], ["banned", "Banned"], ["nick", "Has a nickname"], ["nonick", "No nickname"], ["locked", "Locked"], ["unasked", "Not asked yet"]];
+    const FILTERS = [["all", "All"], ["flagged", "Flagged"], ["clash", "Name clash"], ["motto", "Motto flagged"], ["habbo", "Habbo to approve"], ["banned", "Banned"], ["nick", "Has a nickname"], ["nonick", "No nickname"], ["locked", "Locked"], ["unasked", "Not asked yet"]];
     const Kit = window.AdminBanKit;
     const FLAG_REASONS = { profanity: "filter word", reserved: "reserved word" };
     const SORTS = [["seen", "Last signed in"], ["joined", "First signed in"], ["name", "Discord name"], ["nick", "Nickname"]];
@@ -647,14 +647,14 @@
         /* Name clashes count as waiting too (4 Oct 2026): see nameClash; and
            flagged mottos (5 Oct 2026): see mottoWaiting. */
         // `waiting` counts each player once, whatever they are waiting on (the quick scan).
-        const flagged = has(counts.waiting) ? Number(counts.waiting) || 0 : (Number(counts.flagged) || 0) + (Number(counts.clash) || 0) + (Number(counts.motto) || 0);
+        const flagged = has(counts.waiting) ? Number(counts.waiting) || 0 : (Number(counts.flagged) || 0) + (Number(counts.clash) || 0) + (Number(counts.motto) || 0) + (Number(counts.habbo) || 0);
         const n = flagged > 0 ? flagged : Number(counts.all) || 0;
         navCount.textContent = n ? num(n) : "";
         navCount.hidden = !n;
         navCount.classList.toggle("admin-nav-count-quiet", flagged <= 0);
         navCount.classList.toggle("pl-nav-flagged", flagged > 0);
         navCount.setAttribute("title", flagged > 0
-            ? `${num(flagged)} ${flagged === 1 ? "player" : "players"} to review (flagged nicknames, name clashes and mottos)`
+            ? `${num(flagged)} ${flagged === 1 ? "player" : "players"} to review (flagged nicknames, name clashes, mottos and Habbos)`
             : QUIET_TITLE);
     }
     function flagText(f) {
@@ -674,6 +674,7 @@
             stat(c.flagged, "nickname flagged", "nicknames flagged", "Nicknames the word filter caught, waiting for an Allow or a Reject") +
             (Number(c.clash) ? stat(c.clash, "name clash", "name clashes", "Players whose linked Habbo name another player already has as a nickname — waiting for you to settle") : "") +
             (Number(c.motto) ? stat(c.motto, "motto flagged", "mottos flagged", "Habbo mottos with a filter word in them, kept off profiles and Mazer Cards — waiting for an Approve or a Keep hidden") : "") +
+            (Number(c.habbo) ? stat(c.habbo, "Habbo to approve", "Habbos to approve", "Habbos guessed from a nickname that the player has not verified — waiting for an Approve or a Reject") : "") +
             (has(c.banned) ? stat(c.banned, "banned or cooling down", "banned or cooling down", "Players with a ban or cool-down in force on their account or their network") : "");
     }
 
@@ -724,7 +725,7 @@
     function renderFilters() {
         buildFilters();
         const c = counts || {};
-        const n = { all: c.all, nick: c.nick, locked: c.locked, flagged: c.flagged, clash: c.clash, motto: c.motto, banned: c.banned, nonick: has(c.all) && has(c.nick) ? Number(c.all) - Number(c.nick) : null };
+        const n = { all: c.all, nick: c.nick, locked: c.locked, flagged: c.flagged, clash: c.clash, motto: c.motto, habbo: c.habbo, banned: c.banned, nonick: has(c.all) && has(c.nick) ? Number(c.all) - Number(c.nick) : null };
         filtersEl.querySelector('[data-f="filter"]').innerHTML = FILTERS.map(([k, label]) =>
             `<button type="button" class="btn-enter-mini${k === filter ? " active" : ""}" data-filter="${k}" aria-pressed="${k === filter}">${escapeHtml(label)}${has(n[k]) && Number(n[k]) ? ` (${escapeHtml(num(n[k]))})` : ""}</button>`).join("");
     }
@@ -756,6 +757,7 @@
         if (p.nameClash) out.push(`<span class="de-chip is-marked pl-chip-flagged" title="${escapeHtml("OriginsBot says their Habbo is " + p.nameClash.name + (p.nameClash.hotel ? " (" + p.nameClash.hotel + ")" : "") + ", but another player already has that nickname. Open the row to settle it.")}">Name clash: ${escapeHtml(p.nameClash.name)}</span>`);
         /* A FLAGGED MOTTO (5 Oct 2026, the owner's; MOTTO_WAITING in
            players-admin.js), waiting for a look. */
+        if (habboWaiting(p)) out.push(`<span class="de-chip is-marked pl-chip-flagged" title="${escapeHtml("Their nickname matches the Habbo " + p.habboGuess.name + " (" + (p.habboGuess.hotel || "COM") + "), which they have not verified. Open the row to approve or reject it.")}">Habbo to approve</span>`);
         if (mottoWaiting(p)) out.push(`<span class="de-chip is-marked pl-chip-flagged" title="${escapeHtml("Their Habbo motto has '" + (p.mottoFlag.word || "a filter word") + "' in it, so it's hidden from their profile and Mazer Card. Open the row to Approve it or keep it hidden.")}">Motto flagged${p.mottoFlag.word ? ` '${escapeHtml(p.mottoFlag.word)}'` : ""}</span>`);
         if (p.nickRejected) out.push(`<span class="de-chip de-status-rejected pl-chip-rejected" title="${escapeHtml("Rejected" + (p.nickRejected.by ? " by " + p.nickRejected.by : "") + (p.nickRejected.at ? ", " + fmtUtc(p.nickRejected.at) : "") + " — they're asked to choose another on each visit until they do")}">Asked to change</span>`);
         /* No "Locked" chip any more (3 Oct 2026, the owner's): a red pill on
@@ -939,6 +941,9 @@
         const when = h.checkedAt ? ", checked " + escapeHtml(fmtUtc(h.checkedAt)) : "";
         if (!h.name) return "No Habbo account linked" + when;
         const named = escapeHtml(h.name) + (h.hotel ? " (" + escapeHtml(h.hotel) + ")" : "");
+        // Not OriginsBot's (5 Oct 2026): proved by a motto code, or set here.
+        if (h.via === "motto") return named + " — verified by them with a motto code" + (h.checkedAt ? ", " + escapeHtml(fmtUtc(h.checkedAt)) : "");
+        if (h.via && h.via.startsWith("admin:")) return named + " — linked by " + escapeHtml(h.via.slice(6)) + (h.checkedAt ? ", " + escapeHtml(fmtUtc(h.checkedAt)) : "");
         if (h.applied) return named + " — set as their nickname and locked" + when;
         if (h.clash) return named + " — not set: another player's nickname is the same name or too close to it" + (h.clashDismissed ? " (dismissed)" : "") + when;
         if (h.unusable) return named + " — not set: the boards can't display it" + when;
@@ -991,6 +996,8 @@
         return `
             <div class="pl-edit">
                 ${clashHtml(p)}
+                ${habboGuessHtml(p)}
+                ${habboLinkHtml(p)}
                 ${mottoHtml(p)}
                 ${reviewHtml(p)}
                 <label class="ctl-label" for="pl-nick-${domId(ref)}">Nickname</label>
@@ -1091,6 +1098,51 @@
         return "";
     }
     const mottoWaiting = p => !!(p && p.mottoFlag && !p.mottoFlag.reviewed);
+    // A Habbo guessed from their nickname, the player not verifying it (5 Oct 2026).
+    const habboWaiting = p => !!(p && p.habboGuess && p.habboGuess.state === "declined");
+
+    /* LINK A HABBO BY HAND (5 Oct 2026, the owner's; habboLinkSet in
+       players-admin.js): the name and hotel of their Habbo Origins account,
+       linked as a verified one — their Maze Rats badges and all, and
+       OriginsBot leaves it be. The server checks it exists on that hotel and
+       is nobody else's. Unlink takes it away. */
+    const HOTELS = [["COM", ".com"], ["ES", ".es"], ["BR", ".com.br"]];
+    function habboLinkHtml(p) {
+        const h = p.habbo && p.habbo.name ? p.habbo : null;
+        const off = busy ? " disabled" : "";
+        const id = `pl-habbo-${domId(refOf(p))}`;
+        return `
+            <div class="pl-review pl-habbo-link">
+                <label class="ctl-label" for="${id}">Habbo Origins account</label>
+                <p class="admin-hint">${h ? `Linked: <strong>${escapeHtml(h.name)}</strong> (${escapeHtml(h.hotel || "COM")}). Type another to change it.` : "None linked. Link their Habbo here and it counts as verified."}</p>
+                <div class="ctl-row">
+                    <input type="text" class="ctl-input pl-habbo-name" id="${id}" maxlength="40" autocomplete="off" spellcheck="false" placeholder="Habbo username" value="${escapeHtml(h ? h.name : "")}"${off}>
+                    <select class="ctl-input pl-habbo-hotel" aria-label="Hotel"${off}>${HOTELS.map(([v, l]) => `<option value="${v}"${(h ? h.hotel : "COM") === v ? " selected" : ""}>${l}</option>`).join("")}</select>
+                    <button type="button" class="ctl-btn pl-write" data-a="habbo-link"${off}>${h ? "Change" : "Link Habbo"}</button>
+                    ${h ? `<button type="button" class="ctl-btn admin-delete-btn pl-write" data-a="habbo-unlink"${off}>Unlink</button>` : ""}
+                </div>
+            </div>`;
+    }
+
+    /* A GUESSED HABBO (5 Oct 2026, the owner's; _habbo-guess.js). Shown on
+       their profile unverified — avatar and motto, none of the badges a
+       Habbo name earns. Approve links it as OriginsBot would, badges and
+       all; Reject takes it away. Shown while it waits, and while it is
+       still only offered to the player. */
+    function habboGuessHtml(p) {
+        const g = p.habboGuess;
+        if (!g || !g.name || g.state === "rejected") return "";
+        const off = busy ? " disabled" : "";
+        const hotel = escapeHtml(g.hotel || "COM");
+        return `
+            <div class="pl-review">
+                <p class="admin-hint">Habbo guessed from their nickname: <strong>${escapeHtml(g.name)}</strong> (${hotel}). It shows on their profile, unverified, and they have no Maze Rats badges until it's verified. ${g.state === "declined" ? "They chose not to verify it, so it waits for you." : "They have been offered to verify it."}</p>
+                <div class="ctl-actions">
+                    <button type="button" class="ctl-btn pl-write" data-a="habbo-approve"${off} title="Link this Habbo to them, as OriginsBot would: it counts for the Maze Owner, Event Host and Contributor badges">Approve Habbo</button>
+                    <button type="button" class="ctl-btn pl-write" data-a="habbo-reject"${off} title="Take it off their profile; it is not guessed again for this nickname">Reject</button>
+                </div>
+            </div>`;
+    }
 
     function reviewHtml(p) {
         const canAllow = !!(p.nickFlag || p.nickRejected);
@@ -1429,6 +1481,18 @@
             else if (a === "allow" || a === "reject") reviewNick(p, a);
             else if (a === "motto-approve") write(p, { motto: "approve", seen: p.mottoFlag ? p.mottoFlag.text : "" }, "Approved. That motto shows on their profile and can go on their Mazer Card.");
             else if (a === "motto-hide") write(p, { motto: "hide" }, "Kept hidden. It stays off their profile and Mazer Card.");
+            else if (a === "habbo-approve") write(p, { habboGuess: "approve", seen: p.habboGuess ? p.habboGuess.name : "" }, "Approved. That Habbo is linked to them now, and their Maze Rats badges show.");
+            else if (a === "habbo-link") {
+                const name = ((el.querySelector(".pl-habbo-name") || {}).value || "").trim();
+                const hotel = (el.querySelector(".pl-habbo-hotel") || {}).value || "COM";
+                if (!name) { say(ref, "Type their Habbo username first.", true); return; }
+                write(p, { habboLink: { name, hotel } }, `Linked. ${name} is their Habbo now, and their Maze Rats badges show.`);
+            }
+            else if (a === "habbo-unlink") {
+                ask(`Unlink <strong>${escapeHtml(p.habbo ? p.habbo.name : "")}</strong> from them? Their Maze Rats badges go until a Habbo is linked again.`)
+                    .then(ok => { if (ok) write(p, { habboLink: null }, "Unlinked."); });
+            }
+            else if (a === "habbo-reject") write(p, { habboGuess: "reject", seen: p.habboGuess ? p.habboGuess.name : "" }, "Rejected. It's off their profile.");
             else if (a === "motto-revoke") write(p, { motto: "revoke" }, "Hidden again. It's off their profile and Mazer Card.");
             else if (a === "dismiss-clash") write(p, { dismissClash: true }, "Dismissed. Both keep their names, and OriginsBot won't ask about it again.");
             else if (a === "untd") unTurnDown(p, b.dataset.key || "");
@@ -1544,7 +1608,7 @@
             detailErrors.delete(ref);
             // The list's copy follows what the detail says.
             const row = players.find(x => refOf(x) === ref);
-            if (row) ["nick", "displayName", "nickLocked", "nickLockedBy", "nickLockedAt", "nickAsked", "nickAt", "nickFlag", "nickRejected", "nameClash", "mottoFlag", "mottoApproved", "name", "username", "avatar", "seenAt", "ban", "hasNetHash"].forEach(k => { row[k] = p[k]; });
+            if (row) ["nick", "displayName", "nickLocked", "nickLockedBy", "nickLockedAt", "nickAsked", "nickAt", "nickFlag", "nickRejected", "nameClash", "mottoFlag", "mottoApproved", "habboGuess", "habbo", "name", "username", "avatar", "seenAt", "ban", "hasNetHash"].forEach(k => { row[k] = p[k]; });
         } catch (err) {
             if (mine !== sessionNo) return;
             if (sessionGone(err)) return;
@@ -1569,7 +1633,7 @@
         const prev = details.get(ref) || {};
         details.set(ref, Object.assign({}, prev, player, { activity: prev.activity }));
         const row = players.find(x => refOf(x) === ref);
-        if (row) ["nick", "displayName", "nickLocked", "nickLockedBy", "nickLockedAt", "nickAsked", "nickAt", "nickFlag", "nickRejected", "nameClash", "mottoFlag", "mottoApproved"].forEach(k => { row[k] = player[k]; });
+        if (row) ["nick", "displayName", "nickLocked", "nickLockedBy", "nickLockedAt", "nickAsked", "nickAt", "nickFlag", "nickRejected", "nameClash", "mottoFlag", "mottoApproved", "habboGuess", "habbo"].forEach(k => { row[k] = player[k]; });
     }
 
     async function write(p, change, okText) {
@@ -1580,7 +1644,7 @@
         setBusy(true);
         say(ref, "Saving…");
         // Taken before the write: takeWrite updates p in place when it is the list row.
-        const had = { nick: !!p.nick, locked: !!p.nickLocked, flagged: !!p.nickFlag, clash: !!p.nameClash, motto: mottoWaiting(p) };
+        const had = { nick: !!p.nick, locked: !!p.nickLocked, flagged: !!p.nickFlag, clash: !!p.nameClash, motto: mottoWaiting(p), habbo: habboWaiting(p) };
         try {
             const res = await Api.updatePlayer(token(), Object.assign({ id: p.id }, change));
             if (mine !== sessionNo) return false;
@@ -1592,7 +1656,8 @@
             if (has(counts.locked)) counts.locked += (now.nickLocked ? 1 : 0) - (had.locked ? 1 : 0);
             if (has(counts.clash)) counts.clash = Math.max(0, counts.clash + (now.nameClash ? 1 : 0) - (had.clash ? 1 : 0));
             if (has(counts.motto)) counts.motto = Math.max(0, counts.motto + (mottoWaiting(now) ? 1 : 0) - (had.motto ? 1 : 0));
-            if (has(counts.waiting)) counts.waiting = Math.max(0, counts.waiting + (now.nickFlag || now.nameClash || mottoWaiting(now) ? 1 : 0) - (had.flagged || had.clash || had.motto ? 1 : 0));
+            if (has(counts.habbo)) counts.habbo = Math.max(0, counts.habbo + (habboWaiting(now) ? 1 : 0) - (had.habbo ? 1 : 0));
+            if (has(counts.waiting)) counts.waiting = Math.max(0, counts.waiting + (now.nickFlag || now.nameClash || mottoWaiting(now) || habboWaiting(now) ? 1 : 0) - (had.flagged || had.clash || had.motto || had.habbo ? 1 : 0));
             if (has(counts.flagged)) {
                 counts.flagged = Math.max(0, counts.flagged + (now.nickFlag ? 1 : 0) - (had.flagged ? 1 : 0));
                 setBadge(counts);
@@ -1612,7 +1677,7 @@
                changed, or another admin dealt with it, since this was
                loaded. It was worded as a nickname clash. The server's own
                words, and the detail read again. */
-            if (err && err.status === 409 && (Object.prototype.hasOwnProperty.call(change, "motto") || (err.data && err.data.changed))) {
+            if (err && err.status === 409 && (Object.prototype.hasOwnProperty.call(change, "motto") || Object.prototype.hasOwnProperty.call(change, "habboGuess") || (err.data && err.data.changed))) {
                 const text = "Not saved: " + errText(err);
                 say(ref, text, true);
                 // Said again once the re-read has redrawn the detail.

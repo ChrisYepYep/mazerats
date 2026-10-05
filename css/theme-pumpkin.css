@@ -9,7 +9,7 @@
    completely inert until js/site.js puts that attribute on <html>. The
    classic palette is not defined here and is not affected by anything in it.
 
-   1092 rules, 1768 declarations, hues 18 (surfaces) / 38 (accents).
+   1094 rules, 1771 declarations, hues 18 (surfaces) / 38 (accents).
 */
 :root[data-theme="pumpkin"] {
     --bg-black: #0a0401;
@@ -1939,10 +1939,6 @@ html[data-theme="pumpkin"]::-webkit-scrollbar-button {
     border: 1px solid transparent;
     background: transparent;
     color: inherit;
-}
-
-[data-theme="pumpkin"] .console-notices-item:hover {
-    background: rgba(238, 238, 238, 0.08);
 }
 
 [data-theme="pumpkin"] .console-notices-item.is-picked {
@@ -5078,6 +5074,11 @@ html[data-theme="pumpkin"]::-webkit-scrollbar-button {
     color: #ffffff;
 }
 
+[data-theme="pumpkin"] .console-verify-code {
+    border: 1px solid #eeeeee;
+    color: #ffffff;
+}
+
 [data-theme="pumpkin"] .console-btn:disabled:hover {
     background: transparent;
 }
@@ -5397,6 +5398,14 @@ html[data-theme="pumpkin"]::-webkit-scrollbar-button {
     background: none;
     border: 0;
     color: inherit;
+}
+
+[data-theme="pumpkin"] .nt-opt-quiet {
+    color: var(--parchment-dim);
+}
+
+[data-theme="pumpkin"] .nt-row[data-nid]:focus-visible {
+    outline: 2px solid var(--chrome-highlight);
 }
 
 /* ------------------------------------------- COLOUR THAT IS INFORMATION

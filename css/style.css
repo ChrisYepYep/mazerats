@@ -9129,34 +9129,29 @@ body[data-page="admin"] .search-box input {
 }
 
 /* ---- a notification (5 Oct 2026, the owner's; NOTIFICATIONS in
-   js/console.js): the message in the middle of the screen, both ways, in
-   the screen's ordinary weight; the OK pinned to the bottom as the thanks
-   page's is. The message takes the room between, and centres itself in it. */
-.console-page-notice {
-    position: relative;
-    display: flex;
+   js/console.js): set as the Notifications page is (the owner's, 5 Oct
+   2026) — its heading and hashline, the message from the left in the
+   screen's ordinary weight, kept to the line breaks it was written with.
+   Back and Next sit at the foot in the list's own row
+   (.console-notices-actions, below): with a short message the page fills
+   the screen and the row sits at the bottom; a long one scrolls (the
+   console's own scrollbar) under it. */
+.console-page.console-page-notice {
     flex-direction: column;
-    justify-content: flex-end;
-    height: 100%;
+    min-height: 100%;
+    padding-bottom: 0;
     box-sizing: border-box;
 }
-/* Centred on the whole screen, not on the room above the OK: laid over the
-   page, with the same clear band top and bottom so a long message never
-   runs under the button and the middle stays the screen's middle. */
 .console-notice-text {
-    position: absolute;
-    inset: 0;
-    display: flex;
-    align-items: center;
-    justify-content: center;
+    flex: 1 0 auto;
     margin: 0;
-    padding: 40px 10px;
     font-family: 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace;
     font-weight: 400;
     font-size: 0.5625rem;
     line-height: 1.6;
     color: #eeeeee;
-    text-align: center;
+    text-align: left;
+    white-space: pre-line;
     overflow-wrap: anywhere;
 }
 /* **Bold** in a notice: Volter's bold cut, asked for by name (see the
@@ -9165,21 +9160,21 @@ body[data-page="admin"] .search-box input {
     font-family: 'Volter Goldfish Bold', 'Volter Goldfish', 'Pixelify Sans', monospace;
     font-weight: 400;
 }
+/* How many more wait, under the message: Next goes on to them. */
 .console-notice-count {
-    margin: 0 0 6px;
+    margin: 6px 0 0;
     font-family: 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace;
     font-size: 0.5625rem;
     color: #eeeeee;
     opacity: 0.7;
-    text-align: center;
 }
-/* Above the message, which is laid over the whole page: the OK could not
-   be hovered or pressed under it (5 Oct 2026, the owner's). The message
-   lets the pointer through as well, in case a long one reaches it. */
-.console-page-notice .console-btn-ok,
-.console-page-notice .console-notice-count { position: relative; z-index: 1; }
-.console-page-notice .console-notice-text { pointer-events: none; }
-.console-page-notice .console-btn-ok { margin-top: 0; }
+.console-notice-count[hidden] { display: none; }
+/* Back at the left and Next at the right; opened from the list, Next
+   moves in beside Back and Delete takes the right (the owner's). */
+.console-page-notice .console-notices-actions { justify-content: flex-start; gap: 6px; }
+.console-page-notice #console-notice-next { margin-left: auto; }
+.console-page-notice.is-viewing #console-notice-next { margin-left: 0; }
+.console-page-notice #console-notice-delete { margin-left: auto; }
 
 /* THE NOTIFICATIONS LIST (5 Oct 2026; js/console.js): each notice under its
    day, a dotted line between them, as the Contributors list sets its rows.
@@ -9215,10 +9210,12 @@ body[data-page="admin"] .search-box input {
     background-position: left 0 bottom -2px;
     image-rendering: pixelated;
 }
-/* A notice is a button: picked, it gets a 1px border (the owner's) and
-   Delete comes up. The border is always there, clear until picked, so
-   picking one moves nothing; it runs 4px out either side of the text,
-   which stays in line with the title. */
+/* A notice is a preview (5 Oct 2026, the owner's): two lines of it at
+   most. No hover state (the owner's); picked, it gets a 1px border and
+   View comes up at the bottom right, which opens it whole on the
+   notification page (where Delete now is). The border is always there,
+   clear until picked, so picking one moves nothing; it runs 4px out either
+   side of the text, which stays in line with the title. */
 .console-notices-item {
     display: block;
     width: calc(100% + 8px);
@@ -9232,7 +9229,6 @@ body[data-page="admin"] .search-box input {
     font: inherit;
     cursor: var(--cursor-pointer);
 }
-.console-notices-item:hover { background: rgba(238, 238, 238, 0.08); }
 .console-notices-item.is-picked { border-color: #eeeeee; }
 .console-notices-item:focus-visible { outline: 1px dotted #eeeeee; outline-offset: 1px; }
 .console-notices-day,
@@ -9246,6 +9242,13 @@ body[data-page="admin"] .search-box input {
 }
 .console-notices-text {
     margin: 0;
+    white-space: pre-line;   /* the line breaks it was written with */
+    /* The preview: two lines, the rest cut with an ellipsis. */
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    overflow: hidden;
     font-family: 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace;
     font-size: 0.5625rem;
     line-height: 1.6;
@@ -20157,6 +20160,32 @@ body.is-viewer .admin-panel[data-panel="errors"] .se-write { display: none !impo
    the red .is-error already uses. */
 .console-form-status.is-ok { color: #ffffff; }
 
+/* ---- Is this your Habbo? (5 Oct 2026; habboVerifyHtml in
+   js/console-profile.js) — laid out as the nickname section above. ---- */
+.console-verify-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+    margin: 4px 0;
+}
+.console-verify-actions .console-btn { padding: 4px 10px; }
+/* The quiet way out, at the size of the nickname's Remove. */
+.console-link-btn.console-verify-notme { display: block; margin: 2px 0 4px; font-size: 0.5625rem; }
+/* The code to type into a motto: big enough to read off the screen, boxed
+   like the screen's inputs. */
+.console-verify-code {
+    display: inline-block;
+    margin: 4px 0 6px;
+    padding: 4px 10px;
+    border: 1px solid #eeeeee;
+    font-family: 'Volter Goldfish Bold', 'Volter Goldfish', monospace;
+    font-size: 0.75rem;
+    letter-spacing: 0.08em;
+    color: #ffffff;
+    user-select: all;
+}
+
 .console-btn:disabled,
 .console-link-btn:disabled { opacity: 0.5; cursor: default; }
 .console-btn:disabled:hover { background: transparent; }
@@ -21354,7 +21383,7 @@ body.is-viewer #bans-add { display: none !important; }
     cursor: var(--cursor-pointer);
 }
 .nt-row { display: flex; flex-direction: column; gap: 4px; padding: 8px 10px; }
-.nt-row-text { margin: 0; overflow-wrap: anywhere; }
+.nt-row-text { margin: 0; overflow-wrap: anywhere; white-space: pre-line; }
 .nt-row-meta { margin: 0; }
 .nt-row.is-withdrawn { opacity: 0.6; }
 /* The @username in a search result: the button's own size and Volter's
@@ -21397,6 +21426,14 @@ body.is-viewer #bans-add { display: none !important; }
 .nt-left { opacity: 0.85; }
 .nt-to-row { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; margin-top: 4px; }
 .nt-to-row .ctl-label { margin: 0; }
+/* An everyone-notice's options (5 Oct 2026): how long, who, when, quiet —
+   two to a row, the quiet tick across the foot. */
+.nt-options { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 12px; margin-top: 8px; }
+.nt-opt { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.nt-opt .ctl-label { margin: 0; }
+.nt-opt .ctl-input { width: 100%; }
+.nt-opt-quiet { grid-column: 1 / -1; flex-direction: row; align-items: center; gap: 6px; font-size: 0.75rem; color: var(--parchment-dim); }
+@media (max-width: 640px) { .nt-options { grid-template-columns: minmax(0, 1fr); } }
 .nt-audience { display: inline-flex; flex: 0 0 auto; width: auto; }
 .nt-audience .btn-enter-mini { flex: 0 0 auto; padding: 0 14px; }
 .nt-send-row {
@@ -21416,6 +21453,18 @@ body.is-viewer #bans-add { display: none !important; }
 .nt-row-text { align-self: stretch; }
 .nt-row-meta { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
 .nt-withdraw { flex: 0 0 auto; }
+/* A sent notification opens to show who has read it (5 Oct 2026). */
+/* The Warren's Habbo link on a player (5 Oct 2026): the name takes the
+   room, the hotel only what its longest option needs. */
+.pl-habbo-link .ctl-row { flex-wrap: wrap; }
+.pl-habbo-link .pl-habbo-name { flex: 1 1 160px; min-width: 0; }
+.pl-habbo-link .pl-habbo-hotel { flex: 0 0 auto; width: auto; }
+.nt-row[data-nid] { cursor: pointer; }
+.nt-row[data-nid]:focus-visible { outline: 2px solid var(--chrome-highlight); outline-offset: -2px; }
+.nt-readers { align-self: stretch; display: flex; flex-direction: column; gap: 6px; margin-top: 2px; padding-top: 8px; border-top: 1px dashed var(--chrome-highlight); cursor: default; }
+.nt-readers .admin-hint { margin: 0; }
+.nt-reader-list { display: flex; flex-wrap: wrap; gap: 4px; }
+.nt-reader-nonick { font-style: italic; }
 @media (max-width: 640px) {
     .nt-row-foot, .nt-send-row { flex-wrap: wrap; }
 }

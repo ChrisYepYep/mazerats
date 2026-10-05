@@ -1117,7 +1117,12 @@ if (typeof renderPrivacySections === "function") {
     const ICON_ALERT = "assets/img/console-icon-alert.gif";
     const noticeTextEl = document.getElementById("console-notice-text");
     const noticeCountEl = document.getElementById("console-notice-count");
-    const noticeOkBtn = document.getElementById("console-notice-ok");
+    // Back and Next (5 Oct 2026, the owner's), at the foot as the list's
+    // Back and Delete are: both mark the one showing read; Next goes on to
+    // the next unread, and is greyed when there is none.
+    const noticeBackBtn = document.getElementById("console-notice-back");
+    const noticeNextBtn = document.getElementById("console-notice-next");
+    const noticeDeleteBtn = document.getElementById("console-notice-delete");
     const openImg = openBtn.querySelector("img");
 
     function localSeen() {
@@ -1176,7 +1181,19 @@ if (typeof renderPrivacySections === "function") {
     // The nid on screen, so OK marks THAT one read even if a check has
     // changed the queue under it since (the bug scan, 5 Oct 2026).
     let shownNid = null;
+    /* The same page shows one picked from the Notifications list (5 Oct
+       2026, the owner's: "View" on a preview). viewing holds it while it
+       is up; Back goes back to the list, and Delete stands in for Next. */
+    let viewing = null;
+    /* From the list (the owner's, 5 Oct 2026): Next as well, beside Back,
+       on to the next one down the list, and Delete at the right. */
+    function noticeButtons(fromList) {
+        if (pages.notice) pages.notice.classList.toggle("is-viewing", fromList);
+        if (noticeDeleteBtn) noticeDeleteBtn.hidden = !fromList;
+    }
     function showNotice() {
+        viewing = null;
+        noticeButtons(false);
         const n = notices[0];
         shownNid = n ? n.nid : null;
         if (!n) { leaveNotices(); return; }
@@ -1185,7 +1202,9 @@ if (typeof renderPrivacySections === "function") {
             noticeCountEl.hidden = notices.length < 2;
             noticeCountEl.textContent = `${notices.length - 1} more after this`;
         }
-        if (noticeOkBtn && modal.style.display === "block") noticeOkBtn.focus({ preventScroll: true });
+        if (noticeNextBtn) noticeNextBtn.disabled = notices.length < 2;
+        const focusBtn = noticeNextBtn && !noticeNextBtn.disabled ? noticeNextBtn : noticeBackBtn;
+        if (focusBtn && modal.style.display === "block") focusBtn.focus({ preventScroll: true });
     }
     // Off the notice page to the Profile tab's page, with focus on its first
     // button rather than lost with the OK it hid.
@@ -1206,7 +1225,7 @@ if (typeof renderPrivacySections === "function") {
     let checkGen = 0;
     function checkNotices() {
         // A page without the notice pages (fallinfurni.html) has nowhere to show one.
-        if (!pages.notice || !noticeOkBtn) return Promise.resolve();
+        if (!pages.notice || !noticeBackBtn) return Promise.resolve();
         const mine = ++checkGen;
         noticeCheckedAt = Date.now();
         return fetch(NOTICE_URL, { credentials: "same-origin", headers: { Accept: "application/json" }, cache: "no-store" })
@@ -1225,26 +1244,50 @@ if (typeof renderPrivacySections === "function") {
                     playSound("notice");
                 }
                 // On the notice page: what it shows follows the new queue.
-                if (noticePageShowing() && (!notices.length || notices[0].nid !== shownNid)) showNotice();
+                if (noticePageShowing() && !viewing && (!notices.length || notices[0].nid !== shownNid)) showNotice();
             })
             .catch(() => { /* asked again later; nothing to show meanwhile */ });
     }
 
-    if (noticeOkBtn) {
-        noticeOkBtn.addEventListener("click", () => {
-            const i = notices.findIndex(x => x.nid === shownNid);
-            const n = i >= 0 ? notices.splice(i, 1)[0] : null;
-            if (n) {
-                rememberSeen(n.nid);
-                fetch(NOTICE_URL, {
-                    method: "POST",
-                    credentials: "same-origin",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ seen: [n.nid] })
-                }).catch(() => { /* the browser has it; the account learns next time */ });
+    function markShownSeen() {
+        const i = notices.findIndex(x => x.nid === shownNid);
+        const n = i >= 0 ? notices.splice(i, 1)[0] : null;
+        if (n) {
+            rememberSeen(n.nid);
+            fetch(NOTICE_URL, {
+                method: "POST",
+                credentials: "same-origin",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ seen: [n.nid] })
+            }).catch(() => { /* the browser has it; the account learns next time */ });
+        }
+        paintNoticeIcon();
+    }
+    if (noticeBackBtn) {
+        // Back to the Profile tab's page; any others still unread wait,
+        // and the console button keeps its alert picture for them.
+        noticeBackBtn.addEventListener("click", () => {
+            if (viewing) {
+                viewing = null;
+                showPage("notices");
+                if (noticesViewBtn && !noticesViewBtn.hidden && modal.style.display === "block") noticesViewBtn.focus({ preventScroll: true });
+                return;
             }
-            paintNoticeIcon();
+            markShownSeen();
+            leaveNotices();
+        });
+    }
+    if (noticeNextBtn) {
+        noticeNextBtn.addEventListener("click", () => {
+            if (noticeNextBtn.disabled) return;
+            if (viewing) {
+                const after = listedAfter(viewing.nid);
+                if (after) { pickNotice(after); viewNotice(after); }
+                return;
+            }
+            markShownSeen();
             if (notices.length) showNotice(); else leaveNotices();
+            if (screenScroll) screenScroll.scrollTop = 0;
         });
     }
 
@@ -1257,12 +1300,14 @@ if (typeof renderPrivacySections === "function") {
         const t = Date.parse(iso);
         return Number.isFinite(t) ? new Date(t).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }) : "";
     };
-    const noticesDeleteBtn = document.getElementById("console-notices-delete");
     const NO_NOTICES = `<p class="console-blurb console-notices-empty">No notifications yet.</p>`;
     let historyGen = 0;
-    /* One notice picked at a time (5 Oct 2026, the owner's): a click draws a
-       border round it and brings up Delete; a second click on it, or Back,
-       lets it go. */
+    // What the list was sent, by nid, for View to open.
+    let listed = new Map();
+    /* One preview picked at a time (5 Oct 2026, the owner's): a click draws
+       a border round it and brings up View at the bottom right (not there
+       at all until one is picked); a second click on it lets it go. */
+    const noticesViewBtn = document.getElementById("console-notices-view");
     let pickedNid = null;
     function pickNotice(nid) {
         pickedNid = nid;
@@ -1271,7 +1316,7 @@ if (typeof renderPrivacySections === "function") {
             el.classList.toggle("is-picked", on);
             el.setAttribute("aria-pressed", String(on));
         });
-        if (noticesDeleteBtn) noticesDeleteBtn.hidden = !nid;
+        if (noticesViewBtn) noticesViewBtn.hidden = !nid;
     }
     function showNoticeHistory() {
         showPage("notices");
@@ -1288,6 +1333,10 @@ if (typeof renderPrivacySections === "function") {
                 if (mine !== historyGen) return;
                 const gone = new Set(localDeleted());
                 const list = ((data && Array.isArray(data.notices)) ? data.notices : []).filter(n => n && n.nid && !gone.has(n.nid));
+                listed = new Map(list.map(n => [n.nid, n]));
+                /* Previews (5 Oct 2026, the owner's): two lines of each at
+                   most; picked, View opens it whole on the notification
+                   page. */
                 noticesListEl.innerHTML = list.length
                     ? list.map(n => `
                         <button type="button" class="console-notices-item" data-nid="${n.nid}" aria-pressed="false">
@@ -1301,27 +1350,67 @@ if (typeof renderPrivacySections === "function") {
                 noticesListEl.innerHTML = `<p class="console-blurb">Your notifications couldn't be loaded just now. Try again in a moment.</p>`;
             });
     }
+    // One from the list, whole, on the notification page. An unread one is
+    // read now, so it leaves the queue and the console icon settles.
+    // The one below it in the list, or null at the bottom.
+    function listedAfter(nid) {
+        const ids = [...listed.keys()];
+        const i = ids.indexOf(nid);
+        return i >= 0 && i + 1 < ids.length ? ids[i + 1] : null;
+    }
+    function viewNotice(nid) {
+        const n = listed.get(nid);
+        if (!n || !pages.notice) return;
+        viewing = n;
+        shownNid = null;
+        if (noticeTextEl) noticeTextEl.innerHTML = noticeHtml(n.text);
+        if (noticeCountEl) noticeCountEl.hidden = true;
+        noticeButtons(true);
+        if (noticeNextBtn) noticeNextBtn.disabled = !listedAfter(nid);
+        showPage("notice");
+        if (screenScroll) screenScroll.scrollTop = 0;
+        const i = notices.findIndex(x => x.nid === nid);
+        if (i >= 0) {
+            notices.splice(i, 1);
+            paintNoticeIcon();
+            rememberSeen(nid);
+            fetch(NOTICE_URL, {
+                method: "POST",
+                credentials: "same-origin",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ seen: [nid] })
+            }).catch(() => { /* the browser has it; the account learns next time */ });
+        }
+        if (noticeBackBtn && modal.style.display === "block") noticeBackBtn.focus({ preventScroll: true });
+    }
     if (noticesListEl) {
         noticesListEl.addEventListener("click", e => {
             const item = e.target.closest(".console-notices-item");
             if (item) pickNotice(item.dataset.nid === pickedNid ? null : item.dataset.nid);
         });
     }
-    if (noticesDeleteBtn) {
-        noticesDeleteBtn.addEventListener("click", () => {
-            const nid = pickedNid;
-            const item = nid && noticesListEl && noticesListEl.querySelector(`.console-notices-item[data-nid="${nid}"]`);
-            if (!item) { pickNotice(null); return; }
-            // The dotted line that went with it: the one before, or for the
-            // first notice, the one after.
-            const line = item.previousElementSibling || item.nextElementSibling;
-            if (line && line.classList.contains("console-dotline")) line.remove();
-            item.remove();
-            if (!noticesListEl.querySelector(".console-notices-item")) noticesListEl.innerHTML = NO_NOTICES;
+    if (noticesViewBtn) noticesViewBtn.addEventListener("click", () => { if (pickedNid) viewNotice(pickedNid); });
+    // Delete, on one opened from the list: for this visitor only, then back
+    // to the list without it.
+    if (noticeDeleteBtn) {
+        noticeDeleteBtn.addEventListener("click", () => {
+            const n = viewing;
+            if (!n) return;
+            const nid = n.nid;
+            viewing = null;
+            listed.delete(nid);
+            const item = noticesListEl && noticesListEl.querySelector(`.console-notices-item[data-nid="${nid}"]`);
+            if (item) {
+                // The dotted line that went with it: the one before, or for
+                // the first notice, the one after.
+                const line = item.previousElementSibling || item.nextElementSibling;
+                if (line && line.classList.contains("console-dotline")) line.remove();
+                item.remove();
+                if (!noticesListEl.querySelector(".console-notices-item")) noticesListEl.innerHTML = NO_NOTICES;
+            }
             pickNotice(null);
             rememberDeleted(nid);
             rememberSeen(nid);
-            // Out of the unread queue too, so the console icon settles.
             const i = notices.findIndex(x => x.nid === nid);
             if (i >= 0) { notices.splice(i, 1); paintNoticeIcon(); }
             fetch(NOTICE_URL, {
@@ -1330,8 +1419,9 @@ if (typeof renderPrivacySections === "function") {
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ deleted: [nid] })
             }).catch(() => { /* the browser has it; the account learns next time */ });
+            showPage("notices");
             const back = document.getElementById("console-notices-back");
-            if (back) back.focus({ preventScroll: true });
+            if (back && modal.style.display === "block") back.focus({ preventScroll: true });
         });
     }
     const onClick = (id, fn) => { const el = document.getElementById(id); if (el) el.addEventListener("click", fn); };
@@ -1364,6 +1454,8 @@ if (typeof renderPrivacySections === "function") {
             paintNoticeIcon();
             if (noticePageShowing()) leaveNotices();
             historyGen++;
+            viewing = null;
+            listed = new Map();
             pickNotice(null);
             if (noticesListEl) noticesListEl.innerHTML = "";
             if (pages.notices && pages.notices.style.display !== "none") showPage(landingPage());

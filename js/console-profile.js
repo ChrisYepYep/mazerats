@@ -573,6 +573,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 </div>
             </div>
             ${d && !habbo && !d.habboLinked ? `<p class="console-note console-profile-note">Link your Habbo through OriginsBot to show your avatar and motto on your profile.</p>` : ""}
+            ${(() => { const v = d ? habboVerifyHtml() : ""; return v ? rule + v + rule : ""; })()}
             <div data-nick-slot></div>`;
 
         const view = `
@@ -665,6 +666,132 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     }
 
+
+    /* IS THIS YOUR HABBO? (5 Oct 2026, the owner's; netlify/functions/
+       _habbo-guess.js and habbo-verify.js.) A player with no Habbo linked
+       has the Habbo of their nickname's name shown on their profile,
+       unverified. Here they are offered to prove it is theirs: a code in
+       their Origins motto, then Check. Not now leaves it as it is (and,
+       unsaid, with the admins); That's not me takes it away.
+
+       Check again waits CHECK_GAP_S between presses, counted down on the
+       button (the owner's: Origins can take a few minutes to show a new
+       motto, and the button must not be one to lean on). The server holds
+       the same gap and says how long is left. */
+    const VERIFY_URL = "/.netlify/functions/habbo-verify";
+    const HOTEL_NAMES = { COM: ".com", ES: ".es", BR: ".com.br" };
+    const hv = { phase: "offer", code: "", msg: "", tone: "", until: 0, busy: false, for: "" };
+    let hvTimer = 0;
+
+    function habboVerifyHtml() {
+        const g = data && data.habboGuess;
+        // Linked: the guess is gone, and the news is all that is left to say.
+        if (!g || !g.name) return hv.tone === "ok" && hv.msg ? `<p class="console-form-status is-ok">${esc(hv.msg)}</p>` : "";
+        if (hv.for !== g.name) { hv.phase = "offer"; hv.code = ""; hv.msg = ""; hv.until = 0; hv.for = g.name; }
+        const where = `${esc(g.name)} (Habbo Origins ${esc(HOTEL_NAMES[g.hotel] || ".com")})`;
+        const off = hv.busy ? " disabled" : "";
+        const say = hv.msg ? `<p class="console-form-status${hv.tone ? " is-" + hv.tone : ""}">${esc(hv.msg)}</p>` : "";
+        if (hv.phase === "code") {
+            const left = Math.max(0, Math.ceil((hv.until - Date.now()) / 1000));
+            return `
+                ${head("Verify your Habbo")}
+                <p class="console-blurb">Put this in your motto on Habbo Origins, then press Check:</p>
+                <p class="console-verify-code">${esc(hv.code)}</p>
+                <p class="console-note">Origins can take a few minutes to show a new motto. You can change it back once it's verified.</p>
+                <div class="console-verify-actions">
+                    <button type="button" class="console-btn" data-act="hv-check"${off || (left ? " disabled" : "")}>${left ? `Check again (${left}s)` : hv.checked ? "Check again" : "Check"}</button>
+                    <button type="button" class="console-btn console-btn-cancel" data-act="hv-cancel"${off}>Cancel</button>
+                </div>
+                ${say}`;
+        }
+        if (g.asked) {
+            return `
+                <p class="console-note console-profile-note">You're not verified yet, so your progress doesn't count towards Maze Rats badges yet.</p>
+                <div class="console-verify-actions"><button type="button" class="console-btn" data-act="hv-start"${off}>Verify it</button></div>
+                ${say}`;
+        }
+        return `
+            ${head("Is this your Habbo?")}
+            <p class="console-blurb">${where} is on your profile. Verify it's yours to start earning Maze Rats badges.</p>
+            <div class="console-verify-actions">
+                <button type="button" class="console-btn" data-act="hv-start"${off}>Verify it</button>
+                <button type="button" class="console-btn console-btn-cancel" data-act="hv-decline"${off}>Not now</button>
+            </div>
+            <button type="button" class="console-link-btn console-verify-notme" data-act="hv-notme"${off}>That's not me</button>
+            ${say}`;
+    }
+
+    async function hvPost(action) {
+        const res = await fetch(VERIFY_URL, {
+            method: "POST",
+            credentials: "same-origin",
+            headers: { "Content-Type": "application/json", Accept: "application/json" },
+            body: JSON.stringify({ action })
+        });
+        const body = await res.json().catch(() => ({}));
+        if (!res.ok && res.status !== 429) throw Object.assign(new Error(body.error || "That didn't work just now. Try again in a moment."), { status: res.status });
+        return Object.assign({ status: res.status }, body);
+    }
+
+    // The countdown on Check again: a second's tick, redrawing only the button.
+    function hvCountdown(ms) {
+        hv.until = Date.now() + Math.max(0, ms || 0);
+        clearInterval(hvTimer);
+        hvTimer = setInterval(() => {
+            const btn = host.querySelector('[data-act="hv-check"]');
+            const left = Math.max(0, Math.ceil((hv.until - Date.now()) / 1000));
+            if (btn) {
+                btn.disabled = hv.busy || left > 0;
+                btn.textContent = left ? `Check again (${left}s)` : "Check again";
+            }
+            if (!left) clearInterval(hvTimer);
+        }, 1000);
+    }
+
+    async function hvAct(act) {
+        if (hv.busy) return;
+        hv.busy = true;
+        hv.msg = "";
+        render();
+        try {
+            if (act === "hv-start") {
+                const r = await hvPost("start");
+                if (r.code) { hv.phase = "code"; hv.code = r.code; hv.checked = false; }
+            } else if (act === "hv-check") {
+                const r = await hvPost("check");
+                hv.checked = true;
+                if (r.linked) {
+                    hv.phase = "offer";
+                    hv.msg = "";
+                    clearInterval(hvTimer);
+                    hv.busy = false;
+                    await load(true);
+                    hv.msg = "Verified! Your Habbo is linked to your profile.";
+                    hv.tone = "ok";
+                    render();
+                    return;
+                }
+                hv.msg = r.status === 429 ? "Give it a moment, then check again." : "Not in your motto yet. Origins can take a few minutes, so check again shortly.";
+                hv.tone = "";
+                hvCountdown(r.wait || 30000);
+            } else if (act === "hv-decline") {
+                await hvPost("decline");
+                if (data && data.habboGuess) data.habboGuess.asked = true;
+            } else if (act === "hv-notme") {
+                await hvPost("notme");
+                if (data) data.habboGuess = null;
+                await load(true);
+            } else if (act === "hv-cancel") {
+                hv.phase = "offer";
+                clearInterval(hvTimer);
+            }
+        } catch (e) {
+            hv.msg = e.message;
+            hv.tone = "error";
+        }
+        hv.busy = false;
+        render();
+    }
 
     async function load(force) {
         const me = window.Account ? Account.current : null;
@@ -835,6 +962,7 @@ document.addEventListener("DOMContentLoaded", () => {
         else if (act === "progress") location.href = "/profile";
         else if (act === "boards") location.href = "/home";
         else if (act === "info") Console.openInfo(null);
+        else if (act.startsWith("hv-")) hvAct(act);
     });
 
     host.addEventListener("change", e => {

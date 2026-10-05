@@ -9091,6 +9091,12 @@ document.addEventListener("DOMContentLoaded", () => {
     const badgeHow = (b, f) => (typeof b.how === "function" ? b.how(f) : b.how);
 
     function earnedBadges(f, d) {
+        /* None at all while their Habbo is only guessed from their nickname
+           and not yet verified (5 Oct 2026, the owner's: "They cannot have
+           any badges until verified"; netlify/functions/_habbo-guess.js).
+           Every list of badges comes through here: the profile, its
+           featured badge, the Mazer Card and Edit Profile's picker. */
+        if (d && d.habboUnverified) return [];
         return BADGES.filter(b => !b.off && b.test(f, d))
             .map(b => ({ key: b.key, name: b.name, means: b.means, how: badgeHow(b, f) }));
     }

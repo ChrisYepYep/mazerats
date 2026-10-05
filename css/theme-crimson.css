@@ -9,7 +9,7 @@
    completely inert until js/site.js puts that attribute on <html>. The
    classic palette is not defined here and is not affected by anything in it.
 
-   1092 rules, 1768 declarations, hues 350 (surfaces) / 212 (accents).
+   1094 rules, 1771 declarations, hues 350 (surfaces) / 212 (accents).
 */
 :root[data-theme="crimson"] {
     --bg-black: #080506;
@@ -1939,10 +1939,6 @@ html[data-theme="crimson"]::-webkit-scrollbar-button {
     border: 1px solid transparent;
     background: transparent;
     color: inherit;
-}
-
-[data-theme="crimson"] .console-notices-item:hover {
-    background: rgba(238, 238, 238, 0.08);
 }
 
 [data-theme="crimson"] .console-notices-item.is-picked {
@@ -5078,6 +5074,11 @@ html[data-theme="crimson"]::-webkit-scrollbar-button {
     color: #ffffff;
 }
 
+[data-theme="crimson"] .console-verify-code {
+    border: 1px solid #eeeeee;
+    color: #ffffff;
+}
+
 [data-theme="crimson"] .console-btn:disabled:hover {
     background: transparent;
 }
@@ -5397,6 +5398,14 @@ html[data-theme="crimson"]::-webkit-scrollbar-button {
     background: none;
     border: 0;
     color: inherit;
+}
+
+[data-theme="crimson"] .nt-opt-quiet {
+    color: var(--parchment-dim);
+}
+
+[data-theme="crimson"] .nt-row[data-nid]:focus-visible {
+    outline: 2px solid var(--chrome-highlight);
 }
 
 /* ------------------------------------------- COLOUR THAT IS INFORMATION

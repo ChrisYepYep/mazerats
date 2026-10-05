@@ -1088,11 +1088,21 @@
                     </div>
                     <!-- A notification waiting for this visitor (5 Oct 2026; js/console.js,
                          netlify/functions/notifications.js): shown first when the
-                         console opens, centred on the screen, one at a time. -->
+                         console opens, one at a time, under the Notifications
+                         page's own heading so it reads as that page; a long one
+                         scrolls under Back and Next, held at the foot as the
+                         list's Back is. Opened from the Notifications list it
+                         shows that one, with Delete in place of Next. -->
                     <div class="console-page console-page-notice" id="console-page-notice" style="display:none;" role="status">
+                        <h3 class="console-page-title">Notifications</h3>
+                        <div class="console-hashline" aria-hidden="true"></div>
                         <p class="console-notice-text" id="console-notice-text"></p>
                         <p class="console-notice-count" id="console-notice-count" hidden></p>
-                        <button type="button" class="console-btn console-btn-ok" id="console-notice-ok">OK</button>
+                        <div class="console-contact-actions console-notices-actions">
+                            <button type="button" class="console-btn console-btn-cancel" id="console-notice-back">Back</button>
+                            <button type="button" class="console-btn" id="console-notice-next" disabled>Next</button>
+                            <button type="button" class="console-btn" id="console-notice-delete" hidden>Delete</button>
+                        </div>
                     </div>
                     <!-- Between pressing Send and the thanks (5 Oct 2026, the
                          owner's): every console form goes through it
@@ -1152,7 +1162,7 @@
                         <div class="console-notices-list" id="console-notices-list"></div>
                         <div class="console-contact-actions console-notices-actions">
                             <button type="button" class="console-btn console-btn-cancel" id="console-notices-back">Back</button>
-                            <button type="button" class="console-btn" id="console-notices-delete" hidden>Delete</button>
+                            <button type="button" class="console-btn" id="console-notices-view" hidden>View</button>
                         </div>
                     </div>
                     <div class="console-page" id="console-page-profile" style="display:none;">
@@ -1706,7 +1716,7 @@
     <script src="js/home.js?v=2"></script>
     <script src="js/custom-scrollbar.js?v=2"></script>
     <script src="js/letter-jump.js?v=2"></script>
-    <script src="js/console.js?v=7"></script>
+    <script src="js/console.js?v=10"></script>
     <!-- The console's Add Maze Info form and Missing Pieces list. After
          console.js, whose page switching it uses (window.MazeConsole). -->
     <script src="js/console-info.js?v=3"></script>

@@ -449,3 +449,5 @@ exports.lookupOriginsName = lookupOriginsName;
 exports.ORIGINS_HOSTS = ORIGINS_HOSTS;
 exports.avatarUrl = avatarUrl;
 exports.creatorMatcher = creatorMatcher;
+
+exports.fetchOriginsProfile = fetchOriginsProfile;

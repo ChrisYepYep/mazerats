@@ -136,6 +136,8 @@ const { record } = require("./_audit");
 const { SECURITY_HEADERS } = require("./_headers");
 const { nameKey } = require("./_player");
 const nickRules = require("./player-nick");
+const { linkHabbo } = require("./_habbo-guess");
+const { lookupOriginsName } = require("./habbo");
 // Each row's ban and the "banned" filter (29 Sept 2026).
 const Bans = require("./_bans");
 /* The launch cut the boards use (29 Sept 2026; see ACTIVITY in the header).
@@ -161,7 +163,7 @@ const MAX_BODY = 2048;
 // player-forget.js), since one goes into a regex below.
 const ID_SHAPE = /^[A-Za-z0-9_-]{1,64}$/;
 const REF_SHAPE = /^p_[0-9a-f]{20}$/;
-const FILTERS = ["all", "nick", "nonick", "locked", "unasked", "flagged", "clash", "motto", "banned"];
+const FILTERS = ["all", "nick", "nonick", "locked", "unasked", "flagged", "clash", "motto", "habbo", "banned"];
 const REVIEWS = ["allow", "reject"];
 /* A flagged row, as a Mongo filter (29 Sept 2026). On the flag's `reason`
    being a string rather than on nickFlag existing, for the same reason the
@@ -186,6 +188,11 @@ function clashOf(row) {
    mottoReview below. */
 const MOTTO_WAITING = { "mottoFlag.text": { $type: "string" }, "mottoFlag.reviewed": { $ne: true } };
 const MOTTO_REVIEWS = ["approve", "hide", "revoke"];
+/* A HABBO GUESSED FROM A NICKNAME, the player not verifying it
+   (_habbo-guess.js, 5 Oct 2026): it waits here for an admin to approve,
+   which links it as OriginsBot would, or reject, which takes it away. */
+const HABBO_WAITING = { "habboGuess.state": "declined", "habboGuess.name": { $type: "string" } };
+const HABBO_REVIEWS = ["approve", "reject"];
 function mottoFlagOf(row) {
     const f = row && row.mottoFlag;
     if (!f || typeof f !== "object" || typeof f.text !== "string") return null;
@@ -263,6 +270,12 @@ function shape(row, seesIds, act, bans) {
         // Their Habbo motto, kept off for profanity, and any motto passed (MOTTO_WAITING).
         mottoFlag: mottoFlagOf(row),
         mottoApproved: mottoApprovedOf(row),
+        /* A Habbo guessed from their nickname (5 Oct 2026): a Habbo name,
+           so shown to every role, as `habbo` below is. `state` "declined"
+           is the one waiting for an admin (HABBO_WAITING). */
+        habboGuess: row.habboGuess && typeof row.habboGuess === "object" && str(row.habboGuess.name) ? {
+            name: str(row.habboGuess.name), hotel: str(row.habboGuess.hotel), state: str(row.habboGuess.state)
+        } : null,
         /* BANS (29 Sept 2026; see _bans.js). `ban` is the most severe active
            ban on their account or on their network code, as { level, until,
            kind }, or null. `hasNetHash` says whether the Warren can ban
@@ -305,7 +318,9 @@ function detailShape(row, seesIds, act, bans) {
     const h = row.habbo && typeof row.habbo === "object" ? row.habbo : null;
     out.habbo = h ? {
         name: str(h.name), hotel: str(h.hotel), applied: str(h.applied),
-        clash: !!h.clash, clashDismissed: h.clashDismissed === true, unusable: str(h.unusable), checkedAt: str(h.checkedAt)
+        clash: !!h.clash, clashDismissed: h.clashDismissed === true, unusable: str(h.unusable), checkedAt: str(h.checkedAt),
+        // How it was linked when not by OriginsBot: "motto" or "admin:<username>".
+        via: str(h.via)
     } : null;
     return out;
 }
@@ -344,6 +359,7 @@ function listFilter(filter, q, seesIds, bans) {
     if (filter === "flagged") and.push(FLAGGED);
     if (filter === "clash") and.push(CLASHING);
     if (filter === "motto") and.push(MOTTO_WAITING);
+    if (filter === "habbo") and.push(HABBO_WAITING);
     if (q) {
         const bare = q.replace(/^@/, "").trim();
         if (bare) {
@@ -537,7 +553,7 @@ async function list(event, db, seesIds) {
     // the "banned" filter and count (29 Sept 2026). A handful of rows.
     const bans = await Bans.accountBans(db);
     const where = listFilter(filter, q, seesIds, bans);
-    const [rows, total, all, nick, locked, flagged, banned, clash, motto, waiting] = await Promise.all([
+    const [rows, total, all, nick, locked, flagged, banned, clash, motto, habbo, waiting] = await Promise.all([
         pageOf(players, where, sort, skip, limit),
         players.countDocuments(where),
         players.countDocuments({}),
@@ -550,15 +566,17 @@ async function list(event, db, seesIds) {
         players.countDocuments(CLASHING),
         // And flagged mottos (5 Oct 2026).
         players.countDocuments(MOTTO_WAITING),
+        // And guessed Habbos to approve (5 Oct 2026).
+        players.countDocuments(HABBO_WAITING),
         /* All of them at once, each player once, for the nav badge (the
            quick scan): a flagged name with a clash too was counted twice. */
-        players.countDocuments({ $or: [FLAGGED, CLASHING, MOTTO_WAITING] })
+        players.countDocuments({ $or: [FLAGGED, CLASHING, MOTTO_WAITING, HABBO_WAITING] })
     ]);
     const act = await activityFor(db, rows.map(r => String(r.id)), false);
     return json(200, {
         players: rows.map(r => shape(r, seesIds, act.get(String(r.id)), bans)),
         total,
-        counts: { all, nick, locked, flagged, banned, clash, motto, waiting },
+        counts: { all, nick, locked, flagged, banned, clash, motto, habbo, waiting },
         now: new Date().toISOString()
     });
 }
@@ -612,6 +630,16 @@ async function update(event, db, role) {
         if (hasNick || body.locked !== undefined || body.resetPrompt !== undefined || body.review !== undefined || body.dismissClash !== undefined) return json(400, { error: "A motto review goes on its own." });
         if (body.motto === "approve" && typeof body.seen !== "string") return json(400, { error: "seen is the motto you were looking at." });
         return await mottoReview(event, db, body);
+    }
+    if (body.habboLink !== undefined) {
+        if (hasNick || body.locked !== undefined || body.resetPrompt !== undefined || body.review !== undefined || body.motto !== undefined || body.habboGuess !== undefined) return json(400, { error: "Linking a Habbo goes on its own." });
+        return await habboLinkSet(event, db, body);
+    }
+    if (body.habboGuess !== undefined) {
+        if (!HABBO_REVIEWS.includes(body.habboGuess)) return json(400, { error: "habboGuess is approve or reject." });
+        if (hasNick || body.locked !== undefined || body.resetPrompt !== undefined || body.review !== undefined || body.motto !== undefined) return json(400, { error: "A Habbo review goes on its own." });
+        if (typeof body.seen !== "string") return json(400, { error: "seen is the Habbo name you were looking at." });
+        return await habboGuessReview(event, db, body);
     }
     if (body.dismissClash !== undefined) {
         if (body.dismissClash !== true) return json(400, { error: "dismissClash is true." });
@@ -823,6 +851,86 @@ async function mottoReview(event, db, body) {
         target: `${body.id}: ${did}`.slice(0, 200)
     });
     await players.updateOne({ id: body.id }, upd);
+    const after = await players.findOne({ id: body.id }, { projection: { _id: 0 } });
+    return json(200, { player: detailShape(after || row, true, null, await bansOr(db)), changed: [did] });
+}
+
+/* A HABBO LINKED BY AN ADMIN (5 Oct 2026, the owner's). { habboLink: { name,
+   hotel } } links that Habbo to the player as a verified one (linkHabbo,
+   as OriginsBot or a motto check would), badges and all; { habboLink: null }
+   takes their link away. The Habbo must exist on Origins on that hotel and
+   not be linked to anybody else already. Their nickname is left as it is. */
+const LINK_HOTELS = ["COM", "ES", "BR"];
+async function habboLinkSet(event, db, body) {
+    const players = db.collection("players");
+    const row = await players.findOne({ id: body.id }, { projection: { _id: 0 } });
+    if (!row) return json(404, { error: "No player by that id." });
+    const who = usernameFromToken(event) || "unknown";
+    let did;
+    if (body.habboLink === null) {
+        if (!(row.habbo && str(row.habbo.name))) return json(200, { player: detailShape(row, true, null, await bansOr(db)), changed: [] });
+        did = `Habbo ${row.habbo.name} unlinked`;
+        /* Kept as looked at, with the clash dismissed, so OriginsBot does
+           not put it straight back (its due() in _originsbot.js); the
+           guess goes too, and is made afresh on their next profile view. */
+        await players.updateOne({ id: body.id }, {
+            $set: { habbo: { name: null, hotel: null, checkedAt: new Date().toISOString(), via: `admin:${who}`, clashDismissed: true } },
+            $unset: { habboGuess: "", habboVerify: "" }
+        });
+    } else {
+        const b = body.habboLink;
+        const name = b && typeof b.name === "string" ? b.name.trim() : "";
+        const hotel = b && typeof b.hotel === "string" ? b.hotel.toUpperCase() : "";
+        if (!name || name.length > 40 || !/^[A-Za-z0-9 ._\-=?!@:,]+$/.test(name)) return json(400, { error: "That isn't a Habbo name." });
+        if (!LINK_HOTELS.includes(hotel)) return json(400, { error: "Choose its hotel: .com, .es or .com.br." });
+        const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+        const other = await players.findOne(
+            { id: { $ne: body.id }, "habbo.name": { $regex: "^" + escaped + "$", $options: "i" }, "habbo.hotel": hotel },
+            { projection: { _id: 0, id: 1, nick: 1 } });
+        if (other) return json(409, { error: `That Habbo is already linked to ${other.nick ? other.nick : "another player"}. Unlink it there first.` });
+        const found = await lookupOriginsName(db, hotel, name);
+        if (found === null) return json(503, { error: "Habbo Origins isn't answering just now, so it can't be checked. Try again in a moment." });
+        if (!found.found) return json(404, { error: `There's no Habbo called ${name} on that hotel.` });
+        const real = (found.profile && found.profile.name) || name;
+        did = `Habbo ${real} (${hotel}) linked`;
+        await linkHabbo(db, body.id, real, hotel, `admin:${who}`);
+    }
+    await record(event, "write", {
+        username: who,
+        session: sessionOf(event),
+        method: "PUT",
+        endpoint: "players-admin",
+        target: `${body.id}: ${did}`.slice(0, 200)
+    });
+    const after = await players.findOne({ id: body.id }, { projection: { _id: 0 } });
+    return json(200, { player: detailShape(after || row, true, null, await bansOr(db)), changed: [did] });
+}
+
+/* A GUESSED HABBO REVIEWED (5 Oct 2026; see HABBO_WAITING). update() has
+   checked the role and the body.
+     approve  linked as theirs (linkHabbo), as a verified motto links it:
+              the Habbo-name badges come with it. `seen` must be the name
+              the admin was shown; a different guess since is a 409.
+     reject   taken off their profile, and not guessed again for this
+              nickname. */
+async function habboGuessReview(event, db, body) {
+    const players = db.collection("players");
+    const row = await players.findOne({ id: body.id }, { projection: { _id: 0 } });
+    if (!row) return json(404, { error: "No player by that id." });
+    const g = row.habboGuess && typeof row.habboGuess === "object" ? row.habboGuess : null;
+    if (!g || !str(g.name) || g.state === "rejected") return json(409, { error: "There's no Habbo waiting for them now. Have another look.", changed: true });
+    if (g.name !== body.seen) return json(409, { error: "Their Habbo has changed since you loaded it. Have a look at the new one.", changed: true });
+    const who = usernameFromToken(event) || "unknown";
+    const did = body.habboGuess === "approve" ? `Habbo ${g.name} (${g.hotel}) approved` : `Habbo ${g.name} rejected`;
+    await record(event, "write", {
+        username: who,
+        session: sessionOf(event),
+        method: "PUT",
+        endpoint: "players-admin",
+        target: `${body.id}: ${did}`.slice(0, 200)
+    });
+    if (body.habboGuess === "approve") await linkHabbo(db, body.id, g.name, g.hotel, `admin:${who}`);
+    else await players.updateOne({ id: body.id }, { $set: { "habboGuess.state": "rejected", "habboGuess.rejectedBy": `admin:${who}` }, $unset: { habboVerify: "" } });
     const after = await players.findOne({ id: body.id }, { projection: { _id: 0 } });
     return json(200, { player: detailShape(after || row, true, null, await bansOr(db)), changed: [did] });
 }

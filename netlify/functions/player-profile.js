@@ -259,7 +259,9 @@ async function figuresFor(db, id) {
                 profileIntroAt: 1,
                 // The motto check (MOTTOS in profiles.js, 5 Oct 2026): who, and
                 // the admins' say on their motto.
-                id: 1, mottoApproved: 1, mottoFlag: 1 } }),
+                id: 1, mottoApproved: 1, mottoFlag: 1,
+                // A Habbo guessed from the nickname (_habbo-guess.js, 5 Oct 2026).
+                habboGuess: 1 } }),
         guessCol.find({ playerId: id, ...fromLaunch }, rowShape).sort({ day: 1 }).toArray(),
         dailyCol.find({ playerId: id, game: "odd", ...fromLaunch }, rowShape).sort({ day: 1 }).toArray(),
         boardTotals(guessCol, dailyCol, launch),
