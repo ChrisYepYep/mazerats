@@ -59,7 +59,7 @@ require("./_env.js").loadEnv(["MONGODB_URI"]);
 const { getCatalogue } = require("../netlify/functions/furni-catalogue.js");
 const { blobStore } = require("../netlify/functions/_blobs.js");
 const { getDb } = require("../netlify/functions/_db.js");
-const { spriteList, isLegacySpriteKey } = require("../netlify/functions/_furni-sprites.js");
+const { spriteList, isLegacySpriteKey, scanCatalogue } = require("../netlify/functions/_furni-sprites.js");
 const { pieceKey } = require("../netlify/functions/_furni-merge.js");
 
 const CACHE = path.join(__dirname, ".cache", "sprites");
@@ -343,7 +343,9 @@ function imagesOf(doc) {
 
     try {
 
-    const catalogue = await getCatalogue();
+    /* The old renders for every furni the old catalogue had, the new API's
+       for the rest (5 Oct 2026) — see scanCatalogue in _furni-sprites.js. */
+    const catalogue = scanCatalogue(await getCatalogue());
     const all = spriteList(catalogue);
     await setProgress({ current: "Loading furni sprites…" });
     const wanted = await ensureSpriteCache(catalogue);
@@ -588,9 +590,12 @@ function imagesOf(doc) {
                        has no business deleting. */
                     const items = msg.result.hits.map(h => {
                         const item = catalogue.items[h.key];
+                        // className too (5 Oct 2026), which the site otherwise
+                        // has to work out from the icon (see _furni-payload.js).
                         return {
                             name: item.name, motto: item.motto, icon: item.icon,
                             sprite: h.sprite || null, url: item.url, releaseDate: item.releaseDate,
+                            className: item.className || "",
                             matched: h.matched, coverage: Number(h.coverage.toFixed(3)), at: h.at,
                             alternates: (h.alternates || []).map(k => catalogue.items[k].name)
                         };

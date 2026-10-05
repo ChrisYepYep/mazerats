@@ -760,13 +760,17 @@ document.addEventListener("DOMContentLoaded", () => {
     // Order matters here — it's also the ascending "easiest first" sort
     // order used by the Difficulty option in the sort dropdown, and js/
     // admin.js keeps its own copy of the same value/label pairs.
-    const DIFFICULTY_ORDER = ["easy", "medium", "hard", "very-hard", "extreme"];
+    /* IMPOSSIBLE (5 Oct 2026, the owner's), past Extreme: a maze nobody can
+       finish. It cannot be marked completed (isImpossible, below) and is not
+       one of the open mazes the totals count. */
+    const DIFFICULTY_ORDER = ["easy", "medium", "hard", "very-hard", "extreme", "impossible"];
     const DIFFICULTY_LABELS = {
         easy: "Easy",
         medium: "Medium",
         hard: "Hard",
         "very-hard": "Very Hard",
-        extreme: "Extreme"
+        extreme: "Extreme",
+        impossible: "Impossible"
     };
 
     // String(), like admin.js's copy: every caller happens to pass a string
@@ -2237,8 +2241,16 @@ document.addEventListener("DOMContentLoaded", () => {
        so completing one earned nothing and the total quietly ignored a whole
        tab. Only Closed — gone from the hotel, collab or not (4 Oct 2026) —
        and hallways stay out. */
+    /* An Impossible maze (5 Oct 2026, the owner's): no Completed, no To do
+       and no Favourite on it (each asks for a maze that can be finished),
+       and it is not one of the open mazes — so none of the totals, the bar,
+       By difficulty or the badges count it. */
+    function isImpossible(record) {
+        return String((record && record.difficulty) || "").toLowerCase() === "impossible";
+    }
+
     function walkableRooms() {
-        return ROOMS.filter(r => roomStatus(r) !== "closed" && !isHallway(r));
+        return ROOMS.filter(r => roomStatus(r) !== "closed" && !isHallway(r) && !isImpossible(r));
     }
 
     /* "N of M completed", wherever it is shown: the open mazes only, as the
@@ -2297,9 +2309,11 @@ document.addEventListener("DOMContentLoaded", () => {
 
     function walkedToggleHtml(n) {
         // No Completed on an event, and none on a hallway either: there is
-        // nothing in a corridor to have finished.
+        // nothing in a corridor to have finished. Nor on an Impossible maze —
+        // unless it was ticked before it was marked so, which can be undone.
         if (n.isEvent || !n.id || isHallway(n)) return "";
         const walked = isWalked(n.id);
+        if (isImpossible(n) && !walked) return "";
         /* A CLOSED maze can be marked completed again (4 Oct 2026, the
            owner's): somebody who walked it while it was open should be able
            to say so. It shows on the profile as a closed maze completed (see
@@ -2499,9 +2513,12 @@ document.addEventListener("DOMContentLoaded", () => {
     function savedToggleHtml(n) {
         // Same exclusions as Completed, and for the same reason: if there is
         // nothing in a hallway to finish, there is nothing to save it for.
+        // An Impossible maze likewise: a To do it could never leave. Only
+        // offered, not taken away, as a closed one's (closedAndUnticked): one
+        // saved before the maze was marked Impossible can still come off.
         if (n.isEvent || !n.id || isHallway(n)) return "";
         const saved = isSaved(n.id);
-        if (closedAndUnticked(n, saved)) return "";
+        if (closedAndUnticked(n, saved) || (isImpossible(n) && !saved)) return "";
         // Tucked away while the maze is completed — see DONE TAKES IT OFF.
         const done = isWalked(n.id) && !saved;
         return `<button type="button" class="saved-toggle${saved ? " is-saved" : ""}${done ? " is-done" : ""}" ` +
@@ -8950,7 +8967,7 @@ document.addEventListener("DOMContentLoaded", () => {
         { key: "seasoned", at: 25, name: "Seasoned" }
     ];
 
-    const DIFFICULTY_RANK = ["easy", "medium", "hard", "very-hard", "extreme"];
+    const DIFFICULTY_RANK = ["easy", "medium", "hard", "very-hard", "extreme", "impossible"];
     const prettyDifficulty = d => (d === "unknown" ? "Unrated" : String(d).replace(/-/g, " "));
     // Every word, as the By difficulty list shows them ("Very Hard").
     const capitalise = s => String(s).replace(/\b[a-z]/g, c => c.toUpperCase());
@@ -9116,7 +9133,7 @@ document.addEventListener("DOMContentLoaded", () => {
            hours the two were added together, and the total grew with every
            closed maze ticked. `counted` is the pair the profile, the side
            menu, the count over the list and the Mazer Card all show. */
-        const closedDone = ROOMS.filter(r => roomStatus(r) === "closed" && !isHallway(r) && walked.has(r.id));
+        const closedDone = ROOMS.filter(r => roomStatus(r) === "closed" && !isHallway(r) && !isImpossible(r) && walked.has(r.id));
         const counted = { done: walkedHere.length, total: walkable.length };
 
         return { walkable, walkedHere, savedRooms, toWalk, savedShown, byDifficulty, closedDone, counted };
@@ -9239,8 +9256,11 @@ document.addEventListener("DOMContentLoaded", () => {
        filled) and aria-pressed say which: "My favourite" would not fit the
        phone's action bar beside the other three. */
     function favToggleHtml(n) {
+        // Not on an Impossible maze: a favourite has to be completed
+        // (isImpossible) — but one already the favourite can be taken off.
         if (n.isEvent || !n.id || isHallway(n)) return "";
         const on = currentFavourite() === n.id;
+        if (isImpossible(n) && !on) return "";
         return `<button type="button" class="fav-toggle${on ? " is-fav" : ""}" ` +
             `data-fav-id="${escapeHtml(n.id)}" aria-pressed="${on ? "true" : "false"}" ` +
             `title="${on ? FAV_TITLE.on : FAV_TITLE.off}" ` +
@@ -9399,7 +9419,8 @@ document.addEventListener("DOMContentLoaded", () => {
         /* Every maze this browser has ticked, closed ones included (a maze
            you loved is no less your favourite for having gone), by name. */
         completed() {
-            return ROOMS.filter(r => walkedIds.has(r.id) && !isHallway(r))
+            // Not an Impossible one: nobody completes those, so none is a favourite.
+            return ROOMS.filter(r => walkedIds.has(r.id) && !isHallway(r) && !isImpossible(r))
                 .map(r => ({ id: r.id, name: r.name || r.id, creator: r.creator || "" }))
                 .sort((a, b) => a.name.localeCompare(b.name, "en", { sensitivity: "base" }));
         },
@@ -9538,7 +9559,9 @@ document.addEventListener("DOMContentLoaded", () => {
        devices' ticks are merged as sets, so "recently" is the order they
        reached the account, not a timestamp. Nothing is timed. */
     function highlightsOf(list) {
-        const rooms = list.map(roomById).filter(r => r && !isHallway(r));
+        // Not an Impossible maze, ticked before it was marked so (5 Oct 2026):
+        // nobody completes those, so it is never their Toughest or Latest.
+        const rooms = list.map(roomById).filter(r => r && !isHallway(r) && !isImpossible(r));
 
         // The hardest difficulty reached; the latest of them, if several.
         let hardest = null;
@@ -9689,6 +9712,8 @@ document.addEventListener("DOMContentLoaded", () => {
         } else if (self) {
             if (d && d.hidden) noteLines.push(`<span class="profile-hidden-note">Hidden: only you can see this.</span>`);
             if (d && !habbo && !d.habboLinked) noteLines.push("Link your Habbo through OriginsBot to show your avatar and motto here.");
+            // Kept off for a filter word (MOTTOS in netlify/functions/profiles.js; 5 Oct 2026).
+            if (d && d.mottoHidden) noteLines.push("Your Habbo motto isn't shown: it has a word in it the site doesn't allow. An admin will take a look.");
         }
         const notes = noteLines.length
             ? `<div class="profile-notes">${noteLines.map(l => `<p class="progress-note">${l}</p>`).join("")}</div>` : "";
@@ -9763,17 +9788,17 @@ document.addEventListener("DOMContentLoaded", () => {
         }
 
         // ---- every completed maze, by name ----
-        const completedRooms = list.map(roomById).filter(r => r && !isHallway(r))
+        const completedRooms = list.map(roomById).filter(r => r && !isHallway(r) && !isImpossible(r))
             .sort((a, b) => String(a.name || a.id).localeCompare(String(b.name || b.id), "en", { sensitivity: "base" }));
 
         const savedList = f.savedShown.length
             ? `<ul class="progress-saved">${f.savedShown.map(({ room: r }) => mazeRow(r, closedTag(r))).join("")}</ul>`
             : `<p class="progress-note">Nothing to do yet. Open a maze and press <strong>To do</strong> to keep it here until you complete it.</p>`;
 
-        /* Under the bar, what closed mazes still don't count towards (4 Oct
-           2026; the owner asked for it to be said): the badges, and
-           Latest just below. They do count towards the bar and By
-           difficulty, and Toughest. The Badges section says its half again. */
+        /* Under the bar, the closed mazes completed, as a tally of their own
+           (see CLOSED MAZES in progressFigures): the bar and By difficulty
+           are the open mazes only. Closed ones count towards Toughest, not
+           towards the badges or Latest; the Badges section says so. */
         const body = `
             ${notes}
             ${favourite}

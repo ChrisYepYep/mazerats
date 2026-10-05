@@ -26,11 +26,14 @@ const path = require("path");
 require("./_env.js").loadEnv();
 
 const { getCatalogue } = require("../netlify/functions/furni-catalogue.js");
+const { scanCatalogue } = require("../netlify/functions/_furni-sprites.js");
 
 const OUT = path.join(__dirname, ".cache", "furni-names.txt");
 
 (async () => {
-    const catalogue = await getCatalogue();
+    // The names the scan records (5 Oct 2026; see scanCatalogue), which is
+    // what the omit list is matched against.
+    const catalogue = scanCatalogue(await getCatalogue());
     const names = [...new Set(
         Object.values(catalogue.items || {})
             .map(it => it && it.name)

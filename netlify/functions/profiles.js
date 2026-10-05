@@ -32,8 +32,10 @@
    the nickname only. Matching their Discord display name as well would let
    anybody type a Discord name in and get the nicknamed player back — the
    very link the nickname is for breaking (see _publicid.js). A player with
-   no nickname is listed under their Discord name on the boards already, and
-   is found by it.
+   no nickname (5 Oct 2026, the owner's: "nicknames apply to the whole
+   website") is never shown or found by their Discord name: their profile
+   says NO_NICK, and the name search passes them by. Their linked Habbo
+   still finds them, as it finds anybody.
 
    THE PUBLIC ID is an HMAC of the Discord id and cannot be turned back, so
    finding the player behind one means working out everybody's and seeing
@@ -48,6 +50,7 @@ const { accountBans } = require("./_bans");
 const { SECURITY_HEADERS } = require("./_headers");
 const { figuresFor } = require("./player-profile");
 const { originsProfileFor, cachedOriginsProfiles, creatorMatcher, lookupOriginsName } = require("./habbo");
+const { mottoHit } = require("./player-nick");
 
 // The Origins hotels a typed name is looked for on (habbo.js, ORIGINS_HOSTS).
 const HOTELS = ["COM", "ES", "BR"];
@@ -119,7 +122,9 @@ const isPublic = (row, prefs) => (prefs && typeof prefs.hidden === "boolean")
     : !!(row && row.profileIntroAt);
 
 const hasNick = row => typeof row.nick === "string" && !!row.nick;
-const shown = row => (hasNick(row) ? row.nick : row.name) || "Someone";
+// What a profile is called without a nickname — never the Discord name.
+const NO_NICK = "A Maze Rat";
+const shown = row => (hasNick(row) ? row.nick : NO_NICK);
 // A Habbo OriginsBot vouched for: a name on the row, whether or not it
 // could be made their nickname (a clash or an unusable name is still theirs).
 // The key cachedOriginsProfiles answers under: hotel and the trimmed name.
@@ -209,11 +214,9 @@ async function search(db, q) {
     /* Best matches first, each tier asked for in its own right: the name
        exactly, then names that start with it, then any that contain it,
        alphabetically within each, until SEARCH_LIMIT. A nicknamed player is
-       matched on the nickname alone (see the header). */
-    const named = rx => ({ $or: [
-        { nick: rx },
-        { name: rx, $or: [{ nick: { $exists: false } }, { nick: null }, { nick: "" }] }
-    ] });
+       matched on the nickname alone, and a player without one is not
+       matched by name at all (see the header). */
+    const named = rx => ({ nick: rx });
     const tiers = [new RegExp(`^${escaped}$`, "i"), new RegExp(`^${escaped}`, "i"), new RegExp(escaped, "i")];
     const playersCol = db.collection("players");
     const kept = [];
@@ -306,10 +309,45 @@ async function habboView(db, rawName, rawHotel) {
         kind: "habbo",
         status: standing,
         hotel,
-        habbo: { name: p.name || name, motto: p.motto || "", avatar: p.avatar || null, online: !!p.online },
+        // Not shown with profanity in it (MOTTOS below); nobody here to flag.
+        habbo: { name: p.name || name, motto: mottoHit(p.motto || "") ? "" : (p.motto || ""), avatar: p.avatar || null, online: !!p.online },
         // "Rat since" for a player here who has not activated their profile.
         since: Number.isFinite(joined) ? new Date(joined).toISOString().slice(0, 7) : null
     });
+}
+
+/* ---- MOTTOS (5 Oct 2026, the owner's) ----
+
+   A Habbo motto with profanity in it (mottoHit in player-nick.js: the
+   nickname filter's lists, word by word) is not shown on a profile, and so
+   never reaches a Mazer Card, unless an admin has approved that exact
+   motto in the Warren (`mottoApproved.text`; players-admin.js). The motto
+   is the hotel's and can change at any moment, so it is checked as it is
+   read rather than when it was set, and the player's row carries a flag
+   for the Warren (`mottoFlag`: the motto, the word, when) while it stands —
+   written only when it changes: a new hit, or the motto cleaned up (the
+   flag goes). An admin who keeps it hidden marks the flag `reviewed`, and
+   the same motto is not raised again. A Habbo with no player here (the
+   search's "not joined") just has it hidden: there is nobody to flag. */
+async function shownMotto(db, row, motto) {
+    const text = typeof motto === "string" ? motto : "";
+    const word = text ? mottoHit(text) : null;
+    const approved = !!(row && row.mottoApproved && row.mottoApproved.text === text);
+    if (row && row.id != null) {
+        const f = row.mottoFlag;
+        const want = word && !approved;
+        try {
+            if (want && !(f && f.text === text)) {
+                await db.collection("players").updateOne({ id: row.id },
+                    { $set: { mottoFlag: { text, word, at: new Date().toISOString() } } });
+            } else if (!want && f) {
+                await db.collection("players").updateOne({ id: row.id }, { $unset: { mottoFlag: "" } });
+            }
+        } catch (e) {
+            console.error("profiles: could not note a motto flag", e);
+        }
+    }
+    return word && !approved ? { motto: "", hidden: true } : { motto: text, hidden: false };
 }
 
 /* ---- one profile ---- */
@@ -338,6 +376,9 @@ async function profile(db, id, self) {
         h ? archiveCredits(db, h.name) : { mazeOwner: false, eventHost: false }
     ]);
 
+    // Not shown if it has profanity in it and no admin has passed it (MOTTOS above).
+    const motto = origins ? await shownMotto(db, row, origins.motto) : { motto: "", hidden: false };
+
     const joined = row.joinedAt ? Date.parse(row.joinedAt) : NaN;
     const launch = figures.launch ? Date.parse(figures.launch) : NaN;
 
@@ -357,14 +398,15 @@ async function profile(db, id, self) {
         habboLinked: !!h,
         habbo: origins ? {
             name: origins.name,
-            motto: origins.motto || "",
+            motto: motto.motto,
             avatar: origins.avatar || null,
             online: !!origins.online
         } : null,
         walked: (state && Array.isArray(state.walked)) ? state.walked : [],
         favourite: prefs.favourite || null,
         badge: prefs.badge || null,
-        ...(self ? { hidden } : {}),
+        // Their own: whether their motto is being kept off (MOTTOS above).
+        ...(self ? { hidden, mottoHidden: motto.hidden } : {}),
         games: { guess: game(figures.games.guess), odd: game(figures.games.odd) },
         combined: figures.combined,
         ff: figures.ff ? { points: figures.ff.points, levels: figures.ff.levels, rank: figures.ff.rank, of: figures.ff.of } : null,

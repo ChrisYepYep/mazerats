@@ -84,8 +84,12 @@ const BOARD_SIZE = 10;
 /* Read a few past the top ten (3 Oct 2026): withoutBanned (_bans.js) takes
    a banned player's rows out AFTER the cut, so a board with one in its top
    ten came out nine long and the eleventh player never showed. The spare
-   rows fill those places; every list is cut back to BOARD_SIZE after it. */
-const BOARD_READ = BOARD_SIZE + 5;
+   rows fill those places; every list is cut back to BOARD_SIZE after it.
+   Five became forty (5 Oct 2026, the bug scan): the same filter now takes
+   out every player with no nickname too, and the scores from before the
+   games asked for one are many of them — a board could come out short with
+   nicknamed players still below the cut. */
+const BOARD_READ = BOARD_SIZE + 40;
 const topOf = lists => lists.map(l => l.slice(0, BOARD_SIZE));
 /* Ten a right pick, so a perfect day is 50, as in Guess the Maze. It was
    100 (a 500 day) until just before launch; the rows scored that way are

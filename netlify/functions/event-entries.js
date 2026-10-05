@@ -62,6 +62,7 @@ const { clientIp, clientNet, forgetOldAddresses } = require("./_net");
 const { writeRefusal } = require("./_bans");
 const { SECURITY_HEADERS } = require("./_headers");
 const { imagesStore } = require("./_images");
+const { notifyPlayers } = require("./notifications");
 
 const json = (statusCode, data) => ({
     statusCode,
@@ -569,7 +570,7 @@ async function handleReview(event, db, id) {
        "Winner by X" for an admin who had only typed a note on somebody
        else's winner. It moves now only when the status does; a note that
        changes gets its own noteBy and noteAt. */
-    const current = await db.collection(COLLECTION).findOne({ id }, { projection: { _id: 0, status: 1, note: 1 } });
+    const current = await db.collection(COLLECTION).findOne({ id }, { projection: { _id: 0, status: 1, note: 1, from: 1, eventTitle: 1, approvalNoticed: 1 } });
     if (!current) return json(404, { error: "No such entry" });
     const who = usernameFromToken(event);
     const now = new Date();
@@ -581,8 +582,30 @@ async function handleReview(event, db, id) {
         set.noteBy = who;
         set.noteAt = now;
     }
+    /* APPROVED: THE PLAYER IS TOLD (5 Oct 2026, the owner's). The first time
+       an entry is approved, the player who sent it — known only when they
+       were signed in to send it — gets a notice in the Habbo Console on their
+       next visit (notifications.js). Once per entry: approved, changed and
+       approved again does not tell them twice.
+       From the bug scan (5 Oct 2026): a Winner is approved too — the
+       Warren offers Winner straight from New, and the sender was told
+       they'd hear when it was approved; the once is CLAIMED atomically, so
+       two admins approving together send one notice; and the claim is let
+       go again if the notice could not be stored, so the next approve
+       tries again. */
+    const APPROVED = ["reviewed", "winner"];
+    const approving = APPROVED.includes(set.status) && !APPROVED.includes(current.status || "new") &&
+        !current.approvalNoticed && !!(current.from && current.from.id);
     const res = await db.collection(COLLECTION).updateOne({ id }, { $set: set });
     if (!res.matchedCount) return json(404, { error: "No such entry" });
+    if (approving) {
+        const claim = await db.collection(COLLECTION).updateOne({ id, approvalNoticed: { $ne: true } }, { $set: { approvalNoticed: true } });
+        if (claim.modifiedCount) {
+            const what = current.eventTitle ? String(current.eventTitle) : "the event";
+            const nid = await notifyPlayers(db, [current.from.id], `Your event entry for ${what} was approved! Good luck!`, { kind: "entry", ref: id, by: who || "site" });
+            if (!nid) await db.collection(COLLECTION).updateOne({ id }, { $unset: { approvalNoticed: "" } }).catch(() => {});
+        }
+    }
     return json(200, { id, ...set });
 }
 

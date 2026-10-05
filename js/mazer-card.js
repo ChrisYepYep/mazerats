@@ -521,6 +521,7 @@
 
     // ---- the window ----
     let showing = null;
+    let escapeRegistered = false;
     const reduced = () => !!(window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches);
 
     function el(html) {
@@ -598,15 +599,19 @@
         // not change the window.
         let H = 200;
         try { if (data) H = Math.max(layout(data).height, layout({ ...data, motto: "" }).height); } catch (e) { /* a jam later */ }
-        const SH = sceneHeight(H);
+        let SH = sceneHeight(H);
         const z = window.innerWidth >= PW * 2 + 80 && window.innerHeight >= SH * 2 + 190 ? 2 : 1;
-        scene.width = PW; scene.height = SH;
-        stage.style.width = `${PW * z}px`;
-        stage.style.height = `${SH * z}px`;
-        scene.style.width = `${PW * z}px`;
-        scene.style.height = `${SH * z}px`;
         const ctx = scene.getContext("2d");
-        ctx.imageSmoothingEnabled = false;
+        const size = () => {
+            scene.width = PW; scene.height = SH;
+            stage.style.width = `${PW * z}px`;
+            stage.style.height = `${SH * z}px`;
+            scene.style.width = `${PW * z}px`;
+            scene.style.height = `${SH * z}px`;
+            // Resizing a canvas resets its drawing state.
+            ctx.imageSmoothingEnabled = false;
+        };
+        size();
         /* The printer is there from the start (the owner's), with blank
            paper loaded; the picker sits in the space under it, where the
            card will come out. Pointing at a colour loads that paper. */
@@ -628,15 +633,27 @@
             showing = null;
             gen++;
             if (audio) { audio.stop(); audio = null; }
-            document.removeEventListener("keydown", onKey, true);
+            if (onKey) document.removeEventListener("keydown", onKey, true);
             overlay.remove();
             if (!document.querySelector(".modal-overlay.open")) document.body.classList.remove("modal-open");
             if (returnTo && document.body.contains(returnTo) && typeof returnTo.focus === "function") returnTo.focus({ preventScroll: true });
         }
-        function onKey(e) {
-            if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); close(); }
+        /* Escape through the site's one stack (site.js), so it shuts this
+           window and only this one: a listener of its own also fired the
+           Escape that shut the Profiles window behind. */
+        let onKey = null;
+        if (window.EscapeLayers) {
+            if (!escapeRegistered) {
+                escapeRegistered = true;
+                window.EscapeLayers.register({
+                    elements: () => (showing && showing.overlay ? [showing.overlay] : []),
+                    close: () => showing && showing.close()
+                });
+            }
+        } else {
+            onKey = e => { if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); close(); } };
+            document.addEventListener("keydown", onKey, true);
         }
-        document.addEventListener("keydown", onKey, true);
         overlay.addEventListener("click", e => {
             if (e.target === overlay || e.target.closest(".chrome-close")) close();
         });
@@ -706,6 +723,10 @@
             if (my !== gen) return;
             if (!card) { jam(); return; }
             const CH = card.height;
+            /* The figures are asked again for each print, and a print can
+               come out taller than the window was sized for (a badge earned
+               in another tab): grow, once, rather than cut the card off. */
+            if (CH > H) { H = CH; SH = sceneHeight(H); size(); }
 
             const plan = schedule(card, t.paper);
             const start = performance.now();
@@ -814,7 +835,7 @@
             }
         });
 
-        showing = { close };
+        showing = { close, overlay };
         ready(false);
         win.focus({ preventScroll: true });
         const first = picker.querySelector(".mazer-swatch");

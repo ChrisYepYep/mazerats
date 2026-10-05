@@ -231,6 +231,7 @@
                                 <span class="ctl-label">People</span>
                                 <div class="admin-nav-col">
                                     <button type="button" class="chrome-nav-btn ctl-btn" data-panel="players" role="tab" aria-selected="false"><span class="chrome-nav-btn-label">Players</span><span class="admin-nav-count admin-nav-count-quiet" id="players-nav-count" title="Players who have signed in with Discord" hidden></span></button>
+                                    <button type="button" class="chrome-nav-btn ctl-btn" data-panel="notifications" role="tab" aria-selected="false"><span class="chrome-nav-btn-label">Notifications</span></button>
                                     <button type="button" class="chrome-nav-btn ctl-btn" data-panel="admins" role="tab" aria-selected="false"><span class="chrome-nav-btn-label">Admins</span></button>
                                     <button type="button" class="chrome-nav-btn ctl-btn" data-panel="bans" role="tab" aria-selected="false"><span class="chrome-nav-btn-label">Bans</span></button>
                                     <button type="button" class="chrome-nav-btn ctl-btn" data-panel="activity" id="activity-nav-btn" role="tab" aria-selected="false" hidden><span class="chrome-nav-btn-label">Activity</span></button>
@@ -1188,6 +1189,27 @@
                                      ones who are not in the list. -->
                             </section>
 
+                            <!-- ---------- Notifications (5 Oct 2026) ----------
+                                 A notice in the Habbo Console for everyone or
+                                 for chosen players, and every notice sent
+                                 (an entry approved sends its own). Drawn by
+                                 js/admin-notifications.js; the store is
+                                 netlify/functions/notifications.js. -->
+                            <section class="admin-panel" data-panel="notifications" hidden>
+                                <header class="admin-panel-head">
+                                    <div>
+                                        <h3 class="admin-panel-title">Notifications</h3>
+                                        <p class="admin-hint">Messages that wait in the Habbo Console until they're read. Approved event entries send their own.</p>
+                                    </div>
+                                    <div class="admin-activity-controls">
+                                        <button class="admin-action-pill" id="notices-refresh-btn" type="button">Refresh</button>
+                                    </div>
+                                </header>
+                                <div class="ctl-card nt-compose" id="notices-compose"></div>
+                                <h4 class="admin-subheading admin-subheading-spaced">Sent</h4>
+                                <div class="chrome-list nt-list" id="notices-list"></div>
+                            </section>
+
                             <!-- ---------- Players (29 Sept 2026) ----------
                                  Everybody who has signed in with Discord, and
                                  the nicknames the boards show them by: set,
@@ -1330,6 +1352,7 @@
     <script src="js/admin-errors.js?v=1"></script>
     <script src="js/admin-players.js?v=1"></script>
     <script src="js/admin-entries.js?v=1"></script>
+    <script src="js/admin-notifications.js?v=1"></script>
     <script src="js/password-field.js?v=3"></script>
     <script src="js/glyph-palette.js?v=2"></script>
     <script src="js/custom-scrollbar.js?v=2"></script>

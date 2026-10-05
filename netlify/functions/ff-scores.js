@@ -1037,7 +1037,8 @@ exports.handler = async (event) => {
                 .limit(BOARD_READ)
                 .toArray()], r => r && r.playerId))[0].slice(0, TOP);
 
-            const heads = await habboHeads(db, top.map(r => r && r.playerId));
+            // The signed-in player's own too, for their row below the board.
+            const heads = await habboHeads(db, [...top.map(r => r && r.playerId), player && player.id]);
             out = { count: top.length, top: top.map(r => clean(r, heads)) };
             if (player) {
                 const mine = await scores.findOne({ playerId: player.id }, { projection: { _id: 0 } });
@@ -1079,12 +1080,12 @@ exports.handler = async (event) => {
                     .sort({ points: -1, ms: 1, at: 1 })
                     .limit(BOARD_READ)
                     .toArray()], r => r && r.playerId))[0].slice(0, TOP);
-                const meetHeads = await habboHeads(db, rows.map(r => r && r.playerId));
+                const meetHeads = await habboHeads(db, [...rows.map(r => r && r.playerId), player && player.id]);
                 out.tournament = { ...meet, top: rows.map(r => clean(r, meetHeads)) };
                 if (player) {
                     const mine = await db.collection(TOURNAMENT_COLLECTION)
                         .findOne({ tid: meet.id, playerId: player.id }, { projection: { _id: 0 } });
-                    out.tournament.you = afterLaunch(gate, mine) ? clean(mine) : null;
+                    out.tournament.you = afterLaunch(gate, mine) ? clean(mine, meetHeads) : null;
                 }
             } catch (e) { /* the all-time board is still worth serving */ }
         }

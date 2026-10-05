@@ -102,7 +102,18 @@
   # `git add`ed with the code that reads them: a dashboard deploy builds from
   # the pushed commit, and a file that is only on this machine is a file the
   # live site does not have — with no error, for the reasons above.
-  included_files = ["netlify/functions/_furnidata.json", "netlify/functions/_furni-api-map.json", "netlify/functions/_habbo-names.json", "js/featured-days.js", "js/dead-ends.js", "home.html"]
+  #
+  # _furni-catalogue-seed.json and _furni-legacy.json (5 Oct 2026), when the
+  # furni catalogue moved to FurniIndex's new API. The seed is the full
+  # catalogue furni-catalogue.js starts from, since walking the new API from
+  # nothing takes minutes (rebuilt by tools/furni-catalogue-seed.js); the
+  # legacy file is the old catalogue, frozen, which _furni-payload.js needs
+  # to read the furni stored before the switch (see _furni-legacy.js). Both
+  # are required in a try, so a bundle without them fails quietly: no
+  # seed is a catalogue that fills over many refreshes, no legacy file is
+  # every old detection's small sprite and classname lost. The same
+  # `git add` warning applies to both, and to tools/furni-catalogue-seed.js.
+  included_files = ["netlify/functions/_furnidata.json", "netlify/functions/_furni-api-map.json", "netlify/functions/_habbo-names.json", "netlify/functions/_furni-catalogue-seed.json", "netlify/functions/_furni-legacy.json", "netlify/functions/_furni-mirror.json", "js/featured-days.js", "js/dead-ends.js", "home.html"]
 
 # ------------------------------------------------------------ THE ADMIN PANEL
 #
@@ -678,9 +689,15 @@
     # picker, and js/furni-rain.js's seats); all of them are <img>s, and the
     # API answers each one itself, with no redirect to another host, so
     # img-src is the only directive that needs it — nothing fetch()es it,
-    # which is why connect-src does not name it. furniindex.com stays for the
-    # pictures the new API can't serve and for Fallin' Furni's room art.
-    Content-Security-Policy = "default-src 'self'; script-src 'self' 'unsafe-inline' https://cloud.umami.is; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob: https://www.habbo.com https://images.habbo.com https://origins.habbo.com https://furniindex.com https://api.furniindex.com https://cdn.discordapp.com; connect-src 'self' https://cloud.umami.is https://gateway.umami.is; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'"
+    # which is why connect-src does not name it.
+    #
+    # The OLD host, furniindex.com, is gone from img-src (5 Oct 2026, the
+    # owner's: FurniIndex is switching it off). Everything the new API holds
+    # is drawn from it (tools/furni-api-map.js, then tools/furni-api-nearest.js
+    # for the views that wouldn't match pixel for pixel), and the rest — furni
+    # it doesn't hold, door0, poster_1000… — is this site's own copy under
+    # assets/img/furni-legacy/ (netlify/functions/_furni-mirror.js), so 'self'.
+    Content-Security-Policy = "default-src 'self'; script-src 'self' 'unsafe-inline' https://cloud.umami.is; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob: https://www.habbo.com https://images.habbo.com https://origins.habbo.com https://api.furniindex.com https://cdn.discordapp.com; connect-src 'self' https://cloud.umami.is https://gateway.umami.is; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'"
 
 # How long a returning visitor's browser may keep the pixel art, the fonts
 # and the sprite sheets without asking again. The HTML and the data

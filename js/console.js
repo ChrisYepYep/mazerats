@@ -35,12 +35,31 @@ document.addEventListener("DOMContentLoaded", () => {
         info: document.getElementById("console-page-info"),
         missing: document.getElementById("console-page-missing"),
         // Event Submission (30 Sept 2026), wired further down this file.
-        entry: document.getElementById("console-page-entry")
+        entry: document.getElementById("console-page-entry"),
+        // A notification waiting to be read (5 Oct 2026; NOTIFICATIONS
+        // below). Not a tab, like thanks.
+        notice: document.getElementById("console-page-notice"),
+        // The PROFILE tab's own page, a choice of Notifications or Edit
+        // Profile (5 Oct 2026, the owner's), and the Notifications list.
+        me: document.getElementById("console-page-me"),
+        notices: document.getElementById("console-page-notices")
     };
+
+    // Notifications waiting, oldest first (NOTIFICATIONS, near the end).
+    // Declared up here because openConsole reads it.
+    let notices = [];
 
     // Which pages belong to the CONTACT tab, so the row of tab lights keeps
     // saying where you are rather than going blank on a sub-page.
     const CONTACT_PAGES = ["contact", "message", "info", "missing", "entry"];
+    // And the PROFILE tab's: its landing page, Edit Profile and the list.
+    const PROFILE_PAGES = ["me", "profile", "notices", "notice"];
+    /* Where the console lands: the Profile tab's page of two choices, or,
+       on a page that has no such page (fallinfurni.html loads this file
+       too, with the console as it was), Edit Profile as it always did —
+       a missing page would leave the screen blank (the bug scan, 5 Oct
+       2026). */
+    const landingPage = () => (pages.me ? "me" : "profile");
 
     function clearPrivacyHash() {
         if (location.hash === "#privacy") {
@@ -64,9 +83,9 @@ document.addEventListener("DOMContentLoaded", () => {
             // so its OK button can be pinned to the bottom — an inline
             // style here would otherwise beat that rule outright regardless
             // of specificity, forcing it back to a plain block.
-            el.style.display = key !== name ? "none" : (key === "thanks" ? "flex" : "block");
+            el.style.display = key !== name ? "none" : (key === "thanks" || key === "notice" ? "flex" : "block");
         });
-        const litTab = CONTACT_PAGES.includes(name) ? "contact" : name;
+        const litTab = CONTACT_PAGES.includes(name) ? "contact" : PROFILE_PAGES.includes(name) ? "me" : name;
         tabButtons.forEach(btn => btn.classList.toggle("active", btn.dataset.page === litTab));
         // All four pages share one scrollable container (#console-screen-
         // scroll) — its scrollTop otherwise carries over from whichever
@@ -177,7 +196,10 @@ document.addEventListener("DOMContentLoaded", () => {
         // than flashing through Profile first (which would also clear the
         // #privacy hash immediately via showPage's own cleanup, before the
         // privacy page ever actually showed).
-        showPage(defaultPage || "profile");
+        // A notification waiting goes first, unless the console was opened
+        // for something particular (privacy, an entry link).
+        showPage(!defaultPage && notices.length && pages.notice ? "notice" : (defaultPage || landingPage()));
+        if (!defaultPage && notices.length && pages.notice) showNotice();
         if (!hasBeenDragged) positionConsoleDefault();
         // loadContributors sets dataLoaded itself, and only on a list that
         // actually arrived — so a failed read is asked again on the next open.
@@ -511,6 +533,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     const thanksMessageEl = document.getElementById("console-thanks-message");
     const THANKS_DEFAULT = thanksMessageEl ? thanksMessageEl.textContent : "";
+    const thanksNoteEl = document.getElementById("console-thanks-note");
     if (thanksOkBtn) thanksOkBtn.addEventListener("click", () => showPage("contact"));
 
     /* The console, for the rest of the page. js/console-info.js fills the
@@ -527,12 +550,15 @@ document.addEventListener("DOMContentLoaded", () => {
         showPage,
         // The thanks page with its own sentence, then its default again for
         // the next time the Contact form uses it.
-        showThanks(text) {
+        // `note`: a second line under it, in the screen's ordinary weight.
+        showThanks(text, note) {
             if (thanksMessageEl) thanksMessageEl.textContent = text || THANKS_DEFAULT;
+            if (thanksNoteEl) { thanksNoteEl.textContent = note || ""; thanksNoteEl.hidden = !note; }
             showPage("thanks");
         },
         resetThanks() {
             if (thanksMessageEl) thanksMessageEl.textContent = THANKS_DEFAULT;
+            if (thanksNoteEl) { thanksNoteEl.textContent = ""; thanksNoteEl.hidden = true; }
         },
         openInfo() { MazeConsole.open("info"); },
         openMissing() { MazeConsole.open("missing"); },
@@ -799,9 +825,14 @@ document.addEventListener("DOMContentLoaded", () => {
                 /* Two entries an event (2 Oct 2026): the first says one more
                    can follow to correct it, the correction that it's the last. */
                 const forEvent = sent && sent.event && typeof sent.correction === "boolean";
+                /* The approval comes as a console notification (5 Oct 2026,
+                   the owner's; notifications.js) — to whoever was signed in
+                   to send it, so only they are promised one. */
+                const willNotify = !!(window.Account && Account.current);
                 if (entryShowing) MazeConsole.showThanks(!forEvent ? "Entry Submitted"
                     : sent.correction ? "Correction Submitted. That's both of your entries for this event."
-                    : "Entry Submitted. If you need to correct it, you can send one more.");
+                    : "Entry Submitted. If you need to correct it, you can send one more.",
+                    willNotify ? "We'll notify you when your entry has been approved." : "");
             } catch (e) {
                 // Changed on its way: the retry is a new entry (entryEdited).
                 if (entryEditedWhileSending) entryRef = null;
@@ -963,6 +994,175 @@ document.addEventListener("DOMContentLoaded", () => {
 if (typeof renderPrivacySections === "function") {
     renderPrivacySections(document.getElementById("console-privacy-body"));
 }
+
+    // ---------- NOTIFICATIONS (5 Oct 2026, the owner's) ----------
+    /* What netlify/functions/notifications.js has waiting for this visitor:
+       an event entry approved, or a notice sent from the Warren. While one
+       is unread the header's console button wears its alert picture, and
+       opening the console shows it first, centred on the screen, with an
+       OK. One at a time; OK marks it seen, on the account when signed in
+       and in this browser always (a notice for everyone reaches somebody
+       signed out too, and only the browser can remember them). Asked on
+       load, on signing in or out, and when the tab comes back after a
+       while. */
+    const NOTICE_URL = "/.netlify/functions/notifications";
+    const NOTICE_SEEN_KEY = "mazerats_notices_seen";
+    const NOTICE_RECHECK_MS = 5 * 60 * 1000;
+    const ICON = "assets/img/console-icon.png";
+    const ICON_ALERT = "assets/img/console-icon-alert.gif";
+    const noticeTextEl = document.getElementById("console-notice-text");
+    const noticeCountEl = document.getElementById("console-notice-count");
+    const noticeOkBtn = document.getElementById("console-notice-ok");
+    const openImg = openBtn.querySelector("img");
+
+    function localSeen() {
+        try { return JSON.parse(localStorage.getItem(NOTICE_SEEN_KEY) || "[]") || []; } catch (e) { return []; }
+    }
+    function rememberSeen(nid) {
+        try {
+            const list = localSeen().filter(x => x !== nid);
+            list.push(nid);
+            localStorage.setItem(NOTICE_SEEN_KEY, JSON.stringify(list.slice(-100)));
+        } catch (e) { /* private mode: the account still has it, if signed in */ }
+    }
+
+    /* A notice's words as markup: escaped, then **this** in the bold cut
+       (5 Oct 2026, the owner's: the Warren's Bold button writes the
+       asterisks; js/admin-notifications.js previews with the same rule). In
+       one span, because the line is a flex box that would otherwise make
+       each bold run an item of its own. */
+    function noticeHtml(text) {
+        const safe = String(text || "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+        return `<span class="console-notice-inner">${safe.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")}</span>`;
+    }
+
+    function paintNoticeIcon() {
+        const n = notices.length;
+        if (openImg) openImg.src = n ? ICON_ALERT : ICON;
+        openBtn.classList.toggle("has-notice", n > 0);
+        openBtn.setAttribute("aria-label", n ? `Console: ${n} new ${n === 1 ? "notification" : "notifications"}` : "Console");
+    }
+
+    // The nid on screen, so OK marks THAT one read even if a check has
+    // changed the queue under it since (the bug scan, 5 Oct 2026).
+    let shownNid = null;
+    function showNotice() {
+        const n = notices[0];
+        shownNid = n ? n.nid : null;
+        if (!n) { leaveNotices(); return; }
+        if (noticeTextEl) noticeTextEl.innerHTML = noticeHtml(n.text);
+        if (noticeCountEl) {
+            noticeCountEl.hidden = notices.length < 2;
+            noticeCountEl.textContent = `${notices.length - 1} more after this`;
+        }
+        if (noticeOkBtn && modal.style.display === "block") noticeOkBtn.focus({ preventScroll: true });
+    }
+    // Off the notice page to the Profile tab's page, with focus on its first
+    // button rather than lost with the OK it hid.
+    function leaveNotices() {
+        showPage(landingPage());
+        if (modal.style.display !== "block") return;
+        const first = pages.me && pages.me.querySelector("button");
+        if (first) first.focus({ preventScroll: true });
+    }
+    const noticePageShowing = () => !!(pages.notice && pages.notice.style.display !== "none" && modal.style.display === "block");
+
+    /* Each check is its own: one started after a sign-in or sign-out is
+       never answered with one that left before it (checkGen), and the
+       queue is emptied the moment who is signed in changes, so the last
+       player's own notices are not left on a shared computer while the
+       new answer is on its way (the bug scan, 5 Oct 2026). */
+    let noticeCheckedAt = 0;
+    let checkGen = 0;
+    function checkNotices() {
+        // A page without the notice pages (fallinfurni.html) has nowhere to show one.
+        if (!pages.notice || !noticeOkBtn) return Promise.resolve();
+        const mine = ++checkGen;
+        noticeCheckedAt = Date.now();
+        return fetch(NOTICE_URL, { credentials: "same-origin", headers: { Accept: "application/json" }, cache: "no-store" })
+            .then(res => (res.ok ? res.json() : null))
+            .then(data => {
+                if (mine !== checkGen || !data || !Array.isArray(data.notices)) return;
+                const seen = new Set(localSeen());
+                notices = data.notices.filter(n => n && n.nid && !seen.has(n.nid));
+                paintNoticeIcon();
+                // On the notice page: what it shows follows the new queue.
+                if (noticePageShowing() && (!notices.length || notices[0].nid !== shownNid)) showNotice();
+            })
+            .catch(() => { /* asked again later; nothing to show meanwhile */ });
+    }
+
+    if (noticeOkBtn) {
+        noticeOkBtn.addEventListener("click", () => {
+            const i = notices.findIndex(x => x.nid === shownNid);
+            const n = i >= 0 ? notices.splice(i, 1)[0] : null;
+            if (n) {
+                rememberSeen(n.nid);
+                fetch(NOTICE_URL, {
+                    method: "POST",
+                    credentials: "same-origin",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ seen: [n.nid] })
+                }).catch(() => { /* the browser has it; the account learns next time */ });
+            }
+            paintNoticeIcon();
+            if (notices.length) showNotice(); else leaveNotices();
+        });
+    }
+
+    /* THE PROFILE TAB'S PAGE and THE NOTIFICATIONS LIST (5 Oct 2026, the
+       owner's): Profile lands on a choice of two, as Contact does —
+       Notifications, every notice this visitor has been sent, newest first
+       (read ones too), and Edit Profile. Each has a Back to the choice. */
+    const noticesListEl = document.getElementById("console-notices-list");
+    const fmtNoticeDay = iso => {
+        const t = Date.parse(iso);
+        return Number.isFinite(t) ? new Date(t).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }) : "";
+    };
+    let historyGen = 0;
+    function showNoticeHistory() {
+        showPage("notices");
+        if (!noticesListEl) return;
+        const mine = ++historyGen;
+        noticesListEl.innerHTML = `<p class="console-blurb">Loading...</p>`;
+        fetch(NOTICE_URL + "?all=1", { credentials: "same-origin", headers: { Accept: "application/json" }, cache: "no-store" })
+            .then(res => (res.ok ? res.json() : Promise.reject(new Error(String(res.status)))))
+            .then(data => {
+                if (mine !== historyGen) return;
+                const list = (data && Array.isArray(data.notices)) ? data.notices : [];
+                noticesListEl.innerHTML = list.length
+                    ? list.map(n => `
+                        <div class="console-notices-item">
+                            <p class="console-notices-day">${fmtNoticeDay(n.at)}</p>
+                            <p class="console-notices-text">${noticeHtml(n.text)}</p>
+                        </div>`).join('<div class="console-dotline"></div>')
+                    : `<p class="console-blurb console-notices-empty">No notifications yet.</p>`;
+            })
+            .catch(() => {
+                if (mine !== historyGen) return;
+                noticesListEl.innerHTML = `<p class="console-blurb">Your notifications couldn't be loaded just now. Try again in a moment.</p>`;
+            });
+    }
+    const onClick = (id, fn) => { const el = document.getElementById(id); if (el) el.addEventListener("click", fn); };
+    onClick("console-choice-notices", showNoticeHistory);
+    onClick("console-choice-edit", () => showPage("profile"));
+    onClick("console-notices-back", () => showPage(landingPage()));
+    onClick("console-profile-back", () => showPage(landingPage()));
+
+    // After the page has settled, then whenever who is signed in changes —
+    // the old queue dropped at once (see checkGen).
+    setTimeout(checkNotices, 1500);
+    if (window.Account && typeof Account.onChange === "function") {
+        Account.onChange(() => {
+            notices = [];
+            paintNoticeIcon();
+            if (noticePageShowing()) leaveNotices();
+            checkNotices();
+        });
+    }
+    document.addEventListener("visibilitychange", () => {
+        if (document.visibilityState === "visible" && Date.now() - noticeCheckedAt > NOTICE_RECHECK_MS) checkNotices();
+    });
 
     // A page loaded straight at #privacy — see the note by the hashchange
     // listener above for why this waits until everything is set up.

@@ -83,9 +83,9 @@ const ROUNDS = 5;
 const POINTS = [10, 6, 3];
 const TRIES = POINTS.length;
 const BOARD_SIZE = 10;
-// A few spare past the top ten, cut back after the banned are taken out —
-// see BOARD_READ in daily-scores.js (3 Oct 2026).
-const BOARD_READ = BOARD_SIZE + 5;
+// Spare rows past the top ten, cut back after the banned and the nickless
+// are taken out — see BOARD_READ in daily-scores.js (3 Oct 2026).
+const BOARD_READ = BOARD_SIZE + 40;
 
 const json = (statusCode, data) => ({
     statusCode,

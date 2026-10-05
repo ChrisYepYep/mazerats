@@ -24,7 +24,8 @@ const json = (statusCode, data) => ({
    and markup, and the form's <select> was the only thing keeping them tidy —
    which is no guard at all against a request that did not come from the
    form. Blank is allowed where the form offers "Not rated" / "Unknown". */
-const DIFFICULTIES = ["", "easy", "medium", "hard", "very-hard", "extreme"];
+// "impossible" (5 Oct 2026, the owner's): never completed, never counted as open (js/home.js).
+const DIFFICULTIES = ["", "easy", "medium", "hard", "very-hard", "extreme", "impossible"];
 /* "collab" is the OLD way of marking a collab maze, before it had its own
    true/false field, `collab` (4 Oct 2026, the owner's: a collab maze is
    open or closed too). Still accepted, because mazes stored that way are

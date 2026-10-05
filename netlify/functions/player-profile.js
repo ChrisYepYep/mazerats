@@ -256,7 +256,10 @@ async function figuresFor(db, id) {
         // playerView's nickHabbo, and the avatar profiles.js shows).
         db.collection("players").findOne({ id }, { projection: { _id: 0, joinedAt: 1, name: 1, avatar: 1, nick: 1, nickAsked: 1, nickLocked: 1, nickLockedBy: 1, habbo: 1, nickRejected: 1, nickRefused: 1, sv: 1, svStrict: 1,
                 // Whether they have been shown profiles yet (profiles.js, isPublic).
-                profileIntroAt: 1 } }),
+                profileIntroAt: 1,
+                // The motto check (MOTTOS in profiles.js, 5 Oct 2026): who, and
+                // the admins' say on their motto.
+                id: 1, mottoApproved: 1, mottoFlag: 1 } }),
         guessCol.find({ playerId: id, ...fromLaunch }, rowShape).sort({ day: 1 }).toArray(),
         dailyCol.find({ playerId: id, game: "odd", ...fromLaunch }, rowShape).sort({ day: 1 }).toArray(),
         boardTotals(guessCol, dailyCol, launch),
@@ -283,7 +286,9 @@ async function figuresFor(db, id) {
     const nicked = await nickedAmong(db, [...boardIds, ...ffIds]);
     const offBoard = new Set(banned);
     [...boardIds, ...ffIds].forEach(k => { if (!nicked || !nicked.has(k)) offBoard.add(k); });
-    const listed = !!(profile && typeof profile.nick === "string" && profile.nick);
+    // A failed read (nicked null) counts everyone else out, which would
+    // put this player first of one: no place at all instead.
+    const listed = !!nicked && !!(profile && typeof profile.nick === "string" && profile.nick);
 
     // Their own totals, fresh from their own rows; null means no place.
     const myGuess = guessRows.length && listed ? sumPoints(guessRows) : null;

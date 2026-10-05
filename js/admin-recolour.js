@@ -220,7 +220,8 @@ window.AdminRecolour = (function () {
     const PARTS = [
         [/data-difficulty="easy"/, "Featured row, easy"], [/data-difficulty="medium"/, "Featured row, medium"],
         [/data-difficulty="hard"/, "Featured row, hard"], [/data-difficulty="very-hard"/, "Featured row, very hard"],
-        [/data-difficulty="extreme"/, "Featured row, extreme"], [/#featured-frame-list/, "Featured row text"],
+        [/data-difficulty="extreme"/, "Featured row, extreme"], [/data-difficulty="impossible"/, "Featured row, impossible"],
+        [/#featured-frame-list/, "Featured row text"],
         [/\.ec-title-name|\.chrome-list-row h3|\.row-title/, "Row title"], [/\.row-creator/, "Builder line"],
         [/\.row-desc/, "Row description"], [/\.row-date/, "Row date"], [/\.row-thumb/, "Row picture"],
         [/\.furni-card-name/, "Furni card name"], [/\.furni-card-motto/, "Furni card motto"],
@@ -256,7 +257,7 @@ window.AdminRecolour = (function () {
         [/\.furni-card/, "Furni card"], [/\.furni-strip/, "Furni strip"], [/\.furni-icon/, "Furni icon button"],
         [/\.incomplete/, "Incomplete-maze help"],
         [/\.difficulty-easy|"easy"/, "Easy"], [/\.difficulty-medium|"medium"/, "Medium"], [/\.difficulty-hard|"hard"/, "Hard"],
-        [/very-hard/, "Very hard"], [/extreme/, "Extreme"], [/\.status-live/, "Live"], [/\.builder-status/, "Builder online"],
+        [/very-hard/, "Very hard"], [/extreme/, "Extreme"], [/impossible/, "Impossible"], [/\.status-live/, "Live"], [/\.builder-status/, "Builder online"],
         [/\.status-badge/, "Status badge"], [/\.tag-chip/, "Tag chip"], [/\.tag\b/, "Tag"], [/\.progress/, "Progress"],
         [/\.search-box/, "Search box"], [/\.sort-box/, "Sort menu"], [/\.password-toggle/, "Show-password eye"],
         [/\.guess-option/, "Answer option"], [/\.guess-pip/, "Result pip"], [/\.guess-board/, "Results board"],

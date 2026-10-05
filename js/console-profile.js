@@ -88,7 +88,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 <li>Your completed mazes, on every device</li>
                 <li>A profile other players can find</li>
                 <li>Your streaks and places in the daily games</li>
-                <li>Your name on the leaderboards, or a nickname</li>
+                <li>A nickname, your name all over the site</li>
                 <li>Credit for what you send in</li>
             </ul>
             <button type="button" class="console-btn console-profile-btn" data-act="signin">Sign in with Discord</button>
@@ -170,7 +170,7 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     function nickNote() {
-        return `<p class="console-note console-profile-note console-nick-note">Shown on the scoreboards instead of your Discord name. Optional ${DASH} change it any time.</p>`;
+        return `<p class="console-note console-profile-note console-nick-note">Your name everywhere on the site, never your Discord name. Without one you are left off the leaderboards ${DASH} change it any time.</p>`;
     }
 
     function drawNick() {

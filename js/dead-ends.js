@@ -305,7 +305,8 @@
         { key: "medium", label: "Medium" },
         { key: "hard", label: "Hard" },
         { key: "very-hard", label: "Very Hard" },
-        { key: "extreme", label: "Extreme" }
+        { key: "extreme", label: "Extreme" },
+        { key: "impossible", label: "Impossible" }
     ];
 
     const DeadEnds = {

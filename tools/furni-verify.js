@@ -29,7 +29,7 @@ require("./_env.js").loadEnv(["MONGODB_URI"]);
 const { decodePng } = require("../netlify/functions/_png.js");
 const { scanRoom } = require("../netlify/functions/_furni-match.js");
 const { getCatalogue } = require("../netlify/functions/furni-catalogue.js");
-const { spriteList, spriteCacheKey } = require("../netlify/functions/_furni-sprites.js");
+const { spriteList, spriteCacheKey, scanCatalogue } = require("../netlify/functions/_furni-sprites.js");
 const { imageUrl } = require("../netlify/functions/_url.js");
 const { getDb } = require("../netlify/functions/_db.js");
 const { encodePng } = require("./png-encode.js");
@@ -88,7 +88,8 @@ function draw(out, W, H, src, sx, sy, sw, sh, dx, dy, box, bg) {
     }
     console.log(`${target.maze}\n${target.image}\n`);
 
-    const catalogue = await getCatalogue();
+    // The library the scan itself uses (5 Oct 2026; see scanCatalogue).
+    const catalogue = scanCatalogue(await getCatalogue());
     const sprites = [];
     for (const s of spriteList(catalogue)) {
         const file = path.join(CACHE, s.blobKey);

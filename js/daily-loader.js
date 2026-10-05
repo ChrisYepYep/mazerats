@@ -256,9 +256,14 @@
 
             load(name).then(() => {
                 clearTimeout(slow);
-                clearLoading(name);
                 // The game's mount() has wired its own close by now.
                 disarm(name);
+                /* The bar is left up for the game to take over (5 Oct 2026,
+                   the bug scan): its open() puts up the same bar in the same
+                   deck while the day is dealt (Daily.waiting, which keeps
+                   one already there) and takes it down when it is done.
+                   Cleared here and put back there, it blinked out and faded
+                   in again. Cleared only if the game will not be opened. */
                 /* The game has published its own opener by now; this call is
                    the real one, and it finds its window already open — unless
                    the player gave up and closed the empty window while it was
@@ -267,6 +272,8 @@
                    springing back. */
                 if (ready(name) && (!overlay || overlay.classList.contains("open"))) {
                     window[GAMES[name].open]();
+                } else {
+                    clearLoading(name);
                 }
             }).catch(() => {
                 clearTimeout(slow);

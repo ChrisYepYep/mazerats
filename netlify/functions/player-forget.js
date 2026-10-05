@@ -186,7 +186,14 @@ const PLACES = [
     { label: "event_entries.from", collection: "event_entries", filter: id => ({ "from.id": id }),
         unlink: { $set: { from: null } } },
     { label: "event_entries.sender", collection: "event_entries", filter: id => ({ sender: `p:${id}` }),
-        unlink: { $unset: { sender: "", clientRef: "" } } }
+        unlink: { $unset: { sender: "", clientRef: "" } } },
+    /* notifications.js (5 Oct 2026, the bug scan): a notice sent to chosen
+       players names each by Discord id in `to`. The notice stays (it may
+       have gone to others too, and the Warren keeps what was sent); this
+       player is taken off it. What they had read went with the players row,
+       so nothing of theirs is left. */
+    { label: "notifications.to", collection: "notifications", filter: id => ({ audience: "players", to: id }),
+        unlink: id => ({ $pull: { to: id } }) }
 ];
 
 /* The player's own account bans, which a forget keeps (see the last PLACE
@@ -267,7 +274,9 @@ async function forget(db, id) {
        and reports only what the first one missed. */
     const done = await Promise.all(PLACES.map(async p => {
         const col = db.collection(p.collection);
-        const res = p.unlink ? await col.updateMany(p.filter(id), p.unlink) : await col.deleteMany(p.filter(id));
+        // An unlink that needs the id itself is a function of it (notifications).
+        const unlink = typeof p.unlink === "function" ? p.unlink(id) : p.unlink;
+        const res = unlink ? await col.updateMany(p.filter(id), unlink) : await col.deleteMany(p.filter(id));
         return p.unlink ? (res.modifiedCount || 0) : (res.deletedCount || 0);
     }));
     const counts = {};

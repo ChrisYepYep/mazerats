@@ -9,7 +9,7 @@
    completely inert until js/site.js puts that attribute on <html>. The
    classic palette is not defined here and is not affected by anything in it.
 
-   1062 rules, 1720 declarations, hues 272 (surfaces) / 272 (accents).
+   1084 rules, 1756 declarations, hues 272 (surfaces) / 272 (accents).
 */
 :root[data-theme="purple"] {
     --bg-black: #020104;
@@ -1286,6 +1286,36 @@ html[data-theme="purple"]::-webkit-scrollbar-button {
     color: #ffffff;
 }
 
+[data-theme="purple"] .modal-meta-actions .fav-toggle {
+    background: linear-gradient(#583840, #452b31);
+    border: 1px solid #86606a;
+    box-shadow: inset 0 1px 0 rgba(222, 186, 192, 0.18), 0 1px 0 rgba(0, 0, 0, 0.35);
+    color: #e6cfd2;
+}
+
+[data-theme="purple"] .modal-meta-actions .fav-toggle:hover,
+[data-theme="purple"] .modal-meta-actions .fav-toggle:focus-visible {
+    background: linear-gradient(#66434b, #51343b);
+    border-color: #a07880;
+    color: #f3e4e6;
+}
+
+[data-theme="purple"] .modal-meta-actions .fav-toggle.is-fav {
+    background: linear-gradient(#77484f, #5f3940);
+    border-color: #b48a92;
+    color: #f3e4e6;
+}
+
+[data-theme="purple"] .modal-meta-actions .fav-toggle.is-fav:hover,
+[data-theme="purple"] .modal-meta-actions .fav-toggle.is-fav:focus-visible {
+    background: linear-gradient(#83535a, #6a414a);
+    border-color: #c49ca3;
+}
+
+[data-theme="purple"] .fav-toggle-mark {
+    background-color: currentColor;
+}
+
 [data-theme="purple"] .modal-share-fallback {
     background: #0b070f;
     border: 1px solid var(--chrome-border);
@@ -1876,6 +1906,26 @@ html[data-theme="purple"]::-webkit-scrollbar-button {
     color: #eeeeee;
 }
 
+[data-theme="purple"] .console-thanks-note {
+    color: #eeeeee;
+}
+
+[data-theme="purple"] .console-notice-text {
+    color: #eeeeee;
+}
+
+[data-theme="purple"] .console-notice-count {
+    color: #eeeeee;
+}
+
+[data-theme="purple"] .console-notices-day {
+    color: #eeeeee;
+}
+
+[data-theme="purple"] .console-notices-text {
+    color: #eeeeee;
+}
+
 [data-theme="purple"] .console-note {
     color: rgba(238, 238, 238, 0.7);
 }
@@ -2302,7 +2352,7 @@ html[data-theme="purple"]::-webkit-scrollbar-button {
     background: var(--amber);
 }
 
-[data-theme="purple"] .timeline-entry:not(:last-child) .timeline-dot::after {
+[data-theme="purple"] .timeline-entry:not(:last-child)::after {
     background: var(--border);
 }
 
@@ -4317,6 +4367,20 @@ html[data-theme="purple"]::-webkit-scrollbar-button {
     color: var(--danger);
 }
 
+[data-theme="purple"] .daily-bar {
+    border: 1px solid var(--parchment);
+    box-shadow: 2px 2px 0 rgba(0, 0, 0, 0.4);
+}
+
+[data-theme="purple"] .daily-bar > span {
+    background: var(--parchment);
+}
+
+[data-theme="purple"] .guess-sheet.is-fetching .guess-picture::after {
+    border: 1px solid var(--parchment);
+    background: linear-gradient(var(--parchment), var(--parchment)) no-repeat;
+}
+
 [data-theme="purple"] .daily-head {
     border-bottom: 1px solid rgba(178, 147, 205, 0.18);
 }
@@ -5258,6 +5322,47 @@ html[data-theme="purple"]::-webkit-scrollbar-button {
     }
 }
 
+[data-theme="purple"] .mazer-swatch {
+    background: transparent;
+    border: 0;
+}
+
+[data-theme="purple"] .mazer-swatch span {
+    border: 1px solid #000;
+}
+
+[data-theme="purple"] .mazer-swatch:hover span,
+[data-theme="purple"] .mazer-swatch:focus-visible span {
+    outline: 1px solid var(--parchment);
+}
+
+[data-theme="purple"] .mazer-swatch:focus {
+    outline: none;
+}
+
+[data-theme="purple"] .mazer-motto-box {
+    border: 1px solid var(--parchment);
+    background: transparent;
+}
+
+[data-theme="purple"] .mazer-motto-box::after {
+    background: var(--parchment);
+}
+
+[data-theme="purple"] .mazer-motto-box:focus {
+    outline: none;
+}
+
+[data-theme="purple"] .mazer-motto-box:focus-visible {
+    outline: 1px solid var(--parchment);
+}
+
+[data-theme="purple"] .nt-chip-x {
+    background: none;
+    border: 0;
+    color: inherit;
+}
+
 /* ------------------------------------------- COLOUR THAT IS INFORMATION
 
    Not recoloured, and re-stated here so it still wins. The difficulty
@@ -5289,6 +5394,11 @@ html[data-theme="purple"]::-webkit-scrollbar-button {
     border-color: #731418;
 }
 
+[data-theme="purple"] .difficulty-impossible {
+    color: #a3a3a3;
+    border-color: #5c5c5c;
+}
+
 [data-theme="purple"] #featured-frame-list .chrome-list-row[data-difficulty="easy"] {
     background: #63c07f;
 }
@@ -5309,12 +5419,24 @@ html[data-theme="purple"]::-webkit-scrollbar-button {
     background: #731418;
 }
 
+[data-theme="purple"] #featured-frame-list .chrome-list-row[data-difficulty="impossible"] {
+    background: #4a4a4a;
+}
+
 [data-theme="purple"] #featured-frame-list .chrome-list-row[data-difficulty="extreme"] h3,
 [data-theme="purple"] #featured-frame-list .chrome-list-row[data-difficulty="extreme"] .row-creator,
 [data-theme="purple"] #featured-frame-list .chrome-list-row[data-difficulty="extreme"] .row-desc,
 [data-theme="purple"] #featured-frame-list .chrome-list-row[data-difficulty="extreme"] .row-date,
 [data-theme="purple"] #featured-frame-list .chrome-list-row[data-difficulty="extreme"] .chrome-go {
     color: #d47979;
+}
+
+[data-theme="purple"] #featured-frame-list .chrome-list-row[data-difficulty="impossible"] h3,
+[data-theme="purple"] #featured-frame-list .chrome-list-row[data-difficulty="impossible"] .row-creator,
+[data-theme="purple"] #featured-frame-list .chrome-list-row[data-difficulty="impossible"] .row-desc,
+[data-theme="purple"] #featured-frame-list .chrome-list-row[data-difficulty="impossible"] .row-date,
+[data-theme="purple"] #featured-frame-list .chrome-list-row[data-difficulty="impossible"] .chrome-go {
+    color: #d6d6d6;
 }
 
 [data-theme="purple"] .admin-notice {

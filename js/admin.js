@@ -44,6 +44,16 @@ document.addEventListener("DOMContentLoaded", () => {
        site's side). The stored icon is still what gets saved — it is the
        record's identity — and is put back if the new API has no icon for
        this furni (the error listener below, on data-fallback). */
+    /* A stored furni picture, drawable (5 Oct 2026, the owner's: FurniIndex is
+       switching its old host off, and the site's security policy no longer
+       loads from it). The records keep their old addresses — they are data —
+       so an old one is drawn through furni-shown.js, which redirects to the
+       new API's picture or the site's own copy, as the public site shows it. */
+    function shownFurni(url, className) {
+        if (typeof url !== "string" || !/^https:\/\/furniindex\.com\/image\//.test(url)) return url || "";
+        return "/.netlify/functions/furni-shown?u=" + encodeURIComponent(url) + (className ? "&c=" + encodeURIComponent(className) : "");
+    }
+
     function pickerIcon(f) {
         return f && f.className
             ? "https://api.furniindex.com/furni/" + encodeURIComponent(f.className) + "/icon"
@@ -412,7 +422,8 @@ document.addEventListener("DOMContentLoaded", () => {
     // Same order used by the rooms-sort dropdown's difficulty options and by
     // the public site's own room-sort (js/home.js) — kept in sync manually
     // since each file already has its own small copy of the difficulty list.
-    const DIFFICULTY_ORDER = ["easy", "medium", "hard", "very-hard", "extreme"];
+    // Impossible (5 Oct 2026, the owner's): a maze nobody can finish; see isImpossible in js/home.js.
+    const DIFFICULTY_ORDER = ["easy", "medium", "hard", "very-hard", "extreme", "impossible"];
 
     const MONTH_NAMES = [
         "January", "February", "March", "April", "May", "June",
@@ -437,7 +448,8 @@ document.addEventListener("DOMContentLoaded", () => {
         ["medium", "Medium"],
         ["hard", "Hard"],
         ["very-hard", "Very Hard"],
-        ["extreme", "Extreme"]
+        ["extreme", "Extreme"],
+        ["impossible", "Impossible"]
     ];
 
     // The hotels this archive covers, as a fixed list rather than the free
@@ -2870,10 +2882,21 @@ document.addEventListener("DOMContentLoaded", () => {
        again and addFurni recorded it twice in the same room. A url decides
        when both sides have one, a classname when both have that, and only
        then the key as before. */
+    /* A classname first, and a url only compared by its letters (5 Oct
+       2026). Since the catalogue moved to FurniIndex's new API it spells 124
+       page links differently from the ones stored before (…/gate-(lockable)
+       for …/gate-lockable, …/bar%2Fdesk for …/bardesk), and its classnames
+       are all lower case where stored ones may not be (doorB) — either would
+       have made a furni already in the room look new to the picker. */
+    const pageOf = u => {
+        let s = String(u || "");
+        try { s = decodeURIComponent(s); } catch (e) { /* as it stands */ }
+        return s.toLowerCase().replace(/^.*?\/furni\//, "").replace(/[^a-z0-9]+/g, "");
+    };
     const sameFurni = (a, b) => {
         if (!a || !b) return false;
-        if (a.url && b.url) return a.url === b.url;
-        if (a.className && b.className) return a.className === b.className;
+        if (a.className && b.className) return a.className.toLowerCase() === b.className.toLowerCase();
+        if (a.url && b.url) return pageOf(a.url) === pageOf(b.url);
         return furniKey(a) === furniKey(b);
     };
 
@@ -2907,6 +2930,12 @@ document.addEventListener("DOMContentLoaded", () => {
            rebuild, so the only place this can live is outside them. */
         let pickerQuery = "";
         let pickerResults = [];
+        /* How far down the results list was scrolled (5 Oct 2026, the
+           owner's): an add rebuilds the panel, and the redrawn list started
+           back at the top, away from the furni just clicked. Read before the
+           rebuild (addFurni), put back after the redraw (wirePicker), and
+           forgotten when a new search starts. */
+        let pickerScrollTop = 0;
         /* The search's own bookkeeping lives out here too (1 Oct 2026, night
            scan). It was inside wirePicker, so every render — an add, a Hide
            in another room — started a fresh counter and stranded the old
@@ -2993,7 +3022,7 @@ document.addEventListener("DOMContentLoaded", () => {
                    a room are drawn when it is opened, which re-renders. */
                 const rows = !open ? "" : items.map((f, i) => '' +
                     '<div class="admin-furni-item ' + (f.hidden ? "is-hidden" : "") + (f.manual ? " is-manual" : "") + '" data-image="' + escapeHtml(image) + '" data-index="' + i + '">' +
-                        '<img src="' + escapeHtml(safeUrl(f.sprite || f.icon)) + '" alt="" loading="lazy" decoding="async">' +
+                        '<img src="' + escapeHtml(safeUrl(shownFurni(f.sprite || f.icon, f.className))) + '" alt="" loading="lazy" decoding="async">' +
                         '<span class="admin-furni-name">' + escapeHtml(f.name || "") + '</span>' +
                         // A hand-added entry has no coverage to report, and
                         // showing it as "0%" read as a failed match rather
@@ -3241,7 +3270,7 @@ document.addEventListener("DOMContentLoaded", () => {
                     '<button type="button" class="admin-furni-result' + (isAdded ? " is-added" : "") + '" data-index="' + i + '"' + (isAdded ? " disabled" : "") + '>' +
                         /* Lazy, because the result list is no longer capped —
                            a broad search draws three hundred rows, and every
-                           icon is a request to furniindex.com. The pane is a
+                           icon is a request to api.furniindex.com. The pane is a
                            220px scroller (.admin-furni-results), so all but
                            the first handful are genuinely off screen and the
                            rest arrive as they are scrolled to. */
@@ -3250,7 +3279,7 @@ document.addEventListener("DOMContentLoaded", () => {
                            greys the row out (markNoPicture). */
                         (f.notListed
                             ? '<img src="' + escapeHtml(safeUrl(pickerIcon(f))) + '" data-unlisted="1" alt="" loading="lazy" decoding="async">'
-                            : '<img src="' + escapeHtml(safeUrl(pickerIcon(f))) + '" data-fallback="' + escapeHtml(safeUrl(f.icon)) + '" alt="" loading="lazy" decoding="async">') +
+                            : '<img src="' + escapeHtml(safeUrl(pickerIcon(f))) + '" data-fallback="' + escapeHtml(safeUrl(shownFurni(f.icon, f.className))) + '" alt="" loading="lazy" decoding="async">') +
                         '<span class="admin-furni-result-name">' + escapeHtml(f.name || "") + line + '</span>' +
                         // A furni FurniIndex hasn't catalogued yet (1 Oct 2026),
                         // from Habbo's own list: it can still be added, by name
@@ -3287,7 +3316,10 @@ document.addEventListener("DOMContentLoaded", () => {
 
             // Redraw whatever the last search found, so the results are
             // still there after adding one of them.
-            if (pickerResults.length) drawResults(pickerResults);
+            if (pickerResults.length) {
+                drawResults(pickerResults);
+                results.scrollTop = pickerScrollTop;
+            }
             // And say so if a newer one is still on its way (see pickerSeq).
             if (pickerTimer || pickerSearching) status.textContent = "Searching…";
 
@@ -3324,6 +3356,7 @@ document.addEventListener("DOMContentLoaded", () => {
             input.addEventListener("input", () => {
                 const q = input.value.trim();
                 pickerQuery = input.value;
+                pickerScrollTop = 0;
                 clearTimeout(pickerTimer);
                 pickerTimer = null;
                 if (q.length < 2) {
@@ -3415,6 +3448,9 @@ document.addEventListener("DOMContentLoaded", () => {
             // future layout that does not have one.
             const scroller = wrap.closest(".admin-stage") || document.scrollingElement;
             const was = anchor();
+            // And the results list's own scroll, which the rebuild resets.
+            const resultsEl = listEl.querySelector(".admin-furni-results");
+            pickerScrollTop = resultsEl ? resultsEl.scrollTop : 0;
 
             render();
 

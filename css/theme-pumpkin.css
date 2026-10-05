@@ -9,7 +9,7 @@
    completely inert until js/site.js puts that attribute on <html>. The
    classic palette is not defined here and is not affected by anything in it.
 
-   1062 rules, 1720 declarations, hues 18 (surfaces) / 38 (accents).
+   1084 rules, 1756 declarations, hues 18 (surfaces) / 38 (accents).
 */
 :root[data-theme="pumpkin"] {
     --bg-black: #0a0401;
@@ -1286,6 +1286,36 @@ html[data-theme="pumpkin"]::-webkit-scrollbar-button {
     color: #ffffff;
 }
 
+[data-theme="pumpkin"] .modal-meta-actions .fav-toggle {
+    background: linear-gradient(#583840, #452b31);
+    border: 1px solid #86606a;
+    box-shadow: inset 0 1px 0 rgba(222, 186, 192, 0.18), 0 1px 0 rgba(0, 0, 0, 0.35);
+    color: #e6cfd2;
+}
+
+[data-theme="pumpkin"] .modal-meta-actions .fav-toggle:hover,
+[data-theme="pumpkin"] .modal-meta-actions .fav-toggle:focus-visible {
+    background: linear-gradient(#66434b, #51343b);
+    border-color: #a07880;
+    color: #f3e4e6;
+}
+
+[data-theme="pumpkin"] .modal-meta-actions .fav-toggle.is-fav {
+    background: linear-gradient(#77484f, #5f3940);
+    border-color: #b48a92;
+    color: #f3e4e6;
+}
+
+[data-theme="pumpkin"] .modal-meta-actions .fav-toggle.is-fav:hover,
+[data-theme="pumpkin"] .modal-meta-actions .fav-toggle.is-fav:focus-visible {
+    background: linear-gradient(#83535a, #6a414a);
+    border-color: #c49ca3;
+}
+
+[data-theme="pumpkin"] .fav-toggle-mark {
+    background-color: currentColor;
+}
+
 [data-theme="pumpkin"] .modal-share-fallback {
     background: #180d09;
     border: 1px solid var(--chrome-border);
@@ -1876,6 +1906,26 @@ html[data-theme="pumpkin"]::-webkit-scrollbar-button {
     color: #eeeeee;
 }
 
+[data-theme="pumpkin"] .console-thanks-note {
+    color: #eeeeee;
+}
+
+[data-theme="pumpkin"] .console-notice-text {
+    color: #eeeeee;
+}
+
+[data-theme="pumpkin"] .console-notice-count {
+    color: #eeeeee;
+}
+
+[data-theme="pumpkin"] .console-notices-day {
+    color: #eeeeee;
+}
+
+[data-theme="pumpkin"] .console-notices-text {
+    color: #eeeeee;
+}
+
 [data-theme="pumpkin"] .console-note {
     color: rgba(238, 238, 238, 0.7);
 }
@@ -2302,7 +2352,7 @@ html[data-theme="pumpkin"]::-webkit-scrollbar-button {
     background: var(--amber);
 }
 
-[data-theme="pumpkin"] .timeline-entry:not(:last-child) .timeline-dot::after {
+[data-theme="pumpkin"] .timeline-entry:not(:last-child)::after {
     background: var(--border);
 }
 
@@ -4317,6 +4367,20 @@ html[data-theme="pumpkin"]::-webkit-scrollbar-button {
     color: var(--danger);
 }
 
+[data-theme="pumpkin"] .daily-bar {
+    border: 1px solid var(--parchment);
+    box-shadow: 2px 2px 0 rgba(0, 0, 0, 0.4);
+}
+
+[data-theme="pumpkin"] .daily-bar > span {
+    background: var(--parchment);
+}
+
+[data-theme="pumpkin"] .guess-sheet.is-fetching .guess-picture::after {
+    border: 1px solid var(--parchment);
+    background: linear-gradient(var(--parchment), var(--parchment)) no-repeat;
+}
+
 [data-theme="pumpkin"] .daily-head {
     border-bottom: 1px solid rgba(232, 194, 128, 0.18);
 }
@@ -5258,6 +5322,47 @@ html[data-theme="pumpkin"]::-webkit-scrollbar-button {
     }
 }
 
+[data-theme="pumpkin"] .mazer-swatch {
+    background: transparent;
+    border: 0;
+}
+
+[data-theme="pumpkin"] .mazer-swatch span {
+    border: 1px solid #000;
+}
+
+[data-theme="pumpkin"] .mazer-swatch:hover span,
+[data-theme="pumpkin"] .mazer-swatch:focus-visible span {
+    outline: 1px solid var(--parchment);
+}
+
+[data-theme="pumpkin"] .mazer-swatch:focus {
+    outline: none;
+}
+
+[data-theme="pumpkin"] .mazer-motto-box {
+    border: 1px solid var(--parchment);
+    background: transparent;
+}
+
+[data-theme="pumpkin"] .mazer-motto-box::after {
+    background: var(--parchment);
+}
+
+[data-theme="pumpkin"] .mazer-motto-box:focus {
+    outline: none;
+}
+
+[data-theme="pumpkin"] .mazer-motto-box:focus-visible {
+    outline: 1px solid var(--parchment);
+}
+
+[data-theme="pumpkin"] .nt-chip-x {
+    background: none;
+    border: 0;
+    color: inherit;
+}
+
 /* ------------------------------------------- COLOUR THAT IS INFORMATION
 
    Not recoloured, and re-stated here so it still wins. The difficulty
@@ -5289,6 +5394,11 @@ html[data-theme="pumpkin"]::-webkit-scrollbar-button {
     border-color: #731418;
 }
 
+[data-theme="pumpkin"] .difficulty-impossible {
+    color: #a3a3a3;
+    border-color: #5c5c5c;
+}
+
 [data-theme="pumpkin"] #featured-frame-list .chrome-list-row[data-difficulty="easy"] {
     background: #63c07f;
 }
@@ -5309,12 +5419,24 @@ html[data-theme="pumpkin"]::-webkit-scrollbar-button {
     background: #731418;
 }
 
+[data-theme="pumpkin"] #featured-frame-list .chrome-list-row[data-difficulty="impossible"] {
+    background: #4a4a4a;
+}
+
 [data-theme="pumpkin"] #featured-frame-list .chrome-list-row[data-difficulty="extreme"] h3,
 [data-theme="pumpkin"] #featured-frame-list .chrome-list-row[data-difficulty="extreme"] .row-creator,
 [data-theme="pumpkin"] #featured-frame-list .chrome-list-row[data-difficulty="extreme"] .row-desc,
 [data-theme="pumpkin"] #featured-frame-list .chrome-list-row[data-difficulty="extreme"] .row-date,
 [data-theme="pumpkin"] #featured-frame-list .chrome-list-row[data-difficulty="extreme"] .chrome-go {
     color: #d47979;
+}
+
+[data-theme="pumpkin"] #featured-frame-list .chrome-list-row[data-difficulty="impossible"] h3,
+[data-theme="pumpkin"] #featured-frame-list .chrome-list-row[data-difficulty="impossible"] .row-creator,
+[data-theme="pumpkin"] #featured-frame-list .chrome-list-row[data-difficulty="impossible"] .row-desc,
+[data-theme="pumpkin"] #featured-frame-list .chrome-list-row[data-difficulty="impossible"] .row-date,
+[data-theme="pumpkin"] #featured-frame-list .chrome-list-row[data-difficulty="impossible"] .chrome-go {
+    color: #d6d6d6;
 }
 
 [data-theme="pumpkin"] .admin-notice {

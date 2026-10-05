@@ -24,12 +24,15 @@
    Result: 3.38MB -> 569KB, and ~78KB once compressed. */
 
 const { getCatalogue } = require("./furni-catalogue.js");
+const { legacy } = require("./_furni-legacy.js");
 
-// Every icon and sprite URL FurniIndex serves begins with this. Sent once.
+// Every icon and sprite URL FurniIndex's OLD host served begins with this —
+// the addresses the stored records hold. See API_PREFIX for what is sent.
 const PREFIX = "https://furniindex.com/image/furni/furni-";
 
 /* Two things the stored records can't answer on their own, both looked up
-   in the catalogue:
+   in the catalogue — the old one frozen in _furni-legacy.js for everything
+   stored before 5 Oct 2026, the live one for what has been stored since:
 
    smallByLarge — the scan records the sprite it matched as a LARGE image
    URL, because that is the artwork it compared against, but the furni card
@@ -64,6 +67,17 @@ async function catalogueIndex() {
     const smallByLarge = new Map();
     const classByIcon = new Map();
     const itemByClass = new Map();
+    /* The old catalogue first, then the live one over it (5 Oct 2026).
+       Since the catalogue moved to the new API its icons and grids are
+       new-API addresses — and the records hold the OLD ones, so these two
+       maps have to come from the old catalogue, frozen in _furni-legacy.js,
+       for every detection stored before the switch. Filled before the
+       catalogue is asked, so they hold even when it can't be reached. The
+       live catalogue adds the new addresses, which a scan or a hand-add
+       since then stores. */
+    const old = legacy();
+    for (const [icon, cls] of old.classByIcon) classByIcon.set(icon, cls);
+    for (const [large, small] of old.smallByLarge) smallByLarge.set(large, small);
     try {
         /* Capped here as well as inside getCatalogue. That one serves a
            stale copy when a refresh fails, but with no copy at all (a new
@@ -77,22 +91,26 @@ async function catalogueIndex() {
         const cap = new Promise((_, reject) => {
             timer = setTimeout(() => reject(new Error("catalogue timed out")), CATALOGUE_WAIT_MS);
         });
-        const pending = getCatalogue();
+        const pending = getCatalogue({ wait: false });
         pending.catch(() => { /* reported by the race below, if it matters */ });
         const catalogue = await Promise.race([pending, cap]).finally(() => clearTimeout(timer));
         for (const item of catalogue.items || []) {
             if (item.icon && item.className) classByIcon.set(item.icon, item.className);
-            if (item.className && !itemByClass.has(item.className)) itemByClass.set(item.className, item);
+            // Lower-cased (5 Oct 2026): the new API's classnames all are, and
+            // a stored one may not be (CF_1_coin_bronze, doorB).
+            const key = (item.className || "").toLowerCase();
+            if (key && !itemByClass.has(key)) itemByClass.set(key, item);
             (item.largeImages || []).forEach((state, si) => state.forEach((url, ri) => {
                 const small = ((item.smallImages || [])[si] || [])[ri];
                 if (url && small) smallByLarge.set(url, small);
             }));
         }
     } catch (e) {
-        /* An unreachable catalogue must not cost the site its furni. Empty
-           maps mean every sprite falls through to the large URL below and
-           className is simply absent — which is what the site showed before
-           any of this existed.
+        /* An unreachable catalogue must not cost the site its furni. The
+           maps then hold only the old catalogue's part (above): a sprite
+           neither knows falls through to the large URL below, and a
+           className neither knows is simply absent — which is what the site
+           showed before any of this existed.
 
            The empty result is cached too, for a short while. Returning
            without caching meant a failing catalogue was retried on EVERY
@@ -119,15 +137,16 @@ const strip = url => (typeof url === "string" && url.startsWith(PREFIX)) ? url.s
    the render tools/furni-api-map.js matched to the old view by its pixels,
    since the old r1..r4 are not the game's directions in any fixed order.
    Anything the table doesn't know (a furni scanned since it was built, an
-   icon the new API lacks) keeps its old address, which still works, and
-   goes out whole rather than as a tail of the new prefix. */
+   icon the new API lacks) goes out as this site's own copy of the old
+   picture (_furni-mirror.js) since the old host went away (5 Oct 2026),
+   or failing that the new API's default view by classname. */
 const API_PREFIX = "https://api.furniindex.com/furni/";
 let apiMap = null;
-try { apiMap = require("./_furni-api-map.json"); } catch (e) { /* no table: everything stays on the old host */ }
-/* Without the table, the icons stay on the old host too (2 Oct 2026, night
-   scan). They used to switch to /icon by classname regardless, which put
-   the furni the table lists as having NO icon there (door0, poster_1000…)
-   on a 404 — the opposite of the "falls back to the old host" promised. */
+try { apiMap = require("./_furni-api-map.json"); } catch (e) { /* no table: only the mirror's copies are left */ }
+/* Without the table, the icons are the mirror's copies too (2 Oct 2026,
+   night scan). They used to switch to /icon by classname regardless, which
+   put the furni the table lists as having NO icon there (door0,
+   poster_1000…) on a 404. */
 const NO_ICON = new Set((apiMap && apiMap.noIcon) || []);
 const apiPath = p => {
     const [cls, ...rest] = String(p).split("/");
@@ -139,9 +158,25 @@ const apiPath = p => {
    characters on each of over a thousand detections (2 Oct 2026). */
 const tailOf = url => (typeof url === "string" && url.startsWith(API_PREFIX)) ? url.slice(API_PREFIX.length) : url;
 
+/* What the new API can't serve goes out as this site's own copy, never the
+   old host (5 Oct 2026; _furni-mirror.js). */
+const { site } = require("./_furni-mirror.js");
+
+/* A stored classname the new API files under another (5 Oct 2026): the old
+   catalogue's Telephone Box "door0" is the green one FurniIndex lists as
+   doore. Pictures go by the new API's name; the record keeps its own. */
+const CLASS_ALIAS = (apiMap && apiMap.classAlias) || {};
+/* Views whose still render leaves out what the old picture showed — the
+   Holopod's and Holo-girl's figures are an animation layer (5 Oct 2026,
+   the owner's) — sent as the new API's animated picture instead. */
+const ANIMATED = new Set((apiMap && apiMap.animated) || []);
+// Own keys only: a classname of "constructor" must not find Object.prototype.
+const own = (table, key) => (key && Object.prototype.hasOwnProperty.call(table, key) ? table[key] : undefined);
+
 function wireIcon(icon, className) {
-    if (apiMap && className && !NO_ICON.has(className)) return encodeURIComponent(className) + "/icon";
-    return tailOf(icon || "");
+    const cls = own(CLASS_ALIAS, className) || className;
+    if (apiMap && cls && !NO_ICON.has(cls)) return encodeURIComponent(cls) + "/icon";
+    return site(tailOf(icon || ""));
 }
 
 /* FURNI THAT GROW (2 Oct 2026, the owner's) are shown fully grown, at the
@@ -154,7 +189,7 @@ function grownPath(p, className) {
     const m = /^([^/]+)\/(small|large)(?:\/r(\d+)\/s(\d+))?(?:\/noshadow)?$/.exec(p || "");
     if (!m) return null;
     const cls = decodeURIComponent(m[1]);
-    const g = GROWN[cls] || (className && cls === className ? GROWN[className] : null);
+    const g = own(GROWN, cls) || (className && cls === className ? own(GROWN, className) : null);
     if (!g) return null;
     const rotation = m[3] !== undefined ? m[3] : g[1];
     return `${encodeURIComponent(cls)}/${m[2]}/r${rotation}/s${g[0]}/noshadow`;
@@ -162,8 +197,12 @@ function grownPath(p, className) {
 
 function wireSprite(sprite, className) {
     const tail = strip(sprite);
-    const mapped = tail && apiMap && apiMap.sprites && apiMap.sprites[tail];
-    const out = mapped ? apiPath(mapped) + "/noshadow" : tailOf(sprite);
+    const mapped = tail && apiMap && apiMap.sprites && own(apiMap.sprites, tail);
+    let out = mapped ? apiPath(mapped) + "/noshadow" + (ANIMATED.has(tail) ? "/animated" : "") : site(tailOf(sprite));
+    /* An old sprite the table never matched and the mirror holds no copy of
+       would go out blank: the new API's own default view of the furni is
+       better than nothing. */
+    if (!out && sprite && apiMap && className) out = encodeURIComponent(own(CLASS_ALIAS, className) || className) + "/small";
     return (typeof out === "string" && grownPath(out, className)) || out;
 }
 
@@ -214,7 +253,7 @@ async function packRecords(docs) {
                        name that is only Habbo's text key, from the catalogue
                        whenever FurniIndex has them. Pictures already follow
                        the classname (wireIcon, wireSprite). */
-                    const listed = className ? itemByClass.get(className) : null;
+                    const listed = className ? itemByClass.get(className.toLowerCase()) : null;
                     const listedName = listed && listed.name && !/_name$/.test(listed.name) ? listed.name : "";
                     const name = realName(f.name, className);
                     table.push({
@@ -222,8 +261,17 @@ async function packRecords(docs) {
                         c: className,
                         m: realMotto(f.motto, className) || (listed && realMotto(listed.motto, className)) || "",
                         i: wireIcon(f.icon, className),
-                        u: f.url || (listed && listed.url) || "",
-                        d: f.releaseDate || (listed && listed.releaseDate) || ""
+                        /* The catalogue's page and date before the stored ones
+                           (5 Oct 2026). The new API spells 124 page links
+                           differently from the old (…/aisha-figure-(blue) for
+                           …/aisha-figure-blue; both open the same page), and
+                           js/home.js tells furni apart by this link — so a
+                           furni scanned before the switch and again after it
+                           would otherwise be two furni on the site. The
+                           stored value still answers wherever the catalogue
+                           has none. */
+                        u: (listed && listed.url) || f.url || "",
+                        d: (listed && listed.releaseDate) || f.releaseDate || ""
                     });
                 }
                 const index = seen.get(f.icon);
@@ -242,4 +290,22 @@ async function packRecords(docs) {
     return { v: 2, p: API_PREFIX, f: table, rooms: packed };
 }
 
-module.exports = { packRecords, PREFIX };
+/* ONE STORED PICTURE, as the site would show it (5 Oct 2026): for the
+   Warren, which edits the records as stored and so still holds the old
+   host's addresses, now that the old host is being switched off. An old
+   sprite (…-s1-r1-sml.png) goes the way a detection's does (its small
+   picture where the frozen catalogue knows one, then the map, then this
+   site's own copy); anything else is an icon, by its furni's classname.
+   A whole address back — the new API's, or this site's — or "" for none.
+   furni-shown.js redirects to it. */
+async function shownPicture(url, className) {
+    const { smallByLarge, classByIcon } = await catalogueIndex();
+    const sprite = /-s\d+-r\d+-(sml|lrg)\.png$/i.test(url || "");
+    const out = sprite
+        ? wireSprite(smallByLarge.get(url) || url, className || "")
+        : wireIcon(url, className || classByIcon.get(url) || "");
+    if (!out) return "";
+    return /^(https?:\/\/|\/)/.test(out) ? out : API_PREFIX + out;
+}
+
+module.exports = { packRecords, PREFIX, shownPicture };

@@ -30,7 +30,7 @@
    kind=head  the head alone at the small size, 27x30, for lists
 
    v          ignored here, but part of the cache key: the page raises it
-              (OUTLINE_V in js/home.js) when the drawing changes. */
+              (OUTLINE_V; see below) when the drawing changes. */
 const { decodePng, encodePng } = require("./_png");
 const { SECURITY_HEADERS } = require("./_headers");
 
@@ -45,8 +45,10 @@ const FIGURE = /^[a-z]{2}-\d{1,6}(?:-\d{1,6}){0,2}(?:\.[a-z]{2}-\d{1,6}(?:-\d{1,
 /* Both at Habbo's SMALL size (4 Oct 2026, the owner's): the figure as a
    room draws it, 33x56, shown at its own size (.profile-avatar). It was the
    normal 64x110. */
-// What the page asks with (OUTLINE_V in js/home.js; js/console-profile.js
-// too). Raise all three together when the drawing changes.
+// What the pages ask with: OUTLINE_V in js/home.js and in
+// netlify/functions/_publicid.js (the boards' heads), and the v=2 written
+// out in js/console-profile.js. Raise all four together when the drawing
+// changes.
 const OUTLINE_V = "2";
 
 const KINDS = {

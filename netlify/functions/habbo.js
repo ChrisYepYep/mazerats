@@ -412,6 +412,33 @@ async function cachedOriginsProfiles(db, wants) {
     return out;
 }
 
+/* BUILDER CARDS' MOTTOS (5 Oct 2026, the owner's; MOTTOS in profiles.js).
+   The builder cards on a maze and on the welcome page show a builder's
+   Habbo motto from this endpoint. One with profanity in it (mottoHit in
+   player-nick.js) goes out blank — unless it is a player's motto an admin
+   has approved in the Warren (mottoApproved, that exact text, on the player
+   whose linked Habbo this is). Only this endpoint's answer: the profile's
+   own lookup (originsProfileFor) does its own, with the flag. */
+const answerHandler = exports.handler;
+exports.handler = async (event) => {
+    const res = await answerHandler(event);
+    if (!res || res.statusCode !== 200) return res;
+    let body;
+    try { body = JSON.parse(res.body); } catch (e) { return res; }
+    if (!body || typeof body.motto !== "string" || !body.motto) return res;
+    const { mottoHit } = require("./player-nick");
+    if (!mottoHit(body.motto)) return res;
+    try {
+        const db = await getDb();
+        const passed = await db.collection("players").find({ "mottoApproved.text": body.motto }, { projection: { _id: 0, habbo: 1 } }).limit(20).toArray();
+        const name = String(body.name || "").trim().toLowerCase();
+        if (name && passed.some(p => p.habbo && String(p.habbo.name || "").trim().toLowerCase() === name)) return res;
+    } catch (e) {
+        console.error("habbo: could not read approved mottos; this one stays blank", e);
+    }
+    return { ...res, body: JSON.stringify({ ...body, motto: "" }) };
+};
+
 /* Failures reported to /warren's Errors tab (28 Sept 2026): see
    withErrorReporting in _errors.js. Last, so it wraps the handler as finally
    defined above; what the handler answers is unchanged. */

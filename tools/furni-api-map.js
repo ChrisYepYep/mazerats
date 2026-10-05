@@ -24,7 +24,8 @@
    _furni-payload.js — { sprites: { oldFilename: "class/size/rN/sN" },
    noIcon: [class] }. (The Warren's picker needs no table: its icons are by
    classname alone. Its scan-review rows stay on the old host with the
-   scanner, which still matches against the old renders.)
+   scanner, which still matches against the old renders — see scanCatalogue
+   in netlify/functions/_furni-sprites.js, 5 Oct 2026.)
    An old filename missing from the table keeps its old address, which still
    works; re-run this after a scan adds furni the table doesn't know.
 
@@ -154,7 +155,10 @@ function score(a, b) {
     console.log("Reading the catalogue's large renders, for the rain of seats");
     const cat = await getJson(`${SITE}/.netlify/functions/furni-catalogue?sprites=1`);
     const classByLarge = new Map();
-    for (const item of cat.items || []) {
+    /* The OLD renders' filenames come from the frozen old catalogue since the
+       live one moved to the new API (5 Oct 2026; _furni-legacy.js). */
+    const { legacy } = require(path.join(ROOT, "netlify", "functions", "_furni-legacy.js"));
+    for (const item of legacy().items) {
         for (const state of item.largeImages || []) for (const url of state || []) {
             if (url && url.startsWith(OLD) && item.className) classByLarge.set(url.slice(OLD.length), item.className);
         }

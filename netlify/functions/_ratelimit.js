@@ -67,7 +67,7 @@ const LIMITS = { media: 600, search: 40, write: 60, read: 240 };
    cached yet) can load a few hundred maze pictures in its first minute. */
 const MEDIA = new Set([
     "image", "deal-image", "habbo", "habbo-outline", "room-figure",
-    "furni-catalogue", "furni-meta", "track"
+    "furni-catalogue", "furni-meta", "furni-shown", "track"
 ]);
 
 /* NOT LIMITED AT ALL (4 Oct 2026, the bug scan), each because a refusal

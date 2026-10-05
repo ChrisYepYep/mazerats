@@ -58,7 +58,8 @@
 
     const Iso = window.RoomIso;
 
-    const SPRITE_BASE = "https://furniindex.com/image/furni/furni-";
+    // (SPRITE_BASE, the old FurniIndex host's picture prefix, went on 5 Oct
+    // 2026: nothing read it. This page's art is the client's own.)
     const sprites = new Map();          // url -> { img, ready }
     let onLoad = null;
 
@@ -1223,7 +1224,7 @@
     }
 
     window.RoomFurni = {
-        SPRITE_BASE, make, tilesOf, covers, blockedTiles, seatAt, anyAt,
+        make, tilesOf, covers, blockedTiles, seatAt, anyAt,
         fits, depthOf, sorted, draw, drawAll, outline, sprite, onSpriteLoad,
         footprint, rotate, rotationsOf, statesOf, anchor, variantAt, librarySprite, libraryMeta,
         partsOf, drawPart, drawAdded, depthOfPart, tileDepth, DEPTH_PER_TILE, stateName,

@@ -161,7 +161,7 @@ const MAX_BODY = 2048;
 // player-forget.js), since one goes into a regex below.
 const ID_SHAPE = /^[A-Za-z0-9_-]{1,64}$/;
 const REF_SHAPE = /^p_[0-9a-f]{20}$/;
-const FILTERS = ["all", "nick", "nonick", "locked", "unasked", "flagged", "clash", "banned"];
+const FILTERS = ["all", "nick", "nonick", "locked", "unasked", "flagged", "clash", "motto", "banned"];
 const REVIEWS = ["allow", "reject"];
 /* A flagged row, as a Mongo filter (29 Sept 2026). On the flag's `reason`
    being a string rather than on nickFlag existing, for the same reason the
@@ -178,6 +178,23 @@ function clashOf(row) {
     const h = row && row.habbo;
     if (!h || h.clash !== true || h.clashDismissed === true) return null;
     return { name: str(h.name), hotel: str(h.hotel) };
+}
+/* A MOTTO FLAGGED and waiting for an admin (5 Oct 2026, the owner's; MOTTOS
+   in profiles.js): their Habbo motto has profanity in it, so it is kept off
+   their profile and Mazer Card. Settled by Approve (that exact motto shows
+   again) or Keep hidden (`reviewed`, and it stops waiting); see
+   mottoReview below. */
+const MOTTO_WAITING = { "mottoFlag.text": { $type: "string" }, "mottoFlag.reviewed": { $ne: true } };
+const MOTTO_REVIEWS = ["approve", "hide", "revoke"];
+function mottoFlagOf(row) {
+    const f = row && row.mottoFlag;
+    if (!f || typeof f !== "object" || typeof f.text !== "string") return null;
+    return { text: f.text, word: str(f.word), at: str(f.at), reviewed: f.reviewed === true };
+}
+function mottoApprovedOf(row) {
+    const a = row && row.mottoApproved;
+    if (!a || typeof a !== "object" || typeof a.text !== "string") return null;
+    return { text: a.text, by: str(a.by), at: str(a.at) };
 }
 const SORTS = ["seen", "joined", "name", "nick"];
 
@@ -243,6 +260,9 @@ function shape(row, seesIds, act, bans) {
         nickAsked: row.nickAsked === true,
         // Their Habbo name, held by somebody else (see CLASHING).
         nameClash: clashOf(row),
+        // Their Habbo motto, kept off for profanity, and any motto passed (MOTTO_WAITING).
+        mottoFlag: mottoFlagOf(row),
+        mottoApproved: mottoApprovedOf(row),
         /* BANS (29 Sept 2026; see _bans.js). `ban` is the most severe active
            ban on their account or on their network code, as { level, until,
            kind }, or null. `hasNetHash` says whether the Warren can ban
@@ -323,6 +343,7 @@ function listFilter(filter, q, seesIds, bans) {
     if (filter === "unasked") and.push({ nickAsked: { $ne: true } });
     if (filter === "flagged") and.push(FLAGGED);
     if (filter === "clash") and.push(CLASHING);
+    if (filter === "motto") and.push(MOTTO_WAITING);
     if (q) {
         const bare = q.replace(/^@/, "").trim();
         if (bare) {
@@ -516,7 +537,7 @@ async function list(event, db, seesIds) {
     // the "banned" filter and count (29 Sept 2026). A handful of rows.
     const bans = await Bans.accountBans(db);
     const where = listFilter(filter, q, seesIds, bans);
-    const [rows, total, all, nick, locked, flagged, banned, clash, waiting] = await Promise.all([
+    const [rows, total, all, nick, locked, flagged, banned, clash, motto, waiting] = await Promise.all([
         pageOf(players, where, sort, skip, limit),
         players.countDocuments(where),
         players.countDocuments({}),
@@ -527,15 +548,17 @@ async function list(event, db, seesIds) {
         players.countDocuments(bannedFilter(bans)),
         // And name clashes, which light it too (4 Oct 2026).
         players.countDocuments(CLASHING),
-        /* Both at once, each player once, for the nav badge (the quick
-           scan): a flagged name with a clash too was counted twice. */
-        players.countDocuments({ $or: [FLAGGED, CLASHING] })
+        // And flagged mottos (5 Oct 2026).
+        players.countDocuments(MOTTO_WAITING),
+        /* All of them at once, each player once, for the nav badge (the
+           quick scan): a flagged name with a clash too was counted twice. */
+        players.countDocuments({ $or: [FLAGGED, CLASHING, MOTTO_WAITING] })
     ]);
     const act = await activityFor(db, rows.map(r => String(r.id)), false);
     return json(200, {
         players: rows.map(r => shape(r, seesIds, act.get(String(r.id)), bans)),
         total,
-        counts: { all, nick, locked, flagged, banned, clash, waiting },
+        counts: { all, nick, locked, flagged, banned, clash, motto, waiting },
         now: new Date().toISOString()
     });
 }
@@ -583,6 +606,12 @@ async function update(event, db, role) {
             return json(400, { error: "Taking a name off the turned-down list goes on its own." });
         }
         return await unTurnDown(event, db, body);
+    }
+    if (body.motto !== undefined) {
+        if (!MOTTO_REVIEWS.includes(body.motto)) return json(400, { error: "motto is approve, hide or revoke." });
+        if (hasNick || body.locked !== undefined || body.resetPrompt !== undefined || body.review !== undefined || body.dismissClash !== undefined) return json(400, { error: "A motto review goes on its own." });
+        if (body.motto === "approve" && typeof body.seen !== "string") return json(400, { error: "seen is the motto you were looking at." });
+        return await mottoReview(event, db, body);
     }
     if (body.dismissClash !== undefined) {
         if (body.dismissClash !== true) return json(400, { error: "dismissClash is true." });
@@ -755,6 +784,47 @@ async function dismissClash(event, db, body) {
     await players.updateOne({ id: body.id }, { $set: { "habbo.clashDismissed": true } });
     const after = await players.findOne({ id: body.id }, { projection: { _id: 0 } });
     return json(200, { player: detailShape(after || row, true, null, await bansOr(db)), changed: ["name clash dismissed"] });
+}
+
+/* A MOTTO REVIEWED (5 Oct 2026; see MOTTO_WAITING). update() has already
+   checked the role and the body.
+     approve  that exact motto shows again (mottoApproved), and the flag
+              goes. `seen` must be the motto the admin was shown: one changed
+              since is answered 409, to be looked at first.
+     hide     kept off, and no longer waiting (the flag is marked reviewed).
+     revoke   an approval taken back: kept off again, as reviewed. */
+async function mottoReview(event, db, body) {
+    const players = db.collection("players");
+    const row = await players.findOne({ id: body.id }, { projection: { _id: 0 } });
+    if (!row) return json(404, { error: "No player by that id." });
+    const flag = mottoFlagOf(row), passed = mottoApprovedOf(row);
+    const who = usernameFromToken(event) || "unknown";
+    const now = new Date().toISOString();
+    let upd, did;
+    if (body.motto === "approve") {
+        if (!flag) return json(409, { error: "There's no flagged motto to approve now. Have another look." });
+        if (flag.text !== body.seen) return json(409, { error: "Their motto has changed since you loaded it. Have a look at the new one." });
+        upd = { $set: { mottoApproved: { text: flag.text, by: who, at: now } }, $unset: { mottoFlag: "" } };
+        did = "motto approved";
+    } else if (body.motto === "hide") {
+        if (!flag) return json(200, { player: detailShape(row, true, null, await bansOr(db)), changed: [] });
+        upd = { $set: { "mottoFlag.reviewed": true } };
+        did = "motto kept hidden";
+    } else {
+        if (!passed) return json(200, { player: detailShape(row, true, null, await bansOr(db)), changed: [] });
+        upd = { $unset: { mottoApproved: "" }, $set: { mottoFlag: { text: passed.text, word: nickRules.mottoHit(passed.text), at: now, reviewed: true } } };
+        did = "motto approval taken back";
+    }
+    await record(event, "write", {
+        username: who,
+        session: sessionOf(event),
+        method: "PUT",
+        endpoint: "players-admin",
+        target: `${body.id}: ${did}`.slice(0, 200)
+    });
+    await players.updateOne({ id: body.id }, upd);
+    const after = await players.findOne({ id: body.id }, { projection: { _id: 0 } });
+    return json(200, { player: detailShape(after || row, true, null, await bansOr(db)), changed: [did] });
 }
 
 /* THE REVIEW, allow or reject (29 Sept 2026; see the header's second PUT,

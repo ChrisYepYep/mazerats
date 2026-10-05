@@ -61,4 +61,34 @@ function isLegacySpriteKey(name) {
     return /^\d+_\d+_\d+\.png$/.test(name);
 }
 
-module.exports = { spriteCacheKey, spriteList, isLegacySpriteKey };
+/* The catalogue the scanner matches against (5 Oct 2026, when the catalogue
+   moved to FurniIndex's new API).
+
+   Every furni the old catalogue had is scanned exactly as before: against
+   the old renders, recorded under the old name, icon and url. The matcher
+   compares exact colours, and the new API's renders differ from the old in
+   enough pixels to cost real finds — on sixteen archive rooms the new
+   renders missed 19 of the 129 furni the old ones found (every Door, the
+   Yukka, the polyfon bar desks), with a third of a sprite's coverage gone
+   at worst. The old renders are what the archive was scanned and tuned
+   against, and recording the same identity keeps a rescan recognising the
+   pieces an admin hid (pieceKey in _furni-merge.js keys on url and icon).
+   Only furni released since — which never had an old render — are matched
+   against the new API's (largeImages as furni-catalogue.js builds them).
+
+   Moving the rest onto the new renders means re-validating the matcher
+   against them first (tools/furni-verify.js, then MIN_COVERAGE in
+   _furni-match.js), and a rescan of the archive; until then, this. The old
+   renders come from the local sprite cache (tools/.cache/sprites), refilled
+   from the old host only when a file is missing. */
+function scanCatalogue(catalogue) {
+    const { byClass } = require("./_furni-legacy.js").legacy();
+    const items = (catalogue.items || []).map(item => {
+        if (item.legacy) return item;
+        const old = byClass.get((item.className || "").toLowerCase());
+        return old && (old.largeImages || []).length ? old : item;
+    });
+    return { ...catalogue, items };
+}
+
+module.exports = { spriteCacheKey, spriteList, isLegacySpriteKey, scanCatalogue };

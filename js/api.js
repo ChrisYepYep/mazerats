@@ -75,7 +75,9 @@ const Api = {
            sent with their old address in full (_furni-payload.js). */
         // An empty one stays empty (2 Oct 2026): js/home.js reads "" as "no
         // picture", where the bare prefix is a request for a 404.
-        const at = v => (!v || /^https?:\/\//.test(v) ? (v || "") : prefix + v);
+        // And one of this site's own (/assets/img/furni-legacy/…, 5 Oct 2026:
+        // a picture the new API can't serve, copied here off the old host).
+        const at = v => (!v || /^(https?:\/\/|\/)/.test(v) ? (v || "") : prefix + v);
         const table = payload.f.map(t => ({
             name: t.n || "",
             className: t.c || "",
@@ -399,7 +401,7 @@ const Api = {
         if (!res.ok) throw new Error(data.error || `Furni catalogue unavailable (${res.status})`);
         return { fetchedAt: data.fetchedAt, count: data.total };
     },
-    // Owners only: fetch it from FurniIndex now. Thirteen pages, so a long leash.
+    // Owners only: fetch it from FurniIndex now. An eight-second round of requests on the server, so a long leash.
     async refreshFurniCatalogue(token) {
         const data = await this._write("/.netlify/functions/furni-catalogue?refresh=1&limit=1", "GET", token, undefined, 60000);
         return { fetchedAt: data && data.fetchedAt, count: data && data.total };
@@ -991,6 +993,19 @@ const Api = {
     },
     updatePlayer(token, body) {
         return this._write("/.netlify/functions/players-admin", "PUT", token, body);
+    },
+
+    /* Console notifications (5 Oct 2026; netlify/functions/notifications.js):
+       the latest sent, with how many have seen each; send one ({ text,
+       audience: "all" | "players", to: [Discord ids] }); withdraw one. */
+    getNotifications(token) {
+        return this._write("/.netlify/functions/notifications?admin=1", "GET", token);
+    },
+    sendNotification(token, body) {
+        return this._write("/.netlify/functions/notifications?admin=1", "POST", token, body);
+    },
+    withdrawNotification(token, nid) {
+        return this._write(`/.netlify/functions/notifications?admin=1&nid=${encodeURIComponent(nid)}`, "DELETE", token);
     },
 
     getBans(token) { return this._write("/.netlify/functions/bans", "GET", token); },

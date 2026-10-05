@@ -275,7 +275,7 @@
             if (!Account.current || !patch) return;
             Object.assign(pendingPatch, patch);
             clearTimeout(saveTimer);
-            saveTimer = setTimeout(flushState, 600);
+            saveTimer = setTimeout(() => flushState(), 600);
         },
 
         // For the one case that cannot wait 600ms: the page is going away.
@@ -353,7 +353,13 @@
     // The PUT currently on the wire, if any — see forget() for who waits on it.
     let inFlight = null;
 
-    async function flushState() {
+    /* `leaving`: the page is going away (pagehide), the one save that is
+       sent keepalive. `retry`: this is the second go at a save that failed
+       to send (see SAFARI'S "LOAD FAILED" below). */
+    const RETRY_MS = 3000;
+    async function flushState(opts) {
+        const leaving = !!(opts && opts.leaving);
+        const retry = !!(opts && opts.retry);
         clearTimeout(saveTimer);
         if (!Account.current) { pendingPatch = {}; return; }
         const patch = pendingPatch;
@@ -370,12 +376,19 @@
                     credentials: "same-origin",
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify(patch),
-                    /* Without this the pagehide flush below was usually
-                       cancelled with the page, so the last ticks before
-                       closing the tab never arrived. The body is a few ids
-                       and at most one day's game, far under keepalive's
-                       64KB limit. */
-                    keepalive: true
+                    /* On the pagehide flush only: without it that save was
+                       usually cancelled with the page, so the last ticks
+                       before closing the tab never arrived. The body is a
+                       few ids and at most one day's game, far under
+                       keepalive's 64KB limit.
+
+                       SAFARI'S "LOAD FAILED" (5 Oct 2026, the Warren's
+                       Errors tab): every save used to go keepalive, and
+                       Safari failed one at once (45ms, status 0, "Load
+                       failed") a few seconds after another had gone through
+                       — WebKit is known to be unreliable with keepalive
+                       requests. An ordinary save has no need of it. */
+                    keepalive: leaving
                 }, 15000);
                 if (res.ok) {
                     Account.stored = await res.json();
@@ -387,7 +400,19 @@
                        showing a player whose saves are all refused. */
                     signedOutUnderneath();
                 }
-            } catch (e) { /* the local copy is already right; nothing to undo */ }
+            } catch (e) {
+                /* Never sent, or no answer: the local copy is already right,
+                   but the account would miss these changes until the next
+                   save happened to carry them. So it goes back in the queue
+                   and is tried once more in a few seconds — under anything
+                   newer queued since, which wins. Not on the way out, and
+                   only once: a second failure waits for the next save. */
+                if (!leaving && !retry && Account.current) {
+                    pendingPatch = Object.assign({}, patch, pendingPatch);
+                    clearTimeout(saveTimer);
+                    saveTimer = setTimeout(() => flushState({ retry: true }), RETRY_MS);
+                }
+            }
         })();
         inFlight = send;
         await send;
@@ -430,6 +455,14 @@
             pendingPatch[list] = pendingPatch[list].filter(x => x !== id);
         }
         if (inFlight) { try { await inFlight; } catch (e) { /* settled either way */ } }
+        /* Again, after it: a save that failed puts its list back in the
+           queue to be tried again (flushState), and that list was taken
+           before this un-tick — without this the retry carried the id back
+           to the account after the DELETE had removed it (the bug scan,
+           5 Oct 2026). */
+        if (Array.isArray(pendingPatch[list])) {
+            pendingPatch[list] = pendingPatch[list].filter(x => x !== id);
+        }
         try {
             const res = await timedFetch(`${STATE_ENDPOINT}?${list}=${encodeURIComponent(id)}`, {
                 method: "DELETE",
@@ -689,7 +722,7 @@
 
     // A tick made in the last moments before the tab closes still counts.
     window.addEventListener("pagehide", () => {
-        if (Object.keys(pendingPatch).length) flushState();
+        if (Object.keys(pendingPatch).length) flushState({ leaving: true });
     });
 
     function announce() {

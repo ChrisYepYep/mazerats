@@ -707,7 +707,10 @@
 
     function setBusy(i, on) {
         const sheet = roundSheet(i);
-        if (sheet) sheet.el.classList.toggle("is-busy", on);
+        if (!sheet) return;
+        sheet.el.classList.toggle("is-busy", on);
+        // The loading bar is for the picture only, not a guess on its way.
+        sheet.el.classList.toggle("is-fetching", on);
     }
 
     /* The rooms handed out so far, kept beside the day under a key of their
@@ -2341,7 +2344,19 @@
         state.round = next === -1 ? ROUNDS - 1 : kept ? state.round : next;
     }
 
-    async function start() {
+    /* One start at a time, and a second caller waits on the first (5 Oct
+       2026, the bug scan): a window shut and opened again while the day was
+       still being dealt got an at-once return from here, took its loading
+       bar down and found no state, so the window sat on hidden sheets. */
+    let starting = null;
+    function start() {
+        if (starting) return starting;
+        if (started) return Promise.resolve();
+        starting = startNow().finally(() => { starting = null; });
+        return starting;
+    }
+
+    async function startNow() {
         if (started) return;
         started = true;
         unavailable = false;
@@ -2468,7 +2483,9 @@
            the window used to stand empty, or on a splash whose Play did
            nothing, until the server answered. Down again below, whatever
            happened. */
-        Daily.waiting(el.deck, true, "Dealing today's rooms");
+        // Only while there is nothing to show: reopened on a day already
+        // dealt, the sheets stand while the server is asked again below.
+        if (!started || !state || starting || dayHasTurned()) Daily.waiting(el.deck, true, "Dealing today's rooms");
         let reopened = false;
         claimAdminReset()
             .then(() => { if (dayHasTurned()) forgetDeal(); reopened = started; })

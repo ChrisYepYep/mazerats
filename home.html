@@ -1086,8 +1086,18 @@
                         <div class="console-hashline" aria-hidden="true"></div>
                         <div id="console-missing-body"></div>
                     </div>
+                    <!-- A notification waiting for this visitor (5 Oct 2026; js/console.js,
+                         netlify/functions/notifications.js): shown first when the
+                         console opens, centred on the screen, one at a time. -->
+                    <div class="console-page console-page-notice" id="console-page-notice" style="display:none;" role="status">
+                        <p class="console-notice-text" id="console-notice-text"></p>
+                        <p class="console-notice-count" id="console-notice-count" hidden></p>
+                        <button type="button" class="console-btn console-btn-ok" id="console-notice-ok">OK</button>
+                    </div>
                     <div class="console-page console-page-thanks" id="console-page-thanks" style="display:none;">
                         <p class="console-thanks-message" id="console-thanks-message">We'll be in touch for more details, thanks!</p>
+                        <!-- A second, plainer line some sends add (an event entry's). -->
+                        <p class="console-thanks-note" id="console-thanks-note" hidden></p>
                         <button type="button" class="console-btn console-btn-ok" id="console-thanks-ok">OK</button>
                     </div>
                     <div class="console-page" id="console-page-people" style="display:none;">
@@ -1117,16 +1127,39 @@
                          would get. Built by js/console-profile.js from
                          netlify/functions/player-profile.js. It replaced the
                          About page. -->
+                    <!-- The PROFILE tab lands here (5 Oct 2026, the owner's): laid out
+                         as Contact is, a choice of two. js/console.js wires it. -->
+                    <div class="console-page" id="console-page-me" style="display:none;">
+                        <h3 class="console-page-title">Profile</h3>
+                        <div class="console-hashline" aria-hidden="true"></div>
+                        <div class="console-choice">
+                            <button type="button" class="console-btn console-choice-btn" id="console-choice-notices">Notifications</button>
+                            <button type="button" class="console-btn console-choice-btn" id="console-choice-edit">Edit Profile</button>
+                        </div>
+                    </div>
+                    <!-- Every notification this visitor has been sent, newest first
+                         (netlify/functions/notifications.js ?all=1). -->
+                    <div class="console-page" id="console-page-notices" style="display:none;">
+                        <h3 class="console-page-title">Notifications</h3>
+                        <div class="console-hashline" aria-hidden="true"></div>
+                        <div class="console-notices-list" id="console-notices-list"></div>
+                        <div class="console-contact-actions">
+                            <button type="button" class="console-btn console-btn-cancel" id="console-notices-back">Back</button>
+                        </div>
+                    </div>
                     <div class="console-page" id="console-page-profile" style="display:none;">
                         <h3 class="console-page-title">Edit Profile</h3>
                         <div class="console-hashline" aria-hidden="true"></div>
                         <div id="console-profile-body"></div>
+                        <div class="console-contact-actions">
+                            <button type="button" class="console-btn console-btn-cancel" id="console-profile-back">Back</button>
+                        </div>
                     </div>
                 </div>
                 <div class="console-screen-shadow" aria-hidden="true"></div>
             </div>
             <div class="console-buttons" id="console-buttons">
-                <button type="button" class="console-tab-btn" id="profile-btn" data-page="profile" aria-label="Profile"><span class="console-tab-label">PROFILE</span></button>
+                <button type="button" class="console-tab-btn" id="profile-btn" data-page="me" aria-label="Profile"><span class="console-tab-label">PROFILE</span></button>
                 <button type="button" class="console-tab-btn" id="contact-btn" data-page="contact" aria-label="Contact Us"><span class="console-tab-label">CONTACT</span></button>
                 <button type="button" class="console-tab-btn" id="people-btn" data-page="people" aria-label="Source: contributors"><span class="console-tab-label">SOURCE</span></button>
                 <button type="button" class="console-tab-btn" id="privacy-btn" data-page="privacy" aria-label="Privacy Policy"><span class="console-tab-label">PRIVACY</span></button>
@@ -1670,7 +1703,7 @@
          console.js, whose page switching it uses (window.MazeConsole). -->
     <script src="js/console-info.js?v=2"></script>
     <script src="js/console-profile.js?v=2"></script>
-    <script src="js/mazer-card.js?v=1"></script>
+    <script src="js/mazer-card.js?v=2"></script>
     <!-- The Guides window. guide-text.js is loaded above, before home.js. -->
     <script src="js/guides.js?v=2"></script>
     <!-- The Alt Codes window. Needs nothing but site.js's EscapeLayers. -->

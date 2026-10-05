@@ -3484,6 +3484,10 @@ body[data-page="admin"] .admin-contributor-count {
 /* Text lifted off the deep red so the label is legible on the tag's own
    dark fill; the outline keeps the difficulty colour itself. */
 .difficulty-extreme { color: #d47979; border-color: #731418; }
+/* Impossible (5 Oct 2026, the owner's): dark grey, past the colour scale —
+   a maze nobody can finish (isImpossible in js/home.js). The text a lighter
+   grey so it reads on the tag's dark fill (about 6:1). */
+.difficulty-impossible { color: #a3a3a3; border-color: #5c5c5c; }
 
 /* .chrome-tab itself is gone: no page and no script had rendered one since
    the tabs became .chrome-nav-btn, and its outline: none was a focus-ring
@@ -3978,6 +3982,7 @@ body[data-page="admin"] .admin-contributor-count {
 #featured-frame-list .chrome-list-row[data-difficulty="hard"] { background: #fa7646; }
 #featured-frame-list .chrome-list-row[data-difficulty="very-hard"] { background: #ec434a; }
 #featured-frame-list .chrome-list-row[data-difficulty="extreme"] { background: #731418; }
+#featured-frame-list .chrome-list-row[data-difficulty="impossible"] { background: #4a4a4a; }
 
 /* The row tints above are solid, mid-to-light colours that the shared
    light-on-dark text tones (h3's --amber-bright, .row-creator/.row-desc's
@@ -4018,6 +4023,14 @@ body[data-page="admin"] .admin-contributor-count {
 #featured-frame-list .chrome-list-row[data-difficulty="extreme"] .row-date,
 #featured-frame-list .chrome-list-row[data-difficulty="extreme"] .chrome-go {
     color: #d47979;
+}
+/* Impossible's grey is dark too: a light grey on it (about 6:1). */
+#featured-frame-list .chrome-list-row[data-difficulty="impossible"] h3,
+#featured-frame-list .chrome-list-row[data-difficulty="impossible"] .row-creator,
+#featured-frame-list .chrome-list-row[data-difficulty="impossible"] .row-desc,
+#featured-frame-list .chrome-list-row[data-difficulty="impossible"] .row-date,
+#featured-frame-list .chrome-list-row[data-difficulty="impossible"] .chrome-go {
+    color: #d6d6d6;
 }
 
 /* Full-bleed thumbnail instead of the shared 76x76 fixed square — stretches
@@ -9070,11 +9083,99 @@ body[data-page="admin"] .search-box input {
     text-align: center;
 }
 
+/* The second line (5 Oct 2026, the owner's: an event entry's "We'll notify
+   you when your entry has been approved."), in the ordinary weight. */
+.console-thanks-note {
+    margin: 8px 0 0;
+    font-weight: 400;
+    font-size: 0.55rem;
+    line-height: 1.4;
+    color: #eeeeee;
+    text-align: center;
+}
+.console-thanks-note[hidden] { display: none; }
+
 .console-btn-ok {
     align-self: center;
     margin-top: auto;
     margin-bottom: 8px;
     min-width: 48px;
+}
+
+/* ---- a notification (5 Oct 2026, the owner's; NOTIFICATIONS in
+   js/console.js): the message in the middle of the screen, both ways, in
+   the screen's ordinary weight; the OK pinned to the bottom as the thanks
+   page's is. The message takes the room between, and centres itself in it. */
+.console-page-notice {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+    height: 100%;
+    box-sizing: border-box;
+}
+/* Centred on the whole screen, not on the room above the OK: laid over the
+   page, with the same clear band top and bottom so a long message never
+   runs under the button and the middle stays the screen's middle. */
+.console-notice-text {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 0;
+    padding: 40px 10px;
+    font-family: 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace;
+    font-weight: 400;
+    font-size: 0.5625rem;
+    line-height: 1.6;
+    color: #eeeeee;
+    text-align: center;
+    overflow-wrap: anywhere;
+}
+/* **Bold** in a notice: Volter's bold cut, asked for by name (see the
+   @font-face pair at the top), not a synthetic weight. */
+.console-notice-text strong {
+    font-family: 'Volter Goldfish Bold', 'Volter Goldfish', 'Pixelify Sans', monospace;
+    font-weight: 400;
+}
+.console-notice-count {
+    margin: 0 0 6px;
+    font-family: 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace;
+    font-size: 0.5625rem;
+    color: #eeeeee;
+    opacity: 0.7;
+    text-align: center;
+}
+/* Above the message, which is laid over the whole page: the OK could not
+   be hovered or pressed under it (5 Oct 2026, the owner's). The message
+   lets the pointer through as well, in case a long one reaches it. */
+.console-page-notice .console-btn-ok,
+.console-page-notice .console-notice-count { position: relative; z-index: 1; }
+.console-page-notice .console-notice-text { pointer-events: none; }
+.console-page-notice .console-btn-ok { margin-top: 0; }
+
+/* THE NOTIFICATIONS LIST (5 Oct 2026; js/console.js): each notice under its
+   day, a dotted line between them, as the Contributors list sets its rows. */
+.console-notices-item { padding: 4px 0; }
+.console-notices-day {
+    margin: 0 0 2px;
+    font-family: 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace;
+    font-size: 0.5625rem;
+    color: #eeeeee;
+    opacity: 0.7;
+}
+.console-notices-text {
+    margin: 0;
+    font-family: 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace;
+    font-size: 0.5625rem;
+    line-height: 1.6;
+    color: #eeeeee;
+    overflow-wrap: anywhere;
+}
+.console-notices-text strong {
+    font-family: 'Volter Goldfish Bold', 'Volter Goldfish', 'Pixelify Sans', monospace;
+    font-weight: 400;
 }
 
 /* ---- CONSOLE: MISSING PIECES (js/console-info.js)
@@ -10970,10 +11071,12 @@ body[data-page="admin"] #activity-sessions {
    every date ends on the same edge and the dots line up into the rule that
    makes this read as a timeline at all. */
 .timeline-entry {
+    --tl-date: 84px;
+    --tl-gap: 10px;
     display: grid;
-    grid-template-columns: 84px 13px 1fr;
+    grid-template-columns: var(--tl-date) 13px 1fr;
     align-items: start;
-    gap: 0 10px;
+    gap: 0 var(--tl-gap);
     padding: 7px 0;
 }
 
@@ -10986,10 +11089,10 @@ body[data-page="admin"] #activity-sessions {
     font-variant-numeric: tabular-nums;
 }
 
-/* The dot, and the line between the dots. The line is drawn by the dot's
-   own ::after reaching down to the next one rather than as a border on a
-   container, so it stops of its own accord at the last entry of a year
-   instead of running on into the year heading below. */
+/* The dot. The line between the dots is drawn by each entry but the last
+   (below), rather than as a border on a container, so it stops of its own
+   accord at the last entry of a year instead of running on into the year
+   heading below. */
 .timeline-dot {
     position: relative;
     width: 7px;
@@ -11000,16 +11103,25 @@ body[data-page="admin"] #activity-sessions {
     justify-self: center;
 }
 
-.timeline-entry:not(:last-child) .timeline-dot::after {
+/* THE LINE IS THE ENTRY'S, not the dot's (5 Oct 2026, the bug scan). A
+   line hung off the dot had to guess how far away the next dot was — it
+   was capped at 60px — and stopped short under any entry taller than
+   that: most of them on a phone, where the names wrap, and a third on a
+   wide screen. Drawn from the entry instead it runs from under this dot
+   (the entry's 7px padding, the dot's 6px margin and its own 7px) to the
+   top of the next one (13px into the next entry), however tall this one
+   is. --tl-date and --tl-gap are the grid's own date column and gap, so
+   the line sits on the middle of the dot column. */
+.timeline-entry { position: relative; }
+.timeline-entry:not(:last-child)::after {
     content: "";
     position: absolute;
-    left: 50%;
-    top: 7px;
+    left: calc(var(--tl-date, 84px) + var(--tl-gap, 10px) + 6px);
+    top: 20px;
+    bottom: -13px;
     width: 1px;
-    height: calc(100% + 100px);
-    max-height: 60px;
-    transform: translateX(-50%);
     background: var(--border);
+    pointer-events: none;
 }
 
 /* An event's dot is hollow, so the two kinds of entry are told apart on the
@@ -11095,27 +11207,18 @@ body[data-page="admin"] #activity-sessions {
     overflow: hidden;
 }
 
+/* On a phone the timeline is the desktop's (5 Oct 2026, the owner's): the
+   date column, the dot and the entry side by side. The date used to move
+   above its entry under 640px, which was the timeline's old look; the
+   frame's list is wide enough for the column now. Only the year is a
+   little smaller. */
 @media (max-width: 640px) {
-    /* The date moves above its entry rather than shrinking the column it
-       shares — a 84px date column against a 375px screen leaves the names
-       nowhere to go. */
-    .timeline-entry {
-        grid-template-columns: 13px 1fr;
-        gap: 0 8px;
-    }
-    .timeline-date {
-        grid-column: 2;
-        text-align: left;
-        line-height: 1.4;
-    }
-    .timeline-dot {
-        grid-row: 1 / span 2;
-        margin-top: 4px;
-    }
-    .timeline-entry:not(:last-child) .timeline-dot::after {
-        max-height: 90px;
-    }
     .timeline-year-number { font-size: 1.15rem; }
+    /* Room for the names: the box's own margin and padding trimmed, and
+       the date column to the width of "3 Oct 2026" (a longer date wraps,
+       as "10 Sept 2024" already does on the desktop's 84px). */
+    .chrome-list:has(> .timeline) { margin: 8px 4px 6px; padding: 12px 8px 14px; }
+    .timeline-entry { --tl-date: 72px; --tl-gap: 8px; }
 }
 
 /* The divider between a year's counts. Roboto, because Volter Goldfish
@@ -17601,8 +17704,8 @@ textarea.ctl-input.de-note {
 }
 
 /* The line shown inside a daily window while its game is still being
-   fetched — see js/daily-loader.js. Only ever appears after 400ms, so on
-   any ordinary connection nobody sees it at all.
+   fetched — see js/daily-loader.js. Only ever appears after 150ms (SLOW_AFTER
+   there), so on an ordinary connection nobody sees it at all.
 
    Centred in the window rather than sat at the top of it, because the
    window is already at full height by the time this exists (the deck
@@ -17627,8 +17730,8 @@ textarea.ctl-input.de-note {
     font-size: 0.6875rem;
     line-height: 1.7;
     color: var(--parchment-dim);
-    /* It fades in rather than appearing, so the 400ms threshold does not
-       read as a flicker on a connection that lands at 450ms. */
+    /* It fades in rather than appearing, so the 150ms threshold does not
+       read as a flicker on a connection that lands just past it. */
     animation: daily-loading-in 0.25s ease both;
 }
 
@@ -17676,8 +17779,10 @@ textarea.ctl-input.de-note {
     to { transform: translateX(148px); }
 }
 /* The room's picture on its way (a slow image, a retry): the same bar over
-   the dimmed frame. */
-.guess-sheet.is-busy .guess-picture::after {
+   the dimmed frame. Its own class (setBusy in js/guess.js), not .is-busy,
+   which a guess on its way to the server also sets: the bar flashed on
+   every guess. */
+.guess-sheet.is-fetching .guess-picture::after {
     content: "";
     position: absolute;
     left: 50%;
@@ -17700,7 +17805,7 @@ textarea.ctl-input.de-note {
 }
 @media (prefers-reduced-motion: reduce) {
     .daily-bar > span,
-    .guess-sheet.is-busy .guess-picture::after { animation-duration: 3s; }
+    .guess-sheet.is-fetching .guess-picture::after { animation-duration: 3s; }
 }
 
 /* The window holds a frame, and the frame holds the deck — the same deck of
@@ -19331,8 +19436,17 @@ body.is-logging-out * {
    pixels of the picture's anyway. A single banner with no gallery still
    hugs its picture: it never changes, so it never jumps. */
 @media (max-width: 640px) {
+    /* Held at the shape of a Habbo screenshot, not at the panel height (5
+       Oct 2026, the owner's: the pictures didn't fill it). 28vh on a
+       375-wide phone made a frame of about 1.25:1 around pictures of about
+       1.57:1, so every slide sat in black bands top and bottom. 16:10 is
+       what nearly every event picture is, give or take a few pixels, and
+       the frame still never changes size from slide to slide. The panel
+       height stays as the cap, for a phone on its side. */
     .modal-thumb.modal-thumb-full.is-event.has-gallery .modal-thumb-frame {
-        height: var(--event-thumb-h);
+        height: auto;
+        aspect-ratio: 16 / 10;
+        max-height: var(--event-thumb-h);
         width: 100%;
     }
     .modal-thumb-full.is-event.has-gallery .gallery-viewport {
@@ -21107,3 +21221,87 @@ body.is-viewer #bans-add { display: none !important; }
 .mazer-motto-box:checked::after { visibility: visible; }
 .mazer-motto-box:focus { outline: none; }
 .mazer-motto-box:focus-visible { outline: 1px solid var(--parchment); outline-offset: 1px; }
+
+/* ---- the Warren's Notifications panel (5 Oct 2026; js/admin-notifications.js) ---- */
+.nt-compose { display: flex; flex-direction: column; gap: 6px; margin-bottom: 12px; }
+.nt-text { width: 100%; box-sizing: border-box; min-height: 64px; resize: vertical; font: inherit; }
+.nt-left { margin: 0; }
+.nt-pick { display: flex; flex-direction: column; gap: 6px; }
+.nt-search { width: 100%; box-sizing: border-box; }
+.nt-results, .nt-chosen { display: flex; flex-wrap: wrap; gap: 4px; }
+.nt-chip { display: inline-flex; align-items: center; gap: 4px; }
+.nt-chip-x {
+    padding: 0 2px;
+    background: none;
+    border: 0;
+    color: inherit;
+    font: inherit;
+    line-height: 1;
+    cursor: var(--cursor-pointer);
+}
+.nt-row { display: flex; flex-direction: column; gap: 4px; padding: 8px 10px; }
+.nt-row-text { margin: 0; overflow-wrap: anywhere; }
+.nt-row-meta { margin: 0; }
+.nt-row.is-withdrawn { opacity: 0.6; }
+/* The @username in a search result: the button's own size and Volter's
+   regular cut, as typed (not the button's capitals), a little dimmer.
+   .admin-hint here was 12px, a size Volter cannot draw cleanly. */
+.nt-result-user {
+    margin-left: 6px;
+    font-size: inherit;
+    font-weight: 400;
+    letter-spacing: 0;
+    text-transform: none;
+    opacity: 0.75;
+}
+/* The Notifications panel's two columns: the message on the left, the
+   console preview on the right (under it on a narrow window). */
+.nt-compose-top { display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-start; }
+.nt-compose-main { flex: 1 1 280px; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+.nt-label-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.nt-bold strong { margin-right: 4px; }
+.nt-preview { flex: 0 0 auto; display: flex; flex-direction: column; gap: 6px; }
+/* The real console's parts (#console-modal in home.html), cut off below the
+   screen where its tabs would be: the 32px top, the 200px screen, and the
+   14px edge under it. Not a dialog here, and nothing in it can be pressed. */
+.nt-preview-frame { height: 246px; flex: none; pointer-events: none; }
+/* The console's screen keeps 24px at the right for its scrollbar track
+   (js/custom-scrollbar.js); kept here too, so the words wrap and centre
+   exactly where a player sees them. */
+.nt-preview-scroll { width: 205px; }
+
+/* The Notifications panel, tidied (5 Oct 2026, the owner's: "cleaner").
+   The compose card is one ctl-card: the left column stretches the message
+   box to fill the preview's height; Send to is a row of its own with
+   compact buttons rather than two stretched across the page; the line
+   about who it reaches sits beside Send at the foot. A sent row is the
+   message over one line: details left, Withdraw right. */
+.nt-compose { padding: 14px; }
+.nt-compose-top { align-items: stretch; gap: 20px; }
+.nt-compose-main { gap: 8px; }
+.nt-text { flex: 1 1 auto; min-height: 96px; }
+.nt-left { opacity: 0.85; }
+.nt-to-row { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; margin-top: 4px; }
+.nt-to-row .ctl-label { margin: 0; }
+.nt-audience { display: inline-flex; flex: 0 0 auto; width: auto; }
+.nt-audience .btn-enter-mini { flex: 0 0 auto; padding: 0 14px; }
+.nt-send-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-top: auto;
+    padding-top: 10px;
+    border-top: 1px dashed var(--chrome-highlight);
+}
+.nt-reach { margin: 0; }
+.nt-send { flex: 0 0 auto; }
+.nt-status:empty { display: none; }
+.nt-row { gap: 6px; padding: 10px 12px; }
+.nt-row-foot { display: flex; align-items: center; justify-content: space-between; gap: 12px; align-self: stretch; }
+.nt-row-text { align-self: stretch; }
+.nt-row-meta { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
+.nt-withdraw { flex: 0 0 auto; }
+@media (max-width: 640px) {
+    .nt-row-foot, .nt-send-row { flex-wrap: wrap; }
+}

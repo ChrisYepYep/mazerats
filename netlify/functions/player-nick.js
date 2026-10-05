@@ -321,6 +321,24 @@ function filterHit(nick) {
     return null;
 }
 
+/* A HABBO MOTTO'S PROFANITY (5 Oct 2026, the owner's; MOTTOS in
+   profiles.js): the same profanity lists as a nickname's, word by word
+   through a sentence — each word folded for digit swaps as a nickname is,
+   ANYWHERE words looked for inside each word rather than across the whole
+   line (run together, "top ornament" holds "porn"), and the reserved
+   words left out ("admin" is a fair thing to say in a motto). The list's
+   own word that matched, or null. A word of digits only (a year, a room
+   number, "455") is left alone: folded, it would read as letters. */
+function mottoHit(text) {
+    const words = String(text || "").split(/[^\p{L}\p{N}]+/u).filter(w => w && !/^\p{N}+$/u.test(w)).map(unLeet).filter(Boolean);
+    for (const w of words) {
+        const anywhere = ANYWHERE.find(a => w.includes(a));
+        if (anywhere) return anywhere;
+        if (WHOLE_WORD.has(w)) return w;
+    }
+    return null;
+}
+
 /* The one clash rule left (29 Sept 2026; see NOT ANOTHER PLAYER'S NICKNAME
    in the header): somebody OTHER than `id` already holds this nickname, by
    nameKey. True or false. A quick, friendly answer ahead of the write; the
@@ -719,6 +737,7 @@ exports.handler = handler;
 exports.normalise = normalise;
 exports.shapeProblem = shapeProblem;
 exports.filterHit = filterHit;
+exports.mottoHit = mottoHit;
 exports.takenBy = takenBy;
 exports.historyPush = historyPush;
 exports.renameRows = renameRows;
