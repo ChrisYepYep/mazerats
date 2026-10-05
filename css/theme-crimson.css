@@ -9,7 +9,7 @@
    completely inert until js/site.js puts that attribute on <html>. The
    classic palette is not defined here and is not affected by anything in it.
 
-   1089 rules, 1764 declarations, hues 350 (surfaces) / 212 (accents).
+   1092 rules, 1768 declarations, hues 350 (surfaces) / 212 (accents).
 */
 :root[data-theme="crimson"] {
     --bg-black: #080506;
@@ -1900,6 +1900,19 @@ html[data-theme="crimson"]::-webkit-scrollbar-button {
 
 [data-theme="crimson"] .console-form-status.is-error {
     color: #ff8080;
+}
+
+[data-theme="crimson"] .console-sending-message {
+    color: #eeeeee;
+}
+
+[data-theme="crimson"] .console-screen .console-page-sending .console-sending-bar {
+    border-color: #eeeeee;
+    box-shadow: none;
+}
+
+[data-theme="crimson"] .console-screen .console-page-sending .console-sending-bar > span {
+    background: #eeeeee;
 }
 
 [data-theme="crimson"] .console-thanks-message {

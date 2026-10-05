@@ -1178,6 +1178,11 @@
                         <div class="console-hashline" aria-hidden="true"></div>
                         <div id="console-missing-body"></div>
                     </div>
+                    <!-- Between Send and the thanks, as home.html has it. -->
+                    <div class="console-page console-page-sending" id="console-page-sending" style="display:none;" role="status" aria-live="polite">
+                        <p class="console-sending-message">Sending...</p>
+                        <span class="daily-bar console-sending-bar" aria-hidden="true"><span></span></span>
+                    </div>
                     <div class="console-page console-page-thanks" id="console-page-thanks" style="display:none;">
                         <p class="console-thanks-message" id="console-thanks-message">We'll be in touch for more details, thanks!</p>
                         <button type="button" class="console-btn console-btn-ok" id="console-thanks-ok">OK</button>
@@ -1303,10 +1308,10 @@
          list from it and does nothing at all without it. -->
     <script src="js/dead-ends.js?v=2"></script>
     <script src="js/custom-scrollbar.js?v=2"></script>
-    <script src="js/console.js?v=4"></script>
+    <script src="js/console.js?v=7"></script>
     <!-- The console's Add Maze Info, Missing Pieces and Profile pages, as on
          home.html. After console.js, whose window.MazeConsole they use. -->
-    <script src="js/console-info.js?v=2"></script>
+    <script src="js/console-info.js?v=3"></script>
     <script src="js/console-profile.js?v=2"></script>
     <script src="js/room-patterns.js"></script>
     <script src="js/furni-library.js"></script>

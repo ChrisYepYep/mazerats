@@ -505,6 +505,10 @@ document.addEventListener("DOMContentLoaded", () => {
         // the console shut, and a new form begun) before the send lands, the
         // page that is showing by then is not this send's to change.
         const sentRef = clientRef;
+        // The sent sound and the Sending... screen at once (5 Oct 2026, the
+        // owner's); the picture count is said on it as they go.
+        say("");
+        Console.startSending("info");
         try {
             let done = 0;
             const items = [];
@@ -515,7 +519,7 @@ document.addEventListener("DOMContentLoaded", () => {
                     // Already landed on an earlier try: reuse it.
                     const had = uploadedKeys.get(f);
                     if (had) { images.push(had); continue; }
-                    say(`Sending image ${done} of ${fileCount}...`);
+                    Console.sendingSay(`Sending image ${done} of ${fileCount}...`);
                     const dataUrl = await readAsDataUrl(f);
                     // Sized to the picture, as js/api.js sizes the admin's
                     // uploads: a flat 90s cut off a 4MB image on a slow
@@ -528,7 +532,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 }
                 items.push({ kind: r.kind, value: r.value, images });
             }
-            say("Sending...");
+            Console.sendingSay("");
             const [rtype, ...rest] = record.split(":");
             const body = {
                 type,
@@ -554,9 +558,14 @@ document.addEventListener("DOMContentLoaded", () => {
                lead is credited. Never the Discord name (5 Oct 2026), so a
                signed-in sender with no nickname is not promised it. */
             const named = !!body.habboName || !!(window.Account && Account.current && Account.current.nick);
-            Console.showThanks("A person reads every submission. Anything that fills a gap will be added to the archive"
+            // Only over the Sending... screen it came from, not a page the
+            // visitor has gone on to.
+            if (Console.stillSending("info")) Console.showThanks("A person reads every submission. Anything that fills a gap will be added to the archive"
                 + (named ? ", with credit to you." : ".") + " Thank you!");
         } catch (err) {
+            // Back to the form, if the visitor is still waiting on it, to say
+            // what went wrong there.
+            Console.failedSending("info");
             // Changed while this was on its way: that change is not in what
             // was sent, so the retry is a new submission (editedSubmission).
             if (editedWhileSending) clientRef = null;

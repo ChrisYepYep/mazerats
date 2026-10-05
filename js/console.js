@@ -27,6 +27,8 @@ document.addEventListener("DOMContentLoaded", () => {
         // success, and left out of the tabButtons active-state match
         // below since no tab's data-page is "thanks".
         thanks: document.getElementById("console-page-thanks"),
+        // Between Send and the thanks (5 Oct 2026; startSending below).
+        sending: document.getElementById("console-page-sending"),
         // The pages behind that choice. None is a tab of its own; CONTACT
         // stays lit while any shows, because all of them are still that tab
         // (see CONTACT_PAGES below). info and missing are built by
@@ -51,7 +53,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     // Which pages belong to the CONTACT tab, so the row of tab lights keeps
     // saying where you are rather than going blank on a sub-page.
-    const CONTACT_PAGES = ["contact", "message", "info", "missing", "entry"];
+    const CONTACT_PAGES = ["contact", "message", "info", "missing", "entry", "sending"];
     // And the PROFILE tab's: its landing page, Edit Profile and the list.
     const PROFILE_PAGES = ["me", "profile", "notices", "notice"];
     /* Where the console lands: the Profile tab's page of two choices, or,
@@ -83,7 +85,7 @@ document.addEventListener("DOMContentLoaded", () => {
             // so its OK button can be pinned to the bottom — an inline
             // style here would otherwise beat that rule outright regardless
             // of specificity, forcing it back to a plain block.
-            el.style.display = key !== name ? "none" : (key === "thanks" || key === "notice" || key === "notices" ? "flex" : "block");
+            el.style.display = key !== name ? "none" : (key === "thanks" || key === "notice" || key === "notices" || key === "sending" ? "flex" : "block");
         });
         // On a page with no Profile landing (fallinfurni.html) the tab is
         // still data-page="profile" (5 Oct 2026, the bug scan: it never lit).
@@ -502,10 +504,11 @@ document.addEventListener("DOMContentLoaded", () => {
             return;
         }
         sendBtn.disabled = true;
-        // Said, as the entry form and Add Maze Info say it (1 Oct 2026): a
-        // cold function can take seconds, and a greyed-out button alone
-        // looked like nothing was happening. Success leaves for Thanks.
-        showStatus("Sending...", false);
+        // The sent sound and the Sending... screen at once (5 Oct 2026, the
+        // owner's): a cold function can take seconds. Success leaves it for
+        // Thanks; a failure comes back here to say why.
+        hideStatus();
+        MazeConsole.startSending("message");
         try {
             await Api.submitContactMessage(message, usernameInput.value.trim(), discordInput.value.trim(), hpInput.value);
             messageInput.value = "";
@@ -513,9 +516,11 @@ document.addEventListener("DOMContentLoaded", () => {
             discordInput.value = "";
             hideStatus();
             // The thanks page's own sentence: an Add Maze Info send before
-            // this one may have left its wording there.
-            MazeConsole.showThanks();
+            // this one may have left its wording there. Not if the visitor
+            // has gone elsewhere meanwhile.
+            if (MazeConsole.stillSending("message")) MazeConsole.showThanks();
         } catch (e) {
+            MazeConsole.failedSending("message");
             // A blocked sender (403 { banned }) gets the site's own "Can't
             // Send" notice instead of the raw words (29 Sept 2026).
             if (window.Account && Account.writeRefused && Account.writeRefused(e.status, e.data, "send")) {
@@ -547,15 +552,19 @@ document.addEventListener("DOMContentLoaded", () => {
        run, which is at DOMContentLoaded like this file — nothing can press
        a button before then. */
     /* THE CONSOLE'S SOUNDS (5 Oct 2026, the owner's): Habbo's own console
-       sounds, cut from his clip — "sent" when a console form goes through
-       (showThanks, below: Contact Us, Add Maze Info, an event entry), and
-       "notice" when a notification arrives (checkNotices). Both are loud as
-       recorded, so they play well down. A browser lets a page make no sound
+       sounds, cut from his clip — "sent" the moment a console form is sent
+       (startSending, below: Contact Us, Add Maze Info, an event entry), and
+       "notice" when a notification arrives (checkNotices). The clip was
+       recorded low (peaking at 0.15 of full scale), and even 0.6 of it was
+       "reallyyyy quiet" through speakers and headphones (the owner, 5 Oct
+       2026), so the two files were raised six times, to peak at 0.9; then
+       "lower the volume a bit": they play at 0.5 of that. A browser lets a page make no sound
        until the visitor has clicked, tapped or typed on it: one refused is
        kept and played at the first of those instead (a notification that
        came while they were away, met on their way back in). */
-    const SOUND_VOLUME = 0.3;
-    const SOUNDS = { sent: "assets/sounds/console-sent.wav", notice: "assets/sounds/console-notice.wav" };
+    const SOUND_VOLUME = 0.5;
+    // ?v=2: the louder files, past anything the browser kept of the quiet ones.
+    const SOUNDS = { sent: "assets/sounds/console-sent.wav?v=2", notice: "assets/sounds/console-notice.wav?v=2" };
     const soundEls = {};
     let soundWaiting = null;
     function playSound(name) {
@@ -580,6 +589,12 @@ document.addEventListener("DOMContentLoaded", () => {
         ["pointerdown", "keydown", "touchend"].forEach(t => document.addEventListener(t, go, true));
     }
 
+    // The send on the Sending... screen, and when it went up (startSending).
+    const SENDING_MIN_MS = 900;
+    let sendingFrom = null;
+    let sendingAt = 0;
+    const sendingShowing = () => !!(pages.sending && pages.sending.style.display !== "none" && modal.style.display === "block");
+
     const MazeConsole = window.MazeConsole = {
         open(page) {
             if (modal.style.display === "block") showPage(page || "contact");
@@ -590,12 +605,45 @@ document.addEventListener("DOMContentLoaded", () => {
         // the next time the Contact form uses it.
         // `note`: a second line under it, in the screen's ordinary weight.
         showThanks(text, note) {
-            if (thanksMessageEl) thanksMessageEl.textContent = text || THANKS_DEFAULT;
-            if (thanksNoteEl) { thanksNoteEl.textContent = note || ""; thanksNoteEl.hidden = !note; }
-            showPage("thanks");
-            // Only ever reached once a form has gone through, so a failed
-            // send makes no sound.
+            const go = () => {
+                sendingFrom = null;
+                if (thanksMessageEl) thanksMessageEl.textContent = text || THANKS_DEFAULT;
+                if (thanksNoteEl) { thanksNoteEl.textContent = note || ""; thanksNoteEl.hidden = !note; }
+                showPage("thanks");
+            };
+            // Sending... stays up for a moment at least, so a quick answer
+            // does not flash it past unread.
+            const wait = sendingShowing() ? Math.max(0, SENDING_MIN_MS - (Date.now() - sendingAt)) : 0;
+            if (!wait) { go(); return; }
+            setTimeout(() => { if (sendingShowing()) go(); }, wait);
+        },
+        /* SENDING (5 Oct 2026, the owner's): the moment a form's Send is
+           pressed and the form has passed its own checks, the sent sound and
+           the Sending... screen — then the thanks when it lands
+           (showThanks), or straight back to the form with the problem said
+           there (failedSending). `from` is the page it was sent from. */
+        startSending(from) {
+            sendingFrom = from;
+            sendingAt = Date.now();
+            MazeConsole.sendingSay("");
             playSound("sent");
+            showPage("sending");
+        },
+        // Progress on the Sending... screen ("Sending image 2 of 3..."); empty
+        // puts back the plain "Sending...".
+        sendingSay(text) {
+            const el = pages.sending && pages.sending.querySelector(".console-sending-message");
+            if (el) el.textContent = text || "Sending...";
+        },
+        // Whether this page's send is the one still on screen — false once the
+        // visitor has left it (another tab, the console shut).
+        stillSending(from) { return sendingFrom === from && sendingShowing(); },
+        // Back to the form, for its own words about what went wrong.
+        failedSending(from) {
+            const showing = MazeConsole.stillSending(from);
+            sendingFrom = null;
+            if (showing) showPage(from);
+            return showing;
         },
         resetThanks() {
             if (thanksMessageEl) thanksMessageEl.textContent = THANKS_DEFAULT;
@@ -865,7 +913,10 @@ document.addEventListener("DOMContentLoaded", () => {
             entrySend.disabled = true;
             if (!entryRef) entryRef = newEntryRef();
             try {
-                entrySay("Sending...");
+                // The sent sound and the Sending... screen at once (5 Oct
+                // 2026, the owner's); see startSending.
+                entrySay("");
+                MazeConsole.startSending("entry");
                 const dataUrl = file.size > ENTRY_IMAGE_MAX ? await shrinkToFit(file) : await readFileAsDataUrl(file);
                 const sent = await Api.submitEventEntry({ habboName, dataUrl, website: entryHp.value, clientRef: entryRef });
                 // Cleared either way, so a return visit starts fresh.
@@ -877,11 +928,14 @@ document.addEventListener("DOMContentLoaded", () => {
                    the owner's; notifications.js) — to whoever was signed in
                    to send it, so only they are promised one. */
                 const willNotify = !!(window.Account && Account.current);
-                if (entryShowing) MazeConsole.showThanks(!forEvent ? "Entry Submitted"
+                if (MazeConsole.stillSending("entry")) MazeConsole.showThanks(!forEvent ? "Entry Submitted"
                     : sent.correction ? "Correction Submitted. That's both of your entries for this event."
                     : "Entry Submitted. If you need to correct it, you can send one more.",
                     willNotify ? "We'll notify you when your entry has been approved." : "");
             } catch (e) {
+                // Back to the form, if the visitor is still waiting on it, to
+                // say what went wrong there (entryShowing follows).
+                MazeConsole.failedSending("entry");
                 // Changed on its way: the retry is a new entry (entryEdited).
                 if (entryEditedWhileSending) entryRef = null;
                 const status = e && e.status;

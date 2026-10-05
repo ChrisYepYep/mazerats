@@ -9,7 +9,7 @@
    completely inert until js/site.js puts that attribute on <html>. The
    classic palette is not defined here and is not affected by anything in it.
 
-   1089 rules, 1764 declarations, hues 18 (surfaces) / 38 (accents).
+   1092 rules, 1768 declarations, hues 18 (surfaces) / 38 (accents).
 */
 :root[data-theme="pumpkin"] {
     --bg-black: #0a0401;
@@ -1900,6 +1900,19 @@ html[data-theme="pumpkin"]::-webkit-scrollbar-button {
 
 [data-theme="pumpkin"] .console-form-status.is-error {
     color: #ff8080;
+}
+
+[data-theme="pumpkin"] .console-sending-message {
+    color: #eeeeee;
+}
+
+[data-theme="pumpkin"] .console-screen .console-page-sending .console-sending-bar {
+    border-color: #eeeeee;
+    box-shadow: none;
+}
+
+[data-theme="pumpkin"] .console-screen .console-page-sending .console-sending-bar > span {
+    background: #eeeeee;
 }
 
 [data-theme="pumpkin"] .console-thanks-message {

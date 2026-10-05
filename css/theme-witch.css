@@ -9,7 +9,7 @@
    completely inert until js/site.js puts that attribute on <html>. The
    classic palette is not defined here and is not affected by anything in it.
 
-   1089 rules, 1764 declarations, hues 274 (surfaces) / 274 (accents).
+   1092 rules, 1768 declarations, hues 274 (surfaces) / 274 (accents).
 */
 :root[data-theme="witch"] {
     --bg-black: #050207;
@@ -1900,6 +1900,19 @@ html[data-theme="witch"]::-webkit-scrollbar-button {
 
 [data-theme="witch"] .console-form-status.is-error {
     color: #ff8080;
+}
+
+[data-theme="witch"] .console-sending-message {
+    color: #eeeeee;
+}
+
+[data-theme="witch"] .console-screen .console-page-sending .console-sending-bar {
+    border-color: #eeeeee;
+    box-shadow: none;
+}
+
+[data-theme="witch"] .console-screen .console-page-sending .console-sending-bar > span {
+    background: #eeeeee;
 }
 
 [data-theme="witch"] .console-thanks-message {

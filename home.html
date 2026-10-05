@@ -1094,6 +1094,13 @@
                         <p class="console-notice-count" id="console-notice-count" hidden></p>
                         <button type="button" class="console-btn console-btn-ok" id="console-notice-ok">OK</button>
                     </div>
+                    <!-- Between pressing Send and the thanks (5 Oct 2026, the
+                         owner's): every console form goes through it
+                         (MazeConsole.startSending in js/console.js). -->
+                    <div class="console-page console-page-sending" id="console-page-sending" style="display:none;" role="status" aria-live="polite">
+                        <p class="console-sending-message">Sending...</p>
+                        <span class="daily-bar console-sending-bar" aria-hidden="true"><span></span></span>
+                    </div>
                     <div class="console-page console-page-thanks" id="console-page-thanks" style="display:none;">
                         <p class="console-thanks-message" id="console-thanks-message">We'll be in touch for more details, thanks!</p>
                         <!-- A second, plainer line some sends add (an event entry's). -->
@@ -1699,10 +1706,10 @@
     <script src="js/home.js?v=2"></script>
     <script src="js/custom-scrollbar.js?v=2"></script>
     <script src="js/letter-jump.js?v=2"></script>
-    <script src="js/console.js?v=4"></script>
+    <script src="js/console.js?v=7"></script>
     <!-- The console's Add Maze Info form and Missing Pieces list. After
          console.js, whose page switching it uses (window.MazeConsole). -->
-    <script src="js/console-info.js?v=2"></script>
+    <script src="js/console-info.js?v=3"></script>
     <script src="js/console-profile.js?v=2"></script>
     <script src="js/mazer-card.js?v=2"></script>
     <!-- The Guides window. guide-text.js is loaded above, before home.js. -->

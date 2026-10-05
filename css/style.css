@@ -9074,6 +9074,32 @@ body[data-page="admin"] .search-box input {
     box-sizing: border-box;
 }
 
+/* SENDING (5 Oct 2026, the owner's): the screen between Send and the
+   thanks, in the middle of the console's screen, with the daily games'
+   sliding bar (.daily-bar) in the screen's own white. */
+.console-page.console-page-sending {
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    height: 100%;
+    box-sizing: border-box;
+}
+.console-sending-message {
+    margin: 0;
+    font-weight: 700;
+    font-size: 0.55rem;
+    line-height: 1.4;
+    color: #eeeeee;
+    text-align: center;
+}
+/* Three classes deep on purpose: .daily-bar's own rules come later in this
+   sheet and its palette copies (theme-*.css) later still, and at the same
+   weight either won — the bar came out in the archive's parchment, with a
+   drop shadow, on the console's grey glass. */
+.console-screen .console-page-sending .console-sending-bar { border-color: #eeeeee; box-shadow: none; }
+.console-screen .console-page-sending .console-sending-bar > span { background: #eeeeee; }
+
 .console-thanks-message {
     margin: 16px 0 0;
     font-weight: 700;
