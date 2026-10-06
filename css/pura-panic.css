@@ -301,7 +301,22 @@
 
 /* ---- WHO'S PLAYING (js/pura-panic.js): the signed-out name prompt, in the
    console's own field and dropdown. */
-.pura-who-row { display: flex; gap: 6px; width: 100%; max-width: 200px; margin-top: 4px; }
+.pura-who-row { display: flex; gap: 6px; width: 100%; max-width: 230px; margin-top: 4px; }
 .pura-who-row .console-input { margin-bottom: 0; height: 20px; }
 .pura-who-name { flex: 1 1 auto; min-width: 0; padding: 0 6px; user-select: text; -webkit-user-select: text; }
 .pura-who-status { min-height: 1.4em; max-width: 250px; }
+.pura-who-hotel { flex: 0 0 52px; width: 52px; }
+/* "Play as a Guest": a text button, under the username field. */
+.pura-text-btn {
+    margin: 2px 0 0;
+    padding: 2px 4px;
+    border: none;
+    background: none;
+    color: inherit;
+    font: inherit;
+    text-decoration: underline;
+    cursor: var(--cursor-pointer, pointer);
+}
+.pura-text-btn:focus-visible { outline: 1px dotted #eeeeee; }
+/* The motto code, big enough to read off and type in. */
+.pura-code { font-size: 1.125rem; letter-spacing: 1px; margin: 4px 0 !important; user-select: all; -webkit-user-select: all; }

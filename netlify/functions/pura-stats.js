@@ -94,12 +94,12 @@ async function report(db, event) {
        (pura-scores.js, shown): a guest, or an account the board leaves out
        (banned, or no nickname) — so the Warren sees the rows the players
        cannot, and knows they are not seeing them. Ids stay here. */
-    const accounts = board.filter(r => !String(r.playerId || "").startsWith("guest:"));
+    const accounts = board.filter(r => !String(r.playerId || "").startsWith("guest"));
     let kept = null;
     try { [kept] = await withoutBanned(db, [accounts], r => r && r.playerId); } catch (e) { kept = accounts; }
     const keptSet = new Set(kept);
     board = board.map(r => {
-        const guest = String(r.playerId || "").startsWith("guest:");
+        const guest = String(r.playerId || "").startsWith("guest");
         const { playerId, ...rest } = r;
         return { ...rest, guest, hidden: !guest && !keptSet.has(r) };
     });
@@ -147,13 +147,14 @@ async function report(db, event) {
        no name at all. */
     const people = new Map();
     for (const g of games) {
-        const kind = g.playerId ? "player" : g.habbo ? "habbo" : "anon";
+        const kind = g.playerId ? "player" : g.habbo ? "habbo" : g.rat ? "rat" : "anon";
         const key = kind === "player" ? "p:" + g.playerId
-            : kind === "habbo" ? "h:" + String(g.habbo).toLowerCase().replace(/[^a-z0-9]/g, "") : "";
+            : kind === "habbo" ? "h:" + (g.hotel || "COM") + ":" + String(g.habbo).toLowerCase().replace(/[^a-z0-9]/g, "")
+            : kind === "rat" ? "r:" + g.rat : "";
         let p = people.get(key);
         if (!p) people.set(key, p = {
-            kind, name: kind === "player" ? (g.name || "Someone") : kind === "habbo" ? g.habbo : null,
-            hotel: null,
+            kind, name: kind === "player" ? (g.name || "Someone") : kind === "habbo" ? g.habbo : kind === "rat" ? "Guest Rat " + g.rat : null,
+            hotel: kind === "habbo" ? (g.hotel || "COM") : null,
             games: 0, best: 0, bestLevel: 0, rows: 0, ms: 0, first: g.at, last: g.at
         });
         p.games++;
@@ -195,14 +196,16 @@ async function report(db, event) {
         ],
         signedIn: [
             { label: "Signed in", n: signedIn.length },
-            { label: "Signed out, named", n: games.filter(g => !g.playerId && g.habbo).length },
-            { label: "Signed out, no name", n: games.filter(g => !g.playerId && !g.habbo).length }
+            { label: "As their Habbo", n: games.filter(g => !g.playerId && g.habbo).length },
+            { label: "As a Guest Rat", n: games.filter(g => !g.playerId && !g.habbo && g.rat).length },
+            { label: "Not yet named", n: games.filter(g => !g.playerId && !g.habbo && !g.rat).length }
         ],
         byPlayer,
         board,
         recent: games.slice(0, RECENT).map(g => ({
             at: g.at, name: g.playerId ? (g.name || "Someone") : null,
             habbo: g.playerId ? null : (g.habbo || null), hotel: g.playerId ? null : (g.hotel || null),
+            rat: g.playerId ? null : (g.rat || null),
             score: g.score || 0, rows: g.rows || 0, level: g.level || 1, pieces: g.pieces || 0, ms: g.ms || 0,
             ended: g.ended, clears: g.clears || [0, 0, 0, 0], chains: g.chains || 0,
             touch: !!g.touch, dark: !!g.dark, muted: !!g.muted

@@ -1373,7 +1373,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 return escapeHtml(p.habbo) + hotelOf(p.hotel) +
                     ' <span class="admin-hint">said in the game, not signed in</span>';
             }
-            return 'Anonymous <span class="admin-hint">(no name given)</span>';
+            return 'Anonymous <span class="admin-hint">(signed out, no score yet to number them)</span>';
         };
         body.innerHTML = d.byPlayer.map(p => '<tr>' +
             '<td>' + whoCell(p) + '</td>' +
@@ -1580,13 +1580,14 @@ document.addEventListener("DOMContentLoaded", () => {
 
     // Who a row is, in the three kinds pura-stats.js tells apart.
     function puraWho(p) {
+        if (p.kind === "rat" || (!p.kind && p.rat)) return "Guest Rat " + escapeHtml(String(p.rat || (p.name || "").replace(/^Guest Rat /, ""))) + ' <span class="admin-hint">played as a guest</span>';
         if (p.kind === "player" || (!p.kind && p.name)) return escapeHtml(p.name || "Someone");
         const habbo = p.habbo || (p.kind === "habbo" ? p.name : null);
         if (habbo) {
             return escapeHtml(habbo) + (p.hotel && p.hotel !== "COM" ? " (" + escapeHtml(p.hotel) + ")" : "") +
-                ' <span class="admin-hint">signed out</span>';
+                ' <span class="admin-hint">signed out, proved by motto</span>';
         }
-        return 'Anonymous <span class="admin-hint">(no name given)</span>';
+        return 'Anonymous <span class="admin-hint">(signed out, no score yet to number them)</span>';
     }
 
     function puraRender(d) {

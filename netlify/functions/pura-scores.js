@@ -1,12 +1,17 @@
 /* /.netlify/functions/pura-scores — the Pura Panic leaderboard.
 
    GET                    the top 25, and the caller's own best if signed in
-   GET ?name=X            whether a name belongs to a signed-up player
+   GET ?name=X&hotel=COM  whether a Habbo name belongs to a signed-up player
                           ({ taken }), for the signed-out name prompt
-   GET ?guest=X           the board, with a signed-out player's own row
+   GET ?guest=X&hotel=COM the board, with a signed-out Habbo's own row
+   GET ?rat=N             the board, with Guest Rat N's own row
    POST ?action=start     a signed run token carrying the game's SEED
    POST {run, log, ms}    a finished game: `run` that token, `log` where
                           every piece came to rest ([rot, x, y, lane] each)
+   POST ?action=claim     {habbo, hotel}: a motto code for a signed-out
+                          player to prove the Habbo is theirs (see GUESTS)
+   POST ?action=verify    {claim}: their motto read fresh from Origins; the
+                          code in it hands back a token naming that Habbo
    POST ?action=played    the same for a game that is not for the board
                           (signed out, no nickname, no rows): kept for the
                           Warren's figures only — see THE GAME LOG
@@ -40,16 +45,34 @@
    ONE ROW PER PLAYER, their best: highest score, then fewest pieces (the
    tidier game), then earliest. The board is for players signed in WITH A
    NICKNAME, as the daily games are (writeRefusal's `daily`) — and for
-   signed-out players under the name they typed at Play (6 Oct 2026, the
+   signed-out players, as a Habbo or as a Guest Rat (6 Oct 2026, the
    owner's: "that's the whole point of them adding their username").
 
-   GUESTS. Any name, not checked against Origins (the owner's: "they can
-   just type anything"), except one that is a signed-up player's (nameTaken:
-   their nickname, or the Habbo linked to their account). A guest's row is
-   keyed "guest:" + nameKey(name), so "Rat-Fan" and "ratfan" are one guest;
-   two people typing one name share a row, which is what a name with nothing
-   behind it means. No Habbo head is shown for a guest: nobody proved whose
-   it would be. Network bans still apply (writeRefusal with no account).
+   GUESTS, two kinds, both on the one board with everybody else:
+
+   - A HABBO, PROVED (the owner's: the motto code, once). The name typed
+     at Play is looked up on Origins on the hotel picked (lookupOriginsName
+     in habbo.js): not a Habbo, refused ("name-unknown"); a signed-up
+     player's (nameTaken: their nickname, or the Habbo linked to their
+     account on that hotel), refused ("name-taken"). Then a code, as
+     habbo-verify.js gives signed-in players — MR- and five letters, for
+     half an hour, carried in a signed CLAIM rather than stored, since there
+     is no account to keep it on — goes in their Origins motto; "verify"
+     reads the motto FRESH (fetchOriginsProfile, never the cache), at most
+     once every CHECK_GAP_MS a code, and the code in it hands back a signed
+     HABBO token naming that Habbo, kept by the browser for good. Only that
+     token puts a Habbo on the board: a bare name never does. Taken is
+     asked again at every score, in case somebody has signed up with it
+     since. The row is keyed "guest:HOTEL:" + nameKey(name) and shows the
+     Habbo's own spelling and head (the figure rides in the token).
+   - A GUEST RAT, for "Play as a Guest": "Guest Rat 1", "Guest Rat 2"… A
+     number is given out (an atomic counter) only when that browser's first
+     score reaches the board, so the numbers are not used up by people who
+     never clear a row, and handed back signed (RAT_AUDIENCE): the page
+     keeps the token and sends it with every game, so nobody else can play
+     as that Guest Rat. Keyed "guestrat:N".
+
+   Network bans still apply to both (writeRefusal with no account).
 
    ----------------------------------------------------------------------
    THE GAME LOG (6 Oct 2026, the owner's: "make sure I can see cool data",
@@ -151,16 +174,149 @@ function readRun(token, player) {
 let tokensIndexed = false;
 /* A name in the characters a Habbo name may have, the rule room-figure.js
    and ff-runs.js apply (no spaces, nothing that could be markup); anything
-   else is no name at all. Not checked against Origins (see GUESTS). */
+   else is no name at all. Then looked up on Origins (see GUESTS). */
 const HABBO_NAME = /^[A-Za-z0-9_\-=?!@:.,]{1,32}$/;
 const habboName = (v) => {
     const s = String(v === undefined || v === null ? "" : v).trim();
     return HABBO_NAME.test(s) ? s : null;
 };
-// A guest's board key (see GUESTS above).
-const GUEST = "guest:";
-const guestId = (name) => GUEST + nameKey(name);
-const isGuest = (id) => typeof id === "string" && id.startsWith(GUEST);
+// A guest's board key (see GUESTS above): "guest:HOTEL:name" or "guestrat:N".
+const HOTELS = ["COM", "ES", "BR"];
+const hotelOf = (v) => {
+    const s = typeof v === "string" ? v.trim().toUpperCase() : "";
+    return HOTELS.includes(s) ? s : "COM";
+};
+const guestId = (name, hotel) => "guest:" + hotelOf(hotel) + ":" + nameKey(name);
+const ratId = (n) => "guestrat:" + n;
+const isGuest = (id) => typeof id === "string" && (id.startsWith("guest:") || id.startsWith("guestrat:"));
+
+/* The motto proof (see GUESTS). Codes as habbo-verify.js makes them. */
+const CLAIM_AUDIENCE = "mazerats-pura-claim";
+const HABBO_AUDIENCE = "mazerats-pura-habbo";
+const CLAIM_LIFE_S = 30 * 60;
+const CHECK_GAP_MS = 30 * 1000;
+const CODE_LETTERS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+function newCode() {
+    const bytes = crypto.randomBytes(5);
+    let out = "MR-";
+    for (let i = 0; i < 5; i++) out += CODE_LETTERS[bytes[i] % CODE_LETTERS.length];
+    return out;
+}
+function readToken(token, audience) {
+    if (!token || typeof token !== "string" || !process.env.SESSION_SECRET) return null;
+    try { return jwt.verify(token, process.env.SESSION_SECRET, { audience, algorithms: ["HS256"] }); }
+    catch (e) { return null; }
+}
+const signToken = (claims, audience, life) => process.env.SESSION_SECRET
+    ? jwt.sign(claims, process.env.SESSION_SECRET, { audience, algorithm: "HS256", ...(life ? { expiresIn: life } : {}) })
+    : null;
+
+// As habbo-verify.js and player-nick.js: a POST naming another site is refused.
+function sameOrigin(event) {
+    const h = event.headers || {};
+    const origin = h.origin || h.Origin;
+    if (!origin) return true;
+    const host = h["x-forwarded-host"] || h.host || h.Host || "";
+    try { return new URL(origin).host === host; } catch (e) { return false; }
+}
+
+async function claimHabbo(db, body) {
+    const habbo = habboName(body.habbo);
+    if (!habbo) return json(400, { error: "That isn't a Habbo username." });
+    const hotel = hotelOf(body.hotel);
+    if (await nameTaken(db, habbo, hotel)) return json(200, { refused: "name-taken" });
+    let found = null;
+    try {
+        const { lookupOriginsName } = require("./habbo");
+        found = await lookupOriginsName(db, hotel, habbo);
+    } catch (e) { /* below */ }
+    if (!found) return json(503, { error: "Habbo Origins isn't answering just now. Try again in a moment." });
+    if (!found.found) return json(200, { refused: "name-unknown" });
+    const name = (found.profile && found.profile.name) || habbo;
+    const code = newCode();
+    const claim = signToken({ name, hotel, code }, CLAIM_AUDIENCE, CLAIM_LIFE_S);
+    if (!claim) return json(503, { error: "That can't be done just now." });
+    return json(200, { code, name, hotel, claim });
+}
+
+async function verifyHabbo(db, body) {
+    const c = readToken(body.claim, CLAIM_AUDIENCE);
+    if (!c || !c.name || !c.code) return json(409, { error: "That code has run out. Start again for a new one." });
+    // At most one look a code every CHECK_GAP_MS (habbo-verify.js's rule).
+    const checks = db.collection("pura_claims");
+    try {
+        await checks.createIndex({ at: 1 }, { expireAfterSeconds: CLAIM_LIFE_S + 600 }).catch(() => {});
+        const prior = await checks.findOneAndUpdate({ _id: c.code }, { $set: { at: new Date() } }, { upsert: true, returnDocument: "before" });
+        const was = prior && prior.ok !== undefined && prior.value !== undefined ? prior.value : prior;
+        const last = was && was.at ? new Date(was.at).getTime() : 0;
+        if (last && Date.now() - last < CHECK_GAP_MS) {
+            await checks.updateOne({ _id: c.code }, { $set: { at: new Date(last) } });
+            const wait = CHECK_GAP_MS - (Date.now() - last);
+            return json(429, { error: "Give it a moment, then check again.", wait });
+        }
+    } catch (e) { /* the gap is a courtesy to Origins; the check goes on */ }
+    if (await nameTaken(db, c.name, c.hotel)) return json(200, { refused: "name-taken" });
+    let result;
+    try {
+        const { fetchOriginsProfile, ORIGINS_HOSTS } = require("./habbo");
+        result = await fetchOriginsProfile(ORIGINS_HOSTS[c.hotel] || ORIGINS_HOSTS.COM, c.name);
+    } catch (e) {
+        return json(503, { error: "Habbo Origins isn't answering just now. Try again in a moment." });
+    }
+    const motto = result && result.found && result.profile ? String(result.profile.motto || "") : "";
+    if (!motto.toUpperCase().includes(c.code)) return json(200, { verified: false, wait: CHECK_GAP_MS });
+    let figure = null;
+    try { figure = result.profile.avatar ? new URL(result.profile.avatar).searchParams.get("figure") : null; } catch (e) { /* none */ }
+    const token = signToken({ name: c.name, hotel: c.hotel, figure: figure || null }, HABBO_AUDIENCE, 0);
+    if (!token) return json(503, { error: "That can't be done just now." });
+    try { await checks.deleteOne({ _id: c.code }); } catch (e) { /* ages out */ }
+    return json(200, { verified: true, name: c.name, hotel: c.hotel, token });
+}
+
+// A Guest Rat's number, handed back signed so it cannot be borrowed.
+const RAT_AUDIENCE = "mazerats-pura-guestrat";
+function signRat(n) {
+    if (!process.env.SESSION_SECRET) return null;
+    return jwt.sign({ n }, process.env.SESSION_SECRET, { audience: RAT_AUDIENCE, algorithm: "HS256" });
+}
+function readRat(token) {
+    if (!token || typeof token !== "string" || !process.env.SESSION_SECRET) return null;
+    try {
+        const c = jwt.verify(token, process.env.SESSION_SECRET, { audience: RAT_AUDIENCE, algorithms: ["HS256"] });
+        return c && Number.isInteger(c.n) && c.n > 0 ? c.n : null;
+    } catch (e) {
+        return null;
+    }
+}
+async function nextRat(db) {
+    const r = await db.collection("counters").findOneAndUpdate(
+        { _id: "pura_guest_rat" }, { $inc: { n: 1 } }, { upsert: true, returnDocument: "after" });
+    const doc = r && r.ok !== undefined && r.value !== undefined ? r.value : r;
+    return doc && Number.isInteger(doc.n) ? doc.n : null;
+}
+
+// A Habbo head, as _publicid.js draws them (its OUTLINE_V).
+const headOf = (figure) => figure ? `/.netlify/functions/habbo-outline?figure=${encodeURIComponent(figure)}&kind=head&v=2` : null;
+
+/* Who a signed-out game is from, from what the page sent:
+     { kind: "habbo", id, name, hotel, figure }  a Habbo, proved by motto
+     { kind: "rat", n, token }                   a Guest Rat (n null: not yet numbered)
+     { refuse: "name-taken" }
+     null                                        nobody named */
+async function guestOf(db, body) {
+    const h = body.habboToken ? readToken(body.habboToken, HABBO_AUDIENCE) : null;
+    if (h && habboName(h.name)) {
+        const hotel = hotelOf(h.hotel);
+        if (await nameTaken(db, h.name, hotel)) return { refuse: "name-taken" };
+        return { kind: "habbo", id: guestId(h.name, hotel), name: h.name, hotel, figure: typeof h.figure === "string" ? h.figure : null };
+    }
+    if (body.rat) {
+        const n = readRat(body.rat);
+        if (n) return { kind: "rat", n, token: body.rat };
+    }
+    if (body.guest === true) return { kind: "rat", n: null, token: null };
+    return null;
+}
 
 /* The board's own filter: accounts through withoutBanned (banned players
    and players with no nickname off), guests kept as they are. Order kept. */
@@ -174,15 +330,16 @@ async function shown(db, rows) {
 /* A NAME ALREADY SOMEBODY'S (6 Oct 2026, the owner's): a signed-out
    player may not play as a signed-up player. Taken is a nickname that reads
    the same (nameKey, the rule nicknames are unique by), or the Habbo linked
-   to an account. Fails OPEN: an unreadable answer lets
+   to an account on that hotel. Fails OPEN: an unreadable answer lets
    the name through rather than stopping a game over our own trouble. */
-async function nameTaken(db, habbo) {
+async function nameTaken(db, habbo, hotel) {
     const key = nameKey(habbo);
     if (!key) return false;
     const exact = new RegExp("^" + habbo.replace(/[.*+?^${}()|[\]\\-]/g, "\\$&") + "$", "i");
+    const h = hotelOf(hotel);
     try {
         const row = await db.collection("players").findOne(
-            { $or: [{ nickKey: key }, { "habbo.name": exact }] },
+            { $or: [{ nickKey: key }, { "habbo.name": exact, "habbo.hotel": { $in: h === "COM" ? ["COM", null] : [h] } }] },
             { projection: { _id: 0, id: 1 } });
         return Boolean(row);
     } catch (e) {
@@ -213,10 +370,9 @@ async function logStart(db, claims, player) {
 
 /* A finished game, replayed. Once per run id: a second report of the same
    game (the page retrying) is a duplicate key and quietly nothing. */
-async function logGame(db, claims, player, result, ms, body) {
+async function logGame(db, claims, player, result, ms, body, guest) {
     const b = body || {};
-    let habbo = player ? null : habboName(b.habbo);
-    if (habbo && await nameTaken(db, habbo)) habbo = null;
+    const g = guest && guest.kind ? guest : null;
     try {
         await logIndexes(db);
         await db.collection(GAMES).insertOne({
@@ -232,10 +388,11 @@ async function logGame(db, claims, player, result, ms, body) {
             ended: result.over ? "topout" : "quit",
             clears: result.clears || [0, 0, 0, 0],
             chains: result.chains || 0,
-            /* Signed out, the name the player gave at Play (6 Oct 2026, the
-               owner's), a signed-up player's refused (nameTaken) and otherwise
-               said, never checked against Origins (see GUESTS). */
-            habbo,
+            /* Signed out (see GUESTS): the Habbo they played as, checked,
+               with its hotel; or their Guest Rat number once they have one. */
+            habbo: g && g.kind === "habbo" ? g.name : null,
+            hotel: g && g.kind === "habbo" ? g.hotel : null,
+            rat: g && g.kind === "rat" ? g.n : null,
             touch: b.touch === true,
             dark: b.dark === true,
             muted: b.muted === true
@@ -285,7 +442,7 @@ async function spendRun(db, claims, player) {
 
 const clean = (row, heads) => ({
     name: row.name,
-    avatar: (heads && heads.get(String(row.playerId))) || null,
+    avatar: (heads && heads.get(String(row.playerId))) || headOf(row.figure) || null,
     score: Number(row.score) || 0,
     rows: Number(row.rows) || 0,
     level: Number(row.level) || 1,
@@ -327,7 +484,7 @@ exports.handler = async (event) => {
         const q = event.queryStringParameters;
         const habbo = habboName(q.name);
         if (!habbo) return json(400, { error: "That isn't a Habbo name." });
-        return json(200, { taken: await nameTaken(db, habbo) });
+        return json(200, { taken: await nameTaken(db, habbo, q.hotel) });
     }
 
     if (event.httpMethod === "GET") {
@@ -341,8 +498,10 @@ exports.handler = async (event) => {
                 .toArray())).slice(0, TOP);
             const heads = await habboHeads(db, [...top.map(r => r && r.playerId), player && player.id]);
             const out = { open, top: top.map(r => clean(r, heads)) };
-            const guest = player ? null : habboName((event.queryStringParameters || {}).guest);
-            const meId = player ? player.id : guest ? guestId(guest) : null;
+            const qs = event.queryStringParameters || {};
+            const guest = player ? null : habboName(qs.guest);
+            const rat = player ? null : parseInt(qs.rat, 10);
+            const meId = player ? player.id : guest ? guestId(guest, qs.hotel) : rat > 0 ? ratId(rat) : null;
             if (meId) {
                 const mine = await scores.findOne({ playerId: meId }, { projection: { _id: 0 } });
                 out.you = mine ? clean(mine, heads) : null;
@@ -358,6 +517,19 @@ exports.handler = async (event) => {
     }
 
     if (event.httpMethod !== "POST") return json(405, { error: "Method not allowed" });
+
+    // The motto proof (GUESTS): signed out only, from this site only.
+    const act = (event.queryStringParameters || {}).action;
+    if (act === "claim" || act === "verify") {
+        if (!sameOrigin(event)) return json(403, { error: "Forbidden" });
+        if (player) return json(409, { error: "You're signed in already." });
+        const refused = await writeRefusal(db, event, null, { game: true });
+        if (refused) return refused;
+        let body;
+        try { body = JSON.parse(event.body || "{}"); } catch { return json(400, { error: "Body is not JSON" }); }
+        if (!body || typeof body !== "object") return json(400, { error: "Body is not JSON" });
+        return act === "claim" ? claimHabbo(db, body) : verifyHabbo(db, body);
+    }
 
     /* THE START: a token and its seed, nothing written. Answered signed out
        too — the seed is what the game is dealt from either way — but not
@@ -385,7 +557,8 @@ exports.handler = async (event) => {
         if (!body || typeof body !== "object") return json(400, { error: "Body is not JSON" });
         const checked = checkGame(body, player);
         if (checked.refuse) return checked.refuse;
-        await logGame(db, checked.claims, player, checked.result, checked.ms, body);
+        const g = player ? null : await guestOf(db, body);
+        await logGame(db, checked.claims, player, checked.result, checked.ms, body, g && !g.refuse ? g : null);
         return json(200, { logged: true });
     }
 
@@ -400,29 +573,29 @@ exports.handler = async (event) => {
     catch { return json(400, { error: "Body is not JSON" }); }
     if (!body || typeof body !== "object") return json(400, { error: "Body is not JSON" });
 
-    let guest = null;
-    if (!player) {
-        guest = habboName(body.habbo);
-        if (!guest) return json(200, { recorded: false, reason: "signed-out" });
+    if (!player && !body.habboToken && !body.rat && body.guest !== true) {
+        return json(200, { recorded: false, reason: "signed-out" });
     }
     const checked = checkGame(body, player);
     if (checked.refuse) return checked.refuse;
     const { claims, ms, result } = checked;
-    if (guest && await nameTaken(db, guest)) {
-        await logGame(db, claims, null, result, ms, body);
-        return json(200, { recorded: false, reason: "name-taken" });
-    }
-    const who = player || { id: guestId(guest) };
     // Shut since the game started: its token was issued while live, but the
     // board takes nothing in maintenance.
     if (!(await isOpen(db).catch(() => false))) return json(200, { recorded: false, reason: "maintenance" });
-    await logGame(db, claims, player, result, ms, body);
+    const guest = player ? null : await guestOf(db, body);
+    if (guest && guest.refuse) {
+        await logGame(db, claims, null, result, ms, body, null);
+        return json(200, { recorded: false, reason: guest.refuse });
+    }
+    if (!player && !guest) return json(200, { recorded: false, reason: "signed-out" });
+    await logGame(db, claims, player, result, ms, body, guest);
     // The page says what it scored; a page and a server that disagree is a bug worth hearing about.
     if (body.score !== undefined && Number(body.score) !== result.score) {
         console.warn("pura-scores: the page and the replay disagree", body.score, result.score);
     }
     if (!result.score) return json(200, { recorded: false, reason: "no-score", score: 0 });
 
+    let who = player || (guest.kind === "habbo" ? { id: guest.id } : guest.n ? { id: ratId(guest.n) } : { id: "guestrat:new" });
     try {
         await ensureUniqueIndex(scores, "playerId");
         if (!(await spendRun(db, claims, who))) return json(200, { recorded: false, reason: "already-submitted" });
@@ -431,9 +604,26 @@ exports.handler = async (event) => {
         return json(503, { error: "The leaderboard could not be updated just now." });
     }
 
+    // A Guest Rat's first score: their number, now (see GUESTS).
+    let newRat = null;
+    if (guest && guest.kind === "rat" && !guest.n) {
+        let n = null;
+        try { n = await nextRat(db); } catch (e) { console.error("pura-scores: could not number a Guest Rat", e); }
+        const token = n ? signRat(n) : null;
+        if (!n || !token) {
+            try { await db.collection(RUN_TOKENS).deleteOne({ _id: claims.rid }); } catch (e2) { /* lost */ }
+            return json(503, { error: "The leaderboard could not be updated just now." });
+        }
+        guest.n = n;
+        newRat = { n, token };
+        who = { id: ratId(n) };
+        try { await db.collection(GAMES).updateOne({ _id: claims.rid }, { $set: { rat: n } }); } catch (e) { /* the log only */ }
+    }
+
     const row = {
         playerId: who.id,
-        name: player ? await publicName(db, player) : guest,
+        name: player ? await publicName(db, player) : guest.kind === "habbo" ? guest.name : "Guest Rat " + guest.n,
+        ...(guest && guest.kind === "habbo" ? { hotel: guest.hotel, figure: guest.figure } : {}),
         score: result.score,
         rows: result.bands,
         level: result.level,
@@ -460,7 +650,8 @@ exports.handler = async (event) => {
         reason: better ? null : "not-your-best",
         score: result.score,
         best: clean(best),
-        place
+        place,
+        ...(newRat ? { rat: newRat } : {})
     });
 };
 

@@ -1068,7 +1068,7 @@
     function showPanel(which, extra) {
         panel.hidden = false;
         panel.className = "pura-panel" + (which === "board" ? " pura-panel--board" : "");
-        frame.classList.toggle("is-splash", SPLASH.includes(which) || which === "board" || which === "who");
+        frame.classList.toggle("is-splash", SPLASH.includes(which) || which === "board" || which === "who" || which === "code");
         let html = "";
         if (which === "loading") html = `<p>Loading…</p>`;
         else if (which === "failed") html = `<p>The furni could not be loaded.</p><div class="pura-buttons"><button type="button" class="console-btn" data-go="retry">Try again</button></div>`;
@@ -1087,20 +1087,37 @@
                 ${testLevel() ? `<p class="pura-beta-note">Test mode: every game starts at level ${testLevel()}. Not saved.</p>` : ""}
                 <p class="pura-beta-note">This game is in beta, if you spot anything you think might be a bug, please let us know via the <a href="#" data-go="contact">contact form</a> in the Console, thank you!</p>`;
         } else if (which === "who") {
+            const was = guest && guest.kind === "habbo" ? guest : claim;
             html = `<p class="pura-big">WHO'S PLAYING?</p>
                 <div class="console-hashline" aria-hidden="true"></div>
                 <p>Enter your Habbo Origins username.</p>
                 <div class="pura-who-row">
                     <input type="text" id="pura-who-name" class="console-input pura-who-name" maxlength="32"
                            autocomplete="off" autocapitalize="off" spellcheck="false" aria-label="Your Habbo Origins username"
-                           value="${guest ? esc(guest.name) : ""}">
+                           value="${was ? esc(was.name) : ""}">
+                    <select id="pura-who-hotel" class="console-input console-select pura-who-hotel" aria-label="Which Origins hotel">
+                        ${HOTELS.map(h => `<option value="${h}"${(was ? was.hotel : "COM") === h ? " selected" : ""}>${h}</option>`).join("")}
+                    </select>
                 </div>
+                <button type="button" class="pura-text-btn" data-go="asguest">Play as a Guest</button>
                 <p class="pura-who-status" id="pura-who-status" aria-live="polite"></p>
                 <div class="pura-buttons">
-                    <button type="button" class="console-btn" data-go="whoplay">Play</button>
+                    <button type="button" class="console-btn" data-go="whonext">Next</button>
                     <button type="button" class="console-btn" data-go="cancel">Back</button>
                 </div>
-                <p class="pura-beta-note">Your scores go on the leaderboard under this name. Or <a href="#" data-go="signin">sign in with Discord</a> to keep them with your account.</p>`;
+                <p class="pura-beta-note">Your scores go on the leaderboard under your Habbo. Or <a href="#" data-go="signin">sign in with Discord</a> to keep them with your account.</p>`;
+        } else if (which === "code") {
+            html = `<p class="pura-big">IS IT YOU?</p>
+                <div class="console-hashline" aria-hidden="true"></div>
+                <p>To play as <strong>${esc(claim.name)}</strong>${claim.hotel === "COM" ? "" : " on Origins " + claim.hotel}, put this in your motto on Habbo Origins, then press Check:</p>
+                <p class="pura-code">${esc(claim.code)}</p>
+                <p class="pura-beta-note">Origins can take a few minutes to show a new motto. You can change it back once it's verified. You only do this once.</p>
+                <p class="pura-who-status" id="pura-who-status" aria-live="polite"></p>
+                <div class="pura-buttons">
+                    <button type="button" class="console-btn" data-go="whocheck">Check</button>
+                    <button type="button" class="console-btn" data-go="who">Back</button>
+                </div>
+                <p class="pura-beta-note">Don't want to wait? <a href="#" data-go="signin">Sign in with Discord</a> and you can play straight away.</p>`;
         } else if (which === "paused") {
             html = `<p class="pura-big">PAUSED</p>
                 <div class="pura-buttons">
@@ -1128,6 +1145,7 @@
         const first = panel.querySelector("[data-go]");
         if (first && isOpen() && root.contains(document.activeElement)) first.focus({ preventScroll: true });
         if (which === "who") wireWho();
+        if (which === "code" && !touchy()) { const b = panel.querySelector('[data-go="whocheck"]'); if (b) b.focus({ preventScroll: true }); }
     }
 
     function me() { return window.Account ? Account.current : null; }
@@ -1289,7 +1307,7 @@
         if (r.state === "recorded") return `New best! You're ${ord(r.place || 1)} on the board.`;
         if (r.state === "kept") return `Your best is still ${num(r.best && r.best.score)}${r.place ? ` (${ord(r.place)})` : ""}.`;
         if (r.state === "refused") return "That game couldn't be checked, so it wasn't saved.";
-        if (r.state === "name-taken") return "That username belongs to a signed-up player now, so this game wasn't saved. Pick another next time.";
+        if (r.state === "name-taken") return "That Habbo belongs to a signed-up player now, so this game wasn't saved. Pick another next time.";
         if (r.state === "stale-run") return "That game was started too long ago, or on another account, so it wasn't saved.";
         if (r.state === "already-submitted") return "That game was already sent.";
         if (r.state === "no-run-token") return "That game wasn't started with the leaderboard, so it wasn't saved.";
@@ -1304,7 +1322,9 @@
         const go = btn.dataset.go;
         if (go === "play") play();
         else if (go === "who") showPanel("who");
-        else if (go === "whoplay") chooseName();
+        else if (go === "whonext") chooseName();
+        else if (go === "whocheck") checkMotto();
+        else if (go === "asguest") playAsGuest();
         else if (go === "cancel") showPanel("title");
         else if (go === "resume") resume();
         else if (go === "quit") { mode = "play"; endEarly(); }
@@ -1325,7 +1345,11 @@
        signed-out player's Habbo name. */
     function gameFacts() {
         const out = { touch: touchy(), dark, muted: Boolean(music() && music().muted) };
-        if (!me() && guest) out.habbo = guest.name;
+        if (!me() && guest) {
+            if (guest.kind === "habbo") out.habboToken = guest.token;
+            else if (rat && rat.token) out.rat = rat.token;
+            else out.guest = true;
+        }
         return out;
     }
 
@@ -1344,30 +1368,60 @@
 
     /* ---------------------------------------------------------------- WHO'S PLAYING
 
-       Signed out, Play first asks for the player's Habbo Origins username
-       (6 Oct 2026, the owner's), and their scores go on the leaderboard
-       under it ("that's the whole point of them adding their username").
-       Anything may be typed — it is not looked up on Origins (the owner's:
-       "they can just type anything") — except a signed-up player's name
-       (pura-scores.js, nameTaken: "Username taken, try again!"), which the
-       server refuses again when the score arrives. A check that cannot be
-       reached lets the name through: our trouble never stops a game.
-       Remembered on this browser, so the next Play goes straight in; the
-       splash says who and offers Change. Signed in, none of this: the
-       account says who. */
-    const NAME_KEY = "mazerats_pura_habbo";
+       Signed out, Play first asks who is playing (6 Oct 2026, the owner's),
+       two ways, both on the one leaderboard with everybody else:
+
+       - THEIR HABBO, PROVED ONCE. The username and hotel are checked on the
+         server (pura-scores.js, GUESTS): a real Habbo ("No Habbo called…"),
+         not a signed-up player's ("Username taken, try again!"). Then a code
+         for their Origins motto, as the Profile page's Habbo check gives
+         signed-in players, and Check; the server reads the motto fresh and
+         hands back a token naming that Habbo, which this browser keeps, so
+         every later Play goes straight in. The code screen says signing in
+         with Discord skips the wait (the owner's).
+       - PLAY AS A GUEST: no name. Their scores go up as "Guest Rat N", the
+         number given by the server with their first score and kept here
+         (with its signed token) for good.
+
+       The splash says who, with Change. Signed in, none of this. */
+    const WHO_KEY = "mazerats_pura_who";
+    const RAT_KEY = "mazerats_pura_rat";
+    const CLAIM_KEY = "mazerats_pura_claim";
+    const HOTELS = ["COM", "ES", "BR"];
     const HABBO_NAME = /^[A-Za-z0-9_\-=?!@:.,]{1,32}$/;
-    let guest = null;
-    try {
-        const v = JSON.parse(localStorage.getItem(NAME_KEY) || "null");
-        if (v && HABBO_NAME.test(v.name)) guest = { name: v.name };
-    } catch (e) { /* private mode */ }
+    const load = (k) => { try { return JSON.parse(localStorage.getItem(k) || "null"); } catch (e) { return null; } };
+    const keep = (k, v) => { try { if (v) localStorage.setItem(k, JSON.stringify(v)); else localStorage.removeItem(k); } catch (e) { /* this visit only */ } };
+
+    let guest = null;     // { kind: "habbo", name, hotel, token } or { kind: "rat" }
+    let rat = null;       // { n, token }: this browser's Guest Rat, once numbered
+    let claim = null;     // { name, hotel, code, claim, at }: a motto code in waiting
+    (function () {
+        const w = load(WHO_KEY);
+        if (w && w.kind === "habbo" && HABBO_NAME.test(w.name) && typeof w.token === "string") {
+            guest = { kind: "habbo", name: w.name, hotel: HOTELS.includes(w.hotel) ? w.hotel : "COM", token: w.token };
+        } else if (w && w.kind === "rat") guest = { kind: "rat" };
+        const r = load(RAT_KEY);
+        if (r && Number.isInteger(r.n) && typeof r.token === "string") rat = r;
+        const c = load(CLAIM_KEY);
+        // A code is good for half an hour; one with a few minutes left is let go.
+        if (c && c.code && c.claim && Date.now() - c.at < 25 * 60 * 1000) claim = c;
+    })();
 
     const needsName = () => gate.live && !testLevel() && !me() && !guest;
 
     function guestLine() {
         if (!gate.live || testLevel() || me() || !guest) return "";
-        return `<p class="pura-beta-note">Playing as <strong>${esc(guest.name)}</strong> · <a href="#" data-go="who">Change</a></p>`;
+        const who = guest.kind === "habbo"
+            ? `<strong>${esc(guest.name)}</strong>${guest.hotel === "COM" ? "" : " on Origins " + guest.hotel}`
+            : rat ? `<strong>Guest Rat ${rat.n}</strong>` : "a guest";
+        return `<p class="pura-beta-note">Playing as ${who} · <a href="#" data-go="who">Change</a></p>`;
+    }
+
+    // The board's own row for whoever this is (pura-scores.js GET).
+    function boardQuery() {
+        if (me() || !guest) return "";
+        if (guest.kind === "habbo") return "?guest=" + encodeURIComponent(guest.name) + "&hotel=" + guest.hotel;
+        return rat ? "?rat=" + rat.n : "";
     }
 
     function wireWho() {
@@ -1385,42 +1439,109 @@
         if (st) st.textContent = text;
     }
 
-    // A fetch on a twelve-second leash, as Fallin' Furni's lookup is.
-    async function leashed(url) {
+    // A request on a twelve-second leash, as Fallin' Furni's lookup is.
+    async function leashed(url, body) {
         const ctl = typeof AbortController === "function" ? new AbortController() : null;
         const t = ctl ? setTimeout(() => ctl.abort(), 12000) : 0;
         try {
-            const res = await fetch(url, ctl ? { signal: ctl.signal, credentials: "same-origin" } : { credentials: "same-origin" });
+            const res = await fetch(url, {
+                credentials: "same-origin",
+                ...(ctl ? { signal: ctl.signal } : {}),
+                ...(body ? { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) } : {})
+            });
             const data = await res.json().catch(() => ({}));
             return { res, data };
         } finally { clearTimeout(t); }
     }
 
+    function playAsGuest() {
+        guest = { kind: "rat" };
+        keep(WHO_KEY, guest);
+        play();
+    }
+
     let choosing = false;
     async function chooseName() {
         const input = panel.querySelector("#pura-who-name");
+        const hotelEl = panel.querySelector("#pura-who-hotel");
         if (!input || choosing) return;
         const name = input.value.trim();
+        const hotel = hotelEl && HOTELS.includes(hotelEl.value) ? hotelEl.value : "COM";
         if (!name) { whoSay("Enter your Habbo Origins username."); input.focus(); return; }
-        if (!HABBO_NAME.test(name)) { whoSay("Letters, numbers and - _ . , : ! ? @ = only, no spaces."); input.focus(); return; }
+        if (!HABBO_NAME.test(name)) { whoSay("That isn't a Habbo username."); input.focus(); return; }
+        // Already proved on this browser: straight in.
+        if (guest && guest.kind === "habbo" && guest.name.toLowerCase() === name.toLowerCase() && guest.hotel === hotel) { play(); return; }
+        // The code already given for this Habbo, while it lasts.
+        if (claim && claim.name.toLowerCase() === name.toLowerCase() && claim.hotel === hotel) { showPanel("code"); return; }
         choosing = true;
-        const btn = panel.querySelector('[data-go="whoplay"]');
+        const btn = panel.querySelector('[data-go="whonext"]');
         if (btn) btn.disabled = true;
         whoSay("Checking…");
-        let verdict = "ok";
-        try {
-            const taken = await leashed(API + "?name=" + encodeURIComponent(name)).catch(() => null);
-            if (taken && taken.res.ok && taken.data.taken) verdict = "taken";
-        } finally {
-            choosing = false;
-        }
-        // Moved on while it was being checked (Back, or the window shut).
+        let r = null;
+        try { r = await leashed(API + "?action=claim", { habbo: name, hotel }).catch(() => null); }
+        finally { choosing = false; }
         if (panel.querySelector("#pura-who-name") !== input) return;
         if (btn) btn.disabled = false;
-        if (verdict === "taken") { whoSay("Username taken, try again!"); input.focus(); input.select(); return; }
-        guest = { name };
-        try { localStorage.setItem(NAME_KEY, JSON.stringify(guest)); } catch (e) { /* this game only */ }
-        play();
+        const d = r ? r.data : {};
+        if (d.refused === "name-taken") { whoSay("Username taken, try again!"); input.focus(); input.select(); return; }
+        if (d.refused === "name-unknown") { whoSay(`No Habbo called ${name} on Origins ${hotel}.`); input.focus(); input.select(); return; }
+        if (!r || !r.res.ok || !d.claim) {
+            if (r && r.res.status === 403 && window.Account && Account.writeRefused(403, d, "play")) return;
+            whoSay(d.error || "That couldn't be checked just now. Try again in a moment.");
+            return;
+        }
+        claim = { name: d.name, hotel: d.hotel, code: d.code, claim: d.claim, at: Date.now() };
+        keep(CLAIM_KEY, claim);
+        showPanel("code");
+    }
+
+    let checking = false, checkTimer = 0;
+    async function checkMotto() {
+        if (!claim || checking) return;
+        const btn = panel.querySelector('[data-go="whocheck"]');
+        if (!btn || btn.disabled) return;
+        checking = true;
+        btn.disabled = true;
+        whoSay("Reading your motto…");
+        let r = null;
+        try { r = await leashed(API + "?action=verify", { claim: claim.claim }).catch(() => null); }
+        finally { checking = false; }
+        if (panel.querySelector('[data-go="whocheck"]') !== btn) return;
+        const d = r ? r.data : {};
+        if (d.verified) {
+            guest = { kind: "habbo", name: d.name, hotel: d.hotel, token: d.token };
+            keep(WHO_KEY, guest);
+            claim = null; keep(CLAIM_KEY, null);
+            whoSay("That's you! Starting…");
+            play();
+            return;
+        }
+        if (d.refused === "name-taken") {
+            claim = null; keep(CLAIM_KEY, null);
+            showPanel("who");
+            whoSay("Username taken, try again!");
+            return;
+        }
+        if (r && r.res.status === 409) {
+            claim = null; keep(CLAIM_KEY, null);
+            showPanel("who");
+            whoSay("That code ran out. Press Next for a new one.");
+            return;
+        }
+        const wait = r && Number.isFinite(d.wait) ? d.wait : 30000;
+        whoSay(r && r.res.ok ? "Not in your motto yet. Origins can take a few minutes, so check again shortly."
+            : d.error || "That couldn't be checked just now. Try again in a moment.");
+        // Check again only once the server will look again, counted down.
+        const until = Date.now() + wait;
+        clearInterval(checkTimer);
+        const tick = () => {
+            const left = Math.ceil((until - Date.now()) / 1000);
+            if (panel.querySelector('[data-go="whocheck"]') !== btn) { clearInterval(checkTimer); return; }
+            if (left <= 0) { clearInterval(checkTimer); btn.disabled = false; btn.textContent = "Check"; return; }
+            btn.textContent = "Check (" + left + ")";
+        };
+        tick();
+        checkTimer = setInterval(tick, 1000);
     }
 
     function endEarly() {
@@ -1460,6 +1581,8 @@
                 body: JSON.stringify({ run: run.token, log: g.log, ms: Math.round(gameMs), score: g.score, ...gameFacts() })
             });
             const body = await res.json().catch(() => ({}));
+            // A Guest Rat's first score brings their number (pura-scores.js, GUESTS).
+            if (body.rat && Number.isInteger(body.rat.n) && body.rat.token) { rat = { n: body.rat.n, token: body.rat.token }; keep(RAT_KEY, rat); }
             if (res.status === 403) {
                 if (window.Account && Account.writeRefused(403, body, "play")) return { state: "blocked" };
                 return { state: "no-nick" };
@@ -1475,7 +1598,7 @@
             if (body.reason === "name-taken") {
                 // Somebody signed up with it since: the next Play asks again.
                 guest = null;
-                try { localStorage.removeItem(NAME_KEY); } catch (e) { /* this game only */ }
+                keep(WHO_KEY, null);
                 return { state: "name-taken" };
             }
             return { state: "offline" };
@@ -1492,8 +1615,7 @@
         showPanel("board");
         let html;
         try {
-            const mine = !me() && guest ? "?guest=" + encodeURIComponent(guest.name) : "";
-            const res = await fetch(API + mine, { credentials: "same-origin", headers: { Accept: "application/json" } });
+            const res = await fetch(API + boardQuery(), { credentials: "same-origin", headers: { Accept: "application/json" } });
             if (!res.ok) throw new Error(String(res.status));
             const body = await res.json();
             const rows = (body.top || []).map((r, i) => rowHtml(i + 1, r, false));
@@ -1524,7 +1646,7 @@
         if (document.querySelector('link[data-pura]')) return;
         const l = document.createElement("link");
         l.rel = "stylesheet";
-        l.href = "css/pura-panic.css?v=22";
+        l.href = "css/pura-panic.css?v=23";
         l.dataset.pura = "1";
         document.head.appendChild(l);
     })();
