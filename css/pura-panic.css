@@ -298,3 +298,10 @@
 #pura-window:not(.is-touch) .pura-hud-btns { gap: 4px; }
 #pura-window:not(.is-touch) .pura-hud-btn { width: 20px; height: 20px; border-radius: 3px; }
 #pura-window:not(.is-touch) .pura-hud-btn svg { width: auto; height: 8px; }
+
+/* ---- WHO'S PLAYING (js/pura-panic.js): the signed-out name prompt, in the
+   console's own field and dropdown. */
+.pura-who-row { display: flex; gap: 6px; width: 100%; max-width: 200px; margin-top: 4px; }
+.pura-who-row .console-input { margin-bottom: 0; height: 20px; }
+.pura-who-name { flex: 1 1 auto; min-width: 0; padding: 0 6px; user-select: text; -webkit-user-select: text; }
+.pura-who-status { min-height: 1.4em; max-width: 250px; }

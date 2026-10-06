@@ -693,6 +693,7 @@ document.addEventListener("DOMContentLoaded", () => {
         clearSelfPasswordFields();
         sayPassword("", true);
         ffClear();
+        puraClear();
         // A player looked up to be forgotten: personal details, cleared for
         // the same reason as the run log (28 Sept 2026). In the Players tab
         // since 29 Sept 2026 (js/admin-players.js).
@@ -734,6 +735,7 @@ document.addEventListener("DOMContentLoaded", () => {
     function resetAccountPanels() {
         clearRenderedLists();
         ffClear();
+        puraClear();
         clearActivity();
         refusedUploads.clear();
         furniRescue.clear();
@@ -1556,6 +1558,145 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     if (ffRefreshBtn) ffRefreshBtn.addEventListener("click", loadFallinFurni);
+
+    /* ---------- Pura Panic's figures (6 Oct 2026, the owner's: "make sure I
+       can see cool data in there, even more so as the game is in beta").
+       netlify/functions/pura-stats.js works everything out; this only draws
+       it, with the Fallin' Furni page's pieces (ffStat, ffClock, ffDate,
+       activityBars), so the two read alike. */
+    const puraRangeEl = document.getElementById("pura-range");
+    const puraRefreshBtn = document.getElementById("pura-refresh-btn");
+    const puraSummaryEl = document.getElementById("pura-summary");
+    const puraChartsEl = document.getElementById("pura-charts");
+    const puraBoardEl = document.getElementById("pura-board-table");
+    const puraPlayersEl = document.getElementById("pura-players-table");
+    const puraGamesEl = document.getElementById("pura-games-table");
+    const puraStateEl = document.getElementById("pura-state-pill");
+    const puraKeepEl = document.getElementById("pura-keep-days");
+    let puraLoaded = false;
+    let puraLoadGen = 0;
+    const puraNum = n => Number(n || 0).toLocaleString();
+    const puraBig = (n, words) => '<span class="admin-activity-stat"><strong>' + n + '</strong> ' + words + '</span>';
+
+    // Who a row is, in the three kinds pura-stats.js tells apart.
+    function puraWho(p) {
+        if (p.kind === "player" || (!p.kind && p.name)) return escapeHtml(p.name || "Someone");
+        const habbo = p.habbo || (p.kind === "habbo" ? p.name : null);
+        if (habbo) {
+            return escapeHtml(habbo) + (p.hotel && p.hotel !== "COM" ? " (" + escapeHtml(p.hotel) + ")" : "") +
+                ' <span class="admin-hint">signed out</span>';
+        }
+        return 'Anonymous <span class="admin-hint">(no name given)</span>';
+    }
+
+    function puraRender(d) {
+        const t = d.totals;
+        if (puraStateEl) puraStateEl.textContent = d.state === "live" ? "· Live" : "· In maintenance";
+        if (puraKeepEl) puraKeepEl.textContent = d.keepDays || 180;
+        puraSummaryEl.innerHTML =
+            ffStat(t.games, "game finished", "games finished") +
+            ffStat(t.starts, "game started", "games started") +
+            puraBig(t.finishedPct + "%", "of started games finished") +
+            ffStat(t.players, "signed-in player", "signed-in players") +
+            ffStat(t.signedOutGames, "game signed out", "games signed out") +
+            puraBig(puraNum(t.medianScore), "points, typically") +
+            puraBig(t.medianLevel, "level reached, typically") +
+            puraBig(ffClock(t.medianMs), "median game") +
+            puraBig(puraNum(t.bestScore), "best score") +
+            puraBig(t.topLevel + (d.maxLevel && t.topLevel >= d.maxLevel ? " (max speed)" : ""), "highest level") +
+            puraBig(ffClock(t.longestMs), "longest game") +
+            puraBig(puraNum(t.rows), "rows cleared") +
+            puraBig(puraNum(t.pieces), "pieces placed") +
+            puraBig(ffClock(t.playedMs), "played in all") +
+            puraBig(t.rowsPerMin, "rows a minute") +
+            ffStat(t.chains, "chain clear", "chain clears") +
+            ffStat(t.noRows, "game with no rows", "games with no rows", true) +
+            puraBig(t.touchPct + "%", "on a touchscreen") +
+            puraBig(t.darkPct + "%", "with the lights off") +
+            puraBig(t.mutedPct + "%", "with the music muted") +
+            (d.truncated ? '<span class="admin-activity-stat is-warn"><strong>!</strong> only the newest games are counted</span>' : "");
+        puraChartsEl.innerHTML = '<div class="admin-visitor-grid">' +
+            '<div><h4 class="admin-visitor-head">Games per day</h4>' + activityBars(d.gamesByDay, "Nothing played yet.") + '</div>' +
+            '<div><h4 class="admin-visitor-head">Plays pressed per day</h4>' + activityBars(d.startsByDay, "Nothing started yet.") + '</div>' +
+            '<div><h4 class="admin-visitor-head">Where games ended</h4>' + activityBars(d.byLevel, "Nothing yet.") + '</div>' +
+            '<div><h4 class="admin-visitor-head">Clears</h4>' + activityBars(d.clears, "No rows cleared yet.") + '</div>' +
+            '<div><h4 class="admin-visitor-head">How games ended</h4>' + activityBars(d.ended, "Nothing yet.") + '</div>' +
+            '<div><h4 class="admin-visitor-head">Who played</h4>' + activityBars(d.signedIn, "Nothing yet.") + '</div>' +
+            '<div><h4 class="admin-visitor-head">Played on</h4>' + activityBars(d.devices, "Nothing yet.") + '</div>' +
+            '</div>';
+
+        const board = puraBoardEl.querySelector("tbody");
+        board.innerHTML = d.board.length ? d.board.map((r, i) => '<tr>' +
+            '<td>' + (i + 1) + '</td>' +
+            '<td>' + escapeHtml(r.name || "Someone") +
+                (r.guest ? ' <span class="admin-hint">signed out</span>' : "") +
+                (r.hidden ? ' <span class="admin-hint">hidden from the board (banned or no nickname)</span>' : "") + '</td>' +
+            '<td class="ff-num">' + puraNum(r.score) + '</td>' +
+            '<td class="ff-num">' + puraNum(r.rows) + '</td>' +
+            '<td class="ff-num">' + (r.level || 1) + '</td>' +
+            '<td class="ff-num">' + puraNum(r.pieces) + '</td>' +
+            '<td class="ff-num">' + ffClock(r.ms) + '</td>' +
+            '<td>' + ffDate(r.at) + '</td>' +
+        '</tr>').join("") : '<tr><td colspan="8" class="admin-empty">Nobody is on the board yet.</td></tr>';
+
+        const players = puraPlayersEl.querySelector("tbody");
+        players.innerHTML = d.byPlayer.length ? d.byPlayer.map(p => '<tr>' +
+            '<td>' + puraWho(p) + '</td>' +
+            '<td class="ff-num">' + p.games + '</td>' +
+            '<td class="ff-num">' + puraNum(p.best) + '</td>' +
+            '<td class="ff-num">' + p.bestLevel + '</td>' +
+            '<td class="ff-num">' + puraNum(p.rows) + '</td>' +
+            '<td class="ff-num">' + ffClock(p.ms) + '</td>' +
+            '<td>' + ffDate(p.first) + '</td>' +
+            '<td>' + ffDate(p.last) + '</td>' +
+        '</tr>').join("") : '<tr><td colspan="8" class="admin-empty">Nobody has played yet.</td></tr>';
+
+        const games = puraGamesEl.querySelector("tbody");
+        games.innerHTML = d.recent.length ? d.recent.map(g => '<tr>' +
+            '<td>' + ffDate(g.at) + '</td>' +
+            '<td>' + puraWho(g) + '</td>' +
+            '<td class="ff-num">' + puraNum(g.score) + '</td>' +
+            '<td class="ff-num">' + puraNum(g.rows) + '</td>' +
+            '<td class="ff-num">' + g.level + '</td>' +
+            '<td class="ff-num">' + ffClock(g.ms) + '</td>' +
+            '<td>' + (g.clears || []).join(" / ") + '</td>' +
+            '<td class="ff-num">' + g.chains + '</td>' +
+            '<td>' + (g.ended === "quit" ? "Ended from pause" : "Topped out") + '</td>' +
+            '<td>' + [g.touch ? "Touch" : "Keys", g.dark ? "lights off" : "", g.muted ? "muted" : ""].filter(Boolean).join(", ") + '</td>' +
+        '</tr>').join("") : '<tr><td colspan="10" class="admin-empty">No games finished yet.</td></tr>';
+    }
+
+    async function loadPura() {
+        if (!adminToken) return;
+        const gen = ++puraLoadGen;
+        puraSummaryEl.innerHTML = '<span class="admin-hint">Loading…</span>';
+        try {
+            const data = await Api.getPuraStats(adminToken, puraRangeEl && puraRangeEl.value);
+            if (gen !== puraLoadGen) return;
+            puraRender(data);
+            puraLoaded = true;
+        } catch (err) {
+            if (gen !== puraLoadGen) return;
+            if (err.status === 401) { lockOut(); return; }
+            puraSummaryEl.innerHTML = '<span class="admin-hint">' +
+                escapeHtml(err.message || "Couldn't load Pura Panic's figures.") + '</span>';
+        }
+    }
+
+    // Emptied on a log out or a lapsed session, as the Fallin' Furni log is.
+    function puraClear() {
+        puraLoadGen++;
+        puraLoaded = false;
+        if (puraSummaryEl) puraSummaryEl.innerHTML = "";
+        if (puraChartsEl) puraChartsEl.innerHTML = "";
+        [puraBoardEl, puraPlayersEl, puraGamesEl].forEach(table => {
+            const body = table && table.querySelector("tbody");
+            if (body) body.innerHTML = "";
+        });
+    }
+
+    if (puraRefreshBtn) puraRefreshBtn.addEventListener("click", loadPura);
+    if (puraRangeEl) puraRangeEl.addEventListener("change", loadPura);
     if (ffRangeEl) ffRangeEl.addEventListener("change", loadFallinFurni);
 
     /* Running a furni scan is owner-only — see the handler in
@@ -8536,6 +8677,7 @@ document.addEventListener("DOMContentLoaded", () => {
            the admin never open it, so it is fetched when the panel is first
            shown rather than on sign-in. Refresh re-reads it after that. */
         if (name === "ffdata" && !ffLoaded) loadFallinFurni();
+        if (name === "puradata" && !puraLoaded) loadPura();
         /* The ban list is re-read each time it is shown (29 Sept 2026):
            cool-downs end on their own, and the Players tab bans too. */
         if (name === "bans" && adminToken) loadBans();

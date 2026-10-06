@@ -555,6 +555,11 @@
         if (!Array.isArray(log)) return { ok: false, error: "No placements" };
         if (log.length > (limit || 20000)) return { ok: false, error: "Too many placements" };
         const g = newGame(seed);
+        /* How the game went, for the Warren's Pura Panic page: the pieces
+           that cleared one, two, three and four-or-more rows at once, and
+           the chains (rows filled by tiles dropping after a clear). */
+        const clears = [0, 0, 0, 0];
+        let chains = 0;
         for (let i = 0; i < log.length; i++) {
             if (g.over) return { ok: false, error: "A piece after the game ended" };
             const e = log[i];
@@ -568,9 +573,12 @@
             if (!fits(g.board, p)) return { ok: false, error: `Piece ${i + 1} is somewhere it cannot be` };
             if (!landed(g.board, p)) return { ok: false, error: `Piece ${i + 1} was left in the air` };
             g.piece = p;
-            settle(g);
+            const res = settle(g);
+            const n = res.cleared.length;
+            if (n) clears[Math.min(n, 4) - 1]++;
+            chains += (res.stages || []).filter(s => s.cleared.length).length;
         }
-        return { ok: true, score: g.score, bands: g.bands, level: g.level, pieces: g.pieces, over: g.over };
+        return { ok: true, score: g.score, bands: g.bands, level: g.level, pieces: g.pieces, over: g.over, clears, chains };
     }
 
     const api = {

@@ -223,6 +223,7 @@
                                 <div class="admin-nav-col">
                                     <button type="button" class="chrome-nav-btn ctl-btn" data-panel="daily" role="tab" aria-selected="false"><span class="chrome-nav-btn-label">Daily</span></button>
                                     <button type="button" class="chrome-nav-btn ctl-btn" data-panel="ffdata" role="tab" aria-selected="false"><span class="chrome-nav-btn-label">Fallin&#39; Furni</span></button>
+                                    <button type="button" class="chrome-nav-btn ctl-btn" data-panel="puradata" role="tab" aria-selected="false"><span class="chrome-nav-btn-label">Pura Panic</span></button>
                                     <button type="button" class="chrome-nav-btn ctl-btn" data-panel="wizard" role="tab" aria-selected="false"><span class="chrome-nav-btn-label">Atlas</span></button>
                                     <button type="button" class="chrome-nav-btn ctl-btn" data-panel="entries" role="tab" aria-selected="false"><span class="chrome-nav-btn-label">Event Entries</span><span class="admin-nav-count" id="entries-nav-count" title="Entries nobody has looked at yet" hidden></span></button>
                                 </div>
@@ -1189,6 +1190,98 @@
                                 <h3 class="admin-subheading admin-subheading-spaced">Runs, newest first</h3>
                                 <p class="admin-hint">Open one to see every round inside it, in the order they were played.</p>
                                 <div class="chrome-list" id="ff-runs"></div>
+                            </section>
+
+                            <!-- ---------- Pura Panic (6 Oct 2026) ----------
+                                 Every finished game, replayed on the server,
+                                 and every Play pressed: netlify/functions/
+                                 pura-stats.js reads them, js/admin.js draws
+                                 them (loadPura). -->
+                            <section class="admin-panel" data-panel="puradata" hidden>
+                                <header class="admin-panel-head">
+                                    <div>
+                                        <h3 class="admin-panel-title">Pura Panic <span class="admin-hint" id="pura-state-pill"></span></h3>
+                                        <p class="admin-hint">Every finished game, signed in or not, replayed on the server so every number is the rules' own. Signed-out players are named by the Habbo username they gave at Play (said, not proven). Kept for <span id="pura-keep-days">180</span> days.</p>
+                                    </div>
+                                    <div class="admin-activity-controls">
+                                        <div class="sort-box">
+                                            <select id="pura-range" aria-label="Time range">
+                                                <option value="24h">Past 24 hours</option>
+                                                <option value="today">Today</option>
+                                                <option value="7d">Past 7 days</option>
+                                                <option value="30d" selected>Past 30 days</option>
+                                                <option value="90d">Past 90 days</option>
+                                                <option value="all">Everything kept</option>
+                                            </select>
+                                        </div>
+                                        <button class="admin-action-pill" id="pura-refresh-btn" type="button">Refresh</button>
+                                    </div>
+                                </header>
+
+                                <div class="admin-activity-summary" id="pura-summary"></div>
+                                <div class="admin-visitors" id="pura-charts"></div>
+
+                                <h3 class="admin-subheading admin-subheading-spaced">The leaderboard</h3>
+                                <p class="admin-hint">The top ten as stored, all time. Rows the public board hides (a banned player, or one with no nickname) are marked; signed-out players are on it under the name they typed.</p>
+                                <div class="ff-table-wrap">
+                                    <table class="ff-table" id="pura-board-table">
+                                        <thead>
+                                            <tr>
+                                                <th scope="col">#</th>
+                                                <th scope="col">Player</th>
+                                                <th scope="col" class="ff-num">Points</th>
+                                                <th scope="col" class="ff-num">Rows</th>
+                                                <th scope="col" class="ff-num">Level</th>
+                                                <th scope="col" class="ff-num">Pieces</th>
+                                                <th scope="col" class="ff-num">Length</th>
+                                                <th scope="col">When</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody></tbody>
+                                    </table>
+                                </div>
+
+                                <h3 class="admin-subheading admin-subheading-spaced">Players</h3>
+                                <p class="admin-hint">Signed-in players by account, signed-out players by the Habbo username they gave, and one line for games with no name at all. Most games first.</p>
+                                <div class="ff-table-wrap">
+                                    <table class="ff-table" id="pura-players-table">
+                                        <thead>
+                                            <tr>
+                                                <th scope="col">Player</th>
+                                                <th scope="col" class="ff-num">Games</th>
+                                                <th scope="col" class="ff-num">Best</th>
+                                                <th scope="col" class="ff-num">Top level</th>
+                                                <th scope="col" class="ff-num">Rows</th>
+                                                <th scope="col" class="ff-num">Time played</th>
+                                                <th scope="col">First seen</th>
+                                                <th scope="col">Last seen</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody></tbody>
+                                    </table>
+                                </div>
+
+                                <h3 class="admin-subheading admin-subheading-spaced">Games, newest first</h3>
+                                <p class="admin-hint">Clears are the pieces that cleared one, two, three and four or more rows at once; chains are rows filled by tiles dropping after a clear.</p>
+                                <div class="ff-table-wrap">
+                                    <table class="ff-table" id="pura-games-table">
+                                        <thead>
+                                            <tr>
+                                                <th scope="col">When</th>
+                                                <th scope="col">Player</th>
+                                                <th scope="col" class="ff-num">Points</th>
+                                                <th scope="col" class="ff-num">Rows</th>
+                                                <th scope="col" class="ff-num">Level</th>
+                                                <th scope="col" class="ff-num">Length</th>
+                                                <th scope="col">Clears 1/2/3/4+</th>
+                                                <th scope="col" class="ff-num">Chains</th>
+                                                <th scope="col">Ended</th>
+                                                <th scope="col">On</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody></tbody>
+                                    </table>
+                                </div>
                             </section>
 
                             <!-- ---------- Admins ---------- -->

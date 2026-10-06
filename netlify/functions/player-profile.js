@@ -287,7 +287,9 @@ async function figuresFor(db, id) {
        only; a read that fails counts everyone out, as the boards do. */
     const boardIds = new Set([...board.guess.keys(), ...board.odd.keys(), ...board.combined.keys()].map(String));
     const ffIds = ffCounts ? (await ffCol.distinct("playerId")).map(String) : [];
-    const puraIds = puraMine ? (await db.collection("pura_scores").distinct("playerId")).map(String) : [];
+    // Guests (pura-scores.js, GUESTS) have no account to be nicknamed; they
+    // stand on the board as they are, so they count here as they are.
+    const puraIds = puraMine ? (await db.collection("pura_scores").distinct("playerId")).map(String).filter(k => !k.startsWith("guest:")) : [];
     const nicked = await nickedAmong(db, [...boardIds, ...ffIds, ...puraIds]);
     const offBoard = new Set(banned);
     [...boardIds, ...ffIds, ...puraIds].forEach(k => { if (!nicked || !nicked.has(k)) offBoard.add(k); });

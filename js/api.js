@@ -825,6 +825,12 @@ const Api = {
     /* Fallin' Furni's run log. Any admin can read this one, where the
        activity log is owner-only: that file is a record of what ADMINS did
        and this is a record of how the game is playing. */
+    // Pura Panic's figures for the Warren (netlify/functions/pura-stats.js).
+    getPuraStats(token, range) {
+        const q = range ? "?range=" + encodeURIComponent(range) : "";
+        return this._write("/.netlify/functions/pura-stats" + q, "GET", token);
+    },
+
     getFallinFurniRuns(token, range) {
         const q = range ? "?range=" + encodeURIComponent(range) : "";
         return this._write("/.netlify/functions/ff-runs" + q, "GET", token);

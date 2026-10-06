@@ -1,9 +1,15 @@
 /* /.netlify/functions/pura-scores — the Pura Panic leaderboard.
 
    GET                    the top 25, and the caller's own best if signed in
+   GET ?name=X            whether a name belongs to a signed-up player
+                          ({ taken }), for the signed-out name prompt
+   GET ?guest=X           the board, with a signed-out player's own row
    POST ?action=start     a signed run token carrying the game's SEED
    POST {run, log, ms}    a finished game: `run` that token, `log` where
                           every piece came to rest ([rot, x, y, lane] each)
+   POST ?action=played    the same for a game that is not for the board
+                          (signed out, no nickname, no rows): kept for the
+                          Warren's figures only — see THE GAME LOG
 
    ----------------------------------------------------------------------
    THE SCORE IS WORKED OUT HERE, NOT SENT
@@ -33,12 +39,42 @@
 
    ONE ROW PER PLAYER, their best: highest score, then fewest pieces (the
    tidier game), then earliest. The board is for players signed in WITH A
-   NICKNAME, as the daily games are (writeRefusal's `daily`). */
+   NICKNAME, as the daily games are (writeRefusal's `daily`) — and for
+   signed-out players under the name they typed at Play (6 Oct 2026, the
+   owner's: "that's the whole point of them adding their username").
+
+   GUESTS. Any name, not checked against Origins (the owner's: "they can
+   just type anything"), except one that is a signed-up player's (nameTaken:
+   their nickname, or the Habbo linked to their account). A guest's row is
+   keyed "guest:" + nameKey(name), so "Rat-Fan" and "ratfan" are one guest;
+   two people typing one name share a row, which is what a name with nothing
+   behind it means. No Habbo head is shown for a guest: nobody proved whose
+   it would be. Network bans still apply (writeRefusal with no account).
+
+   ----------------------------------------------------------------------
+   THE GAME LOG (6 Oct 2026, the owner's: "make sure I can see cool data",
+   the game being in beta)
+
+   pura_starts    one row per Play pressed while live: when, and who if
+                  signed in. Starts against finished games is how many
+                  games were walked out of without an ending.
+   pura_games     one row per FINISHED game, signed in or not, scored or
+                  not, keyed by its run id so a game is only ever counted
+                  once — replayed like a scored game, so every figure in it
+                  is the rules' own and not the page's say-so: score, rows,
+                  level, pieces, length, how it ended (topped out, or
+                  ended from the pause screen), clears by size and chains;
+                  and three things only the page knows, taken as said:
+                  a touchscreen, lights off, the music muted.
+
+   Both are kept for KEEP_DAYS and read by pura-stats.js for the Warren.
+   Neither write ever stands between a player and their game or score:
+   a failure is logged and the game goes on. */
 
 const crypto = require("crypto");
 const jwt = require("jsonwebtoken");
 const { getDb, ensureUniqueIndex, ensureIndex } = require("./_db");
-const { playerFrom, publicName } = require("./_player");
+const { playerFrom, publicName, nameKey } = require("./_player");
 const { SECURITY_HEADERS } = require("./_headers");
 const { writeRefusal, withoutBanned } = require("./_bans");
 const { habboHeads } = require("./_publicid");
@@ -59,6 +95,10 @@ const MAX_BODY = 400 * 1024;
 
 const DEFAULT_STATE = "maintenance";
 
+const STARTS = "pura_starts";
+const GAMES = "pura_games";
+const KEEP_DAYS = 180;
+
 const json = (statusCode, data) => ({
     statusCode,
     headers: { ...SECURITY_HEADERS, "Cache-Control": "no-store" },
@@ -78,8 +118,7 @@ async function placeOf(db, scores, best) {
         { $or: [{ score: { $gt: best.score } }, { score: best.score, pieces: { $lt: best.pieces } }] },
         { projection: { _id: 0, playerId: 1 } }
     ).toArray();
-    const [shown] = await withoutBanned(db, [ahead], r => r && r.playerId);
-    return 1 + shown.length;
+    return 1 + (await shown(db, ahead)).length;
 }
 
 function signRun(player, now) {
@@ -110,6 +149,124 @@ function readRun(token, player) {
 
 // One token, one entry: the unique _id is the lock (see ff-scores.js).
 let tokensIndexed = false;
+/* A name in the characters a Habbo name may have, the rule room-figure.js
+   and ff-runs.js apply (no spaces, nothing that could be markup); anything
+   else is no name at all. Not checked against Origins (see GUESTS). */
+const HABBO_NAME = /^[A-Za-z0-9_\-=?!@:.,]{1,32}$/;
+const habboName = (v) => {
+    const s = String(v === undefined || v === null ? "" : v).trim();
+    return HABBO_NAME.test(s) ? s : null;
+};
+// A guest's board key (see GUESTS above).
+const GUEST = "guest:";
+const guestId = (name) => GUEST + nameKey(name);
+const isGuest = (id) => typeof id === "string" && id.startsWith(GUEST);
+
+/* The board's own filter: accounts through withoutBanned (banned players
+   and players with no nickname off), guests kept as they are. Order kept. */
+async function shown(db, rows) {
+    const accounts = rows.filter(r => r && !isGuest(r.playerId));
+    const [kept] = await withoutBanned(db, [accounts], r => r && r.playerId);
+    const ok = new Set(kept);
+    return rows.filter(r => r && (isGuest(r.playerId) || ok.has(r)));
+}
+
+/* A NAME ALREADY SOMEBODY'S (6 Oct 2026, the owner's): a signed-out
+   player may not play as a signed-up player. Taken is a nickname that reads
+   the same (nameKey, the rule nicknames are unique by), or the Habbo linked
+   to an account. Fails OPEN: an unreadable answer lets
+   the name through rather than stopping a game over our own trouble. */
+async function nameTaken(db, habbo) {
+    const key = nameKey(habbo);
+    if (!key) return false;
+    const exact = new RegExp("^" + habbo.replace(/[.*+?^${}()|[\]\\-]/g, "\\$&") + "$", "i");
+    try {
+        const row = await db.collection("players").findOne(
+            { $or: [{ nickKey: key }, { "habbo.name": exact }] },
+            { projection: { _id: 0, id: 1 } });
+        return Boolean(row);
+    } catch (e) {
+        console.error("pura-scores: could not check a name", e);
+        return false;
+    }
+}
+
+let logIndexed = false;
+async function logIndexes(db) {
+    if (logIndexed) return;
+    logIndexed = true;
+    for (const c of [STARTS, GAMES]) {
+        try { await db.collection(c).createIndex({ at: 1 }, { expireAfterSeconds: KEEP_DAYS * 86400 }); }
+        catch (e) { /* kept a little longer than meant, at worst */ }
+    }
+}
+
+// A Play pressed while live. Never in the way of the game.
+async function logStart(db, claims, player) {
+    try {
+        await logIndexes(db);
+        await db.collection(STARTS).insertOne({ _id: claims.rid, at: new Date(), playerId: player ? player.id : null });
+    } catch (e) {
+        if (!(e && e.code === 11000)) console.error("pura-scores: could not log a start", e);
+    }
+}
+
+/* A finished game, replayed. Once per run id: a second report of the same
+   game (the page retrying) is a duplicate key and quietly nothing. */
+async function logGame(db, claims, player, result, ms, body) {
+    const b = body || {};
+    let habbo = player ? null : habboName(b.habbo);
+    if (habbo && await nameTaken(db, habbo)) habbo = null;
+    try {
+        await logIndexes(db);
+        await db.collection(GAMES).insertOne({
+            _id: claims.rid,
+            at: new Date(),
+            playerId: player ? player.id : null,
+            name: player ? await publicName(db, player).catch(() => null) : null,
+            score: result.score,
+            rows: result.bands,
+            level: result.level,
+            pieces: result.pieces,
+            ms,
+            ended: result.over ? "topout" : "quit",
+            clears: result.clears || [0, 0, 0, 0],
+            chains: result.chains || 0,
+            /* Signed out, the name the player gave at Play (6 Oct 2026, the
+               owner's), a signed-up player's refused (nameTaken) and otherwise
+               said, never checked against Origins (see GUESTS). */
+            habbo,
+            touch: b.touch === true,
+            dark: b.dark === true,
+            muted: b.muted === true
+        });
+    } catch (e) {
+        if (!(e && e.code === 11000)) console.error("pura-scores: could not log a game", e);
+    }
+}
+
+/* The checks every finished game passes before anything is believed of it,
+   scored or not: the token, the clock, and the replay. A string is a
+   reason to refuse; otherwise { claims, ms, result }. */
+function checkGame(body, player) {
+    if (!body.run) return { refuse: json(200, { recorded: false, reason: "no-run-token" }) };
+    const claims = readRun(body.run, player);
+    if (!claims) return { refuse: json(200, { recorded: false, reason: "stale-run" }) };
+    const ms = Math.max(0, Math.round(Number(body.ms) || 0));
+    if (ms > Date.now() - claims.t + RUN_TOLERANCE_MS) {
+        return { refuse: json(400, { error: "That game is longer than the time since it started" }) };
+    }
+    const log = body.log;
+    if (!Array.isArray(log) || !log.length) return { refuse: json(200, { recorded: false, reason: "no-pieces" }) };
+    if (log.length > MAX_PIECES) return { refuse: json(400, { error: "Too many pieces" }) };
+    if (ms < log.length * PIECE_MIN_MS) {
+        return { refuse: json(400, { error: "Those pieces came down faster than anybody plays" }) };
+    }
+    const result = Engine.replay(claims.seed, log, MAX_PIECES);
+    if (!result.ok) return { refuse: json(400, { error: result.error }) };
+    return { claims, ms, result };
+}
+
 async function spendRun(db, claims, player) {
     const col = db.collection(RUN_TOKENS);
     if (!tokensIndexed) {
@@ -166,19 +323,28 @@ exports.handler = async (event) => {
     const scores = db.collection(COLLECTION);
     const player = playerFrom(event);
 
+    if (event.httpMethod === "GET" && (event.queryStringParameters || {}).name !== undefined) {
+        const q = event.queryStringParameters;
+        const habbo = habboName(q.name);
+        if (!habbo) return json(400, { error: "That isn't a Habbo name." });
+        return json(200, { taken: await nameTaken(db, habbo) });
+    }
+
     if (event.httpMethod === "GET") {
         try {
             await ensureIndex(scores, { score: -1, pieces: 1, at: 1 });
             const open = await isOpen(db);
-            const top = (await withoutBanned(db, [await scores
+            const top = (await shown(db, await scores
                 .find({}, { projection: { _id: 0 } })
                 .sort({ score: -1, pieces: 1, at: 1 })
                 .limit(BOARD_READ)
-                .toArray()], r => r && r.playerId))[0].slice(0, TOP);
+                .toArray())).slice(0, TOP);
             const heads = await habboHeads(db, [...top.map(r => r && r.playerId), player && player.id]);
             const out = { open, top: top.map(r => clean(r, heads)) };
-            if (player) {
-                const mine = await scores.findOne({ playerId: player.id }, { projection: { _id: 0 } });
+            const guest = player ? null : habboName((event.queryStringParameters || {}).guest);
+            const meId = player ? player.id : guest ? guestId(guest) : null;
+            if (meId) {
+                const mine = await scores.findOne({ playerId: meId }, { projection: { _id: 0 } });
                 out.you = mine ? clean(mine, heads) : null;
                 if (mine) {
                     out.you.place = await placeOf(db, scores, mine);
@@ -204,13 +370,29 @@ exports.handler = async (event) => {
         if (!open) return json(200, { token: null, reason: "maintenance" });
         const run = signRun(player, Date.now());
         if (!run) return json(200, { token: null, reason: "unavailable" });
+        await logStart(db, jwt.decode(run.token), player);
         return json(200, run);
     }
 
-    // Signed in with a nickname, not banned — as the daily games ask.
-    const refusal = await writeRefusal(db, event, player ? player.id : null, { game: true, daily: true });
+    /* A GAME NOT FOR THE BOARD: signed out, no nickname, or no rows. Logged
+       for the Warren (THE GAME LOG) after the same checks a scored game
+       passes, and nothing more. Live only, as the token it carries was. */
+    if ((event.queryStringParameters || {}).action === "played") {
+        if ((event.body || "").length > MAX_BODY) return json(413, { error: "That game is too long to send" });
+        let body;
+        try { body = JSON.parse(event.body || "{}"); }
+        catch { return json(400, { error: "Body is not JSON" }); }
+        if (!body || typeof body !== "object") return json(400, { error: "Body is not JSON" });
+        const checked = checkGame(body, player);
+        if (checked.refuse) return checked.refuse;
+        await logGame(db, checked.claims, player, checked.result, checked.ms, body);
+        return json(200, { logged: true });
+    }
+
+    // Signed in with a nickname, not banned — as the daily games ask; or a
+    // guest, under a name (GUESTS above), from a network that is not banned.
+    const refusal = await writeRefusal(db, event, player ? player.id : null, player ? { game: true, daily: true } : { game: true });
     if (refusal) return refusal;
-    if (!player) return json(200, { recorded: false, reason: "signed-out" });
 
     if ((event.body || "").length > MAX_BODY) return json(413, { error: "That game is too long to send" });
     let body;
@@ -218,26 +400,23 @@ exports.handler = async (event) => {
     catch { return json(400, { error: "Body is not JSON" }); }
     if (!body || typeof body !== "object") return json(400, { error: "Body is not JSON" });
 
-    if (!body.run) return json(200, { recorded: false, reason: "no-run-token" });
-    const claims = readRun(body.run, player);
-    if (!claims) return json(200, { recorded: false, reason: "stale-run" });
+    let guest = null;
+    if (!player) {
+        guest = habboName(body.habbo);
+        if (!guest) return json(200, { recorded: false, reason: "signed-out" });
+    }
+    const checked = checkGame(body, player);
+    if (checked.refuse) return checked.refuse;
+    const { claims, ms, result } = checked;
+    if (guest && await nameTaken(db, guest)) {
+        await logGame(db, claims, null, result, ms, body);
+        return json(200, { recorded: false, reason: "name-taken" });
+    }
+    const who = player || { id: guestId(guest) };
     // Shut since the game started: its token was issued while live, but the
     // board takes nothing in maintenance.
     if (!(await isOpen(db).catch(() => false))) return json(200, { recorded: false, reason: "maintenance" });
-
-    const ms = Math.max(0, Math.round(Number(body.ms) || 0));
-    if (ms > Date.now() - claims.t + RUN_TOLERANCE_MS) {
-        return json(400, { error: "That game is longer than the time since it started" });
-    }
-    const log = body.log;
-    if (!Array.isArray(log) || !log.length) return json(200, { recorded: false, reason: "no-pieces" });
-    if (log.length > MAX_PIECES) return json(400, { error: "Too many pieces" });
-    if (ms < log.length * PIECE_MIN_MS) {
-        return json(400, { error: "Those pieces came down faster than anybody plays" });
-    }
-
-    const result = Engine.replay(claims.seed, log, MAX_PIECES);
-    if (!result.ok) return json(400, { error: result.error });
+    await logGame(db, claims, player, result, ms, body);
     // The page says what it scored; a page and a server that disagree is a bug worth hearing about.
     if (body.score !== undefined && Number(body.score) !== result.score) {
         console.warn("pura-scores: the page and the replay disagree", body.score, result.score);
@@ -246,15 +425,15 @@ exports.handler = async (event) => {
 
     try {
         await ensureUniqueIndex(scores, "playerId");
-        if (!(await spendRun(db, claims, player))) return json(200, { recorded: false, reason: "already-submitted" });
+        if (!(await spendRun(db, claims, who))) return json(200, { recorded: false, reason: "already-submitted" });
     } catch (e) {
         console.error("pura-scores: could not spend a run token", e);
         return json(503, { error: "The leaderboard could not be updated just now." });
     }
 
     const row = {
-        playerId: player.id,
-        name: await publicName(db, player),
+        playerId: who.id,
+        name: player ? await publicName(db, player) : guest,
         score: result.score,
         rows: result.bands,
         level: result.level,
@@ -264,14 +443,14 @@ exports.handler = async (event) => {
     };
     let better;
     try {
-        better = await keepBest(scores, player.id, row);
+        better = await keepBest(scores, who.id, row);
     } catch (e) {
         console.error("pura-scores: could not record a game", e);
         // Nothing recorded, so the token is handed back for the page's retry.
         try { await db.collection(RUN_TOKENS).deleteOne({ _id: claims.rid }); } catch (e2) { /* one game lost, never two entries */ }
         return json(503, { error: "The leaderboard could not be updated just now." });
     }
-    const best = better ? row : (await scores.findOne({ playerId: player.id }).catch(() => null)) || row;
+    const best = better ? row : (await scores.findOne({ playerId: who.id }).catch(() => null)) || row;
     let place = null;
     try {
         place = await placeOf(db, scores, best);

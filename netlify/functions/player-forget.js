@@ -141,6 +141,9 @@ const PLACES = [
     { label: "pura_scores", collection: "pura_scores", filter: id => ({ playerId: id }) },
     // pura-scores.js: run tokens issued to the player (short-lived anyway).
     { label: "pura_run_tokens", collection: "pura_run_tokens", filter: id => ({ playerId: id }) },
+    // pura-scores.js: every game they finished, and every Play they pressed.
+    { label: "pura_games", collection: "pura_games", filter: id => ({ playerId: id }) },
+    { label: "pura_starts", collection: "pura_starts", filter: id => ({ playerId: id }) },
     // dead-end-leads.js: today's and yesterday's upload byte counters,
     // _id "p:<id>:<day>". Two-day TTL, but they carry the id till then.
     { label: "dead_end_upload_quotas", collection: "dead_end_upload_quotas", filter: id => ({ _id: { $regex: `^p:${escapeRegex(id)}:` } }) },

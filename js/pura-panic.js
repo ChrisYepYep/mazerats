@@ -511,6 +511,7 @@
         if (mode === "dealing") return;
         if (!mayPlayNow()) return;
         if (window.Account && typeof Account.mayPlay === "function" && !Account.mayPlay()) return;
+        if (needsName()) { showPanel("who"); return; }
         // Started from the press itself: browsers only let sound begin from one.
         if (music()) music().start(1);
         mode = "dealing";
@@ -1067,7 +1068,7 @@
     function showPanel(which, extra) {
         panel.hidden = false;
         panel.className = "pura-panel" + (which === "board" ? " pura-panel--board" : "");
-        frame.classList.toggle("is-splash", SPLASH.includes(which) || which === "board");
+        frame.classList.toggle("is-splash", SPLASH.includes(which) || which === "board" || which === "who");
         let html = "";
         if (which === "loading") html = `<p>Loading…</p>`;
         else if (which === "failed") html = `<p>The furni could not be loaded.</p><div class="pura-buttons"><button type="button" class="console-btn" data-go="retry">Try again</button></div>`;
@@ -1080,10 +1081,26 @@
                 <div class="pura-buttons">
                     <button type="button" class="console-btn" data-go="play">Play</button>
                     <button type="button" class="console-btn" data-go="board">Leaderboard</button>
-                </div>` : `<p class="pura-maint">We're working hard on making Pura Panic better! Bear with us, we'll have it up and running again shortly.</p>`}
+                </div>
+                ${guestLine()}` : `<p class="pura-maint">We're working hard on making Pura Panic better! Bear with us, we'll have it up and running again shortly.</p>`}
                 ${!gate.live && gate.admin && !testLevel() ? `<p class="pura-beta-note">Maintenance: only admins can play right now, and scores aren't kept.</p>` : ""}
                 ${testLevel() ? `<p class="pura-beta-note">Test mode: every game starts at level ${testLevel()}. Not saved.</p>` : ""}
                 <p class="pura-beta-note">This game is in beta, if you spot anything you think might be a bug, please let us know via the <a href="#" data-go="contact">contact form</a> in the Console, thank you!</p>`;
+        } else if (which === "who") {
+            html = `<p class="pura-big">WHO'S PLAYING?</p>
+                <div class="console-hashline" aria-hidden="true"></div>
+                <p>Enter your Habbo Origins username.</p>
+                <div class="pura-who-row">
+                    <input type="text" id="pura-who-name" class="console-input pura-who-name" maxlength="32"
+                           autocomplete="off" autocapitalize="off" spellcheck="false" aria-label="Your Habbo Origins username"
+                           value="${guest ? esc(guest.name) : ""}">
+                </div>
+                <p class="pura-who-status" id="pura-who-status" aria-live="polite"></p>
+                <div class="pura-buttons">
+                    <button type="button" class="console-btn" data-go="whoplay">Play</button>
+                    <button type="button" class="console-btn" data-go="cancel">Back</button>
+                </div>
+                <p class="pura-beta-note">Your scores go on the leaderboard under this name. Or <a href="#" data-go="signin">sign in with Discord</a> to keep them with your account.</p>`;
         } else if (which === "paused") {
             html = `<p class="pura-big">PAUSED</p>
                 <div class="pura-buttons">
@@ -1110,6 +1127,7 @@
         panel.innerHTML = html;
         const first = panel.querySelector("[data-go]");
         if (first && isOpen() && root.contains(document.activeElement)) first.focus({ preventScroll: true });
+        if (which === "who") wireWho();
     }
 
     function me() { return window.Account ? Account.current : null; }
@@ -1271,6 +1289,7 @@
         if (r.state === "recorded") return `New best! You're ${ord(r.place || 1)} on the board.`;
         if (r.state === "kept") return `Your best is still ${num(r.best && r.best.score)}${r.place ? ` (${ord(r.place)})` : ""}.`;
         if (r.state === "refused") return "That game couldn't be checked, so it wasn't saved.";
+        if (r.state === "name-taken") return "That username belongs to a signed-up player now, so this game wasn't saved. Pick another next time.";
         if (r.state === "stale-run") return "That game was started too long ago, or on another account, so it wasn't saved.";
         if (r.state === "already-submitted") return "That game was already sent.";
         if (r.state === "no-run-token") return "That game wasn't started with the leaderboard, so it wasn't saved.";
@@ -1284,6 +1303,9 @@
         if (btn.tagName === "A") e.preventDefault();
         const go = btn.dataset.go;
         if (go === "play") play();
+        else if (go === "who") showPanel("who");
+        else if (go === "whoplay") chooseName();
+        else if (go === "cancel") showPanel("title");
         else if (go === "resume") resume();
         else if (go === "quit") { mode = "play"; endEarly(); }
         else if (go === "board") showBoard();
@@ -1294,6 +1316,111 @@
         else if (go === "music") toggleMusic();
         // The Console's Contact Us form, which opens over this window.
         else if (go === "contact" && window.MazeConsole) MazeConsole.open("message");
+    }
+
+    /* THE GAME LOG (pura-scores.js): a finished game that is not for the
+       board — signed out, no nickname, no rows — is still sent, for the
+       Warren's figures, and the server replays it like any other. Nobody
+       waits on it. With it, the three things only the page knows, and a
+       signed-out player's Habbo name. */
+    function gameFacts() {
+        const out = { touch: touchy(), dark, muted: Boolean(music() && music().muted) };
+        if (!me() && guest) out.habbo = guest.name;
+        return out;
+    }
+
+    function logPlayed() {
+        if (!run || !run.token || !g || !g.log.length) return;
+        const body = JSON.stringify({ run: run.token, log: g.log, ms: Math.round(gameMs), ...gameFacts() });
+        fetch(API + "?action=played", {
+            method: "POST",
+            credentials: "same-origin",
+            headers: { "Content-Type": "application/json" },
+            body,
+            // Survives the window or the tab closing, when small enough to.
+            keepalive: body.length < 60000
+        }).catch(() => { /* a figure lost, never a game */ });
+    }
+
+    /* ---------------------------------------------------------------- WHO'S PLAYING
+
+       Signed out, Play first asks for the player's Habbo Origins username
+       (6 Oct 2026, the owner's), and their scores go on the leaderboard
+       under it ("that's the whole point of them adding their username").
+       Anything may be typed — it is not looked up on Origins (the owner's:
+       "they can just type anything") — except a signed-up player's name
+       (pura-scores.js, nameTaken: "Username taken, try again!"), which the
+       server refuses again when the score arrives. A check that cannot be
+       reached lets the name through: our trouble never stops a game.
+       Remembered on this browser, so the next Play goes straight in; the
+       splash says who and offers Change. Signed in, none of this: the
+       account says who. */
+    const NAME_KEY = "mazerats_pura_habbo";
+    const HABBO_NAME = /^[A-Za-z0-9_\-=?!@:.,]{1,32}$/;
+    let guest = null;
+    try {
+        const v = JSON.parse(localStorage.getItem(NAME_KEY) || "null");
+        if (v && HABBO_NAME.test(v.name)) guest = { name: v.name };
+    } catch (e) { /* private mode */ }
+
+    const needsName = () => gate.live && !testLevel() && !me() && !guest;
+
+    function guestLine() {
+        if (!gate.live || testLevel() || me() || !guest) return "";
+        return `<p class="pura-beta-note">Playing as <strong>${esc(guest.name)}</strong> · <a href="#" data-go="who">Change</a></p>`;
+    }
+
+    function wireWho() {
+        const input = panel.querySelector("#pura-who-name");
+        if (!input) return;
+        input.addEventListener("keydown", e => {
+            if (e.key === "Enter") { e.preventDefault(); chooseName(); }
+        });
+        input.addEventListener("input", () => whoSay(""));
+        if (!touchy()) input.focus({ preventScroll: true });
+    }
+
+    function whoSay(text) {
+        const st = panel.querySelector("#pura-who-status");
+        if (st) st.textContent = text;
+    }
+
+    // A fetch on a twelve-second leash, as Fallin' Furni's lookup is.
+    async function leashed(url) {
+        const ctl = typeof AbortController === "function" ? new AbortController() : null;
+        const t = ctl ? setTimeout(() => ctl.abort(), 12000) : 0;
+        try {
+            const res = await fetch(url, ctl ? { signal: ctl.signal, credentials: "same-origin" } : { credentials: "same-origin" });
+            const data = await res.json().catch(() => ({}));
+            return { res, data };
+        } finally { clearTimeout(t); }
+    }
+
+    let choosing = false;
+    async function chooseName() {
+        const input = panel.querySelector("#pura-who-name");
+        if (!input || choosing) return;
+        const name = input.value.trim();
+        if (!name) { whoSay("Enter your Habbo Origins username."); input.focus(); return; }
+        if (!HABBO_NAME.test(name)) { whoSay("Letters, numbers and - _ . , : ! ? @ = only, no spaces."); input.focus(); return; }
+        choosing = true;
+        const btn = panel.querySelector('[data-go="whoplay"]');
+        if (btn) btn.disabled = true;
+        whoSay("Checking…");
+        let verdict = "ok";
+        try {
+            const taken = await leashed(API + "?name=" + encodeURIComponent(name)).catch(() => null);
+            if (taken && taken.res.ok && taken.data.taken) verdict = "taken";
+        } finally {
+            choosing = false;
+        }
+        // Moved on while it was being checked (Back, or the window shut).
+        if (panel.querySelector("#pura-who-name") !== input) return;
+        if (btn) btn.disabled = false;
+        if (verdict === "taken") { whoSay("Username taken, try again!"); input.focus(); input.select(); return; }
+        guest = { name };
+        try { localStorage.setItem(NAME_KEY, JSON.stringify(guest)); } catch (e) { /* this game only */ }
+        play();
     }
 
     function endEarly() {
@@ -1322,15 +1449,15 @@
         if (run && run.reason === "test") return { state: "test" };
         if (!run || !run.token) return { state: run && (run.reason === "hidden" || run.reason === "maintenance") ? "maintenance" : "offline" };
         const p = me();
-        if (!p) return { state: "signed-out" };
-        if (!p.nick) return { state: "no-nick" };
-        if (!g.score) return { state: "no-score" };
+        if (!p && !guest) { logPlayed(); return { state: "signed-out" }; }
+        if (p && !p.nick) { logPlayed(); return { state: "no-nick" }; }
+        if (!g.score) { logPlayed(); return { state: "no-score" }; }
         try {
             const res = await fetch(API, {
                 method: "POST",
                 credentials: "same-origin",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ run: run.token, log: g.log, ms: Math.round(gameMs), score: g.score })
+                body: JSON.stringify({ run: run.token, log: g.log, ms: Math.round(gameMs), score: g.score, ...gameFacts() })
             });
             const body = await res.json().catch(() => ({}));
             if (res.status === 403) {
@@ -1345,6 +1472,12 @@
             if (body.reason === "signed-out") return { state: "signed-out" };
             if (body.reason === "no-pieces") return { state: "no-score" };
             if (["maintenance", "stale-run", "already-submitted", "no-run-token"].includes(body.reason)) return { state: body.reason };
+            if (body.reason === "name-taken") {
+                // Somebody signed up with it since: the next Play asks again.
+                guest = null;
+                try { localStorage.removeItem(NAME_KEY); } catch (e) { /* this game only */ }
+                return { state: "name-taken" };
+            }
             return { state: "offline" };
         } catch (e) {
             return { state: "offline" };
@@ -1359,7 +1492,8 @@
         showPanel("board");
         let html;
         try {
-            const res = await fetch(API, { credentials: "same-origin", headers: { Accept: "application/json" } });
+            const mine = !me() && guest ? "?guest=" + encodeURIComponent(guest.name) : "";
+            const res = await fetch(API + mine, { credentials: "same-origin", headers: { Accept: "application/json" } });
             if (!res.ok) throw new Error(String(res.status));
             const body = await res.json();
             const rows = (body.top || []).map((r, i) => rowHtml(i + 1, r, false));
@@ -1390,7 +1524,7 @@
         if (document.querySelector('link[data-pura]')) return;
         const l = document.createElement("link");
         l.rel = "stylesheet";
-        l.href = "css/pura-panic.css?v=20";
+        l.href = "css/pura-panic.css?v=22";
         l.dataset.pura = "1";
         document.head.appendChild(l);
     })();
