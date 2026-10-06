@@ -11100,7 +11100,7 @@ document.addEventListener("DOMContentLoaded", () => {
                an admin play (js/pura-panic.js). */
             {
                 name: "Pura Panic",
-                state: puraState === "live" ? "Turn the furni, fill the rows" : "Maintenance",
+                state: puraState === "live" ? "Pure nostalgia, pure panic" : "Maintenance",
                 badge: "",
                 on: false,
                 run: () => window.openPuraPanic()

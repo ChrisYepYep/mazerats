@@ -481,7 +481,8 @@ const FIXED_PAGES = {
     /* Pura Panic (6 Oct 2026), the archive's iso-Tetris of Pura seats. */
     purapanic: {
         title: "Pura Panic",
-        description: "Pura seats fall onto a Habbo floor: turn them, slot them in and fill a line of tiles across the room to clear it. A mini-game from the Maze Rats archive.",
+        // One snappy line (the owner's, 6 Oct 2026); the card's picture carries the tagline.
+        description: "Turn them, drop them, clear the floor.",
         image: "og-purapanic.png"
     }
 };
