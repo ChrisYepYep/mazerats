@@ -85,7 +85,7 @@ function slugFromPath(event) {
         try { pathname = new URL(event.rawUrl).pathname; } catch (e) { /* keep event.path */ }
     }
     // A window's own address (1 Oct 2026): see FIXED_PAGES below.
-    const page = /^\/(guess|odd|guides|profiles?)\/?$/.exec(pathname);
+    const page = /^\/(guess|odd|guides|profiles?|purapanic)\/?$/.exec(pathname);
     // /profiles is /profile by another name (4 Oct 2026).
     if (page) return { page: page[1] === "profiles" ? "profile" : page[1] };
     const m = /^\/(maze|event|guides)\/([^/]+)\/?$/.exec(pathname);
@@ -477,6 +477,12 @@ const FIXED_PAGES = {
         title: "Profiles",
         description: "Find any Maze Rat: the Habbo Origins mazes they have completed, the badges they have earned and their daily game streaks.",
         image: "og-profiles.png"
+    },
+    /* Pura Panic (6 Oct 2026), the archive's iso-Tetris of Pura seats. */
+    purapanic: {
+        title: "Pura Panic",
+        description: "Pura seats fall onto a Habbo floor: turn them, slot them in and fill a line of tiles across the room to clear it. A mini-game from the Maze Rats archive.",
+        image: "og-purapanic.png"
     }
 };
 function fixedTags(page, origin) {

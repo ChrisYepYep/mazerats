@@ -515,10 +515,11 @@ document.addEventListener("DOMContentLoaded", () => {
             usernameInput.value = "";
             discordInput.value = "";
             hideStatus();
-            // The thanks page's own sentence: an Add Maze Info send before
-            // this one may have left its wording there. Not if the visitor
+            // The Contact form's own confirmation (6 Oct 2026, the owner's
+            // wording), given here rather than by changing the thanks page's
+            // default, which other forms fall back on. Not if the visitor
             // has gone elsewhere meanwhile.
-            if (MazeConsole.stillSending("message")) MazeConsole.showThanks();
+            if (MazeConsole.stillSending("message")) MazeConsole.showThanks("Response received. Thank you for contacting MazeRats.");
         } catch (e) {
             MazeConsole.failedSending("message");
             // A blocked sender (403 { banned }) gets the site's own "Can't

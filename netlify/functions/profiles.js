@@ -423,6 +423,7 @@ async function profile(db, id, self) {
         games: { guess: game(figures.games.guess), odd: game(figures.games.odd) },
         combined: figures.combined,
         ff: figures.ff ? { points: figures.ff.points, levels: figures.ff.levels, rank: figures.ff.rank, of: figures.ff.of } : null,
+        pura: figures.pura || null,
         contributions: { accepted: (figures.leads && figures.leads.accepted) || 0 },
         // The Contributor badge (js/home.js, BADGES): see onContributorsList.
         contributor: listed || !!(figures.leads && figures.leads.accepted > 0),

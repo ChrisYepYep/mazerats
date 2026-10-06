@@ -13,6 +13,8 @@
 
    Fallin' Furni gets a tab only once the game is open. Its board is a
    single all-time ranking of best runs, so the span switch is hidden for it.
+   Pura Panic's the same (6 Oct 2026, the owner's): a tab once the Warren
+   has it live, everyone's best game, all time (pura-scores.js).
 
    Opened from the side menu and from the console's Profile page, through
    window.Leaderboards.open(game). */
@@ -32,7 +34,10 @@
         { key: "odd", label: "Odd One Out", url: "/.netlify/functions/daily-scores?game=odd",
           play: () => window.openOddOneOut },
         { key: "ff", label: "Fallin' Furni", url: "/.netlify/functions/ff-scores", ff: true,
-          span: "Everyone's best run. Points first, then the faster time." }
+          span: "Everyone's best run. Points first, then the faster time." },
+        { key: "pura", label: "Pura Panic", url: "/.netlify/functions/pura-scores", ff: true, pura: true,
+          span: "Everyone's best game, all time.",
+          play: () => window.openPuraPanic }
     ];
 
     const RANGES = [
@@ -44,7 +49,7 @@
 
     let game = "all";
     let range = "day";
-    let ffOpen = false;
+    let ffOpen = false, puraOpen = false;
     const cache = {};   // game key -> data, "failed", or a pending promise
     let triggerEl = null;
 
@@ -61,6 +66,7 @@
             .then(s => {
                 const state = s && s.fallinFurniState;
                 ffOpen = !!s && !s.fromCache && state !== "coming-soon" && state !== "maintenance";
+                puraOpen = !!s && !s.fromCache && s.puraPanicState === "live";
                 if (overlay.classList.contains("open")) draw();
             })
             .catch(() => {});
@@ -153,13 +159,17 @@
 
     // Out of the daily games in GAMES (the ones with a play button), so it
     // follows the list rather than a number that goes stale beside it.
-    const DAILY_COUNT = GAMES.filter(g => g.play).length;
+    const DAILY_COUNT = GAMES.filter(g => g.play && !g.ff).length;
     function gamesPill(n) {
         return n ? `<span class="guess-board-games" title="${n} of ${DAILY_COUNT} games played">${n}<span aria-hidden="true">/${DAILY_COUNT}</span></span>` : "<span></span>";
     }
 
     function daysPill(n) {
         return n ? `<span class="guess-board-games" title="Days played">${n} <span>${n === 1 ? "day" : "days"}</span></span>` : "<span></span>";
+    }
+
+    function puraPill(row) {
+        return row.level ? `<span class="guess-board-games" title="Level reached">Lv ${esc(row.level)}</span>` : "<span></span>";
     }
 
     function ffPill(row) {
@@ -182,7 +192,16 @@
 
         const who = me();
         let list, isMe, extra, empty;
-        if (g.ff) {
+        if (g.pura) {
+            // Its rows carry a score where the others carry points.
+            list = (data.top || []).map(r => ({ ...r, points: (Number(r.score) || 0).toLocaleString("en-GB") }));
+            // No ids on its rows either: the player's own best is the row
+            // with its name, score and moment.
+            const you = data.you;
+            isMe = row => !!(you && who && row.name === you.name && row.score === you.score && row.at === you.at);
+            extra = puraPill;
+            empty = "No games recorded yet.";
+        } else if (g.ff) {
             list = data.top || [];
             // ff-scores returns no ids on its rows, so the player's own row is
             // found by the run it reports as theirs.
@@ -240,7 +259,7 @@
     }
 
     function draw() {
-        const games = GAMES.filter(g => !g.ff || ffOpen);
+        const games = GAMES.filter(g => (g.pura ? puraOpen : !g.ff || ffOpen));
         if (!games.some(g => g.key === game)) game = "all";
         const g = GAMES.find(x => x.key === game);
         fetchGame(game);

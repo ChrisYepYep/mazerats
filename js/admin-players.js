@@ -1732,6 +1732,8 @@
         "ff_tournament": "Fallin' Furni tournament entries",
         "ff_run_tokens": "Fallin' Furni run tokens",
         "ff_runs": "Fallin' Furni runs",
+        "pura_scores": "Pura Panic leaderboard entries",
+        "pura_run_tokens": "Pura Panic run tokens",
         "dead_end_upload_quotas": "Missing Pieces upload counters",
         "event_entry_quotas": "Event entry upload counters",
         "dead_end_leads.from": "Missing Pieces submissions (name removed, kept)",

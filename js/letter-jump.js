@@ -47,6 +47,9 @@ document.addEventListener("keydown", e => {
     // shown by its own .open, which neither marker above sees.
     const profile = document.getElementById("progress-overlay");
     if (profile && (profile.classList.contains("open") || profile.contains(active))) return;
+    // Pura Panic too (6 Oct 2026): its keys are letters (Z, X, P, W, A, S, D).
+    const pura = document.getElementById("pura-overlay");
+    if (pura && (pura.classList.contains("open") || pura.contains(active))) return;
 
     const letter = e.key.toLowerCase();
     /* Matched on the same reading of the name the sort uses (sortableName

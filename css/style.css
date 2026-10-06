@@ -8715,9 +8715,9 @@ body[data-page="admin"] .search-box input {
     left: 4px;
     right: 4px;
     /* The same shape as every window titlebar (see .chrome-titlebar): the
-       dots 2px down, eight rows of them, then 9px clear before the screen's
-       own top shadow — 2 + 15 + 9 + that 2px shadow = 28. */
-    height: 28px;
+       dots 2px down, eight rows of them, then clear down to the screen's
+       own top. 24, since the screen came up 4px (6 Oct 2026). */
+    height: 24px;
     display: flex;
     align-items: flex-start;
     justify-content: center;
@@ -8817,44 +8817,88 @@ body[data-page="admin"] .search-box input {
 
 /* ---- screen ---- */
 
+/* WHERE THE SCREEN SITS (6 Oct 2026, the owner's), as variables on the
+   frame so the screen and the rim drawn round it (see the frame's ::before
+   and ::after below) can never disagree:
+
+     - 10px of yellow from the frame's black outline to the screen's black
+       border at the left and at the right, the rim's bands included — the
+       outline is the frame's outermost pixel, so the screen starts at 11;
+     - its top 4px higher than it was, at 28;
+     - its foot where it always was, over the console's tab buttons.
+
+   The Profiles window and Pura Panic (.profile-console-frame) take the same
+   sides and top and set their own foot. */
+.console-frame {
+    --scr-top: 28px;
+    --scr-side: 11px;
+    --scr-foot: 62px;
+    --scr-radius: 12px;
+}
+
 .console-screen {
     position: absolute;
-    /* 9px under the grip's last row of dots, counting the 2px top shadow
-       below (6 + 15 + 9 + 2). The bottom edge stays where it always was, so
-       the screen gives up the 6px it moved down. */
-    top: 32px;
-    left: 14px;
-    width: 229px;
-    height: 200px;
+    top: var(--scr-top);
+    left: var(--scr-side);
+    right: var(--scr-side);
+    bottom: var(--scr-foot);
+    /* Above the frame's border art (.console-border, z-index 1), which is
+       14px deep on every side. With the screen 11px in, that art's yellow
+       was painted over the screen's own left and right 3px — its black
+       border included — and the rim floated out in the yellow, detached. */
+    z-index: 2;
     border: 1px solid #000;
-    border-radius: 15px;
+    /* A few px tighter than the 15px it was (6 Oct 2026, the owner's). */
+    border-radius: var(--scr-radius);
     background-image: url('../assets/img/console/cnsl-bg-tile.png');
     background-repeat: repeat;
     image-rendering: pixelated;
     overflow: hidden;
     font-family: 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace;
     color: #eeeeee;
-    /* External 2px shadow on the top/left (the screen reading as recessed,
-       light notionally coming from the bottom-right) and a 1px highlight
-       on the bottom/right to match — these sit outside the box entirely so
-       scrolled content never reaches them. The matching inset shadow lives
-       on .console-screen-shadow instead (see below) rather than here.
+}
 
-       One shadow each way (4 Oct 2026, the owner's: the screen's left
-       corners looked janky). They were four — 4px left, 2px up, 1px right,
-       1px down — and two copies of a rounded box moved apart sideways and
-       upwards meet in a notch at the corner between them, and stick out as
-       a crescent under the bottom-left curve.
+/* THE SCREEN'S RIM, round the outside of its black border: a solid 2px
+   shadow on the top and the left (the screen sits recessed, the light
+   notionally from the bottom right), and a 1px highlight on the right and
+   the foot, 1px clear of the black border (the owner's, 6 Oct 2026: the
+   right side had no highlight at all, and the left no shadow).
 
-       The dark one is GROWN by 1px (spread) and moved 1px up and left, not
-       just moved: a moved copy keeps the screen's 15px curve, which is not
-       concentric with it, so the band bulged lopsidedly round the top-left
-       corner. Grown, its curve is 16px, the screen's own plus the band — a
-       ring 2px wide at the top and left, thinning to nothing at the top
-       right and bottom left, where the 1px highlight takes over. */
-    box-shadow:
-        -1px -1px 0 1px rgba(0, 0, 0, 0.45),
-        1px 1px 0 0 rgba(255, 255, 255, 0.5);
+   Drawn by the FRAME, not the screen: the screen clips everything inside
+   it (overflow: hidden, for its scrolling pages), so nothing of its own can
+   reach outside its border. And as two rings with per-side colours rather
+   than box-shadows. A box-shadow can only be all the way round, or a moved
+   copy of the box, whose corners are the screen's curve slid sideways and
+   no longer concentric; a ring's corners are its own, two and three pixels
+   out from the screen's, so every band follows the curve. Where one side's
+   colour gives way to the next, at the top right and the bottom left,
+   the change runs diagonally across the corner. */
+.console-frame::before,
+.console-frame::after {
+    content: "";
+    position: absolute;
+    top: calc(var(--scr-top) - 2px);
+    left: calc(var(--scr-side) - 2px);
+    right: calc(var(--scr-side) - 2px);
+    bottom: calc(var(--scr-foot) - 2px);
+    border-radius: calc(var(--scr-radius) + 2px);
+    border-style: solid;
+    pointer-events: none;
+    z-index: 2;
+}
+/* The shadow: both pixels next to the black border, top and left.
+   Colours as one shorthand, never per side: tools/themes.js mirrors
+   border-color into every theme file, and a lone "transparent" there
+   wiped the rim out under all of them. */
+.console-frame::before {
+    border-width: 2px;
+    border-color: rgba(0, 0, 0, 0.45) transparent transparent rgba(0, 0, 0, 0.45);
+}
+/* The highlight: the outer pixel only, right and foot, so the pixel
+   between it and the black border stays the frame's own yellow. */
+.console-frame::after {
+    border-width: 1px;
+    border-color: transparent rgba(255, 255, 255, 0.5) rgba(255, 255, 255, 0.5) transparent;
 }
 
 .console-screen-scroll {
@@ -8872,11 +8916,11 @@ body[data-page="admin"] .search-box input {
 .console-screen-shadow {
     position: absolute;
     inset: 0;
-    /* The curve INSIDE the screen's 1px border, which is 1px tighter than
-       the screen's own 15px (4 Oct 2026). It inherited the 15px, so its
-       corners sat inside the screen's clip and left a sliver of unshaded
-       glass between the black line and the rim at every corner. */
-    border-radius: 14px;
+    /* The curve INSIDE the screen's 1px border, 1px tighter than the
+       screen's own (4 Oct 2026). It inherited the screen's, so its corners
+       sat inside the screen's clip and left a sliver of unshaded glass
+       between the black line and the rim at every corner. */
+    border-radius: calc(var(--scr-radius) - 1px);
     pointer-events: none;
     /* The glass's rim: ONE inset shadow (4 Oct 2026), spread 5px all round
        and dropped 1px, so it is 6px at the top, 5px at the sides and 4px at
@@ -15651,23 +15695,19 @@ ol.fmt-ol-wide.fmt-ol-wide { padding-left: 3.4em; }
    became 360 x 427. The same width on a phone as on a desk now, so the
    header keeps one layout everywhere. */
 .profile-console-frame {
+    /* The console's sides and top (see WHERE THE SCREEN SITS); the screen
+       runs down to 14px from the foot, where the console has its tabs. */
+    --scr-foot: 14px;
     width: min(360px, calc(100vw - 16px));
     height: min(427px, calc(100vh - 16px));
     height: min(427px, calc(100dvh - 16px));
 }
 .profile-console-frame:focus { outline: none; }
 
-/* The screen, from the grip down to the frame's bottom edge: the console's
-   own 14px of yellow at the sides and the foot, where the console keeps
-   its tab buttons. The text can be selected, which the console's frame
+/* The screen, from the grip down to 14px from the frame's foot (see
+   --scr-foot above), where the console keeps its tab buttons. The text can be selected, which the console's frame
    switches off for dragging. */
 .profile-console-screen {
-    top: 32px;
-    left: 14px;
-    right: 14px;
-    bottom: 14px;
-    width: auto;
-    height: auto;
     display: flex;
     flex-direction: column;
     user-select: text;
@@ -18748,14 +18788,27 @@ textarea.ctl-input.de-note {
     .custom-scrollbar-wrap--console .custom-scrollbar-arrow-down {
         background-size: 15px 14px;
     }
+    /* EACH ARROW AGAINST THE TRACK (6 Oct 2026, the owner's: on a phone the
+       console's bar always looked broken). Centred in its 26px box, an
+       arrow's sprite floated 6px clear of the track with bare screen
+       between, so the bar read as three loose pieces. The up arrow now sits
+       at the foot of its box and the down arrow at the top of its own, both
+       touching the track as they do on a desktop, and the extra height the
+       finger gets is on the outside. */
+    .custom-scrollbar-arrow-up { background-position: center bottom; }
+    .custom-scrollbar-arrow-down { background-position: center top; }
     /* A sideways bar is 15px tall, so there the box is pulled out above and
        below instead, 25 tall and centred on it, and its sprite is the
-       rotated 14x15 one. */
+       rotated 14x15 one. Along the bar, the same as above: each arrow's
+       sprite against the track, so the left one sits at the right of its
+       box and the right one at the left. */
     .custom-scrollbar--horizontal .custom-scrollbar-arrow {
         min-height: 25px;
         margin: -5px 0;
         background-size: 14px 15px;
     }
+    .custom-scrollbar--horizontal .custom-scrollbar-arrow-up { background-position: right center; }
+    .custom-scrollbar--horizontal .custom-scrollbar-arrow-down { background-position: left center; }
 
     /* The Privacy Policy link, which js/site.js appends onto the end of the
        copyright line (see the block at the foot of that file). It is a real
@@ -21405,13 +21458,14 @@ body.is-viewer #bans-add { display: none !important; }
 .nt-bold strong { margin-right: 4px; }
 .nt-preview { flex: 0 0 auto; display: flex; flex-direction: column; gap: 6px; }
 /* The real console's parts (#console-modal in home.html), cut off below the
-   screen where its tabs would be: the 32px top, the 200px screen, and the
-   14px edge under it. Not a dialog here, and nothing in it can be pressed. */
-.nt-preview-frame { height: 246px; flex: none; pointer-events: none; }
+   screen where its tabs would be: the 28px top, the 204px screen, and the
+   14px edge under it (--scr-foot, as the Profiles window's). Not a dialog
+   here, and nothing in it can be pressed. */
+.nt-preview-frame { --scr-foot: 14px; height: 246px; flex: none; pointer-events: none; }
 /* The console's screen keeps 24px at the right for its scrollbar track
    (js/custom-scrollbar.js); kept here too, so the words wrap and centre
    exactly where a player sees them. */
-.nt-preview-scroll { width: 205px; }
+.nt-preview-scroll { width: 211px; }
 
 /* The Notifications panel, tidied (5 Oct 2026, the owner's: "cleaner").
    The compose card is one ctl-card: the left column stretches the message

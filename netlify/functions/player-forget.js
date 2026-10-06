@@ -137,6 +137,10 @@ const PLACES = [
     // ff-runs.js: the run log — display name, id, address, the whole run.
     // The policy names "your Fallin' Furni run records", so these go whole.
     { label: "ff_runs", collection: "ff_runs", filter: id => ({ playerId: id }) },
+    // pura-scores.js: the Pura Panic board, one best row per player.
+    { label: "pura_scores", collection: "pura_scores", filter: id => ({ playerId: id }) },
+    // pura-scores.js: run tokens issued to the player (short-lived anyway).
+    { label: "pura_run_tokens", collection: "pura_run_tokens", filter: id => ({ playerId: id }) },
     // dead-end-leads.js: today's and yesterday's upload byte counters,
     // _id "p:<id>:<day>". Two-day TTL, but they carry the id till then.
     { label: "dead_end_upload_quotas", collection: "dead_end_upload_quotas", filter: id => ({ _id: { $regex: `^p:${escapeRegex(id)}:` } }) },
@@ -222,7 +226,7 @@ const shapePlayer = (row) => ({
    failed at sign-in (discord-auth.js lets it), or one already forgotten
    while a stale session kept playing. The newest name any board row has. */
 async function playerFromRows(db, id) {
-    for (const collection of ["guess_scores", "daily_scores", "ff_scores"]) {
+    for (const collection of ["guess_scores", "daily_scores", "ff_scores", "pura_scores"]) {
         const rows = await db.collection(collection).find({ playerId: id }, { projection: { _id: 0, name: 1, avatar: 1, at: 1 } })
             .sort({ at: -1 }).limit(1).toArray();
         if (rows.length) return { id, name: rows[0].name || null, username: null, avatar: rows[0].avatar || null };

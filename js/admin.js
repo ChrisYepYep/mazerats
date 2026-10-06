@@ -155,6 +155,10 @@ document.addEventListener("DOMContentLoaded", () => {
     const ffLaunchAtClear = document.getElementById("ff-launch-at-clear");
     const ffLaunchAtStatus = document.getElementById("ff-launch-at-status");
 
+    // Pura Panic's hidden/live switch (6 Oct 2026).
+    const puraCardEl = document.getElementById("pura-state-card");
+    const puraBtns = document.querySelectorAll(".pura-state-btn");
+    const puraStatus = document.getElementById("pura-state-status");
     // Fallin' Furni's own live/maintenance switch, in the game's rail group.
     const ffToggleEl = document.getElementById("ff-state-toggle");
     const ffToggleBtns = document.querySelectorAll(".ff-state-btn");
@@ -673,6 +677,7 @@ document.addEventListener("DOMContentLoaded", () => {
         if (launchAtEl) launchAtEl.style.display = "none";
         if (ffLaunchAtEl) ffLaunchAtEl.style.display = "none";
         if (ffToggleEl) ffToggleEl.style.display = "none";
+        if (puraCardEl) puraCardEl.style.display = "none";
         if (themeToggleEl) themeToggleEl.style.display = "none";
         /* Passwords out of every field, and the run log out of its tables
            (ffClear) — the next person to sign in on this tab may not be
@@ -964,6 +969,7 @@ document.addEventListener("DOMContentLoaded", () => {
         if (launchAtEl) launchAtEl.style.display = "none";
         if (ffLaunchAtEl) ffLaunchAtEl.style.display = "none";
         if (ffToggleEl) ffToggleEl.style.display = "none";
+        if (puraCardEl) puraCardEl.style.display = "none";
         if (themeToggleEl) themeToggleEl.style.display = "none";
         // The role's classes too — see lockOut for what they did to the
         // sign-in box of a view-only account.
@@ -1778,6 +1784,7 @@ document.addEventListener("DOMContentLoaded", () => {
         if (launchAtEl) launchAtEl.style.display = "flex";
         if (ffLaunchAtEl) ffLaunchAtEl.style.display = "flex";
         if (ffToggleEl) ffToggleEl.style.display = "block";
+        if (puraCardEl) puraCardEl.style.display = "flex";
         if (themeToggleEl) themeToggleEl.style.display = "flex";
         /* The glyph palette used to be shown here, when it was a docked
            column of its own. It is a tab panel now: the strip is what login
@@ -7525,7 +7532,7 @@ document.addEventListener("DOMContentLoaded", () => {
         settingsTriedAt = Date.now();
         try {
             // One read, every switch: they all live in the same settings document.
-            const { landingState, fallinFurniState, maintenanceNote, theme, palette: livePalette, launchAt, ffLaunchAt, fromCache } = await freshSiteSettings();
+            const { landingState, fallinFurniState, puraPanicState, maintenanceNote, theme, palette: livePalette, launchAt, ffLaunchAt, fromCache } = await freshSiteSettings();
             /* The stand-in getSiteSettings answers with during an outage
                (fromCache, see js/api.js) has a GUESSED landing state and no
                Fallin' Furni state or palette at all. Lighting buttons from it
@@ -7560,6 +7567,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 const ff = fallinFurniState || "live";
                 ffToggleBtns.forEach(btn => btn.classList.toggle("active", btn.dataset.ffState === ff));
                 currentFfState = ff;
+                lightPura(puraPanicState);
                 lightMaintenanceNote(maintenanceNote);
             }
             sayLandingMismatch();
@@ -7617,6 +7625,7 @@ document.addEventListener("DOMContentLoaded", () => {
             const ff = s.fallinFurniState || "live";
             ffToggleBtns.forEach(btn => btn.classList.toggle("active", btn.dataset.ffState === ff));
             currentFfState = ff;
+            lightPura(s.puraPanicState);
             if (launchFieldsLoaded) currentFfLaunchAt = s.ffLaunchAt || "";
             sayFfMismatch();
             lightMaintenanceNote(s.maintenanceNote);
@@ -8005,6 +8014,40 @@ document.addEventListener("DOMContentLoaded", () => {
             done: "Fallin' Furni is under maintenance. You can still play and edit it while signed in."
         }
     };
+
+    /* ---- Pura Panic: hidden or live (6 Oct 2026)
+
+       Maintenance is the default — the owner's: it goes out when he says
+       so. Going live asks once, since it opens the game and its board to
+       everyone; back to maintenance does not ask. */
+    function lightPura(state) {
+        const s = state === "live" ? "live" : "maintenance";
+        puraBtns.forEach(b => b.classList.toggle("active", b.dataset.puraState === s));
+    }
+
+    puraBtns.forEach(btn => {
+        btn.addEventListener("click", async () => {
+            const state = btn.dataset.puraState;
+            if (btn.classList.contains("active")) return;
+            if (state === "live" && !(await showConfirmDialog("Open Pura Panic and its leaderboard to everyone?"))) return;
+            puraBtns.forEach(b => b.disabled = true);
+            if (puraStatus) puraStatus.style.display = "none";
+            switchSaves++;
+            try {
+                await Api.updateSiteSettings(adminToken, { puraPanicState: state });
+                lightPura(state);
+            } catch (err) {
+                if (err.status === 401) { lockOut(); return; }
+                if (puraStatus) {
+                    puraStatus.textContent = err.message || "Couldn't update Pura Panic.";
+                    puraStatus.style.display = "block";
+                }
+                if (answerless(err)) relightSwitches();
+            } finally {
+                puraBtns.forEach(b => b.disabled = false);
+            }
+        });
+    });
 
     ffToggleBtns.forEach(btn => {
         btn.addEventListener("click", async () => {

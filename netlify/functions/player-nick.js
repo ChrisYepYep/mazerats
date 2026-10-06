@@ -258,7 +258,7 @@ async function ensureNickIndex(players) {
      - contributors: an accepted lead's credit is a curated row the admins
        own and may have merged with a Habbo name; it is not renamed behind
        their backs. */
-const NAMED = ["guess_scores", "daily_scores", "ff_scores", "ff_tournament", "daily_resets"];
+const NAMED = ["guess_scores", "daily_scores", "ff_scores", "ff_tournament", "daily_resets", "pura_scores"];
 
 const json = (statusCode, data, extra) => ({
     statusCode,

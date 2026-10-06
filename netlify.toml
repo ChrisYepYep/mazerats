@@ -340,6 +340,21 @@
   to = "/fallinfurni.html"
   status = 200
 
+# Pura Panic (6 Oct 2026), a window on the homepage that opens itself when it
+# sees /purapanic (js/home.js). Through the share function, as /odd is, for
+# the window's own title, description and picture when the link is pasted;
+# the function serves home.html with those tags put in.
+[[redirects]]
+  from = "/purapanic"
+  to = "/.netlify/functions/share"
+  status = 200
+
+# Its first address, kept working for anyone who had it: sent on, for good.
+[[redirects]]
+  from = "/pura"
+  to = "/purapanic"
+  status = 301
+
 # Quiz Night, the host's quiz app. A page of its own for the same reason
 # Fallin' Furni is one — it wants the whole viewport, and it is not a daily
 # puzzle whose result gets pasted into a channel. This one goes further and

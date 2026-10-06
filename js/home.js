@@ -9658,6 +9658,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 ${d.combined ? `<p class="progress-note">Both together: <strong>${pfNum(d.combined.points)}</strong> points, ${placeText(d.combined)}.</p>` : ""}`
                 : `<p class="progress-note">${self ? "Play a daily game to start a streak." : "Hasn't played the daily games yet."}</p>`}
             ${d.ff ? `<p class="progress-note">Fallin' Furni best run: <strong>${pfNum(d.ff.points)}</strong> points over ${pfNum(d.ff.levels)} ${d.ff.levels === 1 ? "level" : "levels"}, ${placeText(d.ff)}.</p>` : ""}
+            ${d.pura ? `<p class="progress-note">Pura Panic best: <strong>${pfNum(d.pura.score)}</strong> points, level ${pfNum(d.pura.level)}, ${placeText(d.pura)}.</p>` : ""}
         </section>`;
     }
 
@@ -10511,6 +10512,42 @@ document.addEventListener("DOMContentLoaded", () => {
         openProgress(pid && /^[A-Za-z0-9_-]{16}$/.test(pid) ? pid : null);
     }
 
+    /* PURA PANIC (6 Oct 2026): fetched the first time somebody opens it, as
+       the daily games are (js/daily-loader.js) — the rules, then the game,
+       which brings its own stylesheet. Nothing of it loads on an ordinary
+       visit. /purapanic is the homepage with it open (netlify.toml; the old
+       /pura is sent there), and the Games menu always offers it, saying
+       "Maintenance" while the Warren has it shut (puraState below). */
+    let puraLoading = null;
+    function loadPuraScript(src) {
+        return new Promise((resolve, reject) => {
+            const tag = document.createElement("script");
+            tag.src = src;
+            tag.async = true;
+            tag.onload = resolve;
+            tag.onerror = () => reject(new Error("could not load " + src));
+            document.head.appendChild(tag);
+        });
+    }
+    window.openPuraPanic = function () {
+        if (window.PuraPanic) { window.PuraPanic.open(); return; }
+        if (!puraLoading) {
+            puraLoading = loadPuraScript("js/pura-engine.js?v=13")
+                // The soundtrack is a nicety: a failed load plays on in silence.
+                .then(() => loadPuraScript("js/pura-music.js?v=4").catch(() => {}))
+                .then(() => loadPuraScript("js/pura-panic.js?v=29"))
+                // A failed load forgets itself, so the next press asks again.
+                .catch(err => { puraLoading = null; throw err; });
+        }
+        puraLoading.then(() => { if (window.PuraPanic) window.PuraPanic.open(); })
+            .catch(e => console.warn("Pura Panic could not be loaded", e));
+    };
+    // The address stays /purapanic while the window is open, as /guess does;
+    // closing it puts the archive's back (js/pura-panic.js).
+    if (/^\/(pura|purapanic)\/?$/.test(location.pathname)) {
+        window.openPuraPanic();
+    }
+
     /* A What's New link to a page of this site, opened where it can be
        without loading the page again (4 Oct 2026): the windows that live on
        this page, and the mazes and events in it. Returns whether it did;
@@ -10536,6 +10573,7 @@ document.addEventListener("DOMContentLoaded", () => {
         if (path === "/glyphs" && window.Glyphs) { Glyphs.open(); return true; }
         if (path === "/guess" && typeof window.openGuessGame === "function") { window.openGuessGame(); return true; }
         if (path === "/odd" && typeof window.openOddOneOut === "function") { window.openOddOneOut(); return true; }
+        if (path === "/pura" || path === "/purapanic") { window.openPuraPanic(); return true; }
         if ((m = /^\/(maze|event)\/([^/]+)$/.exec(path))) {
             const key = decode(m[2]);
             const record = key === null ? null : findRecord(m[1], key);
@@ -10887,12 +10925,15 @@ document.addEventListener("DOMContentLoaded", () => {
        dispatch is never called. Written that way first, and the row went on
        saying "Sit on every seat, in order" with the game shut. */
     let ffClosedState = null;
+    // Pura Panic's row says "Maintenance" until the Warren puts it live.
+    let puraState = "maintenance";
 
     if (typeof Api !== "undefined") {
         Api.getSiteSettings()
             .then(s => {
                 const state = s && s.fallinFurniState;
                 if (state === "maintenance" || state === "coming-soon") ffClosedState = state;
+                puraState = s && s.puraPanicState === "live" ? "live" : "maintenance";
             })
             .catch(() => { /* fail open, as the game's own gate does */ });
     }
@@ -11050,6 +11091,19 @@ document.addEventListener("DOMContentLoaded", () => {
                     if (ffClosedState === "coming-soon" && window.FurniRain) window.FurniRain.start();
                     else window.location.href = "/fallinfurni";
                 }
+            },
+            /* Pura Panic (6 Oct 2026): a window, like the daily games, but
+               not a daily — play as often as you like. Always in the menu;
+               while the Warren has it in maintenance its second line says
+               so, as Fallin' Furni's does, and the press still opens the
+               window, which tells a player it is being worked on and lets
+               an admin play (js/pura-panic.js). */
+            {
+                name: "Pura Panic",
+                state: puraState === "live" ? "Turn the furni, fill the rows" : "Maintenance",
+                badge: "",
+                on: false,
+                run: () => window.openPuraPanic()
             },
             {
                 /* Every board in one window (js/leaderboards.js), so the

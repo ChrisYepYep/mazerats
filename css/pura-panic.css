@@ -1,0 +1,300 @@
+/* Pura Panic's window (js/pura-panic.js), loaded with the game.
+
+   THE PROFILES WINDOW'S SHAPE, on purpose (6 Oct 2026, the owner's: "its
+   own window styled like the console, like profiles, and the same size").
+   The frame wears .console-frame and .profile-console-frame and the screen
+   .console-screen and .profile-console-screen, so the size, the border art,
+   the grip, the close box and every theme's recolouring all come from those
+   — what is here is only what is on the screen. 360 x 427 leaves a screen
+   of 330 x 379 inside its line: the score along the top and the well
+   filling the rest. No buttons: the keys on a computer, and on a phone the
+   well itself (js/pura-panic.js, wireTouch). */
+
+.pura-console { z-index: 91; }
+
+#pura-window .console-screen,
+#pura-window .console-screen * { color: #eeeeee; }
+
+.pura-screen {
+    font-family: 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace;
+    font-size: 0.5625rem;
+    line-height: 1.4;
+    user-select: none;
+    -webkit-user-select: none;
+    touch-action: manipulation;
+}
+
+/* ---- the top: score, level and rows, and the next piece ---- */
+.pura-hud {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    /* A little down from the screen's rim, clear of its inner shadow. */
+    padding: 13px 7px 0;
+    height: 53px;
+    box-sizing: border-box;
+}
+/* The score on the left, Next on the right. */
+.pura-stats { flex: 1 1 auto; min-width: 0; padding-left: 5px; }
+.pura-score { font-size: 1.125rem; line-height: 1; letter-spacing: 0; }
+.pura-sub { margin-top: 3px; white-space: nowrap; }
+.pura-box {
+    flex: 0 0 auto;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+}
+.pura-box canvas { display: block; image-rendering: pixelated; }
+
+
+/* ---- the well ---- */
+.pura-stage {
+    position: relative;
+    flex: 1 1 auto;
+    min-height: 0;
+    display: flex;
+    justify-content: center;
+    align-items: flex-end;
+}
+.pura-board {
+    display: block;
+    image-rendering: pixelated;
+    /* On a phone the well is the control (see wireTouch): every touch on
+       it is the game's, never a scroll or a zoom. */
+    touch-action: none;
+}
+
+/* What is said over the well: the title, the pause, the end, the board.
+   Dimmed rather than covered, so the room shows through behind it. */
+.pura-panel {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    padding: 10px 22px;
+    text-align: center;
+    background: rgba(26, 26, 26, 0.72);
+}
+.pura-panel[hidden] { display: none; }
+.pura-panel p { margin: 0; }
+.pura-panel .console-hashline { width: 100%; margin: 0; }
+.pura-big { font-size: 1.125rem; line-height: 1.1; }
+.pura-buttons { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; margin-top: 4px; }
+.pura-note { min-height: 1.4em; max-width: 250px; }
+.pura-note button { margin-top: 6px; }
+
+/* The leaderboard: a list that scrolls inside the panel. */
+.pura-panel--board { justify-content: flex-start; padding-top: 18px; padding-bottom: 14px; }
+/* The list scrolls inside the Console's own pixel scrollbar (js/custom-
+   scrollbar.js wraps it), which sits at the screen's right; the scores
+   stand clear of it rather than up against it (the owner's, 6 Oct 2026). */
+.pura-rows {
+    list-style: none;
+    margin: 0;
+    padding: 0 14px 0 0;
+    width: 100%;
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    text-align: left;
+}
+.pura-panel--board .custom-scrollbar-wrap--console {
+    flex: 1 1 auto;
+    width: 100%;
+    height: auto;
+    min-height: 0;
+}
+.pura-panel--board .custom-scrollbar-wrap--console .custom-scrollbar { margin-right: 0; }
+/* The console bar's own rule gives its list 2px on the right; the scores want more. */
+.pura-panel--board .custom-scrollbar-wrap--console .pura-rows { padding-right: 14px; }
+.pura-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    /* A whole Habbo head's height (habbo-outline.js draws them 27 x 30); at
+       20px the faces were cut off. */
+    height: 32px;
+    border-bottom: 1px dotted rgba(238, 238, 238, 0.35);
+}
+.pura-row.is-you { border-bottom-style: solid; }
+.pura-rank { flex: 0 0 22px; text-align: right; }
+.pura-head {
+    flex: 0 0 27px;
+    width: 27px;
+    height: 30px;
+    object-fit: none;
+    image-rendering: pixelated;
+}
+.pura-head--none {
+    width: 12px;
+    height: 12px;
+    flex-basis: 12px;
+    margin: 0 7px 0 8px;
+    border: 1px solid #eeeeee;
+    border-radius: 50%;
+    box-sizing: border-box;
+}
+.pura-name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pura-pts { flex: 0 0 auto; }
+
+/* ---- the splash: the title, the instructions, Play and Leaderboard, on
+   the bare screen (the owner's, 6 Oct 2026) — no score along the top, no
+   floor, nothing dimmed. js/pura-panic.js sets .is-splash, and stops
+   drawing the floor while it is set. */
+.is-splash .pura-hud { display: none; }
+.is-splash .pura-panel { background: none; }
+
+/* The keys, in two columns: the arrows on the left, Space and P on the
+   right, each a keycap and what it does. */
+.pura-help {
+    display: flex;
+    justify-content: center;
+    gap: 22px;
+    margin: 4px 0 2px;
+    text-align: left;
+}
+.pura-help-col {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+.pura-help-col li {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    min-height: 26px;
+}
+.pura-key { flex: 0 0 auto; display: block; shape-rendering: crispEdges; }
+
+/* ---- LEVEL n, across the middle as a level goes up: a strip of the
+   console's dark glass between two hash lines, the words at twice the
+   console's size. Pops in, holds, and fades as the next piece comes. */
+.pura-banner {
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 46%;
+    padding: 9px 0 8px;
+    text-align: center;
+    font-size: 1.125rem;
+    line-height: 1;
+    letter-spacing: 1px;
+    background: rgba(26, 26, 26, 0.8);
+    border-top: 1px dashed #eeeeee;
+    border-bottom: 1px dashed #eeeeee;
+    pointer-events: none;
+    opacity: 0;
+}
+.pura-banner[hidden] { display: none; }
+.pura-banner.is-on { animation: pura-banner 1.5s steps(30) forwards; }
+@keyframes pura-banner {
+    0%   { opacity: 0; transform: scaleY(0.2); }
+    10%  { opacity: 1; transform: scaleY(1); }
+    80%  { opacity: 1; transform: scaleY(1); }
+    100% { opacity: 0; transform: scaleY(1); }
+}
+@media (prefers-reduced-motion: reduce) {
+    .pura-banner.is-on { animation: none; opacity: 1; }
+}
+
+/* ---- BETA, on the grip at the left: the close box's size and height on
+   the right, mirrored. Its colours are set by js/pura-panic.js from the
+   title and the frame, so every console palette carries it. */
+.pura-beta {
+    position: absolute;
+    top: 7px;
+    left: 14px;
+    z-index: 5;
+    height: 13px;
+    padding: 0 4px;
+    border-radius: 3px;
+    background: #996600;
+    color: #ffcb00;
+    font-family: 'Volter Goldfish Bold', 'Volter Goldfish', 'Pixelify Sans', monospace;
+    font-size: 0.5625rem;
+    line-height: 14px;
+    letter-spacing: 0;
+    pointer-events: none;
+}
+
+/* The beta note under Play, quieter than the instructions. */
+.pura-beta-note {
+    max-width: 270px;
+    margin-top: 6px !important;
+    opacity: 0.8;
+    line-height: 1.5;
+}
+.pura-beta-note a { color: inherit; text-decoration: underline; cursor: var(--cursor-pointer); }
+
+/* The notice where Play would be, while the game is in maintenance. */
+.pura-maint { margin: 6px 0 4px !important; line-height: 1.8; max-width: 250px; }
+
+/* ---- PAUSE AND MUSIC in the score bar (6 Oct 2026, the owner's): made
+   for phones, which have no P or M key, and then wanted on computers too. */
+.pura-hud-btns { display: flex; flex: 0 0 auto; gap: 6px; align-items: center; }
+.pura-hud-btn {
+    width: 32px;
+    height: 32px;
+    padding: 0;
+    display: grid;
+    place-items: center;
+    border: 1px solid rgba(238, 238, 238, 0.55);
+    border-radius: 4px;
+    background: rgba(0, 0, 0, 0.25);
+    color: #eeeeee;
+    cursor: var(--cursor-pointer, pointer);
+    touch-action: manipulation;
+}
+.pura-hud-btn:active { background: rgba(238, 238, 238, 0.18); }
+.pura-hud-btn svg { display: block; }
+
+/* ---- LIGHTS OFF (js/pura-panic.js) ---- */
+/* The bulb: the close box's size, 4px to its left, on the grip like it. */
+.pura-light {
+    position: absolute;
+    top: 7px;
+    right: 31px;
+    width: 13px;
+    height: 13px;
+    padding: 0;
+    border: none;
+    background: #ffcb00;
+    color: #996600;
+    cursor: var(--cursor-pointer, pointer);
+    z-index: 5;
+}
+.pura-light svg { display: block; }
+
+/* The site behind, dimmed as a maze window's overlay dims it
+   (.modal-overlay), and kept out of reach while it is. Under the window
+   (91), over the page and its header. */
+.pura-dim {
+    position: fixed;
+    inset: 0;
+    background: rgba(6, 4, 2, 0.82);
+    z-index: 90;
+}
+.pura-dim[hidden] { display: none; }
+
+/* The frame in deep grey. The screen inside keeps its own colours. */
+.pura-console.is-dark .console-frame { background: #242424; box-shadow: 2px 2px 0 0 rgba(0, 0, 0, 0.5); }
+.pura-console.is-dark .console-border { border-image-source: url('../assets/img/console/dark/cnsl-frame-border.png'); }
+.pura-console.is-dark .console-top-pattern::before,
+.pura-console.is-dark .console-top-pattern::after { background-image: url('../assets/img/console/dark/cnsl-top-pattern.png'); }
+.pura-console.is-dark .console-close-btn { background-image: url('../assets/img/console/dark/cnsl-top-x-close.png'); }
+.pura-console.is-dark .console-title { color: #9a9a9a; }
+/* The screen's rim: the highlight softer on grey than on yellow. */
+.pura-console.is-dark .console-frame::after { border-color: transparent rgba(255, 255, 255, 0.16) rgba(255, 255, 255, 0.16) transparent; }
+/* Smaller on a computer (the owner's), clicked with a mouse rather than a
+   thumb: the icons at one pixel to a pixel, in a smaller box. */
+#pura-window:not(.is-touch) .pura-hud-btns { gap: 4px; }
+#pura-window:not(.is-touch) .pura-hud-btn { width: 20px; height: 20px; border-radius: 3px; }
+#pura-window:not(.is-touch) .pura-hud-btn svg { width: auto; height: 8px; }

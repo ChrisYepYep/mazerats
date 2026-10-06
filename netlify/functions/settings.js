@@ -52,6 +52,17 @@ const DEFAULT_MAINTENANCE_NOTE = "soon";
 const VALID_FF_STATES = ["live", "coming-soon", "maintenance"];
 const DEFAULT_FF_STATE = "live";
 
+/* PURA PANIC: "maintenance" or "live" (6 Oct 2026, the owner's). In
+   maintenance the game is in the Games menu saying so, as Fallin' Furni is
+   when shut, and its window tells a player it is being worked on; an admin
+   signed in to the Warren still plays it, and its board takes no scores.
+   Live, anyone plays and the board is open. It was "hidden" (no menu row at
+   all) before it had a name in the menu; a stored "hidden" reads as
+   maintenance. See pura-scores.js. */
+const VALID_PURA_STATES = ["maintenance", "live"];
+const DEFAULT_PURA_STATE = "maintenance";
+const puraState = (doc) => (doc && doc.puraPanicState === "live") ? "live" : DEFAULT_PURA_STATE;
+
 /* WHICH PALETTE THE SITE WEARS.
 
    "classic" is the brown the archive has always been, and is what everyone
@@ -140,6 +151,7 @@ function settingsReply(event, doc) {
         landingState: (doc && doc.landingState) || DEFAULT_STATE,
         lobbyFurni: (doc && Array.isArray(doc.lobbyFurni)) ? doc.lobbyFurni : [],
         fallinFurniState: (doc && doc.fallinFurniState) || DEFAULT_FF_STATE,
+        puraPanicState: puraState(doc),
         maintenanceNote: (doc && doc.maintenanceNote) || DEFAULT_MAINTENANCE_NOTE,
         theme: (doc && doc.theme) || DEFAULT_THEME,
         palette: (doc && doc.palette) || null,
@@ -225,6 +237,12 @@ async function write(event, settings, db) {
                 return json(400, { error: "fallinFurniState must be one of: " + VALID_FF_STATES.join(", ") });
             }
             update.fallinFurniState = body.fallinFurniState;
+        }
+        if (body.puraPanicState !== undefined) {
+            if (!VALID_PURA_STATES.includes(body.puraPanicState)) {
+                return json(400, { error: "puraPanicState must be one of: " + VALID_PURA_STATES.join(", ") });
+            }
+            update.puraPanicState = body.puraPanicState;
         }
         if (body.maintenanceNote !== undefined) {
             if (!VALID_MAINTENANCE_NOTES.includes(body.maintenanceNote)) {
@@ -314,6 +332,7 @@ async function write(event, settings, db) {
             landingState: (doc && doc.landingState) || DEFAULT_STATE,
             lobbyFurni: (doc && Array.isArray(doc.lobbyFurni)) ? doc.lobbyFurni : [],
             fallinFurniState: (doc && doc.fallinFurniState) || DEFAULT_FF_STATE,
+            puraPanicState: puraState(doc),
             maintenanceNote: (doc && doc.maintenanceNote) || DEFAULT_MAINTENANCE_NOTE,
             theme: (doc && doc.theme) || DEFAULT_THEME,
             // Answered alongside the theme, now that the Controls panel

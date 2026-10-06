@@ -53,6 +53,11 @@ document.addEventListener("DOMContentLoaded", () => {
     // the same component) scroll sideways rather than down.
     document.querySelectorAll(".gallery-strip").forEach(el => setUp(el, "x"));
 
+    /* For lists that do not exist when the page loads — a window drawn by a
+       script that arrived later (Pura Panic's leaderboard) — so they can wear
+       the same bar. Safe to call twice: setUp skips an element it has done. */
+    window.CustomScrollbar = { attach: (el, axis) => { if (el) setUp(el, axis || "y"); } };
+
     function setUp(el, axis) {
         if (el.dataset.customScrollbar) return;
         el.dataset.customScrollbar = "true";
@@ -79,7 +84,9 @@ document.addEventListener("DOMContentLoaded", () => {
         // pixel sprites, so the two read as the same control rather than
         // the admin page growing a second scrollbar style of its own.
         // And Your Profile, a bigger console since 4 Oct 2026 (js/home.js).
-        if (el.id === "console-screen-scroll" || el.id === "profile-screen-scroll" || el.id === "glyph-palette-list") {
+        // And anything built later that asks for it (data-scrollbar="console"):
+        // Pura Panic's leaderboard, 6 Oct 2026.
+        if (el.id === "console-screen-scroll" || el.id === "profile-screen-scroll" || el.id === "glyph-palette-list" || el.dataset.scrollbar === "console") {
             wrap.classList.add("custom-scrollbar-wrap--console");
         }
 

@@ -9,7 +9,7 @@
    completely inert until js/site.js puts that attribute on <html>. The
    classic palette is not defined here and is not affected by anything in it.
 
-   1094 rules, 1771 declarations, hues 350 (surfaces) / 212 (accents).
+   1096 rules, 1772 declarations, hues 350 (surfaces) / 212 (accents).
 */
 :root[data-theme="crimson"] {
     --bg-black: #080506;
@@ -1845,8 +1845,14 @@ html[data-theme="crimson"]::-webkit-scrollbar-button {
     border: 1px solid #000;
     background-image: url('../assets/img/console/cnsl-bg-tile.png');
     color: #eeeeee;
-    box-shadow: -1px -1px 0 1px rgba(0, 0, 0, 0.45),
-        1px 1px 0 0 rgba(255, 255, 255, 0.5);
+}
+
+[data-theme="crimson"] .console-frame::before {
+    border-color: rgba(0, 0, 0, 0.45) transparent transparent rgba(0, 0, 0, 0.45);
+}
+
+[data-theme="crimson"] .console-frame::after {
+    border-color: transparent rgba(255, 255, 255, 0.5) rgba(255, 255, 255, 0.5) transparent;
 }
 
 [data-theme="crimson"] .console-screen-shadow {

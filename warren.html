@@ -345,6 +345,25 @@
                                 <p class="ctl-status" id="ff-launch-at-status" style="display:none;"></p>
                             </div>
 
+                            <!-- Pura Panic (6 Oct 2026): in Maintenance until
+                                 it is switched Live here. In maintenance its
+                                 menu row says so, players are told it is
+                                 being worked on, an admin signed in here
+                                 still plays it, and its board takes no
+                                 scores. See netlify/functions/pura-scores.js. -->
+                            <div class="ctl-card" id="pura-state-card" style="display:none;"
+                                 title="Maintenance: shown in the Games menu as Maintenance, playable by admins only, scores not kept. Live: open to everyone with its leaderboard.">
+                                <span class="ctl-label">Pura Panic</span>
+                                <div class="ctl-row">
+                                    <a class="ctl-btn" href="/purapanic" target="_blank" rel="noopener">Play</a>
+                                    <div class="ctl-seg">
+                                        <button type="button" class="btn-enter-mini pura-state-btn" data-pura-state="maintenance">Maint.</button>
+                                        <button type="button" class="btn-enter-mini pura-state-btn" data-pura-state="live">Live</button>
+                                    </div>
+                                </div>
+                                <p class="ctl-status" id="pura-state-status" style="display:none;"></p>
+                            </div>
+
                             <div class="ctl-card" id="landing-toggle" style="display:none;"
                                  title="What the Enter button on mazerats.net does.">
                                 <span class="ctl-label">Landing page</span>
@@ -1355,7 +1374,7 @@
     <script src="js/admin-notifications.js?v=1"></script>
     <script src="js/password-field.js?v=3"></script>
     <script src="js/glyph-palette.js?v=2"></script>
-    <script src="js/custom-scrollbar.js?v=2"></script>
+    <script src="js/custom-scrollbar.js?v=3"></script>
     <script src="js/letter-jump.js?v=2"></script>
 </body>
 </html>

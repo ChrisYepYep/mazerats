@@ -12,6 +12,7 @@
      guess_scores     Guess the Maze days, points and streaks
      daily_scores     Odd One Out, the same (daily-scores.js; game "odd")
      ff_scores        their best Fallin' Furni run and where it ranks
+     pura_scores      their best Pura Panic game and where it ranks
      dead_end_leads   what they sent through Add Maze Info, by outcome
 
    RANKS ARE COMPETITION RANKS, as the boards number them (see ranks in
@@ -243,7 +244,7 @@ async function figuresFor(db, id) {
     // `rounds` for Odd One Out rows that record it, and `bonus` for the
     // total — see gameStats.
     const rowShape = { projection: { _id: 0, day: 1, points: 1, bonus: 1, solved: 1, rounds: 1 } };
-    const [profile, guessRows, oddRows, board, ffMine, leadCounts, banned] = await Promise.all([
+    const [profile, guessRows, oddRows, board, ffMine, puraMine, leadCounts, banned] = await Promise.all([
         // With the nickname fields, for the Profile's name (see below).
         // nickLocked too (29 Sept 2026): playerView reads it off this
         // row, and a projection that left it out made every Profile
@@ -266,6 +267,7 @@ async function figuresFor(db, id) {
         dailyCol.find({ playerId: id, game: "odd", ...fromLaunch }, rowShape).sort({ day: 1 }).toArray(),
         boardTotals(guessCol, dailyCol, launch),
         ffCol.findOne({ playerId: id }, { projection: { _id: 0, points: 1, levels: 1, ms: 1, at: 1 } }),
+        db.collection("pura_scores").findOne({ playerId: id }, { projection: { _id: 0, score: 1, pieces: 1, level: 1, rows: 1 } }),
         db.collection("dead_end_leads").aggregate([
             { $match: { "from.id": id } },
             { $group: { _id: "$status", n: { $sum: 1 } } }
@@ -285,9 +287,10 @@ async function figuresFor(db, id) {
        only; a read that fails counts everyone out, as the boards do. */
     const boardIds = new Set([...board.guess.keys(), ...board.odd.keys(), ...board.combined.keys()].map(String));
     const ffIds = ffCounts ? (await ffCol.distinct("playerId")).map(String) : [];
-    const nicked = await nickedAmong(db, [...boardIds, ...ffIds]);
+    const puraIds = puraMine ? (await db.collection("pura_scores").distinct("playerId")).map(String) : [];
+    const nicked = await nickedAmong(db, [...boardIds, ...ffIds, ...puraIds]);
     const offBoard = new Set(banned);
-    [...boardIds, ...ffIds].forEach(k => { if (!nicked || !nicked.has(k)) offBoard.add(k); });
+    [...boardIds, ...ffIds, ...puraIds].forEach(k => { if (!nicked || !nicked.has(k)) offBoard.add(k); });
     // A failed read (nicked null) counts everyone else out, which would
     // put this player first of one: no place at all instead.
     const listed = !!nicked && !!(profile && typeof profile.nick === "string" && profile.nick);
@@ -338,6 +341,23 @@ async function figuresFor(db, id) {
         ff = { points, levels: ffMine.levels || 0, ms: ffMine.ms || 0, rank: listed ? above + 1 : null, of: listed ? of : null };
     }
 
+    /* PURA PANIC (6 Oct 2026, the owner's: on a profile only once they
+       have played it). One best row a player; the board (pura-scores.js)
+       sorts { score: -1, pieces: 1, at: 1 }, so ahead is more points, or
+       the same in fewer pieces, among the players the board shows. */
+    let pura = null;
+    if (puraMine) {
+        const puraCol = db.collection("pura_scores");
+        const off = [...offBoard].filter(b => b !== String(id));
+        const scope = off.length ? { playerId: { $nin: off } } : {};
+        const score = Number(puraMine.score) || 0;
+        const [above, of] = await Promise.all([
+            puraCol.countDocuments({ $and: [scope, { $or: [{ score: { $gt: score } }, { score, pieces: { $lt: Number(puraMine.pieces) || 0 } }] }] }),
+            puraCol.countDocuments(scope)
+        ]);
+        pura = { score, level: Number(puraMine.level) || 1, rows: Number(puraMine.rows) || 0, rank: listed ? above + 1 : null, of: listed ? of : null };
+    }
+
     const leads = { sent: 0, accepted: 0, waiting: 0 };
     leadCounts.forEach(r => {
         leads.sent += r.n;
@@ -353,6 +373,7 @@ async function figuresFor(db, id) {
         },
         combined: placeIn(board.combined, id, myCombined, offBoard),
         ff,
+        pura,
         leads
     };
 }
@@ -371,7 +392,7 @@ exports.handler = async (event) => {
 
     const id = player.id;
     try {
-        const { day, profile, games, combined, ff, leads } = await figuresFor(db, id);
+        const { day, profile, games, combined, ff, pura, leads } = await figuresFor(db, id);
 
         /* A REVOKED SESSION (30 Sept 2026; see SESSION VERSIONS in
            _player.js) is signed out here as it is on `me`: a forgotten
@@ -399,6 +420,7 @@ exports.handler = async (event) => {
             games,
             combined,
             ff,
+            pura,
             leads
         });
     } catch (e) {
