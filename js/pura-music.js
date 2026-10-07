@@ -153,6 +153,22 @@
         o.start(at); o.stop(at + dur + 0.02);
     }
 
+    // A note that slides from one pitch to another: the power-up's spin.
+    function glide(at, dur, from, to, kind, vol) {
+        const o = ctx.createOscillator();
+        if (kind === "triangle") o.type = "triangle";
+        else o.setPeriodicWave(kind === "thin" ? pulse12 : pulse25);
+        o.frequency.setValueAtTime(from, at);
+        o.frequency.exponentialRampToValueAtTime(to, at + dur);
+        const g = ctx.createGain();
+        g.gain.setValueAtTime(0, at);
+        g.gain.linearRampToValueAtTime(vol, at + dur * 0.3);
+        g.gain.setValueAtTime(vol, at + dur * 0.85);
+        g.gain.linearRampToValueAtTime(0, at + dur);
+        o.connect(g); g.connect(master);
+        o.start(at); o.stop(at + dur + 0.02);
+    }
+
     function hiss(at, dur, vol, high) {
         const s = ctx.createBufferSource();
         s.buffer = noise;
@@ -228,19 +244,47 @@
     }
 
     /* From the top, at a level. `opts.muffled` for the splash and the
-       other screens between games (see MUFFLED). */
+       other screens between games (see MUFFLED).
+
+       TRANSITIONS (7 Oct 2026, the owner's: smooth between screens with
+       different tracks). The track comes in on a short fade rather than
+       cutting in — the lament giving way to the muffled tune under the
+       leaderboard, say. And `opts.powerUp`, for a game starting: the
+       game-over fall played the other way — a low note spinning up in
+       pitch, the chord climbing over it, and the muffle opening out as it
+       rises — with the tune landing on its first beat as it peaks. */
     function start(lv, opts) {
         if (!setup()) return;
         level = lv || 1;
         step = 0;
-        muffled = Boolean(opts && opts.muffled);
+        const powerUp = Boolean(opts && opts.powerUp);
+        muffled = !powerUp && Boolean(opts && opts.muffled);
         sad = false;
         wake();
-        master.gain.cancelScheduledValues(ctx.currentTime);
-        master.gain.setValueAtTime(loudness(), ctx.currentTime);
-        lowpass.frequency.cancelScheduledValues(ctx.currentTime);
-        lowpass.frequency.setValueAtTime(muffled ? MUFFLED_HZ : OPEN_HZ, ctx.currentTime);
-        nextAt = ctx.currentTime + 0.06;
+        const t = ctx.currentTime;
+        const was = lowpass.frequency.value;
+        master.gain.cancelScheduledValues(t);
+        lowpass.frequency.cancelScheduledValues(t);
+        if (powerUp) {
+            const at = t + 0.03;
+            if (!muted) {
+                glide(at, 0.75, hz(33), hz(69), "triangle", 0.5);
+                glide(at + 0.1, 0.65, hz(45), hz(81), "thin", 0.1);
+                [57, 60, 64, 69, 72, 76].forEach((n, i) => tone(at + 0.22 + i * 0.075, 0.12, hz(n), "pulse", 0.24));
+                tone(at + 0.7, 0.3, hz(81), "pulse", 0.3);
+            }
+            // From wherever the filter was (the splash's muffle) up to open.
+            lowpass.frequency.setValueAtTime(Math.max(200, Math.min(was || MUFFLED_HZ, OPEN_HZ)), t);
+            lowpass.frequency.exponentialRampToValueAtTime(OPEN_HZ, at + 0.7);
+            master.gain.setValueAtTime(master.gain.value, t);
+            master.gain.linearRampToValueAtTime(loudness(), at + 0.3);
+            nextAt = at + 0.9;
+        } else {
+            lowpass.frequency.setValueAtTime(muffled ? MUFFLED_HZ : OPEN_HZ, t);
+            master.gain.setValueAtTime(0, t);
+            master.gain.linearRampToValueAtTime(loudness(), t + 0.6);
+            nextAt = t + 0.06;
+        }
         playing = true;
         clearInterval(timer);
         timer = setInterval(tick, 25);

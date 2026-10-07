@@ -265,16 +265,30 @@
         soundIcon();
         wireDrag();
         wireTouch();
+        /* Signed in or out while the splash is up: it is drawn again, so the
+           Continue offer (which belongs to one account, CONTINUING) appears
+           for the player it is theirs — the splash can be up before the
+           sign-in has finished loading. */
+        if (window.Account && typeof Account.onChange === "function") {
+            Account.onChange(() => { if (isOpen() && mode === "idle" && !panel.hidden && panel.querySelector('[data-go="play"]')) showPanel("title"); });
+        }
         panel.addEventListener("click", onPanelClick);
         window.addEventListener("keydown", onKey, true);
         window.addEventListener("keyup", onKeyUp, true);
         window.addEventListener("resize", clamp);
-        window.addEventListener("blur", () => { if (mode === "play") pause(); });
+        window.addEventListener("blur", () => { if (mode === "play") pause("leaving"); });
         document.addEventListener("visibilitychange", () => {
-            if (document.hidden && mode === "play") pause();
+            if (document.hidden && mode === "play") pause("leaving");
+            // A phone may never bring this tab back: the game is kept to pick up (CONTINUING).
+            if (document.hidden) keepGame();
             // No sound from a tab nobody is looking at; back when it is.
             if (music()) { if (document.hidden) music().pause(); else if (isOpen()) music().resume(); }
         });
+        /* Closing the tab or the browser mid-game: nothing is asked (the
+           owner's, 7 Oct 2026: no browser "Leave site?" box, ever). The
+           board already has the last level reached; the game is kept here to
+           be picked up again (CONTINUING). */
+        window.addEventListener("pagehide", keepGame);
         // The screen clips but must never scroll (as the Profiles window's).
         const screen = frame.querySelector(".console-screen");
         screen.addEventListener("scroll", () => { screen.scrollTop = 0; screen.scrollLeft = 0; });
@@ -357,6 +371,7 @@
             showPanel("title");
         }
         if (dim) dim.hidden = !dark;
+        paintChrome();
         loop();
     }
 
@@ -371,6 +386,24 @@
     const DARK_KEY = "mazerats_pura_dark";
     let dark = false, dim = null;
 
+    /* The pill and the bulb in the frame's colours as they stand now. Read
+       off the page, so asked again whenever they may have changed: the
+       lights, every open, and when css/pura-panic.css arrives — after a
+       reload the window can be built before that stylesheet has loaded, and
+       the pill and bulb kept the yellow of the moment before the dark frame
+       came in (the owner's screenshot, 7 Oct 2026). */
+    function paintChrome() {
+        if (!root) return;
+        const ink = getComputedStyle(root.querySelector("#pura-title")).color;
+        const fill = getComputedStyle(frame).backgroundColor;
+        const pill = root.querySelector(".pura-beta");
+        const bulb = root.querySelector("#pura-light");
+        pill.style.background = ink;
+        pill.style.color = fill;
+        bulb.style.color = ink;
+        bulb.style.backgroundColor = fill;
+    }
+
     function setDark(on, quiet) {
         dark = Boolean(on);
         root.classList.toggle("is-dark", dark);
@@ -378,13 +411,7 @@
         const bulb = root.querySelector("#pura-light");
         bulb.setAttribute("aria-pressed", String(dark));
         bulb.setAttribute("aria-label", dark ? "Lights on" : "Lights off");
-        const ink = getComputedStyle(root.querySelector("#pura-title")).color;
-        const fill = getComputedStyle(frame).backgroundColor;
-        const pill = root.querySelector(".pura-beta");
-        pill.style.background = ink;
-        pill.style.color = fill;
-        bulb.style.color = ink;
-        bulb.style.backgroundColor = fill;
+        paintChrome();
         if (!quiet) { try { localStorage.setItem(DARK_KEY, dark ? "1" : "0"); } catch (e) { /* private mode */ } }
     }
 
@@ -512,8 +539,10 @@
         if (!mayPlayNow()) return;
         if (window.Account && typeof Account.mayPlay === "function" && !Account.mayPlay()) return;
         if (needsName()) { showPanel("who"); return; }
+        // Asked who they are on the way to Continue: carry on with that game.
+        if (pendingContinue) { pendingContinue = false; continueGame(); return; }
         // Started from the press itself: browsers only let sound begin from one.
-        if (music()) music().start(1);
+        if (music()) music().start(1, { powerUp: true });
         mode = "dealing";
         showPanel("dealing");
         const startAt = testLevel();
@@ -523,6 +552,7 @@
         // the music): no game starts behind a shut window.
         if (!isOpen() || mode !== "dealing") { if (mode === "dealing") mode = "idle"; return; }
         if (run.refused) { mode = "idle"; showPanel("title"); return; }
+        forgetGame();
         g = E.newGame(run.token ? run.seed : localSeed());
         if (startAt > 1) {
             g.level = startAt;
@@ -534,6 +564,7 @@
         fallAt = E.stepMs(g.level);
         lockAt = null; lockResets = 0; deepest = -1;
         anim = null; result = null;
+        savedScore = 0; leaving = false; fromLeave = false;
         banner = null; shownLevel = g.level; hideBanner();
         mode = "play";
         hidePanel();
@@ -541,8 +572,12 @@
         frame.focus({ preventScroll: true });
     }
 
-    function pause() {
+    /* `why` "leaving": the tab lost, the window left, or the page about to
+       close — the pause screen then carries the leave notice (LEAVING). */
+    function pause(why) {
+        if (mode === "paused" && why === "leaving" && !leaving) { leaving = true; showPanel("paused"); return; }
         if (mode !== "play") return;
+        leaving = why === "leaving";
         mode = "paused";
         releaseAll();
         if (music()) music().setMuffled(true);
@@ -552,6 +587,7 @@
 
     function resume() {
         if (mode !== "paused") return;
+        leaving = false;
         mode = "play";
         hidePanel();
         if (bannerEl) bannerEl.style.animationPlayState = "";
@@ -687,6 +723,7 @@
             banner = { t: 0, total: BANNER_MS };
             showBanner(g.level);
             if (music()) { music().setLevel(g.level); music().levelUp(); }
+            saveProgress();
         }
     }
 
@@ -974,7 +1011,6 @@
     function draw() {
         if (!bx) return;
         bx.clearRect(0, 0, CW, CH);
-        if (frame.classList.contains("is-splash")) return;
         drawFloor();
         const glow = (g && loaded && !anim && mode !== "over") ? nearlyFull() : null;
         if (!g || !loaded) return;
@@ -1052,23 +1088,16 @@
         return n + (s[(v - 20) % 10] || s[v] || s[0]);
     };
 
-    function hidePanel() { panel.hidden = true; panel.innerHTML = ""; frame.classList.remove("is-splash"); }
+    function hidePanel() { panel.hidden = true; panel.innerHTML = ""; }
 
-    /* THE SPLASH (the owner's, 6 Oct 2026): before a game, the screen holds
-       the title, the instructions and the two buttons and nothing else — no
-       score, no next piece, no floor, nothing dimmed. The floor appears with
-       the first game.
-
-       THE LEADERBOARD always looks like this, wherever it is opened from:
-       over a finished game, the dimmed score and floor showed through behind
-       its rows and read as a mess (the owner's, 6 Oct 2026). Back puts the
-       game-over screen and the game behind it back as they were. */
-    const SPLASH = ["loading", "failed", "dealing", "title"];
+    /* EVERY SCREEN OVER THE GAME (7 Oct 2026, the owner's): the splash,
+       the leaderboard and the rest all sit over the floor and the game,
+       dimmed, deeper at the top (.pura-panel in css/pura-panic.css). It
+       replaces the bare splash and leaderboard of 6 Oct. */
 
     function showPanel(which, extra) {
         panel.hidden = false;
         panel.className = "pura-panel" + (which === "board" ? " pura-panel--board" : "");
-        frame.classList.toggle("is-splash", SPLASH.includes(which) || which === "board" || which === "who" || which === "code");
         let html = "";
         if (which === "loading") html = `<p>Loading…</p>`;
         else if (which === "failed") html = `<p>The furni could not be loaded.</p><div class="pura-buttons"><button type="button" class="console-btn" data-go="retry">Try again</button></div>`;
@@ -1077,9 +1106,9 @@
             html = `<p class="pura-big">PURA PANIC</p>
                 <div class="console-hashline" aria-hidden="true"></div>
                 ${mayPlayNow() ? `<p>Turn the Pura modules and slot them in.<br>Fill a line of tiles across the floor to clear it.</p>
-                ${touchy() ? TOUCH_HELP : KEY_HELP}
+                ${continueOffer() || (touchy() ? TOUCH_HELP : KEY_HELP)}
                 <div class="pura-buttons">
-                    <button type="button" class="console-btn" data-go="play">Play</button>
+                    <button type="button" class="console-btn" data-go="play">${leftGame() ? "New game" : "Play"}</button>
                     <button type="button" class="console-btn" data-go="board">Leaderboard</button>
                 </div>
                 ${guestLine()}` : `<p class="pura-maint">We're working hard on making Pura Panic better! Bear with us, we'll have it up and running again shortly.</p>`}
@@ -1119,10 +1148,29 @@
                 </div>
                 <p class="pura-beta-note">Don't want to wait? <a href="#" data-go="signin">Sign in with Discord</a> and you can play straight away.</p>`;
         } else if (which === "paused") {
-            html = `<p class="pura-big">PAUSED</p>
+            html = leaving ? `<div class="pura-leave" role="alert">
+                    <span class="pura-bang" aria-hidden="true">!</span>
+                    <p>Submit your progress to the scoreboard before you leave by pressing Submit Score!</p>
+                </div>
+                <div class="pura-buttons">
+                    <button type="button" class="console-btn" data-go="leavesubmit">Submit Score</button>
+                    <button type="button" class="console-btn" data-go="resume">Keep Playing</button>
+                </div>` : `
+                <p class="pura-big">PAUSED</p>
                 <div class="pura-buttons">
                     <button type="button" class="console-btn" data-go="resume">Resume</button>
                     <button type="button" class="console-btn" data-go="quit">End game</button>
+                </div>
+                ${musicButton()}`;
+        } else if (which === "over" && fromLeave && (!result || result.state === "recorded" || result.state === "kept")) {
+            // Ended from the leave prompt's Submit Score (LEAVING).
+            html = `<p class="pura-big">${!result ? "SUBMITTING…" : result.state === "recorded" ? "You joined the leaderboard!" : "You're on the leaderboard!"}</p>
+                <div class="console-hashline" aria-hidden="true"></div>
+                <p>${num(g && g.score)} points · ${num(g && g.bands - rowsBase)} ${g && g.bands - rowsBase === 1 ? "row" : "rows"} · level ${g ? g.level : 1}</p>
+                ${result ? `<div class="pura-note" id="pura-note">${overNote()}</div>` : ""}
+                <div class="pura-buttons">
+                    <button type="button" class="console-btn" data-go="play">Play Again</button>
+                    <button type="button" class="console-btn" data-go="board">Leaderboard</button>
                 </div>
                 ${musicButton()}`;
         } else if (which === "over") {
@@ -1325,7 +1373,7 @@
         else if (go === "whonext") chooseName();
         else if (go === "whocheck") checkMotto();
         else if (go === "asguest") playAsGuest();
-        else if (go === "cancel") showPanel("title");
+        else if (go === "cancel") { pendingContinue = false; showPanel("title"); }
         else if (go === "resume") resume();
         else if (go === "quit") { mode = "play"; endEarly(); }
         else if (go === "board") showBoard();
@@ -1334,6 +1382,9 @@
         else if (go === "signin" && window.Account) Account.signIn();
         else if (go === "nick" && window.Account) Account.editNickname();
         else if (go === "music") toggleMusic();
+        // Submit Score: the game ends here and goes to the board; they stay.
+        else if (go === "continue") continueGame();
+        else if (go === "leavesubmit") { fromLeave = true; mode = "play"; endEarly(); }
         // The Console's Contact Us form, which opens over this window.
         else if (go === "contact" && window.MazeConsole) MazeConsole.open("message");
     }
@@ -1544,6 +1595,167 @@
         checkTimer = setInterval(tick, 1000);
     }
 
+    /* ---------------------------------------------------------------- LEAVING
+
+       (7 Oct 2026, the owner's.) A game in progress is saved on the way —
+       at every new level, and whenever its tab is hidden or the page is
+       about to close — so a browser shut hard, a phone's especially, still
+       leaves its score on the board (pura-scores.js, A SAVE ON THE WAY: the
+       board keeps the best, the game can still be finished). And leaving is
+       warned about in the window itself: the game pauses with a flashing !
+       and "Submit your progress to the scoreboard before you leave by
+       pressing End Game!" — on top of the browser's own "Leave site?" when
+       the tab or browser is being closed. */
+    let leaving = false;
+    /* The prompt's answers (7 Oct 2026, the owner's): Submit Score or Keep
+       Playing, to push towards the board. Closing the tab or browser is held
+       by the browser's own "Leave site?" for the whole game — the only hold
+       a page is allowed (its own window is refused once a close begins,
+       proved in a real Edge) — and a phone's swipe-away cannot be held at
+       all, which is what the saves on the way are for. */
+    let fromLeave = false;   // the game was ended by the leave prompt's Submit Score
+    let saving = null;
+    let savedScore = 0;
+
+    // From the moment Play is pressed (the owner's: the first close attempt is stopped).
+    const inGame = () => (mode === "play" || mode === "paused") && Boolean(g);
+
+    function saveProgress() {
+        if (!run || !run.token || !g || !g.score || g.score <= savedScore || testLevel()) return;
+        const p = me();
+        if (p ? !p.nick : !guest) return;
+        savedScore = g.score;
+        const body = JSON.stringify({ run: run.token, log: g.log, ms: Math.round(gameMs), score: g.score, checkpoint: true, ...gameFacts() });
+        const req = fetch(API, {
+            method: "POST",
+            credentials: "same-origin",
+            headers: { "Content-Type": "application/json" },
+            body,
+            // Survives the tab closing, when small enough to.
+            keepalive: body.length < 60000
+        }).then(res => res.json().catch(() => ({}))).then(d => {
+            // A Guest Rat numbered by this save (pura-scores.js, GUESTS).
+            if (d && d.rat && Number.isInteger(d.rat.n) && d.rat.token && (!rat || rat.n !== d.rat.n)) { rat = { n: d.rat.n, token: d.rat.token }; keep(RAT_KEY, rat); }
+        }).catch(() => { savedScore = 0; });
+        saving = req.finally(() => { if (saving === req) saving = null; });
+    }
+
+    /* ---------------------------------------------------------------- CONTINUING
+
+       (7 Oct 2026, the owner's: no "Leave site?" box; leaving mid-game
+       instead puts them on the board at the last level they reached, and on
+       their return the splash offers to pick the game up — once per game.)
+
+       The board side is the saves at each new level (saveProgress) and
+       pura-scores.js's CONTINUING. Here: the game is kept in this browser
+       whenever the tab is hidden or the page goes (its run token, seed,
+       every placement and the time played), and offered on the splash for
+       as long as the server will take it back (RESUME_WINDOW). Continue
+       asks the server for the game's token again — refused for a game
+       continued before — and rebuilds the board by playing the placements
+       back through the rules, exactly as the server replays them, so the
+       game carries on precisely where it stopped. A game continued once is
+       never kept again; a game finished, or a new one started, forgets it. */
+    const LEFT_KEY = "mazerats_pura_left";
+    const RESUME_WINDOW = 24 * 60 * 60 * 1000;
+
+    function keepGame() {
+        if (!inGame() || !run || !run.token || run.resumed || testLevel() || !g.log.length) return;
+        keep(LEFT_KEY, {
+            token: run.token, seed: run.seed, log: g.log, ms: Math.round(gameMs),
+            score: g.score, level: g.level, at: Date.now(), account: me() ? me().id : null
+        });
+    }
+
+    function forgetGame() { keep(LEFT_KEY, null); }
+
+    // The game left behind, if it can still be picked up by whoever this is.
+    function leftGame() {
+        const k = load(LEFT_KEY);
+        if (!k || typeof k.token !== "string" || !Number.isInteger(k.seed) || !Array.isArray(k.log) || !k.log.length) return null;
+        if (Date.now() - k.at > RESUME_WINDOW) { forgetGame(); return null; }
+        if ((k.account || null) !== (me() ? me().id : null)) return null;
+        return k;
+    }
+
+    function continueOffer() {
+        if (g && mode !== "idle") return "";
+        const k = leftGame();
+        if (!k) return "";
+        return `<div class="pura-continue">
+                <p>You left a game at <strong>level ${k.level}</strong> with <strong>${num(k.score)}</strong> points.</p>
+                <button type="button" class="console-btn" data-go="continue">Continue</button>
+                <p class="pura-beta-note">You can pick it up once.</p>
+            </div>`;
+    }
+
+    let continuing = false;
+    // Continue pressed with nobody named (signed out, name cleared): who first.
+    let pendingContinue = false;
+    async function continueGame() {
+        const k = leftGame();
+        if (!k || continuing || mode === "dealing") return;
+        if (needsName()) { pendingContinue = true; showPanel("who"); return; }
+        continuing = true;
+        const btn = panel.querySelector('[data-go="continue"]');
+        if (btn) { btn.disabled = true; btn.textContent = "Picking up…"; }
+        let d = null;
+        try {
+            const res = await fetch(API + "?action=continue", {
+                method: "POST", credentials: "same-origin",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ run: k.token })
+            });
+            d = await res.json().catch(() => null);
+            if (res.status === 403 && window.Account && Account.writeRefused(403, d || {}, "play")) { continuing = false; return; }
+        } catch (e) { d = null; }
+        continuing = false;
+        if (!d || !d.token) {
+            // Gone for good (finished, continued before, too old) unless it was only our trouble.
+            if (d && d.reason) forgetGame();
+            showPanel("title");
+            const note = panel.querySelector(".pura-maint, .pura-beta-note");
+            if (note) note.insertAdjacentHTML("beforebegin", `<p class="pura-beta-note">${d && d.reason ? "That game can't be picked up any more." : "That game couldn't be picked up just now. Try again in a moment."}</p>`);
+            return;
+        }
+        // Never kept again: this is its one continue.
+        forgetGame();
+        if (music()) music().start(1, { powerUp: true });
+        run = { token: d.token, seed: d.seed, resumed: true };
+        rowsBase = 0;
+        g = E.newGame(d.seed);
+        // Each placement checked as the server's replay checks it: a kept game
+        // that does not play back (storage tampered with) is let go cleanly.
+        let sound = true;
+        for (const e of k.log) {
+            if (g.over || !g.piece) break;
+            const [rot, x, y, lean] = Array.isArray(e) ? e : [];
+            const p = { kind: g.piece.kind, rot, x, y, lean };
+            if (![rot, x, y, lean].every(Number.isInteger) || !E.fits(g.board, p) || !E.landed(g.board, p)) { sound = false; break; }
+            const dressed = dress(g.piece.kind, rot);
+            g.piece = p;
+            E.settle(g, (i) => ({ m: dressed[i].m, d: dressed[i].d }));
+        }
+        if (!sound) {
+            g = null; run = null; mode = "idle";
+            if (music()) music().start(1, { muffled: true });
+            showPanel("title");
+            return;
+        }
+        if (g.over) { gameOver(); return; }
+        gameMs = k.ms;
+        fallAt = E.stepMs(g.level);
+        lockAt = null; lockResets = 0; deepest = -1;
+        anim = null; result = null;
+        savedScore = g.score; leaving = false; fromLeave = false;
+        banner = null; shownLevel = g.level; hideBanner();
+        if (music()) music().setLevel(g.level);
+        mode = "play";
+        hidePanel();
+        hud();
+        frame.focus({ preventScroll: true });
+    }
+
     function endEarly() {
         // Ending a game is ending it: what was cleared still counts.
         anim = null;
@@ -1552,6 +1764,7 @@
 
     async function gameOver() {
         mode = "over";
+        forgetGame();
         releaseAll();
         banner = null; hideBanner();
         if (music()) music().gameOver();
@@ -1560,6 +1773,7 @@
         nx.clearRect(0, 0, nextCv.width, nextCv.height);
         showPanel("over");
         result = await submit();
+        if (mode === "over" && fromLeave) { showPanel("over"); return; }
         if (mode === "over") {
             const note = panel.querySelector("#pura-note");
             if (note) note.innerHTML = overNote();
@@ -1567,6 +1781,7 @@
     }
 
     async function submit() {
+        if (saving) await saving.catch(() => {});
         if (run && run.reason === "test") return { state: "test" };
         if (!run || !run.token) return { state: run && (run.reason === "hidden" || run.reason === "maintenance") ? "maintenance" : "offline" };
         const p = me();
@@ -1646,8 +1861,9 @@
         if (document.querySelector('link[data-pura]')) return;
         const l = document.createElement("link");
         l.rel = "stylesheet";
-        l.href = "css/pura-panic.css?v=23";
+        l.href = "css/pura-panic.css?v=29";
         l.dataset.pura = "1";
+        l.addEventListener("load", () => paintChrome());
         document.head.appendChild(l);
     })();
 

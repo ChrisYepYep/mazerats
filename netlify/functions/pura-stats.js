@@ -132,6 +132,8 @@ async function report(db, event) {
         darkPct: pct(games.filter(g => g.dark).length, games.length),
         mutedPct: pct(games.filter(g => g.muted).length, games.length),
         chains: sum(games.map(g => g.chains)),
+        // Left part-way and picked up again (pura-scores.js, CONTINUING).
+        resumed: games.filter(g => g.resumed).length,
         // Rows a minute across all play: how fast the floor is being cleared.
         rowsPerMin: games.length ? Math.round((sum(games.map(g => g.rows)) / Math.max(1, sum(games.map(g => g.ms)) / 60000)) * 10) / 10 : 0
     };
@@ -187,8 +189,10 @@ async function report(db, event) {
             { label: "Chain clears", n: totals.chains }
         ],
         ended: [
-            { label: "Topped out", n: games.length - totals.quits },
-            { label: "Ended from pause", n: totals.quits }
+            { label: "Topped out", n: games.filter(g => g.ended === "topout").length },
+            { label: "Ended from pause", n: totals.quits },
+            // Saved on the way and never finished: the tab or browser closed (see A SAVE ON THE WAY).
+            { label: "Left mid-game", n: games.filter(g => g.ended === "closed").length }
         ],
         devices: [
             { label: "Keyboard", n: games.filter(g => !g.touch).length },

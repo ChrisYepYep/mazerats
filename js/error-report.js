@@ -60,6 +60,8 @@
     function robot(nav) {
         try {
             if (nav.webdriver === true) return true;
+            // One that names itself (7 Oct 2026; the server's own test, parseUserAgent in _errors.js).
+            if (/bot|crawl|spider|slurp|headless|lighthouse/i.test(nav.userAgent || "")) return true;
             var phone = /Android|iPhone|iPad|iPod/i.test(nav.userAgent || "");
             var pointless = window.matchMedia && window.matchMedia("(any-pointer: none)").matches;
             return phone && nav.maxTouchPoints === 0 && !!pointless;

@@ -12,6 +12,8 @@
                           player to prove the Habbo is theirs (see GUESTS)
    POST ?action=verify    {claim}: their motto read fresh from Origins; the
                           code in it hands back a token naming that Habbo
+   POST ?action=continue  {run}: a game left part-way, picked up again —
+                          ONCE (see CONTINUING)
    POST ?action=played    the same for a game that is not for the board
                           (signed out, no nickname, no rows): kept for the
                           Warren's figures only — see THE GAME LOG
@@ -155,6 +157,52 @@ function signRun(player, now) {
             audience: RUN_AUDIENCE, expiresIn: RUN_LIFE_S, algorithm: "HS256"
         })
     };
+}
+
+/* CONTINUING (7 Oct 2026, the owner's). A game left part-way — the tab
+   closed, the browser shut — already stands on the board at the last level
+   it reached (the saves at each new level, A SAVE ON THE WAY). The page
+   keeps the game (its token, seed and placements) and, on the player's
+   return, offers to pick it up where it stopped. "continue" re-issues the
+   game's token, the same game (rid, seed, start time) with a fresh three
+   hours and `resumed` set, so a continued game can never be continued
+   again (the owner's: "once per game, they cannot keep leaving and coming
+   back"). Refused when the game was finished (its token spent), when it
+   started more than RESUME_WINDOW_MS ago, or when it was continued before
+   — here, as well as in the claims, by a row per continue (pura_continues),
+   so the old token cannot be continued twice either. The start time stays
+   the first one, so the clock check still holds: game time can never be
+   more than the time since the game began. */
+const RESUME_WINDOW_MS = 24 * 60 * 60 * 1000;
+
+async function continueRun(db, event, player) {
+    let body;
+    try { body = JSON.parse(event.body || "{}"); } catch { return json(400, { error: "Body is not JSON" }); }
+    let c = null;
+    try {
+        c = jwt.verify(String(body.run || ""), process.env.SESSION_SECRET || "", { audience: RUN_AUDIENCE, algorithms: ["HS256"], ignoreExpiration: true });
+    } catch (e) { c = null; }
+    if (!c || typeof c.rid !== "string" || !/^[0-9a-f]{24}$/.test(c.rid) || !Number.isInteger(c.seed) || !Number.isFinite(c.t)) {
+        return json(200, { token: null, reason: "unknown" });
+    }
+    if (c.sub && (!player || String(c.sub) !== String(player.id))) return json(200, { token: null, reason: "someone-else" });
+    if (c.resumed) return json(200, { token: null, reason: "already-continued" });
+    if (Date.now() - c.t > RESUME_WINDOW_MS) return json(200, { token: null, reason: "too-old" });
+    if (!(await isOpen(db).catch(() => false))) return json(200, { token: null, reason: "maintenance" });
+    try {
+        if (await db.collection(RUN_TOKENS).findOne({ _id: c.rid })) return json(200, { token: null, reason: "finished" });
+        const once = db.collection("pura_continues");
+        await once.createIndex({ at: 1 }, { expireAfterSeconds: RESUME_WINDOW_MS / 1000 + RUN_LIFE_S + 3600 }).catch(() => {});
+        await once.insertOne({ _id: c.rid, at: new Date() });
+    } catch (e) {
+        if (e && e.code === 11000) return json(200, { token: null, reason: "already-continued" });
+        console.error("pura-scores: could not continue a game", e);
+        return json(503, { error: "That game can't be picked up just now." });
+    }
+    const claims = { rid: c.rid, t: c.t, seed: c.seed, resumed: true };
+    if (c.sub) claims.sub = c.sub;
+    const token = jwt.sign(claims, process.env.SESSION_SECRET, { audience: RUN_AUDIENCE, expiresIn: RUN_LIFE_S, algorithm: "HS256" });
+    return json(200, { token, seed: c.seed });
 }
 
 function readRun(token, player) {
@@ -370,13 +418,21 @@ async function logStart(db, claims, player) {
 
 /* A finished game, replayed. Once per run id: a second report of the same
    game (the page retrying) is a duplicate key and quietly nothing. */
+/* A SAVE ON THE WAY (7 Oct 2026, the owner's): a game still being played
+   sends where it has got to at each new level, and when its tab is hidden,
+   so a browser closed hard (a phone's above all) still leaves its score on
+   the board. A save goes through every check a finished game does and
+   keeps the best like one (keepBest), but does NOT spend the run token —
+   the finished game still can — and its log row says "closed" until the
+   finished game overwrites it. A save that arrives after the finish (a tab
+   hidden just after End game) never overwrites the finished row. */
 async function logGame(db, claims, player, result, ms, body, guest) {
     const b = body || {};
     const g = guest && guest.kind ? guest : null;
+    const checkpoint = b.checkpoint === true;
     try {
         await logIndexes(db);
-        await db.collection(GAMES).insertOne({
-            _id: claims.rid,
+        const doc = {
             at: new Date(),
             playerId: player ? player.id : null,
             name: player ? await publicName(db, player).catch(() => null) : null,
@@ -385,7 +441,9 @@ async function logGame(db, claims, player, result, ms, body, guest) {
             level: result.level,
             pieces: result.pieces,
             ms,
-            ended: result.over ? "topout" : "quit",
+            ended: result.over ? "topout" : checkpoint ? "closed" : "quit",
+            // Picked up again after being left (CONTINUING).
+            resumed: claims.resumed === true,
             clears: result.clears || [0, 0, 0, 0],
             chains: result.chains || 0,
             /* Signed out (see GUESTS): the Habbo they played as, checked,
@@ -396,7 +454,13 @@ async function logGame(db, claims, player, result, ms, body, guest) {
             touch: b.touch === true,
             dark: b.dark === true,
             muted: b.muted === true
-        });
+        };
+        if (checkpoint) {
+            // Upserted unless the finished game is on file (then a duplicate key, quietly nothing).
+            await db.collection(GAMES).updateOne({ _id: claims.rid, final: { $ne: true } }, { $set: doc }, { upsert: true });
+        } else {
+            await db.collection(GAMES).replaceOne({ _id: claims.rid }, { ...doc, final: true }, { upsert: true });
+        }
     } catch (e) {
         if (!(e && e.code === 11000)) console.error("pura-scores: could not log a game", e);
     }
@@ -535,6 +599,13 @@ exports.handler = async (event) => {
        too — the seed is what the game is dealt from either way — but not
        while the game is in maintenance: then the page deals its own seed
        and says scores are not being kept. */
+    if ((event.queryStringParameters || {}).action === "continue") {
+        if (!sameOrigin(event)) return json(403, { error: "Forbidden" });
+        const refused = await writeRefusal(db, event, player ? player.id : null, { game: true });
+        if (refused) return refused;
+        return continueRun(db, event, player);
+    }
+
     if ((event.queryStringParameters || {}).action === "start") {
         let open;
         try { open = await isOpen(db); }
@@ -598,7 +669,7 @@ exports.handler = async (event) => {
     let who = player || (guest.kind === "habbo" ? { id: guest.id } : guest.n ? { id: ratId(guest.n) } : { id: "guestrat:new" });
     try {
         await ensureUniqueIndex(scores, "playerId");
-        if (!(await spendRun(db, claims, who))) return json(200, { recorded: false, reason: "already-submitted" });
+        if (body.checkpoint !== true && !(await spendRun(db, claims, who))) return json(200, { recorded: false, reason: "already-submitted" });
     } catch (e) {
         console.error("pura-scores: could not spend a run token", e);
         return json(503, { error: "The leaderboard could not be updated just now." });

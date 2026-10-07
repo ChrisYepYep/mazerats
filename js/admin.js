@@ -1611,6 +1611,7 @@ document.addEventListener("DOMContentLoaded", () => {
             puraBig(ffClock(t.playedMs), "played in all") +
             puraBig(t.rowsPerMin, "rows a minute") +
             ffStat(t.chains, "chain clear", "chain clears") +
+            ffStat(t.resumed || 0, "game left and picked up again", "games left and picked up again") +
             ffStat(t.noRows, "game with no rows", "games with no rows", true) +
             puraBig(t.touchPct + "%", "on a touchscreen") +
             puraBig(t.darkPct + "%", "with the lights off") +
@@ -1662,7 +1663,7 @@ document.addEventListener("DOMContentLoaded", () => {
             '<td class="ff-num">' + ffClock(g.ms) + '</td>' +
             '<td>' + (g.clears || []).join(" / ") + '</td>' +
             '<td class="ff-num">' + g.chains + '</td>' +
-            '<td>' + (g.ended === "quit" ? "Ended from pause" : "Topped out") + '</td>' +
+            '<td>' + (g.ended === "quit" ? "Ended from pause" : g.ended === "closed" ? "Left mid-game (saved)" : "Topped out") + '</td>' +
             '<td>' + [g.touch ? "Touch" : "Keys", g.dark ? "lights off" : "", g.muted ? "muted" : ""].filter(Boolean).join(", ") + '</td>' +
         '</tr>').join("") : '<tr><td colspan="10" class="admin-empty">No games finished yet.</td></tr>';
     }

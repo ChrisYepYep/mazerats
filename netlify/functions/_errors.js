@@ -889,6 +889,11 @@ async function recordReports(db, reports, meta = {}) {
     for (const [fp, { rep, n: asked }] of groups) {
         let n = asked;
         const source = rep.kind === "function" ? "function" : "client";
+        /* A crawler's page is not a visitor's (7 Oct 2026): a bot whose
+           user agent says so (parseUserAgent's "bot") failed to fetch Google
+           Fonts on the landing page and filed it as a site error. Nothing a
+           person sees, and nothing to fix, so its reports are not kept. */
+        if (source === "client" && m.ua.device === "bot") continue;
         const admit = () => newGroupAllowed(db, source, source === "function" ? null : net);
         if (source === "client" && net) {
             n = await takeHourly(db, `occ:net:${net}`, n, NET_OCC_PER_HOUR);

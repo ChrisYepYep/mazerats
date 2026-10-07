@@ -78,7 +78,16 @@
     gap: 6px;
     padding: 10px 22px;
     text-align: center;
-    background: rgba(26, 26, 26, 0.72);
+    /* EVERY SCREEN OVER THE GAME, DIMMED (7 Oct 2026, the owner's; it
+       replaces the bare splash and leaderboard of 6 Oct): the floor and the
+       last game show through behind, and the dimming deepens towards the
+       top, where the score bar sits and where the leaderboard's words start,
+       so the two never clash. */
+    background: linear-gradient(to bottom,
+        rgba(26, 26, 26, 0.95) 0,
+        rgba(26, 26, 26, 0.92) 50px,
+        rgba(26, 26, 26, 0.72) 130px,
+        rgba(26, 26, 26, 0.72) 100%);
 }
 .pura-panel[hidden] { display: none; }
 .pura-panel p { margin: 0; }
@@ -142,12 +151,6 @@
 .pura-name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pura-pts { flex: 0 0 auto; }
 
-/* ---- the splash: the title, the instructions, Play and Leaderboard, on
-   the bare screen (the owner's, 6 Oct 2026) — no score along the top, no
-   floor, nothing dimmed. js/pura-panic.js sets .is-splash, and stops
-   drawing the floor while it is set. */
-.is-splash .pura-hud { display: none; }
-.is-splash .pura-panel { background: none; }
 
 /* The keys, in two columns: the arrows on the left, Space and P on the
    right, each a keycap and what it does. */
@@ -320,3 +323,44 @@
 .pura-text-btn:focus-visible { outline: 1px dotted #eeeeee; }
 /* The motto code, big enough to read off and type in. */
 .pura-code { font-size: 1.125rem; letter-spacing: 1px; margin: 4px 0 !important; user-select: all; -webkit-user-select: all; }
+
+/* ---- LEAVING (js/pura-panic.js): on the pause screen when the tab, the
+   window or the page is being left. A flashing ! in a box, and the line. */
+/* The leave prompt: a big ! on its own, in the screen's #eeeeee, blinking,
+   and the line under it (the owner's). */
+.pura-leave {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    max-width: 260px;
+    margin-bottom: 4px;
+    text-align: center;
+}
+.pura-leave p { margin: 0; line-height: 1.6; }
+.pura-bang {
+    font-family: 'Volter Goldfish Bold', 'Volter Goldfish', monospace;
+    font-size: 4.5rem;
+    line-height: 1;
+    animation: pura-bang 0.8s steps(1) infinite;
+}
+@keyframes pura-bang {
+    0%  { opacity: 1; }
+    50% { opacity: 0.15; }
+}
+@media (prefers-reduced-motion: reduce) {
+    .pura-bang { animation: none; }
+}
+
+/* ---- CONTINUING (js/pura-panic.js): the game left behind, on the splash. */
+.pura-continue {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    padding: 6px 10px;
+    margin: 2px 0 4px;
+    border: 1px dashed rgba(238, 238, 238, 0.6);
+    border-radius: 3px;
+}
+.pura-continue p { margin: 0; }
