@@ -1063,7 +1063,7 @@
                                 <header class="admin-panel-head">
                                     <div>
                                         <h3 class="admin-panel-title">Activity</h3>
-                                        <p class="admin-hint">Sign-ins and changes made by admin accounts. Owner-only, and kept for 90 days before it prunes itself.</p>
+                                        <p class="admin-hint">What visitors do on the site, and what the admin accounts have done. Owner-only.</p>
                                     </div>
                                     <div class="admin-activity-controls">
                                         <div class="sort-box">
@@ -1079,17 +1079,30 @@
                                         <button class="admin-action-pill" id="activity-refresh-btn" type="button">Refresh</button>
                                     </div>
                                 </header>
-                                <div class="admin-activity-summary" id="activity-summary"></div>
 
-                                <h3 class="admin-subheading">What visitors use</h3>
-                                <p class="admin-hint">Counted, never listed: these records carry no address and no account, the session id is discarded when a visitor closes their tab, and search terms are never stored. Anyone sending "Do Not Track" or Global Privacy Control is not counted at all. Kept for 60 days.</p>
-                                <div class="admin-visitors" id="activity-visitors"></div>
+                                <!-- Four views of one read (js/admin.js, ACTIVITY). -->
+                                <div class="ctl-seg act-tabs" role="tablist" aria-label="Activity views">
+                                    <button type="button" class="btn-enter-mini active" role="tab" aria-selected="true" data-act-tab="overview">Overview</button>
+                                    <button type="button" class="btn-enter-mini" role="tab" aria-selected="false" data-act-tab="features">Features</button>
+                                    <button type="button" class="btn-enter-mini" role="tab" aria-selected="false" data-act-tab="games">Games</button>
+                                    <button type="button" class="btn-enter-mini" role="tab" aria-selected="false" data-act-tab="admins">Admins</button>
+                                </div>
 
-                                <h3 class="admin-subheading admin-subheading-spaced">Sessions</h3>
-                                <p class="admin-hint">One row per sign-in. "Active for" is the gap between the first and last thing that session did, so it measures work rather than an open tab.</p>
-                                <div class="chrome-list" id="activity-sessions"></div>
-                                <h3 class="admin-subheading admin-subheading-spaced">Everything, newest first</h3>
-                                <div class="chrome-list" id="activity-events"></div>
+                                <div class="act-pane" data-act-pane="overview" id="act-overview"></div>
+                                <div class="act-pane" data-act-pane="features" id="act-features" hidden></div>
+                                <div class="act-pane" data-act-pane="games" id="act-games" hidden></div>
+                                <div class="act-pane" data-act-pane="admins" hidden>
+                                    <p class="admin-hint">Sign-ins and changes made by admin accounts, kept for 90 days.</p>
+                                    <div class="admin-activity-summary" id="activity-summary"></div>
+                                    <div id="activity-failed"></div>
+                                    <h3 class="admin-subheading admin-subheading-spaced">Sessions</h3>
+                                    <p class="admin-hint">One row per sign-in. "Active for" is the gap between the first and last thing that session did, so it measures work rather than an open tab.</p>
+                                    <div class="chrome-list" id="activity-sessions"></div>
+                                    <h3 class="admin-subheading admin-subheading-spaced">Everything, newest first</h3>
+                                    <div class="chrome-list" id="activity-events"></div>
+                                </div>
+
+                                <p class="admin-hint act-privacy">Visitor figures are counted, never listed: the records carry no address and no account, a "visit" is one browser tab (somebody back tomorrow is a new visit), and search terms are never stored. Anyone sending Do Not Track or Global Privacy Control is not counted at all. Kept for 60 days. Times are UTC.</p>
                             </section>
 
                             <!-- ---------- Fallin' Furni ---------- -->

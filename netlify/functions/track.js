@@ -106,7 +106,18 @@ const EVENT_NAMES = new Set([
     /* The daily games (30 Sept 2026): opened, finished, result copied,
        each labelled with the game ("odd", "guess") and nothing else —
        sent by Daily.track in js/daily.js, not by a data-track. */
-    "daily-open", "daily-finish", "daily-share"
+    "daily-open", "daily-finish", "daily-share",
+    /* The site menu's rows, labelled with the row's name (7 Oct 2026), and
+       the windows it and the page open: Guides (the guide's id), the
+       Leaderboards (which board), the Console (which page), Profiles
+       (their own or another's, never whose), Alt Codes. */
+    "menu", "guide-open", "boards-open", "console-open", "profile-open", "glyphs-open",
+    /* Pura Panic (js/pura-panic.js, WHAT IS COUNTED): opened, a game
+       started (as whom: signed-in / habbo / guest-rat), continued,
+       finished (the level), Submit Score, the leaderboard, the name
+       chosen, the lights. */
+    "pura-open", "pura-play", "pura-continue", "pura-finish", "pura-submit",
+    "pura-board", "pura-name", "pura-lights"
 ]);
 
 function limiterKey(event) {

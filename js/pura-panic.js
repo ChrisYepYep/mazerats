@@ -342,9 +342,19 @@
     let loaded = null;
     let opener = null;
 
+    /* WHAT IS COUNTED (7 Oct 2026, the owner's: "opened but didn't play"
+       and more, in the Warren's Activity). Through js/track.js, with its
+       rules: no account, no address, a tab-long session id, nothing at all
+       under Do Not Track. Opened, a game started (and as whom: signed in, a
+       Habbo, a Guest Rat), continued, finished (at which level), Submit
+       Score from the leave prompt, the leaderboard, the name chosen, the
+       lights. */
+    const count = (name, label) => { if (window.Track && typeof Track.event === "function") Track.event(name, label == null ? null : String(label)); };
+
     function open() {
         if (!E) return;
         const first = !built;
+        if (!isOpen()) count("pura-open");
         build();
         if (!isOpen()) opener = document.activeElement;
         root.classList.add("open");
@@ -412,7 +422,7 @@
         bulb.setAttribute("aria-pressed", String(dark));
         bulb.setAttribute("aria-label", dark ? "Lights on" : "Lights off");
         paintChrome();
-        if (!quiet) { try { localStorage.setItem(DARK_KEY, dark ? "1" : "0"); } catch (e) { /* private mode */ } }
+        if (!quiet) { count("pura-lights", dark ? "off" : "on"); try { localStorage.setItem(DARK_KEY, dark ? "1" : "0"); } catch (e) { /* private mode */ } }
     }
 
     /* MAINTENANCE (6 Oct 2026, the owner's): until the Warren puts the game
@@ -566,6 +576,7 @@
         anim = null; result = null;
         savedScore = 0; leaving = false; fromLeave = false;
         banner = null; shownLevel = g.level; hideBanner();
+        if (!startAt) count("pura-play", me() ? "signed-in" : guest ? (guest.kind === "habbo" ? "habbo" : "guest-rat") : "unnamed");
         mode = "play";
         hidePanel();
         hud();
@@ -1384,7 +1395,7 @@
         else if (go === "music") toggleMusic();
         // Submit Score: the game ends here and goes to the board; they stay.
         else if (go === "continue") continueGame();
-        else if (go === "leavesubmit") { fromLeave = true; mode = "play"; endEarly(); }
+        else if (go === "leavesubmit") { count("pura-submit"); fromLeave = true; mode = "play"; endEarly(); }
         // The Console's Contact Us form, which opens over this window.
         else if (go === "contact" && window.MazeConsole) MazeConsole.open("message");
     }
@@ -1506,6 +1517,7 @@
     }
 
     function playAsGuest() {
+        count("pura-name", "guest-rat");
         guest = { kind: "rat" };
         keep(WHO_KEY, guest);
         play();
@@ -1560,6 +1572,7 @@
         if (panel.querySelector('[data-go="whocheck"]') !== btn) return;
         const d = r ? r.data : {};
         if (d.verified) {
+            count("pura-name", "habbo");
             guest = { kind: "habbo", name: d.name, hotel: d.hotel, token: d.token };
             keep(WHO_KEY, guest);
             claim = null; keep(CLAIM_KEY, null);
@@ -1750,6 +1763,7 @@
         savedScore = g.score; leaving = false; fromLeave = false;
         banner = null; shownLevel = g.level; hideBanner();
         if (music()) music().setLevel(g.level);
+        count("pura-continue");
         mode = "play";
         hidePanel();
         hud();
@@ -1763,6 +1777,7 @@
     }
 
     async function gameOver() {
+        if (!testLevel() && g) count("pura-finish", g.level);
         mode = "over";
         forgetGame();
         releaseAll();
@@ -1823,6 +1838,7 @@
     }
 
     async function showBoard() {
+        count("pura-board");
         boardFrom = mode === "over" ? "over" : "title";
         mode = "board";
         // The muffled track under the board too, back from silence after a game.

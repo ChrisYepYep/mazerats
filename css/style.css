@@ -11046,6 +11046,122 @@ body[data-page="admin"] #activity-sessions {
     min-width: 0;
 }
 
+/* ---------- ACTIVITY (rebuilt 7 Oct 2026; js/admin.js, ACTIVITY) ----------
+   Four tabs over one read; tiles for the headline numbers, cards for the
+   charts. One colour for magnitude, the Warren's amber; every figure in the
+   parchment inks; nothing told by colour alone. */
+.act-tabs { display: inline-flex; margin: 0 0 16px; }
+.act-pane[hidden] { display: none; }
+
+.act-tiles {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 10px;
+    margin-bottom: 18px;
+}
+.act-tile {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    padding: 10px 12px;
+    border: 1px solid var(--chrome-border);
+    border-radius: 6px;
+    background: rgba(0, 0, 0, 0.22);
+    min-width: 0;
+}
+.act-tile-label { font-size: 0.68rem; color: var(--parchment-dim); }
+.act-tile-value {
+    font-family: 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace;
+    font-size: 1.35rem;
+    line-height: 1.1;
+    color: var(--amber-bright);
+    font-variant-numeric: tabular-nums;
+}
+.act-tile-sub { font-size: 0.66rem; color: var(--parchment-dim); line-height: 1.35; }
+.act-tile.is-warn { border-color: var(--danger); }
+.act-delta { font-size: 0.66rem; color: var(--parchment-dim); }
+.act-delta.is-up, .act-delta.is-down { color: var(--parchment); }
+
+/* Wrapping rows that always fill: a card on its own at the end of a row
+   stretches across it rather than leaving a hole (a grid's empty tracks did). */
+.act-grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 14px;
+    margin-bottom: 20px;
+}
+.act-card {
+    padding: 12px 14px;
+    border: 1px solid var(--chrome-border);
+    border-radius: 6px;
+    background: rgba(0, 0, 0, 0.18);
+    flex: 1 1 260px;
+    min-width: 0;
+}
+.act-card.is-wide { flex-basis: 100%; }
+.act-note { margin: 8px 0 0; }
+.act-share { color: var(--parchment-dim); font-size: 0.64rem; margin-left: 2px; }
+
+/* Columns over days: thin, a 2px gap between, the figure on hover. */
+.act-cols {
+    display: flex;
+    align-items: flex-end;
+    gap: 2px;
+    height: 110px;
+    padding: 4px 2px 0;
+    border-bottom: 1px solid var(--chrome-border);
+}
+.act-col {
+    flex: 1 1 0;
+    min-width: 2px;
+    background: var(--amber-bright);
+    border-radius: 2px 2px 0 0;
+}
+.act-col:hover { filter: brightness(1.25); }
+.act-axis {
+    display: flex;
+    justify-content: space-between;
+    gap: 8px;
+    margin-top: 4px;
+    font-size: 0.64rem;
+    color: var(--parchment-dim);
+    font-variant-numeric: tabular-nums;
+}
+
+/* Weekday × hour: one hue, its strength the count. */
+.act-heat { display: flex; flex-direction: column; gap: 2px; overflow-x: auto; }
+.act-heat-row { display: grid; grid-template-columns: 30px repeat(24, minmax(9px, 1fr)); gap: 2px; align-items: center; }
+.act-heat-day { font-size: 0.64rem; color: var(--parchment-dim); }
+.act-heat-cell { display: block; height: 14px; background: rgba(0, 0, 0, 0.3); border-radius: 2px; overflow: hidden; }
+.act-heat-cell b { display: block; height: 100%; background: var(--amber-bright); }
+.act-heat-cell:hover { outline: 1px solid var(--parchment); }
+.act-heat-hours span { font-size: 0.6rem; color: var(--parchment-dim); }
+
+/* A funnel: each step's bar against the first, its count, and the share
+   that went on from the step before. */
+.act-funnel { display: flex; flex-direction: column; gap: 6px; }
+.act-step {
+    display: grid;
+    grid-template-columns: minmax(120px, 30%) 1fr 56px 96px;
+    align-items: center;
+    gap: 10px;
+    font-size: 0.74rem;
+    color: var(--parchment-dim);
+}
+.act-step-bar { height: 12px; background: rgba(0, 0, 0, 0.3); border: 1px solid var(--chrome-border); }
+.act-step-bar i { display: block; height: 100%; background: var(--amber-bright); }
+.act-step-n { text-align: right; color: var(--parchment); font-variant-numeric: tabular-nums; }
+.act-step-pct { font-size: 0.66rem; }
+@media (max-width: 600px) {
+    .act-step { grid-template-columns: 1fr 48px; }
+    .act-step-bar { grid-column: 1 / -1; grid-row: 2; }
+    .act-step-pct { grid-column: 1 / -1; }
+}
+
+.act-table th[scope="row"] { text-align: left; font-weight: 400; }
+.act-more { margin: -6px 0 18px; }
+.act-privacy { margin-top: 18px; padding-top: 12px; border-top: 1px solid rgba(0, 0, 0, 0.35); }
+
 /* ---------- what visitors use ---------- */
 
 .admin-visitor-grid {

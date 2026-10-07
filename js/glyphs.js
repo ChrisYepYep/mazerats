@@ -322,6 +322,7 @@
     function open(opts) {
         const o = opts || {};
         if (isOpen()) { win.focus(); return; }
+        if (window.Track && typeof Track.event === "function") Track.event("glyphs-open");
         triggerEl = document.activeElement;
         if (!o.fromAddress) {
             if (pendingBack) {

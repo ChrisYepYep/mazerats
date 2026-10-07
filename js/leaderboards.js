@@ -309,6 +309,7 @@
 
     function open(which) {
         if (which && GAMES.some(g => g.key === which)) game = which;
+        if (window.Track && typeof Track.event === "function") Track.event("boards-open", game);
         if (!overlay.classList.contains("open")) triggerEl = document.activeElement;
         // A board a few minutes old is still worth a fresh look on reopening.
         Object.keys(cache).forEach(k => { if (cache[k] && typeof cache[k].then !== "function") delete cache[k]; });

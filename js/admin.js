@@ -1005,7 +1005,6 @@ document.addEventListener("DOMContentLoaded", () => {
        applyRoleVisibility rather than showing a panel that would only 403. */
     const activityNavBtn = document.getElementById("activity-nav-btn");
     const activitySummaryEl = document.getElementById("activity-summary");
-    const activityVisitorsEl = document.getElementById("activity-visitors");
     const activitySessionsEl = document.getElementById("activity-sessions");
     const activityEventsEl = document.getElementById("activity-events");
     const activityRefreshBtn = document.getElementById("activity-refresh-btn");
@@ -1075,20 +1074,332 @@ document.addEventListener("DOMContentLoaded", () => {
 
     let activityRangeLabel = "";
 
-    function renderVisitors(v) {
-        if (!v) { activityVisitorsEl.innerHTML = ""; return; }
-        activityVisitorsEl.innerHTML = "" +
-            '<div class="admin-activity-summary">' +
-                '<span class="admin-activity-stat"><strong>' + v.sessions + '</strong> ' + (v.sessions === 1 ? "visit" : "visits") + '</span>' +
-                '<span class="admin-activity-stat"><strong>' + v.events + '</strong> ' + (v.events === 1 ? "interaction" : "interactions") + '</span>' +
-                '<span class="admin-hint">' + escapeHtml(activityRangeLabel) + '</span>' +
-            '</div>' +
-            '<div class="admin-visitor-grid">' +
-                '<div><h4 class="admin-visitor-head">By day</h4>' + activityBars(v.byDay, "Nothing yet.") + '</div>' +
-                '<div><h4 class="admin-visitor-head">What happened</h4>' + activityBars(v.byName, "Nothing yet.") + '</div>' +
-                '<div><h4 class="admin-visitor-head">Most opened mazes</h4>' + activityBars(v.topMazes, "No mazes opened yet.") + '</div>' +
-                '<div><h4 class="admin-visitor-head">Most opened furni</h4>' + activityBars(v.topFurni, "No furni opened yet.") + '</div>' +
+    /* ---------- ACTIVITY: what visitors do (rebuilt 7 Oct 2026) ----------
+
+       The owner's brief: "a full overhaul… intuitive UI, good readability of
+       the stats, and plenty of stats" — starting from "do we track how many
+       people opened Pura Panic? 'Opened but didn't play' stats". Four tabs
+       over one read (netlify/functions/admin-activity.js, whose visitor half
+       is worked out in _visitor-stats.js):
+
+         Overview   headline tiles (each against the window just before),
+                    visits and interactions per day, when people come (a
+                    weekday × hour map), how deep and how long visits go,
+                    which pages
+         Features   how many visits used each feature, the menu, and the
+                    most opened mazes, events, furni, guides, boards…
+         Games      Pura Panic's funnel (opened → played → finished, and
+                    the visits that opened it and went no further), who
+                    played and how far; the daily games game by game; what
+                    a visit does after opening a maze
+         Admins     the admin accounts' sign-ins and changes, as before,
+                    with the failed sign-ins summarised
+
+       One colour for magnitude (the Warren's amber, light to dark), text in
+       the parchment inks, every bar and cell with its exact figure on hover
+       and the headline numbers written out, never colour alone. */
+    const actPaneEls = {
+        overview: document.getElementById("act-overview"),
+        features: document.getElementById("act-features"),
+        games: document.getElementById("act-games")
+    };
+    const actFailedEl = document.getElementById("activity-failed");
+    const ACT_TAB_KEY = "mazerats_admin_activity_tab";
+
+    // The tabs: remembered on this browser, as the Warren's panels are.
+    function showActTab(name) {
+        document.querySelectorAll("[data-act-tab]").forEach(b => {
+            const on = b.dataset.actTab === name;
+            b.classList.toggle("active", on);
+            b.setAttribute("aria-selected", String(on));
+        });
+        document.querySelectorAll("[data-act-pane]").forEach(p => { p.hidden = p.dataset.actPane !== name; });
+        try { localStorage.setItem(ACT_TAB_KEY, name); } catch (e) { /* this visit only */ }
+    }
+    document.querySelectorAll("[data-act-tab]").forEach(b => b.addEventListener("click", () => showActTab(b.dataset.actTab)));
+    (function () {
+        let saved = null;
+        try { saved = localStorage.getItem(ACT_TAB_KEY); } catch (e) { /* none */ }
+        if (saved && document.querySelector(`[data-act-tab="${saved}"]`)) showActTab(saved);
+    })();
+
+    // Friendly names for what js/track.js records (netlify/functions/track.js, EVENT_NAMES).
+    const FEATURE_NAMES = {
+        "page": "Viewed a page",
+        "search": "Searched the archive",
+        "tab": "Switched archive tab",
+        "whats-new": "Opened What's New",
+        "timeline": "Opened the Timeline",
+        "maze-open": "Opened a maze",
+        "event-open": "Opened an event",
+        "photo-open": "Enlarged a photo",
+        "furni-open": "Opened a furni",
+        "furni-browse": "Browsed the furni",
+        "furni-also-list": "Followed 'also in'",
+        "walked-toggle": "Marked a maze completed",
+        "saved-toggle": "Saved a maze for later",
+        "fav-toggle": "Favourited a maze",
+        "share-copy": "Copied a share link",
+        "daily-open": "Opened a daily game",
+        "daily-finish": "Finished a daily game",
+        "daily-share": "Shared a daily result",
+        "menu": "Used the menu",
+        "guide-open": "Opened a guide",
+        "boards-open": "Opened the Leaderboards",
+        "console-open": "Opened the Console",
+        "profile-open": "Opened a profile",
+        "glyphs-open": "Opened Alt Codes",
+        "pura-open": "Opened Pura Panic",
+        "pura-play": "Started a Pura Panic game",
+        "pura-continue": "Continued a Pura Panic game",
+        "pura-finish": "Finished a Pura Panic game",
+        "pura-submit": "Submit Score (leave prompt)",
+        "pura-board": "Pura Panic leaderboard",
+        "pura-name": "Chose a Pura Panic name",
+        "pura-lights": "Pura Panic lights"
+    };
+    const PAGE_NAMES = {
+        home: "The archive", welcome: "Landing page", wizard: "Atlas", legal: "Privacy & terms",
+        notfound: "Page not found", fallinfurni: "Fallin' Furni", admin: "The Warren"
+    };
+    const LABEL_NAMES = {
+        "pura-play": { "signed-in": "Signed in", "habbo": "As their Habbo", "guest-rat": "As a Guest Rat", "unnamed": "Not named" },
+        "pura-name": { "habbo": "Proved their Habbo", "guest-rat": "Play as a Guest" },
+        "pura-lights": { "off": "Turned the lights off", "on": "Turned them back on" },
+        "profile-open": { "self": "Their own", "other": "Somebody else's" },
+        "daily-open": { odd: "Odd One Out", guess: "Guess the Maze" },
+        "boards-open": { all: "All dailies", guess: "Guess the Maze", odd: "Odd One Out", ff: "Fallin' Furni", pura: "Pura Panic" }
+    };
+    const ACT_DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+    const actNum = n => Number(n || 0).toLocaleString("en-GB");
+    const actPct = (n, of) => (of ? Math.round((n / of) * 100) : 0);
+    const actPlural = (n, one, many) => actNum(n) + " " + (n === 1 ? one : many);
+    const actDay = d => new Date(d + "T00:00:00Z").toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short", timeZone: "UTC" });
+
+    function actWait(secs) {
+        if (!secs) return "—";
+        if (secs < 60) return Math.round(secs) + "s";
+        const m = Math.round(secs / 60);
+        return m < 60 ? m + " min" : Math.floor(m / 60) + "h " + (m % 60) + "m";
+    }
+
+    // Up or down against the window just before, in words as well as an arrow.
+    function actDelta(now, before, prevWords) {
+        if (before === null || before === undefined) return "";
+        if (!before && !now) return '<span class="act-delta">no change</span>';
+        if (!before) return '<span class="act-delta is-up" title="Nothing in ' + escapeHtml(prevWords) + '">▲ new</span>';
+        const p = Math.round(((now - before) / before) * 100);
+        const cls = p > 0 ? "is-up" : p < 0 ? "is-down" : "";
+        return '<span class="act-delta ' + cls + '" title="' + actNum(before) + ' in ' + escapeHtml(prevWords) + '">' +
+            (p > 0 ? "▲ " : p < 0 ? "▼ " : "") + Math.abs(p) + "% vs before</span>";
+    }
+
+    function actTile(label, value, sub, extra, warn) {
+        return '<div class="act-tile' + (warn ? " is-warn" : "") + '">' +
+            '<span class="act-tile-label">' + escapeHtml(label) + '</span>' +
+            '<strong class="act-tile-value">' + value + '</strong>' +
+            (sub ? '<span class="act-tile-sub">' + sub + '</span>' : "") +
+            (extra || "") +
+        '</div>';
+    }
+
+    function actCard(title, body, wide) {
+        return '<div class="act-card' + (wide ? " is-wide" : "") + '"><h4 class="admin-visitor-head">' + escapeHtml(title) + '</h4>' + body + '</div>';
+    }
+
+    // Columns over days, one series, the figure on hover and the axis below.
+    function actColumns(days, key, unit) {
+        if (!days.length || !days.some(d => d[key])) return '<p class="admin-empty">Nothing yet.</p>';
+        const max = Math.max(...days.map(d => d[key])) || 1;
+        const cols = days.map(d => '<i class="act-col" style="height:' + Math.max(d[key] ? 3 : 0, Math.round((d[key] / max) * 100)) + '%" title="' +
+            escapeHtml(actDay(d.day) + ": " + actPlural(d[key], unit[0], unit[1])) + '"></i>').join("");
+        const total = days.reduce((n, d) => n + d[key], 0);
+        return '<div class="act-cols" role="img" aria-label="' + escapeHtml(actPlural(total, unit[0], unit[1]) + " over " + days.length + " days, at most " + actNum(max) + " in a day") + '">' + cols + '</div>' +
+            '<div class="act-axis"><span>' + escapeHtml(actDay(days[0].day)) + '</span><span>busiest ' + actNum(max) + '</span><span>' + escapeHtml(actDay(days[days.length - 1].day)) + '</span></div>';
+    }
+
+    // Weekday × hour, darker for busier: one hue, the count on hover.
+    function actHeatmap(cells) {
+        if (!cells.length) return { html: '<p class="admin-empty">Nothing yet.</p>', note: "" };
+        const at = new Map(cells.map(c => [c.w + ":" + c.h, c.n]));
+        const max = Math.max(...cells.map(c => c.n)) || 1;
+        let rows = "";
+        for (let w = 1; w <= 7; w++) {
+            let row = '<span class="act-heat-day">' + ACT_DAYS[w - 1] + '</span>';
+            for (let h = 0; h < 24; h++) {
+                const n = at.get(w + ":" + h) || 0;
+                const a = n ? 0.15 + 0.85 * (n / max) : 0;
+                row += '<i class="act-heat-cell" title="' + ACT_DAYS[w - 1] + " " + String(h).padStart(2, "0") + ":00–" + String((h + 1) % 24).padStart(2, "0") + ':00 UTC: ' + actPlural(n, "interaction", "interactions") +
+                    '"><b style="opacity:' + a.toFixed(2) + '"></b></i>';
+            }
+            rows += '<div class="act-heat-row">' + row + '</div>';
+        }
+        const hours = '<div class="act-heat-row act-heat-hours"><span class="act-heat-day"></span>' +
+            Array.from({ length: 24 }, (_, h) => '<span>' + (h % 6 === 0 ? String(h).padStart(2, "0") : "") + '</span>').join("") + '</div>';
+        // The busiest day and hour, said in words.
+        const byDay = [0, 0, 0, 0, 0, 0, 0], byHour = new Array(24).fill(0);
+        cells.forEach(c => { byDay[c.w - 1] += c.n; byHour[c.h] += c.n; });
+        const bd = byDay.indexOf(Math.max(...byDay)), bh = byHour.indexOf(Math.max(...byHour));
+        const note = "Busiest on " + ["Mondays", "Tuesdays", "Wednesdays", "Thursdays", "Fridays", "Saturdays", "Sundays"][bd] +
+            ", and at " + String(bh).padStart(2, "0") + ":00–" + String((bh + 1) % 24).padStart(2, "0") + ":00 UTC.";
+        return { html: '<div class="act-heat">' + rows + hours + '</div>', note };
+    }
+
+    // A list of bars with the figure written out; `of` adds a share of it.
+    function actBars(rows, empty, of) {
+        if (!rows || !rows.length) return '<p class="admin-empty">' + escapeHtml(empty) + '</p>';
+        const max = Math.max(...rows.map(r => r.n)) || 1;
+        return rows.map(r => '' +
+            '<div class="admin-visitor-row" title="' + escapeHtml(r.label + ": " + (r.tip || actNum(r.n))) + '">' +
+                '<span class="admin-visitor-label">' + escapeHtml(r.label) + '</span>' +
+                '<span class="admin-visitor-bar"><i style="width:' + Math.round((r.n / max) * 100) + '%"></i></span>' +
+                '<span class="admin-visitor-count">' + actNum(r.n) + (of ? ' <span class="act-share">' + actPct(r.n, of) + '%</span>' : "") + '</span>' +
+            '</div>').join("");
+    }
+
+    // A funnel: each step against the first, and what share went on from the step before.
+    function actFunnel(steps) {
+        const first = steps[0].n || 0;
+        if (!first) return '<p class="admin-empty">Nobody has started yet in this range.</p>';
+        return '<div class="act-funnel">' + steps.map((s, i) => {
+            const on = i ? actPct(s.n, steps[i - 1].n) : 100;
+            return '<div class="act-step" title="' + escapeHtml(s.label + ": " + actPlural(s.n, "visit", "visits") + (i ? ", " + on + "% of the step before" : "")) + '">' +
+                '<span class="act-step-label">' + escapeHtml(s.label) + '</span>' +
+                '<span class="act-step-bar"><i style="width:' + Math.max(s.n ? 2 : 0, actPct(s.n, first)) + '%"></i></span>' +
+                '<span class="act-step-n">' + actNum(s.n) + '</span>' +
+                '<span class="act-step-pct">' + (i ? on + "% went on" : "") + '</span>' +
             '</div>';
+        }).join("") + '</div>';
+    }
+
+    // Ordered by what is shown (visits), most first.
+    const actLabels = (v, name, map, limit) => ((v.labels && v.labels[name]) || []).slice().sort((a, b) => b.visits - a.visits || b.events - a.events).slice(0, limit || 10)
+        .map(r => ({ label: (map && map[r.label]) || r.label, n: r.visits, tip: actPlural(r.visits, "visit", "visits") + ", " + actPlural(r.events, "time", "times") }));
+
+    function renderVisitors(v) {
+        Object.values(actPaneEls).forEach(el => { if (el) el.innerHTML = ""; });
+        if (!v) return;
+        if (v.error) { actPaneEls.overview.innerHTML = '<p class="admin-empty">' + escapeHtml(v.error) + '</p>'; return; }
+        const t = v.totals, p = v.previous, f = v.funnels;
+        const prevWords = "the same length of time before";
+
+        /* ---- Overview */
+        const heat = actHeatmap(v.heat);
+        actPaneEls.overview.innerHTML =
+            '<div class="act-tiles">' +
+                actTile("Visits", actNum(t.visits), escapeHtml(activityRangeLabel), actDelta(t.visits, p && p.visits, prevWords)) +
+                actTile("Interactions", actNum(t.events), "clicks and views", actDelta(t.events, p && p.events, prevWords)) +
+                actTile("Per visit", t.perVisit, "things done, on average") +
+                actTile("Typical visit", actWait(t.engagedMedianSecs), "of those doing more than one thing") +
+                actTile("One-click visits", actPct(t.oneThing, t.visits) + "%", actNum(t.oneThing) + " looked at one page and left") +
+                actTile("Right now", actNum(v.liveNow), "visits active in the last 15 min") +
+            '</div>' +
+            '<div class="act-grid">' +
+                actCard("Visits per day", actColumns(v.byDay, "visits", ["visit", "visits"]), true) +
+                actCard("Interactions per day", actColumns(v.byDay, "events", ["interaction", "interactions"]), true) +
+                actCard("When people visit (UTC)", heat.html + (heat.note ? '<p class="admin-hint act-note">' + escapeHtml(heat.note) + '</p>' : ""), true) +
+                actCard("How much a visit does", actBars(v.depth.map(r => ({ label: r.label, n: r.n })), "Nothing yet.", t.visits)) +
+                actCard("How long a visit lasts", actBars(v.length.map(r => ({ label: r.label, n: r.n })), "Nothing yet.", t.visits) +
+                    '<p class="admin-hint act-note">First click to last, so a single page view is under 10 seconds.</p>') +
+                actCard("Pages", actBars(actLabels(v, "page", PAGE_NAMES), "No pages yet.", t.visits)) +
+            '</div>';
+
+        /* ---- Features */
+        const reach = v.features.filter(r => r.name !== "page")
+            .map(r => ({ label: FEATURE_NAMES[r.name] || r.name, n: r.visits, tip: actPlural(r.visits, "visit", "visits") + ", used " + actPlural(r.events, "time", "times") }))
+            .sort((a, b) => b.n - a.n);
+        actPaneEls.features.innerHTML =
+            '<div class="act-grid">' +
+                actCard("What visits used", actBars(reach, "Nothing used yet.", t.visits) +
+                    '<p class="admin-hint act-note">Visits that used each feature at least once, and that as a share of every visit. Hover for how many times.</p>', true) +
+                actCard("The menu", actBars(actLabels(v, "menu", null, 15), "Nobody has used the menu yet in this range.", t.visits)) +
+                actCard("Most opened mazes", actBars(actLabels(v, "maze-open"), "No mazes opened yet.")) +
+                actCard("Most opened events", actBars(actLabels(v, "event-open"), "No events opened yet.")) +
+                actCard("Most opened furni", actBars(actLabels(v, "furni-open"), "No furni opened yet.")) +
+                actCard("Guides", actBars(actLabels(v, "guide-open"), "No guides opened yet.")) +
+                actCard("Leaderboards opened at", actBars(actLabels(v, "boards-open", LABEL_NAMES["boards-open"]), "Not opened yet.")) +
+                actCard("Console pages", actBars(actLabels(v, "console-open"), "The Console hasn't been opened yet.")) +
+                actCard("Profiles", actBars(actLabels(v, "profile-open", LABEL_NAMES["profile-open"]), "No profiles opened yet.")) +
+                actCard("Archive tabs", actBars(actLabels(v, "tab"), "No tabs switched yet.")) +
+            '</div>';
+
+        /* ---- Games */
+        const pura = f.pura;
+        const levels = ((v.labels && v.labels["pura-finish"]) || []).reduce((acc, r) => {
+            const l = Number(r.label) || 1;
+            const band = l <= 1 ? "Level 1" : l <= 3 ? "Levels 2–3" : l <= 5 ? "Levels 4–5" : l <= 10 ? "Levels 6–10" : l <= 20 ? "Levels 11–20" : "Level 21+";
+            acc[band] = (acc[band] || 0) + r.events;
+            return acc;
+        }, {});
+        const levelRows = ["Level 1", "Levels 2–3", "Levels 4–5", "Levels 6–10", "Levels 11–20", "Level 21+"].filter(k => levels[k]).map(k => ({ label: k, n: levels[k], tip: actPlural(levels[k], "game", "games") }));
+        const dailyGames = ["guess", "odd"].map(gk => {
+            const find = (name) => ((v.labels && v.labels[name]) || []).find(r => r.label === gk) || { visits: 0 };
+            const o = find("daily-open").visits, fi = find("daily-finish").visits, sh = find("daily-share").visits;
+            return '<tr><th scope="row">' + escapeHtml(LABEL_NAMES["daily-open"][gk]) + '</th><td class="ff-num">' + actNum(o) + '</td><td class="ff-num">' + actNum(fi) +
+                '</td><td class="ff-num">' + (o ? actPct(fi, o) + "%" : "—") + '</td><td class="ff-num">' + actNum(sh) + '</td></tr>';
+        }).join("");
+        actPaneEls.games.innerHTML =
+            '<h3 class="admin-subheading">Pura Panic</h3>' +
+            '<div class="act-tiles">' +
+                actTile("Opened it", actNum(pura.opened), "visits", actDelta(pura.opened, p && p.puraOpen, prevWords)) +
+                actTile("Played", actNum(pura.played), actPct(pura.played, pura.opened) + "% of those who opened it", actDelta(pura.played, p && p.puraPlay, prevWords)) +
+                actTile("Opened but didn't play", actNum(pura.openedOnly), actPct(pura.openedOnly, pura.opened) + "% of those who opened it", "", pura.openedOnly > pura.played) +
+                actTile("Played but didn't finish", actNum(pura.playedNotFinished), "left mid-game, in the visit", "") +
+                actTile("Continued a game", actNum(pura.continued), "picked up after leaving") +
+                actTile("Leaderboard", actNum(pura.board), "visits that looked at it") +
+            '</div>' +
+            '<div class="act-grid">' +
+                actCard("From opening to finishing", actFunnel([
+                    { label: "Opened Pura Panic", n: pura.opened },
+                    { label: "Started a game", n: pura.openThenPlay },
+                    { label: "Finished a game", n: Math.min(pura.finished, pura.openThenPlay) }
+                ]) + '<p class="admin-hint act-note">Visits, each counted once however many games they played. Submit Score was used in ' + actPlural(pura.submitted, "visit", "visits") + '.</p>', true) +
+                actCard("Who played", actBars(actLabels(v, "pura-play", LABEL_NAMES["pura-play"]), "No games yet.")) +
+                actCard("Where games ended", actBars(levelRows, "No games finished yet.") + '<p class="admin-hint act-note">Every finished game, by the level it reached.</p>') +
+                actCard("Names chosen", actBars(actLabels(v, "pura-name", LABEL_NAMES["pura-name"]), "No names chosen yet.")) +
+                actCard("Lights", actBars(actLabels(v, "pura-lights", LABEL_NAMES["pura-lights"]), "Nobody has touched the lights yet.")) +
+            '</div>' +
+            '<p class="act-more"><button type="button" class="admin-action-pill" data-act-goto="puradata">Scores, players and every game: the Pura Panic page →</button></p>' +
+
+            '<h3 class="admin-subheading admin-subheading-spaced">Daily games</h3>' +
+            '<div class="act-grid">' +
+                actCard("Opened, finished, shared", actFunnel([
+                    { label: "Opened a daily game", n: f.daily.opened },
+                    { label: "Finished it", n: f.daily.openThenFinish },
+                    { label: "Shared the result", n: f.daily.finishThenShare }
+                ]), true) +
+                actCard("Game by game", '<div class="ff-table-wrap"><table class="ff-table act-table"><thead><tr><th scope="col">Game</th><th scope="col" class="ff-num">Opened</th><th scope="col" class="ff-num">Finished</th><th scope="col" class="ff-num">Finish rate</th><th scope="col" class="ff-num">Shared</th></tr></thead><tbody>' +
+                    dailyGames + '</tbody></table></div><p class="admin-hint act-note">Visits. More on each player in the Daily page.</p>', true) +
+            '</div>' +
+
+            '<h3 class="admin-subheading admin-subheading-spaced">Mazes</h3>' +
+            '<div class="act-grid">' +
+                actCard("After opening a maze, in the same visit", actFunnel([
+                    { label: "Opened a maze", n: f.mazes.opened },
+                    { label: "Marked one completed", n: f.mazes.walked },
+                    { label: "Saved one for later", n: f.mazes.saved },
+                    { label: "Favourited one", n: f.mazes.fav }
+                ]) + '<p class="admin-hint act-note">Each step against the visits that opened a maze; "went on" is against the step above. A share link was copied in ' + actPlural(f.mazes.shared, "visit", "visits") + '.</p>', true) +
+            '</div>';
+    }
+
+    // The Games tab's way to the Pura Panic page.
+    document.addEventListener("click", e => {
+        const b = e.target.closest("[data-act-goto]");
+        if (!b) return;
+        const nav = document.querySelector('.chrome-nav-btn[data-panel="' + b.dataset.actGoto + '"]');
+        if (nav) nav.click();
+    });
+
+    // The failed sign-ins, by address and by name (admin-activity.js has worked these out all along).
+    function renderFailed(fl) {
+        if (!actFailedEl) return;
+        if (!fl || !fl.total) { actFailedEl.innerHTML = ""; return; }
+        const rows = (list, key) => list.map(r => ({ label: r[key] || "—", n: r.n, tip: actPlural(r.n, "try", "tries") + ", last " + formatWhen(r.last) }));
+        actFailedEl.innerHTML = '<div class="act-grid">' +
+            actCard("Failed sign-ins by address", actBars(rows(fl.byIp, "ip"), "None.")) +
+            actCard("Failed sign-ins by name tried", actBars(rows(fl.byName, "username"), "None.")) +
+        '</div>';
     }
 
     const RANGE_WORDS = {
@@ -1103,6 +1414,7 @@ document.addEventListener("DOMContentLoaded", () => {
     function renderActivity(data) {
         activityRangeLabel = RANGE_WORDS[data.range] || "";
         renderVisitors(data.visitors);
+        renderFailed(data.failedLogins);
         const c = data.counts || {};
         activitySummaryEl.innerHTML = "" +
             '<span class="admin-activity-stat"><strong>' + c.sessions + '</strong> ' + (c.sessions === 1 ? "session" : "sessions") + '</span>' +
@@ -1164,7 +1476,7 @@ document.addEventListener("DOMContentLoaded", () => {
        a non-owner signing in next. */
     function clearActivity() {
         activitySeq++;
-        [activitySummaryEl, activityVisitorsEl, activitySessionsEl, activityEventsEl].forEach(el => { if (el) el.innerHTML = ""; });
+        [activitySummaryEl, activitySessionsEl, activityEventsEl, actFailedEl, ...Object.values(actPaneEls)].forEach(el => { if (el) el.innerHTML = ""; });
     }
     async function loadActivity() {
         if (!canReadActivity()) return;

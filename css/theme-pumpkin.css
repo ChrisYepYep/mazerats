@@ -9,7 +9,7 @@
    completely inert until js/site.js puts that attribute on <html>. The
    classic palette is not defined here and is not affected by anything in it.
 
-   1096 rules, 1772 declarations, hues 18 (surfaces) / 38 (accents).
+   1117 rules, 1796 declarations, hues 18 (surfaces) / 38 (accents).
 */
 :root[data-theme="pumpkin"] {
     --bg-black: #0a0401;
@@ -2340,6 +2340,94 @@ html[data-theme="pumpkin"]::-webkit-scrollbar-button {
 
 [data-theme="pumpkin"] .admin-activity-row.is-warn h3 {
     color: var(--danger);
+}
+
+[data-theme="pumpkin"] .act-tile {
+    border: 1px solid var(--chrome-border);
+    background: rgba(0, 0, 0, 0.22);
+}
+
+[data-theme="pumpkin"] .act-tile-label {
+    color: var(--parchment-dim);
+}
+
+[data-theme="pumpkin"] .act-tile-value {
+    color: var(--amber-bright);
+}
+
+[data-theme="pumpkin"] .act-tile-sub {
+    color: var(--parchment-dim);
+}
+
+[data-theme="pumpkin"] .act-tile.is-warn {
+    border-color: var(--danger);
+}
+
+[data-theme="pumpkin"] .act-delta {
+    color: var(--parchment-dim);
+}
+
+[data-theme="pumpkin"] .act-delta.is-up,
+[data-theme="pumpkin"] .act-delta.is-down {
+    color: var(--parchment);
+}
+
+[data-theme="pumpkin"] .act-card {
+    border: 1px solid var(--chrome-border);
+    background: rgba(0, 0, 0, 0.18);
+}
+
+[data-theme="pumpkin"] .act-share {
+    color: var(--parchment-dim);
+}
+
+[data-theme="pumpkin"] .act-col {
+    background: var(--amber-bright);
+}
+
+[data-theme="pumpkin"] .act-col:hover {
+    filter: brightness(1.25);
+}
+
+[data-theme="pumpkin"] .act-axis {
+    color: var(--parchment-dim);
+}
+
+[data-theme="pumpkin"] .act-heat-day {
+    color: var(--parchment-dim);
+}
+
+[data-theme="pumpkin"] .act-heat-cell {
+    background: rgba(0, 0, 0, 0.3);
+}
+
+[data-theme="pumpkin"] .act-heat-cell b {
+    background: var(--amber-bright);
+}
+
+[data-theme="pumpkin"] .act-heat-cell:hover {
+    outline: 1px solid var(--parchment);
+}
+
+[data-theme="pumpkin"] .act-heat-hours span {
+    color: var(--parchment-dim);
+}
+
+[data-theme="pumpkin"] .act-step {
+    color: var(--parchment-dim);
+}
+
+[data-theme="pumpkin"] .act-step-bar {
+    background: rgba(0, 0, 0, 0.3);
+    border: 1px solid var(--chrome-border);
+}
+
+[data-theme="pumpkin"] .act-step-bar i {
+    background: var(--amber-bright);
+}
+
+[data-theme="pumpkin"] .act-step-n {
+    color: var(--parchment);
 }
 
 [data-theme="pumpkin"] .admin-visitor-head {

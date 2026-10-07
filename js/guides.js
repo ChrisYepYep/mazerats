@@ -451,6 +451,7 @@
     function open(id, opts) {
         const o = opts || {};
         if (!isOpen()) {
+            if (window.Track && typeof Track.event === "function") Track.event("guide-open", id ? String(id) : "list");
             listPlace = null;
             triggerEl = document.activeElement;
             if (!o.fromAddress) {

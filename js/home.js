@@ -10110,6 +10110,8 @@ document.addEventListener("DOMContentLoaded", () => {
     function openProgress(pid) {
         const overlay = document.getElementById("progress-overlay");
         if (!overlay) return;
+        // Their own or somebody else's, never whose (the Warren's Activity).
+        if (window.Track && typeof Track.event === "function") Track.event("profile-open", pid ? "other" : "self");
         /* The room modal goes first. Both overlays sat at z-index 100 and
            the modal comes later in the page, so opening this from the
            console's Profile while a maze was showing put Your Progress
@@ -10535,7 +10537,7 @@ document.addEventListener("DOMContentLoaded", () => {
             puraLoading = loadPuraScript("js/pura-engine.js?v=14")
                 // The soundtrack is a nicety: a failed load plays on in silence.
                 .then(() => loadPuraScript("js/pura-music.js?v=5").catch(() => {}))
-                .then(() => loadPuraScript("js/pura-panic.js?v=46"))
+                .then(() => loadPuraScript("js/pura-panic.js?v=47"))
                 // A failed load forgets itself, so the next press asks again.
                 .catch(err => { puraLoading = null; throw err; });
         }
@@ -11279,7 +11281,8 @@ document.addEventListener("DOMContentLoaded", () => {
                     // focused element as the place to hand focus back to.
                     spine.focus({ preventScroll: true });
                     setOpen(false);
-                    if (entry) entry.run();
+                    // Which feature the menu was used to reach (the Warren's Activity).
+                    if (entry) { if (window.Track && typeof Track.event === "function") Track.event("menu", entry.name); entry.run(); }
                 });
             });
         }

@@ -9,7 +9,7 @@
    completely inert until js/site.js puts that attribute on <html>. The
    classic palette is not defined here and is not affected by anything in it.
 
-   1096 rules, 1772 declarations, hues 274 (surfaces) / 274 (accents).
+   1117 rules, 1796 declarations, hues 274 (surfaces) / 274 (accents).
 */
 :root[data-theme="witch"] {
     --bg-black: #050207;
@@ -2340,6 +2340,94 @@ html[data-theme="witch"]::-webkit-scrollbar-button {
 
 [data-theme="witch"] .admin-activity-row.is-warn h3 {
     color: var(--danger);
+}
+
+[data-theme="witch"] .act-tile {
+    border: 1px solid var(--chrome-border);
+    background: rgba(0, 0, 0, 0.22);
+}
+
+[data-theme="witch"] .act-tile-label {
+    color: var(--parchment-dim);
+}
+
+[data-theme="witch"] .act-tile-value {
+    color: var(--amber-bright);
+}
+
+[data-theme="witch"] .act-tile-sub {
+    color: var(--parchment-dim);
+}
+
+[data-theme="witch"] .act-tile.is-warn {
+    border-color: var(--danger);
+}
+
+[data-theme="witch"] .act-delta {
+    color: var(--parchment-dim);
+}
+
+[data-theme="witch"] .act-delta.is-up,
+[data-theme="witch"] .act-delta.is-down {
+    color: var(--parchment);
+}
+
+[data-theme="witch"] .act-card {
+    border: 1px solid var(--chrome-border);
+    background: rgba(0, 0, 0, 0.18);
+}
+
+[data-theme="witch"] .act-share {
+    color: var(--parchment-dim);
+}
+
+[data-theme="witch"] .act-col {
+    background: var(--amber-bright);
+}
+
+[data-theme="witch"] .act-col:hover {
+    filter: brightness(1.25);
+}
+
+[data-theme="witch"] .act-axis {
+    color: var(--parchment-dim);
+}
+
+[data-theme="witch"] .act-heat-day {
+    color: var(--parchment-dim);
+}
+
+[data-theme="witch"] .act-heat-cell {
+    background: rgba(0, 0, 0, 0.3);
+}
+
+[data-theme="witch"] .act-heat-cell b {
+    background: var(--amber-bright);
+}
+
+[data-theme="witch"] .act-heat-cell:hover {
+    outline: 1px solid var(--parchment);
+}
+
+[data-theme="witch"] .act-heat-hours span {
+    color: var(--parchment-dim);
+}
+
+[data-theme="witch"] .act-step {
+    color: var(--parchment-dim);
+}
+
+[data-theme="witch"] .act-step-bar {
+    background: rgba(0, 0, 0, 0.3);
+    border: 1px solid var(--chrome-border);
+}
+
+[data-theme="witch"] .act-step-bar i {
+    background: var(--amber-bright);
+}
+
+[data-theme="witch"] .act-step-n {
+    color: var(--parchment);
 }
 
 [data-theme="witch"] .admin-visitor-head {

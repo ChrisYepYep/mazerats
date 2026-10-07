@@ -5,14 +5,13 @@
    exactly the sort of thing a standard admin should not be able to read
    about their colleagues.
 
-   Scope, and why it stops where it does: this covers ADMIN accounts only. It
-   does not, and should not, log what visitors click. The site's own privacy
-   policy states that its analytics run "without tracking individual users",
-   collect no personal data and set no cookies — bespoke click tracking would
-   contradict that in writing, and Umami already answers the aggregate
-   traffic question. Admin accounts are a different case: a handful of named,
-   authenticated people with write access to a live site, where an audit
-   trail is ordinary practice.
+   Two halves. ADMINS: sign-ins and changes by the admin accounts, a
+   handful of named, authenticated people with write access to a live site,
+   where an audit trail is ordinary practice. VISITORS: what the site's
+   visitors use, from the first-party interaction records (js/track.js) —
+   counted only, never listed, with no address or account on them and a
+   session id that dies with the tab, as the privacy policy says; the
+   figures are worked out in _visitor-stats.js.
 
    Returns two views of the same records, because they answer different
    questions: SESSIONS (who was in, when, for how long, how much they did)
@@ -23,6 +22,7 @@ const { isAuthorized, roleOf, UNAUTHORIZED, forbidden, AUTH_UNAVAILABLE } = requ
 const { COLLECTION, KEEP_DAYS } = require("./_audit");
 const { COLLECTION: SITE_EVENTS, KEEP_DAYS: SITE_KEEP_DAYS } = require("./track");
 const { SECURITY_HEADERS } = require("./_headers");
+const { visitorStats } = require("./_visitor-stats");
 
 const json = (statusCode, data) => ({
     statusCode,
@@ -180,63 +180,17 @@ exports.handler = async (event) => {
     // Counted in full now (see above), not out of whatever fitted in the list.
     const failures = failedCount;
 
-    /* What visitors use, aggregated. Deliberately only ever counted, never
-       listed: the rows carry no address and no account, and the session id
-       dies with the tab, so there is nothing to look up a person by even
-       here. "Sessions" is a count of distinct ids, which is closer to
-       "visits" than to "people" — someone returning tomorrow is a new one. */
-    const site = await db.collection(SITE_EVENTS).aggregate([
-        { $match: window },
-        {
-            $facet: {
-                /* Counted, not collected. This was one $group gathering every
-                   distinct session id into a single array with $addToSet —
-                   and a $facet's whole output is ONE document, capped at
-                   16MB, so a busy stretch of "all" would eventually have
-                   failed the aggregation outright (and, through the catch
-                   below, shown zero visitors). Grouping by session and
-                   counting the groups returns one number however many there
-                   are. The $match drops the empty ids the old
-                   filter(Boolean) dropped. */
-                totals: [{ $group: { _id: null, events: { $sum: 1 } } }],
-                sessions: [
-                    { $match: { session: { $nin: [null, "", 0, false] } } },
-                    { $group: { _id: "$session" } },
-                    { $count: "n" },
-                ],
-                /* Capped like its neighbours. track.js now accepts only the
-                   names the site sends, but rows written before that are
-                   kept for 60 days, and a facet's whole output is one
-                   16MB document — a flood of invented names could fail
-                   the aggregation, and with it every number on the panel. */
-                byName: [{ $group: { _id: "$name", n: { $sum: 1 } } }, { $sort: { n: -1 } }, { $limit: 50 }],
-                topMazes: [
-                    { $match: { name: "maze-open", label: { $ne: null } } },
-                    { $group: { _id: "$label", n: { $sum: 1 } } }, { $sort: { n: -1 } }, { $limit: 10 },
-                ],
-                topFurni: [
-                    { $match: { name: "furni-open", label: { $ne: null } } },
-                    { $group: { _id: "$label", n: { $sum: 1 } } }, { $sort: { n: -1 } }, { $limit: 10 },
-                ],
-                byDay: [
-                    { $group: { _id: { $dateToString: { format: "%Y-%m-%d", date: "$at" } }, n: { $sum: 1 } } },
-                    { $sort: { _id: -1 } }, { $limit: 14 },
-                ],
-            },
-        },
-    ]).toArray().catch(() => []);
-
-    const f = site[0] || {};
-    const totals = (f.totals || [])[0] || { events: 0 };
-    const visitors = {
-        keepDays: SITE_KEEP_DAYS,
-        events: totals.events,
-        sessions: ((f.sessions || [])[0] || { n: 0 }).n,
-        byName: (f.byName || []).map(r => ({ name: r._id, n: r.n })),
-        topMazes: (f.topMazes || []).map(r => ({ label: r._id, n: r.n })),
-        topFurni: (f.topFurni || []).map(r => ({ label: r._id, n: r.n })),
-        byDay: (f.byDay || []).map(r => ({ day: r._id, n: r.n })).reverse(),
-    };
+    /* What visitors do (rebuilt 7 Oct 2026; see _visitor-stats.js for every
+       figure and why each is what it is). Counted, never listed: no address,
+       no account, and a session id that dies with the tab. A failed read
+       is an empty section with a note, never the whole page lost. */
+    let visitors;
+    try {
+        visitors = await visitorStats(db, SITE_EVENTS, since, SITE_KEEP_DAYS);
+    } catch (e) {
+        console.error("admin-activity: could not read the visitor log", e);
+        visitors = { keepDays: SITE_KEEP_DAYS, error: "The visitor figures could not be read just now." };
+    }
 
     return json(200, {
         range,
@@ -252,8 +206,7 @@ exports.handler = async (event) => {
         },
         sessions: sessionList,
         events: rows,
-        // Per address and per name — see the reads above. Nothing on the
-        // page draws it yet; it is here for the panel to pick up.
+        // Per address and per name — see the reads above; the Admins tab draws it.
         failedLogins,
         truncated,
     });

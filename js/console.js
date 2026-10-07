@@ -188,6 +188,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     function openConsole(defaultPage) {
         if (modal.style.display !== "block") {
+            if (window.Track && typeof Track.event === "function") Track.event("console-open", defaultPage || "home");
             const active = document.activeElement;
             opener = active && active !== document.body && !modal.contains(active) ? active : null;
         }
