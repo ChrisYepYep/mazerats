@@ -62,6 +62,11 @@
             if (nav.webdriver === true) return true;
             // One that names itself (7 Oct 2026; the server's own test, parseUserAgent in _errors.js).
             if (/bot|crawl|spider|slurp|headless|lighthouse/i.test(nav.userAgent || "")) return true;
+            /* An iPhone that is not one (7 Oct 2026): every iPhone has a
+               pixel ratio of 2 or 3, and a crawler wearing an iPhone's user
+               agent on a 1600x1200 desktop screen at 1 filed a "Network
+               failure on track" from Singapore. */
+            if (/iPhone|iPod/.test(nav.userAgent || "") && (window.devicePixelRatio || 1) < 2) return true;
             var phone = /Android|iPhone|iPad|iPod/i.test(nav.userAgent || "");
             var pointless = window.matchMedia && window.matchMedia("(any-pointer: none)").matches;
             return phone && nav.maxTouchPoints === 0 && !!pointless;
@@ -680,7 +685,7 @@
                             try {
                                 var ms = sinceLoad() - started;
                                 if (fn) crumb({ type: "fetch", fn: fn, method: method, status: res.status, ms: ms });
-                                if (fn && res.status >= 500) {
+                                if (fn && res.status >= 500 && fn !== "track") {
                                     capture("fetch", {
                                         message: "HTTP " + res.status + " from " + fn,
                                         source: "/.netlify/functions/" + fn,
@@ -697,6 +702,12 @@
                                    newer request), and a request made while
                                    offline was always going to fail. */
                                 if (aborted || nav.onLine === false || leaving) return;
+                                /* The visit counter's own beacon (js/track.js) is
+                                   built to fail silently (7 Oct 2026): one click
+                                   not counted on a slow connection is nothing the
+                                   visitor saw and nothing to fix, so it stays a
+                                   crumb and is never filed. */
+                                if (fn === "track") return;
                                 /* Somebody else's host failing is theirs,
                                    the same as for a failed picture above
                                    (29 Sept 2026): counted, not sent. */
