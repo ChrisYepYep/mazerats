@@ -10537,7 +10537,7 @@ document.addEventListener("DOMContentLoaded", () => {
             puraLoading = loadPuraScript("js/pura-engine.js?v=14")
                 // The soundtrack is a nicety: a failed load plays on in silence.
                 .then(() => loadPuraScript("js/pura-music.js?v=5").catch(() => {}))
-                .then(() => loadPuraScript("js/pura-panic.js?v=47"))
+                .then(() => loadPuraScript("js/pura-panic.js?v=48"))
                 // A failed load forgets itself, so the next press asks again.
                 .catch(err => { puraLoading = null; throw err; });
         }

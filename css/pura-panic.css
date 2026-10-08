@@ -37,7 +37,11 @@
 }
 /* The score on the left, Next on the right. */
 .pura-stats { flex: 1 1 auto; min-width: 0; padding-left: 5px; }
-.pura-score { font-size: 1.125rem; line-height: 1; letter-spacing: 0; }
+.pura-score { flex: 0 0 auto; font-size: 1.125rem; line-height: 1; letter-spacing: 0; }
+/* The score and, to its right, who is playing — cut short with "…" before it
+   ever pushes the buttons or Next along (the whole name is on hover). */
+.pura-score-row { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+.pura-who-line { flex: 1 1 auto; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; opacity: 0.85; }
 .pura-sub { margin-top: 3px; white-space: nowrap; }
 .pura-box {
     flex: 0 0 auto;

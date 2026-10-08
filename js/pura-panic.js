@@ -209,7 +209,11 @@
                 <div class="console-screen profile-console-screen pura-screen">
                     <div class="pura-hud">
                         <div class="pura-stats" aria-live="off">
-                            <div class="pura-score" id="pura-score">0</div>
+                            <!-- The score, and beside it who is playing (7 Oct 2026, the owner's). -->
+                            <div class="pura-score-row">
+                                <div class="pura-score" id="pura-score">0</div>
+                                <div class="pura-who-line" id="pura-who-line"></div>
+                            </div>
                             <div class="pura-sub" id="pura-sub">Level 1 · 0 rows</div>
                         </div>
                         <!-- Pause and the music, on every device (P and M do the same). -->
@@ -270,7 +274,7 @@
            for the player it is theirs — the splash can be up before the
            sign-in has finished loading. */
         if (window.Account && typeof Account.onChange === "function") {
-            Account.onChange(() => { if (isOpen() && mode === "idle" && !panel.hidden && panel.querySelector('[data-go="play"]')) showPanel("title"); });
+            Account.onChange(() => { hud(); if (isOpen() && mode === "idle" && !panel.hidden && panel.querySelector('[data-go="play"]')) showPanel("title"); });
         }
         panel.addEventListener("click", onPanelClick);
         window.addEventListener("keydown", onKey, true);
@@ -371,7 +375,7 @@
         if (window.PageMeta) window.PageMeta.set("purapanic", "Pura Panic — Maze Rats", "https://mazerats.net/purapanic");
         if (!loaded) {
             showPanel("loading");
-            loaded = Promise.all([loadAll(), checkGate()]).then(() => { if (mode === "idle") showPanel("title"); draw(); })
+            loaded = Promise.all([loadAll(), checkGate()]).then(() => { if (mode === "idle") showPanel("title"); hud(); draw(); })
                 .catch(() => { loaded = null; showPanel("failed"); });
         } else if (mode === "idle" || mode === "over" || mode === "board") {
             // Reopened after a game, or from its leaderboard: the splash, as
@@ -626,6 +630,9 @@
         scoreEl.textContent = s.toLocaleString("en-GB");
         const rows = g ? g.bands - rowsBase : 0;
         subEl.textContent = `Level ${g ? g.level : 1} · ${rows} ${rows === 1 ? "row" : "rows"}`;
+        const who = playingAs();
+        const whoEl = root && root.querySelector("#pura-who-line");
+        if (whoEl) { whoEl.textContent = who ? "Playing as: " + who : ""; whoEl.title = who; }
         drawNext();
     }
 
@@ -1471,6 +1478,19 @@
 
     const needsName = () => gate.live && !testLevel() && !me() && !guest;
 
+    /* Who the score bar says is playing (7 Oct 2026, the owner's): a signed-in
+       player's nickname (or name), a proved Habbo, or the guest's own Guest Rat
+       number — "Guest Rat" alone until their first score brings one. Nothing
+       in a test game, or while the game is shut to players. */
+    function playingAs() {
+        if (testLevel() || !(gate.live || gate.admin)) return "";
+        const p = me();
+        if (p) return window.Account && Account.nameOf ? Account.nameOf(p) : (p.nick || p.name || "");
+        if (!guest) return "";
+        if (guest.kind === "habbo") return guest.name;
+        return rat ? "Guest Rat " + rat.n : "Guest Rat";
+    }
+
     function guestLine() {
         if (!gate.live || testLevel() || me() || !guest) return "";
         const who = guest.kind === "habbo"
@@ -1648,7 +1668,7 @@
             keepalive: body.length < 60000
         }).then(res => res.json().catch(() => ({}))).then(d => {
             // A Guest Rat numbered by this save (pura-scores.js, GUESTS).
-            if (d && d.rat && Number.isInteger(d.rat.n) && d.rat.token && (!rat || rat.n !== d.rat.n)) { rat = { n: d.rat.n, token: d.rat.token }; keep(RAT_KEY, rat); }
+            if (d && d.rat && Number.isInteger(d.rat.n) && d.rat.token && (!rat || rat.n !== d.rat.n)) { rat = { n: d.rat.n, token: d.rat.token }; keep(RAT_KEY, rat); hud(); }
         }).catch(() => { savedScore = 0; });
         saving = req.finally(() => { if (saving === req) saving = null; });
     }
@@ -1812,7 +1832,7 @@
             });
             const body = await res.json().catch(() => ({}));
             // A Guest Rat's first score brings their number (pura-scores.js, GUESTS).
-            if (body.rat && Number.isInteger(body.rat.n) && body.rat.token) { rat = { n: body.rat.n, token: body.rat.token }; keep(RAT_KEY, rat); }
+            if (body.rat && Number.isInteger(body.rat.n) && body.rat.token) { rat = { n: body.rat.n, token: body.rat.token }; keep(RAT_KEY, rat); hud(); }
             if (res.status === 403) {
                 if (window.Account && Account.writeRefused(403, body, "play")) return { state: "blocked" };
                 return { state: "no-nick" };
@@ -1877,7 +1897,7 @@
         if (document.querySelector('link[data-pura]')) return;
         const l = document.createElement("link");
         l.rel = "stylesheet";
-        l.href = "css/pura-panic.css?v=29";
+        l.href = "css/pura-panic.css?v=30";
         l.dataset.pura = "1";
         l.addEventListener("load", () => paintChrome());
         document.head.appendChild(l);
