@@ -85,7 +85,7 @@ function slugFromPath(event) {
         try { pathname = new URL(event.rawUrl).pathname; } catch (e) { /* keep event.path */ }
     }
     // A window's own address (1 Oct 2026): see FIXED_PAGES below.
-    const page = /^\/(guess|odd|guides|profiles?|purapanic)\/?$/.exec(pathname);
+    const page = /^\/(guess|odd|guides|profiles?|purapanic|glyphs)\/?$/.exec(pathname);
     // /profiles is /profile by another name (4 Oct 2026).
     if (page) return { page: page[1] === "profiles" ? "profile" : page[1] };
     const m = /^\/(maze|event|guides)\/([^/]+)\/?$/.exec(pathname);
@@ -484,6 +484,13 @@ const FIXED_PAGES = {
         // One snappy line (the owner's, 6 Oct 2026); the card's picture carries the tagline.
         description: "Turn them, drop them, clear the floor.",
         image: "og-purapanic.png"
+    },
+    /* The Alt Codes window (8 Oct 2026): its picture is the window itself,
+       "ª Funky Maze ª" in Habbo's font with a few picture tiles. */
+    glyphs: {
+        title: "Alt Codes",
+        description: "All icons in one place.",
+        image: "og-glyphs.png"
     }
 };
 function fixedTags(page, origin) {

@@ -396,9 +396,13 @@
 #
 # Still not indexed: robots.txt disallows /glyphs. Useful to somebody
 # naming a room, meaningless in a search result.
+#
+# Through the share function (8 Oct 2026), as /purapanic and /profile are,
+# so a pasted link shows the window's own title, line and picture
+# (assets/img/og-glyphs.png) rather than the archive's.
 [[redirects]]
   from = "/glyphs"
-  to = "/home.html"
+  to = "/.netlify/functions/share"
   status = 200
 
 # Your Profile (4 Oct 2026): /profile is the homepage with the profile
