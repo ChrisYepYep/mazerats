@@ -897,6 +897,11 @@
            when the player stopped, and `lastPaint` was reset by
            freezeChanged so the first frame back lands immediately. */
         if (!paused) dirty = true;
+        /* AND THE KEYS BACK TO THE ROOM (10 Oct 2026). Resume hides itself
+           as it is clicked, the focus fell to <body>, and the arrows - which
+           the canvas listens for - did nothing until the room was clicked.
+           As at beginLevel: never in the builder. */
+        if (!paused && !Editor && canvas) canvas.focus({ preventScroll: true });
     }
 
     function wirePause() {
@@ -3449,6 +3454,8 @@
     const showTitle = () => {
         const cv = canvas || document.getElementById("ff-canvas");
         if (cv) cv.setAttribute("aria-label", TITLE_LABEL);
+        // Idle again: its focus ring back (see beginLevel; 10 Oct 2026).
+        if (cv) cv.classList.remove("is-playing");
         // null is a fetch that failed, not an empty game - see prepare().
         titleState(published === null ? "unreachable"
             : published.length ? "ready" : "empty");
@@ -3537,19 +3544,28 @@
                on the field (Account.editNickname — this page carries the
                console too). renderWho runs again on every Account change
                (see showTitle), so the button goes once a nickname is set. */
-            const shown = acct.nameOf ? acct.nameOf(me) : me.name;
-            el.append(`On the board as ${shown} - `);
-            // Not over a nickname the admins have locked (29 Sept 2026): the
-            // Profile would only say it is locked, as the first-sign-in
-            // prompt already knows (wantsNickPrompt in js/account.js).
-            if (!me.nick && !me.nickLocked && acct.canNick && acct.canNick() && acct.editNickname) {
+            /* NO NICKNAME, NOT ON THE BOARD (10 Oct 2026). This said "On the
+               board as <Discord display name>" to a player without one, and
+               both boards leave them off until they choose one (withoutBanned
+               in _bans.js) - a promise the board did not keep, in the one
+               name a nickless player's is never shown by. So: the nickname,
+               or what it takes to get one. */
+            if (me.nick) {
+                el.append(`On the board as ${me.nick} - `);
+            } else if (!me.nickLocked && acct.canNick && acct.canNick() && acct.editNickname) {
+                // Not over a nickname the admins have locked (29 Sept 2026):
+                // the Profile would only say it is locked, as the
+                // first-sign-in prompt already knows (wantsNickPrompt in
+                // js/account.js).
                 const nickBtn = document.createElement("button");
                 nickBtn.type = "button";
                 nickBtn.className = "ff-linkish";
-                nickBtn.textContent = "set a nickname";
+                nickBtn.textContent = "Set a nickname";
                 nickBtn.addEventListener("click", () => acct.editNickname());
                 el.appendChild(nickBtn);
-                el.append(" - ");
+                el.append(" to appear on the leaderboard - ");
+            } else {
+                el.append("Set a nickname to appear on the leaderboard - ");
             }
             const out = document.createElement("button");
             out.type = "button";
@@ -4214,7 +4230,18 @@
             });
             const data = await res.json().catch(() => ({}));
             if (runToken !== tokenFor) return;
-            if (data.recorded) {
+            /* KEPT, BUT ON NO BOARD (10 Oct 2026; `hidden` in ff-scores.js).
+               A player without a nickname has their best stored and shown on
+               neither board until they choose one, so "On the board" and "a
+               new best this week" were both untrue. Said before those, and
+               without data.best's name, which the server leaves out. */
+            if (data.hidden === "no-nick" && (data.recorded || data.tournamentRecorded || data.reason === "not-your-best")) {
+                const line = data.recorded
+                    ? `${points.toLocaleString()} points, ${levelsCleared} cleared in ${asClock(ms)}. Set a nickname to appear on the leaderboard.`
+                    : `${points.toLocaleString()} points. Set a nickname to appear on the leaderboard.`;
+                status("Set a nickname to appear on the leaderboard.", "busy");
+                boardSays(line, false);
+            } else if (data.recorded) {
                 const line = `On the board: ${points.toLocaleString()} points, ${levelsCleared} cleared in ${asClock(ms)}.`;
                 status(line, "good");
                 boardSays(line, false);
@@ -4896,6 +4923,22 @@
         state.furni = game.renderList();
         refreshBlocked();
         dirty = true;
+        /* THE ROOM TAKES THE KEYS AS IT OPENS (10 Oct 2026). The arrows are
+           listened for on the canvas, and nothing ever put the focus there:
+           Enter on Play, Next level or Try again hid the button it was
+           pressed on, the focus fell to <body>, and the arrows did nothing
+           until the room was clicked - every round. Not in the builder, whose
+           keys belong to its own panel; preventScroll, so a page scrolled to
+           the board is not yanked back up to the room. */
+        /* And no ring round it while a run is on (10 Oct 2026): a focus put
+           there by the page is not one the player moved, and the amber
+           outline framed the room for every keyboard player. .is-playing
+           comes off in showTitle, so Tabbing to the idle canvas still shows
+           it (see #ff-canvas:focus-visible in css/fallinfurni.css). */
+        if (!Editor && canvas) {
+            canvas.classList.add("is-playing");
+            canvas.focus({ preventScroll: true });
+        }
         /* NOT AWAITED, so a throw inside it becomes an unhandled rejection
            and the freeze it set is never lifted: `loading` stays true, the
            tick returns before drawing anything, and the game sits on "Loading

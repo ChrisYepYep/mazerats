@@ -42,7 +42,7 @@ const { SECURITY_HEADERS } = require("./_headers");
 // No nicknamed player's Discord avatar on the board (29 Sept 2026).
 // The ban gate on both POSTs, and banned accounts off the boards (29 Sept 2026).
 const { writeRefusal, withoutBanned } = require("./_bans");
-const { habboHeads } = require("./_publicid");
+const { habboHeads, nickedAmong } = require("./_publicid");
 
 const COLLECTION = "ff_scores";
 const LEVELS = "ff_levels";
@@ -205,6 +205,8 @@ const RUN_AUDIENCE = "mazerats-ffrun";
 const RUN_LIFE_S = 3 * 60 * 60;
 const RUN_TOLERANCE_MS = 15 * 1000;
 const RUN_TOKENS = "ff_run_tokens";
+// The largest finished-run request read at all; see the POST (10 Oct 2026).
+const MAX_BODY = 32 * 1024;
 
 function signRun(player, now) {
     if (!process.env.SESSION_SECRET) return null;
@@ -970,14 +972,19 @@ function logDisagrees(log, rounds, points) {
    name, from their players row and the signed session (publicName in
    _player.js), never from the request body.
 
-   NO ID, AND THE AVATAR ONLY FOR A PLAYER WITHOUT A NICKNAME (29 Sept
-   2026). The rows here never carried the player id — the page finds its own
-   row by name, points and time — but the avatar is a cdn.discordapp.com
-   address with the Discord id in it, so a nicknamed player was one copy
-   and paste from their Discord account. `nicked` is the set nickedAmong
-   (_publicid.js) read for the rows being answered, or null when it could
-   not be read (every avatar hidden). Left out — the caller's OWN row, sent
-   only to them and never cached — the stored avatar goes back as it was. */
+   NO ID, AND NO DISCORD PICTURE (29 Sept 2026, then 4 Oct). The rows
+   here never carried the player id — the page finds its own row by name,
+   points and time — and the picture is the player's Habbo head (see
+   `heads` below), never the cdn.discordapp.com avatar, which has the
+   Discord id in it. Left out — the player's own row in a POST answer —
+   it is null.
+
+   AND NO LONGER STORED (10 Oct 2026). Every row used to keep the Discord
+   avatar from the session as well, and nothing has read it since the heads
+   replaced it: an account's Discord id sitting on every board row, one
+   careless projection away from a public answer. Rows written before this
+   still carry it; nothing reads it, and the forget (player-forget.js)
+   takes the whole row. */
 // The three Origins hotels room-figure.js can ask; anything else is null.
 const SCORE_HOTELS = ["COM", "ES", "BR"];
 const scoreHotel = (v) => {
@@ -1049,7 +1056,16 @@ exports.handler = async (event) => {
                    they have one (publicName in _player.js; 28 Sept 2026).
                    It fell back to the Discord USERNAME here, which is the
                    one handle a nickname exists to keep off the page. */
-                out.signedIn = { name: await publicName(db, player), id: player.id };
+                /* NO NICKNAME, NO NAME (10 Oct 2026). Without one the
+                   player is on neither board (withoutBanned in _bans.js),
+                   and both publicName's fallback and their own row's name
+                   are their Discord display name, which is not sent for
+                   anything to show. A failed read counts as no nickname
+                   here: it only costs the name, never shows the wrong one. */
+                const nicked = await nickedAmong(db, [player.id]);
+                const hasNick = Boolean(nicked) && nicked.has(String(player.id));
+                if (!hasNick && out.you) out.you.name = null;
+                out.signedIn = { name: hasNick ? await publicName(db, player) : null, nick: hasNick, id: player.id };
             }
         } catch (e) {
             console.error("ff-scores: could not read the board", e);
@@ -1086,6 +1102,8 @@ exports.handler = async (event) => {
                     const mine = await db.collection(TOURNAMENT_COLLECTION)
                         .findOne({ tid: meet.id, playerId: player.id }, { projection: { _id: 0 } });
                     out.tournament.you = afterLaunch(gate, mine) ? clean(mine, meetHeads) : null;
+                    // No nickname, no name: see out.signedIn above (10 Oct 2026).
+                    if (out.tournament.you && !(out.signedIn && out.signedIn.nick)) out.tournament.you.name = null;
                 }
             } catch (e) { /* the all-time board is still worth serving */ }
         }
@@ -1139,8 +1157,20 @@ exports.handler = async (event) => {
        than treat a guest run as a failure. */
     if (!player) return json(200, { recorded: false, reason: "signed-out" });
 
+    /* THE WHOLE REQUEST, capped before it is parsed (10 Oct 2026), as
+       ff-runs.js caps its own. An honest run of all fifty levels is about
+       six kilobytes - a round, an id and a version a level - so this is room
+       for five times that and refuses nothing the page can send; it used to
+       parse whatever arrived, up to Netlify's six megabytes, before any
+       check could look at it. */
+    const raw = event.body || "";
+    if ((event.isBase64Encoded ? Math.floor(raw.length * 3 / 4) : raw.length) > MAX_BODY) {
+        return json(413, { error: "That run is too large to be one" });
+    }
     let body = {};
-    try { body = JSON.parse(event.body || "{}"); }
+    try {
+        body = JSON.parse(event.isBase64Encoded ? Buffer.from(raw, "base64").toString("utf8") : (raw || "{}"));
+    }
     catch { return json(400, { error: "Body is not JSON" }); }
     // `null` parses cleanly and then has nothing to read a field off.
     if (!body || typeof body !== "object") return json(400, { error: "Body is not JSON" });
@@ -1257,7 +1287,7 @@ exports.handler = async (event) => {
         // The nickname when there is one, from the players row — see
         // publicName in _player.js (28 Sept 2026).
         name: await publicName(db, player),
-        avatar: player.avatar || null,
+        // No `avatar`: see the note above clean() (10 Oct 2026).
         points, levels, ms,
         /* THE ORIGINS HOTEL the player's habbo is on (30 Sept 2026): COM,
            ES or BR, or null when no habbo name was worn. One of three fixed
@@ -1340,11 +1370,23 @@ exports.handler = async (event) => {
        week's came back "not-your-best", and the page said "Your best still
        stands" about a run that had just moved its owner up the Launch Week
        board — and did not redraw that board to show it. */
+    /* `hidden: "no-nick"` (10 Oct 2026): kept, but on no board. A player
+       without a nickname has their best stored as anyone's is, and both
+       boards leave it off until they choose one (withoutBanned in
+       _bans.js) — so "recorded" alone told the page to say "On the board"
+       about a run nobody could see. The row's name is their Discord
+       display name until then, so it is not sent back either. A failed
+       nickname read (null) says nothing rather than guess. */
+    const nicked = await nickedAmong(db, [player.id]);
+    const noNick = Boolean(nicked) && !nicked.has(String(player.id));
+    const bestOut = clean(best);
+    if (noNick) bestOut.name = null;
     return json(200, {
         recorded: better,
         reason: better ? null : "not-your-best",
         tournamentRecorded: meetBetter,
-        best: clean(best)
+        hidden: noNick ? "no-nick" : null,
+        best: bestOut
     });
 };
 

@@ -33,6 +33,19 @@
         navigator.msDoNotTrack === "1";
     if (optedOut) return;
 
+    /* A machine, not a visitor (10 Oct 2026, the bug scan): the Warren's
+       Activity counts had crawlers in them. The same tests js/error-report.js
+       makes in robot() — automation saying so itself, a user agent that
+       names a crawler, and an iPhone at a pixel ratio under 2, which no
+       real iPhone has. Nothing is sent for the visit. Server-side, track.js
+       turns away the same user agents. */
+    try {
+        const ua = navigator.userAgent || "";
+        if (navigator.webdriver === true
+            || /bot|crawl|spider|slurp|headless|lighthouse/i.test(ua)
+            || (/iPhone|iPod/.test(ua) && (window.devicePixelRatio || 1) < 2)) return;
+    } catch (e) { /* counted as a visitor */ }
+
     const SESSION_KEY = "mazerats_session";
     const ENDPOINT = "/.netlify/functions/track";
     const FLUSH_MS = 4000;

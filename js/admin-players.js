@@ -475,6 +475,10 @@
     const details = new Map();          // ref -> the full player, from getPlayer
     const detailErrors = new Map();     // ref -> message, when that read failed
     const nickDrafts = new Map();       // ref -> what is typed in the nickname box
+    /* And in the Habbo link box (10 Oct 2026, the bug scan): a redraw put
+       the linked name back over what was typed, and moved the caret into
+       the nickname box. */
+    const habboDrafts = new Map();      // ref -> { name, hotel }
     /* Element ids (for a label's `for`) are numbered, not built from the ref
        (30 Sept 2026): the ref is a Discord ID, and a click's breadcrumb names
        the element by its id. One number per ref, kept for the page's life,
@@ -816,7 +820,7 @@
         /* The ban form's reason box and end time (29 Sept 2026) as well as
            the nickname box: a detail read landing mid-word redraws them. */
         const typing = active && listEl.contains(active) && active.matches("input")
-            ? { ref: active.dataset.ref || (active.closest(".pl-detail") || { dataset: {} }).dataset.for, bn: active.dataset.bn || "", start: active.selectionStart, end: active.selectionEnd }
+            ? { ref: active.dataset.ref || (active.closest(".pl-detail") || { dataset: {} }).dataset.for, bn: active.dataset.bn || "", habbo: active.classList.contains("pl-habbo-name"), start: active.selectionStart, end: active.selectionEnd }
             : null;
 
         listEl.innerHTML = "";
@@ -847,7 +851,9 @@
         if (typing && typing.ref) {
             const box = typing.bn
                 ? listEl.querySelector(`.pl-detail[data-for="${cssEscape(typing.ref)}"] [data-bn="${cssEscape(typing.bn)}"]`)
-                : listEl.querySelector(`.pl-nick-input[data-ref="${cssEscape(typing.ref)}"]`);
+                : typing.habbo
+                    ? listEl.querySelector(`.pl-detail[data-for="${cssEscape(typing.ref)}"] .pl-habbo-name`)
+                    : listEl.querySelector(`.pl-nick-input[data-ref="${cssEscape(typing.ref)}"]`);
             if (box) {
                 box.focus({ preventScroll: true });
                 try { box.setSelectionRange(typing.start, typing.end); } catch (e) { /* not a text box */ }
@@ -1111,13 +1117,16 @@
         const h = p.habbo && p.habbo.name ? p.habbo : null;
         const off = busy ? " disabled" : "";
         const id = `pl-habbo-${domId(refOf(p))}`;
+        const d = habboDrafts.get(refOf(p));
+        const typed = d ? d.name : (h ? h.name : "");
+        const hotel = d ? d.hotel : (h ? h.hotel : "COM");
         return `
             <div class="pl-review pl-habbo-link">
                 <label class="ctl-label" for="${id}">Habbo Origins account</label>
                 <p class="admin-hint">${h ? `Linked: <strong>${escapeHtml(h.name)}</strong> (${escapeHtml(h.hotel || "COM")}). Type another to change it.` : "None linked. Link their Habbo here and it counts as verified."}</p>
                 <div class="ctl-row">
-                    <input type="text" class="ctl-input pl-habbo-name" id="${id}" maxlength="40" autocomplete="off" spellcheck="false" placeholder="Habbo username" value="${escapeHtml(h ? h.name : "")}"${off}>
-                    <select class="ctl-input pl-habbo-hotel" aria-label="Hotel"${off}>${HOTELS.map(([v, l]) => `<option value="${v}"${(h ? h.hotel : "COM") === v ? " selected" : ""}>${l}</option>`).join("")}</select>
+                    <input type="text" class="ctl-input pl-habbo-name" id="${id}" maxlength="40" autocomplete="off" spellcheck="false" placeholder="Habbo username" value="${escapeHtml(typed)}"${off}>
+                    <select class="ctl-input pl-habbo-hotel" aria-label="Hotel"${off}>${HOTELS.map(([v, l]) => `<option value="${v}"${hotel === v ? " selected" : ""}>${l}</option>`).join("")}</select>
                     <button type="button" class="ctl-btn pl-write" data-a="habbo-link"${off}>${h ? "Change" : "Link Habbo"}</button>
                     ${h ? `<button type="button" class="ctl-btn admin-delete-btn pl-write" data-a="habbo-unlink"${off}>Unlink</button>` : ""}
                 </div>
@@ -1469,6 +1478,13 @@
                 if (e.key === "Escape") { nickDrafts.delete(ref); input.value = p.nick || ""; }
             });
         }
+        const habboName = el.querySelector(".pl-habbo-name");
+        const habboHotel = el.querySelector(".pl-habbo-hotel");
+        if (habboName && habboHotel) {
+            const keep = () => habboDrafts.set(ref, { name: habboName.value, hotel: habboHotel.value });
+            habboName.addEventListener("input", keep);
+            habboHotel.addEventListener("change", keep);
+        }
         el.addEventListener("click", e => {
             const copy = e.target.closest("[data-copy-id]");
             if (copy) { copyText(copy.dataset.copyId, copy); return; }
@@ -1486,7 +1502,10 @@
                 const name = ((el.querySelector(".pl-habbo-name") || {}).value || "").trim();
                 const hotel = (el.querySelector(".pl-habbo-hotel") || {}).value || "COM";
                 if (!name) { say(ref, "Type their Habbo username first.", true); return; }
-                write(p, { habboLink: { name, hotel } }, `Linked. ${name} is their Habbo now, and their Maze Rats badges show.`);
+                /* The name as the hotel spells it (10 Oct 2026): the
+                   message said it as typed, "habbo123", when the server
+                   had stored "Habbo123". */
+                write(p, { habboLink: { name, hotel } }, saved => `Linked. ${(saved && saved.habbo && saved.habbo.name) || name} is their Habbo now, and their Maze Rats badges show.`);
             }
             else if (a === "habbo-unlink") {
                 ask(`Unlink <strong>${escapeHtml(p.habbo ? p.habbo.name : "")}</strong> from them? Their Maze Rats badges go until a Habbo is linked again.`)
@@ -1650,6 +1669,7 @@
             if (mine !== sessionNo) return false;
             takeWrite(ref, res && res.player);
             if (Object.prototype.hasOwnProperty.call(change, "nick")) nickDrafts.delete(ref);
+            if (Object.prototype.hasOwnProperty.call(change, "habboLink")) habboDrafts.delete(ref);
             // Counts on the strip may have moved (a nickname, a lock, a flag).
             const now = details.get(ref) || {};
             if (has(counts.nick)) counts.nick += (now.nick ? 1 : 0) - (had.nick ? 1 : 0);
@@ -1664,7 +1684,8 @@
             }
             setBusy(false);
             render();
-            say(ref, okText);
+            // okText may be worked out from the saved player (habbo-link, 10 Oct 2026).
+            say(ref, typeof okText === "function" ? okText(res && res.player) : okText);
             return true;
         } catch (err) {
             if (mine !== sessionNo) return false;
@@ -1684,7 +1705,10 @@
                 loadDetail(ref).then(() => say(ref, text, true));
                 return false;
             }
-            const msg = err && err.status === 409 ? "That nickname is taken by another player." : errText(err);
+            /* Only a nickname's 409 is "taken" (10 Oct 2026, the bug scan):
+               linking a Habbo answers 409 when it is already somebody
+               else's, and that sentence was replaced with this one. */
+            const msg = err && err.status === 409 && Object.prototype.hasOwnProperty.call(change, "nick") ? "That nickname is taken by another player." : errText(err);
             say(ref, "Not saved: " + msg, true);
             return false;
         }
@@ -1823,13 +1847,16 @@
             forgets.delete(ref);
             details.delete(ref);
             nickDrafts.delete(ref);
+            habboDrafts.delete(ref);
             players = players.filter(x => refOf(x) !== ref);
             total = Math.max(0, total - 1);
             if (has(counts.all)) counts.all = Math.max(0, counts.all - 1);
             if (p.nickFlag && has(counts.flagged)) counts.flagged = Math.max(0, counts.flagged - 1);
             if (p.nameClash && has(counts.clash)) counts.clash = Math.max(0, counts.clash - 1);
             if (mottoWaiting(p) && has(counts.motto)) counts.motto = Math.max(0, counts.motto - 1);
-            if ((p.nickFlag || p.nameClash || mottoWaiting(p)) && has(counts.waiting)) counts.waiting = Math.max(0, counts.waiting - 1);
+            // A Habbo waiting to be approved comes off too (10 Oct 2026, the bug scan).
+            if (habboWaiting(p) && has(counts.habbo)) counts.habbo = Math.max(0, counts.habbo - 1);
+            if ((p.nickFlag || p.nameClash || mottoWaiting(p) || habboWaiting(p)) && has(counts.waiting)) counts.waiting = Math.max(0, counts.waiting - 1);
             if (has(counts.all)) setBadge(counts);
             if (p.nick && has(counts.nick)) counts.nick = Math.max(0, counts.nick - 1);
             if (p.nickLocked && has(counts.locked)) counts.locked = Math.max(0, counts.locked - 1);
@@ -2124,6 +2151,7 @@
         details.clear();
         detailErrors.clear();
         nickDrafts.clear();
+        habboDrafts.clear();
         forgets.clear();
         banDrafts.clear();
         banEdits.clear();

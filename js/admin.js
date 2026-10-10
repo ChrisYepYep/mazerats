@@ -624,6 +624,15 @@ document.addEventListener("DOMContentLoaded", () => {
     let adoptedRecheck = null;
     const ADOPT_GRACE_MS = 60 * 1000;
 
+    /* A read's 401, only for the token it was sent with (10 Oct 2026, the
+       bug scan), as the furni poll already does. A read sent before a lock-out
+       can answer after the same admin has signed back in, and its 401 then
+       signed the fresh session out. A refused token that is no longer this
+       tab's says nothing about the one it has now. */
+    function lockOutFor(tokenUsed) {
+        if (tokenUsed && adminToken === tokenUsed) lockOut();
+    }
+
     function lockOut() {
         if (adoptedToken && adoptedToken === adminToken && Date.now() - adoptedAt < ADOPT_GRACE_MS) {
             if (adoptedRecheck) return;
@@ -732,8 +741,17 @@ document.addEventListener("DOMContentLoaded", () => {
         Object.keys(COLLECTIONS).forEach(key => { const l = COLLECTIONS[key].listEl; if (l) l.innerHTML = ""; });
     }
 
+    /* Bumped whenever the account changes (10 Oct 2026, the bug scan): a
+       read set off by the last account — the admins list, the messages, the
+       bans, the daily games — that lands after a log out or a switch is not
+       drawn, nor kept, for whoever is signed in by then. See sameAccount. */
+    let accountGen = 0;
+    const sameAccount = gen => gen === accountGen && !!adminToken;
+
     function resetAccountPanels() {
+        accountGen++;
         clearRenderedLists();
+        clearDaily();
         ffClear();
         puraClear();
         clearActivity();
@@ -1246,8 +1264,11 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     // A list of bars with the figure written out; `of` adds a share of it.
+    /* Rows that are all nought are empty too (10 Oct 2026): the depth and
+       length cards always send their six bands, and an empty range drew
+       six "0 0%" bars instead of the sentence. */
     function actBars(rows, empty, of) {
-        if (!rows || !rows.length) return '<p class="admin-empty">' + escapeHtml(empty) + '</p>';
+        if (!rows || !rows.some(r => r.n)) return '<p class="admin-empty">' + escapeHtml(empty) + '</p>';
         const max = Math.max(...rows.map(r => r.n)) || 1;
         return rows.map(r => '' +
             '<div class="admin-visitor-row" title="' + escapeHtml(r.label + ": " + (r.tip || actNum(r.n))) + '">' +
@@ -1258,9 +1279,11 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     // A funnel: each step against the first, and what share went on from the step before.
-    function actFunnel(steps) {
+    /* Each funnel says its own empty sentence (10 Oct 2026): "Nobody has
+       started yet" read oddly under the mazes. */
+    function actFunnel(steps, empty) {
         const first = steps[0].n || 0;
-        if (!first) return '<p class="admin-empty">Nobody has started yet in this range.</p>';
+        if (!first) return '<p class="admin-empty">' + escapeHtml(empty || "Nobody has started yet in this range.") + '</p>';
         return '<div class="act-funnel">' + steps.map((s, i) => {
             const on = i ? actPct(s.n, steps[i - 1].n) : 100;
             return '<div class="act-step" title="' + escapeHtml(s.label + ": " + actPlural(s.n, "visit", "visits") + (i ? ", " + on + "% of the step before" : "")) + '">' +
@@ -1353,7 +1376,7 @@ document.addEventListener("DOMContentLoaded", () => {
                     { label: "Opened Pura Panic", n: pura.opened },
                     { label: "Started a game", n: pura.openThenPlay },
                     { label: "Finished a game", n: Math.min(pura.finished, pura.openThenPlay) }
-                ]) + '<p class="admin-hint act-note">Visits, each counted once however many games they played. Submit Score was used in ' + actPlural(pura.submitted, "visit", "visits") + '.</p>', true) +
+                ], "Nobody opened Pura Panic in this range.") + '<p class="admin-hint act-note">Visits, each counted once however many games they played. Submit Score was used in ' + actPlural(pura.submitted, "visit", "visits") + '.</p>', true) +
                 actCard("Who played", actBars(actLabels(v, "pura-play", LABEL_NAMES["pura-play"]), "No games yet.")) +
                 actCard("Where games ended", actBars(levelRows, "No games finished yet.") + '<p class="admin-hint act-note">Every finished game, by the level it reached.</p>') +
                 actCard("Names chosen", actBars(actLabels(v, "pura-name", LABEL_NAMES["pura-name"]), "No names chosen yet.")) +
@@ -1367,7 +1390,7 @@ document.addEventListener("DOMContentLoaded", () => {
                     { label: "Opened a daily game", n: f.daily.opened },
                     { label: "Finished it", n: f.daily.openThenFinish },
                     { label: "Shared the result", n: f.daily.finishThenShare }
-                ]), true) +
+                ], "No daily games opened in this range."), true) +
                 actCard("Game by game", '<div class="ff-table-wrap"><table class="ff-table act-table"><thead><tr><th scope="col">Game</th><th scope="col" class="ff-num">Opened</th><th scope="col" class="ff-num">Finished</th><th scope="col" class="ff-num">Finish rate</th><th scope="col" class="ff-num">Shared</th></tr></thead><tbody>' +
                     dailyGames + '</tbody></table></div><p class="admin-hint act-note">Visits. More on each player in the Daily page.</p>', true) +
             '</div>' +
@@ -1379,7 +1402,7 @@ document.addEventListener("DOMContentLoaded", () => {
                     { label: "Marked one completed", n: f.mazes.walked },
                     { label: "Saved one for later", n: f.mazes.saved },
                     { label: "Favourited one", n: f.mazes.fav }
-                ]) + '<p class="admin-hint act-note">Each step against the visits that opened a maze; "went on" is against the step above. A share link was copied in ' + actPlural(f.mazes.shared, "visit", "visits") + '.</p>', true) +
+                ], "No mazes opened in this range.") + '<p class="admin-hint act-note">Each step against the visits that opened a maze; "went on" is against the step above. A share link was copied in ' + actPlural(f.mazes.shared, "visit", "visits") + '.</p>', true) +
             '</div>';
     }
 
@@ -1481,9 +1504,15 @@ document.addEventListener("DOMContentLoaded", () => {
     async function loadActivity() {
         if (!canReadActivity()) return;
         const mine = ++activitySeq;
+        const used = adminToken;   // see lockOutFor
+        /* Every tab says it is loading, not only the Admins tab (10 Oct
+           2026): Overview, Features and Games kept the last range's
+           figures under the new range's name until the read came back,
+           and kept them for good when it failed. */
         activitySummaryEl.innerHTML = '<span class="admin-hint">Loading…</span>';
+        Object.values(actPaneEls).forEach(el => { if (el) el.innerHTML = '<p class="admin-empty">Loading…</p>'; });
         try {
-            const data = await Api.getAdminActivity(adminToken, activityRangeEl && activityRangeEl.value);
+            const data = await Api.getAdminActivity(used, activityRangeEl && activityRangeEl.value);
             // Nor drawn for an account that is no longer an owner's: a read
             // landing after a sign-out would leave the log's addresses in
             // the hidden panel for whoever signs in next.
@@ -1491,11 +1520,13 @@ document.addEventListener("DOMContentLoaded", () => {
             renderActivity(data);
         } catch (err) {
             if (mine !== activitySeq) return;
-            if (err.status === 401) { lockOut(); return; }
-            activitySummaryEl.innerHTML = '<span class="admin-hint">' +
-                escapeHtml(err.message || "Couldn't load the activity log.") + '</span>';
+            if (err.status === 401) { lockOutFor(used); return; }
+            const why = escapeHtml(err.message || "Couldn't load the activity log.");
+            activitySummaryEl.innerHTML = '<span class="admin-hint">' + why + '</span>';
             activitySessionsEl.innerHTML = "";
             activityEventsEl.innerHTML = "";
+            if (actFailedEl) actFailedEl.innerHTML = "";
+            Object.values(actPaneEls).forEach(el => { if (el) el.innerHTML = '<p class="admin-empty">' + why + '</p>'; });
         }
     }
 
@@ -1837,15 +1868,16 @@ document.addEventListener("DOMContentLoaded", () => {
     async function loadFallinFurni() {
         if (!adminToken) return;
         const gen = ++ffLoadGen;
+        const used = adminToken;   // see lockOutFor
         ffSummaryEl.innerHTML = '<span class="admin-hint">Loading…</span>';
         try {
-            const data = await Api.getFallinFurniRuns(adminToken, ffRangeEl && ffRangeEl.value);
+            const data = await Api.getFallinFurniRuns(used, ffRangeEl && ffRangeEl.value);
             if (gen !== ffLoadGen) return;
             ffRender(data);
             ffLoaded = true;
         } catch (err) {
             if (gen !== ffLoadGen) return;
-            if (err.status === 401) { lockOut(); return; }
+            if (err.status === 401) { lockOutFor(used); return; }
             ffSummaryEl.innerHTML = '<span class="admin-hint">' +
                 escapeHtml(err.message || "Couldn't load the run log.") + '</span>';
         }
@@ -1910,6 +1942,10 @@ document.addEventListener("DOMContentLoaded", () => {
             ffStat(t.games, "game finished", "games finished") +
             ffStat(t.starts, "game started", "games started") +
             puraBig(t.finishedPct + "%", "of started games finished") +
+            /* Games saved on the way and never finished (10 Oct 2026):
+               pura-stats.js now counts them apart from the finished ones,
+               which is all the figures above and the medians below count. */
+            (t.left !== undefined ? ffStat(t.left, "game left part-way", "games left part-way") : "") +
             ffStat(t.players, "signed-in player", "signed-in players") +
             ffStat(t.signedOutGames, "game signed out", "games signed out") +
             puraBig(puraNum(t.medianScore), "points, typically") +
@@ -1983,15 +2019,16 @@ document.addEventListener("DOMContentLoaded", () => {
     async function loadPura() {
         if (!adminToken) return;
         const gen = ++puraLoadGen;
+        const used = adminToken;   // see lockOutFor
         puraSummaryEl.innerHTML = '<span class="admin-hint">Loading…</span>';
         try {
-            const data = await Api.getPuraStats(adminToken, puraRangeEl && puraRangeEl.value);
+            const data = await Api.getPuraStats(used, puraRangeEl && puraRangeEl.value);
             if (gen !== puraLoadGen) return;
             puraRender(data);
             puraLoaded = true;
         } catch (err) {
             if (gen !== puraLoadGen) return;
-            if (err.status === 401) { lockOut(); return; }
+            if (err.status === 401) { lockOutFor(used); return; }
             puraSummaryEl.innerHTML = '<span class="admin-hint">' +
                 escapeHtml(err.message || "Couldn't load Pura Panic's figures.") + '</span>';
         }
@@ -2001,6 +2038,7 @@ document.addEventListener("DOMContentLoaded", () => {
     function puraClear() {
         puraLoadGen++;
         puraLoaded = false;
+        if (puraStateEl) puraStateEl.textContent = "";
         if (puraSummaryEl) puraSummaryEl.innerHTML = "";
         if (puraChartsEl) puraChartsEl.innerHTML = "";
         [puraBoardEl, puraPlayersEl, puraGamesEl].forEach(table => {
@@ -2160,6 +2198,11 @@ document.addEventListener("DOMContentLoaded", () => {
         // in the rule.
         document.body.classList.toggle("is-albus", currentUserRole === "wizard");
         if (activityNavBtn) activityNavBtn.hidden = !canReadActivity();
+        /* And what an owner's read left in it goes (10 Oct 2026, the bug
+           scan). An account demoted while its session had run out signs
+           back in as itself — not a switch, so resetAccountPanels never ran
+           — and the log, every admin's addresses in it, stayed in the page. */
+        if (!canReadActivity()) clearActivity();
         if (furniSidebar) furniSidebar.hidden = !owner;
         if (furniCatalogueCard) {
             furniCatalogueCard.hidden = !owner;
@@ -2187,6 +2230,10 @@ document.addEventListener("DOMContentLoaded", () => {
            Otherwise, whatever was open last time. */
         const opening = currentUserRole === "wizard" ? "wizard" : rememberedPanel();
         if (opening) showPanel(opening);
+        /* Nothing to go back to, and the panel still showing is one this
+           account may not open (10 Oct 2026, the bug scan: Activity, left up
+           for a demoted owner signing back in) — the first panel instead. */
+        else if (shownPanel && !navButtonShown(shownPanel)) showPanel("rooms");
     }
 
     /* A load that failed has to look different from a load that found
@@ -2266,6 +2313,7 @@ document.addEventListener("DOMContentLoaded", () => {
            whether the maze list came back. */
         clearLoadBanner();
         let archiveLoaded = false;
+        const used = adminToken;   // see lockOutFor
         try {
             // With the deleted records' addresses — see readFullWithRetired.
             const [rooms, events] = await Promise.all([
@@ -2277,7 +2325,7 @@ document.addEventListener("DOMContentLoaded", () => {
             archiveLoaded = true;
             archiveLoadedOk = true;
         } catch (err) {
-            if (err && err.status === 401) { lockOut(); return; }
+            if (err && err.status === 401) { lockOutFor(used); return; }
             workingRooms = [];
             workingEvents = [];
             archiveLoadedOk = false;
@@ -2285,6 +2333,13 @@ document.addEventListener("DOMContentLoaded", () => {
                 (err && err.message ? " (" + err.message + ")" : "") +
                 ". Nothing has been changed — reload the page to try again.");
         }
+        /* Signed out while the archive was being read (10 Oct 2026, the bug
+           scan): another tab's log out, or a 401 from a request already out.
+           Carrying on set off every loader below with no token, each 401
+           landing in lockOut again and writing "Session expired" over the
+           box's own reason ("Signed out in another tab"). The next sign-in
+           runs this again from the top. */
+        if (!adminToken) return;
         if (archiveLoaded) {
             renderList("rooms");
             renderList("events");
@@ -2637,6 +2692,11 @@ document.addEventListener("DOMContentLoaded", () => {
        NOW — a scan that finished that room while the form was open moves
        across with it rather than being lost. A record moved twice still
        names the address it was opened at. */
+    // The furni list redrawn if the form's rooms changed — see _syncFurniRooms.
+    function syncFurniRooms(formEl) {
+        if (formEl && typeof formEl._syncFurniRooms === "function") formEl._syncFurniRooms();
+    }
+
     function moveFurniKey(formEl, oldUrl, newUrl) {
         const draft = formEl && formEl._furniDraft;
         if (!draft || !oldUrl || !newUrl || oldUrl === newUrl || !draft[oldUrl]) return;
@@ -3240,6 +3300,9 @@ document.addEventListener("DOMContentLoaded", () => {
                     } catch (err) {
                         if (err.status === 401) { lockOut(); return; }
                         status.textContent = err.message || "Upload failed.";
+                    } finally {
+                        // A retry with the same file (10 Oct 2026) — see wireBookendUpload.
+                        e.target.value = "";
                     }
                 });
             });
@@ -3430,6 +3493,9 @@ document.addEventListener("DOMContentLoaded", () => {
         // Set by the two buttons that open the picker, so the render they
         // cause brings it into view — see revealPicker.
         let revealPickerNext = false;
+        // Which pictures the list was last drawn for — see _syncFurniRooms.
+        let shownRooms = "";
+        const roomsSignature = rooms => JSON.stringify(rooms.map(r => [r.image, r.label]));
 
         // Room images in the order they appear on the site, so this reads in
         // the same order as the gallery above rather than by object key.
@@ -3473,6 +3539,7 @@ document.addEventListener("DOMContentLoaded", () => {
             // Every room image, not only the ones carrying a record: an
             // unscanned room still needs somewhere to add furni by hand.
             const rooms = imagesInOrder();
+            shownRooms = roomsSignature(rooms);
             if (!rooms.length) {
                 listEl.innerHTML = '<p class="admin-empty">Add some room images first — furni is recorded against them.</p>';
                 return;
@@ -3941,6 +4008,19 @@ document.addEventListener("DOMContentLoaded", () => {
         // So a picture replaced elsewhere in the form can redraw this list
         // once its furni has moved to the new address — see moveFurniKey.
         formEl._renderFurni = render;
+        /* And redrawn when the form's room pictures change (10 Oct 2026, the
+           bug scan). imagesInOrder reads the form as it stands, but only
+           when this list is drawn, and nothing drew it on a gallery or
+           bookend change: a room added, uploaded into, promoted to the
+           entrance or removed kept the list as it was — no tab to add furni
+           to the new picture, a tab still offered for the one removed —
+           until something else redrew it. Only when the rooms it would
+           list have changed (their pictures, order or names), so a Bonus
+           press does not rebuild it (and pull the focus into an open
+           picker). */
+        formEl._syncFurniRooms = () => {
+            if (formEl._renderFurni === render && roomsSignature(imagesInOrder()) !== shownRooms) render();
+        };
         render();
     }
 
@@ -3964,6 +4044,11 @@ document.addEventListener("DOMContentLoaded", () => {
             } catch (err) {
                 if (err.status === 401) { lockOut(); return; }
                 status.textContent = err.message || "Upload failed.";
+            } finally {
+                // So the same file can be picked again to retry (10 Oct
+                // 2026, the bug scan) — see wireBookendUpload.
+                fileInput.value = "";
+                resetDropzoneText(fileInput);
             }
         });
     }
@@ -4025,9 +4110,15 @@ document.addEventListener("DOMContentLoaded", () => {
                 }
                 if (removeBtn) removeBtn.disabled = false;
                 status.style.display = "none";
+                syncFurniRooms(formEl);
             } catch (err) {
                 if (err.status === 401) { lockOut(); return; }
                 status.textContent = err.message || "Upload failed.";
+            } finally {
+                /* Cleared (10 Oct 2026, the bug scan), as the gallery's batch
+                   input is: a failed upload left the file chosen, and picking
+                   the same file again to retry fired no "change" at all. */
+                fileInput.value = "";
             }
         });
 
@@ -4055,6 +4146,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 formEl[`_${kind}OldVersionsExpanded`] = false;
                 const refresh = formEl[`_render${kind}OldVersions`];
                 if (refresh) refresh();
+                syncFurniRooms(formEl);
             });
         }
     }
@@ -4081,6 +4173,7 @@ document.addEventListener("DOMContentLoaded", () => {
             }
         }
         if (removeBtn) removeBtn.disabled = !image;
+        syncFurniRooms(formEl);
     }
 
     // Older-version images for the Entrance/Finish bookend slots — same
@@ -4263,6 +4356,7 @@ document.addEventListener("DOMContentLoaded", () => {
         if (dialogShowing) return null;
         dialogShowing = true;
         cancelOpenDialog = onEscape;
+        ungreyDialogButtons(overlay);
         const returnTo = document.activeElement;
         /* Said as a dialog to a screen reader (30 Sept 2026): every box
            built here is a .modal with its heading in the titlebar, so the
@@ -4380,6 +4474,23 @@ document.addEventListener("DOMContentLoaded", () => {
        admin-pill-danger, as the bookend dialog's "Delete it" does. Added
        when the last native confirm()s in the Warren were brought in here;
        the message is still markup, so callers escape what they put in it. */
+    /* A dialog's own buttons are never greyed for a view-only account (10
+       Oct 2026, the bug scan). They sit in an .admin-form-actions, which
+       body.is-viewer greys out with pointer-events: none, and the keyboard
+       guard then cancels them too — so for an Albus account (is-viewer, with
+       the atlas lifted back by wizard.css only INSIDE its panel, while these
+       boxes hang off <body>) the atlas's own Delete? box had a Yes that
+       could not be pressed, and every account's "Something Went Wrong" an OK
+       that could not. A box is only ever up because something already
+       allowed asked it; the server still refuses what the role may not do. */
+    function ungreyDialogButtons(overlay) {
+        overlay.querySelectorAll(".modal-body .admin-form-actions button").forEach(btn => {
+            btn.style.pointerEvents = "auto";
+            btn.style.opacity = "1";
+            btn.style.cursor = "var(--cursor-pointer)";
+        });
+    }
+
     function showConfirmDialog(message, opts) {
         const danger = !!(opts && opts.danger);
         return new Promise(resolve => {
@@ -4783,6 +4894,9 @@ document.addEventListener("DOMContentLoaded", () => {
                         } catch (err) {
                             if (err.status === 401) { lockOut(); return; }
                             status.textContent = err.message || "Upload failed.";
+                        } finally {
+                            // A retry with the same file (10 Oct 2026) — see wireBookendUpload.
+                            thumbFileInput.value = "";
                         }
                     });
                 }
@@ -4933,6 +5047,8 @@ document.addEventListener("DOMContentLoaded", () => {
                     }
                 });
             });
+            // The furni list's rooms follow the gallery — see _syncFurniRooms.
+            syncFurniRooms(formEl);
         }
 
         addBtn.addEventListener("click", async () => {
@@ -5498,18 +5614,28 @@ document.addEventListener("DOMContentLoaded", () => {
             // Save then wrote article: null, deleting the stored copy
             // because Habbo's site happened to be slow for a moment.
             const previous = formEl._articleDraft;
+            /* The opening this read belongs to (10 Oct 2026, the bug scan).
+               The form element outlives it: closed and opened on another
+               event while Habbo answered, the article — or, on a failure,
+               this event's old copy — was written into THAT event's draft. */
+            const session = formEl._openSession;
             let failed = "";
             try {
                 const article = await Api.readArticle(adminToken, url);
+                if (formEl._openSession !== session) return;
                 formEl._articleDraft = article;
                 // Whatever was typed is replaced by the URL actually read,
                 // so the field and the stored copy cannot disagree.
                 urlInput.value = article.url;
             } catch (err) {
                 if (err.status === 401) { lockOut(); return; }
+                if (formEl._openSession !== session) return;
                 formEl._articleDraft = previous;
                 failed = err.message || "That article could not be read.";
             } finally {
+                // The rest is this opening's own (detached) controls, and
+                // refresh would read the new opening's draft into them.
+                if (formEl._openSession !== session) return;
                 button.textContent = label;
                 button.disabled = false;
                 refresh();
@@ -5620,6 +5746,14 @@ document.addEventListener("DOMContentLoaded", () => {
            Save wrote A's furni onto B. */
         cfg.formEl._furniDraft = null;
         cfg.formEl._renderFurni = null;
+        cfg.formEl._syncFurniRooms = null;
+        /* And the last record's gallery (10 Oct 2026, the bug scan): the
+           furni editor is wired before this opening's gallery draft is
+           assigned, and its room list reads _galleryDraft first — so Edit
+           on maze B straight from maze A's open form listed A's rooms in
+           B's furni editor, and furni added there went against A's
+           pictures (and was dropped from B on Save as belonging to none). */
+        cfg.formEl._galleryDraft = null;
         // Rooms moved to a new picture address in this opening — see
         // moveFurniKey. Another record's moves mean nothing here.
         cfg.formEl._furniMoves = new Map();
@@ -5879,15 +6013,15 @@ document.addEventListener("DOMContentLoaded", () => {
             </div>
         ` : "";
 
-        // Rendered whenever the maze has room images at all, not just once
-        // a scan has recorded something: furni can now be added by hand, and
-        // an unscanned maze is precisely where you would want to. Rooms with
-        // nothing against them show as empty tabs with an Add button.
-        const hasRoomImages = Boolean(
-            (item.entrance && item.entrance.image) ||
-            (item.gallery || []).some(g => g && g.image) ||
-            (item.finish && item.finish.image)
-        );
+        // Rendered for every maze, not just once a scan has recorded
+        // something: furni can now be added by hand, and an unscanned maze
+        // is precisely where you would want to. Rooms with nothing against
+        // them show as empty tabs with an Add button.
+        /* And for a maze with no room pictures yet (10 Oct 2026): it was
+           left out until the maze was saved with some and opened again.
+           The editor says "Add some room images first" while there are
+           none, and _syncFurniRooms brings each room's tab in as its
+           picture is added. */
         /* Mazes only. Furni is what an archive of MAZES is for — what was in
            the room, so it can be found again — and an event is a happening
            rather than a room: its images are posters and promos, and a scan
@@ -5897,7 +6031,7 @@ document.addEventListener("DOMContentLoaded", () => {
            this. Nor could it be: submitForm only writes payload.furni when
            _furniDraft exists, and that is set by the editor below — so an
            event saved from here leaves whatever is stored exactly as it is. */
-        const furniSectionHtml = isRooms && hasRoomImages ? `
+        const furniSectionHtml = isRooms ? `
             <div class="admin-field admin-furni-field">
                 <span>Furni in these rooms</span>
                 <p class="admin-hint">What the scan detected in each room image, plus anything added by hand. Hide keeps a detection in the record but stops the site showing it &mdash; better than Remove for a false positive, since a rescan would find it again either way. Hand-added furni is kept through a rescan; detections are not.</p>
@@ -6223,6 +6357,7 @@ document.addEventListener("DOMContentLoaded", () => {
         cfg.formEl._furniDraft = null;
         cfg.formEl._furniMoves = null;
         cfg.formEl._renderFurni = null;
+        cfg.formEl._syncFurniRooms = null;
         cfg.formEl._selectedTags = null;
         cfg.formEl._expandedOldVersions = null;
         cfg.formEl._entranceOldVersions = null;
@@ -6938,11 +7073,16 @@ document.addEventListener("DOMContentLoaded", () => {
     // ---------- admin accounts ----------
 
     async function loadAdmins() {
+        const gen = accountGen;
+        const used = adminToken;   // see lockOutFor
         try {
-            workingAdmins = await Api.getAdmins(adminToken);
+            const admins = await Api.getAdmins(used);
+            if (!sameAccount(gen)) return;
+            workingAdmins = admins;
             renderAdminsList();
         } catch (err) {
-            if (err.status === 401) { lockOut(); return; }
+            if (!sameAccount(gen)) return;
+            if (err.status === 401) { lockOutFor(used); return; }
             // Said, not swallowed — see showLoadFailure.
             showLoadFailure(adminsListEl, err.message || "Couldn't load the admin accounts.");
         }
@@ -6984,7 +7124,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 </div>
                 <div class="admin-row-actions">
                     ${(isSelf || canDelete) ? `<button type="button" class="btn ${isSelf ? "admin-self-reset-btn" : "admin-reset-btn"}">Reset Password</button>` : ""}
-                    ${canDelete && admin.username !== PERMANENT_OWNER ? `<button type="button" class="btn admin-delete-btn" ${workingAdmins.length <= 1 ? "disabled" : ""}>Delete</button>` : ""}
+                    ${canDelete && !isSelf && admin.username !== PERMANENT_OWNER ? `<button type="button" class="btn admin-delete-btn" ${workingAdmins.length <= 1 ? "disabled" : ""}>Delete</button>` : ""}
                 </div>
             `;
             // Only an owner can reset someone else's password (also enforced
@@ -6998,6 +7138,9 @@ document.addEventListener("DOMContentLoaded", () => {
                included), and a greyed button said a viewer could not. */
             const resetBtn = row.querySelector(".admin-reset-btn, .admin-self-reset-btn");
             if (resetBtn) resetBtn.addEventListener("click", () => openResetForm(admin.username));
+            /* No Delete on your own row (10 Oct 2026): a second owner could
+               delete themselves, and were then told "Session expired". The
+               server refuses it too (auth.js's DELETE). */
             const deleteBtn = row.querySelector(".admin-delete-btn");
             if (deleteBtn) deleteBtn.addEventListener("click", () => deleteAdmin(admin.username));
             adminsListEl.appendChild(row);
@@ -7504,11 +7647,16 @@ document.addEventListener("DOMContentLoaded", () => {
     // ---------- console: contact messages ----------
 
     async function loadContactMessages() {
+        const gen = accountGen;
+        const used = adminToken;   // see lockOutFor
         try {
-            workingContactMessages = await Api.getContactMessages(adminToken);
+            const messages = await Api.getContactMessages(used);
+            if (!sameAccount(gen)) return;
+            workingContactMessages = messages;
             contactMessagesFailed = "";
         } catch (err) {
-            if (err.status === 401) { lockOut(); return; }
+            if (!sameAccount(gen)) return;
+            if (err.status === 401) { lockOutFor(used); return; }
             contactMessagesFailed = err.message || "Couldn't load the messages.";
         }
         renderContactMessagesList();
@@ -8478,6 +8626,11 @@ document.addEventListener("DOMContentLoaded", () => {
     function lightPura(state) {
         const s = state === "live" ? "live" : "maintenance";
         puraBtns.forEach(b => b.classList.toggle("active", b.dataset.puraState === s));
+        /* The Pura Panic page's heading says the state too (puraRender), and
+           went on saying "In maintenance" after the switch here put the game
+           Live, until that page was next re-read (10 Oct 2026, the bug
+           scan). Kept in step whenever it has been drawn. */
+        if (puraStateEl && puraLoaded) puraStateEl.textContent = s === "live" ? "· Live" : "· In maintenance";
     }
 
     puraBtns.forEach(btn => {
@@ -9047,8 +9200,11 @@ document.addEventListener("DOMContentLoaded", () => {
         let saved = null;
         try { saved = localStorage.getItem(PANEL_KEY); } catch (e) { /* private mode */ }
         if (!saved) return null;
-        const btn = adminNavEl && adminNavEl.querySelector(`.chrome-nav-btn[data-panel="${saved}"]`);
-        return btn && !btn.hidden ? saved : null;
+        return navButtonShown(saved) ? saved : null;
+    }
+    function navButtonShown(name) {
+        const btn = adminNavEl && adminNavEl.querySelector(`.chrome-nav-btn[data-panel="${name}"]`);
+        return !!btn && !btn.hidden;
     }
 
     if (adminNavEl) {
@@ -9113,12 +9269,31 @@ document.addEventListener("DOMContentLoaded", () => {
        highlighted row. Only the newest read is drawn now. */
     let dailySeq = 0;
 
+    /* The last account's pick, search, note and lists (10 Oct 2026, the bug
+       scan). Nothing cleared them, so whoever signed in next on the tab
+       opened Daily on the last person's search and highlighted player, with
+       a read of theirs still able to land over it. Called by
+       resetAccountPanels; enterAdmin's loadDaily then reads afresh. */
+    function clearDaily() {
+        dailySeq++;
+        dailyPlayers = [];
+        dailyPicked = null;
+        dailyDetail = null;
+        dailyNote = "";
+        dailyNoteFor = "";
+        dailyFailed = "";
+        if (dailySearchEl) dailySearchEl.value = "";
+        if (dailyPlayersEl) dailyPlayersEl.innerHTML = "";
+        if (dailyDetailEl) dailyDetailEl.innerHTML = "";
+    }
+
     async function loadDaily(playerId) {
         if (!dailyPlayersEl) return;
         const seq = ++dailySeq;
         if (String(playerId || "") !== dailyNoteFor) { dailyNote = ""; dailyNoteFor = ""; }
+        const used = adminToken;   // see lockOutFor
         try {
-            const data = await Api.getDailyPlayers(adminToken, dailySearchEl ? dailySearchEl.value.trim() : "", playerId || "");
+            const data = await Api.getDailyPlayers(used, dailySearchEl ? dailySearchEl.value.trim() : "", playerId || "");
             if (seq !== dailySeq) return;
             dailyPlayers = data.players || [];
             dailyDetail = data.detail || null;
@@ -9130,7 +9305,7 @@ document.addEventListener("DOMContentLoaded", () => {
                both reported as an empty game. The first now gets the
                session-expired login like every other panel; the second says
                it failed, in the list, instead of saying nobody played. */
-            if (err && err.status === 401) { lockOut(); return; }
+            if (err && err.status === 401) { lockOutFor(used); return; }
             if (seq !== dailySeq) return;
             dailyPlayers = [];
             dailyDetail = null;
@@ -9402,15 +9577,17 @@ document.addEventListener("DOMContentLoaded", () => {
 
     async function loadBans() {
         const gen = ++bansGen;
+        const acct = accountGen;   // see sameAccount
+        const used = adminToken;   // see lockOutFor
         if (bansRefreshBtn) bansRefreshBtn.disabled = true;
         try {
-            const data = await Api.getBans(adminToken);
-            if (gen !== bansGen) return;
+            const data = await Api.getBans(used);
+            if (gen !== bansGen || !sameAccount(acct)) return;
             workingBans = Array.isArray(data) ? data : (data && Array.isArray(data.bans) ? data.bans : []);
             bansFailed = "";
         } catch (err) {
-            if (gen !== bansGen) return;
-            if (err.status === 401) { lockOut(); return; }
+            if (gen !== bansGen || !sameAccount(acct)) return;
+            if (err.status === 401) { lockOutFor(used); return; }
             workingBans = [];
             // "No bans yet." after a failed read would tell an admin the
             // address they banned last week is free to post again.

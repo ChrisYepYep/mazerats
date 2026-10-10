@@ -280,6 +280,8 @@
         window.addEventListener("keydown", onKey, true);
         window.addEventListener("keyup", onKeyUp, true);
         window.addEventListener("resize", clamp);
+        // Some phones give the new size only after orientationchange has fired.
+        window.addEventListener("orientationchange", () => { clamp(); setTimeout(clamp, 300); });
         window.addEventListener("blur", () => { if (mode === "play") pause("leaving"); });
         document.addEventListener("visibilitychange", () => {
             if (document.hidden && mode === "play") pause("leaving");
@@ -309,11 +311,16 @@
         root.style.top = Math.max(0, Math.round((window.innerHeight - h) / 2)) + "px";
     }
 
+    /* BACK INTO VIEW (10 Oct 2026, the bug scan). A window dragged aside
+       and then squeezed — a phone turned, the browser made smaller — was
+       pushed against the nearest edge and stayed there until it was opened
+       again. Now, when any of it would be off the screen, it goes back to
+       the middle exactly as it opens there (place); a window still wholly
+       on screen stays where it was dragged. Also on a reopen. */
     function clamp() {
         if (!isOpen()) return;
         const r = root.getBoundingClientRect();
-        root.style.left = Math.min(Math.max(0, window.innerWidth - root.offsetWidth), Math.max(0, r.left)) + "px";
-        root.style.top = Math.min(Math.max(0, window.innerHeight - root.offsetHeight), Math.max(0, r.top)) + "px";
+        if (r.left < 0 || r.top < 0 || r.left + root.offsetWidth > window.innerWidth || r.top + root.offsetHeight > window.innerHeight) place();
     }
 
     // Dragged by its yellow, as the Profiles window is (wireProgressDrag in js/home.js).
@@ -368,7 +375,10 @@
            from the top on a fresh open, carried on if a game is paused. */
         if (music()) {
             if (mode === "paused" && music().playing) { music().setMuffled(true); music().resume(); }
-            else if (!music().playing) music().start(1, { muffled: true });
+            // Shut and opened again while a game was being dealt (close()
+            // stopped its track): the game is about to start, so open, not
+            // muffled, or it played the whole game muffled (10 Oct 2026).
+            else if (!music().playing) music().start(1, mode === "dealing" ? {} : { muffled: true });
         }
         // The tab and the address name the game while it is open, as Guess
         // the Maze's do (PageMeta in js/site.js).
@@ -565,7 +575,11 @@
         // Closed while the server was dealing (close() has already stopped
         // the music): no game starts behind a shut window.
         if (!isOpen() || mode !== "dealing") { if (mode === "dealing") mode = "idle"; return; }
-        if (run.refused) { mode = "idle"; showPanel("title"); return; }
+        /* Refused (banned, from 10 Oct 2026 at the start too: pura-scores.js
+           gives no run token to a banned network or account): Account's ban
+           window is already up over this one; the splash behind it, and the
+           track back to the splash's muffled one, not the game's. */
+        if (run.refused) { mode = "idle"; if (music()) music().setMuffled(true); showPanel("title"); return; }
         forgetGame();
         g = E.newGame(run.token ? run.seed : localSeed());
         if (startAt > 1) {
@@ -809,8 +823,22 @@
         m: "music", M: "music"
     };
 
+    /* ONLY WHILE IT IS THE FRONT WINDOW (10 Oct 2026, the bug scan). The
+       keys were taken with the focus anywhere while a game played, so Guess
+       the Maze or Odd One Out opened over it (every .modal-overlay window
+       sits above this one, 100 to its 91) lost the space bar and the
+       arrows to a game that played on unseen behind it. Now a window over
+       it — a .modal-overlay or a picture's lightbox, or the focus inside
+       the Console, which floats above it without covering the page — has
+       the keys; and the loop pauses a game the moment one covers it. */
+    const covered = () => Boolean(document.querySelector(".modal-overlay.open:not(.closing), .lightbox-overlay.open"));
+    function elsewhere() {
+        const a = document.activeElement;
+        return Boolean(a && !root.contains(a) && a.closest(".modal-overlay, .lightbox-overlay, .console-modal"));
+    }
+
     function ours(e) {
-        if (!isOpen()) return false;
+        if (!isOpen() || covered() || elsewhere()) return false;
         const t = e.target;
         if (t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return false;
         return mode === "play" || root.contains(document.activeElement);
@@ -820,8 +848,13 @@
         if (!ours(e) || e.ctrlKey || e.metaKey || e.altKey) return;
         const what = KEYMAP[e.key];
         if (e.key === "Enter" && mode !== "play") {
-            const btn = panel.querySelector("[data-go]");
-            if (btn && document.activeElement && document.activeElement.tagName === "BUTTON" && root.contains(document.activeElement)) return;
+            /* The panel's own buttons (10 Oct 2026): the first [data-go]
+               anywhere was the maintenance notice's "contact form" link,
+               or a game-over note's "Choose a nickname". Continue, when a
+               game left part-way is offered, still comes first. */
+            const btn = panel.querySelector(".pura-continue [data-go], .pura-buttons [data-go]");
+            // A button or link with the focus answers Enter itself (Not you?, Change).
+            if (btn && document.activeElement && /^(BUTTON|A)$/.test(document.activeElement.tagName) && root.contains(document.activeElement)) return;
             if (btn) { e.preventDefault(); btn.click(); }
             return;
         }
@@ -1089,6 +1122,8 @@
         const frameFn = (now) => {
             raf = 0;
             if (!isOpen()) return;
+            // Another window opened over a game: paused (see ONLY WHILE IT IS THE FRONT WINDOW).
+            if (mode === "play" && covered()) pause();
             const dt = Math.min(100, now - last);
             last = now;
             step(dt);
@@ -1388,6 +1423,7 @@
         const go = btn.dataset.go;
         if (go === "play") play();
         else if (go === "who") showPanel("who");
+        else if (go === "forget") forgetGuest();
         else if (go === "whonext") chooseName();
         else if (go === "whocheck") checkMotto();
         else if (go === "asguest") playAsGuest();
@@ -1461,14 +1497,20 @@
     const load = (k) => { try { return JSON.parse(localStorage.getItem(k) || "null"); } catch (e) { return null; } };
     const keep = (k, v) => { try { if (v) localStorage.setItem(k, JSON.stringify(v)); else localStorage.removeItem(k); } catch (e) { /* this visit only */ } };
 
-    let guest = null;     // { kind: "habbo", name, hotel, token } or { kind: "rat" }
+    let guest = null;     // { kind: "habbo", name, hotel, token, id } or { kind: "rat", id }
     let rat = null;       // { n, token }: this browser's Guest Rat, once numbered
     let claim = null;     // { name, hotel, code, claim, at }: a motto code in waiting
+    /* Each guest named on this browser gets a random id of its own, kept
+       with it (10 Oct 2026), so a game left part-way is only offered back
+       to the guest who left it (CONTINUING, leftGame). Never sent anywhere. */
+    const newGuestId = () => Math.random().toString(36).slice(2, 12) + Date.now().toString(36);
     (function () {
         const w = load(WHO_KEY);
         if (w && w.kind === "habbo" && HABBO_NAME.test(w.name) && typeof w.token === "string") {
-            guest = { kind: "habbo", name: w.name, hotel: HOTELS.includes(w.hotel) ? w.hotel : "COM", token: w.token };
-        } else if (w && w.kind === "rat") guest = { kind: "rat" };
+            guest = { kind: "habbo", name: w.name, hotel: HOTELS.includes(w.hotel) ? w.hotel : "COM", token: w.token, id: w.id };
+        } else if (w && w.kind === "rat") guest = { kind: "rat", id: w.id };
+        // Named before ids were kept: given one now.
+        if (guest && typeof guest.id !== "string") { guest.id = newGuestId(); keep(WHO_KEY, guest); }
         const r = load(RAT_KEY);
         if (r && Number.isInteger(r.n) && typeof r.token === "string") rat = r;
         const c = load(CLAIM_KEY);
@@ -1496,7 +1538,24 @@
         const who = guest.kind === "habbo"
             ? `<strong>${esc(guest.name)}</strong>${guest.hotel === "COM" ? "" : " on Origins " + guest.hotel}`
             : rat ? `<strong>Guest Rat ${rat.n}</strong>` : "a guest";
-        return `<p class="pura-beta-note">Playing as ${who} · <a href="#" data-go="who">Change</a></p>`;
+        return `<p class="pura-beta-note">Playing as ${who} · <a href="#" data-go="who">Change</a> · <a href="#" data-go="forget">Not you?</a></p>`;
+    }
+
+    /* NOT YOU? (10 Oct 2026, the bug scan; the owner's yes). A proved Habbo
+       and a Guest Rat number are kept on this browser for good, so on a
+       shared computer the next person scored under the last one's Habbo.
+       "Not you?" forgets them here — the Habbo's token, the Guest Rat and
+       its token, a motto code in waiting — and a game they left part-way
+       with them; the next Play asks who is playing. Their scores stay on
+       the board: only this browser forgets. */
+    function forgetGuest() {
+        const k = load(LEFT_KEY);
+        if (k && !k.account) forgetGame();
+        guest = null; rat = null; claim = null;
+        keep(WHO_KEY, null); keep(RAT_KEY, null); keep(CLAIM_KEY, null);
+        pendingContinue = false;
+        hud();
+        showPanel("title");
     }
 
     // The board's own row for whoever this is (pura-scores.js GET).
@@ -1538,7 +1597,8 @@
 
     function playAsGuest() {
         count("pura-name", "guest-rat");
-        guest = { kind: "rat" };
+        // The same Guest Rat choosing Guest again stays the same guest.
+        guest = { kind: "rat", id: guest && guest.kind === "rat" ? guest.id : newGuestId() };
         keep(WHO_KEY, guest);
         play();
     }
@@ -1593,7 +1653,8 @@
         const d = r ? r.data : {};
         if (d.verified) {
             count("pura-name", "habbo");
-            guest = { kind: "habbo", name: d.name, hotel: d.hotel, token: d.token };
+            const same = guest && guest.kind === "habbo" && guest.name.toLowerCase() === String(d.name).toLowerCase() && guest.hotel === d.hotel;
+            guest = { kind: "habbo", name: d.name, hotel: d.hotel, token: d.token, id: same ? guest.id : newGuestId() };
             keep(WHO_KEY, guest);
             claim = null; keep(CLAIM_KEY, null);
             whoSay("That's you! Starting…");
@@ -1607,9 +1668,15 @@
             return;
         }
         if (r && r.res.status === 409) {
+            /* Back to the step that gives codes, the Habbo still filled in
+               (10 Oct 2026), worded as pura-scores.js words it. */
+            const was = claim;
             claim = null; keep(CLAIM_KEY, null);
             showPanel("who");
-            whoSay("That code ran out. Press Next for a new one.");
+            const input = panel.querySelector("#pura-who-name"), hotelEl = panel.querySelector("#pura-who-hotel");
+            if (input && was && !input.value) input.value = was.name;
+            if (hotelEl && was && HOTELS.includes(was.hotel)) hotelEl.value = was.hotel;
+            whoSay("That code has run out. Press Next for a new one.");
             return;
         }
         const wait = r && Number.isFinite(d.wait) ? d.wait : 30000;
@@ -1637,20 +1704,18 @@
        board keeps the best, the game can still be finished). And leaving is
        warned about in the window itself: the game pauses with a flashing !
        and "Submit your progress to the scoreboard before you leave by
-       pressing End Game!" — on top of the browser's own "Leave site?" when
-       the tab or browser is being closed. */
+       pressing Submit Score!". There is no browser "Leave site?" box (the
+       owner's, 7 Oct 2026; see CONTINUING). */
     let leaving = false;
     /* The prompt's answers (7 Oct 2026, the owner's): Submit Score or Keep
-       Playing, to push towards the board. Closing the tab or browser is held
-       by the browser's own "Leave site?" for the whole game — the only hold
-       a page is allowed (its own window is refused once a close begins,
-       proved in a real Edge) — and a phone's swipe-away cannot be held at
-       all, which is what the saves on the way are for. */
+       Playing, to push towards the board. Closing the tab or the browser,
+       or a phone's swipe-away, cannot be held at all, which is what the
+       saves on the way and CONTINUING are for. */
     let fromLeave = false;   // the game was ended by the leave prompt's Submit Score
     let saving = null;
     let savedScore = 0;
 
-    // From the moment Play is pressed (the owner's: the first close attempt is stopped).
+    // A game under way, playing or paused: what keepGame keeps.
     const inGame = () => (mode === "play" || mode === "paused") && Boolean(g);
 
     function saveProgress() {
@@ -1658,19 +1723,31 @@
         const p = me();
         if (p ? !p.nick : !guest) return;
         savedScore = g.score;
-        const body = JSON.stringify({ run: run.token, log: g.log, ms: Math.round(gameMs), score: g.score, checkpoint: true, ...gameFacts() });
-        const req = fetch(API, {
-            method: "POST",
-            credentials: "same-origin",
-            headers: { "Content-Type": "application/json" },
-            body,
-            // Survives the tab closing, when small enough to.
-            keepalive: body.length < 60000
-        }).then(res => res.json().catch(() => ({}))).then(d => {
+        const facts = { run: run.token, log: g.log.slice(), ms: Math.round(gameMs), score: g.score, checkpoint: true };
+        /* After the save before it, if that one is still out (10 Oct 2026):
+           a Guest Rat is numbered by their first save, and two saves in the
+           air at once on a slow connection both went without a number, so
+           the server gave each its own — one player, two Guest Rats on the
+           board. Who is playing is read when the save goes, not now. */
+        const send = () => {
+            const body = JSON.stringify({ ...facts, ...gameFacts() });
+            return fetch(API, {
+                method: "POST",
+                credentials: "same-origin",
+                headers: { "Content-Type": "application/json" },
+                body,
+                // Survives the tab closing, when small enough to.
+                keepalive: body.length < 60000
+            });
+        };
+        const req = (saving ? saving.catch(() => {}).then(send) : send()).then(res => res.json().catch(() => ({}))).then(d => {
             // A Guest Rat numbered by this save (pura-scores.js, GUESTS).
             if (d && d.rat && Number.isInteger(d.rat.n) && d.rat.token && (!rat || rat.n !== d.rat.n)) { rat = { n: d.rat.n, token: d.rat.token }; keep(RAT_KEY, rat); hud(); }
         }).catch(() => { savedScore = 0; });
-        saving = req.finally(() => { if (saving === req) saving = null; });
+        // Compared with the promise actually kept: it was checked against
+        // `req`, which `saving` never is, so it was never let go.
+        const held = req.finally(() => { if (saving === held) saving = null; });
+        saving = held;
     }
 
     /* ---------------------------------------------------------------- CONTINUING
@@ -1696,7 +1773,9 @@
         if (!inGame() || !run || !run.token || run.resumed || testLevel() || !g.log.length) return;
         keep(LEFT_KEY, {
             token: run.token, seed: run.seed, log: g.log, ms: Math.round(gameMs),
-            score: g.score, level: g.level, at: Date.now(), account: me() ? me().id : null
+            score: g.score, level: g.level, at: Date.now(), account: me() ? me().id : null,
+            // Signed out: which guest left it (see leftGame).
+            guest: !me() && guest ? guest.id : null
         });
     }
 
@@ -1708,6 +1787,12 @@
         if (!k || typeof k.token !== "string" || !Number.isInteger(k.seed) || !Array.isArray(k.log) || !k.log.length) return null;
         if (Date.now() - k.at > RESUME_WINDOW) { forgetGame(); return null; }
         if ((k.account || null) !== (me() ? me().id : null)) return null;
+        /* Left signed out: only for the same guest (10 Oct 2026, the bug
+           scan). It was offered to whoever came next on this browser, under
+           their own name. A guest forgotten (Not you?) or changed since is
+           someone else, and the game is let go — as is one kept before
+           guests were told apart, which cannot say whose it was. */
+        if (!k.account && (k.guest || null) !== (guest ? guest.id : null)) { forgetGame(); return null; }
         return k;
     }
 
@@ -1753,7 +1838,12 @@
         }
         // Never kept again: this is its one continue.
         forgetGame();
-        if (music()) music().start(1, { powerUp: true });
+        /* Shut while the server was answering (10 Oct 2026): its one
+           continue is spent, so the game is still picked up, but held
+           paused and silent behind the shut window, not playing on unseen
+           and heard from it. */
+        const shut = !isOpen();
+        if (music() && !shut) music().start(1, { powerUp: true });
         run = { token: d.token, seed: d.seed, resumed: true };
         rowsBase = 0;
         g = E.newGame(d.seed);
@@ -1771,7 +1861,7 @@
         }
         if (!sound) {
             g = null; run = null; mode = "idle";
-            if (music()) music().start(1, { muffled: true });
+            if (music() && !shut) music().start(1, { muffled: true });
             showPanel("title");
             return;
         }
@@ -1784,6 +1874,7 @@
         banner = null; shownLevel = g.level; hideBanner();
         if (music()) music().setLevel(g.level);
         count("pura-continue");
+        if (shut) { mode = "paused"; hud(); showPanel("paused"); return; }
         mode = "play";
         hidePanel();
         hud();

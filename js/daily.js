@@ -256,14 +256,12 @@ window.Daily = (function () {
 
     /* One move — a tile picked, a name guessed — sent the moment it is made,
        and the server's verdict back. `data` is the game's own part of it
-       ({ tile } or { guess }), `anon` a day begun signed out (see the note
-       at the POST in daily-scores.js). The server refuses `anon` from a
-       request that carries a session — 400, reason "signed-in" — and the
-       game answers that by recording the day instead (see replay below).
-       `untimed` sends a signed-in move WITHOUT starting the day's clock
-       first, for replay only.
+       ({ tile } or { guess }). Every move is a signed-in player's, recorded
+       (the daily games need an account with a nickname); the `anon`,
+       `untimed` and `replay` options that served a day begun signed out
+       went with signed-out play (10 Oct 2026).
 
-       A signed-in player's move waits for the day's start to have landed,
+       A move waits for the day's start to have landed,
        or the server would find no clock and time nothing. A move the server
        calls too fast (MIN_MOVE_MS in netlify/functions/_speed.js) is sent
        again once the time it names has passed — a genuinely quick player
@@ -275,8 +273,8 @@ window.Daily = (function () {
     async function move(game, day, round, data, opts) {
         const o = opts || {};
         const key = game + ":" + day;
-        if (!o.anon && startsInFlight.has(key)) await startsInFlight.get(key);
-        /* A signed-in round 0 move whose start this page never saw land
+        if (startsInFlight.has(key)) await startsInFlight.get(key);
+        /* A round 0 move whose start this page never saw land
            sends the start again first, and waits for it. The start used to
            be tried once, as the first pictures came up, and a request that
            fell over there made the WHOLE day untimed: the server, finding
@@ -287,11 +285,8 @@ window.Daily = (function () {
            find the untimed row already there and change nothing. start()
            itself does nothing signed out, or when the server has already
            refused it (a closed day), so this cannot loop. */
-        if (!o.anon && !o.untimed && round === 0 && !startConfirmed.has(key)) await start(game, day, o.url);
-        // `replay` marks a move sent again by replay() below, which the
-        // server reads as "this day is not to be timed" (28 Sept 2026).
-        const payload = Object.assign({ game, day, action: "move", round }, data,
-            o.anon ? { anon: true } : {}, o.replay ? { replay: true } : {});
+        if (round === 0 && !startConfirmed.has(key)) await start(game, day, o.url);
+        const payload = Object.assign({ game, day, action: "move", round }, data);
         let reply = { status: 0, body: null };
         for (let attempt = 0; attempt < 4; attempt++) {
             reply = await post(o.url || SCORES_URL, payload);
@@ -307,102 +302,31 @@ window.Daily = (function () {
            goes from this page's memory too, as in deal() above; the game
            reads the day again on any 409 and starts it fresh. */
         if (reply.status === 409 && reply.body && reply.body.reason === "practice-over") forgetStarts(game);
-        // A signed-out verdict from before the cut says so — see practised.
-        if (reply.status === 200) notePractice(game, day, reply.body);
         return reply;
     }
 
-    /* PRACTISED, ON THIS DEVICE (1 Oct 2026). A player who practised
-       launch day earns no speed bonus on its real rounds, which deal the
-       same five (NO SPEED BONUS AFTER PRACTICE in
-       netlify/functions/_speed.js). Signed in, the server knows from its
-       own records. Signed out it records nothing, so it says `practice` on
-       every answer it gives before the cut — the first round's, each
-       verdict — and this page remembers the day here, then owns up to it
-       with `practised: true` on its signed-in start (start below). Only
-       this browser's word, so it covers the ordinary way an early player
-       signs in on launch day, not a private window or another device.
-       Kept for LATE_FILE_DAYS, which is as long as a day can matter. */
-    const PRACTISED_KEY = "mazerats_daily_practised";
-    function practisedDays() {
-        let all = null;
-        try { all = JSON.parse(localStorage.getItem(PRACTISED_KEY) || "null"); } catch (e) { all = null; }
-        return all && typeof all === "object" && !Array.isArray(all) ? all : {};
-    }
-    function notePractice(game, day, body) {
-        if (!body || typeof body.practice !== "string") return;
-        const all = practisedDays();
-        const key = game + ":" + day;
-        if (all[key]) return;
-        all[key] = body.practice;
-        let earliest = today();
-        for (let i = 0; i < LATE_FILE_DAYS; i++) earliest = dayBefore(earliest);
-        for (const k of Object.keys(all)) if (!(k.slice(k.indexOf(":") + 1) >= earliest)) delete all[k];
-        try { localStorage.setItem(PRACTISED_KEY, JSON.stringify(all)); } catch (e) { /* private mode */ }
-    }
-    const practised = (game, day) => Boolean(practisedDays()[game + ":" + day]);
+    /* PRACTISED, ON THIS DEVICE — gone (10 Oct 2026). This page used to
+       remember a launch-day run it had played SIGNED OUT before the cut
+       (mazerats_daily_practised) and own up to it with `practised: true`
+       on its signed-in start, so the real day earned no speed bonus. There
+       is no signed-out play to have practised any more; the server knows a
+       signed-in practice run from its own records (NO SPEED BONUS AFTER
+       PRACTICE in netlify/functions/_speed.js). A key left in storage is
+       never read again. */
 
     /* Whether a move's verdict was given after practice time (1 Oct 2026).
-       Every verdict before the cut says so — `practice` signed out,
-       `practiceUntil` recorded — so one carrying neither landed after it.
+       Every verdict before the cut says so (`practiceUntil`; `practice`
+       on the signed-out verdicts there used to be), so one carrying
+       neither landed after it.
        Both games ask this of a day's FIRST verdict: a day dealt at 07:59
        and played from 08:00 was marked practice by the deal and kept the
        mark, so a real, filed launch day was carded "isn't on the boards",
        shared as "(practice)" and left out of the streak. */
     const afterPractice = body => Boolean(body) && typeof body.practice !== "string" && typeof body.practiceUntil !== "string";
 
-    /* Whether a move's answer is the server refusing `anon` because the
-       request carried a session (see move). */
-    const refusedAsSignedIn = reply => Boolean(reply && reply.status === 400 && reply.body && reply.body.reason === "signed-in");
-
-    /* A day begun signed out, RECORDED after the player has signed in part
-       of the way through it.
-
-       The server used to answer a signed-in player's `anon` moves without
-       recording them, so a day begun signed out simply carried on
-       unrecorded and was filed from the page's own moves at the end
-       (scoreClaim). It refuses those now — they were a free answer check
-       for anyone signed in — and a day half recorded and half not can be
-       filed from neither half. So the moves already made are sent again,
-       in order, as recorded moves, and the day carries on recorded from
-       there.
-
-       UNTIMED. No start is sent first, so the server writes the day as
-       noClock (rowForMove in netlify/functions/_speed.js) and it earns no
-       speed bonus — exactly what a day begun signed out always earned.
-       Starting a clock here would time a replay, and a replay of moves
-       already made takes a second a round, which would be most of the
-       bonus for nothing.
-
-       And untimed even when another device has already started the day's
-       clock. That case used to time the replay against the other device's
-       start, which sounded honest and was not: the rounds after the first
-       landed a second or so apart as the replay ran through them, and each
-       earned nearly the whole round's bonus for moves made long before. So
-       every replayed move now carries `replay: true`, and the server, on
-       recording one, marks the day's row noClock for good — the day earns
-       no bonus whichever device started a clock (rowForMove in
-       netlify/functions/_speed.js; 28 Sept 2026).
-
-       SAFE TO REPEAT. A round the server already has answers `already`
-       (Odd One Out) or `already`/`repeat` (Guess the Maze) with the
-       server's own record, so a replay cut off half-way can simply be run
-       again, and a round another device played first comes back as the
-       server has it. Each round's first move waits MIN_MOVE_MS after the
-       round before, as any recorded move does; move() waits it out.
-
-       `list` is [{ round, data }] in the order made. Answers
-       { ok, replies }: ok only if every move came back recorded. */
-    async function replay(game, day, list, opts) {
-        const o = opts || {};
-        const replies = [];
-        for (const item of list || []) {
-            const reply = await move(game, day, item.round, item.data, { url: o.url, untimed: true, replay: true });
-            replies.push(reply);
-            if (reply.status !== 200 || !reply.body || !reply.body.recorded) return { ok: false, replies };
-        }
-        return { ok: true, replies };
-    }
+    /* refusedAsSignedIn and replay() lived here: a day begun signed out,
+       its moves sent again as recorded ones once the player had signed in
+       part-way. Signed-out play is gone (10 Oct 2026), and both with it. */
 
     /* ---------- the speed bonus, as the games show it ----------
 
@@ -429,19 +353,18 @@ window.Daily = (function () {
        with what it counts, and the total matches the board underneath.
 
          filed, with a bonus      "50 + 161 speed bonus = 211 on the boards"
-         filed, no bonus, begun signed out
-                                  "No speed bonus: this day began signed out."
          filed, no bonus, practised first (`practised`, 1 Oct 2026)
                                   "No speed bonus today: you played these
                                    rounds in practice before the site
                                    opened."
          filed, no bonus          "No speed bonus this time."
-         signed in, not filed yet nothing, until the submission answers
-         signed out               "Sign in before you play to earn a speed
-                                   bonus as well." — a signed-out day earns
-                                   none, so it never shows one.
+         not filed yet            nothing, until the submission answers
          a practice run           practiceLine below, whatever else is
-                                  known (`practice`, 30 Sept 2026) */
+                                  known (`practice`, 30 Sept 2026)
+
+       Two lines went with signed-out play (10 Oct 2026): "No speed bonus:
+       this day began signed out." (`mode: "anon"`) and, signed out, "Sign
+       in before you play to earn a speed bonus as well." */
     function bonusLine(opts) {
         const o = opts || {};
         if (o.practice) return practiceLine(o.practice, o.day, o.now);
@@ -453,9 +376,8 @@ window.Daily = (function () {
             // Filed with no clock because the day was practised first (NO
             // SPEED BONUS AFTER PRACTICE in netlify/functions/_speed.js).
             if (s.practised) return "No speed bonus today: you played these rounds in practice before the site opened.";
-            return o.mode === "anon" ? "No speed bonus: this day began signed out." : "No speed bonus this time.";
+            return "No speed bonus this time.";
         }
-        if (!o.signedIn) return "Sign in before you play to earn a speed bonus as well.";
         return "";
     }
 
@@ -583,15 +505,15 @@ window.Daily = (function () {
 
     /* Posts a finished day. Silent by design — whether a score reached a
        board is not something to interrupt somebody's result with, and the
-       board underneath is the confirmation. Signed out it still posts and
-       is told, politely, that there is no name to put on a row.
+       board underneath is the confirmation.
 
-       `moves` is only read by the server for a day played signed out (it
-       scores a signed-in day from the moves it recorded). Answers
-       { ok, body, retry, final } — see filed() below for what each means,
-       and for why `final`, not "not retry", is what marks a day posted. */
-    async function submit(game, day, moves) {
-        const { status, body } = await post(SCORES_URL, { game, day, moves });
+       Just the game and the day: the server scores it from the moves it
+       recorded. (It sent the picks too, `moves`, for a day played signed
+       out; 10 Oct 2026.) Answers { ok, body, retry, final } — see filed()
+       below for what each means, and for why `final`, not "not retry", is
+       what marks a day posted. */
+    async function submit(game, day) {
+        const { status, body } = await post(SCORES_URL, { game, day });
         return Object.assign({ body }, filed(status, body, day));
     }
 
@@ -621,8 +543,8 @@ window.Daily = (function () {
        mark posted on. Three answers that are not worth an immediate retry
        can still end with the day filed, and marking them posted lost the
        day for good:
-         - signed out (a 200 saying so, or Guess the Maze's 401): the
-           session lapsed; signing in again files it;
+         - signed out (a 401 for a session revoked; a lapsed one is the
+           403 below): signing in again files it;
          - 409 "unfinished": the server's record is behind the page's, and
            the game reads the day again to finish it (see refreshDay in
            either game);
@@ -653,8 +575,9 @@ window.Daily = (function () {
            choose one, as a rejected nickname's does — it is not lost. */
         const lifts = status === 403 && (Boolean(b.nickRequired) || Boolean(b.signInToPlay) || Boolean(b.nickToPlay) ||
             Boolean(b.banned && typeof b.banned === "object" && b.banned.until));
+        // (A 200 `reason: "signed-out"` was the old signed-out answer,
+        // never sent since 4 Oct; dropped 10 Oct 2026.)
         const later = retry ||
-            (status === 200 && b.reason === "signed-out") ||
             status === 401 ||
             (lifts && fileable(day)) ||
             (status === 409 && b.reason === "unfinished") ||
@@ -670,9 +593,9 @@ window.Daily = (function () {
        second device changes nothing.
 
        Each game calls it on the way into its first round and only while no
-       round has been played: a day already under way before sign-in has no
-       clock on file and so no bonus, and starting one half-way through
-       would time only the rounds left.
+       round has been played: a day already under way has its clock (or
+       none) on file, and starting one half-way through would time only the
+       rounds left.
 
        Signed out it sends nothing; there is nobody to time. Once per game
        and day per visit, unless the request fell over, in which case the
@@ -699,22 +622,19 @@ window.Daily = (function () {
         const job = (async () => {
             try { await Account.ready(); } catch (e) { startSent.delete(key); return; }
             if (!Account.current) { startSent.delete(key); return; }
-            // `practised`: a run this page played signed out before the cut
-            // (see notePractice above; 1 Oct 2026).
-            const { status, body } = await post(url || SCORES_URL,
-                Object.assign({ game, day, action: "start" }, practised(game, day) ? { practised: true } : {}));
-            /* Only a start the server says it RECORDED (30 Sept 2026). A
-               session that lapsed after the page loaded is answered 200
-               { started: false, reason: "signed-out" }, and counting that
-               as confirmed meant round 0's move never re-sent the start
-               once the player had signed in again in another tab. */
+            const { status, body } = await post(url || SCORES_URL, { game, day, action: "start" });
+            /* Only a start the server says it RECORDED (30 Sept 2026), so
+               round 0's move sends it again otherwise. */
             if (status === 200 && body && body.started) startConfirmed.add(key);
-            // Not recorded, so it may be sent again (round 0's move does).
-            if (status === 200 && body && body.started === false) startSent.delete(key);
             if (status === 200 && body && body.next) openings.set(key, body.next);
-            // A refusal (a closed day, say) will be refused again; only a
-            // server that could not answer is worth another go.
-            if (status === 0 || status >= 500) startSent.delete(key);
+            /* A refusal (a closed day, say) will be refused again; only a
+               server that could not answer is worth another go — and a
+               session that lapsed after the page loaded (401, or 403 "sign
+               in to play"), which signing in again in another tab lifts.
+               That used to come back 200 { started: false } and was let go
+               the same way (10 Oct 2026). */
+            if (status === 0 || status >= 500 || status === 401 ||
+                (status === 403 && body && (body.signInToPlay || body.nickToPlay))) startSent.delete(key);
         })().catch(() => { startSent.delete(key); });
         startsInFlight.set(key, job);
         job.then(() => { if (startsInFlight.get(key) === job) startsInFlight.delete(key); });
@@ -727,27 +647,19 @@ window.Daily = (function () {
        for nearly the whole speed bonus. A round's pictures now arrive in
        the reply that ends the round before it (`next` on a move's answer),
        round 0's in the start's, and a deal reply carries only the rounds
-       the server's record says this player has reached (null for the rest,
-       signed out all null) — see ONE ROUND AT A TIME in
-       netlify/functions/_deal.js. Each game keeps the rounds it has been
-       handed with its saved day, so a reload signed out still has them.
+       the server's record says this player has reached (null for the rest)
+       — see ONE ROUND AT A TIME in netlify/functions/_deal.js. Each game
+       keeps the rounds it has been handed with its saved day.
 
-       opening() is round 0: from the start's reply when a signed-in start
-       is sent (start above), otherwise by asking the same endpoint plainly,
-       which for a signed-out player records nothing and answers the round.
-       Answers the round ({ round: 0, ... }) or null. */
+       opening() is round 0: from the start's reply (start above), or, if
+       that one fell over, by sending the start once more here. Answers the
+       round ({ round: 0, ... }) or null. (The second ask also answered a
+       signed-out page the round, unrecorded, until 10 Oct 2026.) */
     async function opening(game, day, url) {
         const key = game + ":" + day;
         if (!openings.has(key)) await start(game, day, url);
         if (openings.has(key)) return openings.get(key);
-        /* `practised` here too (1 Oct 2026): signed in, this can be the
-           start that lands — start() above fell over, this did not — and
-           when it says started, round 0's move never sends start() again,
-           so the run this page practised went unmentioned. */
-        const { status, body } = await post(url || SCORES_URL,
-            Object.assign({ game, day, action: "start" }, practised(game, day) ? { practised: true } : {}));
-        // Signed out before the cut, round 0 says `practice` (notePractice).
-        if (status === 200) notePractice(game, day, body);
+        const { status, body } = await post(url || SCORES_URL, { game, day, action: "start" });
         if (status === 200 && body && body.next) {
             openings.set(key, body.next);
             if (body.started) startConfirmed.add(key);
@@ -967,13 +879,11 @@ window.Daily = (function () {
                the game says was played unlisted (opts.listed === false),
                which went up under no name at all. */
             /* Nothing at all for a practice run (30 Sept 2026): it goes on
-               no board signed in or out, so neither the nickname line nor
-               "Sign in to be listed" has anything to offer it. */
-            const invite = o.practice ? "" : me() ? (o.listed !== false && window.Account && Account.nickHintHtml ? Account.nickHintHtml() : "") : `
-                <p class="guess-board-note guess-board-invite">
-                    Your ${o.points || 0} points are saved on this device.
-                    <button type="button" class="guess-btn" data-daily-signin>Sign in with Discord to be listed</button>
-                </p>`;
+               no board, so the nickname line has nothing to offer it. The
+               signed-out "Your N points are saved on this device. Sign in
+               with Discord to be listed" went with signed-out play (10 Oct
+               2026): nobody signed out finishes a day now. */
+            const invite = o.practice || !me() ? "" : (o.listed !== false && window.Account && Account.nickHintHtml ? Account.nickHintHtml() : "");
             const spec = RANGES.find(r => r.key === range) || RANGES[0];
             const focused = panel.contains(document.activeElement) ? document.activeElement : null;
             const hadRange = focused && focused.dataset ? focused.dataset.range : null;
@@ -1003,10 +913,6 @@ window.Daily = (function () {
             panel.querySelectorAll(".guess-board-range").forEach(btn => {
                 btn.addEventListener("click", () => { range = btn.dataset.range; draw(); });
             });
-            const signin = panel.querySelector("[data-daily-signin]");
-            if (signin && window.Account && Account.signIn) {
-                signin.addEventListener("click", () => Account.signIn());
-            }
         }
 
         draw();
@@ -1075,7 +981,7 @@ window.Daily = (function () {
 
     return {
         today, now, setServerNow, seededRandom, dayBefore, request,
-        claimReset, deal, move, replay, refusedAsSignedIn, afterPractice, submit, filed, fileable, start, opening, takeRound, mergeRounds,
+        claimReset, deal, move, afterPractice, submit, filed, fileable, start, opening, takeRound, mergeRounds,
         forgetStarts, track, loadingHtml, waiting,
         clock, scoreCell, boards, ranks, isMine,
         SPEED_BONUS_MAX, bonusLine, practiceLine, bonusRule,

@@ -462,6 +462,10 @@ async function route(event, db, scores, resets) {
 
         let mirrorCleared = false;
         let clockCleared = 0;
+        /* One day for the whole reset (10 Oct 2026): read afresh at each step,
+           a reset made across midnight cleared yesterday's row and wrote a
+           ticket for today, which wiped a day nobody had reset. */
+        const day = today();
         {
             /* A practice run of launch day goes with the reset like any
                other row (forgetDay below), and until the player's next
@@ -472,16 +476,16 @@ async function route(event, db, scores, resets) {
                2026), and before anything is deleted, so a note that fails
                leaves the day as it was and the reset is tried again. */
             const cut = await launchCut(db).catch(() => null);
-            if (cut && cut.day === today()) {
-                const row = await progressFor(db, meta.key, today(), playerId);
-                if (isPractice(row, cut)) await notePractised(db, meta.key, today(), playerId, "reset");
+            if (cut && cut.day === day) {
+                const row = await progressFor(db, meta.key, day, playerId);
+                if (isPractice(row, cut)) await notePractised(db, meta.key, day, playerId, "reset");
             }
 
             // Today only. Deleting a player's whole history is a different
             // and much larger decision than giving them today back, and it
             // is not one a single button should be able to make.
             const gone = await db.collection(meta.collection)
-                .deleteOne(Object.assign({ playerId, day: today() }, meta.filter));
+                .deleteOne(Object.assign({ playerId, day: day }, meta.filter));
             deleted = gone.deletedCount || 0;
 
             /* And the account's mirror of the day in progress, which is the
@@ -492,7 +496,7 @@ async function route(event, db, scores, resets) {
             const state = meta.key === "guess"
                 ? await db.collection(PLAYER_STATE).findOne({ playerId }, { projection: { guess: 1 } })
                 : null;
-            if (state && state.guess && state.guess.day === today()) {
+            if (state && state.guess && state.guess.day === day) {
                 await db.collection(PLAYER_STATE).updateOne({ playerId }, { $set: { guess: null } });
                 mirrorCleared = true;
             }
@@ -505,7 +509,7 @@ async function route(event, db, scores, resets) {
                the one started before the reset — so the day given back was
                neither playable nor fairly timed. Today's row for this game
                only, like the score row above. */
-            clockCleared = await forgetDay(db, meta.key, today(), playerId);
+            clockCleared = await forgetDay(db, meta.key, day, playerId);
         }
 
         /* The name on the ticket is the one the boards show: the player's
@@ -525,7 +529,7 @@ async function route(event, db, scores, resets) {
                     playerId, game, by,
                     // The day given back — the only day the claim may clear
                     // (see the player's half above).
-                    day: today(),
+                    day: day,
                     name: ticketName || null,
                     avatar: player ? player.avatar : (profile ? profile.avatar || null : null),
                     at: new Date().toISOString()

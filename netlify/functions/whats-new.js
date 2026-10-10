@@ -164,6 +164,13 @@ exports.handler = async (event) => {
             }
             const data = await read(col);
             if (full) return json(200, data);
+            /* A hidden post stays off the public read (10 Oct 2026). The
+               page already skips it (whatsNewPosts in js/home.js), but its
+               title, text and picture were still in the answer every visitor
+               fetched and the edge kept: "off the log without being deleted"
+               is a draft, and a draft is the Warren's. Overrides stay whole —
+               a hidden one is how an automatic entry is taken off. */
+            data.posts = data.posts.filter(p => p.hidden !== true);
             return cachedJson(event, data, { vary: "full" });
         } catch (e) {
             if (isAuthUnavailable(e)) return AUTH_UNAVAILABLE;

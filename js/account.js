@@ -451,9 +451,10 @@
        still never rejects, so a caller that ignored the result before is
        unaffected.
 
-       keepalive, as the PUT above has: an un-tick made just before the tab
-       closes is the same case as a tick made then, and without it the
-       DELETE was usually cancelled with the page. */
+       keepalive, as the PUT above has on its way out: an un-tick made just
+       before the tab closes is the same case as a tick made then, and
+       without it the DELETE was usually cancelled with the page (and only
+       then: see the request below, 10 Oct 2026). */
     async function forget(list, id) {
         if (!Account.current || !id) return false;
         if (Array.isArray(pendingPatch[list])) {
@@ -469,10 +470,16 @@
             pendingPatch[list] = pendingPatch[list].filter(x => x !== id);
         }
         try {
+            /* keepalive only once the page is being hidden (10 Oct 2026),
+               as flushState keeps it for pagehide: WebKit fails keepalive
+               requests at random (SAFARI'S "LOAD FAILED" above), and every
+               such un-tick was a "Network failure on player-data" in the
+               Warren's Errors tab. One lost to a closing tab stays in
+               js/home.js's book and is sent again on the next sync. */
             const res = await timedFetch(`${STATE_ENDPOINT}?${list}=${encodeURIComponent(id)}`, {
                 method: "DELETE",
                 credentials: "same-origin",
-                keepalive: true
+                keepalive: document.visibilityState === "hidden"
             });
             if (res && res.status === 401) signedOutUnderneath();
             return !!(res && res.ok);
@@ -1809,8 +1816,19 @@
                 close: () => { if (introClose) introClose(); }
             });
         }
+        /* Only a press that starts AND ends on the backdrop closes it (10 Oct
+           2026, the bug scan), as notice() does: a drag that began inside
+           the window and let go outside it closed it. */
+        let downOnBackdrop = false;
+        overlay.addEventListener("pointerdown", e => { downOnBackdrop = e.target === overlay; });
         overlay.addEventListener("click", e => {
-            if (e.target === overlay) { finish(false); return; }
+            if (e.target === overlay) {
+                const close = downOnBackdrop;
+                downOnBackdrop = false;
+                if (close) finish(false);
+                return;
+            }
+            downOnBackdrop = false;
             const b = e.target.closest("[data-intro], .chrome-close");
             if (!b) return;
             finish(b.dataset.intro === "edit");

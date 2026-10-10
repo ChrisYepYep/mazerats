@@ -237,7 +237,7 @@
            summary's an h4 and h5. They look the same, styled by class. */
         // By the reader's day, as What's New decides it (js/guide-text.js).
         const updated = GuideText.wasUpdated(g)
-            ?`Updated ${longDate(g.updatedAt)}` : (g.publishedAt ? `Added ${longDate(g.publishedAt)}` : "");
+            ? `Updated ${longDate(g.updatedAt)}` : (g.publishedAt ? `Added ${longDate(g.publishedAt)}` : "");
         const others = guides.filter(o => o.id !== g.id).slice(0, 3);
         // Beside the summary, framed like the section pictures.
         const thumb = GuideText.thumbOf(g);

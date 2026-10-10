@@ -1113,6 +1113,12 @@ async function handleRest(event, db, admins) {
            could do it. The bootstrap route only comes back when EVERY admin
            is gone, so this would not have been recoverable from the site. */
         if (username === PERMANENT_OWNER) return json(403, { error: "That account can't be deleted" });
+        /* Nor one's own (10 Oct 2026): a second owner could delete their
+           own row, and it went, then the next read told them "Session
+           expired" with no word of why. Another owner removes it. */
+        if (requester && username === requester.username) {
+            return json(403, { error: "You can't delete your own account. Ask another owner to remove it." });
+        }
         const count = await admins.countDocuments();
         if (count <= 1) return json(400, { error: "Can't delete the last remaining admin account" });
         const result = await admins.deleteOne({ username });

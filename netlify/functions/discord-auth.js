@@ -650,7 +650,20 @@ exports.handler = async (event) => {
                offered to somebody who has one. At most 2.5 seconds; a
                lookup that fails leaves the sign-in exactly as it was. */
             const full = await players.findOne({ id: player.id }, { projection: { _id: 0 } });
-            if (full && originsBot.due(full)) await originsBot.refresh(db, full);
+            /* Held for ORIGINSBOT_WAIT_MS at most, as `me` holds it (10 Oct
+               2026, the bug scan): the lookup has its own 2.5 seconds, but a
+               name it applies renames the player's board rows too, and on a
+               slow cluster that came on top of Discord's five seconds inside
+               the platform's ten — the sign-in ended on its error page. Past
+               it the sign-in goes on; the work finishes on its own, and the
+               next `me` reads the nickname it set. */
+            if (full && originsBot.due(full)) {
+                let timer;
+                await Promise.race([
+                    originsBot.refresh(db, full),
+                    new Promise(resolve => { timer = setTimeout(resolve, ORIGINSBOT_WAIT_MS); })
+                ]).finally(() => clearTimeout(timer));
+            }
             let row = await players.findOne({ id: player.id }, { projection: { _id: 0, nick: 1, nickAsked: 1, sv: 1 } });
             /* A row from before session versions (30 Sept 2026; see SESSION
                VERSIONS in _player.js) is given one now — only if it still

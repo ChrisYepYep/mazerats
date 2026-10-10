@@ -696,7 +696,12 @@
                         }, function (err) {
                             try {
                                 var ms = sinceLoad() - started;
-                                var aborted = err && err.name === "AbortError";
+                                /* A leash run out is one too (10 Oct 2026):
+                                   AbortSignal.timeout() rejects with a
+                                   TimeoutError, not an AbortError, so the
+                                   console's Notifications list (js/console.js)
+                                   filed every slow read as a network failure. */
+                                var aborted = err && (err.name === "AbortError" || err.name === "TimeoutError");
                                 crumb({ type: "fetch", fn: fn || cleanUrl(url, 40), method: method, status: 0, ms: ms });
                                 /* An abort is somebody's decision (a leash, a
                                    newer request), and a request made while

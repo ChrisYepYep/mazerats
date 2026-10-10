@@ -493,6 +493,16 @@ const FIXED_PAGES = {
         image: "og-glyphs.png"
     }
 };
+/* KEPT OUT OF SEARCH HERE, NOT IN robots.txt (10 Oct 2026). /glyphs and
+   /profile were Disallowed there, and X's and LinkedIn's card crawlers obey
+   robots.txt, so a pasted link to either unfurled with no card at all — the
+   cards above drawn for nobody. They may be fetched now, and this header on
+   the answer is what keeps them out of an index: a crawler can only obey a
+   noindex it was allowed to fetch. /profiles comes here as "profile", and
+   /profile?p=<id> is the same generic Profiles card (no per-player card, the
+   owner's). tools/check-share-headers.js checks both stay listed. */
+const NOINDEX_PAGES = new Set(["glyphs", "profile"]);
+
 function fixedTags(page, origin) {
     const f = FIXED_PAGES[page];
     return {
@@ -618,8 +628,10 @@ exports.handler = async (event) => {
     const HIT_CACHE = fresh ? "no-store" : CACHE;
     if (!asked) return pageResponse(404, notFound, MISS_CACHE);
     if (asked.page) {
+        // See NOINDEX_PAGES.
+        const robots = NOINDEX_PAGES.has(asked.page) ? { "X-Robots-Tag": "noindex" } : {};
         return pageResponse(200, fixedTags(asked.page, origin), HIT_CACHE,
-            fresh ? undefined : { "Netlify-CDN-Cache-Control": CDN_CACHE });
+            fresh ? robots : { "Netlify-CDN-Cache-Control": CDN_CACHE, ...robots });
     }
     const { slug, kind } = asked;
 
@@ -693,7 +705,7 @@ exports.handler = async (event) => {
 };
 
 // For tools/check-share-headers.js and the local tests.
-exports._test = { withTags, PAGE_HEADERS, requestedSlug, tagsFor, fixedTags };
+exports._test = { withTags, PAGE_HEADERS, requestedSlug, tagsFor, fixedTags, NOINDEX_PAGES };
 
 /* Failures reported to /warren's Errors tab (28 Sept 2026): see
    withErrorReporting in _errors.js. Last, so it wraps the handler as finally

@@ -7,8 +7,9 @@
    the grip, the close box and every theme's recolouring all come from those
    — what is here is only what is on the screen. 360 x 427 leaves a screen
    of 330 x 379 inside its line: the score along the top and the well
-   filling the rest. No buttons: the keys on a computer, and on a phone the
-   well itself (js/pura-panic.js, wireTouch). */
+   filling the rest. No buttons to play with: the keys on a computer, and
+   on a phone the well itself (js/pura-panic.js, wireTouch); only Pause and
+   the music sit in the score bar (PAUSE AND MUSIC, below). */
 
 .pura-console { z-index: 91; }
 

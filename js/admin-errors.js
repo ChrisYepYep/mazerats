@@ -1229,10 +1229,15 @@
     async function setStatus(ids, next) {
         if (busy || !ids.length) return;
         if (typeof Api.updateSiteError !== "function") { flash("Not available yet — reload the page.", true); return; }
+        /* An answer for the account signed in before a reset() is dropped
+           (10 Oct 2026, the bug scan), as the reads' are: it put the last
+           account's group back into details, and its flash, under the next. */
+        const mine = sessionNo;
         setBusy(true);
         try {
             const body = ids.length === 1 ? { id: ids[0], status: next } : { ids, status: next };
             const res = await Api.updateSiteError(token(), body);
+            if (mine !== sessionNo) return;
             if (res && res.group && res.group.id != null) {
                 const g = res.group;
                 g.id = String(g.id);
@@ -1243,6 +1248,7 @@
             flash(`${word} ${n} ${n === 1 ? "error" : "errors"}.`);
             ids.forEach(id => selected.delete(id));
         } catch (err) {
+            if (mine !== sessionNo) return;
             setBusy(false);
             if (!sessionGone(err)) flash(`Not changed: ${errText(err)}`, true);
             else flash("Not changed: your session had expired. Sign in, then try again.", true);
@@ -1255,9 +1261,11 @@
     async function saveNote(id, text) {
         if (busy) return;
         if (typeof Api.updateSiteError !== "function") { flash("Not available yet — reload the page.", true); return; }
+        const mine = sessionNo;
         setBusy(true);
         try {
             const res = await Api.updateSiteError(token(), { id, note: String(text).trim() });
+            if (mine !== sessionNo) return;
             noteDrafts.delete(id);
             const prev = details.get(id) || {};
             const g = res && res.group ? res.group : Object.assign({}, prev, { note: String(text).trim() });
@@ -1267,6 +1275,7 @@
             if (row) row.note = g.note;
             flash(String(text).trim() ? "Note saved." : "Note cleared.");
         } catch (err) {
+            if (mine !== sessionNo) return;
             setBusy(false);
             if (!sessionGone(err)) flash(`Note not saved: ${errText(err)}`, true);
             else flash("Note not saved: your session had expired. Sign in, then press Save note again.", true);
@@ -1291,13 +1300,16 @@
         const msg = String(g.message || "this error");
         const ok = await ask(`Delete <strong>${escapeHtml(msg.length > 120 ? msg.slice(0, 120) + "…" : msg)}</strong> and its ${escapeHtml(num(g.count))} recorded occurrences? If it happens again it comes back as a new error.`, { danger: true });
         if (!ok) return;
+        const mine = sessionNo;
         setBusy(true);
         try {
             await Api.deleteSiteErrors(token(), { id: g.id });
+            if (mine !== sessionNo) return;
             details.delete(String(g.id));
             if (openId === String(g.id)) openId = null;
             flash("Deleted.");
         } catch (err) {
+            if (mine !== sessionNo) return;
             setBusy(false);
             if (!sessionGone(err)) flash(`Not deleted: ${errText(err)}`, true);
             return;
@@ -1312,14 +1324,17 @@
         const n = Number(totals && totals.resolved) || 0;
         const ok = await ask(`Delete all ${escapeHtml(num(n))} resolved ${n === 1 ? "error" : "errors"} for good? Their counts, charts and occurrences go with them. Open and ignored errors are not touched.`, { danger: true });
         if (!ok) return;
+        const mine = sessionNo;
         setBusy(true);
         try {
             const res = await Api.deleteSiteErrors(token(), { status: "resolved" });
+            if (mine !== sessionNo) return;
             const gone = res && Number.isFinite(Number(res.deleted)) ? Number(res.deleted) : n;
             flash(`Cleared ${num(gone)} resolved ${gone === 1 ? "error" : "errors"}.`);
             details.clear();
             openId = null;
         } catch (err) {
+            if (mine !== sessionNo) return;
             setBusy(false);
             if (!sessionGone(err)) flash(`Not cleared: ${errText(err)}`, true);
             return;

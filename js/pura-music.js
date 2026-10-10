@@ -237,6 +237,15 @@
     }
 
     function tick() {
+        /* Fallen behind (a long stall on the page, or a timer held back):
+           the steps already past are let go rather than all booked at once
+           into the same instant, which came out as a burst of noise (10 Oct
+           2026). */
+        if (nextAt < ctx.currentTime - 0.25) {
+            const behind = Math.ceil((ctx.currentTime - nextAt) / stepLen());
+            step += behind;
+            nextAt += behind * stepLen();
+        }
         while (nextAt < ctx.currentTime + 0.12) {
             book(nextAt, step++);
             nextAt += stepLen();
@@ -329,7 +338,10 @@
 
     // Pausing stops the audio clock itself, so nothing booked plays on.
     function pause() { if (ctx && ctx.state === "running") ctx.suspend(); }
-    function resume() { if (ctx && playing && ctx.state === "suspended") wake(); }
+    /* Safari also has "interrupted" (a call, another tab's audio, the
+       phone locked), and only "suspended" was woken, so the track stayed
+       silent on coming back to the tab (10 Oct 2026). */
+    function resume() { if (ctx && playing && ctx.state !== "running" && ctx.state !== "closed") wake(); }
 
     function setLevel(lv) { level = lv; }
 

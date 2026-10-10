@@ -48,6 +48,20 @@ Object.keys(_test.PAGE_HEADERS).forEach(k => {
     if (k === "Content-Type" || k in site) return;
     problems.push(`  ${k}\n    netlify.toml: (missing)\n    share.js:     ${_test.PAGE_HEADERS[k]}`);
 });
+/* And the pages kept out of search by share.js's header (10 Oct 2026).
+   robots.txt no longer Disallows /glyphs or /profile, so their link cards
+   reach X and LinkedIn; the X-Robots-Tag share.js sends is all that keeps
+   them out of an index. Dropping one from NOINDEX_PAGES would publish it
+   to search with nothing said. */
+const noindex = _test.NOINDEX_PAGES;
+const robotsTxt = fs.readFileSync(path.join(root, "robots.txt"), "utf8");
+["glyphs", "profile"].forEach(page => {
+    const blocked = new RegExp(`^\\s*Disallow:\\s*/${page}\\s*$`, "mi").test(robotsTxt);
+    if (!blocked && !(noindex && noindex.has(page))) {
+        console.error(`check-share-headers: /${page} is neither Disallowed in robots.txt nor in share.js's NOINDEX_PAGES, so it would be indexed.`);
+        process.exit(1);
+    }
+});
 if (problems.length) {
     console.error("check-share-headers: netlify/functions/share.js serves home.html with headers that differ from netlify.toml's:\n" + problems.join("\n"));
     console.error("Copy netlify.toml's values into PAGE_HEADERS in share.js.");

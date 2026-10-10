@@ -20,7 +20,7 @@ const { livePlayerFrom } = require("./_player");
 const { writeRefusal } = require("./_bans");
 const { SECURITY_HEADERS } = require("./_headers");
 const { fetchOriginsProfile, ORIGINS_HOSTS } = require("./habbo");
-const { linkHabbo, linked } = require("./_habbo-guess");
+const { linkHabbo, linked, barred, notList } = require("./_habbo-guess");
 
 const CODE_TTL_MS = 30 * 60 * 1000;
 /* Between two looks at their motto (the owner's: Origins can take a few
@@ -60,7 +60,14 @@ exports.handler = async (event) => {
     const action = body && typeof body.action === "string" ? body.action : "";
     if (!["start", "check", "decline", "notme"].includes(action)) return json(400, { error: "Unknown action" });
 
-    const db = await getDb();
+    /* A database that cannot be reached is the 503 the page already words
+       (10 Oct 2026, the bug scan): it was thrown, and reached the console as
+       the platform's bare 500. */
+    let db;
+    try { db = await getDb(); } catch (e) {
+        console.error("habbo-verify: database connection failed", e);
+        return json(503, { error: "That can't be done just now. Try again in a moment." });
+    }
     const player = await livePlayerFrom(db, event);
     if (!player) return json(401, { error: "Sign in first." });
     const refusal = await writeRefusal(db, event, player.id);
@@ -70,9 +77,25 @@ exports.handler = async (event) => {
     const who = { id: String(player.id) };
     const row = await players.findOne(who, { projection: { _id: 0, id: 1, nick: 1, habbo: 1, habboGuess: 1, habboVerify: 1 } });
     if (!row) return json(404, { error: "No profile yet." });
+    /* A code past its half hour is taken off the row on the next look
+       (10 Oct 2026, the privacy check): it was only ever ignored, and the
+       policy says the code is kept for half an hour. Conditional on the
+       code read, so a fresh one started meanwhile stays. _habbo-guess.js
+       sweeps it as well, when the profile is drawn. */
+    const v0 = row.habboVerify;
+    if (v0 && typeof v0 === "object" && !(Date.now() - Date.parse(v0.at) < CODE_TTL_MS)) {
+        await players.updateOne({ ...who, "habboVerify.code": v0.code === undefined ? { $exists: false } : v0.code }, { $unset: { habboVerify: "" } }).catch(() => {});
+        delete row.habboVerify;
+    }
     if (linked(row)) return json(200, { linked: true });
     const g = row.habboGuess;
     if (!g || !g.name || g.state === "rejected") return json(409, { error: "There's no Habbo to check any more." });
+    /* A guess linked to another player since it was made, or unlinked from
+       this one by an admin (NOT GUESSED in _habbo-guess.js, 10 Oct 2026),
+       is not offered on the profile, so it is not verified here either. */
+    if (action === "start" || action === "check") {
+        if (await barred(db, row, notList(g), g.name, g.hotel)) return json(409, { error: "There's no Habbo to check any more." });
+    }
 
     if (action === "decline") {
         await players.updateOne(who, { $set: { "habboGuess.state": "declined", "habboGuess.declinedAt": new Date().toISOString() } });
@@ -94,13 +117,26 @@ exports.handler = async (event) => {
     }
 
     // check
-    if (!current) return json(409, { error: "That code has run out. Start again for a new one." });
+    /* `expired` (10 Oct 2026): Edit Profile goes back to its Verify it
+       button on it (js/console-profile.js, hvAct), which the words name;
+       it offered only Check and Cancel, and Check could only say this. */
+    if (!current) return json(409, { error: "That code has run out. Press Verify it for a new one.", expired: true });
     const last = Date.parse(current.checkedAt);
-    if (Number.isFinite(last) && Date.now() - last < CHECK_GAP_MS) {
-        const wait = CHECK_GAP_MS - (Date.now() - last);
-        return json(429, { error: "Give it a moment, then check again.", wait });
-    }
-    await players.updateOne(who, { $set: { "habboVerify.checkedAt": new Date().toISOString() } });
+    const tooSoon = () => {
+        const wait = Math.max(0, CHECK_GAP_MS - (Date.now() - last));
+        return json(429, { error: "Give it a moment, then check again.", wait: Number.isFinite(wait) ? wait : CHECK_GAP_MS });
+    };
+    if (Number.isFinite(last) && Date.now() - last < CHECK_GAP_MS) return tooSoon();
+    /* THE LOOK IS CLAIMED, not just noted (10 Oct 2026, the bug scan): the
+       gap was read above and stamped here as two steps, so two Checks sent
+       together (two tabs, a double tap) both passed and both asked Origins.
+       The stamp is now conditional on the checkedAt that was read — the
+       same code, and no newer look — so of a burst only one goes on. */
+    const claimed = await players.updateOne(
+        { ...who, "habboVerify.code": current.code, "habboVerify.checkedAt": current.checkedAt === undefined ? { $exists: false } : current.checkedAt },
+        { $set: { "habboVerify.checkedAt": new Date().toISOString() } }
+    );
+    if (!claimed || !claimed.matchedCount) return tooSoon();
     let result;
     try {
         result = await fetchOriginsProfile(ORIGINS_HOSTS[g.hotel] || ORIGINS_HOSTS.COM, g.name);

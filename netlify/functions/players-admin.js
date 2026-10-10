@@ -136,7 +136,7 @@ const { record } = require("./_audit");
 const { SECURITY_HEADERS } = require("./_headers");
 const { nameKey } = require("./_player");
 const nickRules = require("./player-nick");
-const { linkHabbo } = require("./_habbo-guess");
+const { linkHabbo, linkedFilter, sameHabbo, notList, NOT_MAX } = require("./_habbo-guess");
 const { lookupOriginsName } = require("./habbo");
 // Each row's ban and the "banned" filter (29 Sept 2026).
 const Bans = require("./_bans");
@@ -861,6 +861,37 @@ async function mottoReview(event, db, body) {
    takes their link away. The Habbo must exist on Origins on that hotel and
    not be linked to anybody else already. Their nickname is left as it is. */
 const LINK_HOTELS = ["COM", "ES", "BR"];
+
+/* linkedFilter (every row holding a link to a Habbo, the hotel-less links
+   read as .com) lives in _habbo-guess.js since 10 Oct 2026, so a guess is
+   held to it too. */
+
+/* linkHabbo, held to "one Habbo, one player" across a race (10 Oct 2026,
+   the bug scan). The check before it is a read, and two admins linking the
+   same Habbo to two players at once both passed it and both wrote. Nothing
+   unique can be indexed here (a clash keeps a name that is not applied, and
+   the hotel-less links read as .com), so the write is checked AFTER it is
+   made: if another row now holds the same Habbo, the link made first —
+   earliest checkedAt, then lowest id, the same answer from either side —
+   stands, and this one puts the row back as it was read. Returns the other
+   row when this link lost, or null. */
+async function linkUnlessTaken(db, row, name, hotel, via) {
+    const players = db.collection("players");
+    await linkHabbo(db, row.id, name, hotel, via);
+    const holders = await players.find(linkedFilter(name, hotel), { projection: { _id: 0, id: 1, nick: 1, habbo: 1 } }).toArray();
+    if (holders.length < 2) return null;
+    const key = r => `${str(r.habbo && r.habbo.checkedAt) || ""}\u0000${String(r.id)}`;
+    const first = holders.slice().sort((a, b) => (key(a) < key(b) ? -1 : key(a) > key(b) ? 1 : 0))[0];
+    if (String(first.id) === String(row.id)) return null;
+    const $set = {}, $unset = {};
+    for (const f of ["habbo", "habboGuess", "habboVerify"]) {
+        if (row[f] !== undefined) $set[f] = row[f];
+        else $unset[f] = "";
+    }
+    await players.updateOne({ id: row.id }, { ...(Object.keys($set).length ? { $set } : {}), ...(Object.keys($unset).length ? { $unset } : {}) });
+    return first;
+}
+
 async function habboLinkSet(event, db, body) {
     const players = db.collection("players");
     const row = await players.findOne({ id: body.id }, { projection: { _id: 0 } });
@@ -872,10 +903,16 @@ async function habboLinkSet(event, db, body) {
         did = `Habbo ${row.habbo.name} unlinked`;
         /* Kept as looked at, with the clash dismissed, so OriginsBot does
            not put it straight back (its due() in _originsbot.js); the
-           guess goes too, and is made afresh on their next profile view. */
+           guess goes too, and is made afresh on their next profile view —
+           but never as the Habbo just unlinked (10 Oct 2026, the owner's):
+           the fresh guess from their nickname was that same Habbo, shown
+           straight back. It is put on habboGuess.not (NOT GUESSED in
+           _habbo-guess.js), with any already there. */
+        const unlinked = { name: row.habbo.name.trim(), hotel: String(row.habbo.hotel || "COM").toUpperCase() };
+        const not = notList(row.habboGuess).filter(x => !sameHabbo(x, unlinked)).concat([unlinked]).slice(-NOT_MAX);
         await players.updateOne({ id: body.id }, {
-            $set: { habbo: { name: null, hotel: null, checkedAt: new Date().toISOString(), via: `admin:${who}`, clashDismissed: true } },
-            $unset: { habboGuess: "", habboVerify: "" }
+            $set: { habbo: { name: null, hotel: null, checkedAt: new Date().toISOString(), via: `admin:${who}`, clashDismissed: true }, habboGuess: { not } },
+            $unset: { habboVerify: "" }
         });
     } else {
         const b = body.habboLink;
@@ -883,17 +920,18 @@ async function habboLinkSet(event, db, body) {
         const hotel = b && typeof b.hotel === "string" ? b.hotel.toUpperCase() : "";
         if (!name || name.length > 40 || !/^[A-Za-z0-9 ._\-=?!@:,]+$/.test(name)) return json(400, { error: "That isn't a Habbo name." });
         if (!LINK_HOTELS.includes(hotel)) return json(400, { error: "Choose its hotel: .com, .es or .com.br." });
-        const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-        const other = await players.findOne(
-            { id: { $ne: body.id }, "habbo.name": { $regex: "^" + escaped + "$", $options: "i" }, "habbo.hotel": hotel },
-            { projection: { _id: 0, id: 1, nick: 1 } });
-        if (other) return json(409, { error: `That Habbo is already linked to ${other.nick ? other.nick : "another player"}. Unlink it there first.` });
+        // See linkedFilter for the hotel-less links (10 Oct 2026).
+        const taken = (other) => json(409, { error: `That Habbo is already linked to ${other.nick ? other.nick : "another player"}. Unlink it there first.` });
+        const other = await players.findOne({ id: { $ne: body.id }, ...linkedFilter(name, hotel) }, { projection: { _id: 0, id: 1, nick: 1 } });
+        if (other) return taken(other);
         const found = await lookupOriginsName(db, hotel, name);
         if (found === null) return json(503, { error: "Habbo Origins isn't answering just now, so it can't be checked. Try again in a moment." });
         if (!found.found) return json(404, { error: `There's no Habbo called ${name} on that hotel.` });
         const real = (found.profile && found.profile.name) || name;
         did = `Habbo ${real} (${hotel}) linked`;
-        await linkHabbo(db, body.id, real, hotel, `admin:${who}`);
+        // See linkUnlessTaken: the race the check above cannot see.
+        const lost = await linkUnlessTaken(db, row, real, hotel, `admin:${who}`);
+        if (lost) return taken(lost);
     }
     await record(event, "write", {
         username: who,
@@ -920,6 +958,19 @@ async function habboGuessReview(event, db, body) {
     const g = row.habboGuess && typeof row.habboGuess === "object" ? row.habboGuess : null;
     if (!g || !str(g.name) || g.state === "rejected") return json(409, { error: "There's no Habbo waiting for them now. Have another look.", changed: true });
     if (g.name !== body.seen) return json(409, { error: "Their Habbo has changed since you loaded it. Have a look at the new one.", changed: true });
+    /* Held to habboLinkSet's rule (10 Oct 2026, the bug scan): a Habbo
+       linked to another player already is not linked to a second. A guess
+       comes from a nickname alone, and the likeliest way to have one that
+       IS somebody's is a name clash (_originsbot.js) — the player who holds
+       the nickname being guessed the Habbo OriginsBot vouched was the other
+       one's. Approving it handed the real owner's Habbo, badges and all, to
+       the nickname's holder. A link made before OriginsBot named a hotel is
+       the main one's, as profiles.js reads it. */
+    const taken = (other) => json(409, { error: `That Habbo is already linked to ${other.nick ? other.nick : "another player"}. Reject it here, or unlink it there first.` });
+    if (body.habboGuess === "approve") {
+        const other = await players.findOne({ id: { $ne: body.id }, ...linkedFilter(g.name, g.hotel) }, { projection: { _id: 0, id: 1, nick: 1 } });
+        if (other) return taken(other);
+    }
     const who = usernameFromToken(event) || "unknown";
     const did = body.habboGuess === "approve" ? `Habbo ${g.name} (${g.hotel}) approved` : `Habbo ${g.name} rejected`;
     await record(event, "write", {
@@ -929,8 +980,10 @@ async function habboGuessReview(event, db, body) {
         endpoint: "players-admin",
         target: `${body.id}: ${did}`.slice(0, 200)
     });
-    if (body.habboGuess === "approve") await linkHabbo(db, body.id, g.name, g.hotel, `admin:${who}`);
-    else await players.updateOne({ id: body.id }, { $set: { "habboGuess.state": "rejected", "habboGuess.rejectedBy": `admin:${who}` }, $unset: { habboVerify: "" } });
+    if (body.habboGuess === "approve") {
+        const lost = await linkUnlessTaken(db, row, g.name, g.hotel, `admin:${who}`);
+        if (lost) return taken(lost);
+    } else await players.updateOne({ id: body.id }, { $set: { "habboGuess.state": "rejected", "habboGuess.rejectedBy": `admin:${who}` }, $unset: { habboVerify: "" } });
     const after = await players.findOne({ id: body.id }, { projection: { _id: 0 } });
     return json(200, { player: detailShape(after || row, true, null, await bansOr(db)), changed: [did] });
 }

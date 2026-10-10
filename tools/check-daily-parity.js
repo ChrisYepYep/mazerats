@@ -243,6 +243,20 @@ for (const rel of ["js/guess.js", "js/oddoneout.js", "js/daily.js"]) {
     const src = read(rel).replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
     const found = src.match(/\b(daySeed|daySeedFor|seedFrom|Daily\.shuffle|existedBefore|isHallway|roomsForToday|getRooms)\b/);
     check(!found, `${rel} reaches for ${found && found[1]} — the page must play the server's deal, not deal its own`);
+    /* And no longer plays signed out (10 Oct 2026): no `anon` move, no
+       replay of one, no per-network cap to meet. */
+    const anon = src.match(/\b(anon:\s*true|Daily\.replay|refusedAsSignedIn|adoptRecorded|anon-limit)\b|anon: /);
+    check(!anon, `${rel} still has signed-out play in it (${anon && anon[0]})`);
+}
+{
+    const speedSrc = read("netlify/functions/_speed.js").replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
+    check(!/\b(claimAnonMove|anonMoveLimit|recordClaimed)\b/.test(speedSrc),
+        "netlify/functions/_speed.js still has the signed-out verdict cap or claimed-day writer");
+    for (const rel of ["netlify/functions/daily-scores.js", "netlify/functions/guess-scores.js"]) {
+        const src = read(rel).replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
+        check(!/\b(scoreClaim|claimAnonMove|recordClaimed|practiceMark)\b|"signed-out"/.test(src),
+            `${rel} still has a signed-out path (scoreClaim, an unrecorded verdict or a "signed-out" answer)`);
+    }
 }
 
 /* ---- 5. the calendar ---- */
@@ -275,21 +289,20 @@ for (const rel of ["js/guess.js", "js/oddoneout.js", "js/daily.js"]) {
         check(Daily.today() === "2026-10-05", "Daily.today() did not come back when the clocks agreed again");
 
         /* The line under a finished day's points (Daily.bonusLine): the
-           bonus and total only from a day the server filed, nothing about a
-           bonus for a signed-out day except how to earn one, and nothing at
-           all while a signed-in day's figures are still on their way. */
+           bonus and total only from a day the server filed, and nothing at
+           all while the day's figures are still on their way. (Its two
+           signed-out lines — "this day began signed out" and the invitation
+           to sign in — went with signed-out play on 10 Oct 2026, and their
+           checks with them; this now checks that neither comes back.) */
         const line = o => (typeof Daily.bonusLine === "function" ? Daily.bonusLine(o) : null);
-        check(line({ score: { points: 50, bonus: 161 }, signedIn: true, mode: "account" }) === "50 + 161 speed bonus = 211 on the boards",
+        check(line({ score: { points: 50, bonus: 161 } }) === "50 + 161 speed bonus = 211 on the boards",
             "Daily.bonusLine does not show base + bonus = total for a filed day");
-        check(line({ score: { points: 40, bonus: 0 }, signedIn: true, mode: "anon" }) === "No speed bonus: this day began signed out.",
-            "Daily.bonusLine does not explain a claimed day's missing bonus");
-        check(line({ score: { points: 40, bonus: 0 }, signedIn: true, mode: "account" }) === "No speed bonus this time.",
+        check(line({ score: { points: 40, bonus: 0 } }) === "No speed bonus this time.",
             "Daily.bonusLine does not say a filed day earned no bonus");
-        check(line({ score: null, signedIn: true, mode: "account" }) === "",
+        check(line({ score: { points: 40, bonus: 0 }, mode: "anon" }) === "No speed bonus this time.",
+            "Daily.bonusLine still has a line for a day begun signed out");
+        check(line({ score: null }) === "" && line({ score: null, signedIn: false }) === "",
             "Daily.bonusLine says something about a bonus the server has not reported yet");
-        const out = line({ score: null, signedIn: false, mode: "anon" });
-        check(typeof out === "string" && /sign in/i.test(out) && !/\d/.test(out),
-            "Daily.bonusLine should only invite a signed-out player to sign in, with no bonus figure");
         check(typeof Daily.bonusRule === "function" && /up to 36 /.test(Daily.bonusRule("10", "picking")),
             "Daily.bonusRule does not print the real most a round can earn");
 
@@ -325,7 +338,7 @@ for (const rel of ["js/guess.js", "js/oddoneout.js", "js/daily.js"]) {
            finishing POST's answer is settled, never sent again. */
         const cut = "2026-10-03T08:00:00.000Z";
         const before = Date.parse(cut) - 60000, after = Date.parse(cut) + 60000;
-        const pl = (day, at) => line({ score: { points: 40, bonus: 90 }, signedIn: true, mode: "account", practice: cut, day, now: at });
+        const pl = (day, at) => line({ score: { points: 40, bonus: 90 }, practice: cut, day, now: at });
         check(/practice run/i.test(pl("2026-10-03", before)) && /08:00 UTC/.test(pl("2026-10-03", before)) && /start fresh/.test(pl("2026-10-03", before)),
             `Daily.bonusLine on launch day before the cut should say it is practice and when the day starts fresh (saw ${JSON.stringify(pl("2026-10-03", before))})`);
         check(/practice run/i.test(pl("2026-10-02", before)) && !/08:00/.test(pl("2026-10-02", before)),
@@ -337,7 +350,7 @@ for (const rel of ["js/guess.js", "js/oddoneout.js", "js/daily.js"]) {
            day of a player who practised it is filed with no bonus and
            `practised`, and the card says why; the pasted result of a
            practice run says "(practice)". */
-        check(line({ score: { points: 50, bonus: 0, practised: true }, signedIn: true, mode: "account" }) ===
+        check(line({ score: { points: 50, bonus: 0, practised: true } }) ===
             "No speed bonus today: you played these rounds in practice before the site opened.",
             "Daily.bonusLine does not say a practised day earns no bonus");
         check(typeof Daily.shareText === "function" &&
@@ -353,10 +366,20 @@ for (const rel of ["js/guess.js", "js/oddoneout.js", "js/daily.js"]) {
            a refusal that lifts leaves it owed, anything settled is final. */
         const fin = (s, b) => Daily.filed(s, b, "2026-10-05").final;
         check(fin(200, { recorded: true }) && fin(200, { reason: "already" }), "Daily.filed: a filed day is not final");
-        check(!fin(0, null) && !fin(503, {}) && !fin(401, {}) && !fin(200, { reason: "signed-out" }) &&
+        // (A 200 { reason: "signed-out" } was checked here too until the
+        // server stopped sending it; 10 Oct 2026.)
+        check(!fin(0, null) && !fin(503, {}) && !fin(401, {}) &&
             !fin(409, { reason: "unfinished" }), "Daily.filed: a day that can still be filed was marked final");
-        check(!fin(403, { nickRequired: true }) && !fin(403, { banned: { level: "soft", until: "2026-10-06T00:00:00Z" } }),
-            "Daily.filed: a refusal that lifts (a new nickname, a cool-down) was marked final, losing the day");
+        check(!fin(403, { nickRequired: true }) && !fin(403, { banned: { level: "soft", until: "2026-10-06T00:00:00Z" } }) &&
+            !fin(403, { signInToPlay: true }) && !fin(403, { nickToPlay: true }),
+            "Daily.filed: a refusal that lifts (signing in again, a nickname, a cool-down) was marked final, losing the day");
+
+        /* SIGNED-OUT PLAY IS GONE (10 Oct 2026): the daily games need an
+           account with a nickname, and the server refuses every signed-out
+           move. Nothing the page publishes may still serve a day played
+           signed out. */
+        check(typeof Daily.replay === "undefined" && typeof Daily.refusedAsSignedIn === "undefined",
+            "js/daily.js still publishes Daily.replay or Daily.refusedAsSignedIn, which only served a day begun signed out");
         check(fin(403, { banned: { level: "hard", until: null } }) && fin(400, { error: "Bad moves" }),
             "Daily.filed: a refusal that stands was not marked final");
     }

@@ -1616,6 +1616,30 @@ body[data-page="home"] .hero { padding-top: 18px; }
     background: linear-gradient(rgba(6, 6, 20, 0.7), rgba(6, 6, 20, 0));
 }
 
+/* WIDER THAN THE BUTTON ON A PHONE (10 Oct 2026). At the Enter button's
+   width the frame was 171px across at 320 and 390, and the caption ran out
+   at "Open for October only! Cli…" — the "Click for more details." that
+   tells anyone the picture is a link was never seen. Two lines over an
+   88px picture would have covered half of it, so the frame grows instead:
+   the screen less a 16px gutter each side, up to 300px, which holds that
+   caption whole (286px of it, measured at 320) and shows the art at a size
+   that reads. Never narrower than the button above it.
+
+   The stack's one column is sized to the title (see .welcome-stack), so
+   the frame must not widen it: contain: inline-size takes the 957px
+   picture out of its size, width: auto lets it stretch to the column, and
+   the negative margins carry it out past both sides. A percentage margin
+   counts as nothing when the column is measured, so the overhang never
+   feeds back into the title's width. */
+@media (max-width: 699px) {
+    .welcome-promo {
+        width: auto;
+        min-width: 0;
+        contain: inline-size;
+        margin-inline: min(0px, 50% - min(50vw - 16px, 150px));
+    }
+}
+
 /* ---------- THE LAUNCH COUNTDOWN ----------
 
    Under the Enter button while the site is gated and a date is set. See
@@ -14258,54 +14282,29 @@ body[data-page="admin"] #activity-sessions {
 
 .header-signin:disabled { opacity: 0.6; cursor: default; }
 
-/* Signed in, the button carries a face and a name instead of a word, so it
-   is doing double duty as "you are signed in, as this person".
+/* Signed in, the button carries the name instead of a word, so it is doing
+   double duty as "you are signed in, as this person".
 
-   The face is deliberately bigger than the pill and rides up out of the top
-   of it. Two reasons, one of them structural: a 22px avatar in a 16px pill
-   would otherwise decide the pill's height and make it taller than the
-   badges beside it, and taking it out of flow means it cannot. The pill
-   stays exactly 16px however large the face is drawn.
-
-   padding-left reserves the room the face sits in, so the name never runs
-   underneath it. */
+   JUST THE NAME (10 Oct 2026). It used to carry the Discord avatar as well,
+   hung out of the pill's left end, with 25px of left padding held for it.
+   The avatars went on 4 Oct (none anywhere on the site, the owner's) and
+   the padding stayed, so the name sat off to the right of a blank cream
+   gap. Even padding now, a little more than the "Sign in" pill's 8px
+   because a name is mixed case and reads tighter than capitals. */
 .header-signin.is-signed-in {
     position: relative;
-    padding: 2px 9px 2px 25px;
-    /* The whole point — hidden would clip the part that overhangs. */
-    overflow: visible;
+    padding: 2px 9px;
     text-transform: none;
     letter-spacing: 0.2px;
 }
 
-.header-signin-face {
-    position: absolute;
-    left: -2px;
-    /* Anchored to the bottom edge and grown upward, so the overhang is all
-       at the top rather than split top and bottom. */
-    bottom: -1px;
-    width: 22px;
-    height: 22px;
-    border-radius: 50%;
-    display: block;
-    /* The same cream as the pill's own edge, so the face reads as part of
-       the control rather than a picture parked on top of it — and it needs
-       an edge of its own, since a dark avatar against the dark header would
-       otherwise have none. */
-    border: 1px solid #efe4cc;
-    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
-    background: var(--wood-mid);
-    /* Discord avatars are photographs and drawings, not pixel art. */
-    image-rendering: auto;
-}
-
-/* Not truncated. A name is how someone checks they are signed in as
-   themselves, and half of it with an ellipsis answers that badly — so the
-   pill grows to whatever anybody is called instead. Discord allows 32
-   characters and displayName caps at 40, which is the real bound on how
-   wide this can get; the header wraps rather than overflows above that
-   (see .brand-group in the responsive block), and the name is dropped
-   altogether below 700px where there is no room for it. */
+/* Not truncated where there is room. A name is how someone checks they are
+   signed in as themselves, and half of it with an ellipsis answers that
+   badly — so the pill grows to whatever anybody is called. Nicknames and
+   Discord names run to 32 characters and displayName caps at 40, which is
+   the real bound on how wide this can get; the header wraps rather than
+   overflows above that (see .brand-group in the responsive block). Below
+   700px the name is capped instead (see the block after the note). */
 .header-signin-name {
     white-space: nowrap;
 }
@@ -14328,12 +14327,18 @@ body[data-page="admin"] #activity-sessions {
 }
 
 @media (max-width: 700px) {
-    /* The name is the first thing to go when the header runs out of room —
-       the avatar alone still says "signed in, and as whom". The left
-       padding stays, because that is the room the face occupies; only the
-       text side is given back. */
-    .header-signin-name { display: none; }
-    .header-signin.is-signed-in { padding: 2px 4px 2px 22px; }
+    /* KEPT ON A PHONE, CAPPED (10 Oct 2026). The name used to be hidden
+       here, leaving the avatar to say "signed in, and as whom" — and once
+       the avatar went, a phone was left with an empty cream pill that said
+       nothing at all. Now the name stays and is cut with an ellipsis past
+       120px, which is about fifteen characters: most names whole, a long
+       one recognisably begun, and the header still on its rows at 320px. */
+    .header-signin-name {
+        display: block;
+        max-width: 120px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
 }
 
 /* ---------- the score ---------- */
@@ -14590,6 +14595,24 @@ body[data-page="admin"] #activity-sessions {
 .guess-board-range:focus-visible {
     outline: 2px solid var(--amber-bright);
     outline-offset: 1px;
+}
+
+/* TWO EVEN COLUMNS BELOW 360px (10 Oct 2026). On a 320px phone the four
+   spans wrapped three and one, leaving "All time" alone on a second row,
+   and the four games two and two at four different widths. Here every
+   pill is half the row, two to a line; an odd one out at the end (the
+   games row once Fallin' Furni is on it) is centred under the others at
+   the same half width rather than stretched across. */
+@media (max-width: 359px) {
+    .guess-board-ranges {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+    .guess-board-range:last-child:nth-child(odd) {
+        grid-column: 1 / -1;
+        justify-self: center;
+        width: calc(50% - 2px);
+    }
 }
 
 /* What the chosen span actually covers. "This week" is a Monday rather
@@ -15961,6 +15984,20 @@ ol.fmt-ol-wide.fmt-ol-wide { padding-left: 3.4em; }
 
 .profile-back { padding: 3px 10px; }
 .profile-back[hidden] { display: none; }
+
+/* UNDER THE NAME BELOW 360px (10 Oct 2026). "The window is the same 360px
+   wide on a phone" holds down to a 360px screen and no further: at 320 the
+   window is 304px, the search keeps its 144px, and the heading was left
+   56px — "Your a…" for "Your archive", and a player's name cut to its
+   first few letters. There the search takes a line of its own, the
+   whole width, under the name and the lines beside the Habbo. */
+@media (max-width: 359px) {
+    .profile-top-main {
+        flex-wrap: wrap;
+        row-gap: 6px;
+    }
+    .profile-bar { flex: 1 1 100%; }
+}
 
 .profile-search {
     position: relative;
@@ -18842,15 +18879,41 @@ textarea.ctl-input.de-note {
        titlebar — and relative would take that away, dropping the button out
        of the corner it is pinned to and back into the flow, where it lands
        fourteen pixels off the left edge of the console with the window
-       painted over it. Which is what happened. */
+       painted over it. Which is what happened.
+
+       TO THE FRAME'S EDGES (10 Oct 2026). The centred 30px square came out
+       30x29 — the frame clips at overflow: hidden and the button sits 7px
+       under its top — and the console, Profiles and Pura Panic all have
+       more room than that. Measured at 320 in all three: 7px up to the
+       frame's top edge and 14px right to its side, both the edge of what
+       can be touched anyway; 14px down, which stops above the first thing
+       on the screen (the console's scroll arrow 16px down, the Profiles
+       header's words 19px); and 16px left, still a long way short of the
+       title (54px in the console). 43 by 34 of reach on a 13px sprite. */
     .console-close-btn::after {
         content: "";
         position: absolute;
-        left: 50%;
-        top: 50%;
-        transform: translate(-50%, -50%);
-        width: max(100%, 30px);
-        height: max(100%, 30px);
+        left: -16px;
+        right: -14px;
+        top: -7px;
+        bottom: -14px;
+        background: transparent;
+    }
+
+    /* Pura Panic's bulb sits 4px left of its close button, 13px of pixel
+       art as the X is, and had no reach at all — 9 by 14 measured, smaller
+       than the sprite. The two share the gap down the middle: the X reaches
+       2px left and the bulb 2px right, so they meet and never overlap, and
+       the bulb takes the same 7 up and 14 down. Both are already
+       position: absolute in the titlebar, so neither gets a relative. */
+    #pura-close::after { left: -2px; }
+    .pura-light::after {
+        content: "";
+        position: absolute;
+        left: -14px;
+        right: -2px;
+        top: -7px;
+        bottom: -14px;
         background: transparent;
     }
 
@@ -19793,16 +19856,6 @@ body.is-logging-out * {
     flex-direction: column;
     align-items: center;
     text-align: center;
-}
-
-.signout-face {
-    width: 56px;
-    height: 56px;
-    border-radius: 50%;
-    border: 1px solid var(--chrome-border);
-    box-shadow: 2px 2px 0 rgba(0, 0, 0, 0.4);
-    margin: 2px 0 12px;
-    object-fit: cover;
 }
 
 /* Two short lines, set tight: who is signed in, in the plain pixel face,
@@ -20753,6 +20806,28 @@ body[data-page="admin"] .ctl-seg .btn-enter-mini {
     body[data-page="admin"] .rc-search,
     body[data-page="admin"] .search-box input,
     body[data-page="admin"] textarea { font-size: 16px; }
+    /* The sign-in screen's username and password (10 Oct 2026, the bug
+       scan): #login-form's Arial 0.9rem (14.4px) is an id rule, so the
+       lines above never reached it and the first thing an admin on a phone
+       touched zoomed the page. The add-admin form shares that rule. */
+    body[data-page="admin"] #login-form .admin-field input,
+    body[data-page="admin"] #admins-form .admin-field input { font-size: 16px; }
+    /* And every other field on the page (10 Oct 2026). The room, event and
+       guide forms' fields are .admin-field inputs in 9px Volter (see "Every
+       text field on the admin page in the site's own pixel face"), at two
+       classes' weight, so neither the list above nor its bare textarea
+       reached them, and the first tap into a room's name zoomed the page.
+       Written as a list of what is NOT typed into rather than of what is,
+       so a field added to a form later is covered without anyone
+       remembering this: ticks, radios, colour wells, sliders, file
+       pickers and buttons never open a keyboard, and the dates are left
+       out for the reason given above. The :not()s also carry the weight
+       to beat the form rules. Selects are in it: Safari zooms on those
+       too. */
+    body[data-page="admin"] input:not([type="checkbox"]):not([type="radio"]):not([type="color"]):not([type="range"]):not([type="file"]):not([type="button"]):not([type="submit"]):not([type="reset"]):not([type="image"]):not([type="hidden"]):not([type="datetime-local"]):not([type="date"]):not([type="time"]),
+    body[data-page="admin"] .admin-field textarea,
+    body[data-page="admin"] .admin-field select,
+    body[data-page="admin"] select { font-size: 16px; }
 }
 
 /* "Resolved" on the Errors tab measured 4.4:1 against its row, just under
@@ -21492,7 +21567,23 @@ body.is-viewer #bans-add { display: none !important; }
 .mazer-swatch:focus { outline: none; }
 
 /* Kept in the layout while the card prints, so the window never grows. */
-.mazer-actions { margin-top: 12px; }
+/* CENTRED ROWS (10 Oct 2026). The three buttons were inline boxes ranged
+   left, and on a phone, where the window is the printer's 228px, "Another
+   colour" dropped alone to a second row under Copy Image, hard against the
+   left edge. A centred, wrapping row instead: Copy Image and Save on the
+   first line, Another colour centred under them. Where all three fit — any
+   desktop — the row is exactly as wide as they are, so nothing moves:
+   measured to the pixel at 1181 wide. The 4px gap is the space the inline
+   layout left between them; align-items: center matches the old baseline,
+   which sat the taller Copy Image 4px proud of the other two. */
+.mazer-actions {
+    margin-top: 12px;
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    align-items: center;
+    gap: 4px;
+}
 .mazer-actions[data-ready="0"] { visibility: hidden; }
 .mazer-actions [hidden] { display: none; }
 
@@ -21533,6 +21624,27 @@ body.is-viewer #bans-add { display: none !important; }
 .mazer-motto-box:checked::after { visibility: visible; }
 .mazer-motto-box:focus { outline: none; }
 .mazer-motto-box:focus-visible { outline: 1px solid var(--parchment); outline-offset: 1px; }
+
+/* A reach for the motto tick on a touch screen (10 Oct 2026). The label is
+   what is pressed — it is a <label>, so its words tick the box as well —
+   and it was 14px tall. 32px of invisible ::after on the label, as the
+   header pills have, and 6px either side: 10px of empty window lies
+   between it and the colour squares above, and the reach's top edge stops
+   1px short of them (measured at 320). The box's own ::after is its tick,
+   so the reach goes on the label rather than the box. */
+@media (pointer: coarse) {
+    .mazer-motto { position: relative; }
+    .mazer-motto::after {
+        content: "";
+        position: absolute;
+        left: -6px;
+        right: -6px;
+        top: 50%;
+        height: 32px;
+        transform: translateY(-50%);
+        background: transparent;
+    }
+}
 
 /* ---- the Warren's Notifications panel (5 Oct 2026; js/admin-notifications.js) ---- */
 .nt-compose { display: flex; flex-direction: column; gap: 6px; margin-bottom: 12px; }
@@ -21623,12 +21735,12 @@ body.is-viewer #bans-add { display: none !important; }
 .nt-row-text { align-self: stretch; }
 .nt-row-meta { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
 .nt-withdraw { flex: 0 0 auto; }
-/* A sent notification opens to show who has read it (5 Oct 2026). */
 /* The Warren's Habbo link on a player (5 Oct 2026): the name takes the
    room, the hotel only what its longest option needs. */
 .pl-habbo-link .ctl-row { flex-wrap: wrap; }
 .pl-habbo-link .pl-habbo-name { flex: 1 1 160px; min-width: 0; }
 .pl-habbo-link .pl-habbo-hotel { flex: 0 0 auto; width: auto; }
+/* A sent notification opens to show who has read it (5 Oct 2026). */
 .nt-row[data-nid] { cursor: pointer; }
 .nt-row[data-nid]:focus-visible { outline: 2px solid var(--chrome-highlight); outline-offset: -2px; }
 .nt-readers { align-self: stretch; display: flex; flex-direction: column; gap: 6px; margin-top: 2px; padding-top: 8px; border-top: 1px dashed var(--chrome-highlight); cursor: default; }
@@ -21637,4 +21749,26 @@ body.is-viewer #bans-add { display: none !important; }
 .nt-reader-nonick { font-style: italic; }
 @media (max-width: 640px) {
     .nt-row-foot, .nt-send-row { flex-wrap: wrap; }
+}
+
+/* ---- Profiles: "Not verified" (10 Oct 2026, the owner's; NOT VERIFIED
+   in js/home.js progressHtml) ----
+   A Habbo guessed from the nickname: a small outlined tag at the start of
+   the motto's line (the name's line had no room for it), the screen's one
+   colour, told from the badges by having no square mark and the regular
+   cut, not the bold. It comes first, so the motto's ellipsis takes the
+   cut and the tag is never shortened. */
+.profile-unverified-tag {
+    margin-right: 4px;
+    padding: 0 3px;
+    border: 1px solid var(--pc-text);
+    border-radius: 2px;
+    color: var(--pc-text);
+    font-family: 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace;
+    font-size: 0.5625rem;
+    line-height: 1.2;
+    white-space: nowrap;
+    /* Not the name heading's shadow, which it would inherit. */
+    text-shadow: none;
+    cursor: default;
 }

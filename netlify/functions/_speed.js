@@ -47,20 +47,21 @@
    in order: a request cannot finish round 4 first, or finish round 2 early
    and round 1 after it, to squeeze one round's time into another.
 
-   Signed out, nothing is recorded, because there is nobody to record it
-   against; the move is judged and the verdict sent back, and that is all.
-   A day whose first signed-in move arrives with no start on file (the start
+   Every move is a signed-in player's: the daily games need an account
+   with a nickname (THE DAILY GAMES ARE FOR PLAYERS WITH A NICKNAME in
+   _bans.js), so a signed-out move is refused before it reaches any of
+   this. A day whose first move arrives with no start on file (the start
    request failed, say) is written as untimed, `noClock`, and earns no bonus
    — a clock that never started cannot say how fast anybody was. A round
    with no mark earns nothing either, rather than a guess at how long it
    took.
 
    This is exactly as trustworthy as the rest of the scoring (see the notes
-   at the top of guess-scores.js and daily-scores.js): the pictures are
-   public, and a player who plays the day signed out in a private window
-   first knows the answers when they play it signed in. What it no longer
-   allows is knowing them from the page, or choosing them after the clock
-   has stopped.
+   at the top of guess-scores.js and daily-scores.js). What it does not
+   allow is knowing the answers from the page, or choosing them after the
+   clock has stopped. (It used to say a player could learn the answers
+   signed out in a private window first; signed-out verdicts went with
+   signed-out play, 10 Oct 2026.)
 
    ----------------------------------------------------------------------
    HOW BIG IT IS
@@ -105,8 +106,6 @@
    button would be a thing to exploit.
 
    The one number below is the one to tune. */
-const crypto = require("crypto");
-
 const COLLECTION = "daily_starts";
 
 // Thirty-six seconds a round: the three minutes a whole day is given,
@@ -322,16 +321,10 @@ function gateFor(row, round, now) {
    not marked, the round before marked — so two picks racing for one round
    cannot both land, and whichever lands first is the one that counts.
 
-   `replay` is a move the page is sending again, made earlier while signed
-   out (Daily.replay in js/daily.js). Recording one marks the row noClock
-   in the same write, so the whole day reads as untimed (clockOf) and earns
-   no bonus. Without it a replay onto a row another device had already
-   started was timed against THAT start: rounds 1 on landed about a second
-   apart as the replay ran and each earned nearly the round's whole bonus,
-   for picks made long before (28 Sept 2026). Only ever set, never cleared,
-   so no later move can put the clock back. A replayed round the server
-   already has ("already") writes nothing and marks nothing. */
-async function recordOddPick(db, ensureUniqueIndex, day, playerId, round, tile, dealRound, now, replay) {
+   There was a `replay` here too, for picks made signed out and sent again
+   once the player signed in (it marked the day noClock). Signed-out play
+   is gone, and the replay with it (10 Oct 2026). */
+async function recordOddPick(db, ensureUniqueIndex, day, playerId, round, tile, dealRound, now) {
     const game = "odd";
     const col = db.collection(COLLECTION);
     if (!dealRound || !Number.isInteger(tile) || tile < 0 || tile >= dealRound.tiles.length) return { error: "bad-move" };
@@ -348,7 +341,6 @@ async function recordOddPick(db, ensureUniqueIndex, day, playerId, round, tile, 
     const filter = { game, day, playerId, ["moves." + key]: { $exists: false }, ["marks." + key]: { $exists: false } };
     if (round > 0) filter["marks." + markKey(round - 1)] = { $exists: true };
     const set = { ["moves." + key]: { tile, right, at }, ["marks." + key]: at };
-    if (replay) set.noClock = true;
     const res = await col.updateOne(filter, { $set: set });
     if (res && res.matchedCount) return { moved: true, tile, right };
     // Lost a race: whatever landed first is the answer.
@@ -393,12 +385,9 @@ const optionFor = (options, name) => (options || []).find(o => o === name) ||
 
    Written with the round's guesses AS READ in the filter, so a guess from a
    second tab landing in between makes this one miss; it then reads again
-   and has another go, a few times at most.
-
-   `replay` as for recordOddPick: a replayed guess that is recorded (moved)
-   marks the row noClock in the same write; `already` and `repeat` write
-   nothing and so mark nothing (28 Sept 2026). */
-async function recordGuess(db, ensureUniqueIndex, day, playerId, round, name, dealRound, tries, now, replay) {
+   and has another go, a few times at most. (No `replay` any more — see
+   recordOddPick; 10 Oct 2026.) */
+async function recordGuess(db, ensureUniqueIndex, day, playerId, round, name, dealRound, tries, now) {
     const game = "guess";
     const col = db.collection(COLLECTION);
     if (!dealRound || typeof name !== "string") return { error: "bad-move" };
@@ -435,46 +424,16 @@ async function recordGuess(db, ensureUniqueIndex, day, playerId, round, name, de
         if (round > 0) filter["marks." + markKey(round - 1)] = { $exists: true };
         const set = { ["moves." + key]: next };
         if (done) set["marks." + key] = at;
-        if (replay) set.noClock = true;
         const res = await col.updateOne(filter, { $set: set });
         if (res && res.matchedCount) return view(next, "moved");
     }
     return { error: "busy" };
 }
 
-/* A day played signed out and filed by claim after signing in, written
-   down here as well (1 Oct 2026), as the moves the claim was judged from.
-
-   Nothing else records it: a claim has no moves on file by definition
-   (that is what makes it one), so the account's second device was told
-   the day was `filed` with no progress, and offered the splash and the
-   rounds as if nothing had been played — then its finish was answered
-   "already" with the claimed score, and the card and the board
-   disagreed. Written, the deal reply carries the day as played and the
-   second device shows it finished, as it would a day played signed in.
-
-   `moves` is per round in the stored shape — Odd One Out's
-   { tile, right }, Guess the Maze's { guesses, done, won, tries } — all
-   stamped now and marked, under noClock: a claim was never timed and this
-   must never read as a clock. Only onto a row with no moves (a start with
-   nothing after it, or no row at all); one that has moves already raced
-   this, and keeps them. Never counted for anything: the day is filed. */
-async function recordClaimed(db, ensureUniqueIndex, game, day, playerId, moves) {
-    const col = db.collection(COLLECTION);
-    await ensureIndexes(col, ensureUniqueIndex);
-    const at = new Date();
-    const set = { noClock: true };
-    (moves || []).forEach((m, i) => {
-        set["moves." + markKey(i)] = { ...m, at };
-        set["marks." + markKey(i)] = at;
-    });
-    try {
-        await col.updateOne({ game, day, playerId, moves: { $exists: false } },
-            { $set: set, $setOnInsert: { at } }, { upsert: true });
-    } catch (e) {
-        if (!(e && e.code === 11000)) throw e;
-    }
-}
+/* recordClaimed lived here: the moves of a day played signed out and filed
+   by claim after signing in. Claims went with signed-out play (10 Oct
+   2026); a day is only ever filed from the moves recorded as it was
+   played. */
 
 /* A player's day taken away, for an administrator's reset (daily-games.js):
    the start, every mark and every move, so the day given back really does
@@ -524,97 +483,22 @@ const MAX_START_BODY = 512;
    bytes, a few KB with long names — so 16KB is far past any real one. It had
    no cap at all (30 Sept 2026): the whole body was parsed whatever its size,
    up to the platform's own limit of megabytes, before anything looked at
-   it. Checked before the parse, in both scores endpoints. */
+   it. Checked before the parse, in both scores endpoints. Since 10 Oct 2026
+   the finish carries no picks at all (the day is scored from the moves
+   recorded), so it is only a game and a day; the cap stays as it was. */
 const MAX_FINISH_BODY = 16 * 1024;
 
 /* ----------------------------------------------------------------------
-   THE CAP ON SIGNED-OUT VERDICTS
+   THE CAP ON SIGNED-OUT VERDICTS, GONE (10 Oct 2026)
 
-   A signed-out move is judged and answered and nothing else — there is
-   nobody to record it against — and that answer is the one thing on the
-   daily games that says what is right without it counting. Unmetered, it
-   was an answer key on request: a script could ask about every tile of
-   every Odd One Out round, or ask Guess the Maze for each room's maze in
-   one request apiece (`final`), and hand the answers round before anybody
-   had played.
-
-   So the verdicts are counted per network per game per day — the network
-   as clientNet in _net.js reads it (an IPv4 address, or an IPv6 /64,
-   because one subscriber can put a fresh IPv6 address on every request) —
-   and past anonMoveLimit the answer is 429. The limit is generous on
-   purpose: twenty times the most moves a day can take, plus ANON_SLACK, so
-   a household, an office, a school, or a phone network putting many people
-   behind one address can all play signed out before anyone meets it, and a
-   request retried after a dropped connection is not a move lost. Odd One
-   Out's five picks give 200; Guess the Maze's fifteen guesses give 400.
-
-   It was three times plus 30 (45 and 75) until 28 Sept 2026: about nine
-   full plays per shared IPv4 address, which a school's one address or a
-   phone network's carrier-grade NAT would meet by mid-morning of launch
-   day, and the people refused would be exactly the signed-out newcomers the
-   daily games are meant to bring in. Twenty full plays plus a hundred loose
-   moves still stops what the cap is for — a script walking every tile of
-   every round across many days and networks is the scale that matters, and
-   one network's day is still a small fixed allowance — while a classroom
-   no longer runs into it. What it stops is the scale a script works at,
-   which is the point; one person asking a few answers early is the
-   private-window route the notes above already accept.
-
-   One counter document per (game, day, network), bumped and read back in
-   a single atomic step — findOneAndUpdate with $inc and upsert — so a
-   burst in parallel cannot all see room together, as claimNotifySlot in
-   _net.js does. The network is stored HASHED: the counter needs only to
-   tell networks apart, never to say whose they were. A TTL sweeps them two
-   days on, when their day can no longer be played.
-
-   FAILS OPEN. A counter the database could not bump lets the move through:
-   the cap is a fence against scripts, and a signed-out player refused a
-   verdict because a counter hiccuped would be worse than one extra answer.
-   And with no network to count by at all (no address from Netlify, which
-   in production does not happen; `netlify dev` is the usual case) it is
-   not counted, as every other limiter on the site treats a missing
-   address — never folded into one shared bucket that unrelated visitors
-   would exhaust for each other. */
-const ANON_COLLECTION = "daily_anon_moves";
-const ANON_MULTIPLE = 20;
-const ANON_SLACK = 100;
-
-// The day's cap for a game: `rounds` rounds of at most `perRound` moves.
-function anonMoveLimit(rounds, perRound) {
-    const r = Number.isInteger(rounds) && rounds > 0 ? rounds : 5;
-    const p = Number.isInteger(perRound) && perRound > 0 ? perRound : 1;
-    return r * p * ANON_MULTIPLE + ANON_SLACK;
-}
-
-let anonIndexed = null;
-function netKey(net) {
-    return crypto.createHash("sha256")
-        .update("daily-anon:" + (process.env.SESSION_SECRET || "") + ":" + net)
-        .digest("base64url").slice(0, 22);
-}
-
-/* Counts one signed-out move and answers whether it may be judged. */
-async function claimAnonMove(db, game, day, net, limit) {
-    if (!net) return true;
-    try {
-        const col = db.collection(ANON_COLLECTION);
-        if (!anonIndexed) {
-            anonIndexed = col.createIndex({ at: 1 }, { expireAfterSeconds: 2 * 24 * 60 * 60 }).catch(() => {});
-        }
-        const doc = await col.findOneAndUpdate(
-            { _id: `${game}:${day}:${netKey(net)}` },
-            { $inc: { n: 1 }, $setOnInsert: { at: new Date() } },
-            { upsert: true, returnDocument: "after" }
-        );
-        // Either driver shape: the document, or { value: document }.
-        const row = doc && doc.value !== undefined ? doc.value : doc;
-        const n = row && row.n;
-        return !(typeof n === "number" && n > limit);
-    } catch (e) {
-        console.warn("daily: the signed-out move cap is unavailable", e && e.message);
-        return true;
-    }
-}
+   A signed-out move used to be judged and answered without being
+   recorded, and those verdicts were counted per network per day
+   (claimAnonMove, in the daily_anon_moves collection) so a script could
+   not ask the whole day's answers. Since 4 Oct the daily games need an
+   account with a nickname, and every signed-out move is refused (403,
+   writeRefusal in _bans.js) before it is judged, so the cap could never
+   be reached and was taken out with the rest of signed-out play. Rows
+   left in daily_anon_moves expire on their own TTL two days on. */
 
 /* ----------------------------------------------------------------------
    PRACTICE BEFORE LAUNCH (30 Sept 2026)
@@ -687,22 +571,14 @@ async function dropPractice(db, game, day, playerId, row) {
        player_data before the cut is stamped practice there (player-data.js),
        and a stamped copy with a guess in it writes the note too — so a run
        played signed out and then signed into before the cut is caught.
-     - signed out: the server records nothing against anybody, so it
-       cannot know on its own. The answers it sends a signed-out player
-       before the cut (the start's first round, every verdict) say
-       `practice`, the page remembers that for the day (Daily.move and
-       Daily.opening in js/daily.js), and its signed-in start later says
-       `practised: true`, which writes the note. That covers the same
-       browser: the ordinary way an early player signs in on launch day.
-       It does NOT cover a different browser or device, a private window,
-       or cleared storage — the page is the only witness, and it is this
-       one's word. That is the private-window route the notes at the top of
-       this file already accept.
+     - signed out: there was a third witness, the page's own word
+       (`practised: true` on its signed-in start, for a run it had played
+       signed out before the cut). Signed-out play is gone, so that went
+       too (10 Oct 2026).
 
-   Matching by NETWORK was considered and left out: the signed-out verdict
-   counters know which networks played before the cut, but a phone
-   network's shared address or a household's would take the bonus off
-   people who never practised, on the one morning it matters most. */
+   Matching by NETWORK was considered and left out: a phone network's
+   shared address or a household's would take the bonus off people who
+   never practised, on the one morning it matters most. */
 const PRACTISED_COLLECTION = "daily_practised";
 const practisedId = (game, day, playerId) => `${game}:${day}:${playerId}`;
 
@@ -730,8 +606,7 @@ async function practisedOn(db, game, day, playerId) {
 
 module.exports = {
     COLLECTION, ROUND_BONUS_SECONDS, NO_TIME, TOTAL, MAX_START_BODY, MAX_FINISH_BODY, MIN_MOVE_MS,
-    ANON_COLLECTION, ANON_MULTIPLE, ANON_SLACK,
     totalOf, roundBonusFor, markRound, recordStart, progressFor, clockOf, clockFor, movesOf, lastMarkAt,
-    recordOddPick, recordGuess, recordClaimed, forgetDay, dayBonus, normalise, optionFor, anonMoveLimit, claimAnonMove,
+    recordOddPick, recordGuess, forgetDay, dayBonus, normalise, optionFor,
     beforeCut, isPractice, dropPractice, PRACTISED_COLLECTION, notePractised, practisedOn
 };

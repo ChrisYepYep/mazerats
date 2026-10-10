@@ -413,7 +413,10 @@ async function profile(db, id, self) {
             name: origins.name,
             motto: motto.motto,
             avatar: origins.avatar || null,
-            online: !!origins.online
+            /* Not for a guess (10 Oct 2026, the owner's): whether a Habbo
+               not shown to be theirs is in the hotel says nothing about
+               them, and the Online dot made a guess look verified. */
+            online: !!h && !!origins.online
         } : null,
         walked: (state && Array.isArray(state.walked)) ? state.walked : [],
         favourite: prefs.favourite || null,

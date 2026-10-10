@@ -404,7 +404,10 @@ body.is-editing .ff-title { display: none; }
    canvas; and only for the keyboard, so a click does not draw a frame
    round the room. */
 #ff-canvas:focus { outline: none; }
-#ff-canvas:focus-visible { outline: 2px solid var(--amber); outline-offset: -2px; }
+/* Not while a run is on (10 Oct 2026): the page puts the focus there itself
+   as each level opens (beginLevel), and a ring round the room for the whole
+   round was a frame nobody asked for. .is-playing comes off at the title. */
+#ff-canvas:not(.is-playing):focus-visible { outline: 2px solid var(--amber); outline-offset: -2px; }
 
 /* The builder is a tool rather than a room, so there a tile you can click
    says so the way the rest of the page does. */

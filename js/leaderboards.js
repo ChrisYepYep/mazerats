@@ -231,8 +231,12 @@
 
         let foot = "";
         if (!who) {
+            /* Pura Panic's own words (10 Oct 2026, the owner's): a visitor
+               signed out can be on its board already, as their Habbo
+               (proved by motto) or as a Guest Rat (pura-scores.js), so
+               "sign in" is not the only way on. */
             foot = `<div class="guess-board-note guess-board-invite">
-                        Sign in and choose a nickname to get on the boards.
+                        ${g.pura ? "Play as your Habbo or a Guest Rat, or sign in, to get on this board." : "Sign in and choose a nickname to get on the boards."}
                         <button type="button" class="guess-btn" data-boards-signin>Sign in with Discord</button>
                     </div>`;
         } else if (!who.nick) {
@@ -321,7 +325,11 @@
 
     function close(opts) {
         overlay.classList.remove("open");
-        document.body.classList.remove("modal-open");
+        /* Only when nothing else is open (10 Oct 2026), as js/guess.js and
+           js/account.js's windows do: opened from the console over another
+           window (a maze's, a guide), closing this took modal-open off the
+           page while that one was still up. */
+        if (!document.querySelector(".modal-overlay.open")) document.body.classList.remove("modal-open");
         const back = triggerEl;
         triggerEl = null;
         if ((opts && opts.keepFocus) || !back || !document.body.contains(back)) return;
@@ -330,7 +338,15 @@
     }
 
     if (closeBtn) closeBtn.addEventListener("click", () => close());
-    overlay.addEventListener("click", e => { if (e.target === overlay) close(); });
+    /* Only a press that starts AND ends on the backdrop closes it (10 Oct
+       2026, the bug scan), as js/account.js's notice() does: a drag that
+       began inside the window and let go outside it closed the boards. */
+    let downOnBackdrop = false;
+    overlay.addEventListener("pointerdown", e => { downOnBackdrop = e.target === overlay; });
+    overlay.addEventListener("click", e => {
+        if (e.target === overlay && downOnBackdrop) close();
+        downOnBackdrop = false;
+    });
     if (window.EscapeLayers) {
         window.EscapeLayers.register({
             elements: () => overlay.classList.contains("open") ? [overlay] : [],

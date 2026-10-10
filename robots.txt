@@ -8,18 +8,21 @@ User-agent: *
 Allow: /
 
 # The Volter Goldfish picture-glyph sheet, offered in the archive's side
-# menu as "Alt Codes". Linked, and deliberately not indexed: it is a tool
-# for somebody part-way through naming a room, and it would be a baffling
-# thing to land on from a search. It is a window on the homepage now, and
-# /glyphs is the homepage with it open; /glyphs.html only redirects there
-# (see netlify.toml), and is listed for the links that still point at it.
-Disallow: /glyphs
+# menu as "Alt Codes", and Your Profile. Linked, and deliberately not
+# indexed: one is a tool for somebody part-way through naming a room, the
+# other shows the visitor's own progress (or a player's, reached through
+# search), and neither is anything a search result should land on.
+#
+# NOT disallowed here, though (10 Oct 2026). /glyphs and /profile used to
+# be, and X's and LinkedIn's card crawlers obey this file, so a link to
+# either pasted there unfurled with no card. They are kept out of search by
+# an X-Robots-Tag: noindex on the page itself (NOINDEX_PAGES in
+# netlify/functions/share.js), which a crawler can only obey if it may fetch
+# the page — the same reasoning as the Atlas below.
+#
+# /glyphs.html only redirects to /glyphs (see netlify.toml) and stays
+# listed for the links that still point at it.
 Disallow: /glyphs.html
-
-# Your Profile, on the same terms: /profile is the homepage with the profile
-# window open, and what it shows is the visitor's own (or a player's,
-# reached through search), not anything a search result should land on.
-Disallow: /profile
 
 # The Sorcerer's Atlas is NOT disallowed here, on purpose. It is still being
 # drawn and is kept out of search results — but by its noindex (the meta tag

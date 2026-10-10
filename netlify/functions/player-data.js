@@ -19,7 +19,9 @@
 
    STATS ARE NOT STORED AT ALL. Days played, points, streak and the rest are
    worked out here from guess_scores, which already holds one authoritative
-   row per player per day (see guess-scores.js). Storing a second copy would
+   row per player per day (see guess-scores.js) — and, since 10 Oct 2026,
+   Odd One Out's the same way from its rows in daily_scores (`oddStats`).
+   Storing a second copy would
    mean deciding what happens when a device that has been playing signed out
    arrives with its own totals — and there is no honest answer to that, only
    a choice between double-counting and throwing history away. Derived, the
@@ -35,6 +37,8 @@ const speed = require("./_speed");
 
 const COLLECTION = "player_state";
 const SCORES = "guess_scores";
+/* Odd One Out's rows: daily_scores, game "odd" (daily-scores.js). */
+const ODD_SCORES = "daily_scores";
 const ROUNDS = 5;
 
 // Generous enough for an archive many times this size, small enough that a
@@ -234,8 +238,18 @@ function guessDayOpen(day) {
 /* Everything the results panel wants to say about a player, counted from
    the rows that were actually recorded. The streak walks backwards from the
    most recent day rather than being kept as a number, so it cannot drift
-   out of step with the days it is meant to describe. */
-async function statsFor(db, playerId) {
+   out of step with the days it is meant to describe.
+
+   ODD ONE OUT TOO (10 Oct 2026). Its results card showed only what this
+   browser had banked, so on a shared computer the second player saw the
+   first one's streak and totals, and a day they finished after the first
+   on the same day was never counted at all. Now the card shows the
+   account's figures, counted here the same way from the account's Odd One
+   Out rows in daily_scores (`game` names which), and returned beside
+   Guess the Maze's as `oddStats`. `collection` and `match` say which rows;
+   a row's own `rounds` is how many rounds it had (five for a row from
+   before the field). */
+async function statsFor(db, playerId, collection = SCORES, match = {}) {
     /* From launch day on, as the boards and the Profile count (see launchDay
        in daily-scores.js). Without it a player who tested before launch saw
        their test days in this panel while the Profile said they had played
@@ -244,9 +258,9 @@ async function statsFor(db, playerId) {
        08:00 UTC, and a day cut alone counted anything played on 3 Oct
        before the doors opened — the owner's own early checks included. */
     const launch = await launchCut(db);
-    const query = launch ? { playerId, day: { $gte: launch.day }, ...afterLaunch(launch) } : { playerId };
-    const rows = await db.collection(SCORES)
-        .find(query, { projection: { _id: 0, day: 1, points: 1, solved: 1 } })
+    const query = launch ? { ...match, playerId, day: { $gte: launch.day }, ...afterLaunch(launch) } : { ...match, playerId };
+    const rows = await db.collection(collection)
+        .find(query, { projection: { _id: 0, day: 1, points: 1, solved: 1, rounds: 1 } })
         .sort({ day: 1 })
         .toArray();
 
@@ -273,12 +287,13 @@ async function statsFor(db, playerId) {
        and the Profile rank by the total and still show it; a signed-out
        player's days carry no bonus anyway, so for them the two were always
        the same number. */
-    let points = 0, solved = 0, bestDay = 0;
+    let points = 0, solved = 0, bestDay = 0, rounds = 0;
     rows.forEach(r => {
         const base = Number(r.points) || 0;
         points += base;
         solved += r.solved || 0;
         bestDay = Math.max(bestDay, base);
+        rounds += Number.isInteger(r.rounds) && r.rounds > 0 ? r.rounds : ROUNDS;
     });
 
     const days = rows.map(r => r.day);
@@ -303,8 +318,11 @@ async function statsFor(db, playerId) {
         best = Math.max(best, run);
     });
 
-    return { days: rows.length, points, solved, rounds: rows.length * ROUNDS, bestDay, streak, best, lastDay };
+    return { days: rows.length, points, solved, rounds, bestDay, streak, best, lastDay };
 }
+
+// Odd One Out's figures — see ODD ONE OUT TOO above.
+const oddStatsFor = (db, playerId) => statsFor(db, playerId, ODD_SCORES, { game: "odd" });
 
 exports.handler = async (event) => {
     const player = playerFrom(event);
@@ -359,16 +377,18 @@ exports.handler = async (event) => {
             console.error("player-data: could not check the session; reading on", e);
         }
         try {
-            const [doc, stats] = await Promise.all([
+            const [doc, stats, oddStats] = await Promise.all([
                 col.findOne({ playerId: player.id }, { projection: { _id: 0, walked: 1, saved: 1, guess: 1, profile: 1 } }),
-                statsFor(db, player.id)
+                statsFor(db, player.id),
+                oddStatsFor(db, player.id)
             ]);
             return json(200, {
                 walked: (doc && doc.walked) || [],
                 saved: (doc && doc.saved) || [],
                 guess: liveGuess(doc && doc.guess),
                 profile: profileOf(doc),
-                stats
+                stats,
+                oddStats
             });
         } catch (e) {
             console.error("player-data: read failed", e);
@@ -444,8 +464,8 @@ exports.handler = async (event) => {
                SPEED BONUS AFTER PRACTICE in _speed.js; 1 Oct 2026). A copy
                for any other day is no concern of the cut's. A note that
                fails to write is only logged: this save carries the ticks
-               too, and the page's own `practised` on its start is the other
-               witness to the same run. */
+               too. (The page's own `practised` on its start was a second
+               witness until signed-out play went, 10 Oct 2026.) */
             if (g && g.practice && cut && g.day === cut.day && g.results.some(r => r.guesses.length)) {
                 try { await speed.notePractised(db, "guess", g.day, player.id, "mirror"); } catch (e) {
                     console.warn("player-data: could not note a practice run", e && e.message);
@@ -543,16 +563,18 @@ exports.handler = async (event) => {
 
             await col.updateOne({ playerId: player.id }, update, { upsert: true });
 
-            const [doc, stats] = await Promise.all([
+            const [doc, stats, oddStats] = await Promise.all([
                 col.findOne({ playerId: player.id }, { projection: { _id: 0, walked: 1, saved: 1, guess: 1, profile: 1 } }),
-                statsFor(db, player.id)
+                statsFor(db, player.id),
+                oddStatsFor(db, player.id)
             ]);
             return json(200, {
                 walked: (doc && doc.walked) || [],
                 saved: (doc && doc.saved) || [],
                 guess: liveGuess(doc && doc.guess),
                 profile: profileOf(doc),
-                stats
+                stats,
+                oddStats
             });
         } catch (e) {
             console.error("player-data: save failed", e);

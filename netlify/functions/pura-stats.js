@@ -12,7 +12,8 @@
    volumes are small and the arithmetic is easier to read and check. */
 
 const { getDb } = require("./_db");
-const { hasAccount, UNAUTHORIZED, isAuthUnavailable, AUTH_UNAVAILABLE } = require("./_auth");
+const { hasAccount, roleOf, WRITE_SCOPES, UNAUTHORIZED, isAuthUnavailable, AUTH_UNAVAILABLE } = require("./_auth");
+const { nickedAmong } = require("./_publicid");
 const { SECURITY_HEADERS } = require("./_headers");
 const { withoutBanned } = require("./_bans");
 const Engine = require("../../js/pura-engine.js");
@@ -94,6 +95,25 @@ async function report(db, event) {
        (pura-scores.js, shown): a guest, or an account the board leaves out
        (banned, or no nickname) — so the Warren sees the rows the players
        cannot, and knows they are not seeing them. Ids stay here. */
+    /* NO DISCORD NAME FOR A VIEW-ONLY ACCOUNT (10 Oct 2026). A row's name
+       is publicName's, which is the Discord name for a player with no
+       nickname, and any Warren account reads this — so a viewer or a
+       wizard saw Discord names here that players-admin.js and
+       notifications.js never show them. A reader without the "site" write
+       scope gets "A player with no nickname" for every account not
+       nicknamed now (nickedAmong, which fails closed: an unreadable answer
+       hides every name). Guests' names are their Habbos', public anyway. */
+    const seesIds = (WRITE_SCOPES[await roleOf(event)] || []).includes("site");
+    let nicked = null;
+    if (!seesIds) {
+        nicked = await nickedAmong(db, games.map(g => g.playerId).concat(board.map(r => r.playerId))
+            .filter(id => id && !String(id).startsWith("guest")));
+    }
+    const NO_NICK = "A player with no nickname";
+    const nameOf = (playerId, name) => (seesIds || !playerId || String(playerId).startsWith("guest") || (nicked && nicked.has(String(playerId))) ? name : NO_NICK);
+    games.forEach(g => { if (g.playerId) g.name = nameOf(g.playerId, g.name); });
+    board.forEach(r => { r.name = nameOf(r.playerId, r.name); });
+
     const accounts = board.filter(r => !String(r.playerId || "").startsWith("guest"));
     let kept = null;
     try { [kept] = await withoutBanned(db, [accounts], r => r && r.playerId); } catch (e) { kept = accounts; }
@@ -106,23 +126,36 @@ async function report(db, event) {
 
     const signedIn = games.filter(g => g.playerId);
     const scores = games.map(g => g.score || 0);
+    /* FINISHED MEANS FINISHED (10 Oct 2026, the bug scan). A game saved on
+       the way and never finished (ended "closed": the tab or browser shut
+       mid-game, see A SAVE ON THE WAY in pura-scores.js) was counted as a
+       finished game — in "games finished", the percentage of started games
+       finished, and the typical score, level and length. Those now count
+       only games that ended (topped out, or ended from pause); the closed
+       ones are their own figure, `left`. Everything summed (rows, pieces,
+       time played, best score) still counts every game, as it was all
+       really played. */
+    const finished = games.filter(g => g.ended !== "closed");
+    const left = games.length - finished.length;
     const clears = [0, 1, 2, 3].map(i => sum(games.map(g => (g.clears || [])[i] || 0)));
     const topLevel = games.reduce((m, g) => Math.max(m, g.level || 1), 0);
     const longest = games.reduce((m, g) => Math.max(m, g.ms || 0), 0);
 
     const totals = {
         starts: starts.length,
-        games: games.length,
-        finishedPct: pct(games.length, starts.length),
+        games: finished.length,
+        // Saved part-way and never finished (FINISHED MEANS FINISHED above).
+        left,
+        finishedPct: pct(finished.length, starts.length),
         players: new Set(signedIn.map(g => g.playerId)).size,
         signedOutGames: games.length - signedIn.length,
         rows: sum(games.map(g => g.rows)),
         pieces: sum(games.map(g => g.pieces)),
         playedMs: sum(games.map(g => g.ms)),
-        medianScore: median(scores),
-        medianRows: median(games.map(g => g.rows || 0)),
-        medianLevel: median(games.map(g => g.level || 1)),
-        medianMs: median(games.map(g => g.ms || 0)),
+        medianScore: median(finished.map(g => g.score || 0)),
+        medianRows: median(finished.map(g => g.rows || 0)),
+        medianLevel: median(finished.map(g => g.level || 1)),
+        medianMs: median(finished.map(g => g.ms || 0)),
         bestScore: scores.reduce((m, n) => Math.max(m, n), 0),
         topLevel,
         longestMs: longest,
@@ -192,7 +225,7 @@ async function report(db, event) {
             { label: "Topped out", n: games.filter(g => g.ended === "topout").length },
             { label: "Ended from pause", n: totals.quits },
             // Saved on the way and never finished: the tab or browser closed (see A SAVE ON THE WAY).
-            { label: "Left mid-game", n: games.filter(g => g.ended === "closed").length }
+            { label: "Left mid-game", n: left }
         ],
         devices: [
             { label: "Keyboard", n: games.filter(g => !g.touch).length },

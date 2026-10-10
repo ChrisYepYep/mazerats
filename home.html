@@ -46,8 +46,7 @@
          index.html, unlike the old js/site.js gate, which only ever ran on
          DOMContentLoaded, well after the page had already painted. Plain
          fetch() rather than js/api.js's helpers, since that script hasn't
-         loaded yet this early — duplicating the same two calls it wraps. */
-    -->
+         loaded yet this early — duplicating the same two calls it wraps. -->
     <!-- The one thing that must survive this script not running at all.
          <html> ships hidden and only script reveals it, so a visitor with
          JavaScript off, an extension that blocks the inline script above,

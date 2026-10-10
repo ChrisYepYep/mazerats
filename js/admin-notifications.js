@@ -51,6 +51,7 @@
     let results = [];
     let searchGen = 0;
     let busy = false;
+    let sessionNo = 0;          // moved on by reset(): see send
 
     // ----------------------------------------------------------- helpers
 
@@ -341,13 +342,19 @@
             ? escapeHtml(reachLine())
             : chosen.length === 1 ? `<strong>${escapeHtml(chosen[0].name)}</strong>` : `<strong>${chosen.length} players</strong>`;
         const question = audience === "all" ? `Send this? ${who}` : `Send this to ${who}?`;
+        const mine = sessionNo;
         if (!(await ask(`${question}<br><br>"${noticeHtml(text)}"`))) return;
+        /* Signed out, or somebody else in, while the box was up (10 Oct
+           2026, the bug scan): this was the last account's message, and is
+           not sent under the next one's token. */
+        if (mine !== sessionNo || busy) return;
         busy = true;
         renderCompose();
         say("Sending…");
         try {
             await Api.sendNotification(token(), Object.assign({ text, audience, to: audience === "players" ? chosen.map(c => c.id) : [] },
                 audience === "all" ? { activeDays: opt.days, who: opt.who, quiet: opt.quiet, ...(startAt ? { startAt } : {}) } : {}));
+            if (mine !== sessionNo) return;
             draft = "";
             chosen = [];
             results = [];
@@ -356,6 +363,7 @@
             say("Sent. It shows on their next visit.");
             load();
         } catch (err) {
+            if (mine !== sessionNo) return;
             busy = false;
             renderCompose();
             if (sessionGone(err)) return;
@@ -501,7 +509,10 @@
        admin's draft, chosen players and sent list — names and all — were
        left for whoever signed in next, view-only accounts included. */
     function reset() {
+        sessionNo++;
         loadGen++;
+        // The last account's options too (10 Oct 2026, the bug scan).
+        Object.assign(opt, { days: 30, later: false, start: "", who: "everyone", quiet: false });
         loading = false;
         again = false;
         notices = null;

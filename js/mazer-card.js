@@ -662,8 +662,14 @@
             onKey = e => { if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); close(); } };
             document.addEventListener("keydown", onKey, true);
         }
+        /* Only a press that STARTED on the dimmed page shuts it (10 Oct
+           2026, the bug scan), as account.js's windows do: selecting a line
+           on the card and letting go outside it shut the window. */
+        let downOnBackdrop = false;
+        overlay.addEventListener("pointerdown", e => { downOnBackdrop = e.target === overlay; });
         overlay.addEventListener("click", e => {
-            if (e.target === overlay || e.target.closest(".chrome-close")) close();
+            if ((e.target === overlay && downOnBackdrop) || e.target.closest(".chrome-close")) close();
+            downOnBackdrop = false;
         });
 
         const wait = ms => new Promise(r => setTimeout(r, ms));

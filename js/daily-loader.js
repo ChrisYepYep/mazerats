@@ -349,7 +349,9 @@
     window.DailyGames = { load, preloadAll, isReady: ready };
 
     /* A deep link is not a guess. Load it now. */
-    const deepLinked = Object.keys(GAMES).find(name => location.pathname === GAMES[name].path);
+    // With or without a slash on the end, as the games themselves read it
+    // (atOwnAddress in either; 10 Oct 2026).
+    const deepLinked = Object.keys(GAMES).find(name => location.pathname.replace(/\/$/, "") === GAMES[name].path);
     if (deepLinked) {
         load(deepLinked).catch(() => {});
     } else if (hasPlayedBefore()) {

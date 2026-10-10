@@ -81,7 +81,10 @@ exports.handler = async (event) => {
     // constrained to what an id can contain and the collection to one of two
     // literals — not because spawn() without a shell is injectable, but so a
     // malformed id fails here rather than as a confusing scan of nothing.
-    if (!ids.every(id => typeof id === "string" && /^[A-Za-z0-9_-]{1,64}$/.test(id))) {
+    /* Up to 80 (10 Oct 2026): a new record's id is its address, and an
+       address runs to 80 characters (MAX in _slugs.js) — a maze with a long
+       enough name could never have been scanned. */
+    if (!ids.every(id => typeof id === "string" && /^[A-Za-z0-9_-]{1,80}$/.test(id))) {
         return json(400, { error: "ids must be plain record ids" });
     }
     /* The run id is an argument too, and was passed through as sent (30

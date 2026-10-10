@@ -455,6 +455,11 @@ function cleanReport(r, { fromClient = true } = {}) {
     if (r.status !== undefined) out.status = int(r.status, 0, 999);
     if (r.ms !== undefined) out.ms = int(r.ms, 0, 1e7);
     if (r.tag) out.tag = ["img", "script", "link", "video", "audio", "source"].includes(r.tag) ? r.tag : "";
+    /* The visit counter's own beacon failing (10 Oct 2026): js/error-report.js
+       stopped filing it on 7 Oct (fn "track"), but a page opened before
+       that keeps the old script until it is reloaded. Turned away here too,
+       as BROWSER_OWN is above. */
+    if (fromClient && kind === "fetch" && out.fn === "track") return null;
     const context = cleanContext(r.context);
     if (context) out.context = context;
     // Server-only fields, never accepted from a browser.
@@ -894,6 +899,10 @@ async function recordReports(db, reports, meta = {}) {
            Fonts on the landing page and filed it as a site error. Nothing a
            person sees, and nothing to fix, so its reports are not kept. */
         if (source === "client" && m.ua.device === "bot") continue;
+        /* And an iPhone at a pixel ratio under 2, which no iPhone is: a
+           crawler wearing one's user agent (js/error-report.js's rule of 7
+           Oct 2026, kept here too for pages on the older script; 10 Oct 2026). */
+        if (source === "client" && m.ua.os === "iOS" && typeof rep.dpr === "number" && rep.dpr < 2) continue;
         const admit = () => newGroupAllowed(db, source, source === "function" ? null : net);
         if (source === "client" && net) {
             n = await takeHourly(db, `occ:net:${net}`, n, NET_OCC_PER_HOUR);

@@ -1001,13 +1001,15 @@ document.addEventListener("DOMContentLoaded", () => {
         showWhatsNew = false;
         showTimeline = false;
         showFurni = false;
-       
         furniFilter = null;
         if (n) {
             if (n.isEvent) {
                 topView = "events";
                 // Same test sourceItems uses to file an event under a tab.
-                const raw = n._raw;
+                // Looked up by id when the record has no _raw (10 Oct 2026):
+                // a What's New note is a copy of one, and Object.assign
+                // leaves the non-enumerable _raw behind.
+                const raw = n._raw || (n.id && EVENTS.find(e => e && e.id === n.id));
                 if (raw) {
                     eventsSub = isUpcomingTabEvent(raw) ? "upcoming" : eventStatus(raw) === "past" ? "past" : "archive";
                     eventsSubTouched = true;
@@ -2788,8 +2790,9 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     // The guides arrive on their own request; a log already on screen
-    // redraws to include them.
-    if (window.Guides) Guides.onLoad(() => { if (showWhatsNew) render(); });
+    // redraws to include them — in place (10 Oct 2026), as any render
+    // nobody asked for must, so a reader part-way down keeps their place.
+    if (window.Guides) Guides.onLoad(() => { if (showWhatsNew) renderInPlace(); });
 
     // The Guides row's second line in the side menu.
     function guidesState() {
@@ -3059,26 +3062,11 @@ document.addEventListener("DOMContentLoaded", () => {
         "images": "Pictures updated",
     };
 
-    /* EVERY CHANGE, TWO TO A LINE. The list is ordered by the server with
-       pictures and furni first, so the first line is the one a reader would
-       have picked out anyway, and anything more wraps onto the lines below.
-
-       It used to be one line: the first two, then "+1 more". That told a
-       reader something else had changed and kept back what — Twister Maze
-       read "Added room imagery · Updated furni listing · +1 more" — when the
-       word it was hiding would have fitted on the next line. Each line is its
-       own row in .updatelog-what's column, so it keeps the row's ellipsis on
-       a narrow screen rather than wrapping mid-phrase.
-
-       Nothing at all for a record with no `changes` field, which is every
-       record edited before this existed and every record only ever added.
-       An absent line is honest; inventing "Updated" for them would be the
-       log telling somebody something it does not know. */
-/* The word at the head of each entry. News and Note are the Warren's own
+    /* The word at the head of each entry. News and Note are the Warren's own
        (WHAT'S NEW, BY HAND). */
     const LOG_VERBS = { added: "Added", updated: "Updated", news: "News", note: "Note" };
 
-/* THE LOG'S PICTURES, ZOOMED INTO THE MIDDLE (4 Oct 2026, the owner's).
+    /* THE LOG'S PICTURES, ZOOMED INTO THE MIDDLE (4 Oct 2026, the owner's).
        A room screenshot at 34x24 was a smear: it was fetched as a 160px
        SQUARE, cropped a second time to the box's wider shape, and shrunk
        with pixelated scaling, which keeps one pixel in five and drops the
@@ -3100,6 +3088,21 @@ document.addEventListener("DOMContentLoaded", () => {
         return `<span class="updatelog-thumb-crop"><img class="updatelog-thumb-zoom" src="${escapeHtml(imgCdn(n.thumb, 204, 144, 75))}" ${attrs}></span>`;
     }
 
+    /* EVERY CHANGE, TWO TO A LINE. The list is ordered by the server with
+       pictures and furni first, so the first line is the one a reader would
+       have picked out anyway, and anything more wraps onto the lines below.
+
+       It used to be one line: the first two, then "+1 more". That told a
+       reader something else had changed and kept back what — Twister Maze
+       read "Added room imagery · Updated furni listing · +1 more" — when the
+       word it was hiding would have fitted on the next line. Each line is its
+       own row in .updatelog-what's column, so it keeps the row's ellipsis on
+       a narrow screen rather than wrapping mid-phrase.
+
+       Nothing at all for a record with no `changes` field, which is every
+       record edited before this existed and every record only ever added.
+       An absent line is honest; inventing "Updated" for them would be the
+       log telling somebody something it does not know. */
     function changeLineHtml(n) {
         const keys = Array.isArray(n.changes) ? n.changes : [];
         const words = keys.map(k => CHANGE_WORDS[k]).filter(Boolean);
@@ -3458,13 +3461,21 @@ document.addEventListener("DOMContentLoaded", () => {
         if (undatedEvents) missing.push(`${undatedEvents} ${undatedEvents === 1 ? "event" : "events"}`);
         // One subject, one verb: the counts are joined into a single phrase
         // and the agreement follows the total, not the phrasing.
+        /* Events are held, not opened (10 Oct 2026): "1 event is not shown
+           here: there is no record of when it opened" said of an event what
+           is only true of a maze. Mazes open, events are held, and a mix of
+           the two is said plainly as having no date. */
+        const one = undatedTotal === 1;
+        const why = !undatedEvents
+            ? (one ? "there is no record of when it opened." : "there is no record of when they opened.")
+            : !undatedMazes
+                ? (one ? "there is no record of when it was held." : "there is no record of when they were held.")
+                : "they have no date on record.";
         const omission = undatedTotal
             ? `<p class="timeline-omission">${escapeHtml(missing.join(" and "))} ` +
-              (undatedTotal === 1
-                  // A colon rather than a dash: .timeline-omission is set in
-                  // Volter Goldfish, which draws U+2014 as a musical note.
-                  ? "is not shown here: there is no record of when it opened."
-                  : "are not shown here: there is no record of when they opened.") +
+              // A colon rather than a dash: .timeline-omission is set in
+              // Volter Goldfish, which draws U+2014 as a musical note.
+              (one ? "is not shown here: " : "are not shown here: ") + why +
               `</p>`
             : "";
 
@@ -3640,13 +3651,11 @@ document.addEventListener("DOMContentLoaded", () => {
         }
 
         const view = effectiveView();
-        /* Three pools, one row renderer. What's New and the furni filter
-           each bring their own set and their own order, so they stand
-           outside the view/sort machinery — the sort dropdown has no opinion
-           worth having about "newest first", and a furni's mazes read
-           alphabetically like any other list of mazes. The search box still
-           applies to all three: narrowing any of them by name is a
-           reasonable thing to want. */
+        /* Only the plain listings reach this point (10 Oct 2026, the bug
+           scan): What's New and the furni filter each return above with a
+           renderer of their own, so the branches for them that used to sit
+           here — their pools, the furni chip and its Clear and Back wiring
+           (now wireFurniChip, beside renderFurniRooms) — could never run. */
         /* A search or a filter looks across EVERY tab of its kind — Open,
            Archived and Collab for mazes, all three event tabs for events —
            because the tabs are how the archive is shelved, not something a
@@ -3655,47 +3664,20 @@ document.addEventListener("DOMContentLoaded", () => {
            them was how you found out there were more. Each row still carries
            its own status badge, so nothing is lost by mixing them. */
         const searching = !!query.trim();
-        const rawItems = furniFilter
-            ? furniFilteredItems().filter(matchesQuery)
-            : showWhatsNew
-                ? whatsNewItems().filter(matchesQuery)
-                : normalizeAll(searching ? kindItems(topView) : sourceItems(view), topView === "events")
-                    .filter(matchesQuery);
-        const items = (showWhatsNew || furniFilter) ? rawItems : sortItems(rawItems);
+        const items = sortItems(normalizeAll(searching ? kindItems(topView) : sourceItems(view), topView === "events")
+            .filter(matchesQuery));
 
         // The Open Mazes list trades the short description for the date the
-        // maze opened, shown right next to the owner's name instead. What's
-        // New keeps the description: a mixed list of mazes and events needs
-        // the line that says what each one is.
-        const isOpenView = !showWhatsNew && !searching && view === "open";
+        // maze opened, shown right next to the owner's name instead. A
+        // search across every tab keeps the description.
+        const isOpenView = !searching && view === "open";
 
         // Only the records that actually drew — see rowsHtml. currentItems
         // has to be exactly that list, because wireRowActivation pairs
         // rows with it by position.
         const rows = rowsHtml(items, isOpenView);
         currentItems = rows.items;
-        grid.innerHTML = furniFilterChipHtml() + rows.html;
-
-        const clearFilter = document.getElementById("furni-filter-clear");
-        if (clearFilter) {
-            clearFilter.addEventListener("click", () => {
-                leaveFurniFilter();
-                render();
-            });
-        }
-
-        // Back: the archive as it was, and the maze that asked the question
-        // open again on top of it.
-        const backToMaze = document.getElementById("furni-filter-back");
-        if (backToMaze) {
-            backToMaze.addEventListener("click", () => {
-                const id = furniFilter && furniFilter.fromMazeId;
-                furniFilter = null;
-                render();
-                const record = ROOMS.find(r => r.id === id);
-                if (record) openModal(normalize(record, false));
-            });
-        }
+        grid.innerHTML = rows.html;
 
         wireRowActivation(grid, currentItems);
         wireThumbFadeIn(grid);
@@ -3773,14 +3755,17 @@ document.addEventListener("DOMContentLoaded", () => {
         if (!isEmpty) { emptyEl.innerHTML = ""; return; }
 
         const searching = !!query.trim();
+        // Not "No events scheduled." when the events never arrived
+        // (1 Oct 2026): that reads as a fact, not an outage. Checked before
+        // the search wording too (10 Oct 2026): "No events match your
+        // search." over events that never loaded is the same false fact.
+        const eventsFailed = topView === "events" && Api._degraded && Api._degraded.has("event data");
         const message = showWhatsNew
             ? (searching ? "Nothing new matches your search." : "Nothing has been added yet.")
-            : searching
-                ? (topView === "events" ? "No events match your search." : "No mazes match your search.")
-                // Not "No events scheduled." when the events never arrived
-                // (1 Oct 2026): that reads as a fact, not an outage.
-                : topView === "events" && Api._degraded && Api._degraded.has("event data")
-                    ? "Couldn't load the events. Try refreshing the page."
+            : eventsFailed
+                ? "Couldn't load the events. Try refreshing the page."
+                : searching
+                    ? (topView === "events" ? "No events match your search." : "No mazes match your search.")
                     : emptyMessagesNoSearch[view];
 
         emptyEl.innerHTML = "";
@@ -3818,7 +3803,7 @@ document.addEventListener("DOMContentLoaded", () => {
            and the jump marks it touched — so with nothing scheduled this
            locked the tab to an empty Upcoming instead of falling to Past as
            the top nav's Events does. */
-        btn.addEventListener("click", () => jumpKeepingSearch(other === "events" ? resolvedEventsSub() : mazesSub));
+        btn.addEventListener("click", e => jumpKeepingSearch(other === "events" ? resolvedEventsSub() : mazesSub, e));
         row.appendChild(btn);
         emptyEl.appendChild(row);
     }
@@ -3833,7 +3818,26 @@ document.addEventListener("DOMContentLoaded", () => {
        eventsSubTouched is set for the same reason the sub-nav sets it: the
        visitor has now chosen an events tab explicitly, and resolvedEventsSub
        must stop second-guessing them. */
-    function jumpKeepingSearch(view) {
+    /* Whether a press came from a finger (10 Oct 2026).
+
+       Handing focus back to the search box is right for a mouse or a
+       keyboard, where the next keystroke should carry on refining. On a
+       phone it pops the on-screen keyboard up over the very results the
+       press was for. A click with detail 0 is the keyboard's, so focus.
+       Otherwise the click's own pointerType when the browser gives one,
+       else the last pointerdown's (click is a plain MouseEvent in Safari
+       and older Firefox — see the canvas's note further down), else
+       whether this is a touch device at all. */
+    let lastPressPointerType = "";
+    document.addEventListener("pointerdown", e => { lastPressPointerType = e.pointerType || ""; }, true);
+    function pressWasTouch(e) {
+        if (e && e.detail === 0) return false;
+        const type = (e && e.pointerType) || lastPressPointerType;
+        if (type) return type === "touch" || type === "pen";
+        return !!(window.matchMedia && window.matchMedia("(pointer: coarse)").matches);
+    }
+
+    function jumpKeepingSearch(view, e) {
         if (MAZE_VIEWS.includes(view)) {
             topView = "mazes";
             mazesSub = view;
@@ -3846,24 +3850,23 @@ document.addEventListener("DOMContentLoaded", () => {
         showWhatsNew = false;
         showTimeline = false;
         showFurni = false;
-       
         furniFilter = null;
         render();
         // Back to the box, so the next keystroke carries on refining rather
         // than going nowhere — the button that was just pressed no longer
         // exists to hold focus, and focus would otherwise fall to <body>.
-        if (searchInput) searchInput.focus();
+        // Not after a finger's press (10 Oct 2026): see pressWasTouch.
+        if (searchInput && !pressWasTouch(e)) searchInput.focus();
     }
 
-    // Populates .featured-frame's own list — one maze per difficulty, two
-    // difficulties, reshuffled each time this view opens rather than
-    // sorted/stable across visits, so it reads as a rotating teaser rather
-    // than a real second browsing list (that's .chrome-frame's job, nested
-    // right below — see home.html). Only actually reshuffles the moment
-    // showFeatured flips true (see updateChrome's own comment) rather than
-    // on every render while it stays open, since nothing that would change
-    // this list's contents can happen while it's open (any sub-nav/top-nav
-    // click closes it first).
+    // Populates .featured-frame's own list — one maze per difficulty (two
+    // picks, four on a phone), reshuffled each time this view opens rather
+    // than sorted/stable across visits, so it reads as a rotating teaser
+    // rather than a real second browsing list (that's .chrome-frame's job,
+    // nested right below — see home.html). Only actually reshuffles the
+    // moment showFeatured flips true, or on Refresh; every other render
+    // while it stays open re-draws the same picks (see updateChrome's own
+    // comment and renderFeaturedList).
     /* How many picks the frame shows.
 
        Two on a desktop, where that is all the panel has room for. Four on a
@@ -3910,7 +3913,9 @@ document.addEventListener("DOMContentLoaded", () => {
     // row tint is the whole point of this list. Difficulties are drawn at
     // random but the result is returned easiest-first, so the list always
     // reads as a ramp regardless of which two came up.
-    function pickFeatured(pool) {
+    // count: how many to deal — the frame's full count, or (renderFeaturedList's
+    // top-up) only the places a pick that left has emptied.
+    function pickFeatured(pool, count = featuredFrameCount()) {
         const byDifficulty = new Map();
         pool.forEach(n => {
             const key = n.difficulty || "";
@@ -3925,7 +3930,7 @@ document.addEventListener("DOMContentLoaded", () => {
         const unrated = byDifficulty.has("") ? [""] : [];
 
         return rated.concat(unrated)
-            .slice(0, featuredFrameCount())
+            .slice(0, count)
             .map(key => {
                 const group = byDifficulty.get(key);
                 return group[Math.floor(Math.random() * group.length)];
@@ -3946,9 +3951,22 @@ document.addEventListener("DOMContentLoaded", () => {
         const kept = reshuffle ? [] : featuredListItems
             .map(old => pool.find(n => n.id && n.id === old.id))
             .filter(Boolean);
+        /* Topped up when a pick has left (10 Oct 2026). A maze deleted or
+           un-featured while the panel was open left it one short until it
+           was closed and opened again. The empty places are dealt afresh
+           from the difficulties not already showing, so the rows still read
+           as a ramp of different colours; with no such difficulty left
+           there is nothing to add and the panel stays as it is. */
+        let picks = kept;
+        const want = featuredFrameCount();
+        if (kept.length && kept.length < want) {
+            const held = new Set(kept.map(n => n.difficulty || ""));
+            const extra = pickFeatured(pool.filter(n => !held.has(n.difficulty || "")), want - kept.length);
+            picks = kept.concat(extra).sort((a, b) => difficultyRank(a.difficulty) - difficultyRank(b.difficulty));
+        }
         // Through rowsHtml so a pick that will not draw is dropped rather
         // than taking the panel down with it — see normalizeAll.
-        const rows = rowsHtml(kept.length ? kept : pickFeatured(pool), false);
+        const rows = rowsHtml(picks.length ? picks : pickFeatured(pool), false);
         featuredListItems = rows.items;
 
         featuredFrameList.innerHTML = rows.html;
@@ -5885,10 +5903,14 @@ document.addEventListener("DOMContentLoaded", () => {
     const FURNI_SIG_MAZES = 6;
     const FURNI_SIG_SAMPLE = 5;
 
+    /* data-focus-key on these and on the complete-maze names (10 Oct 2026,
+       the bug scan): render() can only hand focus back to something that
+       carries one, so another tab's tick or the account's ticks arriving
+       redrew the browser and dropped a keyboard user on <body>. */
     function furniMoreHtml(openKey, total, shown) {
         const open = furniOpen.has(openKey);
         if (!open && total <= shown) return "";
-        return `<button type="button" class="furni-band-more" data-open-key="${escapeHtml(openKey)}" aria-expanded="${open}">${open ? "Show fewer" : `Show all ${total}`}</button>`;
+        return `<button type="button" class="furni-band-more" data-open-key="${escapeHtml(openKey)}" data-focus-key="${escapeHtml("furni-more:" + openKey)}" aria-expanded="${open}">${open ? "Show fewer" : `Show all ${total}`}</button>`;
     }
 
     /* A band's tiles. `cap` shortens it to its first few, with a button for
@@ -5958,7 +5980,7 @@ document.addEventListener("DOMContentLoaded", () => {
                     }).join("")}
                 </div>
                 ${groups.length > FURNI_SIG_MAZES
-                    ? `<button type="button" class="furni-band-more" data-open-key="sig" aria-expanded="${furniOpen.has("sig")}">${furniOpen.has("sig") ? "Show fewer mazes" : `Show all ${groups.length} mazes`}</button>`
+                    ? `<button type="button" class="furni-band-more" data-open-key="sig" data-focus-key="furni-more:sig" aria-expanded="${furniOpen.has("sig")}">${furniOpen.has("sig") ? "Show fewer mazes" : `Show all ${groups.length} mazes`}</button>`
                     : ""}
             </section>`;
     }
@@ -5978,12 +6000,19 @@ document.addEventListener("DOMContentLoaded", () => {
            tile's count stays its count across the whole archive. */
         let entries = all;
         let filtered = false;
+        /* Searching only once the box says something (10 Oct 2026). A
+           filter still being typed ("by:" before its name, a lone "-")
+           parses to nothing, and every band was un-capped under "430
+           pieces match 'by:'" — the whole browser drawn at once, labelled
+           as a search. Until something parses, it is still browsing. */
+        let searching = false;
         if (q) {
             const s = parseSearch(query.trim());
             const names = s.words.concat(s.keys.filter(k => k.key === "furni").map(k => k.value));
             const notNames = s.not.concat(s.notKeys.filter(k => k.key === "furni").map(k => k.value));
             const mazeKeys = s.keys.filter(k => k.key !== "furni");
             const mazeNot = s.notKeys.filter(k => k.key !== "furni");
+            searching = !!(names.length || notNames.length || mazeKeys.length || mazeNot.length);
             let inMazes = null;
             if (mazeKeys.length || mazeNot.length) {
                 filtered = true;
@@ -6041,12 +6070,12 @@ document.addEventListener("DOMContentLoaded", () => {
            few with "Show all"; a search shows every match, uncapped, and the
            one-maze pieces as the plain band they were — a search is for
            finding a piece, not for browsing mazes. */
-        const cap = q ? 0 : FURNI_BAND_CAP;
+        const cap = searching ? 0 : FURNI_BAND_CAP;
         const commonBand = {
             key: "common",
             title: "The common kit",
             // Opened in full ("Show all"), it no longer shows only the top few.
-            note: q || furniOpen.has("common") || common.length <= cap ? "What most Origins mazes are built from, most widespread first."
+            note: searching || furniOpen.has("common") || common.length <= cap ? "What most Origins mazes are built from, most widespread first."
                 : `What most Origins mazes are built from: the ${Math.min(cap, common.length)} most widespread of ${common.length}.`,
             items: common, cap
         };
@@ -6056,7 +6085,7 @@ document.addEventListener("DOMContentLoaded", () => {
             note: `In ${FURNI_SOLO + 1} to ${FURNI_FEW_MAX} mazes — the pieces a few builders found and the rest did not.`,
             items: few, cap
         };
-        const bandsHtml = q
+        const bandsHtml = searching
             ? [commonBand, { key: "solo", title: "Used by one maze alone", note: "Nobody else built with these.", items: solo }, fewBand].map(furniBandHtml).join("")
             : furniBandHtml(commonBand) + furniSignatureHtml(solo) + furniBandHtml(fewBand);
 
@@ -6092,7 +6121,7 @@ document.addEventListener("DOMContentLoaded", () => {
         const completeHtml = complete.length
             ? `<p class="furni-head-complete">Not all mazes' furni listings are fully complete. Currently these mazes have 100% furni listings:
                 <span class="furni-head-complete-names">${complete.map(r =>
-                    `<button type="button" class="furni-head-complete-link" data-room-id="${escapeHtml(r.id)}">${escapeHtml(String(r.name).trim())}</button>`).join(", ")}</span></p>`
+                    `<button type="button" class="furni-head-complete-link" data-room-id="${escapeHtml(r.id)}" data-focus-key="${escapeHtml("furni-complete:" + r.id)}">${escapeHtml(String(r.name).trim())}</button>`).join(", ")}</span></p>`
             : "";
 
         const head = `
@@ -6107,7 +6136,7 @@ document.addEventListener("DOMContentLoaded", () => {
                     ${stat(soloCount, soloCount === 1 ? "used by one maze" : "used by one maze only")}
                     ${widest ? stat(widest.mazes, "mazes at its widest") : ""}
                 </div>
-                ${q
+                ${searching
                     ? `<p class="furni-head-filter">${entries.length} ${entries.length === 1 ? "piece matches" : "pieces match"} “${escapeHtml(query.trim())}”.</p>`
                     : ""}
             </section>`;
@@ -6141,10 +6170,19 @@ document.addEventListener("DOMContentLoaded", () => {
            Pressing it again closes it. */
         grid.querySelectorAll(".furni-tile").forEach(btn => {
             btn.setAttribute("aria-expanded", "false");
-            btn.addEventListener("click", () => {
+            btn.addEventListener("click", e => {
                 const key = btn.dataset.furniKey;
                 furniExpanded = furniExpanded === key ? null : key;
                 placeFurniExpand(all);
+                /* Into the panel when the keyboard opened it (10 Oct 2026).
+                   The panel goes after the LAST tile of the row, so Tab from
+                   the piece walked the rest of the row first and the panel
+                   it had just opened was out of order. detail 0 is a
+                   keyboard click; a mouse or finger leaves focus be. */
+                if (e.detail === 0 && furniExpanded === key) {
+                    const close = grid.querySelector(".furni-expand .furni-expand-close");
+                    if (close) close.focus();
+                }
             });
         });
 
@@ -6453,16 +6491,6 @@ document.addEventListener("DOMContentLoaded", () => {
             const results = document.querySelector(".home-results");
             if (results) results.scrollTop = 0;
         });
-    }
-
-    // The mazes a furni filter is asking for, as normalized records ready to
-    // render as ordinary rows.
-    function furniFilteredItems() {
-        if (!furniFilter) return [];
-        const ids = new Set(mazesWithFurni({ url: furniFilter.key, name: furniFilter.key }).map(m => m.id));
-        return ROOMS.filter(r => ids.has(r.id))
-            .map(r => normalize(r, false))
-            .sort((a, b) => compareNames(a.name, b.name));
     }
 
     /* Every ROOM a piece was found in, not every maze.
@@ -9612,7 +9640,11 @@ document.addEventListener("DOMContentLoaded", () => {
         const f = progressFigures();
         const badges = earnedBadges(f, d);
         const featured = d.badge ? badges.find(b => b.key === d.badge) : null;
-        const habbo = d.habbo || null;
+        /* Not a guessed Habbo (10 Oct 2026, the owner's; NOT VERIFIED in
+           progressHtml): a card is printed and kept, so its avatar and
+           motto wait until the Habbo is shown to be theirs, and the card is
+           drawn as for a player with no Habbo linked. */
+        const habbo = d.habboUnverified ? null : (d.habbo || null);
         const g = d.games || {};
         const game = s => (s && s.days ? { streak: s.streak, best: s.best, days: s.days } : null);
         return {
@@ -9735,15 +9767,31 @@ document.addEventListener("DOMContentLoaded", () => {
         } else if (self) {
             if (d && d.hidden) noteLines.push(`<span class="profile-hidden-note">Hidden: only you can see this.</span>`);
             if (d && !habbo && !d.habboLinked) noteLines.push("Link your Habbo through OriginsBot to show your avatar and motto here.");
+            // A guessed Habbo (NOT VERIFIED below; 10 Oct 2026): where to verify it.
+            if (d && habbo && d.habboUnverified) noteLines.push(`This Habbo was matched to your nickname. Verify it's yours in <button type="button" class="progress-signin" data-profile-act="edit">Edit Profile</button>.`);
             // Kept off for a filter word (MOTTOS in netlify/functions/profiles.js; 5 Oct 2026).
             if (d && d.mottoHidden) noteLines.push("Your Habbo motto isn't shown: it has a word in it the site doesn't allow. An admin will take a look.");
         }
         const notes = noteLines.length
             ? `<div class="profile-notes">${noteLines.map(l => `<p class="progress-note">${l}</p>`).join("")}</div>` : "";
 
+        /* NOT VERIFIED (10 Oct 2026, the owner's): a Habbo guessed from the
+           nickname (netlify/functions/_habbo-guess.js) was drawn as a
+           verified one is — outline, motto and the Online dot, nothing to
+           tell them apart. Now it carries a "Not verified" tag, outlined as
+           the screen's tags are and in its one colour
+           (.profile-unverified-tag in style.css), and never the Online dot
+           (profiles.js sends none for a guess either). The tag leads the
+           MOTTO's line, not the name's: on the name's line it cut an
+           ordinary name to "Ch…" in the 360px window, and the motto is the
+           guessed Habbo's own, so it is the line the tag is about. */
+        const unverified = !!(d && habbo && d.habboUnverified);
+        const unverifiedTag = unverified
+            ? `<span class="profile-unverified-tag" title="This Habbo matches their nickname, but it hasn't been shown to be theirs yet.">Not verified</span>` : "";
+        const mottoText = habbo && habbo.motto ? `"${escapeHtml(habbo.motto)}"` : "";
         const who = `
-                    <h3><span class="profile-name" title="${escapeHtml(name)}">${escapeHtml(name)}</span>${onlineMark(habbo)}</h3>
-                    ${habbo && habbo.motto ? `<p class="profile-motto" title="${escapeHtml(habbo.motto)}">"${escapeHtml(habbo.motto)}"</p>` : ""}
+                    <h3><span class="profile-name" title="${escapeHtml(name)}">${escapeHtml(name)}</span>${unverified ? "" : onlineMark(habbo)}</h3>
+                    ${mottoText || unverified ? `<p class="profile-motto"${mottoText ? ` title="${escapeHtml(habbo.motto)}"` : ""}>${unverifiedTag}${mottoText}</p>` : ""}
                     ${featured ? `<p class="profile-featured-line"><span class="progress-badge profile-featured" title="${escapeHtml(featured.means)}"><span class="progress-badge-mark" aria-hidden="true"></span><span>${escapeHtml(featured.name)}</span></span></p>` : ""}
                     ${sinceLine}`;
 
@@ -10297,6 +10345,26 @@ document.addEventListener("DOMContentLoaded", () => {
         overlay.style.top = top + "px";
     }
 
+    /* Back into view when the screen changes shape (10 Oct 2026). Clamping
+       alone on a resize left the window where the clamp had shoved it: a
+       phone turned to landscape and back kept it pressed against an edge,
+       off centre, until it was closed and opened again. Now a window never
+       dragged is centred again, as it was on open; a dragged one is held
+       on screen where it was put, unless the change has left most of it
+       off the screen, in which case it is centred too rather than parked
+       against the edge it fell off. Run again a frame later on a turn:
+       some phones report the old size in the event itself. */
+    function keepProgressInView() {
+        const overlay = document.getElementById("progress-overlay");
+        if (!overlay || !overlay.classList.contains("open")) return;
+        if (!progressDragged) { placeProgressDefault(); return; }
+        const rect = overlay.getBoundingClientRect();
+        const seenW = Math.min(rect.right, window.innerWidth) - Math.max(rect.left, 0);
+        const seenH = Math.min(rect.bottom, window.innerHeight) - Math.max(rect.top, 0);
+        if (seenW < rect.width / 2 || seenH < Math.min(rect.height, window.innerHeight) / 2) placeProgressDefault();
+        else clampProgress();
+    }
+
     (function wireProgressDrag() {
         const overlay = document.getElementById("progress-overlay");
         const frame = document.getElementById("progress-window");
@@ -10338,7 +10406,12 @@ document.addEventListener("DOMContentLoaded", () => {
         window.addEventListener("pointerup", end);
         // A cancelled pointer must not leave the window stuck to the finger.
         window.addEventListener("pointercancel", end);
-        window.addEventListener("resize", clampProgress);
+        // See keepProgressInView (10 Oct 2026).
+        window.addEventListener("resize", keepProgressInView);
+        window.addEventListener("orientationchange", () => {
+            keepProgressInView();
+            requestAnimationFrame(keepProgressInView);
+        });
 
         /* The screen itself never scrolls — only the part under the header
            does. But it clips (overflow: hidden), and a clipping box can
@@ -10602,9 +10675,9 @@ document.addEventListener("DOMContentLoaded", () => {
             // sign-in), so a change of answer redraws it even when no tick
             // moved — see refreshProgressIfOpen.
             refreshProgressIfOpen();
-            // And its profile half is somebody else's now, or nobody's.
             // The maze window's Favourite is somebody else's now, or nobody's.
             repaintFavToggles();
+            // And the window's profile half is too: read again for whoever it is.
             const overlay = document.getElementById("progress-overlay");
             if (overlay && overlay.classList.contains("open") && !viewing) loadOwnProfile(true);
             /* Your own profile, opened by its public id before this answer
@@ -11595,7 +11668,6 @@ document.addEventListener("DOMContentLoaded", () => {
             showWhatsNew = false;
             showTimeline = false;
             showFurni = false;
-           
             furniFilter = null;
             searchInput.value = "";
             query = "";
@@ -11619,7 +11691,6 @@ document.addEventListener("DOMContentLoaded", () => {
             showWhatsNew = false;
             showTimeline = false;
             showFurni = false;
-           
             furniFilter = null;
             searchInput.value = "";
             query = "";
@@ -11718,7 +11789,7 @@ document.addEventListener("DOMContentLoaded", () => {
        loses its ?q= with it, through render's syncSearchToUrl. */
     const clearFilterBtn = document.getElementById("clear-filter-btn");
     if (clearFilterBtn) {
-        clearFilterBtn.addEventListener("click", () => {
+        clearFilterBtn.addEventListener("click", e => {
             searchInput.value = "";
             query = "";
             let backToBrowser = false;
@@ -11729,7 +11800,8 @@ document.addEventListener("DOMContentLoaded", () => {
             render();
             const results = document.querySelector(".home-results");
             if (results && !backToBrowser) results.scrollTop = 0;
-            searchInput.focus({ preventScroll: true });
+            // No keyboard popped over the archive by a finger (10 Oct 2026).
+            if (!pressWasTouch(e)) searchInput.focus({ preventScroll: true });
         });
     }
 

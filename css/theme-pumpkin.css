@@ -9,7 +9,7 @@
    completely inert until js/site.js puts that attribute on <html>. The
    classic palette is not defined here and is not affected by anything in it.
 
-   1117 rules, 1796 declarations, hues 18 (surfaces) / 38 (accents).
+   1118 rules, 1796 declarations, hues 18 (surfaces) / 38 (accents).
 */
 :root[data-theme="pumpkin"] {
     --bg-black: #0a0401;
@@ -3204,12 +3204,6 @@ html[data-theme="pumpkin"]::-webkit-scrollbar-button {
     outline: 2px solid var(--amber-bright);
 }
 
-[data-theme="pumpkin"] .header-signin-face {
-    border: 1px solid #faf7f2;
-    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
-    background: var(--wood-mid);
-}
-
 [data-theme="pumpkin"] .header-signin-note {
     background: var(--bg-panel);
     border: 1px solid var(--border);
@@ -4711,6 +4705,12 @@ html[data-theme="pumpkin"]::-webkit-scrollbar-button {
 }
 
 @media (pointer: coarse) {
+    [data-theme="pumpkin"] .pura-light::after {
+        background: transparent;
+    }
+}
+
+@media (pointer: coarse) {
     [data-theme="pumpkin"] .photo-frame-close::after {
         background: transparent;
     }
@@ -4959,11 +4959,6 @@ html[data-theme="pumpkin"]::-webkit-scrollbar-button {
 
 [data-theme="pumpkin"] .daily-bonus {
     color: var(--parchment-dim);
-}
-
-[data-theme="pumpkin"] .signout-face {
-    border: 1px solid var(--chrome-border);
-    box-shadow: 2px 2px 0 rgba(0, 0, 0, 0.4);
 }
 
 [data-theme="pumpkin"] .signout-everywhere {
@@ -5488,6 +5483,12 @@ html[data-theme="pumpkin"]::-webkit-scrollbar-button {
     outline: 1px solid var(--parchment);
 }
 
+@media (pointer: coarse) {
+    [data-theme="pumpkin"] .mazer-motto::after {
+        background: transparent;
+    }
+}
+
 [data-theme="pumpkin"] .nt-chip-x {
     background: none;
     border: 0;
@@ -5500,6 +5501,12 @@ html[data-theme="pumpkin"]::-webkit-scrollbar-button {
 
 [data-theme="pumpkin"] .nt-row[data-nid]:focus-visible {
     outline: 2px solid var(--chrome-highlight);
+}
+
+[data-theme="pumpkin"] .profile-unverified-tag {
+    border: 1px solid var(--pc-text);
+    color: var(--pc-text);
+    text-shadow: none;
 }
 
 /* ------------------------------------------- COLOUR THAT IS INFORMATION

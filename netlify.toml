@@ -394,8 +394,10 @@
 # archive's side menu. It is a window over the archive now, and the file is
 # gone; the /glyphs.html redirect further up still sends an old link here.
 #
-# Still not indexed: robots.txt disallows /glyphs. Useful to somebody
-# naming a room, meaningless in a search result.
+# Still not indexed: the share function answers with X-Robots-Tag: noindex
+# (NOINDEX_PAGES). Useful to somebody naming a room, meaningless in a search
+# result. Not robots.txt any more (10 Oct 2026), which also kept X's and
+# LinkedIn's preview bots from fetching the card.
 #
 # Through the share function (8 Oct 2026), as /purapanic and /profile are,
 # so a pasted link shows the window's own title, line and picture
@@ -409,7 +411,7 @@
 # window open, and /profile?p=<public id> opens one player's. On the same
 # terms as /glyphs above; js/home.js opens the window and puts the address
 # back to /home, since the window keeps no address of its own. Not indexed
-# (robots.txt): it shows whoever is looking their own browser's progress.
+# (X-Robots-Tag from the share function, as /glyphs): it shows whoever is looking their own browser's progress.
 # Through the share function, which serves the same home.html with the
 # Profiles link preview (assets/img/og-profiles.png, the Habbo Console).
 [[redirects]]

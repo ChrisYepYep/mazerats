@@ -18,7 +18,12 @@
    What a player has seen is on their own players row, `noticesSeen` (the
    newest SEEN_KEEP nids). Somebody signed out can still be sent one meant
    for everyone: they are told it, and their browser keeps what they have
-   seen (js/console.js). An everyone-notice is offered for BROADCAST_DAYS,
+   seen (js/console.js). Signed in, only the account counts (10 Oct 2026,
+   the owner's: "should be account, surely?"): the console no longer lays
+   this browser's list over a player's answer, so on a shared computer one
+   player reading or deleting a notice for everyone does not hide it from
+   the next, and a player's read and deleted ones are the same on every
+   device. An everyone-notice is offered for BROADCAST_DAYS,
    so a first visit next year is not met by this autumn's news.
 
    GET                   the caller's unseen notices: [{ nid, text, at }],
@@ -153,21 +158,39 @@ async function mine(event, db) {
         { endless: true },
         { until: { $exists: false }, endless: { $ne: true }, at: { $gte: since } }
     ] };
-    const query = player
-        ? { withdrawn: { $ne: true }, $or: [liveAll, { audience: "players", to: String(player.id) }] }
-        : { withdrawn: { $ne: true }, ...liveAll };
     // Their own lists first: what they have deleted is left out IN the
     // query (5 Oct 2026, the bug scan), so deleted notices do not use up
     // the fifty and push an older unread one out of reach.
     const row = player ? await db.collection("players").findOne({ id: String(player.id) }, { projection: { _id: 0, noticesSeen: 1, noticesDeleted: 1, joinedAt: 1, nick: 1, habbo: 1 } }) : null;
-    const deletedIds = row && Array.isArray(row.noticesDeleted) ? row.noticesDeleted.filter(n => typeof n === "string") : [];
-    if (deletedIds.length) query.nid = { $nin: deletedIds };
-    // The newest fifty, then oldest first for the queue of unread ones.
-    const fetched = await col.find(query, { projection: { _id: 0, nid: 1, text: 1, at: 1, audience: 1, who: 1, quiet: 1 } }).sort({ at: -1 }).limit(50).toArray();
-    // Who each everyone-notice is for (WHO_KINDS), against this visitor.
     const joined = row && Date.parse(row.joinedAt);
     const hasNick = !!(row && typeof row.nick === "string" && row.nick);
     const verified = !!(row && row.habbo && typeof row.habbo.name === "string" && row.habbo.name);
+    /* WHO, IN THE QUERY too (10 Oct 2026, the bug scan): the everyone-
+       notices not meant for this visitor (WHO_KINDS) used to be fetched and
+       then dropped by forThem below, so ten "signed out only" notices took
+       ten of the fifty and an older one that WAS for them never came back.
+       Now only the kinds that can be for them are asked for; forThem stays,
+       as the same rules read the other way. */
+    const whoKinds = player
+        ? ["everyone", "signedIn", ...(hasNick ? [] : ["noNick"]), ...(verified ? [] : ["unverified"])]
+        : ["everyone", "signedOut"];
+    const whoFits = [{ who: { $exists: false } }, { who: { $in: whoKinds } }];
+    if (player && Number.isFinite(joined)) whoFits.push({ who: "newPlayers", at: { $lte: new Date(joined).toISOString() } });
+    const forAll = { $and: [liveAll, { $or: whoFits }] };
+    const query = player
+        ? { withdrawn: { $ne: true }, $or: [forAll, { audience: "players", to: String(player.id) }] }
+        : { withdrawn: { $ne: true }, ...forAll };
+    const deletedIds = row && Array.isArray(row.noticesDeleted) ? row.noticesDeleted.filter(n => typeof n === "string") : [];
+    const seenIds = row && Array.isArray(row.noticesSeen) ? row.noticesSeen.filter(n => typeof n === "string") : [];
+    const wantAll = (event.queryStringParameters || {}).all === "1";
+    /* The queue of unread ones leaves the read ones out in the query as well
+       (10 Oct 2026), for the same reason: fifty read notices no longer hide
+       an older unread one. The ?all=1 list wants the read ones too. */
+    const leaveOut = wantAll ? deletedIds : [...new Set([...deletedIds, ...seenIds])];
+    if (leaveOut.length) query.nid = { $nin: leaveOut };
+    // The newest fifty, then oldest first for the queue of unread ones.
+    const fetched = await col.find(query, { projection: { _id: 0, nid: 1, text: 1, at: 1, audience: 1, who: 1, quiet: 1 } }).sort({ at: -1 }).limit(50).toArray();
+    // Who each everyone-notice is for (WHO_KINDS), against this visitor.
     const forThem = n => {
         if (n.audience !== "all") return true;
         switch (n.who) {
@@ -181,17 +204,21 @@ async function mine(event, db) {
     };
     const kept = fetched.filter(forThem).map(n => ({ nid: n.nid, text: n.text, at: n.at, ...(n.quiet ? { quiet: true } : {}) }));
     const rows = kept.slice().reverse();
-    const seen = new Set(row && Array.isArray(row.noticesSeen) ? row.noticesSeen : []);
+    const seen = new Set(seenIds);
+    /* `acct` (10 Oct 2026): an opaque tag for whose answer this is, so the
+       console can keep its played-the-sound list per account in this
+       browser without storing the Discord id there. */
+    const acct = player ? crypto.createHash("sha256").update(`notices:${player.id}`).digest("hex").slice(0, 16) : null;
     /* ?all=1 (5 Oct 2026, the owner's): every notice the caller has been
        sent, read or not, newest first — the console's Notifications page. */
-    if ((event.queryStringParameters || {}).all === "1") {
+    if (wantAll) {
         return json(200, {
-            signedIn: !!player,
+            signedIn: !!player, acct,
             notices: kept.slice(0, HISTORY_MAX).map(r => ({ ...r, seen: seen.has(r.nid) }))
         });
     }
     // The queue of unread alerts: a quiet one is only ever in the list above.
-    return json(200, { signedIn: !!player, notices: rows.filter(r => !seen.has(r.nid) && !r.quiet) });
+    return json(200, { signedIn: !!player, acct, notices: rows.filter(r => !seen.has(r.nid) && !r.quiet) });
 }
 
 async function markSeen(event, db) {
@@ -227,8 +254,9 @@ async function markSeen(event, db) {
 
 /* `seesIds`: the reader can edit the site (owner, admin). A view-only
    account is shown who a notice went to by nickname only, with no Discord
-   id or Discord name — as the Players tab does (seesIds in players-admin.js;
-   the bug scan, 5 Oct 2026). */
+   id or Discord name (the bug scan, 5 Oct 2026). Stricter than the Players
+   tab, which keeps only the id and the avatar from a viewer and shows the
+   Discord names (seesIds in players-admin.js; corrected 10 Oct 2026). */
 /* WHO HAS READ ONE (5 Oct 2026, the owner's: a sent notification in the
    Warren opens to show its readers). Signed-in readers only — a signed-out
    visitor's read is kept in their browser alone. The roles that see ids get

@@ -11,12 +11,16 @@
                                     the day's speed bonus — see _speed.js
    POST {game, day, action: "move", round, tile}
                                     one pick, judged against the stored
-                                    deal now; recorded for a signed-in
-                                    player, only answered for anybody else
-   POST {game, day[, moves]}        records the signed-in player's finished
-                                    day, scored from the moves recorded —
-                                    `moves` is read only for a day played
-                                    signed out (see scoreClaim)
+                                    deal now and recorded
+   POST {game, day}                 records the signed-in player's finished
+                                    day, scored from the moves recorded
+
+   Every POST is a signed-in player's with a nickname (THE DAILY GAMES ARE
+   FOR PLAYERS WITH A NICKNAME in _bans.js); anybody else is refused 403
+   before anything is judged. The signed-out half that used to sit beside
+   each of these — verdicts answered unrecorded, an opening round handed
+   out, a finished day filed from the page's own picks (scoreClaim) — was
+   unreachable behind that refusal and was taken out (10 Oct 2026).
 
    Guess the Maze has had a board since it was built (guess-scores.js); this
    is the same idea for the games beside it.
@@ -57,17 +61,16 @@
    claim the right pick every time, and let the day's speed marks be laid
    down in a burst and the picks chosen afterwards.
 
-   What is still possible is learning the answers first — playing the day
-   signed out in a private window, where every pick is answered — and then
-   playing it signed in. One submission per player per day is the backstop
-   that keeps even that from compounding, and two things keep it from being
-   free: a signed-in request may not ask for an unrecorded verdict (see
-   "one pick" below), and signed-out verdicts are capped per network per
-   day (claimAnonMove in _speed.js). A leaderboard here is a thing to
-   enjoy, not a thing to defend. */
+   What used to be possible was learning the answers first — playing the
+   day signed out in a private window, where every pick was answered — and
+   then playing it signed in. Signed out, nothing is answered now (see the
+   top of the file; 10 Oct 2026), so every verdict is a recorded pick on
+   one account. A second account is still a second account, and one
+   submission per player per day is the backstop that keeps anything from
+   compounding. A leaderboard here is a thing to enjoy, not a thing to
+   defend. */
 const { getDb, ensureUniqueIndex } = require("./_db");
 const { playerFrom, livePlayerFrom, publicName } = require("./_player");
-const { clientNet } = require("./_net");
 const { today, dayIsOpen, dayClosesAt, rangeBounds } = require("./_daily");
 const { SECURITY_HEADERS } = require("./_headers");
 const { cachedJson, BOARD_CDN_CACHE } = require("./_cache");
@@ -250,30 +253,12 @@ function scoreRecorded(dealRounds, moves) {
     return { points: solved * POINTS_EACH, solved, grid, complete: moves.every(Boolean) };
 }
 
-/* A day played SIGNED OUT, being filed now the player has signed in.
-
-   Nothing was recorded while they played — there was nobody to record it
-   against — so the only account of the day is the picks the page kept. They
-   are judged against the stored deal, and filed with no bonus, because no
-   clock ever ran for them. That is the "Sign in with Discord to be listed"
-   promise kept, and it is the one place a request's picks still count; see
-   the POST below for why it is only reached when nothing was recorded. It
-   buys nothing that playing the day signed out first and then signed in
-   would not, and it earns less: no bonus. */
-function scoreClaim(dealRounds, moves) {
-    if (!Array.isArray(moves) || moves.length !== dealRounds.length) return null;
-    const grid = [], judged = [];
-    for (let i = 0; i < dealRounds.length; i++) {
-        const pick = moves[i] && moves[i].tile;
-        if (!Number.isInteger(pick) || pick < 0 || pick >= dealRounds[i].tiles.length) return null;
-        const right = Boolean(dealRounds[i].tiles[pick].odd);
-        grid.push(right ? 1 : 0);
-        judged.push({ tile: pick, right });
-    }
-    const solved = grid.filter(Boolean).length;
-    // `moves`, as judged, for recordClaimed in _speed.js (1 Oct 2026).
-    return { points: solved * POINTS_EACH, solved, grid, complete: true, moves: judged };
-}
+/* scoreClaim lived here: a day played signed out, filed from the picks
+   the page sent once the player had signed in. Taken out with signed-out
+   play (10 Oct 2026) — and not only dead: a signed-in player with no
+   picks recorded could send five picks of their choosing in the finish
+   and be filed on them, with no move ever judged one at a time. Now a
+   day with nothing recorded is simply unfinished. */
 
 /* What the page is told about the moves recorded so far, for a signed-in
    player reopening the day: which tile each round got and whether it was
@@ -767,70 +752,47 @@ exports.handler = async (event) => {
         // dayIsOpen in _daily.js for why the grace period exists. A day that
         // has not happened cannot have been played.
         //
-        // With ONE exception, decided further down: a signed-in player's
-        // finishing request for a closed day whose moves were all recorded
-        // before it closed (see LATE FILING below). Every move and start,
-        // and anything signed out, is still held to the open day here.
+        // With ONE exception, decided further down: a finishing request
+        // for a closed day whose moves were all recorded before it closed
+        // (see LATE FILING below). Every move and start is still held to
+        // the open day here.
         const open = dayIsOpen(day);
-        if (!open && (body.action !== undefined || !player)) return json(400, { error: "That day is not open" });
+        if (!open && body.action !== undefined) return json(400, { error: "That day is not open" });
 
         /* BANNED, AND THE REJECTED NICKNAME (29 Sept 2026; see _bans.js).
-           Every POST here — a pick, a start, a finished day, signed in or
-           out (a signed-out pick is judged by the network's bans) — is
-           refused with 403 { error, banned } for a banned account or
-           network, and a signed-in player whose nickname the admins have
-           rejected is refused with 403 { error, nickRequired: true } until
-           they choose another (player-nick.js). Ahead of the deal and every
-           write, so a refused request costs one memoised lookup. */
+           Every POST here — a pick, a start, a finished day — is refused
+           with 403 { error, banned } for a banned account or network, and
+           a player whose nickname the admins have rejected is refused with
+           403 { error, nickRequired: true } until they choose another
+           (player-nick.js). Ahead of the deal and every write, so a refused
+           request costs one memoised lookup. */
         // And signed in with a nickname, or not at all (4 Oct 2026, the owner's;
         // see THE DAILY GAMES ARE FOR PLAYERS WITH A NICKNAME in _bans.js).
+        // So past this line there is always a `player` (10 Oct 2026: the
+        // signed-out branches below it are gone).
         const refusal = await writeRefusal(db, event, player ? player.id : null, { game: true, daily: true });
         if (refusal) return refusal;
 
         /* Practice time — see PRACTICE BEFORE LAUNCH in _speed.js. Read on
-           the arrival time, like everything else about the request. Signed
-           out, nothing is stored to set aside, and the page keeps its own
-           practice day (js/oddoneout.js) — but it is read signed out too
-           (1 Oct 2026), so the answers can say `practice` and the page can
-           own up to it once signed in (NO SPEED BONUS AFTER PRACTICE). */
+           the arrival time, like everything else about the request. */
         const practice = await practiceOf(db, day, arrived);
-        const practiceMark = practice.now ? { practice: practice.cut.at } : {};
 
         /* ---------- one pick ----------
 
            Sent by the game (Daily.move in js/daily.js) the moment a tile is
-           picked, for EVERYBODY — the page no longer knows which tile is the
-           imposter, so it has to ask. Judged against the stored deal now.
+           picked — the page no longer knows which tile is the imposter, so
+           it has to ask. Judged against the stored deal now, and written
+           down, once, in order, and no sooner than MIN_MOVE_MS into its
+           round (recordOddPick in _speed.js); the day is later scored from
+           what was written.
 
-           Signed in, the pick is also written down, once, in order, and no
-           sooner than MIN_MOVE_MS into its round (recordOddPick in
-           _speed.js), and the day is later scored from what was written.
-           Signed out, it is only answered: nothing is stored, so nothing
-           about it can count until a finished day is filed (see
-           scoreClaim).
-
-           `anon` WITH A SESSION IS REFUSED. The page used to send `anon`
-           for a day it began signed out, and the server answered those
-           without recording them whoever was asking — so a signed-in
-           player could put `anon: true` on a pick, read whether it was
-           right, and then make the recorded pick knowing. A free answer
-           check on a timed day, with the bonus still to earn. Now a
-           request that carries a valid session is told "signed in" (400)
-           and nothing is judged; the page then records the day instead,
-           replaying any picks it made signed out first (adoptRecorded in
-           js/oddoneout.js). A day played wholly signed out and filed after
-           signing in is untouched: that is the finishing POST below
-           (scoreClaim), not a move.
-
-           AND SIGNED-OUT VERDICTS ARE CAPPED, per network per day
-           (claimAnonMove in _speed.js). The private-window route above is
-           still open, deliberately — a signed-out player has to be able to
-           play — but it was unmetered, so a script could ask every tile of
-           every round. The cap is twenty times a day's picks and then some
-           (see ANON_MULTIPLE in _speed.js: a school or a phone network puts
-           many players behind one address), which no one address of real
-           players reaches; past it the answer is 429 and the page suggests
-           signing in. */
+           There is no unrecorded verdict any more. A signed-out pick used
+           to be answered and not stored, and a signed-in request carrying
+           `anon: true` was refused so it could not ask for one; both went
+           with signed-out play (10 Oct 2026), along with the per-network
+           cap on signed-out verdicts and the `replay` of picks made signed
+           out. An `anon` or `replay` a page from before still sends is
+           ignored, and the pick is recorded like any other. */
         if (body.action === "move") {
             if (String(event.body || "").length > speed.MAX_START_BODY) return privateJson(413, { error: "Too large" });
             const round = speed.markRound(body.round, ROUNDS);
@@ -847,25 +809,6 @@ exports.handler = async (event) => {
             if (!dealt || !Number.isInteger(tile) || tile < 0 || tile >= dealt.tiles.length) {
                 return privateJson(400, { error: "Bad move" });
             }
-            if (player && body.anon === true) {
-                return privateJson(400, { error: "signed in", reason: "signed-in" });
-            }
-            if (!player) {
-                const allowed = await speed.claimAnonMove(db, game, day, clientNet(event),
-                    speed.anonMoveLimit(deal.rounds.length, 1));
-                if (!allowed) return privateJson(429, { reason: "anon-limit", error: "Too many picks from this network today" });
-                // `next`: the round after this one, handed out now that this
-                // one is over — see ONE ROUND AT A TIME in _deal.js.
-                return privateJson(200, { recorded: false, tile, right: Boolean(dealt.tiles[tile].odd),
-                    next: deals.nextRound(game, deal.rounds, round, day), ...practiceMark });
-            }
-            /* `replay: true` is a pick made signed out and sent again now
-               the day is recorded (Daily.replay in js/daily.js). Recording
-               one marks the day untimed for good, so a replay run against
-               a clock another device started earns no bonus for picks made
-               long before (recordOddPick in _speed.js; 28 Sept 2026). Only
-               `true` counts, like `anon`. */
-            const replayed = body.replay === true;
             let outcome;
             try {
                 /* A pick on a practice run once the cut has passed: the run
@@ -881,7 +824,7 @@ exports.handler = async (event) => {
                         return privateJson(409, { reason: "practice-over" });
                     }
                 }
-                outcome = await speed.recordOddPick(db, ensureUniqueIndex, day, player.id, round, tile, dealt, arrived, replayed);
+                outcome = await speed.recordOddPick(db, ensureUniqueIndex, day, player.id, round, tile, dealt, arrived);
             } catch (e) {
                 console.error("daily-scores: could not record a pick", e);
                 return privateJson(503, { error: "The pick could not be recorded just now" });
@@ -895,8 +838,7 @@ exports.handler = async (event) => {
                a real, filed launch day was carded as "isn't on the boards",
                shared as "(practice)" and left out of the streak. The page
                reads a first verdict WITHOUT it as the day having begun for
-               real (choose in js/oddoneout.js). Not `practice`, which the
-               page notes as "this browser practised" (Daily.move). */
+               real (choose in js/oddoneout.js). */
             return privateJson(200, { recorded: true, already: Boolean(outcome.already), tile: outcome.tile, right: outcome.right,
                 next: deals.nextRound(game, deal.rounds, round, day),
                 ...(practice.now ? { practiceUntil: practice.cut.at } : {}) });
@@ -909,11 +851,10 @@ exports.handler = async (event) => {
 
         /* The start's reply carries round 0's pictures (`next`), which the
            deal reply no longer does before the day has started — see ONE
-           ROUND AT A TIME in _deal.js (30 Sept 2026). Signed out too: the
-           page asks the same way to be shown the first round, nothing is
-           recorded, and the round is what the deal reply used to hand
-           anybody. A deal that cannot be read is no `next`, and the page
-           asks for the deal again. */
+           ROUND AT A TIME in _deal.js (30 Sept 2026). A deal that cannot be
+           read is no `next`, and the page asks for the deal again. (It was
+           handed to a signed-out start too, unrecorded, until signed-out
+           play went; 10 Oct 2026.) */
         const openingRound = async () => {
             try {
                 const deal = await deals.dealFor(db, ensureUniqueIndex, game, day);
@@ -923,16 +864,6 @@ exports.handler = async (event) => {
                 return null;
             }
         };
-        if (!player && body.action === "start") {
-            if (String(event.body || "").length > speed.MAX_START_BODY) return json(413, { error: "Too large" });
-            return privateJson(200, { started: false, recorded: false, reason: "signed-out", next: await openingRound(), ...practiceMark });
-        }
-
-        // Signed out is not an error: the game posts unconditionally and
-        // there is simply no name to put on a row. privateJson: json()
-        // marks every 200 "public, max-age=30", which is for the boards and
-        // has no business on the answer to a POST (30 Sept 2026).
-        if (!player) return privateJson(200, { recorded: false, reason: "signed-out" });
 
         /* ---------- the day's clock starting ----------
 
@@ -949,11 +880,9 @@ exports.handler = async (event) => {
                 if (practice.cut && !practice.now) {
                     const row = await speed.progressFor(db, game, day, player.id);
                     if (pastPractice(practice, row)) await speed.dropPractice(db, game, day, player.id, row);
-                    /* And a run this page played SIGNED OUT before the cut,
-                       which only the page knows of (`practised`, from
-                       Daily.start; NO SPEED BONUS AFTER PRACTICE in
-                       _speed.js, 1 Oct 2026). Only `true` counts. */
-                    if (body.practised === true) await speed.notePractised(db, game, day, player.id, "page");
+                    // `practised: true` from the page (a run it played
+                    // signed out before the cut) is no longer read: there is
+                    // no signed-out play to have practised (10 Oct 2026).
                 }
                 await speed.recordStart(db, ensureUniqueIndex, game, day, player.id);
             } catch (e) {
@@ -991,13 +920,11 @@ exports.handler = async (event) => {
         if (filed) return privateJson(200, alreadyReply(filed));
 
         /* Scored from the picks RECORDED as they were made (scoreRecorded),
-           whenever there are any: then nothing in this request counts at
-           all, and a day with rounds still unpicked is not filed yet. Only a
-           day with no recorded picks — played signed out, and being filed
-           now the player has signed in — reads the request's picks, judged
-           against the stored deal and with no bonus (scoreClaim). A day
-           cannot be half one and half the other: one recorded pick and the
-           request's picks are ignored.
+           and from nothing in this request: a day with rounds still
+           unpicked — none at all included — is not filed yet (409
+           "unfinished"). A day with no recorded picks used to read the
+           request's own picks instead (scoreClaim, for a day played signed
+           out); that went on 10 Oct 2026.
 
            One game in the switch, and the switch kept: `game` has already
            been checked against GAMES above. See the note at the top of the
@@ -1009,14 +936,13 @@ exports.handler = async (event) => {
            moves exactly as it would have been at 00:04, so arriving at
            00:06 changes nothing about it except that it now lands — before
            this, a finished day whose POST fell over in the grace was lost
-           outright. A day played signed out has no stamps to prove when it
-           was played, so a claim is still refused once the day has closed,
-           and so is a day with a round unplayed: it can no longer be
-           finished, so it is told so (400, final) rather than "unfinished"
-           (409, which the page keeps trying). The start row these read
-           expires two days on (_speed.js), which bounds how late is late. */
+           outright. A day with a round unplayed is refused once the day has
+           closed: it can no longer be finished, so it is told so (400,
+           final) rather than "unfinished" (409, which the page keeps
+           trying). The start row these read expires two days on
+           (_speed.js), which bounds how late is late. */
         const closed = () => json(400, { error: "That day is not open" });
-        let scored, clock = null, claimed = false, practiceRun = practice.now, practised = false;
+        let scored, clock = null, practiceRun = practice.now, practised = false;
         try {
             let row = await speed.progressFor(db, game, day, player.id);
             // Checked before the deal is read, so a closed day with nothing
@@ -1028,27 +954,20 @@ exports.handler = async (event) => {
                when the practice row IS the run being finished, every round
                of it recorded before the cut (moves on it after the cut are
                refused, practice-over). A row with rounds still unrecorded
-               is not (1 Oct 2026): it is a practice run left behind, and
-               this request is a different run — the real day, played signed
-               out after the cut and claimed now. It was answered "practice"
-               (a start-only row) or 409 "unfinished" for good (a part-played
-               one), so the real day could never be filed. The row is set
-               aside as a move on it would be (dropPractice, which notes the
-               practice), and the day goes on as a claim. */
+               is not (1 Oct 2026): it is a practice run left behind, and is
+               set aside as a move on it would be (dropPractice, which notes
+               the practice). With nothing recorded after it the day is
+               "unfinished", and the page reads the day again and plays it
+               fresh (it was filed as a claim from the page's picks until
+               10 Oct 2026). */
             if (pastPractice(practice, row)) {
                 if (speed.movesOf(row, deal.rounds.length).every(Boolean)) practiceRun = true;
                 else { await speed.dropPractice(db, game, day, player.id, row); row = null; }
             }
             const moves = speed.movesOf(row, deal.rounds.length);
-            if (moves.some(Boolean)) {
-                scored = scoreRecorded(deal.rounds, moves);
-                if (!scored.complete) return open ? privateJson(409, { recorded: false, reason: "unfinished" }) : closed();
-                clock = speed.clockOf(row);
-            } else {
-                if (!open) return closed();
-                scored = scoreClaim(deal.rounds, body.moves);
-                claimed = true;
-            }
+            scored = scoreRecorded(deal.rounds, moves);
+            if (!scored.complete) return open ? privateJson(409, { recorded: false, reason: "unfinished" }) : closed();
+            clock = speed.clockOf(row);
             /* The real launch day of a player who practised it: no clock,
                so no bonus, and filed on its base points (NO SPEED BONUS
                AFTER PRACTICE in _speed.js; 1 Oct 2026). Only on a day the
@@ -1061,11 +980,10 @@ exports.handler = async (event) => {
             console.error("daily-scores: could not check the day", e);
             return json(500, { error: "Could not check the day" });
         }
-        if (!scored) return json(400, { error: "Bad moves" });
 
         /* The speed bonus, from the start and the marks on file — see
            _speed.js. Only rounds judged right when they were played earn
-           any. No clock (a claimed day, or an untimed one) is no bonus
+           any. No clock (an untimed day, or one practised first) is no bonus
            rather than a day that fails to record. */
         const { bonus, ms, roundSecs } = speed.dayBonus(clock, scored.grid.map(g => g > 0), arrived);
 
@@ -1101,9 +1019,8 @@ exports.handler = async (event) => {
                    Rows written before this have no field; player-profile.js
                    reads those as five, which is what they almost all were. */
                 rounds: scored.grid.length,
-                // A day filed from the page's own picks after signing in —
-                // see scoreClaim. Only there so the difference can be told.
-                ...(claimed ? { claimed: true } : {}),
+                // (`claimed: true` marked a day filed from the page's own
+                // picks — scoreClaim, gone 10 Oct 2026. Older rows keep it.)
                 // Played in practice first, so no bonus — see above.
                 ...(practised ? { practised: true } : {}),
                 at: new Date().toISOString()
@@ -1117,16 +1034,6 @@ exports.handler = async (event) => {
                 return privateJson(200, first ? alreadyReply(first) : { recorded: false, reason: "already" });
             }
             return json(500, { error: "Could not record the score" });
-        }
-
-        /* A claimed day's picks written down as the day's moves, so the
-           account's other devices see it played (recordClaimed in
-           _speed.js; 1 Oct 2026). The day is filed whatever happens here,
-           so a failure is only logged. */
-        if (claimed) {
-            try { await speed.recordClaimed(db, ensureUniqueIndex, game, day, player.id, scored.moves); } catch (e) {
-                console.warn("daily-scores: could not write a claimed day's picks", e && e.message);
-            }
         }
 
         return privateJson(200, { recorded: true, points: scored.points, bonus, solved: scored.solved, ...(practised ? { practised: true } : {}) });
@@ -1151,8 +1058,9 @@ function alreadyReply(row) {
    forward no longer shows tomorrow's pictures (and the seed that deals them
    is secret — see _deal.js — so they cannot be worked out either).
 
-   Public: fetching the deal needs no account, and a signed-out player
-   plays exactly the same day. A signed-in player also gets their recorded
+   Public: fetching the deal needs no account — though it is only the
+   pictures, none of them before the day has started, and nobody signed
+   out can play them (10 Oct 2026). A signed-in player also gets their recorded
    moves (so a reload, or another device, carries on where they are rather
    than offering rounds already played), and whether the day is already
    filed. `now` is the server's clock, which the page uses to correct its
@@ -1175,7 +1083,7 @@ async function dealReply(db, event, game, params) {
     let progress = null, filed = false, score = null, practiceOver = false;
     // How many rounds' pictures go out: none before the day has started,
     // then only the rounds this player has reached (ONE ROUND AT A TIME in
-    // _deal.js). Signed out, none — the page keeps the rounds it was handed.
+    // _deal.js). Signed out, none.
     let reached = 0;
     if (player) {
         try {
@@ -1205,7 +1113,7 @@ async function dealReply(db, event, game, params) {
         progress, filed, score,
         /* Practice time (PRACTICE BEFORE LAUNCH in _speed.js): the instant
            it ends, so the page can mark the day a practice run and say when
-           the real one starts. For everybody, signed out included. */
+           the real one starts. */
         ...(practice.now ? { practiceUntil: practice.cut.at } : {}),
         ...(practiceOver ? { practiceOver: true } : {})
     });
@@ -1240,9 +1148,8 @@ module.exports.filedScore = filedScore;
 module.exports.boardReply = boardReply;
 module.exports.freshFor = freshFor;
 module.exports.plainBoard = plainBoard;
-// For the tests: the pure scoring halves.
+// For the tests: the pure scoring (scoreClaim went with signed-out play).
 module.exports.scoreRecorded = scoreRecorded;
-module.exports.scoreClaim = scoreClaim;
 
 /* Failures reported to /warren's Errors tab (28 Sept 2026): see
    withErrorReporting in _errors.js. Last, so it wraps the handler as finally

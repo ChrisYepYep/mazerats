@@ -239,8 +239,15 @@ async function packRecords(docs) {
             const items = ((record && record.items) || []).filter(f => f && !f.hidden);
             if (!items.length) continue;   // a scanned-but-empty room says nothing to a visitor
             out[image] = items.map(f => {
-                if (!seen.has(f.icon)) {
-                    seen.set(f.icon, table.length);
+                /* A piece with no icon is keyed on what it is instead (10
+                   Oct 2026): every iconless piece shared the one key "", so
+                   the second furni without an icon went out under the first
+                   one's name, motto and link. None is stored today, but a
+                   catalogue furni with no icon and no mirrored copy is
+                   offered with icon "" (itemOf in furni-catalogue.js). */
+                const id = f.icon || `no-icon:${f.className || ""}|${f.name || ""}|${f.url || ""}`;
+                if (!seen.has(id)) {
+                    seen.set(id, table.length);
                     // Stored where a recent scan or a hand-add put it there,
                     // from the catalogue for everything older.
                     const className = f.className || classByIcon.get(f.icon) || "";
@@ -274,7 +281,7 @@ async function packRecords(docs) {
                         d: (listed && listed.releaseDate) || f.releaseDate || ""
                     });
                 }
-                const index = seen.get(f.icon);
+                const index = seen.get(id);
                 // Small where it is known, large where it isn't, and neither
                 // for a hand-added entry with no sprite at all — js/api.js
                 // falls back to the icon for that last case.

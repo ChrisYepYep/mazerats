@@ -227,6 +227,13 @@ exports.handler = async (event) => {
     // A beacon is always a POST; anything else is not this endpoint's business.
     if (event.httpMethod !== "POST") return { statusCode: 405, body: "" };
 
+    /* A crawler's beacon (10 Oct 2026, the bug scan): answered as any other,
+       and not stored. The user agent is read here and nowhere kept; the
+       same pattern as parseUserAgent in _errors.js and js/track.js's own
+       test, which stops most of them before they send. */
+    const h = event.headers || {};
+    if (/bot|crawl|spider|slurp|headless|lighthouse/i.test(String(h["user-agent"] || h["User-Agent"] || ""))) return ok;
+
     /* A size limit before anything is parsed (2 Oct 2026), as site-errors.js
        and ff-runs.js have. Twenty events of a forty-character name and an
        eighty-character label is under 4KB; anything near the platform's 6MB

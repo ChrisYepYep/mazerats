@@ -394,11 +394,14 @@
 
     // ---------- what is remembered ----------
 
-    /* `mode` is settled by the day's first guess — "account" when somebody
-       is signed in to have their guesses recorded, "anon" when not — and
-       kept (see submitGuess). `posted` is whether the finished day reached
-       the server, saved WITH the day so a submission that failed is sent
-       again on the next open rather than forgotten with the visit. */
+    /* `posted` is whether the finished day reached the server, saved WITH
+       the day so a submission that failed is sent again on the next open
+       rather than forgotten with the visit. `who` is the account playing
+       it — see WHOSE DAY IT IS below. `mode` ("account", or "anon" for a
+       day begun signed out) is still written, always "account", because
+       the account's mirror keeps it (cleanGuess in
+       netlify/functions/player-data.js); nothing reads it since signed-out
+       play went (10 Oct 2026). */
     function blankDay(forDay) {
         return {
             v: STATE_VERSION,
@@ -409,10 +412,25 @@
             // server has ended the round, and null until then.
             results: Array.from({ length: ROUNDS }, () => ({ guesses: [], done: false, won: false, answer: null })),
             done: false,
-            mode: null,
-            posted: false
+            mode: "account",
+            posted: false,
+            who: whoNow()
         };
     }
+
+    /* WHOSE DAY IT IS (10 Oct 2026). The day saved in this browser is
+       stamped with the account that began it (`who`: the public board id
+       from `me`, never the Discord id — the one js/account.js keeps in
+       WHO_KEY), and a copy stamped by anybody else is not this player's.
+       On a shared computer the second player used to be shown the first
+       one's day in the side menu's "3 of 5" (GuessStatus), and saveState
+       adopted it over their own as "further on". "" when nobody is signed
+       in, or `me` gave no public id, which matches nothing. As in
+       js/oddoneout.js. */
+    function whoNow() {
+        return window.Account && Account.current && Account.current.publicId ? String(Account.current.publicId) : "";
+    }
+    const ours = s => Boolean(s && s.who && s.who === whoNow());
 
     // The stored day, if it is one of this shape; otherwise null.
     function readSaved() {
@@ -436,10 +454,14 @@
        only watching up to date too. A signed-in player's guesses are the
        server's to settle anyway (the first recorded move per round wins). */
     function saveState() {
+        // Whose it is (WHOSE DAY IT IS): stamped once, by the account that
+        // began it, and never moved to whoever is signed in later.
+        if (state && !state.who) state.who = whoNow();
         const stored = readSaved();
         // Never a practice run's copy over the real day that replaced it
-        // (see PRACTICE in refreshDay).
-        if (stored && state && stored.day === state.day && progressOf(stored) > progressOf(state) &&
+        // (see PRACTICE in refreshDay), and never another account's copy,
+        // however far on it is (10 Oct 2026).
+        if (stored && state && ours(stored) && stored.day === state.day && progressOf(stored) > progressOf(state) &&
                 !(stored.practice && !state.practice)) {
             state = Object.assign(stored, { posted: Boolean(stored.posted || state.posted) });
             return;
@@ -447,7 +469,8 @@
         try { localStorage.setItem(STATE_KEY, JSON.stringify(state)); } catch (e) { /* private mode */ }
         // And against the account, so a day begun on a phone can be
         // finished at a desk. Coalesced and fire-and-forget in Account.
-        if (window.Account && Account.current) Account.saveState({ guess: state });
+        // Only the account's own day (10 Oct 2026; WHOSE DAY IT IS).
+        if (window.Account && Account.current && ours(state)) Account.saveState({ guess: state });
     }
 
     /* Takes the account's copy of today if it is further on than this
@@ -471,11 +494,12 @@
         // A practice run mirrored before the launch cut, once the cut has
         // passed: put away, not adopted (see PRACTICE in refreshDay).
         if (saved.practice && !practiceUntil) return false;
+        // The account's own mirror, so it is stamped as the account's
+        // (blankDay; the mirror keeps no `who`).
         state = Object.assign(blankDay(saved.day), {
             round: saved.round || 0,
             results: saved.results,
             done: Boolean(saved.done),
-            mode: saved.mode || null,
             posted: Boolean(saved.posted)
         }, practiceUntil ? { practice: practiceUntil } : {});
         try { localStorage.setItem(STATE_KEY, JSON.stringify(state)); } catch (e) { /* private mode */ }
@@ -598,8 +622,9 @@
            reason the streak is banked here: this is the moment the day is
            finished and can no longer change. Only lands on the board if
            someone is signed in — see submitDay, which is a no-op otherwise.
-           The local record above is kept either way, so playing signed out
-           still counts for the player's own streak and totals. */
+           (The local record above was the whole of a signed-out player's
+           streak and totals; there is no signed-out play since 4 Oct, and
+           it now only stands in when the account's figures cannot be read.) */
     }
 
     // ---------- preparing a round ----------
@@ -715,10 +740,11 @@
 
     /* The rooms handed out so far, kept beside the day under a key of their
        own (30 Sept 2026). A deal reply no longer carries every room — see
-       ONE ROUND AT A TIME in js/daily.js — and signed out it carries none,
-       so a reload part-way through plays on from these. Not in STATE_KEY,
-       because the state is mirrored to the account (saveState) and this is
-       nothing the account needs. */
+       ONE ROUND AT A TIME in js/daily.js — so a reload part-way through
+       plays on from these. Not in STATE_KEY, because the state is mirrored
+       to the account (saveState) and this is nothing the account needs.
+       Stamped with the account too (10 Oct 2026; WHOSE DAY IT IS), so on a
+       shared computer one player is never handed rooms another reached. */
     const DEALT_KEY = "mazerats_guess_dealt";
     function keepDealt() {
         if (!deal) return;
@@ -726,23 +752,22 @@
            tab has been handed later rooms since) never writes its shorter
            list over the longer one (30 Sept 2026). */
         mergeKeptDealt();
-        try { localStorage.setItem(DEALT_KEY, JSON.stringify({ day: deal.day, rounds: deal.rounds })); } catch (e) { /* private mode */ }
+        try { localStorage.setItem(DEALT_KEY, JSON.stringify({ day: deal.day, rounds: deal.rounds, who: whoNow() })); } catch (e) { /* private mode */ }
     }
     function mergeKeptDealt() {
         if (!deal) return;
         let kept = null;
         try { kept = JSON.parse(localStorage.getItem(DEALT_KEY) || "null"); } catch (e) { kept = null; }
-        if (kept && kept.day === deal.day) Daily.mergeRounds(deal.rounds, kept.rounds);
+        if (kept && ours(kept) && kept.day === deal.day) Daily.mergeRounds(deal.rounds, kept.rounds);
     }
 
     /* A room whose picture and names this page does not have: room 1
        before the start's reply has brought it, or a later one whose `next`
        was lost (a reply that fell over, a reload with nothing kept). Room 1
        is asked for through Daily.opening. A later one is in a deal asked
-       for again when signed in, since the server's record says it has been
-       reached; signed out the server keeps no record, so the guess that
-       ended the room before is sent again, unrecorded and `final` as it
-       was, and its answer hands this room out as it did the first time. */
+       for again, since the server's record says it has been reached. (The
+       two signed-out ways — recording a day begun signed out, or sending
+       the last guess again unrecorded — went on 10 Oct 2026.) */
     let fetchingRound = -1;
     async function fetchRound(i) {
         if (fetchingRound === i || !deal || !state) return;
@@ -756,23 +781,6 @@
         } else {
             const reply = await Daily.deal("guess", forDay, BOARDS_URL);
             if (reply && reply.day === forDay) Daily.mergeRounds(list, reply.rounds);
-            /* A day begun signed out and now signed in, with the rooms it was
-               handed not on this device — the account's mirror brought the
-               day here from another one (adoptAccountDay). The server has no
-               record to hand them out from, and the signed-out way below is
-               closed to a signed-in request, so this used to end in "could
-               not be dealt" and a Try again that could never work. Recording
-               the day's guesses (as the next guess would anyway) hands each
-               room after them out again (30 Sept 2026). */
-            if (!list[i] && state && state.mode === "anon" && signedIn() && state.day === forDay) {
-                await adoptRecorded(roundSheet(i));
-            }
-            const before = state && state.results[i - 1];
-            const last = before && before.done && before.guesses[before.guesses.length - 1];
-            if (!list[i] && state && state.mode === "anon" && last && !signedIn()) {
-                const again = await Daily.move("guess", forDay, i - 1, { guess: last.name, final: true }, { anon: true, url: BOARDS_URL });
-                Daily.takeRound(list, again.body && again.body.next);
-            }
         }
         fetchingRound = -1;
         if (gen !== dealGen || !state || state.day !== forDay || picks() !== list) return;
@@ -830,27 +838,23 @@
        the round moves on when the answer comes back — with the maze's name
        once the round is over, and not before.
 
-       For a signed-in player the server also RECORDS it, and it counts the
-       guesses: a round's view number is how many the server received, not a
-       number this page reports (it used to be, and "1" was worth ten points
-       a round to anybody who wrote it). The first recorded guesses stand —
-       if another tab or device has played this round, the answer carries
-       that round as the server has it, and that is what is shown.
+       The server RECORDS it, and it counts the guesses: a round's view
+       number is how many the server received, not a number this page
+       reports (it used to be, and "1" was worth ten points a round to
+       anybody who wrote it). The first recorded guesses stand — if another
+       tab or device has played this round, the answer carries that round as
+       the server has it, and that is what is shown.
 
-       The mode is settled by the day's first guess, as Odd One Out's is
-       (see choose in js/oddoneout.js): a day begun signed out is sent with
-       `anon` while the player stays signed out, is not recorded, and is
-       filed from this page's own guesses with no bonus once finished. If
-       they sign in part-way, the day becomes recorded — the server refuses
-       `anon` from a signed-in request now — by recording the guesses
-       already made first (adoptRecorded), still untimed. Signed out, the server cannot
-       count, so the page says when a guess is its last (`final`) to be told
-       the answer.
+       Every guess is a signed-in player's. The day's "mode" — "anon" for a
+       day begun signed out, sent unrecorded with `final` on its last guess,
+       and recorded on signing in part-way (adoptRecorded) — and "Carry on
+       unlisted" went with signed-out play (10 Oct 2026), as in choose() in
+       js/oddoneout.js.
 
        While a guess is on its way the other names are ignored; one that
        could not be judged leaves the round as it was, says so, and can
        simply be made again. */
-    async function submitGuess(name, again) {
+    async function submitGuess(name) {
         const index = state.round;
         const result = currentResult();
         // Not before the picture is on screen: a guess at a room nobody has
@@ -859,85 +863,22 @@
         // are all there is, and refusing them was what stopped the day.
         if (!result || result.done || guessing || !picks()[index] || !(rounds[index] || unloadable[index])) return;
         const forDay = state.day;
-        const final = result.guesses.length + 1 >= TRIES;
 
         guessing = true;
         const sheet = roundSheet(index);
         if (sheet) sheet.el.classList.add("is-busy");
-        /* The mode, settled by the day's first guess — but not on a sign-in
-           check that FAILED rather than answered (Account.unsure; see
-           js/account.js), which used to settle a signed-in player's day as
-           unrecorded. Asked again first; still unsure, the guess goes out
-           without `anon` and the server's `recorded` settles it, since the
-           server can read the session even when this page could not ask. As
-           choose() in js/oddoneout.js. */
-        if (!state.mode) {
-            if (window.Account && Account.unsure) { try { await Account.refresh(); } catch (e) { /* still unsure */ } }
-            if (signedIn()) state.mode = "account";
-            else if (!(window.Account && Account.unsure)) state.mode = "anon";
-        }
-        /* A day begun signed out, and the player has signed in since: its
-           guesses so far are recorded first (adoptRecorded), and this one
-           and the rest go out recorded too. The server no longer answers
-           `anon` from a signed-in request — see the note at the POST in
-           netlify/functions/guess-scores.js. */
-        if (state.mode === "anon" && signedIn()) {
-            const adopted = await adoptRecorded(sheet);
-            if (!state || state.day !== forDay || state.round !== index) { guessing = false; return; }
-            // "signed-out": the server saw no session after all, so the day
-            // carries on as it was, unrecorded.
-            if (!adopted) {
-                guessing = false;
-                if (sheet) sheet.el.classList.remove("is-busy");
-                guessFailed(sheet);
-                return;
-            }
-            // The round in hand may have been finished by the replay (another
-            // device played it first): nothing left to guess in it.
-            if (currentResult().done) {
-                guessing = false;
-                if (sheet) sheet.el.classList.remove("is-busy");
-                renderAll();
-                return;
-            }
-        }
-        const wasMode = state.mode;
-        const reply = await Daily.move("guess", forDay, index, { guess: name, final }, { anon: wasMode === "anon", url: BOARDS_URL });
+        const reply = await Daily.move("guess", forDay, index, { guess: name }, { url: BOARDS_URL });
         guessing = false;
         if (sheet) sheet.el.classList.remove("is-busy");
         if (!state || state.day !== forDay || state.round !== index) return;
 
         const body = reply.body || {};
-        /* Sent as signed out, and the server can see a session this page
-           could not (a sign-in in another tab, a check that failed on load):
-           the day's guesses so far are recorded and this one is made again,
-           recorded. Once — `again` stops a loop. As choose() in
-           js/oddoneout.js. */
-        if (Daily.refusedAsSignedIn(reply)) {
-            if (window.Account) { try { await Account.refresh(); } catch (e) { /* the server already said */ } }
-            if (!state || state.day !== forDay || state.round !== index) return;
-            if (!again) {
-                guessing = true;
-                if (sheet) sheet.el.classList.add("is-busy");
-                const adopted = await adoptRecorded(sheet);
-                guessing = false;
-                if (sheet) sheet.el.classList.remove("is-busy");
-                if (!state || state.day !== forDay || state.round !== index) return;
-                if (adopted === true) {
-                    if (currentResult().done) { renderAll(); return; }
-                    return submitGuess(name, true);
-                }
-            }
-            guessFailed(sheet);
-            return;
-        }
-        /* Signed out, and this network has asked for more verdicts today
-           than anybody playing could (claimAnonMove in
-           netlify/functions/_speed.js). Signing in carries on recorded. */
-        if (reply.status === 429 && body.reason === "anon-limit") {
-            if (sheet) statusWithAction(sheet,
-                "Too many signed-out guesses have come from your network today. Sign in to carry on — your guesses so far are kept.",
-                "Sign in", () => { if (window.Account && Account.signIn) Account.signIn(); });
+        /* Signed out under the game — a session ended elsewhere (401), or
+           lapsed (403 "sign in to play", whose notice js/account.js has
+           already put up). Signing in again is a page load, and the
+           recorded rooms come back from the server. */
+        if (reply.status === 401 || (reply.status === 403 && body.signInToPlay)) {
+            if (sheet) signInLapsed(sheet);
             return;
         }
         if (reply.status !== 200) {
@@ -978,34 +919,10 @@
             }
             return;
         }
-        /* Answered but NOT RECORDED while this day was meant to be: the
-           server did not see the session. It used to switch the day to
-           unrecorded silently, and a day recorded in part can be filed from
-           neither part — so the whole day was lost to the board. Now the
-           sign-in is asked again: back, and the guess is made again,
-           recorded this time (once — see `again`); gone, and the guess is
-           not taken, and the player is offered a way back in (signing in
-           reloads the page, and the recorded rooms come back from the
-           server) or to carry on unlisted knowing what that costs. */
-        if (wasMode === "account" && !body.recorded) {
-            let back = false;
-            try { back = Boolean(await Account.refresh()); } catch (e) { back = false; }
-            if (!state || state.day !== forDay || state.round !== index) return;
-            if (back && !again) return submitGuess(name, true);
-            if (!back && Account.unsure) {
-                if (sheet) {
-                    sheet.refs.status.textContent = "That guess did not reach the server, so it has not counted. Try it again.";
-                    sheet.refs.status.hidden = false;
-                    announce(sheet, sheet.refs.status.textContent);
-                }
-                return;
-            }
-            if (sheet) signInLapsed(sheet);
-            return;
-        }
-        // The first guess of a day whose sign-in could not be checked: the
-        // server's answer says which kind of day it is.
-        if (!state.mode) state.mode = body.recorded ? "account" : "anon";
+        /* (An answer that came back NOT recorded meant the server had not
+           seen the session; it is a 401 or 403 now, handled above, so the
+           "asked again, or carry on unlisted" step here went with
+           signed-out play, 10 Oct 2026.) */
 
         /* The day's first verdict, given after the launch cut, on a day the
            deal marked practice (dealt at 07:59, played from 08:00): the day
@@ -1016,17 +933,17 @@
             practiceUntil = null;
         }
 
-        if (Array.isArray(body.guesses)) {
-            // The round as the server has it — which, if another tab got
-            // there first, is not quite what was just pressed.
-            result.guesses = body.guesses.map(g => ({ name: g.name, correct: Boolean(g.correct) }));
-            result.done = Boolean(body.done);
-            result.won = Boolean(body.won);
-        } else {
-            result.guesses.push({ name, correct: Boolean(body.correct) });
-            result.won = Boolean(body.correct);
-            result.done = result.won || result.guesses.length >= TRIES;
+        /* The round as the server has it — which, if another tab got there
+           first, is not quite what was just pressed. (A signed-out answer
+           carried only `correct`, and the page counted the guess itself;
+           gone 10 Oct 2026.) */
+        if (!Array.isArray(body.guesses)) {
+            if (sheet) guessFailed(sheet);
+            return;
         }
+        result.guesses = body.guesses.map(g => ({ name: g.name, correct: Boolean(g.correct) }));
+        result.done = Boolean(body.done);
+        result.won = Boolean(body.won);
         if (body.answer) result.answer = body.answer;
         /* The next room comes with the answer that ends this one, and only
            then (ONE ROUND AT A TIME in js/daily.js); its picture is fetched
@@ -1057,49 +974,6 @@
         announce(sheet, sheet.refs.status.textContent);
     }
 
-    /* A day begun signed out, recorded now the player is signed in: every
-       guess already made is sent again, in order, as a recorded guess (see
-       Daily.replay in js/daily.js for the why, and for why the day stays
-       untimed and earns no bonus, as a day begun signed out always has).
-       Each round comes back as the server has it — a room another device
-       finished first included — and that is what is kept.
-
-       Answers true when every guess is on file and the day is now an
-       account day; "signed-out" when the server turned out not to see a
-       session after all, and the day carries on unrecorded as it was;
-       false when a guess could not be recorded just now, which trying again
-       repeats harmlessly (a guess already on file answers `repeat` or
-       `already`). As adoptRecorded in js/oddoneout.js. */
-    async function adoptRecorded(sheet) {
-        const forDay = state.day;
-        const list = [];
-        state.results.forEach((r, i) => r.guesses.forEach(g => list.push({ round: i, data: { guess: g.name } })));
-        const status = sheet && sheet.refs.status;
-        if (status && list.length) { status.textContent = "Signed in — recording your guesses so far first…"; status.hidden = false; }
-        const { ok, replies } = await Daily.replay("guess", forDay, list, { url: BOARDS_URL });
-        if (status) { status.hidden = true; status.textContent = ""; }
-        if (!state || state.day !== forDay) return false;
-        replies.forEach((r, k) => {
-            const b = r.body || {};
-            if (r.status === 200 && Daily.takeRound(picks(), b.next)) keepDealt();
-            const result = state.results[list[k].round];
-            if (r.status !== 200 || !b.recorded || !Array.isArray(b.guesses) || !result) return;
-            result.guesses = b.guesses.map(g => ({ name: g.name, correct: Boolean(g.correct) }));
-            result.done = Boolean(b.done);
-            result.won = Boolean(b.won);
-            if (b.answer) result.answer = b.answer;
-        });
-        const last = replies[replies.length - 1];
-        if (!ok && last && last.status === 200 && last.body && last.body.recorded === false) {
-            if (window.Account) { try { await Account.refresh(); } catch (e) { /* signed out either way */ } }
-            return "signed-out";
-        }
-        if (!ok) { saveState(); return false; }
-        state.mode = "account";
-        saveState();
-        return true;
-    }
-
     /* A room's status line with buttons under the words, for the two
        refusals that need the player to choose something (see submitGuess).
        Elements rather than markup, so each handler is bound to exactly its
@@ -1121,18 +995,12 @@
         status.hidden = false;
     }
 
+    // ("Carry on unlisted" sat beside "Sign in again" until there was no
+    // unrecorded play to carry on with; 10 Oct 2026.)
     function signInLapsed(sheet) {
         statusWithAction(sheet,
             "You've been signed out, so that guess wasn't recorded. Sign in again to carry on — the rooms already recorded are kept.",
-            "Sign in again", () => { if (window.Account && Account.signIn) Account.signIn(); },
-            "Carry on unlisted", () => {
-                /* Unrecorded from here, so this day can't reach the board:
-                   its first rooms are on file and the rest would not be,
-                   and a day is filed whole or not at all. */
-                state.mode = "anon";
-                saveState();
-                sheet.refs.status.textContent = "Carrying on without recording. Guess again.";
-            });
+            "Sign in again", () => { if (window.Account && Account.signIn) Account.signIn(); });
     }
 
     /* Where the keyboard goes after a guess, and what is said out loud.
@@ -1661,8 +1529,7 @@
 
     function bonusText() {
         const s = served && state && served.day === state.day ? served : null;
-        return Daily.bonusLine({ score: s, signedIn: signedIn(), mode: state ? state.mode : null,
-            practice: (state && state.practice) || null, day: state ? state.day : null });
+        return Daily.bonusLine({ score: s, practice: (state && state.practice) || null, day: state ? state.day : null });
     }
 
     function drawBonus() {
@@ -1784,12 +1651,11 @@
     /* The speed bonus's clock, started by the server the first time a
        signed-in player goes into a room of the day (see Daily.start and
        netlify/functions/_speed.js). Only before any guess has been made:
-       a day part-played before signing in has no clock and no bonus,
-       rather than a clock that timed only the rooms that were left. Nothing
-       here or anywhere in the game shows a time; the bonus lands on the
-       board. */
+       a clock started later would time only the rooms that were left.
+       Nothing here or anywhere in the game shows a time; the bonus lands on
+       the board. */
     function startClock() {
-        if (!state || state.done || !dayStillOpen(state.day) || state.mode === "anon") return;
+        if (!state || state.done || !dayStillOpen(state.day)) return;
         if (state.results.some(r => r.guesses.length)) return;
         if (window.Daily && Daily.start) Daily.start("guess", state.day, BOARDS_URL);
     }
@@ -1816,22 +1682,19 @@
        board itself is the confirmation. Signed out, this does nothing at
        all — there is no name to put on a row.
 
-       For a day played signed in the server scores it from the guesses it
-       recorded, and the rounds sent here are ignored. For a day played
-       signed out they are all it has — each round's guesses in order, which
-       it judges against the day it dealt (scoreClaim in
-       netlify/functions/guess-scores.js). Never a count of tries or a
-       claimed answer: the server works both out. */
+       Just the day: the server scores it from the guesses it recorded. (It
+       sent each round's guesses too, for a day played signed out —
+       scoreClaim in netlify/functions/guess-scores.js — until 10 Oct
+       2026.) */
     async function submitDay() {
         if (!window.Account || !Account.current || !state) return;
         const forDay = state.day;
         if (postedDay === forDay) return;
         postedDay = forDay;
-        const rounds = state.results.map(r => ({ guesses: r.guesses.map(g => g.name) }));
         const { status, body } = await Daily.request(BOARDS_URL, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ day: forDay, rounds })
+            body: JSON.stringify({ day: forDay })
         });
         if (postedDay === forDay) postedDay = "";
         /* A failed POST used to be the end of it. Now the day stays owed —
@@ -1866,19 +1729,13 @@
         }
         /* The server has fewer rooms recorded than this page finished (see
            applyRecorded): read the day again, which brings the missing rooms
-           back up to be played, for a day played signed in. A day carried
-           on unlisted after its first rooms were recorded can never be
-           filed, so it is settled instead of being sent again forever. */
+           back up to be played. (A day "carried on unlisted" was settled
+           here instead, until there was no unlisted play; 10 Oct 2026.) */
         if (state && state.day === forDay && body && body.reason === "unfinished") {
-            if (state.mode === "account") {
-                if (await refreshDay()) {
-                    renderAll();
-                    prepareRound(state.round);
-                    goTo(state.done ? "results" : "intro");
-                }
-            } else {
-                state.posted = true;
-                saveState();
+            if (await refreshDay()) {
+                renderAll();
+                prepareRound(state.round);
+                goTo(state.done ? "results" : "intro");
             }
             return;
         }
@@ -2025,24 +1882,15 @@
             return;
         }
 
-        /* The prompt to sign in belongs here and only here — at the moment
-           there is a score worth putting somewhere. Asking on the way IN to
-           a game nobody has played yet is asking for a login to do nothing
-           with.
-
-           Signed in with no nickname, the same spot says which name the
-           score went up under and offers to choose another (28 Sept 2026;
+        /* Signed in with no nickname, this spot says which name the score
+           went up under and offers to choose another (28 Sept 2026;
            Account.nickHintHtml in js/account.js draws it, answers its
-           button, and takes it off the card once a nickname is set). Only
-           for a day played signed in (mode "account"): a day carried on
-           unlisted went up under no name at all. */
-        const listed = !!(state && state.mode === "account");
+           button, and takes it off the card once a nickname is set). Signed
+           out it used to say "Your N points are saved on this device. Sign
+           in with Discord to be listed"; nobody signed out finishes a day
+           now, and that went (10 Oct 2026). */
         // Nothing for a practice run, which goes on no board (30 Sept 2026).
-        const invite = state && state.practice ? "" : me ? (listed && window.Account && Account.nickHintHtml ? Account.nickHintHtml() : "") : `
-            <p class="guess-board-note guess-board-invite">
-                Your ${dayPoints()} points are saved on this device.
-                <button type="button" class="guess-btn" id="guess-board-signin">Sign in with Discord to be listed</button>
-            </p>`;
+        const invite = state && state.practice || !me ? "" : (window.Account && Account.nickHintHtml ? Account.nickHintHtml() : "");
 
         const range = BOARD_RANGES.find(r => r.key === boardRange) || BOARD_RANGES[0];
         const list = boards[range.key];
@@ -2086,9 +1934,6 @@
                 if (again) again.focus({ preventScroll: true });
             });
         });
-
-        const signin = document.getElementById("guess-board-signin");
-        if (signin) signin.addEventListener("click", () => window.Account && Account.signIn());
     }
 
     function niceDate(iso) {
@@ -2208,8 +2053,13 @@
        as in forgetDeal). Answers whether a deal was had. */
     let recorded = null;   // the server's record of this player's guesses, from the last deal
     async function refreshDay() {
-        const saved = readSaved();
-        const carry = [state, saved].find(s => s && s.v === STATE_VERSION && s.day !== today() &&
+        /* Only this account's copies (10 Oct 2026; WHOSE DAY IT IS): a day
+           stamped by another account is not carried on, filed or played on
+           from, and the day starts from the server's record instead. */
+        const read = readSaved();
+        const saved = ours(read) ? read : null;
+        const own = [state, saved].filter(ours);
+        const carry = own.find(s => s.v === STATE_VERSION && s.day !== today() &&
             !s.done && s.results.some(r => r.guesses.length)) || null;
         let reply = carry ? await Daily.deal("guess", carry.day, BOARDS_URL) : null;
         if (!reply) reply = await Daily.deal("guess", null, BOARDS_URL);
@@ -2223,16 +2073,16 @@
            time (LATE FILING in netlify/functions/guess-scores.js, and
            Daily.fileable). Its answer changes nothing here: that day is
            over on this device either way. */
-        const owed = [state, saved].find(s => s && s.v === STATE_VERSION && s.day !== reply.day && s.done && !s.posted);
+        const owed = own.find(s => s.v === STATE_VERSION && s.day !== reply.day && s.done && !s.posted);
         if (owed && signedIn() && Daily.fileable && Daily.fileable(owed.day)) {
             await Daily.request(BOARDS_URL, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ day: owed.day, rounds: owed.results.map(r => ({ guesses: r.guesses.map(g => g.name) })) })
+                body: JSON.stringify({ day: owed.day })
             });
         }
 
-        const previous = deal;
+        const previous = ours(state) ? deal : null;
         if (!deal || deal.day !== reply.day) {
             dealGen += 1;
             rounds = [];
@@ -2241,8 +2091,8 @@
         }
         deal = { day: reply.day, rounds: reply.rounds };
         /* The rooms already handed out for this day — in memory, and kept
-           on this device — laid into the slots the reply left empty (ONE
-           ROUND AT A TIME in js/daily.js; signed out, it leaves them all). */
+           on this device for this account — laid into the slots the reply
+           left empty (ONE ROUND AT A TIME in js/daily.js). */
         if (previous && previous.day === reply.day) Daily.mergeRounds(deal.rounds, previous.rounds);
         mergeKeptDealt();
         keepDealt();
@@ -2260,15 +2110,15 @@
                player's day (28 Sept 2026). */
             served = null;
         }
-        const mine = [state, saved].filter(s => s && s.v === STATE_VERSION && s.day === reply.day)
+        const mine = own.filter(s => s.v === STATE_VERSION && s.day === reply.day)
             .sort((a, b) => progressOf(b) - progressOf(a))[0];
         state = mine || blankDay(reply.day);
 
         /* PRACTICE (30 Sept 2026; PRACTICE BEFORE LAUNCH in
            netlify/functions/_speed.js). While the server says the day is in
            practice time, the day is a practice run; once it says not, a day
-           marked so is put away and today starts fresh, signed in or out —
-           see the same step in js/oddoneout.js for why. The server's copy
+           marked so is put away and today starts fresh — see the same step
+           in js/oddoneout.js. The server's copy
            is set aside on its side (practiceOver, or a guess's 409), and
            the start this page remembers goes too (Daily.forgetStarts), so
            the real day's first room is timed. */
@@ -2298,9 +2148,9 @@
        null signed out, or when the record could not be read — so an array,
        even an empty one, is the server's word on this player's day.
 
-       A day played signed in (mode "account") takes the server's record
-       WHEREVER IT DIFFERS, shorter included: every guess such a day keeps
-       was recorded before it was kept (see submitGuess), so a server with
+       A day not yet filed takes the server's record WHEREVER IT DIFFERS,
+       shorter included: every guess a day keeps was recorded before it was
+       kept (see submitGuess), so a server with
        fewer has lost some — an administrator's reset while the window was
        open, or a guess taken while the session had lapsed, before that was
        caught. Keeping the longer local copy is what used to loop: every
@@ -2310,14 +2160,14 @@
        daily_starts), so the day here is cleared too, and the caller claims
        the reset's ticket so the next open does not wipe the replay; this
        answers "reset" to say so. A day already filed is left alone — a
-       reset deletes the filed row, so `filed` means none happened.
-
-       Any other day takes the record only when it is at least as far on,
-       as it always has (guesses made on another device). */
+       reset deletes the filed row, so `filed` means none happened, and a
+       filed day takes the record only when it is at least as far on.
+       (This read `mode === "account"` until every day was one; 10 Oct
+       2026.) */
     let recordedFiled = false;
     function applyRecorded() {
         if (!state) return;
-        const accountDay = state.mode === "account" && !recordedFiled && Array.isArray(recorded);
+        const accountDay = !recordedFiled && Array.isArray(recorded);
         if (accountDay && !recorded.length) {
             if (!anyGuesses()) return;
             state = blankDay(state.day);
@@ -2334,7 +2184,6 @@
                 done: Boolean(rec[i].done), won: Boolean(rec[i].won), answer: rec[i].answer || null
             }
             : { guesses: [], done: false, won: false, answer: null }));
-        state.mode = "account";
         const next = state.results.findIndex(r => !r.done);
         state.done = next === -1;
         /* The room in hand: the first one not over, or the last — except
@@ -2431,6 +2280,11 @@
         prepareRound(state.round);
     }
 
+    /* Whether the address is the game's own, /guess. With a slash on the
+       end too (10 Oct 2026): Netlify serves /guess/ the same page through
+       the same rule, and it opened onto the archive with the game shut. */
+    const atOwnAddress = () => /^\/guess\/?$/.test(location.pathname);
+
     // Whatever had focus when the window opened, for close() to hand back
     // to — as js/oddoneout.js does. Only recorded on a real open.
     let opener = null;
@@ -2463,7 +2317,7 @@
             if (!document.querySelector(".modal-overlay.open")) document.body.classList.remove("modal-open");
             // A pasted /guess should not leave the address bar on a game
             // that never opened.
-            if (location.pathname === "/guess") history.replaceState({}, "", "/home");
+            if (atOwnAddress()) history.replaceState({}, "", "/home");
             return;
         }
         if (!el.overlay.classList.contains("open")) {
@@ -2656,7 +2510,7 @@
         if (landing) landing.focus({ preventScroll: true });
         // A pasted /guess link should not leave the address bar claiming the
         // game is open once it has been closed.
-        if (location.pathname === "/guess") history.replaceState({}, "", "/home");
+        if (atOwnAddress()) history.replaceState({}, "", "/home");
     }
 
     // ---------- wiring ----------
@@ -2793,6 +2647,9 @@
             if (e.key !== STATE_KEY || !state || guessing) return;
             const other = readSaved();
             if (!other || other.day !== state.day || progressOf(other) <= progressOf(state)) return;
+            // Another account's day is not this one's to move on with
+            // (WHOSE DAY IT IS; 10 Oct 2026).
+            if (!ours(other)) return;
             if (other.practice && !state.practice) return;   // a practice run put away here
             const wasDone = state.done;
             state = other;
@@ -2808,15 +2665,28 @@
         /* Escape closes the window outright. It used to have to close the
            name list first, but the list is part of the board now rather
            than something floating over it, so there is nothing to dismiss
-           on the way out. */
-        document.addEventListener("keydown", e => {
-            if (e.key === "Escape" && el.overlay.classList.contains("open")) close();
-        });
+           on the way out.
+
+           Through the shared top-most-layer rule (EscapeLayers in
+           js/site.js; 10 Oct 2026), as Pura Panic's window has it. This
+           file's own document listener closed the game whatever was over
+           it, so one press shut an Account notice (Sign In to Play, the
+           nickname window, a ban) AND the game behind it; now the front
+           layer alone closes. The old listener stays only where site.js has
+           not loaded. */
+        const isOpen = () => el.overlay.classList.contains("open");
+        if (window.EscapeLayers) {
+            window.EscapeLayers.register({ elements: () => (isOpen() ? [el.overlay] : []), close: () => close() });
+        } else {
+            document.addEventListener("keydown", e => {
+                if (e.key === "Escape" && isOpen()) close();
+            });
+        }
 
         // /guess is a rewrite to this page (see netlify.toml), so a pasted
         // link opens the game rather than dropping someone on the archive
         // wondering what they were sent.
-        if (location.pathname === "/guess") open();
+        if (atOwnAddress()) open();
     }
 
     /* How today is going, for the menu that offers the game.
@@ -2835,7 +2705,12 @@
         // OddOneOutStatus; 30 Sept 2026).
         const now = window.Daily && Daily.now ? Daily.now() : Date.now();
         const practiceOver = saved && typeof saved.practice === "string" && Date.parse(saved.practice) <= now;
-        if (!saved || saved.day !== today() || !Array.isArray(saved.results) || practiceOver) {
+        /* And only the signed-in account's own day (10 Oct 2026; WHOSE DAY
+           IT IS): on a shared computer the menu said "3 of 5" for whoever
+           had played last, or for nobody at all once signed out. A day
+           saved before the stamp, or by another account, reads as
+           untouched until the game is opened and the server says. */
+        if (!saved || !ours(saved) || saved.day !== today() || !Array.isArray(saved.results) || practiceOver) {
             return { started: false, done: 0, total: ROUNDS, finished: false, points: 0 };
         }
         const done = saved.results.filter(r => r && r.done).length;

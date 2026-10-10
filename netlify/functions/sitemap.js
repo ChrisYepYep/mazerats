@@ -117,7 +117,7 @@ exports.handler = async (event) => {
         const [rooms, events, settings, retiredRooms, retiredEvents, retiredGuides] = await Promise.all([
             db.collection("rooms").find({}, { projection: { ...SLUG_FIELDS, updatedAt: 1, createdAt: 1 } }).toArray(),
             db.collection("events").find({}, { projection: { ...SLUG_FIELDS, updatedAt: 1, createdAt: 1 } }).toArray(),
-            db.collection("settings").findOne({ _id: "site" }, { projection: { fallinFurniState: 1 } }).catch(() => SETTINGS_UNREAD),
+            db.collection("settings").findOne({ _id: "site" }, { projection: { fallinFurniState: 1, puraPanicState: 1 } }).catch(() => SETTINGS_UNREAD),
             retiredOf(db, "maze"), retiredOf(db, "event"), retiredOf(db, "guide")
         ]);
         /* A settings read that FAILED is not a settings document that is
@@ -138,6 +138,17 @@ exports.handler = async (event) => {
            place. Below home because the archive is what the site is for. */
         const ffState = settingsUnread ? "unknown" : (settings && settings.fallinFurniState) || "live";
         if (ffState === "live") entries.splice(2, 0, url(`${origin}/fallinfurni`, "", "0.7"));
+        /* Pura Panic (10 Oct 2026), at /purapanic: the window's own address,
+           served by share.js with its own title, description and canonical.
+           On its own switch as Fallin' Furni is, but the other way round:
+           puraPanicState is "maintenance" until the owner sets it live (see
+           settings.js), so only an explicit "live" lists it, and an unread
+           settings document never does. With the games, after /guides; no
+           lastmod, for the same reason as theirs. */
+        if (!settingsUnread && settings && settings.puraPanicState === "live") {
+            const after = entries.findIndex(e => e.includes(`<loc>${esc(`${origin}/guides`)}</loc>`));
+            entries.splice(after === -1 ? entries.length : after + 1, 0, url(`${origin}/purapanic`, "", "0.6"));
+        }
         /* Each at its own address, /maze/<slug> — the canonical the page
            names there, worked out by the same rule (see _slugs.js). Listing
            an id that 301s to the slug would be listing a redirect. */

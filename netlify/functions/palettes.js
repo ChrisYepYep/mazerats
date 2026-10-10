@@ -189,7 +189,13 @@ exports.handler = async (event) => {
             }
             const all = await col.find({}, { projection: { _id: 0 } }).sort({ at: 1 }).toArray();
             const signedIn = isAuthorized(event);
-            return json(200, { count: all.length, palettes: all.map(p => clean(p, signedIn)) });
+            /* no-store (10 Oct 2026): this answer differs by token — `by`
+               goes only to a signed-in editor — and said nothing about
+               caching, so nothing stopped a cache in between keeping an
+               admin's copy, usernames and all, for the next caller. */
+            const res = json(200, { count: all.length, palettes: all.map(p => clean(p, signedIn)) });
+            res.headers = { ...res.headers, "Cache-Control": "no-store" };
+            return res;
         } catch (e) {
             console.error("palettes: read failed", e);
             return json(503, { error: "Palettes could not be read just now." });

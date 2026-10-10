@@ -43,8 +43,9 @@
        name a lead is publicly credited to is public attribution the admins
        manage, not account data, so it stays. The Warren's confirmation
        says so (forgetConfirmHtml in js/admin-players.js).
-     - daily_anon_moves: keyed by a hashed network, not a player, and gone
-       after two days anyway (see _speed.js).
+     - daily_anon_moves: keyed by a hashed network, not a player. No longer
+       written since 10 Oct 2026 (signed-out moves are refused before they
+       are judged; see _speed.js), and the rows left expire within two days.
      - site_events: carries a per-tab session id and never an account.
      - admin_activity: the admins' own log. A forget is itself written
        there, by id and never by name (below), and ages out with the rest
@@ -113,6 +114,11 @@ const entryQuotaCode = (id) => crypto.createHash("sha256").update(`event-entries
 const PLACES = [
     // discord-auth.js: one row per Discord account — name, username,
     // avatar, joinedAt, seenAt. What the Profile page's "joined" reads.
+    // Also the notices they have read and deleted (noticesSeen,
+    // noticesDeleted; notifications.js, per account since 10 Oct 2026),
+    // and the Habbos never to be guessed for them (habboGuess.not,
+    // _habbo-guess.js, 10 Oct 2026), which go with the row and need no
+    // place of their own.
     { label: "players", collection: "players", filter: id => ({ id }) },
     // player-data.js: walked and saved mazes, and Guess the Maze's day in
     // progress mirrored for another device.

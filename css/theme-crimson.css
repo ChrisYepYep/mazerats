@@ -9,7 +9,7 @@
    completely inert until js/site.js puts that attribute on <html>. The
    classic palette is not defined here and is not affected by anything in it.
 
-   1117 rules, 1796 declarations, hues 350 (surfaces) / 212 (accents).
+   1118 rules, 1796 declarations, hues 350 (surfaces) / 212 (accents).
 */
 :root[data-theme="crimson"] {
     --bg-black: #080506;
@@ -3204,12 +3204,6 @@ html[data-theme="crimson"]::-webkit-scrollbar-button {
     outline: 2px solid var(--amber-bright);
 }
 
-[data-theme="crimson"] .header-signin-face {
-    border: 1px solid #f3f3f4;
-    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
-    background: var(--wood-mid);
-}
-
 [data-theme="crimson"] .header-signin-note {
     background: var(--bg-panel);
     border: 1px solid var(--border);
@@ -4711,6 +4705,12 @@ html[data-theme="crimson"]::-webkit-scrollbar-button {
 }
 
 @media (pointer: coarse) {
+    [data-theme="crimson"] .pura-light::after {
+        background: transparent;
+    }
+}
+
+@media (pointer: coarse) {
     [data-theme="crimson"] .photo-frame-close::after {
         background: transparent;
     }
@@ -4959,11 +4959,6 @@ html[data-theme="crimson"]::-webkit-scrollbar-button {
 
 [data-theme="crimson"] .daily-bonus {
     color: var(--parchment-dim);
-}
-
-[data-theme="crimson"] .signout-face {
-    border: 1px solid var(--chrome-border);
-    box-shadow: 2px 2px 0 rgba(0, 0, 0, 0.4);
 }
 
 [data-theme="crimson"] .signout-everywhere {
@@ -5488,6 +5483,12 @@ html[data-theme="crimson"]::-webkit-scrollbar-button {
     outline: 1px solid var(--parchment);
 }
 
+@media (pointer: coarse) {
+    [data-theme="crimson"] .mazer-motto::after {
+        background: transparent;
+    }
+}
+
 [data-theme="crimson"] .nt-chip-x {
     background: none;
     border: 0;
@@ -5500,6 +5501,12 @@ html[data-theme="crimson"]::-webkit-scrollbar-button {
 
 [data-theme="crimson"] .nt-row[data-nid]:focus-visible {
     outline: 2px solid var(--chrome-highlight);
+}
+
+[data-theme="crimson"] .profile-unverified-tag {
+    border: 1px solid var(--pc-text);
+    color: var(--pc-text);
+    text-shadow: none;
 }
 
 /* ------------------------------------------- COLOUR THAT IS INFORMATION

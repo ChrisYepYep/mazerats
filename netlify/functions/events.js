@@ -71,6 +71,29 @@ function checkSpotlight(body) {
     return "";
 }
 
+/* The list and picture fields held to their shapes, and the two short
+   lines every page prints held to a ceiling (10 Oct 2026) — rooms.js's
+   checkShapes, which this route never had. An event carries the same
+   gallery, related rooms, bookends and tags a maze does (the share
+   function and js/home.js read them alike), and a title or host line of
+   any length went into the public payload. Far above any real one (the
+   longest stored title is 38 characters, the longest host line 36). */
+const TITLE_MAX = 200;
+const HOST_MAX = 500;
+function checkShapes(body) {
+    for (const field of ["tags", "gallery", "relatedImages"]) {
+        const v = body[field];
+        if (v !== undefined && v !== null && !Array.isArray(v)) return `"${field}" must be a list`;
+    }
+    for (const field of ["entrance", "finish"]) {
+        const v = body[field];
+        if (v !== undefined && v !== null && (typeof v !== "object" || Array.isArray(v))) return `"${field}" must be a picture or nothing`;
+    }
+    if (typeof body.title === "string" && body.title.length > TITLE_MAX) return `A title is at most ${TITLE_MAX} characters`;
+    if (typeof body.host === "string" && body.host.length > HOST_MAX) return `The host line is at most ${HOST_MAX} characters`;
+    return null;
+}
+
 // The edit-conflict check, as in rooms.js — see the notes there.
 function stamp(v) {
     if (v instanceof Date) return isNaN(v.getTime()) ? "" : v.toISOString();
@@ -218,7 +241,7 @@ async function handle(event) {
             (typeof body.title !== "string" || !body.title)) {
             return json(400, { error: "An event needs at least a title" });
         }
-        const problem = checkRecord(body, CHOICES);
+        const problem = checkShapes(body) || checkRecord(body, CHOICES);
         if (problem) return json(400, { error: problem });
         const spotProblem = checkSpotlight(body);
         if (spotProblem) return json(400, { error: spotProblem });

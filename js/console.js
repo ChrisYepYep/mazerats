@@ -162,19 +162,48 @@ document.addEventListener("DOMContentLoaded", () => {
     // outside the new (smaller) viewport with no way to drag it back short
     // of reloading the page. Reuses the exact same clamping math the drag
     // handler below already applies on every mousemove.
+    /* RE-PLACED, NOT PINNED TO AN EDGE (10 Oct 2026, the bug scan). The
+       clamp above only pushed a console that had gone off-screen back to
+       the nearest edge, so a phone turned sideways and back left it
+       squashed against one side until it was shut and opened again. Now:
+       one never dragged follows its default place (positionConsoleDefault,
+       where it opens — centred on a phone) on every resize; one that was
+       dragged keeps its place while it still fits whole, and if it no
+       longer does, goes back to that default place, as on opening, rather
+       than to an edge. Not mid-drag (the drag clamps itself). Only when
+       the WIDTH has changed (a rotation, a window resized): a phone
+       keyboard opening for the Contact form changes just the height, and
+       that keeps the old nudge back on-screen, so the form does not jump
+       about under the typing. A rotation is asked about again a moment
+       later too: some phones fire orientationchange before the new
+       innerWidth is in. */
+    let placedForWidth = window.innerWidth;
     function clampConsoleToViewport() {
         if (modal.style.display !== "block") return; // closed — nothing to reposition
+        if (dragging) return;
+        const widthChanged = window.innerWidth !== placedForWidth;
+        placedForWidth = window.innerWidth;
+        if (widthChanged && !hasBeenDragged) { positionConsoleDefault(); return; }
         const rect = modal.getBoundingClientRect();
         const maxLeft = Math.max(0, window.innerWidth - modal.offsetWidth);
         const maxTop = Math.max(0, window.innerHeight - modal.offsetHeight);
         const left = Math.min(maxLeft, Math.max(0, rect.left));
         const top = Math.min(maxTop, Math.max(0, rect.top));
         if (left === rect.left && top === rect.top) return; // already fully on-screen
+        if (widthChanged) {
+            hasBeenDragged = false;
+            positionConsoleDefault();
+            return;
+        }
         modal.style.left = left + "px";
         modal.style.top = top + "px";
         modal.style.transform = "none";
     }
     window.addEventListener("resize", clampConsoleToViewport);
+    window.addEventListener("orientationchange", () => {
+        clampConsoleToViewport();
+        setTimeout(clampConsoleToViewport, 300);
+    });
 
     // ---------- open/close ----------
 
@@ -205,7 +234,11 @@ document.addEventListener("DOMContentLoaded", () => {
         // for something particular (privacy, an entry link).
         showPage(!defaultPage && notices.length && pages.notice ? "notice" : (defaultPage || landingPage()));
         if (!defaultPage && notices.length && pages.notice) showNotice();
-        if (!hasBeenDragged) positionConsoleDefault();
+        /* A dragged one is checked as on a resize (10 Oct 2026): a width
+           changed while it was shut takes it back to its default place if
+           it no longer fits. */
+        if (!hasBeenDragged) { positionConsoleDefault(); placedForWidth = window.innerWidth; }
+        else clampConsoleToViewport();
         // loadContributors sets dataLoaded itself, and only on a list that
         // actually arrived — so a failed read is asked again on the next open.
         if (!dataLoaded) loadContributors();
@@ -1104,9 +1137,10 @@ if (typeof renderPrivacySections === "function") {
        an event entry approved, or a notice sent from the Warren. While one
        is unread the header's console button wears its alert picture, and
        opening the console shows it first, centred on the screen, with an
-       OK. One at a time; OK marks it seen, on the account when signed in
-       and in this browser always (a notice for everyone reaches somebody
-       signed out too, and only the browser can remember them). Asked on
+       OK. One at a time; OK marks it seen, on the account when signed in,
+       and in this browser when signed out (a notice for everyone reaches
+       somebody signed out too, and only the browser can remember them;
+       10 Oct 2026, see noticeAcct). Asked on
        load, on signing in or out, and when the tab comes back after a
        while. */
     const NOTICE_URL = "/.netlify/functions/notifications";
@@ -1127,10 +1161,33 @@ if (typeof renderPrivacySections === "function") {
     const noticeDeleteBtn = document.getElementById("console-notice-delete");
     const openImg = openBtn.querySelector("img");
 
+    /* PER ACCOUNT, NOT PER BROWSER (10 Oct 2026, the owner's: "should be
+       account, surely?"). The lists below used to be laid over every
+       answer, signed in or not, so on a shared computer a notice for
+       everyone that one player read or deleted was hidden from the next,
+       and a player's read ones differed from device to device. Now a
+       signed-in answer is taken as the account has it (noticesSeen and
+       noticesDeleted on their players row, notifications.js), and this
+       browser's lists are the signed-out visitor's only: read from and
+       written to just while signed out. noticeAcct is whose the last
+       answer was: undefined before one, null signed out, else the
+       server's opaque tag for the account (`acct`). Nothing is merged on
+       signing in: these lists never said whose they were, and whatever a
+       player marked while signed in reached their account already. */
+    let noticeAcct;
+    const browserKeeps = () => noticeAcct === null;
+    /* What was read or deleted on this page since the last sign-in or
+       sign-out: a check that answers before the account has taken a read
+       does not bring the notice straight back. In memory only, emptied
+       when who is signed in changes (deletedHere, below, is the same for
+       Delete). */
+    let markedHere = new Set();
     function localSeen() {
         try { return JSON.parse(localStorage.getItem(NOTICE_SEEN_KEY) || "[]") || []; } catch (e) { return []; }
     }
     function rememberSeen(nid) {
+        markedHere.add(nid);
+        if (!browserKeeps()) return;
         try {
             const list = localSeen().filter(x => x !== nid);
             list.push(nid);
@@ -1139,23 +1196,40 @@ if (typeof renderPrivacySections === "function") {
     }
     /* Deleted from the Notifications list (5 Oct 2026, the owner's): for
        this visitor only. Signed in, the account keeps it (noticesDeleted);
-       the browser keeps it as well, which is all a signed-out visitor has. */
+       signed out, the browser does (10 Oct 2026: no longer both). */
     // The notices the arrival sound has already played for (checkNotices).
+    // Still this browser's, but one list per account (10 Oct 2026): the
+    // signed-out visitor's under the plain key, a player's under their tag.
     const NOTICE_CHIMED_KEY = "mazerats_notices_chimed";
+    const chimedKey = () => (noticeAcct ? `${NOTICE_CHIMED_KEY}:${noticeAcct}` : NOTICE_CHIMED_KEY);
+    /* An account's list, the first time it is asked for, starts as a copy
+       of the plain one (10 Oct 2026): before the split every player's
+       sounds were kept there, and starting empty played them all again.
+       Copied, not moved: the plain list is still the signed-out one's. */
     function localChimed() {
-        try { return JSON.parse(localStorage.getItem(NOTICE_CHIMED_KEY) || "[]") || []; } catch (e) { return []; }
+        const key = chimedKey();
+        try {
+            if (key !== NOTICE_CHIMED_KEY && localStorage.getItem(key) === null) {
+                const plain = localStorage.getItem(NOTICE_CHIMED_KEY);
+                if (plain !== null) localStorage.setItem(key, plain);
+            }
+        } catch (e) { /* private mode: it may play again on the next visit */ }
+        try { return JSON.parse(localStorage.getItem(key) || "[]") || []; } catch (e) { return []; }
     }
     function rememberChimed(nids) {
         try {
             const list = localChimed().filter(x => !nids.includes(x)).concat(nids);
-            localStorage.setItem(NOTICE_CHIMED_KEY, JSON.stringify(list.slice(-100)));
+            localStorage.setItem(chimedKey(), JSON.stringify(list.slice(-100)));
         } catch (e) { /* private mode: it may play again on the next visit */ }
     }
     const NOTICE_DELETED_KEY = "mazerats_notices_deleted";
     function localDeleted() {
         try { return JSON.parse(localStorage.getItem(NOTICE_DELETED_KEY) || "[]") || []; } catch (e) { return []; }
     }
+    let deletedHere = new Set();
     function rememberDeleted(nid) {
+        deletedHere.add(nid);
+        if (!browserKeeps()) return;
         try {
             const list = localDeleted().filter(x => x !== nid);
             list.push(nid);
@@ -1234,7 +1308,8 @@ if (typeof renderPrivacySections === "function") {
             .then(res => (res.ok ? res.json() : null))
             .then(data => {
                 if (mine !== checkGen || !data || !Array.isArray(data.notices)) return;
-                const seen = new Set([...localSeen(), ...localDeleted()]);
+                noticeAcct = data.signedIn ? String(data.acct || "account") : null;
+                const seen = new Set([...markedHere, ...deletedHere, ...(browserKeeps() ? [...localSeen(), ...localDeleted()] : [])]);
                 notices = data.notices.filter(n => n && n.nid && !seen.has(n.nid));
                 paintNoticeIcon();
                 // The sound, once for each notice however often it is asked
@@ -1333,15 +1408,19 @@ if (typeof renderPrivacySections === "function") {
             .then(res => (res.ok ? res.json() : Promise.reject(new Error(String(res.status)))))
             .then(data => {
                 if (mine !== historyGen) return;
-                const gone = new Set(localDeleted());
+                if (data) noticeAcct = data.signedIn ? String(data.acct || "account") : null;
+                const gone = new Set([...deletedHere, ...(browserKeeps() ? localDeleted() : [])]);
                 const list = ((data && Array.isArray(data.notices)) ? data.notices : []).filter(n => n && n.nid && !gone.has(n.nid));
                 listed = new Map(list.map(n => [n.nid, n]));
                 /* Previews (5 Oct 2026, the owner's): two lines of each at
                    most; picked, View opens it whole on the notification
-                   page. */
+                   page. data-crumb (10 Oct 2026): a press on one used to put
+                   the first thirty characters of the notice in the error
+                   report's click breadcrumb (js/error-report.js), and one
+                   sent to chosen players can name them. */
                 noticesListEl.innerHTML = list.length
                     ? list.map(n => `
-                        <button type="button" class="console-notices-item" data-nid="${n.nid}" aria-pressed="false">
+                        <button type="button" class="console-notices-item" data-nid="${n.nid}" data-crumb="Notification" aria-pressed="false">
                             <span class="console-notices-day">${fmtNoticeDay(n.at)}</span>
                             <span class="console-notices-text">${noticeHtml(n.text)}</span>
                         </button>`).join('<div class="console-dotline"></div>')
@@ -1453,6 +1532,9 @@ if (typeof renderPrivacySections === "function") {
             noticedFor = id;
             if (first) { if (!noticeCheckedAt) checkNotices(); return; }
             notices = [];
+            noticeAcct = undefined;
+            markedHere = new Set();
+            deletedHere = new Set();
             paintNoticeIcon();
             if (noticePageShowing()) leaveNotices();
             historyGen++;

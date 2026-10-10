@@ -386,7 +386,8 @@ function publicRounds(game, rounds, day, upTo) {
    row in daily_starts (progressFor in _speed.js) and whether the day is
    filed. No row — the day not started — is none: round 0 comes with the
    start. Otherwise the rounds already over and the one in hand. A filed
-   day, all of them (a day filed from a signed-out claim has no row). Pure.
+   day, all of them (a day filed from a signed-out claim, while there were
+   any — until 10 Oct 2026 — had no row). Pure.
    A round is over when it has a move (Odd One Out, one pick a round) or a
    finished one (Guess the Maze, up to three guesses). */
 function reachedOf(game, row, count, filed) {

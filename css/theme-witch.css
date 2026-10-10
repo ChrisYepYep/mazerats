@@ -9,7 +9,7 @@
    completely inert until js/site.js puts that attribute on <html>. The
    classic palette is not defined here and is not affected by anything in it.
 
-   1117 rules, 1796 declarations, hues 274 (surfaces) / 274 (accents).
+   1118 rules, 1796 declarations, hues 274 (surfaces) / 274 (accents).
 */
 :root[data-theme="witch"] {
     --bg-black: #050207;
@@ -3204,12 +3204,6 @@ html[data-theme="witch"]::-webkit-scrollbar-button {
     outline: 2px solid var(--amber-bright);
 }
 
-[data-theme="witch"] .header-signin-face {
-    border: 1px solid #ece8f0;
-    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
-    background: var(--wood-mid);
-}
-
 [data-theme="witch"] .header-signin-note {
     background: var(--bg-panel);
     border: 1px solid var(--border);
@@ -4711,6 +4705,12 @@ html[data-theme="witch"]::-webkit-scrollbar-button {
 }
 
 @media (pointer: coarse) {
+    [data-theme="witch"] .pura-light::after {
+        background: transparent;
+    }
+}
+
+@media (pointer: coarse) {
     [data-theme="witch"] .photo-frame-close::after {
         background: transparent;
     }
@@ -4959,11 +4959,6 @@ html[data-theme="witch"]::-webkit-scrollbar-button {
 
 [data-theme="witch"] .daily-bonus {
     color: var(--parchment-dim);
-}
-
-[data-theme="witch"] .signout-face {
-    border: 1px solid var(--chrome-border);
-    box-shadow: 2px 2px 0 rgba(0, 0, 0, 0.4);
 }
 
 [data-theme="witch"] .signout-everywhere {
@@ -5488,6 +5483,12 @@ html[data-theme="witch"]::-webkit-scrollbar-button {
     outline: 1px solid var(--parchment);
 }
 
+@media (pointer: coarse) {
+    [data-theme="witch"] .mazer-motto::after {
+        background: transparent;
+    }
+}
+
 [data-theme="witch"] .nt-chip-x {
     background: none;
     border: 0;
@@ -5500,6 +5501,12 @@ html[data-theme="witch"]::-webkit-scrollbar-button {
 
 [data-theme="witch"] .nt-row[data-nid]:focus-visible {
     outline: 2px solid var(--chrome-highlight);
+}
+
+[data-theme="witch"] .profile-unverified-tag {
+    border: 1px solid var(--pc-text);
+    color: var(--pc-text);
+    text-shadow: none;
 }
 
 /* ------------------------------------------- COLOUR THAT IS INFORMATION

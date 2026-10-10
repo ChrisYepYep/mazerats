@@ -682,6 +682,8 @@ document.addEventListener("DOMContentLoaded", () => {
     const HOTEL_NAMES = { COM: ".com", ES: ".es", BR: ".com.br" };
     const hv = { phase: "offer", code: "", msg: "", tone: "", until: 0, busy: false, for: "" };
     let hvTimer = 0;
+    // The player the state above belongs to (see Account.onChange below).
+    let hvFor = null;
 
     function habboVerifyHtml() {
         const g = data && data.habboGuess;
@@ -721,15 +723,34 @@ document.addEventListener("DOMContentLoaded", () => {
             ${say}`;
     }
 
+    /* On a leash (10 Oct 2026), as savePref is: a press that never answered
+       left hv.busy set, and every button of the section disabled, until a
+       reload. A check reads Origins on the server, so 20s. A 401 asks `me`
+       again, as load() does, so the page redraws signed out. */
     async function hvPost(action) {
-        const res = await fetch(VERIFY_URL, {
-            method: "POST",
-            credentials: "same-origin",
-            headers: { "Content-Type": "application/json", Accept: "application/json" },
-            body: JSON.stringify({ action })
-        });
-        const body = await res.json().catch(() => ({}));
-        if (!res.ok && res.status !== 429) throw Object.assign(new Error(body.error || "That didn't work just now. Try again in a moment."), { status: res.status });
+        const abort = typeof AbortController === "function" ? new AbortController() : null;
+        const limit = abort ? setTimeout(() => abort.abort(), 20000) : 0;
+        let res, body;
+        try {
+            res = await fetch(VERIFY_URL, {
+                method: "POST",
+                credentials: "same-origin",
+                headers: { "Content-Type": "application/json", Accept: "application/json" },
+                body: JSON.stringify({ action }),
+                signal: abort ? abort.signal : undefined
+            });
+            body = await res.json().catch(() => ({}));
+        } catch (e) {
+            throw new Error(e && e.name === "AbortError" ? "That took too long. Try again in a moment."
+                : "That couldn't be reached. Check your connection and try again.");
+        } finally {
+            clearTimeout(limit);
+        }
+        if (res.status === 401 && window.Account && typeof Account.refresh === "function" && Date.now() - askedMeAt > 60000) {
+            askedMeAt = Date.now();
+            Account.refresh();
+        }
+        if (!res.ok && res.status !== 429) throw Object.assign(new Error((body && body.error) || "That didn't work just now. Try again in a moment."), { status: res.status, expired: !!(body && body.expired) });
         return Object.assign({ status: res.status }, body);
     }
 
@@ -757,6 +778,18 @@ document.addEventListener("DOMContentLoaded", () => {
             if (act === "hv-start") {
                 const r = await hvPost("start");
                 if (r.code) { hv.phase = "code"; hv.code = r.code; hv.checked = false; }
+                /* Linked meanwhile (an admin in the Warren, or another tab;
+                   10 Oct 2026): the server answers { linked: true } with no
+                   code, and the press used to do nothing at all. */
+                else if (r.linked) {
+                    hv.phase = "offer";
+                    hv.busy = false;
+                    await load(true);
+                    hv.msg = "Verified! Your Habbo is linked to your profile.";
+                    hv.tone = "ok";
+                    render();
+                    return;
+                }
             } else if (act === "hv-check") {
                 const r = await hvPost("check");
                 hv.checked = true;
@@ -788,6 +821,16 @@ document.addEventListener("DOMContentLoaded", () => {
         } catch (e) {
             hv.msg = e.message;
             hv.tone = "error";
+            /* The half-hour code ran out (habbo-verify.js answers 409 with
+               `expired`; 10 Oct 2026, the bug scan): back to the offer, so
+               its Verify it button is there for a new code. Only Check and
+               Cancel were, and Check could only say it had run out. */
+            if (e.expired && hv.phase === "code") {
+                hv.phase = "offer";
+                hv.code = "";
+                hv.until = 0;
+                clearInterval(hvTimer);
+            }
         }
         hv.busy = false;
         render();
@@ -913,7 +956,18 @@ document.addEventListener("DOMContentLoaded", () => {
         Account.onChange(() => {
             const me = Account.current;
             const id = me && me.id != null ? me.id : null;
-            if (id === null || id !== dataFor) { data = null; dataFor = null; readAt = 0; }
+            if (id === null || id !== dataFor) {
+                data = null; dataFor = null; readAt = 0;
+                /* And the Habbo check with them (10 Oct 2026): the last
+                   player's code, countdown and "Verified!" stayed for whoever
+                   signed in next on this page. hvFor is the last player
+                   seen, so the first answer of a visit resets nothing. */
+                if (hvFor !== null && hvFor !== id) {
+                    clearInterval(hvTimer);
+                    Object.assign(hv, { phase: "offer", code: "", msg: "", tone: "", until: 0, for: "", checked: false });
+                }
+            }
+            if (id !== null) hvFor = id;
             if (showing) { render(); if (id) load(true); }
         });
     }

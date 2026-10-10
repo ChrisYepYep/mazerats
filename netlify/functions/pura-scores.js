@@ -191,6 +191,11 @@ async function continueRun(db, event, player) {
     if (!(await isOpen(db).catch(() => false))) return json(200, { token: null, reason: "maintenance" });
     try {
         if (await db.collection(RUN_TOKENS).findOne({ _id: c.rid })) return json(200, { token: null, reason: "finished" });
+        /* Finished is also its log row (10 Oct 2026): the spent token above
+           ages out after four hours, inside the day a game can be picked
+           up in, and a game finished off the board (THE GAME LOG's
+           "played") never spends one at all. */
+        if (await db.collection(GAMES).findOne({ _id: c.rid, final: true }, { projection: { _id: 1 } })) return json(200, { token: null, reason: "finished" });
         const once = db.collection("pura_continues");
         await once.createIndex({ at: 1 }, { expireAfterSeconds: RESUME_WINDOW_MS / 1000 + RUN_LIFE_S + 3600 }).catch(() => {});
         await once.insertOne({ _id: c.rid, at: new Date() });
@@ -234,7 +239,20 @@ const hotelOf = (v) => {
     const s = typeof v === "string" ? v.trim().toUpperCase() : "";
     return HOTELS.includes(s) ? s : "COM";
 };
-const guestId = (name, hotel) => "guest:" + hotelOf(hotel) + ":" + nameKey(name);
+/* Keyed by the Habbo's own name, lower-cased (10 Oct 2026). It was
+   nameKey(name), letters and digits only — so "Bob" and ".Bob.", two
+   different Habbos, shared one row, each score landing under the other's
+   name, and every punctuation-only name shared "guest:COM:". Rows from
+   before are still under that key (legacyGuestId): read as the Habbo's
+   when the name matches, and moved to the new key at its next score. */
+const guestId = (name, hotel) => "guest:" + hotelOf(hotel) + ":" + String(name).toLowerCase();
+const legacyGuestId = (name, hotel) => "guest:" + hotelOf(hotel) + ":" + nameKey(name);
+const sameName = (name) => new RegExp("^" + String(name).replace(/[.*+?^${}()|[\]\\-]/g, "\\$&") + "$", "i");
+// A guest Habbo's row, under its key or the old one with the same name.
+const guestRowFilter = (name, hotel) => {
+    const key = guestId(name, hotel), legacy = legacyGuestId(name, hotel);
+    return key === legacy ? { playerId: key } : { $or: [{ playerId: key }, { playerId: legacy, name: sameName(name) }] };
+};
 const ratId = (n) => "guestrat:" + n;
 const isGuest = (id) => typeof id === "string" && (id.startsWith("guest:") || id.startsWith("guestrat:"));
 
@@ -289,16 +307,22 @@ async function claimHabbo(db, body) {
 
 async function verifyHabbo(db, body) {
     const c = readToken(body.claim, CLAIM_AUDIENCE);
-    if (!c || !c.name || !c.code) return json(409, { error: "That code has run out. Start again for a new one." });
+    /* Named for the real button (10 Oct 2026): the page goes back to
+       Who's Playing on this answer, whose Next gives a new code. */
+    if (!c || !c.name || !c.code) return json(409, { error: "That code has run out. Press Next for a new one." });
     // At most one look a code every CHECK_GAP_MS (habbo-verify.js's rule).
     const checks = db.collection("pura_claims");
+    /* Keyed by a hash of the code, never the code (10 Oct 2026): the
+       privacy policy says the motto code is not stored by us, and the
+       gap only needs to know the same code again. */
+    const codeId = crypto.createHash("sha256").update(String(c.code)).digest("hex");
     try {
         await checks.createIndex({ at: 1 }, { expireAfterSeconds: CLAIM_LIFE_S + 600 }).catch(() => {});
-        const prior = await checks.findOneAndUpdate({ _id: c.code }, { $set: { at: new Date() } }, { upsert: true, returnDocument: "before" });
+        const prior = await checks.findOneAndUpdate({ _id: codeId }, { $set: { at: new Date() } }, { upsert: true, returnDocument: "before" });
         const was = prior && prior.ok !== undefined && prior.value !== undefined ? prior.value : prior;
         const last = was && was.at ? new Date(was.at).getTime() : 0;
         if (last && Date.now() - last < CHECK_GAP_MS) {
-            await checks.updateOne({ _id: c.code }, { $set: { at: new Date(last) } });
+            await checks.updateOne({ _id: codeId }, { $set: { at: new Date(last) } });
             const wait = CHECK_GAP_MS - (Date.now() - last);
             return json(429, { error: "Give it a moment, then check again.", wait });
         }
@@ -317,7 +341,7 @@ async function verifyHabbo(db, body) {
     try { figure = result.profile.avatar ? new URL(result.profile.avatar).searchParams.get("figure") : null; } catch (e) { /* none */ }
     const token = signToken({ name: c.name, hotel: c.hotel, figure: figure || null }, HABBO_AUDIENCE, 0);
     if (!token) return json(503, { error: "That can't be done just now." });
-    try { await checks.deleteOne({ _id: c.code }); } catch (e) { /* ages out */ }
+    try { await checks.deleteOne({ _id: codeId }); } catch (e) { /* ages out */ }
     return json(200, { verified: true, name: c.name, hotel: c.hotel, token });
 }
 
@@ -341,6 +365,33 @@ async function nextRat(db) {
         { _id: "pura_guest_rat" }, { $inc: { n: 1 } }, { upsert: true, returnDocument: "after" });
     const doc = r && r.ok !== undefined && r.value !== undefined ? r.value : r;
     return doc && Number.isInteger(doc.n) ? doc.n : null;
+}
+/* ONE GAME, ONE GUEST RAT (10 Oct 2026). A number was given to every
+   unnamed submission, and a game sends several (A SAVE ON THE WAY): two
+   saves racing, or a save whose answer never reached a closing tab and
+   then the finish, each took a number and left a row, so one browser's one
+   game stood on the board as "Guest Rat 5" and "Guest Rat 6" — and a
+   script could mint rows endlessly from a single token. Now the number
+   is the run's: the first submission of a game takes one and every later
+   one of the same game gets the same back. Kept as long as the token can
+   be continued. */
+const RUN_RATS = "pura_run_rats";
+async function ratForRun(db, rid) {
+    const col = db.collection(RUN_RATS);
+    const had = await col.findOne({ _id: rid });
+    if (had && Number.isInteger(had.n)) return had.n;
+    const n = await nextRat(db);
+    if (!n) return null;
+    await col.createIndex({ at: 1 }, { expireAfterSeconds: RESUME_WINDOW_MS / 1000 + RUN_LIFE_S + 3600 }).catch(() => {});
+    try {
+        await col.insertOne({ _id: rid, n, at: new Date() });
+        return n;
+    } catch (e) {
+        // A save of the same game got there first: its number (this one goes unused).
+        if (!(e && e.code === 11000)) throw e;
+        const won = await col.findOne({ _id: rid });
+        return won && Number.isInteger(won.n) ? won.n : null;
+    }
 }
 
 // A Habbo head, as _publicid.js draws them (its OUTLINE_V).
@@ -382,12 +433,14 @@ async function shown(db, rows) {
    the name through rather than stopping a game over our own trouble. */
 async function nameTaken(db, habbo, hotel) {
     const key = nameKey(habbo);
-    if (!key) return false;
-    const exact = new RegExp("^" + habbo.replace(/[.*+?^${}()|[\]\\-]/g, "\\$&") + "$", "i");
     const h = hotelOf(hotel);
+    // A name with no letters or digits reads as no nickname, but can still
+    // be a linked Habbo's (10 Oct 2026: it used to skip both checks).
+    const either = [{ "habbo.name": sameName(habbo), "habbo.hotel": { $in: h === "COM" ? ["COM", null] : [h] } }];
+    if (key) either.unshift({ nickKey: key });
     try {
         const row = await db.collection("players").findOne(
-            { $or: [{ nickKey: key }, { "habbo.name": exact, "habbo.hotel": { $in: h === "COM" ? ["COM", null] : [h] } }] },
+            { $or: either },
             { projection: { _id: 0, id: 1 } });
         return Boolean(row);
     } catch (e) {
@@ -567,7 +620,7 @@ exports.handler = async (event) => {
             const rat = player ? null : parseInt(qs.rat, 10);
             const meId = player ? player.id : guest ? guestId(guest, qs.hotel) : rat > 0 ? ratId(rat) : null;
             if (meId) {
-                const mine = await scores.findOne({ playerId: meId }, { projection: { _id: 0 } });
+                const mine = await scores.findOne(!player && guest ? guestRowFilter(guest, qs.hotel) : { playerId: meId }, { projection: { _id: 0 } });
                 out.you = mine ? clean(mine, heads) : null;
                 if (mine) {
                     out.you.place = await placeOf(db, scores, mine);
@@ -611,6 +664,14 @@ exports.handler = async (event) => {
         try { open = await isOpen(db); }
         catch (e) { return json(503, { error: "The leaderboard could not be reached just now." }); }
         if (!open) return json(200, { token: null, reason: "maintenance" });
+        /* Banned, no game (10 Oct 2026, the bug scan; the owner's yes). A
+           banned network or account was handed a run token and logged a
+           pura_starts row, and only found out at the first save. The same
+           refusal `continue` gives: the ban (and a rejected nickname, or a
+           revoked session) — never the daily games' sign-in and nickname
+           gate, as guests still play. The page shows Account's ban window. */
+        const refused = await writeRefusal(db, event, player ? player.id : null, { game: true });
+        if (refused) return refused;
         const run = signRun(player, Date.now());
         if (!run) return json(200, { token: null, reason: "unavailable" });
         await logStart(db, jwt.decode(run.token), player);
@@ -667,22 +728,38 @@ exports.handler = async (event) => {
     if (!result.score) return json(200, { recorded: false, reason: "no-score", score: 0 });
 
     let who = player || (guest.kind === "habbo" ? { id: guest.id } : guest.n ? { id: ratId(guest.n) } : { id: "guestrat:new" });
+    /* Only a finished game spends the token, so only a finished game hands
+       it back when the write fails (10 Oct 2026): a checkpoint failing used
+       to delete the lock its own game's finish had taken, letting the
+       finish be filed twice. */
+    const spends = body.checkpoint !== true;
+    const unspend = async () => {
+        if (!spends) return;
+        try { await db.collection(RUN_TOKENS).deleteOne({ _id: claims.rid }); } catch (e2) { /* one game lost, never two entries */ }
+    };
     try {
         await ensureUniqueIndex(scores, "playerId");
-        if (body.checkpoint !== true && !(await spendRun(db, claims, who))) return json(200, { recorded: false, reason: "already-submitted" });
+        if (spends && !(await spendRun(db, claims, who))) return json(200, { recorded: false, reason: "already-submitted" });
     } catch (e) {
         console.error("pura-scores: could not spend a run token", e);
         return json(503, { error: "The leaderboard could not be updated just now." });
+    }
+
+    // A Habbo's row from before the key changed (guestId), moved over.
+    if (guest && guest.kind === "habbo" && legacyGuestId(guest.name, guest.hotel) !== guest.id) {
+        try {
+            await scores.updateOne({ playerId: legacyGuestId(guest.name, guest.hotel), name: sameName(guest.name) }, { $set: { playerId: guest.id } });
+        } catch (e) { /* 11000: the new key has a row already; the old one stays put */ }
     }
 
     // A Guest Rat's first score: their number, now (see GUESTS).
     let newRat = null;
     if (guest && guest.kind === "rat" && !guest.n) {
         let n = null;
-        try { n = await nextRat(db); } catch (e) { console.error("pura-scores: could not number a Guest Rat", e); }
+        try { n = await ratForRun(db, claims.rid); } catch (e) { console.error("pura-scores: could not number a Guest Rat", e); }
         const token = n ? signRat(n) : null;
         if (!n || !token) {
-            try { await db.collection(RUN_TOKENS).deleteOne({ _id: claims.rid }); } catch (e2) { /* lost */ }
+            await unspend();
             return json(503, { error: "The leaderboard could not be updated just now." });
         }
         guest.n = n;
@@ -708,7 +785,7 @@ exports.handler = async (event) => {
     } catch (e) {
         console.error("pura-scores: could not record a game", e);
         // Nothing recorded, so the token is handed back for the page's retry.
-        try { await db.collection(RUN_TOKENS).deleteOne({ _id: claims.rid }); } catch (e2) { /* one game lost, never two entries */ }
+        await unspend();
         return json(503, { error: "The leaderboard could not be updated just now." });
     }
     const best = better ? row : (await scores.findOne({ playerId: who.id }).catch(() => null)) || row;
