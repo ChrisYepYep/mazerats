@@ -378,7 +378,34 @@ async function adminWithdraw(event, db) {
     return json(200, { nid, withdrawn: true });
 }
 
+/* A DEADLINE FOR THE VISITOR'S CHECK (10 Oct 2026). Each database step has
+   its own limit (_db.js), but nothing bounded them together: on a slow
+   Atlas spell the connect, the player lookup and the query ran one after
+   another until the platform cut the request off at about thirty seconds,
+   and the console's minute-by-minute check got the platform's 504 instead
+   of an answer. The visitor's GET now gives up at eight seconds with the
+   ordinary 503. The admin routes and the writes are left alone: they are
+   pressed by somebody waiting for them, not polled. */
+const VISITOR_DEADLINE_MS = 8000;
+
 exports.handler = async (event) => {
+    const visitorGet = event.httpMethod === "GET" && (event.queryStringParameters || {}).admin !== "1";
+    if (!visitorGet) return handle(event);
+    let timer;
+    const late = new Promise(resolve => {
+        timer = setTimeout(() => {
+            console.error(`notifications: visitor check gave up after ${VISITOR_DEADLINE_MS}ms`);
+            resolve(UNAVAILABLE());
+        }, VISITOR_DEADLINE_MS);
+    });
+    try {
+        return await Promise.race([handle(event), late]);
+    } finally {
+        clearTimeout(timer);
+    }
+};
+
+async function handle(event) {
     const method = event.httpMethod;
     const admin = (event.queryStringParameters || {}).admin === "1";
     if (admin) {
@@ -422,7 +449,7 @@ exports.handler = async (event) => {
         if (e && /^Mongo/.test(e.name || "")) return UNAVAILABLE();
         return json(500, { error: "Something went wrong with that request." });
     }
-};
+}
 
 exports.notifyPlayers = notifyPlayers;
 

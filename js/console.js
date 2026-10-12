@@ -1304,7 +1304,13 @@ if (typeof renderPrivacySections === "function") {
         if (!pages.notice || !noticeBackBtn) return Promise.resolve();
         const mine = ++checkGen;
         noticeCheckedAt = Date.now();
-        return fetch(NOTICE_URL, { credentials: "same-origin", headers: { Accept: "application/json" }, cache: "no-store" })
+        /* A leash, and marked as a background poll (10 Oct 2026): with
+           neither, a slow spell held this request for the platform's whole
+           thirty seconds and each failure went to the Warren as a site
+           error, though the next check a minute later was fine. js/error-
+           report.js files background polls only after a run of failures. */
+        const leash = typeof AbortSignal !== "undefined" && AbortSignal.timeout ? AbortSignal.timeout(10000) : undefined;
+        return fetch(NOTICE_URL, { credentials: "same-origin", headers: { Accept: "application/json", "X-Background": "1" }, cache: "no-store", signal: leash })
             .then(res => (res.ok ? res.json() : null))
             .then(data => {
                 if (mine !== checkGen || !data || !Array.isArray(data.notices)) return;

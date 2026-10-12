@@ -669,6 +669,9 @@
            of our functions, a report for a 5xx from one (a 4xx is an answer,
            not a failure), and a report for a request that never arrived.
            Bodies are never read, in either direction. */
+        // Failed background polls in a row, per function (see A BACKGROUND POLL).
+        var backgroundFails = {};
+        var BACKGROUND_RUN = 3;
         if (origFetch) {
             window.fetch = function (input, init) {
                 var started = sinceLoad();
@@ -677,6 +680,19 @@
                     url = typeof input === "string" ? input : (input && input.url) || String(input);
                     method = String((init && init.method) || (input && typeof input === "object" && input.method) || "GET").toUpperCase();
                 } catch (e) { /* unknown is fine */ }
+                /* A BACKGROUND POLL (10 Oct 2026): a request sent with an
+                   X-Background header (the console's minute-by-minute notices
+                   check) is asked again shortly whatever happens, so one
+                   failure is nothing anybody saw — a signed-out visitor with
+                   a page open for a day filed a 504 and a dropped connection
+                   from a slow spell the next poll had already recovered from.
+                   It is filed only once BACKGROUND_RUN in a row have failed,
+                   which is an outage worth knowing about. */
+                var background = false;
+                try {
+                    var hd = init && init.headers;
+                    background = !!(hd && (typeof hd.get === "function" ? hd.get("X-Background") : (hd["X-Background"] || hd["x-background"])));
+                } catch (e) { /* not one */ }
                 var promise = origFetch.apply(this, arguments);
                 try {
                     var fn = fnOf(url);
@@ -685,6 +701,12 @@
                             try {
                                 var ms = sinceLoad() - started;
                                 if (fn) crumb({ type: "fetch", fn: fn, method: method, status: res.status, ms: ms });
+                                if (background && fn) {
+                                    if (res.status < 500) { backgroundFails[fn] = 0; return; }
+                                    backgroundFails[fn] = (backgroundFails[fn] || 0) + 1;
+                                    if (backgroundFails[fn] < BACKGROUND_RUN) return;
+                                    backgroundFails[fn] = 0;
+                                }
                                 if (fn && res.status >= 500 && fn !== "track") {
                                     capture("fetch", {
                                         message: "HTTP " + res.status + " from " + fn,
@@ -702,6 +724,10 @@
                                    console's Notifications list (js/console.js)
                                    filed every slow read as a network failure. */
                                 var aborted = err && (err.name === "AbortError" || err.name === "TimeoutError");
+                                /* Except a background poll's own leash: every
+                                   check timing out IS the outage, so those
+                                   count toward the run below (10 Oct 2026). */
+                                if (background && fn && err && err.name === "TimeoutError") aborted = false;
                                 crumb({ type: "fetch", fn: fn || cleanUrl(url, 40), method: method, status: 0, ms: ms });
                                 /* An abort is somebody's decision (a leash, a
                                    newer request), and a request made while
@@ -713,6 +739,12 @@
                                    visitor saw and nothing to fix, so it stays a
                                    crumb and is never filed. */
                                 if (fn === "track") return;
+                                // A background poll: only a run of failures (above).
+                                if (background && fn) {
+                                    backgroundFails[fn] = (backgroundFails[fn] || 0) + 1;
+                                    if (backgroundFails[fn] < BACKGROUND_RUN) return;
+                                    backgroundFails[fn] = 0;
+                                }
                                 /* Somebody else's host failing is theirs,
                                    the same as for a failed picture above
                                    (29 Sept 2026): counted, not sent. */
