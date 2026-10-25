@@ -766,6 +766,26 @@ document.addEventListener("DOMContentLoaded", async () => {
         return `${date}, ${time} UTC`;
     }
 
+    /* A LIVE EVENT THAT RUNS FOR DAYS shows how long it has left instead of
+       its start, which has passed (25 Oct 2026, the owner's: "Ends in 3
+       days"). Only one with a real end more than a day after its start: a
+       party of a few hours keeps its date. Whole days while there are any,
+       then hours, then minutes, each rounded down, as a countdown reads. */
+    const DAY_MS = 24 * 60 * 60 * 1000;
+    function endsIn(event) {
+        if (EventStatus.derive(event) !== "live") return null;
+        const start = new Date(event.date), end = new Date(event.endDate || "");
+        if (isNaN(start) || isNaN(end) || end - start <= DAY_MS) return null;
+        const left = end - Date.now();
+        const say = (n, unit) => `Ends in ${n} ${unit}${n === 1 ? "" : "s"}`;
+        if (left >= DAY_MS) return say(Math.floor(left / DAY_MS), "day");
+        if (left >= 60 * 60 * 1000) return say(Math.floor(left / (60 * 60 * 1000)), "hour");
+        return say(Math.max(1, Math.ceil(left / 60000)), "minute");
+    }
+    function whenText(event) {
+        return endsIn(event) || formatEventWhen(event.date);
+    }
+
     function slideMarkup(event) {
         if (!event) {
             return `<p class="header-events-title">No upcoming events.</p><p class="header-events-when">Check back later!</p>`;
@@ -786,7 +806,7 @@ document.addEventListener("DOMContentLoaded", async () => {
         const href = isWelcome
             ? `#event-${encodeURIComponent(event.id || "")}`
             : RecordAddress.of("event", event);
-        return `<a class="header-events-title" href="${href}">${escapeHtml(event.title || "")}</a><p class="header-events-when">${formatEventWhen(event.date)}</p>`;
+        return `<a class="header-events-title" href="${href}">${escapeHtml(event.title || "")}</a><p class="header-events-when"${endsIn(event) ? ` title="Ends ${formatEventWhen(event.endDate)}"` : ""}>${whenText(event)}</p>`;
     }
 
     let events = [];
@@ -901,7 +921,7 @@ document.addEventListener("DOMContentLoaded", async () => {
        title measured in the fallback face is the wrong width. */
     let fitFor = "";
     function fitWidth(force) {
-        const key = upcoming.map(e => e.id + "|" + e.title + "|" + e.date).join("\n");
+        const key = upcoming.map(e => e.id + "|" + e.title + "|" + (e.extra ? e.when : whenText(e))).join("\n");
         if (!force && key === fitFor) return;
         fitFor = key;
         const stage = widget.cloneNode(true);
@@ -956,6 +976,10 @@ document.addEventListener("DOMContentLoaded", async () => {
     setInterval(() => {
         upcoming = currentUpcoming();
         fitWidth(false);
+        // A live event's countdown moves on while it stays on screen (a
+        // lone event never turns over, so it would otherwise stand still).
+        const whenEl = showing && !showing.extra && slideEl.querySelector(".header-events-when");
+        if (whenEl && whenEl.textContent !== whenText(showing)) whenEl.textContent = whenText(showing);
         const at = showing ? upcoming.indexOf(showing) : -1;
         // Nothing to rotate through: settle on whatever is true now
         // without an animation, and only touch the DOM if it changed.
