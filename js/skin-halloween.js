@@ -1313,6 +1313,17 @@
            all back, calms the swarm and ends that game: the next hit starts a
            new one from nothing. The best is kept. All of it is transforms on
            html.hw-batgame (css/skin-halloween.css), so no box moves. */
+        /* Under the top bar, wherever it ends: 58px was its height on a wide
+           screen, and on a phone the bar wraps to twice that and covered the
+           score. Followed as the bar changes height (the ticker's row). */
+        const head = document.querySelector(".site-header");
+        const placeBoard = () => {
+            if (!board) return;
+            const bottom = head ? Math.max(0, head.getBoundingClientRect().bottom) : 50;
+            board.style.top = Math.round(bottom + 8) + "px";
+        };
+        const headWatch = head && window.ResizeObserver ? new ResizeObserver(placeBoard) : null;
+        if (headWatch) headWatch.observe(head);
         function showBoard() {
             if (board) return;
             board = document.createElement("div");
@@ -1328,6 +1339,7 @@
             end.addEventListener("click", endGame);
             board.append(open, end);
             document.body.appendChild(board); added.add(board);
+            placeBoard();
             root.classList.add("hw-batgame");
             reported = false;
             if (window.Track) Track.event("bat-start");
@@ -1491,6 +1503,7 @@
         addEventListener("resize", resize);
         bats = { stop() {
             cancelAnimationFrame(id); removeEventListener("resize", resize);
+            if (headWatch) headWatch.disconnect();
             document.removeEventListener("pointerdown", onDown, true);
             document.removeEventListener("click", onClick, true);
             document.removeEventListener("pointermove", onMove);
