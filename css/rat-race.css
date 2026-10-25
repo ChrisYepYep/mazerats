@@ -1,0 +1,160 @@
+/* Rat Race's window (js/rat-race.js), loaded with the game after Pura
+   Panic's stylesheet (css/pura-panic.css), whose console classes it wears.
+   (12 Oct 2026: the platform game.) The console is wider than Pura Panic's
+   for the game's 320 x 224 picture at twice the size, and the picture fills
+   the screen with nothing else on it but two small buttons in the corner. */
+
+#rr-window {
+    width: min(664px, calc(100vw - 16px));
+    height: min(492px, calc(100vh - 16px));
+    height: min(492px, calc(100dvh - 16px));
+}
+#rr-window .console-screen,
+#rr-window .console-screen * { color: #eeeeee; }
+
+/* (The console's own rule places the screen, absolutely, inside the frame.) */
+.rr-screen {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #0d0805;
+    overflow: hidden;
+    user-select: none;
+    -webkit-user-select: none;
+}
+.rr-board {
+    display: block;
+    image-rendering: pixelated;
+    image-rendering: crisp-edges;
+    touch-action: none;
+}
+/* Fullscreen: the screen fills the display, black round the picture. */
+.rr-screen:fullscreen { background: #000; }
+
+/* Pause, music and fullscreen (13 Oct 2026): in the title bar, beside the
+   light switch and made like it, so nothing sits over the picture. In
+   fullscreen, where the title bar is gone, the same three in the screen's
+   top-right corner, over the black round the picture. */
+.rr-bar-btns {
+    position: absolute;
+    top: 7px;
+    right: 49px;
+    display: flex;
+    gap: 5px;
+    z-index: 5;
+}
+.rr-bar-btn {
+    width: 13px;
+    height: 13px;
+    padding: 0;
+    display: grid;
+    place-items: center;
+    border: 1px solid #996600;   /* boxed, as the light switch and the close button are */
+    box-sizing: border-box;
+    background: #ffcb00;
+    color: #996600;
+    cursor: var(--cursor-pointer, pointer);
+}
+.rr-bar-btn svg { display: block; }
+.rr-bar-btn[hidden] { display: none; }
+.rr-corner {
+    position: absolute;
+    top: 6px;
+    right: 6px;
+    display: none;
+    gap: 4px;
+    z-index: 2;
+    opacity: 0.55;
+    transition: opacity 0.15s;
+}
+.rr-screen:fullscreen .rr-corner { display: flex; }
+.rr-corner:hover, .rr-corner:focus-within { opacity: 1; }
+.rr-corner-btn {
+    width: 22px;
+    height: 20px;
+    padding: 0;
+    display: grid;
+    place-items: center;
+    border: 1px solid rgba(238, 238, 238, 0.6);
+    border-radius: 3px;
+    background: rgba(0, 0, 0, 0.55);
+    color: #eeeeee;
+    cursor: var(--cursor-pointer, pointer);
+}
+.rr-corner-btn svg { display: block; }
+.rr-corner-btn[hidden] { display: none; }
+
+/* THE PAD (touch screens only), under the window: a cross of four keys on
+   the left, a big JUMP on the right, on a plate in the frame's colour. */
+.rr-pad {
+    position: absolute;
+    top: calc(100% + 8px);
+    left: 0;
+    right: 0;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 14px;
+    border-radius: 12px;
+    background: var(--rr-plate, #ffcb00);
+    box-shadow: 2px 2px 0 0 rgba(0, 0, 0, 0.5), inset 0 0 0 2px rgba(0, 0, 0, 0.25);
+    touch-action: none;
+    user-select: none;
+    -webkit-user-select: none;
+}
+.rr-pad[hidden] { display: none; }
+.rr-dpad { position: relative; width: 132px; height: 132px; }
+.rr-pad-btn {
+    position: absolute;
+    width: 44px;
+    height: 44px;
+    padding: 0;
+    display: grid;
+    place-items: center;
+    border: 2px solid #eeeeee;
+    border-radius: 6px;
+    background: #1a1a1a;
+    color: #eeeeee;
+    box-shadow: 0 3px 0 0 #000;
+    touch-action: none;
+    -webkit-tap-highlight-color: transparent;
+    font-family: 'Volter Goldfish', monospace;
+    font-size: 0.75rem;
+}
+.rr-pad-btn svg { display: block; }
+.rr-pad-btn.is-down { transform: translateY(2px); box-shadow: 0 1px 0 0 #000; background: #2c2c2c; }
+.rr-dpad [data-k="up"] { left: 44px; top: 0; }
+.rr-dpad [data-k="left"] { left: 0; top: 44px; }
+.rr-dpad [data-k="right"] { left: 88px; top: 44px; }
+.rr-dpad [data-k="down"] { left: 44px; top: 88px; }
+.rr-pad .rr-jump { position: static; width: 96px; height: 96px; border-radius: 50%; }
+/* The Station's wheel buttons, Z and X, pressed one after the other */
+.rr-turn { display: flex; gap: 10px; }
+.rr-turn[hidden] { display: none; }
+.rr-turn .rr-pad-btn { position: static; width: 52px; height: 52px; font-size: 1rem; }
+
+/* A phone held sideways: the pad either side of the picture, over the
+   screen's dark edges (js/rat-race.js moves it into the screen and leaves
+   room for it), a little see-through. */
+.rr-pad.is-side {
+    top: auto;
+    bottom: 10px;
+    left: 8px;
+    right: 8px;
+    padding: 0;
+    border-radius: 0;
+    background: none;
+    box-shadow: none;
+    pointer-events: none;
+    z-index: 3;
+}
+.rr-pad.is-side > * { pointer-events: auto; }
+.rr-pad.is-side .rr-dpad { width: 108px; height: 108px; }
+.rr-pad.is-side .rr-pad-btn { width: 36px; height: 36px; opacity: 0.85; }
+.rr-pad.is-side .rr-dpad [data-k="up"] { left: 36px; top: 0; }
+.rr-pad.is-side .rr-dpad [data-k="left"] { left: 0; top: 36px; }
+.rr-pad.is-side .rr-dpad [data-k="right"] { left: 72px; top: 36px; }
+.rr-pad.is-side .rr-dpad [data-k="down"] { left: 36px; top: 72px; }
+.rr-pad.is-side .rr-jump { width: 84px; height: 84px; margin-right: 12px; }
+.rr-pad.is-side .rr-turn { position: absolute; right: 108px; bottom: 0; flex-direction: column; gap: 6px; }
+.rr-pad.is-side .rr-turn .rr-pad-btn { width: 40px; height: 40px; }

@@ -138,11 +138,18 @@
                (29 Sept 2026). Every Sign in on the site comes through here
                — the header, the Profile's, Fallin' Furni's. */
             if (activeBan()) { showBlocked("signin"); return; }
-            const to = returnTo || (location.pathname + location.search + location.hash);
+            /* From inside a frame of the site's own (Fallin' Furni's window on the
+               homepage, 25 Oct 2026) the whole page makes the trip: the frame
+               alone would have tried to show Discord's page, which refuses to
+               be framed, and come back to the bare game. */
+            let win = window;
+            try { if (window.top !== window && window.top.location.origin === location.origin) win = window.top; } catch (e) { /* another site's frame: this one only */ }
+            const here = win.location;
+            const to = returnTo || (here.pathname + here.search + here.hash);
             // The clean path, matching what is registered with Discord (see
             // netlify.toml). "me" and "signout" below are only ever called
             // by this file, so they stay on the function's own URL.
-            location.href = `/auth/discord/start?to=${encodeURIComponent(to)}`;
+            here.href = `/auth/discord/start?to=${encodeURIComponent(to)}`;
         },
 
         /* Resolves true once signed out, false if the server could not be

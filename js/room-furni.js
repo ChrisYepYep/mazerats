@@ -716,6 +716,21 @@
 
     const tileDepth = (x, y) => (x + y) * DEPTH_PER_TILE;
 
+    /* A PART TO BE DRAWN IN STRIPS (25 Oct 2026): one with no depth data in
+       the client, on a piece more than a tile long. Sorted whole at its far
+       corner, the back half of a divider outranked the roller in front of it
+       and drew over it (the owner's, level 25: "partially overlapped by the
+       top row of lodge dividers which should appear behind the rollers");
+       sorted at its origin, as the client does, anybody standing behind the
+       far half would be drawn over it. Neither single number is right for a
+       two-tile piece, so the painter cuts such a part into one vertical strip
+       per tile column, each sorted at its own tile (see paintScene). */
+    function sliced(f, partKey) {
+        if ((f.w || 1) < 2 && (f.h || 1) < 2) return false;
+        const lib = libraryEntry(f.className);
+        return !(lib && lib.z && lib.z[partKey]);
+    }
+
     /* One piece's depth when it is NOT broken into parts — the fallback path,
        which keeps the old far-corner sort. */
     const depthOfPart = (f) => tileDepth(f.x + f.w - 1, f.y + f.h - 1);
@@ -971,7 +986,8 @@
                 x: v.mirror ? baseX + box.w - p.ox - p.w : baseX + p.ox,
                 y: baseY + p.oy,
                 flip: v.mirror,
-                depth: depth + zshiftOf(f, p.k, v.facing)
+                depth: depth + zshiftOf(f, p.k, v.facing),
+                noZ: sliced(f, p.k)
             });
         }
         return out.length ? out : null;
@@ -1015,7 +1031,8 @@
             x: a.mirror ? baseX + a.box.w - p.ox - p.w : baseX + p.ox,
             y: baseY + p.oy,
             flip: a.mirror,
-            depth: depth + zshiftOf(f, p.k, v.facing)
+            depth: depth + zshiftOf(f, p.k, v.facing),
+            noZ: sliced(f, p.k)
         }));
     }
 

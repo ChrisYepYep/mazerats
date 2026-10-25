@@ -36,7 +36,8 @@ const MAX_LABEL_GROUPS = 4000;
 const LABELLED = [
     "page", "menu", "maze-open", "event-open", "furni-open", "guide-open",
     "boards-open", "console-open", "profile-open", "daily-open", "daily-finish",
-    "daily-share", "pura-play", "pura-finish", "pura-name", "pura-lights", "tab"
+    "daily-share", "pura-play", "pura-finish", "pura-name", "pura-lights", "tab",
+    "bat-end"
 ];
 
 // A flag per visit: did anything of this name happen in it?
@@ -46,7 +47,8 @@ const FLAGS = {
     puraSubmit: "pura-submit", puraContinue: "pura-continue", puraBoard: "pura-board",
     dailyOpen: "daily-open", dailyFinish: "daily-finish", dailyShare: "daily-share",
     mazeOpen: "maze-open", walked: "walked-toggle", saved: "saved-toggle", fav: "fav-toggle",
-    shared: "share-copy", searched: "search", menu: "menu"
+    shared: "share-copy", searched: "search", menu: "menu",
+    batStart: "bat-start", batEnd: "bat-end", batShare: "bat-share"
 };
 
 const sumOf = (field) => ({ $sum: "$" + field });
@@ -213,7 +215,9 @@ async function visitorStats(db, collection, since, keepDays) {
                 openThenPlay: s.puraOpenPlay || 0
             },
             daily: { opened: s.dailyOpen || 0, finished: s.dailyFinish || 0, shared: s.dailyShare || 0, openThenFinish: s.dailyOpenFinish || 0, finishThenShare: s.dailyFinishShare || 0 },
-            mazes: { opened: s.mazeOpen || 0, walked: s.mazeWalked || 0, saved: s.mazeSaved || 0, fav: s.mazeFav || 0, shared: s.shared || 0 }
+            mazes: { opened: s.mazeOpen || 0, walked: s.mazeWalked || 0, saved: s.mazeSaved || 0, fav: s.mazeFav || 0, shared: s.shared || 0 },
+            // The Halloween bat game: visits that hit a bat, ended a game, opened its card.
+            bats: { started: s.batStart || 0, ended: s.batEnd || 0, shared: s.batShare || 0 }
         }
     };
 }

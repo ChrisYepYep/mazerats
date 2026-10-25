@@ -53,8 +53,14 @@
 # guessed the name. Removed from the build's throwaway clone rather than
 # 404'd by a redirect, because `netlify dev` obeys redirects too and a
 # redirect would shut the bench on the machine it is being built on.
+#
+# The first step does the same for Ariadne's Thread's level editor (14 Oct
+# 2026): tools/ariadne-editor is a page and a small local server for this
+# machine only, and assets/ariadne-levels holds the level files it edits.
+# The game reads none of them: it loads js/rat-race-levels.js, which the
+# editor writes from them on every save.
 [build]
-  command = "npm install && node tools/check-daily-parity.js && node tools/check-changes.js && node tools/check-share-headers.js && node tools/themes.js && node tools/build-minify.js && rm -f dungeon.html js/dungeon.js"
+  command = "rm -rf tools/ariadne-editor assets/ariadne-levels && npm install && node tools/check-daily-parity.js && node tools/check-changes.js && node tools/check-share-headers.js && node tools/themes.js && node tools/build-minify.js && rm -f dungeon.html js/dungeon.js"
   publish = "."
 
 [functions]
@@ -326,19 +332,35 @@
   to = "/.netlify/functions/share"
   status = 200
 
-# Fallin' Furni. A page of its own rather than a window on the homepage, unlike
-# the daily games above: it wants the whole viewport for the room, and it
-# is not a once-a-day puzzle whose result gets pasted into a channel.
+# Fallin' Furni. A WINDOW ON THE HOMEPAGE since 25 Oct 2026 (the owner's),
+# as /purapanic is: /fallinfurni is the homepage with the game open
+# (js/home.js, js/ff-window.js), through the share function for the game's
+# own title, description and picture when the link is pasted. It stays the
+# canonical address the game's page names and the one in the sitemap.
 #
-# A rewrite for the same reason as /admin and /wizard — the address bar keeps
-# what was typed. It carried a robots noindex while the game was being built;
-# that came off once all fifty rooms were finished, and this address is now
-# the canonical one the page names and the one in the sitemap. Both URLs still
-# serve the document, which is exactly why only one of them is canonical.
+# The game's page itself is /fallinfurni/play — what the window frames
+# (?embed=1), and where a phone is sent, which plays it fullscreen with no
+# room for a window. The level editor stays at /fallinfurni?edit=1: matched
+# on its query first, so the builder's address is unchanged.
 [[redirects]]
   from = "/fallinfurni"
+  query = {edit = ":edit"}
   to = "/fallinfurni.html"
   status = 200
+
+[[redirects]]
+  from = "/fallinfurni/play"
+  to = "/fallinfurni.html"
+  status = 200
+
+# Forced: fallinfurni.html is a real file, and Netlify serves /fallinfurni
+# from it ahead of an unforced rewrite (the editor's rule above relies on
+# exactly that, which is why it is not forced).
+[[redirects]]
+  from = "/fallinfurni"
+  to = "/.netlify/functions/share"
+  status = 200
+  force = true
 
 # Pura Panic (6 Oct 2026), a window on the homepage that opens itself when it
 # sees /purapanic (js/home.js). Through the share function, as /odd is, for
@@ -348,6 +370,25 @@
   from = "/purapanic"
   to = "/.netlify/functions/share"
   status = 200
+
+# Scout's Trail (15 Oct 2026; Ariadne's Thread from 13 Oct, Rat Race before
+# that), the same: a window on the homepage that opens itself at /scout
+# (js/home.js), through the share function for its card.
+[[redirects]]
+  from = "/scout"
+  to = "/.netlify/functions/share"
+  status = 200
+
+# Its earlier addresses, kept working for anyone who had them: sent on, for good.
+[[redirects]]
+  from = "/ariadne"
+  to = "/scout"
+  status = 301
+
+[[redirects]]
+  from = "/ratrace"
+  to = "/scout"
+  status = 301
 
 # Its first address, kept working for anyone who had it: sent on, for good.
 [[redirects]]
@@ -635,7 +676,12 @@
 [[headers]]
   for = "/*"
   [headers.values]
-    X-Frame-Options = "DENY"
+    # SAMEORIGIN, and frame-ancestors 'self' in the policy below, since 25 Oct
+    # 2026: Fallin' Furni's window on the homepage frames the game's own page
+    # (js/ff-window.js). Still no other site may frame any page here. Set for
+    # the whole site because a narrower rule cannot safely be laid over this
+    # one (see ONE RULE PER FOLDER below); share.js carries the same pair.
+    X-Frame-Options = "SAMEORIGIN"
     X-Content-Type-Options = "nosniff"
     Referrer-Policy = "strict-origin-when-cross-origin"
     # Nothing here uses a camera, a microphone or a location, so nothing
@@ -718,7 +764,7 @@
     # for the views that wouldn't match pixel for pixel), and the rest — furni
     # it doesn't hold, door0, poster_1000… — is this site's own copy under
     # assets/img/furni-legacy/ (netlify/functions/_furni-mirror.js), so 'self'.
-    Content-Security-Policy = "default-src 'self'; script-src 'self' 'unsafe-inline' https://cloud.umami.is; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob: https://www.habbo.com https://images.habbo.com https://origins.habbo.com https://api.furniindex.com https://cdn.discordapp.com; connect-src 'self' https://cloud.umami.is https://gateway.umami.is; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'"
+    Content-Security-Policy = "default-src 'self'; script-src 'self' 'unsafe-inline' https://cloud.umami.is; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob: https://www.habbo.com https://images.habbo.com https://origins.habbo.com https://api.furniindex.com https://cdn.discordapp.com; connect-src 'self' https://cloud.umami.is https://gateway.umami.is; frame-ancestors 'self'; base-uri 'self'; form-action 'self'; object-src 'none'"
 
 # How long a returning visitor's browser may keep the pixel art, the fonts
 # and the sprite sheets without asking again. The HTML and the data

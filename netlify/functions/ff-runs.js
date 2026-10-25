@@ -96,10 +96,10 @@ const KEEP_DAYS = 180;
 
    So the ceiling is what the game can actually do: every published level,
    plus a retry for each life a run can have (three to start, one back per
-   five cleared), plus the round walked out of. A few more on top for a
+   ten cleared), plus the round walked out of. A few more on top for a
    level published while somebody was mid-run. */
 const STARTING_LIVES = 3;
-const LIFE_EVERY = 5;
+const LIFE_EVERY = 10;              // js/room-game.js; was 5 until 25 Oct
 const LEVEL_SLACK = 5;
 const maxLevelsFor = (published) =>
     published + STARTING_LIVES + Math.floor(published / LIFE_EVERY) + 1 + LEVEL_SLACK;
@@ -237,14 +237,18 @@ async function ensureIndexes(db) {
    after a delete, which is far longer than any run. */
 async function knownLevels(db) {
     const [rows, kept] = await Promise.all([
-        db.collection(LEVELS).find({}, { projection: { _id: 0, id: 1, published: 1 } }).toArray(),
+        db.collection(LEVELS).find({}, { projection: { _id: 0, id: 1, published: 1, powerups: 1 } }).toArray(),
         db.collection("ff_level_versions").distinct("id").catch(() => [])
     ]);
     const ids = new Set(rows.map(r => String(r.id)));
     kept.forEach(id => ids.add(String(id)));
     return {
         ids,
-        published: rows.filter(r => r.published === true).length
+        published: rows.filter(r => r.published === true).length,
+        /* Published levels with a love potion: each is a life a run can win,
+           and so a retry it can play (25 Oct 2026). */
+        potions: rows.filter(r => r.published === true && Array.isArray(r.powerups) &&
+            r.powerups.some(p => p && p.kind === "potion")).length
     };
 }
 
@@ -407,7 +411,7 @@ async function record(db, event) {
        since deleted, and either way the admin panel would give it a row of
        its own. */
     const levels = Array.isArray(body.levels)
-        ? body.levels.slice(0, maxLevelsFor(known.published)).map(cleanLevel)
+        ? body.levels.slice(0, maxLevelsFor(known.published) + (known.potions || 0)).map(cleanLevel)
             .filter(l => l && l.id && known.ids.has(l.id))
         : [];
 

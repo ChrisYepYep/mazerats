@@ -495,8 +495,18 @@
         }
     }
 
+    /* How far the preload has got, as a fraction, for the game's loading bar
+       (js/fallinfurni.js, Boot). An image that failed counts as arrived: it
+       is not coming, and the bar must not wait for it. */
+    function progress() {
+        if (!images.size) return 0;
+        let done = 0;
+        for (const img of images.values()) if (img.complete) done++;
+        return done / images.size;
+    }
+
     window.RoomLobby = {
-        draw, reset, preload, VIEWS, HOLD_MS, FADE_MS,
+        draw, reset, preload, progress, VIEWS, HOLD_MS, FADE_MS,
         setFurni, DEFAULT_FURNI, IMAGE_ONLY, MAX_FURNI: 10,
         get furni() { return chosen.slice(); },
         /* Read-only, and there so that "nothing overlaps" can be CHECKED

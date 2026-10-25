@@ -159,6 +159,10 @@ document.addEventListener("DOMContentLoaded", () => {
     const puraCardEl = document.getElementById("pura-state-card");
     const puraBtns = document.querySelectorAll(".pura-state-btn");
     const puraStatus = document.getElementById("pura-state-status");
+    // Rat Race's, the same (11 Oct 2026).
+    const ratCardEl = document.getElementById("rat-state-card");
+    const ratBtns = document.querySelectorAll(".rat-state-btn");
+    const ratStatus = document.getElementById("rat-state-status");
     // Fallin' Furni's own live/maintenance switch, in the game's rail group.
     const ffToggleEl = document.getElementById("ff-state-toggle");
     const ffToggleBtns = document.querySelectorAll(".ff-state-btn");
@@ -687,6 +691,7 @@ document.addEventListener("DOMContentLoaded", () => {
         if (ffLaunchAtEl) ffLaunchAtEl.style.display = "none";
         if (ffToggleEl) ffToggleEl.style.display = "none";
         if (puraCardEl) puraCardEl.style.display = "none";
+        if (ratCardEl) ratCardEl.style.display = "none";
         if (themeToggleEl) themeToggleEl.style.display = "none";
         /* Passwords out of every field, and the run log out of its tables
            (ffClear) — the next person to sign in on this tab may not be
@@ -990,6 +995,7 @@ document.addEventListener("DOMContentLoaded", () => {
         if (ffLaunchAtEl) ffLaunchAtEl.style.display = "none";
         if (ffToggleEl) ffToggleEl.style.display = "none";
         if (puraCardEl) puraCardEl.style.display = "none";
+        if (ratCardEl) ratCardEl.style.display = "none";
         if (themeToggleEl) themeToggleEl.style.display = "none";
         // The role's classes too — see lockOut for what they did to the
         // sign-in box of a view-only account.
@@ -1174,7 +1180,10 @@ document.addEventListener("DOMContentLoaded", () => {
         "pura-submit": "Submit Score (leave prompt)",
         "pura-board": "Pura Panic leaderboard",
         "pura-name": "Chose a Pura Panic name",
-        "pura-lights": "Pura Panic lights"
+        "pura-lights": "Pura Panic lights",
+        "bat-start": "Found the bat game",
+        "bat-end": "Ended a bat game",
+        "bat-share": "Copied or saved the bat game's card"
     };
     const PAGE_NAMES = {
         home: "The archive", welcome: "Landing page", wizard: "Atlas", legal: "Privacy & terms",
@@ -1186,7 +1195,9 @@ document.addEventListener("DOMContentLoaded", () => {
         "pura-lights": { "off": "Turned the lights off", "on": "Turned them back on" },
         "profile-open": { "self": "Their own", "other": "Somebody else's" },
         "daily-open": { odd: "Odd One Out", guess: "Guess the Maze" },
-        "boards-open": { all: "All dailies", guess: "Guess the Maze", odd: "Odd One Out", ff: "Fallin' Furni", pura: "Pura Panic" }
+        "boards-open": { all: "All dailies", guess: "Guess the Maze", odd: "Odd One Out", ff: "Fallin' Furni", pura: "Pura Panic" },
+        // The bat game's score, as the band js/skin-halloween.js sends (never the score itself).
+        "bat-end": { "0-99": "Under 100", "100-499": "100–499", "500-999": "500–999", "1000-2499": "1,000–2,499", "2500+": "2,500 or more" }
     };
     const ACT_DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
     const actNum = n => Number(n || 0).toLocaleString("en-GB");
@@ -1348,6 +1359,8 @@ document.addEventListener("DOMContentLoaded", () => {
 
         /* ---- Games */
         const pura = f.pura;
+        // An answer from before the bat game existed has no bats.
+        const bats = f.bats || { started: 0, ended: 0, shared: 0 };
         const levels = ((v.labels && v.labels["pura-finish"]) || []).reduce((acc, r) => {
             const l = Number(r.label) || 1;
             const band = l <= 1 ? "Level 1" : l <= 3 ? "Levels 2–3" : l <= 5 ? "Levels 4–5" : l <= 10 ? "Levels 6–10" : l <= 20 ? "Levels 11–20" : "Level 21+";
@@ -1393,6 +1406,19 @@ document.addEventListener("DOMContentLoaded", () => {
                 ], "No daily games opened in this range."), true) +
                 actCard("Game by game", '<div class="ff-table-wrap"><table class="ff-table act-table"><thead><tr><th scope="col">Game</th><th scope="col" class="ff-num">Opened</th><th scope="col" class="ff-num">Finished</th><th scope="col" class="ff-num">Finish rate</th><th scope="col" class="ff-num">Shared</th></tr></thead><tbody>' +
                     dailyGames + '</tbody></table></div><p class="admin-hint act-note">Visits. More on each player in the Daily page.</p>', true) +
+            '</div>' +
+
+            /* The Halloween skin's secret bat game (25 Oct 2026): visits that hit a
+               bat, ended a game (End game, or leaving the page mid-game) and
+               opened its card; and how the games scored, by band. */
+            '<h3 class="admin-subheading admin-subheading-spaced">Bat game (Halloween)</h3>' +
+            '<div class="act-grid">' +
+                actCard("Hit a bat, ended, shared", actFunnel([
+                    { label: "Hit their first bat", n: bats.started },
+                    { label: "Ended a game", n: Math.min(bats.ended, bats.started) },
+                    { label: "Copied or saved the card", n: Math.min(bats.shared, bats.started) }
+                ], "Nobody found the bat game in this range.") + '<p class="admin-hint act-note">Visits. The game only shows while the Halloween skin is on.</p>', true) +
+                actCard("Scores", actBars(actLabels(v, "bat-end", LABEL_NAMES["bat-end"]), "No bat games ended yet.") + '<p class="admin-hint act-note">Every game that ended, by its final score.</p>') +
             '</div>' +
 
             '<h3 class="admin-subheading admin-subheading-spaced">Mazes</h3>' +
@@ -2287,6 +2313,7 @@ document.addEventListener("DOMContentLoaded", () => {
         if (ffLaunchAtEl) ffLaunchAtEl.style.display = "flex";
         if (ffToggleEl) ffToggleEl.style.display = "block";
         if (puraCardEl) puraCardEl.style.display = "flex";
+        if (ratCardEl) ratCardEl.style.display = "flex";
         if (themeToggleEl) themeToggleEl.style.display = "flex";
         /* The glyph palette used to be shown here, when it was a docked
            column of its own. It is a tab panel now: the strip is what login
@@ -2353,7 +2380,8 @@ document.addEventListener("DOMContentLoaded", () => {
         startWizardPanel();
         loadActivity();
         loadAdmins();
-        loadLandingState();
+        // Signed in onto Controls, applyRoleVisibility has just set this off (rereadSwitches): once is enough.
+        if (Date.now() - settingsTriedAt >= SWITCH_REREAD_MS) loadLandingState();
         loadContributors();
         loadContactMessages();
         loadBans();
@@ -3732,13 +3760,16 @@ document.addEventListener("DOMContentLoaded", () => {
                less whatever stays pinned at its top (30 Sept 2026). */
             const ownScroll = /auto|scroll/.test(getComputedStyle(stage).overflowY);
             const scroller = ownScroll ? stage : window;
-            let pinned = 0;
+            /* What stays pinned: the workshop's top bar and the strip of sections
+               under it, and its status line at the foot (css/warren.css, 25 Oct
+               2026; the site header this used to measure is gone from the page). */
+            const stuck = (sel) => [...document.querySelectorAll(sel)].filter((el) => /sticky|fixed/.test(getComputedStyle(el).position)).map((el) => el.getBoundingClientRect());
+            let pinned = 0, foot = window.innerHeight;
             if (!ownScroll) {
-                const head = document.querySelector(".site-header");
-                const pos = head ? getComputedStyle(head).position : "";
-                if (pos === "sticky" || pos === "fixed") pinned = Math.max(0, head.getBoundingClientRect().bottom);
+                for (const r of stuck(".site-header, .wr-top, #admin-nav")) pinned = Math.max(pinned, r.bottom);
+                for (const r of stuck(".wr-status")) foot = Math.min(foot, r.top);
             }
-            const view = ownScroll ? stage.getBoundingClientRect() : { top: pinned, bottom: window.innerHeight };
+            const view = ownScroll ? stage.getBoundingClientRect() : { top: pinned, bottom: foot };
             const bar = document.querySelector(".admin-floating-actions.open");
             const floor = Math.min(view.bottom, bar ? bar.getBoundingClientRect().top : Infinity) - 12;
             const ceiling = view.top + 12;
@@ -7770,23 +7801,21 @@ document.addEventListener("DOMContentLoaded", () => {
     // direction. Idempotent (clears any pill it previously added first) so
     // it can just be re-called on every state check/change instead of
     // needing to track whether it's already showing.
+    /* In the workshop (25 Oct 2026) the pill sits beside "Live site" in the
+       top bar, and the brand itself is the link home. */
     function renderDevModeLink(landingState) {
-        const brandGroup = document.querySelector(".brand-group");
-        if (!brandGroup) return;
-        brandGroup.querySelectorAll(".header-state-pill").forEach(el => el.remove());
+        const live = document.querySelector("#wr-app .wr-live");
+        if (!live) return;
+        document.querySelectorAll("#wr-app .wr-devmode").forEach(el => el.remove());
         if (landingState === "enter") return;
 
         const pill = document.createElement("span");
-        pill.className = "header-badge header-state-pill";
+        pill.className = "wr-live wr-devmode";
         pill.textContent = "Dev Mode";
-
-        const homeLink = document.createElement("a");
-        homeLink.className = "header-badge header-state-pill header-state-link";
-        homeLink.href = "/home";
-        homeLink.textContent = "Home";
-
-        brandGroup.appendChild(pill);
-        brandGroup.appendChild(homeLink);
+        pill.title = landingState === "maintenance"
+            ? "The site is in Maintenance: visitors see the maintenance page, and signed-in admins see everything."
+            : "The site is Coming Soon: visitors see the countdown, and signed-in admins see everything.";
+        live.after(pill);
     }
 
     /* ---------- the launch countdown's date ----------
@@ -8046,7 +8075,9 @@ document.addEventListener("DOMContentLoaded", () => {
         landingMismatchEl.style.display = warning ? "block" : "none";
     }
     if (landingMismatchEl) {
-        const landingWarningTab = landingMismatchEl.closest(".admin-tab");
+        // The Controls section that holds it (25 Oct 2026: a section of its
+        // own in the redesign, where it was a drop-down tab).
+        const landingWarningTab = landingMismatchEl.closest(".admin-tab, .admin-panel");
         if (landingWarningTab) {
             ["mouseenter", "focusin", "click"].forEach(type =>
                 landingWarningTab.addEventListener(type, sayLandingMismatch));
@@ -8066,7 +8097,7 @@ document.addEventListener("DOMContentLoaded", () => {
        the top), and once a minute while it is on screen. A hidden panel is
        skipped; showing it recomputes anyway. */
     if (ffMismatchEl) {
-        const ffWarningTab = ffMismatchEl.closest(".admin-tab");
+        const ffWarningTab = ffMismatchEl.closest(".admin-tab, .admin-panel");
         if (ffWarningTab) {
             ["mouseenter", "focusin", "click"].forEach(type =>
                 ffWarningTab.addEventListener(type, sayFfMismatch));
@@ -8135,7 +8166,7 @@ document.addEventListener("DOMContentLoaded", () => {
         settingsTriedAt = Date.now();
         try {
             // One read, every switch: they all live in the same settings document.
-            const { landingState, fallinFurniState, puraPanicState, maintenanceNote, theme, palette: livePalette, launchAt, ffLaunchAt, fromCache } = await freshSiteSettings();
+            const { landingState, fallinFurniState, puraPanicState, ratRaceState, maintenanceNote, theme, palette: livePalette, launchAt, ffLaunchAt, fromCache } = await freshSiteSettings();
             /* The stand-in getSiteSettings answers with during an outage
                (fromCache, see js/api.js) has a GUESSED landing state and no
                Fallin' Furni state or palette at all. Lighting buttons from it
@@ -8171,6 +8202,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 ffToggleBtns.forEach(btn => btn.classList.toggle("active", btn.dataset.ffState === ff));
                 currentFfState = ff;
                 lightPura(puraPanicState);
+                lightRat(ratRaceState);
                 lightMaintenanceNote(maintenanceNote);
             }
             sayLandingMismatch();
@@ -8229,6 +8261,7 @@ document.addEventListener("DOMContentLoaded", () => {
             ffToggleBtns.forEach(btn => btn.classList.toggle("active", btn.dataset.ffState === ff));
             currentFfState = ff;
             lightPura(s.puraPanicState);
+            lightRat(s.ratRaceState);
             if (launchFieldsLoaded) currentFfLaunchAt = s.ffLaunchAt || "";
             sayFfMismatch();
             lightMaintenanceNote(s.maintenanceNote);
@@ -8236,30 +8269,34 @@ document.addEventListener("DOMContentLoaded", () => {
     }
     const answerless = err => !err || !err.status || err.status >= 500;
 
-    // The Control tab: re-read on opening, at most every 30 seconds, and not
-    // while a switch is mid-save (its buttons are disabled then).
+    // The Controls: re-read on opening, at most every 30 seconds, and not
+    // while a switch is mid-save (its buttons are disabled then). A section
+    // of its own since the redesign (25 Oct 2026), where it was a drop-down
+    // tab; showPanel calls this when it is shown, and pointing at or into it
+    // still asks again, as hovering the tab did.
     const SWITCH_REREAD_MS = 30000;
-    const controlTabEl = document.querySelector('.admin-tab[data-menu="control"]');
+    const controlTabEl = document.querySelector('.admin-panel[data-panel="control"], .admin-tab[data-menu="control"]');
+    function rereadSwitches() {
+        if (!adminToken) return;
+        /* A sign-in whose settings read failed (1 Oct 2026, final scan):
+           a cold function or the outage stand-in left the switches
+           unlit, the launch fields unsavable and switchesReadAt at 0,
+           which this check used to read as "never re-read" — so the one
+           panel most in need of a fresh look never got one, short of a
+           reload, on launch morning of all times. The whole first read
+           is tried again instead, at most every 30 seconds. */
+        if (!launchFieldsLoaded) {
+            if (Date.now() - settingsTriedAt < SWITCH_REREAD_MS) return;
+            loadLandingState();
+            return;
+        }
+        if (!switchesReadAt || Date.now() - switchesReadAt < SWITCH_REREAD_MS) return;
+        if (Array.from(landingToggleBtns).concat(Array.from(ffToggleBtns), Array.from(maintenanceNoteBtns)).some(b => b.disabled)) return;
+        switchesReadAt = Date.now();   // one read per opening, not one per event
+        relightSwitches();
+    }
     if (controlTabEl) {
-        ["mouseenter", "focusin", "click"].forEach(type => controlTabEl.addEventListener(type, () => {
-            if (!adminToken) return;
-            /* A sign-in whose settings read failed (1 Oct 2026, final scan):
-               a cold function or the outage stand-in left the switches
-               unlit, the launch fields unsavable and switchesReadAt at 0,
-               which this check used to read as "never re-read" — so the one
-               panel most in need of a fresh look never got one, short of a
-               reload, on launch morning of all times. The whole first read
-               is tried again instead, at most every 30 seconds. */
-            if (!launchFieldsLoaded) {
-                if (Date.now() - settingsTriedAt < SWITCH_REREAD_MS) return;
-                loadLandingState();
-                return;
-            }
-            if (!switchesReadAt || Date.now() - switchesReadAt < SWITCH_REREAD_MS) return;
-            if (Array.from(landingToggleBtns).concat(Array.from(ffToggleBtns), Array.from(maintenanceNoteBtns)).some(b => b.disabled)) return;
-            switchesReadAt = Date.now();   // one read per opening, not one per event
-            relightSwitches();
-        }));
+        ["mouseenter", "focusin", "click"].forEach(type => controlTabEl.addEventListener(type, rereadSwitches));
     }
 
     // Returns whether the update actually went through, so callers that
@@ -8653,6 +8690,37 @@ document.addEventListener("DOMContentLoaded", () => {
                 if (answerless(err)) relightSwitches();
             } finally {
                 puraBtns.forEach(b => b.disabled = false);
+            }
+        });
+    });
+
+    /* ---- Rat Race: maintenance or live (11 Oct 2026), as Pura Panic's
+       switch above: maintenance by default, and going live asks once. */
+    function lightRat(state) {
+        const s = state === "live" || state === "hidden" ? state : "maintenance";
+        ratBtns.forEach(b => b.classList.toggle("active", b.dataset.ratState === s));
+    }
+
+    ratBtns.forEach(btn => {
+        btn.addEventListener("click", async () => {
+            const state = btn.dataset.ratState;
+            if (btn.classList.contains("active")) return;
+            if (state === "live" && !(await showConfirmDialog("Open Scout's Trail to everyone?"))) return;
+            ratBtns.forEach(b => b.disabled = true);
+            if (ratStatus) ratStatus.style.display = "none";
+            switchSaves++;
+            try {
+                await Api.updateSiteSettings(adminToken, { ratRaceState: state });
+                lightRat(state);
+            } catch (err) {
+                if (err.status === 401) { lockOut(); return; }
+                if (ratStatus) {
+                    ratStatus.textContent = err.message || "Couldn't update Scout's Trail.";
+                    ratStatus.style.display = "block";
+                }
+                if (answerless(err)) relightSwitches();
+            } finally {
+                ratBtns.forEach(b => b.disabled = false);
             }
         });
     });
@@ -9140,6 +9208,14 @@ document.addEventListener("DOMContentLoaded", () => {
            correct once it is actually on screen. Every other panel here is
            a list and does not care. */
         if (name === "wizard" && typeof AdminWizard !== "undefined") AdminWizard.onShown();
+        /* The Controls, shown: what opening the old Control tab did — the
+           switches re-read (rate-limited inside) and both launch-date
+           warnings worked out again against the clock. */
+        if (name === "control") {
+            rereadSwitches();
+            if (landingMismatchEl) sayLandingMismatch();
+            if (ffMismatchEl) sayFfMismatch();
+        }
         /* The run log is the heaviest read on this page and most visits to
            the admin never open it, so it is fetched when the panel is first
            shown rather than on sign-in. Refresh re-reads it after that. */

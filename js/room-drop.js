@@ -58,6 +58,51 @@
        schedule. Well past a slow screen's frame (66ms at 15fps) and well
        under any level's delay between drops. See the tick. */
     const DROP_CATCHUP_MS = 250;
+    // A seat with nowhere safe to land waits this long for the room to
+    // change, this many times, before it is let go. See SEATS WAIT in tick.
+    const SEAT_WAIT_MS = 600;
+    const SEAT_TRIES = 4;
+    // The coffee's furni: the Origins Mochamaster (see POWER-UPS in tick).
+    const COFFEE_CLASS = "mocchamaster";
+
+    /* THE TILE IN FRONT OF A POWER-UP, where the player stands to use it
+       (the owner's: "always aim to bring the avatar to the tile in front of
+       the mocha master"). A power-up faces front-right (2) or front-left (4),
+       as the builder set it; in front is one step that way. */
+    function powerupFront(p) {
+        const facing = Number(p && p.facing) === 4 ? 4 : 2;
+        const d = Path.DIRS[facing];
+        return { x: p.x + d.dx, y: p.y + d.dy, facing };
+    }
+    // The first version's name for it, from before there was more than one.
+    const coffeeFront = powerupFront;
+
+    /* A level's power-ups — normalised (RoomLevels does that), or straight
+       from a file the simulator was handed, which may still carry the first
+       version's single `coffee`. */
+    function powerupsOf(level) {
+        if (Array.isArray(level.powerups)) return level.powerups;
+        if (level.coffee) return [{ kind: "coffee", cls: COFFEE_CLASS, x: level.coffee.x, y: level.coffee.y, after: level.coffee.after || 0, facing: 2 }];
+        return [];
+    }
+
+    /* The rotation that turns a class to face `facing` — the client's own
+       art decides which rotation index that is (the Rainbow Pod's front-right
+       is its second, a machine's its first). */
+    function rotationFacing(cls, facing) {
+        const n = Furni.rotationsOf(cls) || 1;
+        for (let r = 0; r < n; r++) {
+            const v = Furni.variantAt(cls, 0, r);
+            if (v && v.facing === facing) return r;
+        }
+        return 0;
+    }
+    // How far the player can get while a piece falls (LAST CHANCE in spotsFor),
+    // and the nook a piece may seal off beside them. Both measured with
+    // tools/ff-sim.js on 25 Oct: 2 steps, 2 tiles left no level above 2% short
+    // and none stranded; 3 and 4 steps were worse.
+    const NEAR_STEPS = 2;
+    const NOOK_TILES = 2;
 
     function inArea(area, x, y) {
         return x >= area.x && x < area.x + area.w && y >= area.y && y < area.y + area.h;
@@ -227,6 +272,32 @@
         return out;
     }
 
+    /* The floor within `steps` steps of the player, by walking, the ways off
+       a seat included. See LAST CHANCE in spotsFor. */
+    function nearRoom(start, blocked, steps) {
+        const here = key(start.x, start.y);
+        const out = blocked.has(here) ? [] : [{ x: start.x, y: start.y }];
+        const seen = new Set([here]);
+        let ring = [{ x: start.x, y: start.y }];
+        for (let s = 0; s < steps && ring.length; s++) {
+            const next = [];
+            for (const cur of ring) {
+                for (const d of Path.DIRS) {
+                    const nx = cur.x + d.dx, ny = cur.y + d.dy;
+                    if (!Path.inside(nx, ny)) continue;
+                    const nk = key(nx, ny);
+                    if (seen.has(nk) || blocked.has(nk)) continue;
+                    if (sealedCorner(blocked, cur.x, cur.y, d.dx, d.dy)) continue;
+                    seen.add(nk);
+                    out.push({ x: nx, y: ny });
+                    next.push({ x: nx, y: ny });
+                }
+            }
+            ring = next;
+        }
+        return out;
+    }
+
     /* Can the player reach this seat AND GET OFF IT AGAIN?
 
        Getting off is the half that is easy to forget, and forgetting it leaves
@@ -303,7 +374,7 @@
        the area is far enough, the distance requirement is dropped rather than
        the piece. A round short of a seat is a broken round; a round with one
        seat closer than intended is merely an easier one. */
-    function spotsFor(list, entry, meta, avoid, minDistance, sat) {
+    function spotsFor(list, entry, meta, avoid, minDistance, sat, lastChance, reserved, closed) {
         const spots = [];
         const near = [];
         const taken = sat instanceof Set ? sat : new Set(sat || []);
@@ -334,6 +405,9 @@
            is built here instead and the candidate's own tiles are added and
            taken away around each test. */
         const blocked = Furni.blockedTiles(list);
+        // Floor the round has closed off (see CLOSES BEHIND THEM) is not
+        // floor to anybody: nobody can stand there or get off a seat onto it.
+        if (closed) for (const k of closed) blocked.add(k);
 
         /* ONLY THE SEATS THE ROUND ACTUALLY REQUIRES.
 
@@ -382,12 +456,111 @@
            written for — a chair the level itself bricked in — and it does not
            move about with the player. */
         const owed = avoid ? seats.filter(f => canUse(f, null, blocked)) : seats;
-        const room = avoid ? standingRoom(avoid, blocked) : null;
+        let room = avoid ? standingRoom(avoid, blocked) : null;
+
+        /* A PLAYER SITTING ON A CHAIR THAT SPLITS THE ROOM GETS ONE SIDE.
+
+           Everything below asks that every part of the floor the player might
+           be in can finish the round. Sitting on a chair that is the only
+           join between two halves of the room, they "might be" in either, so
+           a new seat had to be reachable from both — and a seat cannot be,
+           since the chair is the only way across. Every spot failed, the seat
+           went back in the queue, and after four tries the round dropped it.
+           That was the whole of "levels end before all the seats have fallen"
+           (25 Oct): Gothic Hall came up short in two rounds in five.
+
+           But a sitting player is not walking anywhere yet. They get up for
+           the next seat they owe, so the side that matters is the side their
+           owed seats are on; with none owed, they are waiting for this one,
+           and it can go on whichever side has more room. So the room is
+           narrowed to that side, and the side they are not going to is not
+           asked about. If no side can reach everything owed, nothing is
+           narrowed and the old rule refuses, as it should.
+
+           AND THE OTHER SIDE CLOSES BEHIND THEM. A sitting player is not
+           walking anywhere YET — but they can stand up either way, and a
+           person does: heading for a power-up, or for where they guess the
+           next seat will land. The side not asked about was never checked,
+           so a piece could land there and they would step off the chair
+           into a pocket with every seat they owed on the far side of it.
+           The owner hit exactly that on level 10 (25 Oct); the simulated
+           player, which only ever walks to its next seat, never did, and a
+           wandering one (tools/ff-sim.js --wander) did one round in a
+           hundred. So when a piece lands on that bargain, the sides not
+           chosen are CLOSED for the rest of the round (`closes`, kept by the
+           round as `offLimits`): they block walking, and spotsFor treats
+           them as wall. It costs the player nothing they had — those sides
+           join the rest of the room only through the chair they are on, so
+           once they are off it on the right side they could never reach
+           them again without sitting back on it. */
+        let side = null;
+        let closes = null;
+        if (avoid && blocked.has(key(avoid.x, avoid.y))) {
+            const parts = regionsFrom(avoid, blocked);
+            if (parts.length > 1) {
+                const fine = parts.filter(r => owed.every(f => canUse(f, r, blocked)));
+                if (fine.length) {
+                    side = fine.reduce((a, b) => (b.size > a.size ? b : a));
+                    const here = key(avoid.x, avoid.y);
+                    room = room.filter(t => side.has(key(t.x, t.y)) && key(t.x, t.y) !== here);
+                    closes = new Set();
+                    for (const r of parts) {
+                        if (r === side) continue;
+                        for (const k of r) if (k !== here && !side.has(k)) closes.add(k);
+                    }
+                }
+            }
+        }
+
+        /* LAST CHANCE: THE FLOOR THEY CAN BE ON, NOT EVERY NOOK IN THE ROOM.
+
+           The test below asks that every part of the floor can still finish
+           the round, and by the last seats of a full room that is a test no
+           spot passes: wherever a sofa goes, it pinches off a tile or two in
+           some corner, and the player is "possibly" in that corner because it
+           is floor. Mint Lounge, Pura Bedsit, Plasto Citrus and Silo
+           Apartment lost a late seat this way in one round in twelve — the
+           player sitting still, owing nothing, the zone half empty (25 Oct).
+
+           So on a seat's LAST try, before it would come off the plan, only
+           the floor within NEAR_STEPS of the player is asked about — where
+           they can actually be by the time it lands. A nook further off is
+           sealed and stays sealed: the flood from the player never reaches
+           it again, so nothing later is asked to land where only it could
+           reach. As the main rule this was measured worse (see
+           standingRoom); as the fallback for a seat that would otherwise not
+           fall at all, it is only ever used when the strict rule has nothing
+           left to give. */
+        /* NOT CUTTING THE PLAYER OFF FROM THE ROOM, even with nothing owed.
+
+           With no seat owed, the test below has nothing to check, and a piece
+           could land anywhere at all — including across the floor, leaving
+           the player in a pocket of a few tiles with the rest of the room
+           (and the next seat's zone) on the other side. The next seat then
+           has nowhere it can land that they can reach, and comes off the plan.
+           So whatever part of the floor the player can be in once this piece
+           is down has to keep all of what they had, bar the piece itself and
+           a nook of NOOK_TILES at most. Waived on a seat's last chance. */
+        const floorSize = room ? room.length : 0;
+        const nearKeys = avoid ? new Set(nearRoom(avoid, blocked, NEAR_STEPS).map(t => key(t.x, t.y))) : null;
+
+        if (avoid && lastChance) {
+            const near = nearKeys;
+            room = room.filter(t => near.has(key(t.x, t.y)));
+        }
 
         for (let y = entry.area.y; y <= entry.area.y + entry.area.h - h; y++) {
             for (let x = entry.area.x; x <= entry.area.x + entry.area.w - w; x++) {
                 const probe = { x, y, w, h };
                 if (!inArea(entry.area, x + w - 1, y + h - 1)) continue;
+                // Not on a tile the round is keeping clear (the coffee's).
+                if (reserved) {
+                    let hit = false;
+                    for (let ry = y; ry < y + h && !hit; ry++) {
+                        for (let rx = x; rx < x + w && !hit; rx++) hit = reserved.has(key(rx, ry));
+                    }
+                    if (hit) continue;
+                }
                 if (!Furni.fits(list, probe)) continue;
                 // Not on top of the player.
                 if (avoid && Furni.covers(probe, avoid.x, avoid.y)) continue;
@@ -459,11 +632,15 @@
                         if (blocked.has(tk) || seenHere.has(tk)) continue;
                         const r = reachableFrom(t, blocked);
                         for (const rk of r) seenHere.add(rk);
+                        if (!lastChance && nearKeys.has(tk) && r.size < floorSize - added.length - NOOK_TILES) { ok = false; break; }
                         if (!check.every(f => canUse(f, r, blocked))) { ok = false; break; }
                     }
                     if (ok) {
-                        ok = regionsFrom(avoid, blocked)
-                            .every(r => check.every(f => canUse(f, r, blocked)));
+                        // Only the ways off the chair onto their side.
+                        const here = key(avoid.x, avoid.y);
+                        const ways = regionsFrom(avoid, blocked).filter(r =>
+                            !side || [...r].some(rk => rk !== here && side.has(rk)));
+                        ok = ways.length > 0 && ways.every(r => check.every(f => canUse(f, r, blocked)));
                     }
                 } else {
                     // No player to measure from — the old local test is all
@@ -479,8 +656,11 @@
                 else spots.push({ x, y });
             }
         }
-        // Far enough if anything is; otherwise whatever there is.
-        return spots.length ? spots : near;
+        // Far enough if anything is; otherwise whatever there is. Either way
+        // it carries the floor its spots close off, if any (see CLOSES).
+        const out = spots.length ? spots : near;
+        if (closes && closes.size) out.closes = closes;
+        return out;
     }
 
     /* A round in progress. `level` is already normalised; `metaFor` resolves a
@@ -496,7 +676,12 @@
            and only the page holds that. One rotation means it cannot turn. */
         const rotationsOf = o.rotationsOf || ((c) => Furni.rotationsOf(c) || 1);
 
-        const queue = window.RoomLevels.schedule(level, rng);
+        /* An obstacle is anything that cannot be sat on as well as anything
+           labelled one: a seat-role piece whose furni has no seat lands and
+           blocks exactly as an obstacle does, so it counts as one for the
+           one-at-a-time rule in RoomLevels.schedule. */
+        const isObstacle = (e) => e.role === "obstacle" || !(metaFor(e.className) || {}).sit;
+        const queue = window.RoomLevels.schedule(level, rng, isObstacle);
         const decor = (level.decor || []).map(d => Furni.make(d.className, d.x, d.y, {
             meta: metaFor(d.className), rotation: d.rotation, state: d.state,
             lift: Number(d.z) || 0, role: "decor",
@@ -523,8 +708,28 @@
             plannedSeats: queue.filter(e =>
                 e.role === "sequence" && (metaFor(e.className) || {}).sit).length,
             falling: [],                // in the air right now
+            // The last piece to fall was an obstacle — or nothing has fallen
+            // yet, which an obstacle must not open either. See `tick`.
+            afterObstacle: true,
             placed: decor.slice(),      // everything on the floor, decor included
             landed: [],                 // dropped pieces, in landing order
+            /* The level's power-ups (js/room-levels.js POWERUPS), each to
+               drop on its tile once `after` seats are down; `furni` once it
+               has fallen. See POWER-UPS in tick. */
+            powerups: powerupsOf(level).map(p => Object.assign({}, p, { furni: null, tryAt: 0 })),
+            /* KEPT CLEAR ALL ROUND: each power-up's own tile, so it can land
+               when its moment comes, and the tile in front of it, so a chair
+               never falls where the player stands to use it. Nothing in the
+               queue lands on either (spotsFor's `reserved`). */
+            reserved: powerupsOf(level).length ? new Set(powerupsOf(level).flatMap(p => {
+                const f = powerupFront(p);
+                return [key(p.x, p.y), key(f.x, f.y)];
+            })) : null,
+            /* FLOOR CLOSED for the rest of the round: the far sides of a chair
+               the player was sitting on when a piece was placed on the
+               promise they would get up the other way. See CLOSES in
+               spotsFor; RoomGame.blocked adds these to what blocks walking. */
+            offLimits: new Set(),
             /* null, not 0, because a round can legitimately begin at timestamp
                zero — and `!this.started` is then true forever, re-stamping the
                start and the next drop on EVERY tick, so the clock never
@@ -577,6 +782,42 @@
                     }
                 }
 
+                /* POWER-UPS (25 Oct 2026): the coffee's Mochamaster, brain
+                   freeze's ice cream machine, the love potion's Rainbow Pod.
+                   Each falls on the tile the builder set, facing the way they
+                   set, once `after` seats have landed — on its own, not in the
+                   queue, so it neither takes a turn from the pieces nor waits
+                   for one. It is held to the same rule as everything else
+                   (spotsFor, on that one tile): while it would cut a seat off,
+                   or the player stands there, it waits and asks again. Once
+                   down it is furniture — a seat only where the power-up is
+                   one (POWERUPS.sit: the love potion's Pod, which is sat in),
+                   and never one of the sequence's. */
+                const seatsDown = this.landed.filter(f => f.sit && f.role === "sequence").length;
+                for (const pu of this.powerups) {
+                    if (pu.furni || now < pu.tryAt || seatsDown < pu.after) continue;
+                    pu.tryAt = now + 400;
+                    const meta = metaFor(pu.cls);
+                    const rot = rotationFacing(pu.cls, pu.facing);
+                    const fp = Furni.footprint(meta, rot, pu.cls, 0);
+                    const others = this.placed.concat(this.falling.map(p => p.furni));
+                    const entry = { className: pu.cls, rotation: rot, role: "power",
+                        area: { x: pu.x, y: pu.y, w: fp.w, h: fp.h } };
+                    const puSpots = spotsFor(others, entry, meta, playerTile, 0, sat, false, null, this.offLimits);
+                    if (!puSpots.some(s => s.x === pu.x && s.y === pu.y)) continue;
+                    if (puSpots.closes) for (const k of puSpots.closes) this.offLimits.add(k);
+                    const furni = Furni.make(pu.cls, pu.x, pu.y, {
+                        meta, rotation: rot, role: "power", ...urlFor(pu.cls, 0, rot)
+                    });
+                    const def = ((window.RoomLevels && window.RoomLevels.POWERUPS) || {})[pu.kind] || {};
+                    furni.sit = Boolean(def.sit && (meta || {}).sit);
+                    furni.power = pu.kind;
+                    furni.lift = FALL_TILES;
+                    this.falling.push({ furni, at: now });
+                    pu.furni = furni;
+                    changed = true;
+                }
+
                 /* Start the next one when its turn comes — and if it has
                    nowhere to go, the one after it, on the same tick.
 
@@ -588,7 +829,31 @@
                    safe to land it goes quiet for ten. Skipping costs nothing
                    instead, and the rhythm between landings stays exactly what
                    the level asked for. */
+                /* Seats put back this tick (see SEATS WAIT below): meeting one
+                   again means everything left has been tried against the room
+                   as it stands, and the dropping pauses instead. */
+                const putBack = new Set();
                 while (this.queue.length && now >= this.nextAt) {
+                    /* THE ONE-AT-A-TIME RULE HELD AT RUN TIME TOO. The
+                       schedule interleaves them (RoomLevels.schedule), but a
+                       seat with nowhere to land is skipped below, and the
+                       obstacle after it would then fall straight after the
+                       last one — or first. So an obstacle that comes up with
+                       no seat dropped since the last obstacle waits for the
+                       next seat in the queue; with no seat left it does not
+                       fall. */
+                    if (this.afterObstacle && isObstacle(this.queue[0])) {
+                        const k = this.queue.findIndex(e => !isObstacle(e));
+                        if (k < 0) { this.queue.length = 0; break; }
+                        this.queue.unshift(this.queue.splice(k, 1)[0]);
+                    }
+                    /* Checked after the rule above, which can bring a seat just
+                       put back to the front again: it would then have spent
+                       its last tries against the same room on the same tick. */
+                    if (putBack.has(this.queue[0])) {
+                        this.nextAt = now + SEAT_WAIT_MS;
+                        break;
+                    }
                     const entry = this.queue[0];
                     const meta = metaFor(entry.className);
                     const others = this.placed.concat(this.falling.map(p => p.furni));
@@ -614,14 +879,31 @@
                     let rotation = entry.rotation || 0;
                     for (const r of turns(rotationsOf(entry.className), rng)) {
                         const spots = spotsFor(others, { ...entry, rotation: r },
-                            meta, playerTile, level.rules.minDropDistance, sat);
+                            meta, playerTile, level.rules.minDropDistance, sat,
+                            (entry.waited || 0) >= SEAT_TRIES, this.reserved, this.offLimits);
                         if (!spots.length) continue;
                         spot = spots[Math.floor(rng() * spots.length)];
                         rotation = r;
+                        if (spots.closes) for (const k of spots.closes) this.offLimits.add(k);
                         break;
                     }
 
                     this.queue.shift();
+                    /* SEATS WAIT (25 Oct 2026). A sequence seat with nowhere
+                       safe to land RIGHT NOW goes to the back of the queue
+                       rather than out of the round — most often it is the
+                       half second after the player sits, before that seat
+                       counts as taken and becomes floor (RoomGame.blocked).
+                       Everything left in the same state, the dropping pauses
+                       SEAT_WAIT_MS (the guard at the top of the loop). Put
+                       back SEAT_TRIES times at most, then let go as before. */
+                    if (!spot && entry.role === "sequence" && (meta || {}).sit
+                        && (entry.waited || 0) < SEAT_TRIES) {
+                        entry.waited = (entry.waited || 0) + 1;
+                        putBack.add(entry);
+                        this.queue.push(entry);
+                        continue;
+                    }
                     if (!spot) {
                         /* Skipped at its turn, which is `nextAt` unless the
                            frame is so late the schedule restarts from now —
@@ -654,6 +936,7 @@
                            than dropping a burst of pieces to catch up. */
                         const due = now - this.nextAt > DROP_CATCHUP_MS ? now : this.nextAt;
                         this.falling.push({ furni, at: due });
+                        this.afterObstacle = isObstacle(entry);
                         this.nextAt = due + level.rules.dropDelayMs;
                         changed = true;
                         break;
@@ -700,7 +983,7 @@
     }
 
     window.RoomDrop = {
-        FALL_TILES, createRound, spotsFor, sealsIn, distanceFrom,
+        FALL_TILES, COFFEE_CLASS, coffeeFront, powerupFront, rotationFacing, createRound, spotsFor, sealsIn, distanceFrom,
         reachableFrom, regionsFrom, canUse
     };
 })();

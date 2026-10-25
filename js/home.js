@@ -10623,6 +10623,57 @@ document.addEventListener("DOMContentLoaded", () => {
         window.openPuraPanic();
     }
 
+    /* FALLIN' FURNI (25 Oct 2026): a console window, its game page in a
+       frame (js/ff-window.js, which brings its own stylesheet). Only that
+       small file is fetched when it opens; the game's page loads inside it,
+       behind its own loading bar. A phone, which has no room for a window
+       and already plays the game fullscreen, goes to the game's page. */
+    let ffLoading = null;
+    const ffHandheld = () => {
+        try {
+            return window.matchMedia("(pointer: coarse)").matches && Math.min(screen.width, screen.height) < 600;
+        } catch (e) { return false; }
+    };
+    // Signed in to the Warren on this browser: a hint, not a check.
+    const adminHint = () => { try { return Boolean(localStorage.getItem("mazerats_admin_token")); } catch (e) { return false; } };
+    window.openFallinFurni = function () {
+        if (ffHandheld()) { window.location.href = "/fallinfurni/play"; return; }
+        if (window.FFWindow) { window.FFWindow.open(); return; }
+        if (!ffLoading) {
+            ffLoading = loadPuraScript("js/ff-window.js?v=1")
+                .catch(err => { ffLoading = null; throw err; });
+        }
+        ffLoading.then(() => { if (window.FFWindow) window.FFWindow.open(); })
+            .catch(e => console.warn("Fallin' Furni could not be loaded", e));
+    };
+    // /fallinfurni is the homepage with the game open (netlify.toml).
+    if (/^\/fallinfurni\/?$/.test(location.pathname)) {
+        window.openFallinFurni();
+    }
+
+    /* RAT RACE (11 Oct 2026): loaded the first time it is opened, as Pura
+       Panic is; /ratrace is the homepage with it open (netlify.toml), and the
+       Games menu offers it, saying "Maintenance" while the Warren has it shut
+       (ratState below). /home?ratrace still opens it on the dev server. */
+    let ratLoading = null;
+    window.openRatRace = function () {
+        if (window.RatRace) { window.RatRace.open(); return; }
+        if (!ratLoading) {
+            // The art, the lettering and the maps, then the game (12 Oct 2026: the platform game);
+            // the other zones' art and drawing (js/rat-race-zones.js) with them (13 Oct 2026).
+            ratLoading = loadPuraScript("js/rat-race-music.js?v=28").catch(() => {})
+                .then(() => Promise.all(["js/rat-race-art.js?v=18", "js/rat-race-font.js?v=3", "js/rat-race-levels.js?v=20", "js/rat-race-zones.js?v=24"].map(loadPuraScript)))
+                .then(() => loadPuraScript("js/rat-race.js?v=97"))
+                .catch(err => { ratLoading = null; throw err; });
+        }
+        ratLoading.then(() => { if (window.RatRace) window.RatRace.open(); })
+            .catch(e => console.warn("Rat Race could not be loaded", e));
+    };
+    // (15 Oct 2026: Scout's Trail, at /scout; /ariadne and /ratrace are sent there by netlify.toml)
+    if (/^\/(scout|ariadne|ratrace)\/?$/.test(location.pathname) || (location.hostname === "localhost" && /[?&](scout|ariadne|ratrace)\b/.test(location.search))) {
+        window.openRatRace();
+    }
+
     /* A What's New link to a page of this site, opened where it can be
        without loading the page again (4 Oct 2026): the windows that live on
        this page, and the mazes and events in it. Returns whether it did;
@@ -10649,6 +10700,7 @@ document.addEventListener("DOMContentLoaded", () => {
         if (path === "/guess" && typeof window.openGuessGame === "function") { window.openGuessGame(); return true; }
         if (path === "/odd" && typeof window.openOddOneOut === "function") { window.openOddOneOut(); return true; }
         if (path === "/pura" || path === "/purapanic") { window.openPuraPanic(); return true; }
+        if (path === "/scout" || path === "/ariadne" || path === "/ratrace") { window.openRatRace(); return true; }
         if ((m = /^\/(maze|event)\/([^/]+)$/.exec(path))) {
             const key = decode(m[2]);
             const record = key === null ? null : findRecord(m[1], key);
@@ -11002,6 +11054,8 @@ document.addEventListener("DOMContentLoaded", () => {
     let ffClosedState = null;
     // Pura Panic's row says "Maintenance" until the Warren puts it live.
     let puraState = "maintenance";
+    // And Rat Race's, the same (11 Oct 2026).
+    let ratState = "maintenance";
 
     if (typeof Api !== "undefined") {
         Api.getSiteSettings()
@@ -11009,6 +11063,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 const state = s && s.fallinFurniState;
                 if (state === "maintenance" || state === "coming-soon") ffClosedState = state;
                 puraState = s && s.puraPanicState === "live" ? "live" : "maintenance";
+                ratState = s && (s.ratRaceState === "live" || s.ratRaceState === "hidden") ? s.ratRaceState : "maintenance";
             })
             .catch(() => { /* fail open, as the game's own gate does */ });
     }
@@ -11033,6 +11088,7 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     }
 
+    const hasAdminToken = () => { try { return Boolean(localStorage.getItem("mazerats_admin_token")); } catch (e) { return false; } };
     function sideMenuEntries() {
         const g = menuFigure(() => typeof window.GuessStatus === "function" ? window.GuessStatus() : null, null);
         // The last fortnight's worth, not the log's length — see
@@ -11117,10 +11173,10 @@ document.addEventListener("DOMContentLoaded", () => {
                 run: () => { if (typeof window.openOddOneOut === "function") window.openOddOneOut(); }
             },
             {
-                /* Not a daily puzzle and not a window: Fallin' Furni is a room
-                   you walk about in, and it wants the whole viewport rather
-                   than a 204px console pane. So this one NAVIGATES, where the
-                   games above open in place. See ffClosedState above. */
+                /* Not a daily puzzle: a room you walk about in, which since
+                   25 Oct 2026 opens in a console window of its own the size of
+                   the game (js/ff-window.js) — or, on a phone, goes to the
+                   game's page. See ffClosedState above. */
                 name: "Fallin' Furni",
                 /* The second line stops describing the game and starts
                    reporting on it. Two words, not a sentence: this is a
@@ -11162,9 +11218,15 @@ document.addEventListener("DOMContentLoaded", () => {
                    (js/furni-rain.js), a taste of the game where the page
                    could only say it was not open yet. In maintenance, and
                    once it is live, the row goes to the game as before. */
+                /* A WINDOW NOW (25 Oct 2026), js/ff-window.js — and an admin
+                   gets the game even while it is Coming Soon, as Pura Panic's
+                   do in maintenance (the owner's: "the game doesn't open on
+                   the homepage even though i'm signed in as an admin"). The
+                   game's own page inside the window still makes the real
+                   check; this only decides between the window and the rain. */
                 run: () => {
-                    if (ffClosedState === "coming-soon" && window.FurniRain) window.FurniRain.start();
-                    else window.location.href = "/fallinfurni";
+                    if (ffClosedState === "coming-soon" && !adminHint() && window.FurniRain) window.FurniRain.start();
+                    else window.openFallinFurni();
                 }
             },
             /* Pura Panic (6 Oct 2026): a window, like the daily games, but
@@ -11179,6 +11241,14 @@ document.addEventListener("DOMContentLoaded", () => {
                 badge: "",
                 on: false,
                 run: () => window.openPuraPanic()
+            },
+            // Rat Race (11 Oct 2026): the same, a window that is always in the menu.
+            {
+                name: "Scout's Trail",
+                state: ratState === "live" ? "A Maze Rats adventure" : ratState === "hidden" ? "Hidden (admins only)" : "Maintenance",
+                badge: "",
+                on: false,
+                run: () => window.openRatRace()
             },
             {
                 /* Every board in one window (js/leaderboards.js), so the
@@ -11220,7 +11290,9 @@ document.addEventListener("DOMContentLoaded", () => {
                 on: false,
                 run: () => { if (window.Glyphs) Glyphs.open(); }
             }
-        ].filter(e => !(onPhone && e.name === "Alt Codes"));
+        ].filter(e => !(onPhone && e.name === "Alt Codes"))
+            // Rat Race while the Warren has it Hidden: only an admin's menu carries it (the game itself checks the admin properly).
+            .filter(e => !(e.name === "Scout's Trail" && ratState === "hidden" && !hasAdminToken()));
         /* The sheet is a reference table of several hundred characters
            beside the key combinations that type them, and a key combination
            is a thing a phone does not have. Offering it there is a tab that

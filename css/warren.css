@@ -1,0 +1,937 @@
+/* THE WARREN, AS A WORKSHOP (25 Oct 2026, the owner's: "a complete redesign
+   to bring it up to date with how our game editor pages look").
+
+   The same workshop as Scout's Trail's editor (tools/ariadne-editor/
+   editor.css) and Fallin' Furni's (css/ff-editor.css): dark round the work,
+   the game's gold for what is active, a cool blue for focus, a plain UI
+   face. A top bar, a rail of sections down the left, the section in the
+   middle, a status line along the foot.
+
+   HOW IT IS LAID OVER THE OLD PAGE. Every panel's insides are still the
+   archive's own markup and still styled by css/style.css, which paints them
+   from the site's colour variables (--amber, --parchment, --chrome-fill …).
+   So the first half of this file gives those variables the workshop's
+   values inside the Warren, which recolours several hundred rules at once
+   and consistently; the second half restyles what colour alone cannot
+   reach — the pixel-art frames on buttons, the white inputs, the pixel
+   fonts in headings.
+
+   ONE SECTION KEEPS THE SITE'S LOOK: Recolour. Its live preview paints the
+   page it is on with the palette being edited, and a palette is for the
+   site, so the panel stays dressed as the site for the preview to show on
+   (see .wr-ui below — it is on everything except that panel).
+
+   Marked data-recolour-skip in warren.html: the Recolour editor builds its
+   catalogue by walking every stylesheet, and nothing here is a site colour.
+
+   ANCHORED TO AN ID. style.css has a hundred-odd Warren-only rules written
+   body[data-page="admin"] … with the old browns in them, which outrank any
+   class selector here; so every rule below starts at #wr-app (or, for the
+   sign-in box, #login-modal — `:is(#wr-app .wr-ui, #login-modal)`), and an
+   id outranks them all without a single !important. */
+
+/* ---- THE PALETTE */
+body.wr-on {
+    --wr-bg: #0e0f12;
+    --wr-panel: #15171b;
+    --wr-panel-2: #1b1e23;
+    --wr-raised: #22262c;
+    --wr-raised-2: #2a2f37;
+    --wr-line: #2a2e35;
+    --wr-line-2: #363b44;
+    --wr-text: #e7e4dc;
+    --wr-text-2: #b4b0a6;
+    --wr-dim: #8a877f;
+    --wr-gold: #f2cc4e;
+    --wr-gold-2: #c9a43a;
+    --wr-gold-ink: #241a04;
+    --wr-blue: #4fd1ff;
+    --wr-red: #ff6a5f;
+    --wr-amber: #ffb347;
+    --wr-green: #7ee081;
+    --wr-radius: 7px;
+    --wr-font: "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, sans-serif;
+    margin: 0;
+    height: 100vh;
+    height: 100dvh;
+    overflow: hidden;
+    background: var(--wr-bg);
+}
+
+/* The site's own colours, in the workshop's values, inside the Warren. */
+.wr-ui {
+    --bg-black: var(--wr-bg);
+    --bg-panel: var(--wr-panel);
+    --bg-panel-light: var(--wr-panel-2);
+    --wood-dark: var(--wr-panel-2);
+    --wood-mid: var(--wr-raised);
+    --amber: var(--wr-gold-2);
+    --amber-bright: var(--wr-gold);
+    --amber-text: #e0c46a;
+    --parchment: var(--wr-text);
+    --parchment-dim: var(--wr-text-2);
+    --danger: #b8473c;
+    --danger-text: var(--wr-red);
+    --ok: #4f9f5d;
+    --unknown: #5d6068;
+    --unknown-text: var(--wr-dim);
+    --border: var(--wr-line-2);
+    --shadow: 0 6px 24px rgba(0, 0, 0, 0.45);
+    --chrome-border: var(--wr-line-2);
+    --chrome-fill: var(--wr-raised);
+    --chrome-highlight: var(--wr-line-2);
+    --chrome-row: var(--wr-panel-2);
+    --chrome-row-featured: var(--wr-raised);
+    --frame-bg: var(--wr-panel);
+    --frame-bg-light: var(--wr-panel-2);
+    --cursor-pointer: pointer;
+    color: var(--wr-text);
+    font: 13px/1.45 var(--wr-font);
+    color-scheme: dark;
+    -webkit-font-smoothing: antialiased;
+}
+
+/* The site's header and footer are not shown: the workshop is the page. */
+body.wr-on > .site-header,
+body.wr-on > .site-footer { display: none !important; }
+
+/* ---- THE SHELL */
+.wr-app {
+    position: fixed;
+    inset: 0;
+    display: grid;
+    grid-template-rows: 52px 1fr 28px;
+    background: var(--wr-bg);
+    color: var(--wr-text);
+}
+/* Each in its own row, so the status line stays at the foot while the
+   middle is empty (signed out). */
+#wr-app .wr-top { grid-row: 1; }
+#wr-app .wr-content { grid-row: 2; }
+#wr-app .wr-status { grid-row: 3; }
+#wr-app *, #wr-app *::before, #wr-app *::after { box-sizing: border-box; }
+#wr-app :focus-visible { outline: 2px solid var(--wr-blue); outline-offset: 1px; }
+#wr-app .wr-spacer { flex: 1; }
+
+/* The top bar. */
+#wr-app .wr-top {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    min-width: 0;
+    padding: 0 14px;
+    background: var(--wr-panel);
+    border-bottom: 1px solid var(--wr-line);
+    position: relative;
+    z-index: 30;
+}
+#wr-app .wr-brand {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    color: var(--wr-text);
+    text-decoration: none;
+    flex: none;
+}
+#wr-app .wr-logo {
+    width: 30px;
+    height: 30px;
+    border-radius: 7px;
+    display: grid;
+    place-items: center;
+    background: var(--wr-gold);
+    color: var(--wr-gold-ink);
+    font: 800 12px/1 var(--wr-font);
+    letter-spacing: 0.5px;
+}
+#wr-app .wr-brand-text { display: flex; flex-direction: column; line-height: 1.15; }
+#wr-app .wr-brand-text strong { font-size: 14px; font-weight: 650; }
+#wr-app .wr-brand-text span { font-size: 11px; color: var(--wr-dim); }
+#wr-app .wr-where {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+    padding-left: 12px;
+    border-left: 1px solid var(--wr-line);
+    font-size: 15px;
+    font-weight: 600;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+/* Every change here is live for every visitor: said once, always visible,
+   where the old page had a "THIS IS LIVE" banner over every panel. */
+#wr-app .wr-live {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    flex: none;
+    padding: 3px 9px;
+    border-radius: 999px;
+    border: 1px solid rgba(255, 106, 95, 0.45);
+    background: rgba(255, 106, 95, 0.1);
+    color: #ffb1aa;
+    font-size: 11px;
+    font-weight: 650;
+    letter-spacing: 0.4px;
+    text-transform: uppercase;
+}
+#wr-app .wr-live::before {
+    content: "";
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--wr-red);
+    box-shadow: 0 0 0 3px rgba(255, 106, 95, 0.2);
+}
+
+/* While the site is gated (Coming Soon or Maintenance), js/admin.js adds this beside it. */
+#wr-app .wr-devmode { border-color: rgba(242, 204, 78, 0.45); background: rgba(242, 204, 78, 0.1); color: #f6dc8a; }
+#wr-app .wr-devmode::before { background: var(--wr-gold); box-shadow: 0 0 0 3px rgba(242, 204, 78, 0.2); }
+
+/* The signed-in tools on the right of the bar: quick adds, the glyphs and
+   your account. Still #admin-rail and still .admin-tab menus, so the code
+   that opens, closes and Escapes them (js/admin.js) is unchanged. */
+#wr-app .wr-top .admin-tabs {
+    position: static;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 0;
+    padding: 0;
+    background: none;
+    border: 0;
+    transform: none;
+    /* style.css clips this row sideways (.admin-tabs), which cut off the
+       left of each drop-down here, where they hang leftwards from their tab. */
+    overflow: visible;
+}
+#wr-app .wr-top .admin-tab { position: relative; margin: 0; }
+#wr-app .wr-top .admin-tab-btn,
+#wr-app .wr-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    height: 32px;
+    padding: 0 12px;
+    border: 1px solid var(--wr-line-2);
+    border-radius: var(--wr-radius);
+    background: var(--wr-raised);
+    color: var(--wr-text);
+    font: 600 12.5px/1 var(--wr-font);
+    letter-spacing: 0;
+    text-transform: none;
+    cursor: pointer;
+    white-space: nowrap;
+    box-shadow: none;
+}
+#wr-app .wr-top .admin-tab-btn:hover,
+#wr-app .wr-btn:hover { background: var(--wr-raised-2); border-color: #444a55; }
+#wr-app .wr-btn svg, #wr-app .wr-top .admin-tab-btn svg { width: 15px; height: 15px; flex: none; }
+#wr-app .wr-top .admin-tab-btn::after { content: none; }
+#wr-app .wr-btn-gold { background: var(--wr-gold); border-color: var(--wr-gold); color: var(--wr-gold-ink); }
+#wr-app .wr-btn-gold:hover { background: #ffd95f; border-color: #ffd95f; }
+#wr-app .wr-top .admin-tab-user .admin-tab-btn::before {
+    content: "";
+    width: 20px;
+    height: 20px;
+    margin-left: -4px;
+    border-radius: 50%;
+    background: var(--wr-raised-2) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23b4b0a6' stroke-width='2' stroke-linecap='round'%3E%3Ccircle cx='12' cy='9' r='4'/%3E%3Cpath d='M4 21c1.5-4 4.5-6 8-6s6.5 2 8 6'/%3E%3C/svg%3E") center / 14px no-repeat;
+}
+
+/* The drop-downs, as the editors' popovers. They open on hover, tap or focus
+   (css/style.css's .admin-tab rules, which this only re-dresses). */
+#wr-app .wr-top .admin-drop {
+    left: auto;
+    right: 0;
+    top: calc(100% + 8px);
+    min-width: 280px;
+    max-width: min(420px, 92vw);
+    padding: 14px;
+    background: var(--wr-panel-2);
+    border: 1px solid var(--wr-line-2);
+    border-radius: 10px;
+    box-shadow: 0 16px 40px rgba(0, 0, 0, 0.55);
+    border-image: none;
+}
+#wr-app .wr-top .admin-drop::before { content: none; }
+#wr-app .wr-top .admin-drop-glyphs { width: 380px; }
+
+/* The body: the rail and the stage. */
+#wr-app .wr-content { min-height: 0; }
+#wr-app .wr-body {
+    height: 100%;
+    display: grid;
+    grid-template-columns: 212px 1fr;
+    min-height: 0;
+}
+
+/* THE RAIL: every section, grouped by what it is for, always in view. Still
+   #admin-nav round .chrome-nav-btn[data-panel] buttons, which is all
+   js/admin.js asks of it. */
+#wr-app .wr-rail {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-height: 0;
+    overflow-y: auto;
+    padding: 12px 10px 16px;
+    background: var(--wr-panel);
+    border-right: 1px solid var(--wr-line);
+    scrollbar-width: thin;
+    scrollbar-color: var(--wr-line-2) transparent;
+}
+#wr-app .wr-rail-group {
+    margin: 12px 8px 4px;
+    font-size: 10.5px;
+    font-weight: 700;
+    letter-spacing: 0.9px;
+    text-transform: uppercase;
+    color: var(--wr-dim);
+}
+#wr-app .wr-rail-group:first-child { margin-top: 2px; }
+#wr-app .wr-rail .chrome-nav-btn {
+    all: unset;
+    box-sizing: border-box;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    min-height: 34px;
+    padding: 6px 10px;
+    border-radius: var(--wr-radius);
+    color: var(--wr-text-2);
+    font: 500 13px/1.2 var(--wr-font);
+    cursor: pointer;
+    position: relative;
+}
+#wr-app .wr-rail .chrome-nav-btn[hidden] { display: none; }
+/* The site's pixel frame for these buttons is a ::before (its phone layout
+   draws it), which `all: unset` above does not reach. The rail's own gold
+   bar for the chosen section, below, is the only ::before here. */
+#wr-app .wr-rail .chrome-nav-btn::before,
+#wr-app .wr-rail .chrome-nav-btn::after { content: none; border: 0; border-image: none; background: none; }
+#wr-app .wr-rail .chrome-nav-btn svg { width: 17px; height: 17px; flex: none; opacity: 0.85; }
+#wr-app .wr-rail .chrome-nav-btn:hover { background: var(--wr-raised); color: var(--wr-text); }
+#wr-app .wr-rail .chrome-nav-btn:focus-visible { outline: 2px solid var(--wr-blue); outline-offset: -2px; }
+#wr-app .wr-rail .chrome-nav-btn.active {
+    background: rgba(242, 204, 78, 0.12);
+    color: var(--wr-gold);
+}
+#wr-app .wr-rail .chrome-nav-btn.active::before {
+    content: "";
+    border: 0;
+    border-image: none;
+    position: absolute;
+    left: -10px;
+    top: 7px;
+    bottom: 7px;
+    width: 3px;
+    border-radius: 0 3px 3px 0;
+    background: var(--wr-gold);
+}
+#wr-app .wr-rail .chrome-nav-btn.active svg { opacity: 1; }
+#wr-app .wr-rail .chrome-nav-btn-label {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font: inherit;
+    color: inherit;
+    text-shadow: none;
+    letter-spacing: 0;
+    text-transform: none;
+}
+/* The counts (unread errors, entries, leads), as the editors' badges. */
+#wr-app .wr-rail .admin-nav-count {
+    position: static;
+    margin: 0;
+    min-width: 20px;
+    height: 18px;
+    padding: 0 6px;
+    border-radius: 999px;
+    border: 0;
+    background: var(--wr-red);
+    color: #2a0805;
+    font: 700 11px/18px var(--wr-font);
+    text-align: center;
+    box-shadow: none;
+    transform: none;
+}
+#wr-app .wr-rail .admin-nav-count[hidden] { display: none; }
+#wr-app .wr-rail .admin-nav-count-quiet { background: var(--wr-raised-2); color: var(--wr-text-2); }
+
+/* THE STAGE: the section you are on. It is the page's scroller, as
+   .admin-stage always was (js/admin.js scrolls it to bring the furni picker
+   into view). */
+/* A column, as the old window inside it was: the list panels (Mazes,
+   Events, Bans …) are .admin-panel-fill, which css/style.css grows to the
+   height left and gives their list the scroll, so a long list scrolls in
+   place under its own heading. --admin-stage-pad-b is the old stage's: the
+   floating Save bar cancels it exactly to sit flush on the foot. */
+#wr-app .wr-stage {
+    --admin-stage-pad-b: 24px;
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    min-height: 0;
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding: 22px 26px var(--admin-stage-pad-b);
+    background: var(--wr-bg);
+    scrollbar-width: thin;
+    scrollbar-color: var(--wr-line-2) transparent;
+}
+#wr-app .wr-stage > .admin-panel { width: 100%; max-width: 1240px; margin: 0 auto; min-width: 0; }
+#wr-app .wr-stage > .admin-panel[hidden] { display: none; }
+
+/* The status line. */
+#wr-app .wr-status {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    min-width: 0;
+    padding: 0 14px;
+    background: var(--wr-panel);
+    border-top: 1px solid var(--wr-line);
+    color: var(--wr-dim);
+    font-size: 11.5px;
+    white-space: nowrap;
+    overflow: hidden;
+}
+#wr-app .wr-status b { color: var(--wr-text-2); font-weight: 600; }
+#wr-app .wr-status .wr-dot {
+    display: inline-block;
+    width: 7px;
+    height: 7px;
+    margin-right: 6px;
+    border-radius: 50%;
+    background: var(--wr-green);
+    vertical-align: 1px;
+}
+#wr-app .wr-status .wr-dot.is-out { background: var(--wr-dim); }
+#wr-app .wr-status .wr-warn { color: var(--wr-amber); }
+
+/* ---- INSIDE THE SECTIONS
+
+   The panel heading: a title, a line on what the section is for, and its
+   main action on the right. */
+#wr-app .wr-ui.admin-panel { background: none; border: 0; padding: 0; box-shadow: none; }
+:is(#wr-app .wr-ui, #login-modal) .admin-panel-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 16px;
+    margin: 0 0 18px;
+    padding: 0 0 16px;
+    border-bottom: 1px solid var(--wr-line);
+    background: none;
+}
+:is(#wr-app .wr-ui, #login-modal) .admin-panel-head-sub { margin-top: 26px; padding-bottom: 10px; }
+:is(#wr-app .wr-ui, #login-modal) .admin-panel-title {
+    margin: 0;
+    font: 650 22px/1.2 var(--wr-font);
+    color: var(--wr-text);
+    letter-spacing: -0.2px;
+}
+:is(#wr-app .wr-ui, #login-modal) .admin-panel-title .admin-hint { font-size: 12px; font-weight: 500; vertical-align: middle; }
+:is(#wr-app .wr-ui, #login-modal) .admin-subheading,
+:is(#wr-app .wr-ui, #login-modal) h3.admin-subheading {
+    font: 650 15px/1.3 var(--wr-font);
+    color: var(--wr-text);
+    letter-spacing: 0;
+    text-transform: none;
+}
+:is(#wr-app .wr-ui, #login-modal) .admin-subheading-spaced { border-top-color: var(--wr-line); }
+:is(#wr-app .wr-ui, #login-modal) .admin-hint { color: var(--wr-dim); font-family: var(--wr-font); font-size: 12.5px; }
+:is(#wr-app .wr-ui, #login-modal) h1, :is(#wr-app .wr-ui, #login-modal) h2, :is(#wr-app .wr-ui, #login-modal) h3, :is(#wr-app .wr-ui, #login-modal) h4 { font-family: var(--wr-font); letter-spacing: 0; text-shadow: none; }
+
+/* Buttons. The pills (actions on a record) and the old pixel-framed
+   buttons all become the editors' buttons; the solid one is gold. */
+:is(#wr-app .wr-ui, #login-modal) .admin-action-pill,
+:is(#wr-app .wr-ui, #login-modal) .ctl-btn,
+:is(#wr-app .wr-ui, #login-modal) .btn,
+:is(#wr-app .wr-ui, #login-modal) .btn-enter-mini {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    width: auto;
+    min-height: 30px;
+    padding: 5px 12px;
+    border: 1px solid var(--wr-line-2);
+    border-image: none;
+    border-radius: var(--wr-radius);
+    background: var(--wr-raised);
+    background-image: none;
+    color: var(--wr-text);
+    font: 600 12.5px/1.2 var(--wr-font);
+    letter-spacing: 0;
+    text-transform: none;
+    text-shadow: none;
+    box-shadow: none;
+    image-rendering: auto;
+    cursor: pointer;
+}
+:is(#wr-app .wr-ui, #login-modal) .admin-action-pill:hover,
+:is(#wr-app .wr-ui, #login-modal) .ctl-btn:hover,
+:is(#wr-app .wr-ui, #login-modal) .btn:hover,
+:is(#wr-app .wr-ui, #login-modal) .btn-enter-mini:hover { background: var(--wr-raised-2); border-color: #444a55; color: var(--wr-text); }
+:is(#wr-app .wr-ui, #login-modal) .admin-pill-solid,
+:is(#wr-app .wr-ui, #login-modal) .btn-solid {
+    background: var(--wr-gold);
+    border-color: var(--wr-gold);
+    color: var(--wr-gold-ink);
+}
+:is(#wr-app .wr-ui, #login-modal) .admin-pill-solid:hover,
+:is(#wr-app .wr-ui, #login-modal) .btn-solid:hover { background: #ffd95f; border-color: #ffd95f; color: var(--wr-gold-ink); }
+:is(#wr-app .wr-ui, #login-modal) :is(.admin-action-pill, .ctl-btn, .btn, .btn-enter-mini):disabled,
+:is(#wr-app .wr-ui, #login-modal) :is(.admin-action-pill, .ctl-btn, .btn, .btn-enter-mini)[aria-disabled="true"] { opacity: 0.45; cursor: default; }
+
+/* A segmented choice — the landing switch, the palettes, a game's state: one
+   track, the current answer filled in gold. */
+:is(#wr-app .wr-ui, #login-modal) .ctl-seg {
+    display: inline-flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 3px;
+    padding: 3px;
+    border-radius: 9px;
+    background: var(--wr-bg);
+    border: 1px solid var(--wr-line);
+    width: auto;
+}
+:is(#wr-app .wr-ui, #login-modal) .ctl-seg > .btn-enter-mini,
+:is(#wr-app .wr-ui, #login-modal) .ctl-seg > .ctl-btn {
+    /* Each as wide as its words: style.css shares a strip out in equal
+       parts, which cut "Follow the dates" down to its middle. */
+    flex: 0 0 auto;
+    min-width: max-content;
+    white-space: nowrap;
+    min-height: 26px;
+    padding: 3px 11px;
+    border-color: transparent;
+    background: transparent;
+    color: var(--wr-text-2);
+}
+:is(#wr-app .wr-ui, #login-modal) .ctl-seg > .btn-enter-mini:hover { background: var(--wr-raised); color: var(--wr-text); }
+:is(#wr-app .wr-ui, #login-modal) .ctl-seg > .btn-enter-mini.active,
+:is(#wr-app .wr-ui, #login-modal) .ctl-seg > .btn-enter-mini[aria-pressed="true"] {
+    background: var(--wr-gold);
+    border-color: var(--wr-gold);
+    color: var(--wr-gold-ink);
+}
+:is(#wr-app .wr-ui, #login-modal) .ctl-seg > input { margin-right: 4px; }
+:is(#wr-app .wr-ui, #login-modal) .theme-dot { box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.15); }
+
+/* Fields. */
+:is(#wr-app .wr-ui, #login-modal) input[type="text"], :is(#wr-app .wr-ui, #login-modal) input[type="search"], :is(#wr-app .wr-ui, #login-modal) input[type="url"],
+:is(#wr-app .wr-ui, #login-modal) input[type="email"], :is(#wr-app .wr-ui, #login-modal) input[type="number"], :is(#wr-app .wr-ui, #login-modal) input[type="password"],
+:is(#wr-app .wr-ui, #login-modal) input[type="date"], :is(#wr-app .wr-ui, #login-modal) input[type="datetime-local"], :is(#wr-app .wr-ui, #login-modal) input[type="time"],
+:is(#wr-app .wr-ui, #login-modal) input:not([type]), :is(#wr-app .wr-ui, #login-modal) select, :is(#wr-app .wr-ui, #login-modal) textarea,
+:is(#wr-app .wr-ui, #login-modal) .admin-field input, :is(#wr-app .wr-ui, #login-modal) .admin-field select, :is(#wr-app .wr-ui, #login-modal) .admin-field textarea,
+:is(#wr-app .wr-ui, #login-modal) .ctl-input, :is(#wr-app .wr-ui, #login-modal) .search-box input, :is(#wr-app .wr-ui, #login-modal) .sort-box select {
+    background: var(--wr-bg);
+    border: 1px solid var(--wr-line-2);
+    border-radius: var(--wr-radius);
+    color: var(--wr-text);
+    font: 13px/1.4 var(--wr-font);
+    padding: 7px 10px;
+    box-shadow: none;
+    background-image: none;
+}
+:is(#wr-app .wr-ui, #login-modal) select,
+:is(#wr-app .wr-ui, #login-modal) select.ctl-input,
+:is(#wr-app .wr-ui, #login-modal) .sort-box select,
+:is(#wr-app .wr-ui, #login-modal) .admin-field select {
+    padding-right: 28px;
+    appearance: none;
+    background: var(--wr-bg) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='M3 4.5l3 3 3-3' fill='none' stroke='%23b4b0a6' stroke-width='1.6' stroke-linecap='round'/%3E%3C/svg%3E") right 9px center / 12px no-repeat;
+}
+:is(#wr-app .wr-ui, #login-modal) input:focus, :is(#wr-app .wr-ui, #login-modal) select:focus, :is(#wr-app .wr-ui, #login-modal) textarea:focus {
+    outline: none;
+    border-color: var(--wr-blue);
+    box-shadow: 0 0 0 3px rgba(79, 209, 255, 0.16);
+}
+:is(#wr-app .wr-ui, #login-modal) input::placeholder, :is(#wr-app .wr-ui, #login-modal) textarea::placeholder { color: var(--wr-dim); }
+:is(#wr-app .wr-ui, #login-modal) input[type="checkbox"], :is(#wr-app .wr-ui, #login-modal) input[type="radio"] { accent-color: var(--wr-gold); }
+:is(#wr-app .wr-ui, #login-modal) .admin-field > span,
+:is(#wr-app .wr-ui, #login-modal) .admin-field-label { color: var(--wr-text-2); font: 600 12px/1.3 var(--wr-font); letter-spacing: 0; text-transform: none; }
+
+/* Lists and rows: the archive's chrome lists as the editors' tables. */
+:is(#wr-app .wr-ui, #login-modal) .chrome-list {
+    background: var(--wr-panel);
+    border: 1px solid var(--wr-line);
+    border-radius: 10px;
+    border-image: none;
+    box-shadow: none;
+}
+
+/* A row's words: the name, who built it, and its marks in the plain face.
+   The description stays in Volter at its 9px — it can hold the Volter
+   picture glyphs (stars and the rest), which only that face draws. */
+:is(#wr-app .wr-ui, #login-modal) .chrome-list-row h3 {
+    font: 600 14px/1.3 var(--wr-font);
+    color: var(--wr-text);
+    letter-spacing: 0;
+    text-transform: none;
+}
+:is(#wr-app .wr-ui, #login-modal) .row-creator {
+    font: 12px/1.4 var(--wr-font);
+    color: var(--wr-text-2);
+    letter-spacing: 0;
+}
+:is(#wr-app .wr-ui, #login-modal) .admin-furni-complete {
+    font: 12px/1.3 var(--wr-font);
+    color: var(--wr-text-2);
+    letter-spacing: 0;
+}
+:is(#wr-app .wr-ui, #login-modal) .status-badge {
+    font: 700 10.5px/1 var(--wr-font);
+    letter-spacing: 0.5px;
+    border-radius: 999px;
+    padding: 4px 8px;
+}
+
+/* Labels and figures still set in the site's pixel faces: the plain face
+   here too. (Listed by walking every section for Volter, Pixelify and
+   Silkscreen; what is left in them is content — descriptions and the glyph
+   buttons, which are the glyphs.) */
+:is(#wr-app .wr-ui, #login-modal) :is(.act-tile-value, .act-tile strong, .admin-stats strong) { font-family: var(--wr-font); font-weight: 650; letter-spacing: -0.2px; }
+#wr-app .wr-ui :is([data-panel="activity"], [data-panel="errors"]) strong { font-family: var(--wr-font); font-weight: 650; }
+#wr-app .wr-ui th {
+    font: 700 10.5px/1.3 var(--wr-font);
+    letter-spacing: 0.6px;
+    text-transform: uppercase;
+    color: var(--wr-dim);
+}
+#wr-app .wr-ui .admin-contributor-count { font: 600 13px/1 var(--wr-font); color: var(--wr-gold); }
+#wr-app .wr-ui .wn-verb { font: 700 10px/1 var(--wr-font); letter-spacing: 0.5px; }
+#wr-app .wr-top .glyph-group-title {
+    font: 700 10.5px/1.2 var(--wr-font);
+    letter-spacing: 0.8px;
+    text-transform: uppercase;
+    color: var(--wr-dim);
+}
+
+/* A form's tag choices (a maze's FURNI MAZE, ILLUSION …): the editors'
+   chips, the chosen ones gold. */
+#wr-app .wr-ui .tag-chip {
+    min-height: 26px;
+    padding: 4px 10px;
+    border: 1px solid var(--wr-line-2);
+    border-radius: 999px;
+    background: var(--wr-raised);
+    background-image: none;
+    color: var(--wr-text-2);
+    font: 600 11.5px/1 var(--wr-font);
+    letter-spacing: 0.3px;
+    text-transform: none;
+    box-shadow: none;
+}
+#wr-app .wr-ui .tag-chip:hover:not([disabled]) { background: var(--wr-raised-2); color: var(--wr-text); border-color: #444a55; }
+#wr-app .wr-ui .tag-chip.selected { background: var(--wr-gold); border-color: var(--wr-gold); color: var(--wr-gold-ink); }
+
+/* The site's own drawn scrollbar (js/custom-scrollbar.js), in the editors'
+   thin dress: no arrows, a dark track, a small rounded thumb. The script
+   sizes the thumb itself (15px) and measures the track, so only the look
+   changes. */
+:is(#wr-app .wr-ui, #login-modal) .custom-scrollbar:not(.custom-scrollbar--horizontal) { width: 10px; margin-left: 4px; }
+:is(#wr-app .wr-ui, #login-modal) .custom-scrollbar--horizontal { height: 10px; margin-top: 4px; }
+:is(#wr-app .wr-ui, #login-modal) .custom-scrollbar-arrow { display: none; }
+:is(#wr-app .wr-ui, #login-modal) .custom-scrollbar-track { width: auto; min-height: 0; border-radius: 5px; background: rgba(255, 255, 255, 0.03); cursor: pointer; }
+:is(#wr-app .wr-ui, #login-modal) .custom-scrollbar-track-segment { background: none; }
+:is(#wr-app .wr-ui, #login-modal) .custom-scrollbar-thumb {
+    background: var(--wr-line-2);
+    background-image: none;
+    border-radius: 5px;
+}
+:is(#wr-app .wr-ui, #login-modal) .custom-scrollbar:not(.custom-scrollbar--horizontal) .custom-scrollbar-thumb { left: 1px; width: 8px; }
+:is(#wr-app .wr-ui, #login-modal) .custom-scrollbar--horizontal .custom-scrollbar-thumb { top: 1px; height: 8px; }
+:is(#wr-app .wr-ui, #login-modal) .custom-scrollbar-thumb:hover,
+:is(#wr-app .wr-ui, #login-modal) .custom-scrollbar-thumb.is-dragging { background: #565d6a; background-image: none; }
+
+/* The control cards (the Controls section): the editors' panels. */
+:is(#wr-app .wr-ui, #login-modal) .ctl-section { margin: 0 0 26px; }
+:is(#wr-app .wr-ui, #login-modal) .ctl-section-title {
+    margin: 0 0 10px;
+    font: 700 11px/1.2 var(--wr-font);
+    letter-spacing: 0.9px;
+    text-transform: uppercase;
+    color: var(--wr-dim);
+}
+:is(#wr-app .wr-ui, #login-modal) .ctl-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    gap: 12px;
+    align-items: start;
+}
+:is(#wr-app .wr-ui, #login-modal) .ctl-card {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+    min-width: 0;
+    padding: 14px;
+    background: var(--wr-panel);
+    border: 1px solid var(--wr-line);
+    border-radius: 10px;
+}
+:is(#wr-app .wr-ui, #login-modal) .ctl-card-wide { grid-column: 1 / -1; }
+:is(#wr-app .wr-ui, #login-modal) .ctl-label {
+    font: 650 13px/1.3 var(--wr-font);
+    letter-spacing: 0;
+    text-transform: none;
+    color: var(--wr-text);
+}
+:is(#wr-app .wr-ui, #login-modal) .ctl-sublabel { margin-top: 4px; font-size: 12px; color: var(--wr-text-2); }
+:is(#wr-app .wr-ui, #login-modal) .ctl-status { font-family: var(--wr-font); font-size: 12px; }
+:is(#wr-app .wr-ui, #login-modal) .ctl-row, :is(#wr-app .wr-ui, #login-modal) .ctl-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+
+/* ---- THE SEASONAL SKINS CARD (js/admin-skin.js): three parts, top to
+   bottom — what visitors see, each skin's dates, a preview for you. */
+#wr-app .wr-ui .sk-card { gap: 0; padding: 0; overflow: hidden; }
+#wr-app .wr-ui .sk-now {
+    width: 100%;
+    margin: 0;
+    padding: 12px 16px;
+    background: var(--wr-panel-2);
+    border-bottom: 1px solid var(--wr-line);
+    color: var(--wr-text-2);
+    font-size: 13px;
+}
+#wr-app .wr-ui .sk-now strong { color: var(--wr-text); font-weight: 650; }
+#wr-app .wr-ui .sk-now.is-on strong { color: var(--wr-gold); }
+#wr-app .wr-ui .sk-now .sk-mine { display: block; margin-top: 3px; color: var(--wr-blue); font-size: 12px; }
+#wr-app .wr-ui .sk-part {
+    width: 100%;
+    padding: 14px 16px 16px;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 9px;
+}
+#wr-app .wr-ui .sk-part + .sk-part { border-top: 1px solid var(--wr-line); }
+#wr-app .wr-ui .sk-title {
+    margin: 0;
+    font: 650 13px/1.3 var(--wr-font);
+    color: var(--wr-text);
+}
+#wr-app .wr-ui .sk-sub { margin-left: 6px; font-weight: 400; font-size: 12px; color: var(--wr-dim); }
+#wr-app .wr-ui .sk-hint { margin: 0; }
+#wr-app .wr-ui .sk-hint.is-bad { color: var(--wr-red); }
+
+/* One row per skin. */
+#wr-app .wr-ui .sk-cal { display: flex; flex-direction: column; gap: 6px; width: 100%; }
+#wr-app .wr-ui .sk-row {
+    display: grid;
+    grid-template-columns: 150px 1fr;
+    align-items: center;
+    gap: 6px 12px;
+    padding: 8px 10px;
+    border: 1px solid var(--wr-line);
+    border-radius: 8px;
+    background: var(--wr-bg);
+}
+#wr-app .wr-ui .sk-name { display: inline-flex; align-items: center; gap: 8px; font-weight: 600; cursor: pointer; }
+#wr-app .wr-ui .sk-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: var(--sk-dot);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--sk-dot) 22%, transparent);
+}
+#wr-app .wr-ui .sk-range { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; }
+#wr-app .wr-ui .sk-line { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+#wr-app .wr-ui .sk-line .sk-lead { width: 64px; flex: none; }
+#wr-app .wr-ui .sk-range.is-off .sk-dm { opacity: 0.55; }
+#wr-app .wr-ui .sk-dm { display: inline-flex; gap: 4px; }
+#wr-app .wr-ui .sk-dm select { width: auto; min-width: 0; padding-top: 5px; padding-bottom: 5px; }
+#wr-app .wr-ui .sk-day { width: 62px; }
+#wr-app .wr-ui .sk-month { width: 76px; }
+#wr-app .wr-ui .sk-range .sk-theme { width: 138px; padding-top: 5px; padding-bottom: 5px; }
+/* A moment: day, month, "at", time — kept together when the row wraps. */
+#wr-app .wr-ui .sk-moment { display: inline-flex; align-items: center; gap: 6px; margin-right: 6px; white-space: nowrap; }
+#wr-app .wr-ui .sk-range .sk-time { width: 96px; padding-top: 4px; padding-bottom: 4px; color-scheme: dark; }
+#wr-app .wr-ui .sk-lead { color: var(--wr-text-2); font-weight: 600; }
+#wr-app .wr-ui .sk-word { color: var(--wr-dim); font-size: 12.5px; }
+#wr-app .wr-ui .sk-len { margin-left: 4px; color: var(--wr-dim); font-size: 12px; }
+#wr-app .wr-ui .sk-range:not(.is-off) .sk-len { color: var(--wr-text-2); }
+#wr-app .wr-ui .sk-kept {
+    grid-column: 2;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 0;
+    color: var(--wr-text-2);
+    font-size: 12px;
+}
+#wr-app .wr-ui .sk-rm { min-height: 24px; padding: 2px 8px; font-size: 11.5px; }
+#wr-app .wr-ui .sk-clock { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; font-size: 12.5px; }
+#wr-app .wr-ui .sk-radio { display: inline-flex; align-items: center; gap: 6px; color: var(--wr-text-2); cursor: pointer; }
+#wr-app .wr-ui .sk-actions { display: flex; align-items: center; gap: 8px; width: 100%; min-height: 30px; }
+/* Nothing to say and nothing to save: no gap where they would be. */
+#wr-app .wr-ui .sk-actions:has(.sk-status:empty):not(:has(button:not([hidden]))) { display: none; }
+#wr-app .wr-ui .sk-status { flex: 1; margin: 0; color: var(--wr-amber); }
+#wr-app .wr-ui .sk-status.is-bad { color: var(--wr-red); }
+
+/* The preview, folded away. */
+#wr-app .wr-ui .sk-preview > summary {
+    list-style: none;
+    cursor: pointer;
+    display: flex;
+    align-items: baseline;
+    flex-wrap: wrap;
+}
+#wr-app .wr-ui .sk-preview > summary::-webkit-details-marker { display: none; }
+#wr-app .wr-ui .sk-preview > summary::before {
+    content: "";
+    width: 7px;
+    height: 7px;
+    margin-right: 9px;
+    border-right: 1.6px solid var(--wr-text-2);
+    border-bottom: 1.6px solid var(--wr-text-2);
+    transform: translateY(-2px) rotate(-45deg);
+    transition: transform 0.15s;
+}
+#wr-app .wr-ui .sk-preview[open] > summary::before { transform: translateY(-3px) rotate(45deg); }
+#wr-app .wr-ui .sk-preview:not([open]) { padding-bottom: 14px; }
+#wr-app .wr-ui .sk-pretend { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+#wr-app .wr-ui .sk-pretend[hidden] { display: none; }
+#wr-app .wr-ui .sk-label { color: var(--wr-text-2); font-size: 12.5px; }
+
+@media (max-width: 860px) {
+    #wr-app .wr-ui .sk-row { grid-template-columns: 1fr; }
+    #wr-app .wr-ui .sk-kept { grid-column: 1; }
+}
+
+/* The Recolour section keeps the site's dress for its preview (see the top
+   of this file), framed so it reads as a window into the site. */
+#wr-app .wr-stage > .admin-panel[data-panel="recolour"] {
+    padding: 18px 20px 22px;
+    background: var(--frame-bg);
+    border-radius: 12px;
+    border: 1px solid var(--wr-line);
+    color: var(--parchment);
+}
+
+/* The Save/Cancel bar for an open maze or event form, floating at the foot
+   of the stage as the editors' action bar. */
+#wr-app .wr-ui.admin-floating-actions {
+    margin: 18px -26px calc(-1 * var(--admin-stage-pad-b));
+    padding: 12px 26px;
+    background: var(--wr-panel-2);
+    border: 0;
+    border-top: 1px solid var(--wr-line-2);
+    border-radius: 0;
+    box-shadow: 0 -12px 30px rgba(0, 0, 0, 0.4);
+    border-image: none;
+}
+:is(#wr-app .wr-ui, #login-modal) .admin-floating-actions-label { color: var(--wr-amber); font: 600 12.5px/1.2 var(--wr-font); }
+
+/* ---- SIGNING IN: a card in the middle of the workshop. */
+body.wr-on #login-modal.modal-overlay {
+    background: radial-gradient(1200px 600px at 50% 30%, rgba(242, 204, 78, 0.05), transparent 60%), rgba(8, 9, 11, 0.86);
+    backdrop-filter: blur(2px);
+}
+body.wr-on #login-modal .modal {
+    width: min(400px, calc(100vw - 32px));
+    background: var(--wr-panel-2);
+    border: 1px solid var(--wr-line-2);
+    border-radius: 14px;
+    border-image: none;
+    box-shadow: 0 24px 60px rgba(0, 0, 0, 0.6);
+    padding: 0;
+    overflow: hidden;
+}
+body.wr-on #login-modal .chrome-titlebar {
+    height: auto;
+    padding: 22px 24px 0;
+    background: none;
+    border: 0;
+    border-image: none;
+    justify-content: flex-start;
+}
+body.wr-on #login-modal .chrome-titlebar::before,
+body.wr-on #login-modal .chrome-titlebar::after { content: none; }
+body.wr-on #login-modal .chrome-titlebar h2 {
+    position: static;
+    transform: none;
+    margin: 0;
+    padding: 0;
+    background: none;
+    font: 650 20px/1.2 var(--wr-font);
+    color: var(--wr-text);
+    text-shadow: none;
+    letter-spacing: 0;
+}
+body.wr-on #login-modal .chrome-frame {
+    background: none;
+    border: 0;
+    border-image: none;
+    padding: 0;
+    box-shadow: none;
+}
+body.wr-on #login-modal .modal-body { padding: 8px 24px 24px; background: none; }
+body.wr-on #login-modal .room-desc-full {
+    margin: 0 0 18px;
+    padding: 0;
+    border: 0;
+    color: var(--wr-text-2);
+    font: 13px/1.5 var(--wr-font);
+}
+body.wr-on #login-modal .admin-form { gap: 12px; border: 0; padding: 0; margin: 0; background: none; }
+body.wr-on #login-modal .admin-field { gap: 6px; }
+body.wr-on #login-modal .admin-form-actions .btn { width: 100%; min-height: 36px; }
+
+/* ---- NARROW: the rail becomes a strip of sections along the top, and the
+   page scrolls as one, as the old page did under 860px (see revealPicker in
+   js/admin.js, which reads which of the two is scrolling). */
+@media (max-width: 860px) {
+    body.wr-on { height: auto; overflow: auto; }
+    .wr-app { position: static; display: block; min-height: 100vh; }
+    #wr-app .wr-top { position: sticky; top: 0; height: 52px; }
+    #wr-app .wr-brand-text span, #wr-app .wr-live { display: none; }
+    #wr-app .wr-body { display: block; height: auto; }
+    #wr-app .wr-rail {
+        position: sticky;
+        top: 52px;
+        z-index: 20;
+        flex-direction: row;
+        overflow-x: auto;
+        overflow-y: hidden;
+        padding: 8px;
+        border-right: 0;
+        border-bottom: 1px solid var(--wr-line);
+    }
+    #wr-app .wr-rail-group { display: none; }
+    #wr-app .wr-rail .chrome-nav-btn { width: auto; flex: none; }
+    #wr-app .wr-rail .chrome-nav-btn.active::before { content: none; }
+    #wr-app .wr-stage { overflow: visible; padding: 16px 14px 90px; }
+    #wr-app .wr-status { position: sticky; bottom: 0; }
+    #wr-app .wr-top .admin-tab-btn .wr-btn-text, #wr-app .wr-btn .wr-btn-text { display: none; }
+    /* One row, icons only: the bar's tools spilled onto a second line over
+       the section strip at phone width. The account button's text is the
+       username (js/admin.js sets it), so it is hidden by size, leaving the
+       avatar. */
+    #wr-app .wr-top { gap: 8px; padding: 0 10px; }
+    #wr-app .wr-top .admin-tabs { flex-wrap: nowrap; gap: 6px; min-width: 0; }
+    #wr-app .wr-top .admin-tab-btn, #wr-app .wr-btn { padding: 0 9px; }
+    #wr-app .wr-top .admin-tab-user .admin-tab-btn { font-size: 0; gap: 0; }
+    #wr-app .wr-top .admin-tab-user .admin-tab-btn::before { margin: 0; }
+    #wr-app .wr-where { font-size: 14px; padding-left: 10px; min-width: 0; flex: 1 1 auto; }
+    /* The drop-downs hang from the bar's right edge, not their small tab,
+       or the wider ones ran off the left of the screen. */
+    #wr-app .wr-top .admin-tab { position: static; }
+    #wr-app .wr-top .admin-drop { right: 10px; max-width: calc(100vw - 20px); }
+    #wr-app .wr-top .admin-drop-glyphs { width: min(380px, calc(100vw - 20px)); }
+    /* style.css pins the Save/Cancel bar to the foot of the screen here: the
+       stage-edge margins above pushed it 24px below it and past both sides. */
+    #wr-app .wr-ui.admin-floating-actions { margin: 0; padding: 12px 14px; }
+}
+@media (max-width: 420px) {
+    #wr-app .wr-where { display: none; }
+}

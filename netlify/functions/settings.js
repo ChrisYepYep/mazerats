@@ -63,6 +63,14 @@ const VALID_PURA_STATES = ["maintenance", "live"];
 const DEFAULT_PURA_STATE = "maintenance";
 const puraState = (doc) => (doc && doc.puraPanicState === "live") ? "live" : DEFAULT_PURA_STATE;
 
+/* RAT RACE: "maintenance" or "live" (11 Oct 2026), exactly as Pura Panic:
+   in maintenance its menu row says so and only an admin signed in to the
+   Warren plays it. */
+// hidden (13 Oct 2026): out of the menu altogether, playable by admins (for testing on the live site in secret)
+const VALID_RAT_STATES = ["maintenance", "live", "hidden"];
+const DEFAULT_RAT_STATE = "maintenance";
+const ratState = (doc) => (doc && VALID_RAT_STATES.includes(doc.ratRaceState)) ? doc.ratRaceState : DEFAULT_RAT_STATE;
+
 /* WHICH PALETTE THE SITE WEARS.
 
    "classic" is the brown the archive has always been, and is what everyone
@@ -82,8 +90,70 @@ const puraState = (doc) => (doc && doc.puraPanicState === "live") ? "live" : DEF
 
    Defaults to classic, so a database that has never heard of this setting
    renders exactly the site it rendered before it existed. */
-const VALID_THEMES = ["classic", "purple", "pumpkin", "witch", "crimson"];
+const VALID_THEMES = ["classic", "purple", "pumpkin", "witch", "crimson", "frost"];
 const DEFAULT_THEME = "classic";
+
+/* THE SEASONAL SKIN (25 Oct 2026): decorations worn over whichever palette
+   is on (snow and lights for Christmas, slime for Halloween). One at a time,
+   as <html data-skin="<name>">; js/skin-wear.js puts it on, and adding a skin
+   means its name here, in SKINS there, and in js/admin-skin.js.
+
+   skin is the MANUAL OVERRIDE: "off" is none whatever the dates say, a
+   skin's name is that skin for everybody now, and "auto" (the default, so a
+   database that has never heard of this wears nothing) follows the dates.
+
+   skinSchedule is those dates: up to MAX_SKIN_WINDOWS windows, each
+       { skin, from: "YYYY-MM-DDTHH:mm", to: "YYYY-MM-DDTHH:mm",
+         zone: "local" | "utc", yearly: true | false, theme?: <palette> | null }
+   theme is the palette worn alongside while the window is on. Left out, it
+   is the skin's own default (Halloween wears Witching Hour, Christmas
+   leaves the palette alone); null keeps the site's palette; a name is that
+   palette.
+   Wall-clock stamps rather than instants, on purpose: "local" means each
+   visitor's own midnight, which no single instant can say. A yearly window
+   ignores its years and may run across New Year, so its end only has to
+   differ from its start; any other window has to end after it starts. */
+const VALID_SKINS = ["xmas", "halloween"];
+const SKIN_MODES = ["auto", "off"].concat(VALID_SKINS);
+const DEFAULT_SKIN = "auto";
+const MAX_SKIN_WINDOWS = 20;
+const SKIN_STAMP = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/;
+
+function realStamp(v) {
+    const m = SKIN_STAMP.exec(String(v || ""));
+    if (!m) return false;
+    const [y, mo, d, h, mi] = m.slice(1).map(Number);
+    const t = new Date(Date.UTC(y, mo - 1, d, h, mi));
+    return t.getUTCFullYear() === y && t.getUTCMonth() === mo - 1 && t.getUTCDate() === d && h < 24 && mi < 60;
+}
+// The cleaned list, or a string saying what is wrong with it.
+function cleanSkinSchedule(list) {
+    if (!Array.isArray(list)) return "skinSchedule must be a list of date windows";
+    if (list.length > MAX_SKIN_WINDOWS) return `At most ${MAX_SKIN_WINDOWS} date windows`;
+    const out = [];
+    for (let i = 0; i < list.length; i++) {
+        const w = list[i] || {}, n = `Window ${i + 1}: `;
+        if (!VALID_SKINS.includes(w.skin)) return n + "skin must be one of: " + VALID_SKINS.join(", ");
+        if (!realStamp(w.from) || !realStamp(w.to)) return n + "from and to must be dates and times (YYYY-MM-DDTHH:mm)";
+        const zone = w.zone === "utc" ? "utc" : "local";
+        const yearly = w.yearly === true;
+        if (yearly ? w.to.slice(5) === w.from.slice(5) : w.to <= w.from) return n + (yearly ? "it starts and ends at the same moment" : "it ends before it starts");
+        const clean = { skin: w.skin, from: w.from, to: w.to, zone, yearly };
+        /* The palette worn with it while it is on. Left out, the skin's own
+           default (Halloween's is Witching Hour; see PAIRED in
+           js/skin-wear.js); null or "" for the site's own palette whatever
+           the skin; or a palette's name. */
+        if (w.theme !== undefined) {
+            const theme = w.theme === null || w.theme === "" ? null : w.theme;
+            if (theme !== null && !VALID_THEMES.includes(theme)) return n + "palette must be one of: " + VALID_THEMES.join(", ");
+            clean.theme = theme;
+        }
+        out.push(clean);
+    }
+    return out;
+}
+const skinOf = (doc) => (doc && SKIN_MODES.includes(doc.skin)) ? doc.skin : DEFAULT_SKIN;
+const scheduleOf = (doc) => (doc && Array.isArray(doc.skinSchedule)) ? doc.skinSchedule : [];
 
 /* Which furni falls past Fallin' Furni's title screen. A site-wide choice
    rather than a per-level one — the title screen is not a level — so it
@@ -152,11 +222,14 @@ function settingsReply(event, doc) {
         lobbyFurni: (doc && Array.isArray(doc.lobbyFurni)) ? doc.lobbyFurni : [],
         fallinFurniState: (doc && doc.fallinFurniState) || DEFAULT_FF_STATE,
         puraPanicState: puraState(doc),
+        ratRaceState: ratState(doc),
         maintenanceNote: (doc && doc.maintenanceNote) || DEFAULT_MAINTENANCE_NOTE,
         theme: (doc && doc.theme) || DEFAULT_THEME,
         palette: (doc && doc.palette) || null,
         launchAt: (doc && doc.launchAt) || "",
-        ffLaunchAt: (doc && doc.ffLaunchAt) || ""
+        ffLaunchAt: (doc && doc.ffLaunchAt) || "",
+        skin: skinOf(doc),
+        skinSchedule: scheduleOf(doc)
     }, { cdn: GATE_CDN_CACHE });
     res.headers = { ...res.headers, "Netlify-Vary": "query=fresh" };
     return res;
@@ -244,6 +317,12 @@ async function write(event, settings, db) {
             }
             update.puraPanicState = body.puraPanicState;
         }
+        if (body.ratRaceState !== undefined) {
+            if (!VALID_RAT_STATES.includes(body.ratRaceState)) {
+                return json(400, { error: "ratRaceState must be one of: " + VALID_RAT_STATES.join(", ") });
+            }
+            update.ratRaceState = body.ratRaceState;
+        }
         if (body.maintenanceNote !== undefined) {
             if (!VALID_MAINTENANCE_NOTES.includes(body.maintenanceNote)) {
                 return json(400, { error: "maintenanceNote must be one of: " + VALID_MAINTENANCE_NOTES.join(", ") });
@@ -300,6 +379,17 @@ async function write(event, settings, db) {
             }
             update.ffLaunchAt = when;
         }
+        if (body.skin !== undefined) {
+            if (!SKIN_MODES.includes(body.skin)) {
+                return json(400, { error: "skin must be one of: " + SKIN_MODES.join(", ") });
+            }
+            update.skin = body.skin;
+        }
+        if (body.skinSchedule !== undefined) {
+            const cleaned = cleanSkinSchedule(body.skinSchedule);
+            if (typeof cleaned === "string") return json(400, { error: cleaned });
+            update.skinSchedule = cleaned;
+        }
         if (body.lobbyFurni !== undefined) {
             if (!Array.isArray(body.lobbyFurni)) {
                 return json(400, { error: "lobbyFurni must be an array of furni class names" });
@@ -333,6 +423,7 @@ async function write(event, settings, db) {
             lobbyFurni: (doc && Array.isArray(doc.lobbyFurni)) ? doc.lobbyFurni : [],
             fallinFurniState: (doc && doc.fallinFurniState) || DEFAULT_FF_STATE,
             puraPanicState: puraState(doc),
+            ratRaceState: ratState(doc),
             maintenanceNote: (doc && doc.maintenanceNote) || DEFAULT_MAINTENANCE_NOTE,
             theme: (doc && doc.theme) || DEFAULT_THEME,
             // Answered alongside the theme, now that the Controls panel
@@ -342,7 +433,10 @@ async function write(event, settings, db) {
             // save is the whole document as the GET would give it rather
             // than all of it but the two fields the date pickers write.
             launchAt: (doc && doc.launchAt) || "",
-            ffLaunchAt: (doc && doc.ffLaunchAt) || ""
+            ffLaunchAt: (doc && doc.ffLaunchAt) || "",
+            // The skin and its dates (25 Oct 2026), for the Warren's skins card.
+            skin: skinOf(doc),
+            skinSchedule: scheduleOf(doc)
         });
     }
 

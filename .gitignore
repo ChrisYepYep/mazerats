@@ -3,3 +3,14 @@ node_modules/
 .env
 deno.lock
 tools/.cache/
+
+# The level editor keeps the last versions of each passage it saved here (tools/ariadne-editor/server.js)
+tools/ariadne-editor/.history/
+
+# The orchestra's recordings for the epic soundtracks, made by tools/ariadne-editor/orchestra.js (editor only)
+tools/ariadne-editor/samples/
+tools/ariadne-editor/.vsco/
+# The epic soundtracks, once made, kept as WAVs so they play at once (server.js /api/epic)
+tools/ariadne-editor/epic-cache/
+# The game's trailer, rendered by the editor page (overnight 22 Oct 2026): big video files, not for git
+tools/ariadne-editor/trailer/

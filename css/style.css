@@ -403,6 +403,23 @@ html::-webkit-scrollbar-button { display: none; width: 0; height: 0; background:
     margin-top: 1px;
 }
 
+/* The archive window's bar runs the whole height of its frame (the owner's,
+   25 Oct 2026). The tally line over the list ("12 of 37 walked", signed
+   in) sits outside .home-results, so a bar in the list's own row started
+   under it, short of the frame's top. It is pinned to .chrome-body's right
+   edge instead, the full height, with the same 1px under the highlight and
+   1px over the bottom; the row keeps its width free for it. The tally and
+   "Clear filter" keep .chrome-body's 18px right padding, which clears it. */
+#browse-window .chrome-body { position: relative; }
+#browse-window .custom-scrollbar-wrap--results { padding-right: 15px; }
+#browse-window .custom-scrollbar-wrap--results .custom-scrollbar {
+    position: absolute;
+    top: 1px;
+    bottom: 1px;
+    right: 0;
+    margin-top: 0;
+}
+
 /* While the chrome-frame is slid down to its minimized sliver, its content
    (including this scrollbar) is still fully rendered underneath — just
    hide the scrollbar itself so it doesn't peek through the visible sliver
@@ -1066,12 +1083,22 @@ main { display: block; flex: 1 0 auto; }
     margin: 0 auto;
 }
 
+/* THE BOTTOM BAR, as the top bar turned over (25 Oct 2026, the owner's:
+   "change the styling of the homepage's bottom bar … so it kind of matches
+   the top bar"): the same near-black band, darkest at the page's edge, the
+   same 2px black edge and the same line of --chrome-fill beside it — on its
+   top here, where .site-header has them on its foot — and the same blur of
+   the maze pattern behind. One rule for every page with the site footer.
+   tools/themes.js gives each palette its own band, as it does the header's. */
 .site-footer {
     flex-shrink: 0;
     margin-top: 60px;
     padding: 18px 24px;
     text-align: center;
-    border-top: 1px solid var(--border);
+    background: linear-gradient(0deg, rgba(18, 12, 7, 0.97), rgba(18, 12, 7, 0.9));
+    border-top: 2px solid var(--chrome-border);
+    box-shadow: 0 -4px 0 -2px var(--chrome-fill);
+    backdrop-filter: blur(4px);
     color: var(--parchment-dim);
     font-family: 'Roboto', sans-serif;
     font-size: 0.72rem;
@@ -17501,6 +17528,24 @@ textarea.ctl-input.de-note {
        ragged when one card holds a button and the next holds a track. */
     align-items: stretch;
     gap: 12px;
+}
+
+/* GROUPED (11 Oct 2026, the owner's: the state switches were scattered).
+   The Control menu is three sections — Website, Games, Tools — each a
+   heading over its own row of cards, a rule between them. */
+.ctl-section + .ctl-section {
+    margin-top: 12px;
+    padding-top: 10px;
+    border-top: 1px solid rgba(0, 0, 0, 0.35);
+}
+.ctl-section-title {
+    margin: 0 0 8px;
+    font-family: 'Silkscreen', monospace;
+    font-size: 0.65rem;
+    font-weight: 700;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    color: var(--parchment);
 }
 
 /* Two controls on one line inside a single card. */

@@ -78,6 +78,18 @@ const META_FILE = opt("meta", null);
 const onlyArg = opt("only", null);
 const ONLY = onlyArg ? new Set(onlyArg.split(",").map(Number)) : null;
 const VERBOSE = argv.includes("--verbose");
+/* --wander: A PLAYER WHO MOVES ABOUT, as people do (25 Oct 2026).
+
+   The player above only ever walks to its next seat, so it never stands up
+   from a chair the "wrong" way, never heads for where it guesses the next
+   seat will land, never goes to a power-up — and the drop rules have
+   shortcuts that are only safe for a player who does exactly what it does
+   (a seated player is given ONE side of a chair that splits the room). The
+   owner was walled off from a seat on level 10 that 300 perfect rounds never
+   came near. With this, whenever no seat is waiting, the player walks to a
+   random tile it can reach, every WANDER_MS or so. */
+const WANDER = argv.includes("--wander");
+const WANDER_MS = 1200;
 const OUT = opt("out", null);
 
 /* MEASURING HOW LONG A ROUND TAKES, rather than whether it fits the clock.
@@ -206,6 +218,9 @@ function playRound(level, meta, seed) {
     let peakBacklog = 0;
     let noticedAt = -1;           // when the player may act on the current seat
     let lastWant = null;
+    // --wander's own dice, so the room's rolls stay the same seed for seed.
+    const wanderRand = mulberry(seed + 7919);
+    let wanderAt = 0;
 
     /* A STEP ARRIVES WHEN IT ENDS, as it does on the page (30 Sept 2026).
 
@@ -239,12 +254,27 @@ function playRound(level, meta, seed) {
         let want = game.nextSeat();
         if (want !== lastWant) { lastWant = want; noticedAt = now + REACT_MS; }
         if (want && now < noticedAt) want = null;
+        if (WANDER && !want && !game.nextSeat() && !route.length && !arriving && now >= wanderAt) {
+            wanderAt = now + WANDER_MS * (0.5 + wanderRand());
+            const blocked = game.blocked();
+            const isBlocked = (x, y) => blocked.has(Iso.key(x, y));
+            const floor = [];
+            for (let y = 0; y < 40; y++) for (let x = 0; x < 40; x++) {
+                if (Path.inside(x, y) && !isBlocked(x, y) && !(x === pos.x && y === pos.y)) floor.push({ x, y });
+            }
+            for (let tries = 0; tries < 6 && floor.length; tries++) {
+                const goal = floor[Math.floor(wanderRand() * floor.length)];
+                const r = Path.findPath(pos, goal, isBlocked, true) || [];
+                if (r.length) { route = r; target = null; break; }
+            }
+        }
         if (want) {
             /* Re-plan when the goal changed, when the route ran out, or when
                the room moved under it. Cheap enough at 25 ticks a second and
                it is what a player with eyes does. */
             const goal = nearestTile(want, pos);
-            const blocked = Furni.blockedTiles(game.round.placed);
+            // As the page walks (RoomGame.blocked): every piece blocks, seats too.
+            const blocked = game.blocked();
             const goalKey = Iso.key(goal.x, goal.y);
             const isBlocked = (x, y) => blocked.has(Iso.key(x, y));
             if (!target || target.x !== goal.x || target.y !== goal.y || !route.length) {
@@ -257,6 +287,12 @@ function playRound(level, meta, seed) {
             }
         }
 
+        // A wander whose way has since been built over (or closed off) is
+        // dropped, as the page's repathIfBlocked drops it.
+        if (route.length && !want && !arriving) {
+            const b = game.blocked();
+            if (route.some(s => b.has(Iso.key(s.x, s.y)))) route = [];
+        }
         if (route.length && now >= stepAt && !arriving) {
             const step = route.shift();
             pos = { x: step.x, y: step.y };

@@ -199,7 +199,21 @@ const THEMES = {
                gamma: 1.35, bone: 0.55, lift: 0.06, keep: 0.80, chromeSat: 0.30,
                loudSat: 0.05, loudLight: 1.22, activeBright: 1.10,
                glintHue: 8, glintSat: 0.30, glintFrom: 0.11,
-               neon: [255, 92, 96], label: 'Crimson' }
+               neon: [255, 92, 96], label: 'Crimson' },
+
+    /* FROST, the Christmas skin's palette (25 Oct 2026; the owner's: "in the
+       mock ups for the christmas skin the site was recoloured"). A moonlit
+       winter night: the browns become a midnight blue, and the light end
+       goes to frost, a paler and greener ice, so the snow and icicles sit
+       on something cold. Lighter than the Halloween three (keep high, gamma
+       gentle): a night under snow is bright, not black. The selected tab is
+       the one block of pale ice, and the furniture's lit edges glint cyan. */
+    frost:   { surfaceHue: 214, accentHue: 196,
+               sat: 1.70, satMax: 0.78, fadeSat: 0.70, fadeSatMax: 0.46,
+               gamma: 1.15, bone: 0.25, lift: 0.08, keep: 0.92, chromeSat: 0.62,
+               loudHue: 192, loudSat: 0.42, loudLight: 1.18, activeBright: 1.08,
+               glintHue: 186, glintSat: 0.55, glintFrom: 0.10,
+               neon: [150, 222, 255], label: 'Frost' }
 };
 
 

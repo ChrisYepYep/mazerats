@@ -1,0 +1,99 @@
+{
+  "zones": [
+    {
+      "name": "MINE LABYRINTH",
+      "music": 1,
+      "theme": "wood",
+      "passages": [
+        "mine-1",
+        "mine-2",
+        "mine-3"
+      ]
+    },
+    {
+      "name": "STONE QUARRY",
+      "music": 2,
+      "theme": "quarry",
+      "passages": [
+        "quarry-1",
+        "quarry-2",
+        "quarry-3"
+      ]
+    },
+    {
+      "name": "ICE CAVERNS",
+      "music": 3,
+      "theme": "ice",
+      "passages": [
+        "ice-1",
+        "ice-2",
+        "ice-3"
+      ]
+    },
+    {
+      "name": "DARK DEPTHS",
+      "music": 4,
+      "theme": "dark",
+      "passages": [
+        "dark-1",
+        "dark-2",
+        "dark-3"
+      ]
+    },
+    {
+      "name": "SUNKEN STATION",
+      "music": 5,
+      "theme": "station",
+      "passages": [
+        "station-1",
+        "station-2",
+        "station-3"
+      ]
+    },
+    {
+      "name": "THE HEART OF THE LABYRINTH",
+      "music": 6,
+      "theme": "heart",
+      "passages": [
+        "heart-1"
+      ],
+      "secret": true
+    },
+    {
+      "name": "STEAMWORKS FACTORY",
+      "music": 9,
+      "theme": "factory",
+      "passages": [
+        "factory-1"
+      ],
+      "lab": true
+    },
+    {
+      "name": "SANDFALL TOMB",
+      "music": 8,
+      "theme": "tomb",
+      "passages": [
+        "tomb-1"
+      ],
+      "lab": true
+    },
+    {
+      "name": "OVERGROWN RUINS",
+      "music": 10,
+      "theme": "ruins",
+      "passages": [
+        "ruins-1"
+      ],
+      "lab": true
+    },
+    {
+      "name": "NEON JUNGLE ARCADE",
+      "music": 11,
+      "theme": "arcade",
+      "passages": [
+        "arcade-1"
+      ],
+      "lab": true
+    }
+  ]
+}

@@ -54,7 +54,7 @@
          and a colour scheme is not worth a blank page. -->
     <link rel="stylesheet" href="/css/style.css?v=2">
     <link id="theme-css" rel="stylesheet">
-    <script>(function(){try{var t=localStorage.getItem("mazerats_theme");if(!t||t==="classic"||!/^[a-z]+$/.test(t))return;document.documentElement.setAttribute("data-theme",t);document.getElementById("theme-css").href="/css/theme-"+t+".css";}catch(e){}})();</script>
+    <script>(function(){try{var t=localStorage.getItem("mazerats_theme"),k=JSON.parse(localStorage.getItem("mazerats_skin_theme")||"null");if(k&&k.theme&&Date.now()<k.until)t=k.theme;if(!t||t==="classic"||!/^[a-z]+$/.test(t))return;document.documentElement.setAttribute("data-theme",t);document.getElementById("theme-css").href="/css/theme-"+t+".css";}catch(e){}})();</script>
     <!-- Umami, the aggregate visit counts. Loaded by this line rather than a
          plain <script src>, because a plain tag cannot ask the browser first:
          with Global Privacy Control on, it is not loaded at all. Do Not Track
@@ -126,6 +126,7 @@
     <!-- Puts the Fellow Fansites row and the Privacy Policy link into the
          footer, exactly as it does on every other page. -->
     <script src="/js/palette-wear.js?v=2"></script>
+    <script src="/js/skin-wear.js?v=1"></script>
     <script src="/js/site.js?v=2"></script>
     <script src="/js/track.js?v=2"></script>
 </body>

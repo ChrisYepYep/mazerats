@@ -281,14 +281,16 @@
        against action=wlk returns four genuinely different images. Asking for
        action=wlk alone returns frame 0 every time, which is why the avatar
        used to slide across the floor with its limbs still. */
-    function avatarSprite(figure, dir, action, frame) {
+    // `carry` is a Habbo carry item (see POWERUPS.carry in js/room-levels.js).
+    function avatarSprite(figure, dir, action, frame, carry) {
         const walking = action === "wlk";
+        const base = walking ? "wlk" : (action === "sit" ? "sit" : "std");
         const url = "https://www.habbo.com/habbo-imaging/avatarimage?" +
             new URLSearchParams({
                 figure, size: avatarSizing().size,
                 direction: String(dir),
                 head_direction: String(dir),
-                action: walking ? "wlk" : (action === "sit" ? "sit" : "std"),
+                action: carry ? `${base},crr=${carry}` : base,
                 frame: String(walking ? (frame | 0) % WALK_FRAMES : 0),
                 gesture: "sml"
             }).toString();
@@ -420,7 +422,7 @@
                 dir: facing === null ? state.dir : facing
             };
         }
-        const t = Math.min(1, (now - state.stepAt) / WALK_MS);
+        const t = Math.min(1, (now - state.stepAt) / (state.stepMs || WALK_MS));
         const a = Iso.tileCenter(state.stepFrom.x, state.stepFrom.y);
         const b = Iso.tileCenter(state.pos.x, state.pos.y);
         /* THE LEGS RUN ON THEIR OWN CLOCK, not on the tile's.
@@ -438,7 +440,7 @@
            So the cycle free-runs on the clock and the tile no longer divides
            it. The phase carries across steps by construction, which is also
            more correct than restarting at frame 0 every tile. */
-        const frame = Math.floor(now / WALK_FRAME_MS) % WALK_FRAMES;
+        const frame = Math.floor(now / (boosted(now) ? POWER_FRAME_MS : WALK_FRAME_MS)) % WALK_FRAMES;
         return {
             sx: a.sx + (b.sx - a.sx) * t,
             sy: a.sy + (b.sy - a.sy) * t,
@@ -462,6 +464,9 @@
         if (!game || game.state !== Game.RUNNING) return;
         const what = game.arrivedAt(state.pos, now);
         if (what) { renderHud(now); dirty = true; }
+        if (what === "sat" || what === "won") Sound.sfx("seat", game.streak);
+        else if (what === "wrong" || what === "decoy" || what === "poi") Sound.sfx(what);
+        else if (what === "power") sitOnPower(now);
     }
 
     function beginStep(now) {
@@ -473,6 +478,9 @@
         state.pos = { x: next.x, y: next.y };
         state.dir = next.dir;
         state.stepAt = now;
+        // A step keeps the length it started with: the coffee wearing off
+        // mid-tile does not jerk the figure back.
+        state.stepMs = boosted(now) ? POWER_WALK_MS : WALK_MS;
         dirty = true;
     }
 
@@ -552,6 +560,541 @@
         dirty = true;
     }
 
+    /* ---- THE POWER-UPS (25 Oct 2026): coffee, brain freeze, love potion.
+
+       The owner's design, every part of it, first for the coffee and then
+       for each one after it:
+
+         the furni     each drops onto a tile the builder sets, facing the way
+                       they set, at a moment they set — once so many seats
+                       have landed ("after the first chair"). The level's
+                       `powerups`, edited on the Rules tab; js/room-drop.js
+                       does the drop and keeps the tile in front clear.
+         getting it    DOUBLE-CLICK it, as in the hotel: the figure walks to
+                       the tile IN FRONT of it, turns to it, and is handed the
+                       thing. One of each a round.
+         holding it    the hand item, in the hand, while it lasts — Habbo's own
+                       carry items from the Origins sprites (POWERUPS.carry in
+                       js/room-levels.js), drawn by the imaging service.
+         what it does  coffee: POWER_WALK_MS steps for 8 seconds. Brain freeze:
+                       the round's clock stops for 5 (RoomGame.freeze), the
+                       furni keeps falling. Love potion: a life.
+
+       What each is — its furni, item, length and tip — is in one table,
+       RoomLevels.POWERUPS, which the editor, the drop and the server read
+       too. */
+    const POWER_WALK_MS = 330;          // a step while the coffee lasts (WALK_MS is 500)
+    const POWER_FRAME_MS = 56;          // the legs to match (WALK_FRAME_MS 84)
+    const DOUBLE_TAP_MS = 500;          // two taps on it inside this (Windows' own double-click time)
+    const POWERS = () => (window.RoomLevels && RoomLevels.POWERUPS) || {};
+    const power = {
+        round: null,
+        until: {},                      // kind -> when its effect ends
+        had: new Set(),                 // kinds used this round
+        seen: new Set(),                // kinds whose furni has landed
+        carry: null,                    // { item, until }: what is in the hand
+        want: null,                     // the one being walked to
+        tap: 0, tapOn: null             // the first click of a double-click
+    };
+
+    const boosted = (now) => (power.until.coffee || 0) > now;
+    // The hand item showing, or 0.
+    const carrying = (now) => (power.carry && power.carry.until > now ? power.carry.item : 0);
+
+    // The power-ups standing in the room, each { p, f }.
+    function powerMachines() {
+        const list = (game && game.round && game.round.powerups) || [];
+        return list.filter(p => p.furni && !game.inAir(p.furni)).map(p => ({ p, f: p.furni }));
+    }
+
+    const covers = (f, x, y) => Furni.tilesOf(f).some(t => t.x === x && t.y === y);
+
+    /* IS THE POINTER ON ITS ARTWORK — not the floor tile under the pointer,
+       which is what a click is otherwise turned into. A machine stands four
+       tiles' worth of pixels tall, so a click on its body maps to a floor tile
+       BEHIND it, and the first version, which only asked about its own tile,
+       ignored every double-click a player actually made (the owner's: "double
+       clicking the mochamaster doesn't do anything"). Read pixel by pixel, so
+       the empty corners of a sprite still let a click through to the floor;
+       the shadow does not count. */
+    const alphaOf = new Map();          // a sprite's alpha, read once
+    function onArtwork(f, px, py) {
+        for (const p of Furni.partsOf(f, performance.now()) || []) {
+            if (!p.url || /_sd\d*\.png$/.test(p.url)) continue;
+            const e = Furni.sprite(p.url);
+            if (!e.ready || e.failed) continue;
+            const w = e.img.naturalWidth, h = e.img.naturalHeight;
+            let lx = Math.floor(px - p.x);
+            const ly = Math.floor(py - p.y);
+            if (lx < 0 || ly < 0 || lx >= w || ly >= h) continue;
+            if (p.flip) lx = w - 1 - lx;
+            let a = alphaOf.get(p.url);
+            if (a === undefined) {
+                try {
+                    const c = document.createElement("canvas");
+                    c.width = w; c.height = h;
+                    const g = c.getContext("2d");
+                    g.drawImage(e.img, 0, 0);
+                    a = g.getImageData(0, 0, w, h).data;
+                } catch (err) { a = null; }   // unreadable: the box will do
+                alphaOf.set(p.url, a);
+            }
+            if (!a || a[(ly * w + lx) * 4 + 3] > 24) return true;
+        }
+        return false;
+    }
+
+    /* A click on the room, before it is walked to. Two on the same power-up
+       in quick succession are the double-click; one alone does nothing, as a
+       click on any other furni does. Taps are counted here rather than with
+       a dblclick listener so a phone's double TAP works the same. `px, py`
+       is the click on the canvas, for the artwork test above. The one nearest
+       the viewer wins where two overlap. */
+    function powerClick(t, px, py) {
+        // The ones you sit in (the love potion's Pod) are walked into like
+        // any seat, with a single click; this is for the ones you use.
+        const hits = powerMachines().filter(({ p, f }) => !(POWERS()[p.kind] || {}).sit &&
+            ((t && covers(f, t.x, t.y)) || (px !== undefined && onArtwork(f, px, py))));
+        if (!hits.length) { power.tap = 0; power.tapOn = null; return false; }
+        hits.sort((a, b) => Furni.tileDepth(b.f.x, b.f.y) - Furni.tileDepth(a.f.x, a.f.y));
+        const hit = hits[0];
+        const now = performance.now();
+        if (power.tap && power.tapOn === hit.p && now - power.tap < DOUBLE_TAP_MS) {
+            power.tap = 0; power.tapOn = null;
+            fetchPower(hit.p, hit.f);
+        } else {
+            power.tap = now; power.tapOn = hit.p;
+        }
+        return true;
+    }
+
+    /* Walk up to it — to THE TILE IN FRONT OF IT, always, as the owner asked;
+       the round keeps that tile clear of falling furni (RoomDrop's
+       `reserved`). Only if it cannot be stood on or reached (the builder put
+       it against a wall, or decor stands there) does this fall back to
+       whichever side is nearest. */
+    function fetchPower(p, m) {
+        const def = POWERS()[p.kind] || {};
+        if (power.had.has(p.kind)) {
+            game.message = `One ${(def.name || "power-up").toLowerCase()} a round.`;
+            renderHud(gameNow());
+            return;
+        }
+        const front = window.RoomDrop && RoomDrop.powerupFront ? RoomDrop.powerupFront(p) : null;
+        if (front && Iso.has(front.x, front.y) && !blocked(front.x, front.y) && !covers(m, front.x, front.y)) {
+            const here = state.pos.x === front.x && state.pos.y === front.y;
+            const route = here ? [] : Path.findPath(state.pos, { x: front.x, y: front.y }, blocked, false);
+            if (here || (route && route.length)) {
+                power.want = { x: front.x, y: front.y, p, machine: m, front: true };
+                if (!here) walkTo(front.x, front.y);
+                return;
+            }
+        }
+        // Already beside it: no walk, it is handed over (powerTick).
+        if (!covers(m, state.pos.x, state.pos.y) && Furni.tilesOf(m).some(t =>
+            Math.max(Math.abs(t.x - state.pos.x), Math.abs(t.y - state.pos.y)) === 1)) {
+            power.want = { x: state.pos.x, y: state.pos.y, p, machine: m };
+            return;
+        }
+        let best = null;
+        for (const t of Furni.tilesOf(m)) {
+            for (const d of Path.DIRS) {
+                const x = t.x + d.dx, y = t.y + d.dy;
+                if (!Iso.has(x, y) || blocked(x, y) || covers(m, x, y)) continue;
+                const route = Path.findPath(state.pos, { x, y }, blocked, false);
+                if (route && route.length && (!best || route.length < best.len)) best = { x, y, len: route.length };
+            }
+        }
+        if (!best) {
+            game.message = `You can't get to the ${def.furniName || "power-up"} from here.`;
+            renderHud(gameNow());
+            return;
+        }
+        power.want = { x: best.x, y: best.y, p, machine: m };
+        walkTo(best.x, best.y);
+    }
+
+    // A new round: nothing had, nothing running, nothing being walked to.
+    function powerArm() {
+        power.round = game;
+        power.until = {};
+        power.freezeSpan = null;
+        power.had = new Set();
+        power.seen = new Set();
+        power.carry = null;
+        power.want = null;
+        power.tap = 0; power.tapOn = null;
+    }
+
+    /* HANDED OVER: what each one does. The hand item goes up for as long as
+       the effect lasts — the potion's, which is a life rather than a spell,
+       for a moment. */
+    function grantPower(p, now) {
+        const def = POWERS()[p.kind] || {};
+        power.had.add(p.kind);
+        power.carry = { item: def.carry, until: now + (def.ms || 3000) };
+        if (p.kind === "coffee") {
+            power.until.coffee = now + def.ms;
+            game.message = "Coffee! Quicker on your feet for 8 seconds.";
+            Sound.sfx("coffee");
+        } else if (p.kind === "freeze") {
+            power.until.freeze = now + def.ms;
+            // Kept past the end, for the room's ice and snow to fade out on.
+            power.freezeSpan = { from: now, to: now + def.ms };
+            if (game.freeze) game.freeze(now, def.ms);
+            game.message = "Brain Freeze! Clock frozen for 5 seconds.";
+            Sound.sfx("freeze");
+        } else if (p.kind === "potion") {
+            if (run) {
+                run.lives += 1;
+                run.potions = (run.potions || 0) + 1;
+            }
+            game.message = run ? "Love potion! One extra life." : "Love potion! (An extra life, in a run.)";
+            Sound.sfx("life");
+            lifePop();
+        }
+        renderHud(now);
+        dirty = true;
+    }
+
+    /* SAT IN THE RAINBOW POD (the owner's: "the player must sit in it, and
+       it fades away when they sit in it, extra life graphic on screen"). The
+       life is given the moment the seat counts (acceptSeat); the Pod fades
+       out over POD_FADE_MS with the figure still sitting in it, and is then
+       taken out of the room, which leaves the figure standing on its tile. */
+    const POD_FADE_MS = 700;
+    function sitOnPower(now) {
+        const list = (game && game.round && game.round.powerups) || [];
+        const p = list.find(q => q.furni && covers(q.furni, state.pos.x, state.pos.y));
+        if (!p || power.had.has(p.kind)) return;
+        grantPower(p, now);
+        p.furni.fadeAt = now;
+    }
+
+    // Faded out: gone from the room, and the tile is floor again.
+    function clearFaded(now) {
+        const r = game && game.round;
+        if (!r) return;
+        const gone = r.placed.filter(f => f.fadeAt && now - f.fadeAt >= POD_FADE_MS);
+        if (!gone.length) return;
+        r.placed = r.placed.filter(f => !gone.includes(f));
+        r.landed = r.landed.filter(f => !gone.includes(f));
+        state.furni = game.renderList();
+        refreshBlocked();
+        dirty = true;
+    }
+
+    /* THE EXTRA LIFE, said over the room: the count-in's own heart and "+1"
+       (lifeBeat), popped up in the middle for a moment while play carries
+       on. Takes no clicks. */
+    let lifePopTimer = 0;
+    function lifePop() {
+        const el = document.getElementById("ff-lifepop");
+        if (!el) return;
+        const n = el.querySelector(".ff-countin-n");
+        el.hidden = false;
+        n.style.animation = "none";
+        void n.offsetWidth;
+        n.style.animation = "";
+        clearTimeout(lifePopTimer);
+        lifePopTimer = setTimeout(() => { el.hidden = true; }, 1500);
+    }
+
+    // Every frame of a running round, after the walk and the drops.
+    function powerTick(now) {
+        if (power.round !== game) powerArm();
+        clearFaded(now);
+
+        // One has just landed: a twinkle, and the hand item's images on their
+        // way so the figure has them by the time it is handed one.
+        for (const { p } of powerMachines()) {
+            if (power.seen.has(p.kind)) continue;
+            power.seen.add(p.kind);
+            preloadCarry((POWERS()[p.kind] || {}).carry);
+            Sound.sfx("coffeeAppear");
+        }
+
+        const w = power.want;
+        if (w) {
+            /* Aimed at the front: there, and only there. Otherwise any tile
+               beside it. A piece landing on the way stops the figure a step
+               short (repathIfBlocked); stopped short, the walk is planned
+               again, a few times. Only a click of the player's own (see the
+               canvas's click) calls it off. */
+            const still = !state.stepFrom && !state.path.length;
+            const arrived = w.front
+                ? still && state.pos.x === w.x && state.pos.y === w.y
+                : still && !covers(w.machine, state.pos.x, state.pos.y) &&
+                  Furni.tilesOf(w.machine).some(t => Math.max(Math.abs(t.x - state.pos.x), Math.abs(t.y - state.pos.y)) === 1);
+            if (arrived) {
+                power.want = null;
+                // Facing it, as the hotel turns you to it.
+                const t = Furni.tilesOf(w.machine)[0];
+                const dx = Math.sign(t.x - state.pos.x), dy = Math.sign(t.y - state.pos.y);
+                const dir = Path.DIRS.findIndex(d => d.dx === dx && d.dy === dy);
+                if (dir >= 0) state.dir = dir;
+                grantPower(w.p, now);
+            } else if (still && !state.goal) {
+                power.want = null;
+                if ((w.tries || 0) < 3) {
+                    fetchPower(w.p, w.machine);
+                    if (power.want) power.want.tries = (w.tries || 0) + 1;
+                }
+            }
+        }
+
+        for (const kind of Object.keys(power.until)) {
+            if (power.until[kind] && now >= power.until[kind]) {
+                power.until[kind] = 0;
+                Sound.sfx("coffeeEnd");
+                dirty = true;
+            }
+        }
+        if (power.carry && now >= power.carry.until) { power.carry = null; dirty = true; }
+    }
+
+    /* ---- THE ROOM FROZEN, while a brain freeze holds the clock (25 Oct
+       2026, the owner's: "have snow falling over the game", and "turning
+       the floor to ice … give it a go but be prepared to revert").
+
+       How much of it is showing, 0 to 1: in over FREEZE_FADE_MS as the
+       freeze starts, out over the same once it ends. */
+    const FREEZE_FADE_MS = 400;
+    // The ice floor, on trial: false takes it out and leaves the snow.
+    const ICE_FLOOR = true;
+    function freezeFade(now) {
+        const s = power.freezeSpan;
+        if (!s || !game || power.round !== game) return 0;
+        if (now < s.from || now > s.to + FREEZE_FADE_MS) return 0;
+        return Math.min(1, (now - s.from) / FREEZE_FADE_MS, (s.to + FREEZE_FADE_MS - now) / FREEZE_FADE_MS);
+    }
+
+    // A steady scramble of a pair of numbers, 0 to 1 — the same every frame.
+    const scramble = (a, b) => {
+        let h = (a * 374761393 + b * 668265263) | 0;
+        h = (h ^ (h >>> 13)) * 1274126177 | 0;
+        return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
+    };
+
+    /* THE ICE FLOOR: the floor's own pattern kept, turned to ice — its colour
+       swapped for a pale ice blue ("color" keeps the light and dark of the
+       tiles, so the pattern still shows through), lightened, then polished:
+       short bright streaks along the grain of the tiles and a few glints
+       that twinkle. Clipped to the floor, under everything standing on it. */
+    function drawIceFloor(ctx2, k, now) {
+        const W = ctx2.canvas.width, H = ctx2.canvas.height;
+        const u = Iso.HALF_W / 32;          // a half-scale room's pixels
+        drawIceEdges(ctx2, k, u);
+        ctx2.save();
+        Iso.floorPath(ctx2);
+        ctx2.clip();
+        ctx2.globalCompositeOperation = "color";
+        ctx2.globalAlpha = 0.9 * k;
+        ctx2.fillStyle = "#8fd3f6";
+        ctx2.fillRect(0, 0, W, H);
+        ctx2.globalCompositeOperation = "screen";
+        ctx2.globalAlpha = 0.58 * k;
+        ctx2.fillStyle = "#9cc9e4";
+        ctx2.fillRect(0, 0, W, H);
+        ctx2.globalCompositeOperation = "source-over";
+        /* Sheen: broad, faint bands of reflected light across the whole
+           sheet, running down the room the way light lies on a frozen pond. */
+        // Each band is two nested strips, the inner brighter: a soft edge in
+        // two fills rather than a gradient per pixel.
+        ctx2.fillStyle = "#ffffff";
+        const band = (x0, w, a) => {
+            ctx2.globalAlpha = k * a;
+            ctx2.beginPath();
+            ctx2.moveTo(x0, 0);
+            ctx2.lineTo(x0 + w, 0);
+            ctx2.lineTo(x0 + w - 2 * H, H);
+            ctx2.lineTo(x0 - 2 * H, H);
+            ctx2.closePath();
+            ctx2.fill();
+        };
+        for (let b = 0; b < W + 2 * H; b += Math.round(170 * u)) {
+            band(b, Math.round(30 * u), 0.07);
+            band(b + Math.round(9 * u), Math.round(12 * u), 0.08);
+        }
+        // Frost where the ice meets the walls: the back edges, and any edge
+        // against a hole in the room.
+        for (let y = 0; y < Iso.ROWS; y++) {
+            for (let x = 0; x < Iso.COLS; x++) {
+                if (!Iso.has(x, y)) continue;
+                const t = Iso.tileTop(x, y);
+                ctx2.fillStyle = "#ffffff";
+                if (!Iso.has(x, y - 1)) {           // the north-east edge
+                    for (let i = 0; i < Iso.HALF_W; i += 2) {
+                        const fx = t.sx + i, fy = t.sy + Math.floor(i / 2);
+                        const r = scramble(x * 64 + i, y + 3);
+                        ctx2.globalAlpha = k * (0.35 + 0.35 * r);
+                        ctx2.fillRect(fx, fy + 1, 2, 1 + Math.round(r * 2 * u));
+                    }
+                }
+                if (!Iso.has(x - 1, y)) {           // the north-west edge
+                    for (let i = 0; i < Iso.HALF_W; i += 2) {
+                        const fx = t.sx - i - 2, fy = t.sy + Math.floor(i / 2);
+                        const r = scramble(x + 5, y * 64 + i);
+                        ctx2.globalAlpha = k * (0.35 + 0.35 * r);
+                        ctx2.fillRect(fx, fy + 1, 2, 1 + Math.round(r * 2 * u));
+                    }
+                }
+            }
+        }
+        for (let y = 0; y < Iso.ROWS; y++) {
+            for (let x = 0; x < Iso.COLS; x++) {
+                if (!Iso.has(x, y)) continue;
+                const r = scramble(x + 11, y + 7);
+                const t = Iso.tileTop(x, y);
+                // Polish: two short parallel streaks along the tile's grain.
+                if (r < 0.5) {
+                    const len = Math.round((7 + r * 16) * u);
+                    const ox = Math.round((-10 + r * 18) * u), oy = Math.round((8 + r * 10) * u);
+                    ctx2.fillStyle = "#ffffff";
+                    ctx2.globalAlpha = 0.62 * k;
+                    for (let i = 0; i < len; i++) ctx2.fillRect(t.sx + ox + 2 * i, t.sy + oy + i, 2, 1);
+                    ctx2.globalAlpha = 0.3 * k;
+                    for (let i = 0; i < len - 3; i++) ctx2.fillRect(t.sx + ox - 4 + 2 * i, t.sy + oy + 3 + i, 2, 1);
+                }
+                // A hairline crack, here and there: a short zig-zag.
+                if (r > 0.6 && r < 0.68) {
+                    let cx = Math.round(t.sx + (-12 + r * 20) * u), cy = Math.round(t.sy + (10 + r * 6) * u);
+                    ctx2.fillStyle = "#5aa2cf";
+                    ctx2.globalAlpha = 0.55 * k;
+                    for (let i = 0; i < Math.round(9 * u); i++) {
+                        ctx2.fillRect(cx, cy, 1, 1);
+                        const s = scramble(x * 31 + i, y * 17);
+                        cx += s < 0.5 ? 1 : 2;
+                        cy += s < 0.3 ? -1 : 1;
+                    }
+                }
+                // A glint, twinkling on its own beat.
+                if (r > 0.82) {
+                    const tw = 0.45 + 0.55 * Math.max(0, Math.sin(now / 260 + r * 40));
+                    const gx = Math.round(t.sx + (-8 + r * 16) * u), gy = Math.round(t.sy + (10 + r * 8) * u);
+                    ctx2.globalAlpha = 0.85 * k * tw;
+                    ctx2.fillStyle = "#ffffff";
+                    ctx2.fillRect(gx - 1, gy, 3, 1);
+                    ctx2.fillRect(gx, gy - 1, 1, 3);
+                }
+            }
+        }
+        ctx2.restore();
+    }
+
+    /* THE FLOOR'S FRONT EDGES TO ICE AS WELL (the owner's: "make sure the
+       bottom edges turn to ice as well"). The room draws its floor as a slab
+       whose thickness shows along every open front edge (FLOOR_EDGE in
+       js/room-iso.js, five pixels); each of those faces is found the same way
+       — a tile with no floor beyond it to the front right or front left — and
+       given the floor's ice, a frosted lip along its top and a row of
+       icicles hanging off its bottom. A painted room has no slab to freeze. */
+    const SLAB = 5;                     // RoomIso's FLOOR_EDGE
+    function drawIceEdges(ctx2, k, u) {
+        if (Iso.layout && Iso.layout.painted) return;
+        const W = ctx2.canvas.width, H = ctx2.canvas.height;
+        const depth = SLAB;                 // not scaled: nor is the room's
+        const faces = [];
+        for (let y = 0; y < Iso.ROWS; y++) {
+            for (let x = 0; x < Iso.COLS; x++) {
+                if (!Iso.has(x, y)) continue;
+                const t = Iso.tileTop(x, y);
+                const east = { x: t.sx + Iso.HALF_W, y: t.sy + Iso.HALF_H };
+                const south = { x: t.sx, y: t.sy + Iso.TILE_H };
+                const west = { x: t.sx - Iso.HALF_W, y: t.sy + Iso.HALF_H };
+                if (!Iso.has(x + 1, y)) faces.push({ a: east, b: south, seed: x * 97 + y, right: true });
+                if (!Iso.has(x, y + 1)) faces.push({ a: south, b: west, seed: x * 89 + y * 7 + 3, right: false });
+            }
+        }
+        if (!faces.length) return;
+        ctx2.save();
+        ctx2.beginPath();
+        for (const f of faces) {
+            ctx2.moveTo(f.a.x, f.a.y);
+            ctx2.lineTo(f.b.x, f.b.y);
+            ctx2.lineTo(f.b.x, f.b.y + depth);
+            ctx2.lineTo(f.a.x, f.a.y + depth);
+            ctx2.closePath();
+        }
+        ctx2.clip();
+        ctx2.globalCompositeOperation = "color";
+        ctx2.globalAlpha = 0.9 * k;
+        ctx2.fillStyle = "#8fd3f6";
+        ctx2.fillRect(0, 0, W, H);
+        ctx2.globalCompositeOperation = "screen";
+        ctx2.globalAlpha = 0.5 * k;
+        ctx2.fillStyle = "#9cc9e4";
+        ctx2.fillRect(0, 0, W, H);
+        ctx2.restore();
+
+        /* The frosted lip and the icicles, along each face — stepped two
+           across and one down, as the room's own edges are drawn. */
+        ctx2.save();
+        for (const f of faces) {
+            const n = Math.round(Math.abs(f.b.x - f.a.x) / 2);
+            const dir = f.b.x > f.a.x ? 1 : -1;
+            const slope = (f.b.y - f.a.y) / (n || 1);
+            for (let i = 0; i < n; i++) {
+                const px = Math.round(f.a.x + dir * 2 * i) - (dir < 0 ? 2 : 0);
+                const py = Math.round(f.a.y + slope * i);
+                // The lip: bright just under the floor's edge.
+                ctx2.globalAlpha = 0.7 * k;
+                ctx2.fillStyle = "#ffffff";
+                ctx2.fillRect(px, py + 1, 2, 1);
+                // An icicle, every so often, of its own length.
+                const r = scramble(f.seed, i);
+                if (r < 0.32) {
+                    const len = 1 + Math.round(r * 9 * u);
+                    ctx2.globalAlpha = 0.85 * k;
+                    ctx2.fillStyle = "#eaf8ff";
+                    ctx2.fillRect(px, py + depth, 2, len);
+                    ctx2.fillStyle = "#96d4f5";
+                    ctx2.fillRect(px + 1, py + depth, 1, len);
+                    ctx2.fillRect(px, py + depth + len, 1, 1);
+                }
+            }
+        }
+        ctx2.restore();
+    }
+
+    /* SNOW, falling over the whole room: pixel flakes of three sizes, each
+       at its own speed, swaying on a light wind — worked out from the time,
+       so nothing is stored and every frame agrees. */
+    const SNOWFLAKES = 90;
+    function drawSnowfall(ctx2, k, now) {
+        const W = ctx2.canvas.width, H = ctx2.canvas.height;
+        const t = now / 1000;
+        ctx2.save();
+        for (let i = 0; i < SNOWFLAKES; i++) {
+            const a = scramble(i, 1), b = scramble(i, 2), c = scramble(i, 3), d = scramble(i, 4);
+            const speed = 16 + b * 34;
+            const y = Math.round(((a * (H + 20)) + t * speed) % (H + 20)) - 10;
+            const sway = Math.sin(t * (0.6 + c) + d * 6.28) * (3 + c * 5);
+            const x = Math.round((((d * W) + t * 6 + sway) % W + W) % W);
+            const size = c < 0.18 ? 3 : c < 0.6 ? 2 : 1;
+            ctx2.globalAlpha = k * (0.6 + 0.4 * b);
+            /* A cold blue edge under each flake, so it shows against the
+               room's cream walls as well as the dark around it. */
+            ctx2.fillStyle = "#7fb3d8";
+            if (size === 3) { ctx2.fillRect(x - 1, y + 1, 3, 1); ctx2.fillRect(x + 1, y, 1, 3); }
+            else ctx2.fillRect(x + 1, y + 1, size, size);
+            ctx2.fillStyle = "#ffffff";
+            if (size === 3) { ctx2.fillRect(x - 1, y, 3, 1); ctx2.fillRect(x, y - 1, 1, 3); }
+            else ctx2.fillRect(x, y, size, size);
+        }
+        ctx2.restore();
+    }
+
+    // The figure with a hand item, every pose, fetched ahead of being needed.
+    function preloadCarry(item) {
+        if (!item) return;
+        for (let d = 0; d < 8; d++) {
+            avatarSprite(state.figure, d, "std", 0, item);
+            avatarSprite(state.figure, d, "sit", 0, item);
+            for (let f = 0; f < WALK_FRAMES; f++) avatarSprite(state.figure, d, "wlk", f, item);
+        }
+    }
+
     // ---- painting
 
     /* The avatar takes part in the SAME depth sort as the furni rather than
@@ -603,6 +1146,45 @@
        Drawing whole furni and then slotting the avatar somewhere among them
        cannot express that, which is why it used to render the figure on top of
        the arm it should be tucked behind. */
+    // A seated figure's place in the sort, above its tile — see the note in
+    // paintScene. A seat's resting height of one, times 1000, plus the 2.
+    const SIT_DEPTH = 1002;
+
+    /* A LONG PIECE WITH NO DEPTH DATA, IN STRIPS (25 Oct 2026; see `sliced`
+       in js/room-furni.js). The part is cut into vertical strips, one per
+       column of tiles it stands on — split halfway between the columns'
+       centres on screen — and each strip sorts at the nearest tile in its
+       column. A divider's back half then sits behind the roller in front of
+       it, and its front half still hides whoever stands behind it. The part's
+       height off the floor (`lift`) keeps the share of its depth it had. */
+    function stripsOf(f, p) {
+        const tiles = Furni.tilesOf(f);
+        const far = tiles.reduce((m, t) => Math.max(m, Furni.tileDepth(t.x, t.y)), -Infinity);
+        const lifted = p.depth - far;
+        const cols = new Map();
+        for (const t of tiles) {
+            const sx = Math.round(Iso.tileCenter(t.x, t.y).sx);
+            cols.set(sx, Math.max(cols.has(sx) ? cols.get(sx) : -Infinity, Furni.tileDepth(t.x, t.y)));
+        }
+        const xs = [...cols.keys()].sort((a, b) => a - b);
+        return xs.map((sx, i) => ({
+            from: i === 0 ? -Infinity : (xs[i - 1] + sx) / 2,
+            to: i === xs.length - 1 ? Infinity : (sx + xs[i + 1]) / 2,
+            depth: cols.get(sx) + lifted
+        }));
+    }
+
+    function drawStrip(ctx2, p, s) {
+        ctx2.save();
+        ctx2.beginPath();
+        const from = s.from === -Infinity ? -1e5 : Math.round(s.from);
+        const to = s.to === Infinity ? 1e5 : Math.round(s.to);
+        ctx2.rect(from, -1e5, to - from, 2e5);
+        ctx2.clip();
+        Furni.drawPart(ctx2, p);
+        ctx2.restore();
+    }
+
     function paintScene(ctx2, now) {
         const at = avatarAt(now);
         const pieces = [];
@@ -631,8 +1213,20 @@
         for (const f of state.furni) {
             const parts = Furni.partsOf(f, now);
             if (parts) {
+                // Fading out (the Rainbow Pod, sat in): every part at once.
+                const fade = f.fadeAt ? Math.max(0, 1 - (now - f.fadeAt) / POD_FADE_MS) : 1;
+                const faded = (fn) => fade >= 1 ? fn : () => {
+                    ctx2.save();
+                    ctx2.globalAlpha *= fade;
+                    fn();
+                    ctx2.restore();
+                };
                 for (const p of parts) {
-                    pieces.push({ key: p.depth * 1000 + (order++), draw: () => Furni.drawPart(ctx2, p) });
+                    if (p.noZ) {
+                        for (const s of stripsOf(f, p)) pieces.push({ key: s.depth * 1000 + (order++), draw: faded(() => drawStrip(ctx2, p, s)) });
+                        continue;
+                    }
+                    pieces.push({ key: p.depth * 1000 + (order++), draw: faded(() => Furni.drawPart(ctx2, p)) });
                 }
             } else {
                 // Not in the library: one flat sprite at its far corner.
@@ -688,11 +1282,38 @@
             }
         }
 
+        /* SITTING LIFTS THE FIGURE A TILE FORWARD IN THE SORT (25 Oct 2026).
+
+           A sofa's parts are shifted from the sofa's OWN tile, and the
+           pieces that belong to its second seat sit about a tile forward —
+           sofa_polyfon's are 1199 and 1236, gothic_sofa's 1303, a three-seat
+           bench's run to 2600. Sorted at its own tile plus a half, a figure
+           on the second seat came out BEHIND those and sank into the
+           cushions. The client's human script (hh_human.cct, the sprite's
+           locZ in a private room) sorts a resting figure at
+               screen z + (floor height + resting height) * 1000 + 2
+           — a seat lifts it a whole tile forward — and that is what is done
+           here: in front of everything of the seat it is on, behind what
+           belongs to the seats nearer the viewer. Standing is unchanged.
+
+           BUT ONLY ON A SEAT THAT FACES THE VIEWER (2 or 4) — the owner's
+           play test, the same day: "not seeing any improvement". A sofa
+           facing AWAY (0 or 6) has its back on the near side, between the
+           figure and the screen, and the back has to hide the sitter's lower
+           half; lifted a tile, the figure was drawn over it, sitting on top
+           of the backrest. Facing away, the figure keeps the standing key,
+           which put every one of those backs in front of it as it should. */
         const tile = state.pos;
+        const forward = at.action === "sit" && (at.dir === 2 || at.dir === 4);
         pieces.push({
-            key: Furni.tileDepth(tile.x, tile.y) * 1000 + 500,
+            key: Furni.tileDepth(tile.x, tile.y) * 1000 + (forward ? SIT_DEPTH * 1000 : 500),
             draw: () => {
-                const sprite = avatarSprite(state.figure, at.dir, at.action, at.frame);
+                /* With the mug in hand while the coffee lasts — and the plain
+                   figure until the mug's images have arrived, rather than
+                   nobody at all. */
+                let sprite = avatarSprite(state.figure, at.dir, at.action, at.frame,
+                    game ? carrying(now) : 0);
+                if (!sprite.ready) sprite = avatarSprite(state.figure, at.dir, at.action, at.frame);
                 if (!sprite.ready) return;
                 const img = sprite.img;
                 const sz = avatarSizing();
@@ -720,7 +1341,13 @@
 
         Iso.drawRoom(ctx, state);
 
+        // A brain freeze: the floor to ice under everything, snow over it.
+        const frost = freezeFade(now);
+        if (frost > 0 && ICE_FLOOR) drawIceFloor(ctx, frost, now);
+
         paintScene(ctx, now);
+
+        if (frost > 0) drawSnowfall(ctx, frost, now);
 
         /* THE NEXT SEAT IS NOT MARKED, and that is the game.
 
@@ -742,6 +1369,7 @@
            paintScene. */
         const playing = game && game.state === Game.RUNNING;
         if (Editor && !playing) Editor.drawOverlay(ctx, state.hover);
+        if (Editor && !playing) drawPowerGhosts(ctx);
 
         if (Editor && guides) drawGuides(ctx);
 
@@ -818,8 +1446,45 @@
         dirty = true;
     }
 
+    /* ---- THE SOUND (25 Oct 2026), js/ff-audio.js, through one door so the
+       game plays on in silence if that file never arrived.
+
+           the title          the dreamy lobby version
+           a round            its level's tune: a new one every five levels,
+                              the last level the theme made epic
+           between rounds     the level's tune from the next room, after a
+                              sting (cleared, or a life lost)
+           the run over       the game-over sting, then the lament
+           the game finished  the winning version
+
+       and the effects: furni falling and landing, every seat sat on (higher
+       up the scale with the streak), the wrong one, a decoy, the auto-kick
+       chair, the three-two-one, the last five seconds. The builder's page
+       has none of it. */
+    const Sound = {
+        on: () => Boolean(window.FFAudio) && !Editor && !EDITING,
+        music(track, muffled) { if (Sound.on()) FFAudio.start({ track, muffled: Boolean(muffled) }); },
+        sfx(name, arg) { if (Sound.on()) FFAudio.play(name, arg); },
+        sting(name, then) { if (Sound.on()) FFAudio.sting(name, then); },
+        muffle(on) { if (Sound.on()) FFAudio.setMuffled(on); },
+        /* The tune the run's current level plays: the one the builder gave
+           it (the editor's Soundtrack, the level's `music`), or else the one
+           for its place in the run. */
+        levelTrack() {
+            if (!window.FFAudio || !run) return "theme";
+            const lv = run.level();
+            if (lv && FFAudio.hasTrack && FFAudio.hasTrack(lv.music)) return lv.music;
+            return FFAudio.trackForLevel(run.index + 1, run.levels.length);
+        }
+    };
+
     function watchVisibility() {
         document.addEventListener("visibilitychange", freezeChanged);
+        // No sound from a tab nobody is looking at; back when it is.
+        document.addEventListener("visibilitychange", () => {
+            if (!Sound.on()) return;
+            if (document.hidden) FFAudio.pause(); else FFAudio.resume();
+        });
     }
 
     /* ---- PAUSE, and the cover that makes it one.
@@ -868,6 +1533,7 @@
            it, so pressing pause JUMPED the whole document and took the pause
            button itself off the top of the screen. */
         if (paused) {
+            pauseMenu();
             const r = document.getElementById("ff-resume");
             if (r) r.focus({ preventScroll: true });
         } else if (resumed && pauseEls.cover && (pauseEls.cover.contains(document.activeElement)
@@ -892,6 +1558,8 @@
         paused = want;
         freezeChanged();
         syncPause();
+        // The tune from the next room while the room is covered.
+        Sound.muffle(paused);
         /* Coming back, the round has to be REDRAWN before the next frame:
            the cover has just come off a canvas holding whatever was on it
            when the player stopped, and `lastPaint` was reset by
@@ -904,11 +1572,125 @@
         if (!paused && !Editor && canvas) canvas.focus({ preventScroll: true });
     }
 
+    /* ---- THE REST OF THE PAUSE MENU (25 Oct 2026, the owner's: "restart
+       level (costs a life), quit game, and quit game and submit score").
+
+       What the menu says depends on the run: how many lives a restart leaves,
+       and no Submit & Quit for a level-select run, which never scores. */
+    function pauseMenu() {
+        const note = document.getElementById("ff-paused-note");
+        const submit = document.getElementById("ff-submit-quit");
+        const restart = document.getElementById("ff-restart");
+        if (submit) submit.hidden = !run || practiceFrom !== null;
+        if (restart) restart.hidden = !run;
+        if (!note) return;
+        if (!run) { note.textContent = ""; return; }
+        note.textContent = run.lives <= 1
+            ? "Restarting on your last life ends the run."
+            : `Restart costs a life - ${run.lives - 1} left after it.`;
+    }
+
+    // Lose this round for a life and play the same level again.
+    function restartLevel() {
+        if (!run || !game || game.state !== Game.RUNNING) return;
+        setPaused(false);
+        const now = gameNow();
+        game.forfeit(now);
+        roundEndedAt = now;
+        // The run may be over (that was the last life): settled and sent as
+        // any lost run is, and nextRound then shows how it went.
+        settleRun();
+        nextRound();
+    }
+
+    /* Leave the run. `submit`: what it has banked goes on the board and its
+       breakdown is shown, as at any run's end; without, it is logged (the
+       level stats count it) and nothing is sent to the board. */
+    function quitRun(submit) {
+        if (!run) return;
+        setPaused(false);
+        const now = gameNow();
+        const theRun = run;
+        if (!submit) runSubmitted = true;
+        reportRun(theRun, "abandoned", { endedAt: now });
+        if (submit) {
+            if (game) game.stop();
+            hideSay();
+            showRunEnd(theRun, false, true);
+            game = null; run = null;
+            renderHud(now);
+            dirty = true;
+        } else {
+            stopRound();
+            // Nothing from the round left said under the name box.
+            status("", "");
+        }
+    }
+
     function wirePause() {
         const btn = document.getElementById("ff-pause");
         const resume = document.getElementById("ff-resume");
         if (btn) btn.addEventListener("click", () => setPaused(!paused));
         if (resume) resume.addEventListener("click", () => setPaused(false));
+        const restart = document.getElementById("ff-restart");
+        const submitQuit = document.getElementById("ff-submit-quit");
+        const quit = document.getElementById("ff-quit");
+        if (restart) restart.addEventListener("click", restartLevel);
+        /* THE OPTIONS — enlarge, music, sound (25 Oct 2026) — on the title
+           and on the pause menu, every button marked `data-opt` and all kept
+           saying the same thing. The music and the effects are remembered by
+           js/ff-audio.js; enlarge belongs to the homepage's window
+           (js/ff-window.js), which is what it makes bigger, so outside that
+           window its buttons are hidden. M flips the music and F enlarges
+           from anywhere but a text box. */
+        const host = () => { try { return window.parent !== window && window.parent.FFWindow ? window.parent.FFWindow : null; } catch (e) { return null; } };
+        const audioLabels = () => {
+            const W = host();
+            for (const b of document.querySelectorAll("[data-opt]")) {
+                const opt = b.dataset.opt;
+                let on;
+                if (opt === "enlarge") {
+                    b.hidden = !W;
+                    on = Boolean(W && W.isEnlarged);
+                    b.textContent = on ? "Normal size" : "Enlarge";
+                } else if (window.FFAudio) {
+                    on = opt === "music" ? FFAudio.music : FFAudio.sound;
+                    b.textContent = `${opt === "music" ? "Music" : "Sound"}: ${on ? "On" : "Off"}`;
+                }
+                b.setAttribute("aria-pressed", String(Boolean(on)));
+            }
+        };
+        // The window calls this when its own button changes the size.
+        window.FFOptionsSync = audioLabels;
+        audioLabels();
+        for (const b of document.querySelectorAll("[data-opt]")) {
+            b.addEventListener("click", () => {
+                const opt = b.dataset.opt;
+                if (opt === "enlarge") { const W = host(); if (W) W.toggleEnlarge(); }
+                else if (window.FFAudio) {
+                    if (opt === "music") FFAudio.setMusic(!FFAudio.music);
+                    else FFAudio.setSound(!FFAudio.sound);
+                }
+                audioLabels();
+            });
+        }
+        document.addEventListener("keydown", (ev) => {
+            if ((ev.key !== "f" && ev.key !== "F") || ev.ctrlKey || ev.metaKey || ev.altKey) return;
+            const el = document.activeElement;
+            if (el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.tagName === "SELECT" || el.isContentEditable)) return;
+            const W = host();
+            if (W) { W.toggleEnlarge(); audioLabels(); }
+        });
+        document.addEventListener("keydown", (ev) => {
+            if ((ev.key !== "m" && ev.key !== "M") || ev.ctrlKey || ev.metaKey || ev.altKey) return;
+            const el = document.activeElement;
+            if (el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.tagName === "SELECT" || el.isContentEditable)) return;
+            if (!Sound.on()) return;
+            FFAudio.setMusic(!FFAudio.music);
+            audioLabels();
+        });
+        if (submitQuit) submitQuit.addEventListener("click", () => quitRun(true));
+        if (quit) quit.addEventListener("click", () => quitRun(false));
         /* Escape resumes and never pauses. A key that toggles is a key that
            hides the room by accident in the middle of a round; this one only
            ever puts it back. */
@@ -1225,8 +2007,9 @@
     function advanceWalk(now) {
         const running = game && game.state === Game.RUNNING;
 
-        if (state.stepFrom && now - state.stepAt >= WALK_MS) {
-            const due = state.stepAt + WALK_MS;
+        const stepMs = state.stepMs || WALK_MS;
+        if (state.stepFrom && now - state.stepAt >= stepMs) {
+            const due = state.stepAt + stepMs;
             const arrived = now - due > STEP_CATCHUP_MS ? now : due;
             state.stepFrom = null;
 
@@ -1349,7 +2132,19 @@
         advanceWalk(now);
 
         if (game && game.state === Game.RUNNING) {
-            if (game.tick(now, state.pos)) {
+            // What fell and what landed this tick, for the effects.
+            const rd = game.round;
+            const startedBefore = rd ? rd.falling.length + rd.landed.length : 0;
+            const landedBefore = rd ? rd.landed.length : 0;
+            const changedNow = game.tick(now, state.pos);
+            if (rd) {
+                if (rd.falling.length + rd.landed.length > startedBefore) Sound.sfx("fall");
+                if (rd.landed.length > landedBefore) {
+                    const last = rd.landed[rd.landed.length - 1];
+                    Sound.sfx("land", Boolean(last && last.w * last.h > 1));
+                }
+            }
+            if (changedNow) {
                 state.furni = game.renderList();
                 refreshBlocked();
                 // Something landed. The route was worked out against a room
@@ -1357,6 +2152,7 @@
                 repathIfBlocked();
                 dirty = true;
             }
+            if (game.state === Game.RUNNING) powerTick(now);
             renderHud(now);
         } else if (game && game.state !== Game.IDLE && !roundEndedAt) {
             /* The round ended. It used to advance itself after a pause, which
@@ -1384,7 +2180,9 @@
            things the GAME moves — a step, a drop — so a lamp's flame held
            still until the player walked. See RoomFurni.animates, which is
            false for anything switched off so a still room stays still. */
-        if (state.furni.some(f => Furni.animates(f))) dirty = true;
+        if (state.furni.some(f => Furni.animates(f) || f.fadeAt)) dirty = true;
+        // The snow falls, and the ice twinkles, every frame of a freeze.
+        if (freezeFade(now) > 0) dirty = true;
         // The title screen is always moving — furni is falling past the hotel.
         if (Lobby && !Editor && !game) dirty = true;
 
@@ -1417,6 +2215,7 @@
         for (const b of document.querySelectorAll("#ff-modes button")) {
             b.classList.toggle("is-on", b.dataset.mode === mode);
         }
+        shellTool(mode);
         setHint(mode);
         renderEditorPanel();
         dirty = true;
@@ -1492,6 +2291,41 @@
         return `state ${i + 1} of ${list.length}`;
     }
 
+    /* THE PANEL FULL OF COFFEE (see .ff-hud-coffee): poured full over
+       COFFEE_POUR_MS once the coffee is drunk, then draining with the time
+       left, so the level IS the time left; the last COFFEE_THIN_MS thin the
+       crema and the steam, the last COFFEE_ENDING_MS leave a lace of foam
+       and no steam. Set in whole pixels, and only when the pixel changes. A
+       brain freeze hides it in the CSS while it runs on. */
+    const COFFEE_POUR_MS = 600;
+    const COFFEE_THIN_MS = 3500;
+    const COFFEE_ENDING_MS = 1800;
+    function coffeeHud(now) {
+        if (!hudEls.coffee) hudEls.coffee = document.getElementById("ff-coffee-liquid");
+        if (!hudEls.coffee) return;
+        const until = power.until.coffee || 0;
+        const on = game.state === Game.RUNNING && until > now;
+        if (on !== hudLast.coffeeOn) {
+            hudLast.coffeeOn = on;
+            hudEls.root.classList.toggle("is-coffee", on);
+            // The cup's depth, read once a coffee rather than every frame.
+            if (on) hudLast.cupH = hudEls.coffee.parentNode.clientHeight;
+        }
+        if (!on) {
+            hudEls.root.classList.remove("is-coffee-thin", "is-coffee-ending");
+            return;     // left at its level, to fade out there
+        }
+        const total = (POWERS().coffee || {}).ms || 8000;
+        const left = until - now;
+        const poured = Math.min(1, Math.max(0, (now - (until - total)) / COFFEE_POUR_MS));
+        const level = Math.min(1 - Math.pow(1 - poured, 3), left / total);
+        // Three pixels short of the brim, so the crema's foam stays in the cup.
+        const px = Math.max(0, Math.round((hudLast.cupH - 3) * level));
+        if (px !== hudLast.coffeePx) { hudLast.coffeePx = px; hudEls.coffee.style.height = `${px}px`; }
+        hudEls.root.classList.toggle("is-coffee-thin", left < COFFEE_THIN_MS && left >= COFFEE_ENDING_MS);
+        hudEls.root.classList.toggle("is-coffee-ending", left < COFFEE_ENDING_MS);
+    }
+
     function renderHud(now) {
         if (!hudEls.root) {
             hudEls.root = document.getElementById("ff-hud");
@@ -1513,9 +2347,47 @@
         if (hide) return;
 
         const left = game.secondsLeft(now);
+        /* A tock for each of the last five seconds, higher for the last
+           three — once a second, read off the clock the player is reading. */
+        const whole = Math.ceil(left);
+        if (whole > 5 || game.state !== Game.RUNNING) hudLast.tock = null;
+        else if (!loading && !paused && left > 0 && whole !== hudLast.tock) {
+            hudLast.tock = whole;
+            Sound.sfx("tick", whole <= 3);
+        }
         const m = Math.floor(left / 60), s = Math.floor(left % 60);
         const clock = `${m}:${String(s).padStart(2, "0")}`;
         if (clock !== hudLast.clock) { hudEls.clock.textContent = clock; hudLast.clock = clock; }
+
+        /* THE POWER-UPS RUNNING, at the end of the score row: each one's icon
+           and seconds left (the coffee's mug, a brain freeze's snowflake —
+           POWERUPS[kind].badge); and while the clock is
+           frozen, the clock itself goes ice blue. */
+        const live = game.state === Game.RUNNING
+            ? ["coffee", "freeze"].filter(k => (power.until[k] || 0) > now)
+                .map(k => `${k}:${Math.ceil((power.until[k] - now) / 1000)}`).join(" ")
+            : "";
+        if (live !== hudLast.boost) {
+            hudLast.boost = live;
+            const el = document.getElementById("ff-boost");
+            if (el) {
+                el.hidden = !live;
+                el.innerHTML = "";
+                for (const part of live ? live.split(" ") : []) {
+                    const [kind, secs] = part.split(":");
+                    const img = document.createElement("img");
+                    img.src = (POWERS()[kind] || {}).badge || `assets/avatar/handitem-${kind}.png`;
+                    img.alt = "";
+                    const s = document.createElement("span");
+                    s.textContent = `${secs}s`;
+                    el.append(img, s);
+                }
+            }
+            hudEls.clock.parentNode.classList.toggle("is-frozen", live.includes("freeze:"));
+            // And the whole panel turns to ice (see .ff-hud.is-frozen).
+            hudEls.root.classList.toggle("is-frozen", live.includes("freeze:"));
+        }
+        coffeeHud(now);
 
         /* THE WHOLE ROW AT ONCE, EMPTY, and then it fills in.
 
@@ -1623,6 +2495,8 @@
        room is most of the grid. A level that begins off the floor cannot be
        walked out of. */
     let pickingStart = false;
+    // The same, for a power-up's tile (the Rules tab): the kind being placed.
+    let pickingPower = null;
 
     /* Put the figure where the level says, looking the way it says. Used when
        the start changes and whenever a level is shown, so the builder is
@@ -1648,6 +2522,137 @@
         syncPickers();
         status(`The player starts at ${t.x}, ${t.y} - press Save to keep it.`, "good");
         dirty = true;
+    }
+
+    /* A POWER-UP'S TILE, MOMENT, FACING AND FURNI (the Rules tab). `after`
+       is how many seats have to have landed first; "" in its picker is none
+       at all. One given no tile yet gets the nearest free floor to the start
+       — never the start itself, where it could not land on the player, and
+       never on another power-up's tile or the tile in front of one. */
+    const powerOf = (L, kind) => (L && L.powerups || []).find(p => p.kind === kind) || null;
+    const frontOf = (p) => window.RoomDrop ? RoomDrop.powerupFront(p) : { x: p.x + 1, y: p.y };
+
+    function changePower(kind, fn, said) {
+        if (!Editor || !Editor.state.level) return;
+        const L = Editor.state.level;
+        L.powerups = Array.isArray(L.powerups) ? L.powerups : [];
+        delete L.coffee;
+        fn(L);
+        Editor.save();
+        syncPickers();
+        status(`${said} - press Save to keep it.`, "good");
+        dirty = true;
+    }
+
+    function freeTileNearStart(L, facing) {
+        const s = L.start || { x: 0, y: 0 };
+        const taken = Furni.blockedTiles(state.furni);
+        for (const p of L.powerups || []) {
+            taken.add(Iso.key(p.x, p.y));
+            const f = frontOf(p);
+            taken.add(Iso.key(f.x, f.y));
+        }
+        for (let r = 1; r < 12; r++) {
+            for (let dy = -r; dy <= r; dy++) {
+                for (let dx = -r; dx <= r; dx++) {
+                    if (Math.max(Math.abs(dx), Math.abs(dy)) !== r) continue;
+                    const x = s.x + dx, y = s.y + dy;
+                    const f = frontOf({ x, y, facing });
+                    if (Iso.has(x, y) && !taken.has(Iso.key(x, y)) &&
+                        Iso.has(f.x, f.y) && !taken.has(Iso.key(f.x, f.y))) return { x, y };
+                }
+            }
+        }
+        return { x: s.x, y: s.y };
+    }
+
+    function setPowerAfter(kind, v) {
+        const def = POWERS()[kind] || {};
+        changePower(kind, (L) => {
+            if (v === "") { L.powerups = L.powerups.filter(p => p.kind !== kind); return; }
+            let p = powerOf(L, kind);
+            if (!p) {
+                p = { kind, cls: (def.classes || [""])[0], facing: 2, after: 0 };
+                Object.assign(p, freeTileNearStart(L, 2));
+                L.powerups.push(p);
+            }
+            p.after = Number(v) || 0;
+        }, v === "" ? `No ${(def.name || "power-up").toLowerCase()} on this level` : `${def.name} set`);
+    }
+
+    function setPowerTile(kind, t) {
+        if (!Iso.has(t.x, t.y)) { status("There is no floor there.", "bad"); return; }
+        pickingPower = null;
+        changePower(kind, (L) => {
+            const p = powerOf(L, kind);
+            if (p) { p.x = t.x; p.y = t.y; }
+        }, `The ${(POWERS()[kind] || {}).furniName || "power-up"} drops on ${t.x}, ${t.y}`);
+    }
+
+    function setPowerFacing(kind, facing) {
+        changePower(kind, (L) => {
+            const p = powerOf(L, kind);
+            if (p) p.facing = Number(facing) === 4 ? 4 : 2;
+        }, "Facing set");
+    }
+
+    function setPowerClass(kind, cls) {
+        changePower(kind, (L) => {
+            const p = powerOf(L, kind);
+            if (p) p.cls = cls;
+        }, "Machine set");
+    }
+
+    function setLevelMusic(v) {
+        if (!Editor || !Editor.state.level) return;
+        Editor.state.level.music = v || "";
+        Editor.save();
+        status("Soundtrack set - press Save to keep it.", "good");
+        // Listening already: switch to the new choice.
+        if (musicPreview) previewMusic(true);
+    }
+
+    /* LISTEN, in the builder. The page's own Sound is off here (Sound.on), so
+       this drives FFAudio directly, and stops when the button is pressed
+       again or the level is played. */
+    let musicPreview = false;
+    function previewMusic(on) {
+        const A = window.FFAudio;
+        const btn = document.getElementById("ff-music-play");
+        musicPreview = Boolean(on && A);
+        if (A) {
+            if (musicPreview) {
+                const L = Editor && Editor.state.level;
+                const auto = autoTrackFor(L) || "theme";
+                A.start({ track: (L && A.hasTrack(L.music)) ? L.music : auto, muffled: false });
+            } else {
+                A.stop();
+            }
+        }
+        if (btn) btn.textContent = musicPreview ? "Stop" : "Listen";
+    }
+
+    // Each power-up where it will drop, see-through, while building — its
+    // tile outlined, and the tile in front (where players stand) in green.
+    const powerGhosts = new Map();
+    function drawPowerGhosts(ctx2) {
+        const L = Editor && Editor.state.level;
+        for (const p of (L && L.powerups) || []) {
+            const rot = window.RoomDrop ? RoomDrop.rotationFacing(p.cls, p.facing) : 0;
+            const sig = `${p.cls}:${p.x}:${p.y}:${rot}`;
+            let g = powerGhosts.get(p.kind);
+            if (!g || g.sig !== sig) {
+                g = { sig, f: Furni.make(p.cls, p.x, p.y, { meta: metaFor(p.cls), rotation: rot, state: 0, ...urlFor(p.cls, 0, rot) }) };
+                powerGhosts.set(p.kind, g);
+            }
+            Iso.highlight(ctx2, p.x, p.y, "#c8813a");
+            const f = frontOf(p);
+            if (Iso.has(f.x, f.y)) Iso.highlight(ctx2, f.x, f.y, "#7ee081");
+            ctx2.save();
+            ctx2.globalAlpha = 0.55;
+            Furni.draw(ctx2, g.f);
+            ctx2.restore();
+        }
     }
 
     function setStartDir(dir) {
@@ -1686,6 +2691,7 @@
         const mode = Editor.state.mode;
 
         if (pickingStart) { setStartTile(t); return; }
+        if (pickingPower) { setPowerTile(pickingPower, t); return; }
 
         if (mode === "walk") { paintWalkable(t, walkPaint); return; }
 
@@ -2244,7 +3250,13 @@
             del.title = L.id ? "Remove this level from the site" : "This level has never been saved";
         }
         const disc = document.getElementById("ff-level-discard");
-        if (disc) disc.textContent = L.id ? "Discard changes" : "Scrap level";
+        if (disc) {
+            // The words only: in the workshop the button also has an icon.
+            const words = L.id ? "Discard changes" : "Scrap level";
+            const span = disc.querySelector("span");
+            if (span) span.textContent = words; else disc.textContent = words;
+            disc.title = words;
+        }
         syncPublishButtons();
 
         const nameEl = document.getElementById("ff-level-name");
@@ -2265,12 +3277,36 @@
     /* The levels already on the server, for the load dropdown. Needs an admin
        session — a signed-out builder gets an empty list and a note, not an
        error page. */
+    /* Every level on the server, as the dropdown last listed them — kept for
+       working out a level's place in the run (autoTrackFor). */
+    let editorLevels = [];
+
+    /* THE TUNE "AUTOMATIC" MEANS FOR THIS LEVEL, so the Soundtrack picker can
+       name it (the owner's: "display the actual track being used on a level
+       rather than 'automatic'"). The run is the published levels in order
+       (ff-levels sorts by `order`), and FFAudio.trackForLevel goes by place
+       in it — so a draft is placed where its order would put it. */
+    function autoTrackFor(L) {
+        const A = window.FFAudio;
+        if (!A || !L) return null;
+        const pub = editorLevels.filter(l => l.published)
+            .sort((a, b) => (Number(a.order) || 0) - (Number(b.order) || 0));
+        let i = pub.findIndex(l => l.id === L.id);
+        let total = pub.length;
+        if (i < 0) {
+            i = pub.filter(l => (Number(l.order) || 0) <= (Number(L.order) || 0)).length;
+            total = pub.length + 1;
+        }
+        return A.trackForLevel(i + 1, total || 50);
+    }
+
     async function refreshLevelList() {
         const sel = document.getElementById("ff-level-list");
         if (!sel) return;
         const signin = document.getElementById("ff-signin");
         try {
             const all = await Editor.listServer(true);
+            editorLevels = all;
             if (signin) signin.hidden = true;
             sel.innerHTML = "";
             for (const l of all) {
@@ -2280,6 +3316,24 @@
                 sel.appendChild(o);
             }
             if (!all.length) sel.innerHTML = '<option value="">No levels saved yet</option>';
+            /* THE LEVEL ON SCREEN, not the first in the list (25 Oct 2026,
+               the owner's: after a reload the dropdown "shows level 1, but
+               reloads to the previously viewed level"). The editor keeps its
+               working draft over a reload (Editor.restore), and the list
+               used to be rebuilt without saying which one that is. A draft
+               never saved yet gets a line of its own at the top. */
+            const cur = Editor.state.level;
+            if (cur && cur.id && [...sel.options].some(o => o.value === cur.id)) {
+                sel.value = cur.id;
+            } else if (cur && all.length) {
+                const o = document.createElement("option");
+                o.value = "";
+                o.textContent = `${cur.name || "New level"} (not saved yet)`;
+                sel.insertBefore(o, sel.firstChild);
+                sel.value = "";
+            }
+            // The Soundtrack picker can now say what "automatic" plays.
+            syncPickers();
         } catch {
             /* A token in storage that the server refuses means the session has
                lapsed, not that nobody ever signed in — and signing in again is
@@ -2444,7 +3498,160 @@
         main.appendChild(box);
     }
 
+    /* ---- THE EDITOR'S WORKSHOP (25 Oct 2026, the owner's: "completely
+       redesign the level editor so it's clean, intuitive, and modern, similar
+       to our editor for scout's trail" — tools/ariadne-editor).
+
+       The page becomes an application filling the window, Scout's layout:
+
+           top      the level, its name and order, and the buttons that keep
+                    it — Save, Publish, Play — always in reach
+           rail     the tools down the left: Room, Decorate, Drop zones,
+                    Rules, Walkable, Title screen
+           stage    the room, on the dark, as big as fits in whole pixels
+           panel    the chosen tool's controls on the right, with what it is
+                    for at the top
+           status   what just happened, what the room is waiting for, and
+                    the tile under the pointer
+
+       Built by MOVING the controls that were already on the page, not by
+       drawing new ones: each keeps its id and every listener already on it,
+       so nothing the editor does had to be rewired — only where it sits and
+       how it looks (css/ff-editor.css). */
+    const TOOL_INFO = {
+        room: ["Room", "The layout, where the player starts, the floor and the walls."],
+        decor: ["Decorate", "Furni that stands in the room from the start. Pick one, then click the room."],
+        zones: ["Drop zones", "Where furni falls, and what. Drag on the room to draw a zone."],
+        rules: ["Rules", "How long the round lasts and how fast things fall."],
+        walk: ["Walkable", "Paint which tiles of a public room can be walked on."],
+        splash: ["Title screen", "The furni that falls past the hotel view on the title."]
+    };
+    const TOOL_ICONS = {
+        room: '<path d="M3 10l9-6 9 6v10H3z"/><path d="M9 20v-6h6v6"/>',
+        decor: '<path d="M5 11V7a2 2 0 012-2h10a2 2 0 012 2v4"/><path d="M3 11h18v5H3zM5 16v3M19 16v3"/>',
+        zones: '<rect x="4" y="4" width="16" height="16" rx="1" stroke-dasharray="3 2"/><path d="M12 8v8M9 13l3 3 3-3"/>',
+        rules: '<circle cx="12" cy="13" r="7"/><path d="M12 9v4l3 2M9 3h6"/>',
+        walk: '<path d="M4 20l4-16M20 20l-4-16M6 12h12M5 16h14M7 8h10"/>',
+        splash: '<rect x="3" y="5" width="18" height="14" rx="2"/><path d="M8 9v3M12 7v4M16 10v3"/>'
+    };
+    const svgIcon = (body, size) => `<svg width="${size || 18}" height="${size || 18}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${body}</svg>`;
+
+    let shell = null;
+    function buildEditorShell() {
+        if (shell) return;
+        const $ = (id) => document.getElementById(id);
+        const css = document.createElement("link");
+        css.rel = "stylesheet";
+        css.href = "css/ff-editor.css?v=1";
+        document.head.appendChild(css);
+
+        shell = document.createElement("div");
+        shell.className = "fe-app";
+        shell.innerHTML = `
+            <header class="fe-top">
+                <a class="fe-brand" href="/home" title="Back to the site"><b>FF</b><span>Fallin' Furni</span><small>Level editor</small></a>
+                <div class="fe-divider"></div>
+                <div class="fe-slot" data-slot="level"></div>
+                <div class="fe-slot fe-meta" data-slot="meta"></div>
+                <span class="fe-spacer"></span>
+                <div class="fe-slot" data-slot="view"></div>
+                <div class="fe-divider"></div>
+                <div class="fe-slot fe-danger" data-slot="danger"></div>
+                <div class="fe-slot" data-slot="keep"></div>
+                <div class="fe-slot fe-play" data-slot="play"></div>
+            </header>
+            <nav class="fe-rail" data-slot="rail" aria-label="Tools"></nav>
+            <main class="fe-stage"><div class="fe-stage-fit" data-slot="stage"></div></main>
+            <aside class="fe-panel">
+                <div class="fe-panel-head"><h2 id="fe-tool-name">Room</h2><p id="fe-tool-about"></p></div>
+                <div class="fe-panel-body" data-slot="panel"></div>
+            </aside>
+            <footer class="fe-status">
+                <div class="fe-slot" data-slot="status"></div>
+                <span class="fe-spacer"></span>
+                <span id="fe-tile" class="fe-dim"></span>
+                <span id="fe-zoom" class="fe-dim"></span>
+            </footer>`;
+        const slot = (name) => shell.querySelector(`[data-slot="${name}"]`);
+        const put = (name, ...els) => els.forEach(el => { if (el) slot(name).appendChild(el); });
+
+        put("level", $("ff-level-list"));
+        const meta = document.querySelector(".ff-levelmeta");
+        put("meta", meta);
+        put("view", $("ff-guides-wrap"));
+        put("danger", $("ff-level-discard"), $("ff-level-delete"));
+        put("keep", $("ff-level-new"), $("ff-save"), $("ff-publish"), $("ff-unpublish"));
+        put("play", $("ff-start"), $("ff-stop"));
+        put("rail", $("ff-modes"));
+        put("stage", document.querySelector(".ff-stage"));
+        put("panel", document.querySelector(".ff-modebody"));
+        put("status", $("ff-status"), $("ff-signin"), $("ff-hint"));
+        // On the page before the relabelling: the lookups below are by id.
+        document.body.appendChild(shell);
+        document.body.classList.add("fe-on");
+
+        // The tools as icons with their names under them.
+        for (const b of document.querySelectorAll("#ff-modes button")) {
+            const label = (TOOL_INFO[b.dataset.mode] || [b.textContent])[0];
+            b.innerHTML = svgIcon(TOOL_ICONS[b.dataset.mode] || "") + `<span>${label}</span>`;
+            b.title = label;
+        }
+        // Words on the buttons that only had words, and icons where they help.
+        // A narrow window shows the icon alone, so each keeps its name on hover.
+        const label = (id, html) => {
+            const b = $(id);
+            if (!b) return;
+            if (!b.title) b.title = b.textContent.trim();
+            b.innerHTML = html;
+        };
+        label("ff-start", svgIcon('<path d="M7 4v16l13-8z" fill="currentColor" stroke="none"/>', 14) + "<span>Play</span>");
+        label("ff-stop", svgIcon('<rect x="5" y="5" width="14" height="14" rx="2" fill="currentColor" stroke="none"/>', 12) + "<span>Stop</span>");
+        label("ff-save", svgIcon('<path d="M5 4h11l3 3v13H5z"/><path d="M8 4v5h7V4M8 20v-6h8v6"/>', 15) + "<span>Save</span>");
+        label("ff-level-new", svgIcon('<path d="M12 5v14M5 12h14"/>', 15) + "<span>New</span>");
+        label("ff-level-discard", svgIcon('<path d="M9 14L4 9l5-5"/><path d="M4 9h11a5 5 0 010 10h-3"/>', 15) + `<span>${$("ff-level-discard") ? $("ff-level-discard").textContent : "Discard"}</span>`);
+        label("ff-level-delete", svgIcon('<path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/>', 15) + "<span>Delete</span>");
+        const guides = $("ff-guides-wrap");
+        if (guides) guides.lastChild.textContent = " Guides";
+        shellTool(Editor.state.mode || "room");
+
+        /* The room as big as the stage holds it in WHOLE pixels — two, three
+           times on a big screen — so a piece is easy to aim at. Clicks still
+           land on the right tile: the room maps the pointer through its own
+           size on the screen (pointerTile). */
+        const fit = () => {
+            const box = shell.querySelector(".fe-stage");
+            const stage = shell.querySelector(".ff-stage");
+            if (!box || !stage) return;
+            const k = Math.max(1, Math.min(3, Math.floor(Math.min((box.clientWidth - 32) / 720, (box.clientHeight - 32) / 498))));
+            stage.style.transform = k > 1 ? `scale(${k})` : "";
+            const z = $("fe-zoom");
+            if (z) z.textContent = `${k * 100}%`;
+        };
+        window.addEventListener("resize", fit);
+        fit();
+        // The tile under the pointer, in the status bar.
+        if (canvas) {
+            canvas.addEventListener("mousemove", (ev) => {
+                const t = pointerTile(ev);
+                const out = $("fe-tile");
+                if (out) out.textContent = t ? `Tile ${t.x}, ${t.y}` : "";
+            });
+            canvas.addEventListener("mouseleave", () => { const out = $("fe-tile"); if (out) out.textContent = ""; });
+        }
+    }
+
+    // The panel's heading follows the tool.
+    function shellTool(mode) {
+        const info = TOOL_INFO[mode];
+        const name = document.getElementById("fe-tool-name");
+        const about = document.getElementById("fe-tool-about");
+        if (!info || !name) return;
+        name.textContent = info[0];
+        about.textContent = info[1];
+    }
+
     function initEditor() {
+        buildEditorShell();
         document.body.classList.add("is-editing");
         Editor.onChange(syncEditor);
         Furni.onSpriteLoad(() => { dirty = true; });
@@ -2699,6 +3906,8 @@
         document.getElementById("ff-level-list").addEventListener("change", async (ev) => {
             const id = ev.target.value;
             if (!id) return;
+            // The unsaved draft's line goes with the draft.
+            for (const o of [...ev.target.options]) if (!o.value) o.remove();
             try { await Editor.loadServer(id); status("Loaded.", "good"); }
             catch (e) { status(e.message || "Could not load.", "bad"); }
         });
@@ -2898,6 +4107,142 @@
         if (dirSel && Editor && Editor.state.level) {
             dirSel.value = String(((Number(Editor.state.level.startDir) || 0) % 8 + 8) % 8);
         }
+
+        // The Rules tab's soundtrack and coffee.
+        const L = Editor && Editor.state.level;
+        const musicSel = document.getElementById("ff-music");
+        if (musicSel && L) {
+            const tracks = window.FFAudio && FFAudio.tracks ? FFAudio.tracks() : [];
+            if (!musicSel.options.length) {
+                musicSel.add(new Option("Automatic", ""));
+                for (const t of tracks) musicSel.add(new Option(t.name, t.id));
+            }
+            // "Automatic" says which tune that is for this level.
+            const auto = tracks.find(t => t.id === autoTrackFor(L));
+            musicSel.options[0].text = auto ? `${auto.name} (automatic)` : "Automatic";
+            musicSel.value = L.music || "";
+        }
+        syncPowerPanel(L);
+    }
+
+    /* THE POWER-UPS PANEL, on the Rules tab: a block per kind — when it
+       drops, which machine (brain freeze takes any ice cream machine), which
+       way it faces, and its tile. Built the first time, kept in step after. */
+    function buildPowerPanel() {
+        const host = document.getElementById("ff-powerups");
+        if (!host || host.childElementCount) return host;
+        const nth = (n) => n + ([, "st", "nd", "rd"][n % 100 > 10 && n % 100 < 14 ? 0 : n % 10] || "th");
+        for (const [kind, def] of Object.entries(POWERS())) {
+            const box = document.createElement("div");
+            box.className = "ff-power";
+            box.dataset.kind = kind;
+            const h = document.createElement("h4");
+            h.innerHTML = `<img src="${def.icon || `assets/avatar/handitem-${kind}.png`}" alt=""> ${def.name}`;
+            const what = document.createElement("p");
+            what.className = "ff-hint";
+            what.textContent = `${def.furniName}: ${def.does}.`;
+            const after = document.createElement("select");
+            after.className = "ff-select";
+            after.dataset.role = "after";
+            after.setAttribute("aria-label", `When the ${def.furniName} drops`);
+            after.add(new Option(`No ${def.name.toLowerCase()}`, ""));
+            after.add(new Option("As the round starts", "0"));
+            for (let n = 1; n <= 12; n++) after.add(new Option(`After the ${nth(n)} seat lands`, String(n)));
+            after.addEventListener("change", () => setPowerAfter(kind, after.value));
+            box.append(h, what, after);
+            if (def.anyOf) {
+                const cls = document.createElement("select");
+                cls.className = "ff-select";
+                cls.dataset.role = "cls";
+                cls.setAttribute("aria-label", `Which ${def.furniName}`);
+                fillMachines(cls, def);
+                cls.addEventListener("change", () => setPowerClass(kind, cls.value));
+                box.append(cls);
+            }
+            const facing = document.createElement("select");
+            facing.className = "ff-select";
+            facing.dataset.role = "facing";
+            facing.setAttribute("aria-label", "Which way it faces");
+            facing.add(new Option("Facing front right", "2"));
+            facing.add(new Option("Facing front left", "4"));
+            facing.addEventListener("change", () => setPowerFacing(kind, facing.value));
+            const at = document.createElement("p");
+            at.className = "ff-sel";
+            at.dataset.role = "at";
+            const row = document.createElement("div");
+            row.className = "ff-btn-row";
+            const pick = document.createElement("button");
+            pick.type = "button";
+            pick.dataset.role = "pick";
+            pick.addEventListener("click", () => {
+                pickingPower = pickingPower === kind ? null : kind;
+                if (pickingPower) {
+                    moving = false;
+                    pickingStart = false;
+                    status(`Click the tile the ${def.furniName} should drop on.`, "busy");
+                }
+                syncPickers();
+                dirty = true;
+            });
+            row.append(pick);
+            box.append(facing, at, row);
+            host.append(box);
+        }
+        return host;
+    }
+
+    /* Every machine the catalogue names that a power-up may be — brain
+       freeze's, every colour of ice cream machine. Filled again if the
+       catalogue had not arrived the first time. */
+    function fillMachines(sel, def) {
+        const rows = (Editor && Editor.search ? Editor.search("Ice Cream Machine", 400) : [])
+            .filter(r => def.anyOf.test(r.className) && r.name);
+        if (!rows.length && sel.options.length) return;
+        sel.innerHTML = "";
+        // One of each name: the catalogue has a few colours twice over.
+        const seen = new Set();
+        for (const r of rows) {
+            if (seen.has(r.className) || seen.has(r.name)) continue;
+            seen.add(r.className); seen.add(r.name);
+            sel.add(new Option(r.name, r.className));
+        }
+        if (!sel.options.length) sel.add(new Option(def.furniName, def.classes[0]));
+    }
+
+    function syncPowerPanel(L) {
+        const host = buildPowerPanel();
+        if (!host || !L) return;
+        for (const sel of host.querySelectorAll('[data-role="cls"]')) {
+            if (sel.options.length < 2) fillMachines(sel, POWERS()[sel.closest(".ff-power").dataset.kind] || {});
+        }
+        const blocked = Furni.blockedTiles(state.furni);
+        for (const box of host.querySelectorAll(".ff-power")) {
+            const kind = box.dataset.kind;
+            const def = POWERS()[kind] || {};
+            const p = powerOf(L, kind);
+            const q = (role) => box.querySelector(`[data-role="${role}"]`);
+            q("after").value = p ? String(p.after) : "";
+            if (q("cls")) { q("cls").value = p ? p.cls : (def.classes || [""])[0]; q("cls").disabled = !p; }
+            q("facing").value = p ? String(p.facing || 2) : "2";
+            q("facing").disabled = !p;
+            let say = `No ${(def.name || "").toLowerCase()} on this level.`, warn = false;
+            if (pickingPower === kind) say = "Click a tile in the room…";
+            else if (p) {
+                /* The tile in front (green on the room) is where the player
+                   is walked to, and nothing falls there. It has to be floor
+                   with nothing standing on it to be any use. */
+                const f = frontOf(p);
+                const usable = Iso.has(f.x, f.y) && !blocked.has(Iso.key(f.x, f.y));
+                say = `On ${p.x}, ${p.y}` + (usable
+                    ? ` - players stand on ${f.x}, ${f.y} (green), kept clear of falling furni.`
+                    : ` - the tile in front (${f.x}, ${f.y}) is not free floor, so players will use whichever side is nearest. Pick another tile.`);
+                warn = !usable;
+            }
+            q("at").textContent = say;
+            q("at").classList.toggle("is-warn", warn);
+            q("pick").textContent = pickingPower === kind ? "Cancel" : "Pick on the room";
+            q("pick").disabled = !p;
+        }
     }
 
     function renderWalkPanel() {
@@ -2984,10 +4329,19 @@
 
        Both are written rather than one or the other: the title's copy is what
        greets them when the round ends and it comes back up. */
+    /* `kind`: good, busy, bad — or "error", for the few things that stop a
+       PLAYER from playing (the name lookup down, levels or furni that would
+       not load, a round that would not start). Only those reach the player's
+       line under the name box (25 Oct 2026, the owner's: red/green text there
+       "carries little to no context"): "Round started.", "Playing as …", the
+       run's board result — said elsewhere already, or nothing to act on —
+       clear it instead. The builder's bar shows everything. */
     function status(text, kind) {
         if (statusEl) {
-            statusEl.textContent = text || "";
-            statusEl.className = "ff-status" + (kind ? " is-" + kind : "");
+            const show = Editor || kind === "error";
+            const cls = kind === "error" ? "bad" : kind;
+            statusEl.textContent = show ? (text || "") : "";
+            statusEl.className = "ff-status" + (show && cls ? " is-" + cls : "");
         }
         if (Editor) return;
         const title = document.getElementById("ff-title");
@@ -3160,8 +4514,8 @@
                     wear(DEFAULT_FIGURE, "", hotel);
                     persist();
                 }
-                status(data.error || (missing ? `No habbo by that name on Origins ${hotel}.`
-                    : "Could not reach the lookup just now."), "bad");
+                status(data.error || (missing ? `No habbo by that name on Origins ${hotel} - you'll play as a guest.`
+                    : "Could not reach the Habbo lookup just now - try Play again."), "error");
                 return missing ? "missing" : "failed";
             }
             wear(data.figureString, data.name || clean, hotel);
@@ -3173,15 +4527,22 @@
         } catch {
             clearTimeout(leash);
             if (mine !== lookupSeq) return "stale";
-            status("Could not reach the lookup just now.", "bad");
+            status("Could not reach the Habbo lookup just now - try Play again.", "error");
             return "failed";
         }
     }
 
-    function pointerTile(ev) {
+    // Where on the canvas, in its own pixels, the pointer is.
+    function pointerPixel(ev) {
         const r = canvas.getBoundingClientRect();
-        const px = (ev.clientX - r.left) * (canvas.width / r.width);
-        const py = (ev.clientY - r.top) * (canvas.height / r.height);
+        return {
+            px: (ev.clientX - r.left) * (canvas.width / r.width),
+            py: (ev.clientY - r.top) * (canvas.height / r.height)
+        };
+    }
+
+    function pointerTile(ev) {
+        const { px, py } = pointerPixel(ev);
         /* Walkable mode reaches the HOLES too — it is the tool that decides
            where they are, and a grid whose empty squares cannot be clicked can
            only ever be made smaller.
@@ -3191,7 +4552,7 @@
            outside the walkable area returned nothing at all, so the picker sat
            there armed and silent and looked broken, when the answer was "not
            there". Everywhere else a hole is not a tile. */
-        if (Editor && (Editor.state.mode === "walk" || pickingStart)) return Iso.tileAtRaw(px, py);
+        if (Editor && (Editor.state.mode === "walk" || pickingStart || pickingPower)) return Iso.tileAtRaw(px, py);
         return Iso.tileAt(px, py);
     }
 
@@ -3452,6 +4813,7 @@
        reader went on announcing a room that was no longer there. */
     const TITLE_LABEL = "The hotel view, with furni falling past it";
     const showTitle = () => {
+        Sound.music("ambient");
         const cv = canvas || document.getElementById("ff-canvas");
         if (cv) cv.setAttribute("aria-label", TITLE_LABEL);
         // Idle again: its focus ring back (see beginLevel; 10 Oct 2026).
@@ -3463,6 +4825,102 @@
         refreshBoard();
     };
 
+    /* ---- THE LOADING BAR (25 Oct 2026). See .ff-boot in the CSS.
+
+       The bar is the WEIGHTED SUM of the real work, each part a fraction:
+
+           levels    the published levels                      2
+           furni     the furnidata for every piece in them      2
+           hotel     the hotel view and what falls past it      3
+           avatar    the figure's 48 sprites                    2
+           fonts     the page's typefaces                       1
+
+       — and what is DRAWN eases toward that sum a few per cent a frame, never
+       backwards and never past it. The work arrives in lumps (one answer
+       carries every level); the bar does not. When everything is in it runs
+       out to the end, holds a beat, and fades into the title.
+
+       The parts a player can live without — the art, the figure, the fonts —
+       stop being waited for after EXTRA_LEASH_MS: a slow image host should
+       not hold the game shut. Levels and furnidata are the game, and a
+       failure there ends the loading at once so the title can say so and
+       offer Retry. */
+    const Boot = (() => {
+        const WEIGHTS = { levels: 2, furni: 2, hotel: 3, avatar: 2, fonts: 1 };
+        /* The first SCRIPT_SHARE of the bar is the game's own files arriving,
+           counted by the inline script beside #ff-boot in fallinfurni.html;
+           everything above shares out the rest. */
+        const SCRIPT_SHARE = 0.4;
+        const EXTRA_LEASH_MS = 8000;
+        const done = {};
+        const polls = {};
+        let shown = 0, raf = 0, started = 0, ended = false, gone = false;
+        const els = {};
+
+        function target() {
+            let sum = 0, all = 0;
+            const leashed = performance.now() - started > EXTRA_LEASH_MS;
+            for (const k of Object.keys(WEIGHTS)) {
+                let f = done[k] || 0;
+                if (polls[k]) { try { f = Math.max(f, polls[k]() || 0); } catch { /* counts as nothing yet */ } }
+                if (leashed && k !== "levels" && k !== "furni") f = 1;
+                sum += WEIGHTS[k] * Math.max(0, Math.min(1, f));
+                all += WEIGHTS[k];
+            }
+            return ended ? 1 : SCRIPT_SHARE + (1 - SCRIPT_SHARE) * (sum / all);
+        }
+
+        function frame() {
+            raf = 0;
+            if (gone || !els.root) return;
+            const t = target();
+            // A few per cent of the gap a frame, and a little creep so the
+            // last stretch of any part does not crawl.
+            if (shown < t) shown = Math.min(t, shown + Math.max((t - shown) * 0.09, 0.004));
+            els.fill.style.transform = `scaleX(${shown.toFixed(4)})`;
+            els.root.setAttribute("aria-valuenow", String(Math.round(shown * 100)));
+            if (shown >= 0.999 && (ended || t >= 0.999)) {
+                gone = true;
+                setTimeout(() => {
+                    els.root.classList.add("is-done");
+                    setTimeout(() => { els.root.hidden = true; }, 320);
+                }, 160);
+                return;
+            }
+            raf = requestAnimationFrame(frame);
+        }
+
+        return {
+            start() {
+                els.root = document.getElementById("ff-boot");
+                els.fill = document.getElementById("ff-boot-fill");
+                if (!els.root || !els.fill) return;
+                started = performance.now();
+                // From where the files left it, which by now is all of them.
+                window.__ffBootTaken = true;
+                shown = SCRIPT_SHARE * (window.__ffBootScripts || 1);
+                if (document.fonts && document.fonts.ready) {
+                    document.fonts.ready.then(() => { done.fonts = 1; }, () => { done.fonts = 1; });
+                } else done.fonts = 1;
+                if (!raf) raf = requestAnimationFrame(frame);
+            },
+            set(part, fraction) { done[part] = fraction; },
+            poll(part, fn) { polls[part] = fn; },
+            /* Finish now, whatever is outstanding: a failure the title has to
+               show, or the builder's page, which never loads like a player's. */
+            end() { ended = true; if (!raf && !gone && els.root) raf = requestAnimationFrame(frame); },
+            /* Looked up HERE as well (25 Oct 2026): the builder's page calls
+               this without start() ever running, and with only start()
+               finding the element the loading screen stayed up over the
+               editor's room for good — the owner's "doesn't load rooms". */
+            hide() {
+                gone = true;
+                const root = els.root || document.getElementById("ff-boot");
+                if (root) root.hidden = true;
+            }
+        };
+    })();
+
     /* Everything a player needs, before they are asked for anything: the
        levels, the furni artwork those levels use, and the first room drawn.
        Whatever this cannot do quietly is said on the title screen rather than
@@ -3471,7 +4929,7 @@
         published = null;
         furniLoaded = null;
         titleState("unreachable", "Couldn't load the furni.");
-        status("Couldn't load the furni - check your connection and press Retry.", "bad");
+        status("Couldn't load the furni - check your connection and press Retry.", "error");
     }
 
     async function prepare() {
@@ -3486,23 +4944,27 @@
         }
         refreshBoard();
 
-        titleState("loading", "Fetching levels…");
+        // The loading bar says it now (Boot); the title's line is kept for
+        // the things that went wrong.
+        titleState("loading", "");
         published = await Levels.fetchPublished();
+        Boot.set("levels", 1);
         /* NULL IS "COULD NOT ASK", not "nobody has published anything" - see
            fetchPublished. The two used to be the same empty list, so a dropped
            connection told the player the game had no levels in it. This one
            says what actually happened and offers the Retry that fixes it. */
         if (published === null) {
+            Boot.end();
             titleState("unreachable", "Couldn't reach the levels.");
-            status("Couldn't reach the levels - check your connection and press Retry.", "bad");
+            status("Couldn't reach the levels - check your connection and press Retry.", "error");
             return;
         }
         if (!published.length) {
+            Boot.end();
             titleState("empty", "");
-            status("No levels have been published yet.", "bad");
+            status("No levels have been published yet.", "error");
             return;
         }
-        titleState("loading", "Loading the furni…");
         furniLoaded = loadLevelFurni(published);
         /* NO FURNIDATA IS NO GAME, and it is said the way no levels is said:
            the unreachable state, with Retry and Play held down. Played on
@@ -3512,9 +4974,11 @@
            and so startRound's own guard fetches both again if it is reached
            some other way. */
         if (!(await furniLoaded)) {
+            Boot.end();
             furniFailed();
             return;
         }
+        Boot.set("furni", 1);
 
         /* No room is built here any more. The title screen is the hotel view,
            so what has to be ready is the hotel view and the seats falling past
@@ -3889,6 +5353,8 @@
     const scoredRounds = (levels) => levels.filter(l => !l.retried).map(l => ({
         id: String(l.id || ""),
         ms: Math.max(0, Math.round((Number(l.seconds) || 0) * 1000)),
+        // How long a brain freeze held the clock (see FREEZE_MS in ff-scores).
+        frozen: Math.max(0, Math.round(Number(l.frozen) || 0)),
         points: Math.round(Number(l.points) || 0),
         won: l.won === true
     }));
@@ -3940,7 +5406,8 @@
         runRecorded = true;
         // A run the console has had its hands on is nobody's result — see
         // debugTainted. Not logged either: it would skew the level stats.
-        if (debugTainted) return Promise.resolve();
+        // A level-select run is practice, and the same applies.
+        if (debugTainted || practiceFrom !== null) return Promise.resolve();
 
         const payload = {
             outcome,
@@ -4060,6 +5527,11 @@
     let runTokenNow = null;
     // Once per run: the board is told when the result settles, and only then.
     let runSubmitted = false;
+    /* A LEVEL-SELECT RUN (25 Oct 2026): the index it started from, or null for
+       an ordinary run from level one. Such a run is practice — it starts
+       wherever the player liked, so it is nobody's result — and it sends
+       nothing: no run token, no run log, no score. See openSelector. */
+    let practiceFrom = null;
     /* A SCORE THAT HAS BEEN DECIDED BUT NOT YET SENT: { body, sent }, or null.
 
        submitRun waits — for the token, then for up to LOG_WAIT_MS on the run
@@ -4160,6 +5632,10 @@
            not move. */
         if (debugTainted) {
             boardSays("This run was played with the debug console open, so it stays off the leaderboard.", false);
+            return;
+        }
+        if (practiceFrom !== null) {
+            boardSays("Level-select runs are practice, so they stay off the leaderboard.", false);
             return;
         }
         /* A run that cleared nothing still ENDED, and the player is owed the
@@ -4335,6 +5811,10 @@
         const secs = (level && level.rules && level.rules.seconds) || 0;
         const left = game.secondsLeft(now);
         const hasNext = Boolean(run && won && run.index + 1 < run.levels.length);
+        /* The sting for how it went, then the level's tune from the next
+           room while the result is read. The last level cleared plays its
+           sting into the winning version, which showRunEnd starts. */
+        if (!Editor) Sound.sting(won ? "clear" : "lost", { track: Sound.levelTrack(), muffled: true });
 
         document.getElementById("ff-round-title").textContent =
             won ? "Round complete" : "Round over";
@@ -4371,7 +5851,7 @@
         const earnsLife = Boolean(run && won && run.cleared() % Game.LIFE_EVERY === 0);
         if (run) {
             rows.push(["Lives", won
-                ? earnsLife ? `${run.lives + 1} - one more for five cleared` : String(run.lives)
+                ? earnsLife ? `${run.lives + 1} - one more for ${Game.LIFE_EVERY} cleared` : String(run.lives)
                 : run.lives > 1
                     ? `${run.lives} - this costs one`
                     : "your last one"]);
@@ -4422,9 +5902,13 @@
        three rows, and the third is marked: "how far did I get" is the question
        this screen is answering, and an empty row for a level never reached
        would answer it worse than no row at all. */
-    function showRunEnd(theRun, cleared) {
+    // `quit`: ended from the pause menu's Submit & Quit, which says so.
+    function showRunEnd(theRun, cleared, quit) {
         const box = document.getElementById("ff-runend");
         if (!box || !theRun) return;
+        if (quit) Sound.music("ambient");
+        else if (cleared) Sound.music("win");
+        else Sound.sting("over", { track: "sad" });
         // submitRun's verdict, if it has answered already - it is sent as the
         // last round ends, before this panel exists. Blank until then, and
         // never the last run's: startRound clears it. See boardLine.
@@ -4441,13 +5925,17 @@
            that makes a player distrust the rest of the table. */
         const won = theRun.results.filter(r => r.won).length;
         const spent = theRun.livesSpent || 0;
-        document.getElementById("ff-runend-why").textContent = cleared
+        const whyLost = (w) => (w === "poi" ? "the wrong chair entirely"
+            : w === "restart" ? "restarted" : "out of time");
+        document.getElementById("ff-runend-why").textContent = quit
+            ? `Quit on ${(theRun.level() || {}).name || "this level"} - ${won} ${won === 1 ? "level" : "levels"} cleared.`
+            : cleared
             ? `All ${won} ${won === 1 ? "level" : "levels"} cleared` +
               (spent ? `, and ${spent === 1 ? "a life" : spent + " lives"} spent getting there.` : ".")
             : last
-                ? `${last.name} - ${last.why === "poi" ? "the wrong chair entirely" : "out of time"}, ` +
-                  "and no lives left."
+                ? `${last.name} - ${whyLost(last.why)}, and no lives left.`
                 : "";
+        if (quit) document.getElementById("ff-runend-title").textContent = "Run ended";
 
         const tbody = document.getElementById("ff-runend-rows");
         tbody.innerHTML = "";
@@ -4552,7 +6040,7 @@
 
         if (!run) {
             // The builder testing one level, or a player replaying it.
-            startRound().catch(e => status(`Could not start: ${e.message}`, "bad"));
+            startRound().catch(e => status(`Could not start the round: ${e.message}`, "error"));
             return;
         }
 
@@ -4580,7 +6068,7 @@
             if (what === "retry") {
                 tell(`A life gone - ${run.lives} left. ${run.level().name} again.`, "bad");
             } else if (earned) {
-                tell(`${run.progressLabel()} - an extra life for five cleared.`, "good");
+                tell(`${run.progressLabel()} - an extra life for ${Game.LIFE_EVERY} cleared.`, "good");
             } else {
                 status(run.progressLabel(), "good");
             }
@@ -4801,6 +6289,21 @@
         n.classList.add(callout.kind === "lost" ? "is-life-lost" : "is-life-won");
     }
 
+    /* A POWER-UP'S INTRODUCTION (the owner's: level 6 is the first round
+       with the coffee; "before the countdown begins have some text appear …
+       'Grab a coffee to walk quicker!' Have this onscreen whilst the countdown
+       plays out too"). Each power-up's tip (POWERUPS.tip) on the first level
+       of the run that has that kind — worked out from the levels, so it
+       follows the power-up if it moves — and, in the builder, on any level
+       with one, to see it. The kinds to introduce, in the level's order. */
+    const TIP_LEAD_MS = 2000;           // the tip alone, before the 3
+    const kindsOf = (lv) => ((lv && lv.powerups) || []).map(p => p.kind);
+    function powerTips() {
+        const lv = game && game.level;
+        return kindsOf(lv).filter(kind =>
+            !run || run.levels.findIndex(l => kindsOf(l).includes(kind)) === run.index);
+    }
+
     function countIn(callout) {
         const root = document.getElementById("ff-countin");
         const n = document.getElementById("ff-countin-n");
@@ -4808,9 +6311,28 @@
 
         const beats = ["3", "2", "1", "Go"];
         if (callout) beats.unshift(callout);
+        const tipEl = document.getElementById("ff-countin-tip");
+        const tips = tipEl ? powerTips() : [];
+        const tip = tips.length > 0;
+        if (tipEl) {
+            // A line each: the hand item, and what to do with it.
+            tipEl.innerHTML = "";
+            for (const kind of tips) {
+                const def = POWERS()[kind] || {};
+                const line = document.createElement("p");
+                const img = document.createElement("img");
+                img.src = def.icon || `assets/avatar/handitem-${kind}.png`;
+                img.alt = "";
+                const span = document.createElement("span");
+                span.textContent = def.tip || "";
+                line.append(img, span);
+                tipEl.appendChild(line);
+            }
+        }
         return new Promise((resolve) => {
             let i = 0;
             root.hidden = false;
+            if (tipEl) tipEl.hidden = !tip;
             /* HELD WHILE THE TAB IS HIDDEN (30 Sept 2026). The count ran on
                timers, which carry on in a background tab, so switching away
                on "3" came back to a round already under way. A beat that
@@ -4831,10 +6353,13 @@
                 n.classList.remove("is-life-lost", "is-life-won");
                 if (i >= beats.length) {
                     root.hidden = true;
+                    if (tipEl) tipEl.hidden = true;
                     resolve();
                     return;
                 }
                 const word = beats[i++];
+                if (typeof word === "object") { if (word.kind === "won") Sound.sfx("life"); }
+                else Sound.sfx("count", word === "Go");
                 if (typeof word === "object") {
                     lifeBeat(n, word);
                     n.classList.remove("is-go");
@@ -4855,7 +6380,15 @@
                 n.style.animation = "";
                 later(word === "Go" ? COUNT_MS * 0.7 : COUNT_MS);
             };
-            step();
+            // The tip on its own first, with the machine's twinkle; then the
+            // count runs under it.
+            if (tip) {
+                n.textContent = "";
+                Sound.sfx("coffeeAppear");
+                later(TIP_LEAD_MS);
+            } else {
+                step();
+            }
         });
     }
 
@@ -4949,6 +6482,8 @@
            A room that failed to preload is still a playable room — the
            sprites arrive as they arrive — so this unfreezes and says so
            rather than leaving the game bricked. */
+        // The level's own tune, open (it was muffled between rounds).
+        if (!Editor) Sound.music(Sound.levelTrack(), false);
         if (!Editor) {
             loadRoom().catch((e) => {
                 console.error("Fallin' Furni: the room loader failed", e);
@@ -4989,7 +6524,65 @@
        having the button there. For a player it starts the RUN: the published
        levels in order, each one a round, dropping faster and landing further
        away as they go. */
-    async function startRound() {
+    /* ---- THE LEVEL SELECTOR (25 Oct 2026, the owner's: "a level selector
+       screen from the main splash screen, accessed by typing 'selector11'
+       into the username box").
+
+       A list of every published level over the title screen; pressing one
+       starts a run there. Runs started this way are practice (practiceFrom)
+       and never reach the board. The title's own form, boards and lines are
+       hidden while it is up (`data-select` on #ff-title, see the CSS), and
+       Back puts them back. */
+    const SELECTOR_CODE = "selector11";
+
+    async function openSelector() {
+        const title = document.getElementById("ff-title");
+        const panel = document.getElementById("ff-select");
+        const list = document.getElementById("ff-select-list");
+        if (!title || !panel || !list) return;
+        if (!published) {
+            status("Loading levels…", "busy");
+            published = await Levels.fetchPublished();
+            if (published && published.length) furniLoaded = loadLevelFurni(published);
+        }
+        if (!published || !published.length) {
+            status("Couldn't reach the levels - check your connection and press Retry.", "error");
+            return;
+        }
+        status("", "");
+        list.textContent = "";
+        published.forEach((level, i) => {
+            const li = document.createElement("li");
+            const b = document.createElement("button");
+            b.type = "button";
+            const n = document.createElement("b");
+            n.textContent = String(i + 1);
+            b.append(n, level.name || `Level ${i + 1}`);
+            b.addEventListener("click", () => {
+                if (playLocked()) return;
+                closeSelector();
+                startRound({ from: i }).catch(e => status(`Could not start the round: ${e.message}`, "error"));
+            });
+            li.appendChild(b);
+            list.appendChild(li);
+        });
+        panel.hidden = false;
+        title.setAttribute("data-select", "");
+        const first = list.querySelector("button");
+        if (first) first.focus();
+    }
+
+    function closeSelector() {
+        const title = document.getElementById("ff-title");
+        const panel = document.getElementById("ff-select");
+        if (panel) panel.hidden = true;
+        if (title) title.removeAttribute("data-select");
+    }
+
+    /* `opts.from`, a level's index, starts a level-select run there — see
+       practiceFrom. Without it a run starts at the first level, as ever. */
+    async function startRound(opts) {
+        const from = opts && Number.isInteger(opts.from) ? opts.from : null;
         hideRoundEnd();
         hideRunEndPanel();
         resetHud();
@@ -5039,21 +6632,22 @@
             return;
         }
         if (published === null) {
-            status("Couldn't reach the levels - check your connection and press Retry.", "bad");
+            status("Couldn't reach the levels - check your connection and press Retry.", "error");
             showTitle();
             return;
         }
         if (!published.length) {
-            status("No levels have been published yet.", "bad");
+            status("No levels have been published yet.", "error");
             showTitle();
             return;
         }
         hideTitle();
+        practiceFrom = from !== null ? Math.max(0, Math.min(published.length - 1, from)) : null;
         /* The token first and the clock straight after, so the server's
            stamp can only ever be LATER than the page's start - the side
            ff-scores.js's tolerance is written for. Not awaited: see
-           requestRunToken. */
-        const tokenReq = requestRunToken();
+           requestRunToken. A practice run asks for none. */
+        const tokenReq = practiceFrom === null ? requestRunToken() : Promise.resolve(null);
         runToken = tokenReq;
         runTokenNow = null;
         // Kept only while it is still this run's: a slow answer for an old
@@ -5066,6 +6660,7 @@
         // unreported until it ends.
         runRecorded = false;
         run = Game.createRun(published, gameOpts());
+        if (practiceFrom !== null) run.index = practiceFrom;
         game = run.startRound(gameNow());
         beginLevel(run.level());
         status(run.progressLabel(), "good");
@@ -5195,8 +6790,15 @@
             }
             fullscreenTapAt = 0;
             const t = pointerTile(ev);
-            if (!t) return;
             const playing = game && game.state === Game.RUNNING;
+            /* A double-click on the Mochamaster fetches the coffee — asked
+               BEFORE the tile is, because the top of the machine stands over
+               the wall where there is no floor tile at all. */
+            if (playing && !loading) {
+                const { px, py } = pointerPixel(ev);
+                if (powerClick(t, px, py)) return;
+            }
+            if (!t) return;
             if (Editor && !playing) { editorClick(t, ev); return; }
             /* NOT WHILE THE ROOM IS LOADING OR COUNTING IN. The count-in lets
                taps through (it is pointer-events: none so it never eats one),
@@ -5209,6 +6811,8 @@
                where they want to go, so the tile is held and walked to the
                moment the round actually starts. Only the latest one counts. */
             if (loading) { queuedTap = t; return; }
+            // Walking somewhere else calls off a trip to the Mochamaster.
+            power.want = null;
             walkTo(t.x, t.y);
         });
 
@@ -5240,6 +6844,8 @@
             const t = { x: state.pos.x + d.dx, y: state.pos.y + d.dy };
             if (!Iso.has(t.x, t.y)) return;
             if (loading) { queuedTap = t; return; }
+            // Walking somewhere else calls off a trip to the Mochamaster.
+            power.want = null;
             walkTo(t.x, t.y);
         });
 
@@ -5269,6 +6875,7 @@
                the same click is how a click does the wrong one. */
             if (pickingStart) {
                 moving = false;
+                pickingPower = null;
                 status("Click the tile the player should start on.", "busy");
             }
             syncPickers();
@@ -5277,6 +6884,14 @@
 
         const dirSel = document.getElementById("ff-start-dir");
         if (dirSel) dirSel.addEventListener("change", () => setStartDir(dirSel.value));
+
+        // The Rules tab's soundtrack and coffee (25 Oct 2026).
+        const musicSel = document.getElementById("ff-music");
+        if (musicSel) musicSel.addEventListener("change", () => setLevelMusic(musicSel.value));
+        const musicPlay = document.getElementById("ff-music-play");
+        if (musicPlay) musicPlay.addEventListener("click", () => previewMusic(!musicPreview));
+        // The power-ups' controls are built, with their listeners, by
+        // buildPowerPanel.
 
         const walkAdd = document.getElementById("ff-walk-add");
         if (walkAdd) walkAdd.addEventListener("click", () => { walkPaint = !walkPaint; renderWalkPanel(); });
@@ -5371,6 +6986,14 @@
             if (play) play.disabled = true;
             try {
                 const typed = nameInput.value.trim();
+                /* The level selector's way in (see openSelector): the code is
+                   not a name, so it is never looked up or remembered — the
+                   box goes back to whoever was being worn. */
+                if (typed.toLowerCase() === SELECTOR_CODE) {
+                    nameInput.value = state.name || "";
+                    await openSelector();
+                    return;
+                }
                 let found = "";
                 if (!typed) wearNobody();
                 // Already found and still worn: no second lookup (see lastFound).
@@ -5399,7 +7022,7 @@
                         : "Could not reach the name lookup - playing as the default habbo.", "bad");
                 }
             } catch (e) {
-                status(`Could not start: ${e.message}`, "bad");
+                status(`Could not start the round: ${e.message}`, "error");
             } finally {
                 /* Only back on over a title that can be played (30 Sept
                    2026): titleState holds Play down while the levels or furni
@@ -5409,10 +7032,23 @@
             }
         });
 
+        const selectBack = document.getElementById("ff-select-back");
+        if (selectBack) selectBack.addEventListener("click", closeSelector);
+        /* The code opens the selector AS IT IS TYPED (25 Oct 2026, the
+           owner's: typing it "doesn't bring it up" — it waited for Play,
+           which nothing said). Play still works too; see the submit handler. */
+        nameInput.addEventListener("input", () => {
+            if (nameInput.value.trim().toLowerCase() !== SELECTOR_CODE) return;
+            if (gameClosed()) return;
+            nameInput.value = state.name || "";
+            openSelector().catch(() => {});
+        });
+
         /* startRound is async, so a throw inside it becomes an unhandled
            rejection and the button just appears to do nothing. Say so instead. */
         document.getElementById("ff-start").addEventListener("click", () => {
-            startRound().catch((e) => status(`Could not start: ${e.message}`, "bad"));
+            if (musicPreview) previewMusic(false);
+            startRound().catch((e) => status(`Could not start the round: ${e.message}`, "error"));
         });
         document.getElementById("ff-stop").addEventListener("click", stopRound);
 
@@ -5421,7 +7057,9 @@
         document.getElementById("ff-runend-again").addEventListener("click", () => {
             if (playLocked()) return;
             hideRunEnd();
-            startRound().catch(e => status(`Could not start: ${e.message}`, "bad"));
+            // A practice run plays again from the level it was started at.
+            startRound(practiceFrom !== null ? { from: practiceFrom } : undefined)
+                .catch(e => status(`Could not start the round: ${e.message}`, "error"));
         });
         document.getElementById("ff-round-quit").addEventListener("click", () => {
             // Abandoning a run still records how far it got — including the
@@ -5485,6 +7123,24 @@
                 .catch(() => { /* no debug; the game is unaffected */ });
         }
 
+        /* The loading bar, for a player; the builder's page has its own
+           business and never waits behind it. The figure's progress is the
+           share of its sprites that have arrived (or failed — they are not
+           coming), and the hotel view's comes from RoomLobby.progress. */
+        if (Editor || EDITING) Boot.hide();
+        else {
+            Boot.start();
+            Boot.poll("avatar", () => {
+                if (!sprites.size) return 0;
+                let n = 0;
+                for (const e of sprites.values()) if (e.ready || e.failed) n++;
+                return n / sprites.size;
+            });
+            Boot.poll("hotel", () => (Lobby && Lobby.progress ? Lobby.progress() : 1));
+            /* The lobby's music, waiting for the first click or key — a
+               browser plays nothing before one (see wake in js/ff-audio.js). */
+            Sound.music("ambient");
+        }
         preload(state.figure);
         // The hotel view and the furni that falls past it, before anything
         // else — it is the first thing on screen. Which furni is a site
@@ -5551,6 +7207,19 @@
                 return ACCEPT_MS;
             },
             get walkFrameMs() { return WALK_FRAME_MS; },
+            /* The power-ups: their state, and dropping the level's now rather
+               than at their moment — to look at one without waiting a round
+               for it. Taints the run, as anything here that changes play
+               does. */
+            get power() { taint(); return power; },   // a live reference: writable, so it taints
+            // The game's clock (pauses taken out), which power.until is on.
+            get now() { return gameNow(); },
+            dropPowerups() {
+                taint();
+                const list = (game && game.round && game.round.powerups) || [];
+                for (const p of list) { p.after = 0; p.tryAt = 0; }
+                return list;
+            },
             /* Whether the room loader has the paint loop frozen. Exposed
                because a stuck `loading` looks exactly like a dead game —
                no repaint, no readout, no error — and there is otherwise

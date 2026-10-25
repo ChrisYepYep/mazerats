@@ -372,6 +372,17 @@
                 try {
                     var wanted = /^[a-z]+$/.test(String(settings.theme || "")) ? settings.theme : "classic";
                     var link = document.getElementById("theme-css");
+                    /* While a seasonal skin wears its own palette (the <head>
+                       script above painted it from mazerats_skin_theme), the
+                       site's is only remembered: js/skin-wear.js decides the
+                       page's palette once it runs, and taking the sheet away
+                       here put it back at the end of <head>, reloaded. */
+                    var worn = null;
+                    try { worn = JSON.parse(localStorage.getItem("mazerats_skin_theme") || "null"); } catch (e) { worn = null; }
+                    if (worn && worn.theme && Date.now() < worn.until) {
+                        localStorage.setItem("mazerats_theme", wanted);
+                        return settings.landingState;
+                    }
                     if (wanted === "classic") {
                         document.documentElement.removeAttribute("data-theme");
                         if (link) link.remove();
@@ -541,7 +552,7 @@
          and a colour scheme is not worth a blank page. -->
     <link rel="stylesheet" href="css/style.css?v=2">
     <link id="theme-css" rel="stylesheet">
-    <script>(function(){try{var t=localStorage.getItem("mazerats_theme");if(!t||t==="classic"||!/^[a-z]+$/.test(t))return;document.documentElement.setAttribute("data-theme",t);document.getElementById("theme-css").href="css/theme-"+t+".css";}catch(e){}})();</script>
+    <script>(function(){try{var t=localStorage.getItem("mazerats_theme"),k=JSON.parse(localStorage.getItem("mazerats_skin_theme")||"null");if(k&&k.theme&&Date.now()<k.until)t=k.theme;if(!t||t==="classic"||!/^[a-z]+$/.test(t))return;document.documentElement.setAttribute("data-theme",t);document.getElementById("theme-css").href="css/theme-"+t+".css";}catch(e){}})();</script>
     <!-- Umami is not loaded here. On this page it waits for the gate at the
          top of <head> to let the visitor in — see loadUmami() there — so a
          gated visitor bounced to the landing page is not counted as a visit
@@ -1693,6 +1704,7 @@
     <script src="js/event-status.js?v=2"></script>
     <script src="js/privacy-content.js?v=2"></script>
     <script src="js/palette-wear.js?v=2"></script>
+    <script src="js/skin-wear.js?v=1"></script>
     <script src="js/site.js?v=2"></script>
     <!-- Dropdowns open the site's own list, not the browser's. After site.js,
          whose EscapeLayers it registers with. -->

@@ -544,6 +544,11 @@ const Api = {
     applyTheme(theme) {
         const name = /^[a-z]+$/.test(String(theme || "")) ? theme : "classic";
         try { localStorage.setItem("mazerats_theme", name); } catch (e) { /* private mode */ }
+        /* While a seasonal skin wears its own palette (js/skin-wear.js), the
+           site's is only remembered: taking the skin's sheet away here and
+           skin-wear putting it back moments later re-appended it after the
+           page's own sheets, and reloaded it. */
+        if (typeof window !== "undefined" && window.__mrSkinPalette) return;
 
         const root = document.documentElement;
         if (name === "classic") root.removeAttribute("data-theme");

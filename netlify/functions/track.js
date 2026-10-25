@@ -117,7 +117,12 @@ const EVENT_NAMES = new Set([
        finished (the level), Submit Score, the leaderboard, the name
        chosen, the lights. */
     "pura-open", "pura-play", "pura-continue", "pura-finish", "pura-submit",
-    "pura-board", "pura-name", "pura-lights"
+    "pura-board", "pura-name", "pura-lights",
+    /* The Halloween skin's secret bat game (25 Oct 2026, js/skin-halloween.js):
+       started (the first bat hit), ended (labelled with a score band, never
+       the score itself), and its share card copied or saved. Never one per hit — a
+       game is dozens of them, and the batch cap would drop the lot. */
+    "bat-start", "bat-end", "bat-share"
 ]);
 
 function limiterKey(event) {

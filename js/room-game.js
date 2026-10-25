@@ -94,7 +94,7 @@
        first loss — and it is what makes forty-nine levels a thing a person
        might finish.
 
-       One earned back per five levels cleared, uncapped. A run that is going
+       One earned back per ten levels cleared, uncapped. A run that is going
        well builds a cushion before the levels get fast, and a run that is not
        does not: losing them faster than one per five IS the difficulty curve,
        so the ramp needs no second lever to express itself.
@@ -110,7 +110,7 @@
        who never needed them should not finish level for level with one who
        needed every one. */
     const STARTING_LIVES = 3;
-    const LIFE_EVERY = 5;               // levels cleared per life earned back
+    const LIFE_EVERY = 10;              // levels cleared per life earned back (5 until 25 Oct)
     const LIFE_BONUS = 100;             // per life still in hand at the end
 
     /* THE CLOCK HAS TO BE WORTH POINTS, because the leaderboard ranks on them.
@@ -184,6 +184,7 @@
                 this.best = 0;
                 this.lastScore = 0;
                 this.speed = 0;
+                this.freezes = [];
                 this.message = "Watch where they land.";
                 this.endedBecause = "";
                 /* NOTHING FALLS YET, and nothing starts timing yet.
@@ -213,7 +214,29 @@
                 if (!this.round) return level.rules.seconds;
                 // A finished round's clock stands where it stopped; see endedAt.
                 const at = this.endedAt === null ? now : Math.min(now, this.endedAt);
-                return Math.max(0, this.round.secondsLeft(at) - this.penalty);
+                /* Unclamped until the end: the round's own secondsLeft stops at 0,
+                   and the freeze's seconds added after that held the clock at 0:05
+                   for good, so the round never ran out. */
+                const r = this.round;
+                const left = r.started === null ? level.rules.seconds : level.rules.seconds - (at - r.started) / 1000;
+                return Math.max(0, left - this.penalty + this.frozenMs(at) / 1000);
+            },
+
+            /* A BRAIN FREEZE (25 Oct 2026, the power-up): the clock stops for
+               `ms` while the furni keeps falling — the drops run on the
+               round's own clock (js/room-drop.js), which this does not touch.
+               Kept as spans so the time given back is exact at any moment. */
+            freezes: [],
+            freeze(now, ms) {
+                this.freezes.push({ from: now, to: now + ms });
+            },
+            frozenMs(at) {
+                let n = 0;
+                for (const f of this.freezes || []) n += Math.max(0, Math.min(at, f.to) - f.from);
+                return n;
+            },
+            isFrozen(now) {
+                return (this.freezes || []).some(f => now >= f.from && now < f.to);
             },
 
             /* The seats still to sit on, in order. Everything already sat on is
@@ -306,6 +329,18 @@
                 return changed;
             },
 
+            /* RESTART, from the pause menu (25 Oct 2026, the owner's: "restart
+               level (costs a life)"). The round is simply lost, by choice:
+               the run takes a life for it and puts the same level back up,
+               exactly as running out of time would. */
+            forfeit(now) {
+                if (this.state !== RUNNING) return;
+                this.state = LOST;
+                this.endedAt = now;
+                this.endedBecause = "restart";
+                this.message = "Restarted.";
+            },
+
             /* The avatar finished a step onto this tile. Returns a short word
                for what happened, so the page can react without re-deriving it:
                null, "sat", "wrong", "decoy", "poi", "won". */
@@ -322,6 +357,13 @@
                     this.message = "That was the wrong chair entirely.";
                     return "poi";
                 }
+
+                /* A POWER-UP SEAT — the love potion's Rainbow Pod (25 Oct
+                   2026): sitting in it is the point, not a mistake. Nothing
+                   scores, nothing is lost; the page does the rest (the Pod
+                   fades, a life). Never counted as sat, so the sequence and
+                   the streak are as they were. */
+                if (seat.role === "power") return "power";
 
                 if (seat.role === "decoy") {
                     this.penalty += DECOY_PENALTY_S;
@@ -393,8 +435,19 @@
             // Everything the room should draw, falling pieces included.
             renderList() { return this.round ? this.round.renderList() : []; },
 
+            /* What the player cannot walk through: every piece, seats sat on
+               included. (For a few hours on 25 Oct 2026 a seat already sat on
+               was left out, so the drop rules could treat it as floor — and the
+               figure then routed straight over chairs, the owner's "walks
+               over/through other chairs". Never again: a seat is a goal, not a
+               path.) */
             blocked() {
-                return this.round ? Furni.blockedTiles(this.round.renderList()) : new Set();
+                if (!this.round) return new Set();
+                const out = Furni.blockedTiles(this.round.renderList());
+                // Floor the round closed behind a seated player (CLOSES in
+                // room-drop.js's spotsFor): nobody walks there any more.
+                if (this.round.offLimits) for (const k of this.round.offLimits) out.add(k);
+                return out;
             },
 
             /* Whether a piece is still on its way down. It is in the room's
@@ -445,6 +498,9 @@
                     seconds: Math.max(0, (level.rules.seconds || 0) - left - this.penalty),
                     allowed: level.rules.seconds || 0,
                     penalty: this.penalty,
+                    // Time the clock stood still for a brain freeze, which the
+                    // leaderboard allows for (FREEZE_MS in ff-scores.js).
+                    frozen: Math.round(this.frozenMs(this.endedAt === null ? now : Math.min(now, this.endedAt))),
                     points: this.score,
                     speed: this.speed,
                     streak: this.best
@@ -536,7 +592,7 @@
                     this.results.push(this.game.summary(now));
                     this.banked += this.game.score;
                     this.index++;
-                    /* A life back per five cleared, counted off the RECORD and
+                    /* A life back per ten cleared, counted off the RECORD and
                        not off `index` — index also moves for a level that was
                        failed and retried, and that must not pay a life. */
                     if (this.results.filter(r => r.won).length % LIFE_EVERY === 0) {

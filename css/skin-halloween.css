@@ -1,0 +1,274 @@
+/* THE HALLOWEEN SKIN's stylesheet (js/skin-halloween.js draws the pieces).
+
+   Every rule is scoped to html[data-skin="halloween"], so it is inert until
+   the attribute is set, and taking the attribute away is the whole of
+   removing it. Loaded only while the skin is on (js/skin-wear.js). Nothing
+   here changes a box's size or place: pieces, animations and pictures only. */
+
+html[data-skin="halloween"] .hw-piece {
+    position: absolute;
+    pointer-events: none;
+    background-repeat: no-repeat;
+    image-rendering: pixelated;
+    z-index: 2;
+}
+
+/* The page after dark: deeper at its edges, a breath of green fog low down.
+   Under everything (z-index -1), so it never sits on a word. */
+html[data-skin="halloween"] body::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+    background:
+        radial-gradient(ellipse 75% 70% at 50% 40%, transparent 62%, rgba(4, 0, 10, 0.4) 100%),
+        linear-gradient(to top, rgba(96, 200, 60, 0.08), rgba(96, 200, 60, 0) 22%);
+}
+
+/* ONE DRIP PER WINDOW swells a pixel at a time, stretches, lets go and
+   springs back: a strip of frames stepped by js/skin-halloween.js's drip
+   clock. The drop that lets go is its own piece (.hw-fall), unseen until
+   that moment; it falls to the edge beneath and splats (.hw-splat), all
+   driven from the script, which knows where the edge is. */
+html[data-skin="halloween"] .hw-fall { opacity: 0; }
+html[data-skin="halloween"] .hw-splat { transition: opacity 0.7s ease-out; }
+
+/* The sky the bats fly in: one canvas over the page, under the top bar (50). */
+html[data-skin="halloween"] .hw-bats {
+    position: fixed;
+    inset: 0;
+    z-index: 45;
+    pointer-events: none;
+    image-rendering: pixelated;
+}
+
+/* A ghost in the console's glass: barely there. */
+html[data-skin="halloween"] .hw-glass-ghost {
+    opacity: 0.13;
+    mix-blend-mode: screen;
+}
+
+html[data-skin="halloween"] .hw-web { opacity: 0.85; }
+
+/* The cobweb is spun in the results frame's top-left corner, where the line
+   over the list starts ("12 of 37 walked", or the Events archive note), so
+   that line steps right to clear it: to just past the web's 48px, whatever
+   .chrome-body's own padding is at this width. Only while the skin is on. */
+html[data-skin="halloween"] #walked-count,
+html[data-skin="halloween"] #events-archive-note { margin-left: calc(48px - var(--chrome-body-pad, 18px)); }
+
+@media (prefers-reduced-motion: reduce) {
+    html[data-skin="halloween"] .hw-fall { opacity: 0; }
+}
+
+/* A green glow on the words the site already lights. */
+
+/* THE CONSOLE IN WITCHING HOUR'S PURPLE, MUTED, whatever palette the site
+   is wearing (the owner's: "the purple but slightly more muted"). Witching
+   Hour's own console art desaturated by tools/skin-halloween-tabs.js, and
+   the two flat colours it printed, all by the one function: a CSS filter
+   was tried and left a dark ring where the border art met the fill. Each
+   rule outranks every palette's own (html + attribute + the palette's
+   selector), so it holds over Classic, Pumpkin, Purple and Crimson alike. */
+html[data-skin="halloween"] .console-frame { background: #6e438f; box-shadow: 2px 2px 0 0 rgba(0, 0, 0, 0.22); }
+html[data-skin="halloween"] .console-border {
+    border-image-source: url("../assets/img/skin-halloween/console/witch/cnsl-frame-border.png");
+}
+html[data-skin="halloween"] .console-top-pattern::before,
+html[data-skin="halloween"] .console-top-pattern::after {
+    background-image: url("../assets/img/skin-halloween/console/witch/cnsl-top-pattern.png");
+}
+html[data-skin="halloween"] .console-close-btn {
+    border: none;
+    background-color: transparent;
+    background-image: url("../assets/img/skin-halloween/console/witch/cnsl-top-x-close.png");
+}
+html[data-skin="halloween"] .console-title { color: #2b173a; text-shadow: none; }
+html[data-skin="halloween"] .console-tab-btn { border: none; background-color: transparent; }
+html[data-skin="halloween"] .console-tab-label { color: #f4e6ff; }
+html[data-skin="halloween"] .console-tab-btn.active .console-tab-label { color: #2b173a; }
+html[data-skin="halloween"] .console-frame::before { border-color: rgba(0, 0, 0, 0.45) transparent transparent rgba(0, 0, 0, 0.45); }
+html[data-skin="halloween"] .console-frame::after { border-color: transparent rgba(255, 255, 255, 0.5) rgba(255, 255, 255, 0.5) transparent; }
+
+/* Its tabs in costume (tools/skin-halloween-tabs.js): Profile a gravestone,
+   Contact a witch, Source a zombie pair, and an eye looking back through
+   Privacy's glass, on the same muted purple. */
+html[data-skin="halloween"] #profile-btn { background-image: url("../assets/img/skin-halloween/console/witch/cnsl-tab-site-profile-inactive.png"); }
+html[data-skin="halloween"] #profile-btn.active { background-image: url("../assets/img/skin-halloween/console/witch/cnsl-tab-site-profile-active.png"); }
+html[data-skin="halloween"] #contact-btn { background-image: url("../assets/img/skin-halloween/console/witch/cnsl-tab-site-contact-inactive.png"); }
+html[data-skin="halloween"] #contact-btn.active { background-image: url("../assets/img/skin-halloween/console/witch/cnsl-tab-site-contact-active.png"); }
+html[data-skin="halloween"] #people-btn { background-image: url("../assets/img/skin-halloween/console/witch/cnsl-tab-site-people-inactive.png"); }
+html[data-skin="halloween"] #people-btn.active { background-image: url("../assets/img/skin-halloween/console/witch/cnsl-tab-site-people-active.png"); }
+html[data-skin="halloween"] #privacy-btn { background-image: url("../assets/img/skin-halloween/console/witch/cnsl-tab-site-privacy-inactive.png"); }
+html[data-skin="halloween"] #privacy-btn.active { background-image: url("../assets/img/skin-halloween/console/witch/cnsl-tab-site-privacy-active.png"); }
+
+/* THE BAT GAME's score (js/skin-halloween.js, decorateBats): appears with
+   the first bat shot, under the top bar at the right. Volter at 9px and 18px
+   only, as everywhere. */
+html[data-skin="halloween"] .hw-batscore {
+    position: fixed;
+    top: 58px;
+    right: 16px;
+    z-index: 49;                /* under the top bar (50), over the bats (45) */
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 6px;
+    padding: 8px 10px;
+    background: rgba(14, 8, 20, 0.9);
+    border: 2px solid #2f2140;
+    border-radius: 8px;
+    box-shadow: 2px 2px 0 rgba(0, 0, 0, 0.35);
+    font-family: 'Volter Goldfish', 'Pixelify Sans', monospace;
+    color: #9fe068;
+    pointer-events: auto;
+    user-select: none;
+}
+html[data-skin="halloween"] .hw-batscore-bat { width: 30px; height: 18px; image-rendering: pixelated; }
+html[data-skin="halloween"] .hw-batscore-n { font-size: 18px; line-height: 18px; min-width: 4ch; text-align: right; }
+html[data-skin="halloween"] .hw-batscore-best { font-size: 9px; line-height: 9px; color: #b8a9c9; align-self: flex-end; margin-bottom: 2px; }
+/* End game, under the score: a quiet button the width of the box. */
+html[data-skin="halloween"] .hw-batscore-end {
+    appearance: none;
+    padding: 4px 8px;
+    border: 1px solid #3f2d55;
+    border-radius: 4px;
+    background: #1d1229;
+    color: #b8a9c9;
+    font: 9px/9px 'Volter Goldfish', monospace;
+    cursor: var(--cursor-pointer, pointer);
+}
+html[data-skin="halloween"] .hw-batscore-end:hover,
+html[data-skin="halloween"] .hw-batscore-end:focus-visible { color: #f4e6ff; border-color: #6a4f8a; outline: none; }
+
+/* THE STAGE CLEARS while a bat game is on (html.hw-batgame): the content
+   slides up out of the page, the fellow fansites and footer down out of it.
+   The top bar stays, and with it the ghost; the moon is the page's own, so it
+   stays too. Transforms only, so nothing is laid out again; and while it is
+   away it takes no clicks. Easing in on the way out, out on the way back. */
+html[data-skin="halloween"] body > main,
+html[data-skin="halloween"] body > .fellow-fansites,
+html[data-skin="halloween"] body > .site-footer {
+    transition: transform 0.9s cubic-bezier(0.2, 0.7, 0.3, 1);
+}
+html[data-skin="halloween"].hw-batgame body > main {
+    transform: translateY(calc(-100% - 120px));
+    transition-timing-function: cubic-bezier(0.6, 0, 0.8, 0.3);
+    pointer-events: none;
+}
+html[data-skin="halloween"].hw-batgame body > .fellow-fansites,
+html[data-skin="halloween"].hw-batgame body > .site-footer {
+    transform: translateY(calc(100vh + 100%));
+    transition-timing-function: cubic-bezier(0.6, 0, 0.8, 0.3);
+    pointer-events: none;
+}
+html[data-skin="halloween"] .hw-batscore.is-hit { animation: hw-score-hit 0.35s steps(2, end); }
+html[data-skin="halloween"] .hw-batscore.is-miss { animation: hw-score-miss 0.35s steps(2, end); }
+@keyframes hw-score-hit { 0%, 100% { border-color: #2f2140; } 50% { border-color: #9fe068; } }
+@keyframes hw-score-miss { 0%, 100% { border-color: #2f2140; } 50% { border-color: #ff6b5a; } }
+
+/* Over a bat, the pointer is the site's own pointing hand. */
+html[data-skin="halloween"].hw-bat-aim,
+html[data-skin="halloween"].hw-bat-aim * { cursor: var(--cursor-pointer, pointer) !important; }
+
+@media (prefers-reduced-motion: reduce) {
+    html[data-skin="halloween"] .hw-batscore.is-hit,
+    html[data-skin="halloween"] .hw-batscore.is-miss { animation: none; }
+}
+
+/* The score is a button that opens the share card (everything but the ×). */
+html[data-skin="halloween"] .hw-batscore-open {
+    appearance: none;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 0;
+    border: none;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    cursor: var(--cursor-pointer, pointer);
+}
+html[data-skin="halloween"] .hw-batscore-open:hover .hw-batscore-n,
+html[data-skin="halloween"] .hw-batscore-open:focus-visible .hw-batscore-n { color: #c4f592; }
+html[data-skin="halloween"] .hw-batscore-open:focus-visible { outline: 1px dotted #9fe068; outline-offset: 3px; }
+
+/* THE SHARE CARD's window: the site's own window, wide enough for the card at
+   twice its pixel size (720px), and the card scaled down whole on a phone. */
+html[data-skin="halloween"] .hw-share { z-index: 120; }
+html[data-skin="halloween"] .hw-share-window { width: 760px; max-width: 100%; }
+html[data-skin="halloween"] .hw-share-body { display: flex; flex-direction: column; align-items: center; gap: 12px; }
+html[data-skin="halloween"] .hw-share-lead {
+    margin: 0;
+    font-family: 'Volter Goldfish', 'Pixelify Sans', monospace;
+    font-size: 9px;
+    color: var(--parchment-dim, #b8a9c9);
+}
+html[data-skin="halloween"] .hw-share-stage { width: 100%; display: flex; justify-content: center; }
+html[data-skin="halloween"] .hw-share-card {
+    display: block;
+    width: 720px;
+    max-width: 100%;
+    height: auto;
+    image-rendering: pixelated;
+    border: 2px solid #000;
+    border-radius: 4px;
+}
+
+/* MOONLIGHT ON THE EDGES THAT FACE IT. The moon hangs up and to the left of
+   the archive window, so the light comes from the upper left: a fine cool
+   rim just outside the top and left of every window, the console and the
+   title, and a softer spill beyond it. Each window keeps its own drop
+   shadow, restated first. The halo and the wash are js/skin-halloween.js's
+   (night). */
+html[data-skin="halloween"] .chrome-window {
+    box-shadow:
+        0 16px 44px rgba(0, 0, 0, 0.6),
+        -1px -1px 0 rgba(206, 220, 255, 0.62),
+        -10px -10px 28px -8px rgba(160, 186, 255, 0.30);
+}
+html[data-skin="halloween"] .modal {
+    box-shadow:
+        0 22px 55px rgba(0, 0, 0, 0.85),
+        -1px -1px 0 rgba(206, 220, 255, 0.62),
+        -10px -10px 28px -8px rgba(160, 186, 255, 0.30);
+}
+html[data-skin="halloween"] .console-frame {
+    box-shadow:
+        2px 2px 0 0 rgba(0, 0, 0, 0.22),
+        -1px -1px 0 rgba(214, 224, 255, 0.62),
+        -8px -8px 22px -6px rgba(160, 186, 255, 0.28);
+}
+/* The title: lit on its upper-left edges, with the skin's green glow behind. */
+html[data-skin="halloween"] .hero-title {
+    text-shadow:
+        -1px -1px 0 rgba(214, 226, 255, 0.55),
+        0 0 6px rgba(120, 255, 70, 0.3);
+}
+
+/* The card's buttons, one size (the owner's): the lead one's larger padding
+   is not its emphasis here, as .signout-actions does it. */
+html[data-skin="halloween"] .hw-share-actions { display: flex; justify-content: center; gap: 12px; }
+html[data-skin="halloween"] .hw-share-actions .guess-btn {
+    width: 140px;
+    flex: 0 0 140px;
+    padding: 10px 8px;
+    letter-spacing: normal;
+    align-self: auto;
+}
+/* Signed out: "Sign in to get your name on the card!", a line of text that is
+   itself the sign-in, in the link-shaped idiom of "Sign out on every device". */
+html[data-skin="halloween"] .hw-share-signin {
+    margin: 0;
+    padding: 0;
+    border: none;
+    background: none;
+    font-family: 'Volter Goldfish', 'Pixelify Sans', monospace;
+    font-size: 9px;
+    line-height: 9px;
+    color: #9fe068;
+    cursor: var(--cursor-pointer, pointer);
+}
+html[data-skin="halloween"] .hw-share-signin:hover,
+html[data-skin="halloween"] .hw-share-signin:focus-visible { color: #c4f592; text-decoration: underline; outline: none; }

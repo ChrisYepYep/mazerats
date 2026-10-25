@@ -23,6 +23,22 @@
          note on these two lines in home.html's <head> (28 Sept 2026). -->
     <meta name="mazerats:build" content="dev">
     <script src="/js/error-report.js?v=4"></script>
+    <!-- EMBEDDED, in the homepage's window (25 Oct 2026, js/ff-window.js):
+         /fallinfurni/play?embed=1 inside a frame shows the game and nothing
+         else — no site header, no page around it (css/fallinfurni.css,
+         html.ff-embed) — and sends every link to the whole tab, since a
+         sign-in or another page has no business opening inside the game. -->
+    <script>
+    (function () {
+        try {
+            if (!/[?&]embed=1(&|$)/.test(location.search) || window.parent === window) return;
+            document.documentElement.classList.add("ff-embed");
+            var base = document.createElement("base");
+            base.target = "_top";
+            document.head.appendChild(base);
+        } catch (e) { /* the ordinary page, then */ }
+    })();
+    </script>
     <!-- THE GAME'S OWN MAINTENANCE SWITCH, and the admin pills.
 
          This is NOT the site gate that used to live here. That one held the
@@ -422,7 +438,7 @@
          and a colour scheme is not worth a blank page. -->
     <link rel="stylesheet" href="css/style.css?v=2">
     <link id="theme-css" rel="stylesheet">
-    <script>(function(){try{var t=localStorage.getItem("mazerats_theme");if(!t||t==="classic"||!/^[a-z]+$/.test(t))return;document.documentElement.setAttribute("data-theme",t);document.getElementById("theme-css").href="css/theme-"+t+".css";}catch(e){}})();</script>
+    <script>(function(){try{var t=localStorage.getItem("mazerats_theme"),k=JSON.parse(localStorage.getItem("mazerats_skin_theme")||"null");if(k&&k.theme&&Date.now()<k.until)t=k.theme;if(!t||t==="classic"||!/^[a-z]+$/.test(t))return;document.documentElement.setAttribute("data-theme",t);document.getElementById("theme-css").href="css/theme-"+t+".css";}catch(e){}})();</script>
     <link rel="stylesheet" href="css/fallinfurni.css">
     <!-- Umami, the aggregate visit counts — the same loader as index.html,
          character for character, and the same reasons: built by script so
@@ -521,6 +537,39 @@
                             aria-describedby="ff-canvas-keys"></canvas>
                     <p id="ff-canvas-keys" class="visually-hidden">Arrow keys walk one tile along the room's grid: up and down, left and right follow the edges of the floor. Walk onto the seats in the order they land.</p>
 
+                    <!-- THE LOADING SCREEN (25 Oct 2026, the owner's: "a
+                         static 'Loading...' text with a clean loading bar
+                         underneath that progresses smoothly as the game
+                         loads"). Up from the first paint, over everything;
+                         Boot in js/fallinfurni.js fills the bar from the real
+                         work and takes it away when the title is ready. -->
+                    <div class="ff-boot" id="ff-boot" role="progressbar" aria-label="Loading Fallin' Furni" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+                        <p class="ff-boot-text">Loading...</p>
+                        <div class="ff-boot-bar"><i id="ff-boot-fill"></i></div>
+                    </div>
+                    <!-- THE BAR'S FIRST STRETCH: the game's own files, counted
+                         as they arrive, up to SCRIPT_SHARE of the bar (Boot in
+                         js/fallinfurni.js takes it from there). And, in the
+                         homepage's window, the word to the window that the
+                         game's own loading screen is up. -->
+                    <script>
+                    (function () {
+                        try {
+                            var TOTAL = 31, SHARE = 0.4, seen = 0;
+                            var fill = document.getElementById("ff-boot-fill");
+                            window.__ffBootScripts = 0;
+                            if ("PerformanceObserver" in window) {
+                                new PerformanceObserver(function (list) {
+                                    list.getEntries().forEach(function (e) { if (e.initiatorType === "script") seen++; });
+                                    window.__ffBootScripts = Math.min(1, seen / TOTAL);
+                                    if (fill && !window.__ffBootTaken) fill.style.transform = "scaleX(" + (window.__ffBootScripts * SHARE).toFixed(3) + ")";
+                                }).observe({ type: "resource", buffered: true });
+                            }
+                            if (window.parent !== window && window.parent.FFWindow) window.parent.FFWindow.booting();
+                        } catch (e) { /* the bar starts from Boot instead */ }
+                    })();
+                    </script>
+
                     <!-- Loading a room, the way the client does it: a small
                          box with a bar and the words "Loading room", over
                          whatever is behind. hh_room.cct builds the same thing
@@ -611,6 +660,17 @@
                          first thing falls. -->
                     <div class="ff-countin" id="ff-countin" hidden aria-hidden="true">
                         <span class="ff-countin-n" id="ff-countin-n">3</span>
+                        <!-- A power-up's introduction: up before the 3, and
+                             through the count, on the first level of the run
+                             that has it. A line each; see countIn. -->
+                        <div class="ff-countin-tip" id="ff-countin-tip" hidden></div>
+                    </div>
+
+                    <!-- AN EXTRA LIFE, popped up over the room while play goes
+                         on (the love potion's Pod, sat in): the count-in's own
+                         heart and "+1". See lifePop. -->
+                    <div class="ff-lifepop" id="ff-lifepop" hidden aria-hidden="true">
+                        <span class="ff-countin-n is-life-won"><span class="ff-countin-heart">♥</span>+1</span>
                     </div>
 
                     <!-- THE PLAYER'S LINE, while a round is on: a life gone
@@ -654,6 +714,16 @@
                                 </div>
                             </form>
 
+                            <!-- THE LEVEL SELECTOR, opened by typing its code
+                                 into the name box (see openSelector in
+                                 js/fallinfurni.js). Filled when opened. -->
+                            <div class="ff-select" id="ff-select" hidden>
+                                <h3>Level select</h3>
+                                <p class="ff-select-note">Practice from any level. These runs stay off the leaderboard.</p>
+                                <ol class="ff-select-list" id="ff-select-list"></ol>
+                                <button type="button" class="ff-select-back" id="ff-select-back">Back</button>
+                            </div>
+
                             <p id="ff-play-status" class="ff-status"></p>
 
                             <!-- Discord is what puts a name on the board. The
@@ -688,6 +758,16 @@
                                  the one case a second try can fix. -->
                             <button type="button" class="ff-title-retry" id="ff-title-retry">Retry</button>
                         </div>
+                        <!-- THE OPTIONS, along the bottom (25 Oct 2026): the
+                             window twice the size, the music, the effects.
+                             The same three as on the pause menu; each says
+                             what it is set to. Enlarge only in the homepage's
+                             window, which is what it makes bigger. -->
+                        <div class="ff-title-opts" role="group" aria-label="Options">
+                            <button type="button" data-opt="enlarge" hidden>Enlarge</button>
+                            <button type="button" data-opt="music">Music: On</button>
+                            <button type="button" data-opt="sound">Sound: On</button>
+                        </div>
                     </div>
 
                     <!-- The readout, IN the room rather than under it. It was
@@ -698,6 +778,17 @@
                          around the floor, the way Habbo's own room widgets
                          sit inside the room. -->
                     <div class="ff-hud" id="ff-hud" hidden>
+                        <!-- The panel full of coffee while the coffee lasts,
+                             behind everything else in it and out of its
+                             layout: the cup it is clipped to, the coffee
+                             (its level set by renderHud) with bubbles rising
+                             through it, and steam off the top. -->
+                        <div class="ff-hud-coffee" aria-hidden="true">
+                            <div class="ff-coffee-cup">
+                                <div class="ff-coffee-liquid" id="ff-coffee-liquid"><i></i><i></i><i></i><i></i><i></i><i></i></div>
+                            </div>
+                            <div class="ff-coffee-steam"><i></i><i></i><i></i></div>
+                        </div>
                         <div class="ff-hud-top">
                             <div class="ff-hud-clock"><span id="ff-clock">0:00</span></div>
                             <!-- Which round of the run. A player needs to know
@@ -714,6 +805,11 @@
                              the wrong chair says more than any instruction. -->
                         <div class="ff-hud-score">
                             <span id="ff-score">0</span><em id="ff-score-delta"></em>
+                            <!-- The power-ups running: each one's icon and
+                                 seconds left, in the row's empty right end so
+                                 nothing else moves when one starts. Filled by
+                                 renderHud. -->
+                            <div class="ff-hud-boost" id="ff-boost" hidden></div>
                         </div>
                         <div class="ff-hud-seq" id="ff-seq"></div>
                         <!-- THE ONE LINE THE GAME TALKS TO YOU WITH, and the
@@ -763,6 +859,26 @@
                             <p class="ff-paused-say" id="ff-paused-say">Paused</p>
                             <p class="ff-paused-sub">The room is covered and the clock is stopped.</p>
                             <button type="button" id="ff-resume" class="ff-primary">Resume</button>
+                            <!-- The rest of the menu (25 Oct 2026, the
+                                 owner's). Restart loses the round for a life
+                                 and plays it again; Submit & Quit ends the run
+                                 and puts what it has banked on the board; Quit
+                                 ends it and puts nothing there. -->
+                            <div class="ff-paused-more">
+                                <button type="button" id="ff-restart">Restart <span class="ff-paused-cost" id="ff-restart-cost">-1 &#9829;</span></button>
+                                <button type="button" id="ff-submit-quit">Submit &amp; Quit</button>
+                                <button type="button" id="ff-quit">Quit</button>
+                            </div>
+                            <p class="ff-paused-note" id="ff-paused-note"></p>
+                            <!-- The window's size, the music and the effects,
+                                 each remembered for this browser (F to enlarge,
+                                 M for the music, anywhere). The same three as
+                                 along the bottom of the title. -->
+                            <div class="ff-paused-audio">
+                                <button type="button" data-opt="enlarge" hidden>Enlarge</button>
+                                <button type="button" id="ff-music-toggle" data-opt="music" aria-pressed="true">Music: On</button>
+                                <button type="button" id="ff-sound-toggle" data-opt="sound" aria-pressed="true">Sound: On</button>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -1027,6 +1143,22 @@
                             and a longer reach lands pieces further from wherever you
                             are standing.
                         </p>
+                        <!-- THE LEVEL'S TUNE (25 Oct 2026). Automatic is the
+                             one its place in the run plays. -->
+                        <h3>Soundtrack</h3>
+                        <select id="ff-music" class="ff-select" aria-label="This level's tune"></select>
+                        <div class="ff-btn-row">
+                            <button type="button" id="ff-music-play">Listen</button>
+                        </div>
+                        <p class="ff-hint">Automatic plays the tune for the level's place in the run: a new one every five levels, and the epic theme on the last.</p>
+                        <!-- THE POWER-UPS (25 Oct 2026): coffee, brain freeze,
+                             love potion — each a furni dropped on one tile at
+                             one point in the round, double-clicked by the
+                             player. A block per kind, built by
+                             buildPowerPanel in js/fallinfurni.js. -->
+                        <h3>Power-ups</h3>
+                        <p class="ff-hint">Each drops on its tile at that point in the round, and players double-click it to use it, once a round. Players stand on the green tile in front of it; nothing falls on either tile. If its tile is in use or would block a seat, it waits until it is clear.</p>
+                        <div id="ff-powerups"></div>
                         <div class="ff-btn-row">
                             <button type="button" id="ff-export">Copy JSON</button>
                         </div>
@@ -1297,6 +1429,7 @@
     <script src="js/event-status.js?v=2"></script>
     <script src="js/privacy-content.js?v=2"></script>
     <script src="js/palette-wear.js?v=2"></script>
+    <script src="js/skin-wear.js?v=1"></script>
     <script src="js/site.js?v=2"></script>
     <!-- Dropdowns open the site's own list, not the browser's. After site.js,
          whose EscapeLayers it registers with. -->
@@ -1333,6 +1466,9 @@
     <script src="js/hotel-views.js"></script>
     <script src="js/room-lobby.js"></script>
     <script src="js/room-editor.js"></script>
+    <!-- The music and the effects (25 Oct 2026). Before the game, which
+         plays on in silence if this one never arrives. -->
+    <script src="js/ff-audio.js"></script>
     <script src="js/fallinfurni.js"></script>
 </body>
 </html>

@@ -85,7 +85,7 @@ function slugFromPath(event) {
         try { pathname = new URL(event.rawUrl).pathname; } catch (e) { /* keep event.path */ }
     }
     // A window's own address (1 Oct 2026): see FIXED_PAGES below.
-    const page = /^\/(guess|odd|guides|profiles?|purapanic|glyphs)\/?$/.exec(pathname);
+    const page = /^\/(guess|odd|guides|profiles?|purapanic|scout|glyphs|fallinfurni)\/?$/.exec(pathname);
     // /profiles is /profile by another name (4 Oct 2026).
     if (page) return { page: page[1] === "profiles" ? "profile" : page[1] };
     const m = /^\/(maze|event|guides)\/([^/]+)\/?$/.exec(pathname);
@@ -231,12 +231,12 @@ function withTags(html, t) {
    tools/check-share-headers.js fails the build if the two drift apart. */
 const PAGE_HEADERS = {
     "Content-Type": "text/html; charset=utf-8",
-    "X-Frame-Options": "DENY",
+    "X-Frame-Options": "SAMEORIGIN",
     "X-Content-Type-Options": "nosniff",
     "Referrer-Policy": "strict-origin-when-cross-origin",
     "Permissions-Policy": "camera=(), microphone=(), geolocation=(), payment=(), usb=()",
     "Strict-Transport-Security": "max-age=63072000; includeSubDomains",
-    "Content-Security-Policy": "default-src 'self'; script-src 'self' 'unsafe-inline' https://cloud.umami.is; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob: https://www.habbo.com https://images.habbo.com https://origins.habbo.com https://api.furniindex.com https://cdn.discordapp.com; connect-src 'self' https://cloud.umami.is https://gateway.umami.is; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'"
+    "Content-Security-Policy": "default-src 'self'; script-src 'self' 'unsafe-inline' https://cloud.umami.is; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob: https://www.habbo.com https://images.habbo.com https://origins.habbo.com https://api.furniindex.com https://cdn.discordapp.com; connect-src 'self' https://cloud.umami.is https://gateway.umami.is; frame-ancestors 'self'; base-uri 'self'; form-action 'self'; object-src 'none'"
 };
 
 /* ---------- what a record's preview says ---------- */
@@ -485,12 +485,26 @@ const FIXED_PAGES = {
         description: "Turn them, drop them, clear the floor.",
         image: "og-purapanic.png"
     },
+    /* Scout's Trail (15 Oct 2026; Ariadne's Thread from 13 Oct, and Rat
+       Race before that), the platform game through the labyrinths. The
+       site's own picture until it has one of its own. */
+    scout: {
+        title: "Scout's Trail",
+        description: "In search of Ariadne."
+    },
     /* The Alt Codes window (8 Oct 2026): its picture is the window itself,
        "ª Funky Maze ª" in Habbo's font with a few picture tiles. */
     glyphs: {
         title: "Alt Codes",
         description: "All icons in one place.",
         image: "og-glyphs.png"
+    },
+    /* Fallin' Furni (25 Oct 2026), a window on the homepage now: the card
+       its own page always had, its words and its picture. */
+    fallinfurni: {
+        title: "Fallin' Furni",
+        description: "Look up before you sit down. Furni drops from the ceiling and you sit on every seat in the order it landed — fifty rooms, three lives, one run.",
+        image: "og-fallinfurni.png"
     }
 };
 /* KEPT OUT OF SEARCH HERE, NOT IN robots.txt (10 Oct 2026). /glyphs and
@@ -501,7 +515,8 @@ const FIXED_PAGES = {
    noindex it was allowed to fetch. /profiles comes here as "profile", and
    /profile?p=<id> is the same generic Profiles card (no per-player card, the
    owner's). tools/check-share-headers.js checks both stay listed. */
-const NOINDEX_PAGES = new Set(["glyphs", "profile"]);
+// Scout's Trail too, while it is in beta (11 Oct 2026).
+const NOINDEX_PAGES = new Set(["glyphs", "profile", "scout"]);
 
 function fixedTags(page, origin) {
     const f = FIXED_PAGES[page];

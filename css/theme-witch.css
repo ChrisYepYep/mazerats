@@ -9,7 +9,7 @@
    completely inert until js/site.js puts that attribute on <html>. The
    classic palette is not defined here and is not affected by anything in it.
 
-   1118 rules, 1796 declarations, hues 274 (surfaces) / 274 (accents).
+   1119 rules, 1799 declarations, hues 274 (surfaces) / 274 (accents).
 */
 :root[data-theme="witch"] {
     --bg-black: #050207;
@@ -257,6 +257,8 @@ html[data-theme="witch"]::-webkit-scrollbar-button {
 }
 
 [data-theme="witch"] .site-footer {
+    background: linear-gradient(0deg, rgba(5, 2, 7, 0.97), rgba(5, 2, 7, 0.9));
+    box-shadow: 0 -4px 0 -2px var(--chrome-fill);
     color: var(--parchment-dim);
 }
 
@@ -4352,6 +4354,10 @@ html[data-theme="witch"]::-webkit-scrollbar-button {
 
 [data-theme="witch"] .de-flash {
     color: var(--amber-bright);
+}
+
+[data-theme="witch"] .ctl-section-title {
+    color: var(--parchment);
 }
 
 [data-theme="witch"] .ctl-card::before {

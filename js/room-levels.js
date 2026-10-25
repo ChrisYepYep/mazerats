@@ -311,7 +311,73 @@
            an easy one, because it looks like the game is broken. */
         out.rules.minDropDistance = Math.max(0, Math.min(cols + rows - 4,
             Math.round(out.rules.minDropDistance || 0)));
+
+        // The tune, or "" for the one the level's place in the run plays.
+        out.music = typeof out.music === "string" ? out.music.slice(0, 24) : "";
+
+        /* THE POWER-UPS (25 Oct 2026): each a furni dropped on one tile,
+           facing front-right (2) or front-left (4), once `after` seats have
+           landed (0, as the round starts). One of each kind at most. A level
+           saved with the first version's single `coffee` field comes across
+           as a coffee power-up. */
+        const list = Array.isArray(out.powerups) ? out.powerups.slice() : [];
+        if (out.coffee && typeof out.coffee === "object") list.unshift(Object.assign({ kind: "coffee" }, out.coffee));
+        const seenKinds = new Set();
+        out.powerups = list.filter(p => p && POWERUPS[p.kind] && !seenKinds.has(p.kind) && seenKinds.add(p.kind))
+            .map(p => {
+                const c = onFloor(p);
+                return {
+                    kind: p.kind,
+                    cls: powerupClass(p.kind, p.cls),
+                    x: c.x, y: c.y,
+                    after: Math.max(0, Math.min(30, Math.round(Number(p.after) || 0))),
+                    facing: Number(p.facing) === 4 ? 4 : 2
+                };
+            });
+        delete out.coffee;
         return out;
+    }
+
+    /* ---- THE POWER-UPS, what each one is (25 Oct 2026).
+
+         furni   what drops: `classes` it may be, the first the default.
+                 Brain freeze takes ANY ice cream machine (the owner's: "any
+                 colour ice cream machine can be used").
+         carry   the hand item held while it lasts — Habbo's own numbers,
+                 drawn by the imaging service from the Origins sprites
+                 (hh_human_item h_crr_ri_N): 6 the coffee mug, 3 the ice-cream
+                 cone, 9 the pink potion flask.
+         ms      how long it lasts (the potion's: how long the flask is held).
+         badge   the panel's icon beside the seconds left, when it is not the
+                 hand item: the brain freeze's snowflake (the owner's:
+                 "replace this with a snow flake icon").
+         tip     said over the count-in on the first level of the run that
+                 has one. */
+    const POWERUPS = {
+        coffee: {
+            name: "Coffee", furniName: "Mochamaster", classes: ["mocchamaster"], carry: 6, ms: 8000,
+            tip: "Grab a coffee to walk quicker!", does: "quicker on their feet for 8 seconds"
+        },
+        freeze: {
+            name: "Brain freeze", furniName: "Ice Cream Machine", classes: ["rare_icecream*1"], anyOf: /^rare_icecream(\*\d+)?$/,
+            carry: 3, ms: 5000, badge: "assets/icons/ff-snowflake.svg",
+            tip: "Grab an ice cream to freeze the clock!", does: "the clock stops for 5 seconds while furni keeps falling"
+        },
+        /* SAT IN, not double-clicked (the owner's: "the player must sit in
+           it, and it fades away when they sit in it, extra life graphic on
+           screen"). `sit` makes the Pod a seat — never one of the sequence's
+           — and there is no hand item. */
+        potion: {
+            name: "Love potion", furniName: "Rainbow Pod", classes: ["chair_plasty_lm1"], carry: 0, ms: 0, sit: true,
+            icon: "assets/furni-icons/chair_plasty_lm1.png",
+            tip: "Sit in the Rainbow Pod for an extra life!", does: "sit in it for one extra life"
+        }
+    };
+    function powerupClass(kind, cls) {
+        const def = POWERUPS[kind];
+        const c = String(cls || "");
+        if (def.anyOf ? def.anyOf.test(c) : def.classes.includes(c)) return c;
+        return def.classes[0];
     }
 
     function blankZone(cols, rows, area) {
@@ -330,6 +396,10 @@
         const seen = new Set();
         for (const d of level.decor || []) seen.add(d.className);
         for (const z of level.zones || []) for (const i of z.items || []) seen.add(i.className);
+        // The power-ups' furni too: a player's page has nothing it is not told
+        // about here, and a machine with no artwork would land invisible.
+        for (const p of level.powerups || []) seen.add(p.cls);
+        if (level.coffee) seen.add("mocchamaster");
         seen.delete("");
         return [...seen];
     }
@@ -344,25 +414,49 @@
        they will fall. `rand` is injectable so a round can be replayed exactly.
 
        Landing tiles are NOT chosen here — where a piece can land depends on
-       what has already landed, which is only known while the round is running. */
-    function schedule(level, rand) {
+       what has already landed, which is only known while the round is running.
+
+       ONE OBSTACLE AT A TIME, AND NEVER FIRST (25 Oct 2026, the owner's:
+       "chair-obstacle-chair-obstacle … and not chair-obstacle-obstacle-chair").
+       The seats are shuffled, and each obstacle goes into a gap AFTER a
+       different seat, the gaps picked at random — so a round opens on a seat
+       and two obstacles never fall back to back. A level with more obstacles
+       than seats cannot keep that rule, and the surplus does not fall.
+       `isObstacle` says which pieces are obstacles; the round passes one that
+       also counts anything that cannot be sat on (see RoomDrop.createRound). */
+    function schedule(level, rand, isObstacle) {
         const rng = rand || Math.random;
-        const pieces = [];
+        const blocks = isObstacle || ((p) => p.role === "obstacle");
+        const seats = [], obstacles = [];
         for (const z of level.zones || []) {
             for (const it of z.items || []) {
                 for (let i = 0; i < it.count; i++) {
-                    pieces.push({
+                    const p = {
                         className: it.className, rotation: it.rotation,
                         area: z.area, role: it.role
-                    });
+                    };
+                    (blocks(p) ? obstacles : seats).push(p);
                 }
             }
         }
         // Fisher-Yates, so the sequence differs run to run.
-        for (let i = pieces.length - 1; i > 0; i--) {
-            const j = Math.floor(rng() * (i + 1));
-            [pieces[i], pieces[j]] = [pieces[j], pieces[i]];
-        }
+        const shuffle = (a) => {
+            for (let i = a.length - 1; i > 0; i--) {
+                const j = Math.floor(rng() * (i + 1));
+                [a[i], a[j]] = [a[j], a[i]];
+            }
+            return a;
+        };
+        shuffle(seats);
+        shuffle(obstacles);
+        // Which seats an obstacle follows: a random few of them, each once.
+        const after = new Set(shuffle(seats.map((s, i) => i)).slice(0, obstacles.length));
+        const pieces = [];
+        let next = 0;
+        seats.forEach((s, i) => {
+            pieces.push(s);
+            if (after.has(i)) pieces.push(obstacles[next++]);
+        });
         return pieces;
     }
 
@@ -431,6 +525,6 @@
         SEAT_ROLES, needsSeat, miscastItems,
         HEIGHT_STEP, MAX_HEIGHT, height,
         normalise, blankZone, furniUsed, totalDrops, schedule,
-        toRoomOpts, fromRoomOpts, fetchPublished
+        toRoomOpts, fromRoomOpts, fetchPublished, POWERUPS, powerupClass
     };
 })();

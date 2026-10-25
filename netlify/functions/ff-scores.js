@@ -461,13 +461,13 @@ const TIME_BONUS_PER_S = 1;
 
 /* AND THE LIVES, which are worth points at the end of a run and would
    otherwise push an honest run through the ceiling. A player starts with
-   three and earns one per five levels cleared, so at `levels` cleared the
+   three and earns one per ten levels cleared, so at `levels` cleared the
    most they can be holding is 3 + floor(levels / 5) — the same arithmetic as
    js/room-game.js, duplicated here for the same reason everything else on
    this page is. Generous like the rest of the ceiling: it assumes none were
    ever spent. */
 const STARTING_LIVES = 3;
-const LIFE_EVERY = 5;
+const LIFE_EVERY = 10;              // js/room-game.js; was 5 until 25 Oct
 const LIFE_BONUS = 100;
 const maxLifeBonus = (levels) => (STARTING_LIVES + Math.floor(levels / LIFE_EVERY)) * LIFE_BONUS;
 
@@ -520,6 +520,21 @@ const MAX_LEVEL_ID = 64;
 const LEVEL_MS_TOLERANCE = 1000;
 // The rounds are slices of the run's own clock and cannot add up to more.
 const RUN_SUM_TOLERANCE_MS = 2000;
+
+/* ---- POWER-UPS (25 Oct 2026; js/room-levels.js POWERUPS).
+
+   A BRAIN FREEZE stops a round's clock for FREEZE_MS while the furni keeps
+   falling, so the round reports less time than really passed. Its furni
+   floor (earnedFloorMs) is measured against the time that DID pass, which
+   the page sends as `frozen`, taken only up to FREEZE_MS and only on a
+   level whose version played has one.
+
+   A LOVE POTION is a life, so the life bonus can be a life larger for each
+   level with one. Both read the level's `powerups`, which the version
+   snapshot keeps (see snapshotOf in ff-levels.js). */
+const FREEZE_MS = 5000;
+const hasPowerup = (level, kind) => Array.isArray(level && level.powerups) &&
+    level.powerups.some(p => p === kind || (p && p.kind === kind));
 
 /* ---- A LEVEL'S FLOOR IS TIED TO ITS POINTS.
 
@@ -711,8 +726,11 @@ function checkBreakdown(body, totals, published, startedAt, view) {
         const allowedMs = (Number((lv.rules || {}).seconds) || 0) * 1000;
         if (ms > allowedMs + LEVEL_MS_TOLERANCE) return bad(`${name} took longer than its clock allows`);
         if (pts > maxPointsFor(lv)) return bad(`${name} scored more than it can pay`);
+        // A brain freeze's stopped clock, where the level has one (POWER-UPS).
+        const frozen = hasPowerup(lv, "freeze")
+            ? Math.max(0, Math.min(FREEZE_MS + LEVEL_MS_TOLERANCE, Number(r.frozen) || 0)) : 0;
         // See A LEVEL'S FLOOR IS TIED TO ITS POINTS.
-        if (ms < earnedFloorMs(lv, pts, ms, isWon)) {
+        if (ms + frozen < earnedFloorMs(lv, pts, ms, isWon)) {
             return bad(`${name} scored more than its furni could have landed in that time`);
         }
         if (pts < minPointsFor(lv)) return bad(`${name} scored less than it can cost`);
@@ -730,7 +748,9 @@ function checkBreakdown(body, totals, published, startedAt, view) {
         const finished = won === dealt.length && (view
             ? listsEvery(ids, view.order, startedAt, view.settledBefore)
             : listsEvery(ids, published, startedAt));
-        if (!finished || bonus < 0 || bonus % LIFE_BONUS !== 0 || bonus > maxLifeBonus(won)) {
+        // A love potion's life, for each level dealt that had one (POWER-UPS).
+        const potions = dealt.filter(lv => hasPowerup(lv, "potion")).length;
+        if (!finished || bonus < 0 || bonus % LIFE_BONUS !== 0 || bonus > maxLifeBonus(won) + potions * LIFE_BONUS) {
             return bad("The points do not add up to the rounds");
         }
     }
@@ -1266,7 +1286,8 @@ exports.handler = async (event) => {
     /* The same trick as the time floor, from the other end: the levels are
        served from here, so the most they can be worth is known here. */
     const ceiling = dealt.slice(0, checked.rounds.length).reduce((n, lv) => n + maxPointsFor(lv), 0)
-        + maxLifeBonus(levels);
+        + maxLifeBonus(levels)
+        + dealt.filter(lv => hasPowerup(lv, "potion")).length * LIFE_BONUS;
     if (points > ceiling) {
         return json(400, { error: "That run scores more than those levels can pay" });
     }

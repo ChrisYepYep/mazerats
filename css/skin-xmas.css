@@ -1,0 +1,54 @@
+/* THE CHRISTMAS SKIN's stylesheet (js/skin-xmas.js draws the pieces).
+
+   Every rule is scoped to html[data-skin="xmas"], so it is inert until the
+   attribute is set, and taking the attribute away is the whole of removing
+   it. Loaded only while the skin is on (js/skin-wear.js). */
+
+html[data-skin="xmas"] .xm-piece {
+    position: absolute;
+    pointer-events: none;
+    background-repeat: no-repeat;
+    image-rendering: pixelated;
+    z-index: 2;
+}
+html[data-skin="xmas"] .xm-lights { z-index: 1; }
+/* The lights' ambient pool: soft on purpose, and faded in at the top so it
+   washes up into the bar rather than starting on a line. */
+html[data-skin="xmas"] .xm-glow {
+    image-rendering: auto;
+    -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 16px);
+    mask-image: linear-gradient(to bottom, transparent 0, #000 16px);
+}
+html[data-skin="xmas"] .xm-snowfall {
+    position: fixed;
+    inset: 0;
+    z-index: 45;            /* under the top bar (50) */
+    pointer-events: none;
+    image-rendering: pixelated;
+}
+
+
+/* The Christmas trees standing in the background maze (js/skin-xmas.js,
+   backgroundTrees): fixed like the maze itself, under everything. Their
+   lights are a layer of their own, so they can breathe without a redraw. */
+html[data-skin="xmas"] .xm-bgtrees {
+    position: fixed; inset: 0; z-index: -1; pointer-events: none;
+}
+/* Added as light, the way the client draws a lamp's glow (its ink is ADD). */
+html[data-skin="xmas"] .xm-bgtrees-lights { mix-blend-mode: screen; mix-blend-mode: plus-lighter; }
+@media (prefers-reduced-motion: no-preference) {
+    html[data-skin="xmas"] .xm-bgtrees-lights { animation: xm-tree-lights 3.6s ease-in-out infinite alternate; }
+}
+@keyframes xm-tree-lights { from { opacity: 0.7; } to { opacity: 1; } }
+
+/* The ticker's countdown slide ("12 sleeps 'til Christmas!"), in the lights' gold. */
+html[data-skin="xmas"] .header-events-extra { color: #ffd24a; }
+
+/* The footer's drift grows up over the fansites strip and the bottom of the
+   main window (js/skin-xmas.js, "the footer's snow piles up"). The strip's
+   links stay above it, and keep a dark edge so they read on the snow. */
+html[data-skin="xmas"] .fellow-fansites { position: relative; z-index: 3; }
+html[data-skin="xmas"] .fellow-fansites a,
+html[data-skin="xmas"] .fellow-fansites p { text-shadow: 1px 1px 0 #0a121e, -1px 0 0 #0a121e, 0 -1px 0 #0a121e; }
+html[data-skin="xmas"] .fellow-fansites .xm-snowed,
+html[data-skin="xmas"] .fellow-fansites .xm-snowed a { color: #123a5c; text-shadow: 1px 1px 0 rgba(255, 255, 255, 0.85); }

@@ -246,6 +246,9 @@ window.Recolour = (function () {
 
         for (const sheet of document.styleSheets) {
             if (sheet.ownerNode && (sheet.ownerNode.id === SHEET_ID || sheet.ownerNode.id === SPRITE_ID)) continue;
+            // A sheet that is not the site's colours (the Warren's own
+            // workshop dress, css/warren.css) says so and is not catalogued.
+            if (sheet.ownerNode && sheet.ownerNode.hasAttribute && sheet.ownerNode.hasAttribute("data-recolour-skip")) continue;
             let rules = null;
             try { rules = sheet.cssRules; } catch (e) { continue; }   // cross-origin
             if (rules) walk(rules, "");

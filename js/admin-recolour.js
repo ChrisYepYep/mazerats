@@ -382,6 +382,8 @@ window.AdminRecolour = (function () {
         };
         for (const sheet of document.styleSheets) {
             if (sheet.ownerNode && (sheet.ownerNode.id === Recolour.SHEET_ID || sheet.ownerNode.id === Recolour.SPRITE_ID)) continue;
+            // Not the site's colours: the Warren's workshop dress (see recolour.js).
+            if (sheet.ownerNode && sheet.ownerNode.hasAttribute && sheet.ownerNode.hasAttribute("data-recolour-skip")) continue;
             let rules = null;
             try { rules = sheet.cssRules; } catch (e) { continue; }
             if (rules) walk(rules);
@@ -1118,7 +1120,7 @@ window.AdminRecolour = (function () {
     const THEME_FALLBACK = [
         { id: "classic", label: "Classic" }, { id: "purple", label: "Purple" },
         { id: "pumpkin", label: "Pumpkin" }, { id: "witch", label: "Witching Hour" },
-        { id: "crimson", label: "Crimson" }
+        { id: "crimson", label: "Crimson" }, { id: "frost", label: "Frost" }
     ];
     function builtInThemes() {
         const seen = new Set();

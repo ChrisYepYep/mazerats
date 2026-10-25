@@ -62,7 +62,7 @@ const { openCast, readMember, unpackBits, readClut } = require("./cct-extract.js
 const { encodePng } = require("./png-encode.js");
 
 const CLIENT = process.env.HABBO_CLIENT ||
-    "C:\\Users\\cjboy\\AppData\\Roaming\\Habbo Launcher\\downloads\\shockwave\\350";
+    "C:\\Users\\cjboy\\AppData\\Roaming\\Habbo Launcher\\downloads\\shockwave\\369";
 
 const MEMBER = /^(.+)_([a-z])_(\d+)_(\d+)_(\d+)_(\d+)_(\d+)$/;
 

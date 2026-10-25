@@ -120,7 +120,19 @@ function cleanLevel(body) {
         })) : [],
         rules: pick(body.rules || {}, [
             "seconds", "dropDelayMs", "dropSpeedMs", "minDropDistance", "replayOrder"
-        ])
+        ]),
+        /* The level's tune, by its id in js/ff-audio.js — "" plays the one its
+           place in the run would (25 Oct 2026). */
+        music: typeof body.music === "string" ? body.music.slice(0, 24) : "",
+        /* The coffee as the first version saved it (a Mochamaster on x,y once
+           `after` seats are down); js/room-levels.js reads it as a power-up. */
+        coffee: body.coffee && typeof body.coffee === "object"
+            ? pick(body.coffee, ["x", "y", "after"]) : null,
+        /* THE POWER-UPS (25 Oct 2026): coffee, brain freeze, love potion —
+           each a furni class, a tile, a facing and the seat count it drops
+           after. See POWERUPS in js/room-levels.js. */
+        powerups: Array.isArray(body.powerups) ? body.powerups.slice(0, 6).map(p =>
+            pick(p || {}, ["kind", "cls", "x", "y", "after", "facing"])) : []
     };
 }
 
@@ -190,8 +202,19 @@ function snapshotOf(level, rev, at) {
         },
         zones: (level.zones || []).map(z => ({
             items: (z.items || []).map(i => ({ role: i.role, count: i.count }))
-        }))
+        })),
+        /* Which power-ups it had: a brain freeze lets a round report less time
+           than passed, and a love potion pays a life — ff-scores allows for
+           each only where the level as played had one. */
+        powerups: powerupKinds(level)
     };
+}
+
+// The kinds of power-up a stored level has, the first version's `coffee` too.
+function powerupKinds(level) {
+    const kinds = (Array.isArray(level.powerups) ? level.powerups : []).map(p => p && p.kind).filter(Boolean);
+    if (level.coffee && !kinds.includes("coffee")) kinds.push("coffee");
+    return kinds;
 }
 
 // A stored timestamp as a Date, or the epoch for a level that never had one:

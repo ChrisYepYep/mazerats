@@ -1,0 +1,123 @@
+/* Fallin' Furni's window on the homepage (js/ff-window.js), loaded with it.
+
+   The frame wears .console-frame and .profile-console-frame, so the border
+   art, the grip, the close box and every theme's recolouring come from
+   those, as Pura Panic's do; what is here is the size, the buttons on the
+   grip, the frame the game sits in, and the lights. */
+
+.ff-console { z-index: 91; }
+
+/* The game's 720 x 498 exactly inside the screen's line: the console's
+   sides (11px) and top (28px), and 14px at the foot as the Profiles window
+   has. js/ff-window.js scales the whole frame down to fit a smaller window. */
+.ff-frame {
+    --scr-foot: 14px;
+    width: 744px;
+    height: 542px;
+    transform-origin: top left;
+}
+.ff-frame:focus { outline: none; }
+
+.ff-console-screen {
+    background: #0e0a06;
+    background-image: none;
+}
+
+/* The game. Hidden until its own loading screen is up (FFWindow.booting),
+   so this window's "Loading..." below hands over to the game's with no
+   blank between. */
+.ff-console-game {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 720px;
+    height: 498px;
+    border: 0;
+    display: block;
+    background: #0e0a06;
+    visibility: hidden;
+}
+.ff-console-screen.is-booted .ff-console-game { visibility: visible; }
+
+/* This window's own "Loading...", drawn as the game draws its (.ff-boot in
+   css/fallinfurni.css), for the moment before the game's page arrives. */
+.ff-console-wait {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+}
+.ff-console-wait p {
+    margin: 0;
+    font-family: "Silkscreen", "Pixelify Sans", monospace;
+    font-size: 14px;
+    line-height: 1.2;
+    letter-spacing: 0.08em;
+    color: #f5c46a;
+}
+.ff-console-bar {
+    width: 240px;
+    height: 8px;
+    padding: 1px;
+    border: 1px solid #c8902e;
+    border-radius: 2px;
+    background: #1a120a;
+}
+.ff-console-bar i { display: block; height: 100%; width: 0; }
+.ff-console-screen.is-booted .ff-console-wait { visibility: hidden; }
+
+/* FULLSCREEN: the screen alone, the game in the middle of black, scaled in
+   whole pixels by js/ff-window.js (scaleFull). */
+.ff-console-screen:fullscreen {
+    border: 0;
+    border-radius: 0;
+    background: #000;
+    display: grid;
+    place-items: center;
+}
+.ff-console-screen:fullscreen .ff-console-game {
+    position: static;
+    transform-origin: center;
+}
+
+/* The buttons on the grip: the close box's size and height, left of it —
+   the bulb 4px from the close box, as Pura Panic's, and fullscreen beside
+   that. Their colours are set by the script from the frame and its title. */
+.ff-console-btn {
+    position: absolute;
+    top: 7px;
+    width: 13px;
+    height: 13px;
+    padding: 0;
+    border: none;
+    display: grid;
+    place-items: center;
+    background: #ffcb00;
+    color: #996600;
+    cursor: var(--cursor-pointer, pointer);
+    z-index: 5;
+}
+.ff-console-btn svg { display: block; }
+.ff-console-light { right: 31px; }
+.ff-console-full { right: 48px; }
+
+/* ---- LIGHTS OFF: the site behind dimmed and kept out of reach, under the
+   window (91), over the page and its header; the frame in deep grey. */
+.ff-console-dim {
+    position: fixed;
+    inset: 0;
+    background: rgba(6, 4, 2, 0.82);
+    z-index: 90;
+}
+.ff-console-dim[hidden] { display: none; }
+
+.ff-console.is-dark .console-frame { background: #242424; box-shadow: 2px 2px 0 0 rgba(0, 0, 0, 0.5); }
+.ff-console.is-dark .console-border { border-image-source: url('../assets/img/console/dark/cnsl-frame-border.png'); }
+.ff-console.is-dark .console-top-pattern::before,
+.ff-console.is-dark .console-top-pattern::after { background-image: url('../assets/img/console/dark/cnsl-top-pattern.png'); }
+.ff-console.is-dark .console-close-btn { background-image: url('../assets/img/console/dark/cnsl-top-x-close.png'); }
+.ff-console.is-dark .console-title { color: #9a9a9a; }
+.ff-console.is-dark .console-frame::after { border-color: transparent rgba(255, 255, 255, 0.16) rgba(255, 255, 255, 0.16) transparent; }

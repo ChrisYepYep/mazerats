@@ -42,7 +42,7 @@ const path = require("path");
 const { openCast, readMember, unpackBits } = require("./cct-extract.js");
 const { encodePng } = require("./png-encode.js");
 
-const CLIENT = "C:/Users/cjboy/AppData/Roaming/Habbo Launcher/downloads/shockwave/350/";
+const CLIENT = "C:/Users/cjboy/AppData/Roaming/Habbo Launcher/downloads/shockwave/369/";
 
 /* Only the directions the service drops need shipping. Direction 4 is not
    listed because it is direction 2 flipped, done at runtime. */

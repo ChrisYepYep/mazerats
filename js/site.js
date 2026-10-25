@@ -770,6 +770,10 @@ document.addEventListener("DOMContentLoaded", async () => {
         if (!event) {
             return `<p class="header-events-title">No upcoming events.</p><p class="header-events-when">Check back later!</p>`;
         }
+        // A slide another script added (the Christmas countdown): no link.
+        if (event.extra) {
+            return `<p class="header-events-title header-events-extra">${escapeHtml(event.title)}</p><p class="header-events-when">${escapeHtml(event.when || "")}</p>`;
+        }
         // On the welcome page (index.html) this is a same-page hash only —
         // js/welcome.js listens for it and opens its own lightweight event
         // modal right there, since home.html itself is off-limits to
@@ -804,7 +808,32 @@ document.addEventListener("DOMContentLoaded", async () => {
     // tab lived — the status logic was right, it just was never asked again.
     // Re-deriving it every ten seconds costs a filter and a sort over a
     // few dozen events.
+    /* SLIDES OF OTHER SCRIPTS' OWN (25 Oct 2026): window.HeaderTickerExtras
+       is a list of functions, each answering { key, title, when } or null,
+       asked afresh on every turn like the events are. The seasonal skin's
+       countdown is one (js/skin-wear.js). They go first, and each keeps one
+       object per key and wording, because the turn below finds "the one on
+       screen" by identity. */
+    const extraSlides = new Map();
+    function tickerExtras() {
+        const out = [];
+        for (const fn of window.HeaderTickerExtras || []) {
+            let s = null;
+            try { s = fn(); } catch (e) { s = null; }
+            if (!s || !s.title) continue;
+            const was = extraSlides.get(s.key);
+            if (was && was.title === s.title && was.when === s.when) { out.push(was); continue; }
+            const slide = { extra: true, key: s.key, title: s.title, when: s.when };
+            extraSlides.set(s.key, slide);
+            out.push(slide);
+        }
+        return out;
+    }
+
     function currentUpcoming() {
+        return tickerExtras().concat(currentEvents());
+    }
+    function currentEvents() {
         return events
             // No longer requires a date. An event with none is upcoming (see
             // js/event-status.js) and belongs in the ticker — being announced
