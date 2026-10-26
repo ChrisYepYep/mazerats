@@ -15,39 +15,6 @@
    hidden, so nothing can be scrolled to either. */
 html[data-skin="xmas"] { overflow-x: clip; }
 
-/* THE CLASSIC MAZE UNDER THE SNOW, WHATEVER THE PALETTE (26 Oct 2026, the
-   owner's: "Try having the original colour back image from the classic
-   palette, with the normal snow"). The skin wears Frost, which swaps the
-   maze for its blue one; under the snow the maze is the site's own brown,
-   with its own top-down shade, exactly as css/style.css lays it (the same
-   three layers, so the size, repeat, blend and fixed attachment there still
-   apply). The page loader is the same backdrop, so the page does not jump
-   when it fades. js/skin-xmas.js tints the snow from whatever maze is shown,
-   so it follows this. */
-html[data-skin="xmas"] body,
-html[data-skin="xmas"] .site-loader {
-    background-color: #120c07;
-    background-image:
-        linear-gradient(to bottom,
-            rgba(10, 7, 4, 0.7920) 0%,
-            rgba(10, 7, 4, 0.7899) 5%,
-            rgba(10, 7, 4, 0.7771) 10%,
-            rgba(10, 7, 4, 0.7480) 15%,
-            rgba(10, 7, 4, 0.7015) 20%,
-            rgba(10, 7, 4, 0.6400) 25%,
-            rgba(10, 7, 4, 0.5685) 30%,
-            rgba(10, 7, 4, 0.4935) 35%,
-            rgba(10, 7, 4, 0.4220) 40%,
-            rgba(10, 7, 4, 0.3605) 45%,
-            rgba(10, 7, 4, 0.3140) 50%,
-            rgba(10, 7, 4, 0.2849) 55%,
-            rgba(10, 7, 4, 0.2721) 60%,
-            rgba(10, 7, 4, 0.2700) 65%,
-            rgba(10, 7, 4, 0.2700) 100%),
-        linear-gradient(rgba(18, 12, 7, 0.1), rgba(18, 12, 7, 0.1)),
-        url('../assets/img/MazeBG.png');
-}
-
 html[data-skin="xmas"] .xm-piece {
     position: absolute;
     pointer-events: none;

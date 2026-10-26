@@ -283,7 +283,9 @@ exports.handler = async (event) => {
     await cache.updateOne(
         { key },
         // source "credit": checked against the archive above (see the fast path).
-        { $set: { key, name, host, found: result.found, profile: result.profile || null, fetchedAt, source: "credit" } },
+        // A credited builder's row is kept for good (see SEARCH_KEEP_MS).
+        { $set: { key, name, host, found: result.found, profile: result.profile || null, fetchedAt, source: "credit" },
+          $unset: { expiresAt: "" } },
         { upsert: true }
     ).catch(e => console.warn("habbo.js: could not cache", key, "-", e.message));
 
@@ -320,7 +322,9 @@ async function originsProfileFor(db, hotelCode, name) {
             /* Marked as a player's on the way in only: a row the handler
                above wrote for a credited builder stays one. */
             { $set: { key, name: name.trim(), host, found: result.found, profile: result.profile || null, fetchedAt: new Date().toISOString() },
-              $setOnInsert: { source: "player" } },
+              $setOnInsert: { source: "player" },
+              // A player's Habbo is kept for good, even one first found by a search (see SEARCH_KEEP_MS).
+              $unset: { expiresAt: "" } },
             { upsert: true }
         ).catch(e => console.warn("habbo.js: could not cache", key, "-", e.message));
         return result.found ? result.profile : null;
@@ -347,6 +351,32 @@ async function originsProfileFor(db, hotelCode, name) {
 const NOT_ON_ORIGINS_TTL_MS = 10 * 60 * 1000;
 const NOT_ON_ORIGINS_MAX = 5000;
 const notOnOrigins = new Map();     // "host:lowercased name" -> when Origins said no
+
+/* A SEARCHED HABBO IS KEPT FOR 90 DAYS (26 Oct 2026, the owner's). A row a
+   search wrote is somebody typed into a box, most of them nothing to do
+   with the site, and it was kept for ever. Now it carries `expiresAt`, 90
+   days on from the last time Origins was asked about it (every lookup past
+   the half-hour freshness pushes it on), and a TTL index has the database
+   delete it after that. A credited builder's row and a player's are kept
+   for good — they are the copy shown when Origins is down — so both of
+   their writes take `expiresAt` off, even from a row a search wrote first.
+   The rows written before this had no date: each warm instance gives those
+   one once, 90 days from when they were last fetched, then leaves it. */
+const SEARCH_KEEP_MS = 90 * 24 * 60 * 60 * 1000;
+let searchesBounded = false;
+async function keepSearchesBounded(cache) {
+    if (searchesBounded) return;
+    searchesBounded = true;          // one attempt per warm instance, never fatal
+    try {
+        await cache.createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 });
+        await cache.updateMany(
+            { source: "search", expiresAt: { $exists: false } },
+            [{ $set: { expiresAt: { $add: [{ $dateFromString: { dateString: "$fetchedAt", onError: "$$NOW", onNull: "$$NOW" } }, SEARCH_KEEP_MS] } } }]
+        );
+    } catch (e) {
+        console.warn("habbo.js: could not bound the searched Habbos -", e.message);
+    }
+}
 
 async function lookupOriginsName(db, hotelCode, name) {
     const clean = typeof name === "string" ? name.trim() : "";
@@ -382,6 +412,10 @@ async function lookupOriginsName(db, hotelCode, name) {
               $setOnInsert: { source: "search" } },
             { upsert: true }
         ).catch(e => console.warn("habbo.js: could not cache", key, "-", e.message));
+        // Only a row that is still nobody's but a search's is given an end (see SEARCH_KEEP_MS).
+        await cache.updateOne({ key, source: "search" }, { $set: { expiresAt: new Date(Date.now() + SEARCH_KEEP_MS) } })
+            .catch(e => console.warn("habbo.js: could not date", key, "-", e.message));
+        await keepSearchesBounded(cache);
         return { found: true, profile: result.profile };
     } catch (e) {
         // Origins having a bad minute: the copy we had, however old.

@@ -1651,6 +1651,12 @@
                under it: "with the normal snow (not thawing)"); true is the
                thaw below. Kept, so either is one word away. */
             const THAW = false;
+            /* SNOW: false leaves the maze bare and keeps only the trees (the
+               owner's, 26 Oct 2026: "For now, remove the snow and revert the
+               background image to the frost colour; keep the trees though").
+               true lays the floors' and the walls' snow below, all of it
+               kept for when he wants it back. */
+            const SNOW = false;
             const BREAKS = THAW ? 0.2 : 0;  // how much of the walls' tops has thawed through: 0 none; 0.2 is breaks here and there along every strip
             /* WHERE A WALL'S SNOW HAS MELTED THROUGH (the owner's, of round
                holes scattered over the tops: "closer to what I want, but it
@@ -1685,7 +1691,7 @@
             const topGone = (u, v) => u >= 0 && u < SW && v >= -6 && v < SH + 8 && goneMap[(v + 6) * SW + u] === 1;
 
             // ---- the snow on the floors: column by column, each run of floor a blanket banked against the wall behind ----
-            for (let u = 0; u < SW; u++) {
+            for (let u = 0; SNOW && u < SW; u++) {
                 for (let v = 0; v < SH; v++) {
                     if (kindAt(u, v) !== T_FLOOR || (v > 0 && kindAt(u, v - 1) === T_FLOOR)) continue;
                     let b = v; while (b + 1 < SH + 40 && kindAt(u, b + 1) === T_FLOOR) b++;
@@ -1728,7 +1734,7 @@
             // ---- the snow on the walls' tops: a slab on each run of top, its crest, its side, its lip ----
             // A top, and the edge line beside one: the slab rounds over the end of a wall as well as its front.
             const topish = (u, v) => { const k = kindAt(u, v); return k === T_TOP || (k === T_LINE && (kindAt(u - 1, v) === T_TOP || kindAt(u + 1, v) === T_TOP)); };
-            for (let u = 0; u < SW; u++) {
+            for (let u = 0; SNOW && u < SW; u++) {
                 for (let v = -6; v < SH + 6; v++) {
                     if (!topish(u, v) || topish(u, v - 1)) continue;
                     let b = v; while (topish(u, b + 1)) b++;
@@ -1783,6 +1789,8 @@
                     const U = t.u + du, V = t.v + dv, e = Math.pow((du - sr * 0.8) / (sr * 1.05), 2) + Math.pow(dv / (sr * 0.36), 2);
                     if (e > 1 || U < 0 || V < 0 || U >= SW || V >= SH || kindAt(U, V) !== T_FLOOR) continue;
                     const d = (V * SW + U) * 4, k = 1 - 0.32 * smooth(1 - e);
+                    // On bare floor (no snow laid there), the shadow is a soft dark of its own over the maze.
+                    if (!out.data[d + 3]) { out.data[d] = 2; out.data[d + 1] = 5; out.data[d + 2] = 10; out.data[d + 3] = Math.round(255 * (1 - k) * 1.2); continue; }
                     out.data[d] *= k; out.data[d + 1] *= k; out.data[d + 2] *= k * 0.96 + 0.04;
                 }
                 const ou = t.u - sp.fx, ov = t.v - sp.fy;

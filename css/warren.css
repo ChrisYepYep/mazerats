@@ -238,6 +238,9 @@ body.wr-on > .site-footer { display: none !important; }
 #wr-app .wr-top .admin-tab-btn:hover,
 #wr-app .wr-btn:hover { background: var(--wr-raised-2); border-color: #444a55; }
 #wr-app .wr-btn svg, #wr-app .wr-top .admin-tab-btn svg { width: 15px; height: 15px; flex: none; }
+/* Home is a link dressed as the bar's buttons (26 Oct 2026). */
+#wr-app a.wr-btn { text-decoration: none; }
+#wr-app .wr-top .wr-home { margin-right: 6px; }
 #wr-app .wr-top .admin-tab-btn::after { content: none; }
 #wr-app .wr-btn-gold { background: var(--wr-gold); border-color: var(--wr-gold); color: var(--wr-gold-ink); }
 #wr-app .wr-btn-gold:hover { background: #ffd95f; border-color: #ffd95f; }
@@ -498,6 +501,12 @@ body.wr-on > .site-footer { display: none !important; }
 }
 :is(#wr-app .wr-ui, #login-modal, .modal-overlay.wr-dialog) .admin-pill-solid:hover,
 :is(#wr-app .wr-ui, #login-modal, .modal-overlay.wr-dialog) .btn-solid:hover { background: #ffd95f; border-color: #ffd95f; color: var(--wr-gold-ink); }
+/* What deletes reads as deleting (26 Oct 2026, the owner's): red text and a
+   red edge, solid red under the pointer, in the panels as in the dialogs.
+   The plain button above had made every Delete and Remove look like any
+   other action. A view-only account's still grey out (style.css). */
+:is(#wr-app .wr-ui, #login-modal, .modal-overlay.wr-dialog) :is(.admin-pill-danger, .admin-delete-btn) { color: var(--wr-red); border-color: rgba(255, 106, 95, 0.45); }
+:is(#wr-app .wr-ui, #login-modal, .modal-overlay.wr-dialog) :is(.admin-pill-danger, .admin-delete-btn):hover:not(:disabled) { background: #b8473c; border-color: #b8473c; color: #fff; }
 :is(#wr-app .wr-ui, #login-modal, .modal-overlay.wr-dialog) :is(.admin-action-pill, .ctl-btn, .btn, .btn-enter-mini):disabled,
 :is(#wr-app .wr-ui, #login-modal, .modal-overlay.wr-dialog) :is(.admin-action-pill, .ctl-btn, .btn, .btn-enter-mini)[aria-disabled="true"] { opacity: 0.45; cursor: default; }
 
@@ -928,8 +937,6 @@ body.wr-on :is(#login-modal, .modal-overlay.wr-dialog) .confirm-message strong {
 body.wr-on :is(#login-modal, .modal-overlay.wr-dialog) .confirm-actions { justify-content: flex-end; gap: 8px; }
 body.wr-on :is(#login-modal, .modal-overlay.wr-dialog) .confirm-actions > * { min-width: 72px; }
 body.wr-on :is(#login-modal, .modal-overlay.wr-dialog) .confirm-prompt { margin-bottom: 18px; }
-body.wr-on :is(#login-modal, .modal-overlay.wr-dialog) .admin-pill-danger { color: var(--wr-red); border-color: rgba(255, 106, 95, 0.45); }
-body.wr-on :is(#login-modal, .modal-overlay.wr-dialog) .admin-pill-danger:hover { background: #b8473c; border-color: #b8473c; color: #fff; }
 body.wr-on .modal-overlay.wr-dialog :focus-visible { outline: 2px solid var(--wr-blue); outline-offset: 1px; }
 body.wr-on .modal-overlay.wr-dialog *, body.wr-on .modal-overlay.wr-dialog *::before, body.wr-on .modal-overlay.wr-dialog *::after { box-sizing: border-box; }
 
