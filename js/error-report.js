@@ -134,6 +134,16 @@
         // Every pagehide, ever: `leaving` alone is put back by pageshow.
         var hides = 0;
         var LEAVE_GRACE_MS = 1500;
+        /* When a link click started taking the visitor away (26 Oct 2026).
+           pagehide comes only once the next page starts to arrive, and on a
+           slow connection that was after the grace above: Safari had by then
+           failed everything still loading — the skin's script, the palette's
+           sheet, the archive's rooms — and each was filed from a landing
+           page whose Enter had simply been pressed. Anything failing in the
+           half minute after such a click is taken to be the leaving. */
+        var departAt = 0;
+        var DEPART_MS = 30000;
+        function departing() { return departAt > 0 && Date.now() - departAt < DEPART_MS; }
 
         /* ---------------------------------------------------- small helpers */
 
@@ -425,7 +435,17 @@
                of the site's hourly one per visitor. Now the first is sent and
                the rest add to its count. */
             var group = /^\/\/api\.furniindex\.com\/furni\//i.test(clean) ? "//api.furniindex.com/furni/*" : "";
-            capture("resource", { message: what + " failed to load", source: clean, tag: tag, group: group });
+            /* Held a moment, as a failed request is (the fetch watcher below,
+               which says why): leaving the page fails whatever is still
+               loading, and a page on its way out reports none of it. The
+               snapshot is the page as it was at the failure. */
+            if (leaving || departing()) { ignored++; return; }
+            var failure = { message: what + " failed to load", source: clean, tag: tag, group: group };
+            try { failure.env = environment(); } catch (x) { /* capture takes its own */ }
+            var hidesThen = hides;
+            setTimeout(function () {
+                try { if (!leaving && hides === hidesThen && !departing()) capture("resource", failure); } catch (x) { /* never */ }
+            }, LEAVE_GRACE_MS);
         }
 
         function onRejection(e) {
@@ -660,7 +680,25 @@
         });
         window.addEventListener("pagehide", function () { leaving = true; hides++; safe(flush, true); });
         // Back from the back/forward cache: the page is in use again.
-        window.addEventListener("pageshow", function () { leaving = false; });
+        window.addEventListener("pageshow", function () { leaving = false; departAt = 0; });
+        /* A click on a link that loads another page here: an ordinary left
+           click on an <a>, nothing on the page having taken it over (the
+           homepage opens its windows in place), not to a new tab, not a
+           download, and not just a jump within this page. Read once the
+           click has finished, when defaultPrevented is final. */
+        document.addEventListener("click", function (e) {
+            try {
+                if (e.button !== 0 || e.ctrlKey || e.metaKey || e.shiftKey || e.altKey) return;
+                var a = e.target && e.target.closest ? e.target.closest("a[href]") : null;
+                if (!a || a.hasAttribute("download")) return;
+                var target = (a.getAttribute("target") || "").toLowerCase();
+                if (target && target !== "_self" && target !== "_top" && target !== "_parent") return;
+                var to = new URL(a.href, location.href);
+                if (!/^https?:$/.test(to.protocol)) return;
+                if (to.origin === location.origin && to.pathname === location.pathname && to.search === location.search) return;
+                setTimeout(function () { if (!e.defaultPrevented) departAt = Date.now(); }, 0);
+            } catch (x) { /* never */ }
+        }, true);
 
         /* fetch, watched without being changed: the original is called with
            the same arguments and ITS promise is what the caller gets back,
@@ -732,7 +770,7 @@
                                 /* An abort is somebody's decision (a leash, a
                                    newer request), and a request made while
                                    offline was always going to fail. */
-                                if (aborted || nav.onLine === false || leaving) return;
+                                if (aborted || nav.onLine === false || leaving || departing()) return;
                                 /* The visit counter's own beacon (js/track.js) is
                                    built to fail silently (7 Oct 2026): one click
                                    not counted on a slow connection is nothing the
@@ -784,7 +822,7 @@
                                    cancelled "rooms" request after all. */
                                 var hidesThen = hides;
                                 setTimeout(function () {
-                                    try { if (!leaving && hides === hidesThen) capture("fetch", failure); } catch (x) { /* never */ }
+                                    try { if (!leaving && hides === hidesThen && !departing()) capture("fetch", failure); } catch (x) { /* never */ }
                                 }, LEAVE_GRACE_MS);
                             } catch (x) { /* never */ }
                         });
