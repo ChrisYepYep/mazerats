@@ -69,10 +69,66 @@
         try {
             var blocked = JSON.parse(localStorage.getItem("mazerats_blocked") || "null");
             if (blocked && typeof blocked === "object" && (!blocked.until || Date.parse(blocked.until) > Date.now())) {
-                location.replace("/");
+                bounce();
                 return;
             }
         } catch (e) { /* unreadable: `me` decides, in js/account.js */ }
+
+        /* Every way out of this gate, to the landing page (26 Oct 2026).
+           js/error-report.js (loaded above, before this) is told first, so a
+           request this page cuts short by leaving is not filed as a failure:
+           MazeErrors.leaving opens its "visitor is leaving" window. */
+        function bounce() {
+            try { if (window.MazeErrors && typeof MazeErrors.leaving === "function") MazeErrors.leaving("/"); } catch (e) { /* reporting is never worth staying */ }
+            location.replace("/");
+        }
+
+        /* A SEASONAL SKIN'S PALETTE, WORKED OUT BEFORE THE FIRST PAINT (26 Oct
+           2026, the bug scan). js/skin-wear.js decides the skin, and the
+           palette it brings (Witching Hour with Halloween, Frost with
+           Christmas), but it runs at the end of <body>. A browser that held
+           no mazerats_skin_theme yet (a first visit in the window, or the
+           first since it opened) was shown the site's palette by the gate
+           below and then changed colour once skin-wear caught up.
+
+           So the palette slot further down, and the gate when the settings
+           land, ask this: the same answer as skin-wear's resolve() and
+           themeOf() for the PUBLIC (an admin's preview is skin-wear's alone,
+           and is already remembered in mazerats_skin_theme from the page
+           before). Keep the two in step: SKINS and PAIRED there are the keys
+           and values here. Answers a palette name, or null for the site's. */
+        var SKIN_PAIRED = { halloween: "witch", xmas: "frost" };
+        function skinPaletteAt(site, t) {
+            if (!site || typeof site !== "object") return null;
+            var mode = site.skin || "auto";
+            var list = Object.prototype.toString.call(site.skinSchedule) === "[object Array]" ? site.skinSchedule : [];
+            var isSkin = function (n) { return Object.prototype.hasOwnProperty.call(SKIN_PAIRED, n); };
+            var themeOf = function (w) { return "theme" in w ? (w.theme || null) : (SKIN_PAIRED[w.skin] || null); };
+            var instant = function (stamp, zone, year) {
+                var m = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/.exec(stamp || "");
+                if (!m) return NaN;
+                var y = year != null ? year : Number(m[1]);
+                return zone === "utc" ? Date.UTC(y, m[2] - 1, +m[3], +m[4], +m[5]) : new Date(y, m[2] - 1, +m[3], +m[4], +m[5]).getTime();
+            };
+            var i, w;
+            if (mode === "off") return null;
+            if (isSkin(mode)) {
+                for (i = 0; i < list.length; i++) if (list[i] && list[i].skin === mode) return themeOf(list[i]);
+                return SKIN_PAIRED[mode];
+            }
+            for (i = 0; i < list.length; i++) {
+                w = list[i];
+                if (!w || !isSkin(w.skin)) continue;
+                var years = w.yearly ? [new Date(t).getFullYear() - 1, new Date(t).getFullYear(), new Date(t).getFullYear() + 1] : [null];
+                for (var j = 0; j < years.length; j++) {
+                    var s = instant(w.from, w.zone, years[j]), e = instant(w.to, w.zone, years[j]);
+                    if (w.yearly && e <= s) e = instant(w.to, w.zone, years[j] + 1);      // across New Year
+                    if (s <= t && t < e) return themeOf(w);
+                }
+            }
+            return null;
+        }
+        try { window.__mrSkinPaletteAt = skinPaletteAt; } catch (e) { /* the slot below then paints the site's */ }
 
         var revealed = false;
         function reveal() {
@@ -192,8 +248,14 @@
             var timer = setTimeout(function () { controller.abort(); }, ms);
             var opts = options || {};
             opts.signal = controller.signal;
+            /* The leash stays on through the BODY (26 Oct 2026). It was
+               taken off when the headers arrived, so a response that stalled
+               after them left res.json() waiting for ever and the page
+               hidden with it. Left running, it aborts a body that never
+               finishes (res.json() then rejects, and the retry or the shut
+               gate takes over); once the body is in, aborting is a no-op.
+               js/api.js's _getWithFallback times the body the same way. */
             return fetch(url, opts).then(function (res) {
-                clearTimeout(timer);
                 return res;
             }, function (err) {
                 clearTimeout(timer);
@@ -383,18 +445,33 @@
                         localStorage.setItem("mazerats_theme", wanted);
                         return settings.landingState;
                     }
-                    if (wanted === "classic") {
+                    /* Nothing remembered, but these settings put a skin on now
+                       that brings its own palette (26 Oct 2026): that palette
+                       is the one painted, here, before the reveal, so the page
+                       never changes colour when js/skin-wear.js arrives. The
+                       settings are kept where skin-wear reads them on its
+                       first pass (its CACHE_KEY, the same shape it writes), so
+                       it agrees with this even when it runs before its own
+                       copy of the answer has come back; the site's own
+                       palette is still the one remembered. */
+                    var shown = wanted;
+                    if (Object.prototype.toString.call(settings.skinSchedule) === "[object Array]") {
+                        localStorage.setItem("mazerats_skin_cache", JSON.stringify({ skin: settings.skin || "auto", skinSchedule: settings.skinSchedule, theme: settings.theme || "classic" }));
+                        var paired = skinPaletteAt(settings, Date.now());
+                        if (paired && /^[a-z]+$/.test(paired)) shown = paired;
+                    }
+                    if (shown === "classic") {
                         document.documentElement.removeAttribute("data-theme");
                         if (link) link.remove();
                     } else {
-                        document.documentElement.setAttribute("data-theme", wanted);
+                        document.documentElement.setAttribute("data-theme", shown);
                         if (!link) {
                             link = document.createElement("link");
                             link.id = "theme-css";
                             link.rel = "stylesheet";
                             document.head.appendChild(link);
                         }
-                        var href = "css/theme-" + wanted + ".css";
+                        var href = "css/theme-" + shown + ".css";
                         if (link.getAttribute("href") !== href) link.href = href;
                     }
                     localStorage.setItem("mazerats_theme", wanted);
@@ -438,7 +515,7 @@
                 // Reached only if the admin verify call itself fails. The
                 // state says this page is gated and the token could not be
                 // confirmed, so the answer is the same as no token at all.
-                location.replace("/");
+                bounce();
             });
 
         // The gated path: an admin with a live session gets in with the Dev
@@ -446,7 +523,7 @@
         function gatedVisitor() {
                 var token = localStorage.getItem(TOKEN_KEY);
                 if (!token) {
-                    location.replace("/");
+                    bounce();
                     return;
                 }
 
@@ -462,7 +539,7 @@
                     .then(function (res) { return res.ok ? res.json() : null; })
                     .then(function (result) {
                         if (!result || !result.username) {
-                            location.replace("/");
+                            bounce();
                             return;
                         }
                         applyAdminNotice();
@@ -540,19 +617,27 @@
          first. <html> gets data-theme in the same breath.
 
          Read from localStorage because the real answer lives in the database and
-         arrives later: js/site.js fetches the site settings, applies whatever they
-         say and writes it here for next time. The cached value is therefore the
+         arrives later: the gate above (and js/api.js) read the site settings,
+         apply whatever they say and write it here for next time. The cached value is therefore the
          PREVIOUS visit's answer, which is right almost always and self-corrects
          within one page load when it is not. A first-ever visitor has nothing
          cached and gets classic, which is the default anyway. Classic leaves the
          slot empty — a stylesheet link with no href loads nothing — and
          js/api.js and the gate above remove it outright.
 
+         A seasonal skin's own palette (mazerats_skin_theme, { theme, until },
+         written by js/skin-wear.js) wins over the site's while its window
+         lasts, so a skinned page paints in the skin's colours from the first
+         frame. With none remembered (26 Oct 2026), the last settings skin-wear
+         kept (mazerats_skin_cache) are worked out against the clock by the
+         gate's __mrSkinPaletteAt, so the first visit since a window opened
+         paints in its palette too.
+
          Wrapped in try/catch: localStorage throws outright in some privacy modes,
          and a colour scheme is not worth a blank page. -->
     <link rel="stylesheet" href="css/style.css?v=2">
     <link id="theme-css" rel="stylesheet">
-    <script>(function(){try{var t=localStorage.getItem("mazerats_theme"),k=JSON.parse(localStorage.getItem("mazerats_skin_theme")||"null");if(k&&k.theme&&Date.now()<k.until)t=k.theme;if(!t||t==="classic"||!/^[a-z]+$/.test(t))return;document.documentElement.setAttribute("data-theme",t);document.getElementById("theme-css").href="css/theme-"+t+".css";}catch(e){}})();</script>
+    <script>(function(){try{var t=localStorage.getItem("mazerats_theme"),k=JSON.parse(localStorage.getItem("mazerats_skin_theme")||"null"),p;if(k&&k.theme&&Date.now()<k.until)t=k.theme;else if(window.__mrSkinPaletteAt&&(p=window.__mrSkinPaletteAt(JSON.parse(localStorage.getItem("mazerats_skin_cache")||"null"),Date.now())))t=p;if(!t||t==="classic"||!/^[a-z]+$/.test(t))return;document.documentElement.setAttribute("data-theme",t);document.getElementById("theme-css").href="css/theme-"+t+".css";}catch(e){}})();</script>
     <!-- Umami is not loaded here. On this page it waits for the gate at the
          top of <head> to let the visitor in — see loadUmami() there — so a
          gated visitor bounced to the landing page is not counted as a visit
@@ -1739,19 +1824,19 @@
     <script src="js/glyphs.js?v=2"></script>
     <!-- The seats that fall when Fallin' Furni is pressed while Coming Soon. -->
     <script src="js/furni-rain.js?v=2"></script>
-    <!-- After site.js, which is where imgCdn and compareNames live. -->
-    <!-- The two daily games, and the day rules they share. daily.js
-         first: both games read it as they set themselves up. -->
-    <!-- daily.js is the shared day/seed/leaderboard layer all three games sit
-         on, and the side menu needs it to say anything at all, so it loads
-         here as it always has.
+    <!-- The two daily games, and the day rules they share (after site.js,
+         which is where imgCdn and compareNames live). daily.js is the
+         shared day/seed/leaderboard layer both games sit on, and the side
+         menu needs it to say anything at all, so it loads here as it always
+         has.
 
-         The three games themselves do NOT. They are about 39KB gzipped
-         between them and most visits never open one — js/daily-loader.js
-         publishes their openers and fetches whichever is actually asked for,
-         preloading all three in the background for anyone whose browser says
-         they have played before. See that file's header for how the window
-         is at its final size before the game arrives. -->
+         The games themselves do NOT. Most visits never open one, so
+         js/daily-loader.js publishes their openers and fetches whichever is
+         actually asked for, preloading both in the background for anyone
+         whose browser says they have played before. See that file's header
+         for the roster and for how the window is at its final size before
+         the game arrives. (It was three games until Ratrospect, and then
+         One Wall, were dropped; 26 Oct 2026.) -->
     <!-- Before daily.js, which reads the table it defines. The pairing is
          asserted by tools/check-daily-parity.js so a page cannot quietly
          load one without the other. -->

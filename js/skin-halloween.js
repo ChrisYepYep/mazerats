@@ -552,7 +552,8 @@
     const restore = new Map();          // element -> { prop: old value } for styles this file set
     const hosts = new Map();            // host -> { width, key, draw, keyOf, pieces }
     const timers = [];
-    let ro = null, mo = null, rafId = 0;
+    let ro = null, mo = null, rafId = 0, roTimer = 0, rzTimer = 0;
+    const resized = new Set();          // hosts the ResizeObserver reported, redrawn together
     const tickers = new Set();          // per-frame painters (the ghost)
 
     function setStyle(el, prop, value) {
@@ -597,7 +598,7 @@
         if (!rec) return;
         const w = Math.round(el.offsetWidth), key = rec.keyOf ? rec.keyOf(el) : null;
         if (w === rec.width && key === rec.key) return;
-        rec.pieces.forEach((p) => { p.remove(); added.delete(p); });
+        rec.pieces.forEach((p) => { p.remove(); added.delete(p); if (p.__hwDrop) { p.__hwDrop.remove(); added.delete(p.__hwDrop); } });
         rec.pieces = [];
         rec.width = w; rec.key = key;
         if (!w) return;
@@ -631,8 +632,9 @@
             range.selectNodeContents(n);
             for (const r of range.getClientRects()) mark(r, 0);
         }
-        scope.querySelectorAll("img, svg, input, select, textarea, video, [class*=icon]").forEach((el) => {
-            if (el.classList.contains("hw-piece") || el.matches(".window-peek-rat, .window-sleep-rat")) return;
+        // A <canvas> is a picture too (26 Oct 2026, the bug scan): Guess the Maze draws its room on one, and goo covered it.
+        scope.querySelectorAll("img, svg, canvas, input, select, textarea, video, [class*=icon]").forEach((el) => {
+            if (el.classList.contains("hw-piece") || el.matches(".window-peek-rat, .window-sleep-rat, .hw-bats")) return;
             const r = el.getBoundingClientRect();
             const icon = r.width < 72 && r.height < 72;
             mark(r, icon || el.matches("input, select, textarea, [class*=icon]") ? 0 : r.width > 200 ? 22 : 9);
@@ -729,6 +731,13 @@
                 const dc = document.createElement("canvas"); dc.width = cw; dc.height = dh;
                 dc.getContext("2d").drawImage(full.canvas, 0, y0, cw, dh, 0, 0, cw, dh);
                 d.drop = piece(into, dc, "hw-fall", Object.assign({}, place, { left: place.left + c0, top: place.top + y0 }));
+                /* Made here, in idle time, after its host was drawn, so it is
+                   not among the host's pieces (26 Oct 2026, the bug scan): a
+                   redraw took the strip and left its drop where the old width
+                   put it, one more for every redraw, and after a phone was
+                   turned upright one stood past the page's edge and held it
+                   wide. It goes with its strip; see redraw(). */
+                strip.__hwDrop = d.drop;
             }
             d.ready = true;
             runDrips();
@@ -769,7 +778,7 @@
         const tick = (now) => {
             dripRaf = dripping.size ? requestAnimationFrame(tick) : 0;
             dripping.forEach((d) => {
-                if (!d.strip.isConnected) { dripping.delete(d); return; }
+                if (!d.strip.isConnected) { dripping.delete(d); if (d.drop) { d.drop.remove(); added.delete(d.drop); } return; }
                 if (!d.ready) return;
                 const f = Math.floor(((now + d.off) % CYCLE) / FRAME_MS);
                 if (f === d.last) return;
@@ -896,14 +905,24 @@
         const s = splatSheet(D), ir = into.getBoundingClientRect(), b = borders(into);
         const el = document.createElement("span");
         el.className = "hw-piece hw-splat"; el.setAttribute("aria-hidden", "true");
+        /* Cut at the window's own sides (26 Oct 2026, the bug scan): a drop
+           landing near one spread its splash (35px or so) past the edge, and
+           on a phone, where the window sits 8px inside the screen, that was
+           past the screen too and could flash a sideways scrollbar in the
+           overlay. The puddle stays under its drop; a droplet that would
+           land beyond the side is simply not drawn. */
+        const left = Math.round(x - ir.left - b.l + into.scrollLeft - s.w / 2);
+        const lo = into.scrollLeft - b.l, hi = into.scrollLeft + ir.width - b.l;
+        const cut = Math.max(0, lo - left), w = Math.max(0, Math.min(s.w, hi - left) - cut);
+        if (!w) return;
         // Its bottom row on the surface's top edge: the puddle sits on it.
-        el.style.cssText = "left:" + Math.round(x - ir.left - b.l + into.scrollLeft - s.w / 2) + "px;top:" + Math.round(landY - ir.top - b.t + into.scrollTop - s.h) +
-            "px;width:" + s.w + "px;height:" + s.h + "px;background-image:url(" + s.url + ");z-index:40";
+        el.style.cssText = "left:" + (left + cut) + "px;top:" + Math.round(landY - ir.top - b.t + into.scrollTop - s.h) +
+            "px;width:" + w + "px;height:" + s.h + "px;background-image:url(" + s.url + ");z-index:40";
         into.appendChild(el); added.add(el);
         let f = 0;
         const step = () => {
             if (!el.isConnected) return;
-            el.style.backgroundPositionX = (-f * s.w) + "px";
+            el.style.backgroundPositionX = (-f * s.w - cut) + "px";
             if (++f < s.n) later(step, [60, 80, 110, 90][f - 1] || 80);
             else later(() => { el.style.opacity = "0"; later(() => { el.remove(); added.delete(el); }, 700); }, 1200);
         };
@@ -946,7 +965,14 @@
         document.querySelectorAll(".chrome-window, .modal").forEach((win) => {
             if (!win.offsetWidth) return;
             const isModal = win.classList.contains("modal");
-            const keyOf = (el) => isModal ? "modal:" + ((el.querySelector(".chrome-titlebar") || el).textContent || "").trim().slice(0, 60) : el.id || "window";
+            /* The archive's key carries where the moon goes (26 Oct 2026, the
+               bug scan): the window is capped at 538px, so a narrower or
+               wider browser left its width, and so the key, alone, and the
+               moon and its wash stayed where the old page put them, the wash
+               as wide as the old page, under a sideways scrollbar. The resize
+               listener in start() asks again. */
+            const keyOf = (el) => isModal ? "modal:" + ((el.querySelector(".chrome-titlebar") || el).textContent || "").trim().slice(0, 60)
+                : el.id === "browse-window" ? "browse-window:" + nightKey(el) : el.id || "window";
             host(win, (el, w) => {
                 const b = borders(el);
                 // The peeking rat stays on top of the goo, its paws over it, and the goo stays low under it.
@@ -956,7 +982,8 @@
                     setStyle(peek, "zIndex", "41");
                     clamp.push({ x0: peek.offsetLeft + b.l + peek.offsetWidth * 0.12, x1: peek.offsetLeft + b.l + peek.offsetWidth * 0.95, max: 1 });
                 }
-                slime(el, w, { size: "big", r: 12, pad: 8, up: 15, down: isModal ? 90 : 80, key: keyOf(el), z: 40, animate: 3, clamp });
+                // Seeded as before, so the goo keeps its shape when only the moon moves.
+                slime(el, w, { size: "big", r: 12, pad: 8, up: 15, down: isModal ? 90 : 80, key: isModal ? keyOf(el) : el.id || "window", z: 40, animate: 3, clamp });
                 if (peek && peek.offsetWidth) {
                     const k = peek.offsetWidth / 78;
                     piece(el, sprite(HAT, HAT_PAL), "hw-hat", { left: Math.round(peek.offsetLeft + 37 * k), top: Math.round(peek.offsetTop - 7 * k), zIndex: 42 });
@@ -966,6 +993,13 @@
             }, keyOf);
         });
     }
+
+    // Where night() would put the moon now, or "day" where it draws none.
+    const nightKey = (win) => {
+        if (innerWidth < 1100 || EMBED) return "day";
+        const r = win.getBoundingClientRect(), doc = document.documentElement;
+        return Math.round(r.left + scrollX) + "," + Math.round(r.top + scrollY) + "," + doc.clientWidth;
+    };
 
     /* The moon in the sky beside the archive window, placed from its outer
        corner. A piece of the page rather than of the window, so when the bat
@@ -988,9 +1022,15 @@
             document.body.appendChild(s); added.add(s);
         };
         // The wash covers the page exactly (never past its edge, where it would add a scrollbar), lit from the moon's centre.
+        /* And no further than its light reaches (26 Oct 2026): past 1200px
+           from the moon the gradient is clear, so the box stops there too.
+           It is measured once, and a page that grew shorter afterwards (a
+           shorter tab, fewer results) was held at its old height by the box,
+           with empty page under the footer. Nothing visible changes. */
+        const doc = document.documentElement;
         const wash = document.createElement("span");
         wash.className = "hw-piece hw-moonwash"; wash.setAttribute("aria-hidden", "true");
-        Object.assign(wash.style, { left: "0", top: "0", width: document.documentElement.clientWidth + "px", height: document.documentElement.scrollHeight + "px", zIndex: "-1",
+        Object.assign(wash.style, { left: "0", top: "0", width: Math.max(0, Math.min(doc.clientWidth, cx + 1200)) + "px", height: Math.max(0, Math.min(doc.scrollHeight, cy + 1200)) + "px", zIndex: "-1",
             background: `radial-gradient(circle 1200px at ${cx}px ${cy}px, rgba(150, 175, 255, 0.11), rgba(150, 175, 255, 0.05) 45%, rgba(150, 175, 255, 0) 100%)` });
         document.body.appendChild(wash); added.add(wash);
         glow("hw-moonglow", 300, "radial-gradient(closest-side, rgba(238, 240, 214, 0.30), rgba(220, 228, 255, 0.12) 40%, rgba(200, 215, 255, 0) 100%)");
@@ -1044,7 +1084,12 @@
        with the maze's window open. Everywhere else the bats are scenery: no
        listeners are added, so every click is the page's. */
     let PLAYABLE = false;     // read in decorateBats, once the body is there
-    const ABOVE_BATS = ".site-header, .modal-overlay, .console-modal, .ff-console, #ff-overlay, .hw-batscore, .hw-share";
+    /* Pura Panic's window (and Scout's, and Profiles') is a .profile-console,
+       not a .modal-overlay, and the lights-off dims sit over the page too
+       (26 Oct 2026, the bug scan): left off this list, a bat passing behind
+       Pura's window took the click meant for Play or Pause, and a tap on
+       the well, as a kill. */
+    const ABOVE_BATS = ".site-header, .modal-overlay, .console-modal, .ff-console, #ff-overlay, .profile-console, .pura-dim, .ff-console-dim, .hw-batscore, .hw-share";
     /* THE SHARE CARD (the owner's): the score as a picture to copy or save,
        "Defeated 50 bats on MazeRats.net! / Scoring / 5,130 points!", on a
        night sky with the moon and a few bats (two
@@ -1156,7 +1201,14 @@
     let shareOpen = null;
     async function shareCard(stats) {
         if (shareOpen) return;
+        /* Held from the first press, not from when the card is up (26 Oct
+           2026): while the font loaded, a second press (a double click on
+           the score) opened a second card under the first; and a skin taken
+           off meanwhile still got its card, left in the page with the page's
+           scrolling locked. */
+        const pending = shareOpen = { close() { if (shareOpen === pending) shareOpen = null; } };
         if (document.fonts) await Promise.all(["18px 'Volter Goldfish'", "bold 18px 'Volter Goldfish'"].map((f) => document.fonts.load(f))).catch(() => {});
+        if (!on || shareOpen !== pending) return;
         const wrap = document.createElement("div");
         wrap.innerHTML = `
             <div class="modal-overlay open hw-share">
@@ -1197,12 +1249,21 @@
            opens: End game opens it every time, so an open is no sign of a share. */
         let counted = false;
         const shared = () => { if (counted) return; counted = true; if (window.Track) Track.event("bat-share"); };
+        /* Tab is kept inside the card by the site's one focus trap (js/site.js
+           FocusTrap: every shown aria-modal in a .modal-overlay), checked 26 Oct
+           2026. Focus goes back where it came from on closing; when that has
+           gone (End game opens the final card and takes the score box, its
+           button with it, away) it goes to the score if a game is still on,
+           else to the archive, the skip link's target, rather than being
+           dropped on <body>. */
         const returnTo = document.activeElement;
         const close = () => {
             overlay.remove(); added.delete(overlay); shareOpen = null;
             removeEventListener("keydown", onKey, true);
             if (!document.querySelector(".modal-overlay.open")) document.body.classList.remove("modal-open");
-            if (returnTo && returnTo.focus) returnTo.focus();
+            const back = returnTo && returnTo.isConnected && returnTo !== document.body ? returnTo
+                : document.querySelector(".hw-batscore-open") || document.getElementById("browse-window");
+            if (back && back.focus) back.focus({ preventScroll: true });
         };
         const onKey = (e) => { if (e.key === "Escape") { e.stopPropagation(); close(); } };
         overlay.addEventListener("click", async (e) => {
@@ -1262,7 +1323,11 @@
         });
         const rnd = prng(31102026);
         let W = 0, H = 0;
-        const resize = () => { W = cv.width = innerWidth; H = cv.height = innerHeight; ctx.imageSmoothingEnabled = false; };
+        /* The page's own width, not innerWidth (26 Oct 2026, the bug scan): on
+           a phone innerWidth grows with anything wider than the page, and
+           after a turn to upright the canvas kept the landscape width it read
+           then, 562px on a 390px page. */
+        const resize = () => { W = cv.width = document.documentElement.clientWidth || innerWidth; H = cv.height = innerHeight; ctx.imageSmoothingEnabled = false; };
         resize();
         const flock = [], falling = [], floaters = [];
         const pick = () => ({ x: W * (0.08 + rnd() * 0.84), y: 70 + rnd() * Math.max(60, H * 0.62) });
@@ -1510,6 +1575,12 @@
             removeEventListener("pagehide", onLeave, true);
             removeEventListener("visibilitychange", onLeave, true);
             root.classList.remove("hw-bat-aim", "hw-batgame");
+            /* Its own canvas and score go with it, and a game still on is
+               counted as ended (26 Oct 2026): the bats now also stop without
+               the rest of the skin, when reduced motion is turned on. */
+            reportEnd();
+            cv.remove(); added.delete(cv);
+            if (board) { board.remove(); added.delete(board); board = null; }
         } };
     }
 
@@ -1526,10 +1597,11 @@
             if (!on) return;
             const t0 = performance.now();
             for (const row of document.querySelectorAll(".chrome-list-row")) {
-                if (hosts.has(row) || !row.offsetWidth) continue;
+                if (hosts.has(row)) continue;
                 const key = "row:" + (row.textContent || "").replace(/\s+/g, " ").slice(0, 60);
                 const pours = rowLook(key);
-                if (!pours.length) continue;
+                // The clean rows (a quarter) are never hosts, so they are told apart before measuring: every pass measured them again (26 Oct 2026).
+                if (!pours.length || !row.offsetWidth) continue;
                 host(row, (el, w) => pours.forEach((span, i) =>
                     slime(el, w, { size: "mid", r: 6, pad: 5, up: 8, down: 26, span, key: key + ":" + i, z: 5, sideRuns: 1, animate: i === 0 && hash(key) % 3 === 0 ? 1 : 0 })));
                 if (performance.now() - t0 > 8) { decorateRows(); return; }
@@ -1620,20 +1692,53 @@
                     ctx.drawImage(body, Math.round(ex - gw / 2), Math.round(ey) - 1, gw, gh);
                     ctx.globalAlpha = 1;
                 };
+                paint.canvas = cv;
                 paint(null);
-                if (!reduceMq.matches) tickers.add(paint);
+                if (!reduceMq.matches) { tickers.add(paint); swing(); }
                 cv.__hwPaint = paint;
             }
         });
-        if (!reduceMq.matches && !rafId) {
-            let last = 0;
-            const tick = (now) => {
-                rafId = requestAnimationFrame(tick);
-                if (now - last < 83) return;
-                last = now;
-                tickers.forEach((p) => p(now / 1000));
-            };
+    }
+    /* The ghost's clock, running only while there is a ghost to swing (26 Oct
+       2026). Each redraw of the bar (any change of its width) made a new
+       ghost and added its painter, and the old one stayed in `tickers`,
+       repainting a canvas no longer in the page twelve times a second, one
+       more per resize. A painter whose canvas has gone now leaves; and with
+       none (a phone, which has no margin to hang him in) the frame loop
+       stops instead of running empty at the screen's rate. */
+    function swing() {
+        if (rafId || reduceMq.matches || !tickers.size) return;
+        let last = 0;
+        const tick = (now) => {
+            if (!tickers.size) { rafId = 0; return; }
             rafId = requestAnimationFrame(tick);
+            if (now - last < 83) return;
+            last = now;
+            tickers.forEach((p) => { if (p.canvas && !p.canvas.isConnected) tickers.delete(p); else p(now / 1000); });
+        };
+        rafId = requestAnimationFrame(tick);
+    }
+
+    /* REDUCED MOTION, FOLLOWED (26 Oct 2026, the bug scan). It was read once
+       and acted on as pieces were made, so a visitor who turned it on with
+       the page open kept the bats, the swinging ghost and the falling drops
+       until a reload, and one who turned it off never got them. Now the
+       moving parts stop (the ghost at rest, each drip on its still frame,
+       the bats gone) or start again as the setting changes. The stylesheet's
+       own reduced-motion rules follow by themselves. */
+    function onMotion() {
+        if (!on) return;
+        if (reduceMq.matches) {
+            if (bats) bats.stop(); bats = null;
+            cancelAnimationFrame(dripRaf); dripRaf = 0;
+            runDrips();
+            cancelAnimationFrame(rafId); rafId = 0;
+            tickers.forEach((p) => p(null)); tickers.clear();
+        } else {
+            decorateBats();
+            runDrips();
+            document.querySelectorAll(".hw-ghost").forEach((cv) => { if (cv.__hwPaint) tickers.add(cv.__hwPaint); });
+            swing();
         }
     }
 
@@ -1642,7 +1747,7 @@
     function prune() {
         hosts.forEach((rec, el) => {
             if (el.isConnected) return;
-            rec.pieces.forEach((p) => { p.remove(); added.delete(p); });
+            rec.pieces.forEach((p) => { p.remove(); added.delete(p); if (p.__hwDrop) { p.__hwDrop.remove(); added.delete(p.__hwDrop); } });
             if (ro) ro.unobserve(el);
             hosts.delete(el);
         });
@@ -1666,9 +1771,14 @@
            around it already wears the skin: here it is the attribute and the
            palette only, as Christmas does, with no goo or drips under the game. */
         if (EMBED) return;
+        /* Every host that changed size in the 120ms is redrawn (26 Oct 2026):
+           each callback used to replace the last one's list, so a row that
+           resized a moment before a window did kept goo drawn for its old
+           width. */
         ro = new ResizeObserver((entries) => {
-            clearTimeout(ro.t);
-            ro.t = setTimeout(() => entries.forEach((e) => redraw(e.target)), 120);
+            entries.forEach((e) => resized.add(e.target));
+            clearTimeout(roTimer);
+            roTimer = setTimeout(() => { const els = [...resized]; resized.clear(); els.forEach((el) => redraw(el)); }, 120);
         });
         let pending = 0;
         mo = new MutationObserver((records) => {
@@ -1679,12 +1789,33 @@
             const ours = (n) => n.classList && n.classList.contains("hw-piece");
             if (pending || records.every((r) => r.type === "childList"
                 ? [...r.addedNodes, ...r.removedNodes].every(ours)
-                : ours(r.target))) return;
+                : ours(r.target) || movedOnly(r))) return;
             pending = requestAnimationFrame(() => { pending = 0; decorateAll(); });
         });
-        mo.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ["class", "style", "hidden"] });
+        mo.observe(document.body, { childList: true, subtree: true, attributes: true, attributeOldValue: true, attributeFilter: ["class", "style", "hidden"] });
+        addEventListener("resize", onResize);
+        reduceMq.addEventListener("change", onMotion);
         decorateAll();
         timers.push(setTimeout(decorateAll, 1500));
+    }
+
+    /* A style change that only MOVES an element is not the page changing
+       (26 Oct 2026). Dragging the console, the Fallin' Furni window or Pura
+       Panic's sets left and top on every pointermove, and each one re-ran the
+       whole decoration pass, measuring rows mid-drag: a forced layout a frame.
+       What moved carries its goo with it; a change of size is the
+       ResizeObserver's. Anything else in the style (display, visibility, a
+       width) still counts. */
+    const MOVE_ONLY = /(?:^|;)\s*(?:left|top|right|bottom|transform|translate|z-index|cursor|will-change)\s*:[^;]*/gi;
+    const unmoved = (s) => String(s || "").replace(MOVE_ONLY, "").replace(/[\s;]+/g, "");
+    const movedOnly = (r) => r.type === "attributes" && r.attributeName === "style" && unmoved(r.oldValue) === unmoved(r.target.getAttribute("style"));
+
+    /* A browser made wider or narrower (26 Oct 2026): a host whose width
+       held still but whose key moved with the page (the archive's moon) is
+       asked again; redraw() leaves the rest alone. */
+    function onResize() {
+        clearTimeout(rzTimer);
+        rzTimer = setTimeout(() => hosts.forEach((rec, el) => { if (rec.keyOf) redraw(el); }), 150);
     }
 
     function stop() {
@@ -1692,6 +1823,9 @@
         on = false;
         if (mo) mo.disconnect(); if (ro) ro.disconnect();
         mo = ro = null;
+        removeEventListener("resize", onResize); clearTimeout(rzTimer);
+        reduceMq.removeEventListener("change", onMotion);
+        clearTimeout(roTimer); resized.clear();
         cancelAnimationFrame(rafId); rafId = 0;
         cancelAnimationFrame(dripRaf); dripRaf = 0; dripping.clear();
         pend.forEach(clearTimeout); pend.clear();

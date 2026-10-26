@@ -95,7 +95,9 @@ const DAY_COUNTER_KEEP_S = 2 * 24 * 60 * 60;
    rows nobody would ever read. Read from the call sites — js/track.js's own
    "page", the one Track.event("search") in js/home.js, and every data-track
    / dataset.track in js/home.js. A new data-track needs adding here, or its
-   clicks are dropped quietly. */
+   clicks are dropped quietly — and since 26 Oct 2026 the build says so:
+   tools/check-daily-parity.js (section 7) fails on any name a page sends
+   that is not on this list. */
 const EVENT_NAMES = new Set([
     "page", "search", "tab", "whats-new", "timeline",
     "maze-open", "event-open", "photo-open",
@@ -122,7 +124,17 @@ const EVENT_NAMES = new Set([
        started (the first bat hit), ended (labelled with a score band, never
        the score itself), and its share card copied or saved. Never one per hit — a
        game is dozens of them, and the batch cap would drop the lot. */
-    "bat-start", "bat-end", "bat-share"
+    "bat-start", "bat-end", "bat-share",
+    /* The Christmas skin's advent calendar (26 Oct 2026, js/skin-xmas-advent.js):
+       the Advent button pressed (labelled "signed-in", or "signed-out" for a
+       visitor who was asked to sign in instead), and a door opened, labelled
+       with its number. Never who opened it: the doors themselves are kept
+       against the account by advent.js. */
+    "advent-open", "advent-door",
+    /* The two game windows opened (26 Oct 2026, the bug scan): Fallin'
+       Furni's (js/home.js, labelled with how — "menu", "link", "route") and
+       Scout's Trail's (js/rat-race.js). */
+    "ff-open", "scout-open"
 ]);
 
 function limiterKey(event) {
@@ -265,6 +277,14 @@ exports.handler = async (event) => {
         const name = clean(e && e.name, MAX_NAME);
         // Only names the site sends — see EVENT_NAMES.
         if (!name || !EVENT_NAMES.has(name)) return null;
+        /* The Warren is never a site visit (26 Oct 2026, the bug scan). Its
+           page (data-page "admin", warren.html) loads no js/track.js, and
+           js/track.js stops at once on that page anyway, so none is sent
+           today; this keeps it so here, at the one door every figure on the
+           Activity page comes through, whatever a page or an old cached
+           script might send. (The Activity page's Admins tab reads the
+           audit log, not these rows.) */
+        if (name === "page" && clean(e.label, MAX_LABEL) === "admin") return null;
         /* The client's clock is not trusted to set the retention window — a
            wrong one could park a row outside the TTL forever — so the time is
            taken here, and the client's own stamp is used only to keep a

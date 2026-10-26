@@ -337,7 +337,10 @@ exports.handler = async (event) => {
     try {
         db = await getDb();
     } catch (e) {
-        return json(500, { error: "Database connection failed" });
+        /* 503, as every other endpoint answers an unreachable database: an
+           outage to retry, not a fault (26 Oct 2026; it was a 500). */
+        console.error("player-data: database connection failed", e);
+        return json(503, { error: "Database connection failed" });
     }
     const col = db.collection(COLLECTION);
     /* Only a write can make a second document, so only a write is refused

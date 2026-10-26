@@ -60,7 +60,9 @@
        found (by zone, passage and place), kept in this browser. */
     const PROGRESS_KEY = "mazerats_ratrace_progress";
     let progress = { reached: 0, rubies: [] };
-    try { const v = JSON.parse(localStorage.getItem(PROGRESS_KEY) || "null"); if (v && typeof v === "object") progress = { reached: Number(v.reached) || 0, rubies: Array.isArray(v.rubies) ? v.rubies : [] }; } catch (e) { /* none yet */ }
+    // (26 Oct 2026, the bug scan: kept within the zones there are, as a whole number; a saved "reached" past the
+    // last of them, from an edited or older save, had the title's zone picker reach for a zone that is not there and throw every frame)
+    try { const v = JSON.parse(localStorage.getItem(PROGRESS_KEY) || "null"); if (v && typeof v === "object") progress = { reached: Math.max(0, Math.min(LEVELS.zones.length - 1, Math.floor(Number(v.reached)) || 0)), rubies: Array.isArray(v.rubies) ? v.rubies : [] }; } catch (e) { /* none yet */ }
     const saveProgress = () => { try { localStorage.setItem(PROGRESS_KEY, JSON.stringify(progress)); } catch (e) { /* private mode */ } };
 
     /* ================================================================ ART
@@ -104,9 +106,9 @@
        in an image editor and save it, rather than ask). Each one listed here is
        drawn from its PNG once it has loaded, in place of the one drawn from text
        in js/rat-race-art.js, which stays as the stand-in until then (and if the
-       file is missing). Asked for afresh on every page load, so a resaved
-       picture shows at the next reload: images on this site may otherwise be
-       cached for a day. */
+       file is missing). Asked for afresh on every page load on the dev server
+       (26 Oct 2026: there only), so a resaved picture shows at the next
+       reload: images on this site may otherwise be cached for a day. */
     const SPRITE_FILES = {
         key: "/assets/img/ariadne/key.png",          // the key you pick up
         keyIcon: "/assets/img/ariadne/key-icon.png", // the small one in the top-right corner
@@ -121,7 +123,9 @@
             c.getContext("2d").drawImage(img, 0, 0);
             sprites[name] = { r: [c], l: [mirror(c)] };
         };
-        img.src = src + "?t=" + Date.now();
+        // (26 Oct 2026, the bug scan: asked afresh on the dev server and in the editor only; on the site a picture
+        // changes only with a deploy, and a fresh address on every visit fetched all four again each time)
+        img.src = src + (location.hostname === "localhost" || location.hostname === "127.0.0.1" ? "?t=" + Date.now() : "");
     }
     let ZK = "wood";   // the zone whose art is on (see THEMES)
     // (a sprite this zone has not drawn and the Wood has none of: any zone's, so the Heart can borrow every creature)
@@ -207,7 +211,8 @@
         cv.addEventListener("pointermove", e => { const i = onPauseBtn(e); if (i >= 0 && i !== state.pauseSel) { state.pauseSel = i; state.pauseSure = false; } cv.style.cursor = i >= 0 ? "pointer" : ""; });
         cv.addEventListener("pointerdown", e => { const i = onPauseBtn(e); if (i < 0) return; e.preventDefault(); if (i !== state.pauseSel) { state.pauseSel = i; state.pauseSure = false; } pausePick(); });
         screenEl.addEventListener("wheel", e => { if (state.mode !== "select") return; e.preventDefault(); selectKey(e.deltaY > 0 ? "down" : "up"); }, { passive: false });
-        root.querySelector("#rr-light").addEventListener("click", () => setDark(!dark));
+        // (26 Oct 2026: let go after a click, as the bar's buttons are, so Space jumps rather than pressing it again; kept from the keyboard)
+        root.querySelector("#rr-light").addEventListener("click", e => { setDark(!dark); if (e.detail) e.currentTarget.blur(); });
         /* Pause, music and fullscreen sit in the window's title bar (13 Oct
            2026, the owner's: over the picture they covered the key and the
            flag in the corner); in fullscreen, where there is no title bar,
@@ -218,8 +223,9 @@
             if (b.dataset.hud === "music") toggleMusic();
             else if (b.dataset.hud === "pause") { if (state.mode === "paused") resume(); else pause(); }
             else toggleFull();
-            b.blur();
+            if (e.detail) b.blur();   // (26 Oct 2026: a click lets go of it; pressed from the keyboard, it keeps the focus)
         }));
+        root.querySelectorAll('[data-hud="full"]').forEach(b => { b.hidden = !canFull(); });   // (26 Oct 2026: see canFull)
         frame.classList.toggle("is-touch", touchy());
         padEl.hidden = !touchy();
         layoutPad();
@@ -232,14 +238,18 @@
         setDark(dark, true);
         soundIcon();
         wireDrag();
+        // (26 Oct 2026) a press or the focus anywhere in the window or its pad brings it forward (see ONE GAME IN FRONT)
+        root.addEventListener("pointerdown", toFront, true);
+        root.addEventListener("focusin", toFront, true);
         window.addEventListener("keydown", onKey, true);
         window.addEventListener("keyup", onKeyUp, true);
         window.addEventListener("resize", () => { layoutPad(); clamp(); fit(); });
         window.addEventListener("orientationchange", () => { layoutPad(); clamp(); fit(); setTimeout(() => { layoutPad(); clamp(); fit(); }, 300); });
         document.addEventListener("fullscreenchange", fit);
-        window.addEventListener("blur", () => { held.clear(); if (state.mode === "play") pause(); });
+        // (26 Oct 2026: during the passage's title card too, which ran on to play behind another tab or window)
+        window.addEventListener("blur", () => { held.clear(); if (state.mode === "play" || state.mode === "card") pause(); });
         document.addEventListener("visibilitychange", () => {
-            if (document.hidden) { held.clear(); if (state.mode === "play") pause(); sfx("pause"); }
+            if (document.hidden) { held.clear(); if (state.mode === "play" || state.mode === "card") pause(); sfx("pause"); }
             else if (isOpen()) sfx("resume");
         });
         if (window.EscapeLayers) window.EscapeLayers.register({ elements: () => (isOpen() ? [root] : []), close: () => close() });
@@ -268,6 +278,8 @@
         const home = side ? screenEl : root;
         if (padEl.parentNode !== home) home.appendChild(padEl);
     }
+    // (26 Oct 2026) a phone's browser that cannot fill the screen with an element (an iPhone's) shows no button for it, and F does nothing
+    const canFull = () => Boolean(screenEl && typeof screenEl.requestFullscreen === "function" && document.fullscreenEnabled !== false);
     function toggleFull() {
         if (!screenEl) return;   // (in the level editor there is no window to fill the screen with)
         try {
@@ -373,12 +385,55 @@
     }
     const mayPlayNow = () => gate.live || gate.admin;
 
+    /* ONE GAME IN FRONT (26 Oct 2026; Pura Panic and the Fallin' Furni window keep the same contract): of the
+       game windows open over the page, only the front one plays. Opened, or brought forward (a press or the
+       focus inside it), Scout's Trail says so on <html data-game-front> and in a "mazerats:game-front" event;
+       another game's coming forward pauses it as P does, hushes its music altogether (not the muffled tune of
+       the pause menu) and leaves its keys alone. It does not play on by itself when brought forward again: the
+       player plays on. */
+    const GAME = "scout";
+    let hushed = false;   // (hushed by another game's coming forward, till Scout's is in front again)
+    const behind = () => { const f = document.documentElement.dataset.gameFront; return Boolean(f && f !== GAME); };
+    function toFront() {
+        if (!isOpen()) return;
+        if (document.documentElement.dataset.gameFront !== GAME) {
+            document.documentElement.dataset.gameFront = GAME;
+            document.dispatchEvent(new CustomEvent("mazerats:game-front", { detail: { game: GAME } }));
+        }
+        if (!hushed) return;
+        hushed = false;
+        sfx("hush", false);
+        // as reopening the window: the pause menu's tune muffled, the screens between passages as they were
+        if (state.mode === "paused") sfx("setMuffled", true);
+        sfx("resume");
+    }
+    function onGameFront(e) {
+        const who = e && e.detail && e.detail.game;
+        if (!isOpen() || !who || who === GAME) return;
+        held.clear();
+        pause(true);
+        hushed = true;
+        sfx("hush", true);
+    }
+    function leaveFront() {
+        if (document.documentElement.dataset.gameFront !== GAME) return;
+        delete document.documentElement.dataset.gameFront;
+        document.dispatchEvent(new CustomEvent("mazerats:game-front", { detail: { game: null } }));
+    }
+
     let gateChecked = null, gateDone = false;
     function open() {
         const first = !built;
         build();
         if (!isOpen()) opener = document.activeElement;
+        const wasOpen = isOpen();
         root.classList.add("open");
+        if (!wasOpen) {
+            document.addEventListener("mazerats:game-front", onGameFront);
+            // (26 Oct 2026) the Warren's Activity counts the window's openings
+            if (window.Track && typeof Track.event === "function") Track.event("scout-open");
+        }
+        toFront();
         fit();
         // (13 Oct 2026) in the middle of the page each time it opens
         moved = false;
@@ -390,6 +445,7 @@
         if (window.PageMeta) window.PageMeta.set("scout", "Scout's Trail — Maze Rats", "https://mazerats.net/scout");
         if (!gateChecked) gateChecked = checkGate().catch(() => {}).then(() => { gateDone = true; });
         if (state.mode === "paused") { sfx("setMuffled", true); sfx("resume"); }
+        else if (state.mode === "dying") sfx("resume");   // (26 Oct 2026: see close)
         else if (state.mode === "title" || state.mode === "over" || state.mode === "zoneclear" || state.mode === "ending") toTitle();
         startLoop();
     }
@@ -397,9 +453,16 @@
         if (!isOpen()) return;
         if (state.mode === "play" || state.mode === "card") pause();
         held.clear();
-        if (state.mode === "paused") sfx("pause"); else sfx("stop");
+        /* (26 Oct 2026, the bug scan) stopped, the audio clock is let go as well (rest, js/rat-race-music.js):
+           stop() only ends the booking, so a window closed on the title, a game over or the end left the context
+           running, and the page's audio device with it, for the rest of the visit. The next start() wakes it.
+           Closed while a life is being lost, the tune is only paused, as the pause menu's is: stopped there, the
+           passage played on in silence after reopening, since a respawn starts nothing (open resumes it). */
+        if (state.mode === "paused" || state.mode === "dying") sfx("pause"); else sfx("rest");
         if (document.fullscreenElement) { try { document.exitFullscreen(); } catch (e) { /* fine */ } }
         root.classList.remove("open");
+        document.removeEventListener("mazerats:game-front", onGameFront);
+        leaveFront();   // (26 Oct 2026: see ONE GAME IN FRONT)
         if (dim) dim.hidden = true;
         stopLoop();
         if (opener && typeof opener.focus === "function" && document.contains(opener)) opener.focus({ preventScroll: true });
@@ -430,13 +493,14 @@
         const t = e.target;
         if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.tagName === "SELECT" || t.isContentEditable)) return false;
         if (document.querySelector(".modal-overlay.open:not(.closing), .lightbox-overlay.open")) return false;
+        if (behind()) return false;   // (26 Oct 2026: another game's window in front has the keys, see ONE GAME IN FRONT)
         return true;
     }
     function press(k) {
         pressedAt[k] = frameNo;
         if (state.mode === "select") { selectKey(k); return; }
         if (state.mode === "paused" && (k === "up" || k === "down")) { pauseMove(k === "up" ? -1 : 1); return; }
-        if (state.mode === "title" && (k === "left" || k === "right") && progress.reached > 0 && mayPlayNow()) { state.pickZone = Math.max(0, Math.min(progress.reached, (state.pickZone || 0) + (k === "right" ? 1 : -1))); sfx("pauseBlip"); return; }
+        if (state.mode === "title" && (k === "left" || k === "right") && pickTop() > 0 && mayPlayNow()) { state.pickZone = Math.max(0, Math.min(pickTop(), (state.pickZone || 0) + (k === "right" ? 1 : -1))); sfx("pauseBlip"); return; }
         if (k === "jump" || k === "start") {
             if (state.mode === "title" && mayPlayNow()) newRun();
             else if (state.mode === "over") toTitle();
@@ -455,7 +519,13 @@
     let typed = "";
     const mayCheat = () => gate.admin;
     function onKey(e) {
-        if (!ours(e)) return;
+        // (26 Oct 2026, the bug scan: as Pura Panic's) a browser's own shortcuts are left to it: Ctrl+F found
+        // nothing but fullscreen, Ctrl+P paused rather than printed, Ctrl+S, Ctrl+D and Alt+D walked Scout about
+        if (!ours(e) || e.ctrlKey || e.metaKey || e.altKey) return;
+        /* (26 Oct 2026) Enter and Space on one of the window's own buttons (reached with Tab: close, pause, music,
+           fullscreen, the light) press that button, as anywhere else; they were taken for start and jump. Not the
+           pad's, which are pressed by touch and only ever focused by it. */
+        if ((e.key === "Enter" || e.key === " ") && e.target && e.target.closest && e.target.closest("button, a") && !e.target.closest("[data-k]")) return;
         if (state.mode === "title" && /^[a-z]$/i.test(e.key)) {
             typed = (typed + e.key.toUpperCase()).slice(-CHEAT.length);
             if (typed === CHEAT && mayCheat()) { typed = ""; e.preventDefault(); openSelect(); return; }
@@ -471,7 +541,7 @@
         const k = KEYS[e.key];
         if (e.key === "p" || e.key === "P") { e.preventDefault(); if (state.mode === "play" || state.mode === "card") pause(); else if (state.mode === "paused") resume(); return; }
         if (e.key === "m" || e.key === "M") { e.preventDefault(); toggleMusic(); return; }
-        if (e.key === "f" || e.key === "F") { e.preventDefault(); toggleFull(); return; }
+        if ((e.key === "f" || e.key === "F") && canFull()) { e.preventDefault(); toggleFull(); return; }
         if (!k) return;
         e.preventDefault(); e.stopImmediatePropagation();
         if (!held.has(k) && !e.repeat) press(k);
@@ -629,6 +699,7 @@
     }
     function buildAct(spec, zone, zi, ai, opts) {
         TH = themeOf(zone); ZK = TH.key;
+        gearCache.clear();   // (26 Oct 2026: see A GEAR'S PICTURE)
         const S = spec.settings || {};
         const h = spec.tiles.length, w = Math.max(...spec.tiles.map(r => r.length));
         const tiles = spec.tiles.map(r => r.padEnd(w, "#").split("").map(c => (TERRAIN.has(c) ? c : ".")));
@@ -3109,12 +3180,21 @@
     /* ================================================================ THE GAME */
     const state = {
         mode: "title",        // title | card | play | dying | clear | paused | over | zoneclear
-        t: 0, zi: 0, ai: 0, lives: LIVES, score: 0, coins: 0, time: 0, runTime: 0,
+        t: 0, zi: 0, ai: 0, lives: LIVES, score: 0, coins: 0, time: 0, zoneTime: 0,
         pausedFrom: null, cam: { x: 0, y: 0 }, shake: 0, pops: [], parts: [], tally: null
     };
     let hero = null;
     let best = {};
     try { best = JSON.parse(localStorage.getItem(BEST_KEY) || "{}") || {}; } catch (e) { best = {}; }
+    /* (26 Oct 2026) A zone's time is that zone's alone now (zoneTime, begun again at its first passage): it was the
+       run's so far, so the Stone Quarry's took in the Mine Labyrinth's, and a run begun there from the title beat
+       any whole run's. The zone bests kept before then are let go, once, all but the Mine Labyrinth's (a run always
+       began its time there, so that one was right); they were admins' test runs. */
+    if (!best.zoneOnly) {
+        for (const k of Object.keys(best)) if (/^z[1-9]\d*$/.test(k)) delete best[k];
+        best.zoneOnly = 1;
+        try { localStorage.setItem(BEST_KEY, JSON.stringify(best)); } catch (e) { /* private mode */ }
+    }
 
     function newHero(x, y) {
         return { x, y, w: BODY_W, h: STAND_H, vx: 0, vy: 0, face: 1, ground: false, coyote: 0, wall: 0, wallLock: 0, wallGrace: 0, wallSide: 0,
@@ -3130,6 +3210,10 @@
     // The zones a run goes through in order, and the secret one at the end (13 Oct 2026).
     const mainZones = () => LEVELS.zones.filter(z => !z.secret && !z.lab).length;   // (14 Oct 2026) the new zones are "lab" ones: in the level select, not in a run yet
     const secretZone = () => LEVELS.zones.findIndex(z => z.secret);
+    /* The furthest zone the title's picker offers (26 Oct 2026, the owner's: the Heart of the Labyrinth is not
+       to be picked there once reached): the last of the run's zones at most. A save that reached the Heart
+       (reached 5) keeps it, and picks from every zone before it. */
+    const pickTop = () => Math.max(0, Math.min(progress.reached, mainZones() - 1));
     // Every ruby in the main zones, as ids; how many of them have been found.
     let rubyIds = null;
     function allRubies() {
@@ -3161,7 +3245,7 @@
         state.cam.x = state.titleRoute[0].x; state.cam.y = state.titleRoute[0].y;
     }
     function newRun() {
-        state.zi = Math.min(state.pickZone || 0, progress.reached); state.ai = 0; state.lives = LIVES; state.score = 0; state.runTime = 0;
+        state.zi = Math.min(state.pickZone || 0, pickTop()); state.ai = 0; state.lives = LIVES; state.score = 0; state.zoneTime = 0;
         state.practice = false; state.endless = false;
         startAct();
     }
@@ -3180,7 +3264,7 @@
         else if ((k === "left" || k === "right" || k === "jump" || k === "start") && S.row === acts.length + 1) S.endless = !S.endless;
         else if ((k === "jump" || k === "start") && S.row < acts.length) {
             const pick = acts[S.row];
-            state.zi = pick.zi; state.ai = pick.ai; state.lives = LIVES; state.score = 0; state.runTime = 0;
+            state.zi = pick.zi; state.ai = pick.ai; state.lives = LIVES; state.score = 0; state.zoneTime = 0;
             state.practice = true; state.endless = S.endless;
             startAct();
             if (S.atFlag && act.flag) {
@@ -3251,6 +3335,7 @@
         hero = newHero(act.start.x, act.start.y);
         state.actScore = state.score;
         state.coins = 0; state.time = 0; state.pops = []; state.parts = [];
+        if (state.ai === 0) state.zoneTime = 0;   // (26 Oct 2026: a zone's time begins at its first passage, see best)
         state.mode = "card"; state.t = 0;
         // the touch pad's two wheel buttons, where there are wheels to turn
         const turnPad = padEl && padEl.querySelector(".rr-turn");
@@ -3266,7 +3351,7 @@
         if (state.ai + 1 < zone.acts.length) { state.ai++; startAct(); return; }
         state.mode = "zoneclear"; state.t = 0;
         const key = "z" + state.zi;
-        if (!state.practice && (!best[key] || state.runTime < best[key])) { best[key] = state.runTime; saveBest(); state.zoneBest = true; } else state.zoneBest = false;
+        if (!state.practice && (!best[key] || state.zoneTime < best[key])) { best[key] = state.zoneTime; saveBest(); state.zoneBest = true; } else state.zoneBest = false;
     }
     /* AFTER A ZONE: on into the next, lives and score carried; after the
        last, the Heart of the Labyrinth if every ruby has been found, or else
@@ -3302,12 +3387,12 @@
         sfx("setMuffled", false);
         toTitle();
     }
-    function pause() {
+    function pause(quiet) {
         if (state.mode !== "play" && state.mode !== "card") return;
         state.pausedFrom = state.mode; state.mode = "paused";
         state.pauseSel = 0; state.pauseSure = false;
         held.clear();
-        sfx("pauseBlip");
+        if (!quiet) sfx("pauseBlip");   // (26 Oct 2026: quiet when another game comes forward, see ONE GAME IN FRONT)
         sfx("setMuffled", true);
     }
     function resume() {
@@ -5110,7 +5195,11 @@
     /* A GEAR'S PICTURE (14 Oct 2026, the owner's: "the gears don't look properly circular"): worked
        out pixel by pixel from a true circle, teeth spaced evenly round it, lit from the top left,
        spokes from a hub; made once for each size and each of 48 turns and kept. cols: k outline,
-       b body, l lit, d shade, h hub. */
+       b body, l lit, d shade, h hub.
+       (26 Oct 2026, the bug scan) Kept for the passage they are drawn in, not the whole visit: the
+       Steamworks Factory's gears behind it and its two cogs (240 turns each) came to some 1,300 pictures,
+       about 50MB, in ten minutes there, all still held after leaving it. buildAct lets them go, and a
+       cap well over that one passage's need stops any one passage holding more. */
     const gearCache = new Map();
     const hexRGB = c => [1, 3, 5].map(i => parseInt(c.slice(i, i + 2), 16));
     const gearHash = (x, y) => { let h = (x * 374761393 + y * 668265263) | 0; h = (h ^ (h >>> 13)) * 1274126177; return ((h ^ (h >>> 16)) >>> 0) / 4294967296; };
@@ -5156,7 +5245,7 @@
             const p = P[k], o = (y * S + X) * 4; img.data[o] = p[0]; img.data[o + 1] = p[1]; img.data[o + 2] = p[2]; img.data[o + 3] = 255;
         }
         x.putImageData(img, 0, 0);
-        gearCache.set(key, c);
+        gearCache.set(key, c); if (gearCache.size > 2000) gearCache.delete(gearCache.keys().next().value);
         return c;
     }
     // THE GEAR WHEELS: the cog, turning, and an iron arm out to each ledge
@@ -6372,7 +6461,7 @@
         const allCoins = act.coins === act.coinsTotal ? 1000 : 0;
         state.tally = { time: state.time, timeBonus, coinBonus, allCoins, gems: act.gems, newBest: false, best: null };
         state.score += timeBonus + coinBonus + allCoins;
-        state.runTime += state.time;
+        state.zoneTime += state.time;
         const key = "a" + state.zi + "-" + state.ai;
         state.tally.best = best[key] || null;
         if (!state.practice && (!best[key] || state.time < best[key])) { best[key] = state.time; saveBest(); state.tally.newBest = true; }
@@ -6466,6 +6555,8 @@
             p.vy += 0.05; return p.t < 26;
         });
         for (const d of act.deco) if (d.kind === "t" && frameNo % 7 === 0) d.t = (d.t + 1) % 4;
+        // (26 Oct 2026) behind another game, a life lost a moment before comes back paused (see ONE GAME IN FRONT)
+        if (hushed && (state.mode === "play" || state.mode === "card")) { pause(true); return; }
         if (state.mode === "card") { if (state.t > 150) state.mode = "play"; stepCamera(); return; }
         if (state.mode === "play") {
             state.time++;
@@ -8401,11 +8492,13 @@
             FONT.draw(g, touchy() ? "PRESS JUMP TO START" : "PRESS SPACE TO START", VW / 2, 132, { align: "center", color: frameNo % 70 < 46 ? "#ffffff" : "#777777" });
             /* ZONES OPEN (13 Oct 2026, the owner's: "reaching a zone unlocks it"):
                left and right choose which to start in. */
-            if (progress.reached > 0) {
-                const z = Math.min(state.pickZone || 0, progress.reached), name = LEVELS.zones[z].name;
-                FONT.draw(g, (z > 0 ? "< " : "  ") + name + (z < progress.reached ? " >" : "  "), VW / 2, 146, { align: "center", ramp: GOLD });
+            const top = pickTop();
+            if (top > 0) {
+                const z = Math.min(state.pickZone || 0, top), name = LEVELS.zones[z].name;
+                FONT.draw(g, (z > 0 ? "< " : "  ") + name + (z < top ? " >" : "  "), VW / 2, 146, { align: "center", ramp: GOLD });
             }
-            if (!gate.live) FONT.draw(g, "MAINTENANCE: ADMINS ONLY", VW / 2, 145, { align: "center", color: "#ff9a6a" });
+            // (26 Oct 2026: a line under the zone's name where there is one; drawn over it, neither could be read)
+            if (!gate.live) FONT.draw(g, "MAINTENANCE: ADMINS ONLY", VW / 2, top > 0 ? 158 : 146, { align: "center", color: "#ff9a6a" });
         }
         drawControls();
         const zb = best.z0;
@@ -8653,7 +8746,8 @@
             FONT.draw(g, r[0], 84, 92 + i * 14, { ramp: GOLD });
             FONT.draw(g, r[1], 236, 92 + i * 14, { align: "right", color: "#ffffff" });
         });
-        if (t > 120) FONT.draw(g, T.newBest ? "NEW BEST TIME!" : "BEST " + clockFine(T.best), VW / 2, 98 + rows.length * 14 + 6, { align: "center", color: T.newBest ? "#9cf09c" : "#d8c8a8" });
+        // (26 Oct 2026: a practice run on a passage with no best yet says nothing here; it said "BEST 0:00.0")
+        if (t > 120 && (T.newBest || T.best)) FONT.draw(g, T.newBest ? "NEW BEST TIME!" : "BEST " + clockFine(T.best), VW / 2, 98 + rows.length * 14 + 6, { align: "center", color: T.newBest ? "#9cf09c" : "#d8c8a8" });
         if (t > 150) FONT.draw(g, touchy() ? "PRESS JUMP" : "PRESS SPACE", VW / 2, VH - 34, { align: "center", color: frameNo % 60 < 40 ? "#ffffff" : "#777777" });
     }
     function drawZoneClear() {
@@ -8661,7 +8755,7 @@
         FONT.draw(g, "ZONE CLEAR!", VW / 2, 34, { align: "center", scale: 3, ramp: ["#fff3b8", "#f2cc4e", "#d39a1e", "#9a6410"], outline: "#2a1804" });
         FONT.draw(g, act.zone.name, VW / 2, 64, { align: "center", color: "#ffffff" });
         FONT.draw(g, "ZONE TIME", 84, 92, { ramp: GOLD });
-        FONT.draw(g, clockFine(state.runTime), 236, 92, { align: "right", color: "#ffffff" });
+        FONT.draw(g, clockFine(state.zoneTime), 236, 92, { align: "right", color: "#ffffff" });
         FONT.draw(g, "SCORE", 84, 106, { ramp: GOLD });
         FONT.draw(g, String(state.score), 236, 106, { align: "right", color: "#ffffff" });
         if (state.zoneBest) FONT.draw(g, "NEW BEST ZONE TIME!", VW / 2, 126, { align: "center", color: "#9cf09c" });
@@ -8788,7 +8882,7 @@
                 if (!window.__rrKeys) { window.addEventListener("keydown", onKey, true); window.addEventListener("keyup", onKeyUp, true); window.__rrKeys = true; }
                 gate = { live: true, admin: true }; gateDone = true;
                 act = buildAct(spec, zone, o.zi || 0, o.ai || 0);
-                state.zi = o.zi || 0; state.ai = o.ai || 0; state.lives = LIVES; state.score = 0; state.runTime = 0; state.practice = true; state.endless = true;
+                state.zi = o.zi || 0; state.ai = o.ai || 0; state.lives = LIVES; state.score = 0; state.zoneTime = 0; state.practice = true; state.endless = true;
                 state.coins = 0; state.time = 0; state.pops = []; state.parts = []; state.actScore = 0;
                 const at = o.at || act.start;
                 debug.dropAt = o.at ? { x: o.at.x, y: o.at.y } : null;
@@ -8829,7 +8923,9 @@
             tick: n => { for (let i = 0; i < (n || 1); i++) update(); return state.mode; },   // (no drawing: the play-tester's)
             freeze: () => stopLoop(), thaw: () => startLoop(),
             goAct: (zi, ai) => { state.zi = zi; state.ai = ai; startAct(); },
-            teleport: (tx, ty) => { hero.x = tx * TS + 3; hero.y = ty * TS + TS - STAND_H; hero.vx = hero.vy = 0; snapCamera(); },
+            // (26 Oct 2026, the bug scan: stood up and let go of whatever he held first; a ladder kept from before
+            // drew him back toward it, through the rock, and a flat swim kept him 13px high in a 22px drop)
+            teleport: (tx, ty) => { hero.climb = null; hero.mantle = null; hero.swim = false; hero.crouch = false; hero.h = STAND_H; hero.x = tx * TS + 3; hero.y = ty * TS + TS - STAND_H; hero.vx = hero.vy = 0; snapCamera(); },
             setGate: g2 => { gate = g2; },
             setFrame: n => { frameNo = n; },
             lava: () => lavaBoxesOf(act)

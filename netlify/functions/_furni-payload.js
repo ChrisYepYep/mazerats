@@ -188,7 +188,11 @@ const GROWN = (apiMap && apiMap.grown) || {};
 function grownPath(p, className) {
     const m = /^([^/]+)\/(small|large)(?:\/r(\d+)\/s(\d+))?(?:\/noshadow)?$/.exec(p || "");
     if (!m) return null;
-    const cls = decodeURIComponent(m[1]);
+    /* A stored address with a stray % in it (26 Oct 2026, the bug scan):
+       decodeURIComponent threw, and a throw here is the whole public /rooms
+       answering 503. Such a classname grows nothing; the picture goes as is. */
+    let cls;
+    try { cls = decodeURIComponent(m[1]); } catch (e) { return null; }
     const g = own(GROWN, cls) || (className && cls === className ? own(GROWN, className) : null);
     if (!g) return null;
     const rotation = m[3] !== undefined ? m[3] : g[1];

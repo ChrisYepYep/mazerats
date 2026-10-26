@@ -355,10 +355,11 @@ function imageSigMatches(game, day, round, tile, image, sig) {
    a deal reply only the rounds the server's record says this player has
    reached (reachedOf, below). publicRound is one round, for those replies.
 
-   WHAT THIS DOES NOT STOP is a player who plays the day through signed
-   out first (every verdict is answered, capped per network — see the POST
-   in daily-scores.js) and then plays it again signed in. That was already
-   the open route to the answers; this only takes away the free one. */
+   WHAT THIS DID NOT STOP was a player who played the day through signed
+   out first (every verdict answered, capped per network) and then again
+   signed in. Signed-out verdicts went with signed-out play (10 Oct 2026),
+   so every verdict is now a recorded move on one account; a second account
+   is still a second account (see the top of daily-scores.js). */
 function needDay(day) {
     if (typeof day !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(day)) {
         throw new Error("publicRounds needs the day, to sign the picture addresses");

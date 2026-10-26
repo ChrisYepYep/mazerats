@@ -221,7 +221,8 @@
         const ax = PAD, ay = y + 8, aw = 33, ah = 56;
         const tx = ax + aw + 9, tw = right - tx;
         let ty = y + 15;
-        const nameLine = fit(String(data.name || "Someone"), tw, true);
+        // "A Maze Rat", as the profile window says for no name (26 Oct 2026).
+        const nameLine = fit(String(data.name || "A Maze Rat"), tw, true);
         const nameY = ty;
         ty += 5;
         const ruleY = ty;

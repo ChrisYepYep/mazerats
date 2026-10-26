@@ -1106,8 +1106,11 @@ document.addEventListener("DOMContentLoaded", () => {
             sorted.sort((a, b) => compareNames(a.name, b.name));
         } else if (sortBy === "owner") {
             // String(): see the note above asText — a record this sort could
-            // not read used to throw here and blank the whole list.
-            sorted.sort((a, b) => String(a.owner || "").localeCompare(String(b.owner || "")));
+            // not read used to throw here and blank the whole list. By the
+            // letters, as the name sort is (26 Oct 2026): a glyph-decorated
+            // owner or host no longer sorts by its glyph. compareNames
+            // String()s what it is given.
+            sorted.sort((a, b) => compareNames(a.owner || "", b.owner || ""));
         } else if (sortBy === "difficulty-asc" || sortBy === "difficulty-desc") {
             const dir = sortBy === "difficulty-asc" ? 1 : -1;
             sorted.sort((a, b) => {
@@ -3273,7 +3276,13 @@ document.addEventListener("DOMContentLoaded", () => {
                     if (!n.link) return;
                     // "//host" (and "/\host", which browsers read the same) is
                     // another site, not one of ours (4 Oct 2026, the bug scans).
-                    if (/^\/(?![\/\\])/.test(n.link)) { if (!openSiteLinkInPlace(n.link)) location.href = n.link; }
+                    // MazeErrors.leaving (26 Oct 2026): what fails as the page goes is not filed as an error.
+                    if (/^\/(?![\/\\])/.test(n.link)) {
+                        if (!openSiteLinkInPlace(n.link)) {
+                            if (window.MazeErrors && typeof MazeErrors.leaving === "function") MazeErrors.leaving(n.link);
+                            location.href = n.link;
+                        }
+                    }
                     else window.open(n.link, "_blank", "noopener");
                 }
                 else if (n && n.isGuide) { if (window.Guides) Guides.open(n.id); }
@@ -4036,6 +4045,12 @@ document.addEventListener("DOMContentLoaded", () => {
         const outgoing = featuredFrameList.cloneNode(true);
         outgoing.removeAttribute("id");
         outgoing.classList.add("featured-frame-list-outgoing");
+        /* A picture of the old picks, not the picks (26 Oct 2026): its rows
+           are copies of focusable role="button" rows with no handlers, so
+           for the half second they slide away Tab could land on one and a
+           screen reader read both sets. */
+        outgoing.inert = true;
+        outgoing.setAttribute("aria-hidden", "true");
         outgoingClip.appendChild(outgoing);
 
         renderFeaturedList(true);
@@ -4761,6 +4776,11 @@ document.addEventListener("DOMContentLoaded", () => {
             if (furniInUse()) return;
             // The same courtesy for the picture and the description.
             if (carouselHeld()) return;
+            /* Nor while the tab is in the background (26 Oct 2026): nobody
+               is looking, and every tick there fetched a 900px picture and
+               ran a slide for no one. The room left on screen is the one
+               waiting when they come back. */
+            if (document.hidden) return;
             showGalleryImage(activeIndex + 1);
         }, 12000);
     }
@@ -4920,7 +4940,9 @@ document.addEventListener("DOMContentLoaded", () => {
             btn.setAttribute("aria-label", `View related image: ${label}`);
             btn.title = label;
             btn.dataset.track = "photo-open";
-            btn.dataset.trackLabel = (entry.name || "").slice(0, 60);
+            // String(): a name saved as a number threw on .slice and took the
+            // whole window down with it (26 Oct 2026; see asText).
+            btn.dataset.trackLabel = String(entry.name || "").slice(0, 60);
             btn.addEventListener("click", () => openPhotoFrame(entry));
 
             if (overflows && i >= PHOTO_ICON_VISIBLE) {
@@ -5851,7 +5873,10 @@ document.addEventListener("DOMContentLoaded", () => {
                     // furni card itself uses.
                     seen.set(key, {
                         key,
-                        name: item.name || key,
+                        // As text (26 Oct 2026): the browser lower-cases it
+                        // to search, and a name that was not a string threw
+                        // there and left the whole view blank.
+                        name: item.name ? String(item.name) : key,
                         icon: item.sprite || item.icon || "",
                         mazes: mazes.length,
                         // Carried only when there IS one, because naming it
@@ -9648,7 +9673,7 @@ document.addEventListener("DOMContentLoaded", () => {
         const g = d.games || {};
         const game = s => (s && s.days ? { streak: s.streak, best: s.best, days: s.days } : null);
         return {
-            name: d.name || "Someone",
+            name: d.name || "A Maze Rat",   // the card's own words for a nameless player (26 Oct 2026)
             motto: habbo && habbo.motto ? habbo.motto : "",
             featured: featured ? featured.name : "",
             since: pfSince(d.since),
@@ -10634,21 +10659,51 @@ document.addEventListener("DOMContentLoaded", () => {
             return window.matchMedia("(pointer: coarse)").matches && Math.min(screen.width, screen.height) < 600;
         } catch (e) { return false; }
     };
-    // Signed in to the Warren on this browser: a hint, not a check.
-    const adminHint = () => { try { return Boolean(localStorage.getItem("mazerats_admin_token")); } catch (e) { return false; } };
-    window.openFallinFurni = function () {
-        if (ffHandheld()) { window.location.href = "/fallinfurni/play"; return; }
+    /* `replace` (26 Oct 2026, the bug scan): arriving at /fallinfurni on a
+       phone, the hop to the game's page REPLACES the entry. Pushed, Back
+       from the game landed on /fallinfurni, which hopped straight forward
+       again, so the phone's Back button could never leave the game. */
+    /* COUNTED (26 Oct 2026, the bug scan): the window opening, as Pura
+       Panic's does, labelled with how it was reached — "menu", "link" (a
+       What's New link) or "route" (arriving at /fallinfurni). Only the
+       Games-menu row's own "menu" event counted it before, so a window
+       opened from a link or the address was never seen. js/track.js loads
+       after this file, so an open on arrival is counted once the page's
+       scripts have all run. */
+    function countOpen(name, how) {
+        const send = () => { if (window.Track && typeof window.Track.event === "function") window.Track.event(name, how); };
+        if (window.Track || document.readyState !== "loading") send();
+        else document.addEventListener("DOMContentLoaded", send, { once: true });
+    }
+    /* A window whose script would not load says so (26 Oct 2026, the bug
+       scan): it only went to the console, and the Games row did nothing. */
+    function tellNotLoaded(title, what) {
+        if (window.Account && typeof Account.notice === "function") {
+            Account.notice({ title, html: `<p class="notice-lines">${what} couldn't be loaded just now. Check your connection and try again.</p>` });
+        }
+    }
+    window.openFallinFurni = function (replace, how) {
+        if (!(window.FFWindow && window.FFWindow.isOpen)) countOpen("ff-open", how || "other");
+        if (ffHandheld()) {
+            if (window.MazeErrors && typeof MazeErrors.leaving === "function") MazeErrors.leaving("/fallinfurni/play");
+            if (replace === true) window.location.replace("/fallinfurni/play");
+            else window.location.href = "/fallinfurni/play";
+            return;
+        }
         if (window.FFWindow) { window.FFWindow.open(); return; }
         if (!ffLoading) {
             ffLoading = loadPuraScript("js/ff-window.js?v=1")
                 .catch(err => { ffLoading = null; throw err; });
         }
         ffLoading.then(() => { if (window.FFWindow) window.FFWindow.open(); })
-            .catch(e => console.warn("Fallin' Furni could not be loaded", e));
+            .catch(e => {
+                console.warn("Fallin' Furni could not be loaded", e);
+                tellNotLoaded("Fallin' Furni", "Fallin' Furni");
+            });
     };
     // /fallinfurni is the homepage with the game open (netlify.toml).
     if (/^\/fallinfurni\/?$/.test(location.pathname)) {
-        window.openFallinFurni();
+        window.openFallinFurni(true, "route");
     }
 
     /* RAT RACE (11 Oct 2026): loaded the first time it is opened, as Pura
@@ -10669,9 +10724,69 @@ document.addEventListener("DOMContentLoaded", () => {
         ratLoading.then(() => { if (window.RatRace) window.RatRace.open(); })
             .catch(e => console.warn("Rat Race could not be loaded", e));
     };
+    /* AN ADMIN, CHECKED (26 Oct 2026, the bug scan). A Warren token merely
+       sitting in this browser is a hint, not an admin: on a shared computer
+       an expired one showed everybody the hidden Scout's Trail. This asks
+       the server once a tab (POST auth "verify", as js/rat-race.js does)
+       and keeps the answer in the same sessionStorage flag js/skin-wear.js
+       keeps for its preview — { tail, at }, the token's last 12 characters
+       — so either one's check serves the other. Good for an admin session's
+       12 hours; a refusal clears it. Nothing is asked without a token. */
+    const ADMIN_VERIFIED_KEY = "mazerats_skin_preview_verified";
+    const ADMIN_SESSION_MS = 12 * 60 * 60 * 1000;
+    let adminCheck = null;
+    function adminToken() { try { return localStorage.getItem("mazerats_admin_token") || ""; } catch (e) { return ""; } }
+    function adminVerifiedNow() {
+        const token = adminToken();
+        if (!token) return false;
+        try {
+            const v = JSON.parse(sessionStorage.getItem(ADMIN_VERIFIED_KEY) || "null");
+            return Boolean(v && v.tail === token.slice(-12) && Date.now() - v.at < ADMIN_SESSION_MS);
+        } catch (e) { return false; }
+    }
+    function adminVerified() {
+        if (adminVerifiedNow()) return Promise.resolve(true);
+        const token = adminToken();
+        if (!token || typeof Api === "undefined" || typeof Api.verifySession !== "function") return Promise.resolve(false);
+        if (!adminCheck) {
+            const tail = token.slice(-12);
+            adminCheck = Api.verifySession(token).then(who => {
+                const ok = Boolean(who && who.username);
+                try {
+                    if (ok) sessionStorage.setItem(ADMIN_VERIFIED_KEY, JSON.stringify({ tail, at: Date.now() }));
+                    else sessionStorage.removeItem(ADMIN_VERIFIED_KEY);
+                } catch (e) { /* private mode: asked again next time */ }
+                return ok;
+            }, () => { adminCheck = null; return false; });   // a blip: not an admin this time, asked again next time
+        }
+        return adminCheck;
+    }
+
+    /* SCOUT'S TRAIL BY ITS ADDRESS, OR A LINK TO IT (26 Oct 2026, the bug
+       scan). /scout (and /ratrace, /ariadne, which netlify.toml sends there)
+       and What's New links used to open the window and fetch ~1.8MB of game
+       for anybody, only for the game to say it was being worked on. Now
+       the settings are read first: live, it opens; otherwise only for an
+       admin the server has vouched for, and anybody else stays on the
+       archive, the address quietly put back to /home. The Games-menu row
+       keeps calling openRatRace itself: it is only offered while the game
+       is live or in maintenance, or hidden to a checked admin. */
+    const SCOUT_PATH = /^\/(scout|ariadne|ratrace)\/?$/;
+    function openRatRaceIfShown() {
+        const settings = (typeof Api !== "undefined" && typeof Api.getSiteSettings === "function")
+            ? Api.getSiteSettings().catch(() => null) : Promise.resolve(null);
+        return settings
+            .then(s => (s && s.ratRaceState === "live") || adminVerified())
+            .then(ok => {
+                if (ok) { window.openRatRace(); return; }
+                if (SCOUT_PATH.test(location.pathname)) {
+                    try { history.replaceState(history.state, "", "/home" + location.search + location.hash); } catch (e) { /* stays */ }
+                }
+            });
+    }
     // (15 Oct 2026: Scout's Trail, at /scout; /ariadne and /ratrace are sent there by netlify.toml)
-    if (/^\/(scout|ariadne|ratrace)\/?$/.test(location.pathname) || (location.hostname === "localhost" && /[?&](scout|ariadne|ratrace)\b/.test(location.search))) {
-        window.openRatRace();
+    if (SCOUT_PATH.test(location.pathname) || (location.hostname === "localhost" && /[?&](scout|ariadne|ratrace)\b/.test(location.search))) {
+        openRatRaceIfShown();
     }
 
     /* A What's New link to a page of this site, opened where it can be
@@ -10700,8 +10815,11 @@ document.addEventListener("DOMContentLoaded", () => {
         if (path === "/guess" && typeof window.openGuessGame === "function") { window.openGuessGame(); return true; }
         if (path === "/odd" && typeof window.openOddOneOut === "function") { window.openOddOneOut(); return true; }
         if (path === "/pura" || path === "/purapanic") { window.openPuraPanic(); return true; }
-        if (path === "/scout" || path === "/ariadne" || path === "/ratrace") { window.openRatRace(); return true; }
-        if ((m = /^\/(maze|event)\/([^/]+)$/.exec(path))) {
+        // Only once the settings say it is live, or for a checked admin (26 Oct 2026; see openRatRaceIfShown).
+        if (path === "/scout" || path === "/ariadne" || path === "/ratrace") { openRatRaceIfShown(); return true; }
+        // Its window too (26 Oct 2026); not the editor, /fallinfurni?edit=1, which is a page.
+        if (path === "/fallinfurni" && !u.search) { window.openFallinFurni(false, "link"); return true; }
+        if ((m =/^\/(maze|event)\/([^/]+)$/.exec(path))) {
             const key = decode(m[2]);
             const record = key === null ? null : findRecord(m[1], key);
             if (record) { openRecord(m[1], record, {}); return true; }
@@ -11055,7 +11173,12 @@ document.addEventListener("DOMContentLoaded", () => {
     // Pura Panic's row says "Maintenance" until the Warren puts it live.
     let puraState = "maintenance";
     // And Rat Race's, the same (11 Oct 2026).
-    let ratState = "maintenance";
+    /* Hidden until a real answer says otherwise (26 Oct 2026, the bug scan):
+       this started at "maintenance", and the settings' fallback object (an
+       unreachable server, the gate's failed request) carries no
+       ratRaceState, so for those visitors the hidden game's row came back
+       into every menu, saying "Maintenance". Shut stays shut. */
+    let ratState = "hidden";
 
     if (typeof Api !== "undefined") {
         Api.getSiteSettings()
@@ -11063,7 +11186,9 @@ document.addEventListener("DOMContentLoaded", () => {
                 const state = s && s.fallinFurniState;
                 if (state === "maintenance" || state === "coming-soon") ffClosedState = state;
                 puraState = s && s.puraPanicState === "live" ? "live" : "maintenance";
-                ratState = s && (s.ratRaceState === "live" || s.ratRaceState === "hidden") ? s.ratRaceState : "maintenance";
+                if (s && !s.fromCache) ratState = (s.ratRaceState === "live" || s.ratRaceState === "hidden") ? s.ratRaceState : "maintenance";
+                // Hidden: a browser holding a Warren token finds out now whether it is still good (see adminVerified).
+                if (ratState === "hidden") adminVerified();
             })
             .catch(() => { /* fail open, as the game's own gate does */ });
     }
@@ -11088,7 +11213,6 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     }
 
-    const hasAdminToken = () => { try { return Boolean(localStorage.getItem("mazerats_admin_token")); } catch (e) { return false; } };
     function sideMenuEntries() {
         const g = menuFigure(() => typeof window.GuessStatus === "function" ? window.GuessStatus() : null, null);
         // The last fortnight's worth, not the log's length — see
@@ -11224,10 +11348,14 @@ document.addEventListener("DOMContentLoaded", () => {
                    the homepage even though i'm signed in as an admin"). The
                    game's own page inside the window still makes the real
                    check; this only decides between the window and the rain. */
-                run: () => {
-                    if (ffClosedState === "coming-soon" && !adminHint() && window.FurniRain) window.FurniRain.start();
-                    else window.openFallinFurni();
-                }
+                /* AND FOR EVERYONE NOW (26 Oct 2026, the owner's): while it is
+                   Coming Soon the window opens on the game's title screen,
+                   its music playing, the name, the tagline and COMING SOON
+                   under them — the rain is retired from the row. The page in
+                   the window takes the way in away from a visitor itself
+                   (body[data-ff-closed], fallinfurni.html), so an admin still
+                   gets Play and nobody else does. */
+                run: () => window.openFallinFurni(false, "menu")
             },
             /* Pura Panic (6 Oct 2026): a window, like the daily games, but
                not a daily — play as often as you like. Always in the menu;
@@ -11291,8 +11419,10 @@ document.addEventListener("DOMContentLoaded", () => {
                 run: () => { if (window.Glyphs) Glyphs.open(); }
             }
         ].filter(e => !(onPhone && e.name === "Alt Codes"))
-            // Rat Race while the Warren has it Hidden: only an admin's menu carries it (the game itself checks the admin properly).
-            .filter(e => !(e.name === "Scout's Trail" && ratState === "hidden" && !hasAdminToken()));
+            /* Rat Race while the Warren has it Hidden: only an admin's menu carries it — one the
+               server has vouched for this session (26 Oct 2026, the bug scan; see adminVerified),
+               not just a token left in the browser, which on a shared computer showed the row to all. */
+            .filter(e => !(e.name === "Scout's Trail" && ratState === "hidden" && !adminVerifiedNow()));
         /* The sheet is a reference table of several hundred characters
            beside the key combinations that type them, and a key combination
            is a thing a phone does not have. Offering it there is a tab that
@@ -12585,6 +12715,7 @@ document.addEventListener("DOMContentLoaded", () => {
             retry.addEventListener("click", () => {
                 retry.disabled = true;
                 retry.textContent = "Reconnecting…";
+                if (window.MazeErrors && typeof MazeErrors.leaving === "function") MazeErrors.leaving();
                 location.reload();
             });
         }

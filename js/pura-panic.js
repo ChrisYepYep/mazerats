@@ -274,7 +274,13 @@
            for the player it is theirs — the splash can be up before the
            sign-in has finished loading. */
         if (window.Account && typeof Account.onChange === "function") {
-            Account.onChange(() => { hud(); if (isOpen() && mode === "idle" && !panel.hidden && panel.querySelector('[data-go="play"]')) showPanel("title"); });
+            Account.onChange(() => {
+                hud();
+                if (isOpen() && mode === "idle" && !panel.hidden && panel.querySelector('[data-go="play"]')) showPanel("title");
+                // A game started signed in and finished signed out, waiting (SIGNED OUT SINCE).
+                if (isOpen() && mode === "over" && result && result.state === "signed-out-run" && me()) sendAgain(false);
+                else sendUnsent();
+            });
         }
         panel.addEventListener("click", onPanelClick);
         window.addEventListener("keydown", onKey, true);
@@ -282,14 +288,31 @@
         window.addEventListener("resize", clamp);
         // Some phones give the new size only after orientationchange has fired.
         window.addEventListener("orientationchange", () => { clamp(); setTimeout(clamp, 300); });
-        window.addEventListener("blur", () => { if (mode === "play") pause("leaving"); });
+        /* The browser window left. Not when the focus has only gone into a
+           frame on this page (26 Oct 2026): Fallin' Furni's window is one,
+           and a press in it blurred this window and put up "Submit your
+           progress before you leave" — that game's coming forward pauses
+           this one plainly (ONE GAME IN FRONT). Asked a moment later, once
+           the focus has landed. */
+        window.addEventListener("blur", () => {
+            if (mode !== "play") return;
+            setTimeout(() => {
+                if (mode !== "play") return;
+                if (document.hasFocus()) pause(); else pause("leaving");
+            }, 0);
+        });
         document.addEventListener("visibilitychange", () => {
             if (document.hidden && mode === "play") pause("leaving");
             // A phone may never bring this tab back: the game is kept to pick up (CONTINUING).
             if (document.hidden) keepGame();
-            // No sound from a tab nobody is looking at; back when it is.
-            if (music()) { if (document.hidden) music().pause(); else if (isOpen()) music().resume(); }
+            // No sound from a tab nobody is looking at; back when it is (not while another game is in front).
+            if (music()) { if (document.hidden) music().pause(); else if (isOpen() && !hushed) music().resume(); }
         });
+        // Brought forward: a press anywhere on it, or the focus going inside it (ONE GAME IN FRONT).
+        root.addEventListener("pointerdown", toFront, true);
+        // Only focus arriving from outside it: a panel handing its focus on inside the window
+        // (showPanel, when another game's coming forward pauses this one) is not a coming forward.
+        root.addEventListener("focusin", e => { if (!(e.relatedTarget && root.contains(e.relatedTarget))) toFront(); });
         /* Closing the tab or the browser mid-game: nothing is asked (the
            owner's, 7 Oct 2026: no browser "Leave site?" box, ever). The
            board already has the last level reached; the game is kept here to
@@ -351,6 +374,7 @@
     }
 
     let loaded = null;
+    let ready = false;     // the art and the gate are in (loaded has settled well)
     let opener = null;
 
     /* WHAT IS COUNTED (7 Oct 2026, the owner's: "opened but didn't play"
@@ -367,9 +391,15 @@
         const first = !built;
         if (!isOpen()) count("pura-open");
         build();
-        if (!isOpen()) opener = document.activeElement;
+        if (!isOpen()) {
+            opener = document.activeElement;
+            hushed = false;
+            document.addEventListener("mazerats:game-front", onGameFront);
+        }
         root.classList.add("open");
         if (first) place(); else clamp();
+        // In front, opened or opened again (ONE GAME IN FRONT): before the music below, which it may wake.
+        toFront();
         frame.focus({ preventScroll: true });
         /* The track, muffled, under the splash (js/pura-music.js, MUFFLED):
            from the top on a fresh open, carried on if a game is paused. */
@@ -385,7 +415,7 @@
         if (window.PageMeta) window.PageMeta.set("purapanic", "Pura Panic — Maze Rats", "https://mazerats.net/purapanic");
         if (!loaded) {
             showPanel("loading");
-            loaded = Promise.all([loadAll(), checkGate()]).then(() => { if (mode === "idle") showPanel("title"); hud(); draw(); })
+            loaded = Promise.all([loadAll(), checkGate()]).then(() => { ready = true; if (mode === "idle") showPanel("title"); hud(); draw(); sendUnsent(); })
                 .catch(() => { loaded = null; showPanel("failed"); });
         } else if (mode === "idle" || mode === "over" || mode === "board") {
             // Reopened after a game, or from its leaderboard: the splash, as
@@ -393,6 +423,11 @@
             // left as it was.
             mode = "idle";
             showPanel("title");
+            /* With the splash's own music (26 Oct 2026, the bug scan):
+               opened again from the menu while still open on GAME OVER,
+               the lament played on under the splash. */
+            if (music() && music().sad) music().start(1, { muffled: true });
+            sendUnsent();
         }
         if (dim) dim.hidden = !dark;
         paintChrome();
@@ -485,6 +520,10 @@
         // Nothing plays behind a closed window. A paused game's track is
         // only held, and picks up muffled when the window opens again.
         if (music()) { if (mode === "paused") music().pause(); else music().stop(); }
+        // No longer in front, nor listening for who is (ONE GAME IN FRONT).
+        document.removeEventListener("mazerats:game-front", onGameFront);
+        hushed = false;
+        leaveFront();
         root.classList.remove("open");
         if (dim) dim.hidden = true;
         if (opener && typeof opener.focus === "function" && document.contains(opener)) opener.focus({ preventScroll: true });
@@ -565,6 +604,8 @@
         if (needsName()) { showPanel("who"); return; }
         // Asked who they are on the way to Continue: carry on with that game.
         if (pendingContinue) { pendingContinue = false; continueGame(); return; }
+        // ...or on the way to saving a finished game as a guest (SIGNED OUT SINCE): saved, not a new game.
+        if (pendingSubmit) { pendingSubmit = false; sendAgain(true); return; }
         // Started from the press itself: browsers only let sound begin from one.
         if (music()) music().start(1, { powerUp: true });
         mode = "dealing";
@@ -598,6 +639,11 @@
         mode = "play";
         hidePanel();
         hud();
+        /* Another game came in front while this one was being dealt (26 Oct
+           2026; ONE GAME IN FRONT): it starts paused, and the focus is left
+           with that game rather than taken back (which would bring this one
+           forward). */
+        if (behind()) { pause(); return; }
         frame.focus({ preventScroll: true });
     }
 
@@ -837,8 +883,54 @@
         return Boolean(a && !root.contains(a) && a.closest(".modal-overlay, .lightbox-overlay, .console-modal"));
     }
 
+    /* ONE GAME IN FRONT (26 Oct 2026; Fallin' Furni's window and Scout's
+       Trail keep the same contract). Of the game windows open over the
+       page, only the front one plays. Opened, or brought forward (a press
+       or the focus inside it), Pura Panic says so on <html data-game-front>
+       and in a "mazerats:game-front" event; another game coming forward
+       pauses it as P does — never the leave prompt, which is for leaving
+       the page — hushes its music altogether (not the pause screen's
+       muffled tune, which played on under the other game's) and leaves the
+       keys to that game. It does not play on by itself when brought forward
+       again: the player resumes it, and the paused tune comes back muffled. */
+    const GAME = "pura";
+    let hushed = false;      // silenced by another game's coming forward, till this one is in front again
+    const behind = () => { const f = document.documentElement.dataset.gameFront; return Boolean(f && f !== GAME); };
+
+    function toFront() {
+        if (!isOpen()) return;
+        if (document.documentElement.dataset.gameFront !== GAME) {
+            document.documentElement.dataset.gameFront = GAME;
+            document.dispatchEvent(new CustomEvent("mazerats:game-front", { detail: { game: GAME } }));
+        }
+        if (!hushed) return;
+        hushed = false;
+        // Back as the screen it is on would have it: a paused game's tune muffled (pause set that),
+        // or started muffled for a game picked up while another was in front (continueGame).
+        if (music() && !document.hidden) {
+            if (music().playing) music().resume();
+            else if (mode === "paused") music().start(g ? g.level : 1, { muffled: true });
+        }
+    }
+
+    function onGameFront(e) {
+        const who = e && e.detail && e.detail.game;
+        if (!isOpen() || !who || who === GAME) return;
+        releaseAll();
+        if (mode === "play") pause();
+        hushed = true;
+        // The audio clock stopped, so nothing booked plays on either.
+        if (music()) music().pause();
+    }
+
+    function leaveFront() {
+        if (document.documentElement.dataset.gameFront !== GAME) return;
+        delete document.documentElement.dataset.gameFront;
+        document.dispatchEvent(new CustomEvent("mazerats:game-front", { detail: { game: null } }));
+    }
+
     function ours(e) {
-        if (!isOpen() || covered() || elsewhere()) return false;
+        if (!isOpen() || covered() || elsewhere() || behind()) return false;
         const t = e.target;
         if (t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return false;
         return mode === "play" || root.contains(document.activeElement);
@@ -859,7 +951,15 @@
             return;
         }
         if (!what) return;
-        if (mode !== "play" && what !== "pause" && what !== "music") return;
+        if (mode !== "play" && what !== "pause" && what !== "music") {
+            /* Paused, or on any screen, with the focus in the window: the
+               arrows scrolled the page behind it (26 Oct 2026, the bug
+               scan). Held here — not stopped, so nothing else loses them —
+               unless the leaderboard's list, which they scroll, has it.
+               (Form fields never get this far: see ours.) */
+            if (/^Arrow/.test(e.key) && root.contains(document.activeElement) && !document.activeElement.closest(".pura-rows")) e.preventDefault();
+            return;
+        }
         e.preventDefault();
         e.stopPropagation();
         if (what === "music") { if (!e.repeat) toggleMusic(); return; }
@@ -1116,18 +1216,33 @@
     }
 
     let raf = 0, last = 0;
+    /* What the well was last drawn for, off a game in play (26 Oct 2026,
+       the bug scan): the splash, the pause, the end and the leaderboard
+       redrew the whole well sixty times a second behind a still panel.
+       Now only when what is behind it has changed — another game, another
+       piece down, another screen, the art arrived. In play, every frame. */
+    let painted = null;
+
     function loop() {
         if (raf) return;
         last = performance.now();
         const frameFn = (now) => {
             raf = 0;
             if (!isOpen()) return;
-            // Another window opened over a game: paused (see ONLY WHILE IT IS THE FRONT WINDOW).
-            if (mode === "play" && covered()) pause();
+            // Another window opened over a game, or another game came in front of it: paused
+            // (see ONLY WHILE IT IS THE FRONT WINDOW, and ONE GAME IN FRONT).
+            if (mode === "play" && (covered() || behind())) pause();
             const dt = Math.min(100, now - last);
             last = now;
             step(dt);
-            draw();
+            if (mode === "play") { draw(); painted = null; }
+            else {
+                const n = g ? g.log.length : -1;
+                if (!painted || painted.g !== g || painted.n !== n || painted.mode !== mode || painted.art !== images.size) {
+                    draw();
+                    painted = { g, n, mode, art: images.size };
+                }
+            }
             raf = requestAnimationFrame(frameFn);
         };
         raf = requestAnimationFrame(frameFn);
@@ -1141,7 +1256,16 @@
         return n + (s[(v - 20) % 10] || s[v] || s[0]);
     };
 
-    function hidePanel() { panel.hidden = true; panel.innerHTML = ""; }
+    /* The score bar out of reach while a panel covers it (26 Oct 2026, the
+       bug scan): Pause and Music under the splash could be tabbed to,
+       unseen. Set after the panel has taken the focus (showPanel), so the
+       focus is never dropped from a button going inert under it. */
+    function hudReach(on) {
+        const bar = root && root.querySelector(".pura-hud");
+        if (bar) bar.inert = !on;
+    }
+
+    function hidePanel() { panel.hidden = true; panel.innerHTML = ""; hudReach(true); }
 
     /* EVERY SCREEN OVER THE GAME (7 Oct 2026, the owner's): the splash,
        the leaderboard and the rest all sit over the floor and the game,
@@ -1189,9 +1313,11 @@
                 </div>
                 <p class="pura-beta-note">Your scores go on the leaderboard under your Habbo. Or <a href="#" data-go="signin">sign in with Discord</a> to keep them with your account.</p>`;
         } else if (which === "code") {
+            // The claim can come back from this browser's storage, so its
+            // hotel is written as text like its name (26 Oct 2026).
             html = `<p class="pura-big">IS IT YOU?</p>
                 <div class="console-hashline" aria-hidden="true"></div>
-                <p>To play as <strong>${esc(claim.name)}</strong>${claim.hotel === "COM" ? "" : " on Origins " + claim.hotel}, put this in your motto on Habbo Origins, then press Check:</p>
+                <p>To play as <strong>${esc(claim.name)}</strong>${claim.hotel === "COM" ? "" : " on Origins " + esc(claim.hotel)}, put this in your motto on Habbo Origins, then press Check:</p>
                 <p class="pura-code">${esc(claim.code)}</p>
                 <p class="pura-beta-note">Origins can take a few minutes to show a new motto. You can change it back once it's verified. You only do this once.</p>
                 <p class="pura-who-status" id="pura-who-status" aria-live="polite"></p>
@@ -1215,6 +1341,17 @@
                     <button type="button" class="console-btn" data-go="quit">End game</button>
                 </div>
                 ${musicButton()}`;
+        } else if (which === "over" && result && result.state === "signed-out-run") {
+            // Started signed in, ended signed out: whose game is it? (SIGNED OUT SINCE)
+            html = `<p class="pura-big">GAME OVER</p>
+                <div class="console-hashline" aria-hidden="true"></div>
+                <p>${num(g && g.score)} points · ${num(g && g.bands - rowsBase)} ${g && g.bands - rowsBase === 1 ? "row" : "rows"} · level ${g ? g.level : 1}</p>
+                <p class="pura-note">You started this game signed in. Sign in to save it to your account, or save it as a guest.</p>
+                <div class="pura-buttons">
+                    <button type="button" class="console-btn" data-go="runsignin">Sign in</button>
+                    <button type="button" class="console-btn" data-go="runguest">Save as a guest</button>
+                </div>
+                <button type="button" class="pura-text-btn" data-go="rundrop">Don't save it</button>`;
         } else if (which === "over" && fromLeave && (!result || result.state === "recorded" || result.state === "kept")) {
             // Ended from the leave prompt's Submit Score (LEAVING).
             html = `<p class="pura-big">${!result ? "SUBMITTING…" : result.state === "recorded" ? "You joined the leaderboard!" : "You're on the leaderboard!"}</p>
@@ -1245,6 +1382,9 @@
         panel.innerHTML = html;
         const first = panel.querySelector("[data-go]");
         if (first && isOpen() && root.contains(document.activeElement)) first.focus({ preventScroll: true });
+        // A HUD button that had the focus with no panel button to take it: the window has it instead.
+        else if (isOpen() && document.activeElement && document.activeElement.closest(".pura-hud")) frame.focus({ preventScroll: true });
+        hudReach(false);
         if (which === "who") wireWho();
         if (which === "code" && !touchy()) { const b = panel.querySelector('[data-go="whocheck"]'); if (b) b.focus({ preventScroll: true }); }
     }
@@ -1427,13 +1567,21 @@
         else if (go === "whonext") chooseName();
         else if (go === "whocheck") checkMotto();
         else if (go === "asguest") playAsGuest();
-        else if (go === "cancel") { pendingContinue = false; showPanel("title"); }
+        else if (go === "cancel") {
+            pendingContinue = false;
+            // Back from naming a guest to save a game as: to that game's choice (SIGNED OUT SINCE).
+            if (pendingSubmit) { pendingSubmit = false; showPanel("over"); } else showPanel("title");
+        }
+        else if (go === "runsignin" && window.Account) { keepUnsent(); Account.signIn("/purapanic"); }
+        else if (go === "runguest") saveAsGuest();
+        else if (go === "rundrop") { keep(UNSENT_KEY, null); result = { state: "unsaved" }; showPanel("over"); }
         else if (go === "resume") resume();
         else if (go === "quit") { mode = "play"; endEarly(); }
         else if (go === "board") showBoard();
         else if (go === "back") { mode = boardFrom === "over" ? "over" : "idle"; showPanel(boardFrom); }
         else if (go === "retry") { open(); }
-        else if (go === "signin" && window.Account) Account.signIn();
+        // With a game waiting to be saved, back to the game after (SIGNED OUT SINCE).
+        else if (go === "signin" && window.Account) Account.signIn(pendingSubmit && unsentGame() ? "/purapanic" : undefined);
         else if (go === "nick" && window.Account) Account.editNickname();
         else if (go === "music") toggleMusic();
         // Submit Score: the game ends here and goes to the board; they stay.
@@ -1697,11 +1845,14 @@
 
     /* ---------------------------------------------------------------- LEAVING
 
-       (7 Oct 2026, the owner's.) A game in progress is saved on the way —
-       at every new level, and whenever its tab is hidden or the page is
-       about to close — so a browser shut hard, a phone's especially, still
-       leaves its score on the board (pura-scores.js, A SAVE ON THE WAY: the
-       board keeps the best, the game can still be finished). And leaving is
+       (7 Oct 2026, the owner's.) A game in progress is saved to the board
+       on the way, at every new level (saveProgress), so a browser shut hard,
+       a phone's especially, still leaves its score there as of the last
+       level reached (pura-scores.js, A SAVE ON THE WAY: the board keeps the
+       best, the game can still be finished); whenever its tab is hidden or
+       the page is about to close it is kept on this browser to be picked up
+       (keepGame, CONTINUING), not sent (26 Oct 2026: this said both were
+       saves to the board). And leaving is
        warned about in the window itself: the game pauses with a flashing !
        and "Submit your progress to the scoreboard before you leave by
        pressing Submit Score!". There is no browser "Leave site?" box (the
@@ -1722,6 +1873,8 @@
         if (!run || !run.token || !g || !g.score || g.score <= savedScore || testLevel()) return;
         const p = me();
         if (p ? !p.nick : !guest) return;
+        // Started signed in, signed out since: not the guest's to save (SIGNED OUT SINCE; the server refuses it too).
+        if (!p && runSub(run.token)) return;
         savedScore = g.score;
         const facts = { run: run.token, log: g.log.slice(), ms: Math.round(gameMs), score: g.score, checkpoint: true };
         /* After the save before it, if that one is still out (10 Oct 2026):
@@ -1769,11 +1922,18 @@
     const LEFT_KEY = "mazerats_pura_left";
     const RESUME_WINDOW = 24 * 60 * 60 * 1000;
 
+    /* Whose the kept game is, signed in: the public board id `me` hands
+       back, as the daily games stamp their days (26 Oct 2026, the bug
+       scan). It was the Discord id, left in this browser's storage for the
+       next person at a shared computer to read. A game kept under the
+       Discord id before this is still recognised (leftGame). */
+    const accountKey = () => { const p = me(); return p ? String(p.publicId || p.id) : null; };
+
     function keepGame() {
         if (!inGame() || !run || !run.token || run.resumed || testLevel() || !g.log.length) return;
         keep(LEFT_KEY, {
             token: run.token, seed: run.seed, log: g.log, ms: Math.round(gameMs),
-            score: g.score, level: g.level, at: Date.now(), account: me() ? me().id : null,
+            score: g.score, level: g.level, at: Date.now(), account: accountKey(),
             // Signed out: which guest left it (see leftGame).
             guest: !me() && guest ? guest.id : null
         });
@@ -1786,7 +1946,7 @@
         const k = load(LEFT_KEY);
         if (!k || typeof k.token !== "string" || !Number.isInteger(k.seed) || !Array.isArray(k.log) || !k.log.length) return null;
         if (Date.now() - k.at > RESUME_WINDOW) { forgetGame(); return null; }
-        if ((k.account || null) !== (me() ? me().id : null)) return null;
+        if ((k.account || null) !== accountKey() && !(me() && k.account === me().id)) return null;
         /* Left signed out: only for the same guest (10 Oct 2026, the bug
            scan). It was offered to whoever came next on this browser, under
            their own name. A guest forgotten (Not you?) or changed since is
@@ -1801,10 +1961,34 @@
         const k = leftGame();
         if (!k) return "";
         return `<div class="pura-continue">
-                <p>You left a game at <strong>level ${k.level}</strong> with <strong>${num(k.score)}</strong> points.</p>
+                <p>You left a game at <strong>level ${esc(k.level)}</strong> with <strong>${num(k.score)}</strong> points.</p>
                 <button type="button" class="console-btn" data-go="continue">Continue</button>
                 <p class="pura-beta-note">You can pick it up once.</p>
             </div>`;
+    }
+
+    /* A game rebuilt from its placements, played back through the rules
+       exactly as the server replays them; null when it does not play back.
+       Each placement checked as the server's replay checks it: a kept game
+       that does not (storage tampered with) is let go cleanly. Shared by
+       Continue and by SIGNED OUT SINCE (26 Oct 2026). */
+    function replayed(seed, log) {
+        const game = E.newGame(seed);
+        for (const e of log) {
+            if (game.over || !game.piece) break;
+            const [rot, x, y, lean] = Array.isArray(e) ? e : [];
+            const p = { kind: game.piece.kind, rot, x, y, lean };
+            /* A turn past four, or a lane that is neither, as the server's
+               replay refuses them (26 Oct 2026, the bug scan): a rot of 5
+               threw inside E.fits, after this game's one continue was spent,
+               and left the splash on a dead "Picking up…" button. */
+            if (![rot, x, y, lean].every(Number.isInteger) || rot < 0 || rot > 3 || (lean !== 0 && lean !== 1) ||
+                !E.fits(game.board, p) || !E.landed(game.board, p)) return null;
+            const dressed = dress(game.piece.kind, rot);
+            game.piece = p;
+            E.settle(game, (i) => ({ m: dressed[i].m, d: dressed[i].d }));
+        }
+        return game;
     }
 
     let continuing = false;
@@ -1842,24 +2026,14 @@
            continue is spent, so the game is still picked up, but held
            paused and silent behind the shut window, not playing on unseen
            and heard from it. */
-        const shut = !isOpen();
+        /* Or another game came in front meanwhile (26 Oct 2026; ONE GAME
+           IN FRONT): held paused and silent the same way. */
+        const shut = !isOpen() || hushed || behind();
         if (music() && !shut) music().start(1, { powerUp: true });
         run = { token: d.token, seed: d.seed, resumed: true };
         rowsBase = 0;
-        g = E.newGame(d.seed);
-        // Each placement checked as the server's replay checks it: a kept game
-        // that does not play back (storage tampered with) is let go cleanly.
-        let sound = true;
-        for (const e of k.log) {
-            if (g.over || !g.piece) break;
-            const [rot, x, y, lean] = Array.isArray(e) ? e : [];
-            const p = { kind: g.piece.kind, rot, x, y, lean };
-            if (![rot, x, y, lean].every(Number.isInteger) || !E.fits(g.board, p) || !E.landed(g.board, p)) { sound = false; break; }
-            const dressed = dress(g.piece.kind, rot);
-            g.piece = p;
-            E.settle(g, (i) => ({ m: dressed[i].m, d: dressed[i].d }));
-        }
-        if (!sound) {
+        g = replayed(d.seed, k.log);
+        if (!g) {
             g = null; run = null; mode = "idle";
             if (music() && !shut) music().start(1, { muffled: true });
             showPanel("title");
@@ -1899,18 +2073,108 @@
         nx.clearRect(0, 0, nextCv.width, nextCv.height);
         showPanel("over");
         result = await submit();
-        if (mode === "over" && fromLeave) { showPanel("over"); return; }
+        // Whose it is to be asked: kept on this browser meanwhile, so nothing is lost (SIGNED OUT SINCE).
+        if (result.state === "signed-out-run") keepUnsent();
+        if (mode === "over" && (fromLeave || result.state === "signed-out-run")) { showPanel("over"); return; }
         if (mode === "over") {
             const note = panel.querySelector("#pura-note");
             if (note) note.innerHTML = overNote();
         }
     }
 
-    async function submit() {
+    /* ---------------------------------------------------------------- SIGNED OUT SINCE
+
+       (26 Oct 2026, the owner's answer: "ask the player".) A game started
+       signed in carries the account in its run token; signed out by the
+       time it ends — another tab, the session lapsing — it used to be filed
+       under whichever guest this browser had. Now the page asks, over the
+       game: sign in again, and it goes to the account (pura-scores.js
+       takes it once the same account is back); or save it as a guest, sent
+       again with `asGuest` and filed like any guest's game, naming the
+       guest first if there is none yet (WHO'S PLAYING, then back here); or
+       not at all. Signing in is a page load, so the game is kept on this
+       browser while it is asked about, and sent from there on the way back
+       (sendUnsent) — and offered again if the window is shut meanwhile.
+       Kept as long as its run token is good. */
+    const UNSENT_KEY = "mazerats_pura_unsent";
+    const UNSENT_FOR = 3 * 60 * 60 * 1000;
+    let pendingSubmit = false;   // naming a guest on the way to saving a game as them
+    let sendingAgain = false;
+
+    // The account a run token was issued to, if any (its payload's sub; read, never trusted: the server checks).
+    function runSub(token) {
+        try {
+            const part = String(token).split(".")[1].replace(/-/g, "+").replace(/_/g, "/");
+            const claims = JSON.parse(atob(part));
+            return claims && claims.sub ? String(claims.sub) : null;
+        } catch (e) { return null; }
+    }
+
+    function keepUnsent() {
+        if (!run || !run.token || !g || !g.log.length) return;
+        keep(UNSENT_KEY, { token: run.token, seed: run.seed, log: g.log, ms: Math.round(gameMs), at: Date.now() });
+    }
+
+    function unsentGame() {
+        const u = load(UNSENT_KEY);
+        if (!u || typeof u.token !== "string" || !Number.isInteger(u.seed) || !Array.isArray(u.log) || !u.log.length) return null;
+        if (!(Date.now() - u.at < UNSENT_FOR)) { keep(UNSENT_KEY, null); return null; }
+        return u;
+    }
+
+    /* The game kept while it was asked about, back on screen: on opening,
+       once the art is in and who is signed in is known. Signed in again, it
+       is sent; still signed out, it is asked about again. */
+    function sendUnsent() {
+        if (!isOpen() || !ready || mode !== "idle" || sendingAgain) return;
+        if (!window.Account || !Account.known || (Account.unsure && !me())) return;
+        const u = unsentGame();
+        if (!u) return;
+        const back = replayed(u.seed, u.log);
+        if (!back) { keep(UNSENT_KEY, null); return; }
+        g = back;
+        run = { token: u.token, seed: u.seed, resumed: true };
+        rowsBase = 0;
+        gameMs = u.ms;
+        anim = null; banner = null; hideBanner();
+        leaving = false; fromLeave = false;
+        mode = "over";
+        hud();
+        nx.clearRect(0, 0, nextCv.width, nextCv.height);
+        if (me()) { sendAgain(false); return; }
+        result = { state: "signed-out-run" };
+        showPanel("over");
+    }
+
+    // Sent again: to the account now signed in, or (asGuest) as the guest.
+    async function sendAgain(asGuest) {
+        if (sendingAgain || mode !== "over") return;
+        sendingAgain = true;
+        result = null;
+        showPanel("over");
+        let r;
+        try { r = await submit({ asGuest }); } finally { sendingAgain = false; }
+        result = r;
+        // Answered, it is put away, as a finished game's one sending is; still nobody's, it is kept.
+        if (r.state !== "signed-out-run") keep(UNSENT_KEY, null);
+        if (mode === "over") showPanel("over");
+    }
+
+    function saveAsGuest() {
+        if (needsName()) { pendingSubmit = true; showPanel("who"); return; }
+        sendAgain(true);
+    }
+
+    /* `opts.asGuest`: a game started signed in, to be filed under the guest
+       now playing on this browser all the same (SIGNED OUT SINCE). */
+    async function submit(opts) {
+        const asGuest = Boolean(opts && opts.asGuest);
         if (saving) await saving.catch(() => {});
         if (run && run.reason === "test") return { state: "test" };
         if (!run || !run.token) return { state: run && (run.reason === "hidden" || run.reason === "maintenance") ? "maintenance" : "offline" };
         const p = me();
+        // Started signed in and signed out since: the player is asked whose it is first.
+        if (!p && !asGuest && g.score && runSub(run.token)) return { state: "signed-out-run" };
         if (!p && !guest) { logPlayed(); return { state: "signed-out" }; }
         if (p && !p.nick) { logPlayed(); return { state: "no-nick" }; }
         if (!g.score) { logPlayed(); return { state: "no-score" }; }
@@ -1919,7 +2183,7 @@
                 method: "POST",
                 credentials: "same-origin",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ run: run.token, log: g.log, ms: Math.round(gameMs), score: g.score, ...gameFacts() })
+                body: JSON.stringify({ run: run.token, log: g.log, ms: Math.round(gameMs), score: g.score, ...gameFacts(), ...(asGuest ? { asGuest: true } : {}) })
             });
             const body = await res.json().catch(() => ({}));
             // A Guest Rat's first score brings their number (pura-scores.js, GUESTS).
@@ -1934,6 +2198,7 @@
             if (body.reason === "not-your-best") return { state: "kept", place: body.place, best: body.best };
             if (body.reason === "no-score") return { state: "no-score" };
             if (body.reason === "signed-out") return { state: "signed-out" };
+            if (body.reason === "signed-out-run") return { state: "signed-out-run" };
             if (body.reason === "no-pieces") return { state: "no-score" };
             if (["maintenance", "stale-run", "already-submitted", "no-run-token"].includes(body.reason)) return { state: body.reason };
             if (body.reason === "name-taken") {

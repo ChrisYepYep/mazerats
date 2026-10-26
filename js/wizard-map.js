@@ -326,6 +326,12 @@ window.WizardMap = function WizardMap(options) {
     function flyTo(xPct, yPct, toZoom, { smooth = true, rate = 0 } = {}) {
         // A place that is not a number would leave the pan NaN for good.
         if (!Number.isFinite(xPct) || !Number.isFinite(yPct)) return;
+        /* And a zoom that is not a number keeps the one the view has (26 Oct
+           2026): NaN passed the clamp below untouched and left the scale, and
+           with it every pan after, NaN for good. revealTarget in js/wizard.js
+           works one out from the revealed records' zoom bands, which are
+           whatever was stored. */
+        if (toZoom != null && !Number.isFinite(toZoom)) toZoom = null;
         const { w, h } = stageSize();
         const target = toZoom == null ? wantZoom
             : Math.max(map.minZoom || 1, Math.min(map.maxZoom || 6, toZoom));
@@ -869,6 +875,10 @@ window.WizardMap = function WizardMap(options) {
             // where it has to be findable in order to be put back. Same rule
             // as a hidden room.
             if (layer.hidden && !options.revealHidden) continue;
+            /* And a layer with no picture is the editor's business alone
+               (26 Oct 2026): on the public map it came out as a dashed box
+               with the file name in it. Skipped the same way. */
+            if (!layer.image && !options.revealHidden) continue;
             const el = document.createElement(layer.image ? "img" : "div");
             // className first. Set after, it wiped the classes added before
             // it — which is why a hidden picture never looked hidden.
@@ -1527,10 +1537,22 @@ window.WizardMap = function WizardMap(options) {
 
            Guarded so this happens once. document.fonts.ready resolves
            immediately on a warm cache, in which case the second pass is
-           nearly free and changes nothing. */
+           nearly free and changes nothing.
+
+           Not in the middle of a reveal (26 Oct 2026). A render rebuilds
+           every print and name, so one landing while a passage was walking
+           wiped its staggered delays and the rest popped in at once — the
+           same pop-in js/wizard.js queues a second answer to avoid. The page
+           says how long it has left (options.busyFor, in ms) and the pass
+           waits for it. */
         if (!refitForFonts && document.fonts && document.fonts.ready) {
             refitForFonts = true;
-            document.fonts.ready.then(() => render());
+            const whenIdle = () => {
+                const left = options.busyFor ? Number(options.busyFor()) || 0 : 0;
+                if (left > 0) setTimeout(whenIdle, left);
+                else render();
+            };
+            document.fonts.ready.then(whenIdle);
         }
     }
 
@@ -1629,6 +1651,13 @@ window.WizardMap = function WizardMap(options) {
 
     stage.addEventListener("pointermove", e => {
         if (!pointers.has(e.pointerId)) return;
+        /* A mouse that moves with no button down has let go somewhere this
+           never heard about (26 Oct 2026): a context menu that opens on the
+           press (macOS) swallows the release, and so can a switch of window
+           mid-drag. The drag was left running, and the map then followed the
+           bare cursor about until the next click. Ended here as the release
+           would have ended it. */
+        if (e.pointerType === "mouse" && e.buttons === 0) { endPointer(e); return; }
         pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
 
         if (pointers.size === 2 && pinchStart) {

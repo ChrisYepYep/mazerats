@@ -7396,14 +7396,11 @@ body[data-page="admin"] .admin-contributor-count {
 
 /* ---------- the admin window ---------- */
 
-/* Titlebar and one .chrome-frame body, same construction as home.html's
-   #browse-window. The tabs that used to sit between them are now the
-   vertical list in the left rail (#admin-nav, see the admin shell block at
-   the end of this file), which is why there is no .chrome-nav row here any
-   more — six labels never did fit across the old fixed-width column. */
-.admin-window {
-    margin-top: 0;
-}
+/* (26 Oct 2026, the bug scan) The .admin-window, .admin-shell, Nav and
+   Control drop-panel and NAV-tab rules that used to be in this file went
+   with the markup they styled: the Warren's workshop redesign (25 Oct,
+   warren.html and css/warren.css) has none of those elements, so nothing
+   matched them. */
 
 /* Only the selected panel is in flow. [hidden] is set/cleared by
    js/admin.js; the explicit display:none keeps that working regardless
@@ -7647,6 +7644,18 @@ body.is-viewer .admin-panel[data-panel="deadends"] .de-write {
     /* The hover glow and the amber border would otherwise still fire on the
        row around it and read as "this one is available". */
     box-shadow: none;
+}
+
+/* ...nor the Seasonal skins card's Preview buttons (26 Oct 2026, the bug
+   scan): a preview is only this browser trying a skin on, nothing is saved,
+   so a view-only account may use it. The card's writes are disabled in
+   js/admin-skin.js. pointer-events back on also lets the keyboard guard in
+   js/admin.js through, as it only stops what this greys. */
+body.is-viewer #skin-preview-skins .btn-enter-mini,
+body.is-viewer #skin-preview-dates .btn-enter-mini {
+    opacity: 1;
+    cursor: var(--cursor-pointer);
+    pointer-events: auto;
 }
 
 /* ...except a viewer's OWN password form. A view-only account may change
@@ -10292,15 +10301,6 @@ body[data-page="admin"] .container {
     min-height: 0;
 }
 
-.admin-shell {
-    display: flex;
-    align-items: stretch;
-    gap: 0;
-    flex: 1 1 auto;
-    min-height: 0;
-    width: 100%;
-}
-
 /* ---------- working area ---------- */
 
 /* The only scrolling region on the page. position: relative so the Save bar
@@ -10316,26 +10316,6 @@ body[data-page="admin"] .container {
     padding: 20px 22px var(--admin-stage-pad-b);
     position: relative;
 }
-
-/* width, not just max-width: .chrome-window carries an explicit 538px —
-   the measure the whole site's windows are built to — which a max-width
-   alone can only ever narrow further, never widen. */
-.admin-stage .admin-window {
-    width: 100%;
-    max-width: 1400px;
-    margin: 0 auto;
-    /* Fills the working area rather than stopping wherever its content ends
-       — a window floating short of the bottom of the screen with a strip of
-       page pattern under it reads as something failing to load. */
-    min-height: 100%;
-    /* And the panel inside fills the window, so its foot sits the same 12px
-       from the window's edge as every other window's (see --window-inset)
-       rather than stopping wherever a short panel's content ends. */
-    display: flex;
-    flex-direction: column;
-}
-
-.admin-stage .admin-window > .chrome-frame { flex: 1 1 auto; }
 
 /* A heading, a line of explanation and the panel's primary action, on one
    row. Every panel opens the same way, so moving between them doesn't move
@@ -10429,10 +10409,6 @@ body[data-page="admin"] #contributors-list {
    otherwise beat. Not under 860px, where the page scrolls and the lists
    flow with it (see the narrow block below). */
 @media (min-width: 861px) {
-    .admin-window:has(.admin-panel:not([hidden]) :is(.admin-list-fill, #rooms-list, #events-list, #contributors-list, #contact-messages-list, #bans-list, #admins-list)) > .chrome-frame {
-        display: flex;
-        flex-direction: column;
-    }
     .chrome-frame > .chrome-body:has(> .admin-panel:not([hidden]) :is(.admin-list-fill, #rooms-list, #events-list, #contributors-list, #contact-messages-list, #bans-list, #admins-list)) {
         flex: 1 0 auto;
         display: flex;
@@ -10600,7 +10576,6 @@ body[data-page="admin"] .site-footer p {
     }
     body[data-page="admin"] main { display: block; }
     body[data-page="admin"] .container { display: block; }
-    .admin-shell { flex-direction: column; }
     .admin-stage {
         overflow: visible;
         --admin-stage-pad-b: 20px;
@@ -14066,17 +14041,10 @@ body[data-page="admin"] #activity-sessions {
     color: var(--parchment-dim);
 }
 
-/* The day's headline number, so it is display type — Montserrat, like
-   every other heading on the site, rather than Volter Goldfish scaled up
-   past the one size it is drawn for. */
-.guess-score {
-    margin: 0;
-    font-family: 'Montserrat', sans-serif;
-    font-weight: 800;
-    font-size: 1rem;
-    letter-spacing: 0.5px;
-    color: var(--parchment);
-}
+/* Its type is further down ("Demoted from the headline"): the Montserrat
+   headline set here was overridden there in full, so only the margin was
+   ever used (26 Oct 2026, the bug scan). */
+.guess-score { margin: 0; }
 
 .guess-score strong { color: var(--amber-bright); }
 
@@ -17061,11 +17029,6 @@ button.tag.tag-by { background: transparent; border-style: dashed; }
    100% basis so it takes a line of its own, and the stage and glyph palette
    share the next one. No wrapper element, and nothing about how the stage
    sizes itself changes. */
-/* The shell is a plain row again — just the working area. The tab strip
-   used to be a wrapped line inside it, which is what let align-content share
-   spare vertical space with the strip and inflate it to 300px on any short
-   panel. Outside the flow, that cannot happen. */
-.admin-shell > .admin-stage { flex: 1 1 auto; }
 
 /* The admin page's <main> stacks instead of running across.
 
@@ -17082,7 +17045,6 @@ main:has(> .admin-tabs) {
 }
 
 main:has(> .admin-tabs) > .admin-tabs { flex: 0 0 auto; }
-main:has(> .admin-tabs) > .admin-shell { flex: 1 1 auto; min-height: 0; }
 
 /* Not a bar: a row of tabs hanging under the site's top bar, with nothing
    behind them. A strip with tabs in it is two surfaces where one will do, and
@@ -17316,61 +17278,6 @@ main:has(> .admin-tabs) > .admin-shell { flex: 1 1 auto; min-height: 0; }
     }
 }
 
-/* ---- NAV, in CONTROL's own language.
-
-   It used to be a three-column grid of the archive's sprite buttons at 78px
-   each — "Fallin' Furni" touched both edges, the sprite's rounded corners
-   were drawn at a size they were never cut for, and it sat beside a Control
-   panel of clean pills and labelled cards looking like it had come from a
-   different page. Now it IS that page: the same .ctl-card groups under the
-   same .ctl-label headings, and every section button is a .ctl-btn pill,
-   with "you are here" in the filled active state Control's own buttons use.
-
-   Anchored to the bar like Control (see the note on .admin-drop-control
-   below) rather than to its own tab, so the two panels open from the same
-   left edge and a narrow window wraps the cards instead of scrolling. */
-.admin-tab[data-menu="nav"] { position: static; }
-
-.admin-drop-nav {
-    left: 12px;
-    width: max-content;
-    max-width: calc(100% - 24px);
-}
-
-.admin-nav-col {
-    display: flex;
-    flex-direction: column;
-    gap: 5px;
-}
-
-/* .chrome-nav-btn stays on these buttons only because js/admin.js finds
-   them by it. Everything it paints — the btn_inactive sprite underneath, the
-   flex: 1 stretch, Silkscreen at 0.55rem, the embossed shadow — is undone
-   here, so what is left is exactly the admin pill (see ADMIN BUTTONS, ONE
-   STYLE near the end of this file, which gives .ctl-btn its border, radius
-   and colours, and its filled .active). */
-/* Written with the body[data-page] prefix so it outranks that shared pill
-   rule, which is more specific than a bare class pair and would otherwise
-   put its own padding and centring back. */
-body[data-page="admin"] .admin-nav-grid .chrome-nav-btn {
-    flex: none;
-    width: 100%;
-    min-width: 132px;
-    height: auto;
-    min-height: 26px;
-    padding: 4px 10px;
-    justify-content: space-between;
-    gap: 10px;
-    text-shadow: none;
-    isolation: auto;
-}
-.admin-nav-grid .chrome-nav-btn::before,
-.admin-nav-grid .chrome-nav-btn::after { content: none; }
-
-/* The label is left-aligned inside a full-width pill, so the four columns
-   read as lists — a centred word in a wide pill made each column ragged. */
-.admin-nav-grid .chrome-nav-btn-label { text-align: left; }
-
 /* A number on a section that is waiting for you: new Dead End leads. */
 .admin-nav-count {
     min-width: 18px;
@@ -17499,27 +17406,6 @@ textarea.ctl-input.de-note {
    max-width keeps it inside the window on a laptop; it is anchored to the
    left edge of its tab, which is the second tab in, so there is plenty of
    room to the right. */
-/* Anchored to the BAR, not to its own tab, and sized by its content.
-
-   Two problems solved together. It is the second tab along, so hanging the
-   panel off the tab put its left edge 83px in and its right edge past the
-   window on anything narrower than a laptop. And MIN-WIDTH BEATS MAX-WIDTH
-   when the two conflict — that is the rule, not a quirk — so the clamp that
-   was meant to keep it inside the window never applied at all, and the page
-   scrolled sideways at 768px.
-
-   Making the control tab position: static hands positioning to .admin-bar,
-   which is full width. width: max-content then lets the four narrow cards
-   sit on one line where there is room and wrap where there is not, with no
-   fixed number to go stale. */
-.admin-tab[data-menu="control"] { position: static; }
-
-.admin-drop-control {
-    left: 12px;
-    width: max-content;
-    max-width: calc(100% - 24px);
-}
-
 .ctl-grid {
     display: flex;
     flex-wrap: wrap;
@@ -19319,6 +19205,18 @@ textarea.ctl-input.de-note {
         flex-basis: calc((100% - 24px) / 0.5625);
         margin-right: calc((100% - 24px) - (100% - 24px) / 0.5625);
     }
+
+    /* Links in small print (26 Oct 2026, the bug scan): the furni browser's
+       "100% furni listings" maze names, 9px words on 14px rows, and the
+       Console Privacy page's "Open the full policy as a page", about 10px
+       tall. Twice the line height gives each a row a fingertip can find,
+       without making the prose any bigger. The names are buttons, which
+       take the line height as their own height (font: inherit); the link
+       is made an inline-block so it does too, as an inline link's tap area
+       is only its letters. */
+    .furni-head-complete-names { line-height: 2; }
+    .console-privacy-out { line-height: 2; }
+    .console-privacy-out a { display: inline-block; }
 }
 
 /* ---------------------------------------------------------------- RECOLOUR
@@ -19594,16 +19492,6 @@ body[data-page="admin"] .btn-enter-mini[data-ff-state="maintenance"].active {
    group is just a row — the Timeline / Furni pair's 5px gap — and "which one"
    is the amber. Rows with a date field in them keep the buttons as tall as
    the field. */
-/* The section showing, on the NAV tab — see showPanel in js/admin.js. */
-.admin-tab-where {
-    color: var(--amber-bright);
-}
-/* Not on a phone: the four tabs only just fit one row there, and the panel's
-   heading is on screen right under them anyway. */
-@media (max-width: 720px) {
-    .admin-tab-where { display: none; }
-}
-
 body[data-page="admin"] .ctl-seg,
 body[data-page="admin"] .admin-wiz-modes {
     display: flex;

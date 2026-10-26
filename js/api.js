@@ -817,9 +817,6 @@ const Api = {
     getContactMessages(token) { return this._write("/.netlify/functions/contact", "GET", token); },
     deleteContactMessage(token, id) { return this._write(`/.netlify/functions/contact?id=${encodeURIComponent(id)}`, "DELETE", token); },
 
-    // Admin-only in both directions — there is no public half here, so
-    // these all go through _write (which carries the token) rather than
-    // _getWithFallback. See netlify/functions/bans.js.
     /* The admin activity log. Owner-only server-side, so a standard admin
        calling this gets a 403 rather than anything to render. */
     getAdminActivity(token, range) {
@@ -827,15 +824,15 @@ const Api = {
         return this._write("/.netlify/functions/admin-activity" + q, "GET", token);
     },
 
-    /* Fallin' Furni's run log. Any admin can read this one, where the
-       activity log is owner-only: that file is a record of what ADMINS did
-       and this is a record of how the game is playing. */
     // Pura Panic's figures for the Warren (netlify/functions/pura-stats.js).
     getPuraStats(token, range) {
         const q = range ? "?range=" + encodeURIComponent(range) : "";
         return this._write("/.netlify/functions/pura-stats" + q, "GET", token);
     },
 
+    /* Fallin' Furni's run log. Any admin can read this one, where the
+       activity log is owner-only: that file is a record of what ADMINS did
+       and this is a record of how the game is playing. */
     getFallinFurniRuns(token, range) {
         const q = range ? "?range=" + encodeURIComponent(range) : "";
         return this._write("/.netlify/functions/ff-runs" + q, "GET", token);
@@ -1023,6 +1020,9 @@ const Api = {
         return this._write(`/.netlify/functions/notifications?admin=1&nid=${encodeURIComponent(nid)}`, "DELETE", token);
     },
 
+    // Admin-only in both directions — there is no public half here, so
+    // these all go through _write (which carries the token) rather than
+    // _getWithFallback. See netlify/functions/bans.js.
     getBans(token) { return this._write("/.netlify/functions/bans", "GET", token); },
     /* Two shapes (29 Sept 2026). The old one, createBan(token, ip, reason),
        is what the Messages and Missing Pieces "Ban" buttons send: a soft,

@@ -639,7 +639,10 @@
             // from the list has landed (1 Oct 2026).
             close({ handOff: true, keepFocus: true, then: () => {
                 if (!(window.ArchiveRecords && window.ArchiveRecords.open(kind, id, { fromGuides: true }))) {
-                    location.href = window.RecordAddress.of(kind, { id });
+                    const to = window.RecordAddress.of(kind, { id });
+                    // Leaving: what fails as the page goes is not a site error (26 Oct 2026; js/error-report.js).
+                    if (window.MazeErrors && typeof MazeErrors.leaving === "function") MazeErrors.leaving(to);
+                    location.href = to;
                 }
             } });
             return;

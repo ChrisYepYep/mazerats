@@ -136,11 +136,23 @@
        two classes, so what appears is the finished window standing empty
        rather than anything of this file's invention. The game's own open()
        runs a moment later and adds the class again, which is harmless. */
+    /* Whatever had the focus before the shell took it, for the game's own
+       open() to hand back to on close (takeOpener, 26 Oct 2026, the bug
+       scan). The game notes its opener only when it finds its window shut,
+       and on a first open through here it found it already open, with the
+       focus on the window — so closing a game opened from the Leaderboards'
+       Play or the Console sent the keyboard to the side menu instead. */
+    const openers = {};
+
     function openShell(name) {
         const game = GAMES[name];
         const overlay = document.getElementById(game.overlay);
         const win = document.getElementById(game.win);
         if (!overlay) return null;
+        if (!overlay.classList.contains("open")) {
+            const active = document.activeElement;
+            openers[name] = active && active !== document.body && !overlay.contains(active) ? active : null;
+        }
         overlay.classList.add("open");
         document.body.classList.add("modal-open");
         if (win) win.focus();
@@ -174,6 +186,7 @@
         const shut = () => {
             overlay.classList.remove("open");
             document.body.classList.remove("modal-open");
+            openers[name] = null;
         };
         const onBackdrop = e => { if (e.target === overlay) shut(); };
         const onKey = e => { if (e.key === "Escape" && overlay.classList.contains("open")) shut(); };
@@ -346,7 +359,14 @@
     // Published so the side menu can ask for the games the moment it is
     // opened — by then somebody is looking at a list of them, which is a
     // better signal than anything this file can guess at.
-    window.DailyGames = { load, preloadAll, isReady: ready };
+    // The shell's opener, once (see openShell).
+    function takeOpener(name) {
+        const node = openers[name] || null;
+        openers[name] = null;
+        return node;
+    }
+
+    window.DailyGames = { load, preloadAll, isReady: ready, takeOpener };
 
     /* A deep link is not a guess. Load it now. */
     // With or without a slash on the end, as the games themselves read it

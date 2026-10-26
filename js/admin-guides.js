@@ -95,7 +95,8 @@
         }
         listEl.innerHTML = '<p class="admin-empty">Your session has expired. <button type="button" class="ctl-btn" data-g-reload>Sign in again</button></p>';
         const b = listEl.querySelector("[data-g-reload]");
-        if (b) b.addEventListener("click", () => location.reload());
+        // Leaving: what fails as the page reloads is not a site error (26 Oct 2026; js/error-report.js).
+        if (b) b.addEventListener("click", () => { if (window.MazeErrors && typeof MazeErrors.leaving === "function") MazeErrors.leaving(); location.reload(); });
         return true;
     }
 
@@ -617,10 +618,18 @@
     }
 
     // `spot`: taken by a caller that reorders the sections first.
+    /* The workshop's stage too (26 Oct 2026, the bug scan). Since the Warren
+       became a workshop (css/warren.css) the page itself no longer scrolls
+       on a wide screen — .wr-stage does — so window.scrollY was always 0
+       and this kept nothing. The window is still kept, for the narrow
+       layout, where the page scrolls again. */
     function redrawKeepingScroll(fallback, spot = focusSpot()) {
         const y = window.scrollY;
+        const stage = formEl.closest(".wr-stage");
+        const top = stage ? stage.scrollTop : 0;
         renderForm();
         window.scrollTo(0, y);
+        if (stage) stage.scrollTop = top;
         restoreFocus(spot, fallback);
     }
 

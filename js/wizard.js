@@ -42,6 +42,12 @@ document.addEventListener("DOMContentLoaded", () => {
         // the whisper below). `buffer` is declared further down and asked
         // only on a keypress, long after it exists.
         typing: () => typeof buffer === "string" && buffer.length > 0,
+        /* How long the reveal on screen has left to walk, so the engine's
+           one late re-render (when the handwriting font arrives) waits for
+           it rather than cutting it short (26 Oct 2026). `revealUntil` is
+           declared further down; this is first asked once the map has
+           loaded, long after it exists. */
+        busyFor: () => Math.max(0, revealUntil - Date.now()),
         canvas: document.getElementById("wiz-canvas"),
         /* The sheet's "(1)", "(2)", "(3)" stay in the editor and never reach
            a reader — see roomName in js/wizard-map.js for why the number is

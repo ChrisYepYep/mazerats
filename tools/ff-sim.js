@@ -326,6 +326,27 @@ function nearestTile(seat, from) {
     return best || { x: seat.x, y: seat.y };
 }
 
+/* WHAT THE PAGE PLAYS, without the furni it cannot draw (26 Oct 2026).
+   The game takes every class js/furni-library.js has no art for out of a
+   level before building a round (leaveOutNoArt in js/fallinfurni.js — it
+   no longer borrows FurniIndex's pictures), so this does the same, and says
+   which it left out. */
+function leaveOutNoArt(level) {
+    const has = (c) => Boolean(c && Furni.librarySprite(c, 0, 0));
+    const gone = new Set();
+    const keep = (c) => { if (has(c)) return true; if (c) gone.add(c); return false; };
+    level.decor = (level.decor || []).filter(d => keep(d.className));
+    for (const z of level.zones || []) z.items = (z.items || []).filter(i => keep(i.className));
+    level.powerups = (level.powerups || []).filter(p => {
+        if (keep(p.cls)) return true;
+        const std = Levels.POWERUPS[p.kind] && Levels.POWERUPS[p.kind].classes[0];
+        if (!has(std)) return false;
+        p.cls = std;
+        return true;
+    });
+    if (gone.size) console.log(`  (level ${level.order}: no game art for ${[...gone].join(", ")} - left out, as the page does)`);
+}
+
 (async () => {
     const levels = LEVELS_FILE
         ? JSON.parse(fs.readFileSync(LEVELS_FILE, "utf8"))
@@ -346,6 +367,7 @@ function nearestTile(seat, from) {
     for (const raw of list) {
         if (ONLY && !ONLY.has(raw.order)) continue;
         const level = Levels.normalise(raw);
+        leaveOutNoArt(level);
         if (UNCAPPED) level.rules = { ...level.rules, seconds: 600 };
         /* A ROOM THIS HAS NO SHAPE FOR IS SKIPPED. The public rooms are loaded
            above now (js/room-public.js), but a level naming any room this

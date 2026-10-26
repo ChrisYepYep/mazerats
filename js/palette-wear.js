@@ -113,6 +113,25 @@
        palette that has since been replaced or taken off. */
     let wearing = 0;
 
+    /* A SEASONAL SKIN'S PALETTE WINS (26 Oct 2026, the bug scan). A skin
+       window can bring a palette of its own (Halloween wears Witching Hour,
+       Christmas Frost: js/skin-wear.js, which sets window.__mrSkinPalette
+       while it does). The live custom palette was put on over it all the
+       same, and a palette's overrides win wherever they apply, so the page
+       wore half of each. Now the live palette stands down while a skin's
+       palette is on, and goes back on when it comes off: skin-wear says so
+       with a "mazerats:skin-palette" event whenever that changes, the
+       window's end in an open tab included. `live` is the palette that
+       would be worn, kept for that. An admin's palette PREVIEW is not
+       stood down: it was asked for, in that tab alone. */
+    let live = null;
+    const skinPalette = () => !!window.__mrSkinPalette;
+    function wearLive(palette) {
+        live = palette || null;
+        if (skinPalette()) { takeOff(); return; }
+        wear(live);
+    }
+
     async function wear(palette) {
         if (!palette) return;
         const seq = ++wearing;
@@ -122,7 +141,8 @@
            failure. The page simply stays unrecoloured. */
         let R;
         try { R = await loadEngine(); } catch (e) { return; }
-        if (!R || seq !== wearing) return;
+        // A skin's palette that came on while the engine loaded (skin-wear runs just after this file).
+        if (!R || seq !== wearing || (!previewing && skinPalette())) return;
         R.rescan();
         /* base "/": the engine fetches the original art to recolour it as
            base + "assets/img/<file>", and with no base that resolved against
@@ -178,6 +198,12 @@
     }
 
     let previewing = false;
+    // See A SEASONAL SKIN'S PALETTE WINS above.
+    document.addEventListener("mazerats:skin-palette", () => {
+        if (previewing) return;
+        if (skinPalette()) takeOff();
+        else if (live) wear(live);
+    });
     try { sessionStorage.removeItem(LEGACY_PREVIEW_KEY); } catch (e) {}
     const handed = takeHandoff();
     if (handed) {
@@ -198,7 +224,7 @@
             const raw = localStorage.getItem(CACHE_KEY);
             if (raw) {
                 const c = JSON.parse(raw);
-                if (c && c.palette) wear(c.palette);
+                if (c && c.palette) wearLive(c.palette);
             }
         } catch (e) { /* nothing remembered, which is the normal first visit */ }
 
@@ -238,6 +264,7 @@
                        alive on returning visitors indefinitely. */
                     let had = false;
                     try { had = !!localStorage.getItem(CACHE_KEY); localStorage.removeItem(CACHE_KEY); } catch (e) {}
+                    live = null;
                     if (had) takeOff();
                     return;
                 }
@@ -253,6 +280,7 @@
                 if (res.status === 404) {
                     let had = false;
                     try { had = !!localStorage.getItem(CACHE_KEY); localStorage.removeItem(CACHE_KEY); } catch (e) {}
+                    live = null;
                     if (had) takeOff();
                     return;
                 }
@@ -260,7 +288,7 @@
                 const p = await res.json();
                 if (!p || !p.palette) return;
                 try { localStorage.setItem(CACHE_KEY, JSON.stringify({ id: p.id, palette: p.palette })); } catch (e) {}
-                wear(p.palette);
+                wearLive(p.palette);
             } catch (e) { /* offline, or the endpoint is down: the cache stands */ }
         };
         if (document.readyState === "loading") {

@@ -402,6 +402,36 @@ for (const rel of ["js/guess.js", "js/oddoneout.js", "js/daily.js"]) {
     }
 }
 
+/* ---- 7. every name the pages count (26 Oct 2026, the bug scan) ----
+   Section 6 for the daily games' three, now for every interaction name a
+   page sends: Track.event("…"), data-track="…", dataset.track = "…", and
+   Pura Panic's own count("…"). track.js drops a name it does not list,
+   silently, so a feature added with a new name (the bat game's three were
+   the latest) is counted nowhere until somebody notices the Activity page
+   never shows it. Names built at run time ("daily-" + what) are section 6's. */
+{
+    const src = read("netlify/functions/track.js").replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
+    const list = (src.match(/EVENT_NAMES\s*=\s*new Set\(\[([\s\S]*?)\]\)/) || [])[1];
+    check(Boolean(list), "netlify/functions/track.js has no EVENT_NAMES list this check can read");
+    const accepted = new Set([...(list || "").matchAll(/"([^"]+)"/g)].map(m => m[1]));
+    const sent = new Map();
+    // A name ending in "-" is the start of one built at run time (section 6's).
+    const note = (name, rel) => { if (!name.endsWith("-") && !sent.has(name)) sent.set(name, rel); };
+    const files = fs.readdirSync(path.join(ROOT, "js")).filter(f => f.endsWith(".js") && !/^quiz/.test(f)).map(f => "js/" + f)
+        .concat(fs.readdirSync(ROOT).filter(f => f.endsWith(".html") && f !== "quiz.html"));
+    for (const rel of files) {
+        const text = read(rel);
+        for (const m of text.matchAll(/Track\.event\(\s*["']([a-z0-9-]+)["']/g)) note(m[1], rel);
+        for (const m of text.matchAll(/data-track=["']([a-z0-9-]+)["']/g)) note(m[1], rel);
+        for (const m of text.matchAll(/dataset\.track\s*=\s*["']([a-z0-9-]+)["']/g)) note(m[1], rel);
+        if (rel === "js/pura-panic.js") for (const m of text.matchAll(/\bcount\(\s*"([a-z0-9-]+)"/g)) note(m[1], rel);
+    }
+    check(sent.size > 10, `only ${sent.size} counted names found in the pages — this check has stopped finding them`);
+    for (const [name, rel] of sent) {
+        check(accepted.has(name), `${rel} counts "${name}", which netlify/functions/track.js does not accept (EVENT_NAMES), so it is dropped`);
+    }
+}
+
 if (process.exitCode) {
     console.error(`\n${checked} checks — see above.`);
 } else {

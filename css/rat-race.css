@@ -57,6 +57,21 @@
 }
 .rr-bar-btn svg { display: block; }
 .rr-bar-btn[hidden] { display: none; }
+/* (26 Oct 2026) On a touch screen, where these are the only pause there is,
+   each is drawn the same but takes a thumb's press over a 24px square round
+   it (its ::after); a little further apart, so the squares meet without
+   overlapping, the last of them ending where the bulb begins. The bulb's
+   and the X's reach (css/style.css, made for Pura Panic's bar) reached 14px
+   and 16px left, over the fullscreen button and over the bulb itself, so a
+   press on the bulb could close the game: here the bulb's starts at its own
+   left edge and the X's meets it in the gap between, as Pura's X does. */
+@media (pointer: coarse) {
+    .rr-bar-btns { gap: 11px; }
+    .rr-bar-btn { position: relative; }
+    .rr-bar-btn::after { content: ""; position: absolute; left: -7px; top: -6px; width: 24px; height: 24px; }
+    #rr-light::after { left: 0; }
+    #rr-close::after { left: -2px; }
+}
 .rr-corner {
     position: absolute;
     top: 6px;

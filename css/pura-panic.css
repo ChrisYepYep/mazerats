@@ -65,6 +65,20 @@
 }
 .pura-board {
     display: block;
+    /* NEVER TALLER THAN ITS STAGE (26 Oct 2026, the bug scan). On a short
+       screen — a phone on its side — the window is held to the screen's
+       height and the stage under the score bar comes out at 220–280px, and
+       the well, a fixed 330px, stood up out of it: its top rows and the
+       spawn line were cut off and it painted over the score bar, Pause and
+       Music with it. Now it shrinks to the stage, keeping its shape, and
+       stays at its own size wherever there is room. The touch controls
+       measure the well as drawn (wireTouch's scale), so they follow. */
+    width: auto;
+    height: auto;
+    max-width: 100%;
+    max-height: 100%;
+    min-width: 0;
+    min-height: 0;
     image-rendering: pixelated;
     /* On a phone the well is the control (see wireTouch): every touch on
        it is the game's, never a scroll or a zoom. */

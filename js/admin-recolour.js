@@ -164,7 +164,7 @@ window.AdminRecolour = (function () {
         { id: "text", title: "Text & links", open: false,
           blurb: "Body copy, headings, dim notes and links, wherever they are on the site." },
         { id: "header", title: "Header & footer", open: false,
-          blurb: "The bar across the top — sign-in, the site-state pill, notices — and the footer's links." },
+          blurb: "The bar across the top — sign-in, the site-state pill, notices — and the footer's links. The Warren has neither, so see them with Preview on the site." },
         { id: "maze", title: "The maze window", open: false,
           blurb: "What opens when you click a maze: photos and gallery, share / saved / walked, old versions, furni cards, the lightbox." },
         { id: "status", title: "Status, difficulty & progress", open: false,
@@ -186,7 +186,7 @@ window.AdminRecolour = (function () {
         { id: "shadows", title: "Shadows & glows", open: false,
           blurb: "Drop shadows, inset shading and hover glows, wherever they are. Mostly black at low opacity: depth rather than colour." },
         { id: "admin", title: "This admin panel", open: false,
-          blurb: "Colours only the Warren uses — its forms, pills and editors. Visitors never see these, but the preview here does." },
+          blurb: "Colours only the Warren uses — its forms, pills and editors. Visitors never see these, and the Warren's other sections wear the workshop's own colours over them, so this panel is the one place they still show." },
         { id: "other", title: "Everything else", open: false,
           blurb: "Colours no section above claims, kept here so nothing is out of reach." }
     ];
@@ -1503,14 +1503,60 @@ window.AdminRecolour = (function () {
         const nameOf = (id) => (builtInThemes().find(t => t.id === id) || { label: id }).label;
         const saved = o && o.kind === "saved" ? state.saved.find(x => x.id === o.id) : null;
         const madeOver = saved ? (saved.baseTheme || "classic") : null;
+        /* Not while a skin brings its own palette (26 Oct 2026): through a
+           Halloween or Christmas window the site wears that skin's palette
+           (Witching Hour, Frost — js/skin-wear.js) and a live palette goes
+           over that, not over the theme it was made on. See skinNow. */
+        const skin = skinNow();
+        const skinTheme = skin && skin.theme && skin.theme !== now ? skin.theme : null;
+        const skinNote = skinTheme
+            ? 'While the ' + esc(SKIN_LABELS[skin.skin] || skin.skin) + ' skin is on' + esc(skinUntil(skin)) + ', the site wears ' +
+              esc(nameOf(skinTheme)) + ' instead, and a live palette is worn over that.'
+            : "";
         if (madeOver && madeOver !== now) {
             s += '<br><span class="rc-kind-warn">Made over ' + esc(nameOf(madeOver)) + ', and worn over it when live — but this page is wearing ' +
                 esc(nameOf(now)) + ', so the preview here is not what the site shows. Saving records ' + esc(nameOf(now)) +
-                ' as its theme; to keep ' + esc(nameOf(madeOver)) + ', switch the site to it in Controls first.</span>';
+                ' as its theme; to keep ' + esc(nameOf(madeOver)) + ', switch the site to it in Controls first.</span>' +
+                (skinNote ? '<br>' + skinNote : "");
+        } else if (skinTheme) {
+            s += '<br>Previewing over ' + (now === "classic" ? "Classic" : 'the ' + esc(nameOf(now)) + ' theme') +
+                ', which is what it is worn over when live once no skin is on. ' + skinNote;
         } else if (now !== "classic") {
             s += '<br>Previewing over the ' + esc(nameOf(now)) + ' theme, which is what it is worn over when live.';
         }
         return s;
+    }
+
+    /* THE SKIN BEING WORN NOW (26 Oct 2026), worked out with the very
+       arithmetic the public pages use: js/admin-skin.js loads
+       js/skin-wear.js in its passive mode, which wears nothing here and
+       lends SkinWear.resolve. The settings it needs are read when the panel
+       is mounted and each time it is shown again, so a schedule changed in
+       Controls meanwhile is caught. Null when no skin is on, or before
+       either has arrived (the line is then as it always was). */
+    const SKIN_LABELS = { halloween: "Halloween", xmas: "Christmas" };
+    let skinSite = null;
+    function skinNow() {
+        const W = window.SkinWear;
+        if (!skinSite || !W || typeof W.resolve !== "function") return null;
+        try {
+            const r = W.resolve(skinSite, Date.now());
+            return r && r.skin ? r : null;
+        } catch (e) { return null; }
+    }
+    function skinUntil(r) {
+        if (r.why === "override") return " (switched on by hand)";
+        if (r.why !== "schedule" || !Number.isFinite(r.until)) return "";
+        return " (until " + new Date(r.until).toLocaleString("en-GB", { day: "numeric", month: "short" }) + ")";
+    }
+    async function readSkinSite() {
+        try {
+            const res = await fetch("/.netlify/functions/settings?fresh=" + Date.now(), { cache: "no-store" });
+            if (!res.ok) return;
+            const s = await res.json();
+            skinSite = { skin: (s && s.skin) || "auto", skinSchedule: s && Array.isArray(s.skinSchedule) ? s.skinSchedule : [] };
+        } catch (e) { return; }
+        updateEditing();
     }
 
     function updateEditing() {
@@ -1722,6 +1768,14 @@ window.AdminRecolour = (function () {
         root = shell.querySelector(".rc-body");
         state.catalogue = Recolour.rescan();
         watchTheme();
+        // Which skin is on, for the "Previewing over" line (26 Oct 2026):
+        // now, and again whenever the panel is shown.
+        readSkinSite();
+        const panelEl = shell.closest(".admin-panel");
+        if (panelEl && typeof MutationObserver !== "undefined") {
+            new MutationObserver(() => { if (!panelEl.hidden) readSkinSite(); })
+                .observe(panelEl, { attributes: true, attributeFilter: ["hidden"] });
+        }
         try { await refresh(); } catch (e) {
             if (e.status === 401) failed(e);
             else say("Could not load saved palettes: " + e.message, "bad");

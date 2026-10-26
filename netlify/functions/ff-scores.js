@@ -462,7 +462,7 @@ const TIME_BONUS_PER_S = 1;
 /* AND THE LIVES, which are worth points at the end of a run and would
    otherwise push an honest run through the ceiling. A player starts with
    three and earns one per ten levels cleared, so at `levels` cleared the
-   most they can be holding is 3 + floor(levels / 5) — the same arithmetic as
+   most they can be holding is 3 + floor(levels / 10) — the same arithmetic as
    js/room-game.js, duplicated here for the same reason everything else on
    this page is. Generous like the rest of the ceiling: it assumes none were
    ever spent. */

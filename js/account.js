@@ -37,6 +37,14 @@
         return fetch(url, Object.assign({}, opts, { signal: controller.signal }));
     }
 
+    /* Before every trip this file starts itself (26 Oct 2026): what fails
+       while the next page loads is the leaving, and js/error-report.js holds
+       it back as it does for a link click. `to`, when given, lets a jump
+       within this page (#nickname on the archive) open nothing. */
+    function leavingNow(to) {
+        try { if (window.MazeErrors && typeof MazeErrors.leaving === "function") MazeErrors.leaving(to); } catch (e) { /* never in the way */ }
+    }
+
     const listeners = [];
     let ready = null;
 
@@ -146,6 +154,10 @@
             try { if (window.top !== window && window.top.location.origin === location.origin) win = window.top; } catch (e) { /* another site's frame: this one only */ }
             const here = win.location;
             const to = returnTo || (here.pathname + here.search + here.hash);
+            // What fails on the way out is the leaving (26 Oct 2026; see
+            // MazeErrors.leaving): the page making the trip, and this frame.
+            leavingNow();
+            if (win !== window) { try { if (win.MazeErrors && typeof win.MazeErrors.leaving === "function") win.MazeErrors.leaving(); } catch (e) { /* not ours to tell */ } }
             // The clean path, matching what is registered with Discord (see
             // netlify.toml). "me" and "signout" below are only ever called
             // by this file, so they stay on the function's own URL.
@@ -710,7 +722,7 @@
     Account.editNickname = () => {
         const C = window.MazeConsole;
         if (C && typeof C.editNickname === "function") C.editNickname();
-        else location.href = "/home#nickname";
+        else { leavingNow("/home#nickname"); location.href = "/home#nickname"; }
     };
 
     /* The line the games put under a filed score (28 Sept 2026): "On the
@@ -1011,6 +1023,15 @@
         }
         const ff = document.getElementById("ff-title");
         if (ff && ff.dataset.state === "playing") return true;
+        /* And a round in the homepage's Fallin' Furni window (26 Oct 2026):
+           the game is a page of its own in a frame there (js/ff-window.js),
+           so its #ff-title is in the frame's document, never this one's, and
+           the windows here opened over a round in play. */
+        try {
+            const frame = document.querySelector("#ff-overlay.open iframe");
+            const inner = frame && frame.contentDocument && frame.contentDocument.getElementById("ff-title");
+            if (inner && inner.dataset.state === "playing") return true;
+        } catch (e) { /* a frame this page cannot read: not ours */ }
         /* Three more waits (29 Sept 2026). The loading screen: home.js
            marks it data-done / .is-done and removes it 300ms later, and
            until then the prompt would open behind the "LOADING" bar.
@@ -1447,6 +1468,7 @@
         if (!b || b.level !== "full") return;
         if (/^\/(?:warren|privacy)/.test(location.pathname)) return;
         rememberBlock();
+        leavingNow();
         location.replace("/");
     }
 

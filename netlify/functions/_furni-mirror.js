@@ -25,7 +25,12 @@ function mirrored() {
 
 function site(url) {
     if (typeof url !== "string" || !OLD.test(url)) return url;
-    const file = decodeURIComponent(url.split("?")[0].split("/").pop());
+    /* A stray % in the address (26 Oct 2026, the bug scan) made
+       decodeURIComponent throw: a 404 logged as a fault from furni-shown.js
+       for anybody's ?u=, and in _furni-payload.js one such stored icon
+       would have failed the whole public /rooms. It names no copy here. */
+    let file;
+    try { file = decodeURIComponent(url.split("?")[0].split("/").pop()); } catch (e) { return ""; }
     return mirrored().has(file) ? LOCAL + encodeURIComponent(file) : "";
 }
 

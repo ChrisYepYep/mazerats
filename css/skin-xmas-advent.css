@@ -1,0 +1,246 @@
+/* THE ADVENT CALENDAR's stylesheet (js/skin-xmas-advent.js builds the window).
+
+   A site window like any other (the owner's, 26 Oct 2026: "styled closer to
+   the rest of the maze rats website, so in a window styled like the rest of
+   the website"): .modal, .chrome-titlebar, .chrome-frame and the archive's
+   .chrome-list-row do the window; this sheet adds the door tiles and the
+   little the row needs. Loaded only while the Christmas skin is on
+   (js/skin-wear.js, EXTRAS).
+
+   ITS OWN PALETTE, WHATEVER THE PAGE WEARS (the owner's: "Classic but make
+   it a darker, more cosy brown palette for the advent calender"). The
+   Christmas skin puts the page in Frost; this window stays Classic, deeper:
+   dark wood and candlelight. The palette's tokens are set again on the
+   overlay, so every rule that reads them (the site's and a palette's alike)
+   paints the window in these; and the few things Frost sets outright — its
+   frame and title-bar art, its white titles, the blue-black behind pills
+   and tags — are set back below, a class deeper than Frost's own rules. */
+
+/* Above the other windows, which sit at 100; the sign-in notice is never
+   shown while this is open. */
+.xa-overlay {
+    z-index: 150;
+    --bg-black: #0e0905;
+    --bg-panel: #140d07;
+    --bg-panel-light: #1f150c;
+    --wood-dark: #24170c;
+    --wood-mid: #3a2512;
+    --amber: #b8894e;
+    --amber-bright: #e3b46e;
+    --amber-text: #d2a564;
+    --parchment: #ecdcbe;
+    --parchment-dim: #cbb796;
+    --unknown-text: #9c8668;
+    --border: rgba(201, 151, 79, 0.35);
+    --chrome-border: #0a0603;
+    --chrome-fill: #2a1a0b;
+    --chrome-highlight: #553619;
+    --chrome-row: #21140a;
+    --chrome-row-featured: #33200f;
+    --frame-bg: #2e1d0e;
+    --frame-bg-light: #3a2614;
+}
+/* A warm dark rather than the page's black-blue (two classes: Frost's own is an attribute and a class). */
+.modal-overlay.xa-overlay { background: rgba(10, 6, 3, 0.86); }
+
+/* What Frost sets outright, set back: Classic's frame and title-bar art. */
+.xa-overlay .modal.xa-window {
+    border-image-source: url('/assets/img/window_frame.png');
+    box-shadow: 0 22px 55px rgba(0, 0, 0, 0.85), 0 0 60px 6px rgba(227, 160, 80, 0.08);
+}
+.xa-overlay .xa-window .chrome-titlebar { background-color: var(--chrome-fill); }
+.xa-overlay .xa-window .chrome-titlebar::before,
+.xa-overlay .xa-window .chrome-titlebar::after { background-image: url('/assets/img/title_pattern.png'); filter: brightness(1.05); }
+.xa-overlay .xa-window .chrome-titlebar h2 { color: #f5ecd8; text-shadow: 1px 1px 0 rgba(0, 0, 0, 0.65); }
+/* The frame inside: dark wood, lit warmly from the top as if by candles. */
+.xa-overlay .xa-window .chrome-frame {
+    background:
+        radial-gradient(ellipse 90% 45% at 50% 0%, rgba(227, 160, 80, 0.10), transparent 70%),
+        var(--frame-bg);
+    box-shadow: inset 0 1px 0 var(--chrome-highlight), inset 1px 0 0 var(--chrome-highlight);
+}
+.xa-overlay .xa-window .chrome-intro { color: var(--parchment-dim); }
+.xa-overlay .xa-window .chrome-list-row,
+.xa-overlay .xa-window .chrome-list-row.featured { background: var(--chrome-row-featured); border-color: var(--chrome-border); }
+.xa-overlay .xa-window .chrome-list-row .row-thumb { border-color: var(--chrome-border); }
+.xa-overlay .xa-window .chrome-list-row h3 { color: var(--amber-bright); text-shadow: none; }
+.xa-overlay .xa-window .chrome-list-row .row-creator { color: var(--amber-text); }
+.xa-overlay .xa-window .chrome-list-row .row-desc { color: var(--parchment-dim); }
+.xa-overlay .xa-window .status-badge,
+.xa-overlay .xa-window .tag { background: rgba(14, 9, 4, 0.88); }
+.xa-overlay .xa-window .tag { border-color: var(--chrome-highlight); color: var(--parchment-dim); }
+.modal.xa-window { max-width: 640px; }
+/* Room inside the frame, so today's ring and the tiles' drop never touch its edge. */
+.xa-frame { padding: 12px 14px 14px; }
+.xa-intro { text-align: center; margin-bottom: 12px; }
+
+/* ---------- the doors ---------- */
+.xa-grid {
+    display: grid;
+    grid-template-columns: repeat(6, 1fr);
+    gap: 8px;
+    margin: 0 0 14px;
+}
+.xa-tile {
+    position: relative;
+    aspect-ratio: 1;
+    padding: 0;
+    border: 2px solid var(--chrome-border);
+    background: var(--chrome-row);
+    /* The row cards' own hard drop, and a lit inner edge. */
+    box-shadow: inset 0 0 0 1px var(--chrome-highlight), 2px 2px 0 rgba(0, 0, 0, 0.4);
+    perspective: 400px;
+    cursor: var(--cursor-pointer, pointer);
+    -webkit-tap-highlight-color: transparent;
+}
+.xa-tile:focus { outline: none; }
+.xa-tile:focus-visible { outline: 2px solid var(--amber-bright); outline-offset: 2px; }
+
+/* What is behind the door: a warm little space, the furni in it. */
+.xa-tile-in {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    background: radial-gradient(circle at 50% 60%, var(--chrome-highlight), var(--chrome-row) 75%);
+}
+.xa-pic { opacity: 0; transition: opacity 0.35s ease 0.2s; }
+.xa-pic.is-in { opacity: 1; }
+
+/* The door: the tile's face, its number in the middle, hung on its left edge. */
+.xa-tile-door {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--chrome-row);
+    box-shadow: inset 0 0 0 1px var(--chrome-highlight);
+    transform-origin: 0 50%;
+    transition: transform 0.7s cubic-bezier(0.3, 0.75, 0.25, 1), opacity 0.7s ease;
+    backface-visibility: hidden;
+}
+.xa-tile-n {
+    font-family: 'Volter Goldfish Bold', 'Volter Goldfish', sans-serif;
+    font-weight: 700;
+    font-size: 1.125rem;
+    line-height: 1;
+    color: var(--amber-bright);
+    text-shadow: 2px 2px 0 var(--chrome-border);
+}
+/* An open door's number, kept small in its corner. */
+.xa-tile-corner {
+    position: absolute;
+    left: 4px;
+    top: 3px;
+    z-index: 1;
+    font-family: 'Volter Goldfish', sans-serif;
+    font-size: 0.5625rem;
+    line-height: 1;
+    color: var(--amber-bright);
+    text-shadow: 1px 1px 0 var(--chrome-border);
+    opacity: 0;
+    transition: opacity 0.3s ease 0.35s;
+}
+
+/* Its states. A door whose day has not come: dim. */
+.xa-tile.is-locked { cursor: default; background: var(--bg-panel); box-shadow: inset 0 0 0 1px var(--chrome-row), 2px 2px 0 rgba(0, 0, 0, 0.4); }
+.xa-tile.is-locked .xa-tile-door { background: var(--bg-panel); box-shadow: none; }
+.xa-tile.is-locked .xa-tile-n { color: var(--unknown-text); }
+/* One whose day has come: lit along its edge. */
+.xa-tile.is-ready { box-shadow: inset 0 0 0 1px var(--amber), 2px 2px 0 rgba(0, 0, 0, 0.4); }
+.xa-tile.is-ready .xa-tile-door { background: var(--chrome-row-featured); }
+/* Today's: ringed in gold, breathing. */
+.xa-tile.is-today .xa-tile-door { background: var(--chrome-row-featured); box-shadow: inset 0 0 0 1px var(--amber-bright); }
+.xa-tile.is-today .xa-tile-n { color: #ffe6a0; }
+.xa-tile.is-today { animation: xa-today 2.4s ease-in-out infinite; }
+@keyframes xa-today {
+    0%, 100% { box-shadow: inset 0 0 0 1px var(--amber-bright), 0 0 0 2px #e8b84a, 0 0 8px 2px rgba(232, 184, 74, 0.3); }
+    50% { box-shadow: inset 0 0 0 1px var(--amber-bright), 0 0 0 2px #ffd98a, 0 0 16px 4px rgba(232, 184, 74, 0.55); }
+}
+/* Open: the door has swung away on its hinge. */
+.xa-tile.is-open .xa-tile-door { transform: rotateY(-105deg); opacity: 0; }
+.xa-tile.is-open .xa-tile-corner { opacity: 1; }
+.xa-tile.is-selected { box-shadow: inset 0 0 0 1px var(--amber-bright), 0 0 0 2px var(--amber-bright), 2px 2px 0 rgba(0, 0, 0, 0.4); }
+@media (hover: hover) {
+    .xa-tile:not(.is-locked):not(.is-open):hover .xa-tile-door { transform: rotateY(-18deg); }
+    .xa-tile.is-open:hover { box-shadow: inset 0 0 0 1px var(--amber-bright), 2px 2px 0 rgba(0, 0, 0, 0.4); }
+}
+.xa-tile.is-shaking { animation: xa-shake 0.42s ease; }
+@keyframes xa-shake {
+    0%, 100% { transform: none; }
+    20% { transform: translateX(-3px); }
+    45% { transform: translateX(3px); }
+    70% { transform: translateX(-2px); }
+}
+
+/* Gold pixels, puffed from a door as it opens. */
+.xa-spark {
+    position: absolute;
+    z-index: 2;
+    width: 4px;
+    height: 4px;
+    background: #ffd98a;
+    box-shadow: 0 0 6px 1px rgba(255, 210, 120, 0.8);
+    pointer-events: none;
+    opacity: 0;
+    animation: xa-spark 0.9s ease-out forwards;
+}
+.xa-spark-w { background: #fff6dc; width: 2px; height: 2px; }
+@keyframes xa-spark {
+    0% { opacity: 1; transform: translate(0, 0); }
+    100% { opacity: 0; transform: translate(var(--dx), var(--dy)); }
+}
+
+/* ---------- the row under them ---------- */
+/* The archive's row, but not a button here: it shows, it does not open. */
+.xa-detail .xa-row { cursor: default; }
+.xa-detail .xa-row:hover { transform: none; }
+.xa-row-thumb {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: radial-gradient(circle at 50% 60%, var(--chrome-highlight), var(--chrome-row) 75%);
+}
+.xa-row-n {
+    font-family: 'Volter Goldfish Bold', 'Volter Goldfish', sans-serif;
+    font-weight: 700;
+    font-size: 1.5rem;
+    color: var(--amber-bright);
+    text-shadow: 2px 2px 0 var(--chrome-border);
+}
+.xa-detail .xa-row-count { color: var(--amber-text); }
+
+/* ---------- the top bar's button ---------- */
+.header-badge.xa-open-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    border-color: #e8b84a;
+    background: rgba(232, 184, 74, 0.14);
+    color: #ffd98a;
+    cursor: var(--cursor-pointer, pointer);
+}
+.header-badge.xa-open-btn[hidden] { display: none; }
+.header-badge.xa-open-btn:hover { background: rgba(232, 184, 74, 0.26); box-shadow: 0 0 8px 2px rgba(232, 184, 74, 0.45); }
+/* A candle flame, lit while a door is waiting. */
+.xa-open-flame {
+    width: 4px;
+    height: 7px;
+    border-radius: 50% 50% 45% 45% / 65% 65% 35% 35%;
+    background: linear-gradient(180deg, #ffb347, #fff2c4 70%);
+    opacity: 0.45;
+}
+.xa-open-btn.has-ready .xa-open-flame { opacity: 1; box-shadow: 0 0 6px 2px rgba(255, 190, 90, 0.7); animation: xa-flame 1.6s ease-in-out infinite; }
+@keyframes xa-flame { 0%, 100% { transform: scaleY(1); } 40% { transform: scaleY(1.18) translateX(0.5px); } 70% { transform: scaleY(0.92); } }
+
+@media (max-width: 600px) {
+    .xa-grid { grid-template-columns: repeat(4, 1fr); gap: 6px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .xa-tile-door, .xa-tile-corner, .xa-pic { transition: none; }
+    .xa-tile.is-today, .xa-open-btn.has-ready .xa-open-flame { animation: none; }
+}

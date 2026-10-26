@@ -107,6 +107,14 @@
 
     const STORE_MUSIC = "mazerats_ff_music";
     const STORE_SOUND = "mazerats_ff_sound";
+    /* THE VOLUME (26 Oct 2026, the owner's): one slider, on the title and the
+       pause menu, for the music and the effects together, 0-100 and 80 until
+       it is moved. It turns the whole mix down after the glue, so the balance
+       between the two is untouched, and it is heard as a square of the
+       slider, which is how ears hear loudness: half way sounds half as loud
+       rather than barely quieter. Music and Sound still switch each off. */
+    const STORE_VOLUME = "mazerats_ff_volume";
+    const DEFAULT_VOLUME = 80;
     const MUSIC_VOL = 0.4;
     const SOUND_VOL = 0.55;
     const MUFFLED_HZ = 750, OPEN_HZ = 20000;
@@ -740,11 +748,15 @@
 
     // ---- the sound graph
     let A = null;                      // see build
-    let musicOn = true, soundOn = true, muffled = false;
+    let musicOn = true, soundOn = true, muffled = false, volume = DEFAULT_VOLUME;
+    const clampVolume = (v) => Math.max(0, Math.min(100, Math.round(Number(v))));
     try {
         musicOn = localStorage.getItem(STORE_MUSIC) !== "off";
         soundOn = localStorage.getItem(STORE_SOUND) !== "off";
-    } catch (e) { /* private mode: on */ }
+        const v = localStorage.getItem(STORE_VOLUME);
+        if (v !== null && v !== "" && !isNaN(Number(v))) volume = clampVolume(v);
+    } catch (e) { /* private mode: on, at the default volume */ }
+    const masterLevel = () => Math.pow(volume / 100, 2);
     const musicLevel = () => (musicOn ? MUSIC_VOL * (muffled ? MUFFLED_VOL : 1) : 0);
 
     /* ---- THE DAC'S SAMPLES, made once per context: `fn(t)` for each sample
@@ -832,7 +844,10 @@
         glue.ratio.value = 3;
         glue.attack.value = 0.004;
         glue.release.value = 0.16;
-        glue.connect(ctx.destination);
+        // The volume slider, the last thing before the speakers (see STORE_VOLUME).
+        const master = g(masterLevel());
+        glue.connect(master);
+        master.connect(ctx.destination);
 
         const musicVol = g(musicLevel());
         musicVol.connect(glue);
@@ -898,7 +913,7 @@
         for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
 
         return {
-            ctx, lanes, music, muffle, musicVol, echo, wash, sting: stingVol, sound: soundVol, noise: buf,
+            ctx, lanes, music, muffle, musicVol, echo, wash, sting: stingVol, sound: soundVol, master, noise: buf,
             psgNoise: makePsgNoise(ctx), dac: makeSamples(ctx)
         };
     }
@@ -908,6 +923,8 @@
         const AC = window.AudioContext || window.webkitAudioContext;
         if (!AC) return false;
         try { A = build(new AC()); } catch (e) { A = null; return false; }
+        // Made while behind another game: a context can start out running.
+        if (held) A.ctx.suspend();
         return true;
     }
 
@@ -1594,20 +1611,44 @@
     /* A browser starts no sound until the page has been clicked or a key
        pressed. Arriving straight at /fallinfurni that may not have happened,
        so a context that is not running waits for the first press. */
+    /* NEVER WHILE THE TAB IS HIDDEN (26 Oct 2026). pause() suspends the
+       context when the tab goes, but a sting's or a track switch's timer
+       still fired behind it (start() wakes), and the tune came back in a tab
+       nobody was looking at — clear a level, switch tabs, and 2.4 seconds
+       later the music played on in the background. The page's own
+       visibilitychange calls resume() when the tab is back.
+
+       AND A TAP COUNTS (26 Oct 2026). Only pointerdown and keydown were
+       listened for, and a finger's pointerdown is not a gesture a browser
+       lets start sound (pointerup and touchend are): on a phone the first
+       tap's resume was refused and the listener gone with it. So pointerup
+       and touchend are listened for too, and every one of them is kept
+       until the context is actually running. */
+    /* AND NEVER WHILE ANOTHER GAME IS IN FRONT (26 Oct 2026). On the
+       homepage Pura Panic and Scout's Trail can be open beside this window,
+       and only the front one plays: behind, the page calls hold(true) and
+       the whole context stops — the lobby's drift as well as a round's
+       tune, nothing muffled left underneath — and nothing here wakes it
+       (a sting's timer, a track switch, a tap) until hold(false). */
+    let held = false;
     let waiting = false;
+    const WAKE_ON = ["pointerdown", "pointerup", "touchend", "keydown"];
     function wake() {
-        if (!A || A.ctx.state === "running") return;
+        if (!A || A.ctx.state === "running" || A.ctx.state === "closed") return;
+        if (document.hidden || held) return;
         A.ctx.resume().catch(() => {});
         if (waiting) return;
         waiting = true;
-        const go = () => {
+        const done = () => {
             waiting = false;
-            document.removeEventListener("pointerdown", go, true);
-            document.removeEventListener("keydown", go, true);
-            if (A && A.ctx.state !== "running") A.ctx.resume().catch(() => {});
+            WAKE_ON.forEach(ev => document.removeEventListener(ev, go, true));
         };
-        document.addEventListener("pointerdown", go, true);
-        document.addEventListener("keydown", go, true);
+        const go = () => {
+            if (!A || A.ctx.state === "running" || A.ctx.state === "closed") { done(); return; }
+            if (held) return;
+            A.ctx.resume().then(() => { if (A && A.ctx.state === "running") done(); }, () => {});
+        };
+        WAKE_ON.forEach(ev => document.addEventListener(ev, go, true));
     }
 
     /* A track from the top (its intro first), or carrying on if that track
@@ -1682,6 +1723,11 @@
     // Pausing stops the audio clock itself, so nothing booked plays on.
     function pause() { if (A && A.ctx.state === "running") A.ctx.suspend(); }
     function resume() { if (A && A.ctx.state !== "running" && A.ctx.state !== "closed") wake(); }
+    // Behind another game and back (see `held` above wake).
+    function hold(on) {
+        held = Boolean(on);
+        if (held) pause(); else resume();
+    }
 
     // ---- THE STINGS, each from `at` on the audio clock, on the sting bus.
     const STINGS = {
@@ -1886,14 +1932,22 @@
         try { localStorage.setItem(STORE_SOUND, soundOn ? "on" : "off"); } catch (e) { /* not remembered */ }
         if (A) A.sound.gain.setTargetAtTime(soundOn ? SOUND_VOL : 0, A.ctx.currentTime, 0.05);
     }
+    // 0-100, remembered; heard as its square (see STORE_VOLUME).
+    function setVolume(v) {
+        if (isNaN(Number(v))) return;
+        volume = clampVolume(v);
+        try { localStorage.setItem(STORE_VOLUME, String(volume)); } catch (e) { /* not remembered */ }
+        if (A) A.master.gain.setTargetAtTime(masterLevel(), A.ctx.currentTime, 0.03);
+    }
 
     window.FFAudio = {
-        start, stop, setMuffled, pause, resume, sting, play, setMusic, setSound, trackForLevel,
+        start, stop, setMuffled, pause, resume, hold, sting, play, setMusic, setSound, setVolume, trackForLevel,
         // The tunes a level can be given, as [id, name] — the editor's list.
         tracks: () => TRACK_NAMES.filter(([id]) => TRACKS[id]).map(([id, name]) => ({ id, name })),
         hasTrack: (id) => Boolean(id && TRACKS[id]),
         get music() { return musicOn; },
         get sound() { return soundOn; },
+        get volume() { return volume; },
         get playing() { return playing; }
     };
 
@@ -1912,6 +1966,7 @@
         const name = what === "song" || what === "muffled" ? "theme" : what;
         if (TRACKS[name]) trk = TRACKS[name];
         A = build(off);
+        A.master.gain.value = 1;     // previews and measurements at full, whatever the slider says
         try {
             Object.keys(A.lanes).forEach(k => { A.lanes[k].gain.value = solo && k !== solo ? 0 : trk.mix[k]; });
             if (TRACKS[name]) {
@@ -1938,6 +1993,7 @@
         const live = A, wasMusic = musicOn;
         musicOn = true;
         A = build(off);
+        A.master.gain.value = 1;     // at full, as _render
         try {
             Object.keys(A.lanes).forEach(k => { A.lanes[k].gain.value = k === "lead" ? 1 : 0; });
             const six = 15 / 100;

@@ -328,8 +328,39 @@ const MAP_DEFAULTS = {
    reads as. js/wizard.js fades across a small margin either side rather
    than switching, so a name does not pop into existence mid-pinch. */
 function readBand(body) {
-    const num = v => (v === null || v === undefined || v === "" ? null : Number(v));
+    // Not a number reads as no limit (26 Oct 2026): it was stored as NaN,
+    // or as the string itself through the bulk save.
+    const num = v => {
+        if (v === null || v === undefined || v === "") return null;
+        const n = Number(v);
+        return Number.isFinite(n) ? n : null;
+    };
     return { fromZoom: num(body.fromZoom), toZoom: num(body.toZoom) };
+}
+
+/* The fields that are numbers, kept as numbers (26 Oct 2026). They were
+   stored exactly as sent — the bulk save in the handler above all, which has
+   no form behind it — so a "2" or an "abc" went out to every visitor as a string, and the
+   page does arithmetic on all of them: revealTarget in js/wizard.js turns a
+   revealed room's zoom band into the zoom the map flies to, and a NaN there
+   is a map that never draws again. Empty means "not set" and is stored as
+   null, as the editor's own number boxes mean it; anything else that is not
+   a finite number is left out of the write, so what was stored stands. The
+   sheet's size and zoom limits keep their own stricter rule in pick(). */
+const NUMERIC = new Set(["x", "y", "w", "h", "size", "rotation", "z", "opacity", "spacing", "gap",
+    "grayscale", "sepia", "brightness", "contrast", "saturate", "blur", "ink",
+    "startX", "startY", "startZoom", "footprintSpacing", "footprintSize", "labelGap", "order"]);
+
+function tidyNumbers(fields) {
+    for (const field of Object.keys(fields)) {
+        if (!NUMERIC.has(field)) continue;
+        const value = fields[field];
+        if (value === null || value === "") { fields[field] = null; continue; }
+        const n = Number(value);
+        if (Number.isFinite(n) && typeof value !== "boolean" && typeof value !== "object") fields[field] = n;
+        else delete fields[field];
+    }
+    return fields;
 }
 
 /* What each kind is allowed to store. An allowlist rather than taking the
@@ -446,6 +477,7 @@ function pick(kind, body) {
         if (body[field] !== undefined) out[field] = body[field];
     }
     if (out.points !== undefined && !validPoints(out.points)) delete out.points;
+    tidyNumbers(out);
     const band = readBand(body);
     if (FIELDS[kind].includes("fromZoom")) {
         out.fromZoom = band.fromZoom;
@@ -956,6 +988,11 @@ async function route(event, wizard) {
                threw inside sampleCurve on the public page, which draws every
                trail in one pass, so one bad record blanked the whole map. */
             if ($set.points !== undefined && !validPoints($set.points)) delete $set.points;
+            // Numbers as numbers, and a zoom band read as pick() reads one
+            // (26 Oct 2026): see tidyNumbers.
+            tidyNumbers($set);
+            if ($set.fromZoom !== undefined) $set.fromZoom = readBand($set).fromZoom;
+            if ($set.toZoom !== undefined) $set.toZoom = readBand($set).toZoom;
             writes.push({
                 updateOne: { filter: { id: item.id, kind: item.kind }, update: { $set } }
             });

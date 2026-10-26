@@ -65,6 +65,12 @@ Allow: /.netlify/functions/rooms
 Allow: /.netlify/functions/events
 Allow: /.netlify/functions/guides
 Allow: /.netlify/functions/dead-ends
+# What's New's own posts and its hidden entries (whats-new), and the
+# palette the site is wearing (palettes?id=), which the homepage reads as
+# it loads too (26 Oct 2026): without them a crawler's render listed What's
+# New entries the admins had taken off, in colours the site is not wearing.
+Allow: /.netlify/functions/whats-new
+Allow: /.netlify/functions/palettes
 #
 # And the image CDN. Every share preview's picture is a
 # /.netlify/images?url=… address (see netlify/functions/share.js), and so is

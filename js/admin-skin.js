@@ -29,8 +29,8 @@
      skinSchedule  [{ skin, from: "YYYY-MM-DDTHH:mm", to: …, zone, yearly,
                      theme?: <palette> | null }]
    A window's theme LEFT OUT means the skin's own default (js/skin-wear.js's
-   PAIRED: Halloween wears Witching Hour, Christmas leaves the palette
-   alone); null means the site's own palette; a name is that palette. The
+   PAIRED: Halloween wears Witching Hour, Christmas wears Frost); null
+   means the site's own palette; a name is that palette. The
    palette picker offers all three, and a row on "Default" writes no theme
    at all, so a skin's default can change later without re-saving dates.
    A row here is a skin's yearly window, its "comes on" and "goes off" being
@@ -103,6 +103,19 @@
     let modeError = "";     // why the switch's last save failed, said under it
 
     const token = () => (typeof window.AdminToken === "function" ? window.AdminToken() : "") || get("mazerats_admin_token");
+    /* Whether this account may change the dates (26 Oct 2026, the bug scan):
+       a view-only account could edit them and press Save, and was only
+       refused by the server. As js/admin-players.js asks it: the role
+       js/admin.js lends, else its body.is-viewer. The calendar is greyed for
+       a viewer and the switch above already is (style.css's viewer list);
+       the preview is this browser's alone and stays theirs to use. */
+    function canWrite() {
+        let r = "";
+        try { r = typeof window.AdminRole === "function" ? String(window.AdminRole() || "") : ""; } catch (e) { r = ""; }
+        if (r) return r === "owner" || r === "admin";
+        return !document.body.classList.contains("is-viewer");
+    }
+    const editable = () => loaded && canWrite();
 
     /* The saved windows, as rows: a skin's first yearly window is its row;
        everything else about it is kept as it is. */
@@ -164,7 +177,7 @@
         box.querySelectorAll(".skin-site-btn").forEach((b) => {
             b.classList.toggle("active", b.dataset.skinSite === mode);
             b.setAttribute("aria-pressed", String(b.dataset.skinSite === mode));
-            b.disabled = !loaded;
+            b.disabled = !editable();
         });
         const hint = $("skin-site-mode-hint");
         if (hint) {
@@ -226,18 +239,23 @@
         time.setAttribute("aria-label", label + " time");
         const report = () => onChange(cur + "T" + (time.value || "00:00"));
         const dm = dayMonth(cur, (v) => { cur = v; report(); }, label);
-        time.addEventListener("change", report);
+        time.addEventListener("change", () => {
+            // A time put back in takes Save's "Set a time" (below) away with it.
+            const need = time.nextElementSibling;
+            if (time.value && need && need.classList.contains("sk-need")) { need.remove(); time.removeAttribute("aria-invalid"); time.removeAttribute("aria-describedby"); }
+            report();
+        });
         return el("span", { className: "sk-moment" }, [dm, el("span", { className: "sk-word", textContent: "at" }), time]);
     }
 
     // A row's palette: worn with the skin while its dates are on.
-    function themePick(r, s) {
+    function themePick(r, s, changed) {
         const choices = [["default", "Default (" + s.palette + ")"]].concat(THEMES);
         const now = r.theme === "default" ? "default" : (r.theme || "");
         const pick = el("select", { className: "ctl-input sk-theme", title: "The palette worn with the skin while its dates are on" },
             choices.map(([v, t]) => el("option", { value: v, textContent: t, selected: v === now })));
-        pick.setAttribute("aria-label", "Palette");
-        pick.addEventListener("change", () => { r.theme = pick.value === "default" ? "default" : (pick.value || null); r.on = true; paintCal(); paintSave(); });
+        pick.setAttribute("aria-label", s.label + " palette");
+        pick.addEventListener("change", () => { r.theme = pick.value === "default" ? "default" : (pick.value || null); r.on = true; changed(); });
         return pick;
     }
 
@@ -265,22 +283,37 @@
         if (!cal) return;
         cal.replaceChildren(...SKINS.map((s) => {
             const r = rows[s.name];
-            const tick = el("input", { type: "checkbox", checked: r.on, disabled: !loaded });
-            tick.addEventListener("change", () => { r.on = tick.checked; paintCal(); paintSave(); });
+            /* A change to a row puts it right IN PLACE (26 Oct 2026). Every
+               change used to draw the whole calendar again, so the control
+               being used was thrown away under the hand: typing a time,
+               Chrome reports each figure as a change, and "14" went in as
+               01:00 with the focus gone; a keyboard user lost their place
+               after every pick. Only the tick, the greying and the length
+               depend on the rest, so only they are touched. */
+            const sync = () => {
+                tick.checked = r.on;
+                range.classList.toggle("is-off", !r.on);
+                len.textContent = r.on ? "On for " + lengthOf(r) : "Not in the calendar";
+                paintSave();
+            };
+            const tick = el("input", { type: "checkbox", checked: r.on, disabled: !editable() });
+            tick.addEventListener("change", () => { r.on = tick.checked; sync(); });
             const name = el("label", { className: "sk-name" }, [tick,
                 el("span", { className: "sk-dot", style: "--sk-dot:" + s.dot }), s.label]);
             // A line each: comes on, goes off, then the palette and how long.
             const line = (lead, kids) => el("div", { className: "sk-line" }, [el("span", { className: "sk-word sk-lead", textContent: lead }), ...kids]);
-            const range = el("div", { className: "sk-range" + (r.on ? "" : " is-off") }, [
-                line("Comes on", [moment(r.onAt, (v) => { r.onAt = v; r.on = true; paintCal(); paintSave(); }, s.label + " comes on")]),
-                line("Goes off", [moment(r.offAt, (v) => { r.offAt = v; r.on = true; paintCal(); paintSave(); }, s.label + " goes off")]),
-                line("Palette", [themePick(r, s),
-                    el("span", { className: "sk-len", textContent: r.on ? "On for " + lengthOf(r) : "Not in the calendar" })])
+            const len = el("span", { className: "sk-len" });
+            const range = el("div", { className: "sk-range" }, [
+                line("Comes on", [moment(r.onAt, (v) => { r.onAt = v; r.on = true; sync(); }, s.label + " comes on")]),
+                line("Goes off", [moment(r.offAt, (v) => { r.offAt = v; r.on = true; sync(); }, s.label + " goes off")]),
+                line("Palette", [themePick(r, s, sync), len])
             ]);
+            range.classList.toggle("is-off", !r.on);
+            len.textContent = r.on ? "On for " + lengthOf(r) : "Not in the calendar";
             // Changing a moment ticks the skin (above): choosing its times is putting it in.
-            range.querySelectorAll("select, input").forEach((x) => { x.disabled = !loaded; });
+            range.querySelectorAll("select, input").forEach((x) => { x.disabled = !editable(); });
             const kept = r.kept.map((w, i) => {
-                const rm = el("button", { type: "button", className: "ctl-btn sk-rm", textContent: "Remove" });
+                const rm = el("button", { type: "button", className: "ctl-btn sk-rm", textContent: "Remove", disabled: !editable() });
                 rm.addEventListener("click", () => { r.kept.splice(i, 1); paintCal(); paintSave(); });
                 return el("p", { className: "sk-kept" }, [el("span", { textContent: "Also: " + keptWords(w) }), rm]);
             });
@@ -290,7 +323,7 @@
         const box = $("skin-clock");
         if (box) {
             const opt = (value, text) => {
-                const r = el("input", { type: "radio", name: "skin-clock", value, checked: clock === value, disabled: !loaded });
+                const r = el("input", { type: "radio", name: "skin-clock", value, checked: clock === value, disabled: !editable() });
                 r.addEventListener("change", () => { clock = value; paintSave(); });
                 return el("label", { className: "sk-radio" }, [r, text]);
             };
@@ -324,8 +357,9 @@
     function paintSave() {
         const dirty = changed();
         const save = $("skin-cal-save"), discard = $("skin-cal-discard");
-        if (save) save.hidden = !dirty;
-        if (discard) discard.hidden = !dirty;
+        if (save) { save.hidden = !dirty; save.disabled = !editable(); }
+        if (discard) { discard.hidden = !dirty; discard.disabled = !editable(); }
+        if (loaded && !canWrite()) { say("This account is view-only: it can see the dates, but not change them."); return; }
         const warn = overlapWarning();
         if (dirty) say(warn ? "Unsaved changes. " + warn : "Unsaved changes.");
         else if (warn) say(warn);
@@ -339,13 +373,14 @@
         const mine = get(PREVIEW_KEY), date = get(DATE_KEY);
         skins.replaceChildren(segBtn("skin-preview-btn", "skinPreview", "", "Off"),
             ...SKINS.map((s) => segBtn("skin-preview-btn", "skinPreview", s.name, s.label)));
-        skins.querySelectorAll("button").forEach((b) => b.classList.toggle("active", b.dataset.skinPreview === mine));
+        // Pressed or not, said as well as lit, as the switch above says it (26 Oct 2026).
+        skins.querySelectorAll("button").forEach((b) => { b.classList.toggle("active", b.dataset.skinPreview === mine); b.setAttribute("aria-pressed", String(b.dataset.skinPreview === mine)); });
         const chosen = skinOf(mine);
         const pretend = $("skin-pretend");
         if (pretend) pretend.hidden = !chosen || !chosen.dates.length;
         dates.replaceChildren(segBtn("skin-date-btn", "skinDate", "", "Today"),
             ...(chosen ? chosen.dates : []).map(([v, t]) => segBtn("skin-date-btn", "skinDate", v, t)));
-        dates.querySelectorAll("button").forEach((b) => b.classList.toggle("active", b.dataset.skinDate === date));
+        dates.querySelectorAll("button").forEach((b) => { b.classList.toggle("active", b.dataset.skinDate === date); b.setAttribute("aria-pressed", String(b.dataset.skinDate === date)); });
         // Open while a preview is on, so it is never on without being seen.
         const box = $("skin-preview-box");
         if (box && mine) box.open = true;
@@ -406,6 +441,27 @@
             save({ skin: b.dataset.skinSite }, "", null);
         });
         $("skin-cal-save").addEventListener("click", async () => {
+            if (!editable()) return;
+            /* A time field left empty (cleared, or half typed) was saved as
+               00:00 while it showed nothing (26 Oct 2026, the bug scan). Now
+               Save stops, says "Set a time" beside each empty one in a skin
+               that is on, and goes to the first. */
+            const blank = [...document.querySelectorAll("#skin-cal .sk-time")].filter((t) => {
+                const row = t.closest(".sk-row");
+                return !t.value && row && rows[row.dataset.skin] && rows[row.dataset.skin].on;
+            });
+            if (blank.length) {
+                blank.forEach((t) => {
+                    t.setAttribute("aria-invalid", "true");
+                    if (t.nextElementSibling && t.nextElementSibling.classList.contains("sk-need")) return;
+                    const need = el("span", { className: "sk-word sk-hint is-bad sk-need", textContent: "Set a time", id: "sk-need-" + Math.random().toString(36).slice(2, 8) });
+                    t.setAttribute("aria-describedby", need.id);
+                    t.after(need);
+                });
+                say("Some times are empty. Set them, then save.", true);
+                blank[0].focus();
+                return;
+            }
             const bad = SKINS.filter((s) => rows[s.name].on && rows[s.name].onAt === rows[s.name].offAt);
             if (bad.length) { say(bad[0].label + " comes on and goes off at the same moment. To keep it on all year, choose it under What visitors see instead.", true); return; }
             if (await save({ skinSchedule: scheduleFrom() }, "Dates saved.", say)) {
@@ -434,6 +490,16 @@
         addEventListener("storage", (e) => { if (e.key === PREVIEW_KEY || e.key === DATE_KEY) paintPreview(); });
 
         paintModes(); paintCal(); paintSave(); paintPreview();
+        /* The role is known only once someone has signed in, and can change
+           with the next sign-in: js/admin.js says so with body.is-viewer, so
+           the card is greyed, or given back, when that class changes. */
+        let viewer = document.body.classList.contains("is-viewer");
+        new MutationObserver(() => {
+            const now = document.body.classList.contains("is-viewer");
+            if (now === viewer) return;
+            viewer = now;
+            paintModes(); paintCal(); paintSave();
+        }).observe(document.body, { attributes: true, attributeFilter: ["class"] });
         // The same arithmetic the public pages use, without wearing anything here.
         window.__skinWearPassive = true;
         const s = document.createElement("script");

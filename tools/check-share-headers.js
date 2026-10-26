@@ -62,6 +62,33 @@ const robotsTxt = fs.readFileSync(path.join(root, "robots.txt"), "utf8");
         process.exit(1);
     }
 });
+/* And the games on a switch (26 Oct 2026; SWITCHED in share.js): /fallinfurni
+   and /scout are indexable only while live, and hidden Scout's Trail is the
+   archive's own page, not its card. /fallinfurni/play is kept out for good by
+   netlify.toml's header, since a header cannot follow the switch. */
+if (!_test.switchedPage || !_test.switchState) {
+    console.error("check-share-headers: share.js no longer exports switchedPage/switchState; the games' noindex rule is unchecked.");
+    process.exit(1);
+}
+const rules = [];
+const origin = "https://mazerats.net";
+const sw = (page, state) => _test.switchedPage(page, _test.switchState(page, state === undefined ? null : { fallinFurniState: state, ratRaceState: state }, state === null), origin);
+[
+    ["fallinfurni", "live", false], ["fallinfurni", "coming-soon", true], ["fallinfurni", "maintenance", true], ["fallinfurni", null, true],
+    ["scout", "live", false], ["scout", "maintenance", true], ["scout", "hidden", true], ["scout", null, true]
+].forEach(([page, state, noindex]) => {
+    const a = sw(page, state);
+    if (a.noindex !== noindex) rules.push(`  /${page} while ${state || "unreadable"}: ${a.noindex ? "noindex" : "indexable"}, should be ${noindex ? "noindex" : "indexable"}`);
+});
+if (sw("scout", "hidden").tags !== null) rules.push("  /scout while hidden carries the game's card; it should be the archive's own page");
+if (/one run/.test(sw("fallinfurni", "coming-soon").tags.description)) rules.push("  /fallinfurni's Coming Soon card says the game is there to play");
+if (!/\[\[headers\]\]\s*\n\s*for\s*=\s*"\/fallinfurni\/play"\s*\n\s*\[headers\.values\]\s*\n\s*X-Robots-Tag\s*=\s*"noindex/.test(toml)) {
+    rules.push("  netlify.toml no longer sends X-Robots-Tag: noindex for /fallinfurni/play");
+}
+if (rules.length) {
+    console.error("check-share-headers: the games' switched pages (SWITCHED in netlify/functions/share.js) break their rule:\n" + rules.join("\n"));
+    process.exit(1);
+}
 if (problems.length) {
     console.error("check-share-headers: netlify/functions/share.js serves home.html with headers that differ from netlify.toml's:\n" + problems.join("\n"));
     console.error("Copy netlify.toml's values into PAGE_HEADERS in share.js.");

@@ -58,9 +58,11 @@
 # 2026): tools/ariadne-editor is a page and a small local server for this
 # machine only, and assets/ariadne-levels holds the level files it edits.
 # The game reads none of them: it loads js/rat-race-levels.js, which the
-# editor writes from them on every save.
+# editor writes from them on every save. js/rat-race-epic.js goes with them
+# (26 Oct 2026): the epic Mine tunes, loaded only by the editor's jukebox
+# (tools/ariadne-editor/index.html); no page of the site loads it.
 [build]
-  command = "rm -rf tools/ariadne-editor assets/ariadne-levels && npm install && node tools/check-daily-parity.js && node tools/check-changes.js && node tools/check-share-headers.js && node tools/themes.js && node tools/build-minify.js && rm -f dungeon.html js/dungeon.js"
+  command = "rm -rf tools/ariadne-editor assets/ariadne-levels js/rat-race-epic.js && npm install && node tools/check-daily-parity.js && node tools/check-changes.js && node tools/check-share-headers.js && node tools/check-article.js && node tools/themes.js && node tools/build-minify.js && rm -f dungeon.html js/dungeon.js"
   publish = "."
 
 [functions]
@@ -412,7 +414,8 @@
   status = 200
 
 # The Sorcerer's Atlas, at the clean /wizard URL. Same rewrite treatment
-# as /admin above, so the address bar keeps the URL that was typed.
+# as /warren above (it said /admin, the panel's address before the rename),
+# so the address bar keeps the URL that was typed.
 [[redirects]]
   from = "/wizard"
   to = "/wizard.html"
@@ -710,9 +713,11 @@
     # stored Habbo article, and FurniIndex's icons. Everything else is
     # first-party.
     #
-    # cdn.discordapp.com is where a signed-in visitor's own Discord avatar
-    # comes from — the small round picture on the header button and on a
-    # leaderboard row. Nothing else is fetched from Discord by the browser:
+    # cdn.discordapp.com is where a player's Discord avatar comes from. Since
+    # 4 Oct 2026 no public page shows one (not the header button, not a
+    # leaderboard row: _publicid.js); only the Warren's Players tab does, for
+    # the accounts that see ids, which is why it is still here (26 Oct 2026).
+    # Nothing else is fetched from Discord by the browser:
     # the OAuth exchange all happens server-side in
     # netlify/functions/discord-auth.js, so discord.com itself never needs
     # to be in connect-src.
@@ -953,3 +958,15 @@
   for = "/wizard.html"
   [headers.values]
     X-Robots-Tag = "noindex, nofollow"
+
+# Fallin' Furni's game page, /fallinfurni/play (26 Oct 2026, the bug scan):
+# never an entry of its own in search. It is what the window frames and
+# where a phone plays, and it names /fallinfurni as its canonical; that
+# address is the one indexed, and only while the game is live (share.js
+# sends /fallinfurni's noindex until then, and sitemap.js lists it only
+# then). Here, a header can't follow the switch, so the page stays out for
+# good: while the game is Coming Soon this kept the placeholder out too.
+[[headers]]
+  for = "/fallinfurni/play"
+  [headers.values]
+    X-Robots-Tag = "noindex"

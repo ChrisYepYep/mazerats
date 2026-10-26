@@ -4,6 +4,50 @@
    attribute is set, and taking the attribute away is the whole of removing
    it. Loaded only while the skin is on (js/skin-wear.js). */
 
+/* NO SIDEWAYS SCROLL, EVER, WHILE IT IS ON (26 Oct 2026). Every piece is
+   drawn for its host's width and redrawn when that changes, but the redraw
+   waits for the ResizeObserver and 120ms after it, so for that moment after a
+   phone turns or a window is dragged narrower, the pieces drawn for the old
+   width (the top bar's lights, a window's snow) stood past the screen: a
+   sideways scrollbar flashed, and a phone could be left zoomed out after
+   turning. Clipped at the root, which is the screen; no page has anything
+   wider than the screen of its own (checked at 375px, skin off). clip, not
+   hidden, so nothing can be scrolled to either. */
+html[data-skin="xmas"] { overflow-x: clip; }
+
+/* THE CLASSIC MAZE UNDER THE SNOW, WHATEVER THE PALETTE (26 Oct 2026, the
+   owner's: "Try having the original colour back image from the classic
+   palette, with the normal snow"). The skin wears Frost, which swaps the
+   maze for its blue one; under the snow the maze is the site's own brown,
+   with its own top-down shade, exactly as css/style.css lays it (the same
+   three layers, so the size, repeat, blend and fixed attachment there still
+   apply). The page loader is the same backdrop, so the page does not jump
+   when it fades. js/skin-xmas.js tints the snow from whatever maze is shown,
+   so it follows this. */
+html[data-skin="xmas"] body,
+html[data-skin="xmas"] .site-loader {
+    background-color: #120c07;
+    background-image:
+        linear-gradient(to bottom,
+            rgba(10, 7, 4, 0.7920) 0%,
+            rgba(10, 7, 4, 0.7899) 5%,
+            rgba(10, 7, 4, 0.7771) 10%,
+            rgba(10, 7, 4, 0.7480) 15%,
+            rgba(10, 7, 4, 0.7015) 20%,
+            rgba(10, 7, 4, 0.6400) 25%,
+            rgba(10, 7, 4, 0.5685) 30%,
+            rgba(10, 7, 4, 0.4935) 35%,
+            rgba(10, 7, 4, 0.4220) 40%,
+            rgba(10, 7, 4, 0.3605) 45%,
+            rgba(10, 7, 4, 0.3140) 50%,
+            rgba(10, 7, 4, 0.2849) 55%,
+            rgba(10, 7, 4, 0.2721) 60%,
+            rgba(10, 7, 4, 0.2700) 65%,
+            rgba(10, 7, 4, 0.2700) 100%),
+        linear-gradient(rgba(18, 12, 7, 0.1), rgba(18, 12, 7, 0.1)),
+        url('../assets/img/MazeBG.png');
+}
+
 html[data-skin="xmas"] .xm-piece {
     position: absolute;
     pointer-events: none;
@@ -28,18 +72,11 @@ html[data-skin="xmas"] .xm-snowfall {
 }
 
 
-/* The Christmas trees standing in the background maze (js/skin-xmas.js,
-   backgroundTrees): fixed like the maze itself, under everything. Their
-   lights are a layer of their own, so they can breathe without a redraw. */
+/* The snowed-in background maze, its snow and its trees (js/skin-xmas.js,
+   backgroundTrees): fixed like the maze itself, under everything. */
 html[data-skin="xmas"] .xm-bgtrees {
     position: fixed; inset: 0; z-index: -1; pointer-events: none;
 }
-/* Added as light, the way the client draws a lamp's glow (its ink is ADD). */
-html[data-skin="xmas"] .xm-bgtrees-lights { mix-blend-mode: screen; mix-blend-mode: plus-lighter; }
-@media (prefers-reduced-motion: no-preference) {
-    html[data-skin="xmas"] .xm-bgtrees-lights { animation: xm-tree-lights 3.6s ease-in-out infinite alternate; }
-}
-@keyframes xm-tree-lights { from { opacity: 0.7; } to { opacity: 1; } }
 
 /* The ticker's countdown slide ("12 sleeps 'til Christmas!"), in the lights' gold. */
 html[data-skin="xmas"] .header-events-extra { color: #ffd24a; }

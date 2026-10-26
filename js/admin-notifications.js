@@ -461,7 +461,10 @@
             return;
         }
         if (b.disabled) return;
+        const mine = sessionNo;
         if (!(await ask("Withdraw this notification? Anyone who hasn't read it yet won't see it."))) return;
+        // Signed out, or somebody else in, while the box was up (26 Oct 2026), as for send.
+        if (mine !== sessionNo) return;
         b.disabled = true;
         try {
             await Api.withdrawNotification(token(), b.dataset.withdraw);
@@ -469,7 +472,10 @@
         } catch (err) {
             b.disabled = false;
             if (sessionGone(err)) return;
-            alert(errText(err));
+            /* The page's own box, as every other panel's (26 Oct 2026, the
+               bug scan): the browser's alert() was the last one left here. */
+            if (typeof window.AdminAlert === "function") window.AdminAlert(escapeHtml(errText(err)));
+            else alert(errText(err));
         }
     });
 
@@ -528,7 +534,17 @@
         if (listEl) listEl.innerHTML = "";
         if (!panel.hidden && token()) onShown();
     }
-    window.AdminNotifications = { reset };
+
+    /* A notification half written (26 Oct 2026, the bug scan): words in
+       the box, players chosen, or an everyone-notice's options moved off
+       where reset() puts them. js/admin.js asks before Log out throws it
+       away, and the browser before the tab closes, as for a guide or a
+       What's New post. */
+    function isDirty() {
+        if (draft.trim() || chosen.length) return true;
+        return opt.days !== 30 || opt.later || opt.start !== "" || opt.who !== "everyone" || opt.quiet;
+    }
+    window.AdminNotifications = { reset, isDirty };
 
     function onShown() {
         if (panel.hidden || !token()) return;

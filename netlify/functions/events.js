@@ -71,6 +71,32 @@ function checkSpotlight(body) {
     return "";
 }
 
+/* THE EVENT'S OWN START AND END (26 Oct 2026, the bug scan), held to what
+   the spotlight's are: an instant with its zone, or "". They were stored as
+   sent, and since b35dcff3 the header ticket counts a multi-day event down
+   to its end ("Ends in 3 days"), event-entries.js opens and shuts a picked
+   event's entries on them, and js/event-status.js reads them on every page
+   — a zoneless "2026-10-03T08:00" was read in each visitor's own zone, and
+   an end before the start quietly became a three-hour event. The /warren
+   form always sends "…T08:00:00Z" or "" (and checks the order itself; see
+   dateFault in js/admin.js), which passes untouched: the value is checked,
+   never rewritten, so a save does not read as a changed date. */
+function checkDates(body) {
+    for (const k of ["date", "endDate"]) {
+        if (!Object.prototype.hasOwnProperty.call(body, k)) continue;
+        const v = body[k];
+        if (v === null || v === "") { body[k] = ""; continue; }
+        if (typeof v !== "string" || !SPOTLIGHT_INSTANT.test(v) || isNaN(Date.parse(v))) {
+            return k === "date" ? "The event's start isn't a date the site can read." : "The event's end isn't a date the site can read.";
+        }
+    }
+    return "";
+}
+// End after start, given both as stored or about to be ("" for none).
+const endsBeforeStart = (date, endDate) => typeof date === "string" && typeof endDate === "string" &&
+    !!date && !!endDate && Date.parse(endDate) <= Date.parse(date);
+const END_BEFORE_START = "The event's end must be after its start.";
+
 /* The list and picture fields held to their shapes, and the two short
    lines every page prints held to a ceiling (10 Oct 2026) — rooms.js's
    checkShapes, which this route never had. An event carries the same
@@ -168,6 +194,18 @@ async function handle(event) {
         });
         const slugs = assignSlugs(all, "event", retired);
         all.forEach(r => { r.slug = slugs.get(r.id) || r.id; });
+        /* An article stored before article.js knew to drop comments
+           (26 Oct 2026): WordPress's <!-- wp:… --> block markers and
+           <!--more--> were kept as TEXT and every visitor read them (The
+           Secrets of Glukko; Testing Facility A since February). Cleaned
+           again here, on the way out, so no stored copy needs re-importing;
+           only a body that shows the signs is touched, and the cleaner is
+           idempotent, so a clean one would come out the same anyway. A
+           re-save then stores the clean copy, since ?full=1 serves it too. */
+        all.forEach(r => {
+            const b = r.article && typeof r.article.body === "string" ? r.article.body : "";
+            if (b && /&lt;[!?]|<!--|<\?/.test(b)) r.article = cleanArticle(r.article);
+        });
         // ?full=1 is the admin page's route: the records exactly as stored,
         // every reviewer field and hidden detection included, because that is
         // what the admin editor works on.
@@ -245,6 +283,10 @@ async function handle(event) {
         if (problem) return json(400, { error: problem });
         const spotProblem = checkSpotlight(body);
         if (spotProblem) return json(400, { error: spotProblem });
+        // See checkDates. A PUT sending one of the two meets the stored other below.
+        const dateProblem = checkDates(body);
+        if (dateProblem) return json(400, { error: dateProblem });
+        if (event.httpMethod === "POST" && endsBeforeStart(body.date, body.endDate)) return json(400, { error: END_BEFORE_START });
         /* The stored article is set as innerHTML in every visitor's event
            modal, so it is sanitised HERE, on the way in, and not only where
            article.js fetched it — see cleanArticle for why that was not
@@ -357,6 +399,11 @@ async function handle(event) {
             if ((has("spotlightFrom") || has("spotlightUntil")) && typeof from === "string" && typeof until === "string" &&
                 from && until && until <= from) {
                 return json(400, { error: "The spotlight's end must be after its start." });
+            }
+            // The event's own start and end, on the same terms (26 Oct 2026; see checkDates).
+            const hasDate = has("date"), hasEnd = has("endDate");
+            if ((hasDate || hasEnd) && endsBeforeStart(hasDate ? update.date : previous.date, hasEnd ? update.endDate : previous.endDate)) {
+                return json(400, { error: END_BEFORE_START });
             }
         }
 

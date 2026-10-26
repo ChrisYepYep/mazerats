@@ -109,6 +109,7 @@ const COLLECTION = "pura_scores";
 const RUN_TOKENS = "pura_run_tokens";
 const TOP = 25;
 const BOARD_READ = TOP * 2;
+const BOARD_READ_MAX = BOARD_READ * 16;
 
 const RUN_AUDIENCE = "mazerats-purarun";
 const RUN_LIFE_S = 3 * 60 * 60;
@@ -361,8 +362,14 @@ function readRat(token) {
     }
 }
 async function nextRat(db) {
-    const r = await db.collection("counters").findOneAndUpdate(
+    const bump = () => db.collection("counters").findOneAndUpdate(
         { _id: "pura_guest_rat" }, { $inc: { n: 1 } }, { upsert: true, returnDocument: "after" });
+    /* Two first-ever bumps racing can have the second's upsert refused with
+       E11000; by then the counter exists, so the same bump again is an
+       ordinary update (26 Oct 2026; bump in track.js does the same). */
+    let r;
+    try { r = await bump(); }
+    catch (e) { if (!(e && e.code === 11000)) throw e; r = await bump(); }
     const doc = r && r.ok !== undefined && r.value !== undefined ? r.value : r;
     return doc && Number.isInteger(doc.n) ? doc.n : null;
 }
@@ -608,11 +615,22 @@ exports.handler = async (event) => {
         try {
             await ensureIndex(scores, { score: -1, pieces: 1, at: 1 });
             const open = await isOpen(db);
-            const top = (await shown(db, await scores
-                .find({}, { projection: { _id: 0 } })
-                .sort({ score: -1, pieces: 1, at: 1 })
-                .limit(BOARD_READ)
-                .toArray())).slice(0, TOP);
+            /* Read further while the filter leaves the board short (26 Oct
+               2026, the bug scan): `shown` drops banned accounts and those
+               whose nickname has since gone, AFTER the read's cut, so a top
+               fifty holding more than twenty-five of them came out short with
+               players still below it. Four times as deep each pass, to
+               BOARD_READ_MAX at most; one pass whenever the board is whole. */
+            let top = [];
+            for (let read = BOARD_READ; ; read *= 4) {
+                const raw = await scores
+                    .find({}, { projection: { _id: 0 } })
+                    .sort({ score: -1, pieces: 1, at: 1 })
+                    .limit(read)
+                    .toArray();
+                top = (await shown(db, raw)).slice(0, TOP);
+                if (top.length >= TOP || raw.length < read || read >= BOARD_READ_MAX) break;
+            }
             const heads = await habboHeads(db, [...top.map(r => r && r.playerId), player && player.id]);
             const out = { open, top: top.map(r => clean(r, heads)) };
             const qs = event.queryStringParameters || {};
@@ -648,10 +666,7 @@ exports.handler = async (event) => {
         return act === "claim" ? claimHabbo(db, body) : verifyHabbo(db, body);
     }
 
-    /* THE START: a token and its seed, nothing written. Answered signed out
-       too — the seed is what the game is dealt from either way — but not
-       while the game is in maintenance: then the page deals its own seed
-       and says scores are not being kept. */
+    // A game left part-way, picked up again: see CONTINUING.
     if ((event.queryStringParameters || {}).action === "continue") {
         if (!sameOrigin(event)) return json(403, { error: "Forbidden" });
         const refused = await writeRefusal(db, event, player ? player.id : null, { game: true });
@@ -659,6 +674,12 @@ exports.handler = async (event) => {
         return continueRun(db, event, player);
     }
 
+    /* THE START: a token and its seed, and the pura_starts row THE GAME LOG
+       counts (the comment said "nothing written" until 26 Oct 2026; it has
+       written that row since 6 Oct). Answered signed out too — the seed is
+       what the game is dealt from either way — but not while the game is in
+       maintenance: then the page deals its own seed and says scores are not
+       being kept. */
     if ((event.queryStringParameters || {}).action === "start") {
         let open;
         try { open = await isOpen(db); }
@@ -705,6 +726,19 @@ exports.handler = async (event) => {
     catch { return json(400, { error: "Body is not JSON" }); }
     if (!body || typeof body !== "object") return json(400, { error: "Body is not JSON" });
 
+    /* A GAME STARTED SIGNED IN, SENT SIGNED OUT (26 Oct 2026, the owner's
+       answer: "ask the player"). Its run token names the account, and it
+       used to be filed under whichever guest this browser had, as if that
+       guest had played it. Now it is refused with its own reason, before
+       anything else is asked of it, and the page asks: sign in again and
+       send it to the account, or send it again with `asGuest` to file it
+       under the guest as any guest's game. A save on the way is refused the
+       same, and goes nowhere. (Continuing such a game signed out was always
+       refused, as "someone-else".) */
+    if (!player && body.asGuest !== true) {
+        const c = readRun(body.run, null);
+        if (c && c.sub) return json(200, { recorded: false, reason: "signed-out-run" });
+    }
     if (!player && !body.habboToken && !body.rat && body.guest !== true) {
         return json(200, { recorded: false, reason: "signed-out" });
     }
@@ -777,7 +811,15 @@ exports.handler = async (event) => {
         level: result.level,
         pieces: result.pieces,
         ms,
-        at: new Date().toISOString()
+        at: new Date().toISOString(),
+        /* Which game set it (26 Oct 2026, the bug scan). A game whose own
+           save on the way (A SAVE ON THE WAY) already set the best, and that
+           cleared no row after it, ends on the same score; keepBest then
+           has nothing to better, and the game was told "Your best is still
+           …" — its own score. The row's game id says the best is this
+           game's, so it is answered as the new best it is. Never sent out
+           (clean picks the fields the board shows). */
+        rid: claims.rid
     };
     let better;
     try {
@@ -788,14 +830,19 @@ exports.handler = async (event) => {
         await unspend();
         return json(503, { error: "The leaderboard could not be updated just now." });
     }
-    const best = better ? row : (await scores.findOne({ playerId: who.id }).catch(() => null)) || row;
+    const held = better ? null : await scores.findOne({ playerId: who.id }).catch(() => null);
+    const best = better ? row : held || row;
+    /* This game's best already, at this very score, set by its own save on
+       the way (see the row's rid). Not a save arriving after its own finish,
+       which is lower and changes nothing. */
+    const ours = better || Boolean(held && held.rid === claims.rid && Number(held.score) === row.score);
     let place = null;
     try {
         place = await placeOf(db, scores, best);
     } catch (e) { /* the place is a nicety */ }
     return json(200, {
-        recorded: better,
-        reason: better ? null : "not-your-best",
+        recorded: ours,
+        reason: ours ? null : "not-your-best",
         score: result.score,
         best: clean(best),
         place,

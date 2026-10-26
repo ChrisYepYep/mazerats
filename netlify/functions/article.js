@@ -237,6 +237,34 @@ const ALLOWED = {
 const VOID_TAGS = new Set(["br", "hr", "img"]);
 // Dropped along with everything inside them, rather than unwrapped.
 const DROP_WHOLE = new Set(["script", "style", "iframe", "object", "embed", "svg", "math", "noscript", "template", "head"]);
+/* Kept, under another name (26 Oct 2026). The article's own title is the
+   modal's, so a heading inside the body is one level down from it whatever
+   the source calls it; an <h2> used to be unwrapped to bare text, which
+   took "THE SECRETS OF GLUKKO" from a heading to a run-on line. A caption
+   is a paragraph of its own. */
+const RENAME = { h1: "h3", h2: "h3", figcaption: "p" };
+
+/* MARKUP THAT IS NOT AN ELEMENT (26 Oct 2026, The Secrets of Glukko).
+   Habbo's article files now come out of WordPress's block editor, which
+   leaves a comment either side of every block — <!-- wp:paragraph -->,
+   <!-- wp:image {"id":5161,…} --> — 66 of them in that one article. The
+   tag pattern below only knows elements, so each comment fell through as
+   TEXT and was escaped: the page showed the comments themselves, a screen
+   of "<!-- wp:separator -->" between the paragraphs.
+
+   So everything that is markup but not an element goes before anything is
+   read: comments (an unclosed one to the end, as a browser reads it),
+   CDATA, <!DOCTYPE …> and other <!…> declarations, and <?…?> processing
+   instructions. Not just WordPress's: any editor's or exporter's leavings
+   of this kind, which is the point — the next change of Habbo's tooling
+   should not need this file changed again.
+
+   And the same once more on the TEXT, after its entities are decoded
+   (STRAY_MARKUP in sanitiseHtml): an article saved while the bug above was
+   live holds those comments escaped, as text, and is cleaned on its next
+   pass through here — a re-save, or events.js's read. */
+const NOT_ELEMENTS = /<!--[\s\S]*?(?:--!?>|$)|<!\[CDATA\[[\s\S]*?(?:\]\]>|$)|<![^>]*>|<\?[\s\S]*?(?:\?>|$)/g;
+const STRAY_MARKUP = /<!--[\s\S]*?(?:-->|$)|<!\[CDATA\[[\s\S]*?(?:\]\]>|$)|<![a-zA-Z][^>]*>|<\?[\s\S]*?\?>/g;
 
 /* Rebuilds the body from scratch against ALLOWED.
 
@@ -252,24 +280,28 @@ function sanitiseHtml(html, base) {
     let dropDepth = 0;        // inside a DROP_WHOLE element
     let dropTag = "";
     let i = 0;
+    // See NOT_ELEMENTS: comments and the like are not content.
+    html = String(html || "").replace(NOT_ELEMENTS, "");
+    const text_ = (t) => escapeHtml(decodeEntities(t).replace(STRAY_MARKUP, ""));
 
     const TAG = /<\/?([a-zA-Z][a-zA-Z0-9-]*)((?:[^>"']|"[^"]*"|'[^']*')*)>/g;
     let m;
     while ((m = TAG.exec(html)) !== null) {
         const text = html.slice(i, m.index);
         i = TAG.lastIndex;
-        if (!dropDepth && text) out.push(escapeHtml(decodeEntities(text)));
+        if (!dropDepth && text) out.push(text_(text));
 
         const closing = m[0][1] === "/";
-        const name = m[1].toLowerCase();
+        const raw = m[1].toLowerCase();
+        const name = Object.prototype.hasOwnProperty.call(RENAME, raw) ? RENAME[raw] : raw;
         const attrSrc = m[2] || "";
 
         if (dropDepth) {
-            if (name === dropTag) dropDepth += closing ? -1 : 1;
+            if (raw === dropTag) dropDepth += closing ? -1 : 1;
             continue;
         }
-        if (DROP_WHOLE.has(name)) {
-            if (!closing && !m[0].endsWith("/>")) { dropDepth = 1; dropTag = name; }
+        if (DROP_WHOLE.has(raw)) {
+            if (!closing && !m[0].endsWith("/>")) { dropDepth = 1; dropTag = raw; }
             continue;
         }
         if (!Object.prototype.hasOwnProperty.call(ALLOWED, name)) continue;   // unwrap
@@ -314,15 +346,42 @@ function sanitiseHtml(html, base) {
         if (!VOID_TAGS.has(name)) open.push(name);
     }
     const tail = html.slice(i);
-    if (!dropDepth && tail) out.push(escapeHtml(decodeEntities(tail)));
+    if (!dropDepth && tail) out.push(text_(tail));
     while (open.length) out.push("</" + open.pop() + ">");
 
     return out.join("")
+        /* A line break at the very start or end of a paragraph (26 Oct 2026):
+           WordPress's block comments sat on lines of their own, and with
+           them gone each paragraph opened and closed on a <br>, a blank line
+           inside every one. */
+        .replace(/<p>(?:\s*<br>)+/g, "<p>")
+        .replace(/(?:<br>\s*)+<\/p>/g, "</p>")
+        // And after a rule or a picture, which end their own line.
+        .replace(/(<hr>|<img\b[^>]*>)(?:\s*<br>)+/g, "$1")
         // Empty paragraphs are how the source spaces itself out; they are
         // noise once this is set in our own type.
         .replace(/<p>\s*(?:<br>\s*)*<\/p>/g, "")
         .replace(/(?:<br>\s*){3,}/g, "<br><br>")
         .trim();
+}
+
+/* WHAT STILL LOOKS LIKE CODE in a cleaned body (26 Oct 2026): the import's
+   own check on its work, so the next change on Habbo's side is caught by
+   the admin who pressed Add Article, in the Warren, rather than by
+   visitors reading a page of it. Read off the visible text only — the
+   tags this file writes itself are not suspects. Each pattern is a kind of
+   leftover seen or likely: markup that came through as text, a template
+   placeholder the app was meant to fill ({{ … }}), a WordPress block name,
+   a shortcode. A list of short descriptions; empty is clean. */
+const LEFTOVERS = [
+    [/<\/?[a-zA-Z!?][^>]*>/, "HTML tags shown as text"],
+    [/\{\{[\s\S]*?\}\}/, "unfilled {{ }} placeholders"],
+    [/\bwp:[a-z]/i, "WordPress block markers"],
+    [/\[\/?(?:caption|gallery|embed|video|audio|playlist)\b[^\]]*\]/i, "[shortcodes]"]
+];
+function leftovers(body) {
+    const visible = decodeEntities(String(body || "").replace(/<[^>]*>/g, " "));
+    return LEFTOVERS.filter(([re]) => re.test(visible)).map(([, what]) => what);
 }
 
 /* What is inside the <div> that `opener` matches, up to ITS closing tag and
@@ -353,7 +412,18 @@ function extract(html, base) {
     const article = firstMatch(html, /<article[^>]*>([\s\S]*?)<\/article>/i);
     if (!article) return null;
 
-    const bodyHtml = innerHtmlOfDiv(article, /<div[^>]+class="[^"]*\bnews-article\b[^"]*"[^>]*>/i);
+    /* And if that box is ever renamed (26 Oct 2026): the article element
+       itself, less its header (the title, date and banner, read separately
+       below) and from Habbo's "Related news" footer on. A body the admin
+       can see and judge — the import's leftovers check says if it is off —
+       rather than none at all and a refusal. */
+    let bodyHtml = innerHtmlOfDiv(article, /<div[^>]+class="[^"]*\bnews-article\b[^"]*"[^>]*>/i);
+    if (!bodyHtml.trim()) {
+        const foot = /<div[^>]+class="[^"]*\bnews-footer\b/i.exec(article);
+        bodyHtml = (foot ? article.slice(0, foot.index) : article)
+            .replace(/<header\b[\s\S]*?<\/header>/gi, "")
+            .replace(/<h1\b[\s\S]*?<\/h1>/gi, "");
+    }
 
     /* The banner. Found by picking out the <img> whose attributes mention
        news-header__image and then reading its src, rather than matching the
@@ -458,7 +528,12 @@ exports.handler = async (event) => {
         return json(502, { error: "That page came back without an article in it. Habbo may have changed how these pages are served." });
     }
 
-    return json(200, Object.assign({}, parsed, { url, fetchedAt: new Date().toISOString() }));
+    /* `warnings` (26 Oct 2026): what still looks like code once cleaned, or
+       a body with no text, for the Warren to say before anything is saved.
+       Never stored: cleanArticle keeps only the fields it lists. */
+    const warnings = leftovers(parsed.body);
+    if (!plain(parsed.body)) warnings.push("no article text");
+    return json(200, Object.assign({}, parsed, { url, fetchedAt: new Date().toISOString(), warnings }));
 };
 
 /* Exported so both halves can be run over a saved page rather than over the
@@ -507,6 +582,7 @@ module.exports.extract = extract;
 module.exports.sanitiseHtml = sanitiseHtml;
 module.exports.safeUrl = safeUrl;
 module.exports.cleanArticle = cleanArticle;
+module.exports.leftovers = leftovers;
 
 /* Failures reported to /warren's Errors tab (28 Sept 2026): see
    withErrorReporting in _errors.js. Last, so it wraps the handler as finally

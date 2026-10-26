@@ -85,6 +85,7 @@
     let stats = null;
     let el = {};
     let showSplash = true;
+    let swappedNote = null;        // said on the next round written: yesterday's swapped for today's (choose)
     let submitting = false;        // a finished day on its way to the server
     let picking = false;           // a pick on its way to be judged
 
@@ -309,6 +310,7 @@
 
         const forDay = day();
         picking = true;
+        swappedNote = null;
         setPicking(index, tileIndex, true);
         const reply = await window.Daily.move("odd", forDay, index, { tile: tileIndex });
         picking = false;
@@ -329,7 +331,17 @@
             /* Refused because the day has closed — a round begun before
                midnight and picked after the grace. With nothing played yet
                the day is simply swapped for today's (see refreshDay). */
-            if (reply.status === 400 && !state.picks.length) return refreshDay().then(() => { render(); settleFocus(); });
+            /* And says so (26 Oct 2026, the bug scan): the round was swapped
+               for today's first without a word. Said on the new round once
+               its pictures are written (render), which may be a moment
+               later: today's first round is asked for afresh. */
+            if (reply.status === 400 && !state.picks.length) {
+                return refreshDay().then(() => {
+                    if (state && state.day !== forDay) swappedNote = "That was yesterday's round — here are today's.";
+                    render();
+                    settleFocus();
+                });
+            }
             /* Part-way through, it is the honest end of a day begun
                yesterday: the picks made so far stay on this device, and the
                player is told so and offered today's rounds. It used to fall
@@ -688,6 +700,9 @@
         if (sheet && rounds[roundNow()]) {
             sheet.inner.innerHTML = roundHtml(rounds[roundNow()]);
             watchTiles(sheet);
+            // Yesterday's round swapped for today's under a pick (see choose).
+            const note = swappedNote && sheet.inner.querySelector(".odd-pick-note");
+            if (note) { note.textContent = swappedNote; note.hidden = false; announce(swappedNote); swappedNote = null; }
         } else if (sheet) {
             // Not handed out yet (ONE ROUND AT A TIME in js/daily.js).
             sheet.inner.innerHTML = `<p class="daily-note">Dealing the round…</p>`;
@@ -1180,6 +1195,10 @@
         if (!retrying && !el.overlay.classList.contains("open")) {
             const active = document.activeElement;
             opener = active && active !== document.body && !el.overlay.contains(active) ? active : null;
+        } else if (!retrying && !opener && window.DailyGames && DailyGames.takeOpener) {
+            // Opened empty by js/daily-loader.js while this file downloaded:
+            // the opener is the one it noted (26 Oct 2026, as js/guess.js).
+            opener = DailyGames.takeOpener("odd");
         }
         el.overlay.classList.add("open");
         document.body.classList.add("modal-open");

@@ -37,7 +37,7 @@
    numbers, booleans and short strings. */
 (function () {
     "use strict";
-    var noop = { report: function () {} };
+    var noop = { report: function () {}, flush: function () {}, leaving: function () {} };
     try {
         if (window.MazeErrors) return;             // loaded twice: the first copy has it
         var nav = window.navigator || {};
@@ -141,9 +141,57 @@
            sheet, the archive's rooms — and each was filed from a landing
            page whose Enter had simply been pressed. Anything failing in the
            half minute after such a click is taken to be the leaving. */
+        /* Timed on the page's own clock, sinceLoad(), not the wall clock
+           (26 Oct 2026): a click whose page never came (a Stay on a leave
+           box, a file the browser saved) followed by the device's clock
+           being put back would have held every failed file and request
+           back until the wall clock caught up — hours, if it was hours. */
         var departAt = 0;
         var DEPART_MS = 30000;
-        function departing() { return departAt > 0 && Date.now() - departAt < DEPART_MS; }
+        function departing() { return departAt > 0 && sinceLoad() - departAt < DEPART_MS; }
+        /* A click that never left is closed again as soon as the page is
+           plainly still in use (26 Oct 2026): a Stay on a leave box (the
+           Warren's, the Wizard editor's), or a file the browser saved
+           without a download attribute to say so, had silenced every failed
+           file and request for the half minute after. Still in use is a
+           press of a pointer or a key more than STILL_HERE_MS after the
+           click, or the page still showing, and in focus, STAY_CHECK_MS
+           after it — asked again every STAY_AGAIN_MS while a leave box has
+           the focus. A page that is really going is gone well before
+           either; one on a very slow connection that is still loading the
+           next page at five seconds files what fails after that, which is
+           what this file did before the window was there at all. */
+        var STILL_HERE_MS = 1000;
+        var STAY_CHECK_MS = 5000;
+        var STAY_AGAIN_MS = 2000;
+        var stayTimer = null;
+        function depart() {
+            var at = departAt = Math.max(1, sinceLoad());
+            if (stayTimer) clearTimeout(stayTimer);
+            stayTimer = setTimeout(function check() {
+                stayTimer = null;
+                try {
+                    if (departAt !== at || !departing() || leaving) return;
+                    var focused = typeof document.hasFocus !== "function" || document.hasFocus();
+                    if (document.visibilityState !== "hidden" && focused) { departAt = 0; return; }
+                    stayTimer = setTimeout(check, STAY_AGAIN_MS);
+                } catch (x) { /* never */ }
+            }, STAY_CHECK_MS);
+        }
+        function stillHere(e) {
+            try {
+                if (e && e.repeat) return;           // a key held down since the Enter that left
+                if (departAt > 0 && sinceLoad() - departAt > STILL_HERE_MS) departAt = 0;
+            } catch (x) { /* never */ }
+        }
+        /* Whether going to `href` loads another page here: not another
+           scheme (mailto:), and not this page again (a jump within it, or
+           a "#" link the page handles). */
+        function leavesPage(href) {
+            var to = new URL(href, location.href);
+            if (!/^https?:$/.test(to.protocol)) return false;
+            return !(to.origin === location.origin && to.pathname === location.pathname && to.search === location.search);
+        }
 
         /* ---------------------------------------------------- small helpers */
 
@@ -356,12 +404,18 @@
 
         /* ---------------------------------------------------- capturing */
 
+        // f.group: what the failure counts as here, when that is wider than
+        // its own address (the FurniIndex pictures in onResourceError).
+        function fingerprint(kind, f) {
+            var message = scrub(f.message || "", 500) || "(no message)";
+            var source = f.source ? cleanUrl(f.source, 300) : "";
+            return kind + "|" + message + "|" + (f.group || source) + "|" + (f.line || 0);
+        }
+
         function capture(kind, f) {
             var message = scrub(f.message || "", 500) || "(no message)";
             var source = f.source ? cleanUrl(f.source, 300) : "";
-            // f.group: what the failure counts as here, when that is wider than
-            // its own address (the FurniIndex pictures in onResourceError).
-            var fp = kind + "|" + message + "|" + (f.group || source) + "|" + (f.line || 0);
+            var fp = fingerprint(kind, f);
             var had = seen[fp];
             if (had) {
                 // The same failure again: a count, not another report.
@@ -393,6 +447,32 @@
 
         function safe(fn, arg) {
             try { fn(arg); } catch (e) { /* never */ }
+        }
+
+        /* A failure held a moment before it counts: a failed file
+           (onResourceError) or request (the fetch watcher, which says why).
+           Reported only if the page has not been left, or started to be,
+           by the time the grace is up. The snapshot is the page as it was
+           AT the failure — but only for a failure that can still become a
+           report (26 Oct 2026): one already counted, or past the caps, has
+           no use for one, and a maze's furni list on a bad FurniIndex
+           afternoon was a hundred snapshots of the whole page for one
+           report and a count. */
+        function hold(kind, failure) {
+            if (!seen[fingerprint(kind, failure)]) {
+                if (distinct >= PAGE_MAX || sentThisVisit() >= SESSION_MAX) return;
+                try { failure.env = environment(); } catch (x) { /* capture takes its own */ }
+            }
+            /* Any pagehide since, not just "leaving now" (3 Oct 2026).
+               Safari keeps a page it leaves in its back/forward cache with
+               this timer frozen; Back brings it out, pageshow clears
+               `leaving`, and the timer finishes — so a visitor who pressed
+               Enter, then came back three minutes later, filed the same
+               cancelled "rooms" request after all. */
+            var hidesThen = hides;
+            setTimeout(function () {
+                try { if (!leaving && hides === hidesThen && !departing()) capture(kind, failure); } catch (x) { /* never */ }
+            }, LEAVE_GRACE_MS);
         }
 
         function onScriptError(e) {
@@ -437,15 +517,9 @@
             var group = /^\/\/api\.furniindex\.com\/furni\//i.test(clean) ? "//api.furniindex.com/furni/*" : "";
             /* Held a moment, as a failed request is (the fetch watcher below,
                which says why): leaving the page fails whatever is still
-               loading, and a page on its way out reports none of it. The
-               snapshot is the page as it was at the failure. */
+               loading, and a page on its way out reports none of it. */
             if (leaving || departing()) { ignored++; return; }
-            var failure = { message: what + " failed to load", source: clean, tag: tag, group: group };
-            try { failure.env = environment(); } catch (x) { /* capture takes its own */ }
-            var hidesThen = hides;
-            setTimeout(function () {
-                try { if (!leaving && hides === hidesThen && !departing()) capture("resource", failure); } catch (x) { /* never */ }
-            }, LEAVE_GRACE_MS);
+            hold("resource", { message: what + " failed to load", source: clean, tag: tag, group: group });
         }
 
         function onRejection(e) {
@@ -693,12 +767,13 @@
                 if (!a || a.hasAttribute("download")) return;
                 var target = (a.getAttribute("target") || "").toLowerCase();
                 if (target && target !== "_self" && target !== "_top" && target !== "_parent") return;
-                var to = new URL(a.href, location.href);
-                if (!/^https?:$/.test(to.protocol)) return;
-                if (to.origin === location.origin && to.pathname === location.pathname && to.search === location.search) return;
-                setTimeout(function () { if (!e.defaultPrevented) departAt = Date.now(); }, 0);
+                if (!leavesPage(a.href)) return;
+                setTimeout(function () { if (!e.defaultPrevented) safe(depart); }, 0);
             } catch (x) { /* never */ }
         }, true);
+        // The page in use after all (see STILL_HERE_MS).
+        document.addEventListener("pointerdown", stillHere, true);
+        document.addEventListener("keydown", stillHere, true);
 
         /* fetch, watched without being changed: the original is called with
            the same arguments and ITS promise is what the caller gets back,
@@ -810,20 +885,8 @@
                                    made, the snapshot was 1.5s late — the
                                    address a window had moved on to, whether
                                    the tab was still visible or online, and
-                                   crumbs from after it. */
-                                try { failure.env = environment(); } catch (x) { /* capture takes its own */ }
-                                /* Any pagehide since, not just "leaving now"
-                                   (3 Oct 2026). Safari keeps a page it leaves
-                                   in its back/forward cache with this timer
-                                   frozen; Back brings it out, pageshow clears
-                                   `leaving`, and the timer finishes — so a
-                                   visitor who pressed Enter, then came back
-                                   three minutes later, filed the same
-                                   cancelled "rooms" request after all. */
-                                var hidesThen = hides;
-                                setTimeout(function () {
-                                    try { if (!leaving && hides === hidesThen && !departing()) capture("fetch", failure); } catch (x) { /* never */ }
-                                }, LEAVE_GRACE_MS);
+                                   crumbs from after it. See hold(). */
+                                hold("fetch", failure);
                             } catch (x) { /* never */ }
                         });
                     }
@@ -877,7 +940,17 @@
                 } catch (e) { /* never */ }
             },
             // Sends what is waiting now rather than in two seconds.
-            flush: function () { safe(flush, false); }
+            flush: function () { safe(flush, false); },
+            /* Called by the site's code just before it sends the visitor
+               somewhere itself — location.assign, .href, .replace, .reload
+               (26 Oct 2026): the same half minute a link click opens (see
+               departAt), which those never did, so the welcome page's
+               hand-off and every Sign in still filed Safari's "everything
+               failed" on the way out. `to`, when given, is where to; this
+               page again (a #hash on it) opens nothing. */
+            leaving: function (to) {
+                try { if (to == null || leavesPage(String(to))) depart(); } catch (e) { /* never */ }
+            }
         };
     }
 })();

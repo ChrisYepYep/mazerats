@@ -1903,9 +1903,9 @@
     /* A browser starts no sound until the page has been clicked or a key
        pressed; a context made before that waits for the first press
        anywhere on the page and starts then. */
-    let waiting = false;
+    let waiting = false, hushed = false;   // (hushed: see HUSHED)
     function wake() {
-        if (!ctx || ctx.state === "running" || ctx.state === "closed") return;
+        if (hushed || !ctx || ctx.state === "running" || ctx.state === "closed") return;
         try { const p = ctx.resume(); if (p && p.catch) p.catch(() => {}); } catch (e) { /* not yet */ }
         if (waiting || typeof document === "undefined") return;
         waiting = true;
@@ -1913,7 +1913,7 @@
             waiting = false;
             document.removeEventListener("pointerdown", go, true);
             document.removeEventListener("keydown", go, true);
-            if (ctx && playing && ctx.state !== "running" && ctx.state !== "closed") {
+            if (ctx && playing && !hushed && ctx.state !== "running" && ctx.state !== "closed") {
                 try { const p = ctx.resume(); if (p && p.catch) p.catch(() => {}); } catch (e) { /* still not */ }
             }
         };
@@ -1927,6 +1927,17 @@
         clearInterval(timer);
     }
 
+    /* Stopped, and the audio clock let go (26 Oct 2026, the bug scan): for the window closing, which only
+       stopped, so the context ran on, and the page's audio device with it, for the rest of the visit. Not in
+       stop() itself, as Pura Panic's is: here stop() comes before the act's fanfare too, which this would cut.
+       Started again while the suspend was on its way (wake saw the context still running and left it), it is
+       woken straight after. */
+    function rest() {
+        stop();
+        if (!ctx || ctx.state !== "running") return;
+        try { Promise.resolve(ctx.suspend()).then(() => { if (playing) wake(); }).catch(() => {}); } catch (e) { /* fine */ }
+    }
+
     // Pausing stops the audio clock itself, so nothing booked plays on.
     function pause() {
         if (ctx && ctx.state === "running") {
@@ -1936,6 +1947,11 @@
     /* Safari also has "interrupted" (a call, another tab's audio, the phone
        locked), so anything but running or closed is woken. */
     function resume() { if (ctx && playing && ctx.state !== "running" && ctx.state !== "closed") wake(); }
+
+    /* HUSHED (26 Oct 2026, one game in front): while another game's window is in front, the audio clock is
+       stopped and nothing wakes it, not a start, a resume, nor the first press on the page (a key pressed in
+       Pura Panic's window woke it, under Pura's tune). Let go, it stays as it is till the game wakes it. */
+    function hush(on) { hushed = Boolean(on); if (hushed) pause(); }
 
     function setLevel(lv) { level = Number(lv) || 1; }
 
@@ -2599,7 +2615,7 @@
     function alarmTone() { const at = gate("alarm", 0.9); if (at < 0) return; fm(at, 0.3, hz(74), { vol: 0.08, ratio: 2, index: 1.5, sustain: 0.8, release: 0.03 }); fm(at + 0.35, 0.3, hz(70), { vol: 0.08, ratio: 2, index: 1.5, sustain: 0.8, release: 0.03 }); }
 
     window.RatMusic = {
-        start: safe(start), stop: safe(stop), pause: safe(pause), resume: safe(resume),
+        start: safe(start), stop: safe(stop), rest: safe(rest), pause: safe(pause), resume: safe(resume), hush: safe(hush),
         setMuffled: safe(setMuffled), setLevel: safe(setLevel), setZone: safe(setZone),
         danger: safe(setDanger), levelUp: safe(levelUp), zone: safe(zoneJingle),
         gameOver: safe(gameOver), setMuted: safe(setMuted), isMuted: () => muted,

@@ -523,14 +523,24 @@
     let localStats = null;
     let accountStats = null;
 
+    /* AND WHOSE RECORD IT IS (26 Oct 2026, the bug scan), as the day is
+       (WHOSE DAY IT IS) and as Odd One Out's record has been since 10 Oct:
+       stamped `who`, and a record stamped by anybody else — or by nobody,
+       from before the stamp — is not read. On a shared computer the second
+       player was shown the first one's Streak, Best and All-time whenever
+       the account's figures could not be had, and a day they finished
+       after the first had played it here was not counted on the card
+       (bankDay's guard saw the day already banked). Read once the sign-in
+       is known (startNow), since `who` is the account's. */
     function loadStats() {
         let s = null;
         try { s = JSON.parse(localStorage.getItem(STATS_KEY) || "null"); } catch (e) { s = null; }
-        const blank = { days: 0, solved: 0, rounds: 0, streak: 0, best: 0, points: 0, bestDay: 0, lastDay: "" };
-        return s && typeof s === "object" ? { ...blank, ...s } : blank;
+        const blank = { days: 0, solved: 0, rounds: 0, streak: 0, best: 0, points: 0, bestDay: 0, lastDay: "", who: whoNow() };
+        return s && typeof s === "object" && ours(s) ? { ...blank, ...s } : blank;
     }
 
     function saveStats() {
+        if (localStats && !localStats.who) localStats.who = whoNow();
         try { localStorage.setItem(STATS_KEY, JSON.stringify(localStats)); } catch (e) { /* private mode */ }
     }
 
@@ -894,7 +904,18 @@
                 prepareRound(state.round);
                 // A practice run put away (409 "practice-over"): back to the
                 // splash, which says so, for the fresh day.
-                if (practiceEnded) goTo("intro");
+                if (practiceEnded) { goTo("intro"); return; }
+                /* And says so (26 Oct 2026, the bug scan): the room pressed
+                   was swapped for today's first without a word, so the
+                   player wondered where their room had gone. */
+                if (reply.status === 400 && state && state.day !== forDay) {
+                    const now = roundSheet(state.round);
+                    if (now) {
+                        now.refs.status.textContent = "That was yesterday's room — here are today's.";
+                        now.refs.status.hidden = false;
+                        announce(now, now.refs.status.textContent);
+                    }
+                }
                 return;
             }
             /* The day has closed under a round in progress. It used to fall
@@ -1992,6 +2013,12 @@
             target.textContent = `Five new rooms in ${h}h ${m}m.`;
         };
         update();
+        /* Ticking only while the window is open (26 Oct 2026, the bug
+           scan): a results card redrawn behind a shut window — another
+           tab's save, or a submission answering after close() — started a
+           timer that close() had already been and cleared, and it ran
+           until the next close. Opening redraws the card, which starts it. */
+        if (!el.overlay || !el.overlay.classList.contains("open")) return;
         countdownTimer = setInterval(update, 30000);
     }
 
@@ -2222,6 +2249,9 @@
            unrecorded; submitGuess asks again at the first guess if it is
            still unsure. */
         if (window.Account && Account.unsure) { try { await Account.refresh(); } catch (e) { /* still unsure */ } }
+        // Read again now whose record to read is known (see loadStats;
+        // 26 Oct 2026): the read above can come before the sign-in is.
+        localStats = loadStats();
 
         /* THE DAY IS THE SERVER'S. It used to be dealt here from the
            archive — and when the archive could not be reached, from the
@@ -2323,6 +2353,10 @@
         if (!el.overlay.classList.contains("open")) {
             const active = document.activeElement;
             opener = active && active !== document.body && !el.overlay.contains(active) ? active : null;
+        } else if (!opener && window.DailyGames && DailyGames.takeOpener) {
+            // Opened empty by js/daily-loader.js while this file downloaded:
+            // the opener is the one it noted (26 Oct 2026).
+            opener = DailyGames.takeOpener("guess");
         }
         el.overlay.classList.add("open");
         document.body.classList.add("modal-open");

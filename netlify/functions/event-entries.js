@@ -258,9 +258,22 @@ async function currentEvent(db) {
         }
         return out;
     }
+    /* Automatic: the live event. Two at once (26 Oct 2026) — a long one
+       like Vermin's Vault (3 Oct to 1 Nov) overlaps every short one, and
+       "only when exactly one is live" filed those hours under no event —
+       goes to the SHORTEST, the one an entry made now is most likely for;
+       of two as long, the one that started most recently. */
     const now = Date.now();
     const live = (await events.find({}, shape).toArray()).filter(ev => ev && ev.id && isLive(ev, now));
-    return live.length === 1 ? { id: live[0].id, title: live[0].title || live[0].id } : null;
+    if (!live.length) return null;
+    const ranked = live.map(ev => ({ ev, span: spanOf(ev) })).sort((a, b) => {
+        const la = a.span ? a.span.end - a.span.start : Infinity;
+        const lb = b.span ? b.span.end - b.span.start : Infinity;
+        if (la !== lb) return la - lb;
+        return (b.span ? b.span.start : -Infinity) - (a.span ? a.span.start : -Infinity);
+    });
+    const pick = ranked[0].ev;
+    return { id: pick.id, title: pick.title || pick.id };
 }
 
 /* Whether an entry can be made now, and under which event: { ev, closed,

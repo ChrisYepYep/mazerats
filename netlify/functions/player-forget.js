@@ -24,7 +24,9 @@
 
    WHAT IS DELETED, and what is only UNLINKED (see PLACES below). A player's
    own rows — their profile, their saved and walked mazes, every daily and
-   Fallin' Furni score, their run log, their clocks and tickets — go. Things
+   Fallin' Furni score, their run log, their clocks and tickets, and since
+   26 Oct 2026 the cached copy of their Habbo's profile (habboCacheFilter
+   below) — go. Things
    they SENT us that are now part of somebody else's work stay, with their
    name and id taken off: an Add Maze Info lead's words and pictures are
    the archive's evidence, and a contact message is the owner's
@@ -62,8 +64,10 @@
        So deleting the row, as the first PLACE does, is the revocation, and
        a fresh Discord sign-in starts a fresh profile row with a new version
        an old session can never match. A session from before versions
-       existed carries none, and stays valid until it expires (thirty days)
-       or they sign out; anything played with it meanwhile is new data.
+       existed carries none, and is revoked all the same since 3 Oct 2026:
+       a numberless session finding no row counts as forgotten too
+       (sessionRevoked in _player.js). (This said it stayed valid for its
+       thirty days; corrected 26 Oct 2026.)
 
    LEADERBOARDS: nothing is cached for long. The daily boards are edge-
    cached for fifteen seconds (BOARD_CDN_CACHE in _cache.js) and Guess the
@@ -123,6 +127,8 @@ const PLACES = [
     // player-data.js: walked and saved mazes, and Guess the Maze's day in
     // progress mirrored for another device.
     { label: "player_state", collection: "player_state", filter: id => ({ playerId: id }) },
+    // advent.js: the advent calendar's doors they opened, and when (26 Oct 2026).
+    { label: "advent_doors", collection: "advent_doors", filter: id => ({ playerId: id }) },
     // guess-scores.js: a scored day each, with name and avatar — the board.
     { label: "guess_scores", collection: "guess_scores", filter: id => ({ playerId: id }) },
     // daily-scores.js: Odd One Out (and the retired Ratrospect and One Wall
@@ -214,10 +220,38 @@ const PLACES = [
    is what gets deleted or unlinked. */
 const keptBans = (db, id) => db.collection("bans").countDocuments({ kind: "player", value: id });
 
+/* THEIR HABBO'S CACHED PROFILE (26 Oct 2026). habbo.js keeps each Habbo it
+   looks up in habbo_cache — name, motto, figure — keyed "<host>:<name>",
+   not by player, so no PLACE above can find it by id. The Habbo linked to
+   them and the one guessed for them (_habbo-guess.js; a code being checked
+   is always for that same guess) are read off their players row BEFORE it
+   is deleted, and those rows go, under every Origins host, since a link
+   OriginsBot made without a hotel is the main one's. It is a cache of
+   what Origins publishes, so taking a row nobody else's profile needed is
+   harmless: the next view looks it up again. The Habbos on habboGuess.not
+   are NOT theirs (an admin unlinked them, or they said "not me") and stay.
+   Reported as "habbo_cache" beside the PLACES. */
+async function habboCacheFilter(db, id) {
+    const row = await db.collection("players").findOne({ id }, { projection: { _id: 0, habbo: 1, habboGuess: 1 } });
+    const names = new Set();
+    for (const h of [row && row.habbo, row && row.habboGuess]) {
+        if (h && typeof h.name === "string" && h.name.trim()) names.add(h.name.trim().toLowerCase());
+    }
+    if (!names.size) return null;
+    const { ORIGINS_HOSTS } = require("./habbo");
+    const keys = [];
+    for (const host of Object.values(ORIGINS_HOSTS)) for (const n of names) keys.push(`${host}:${n}`);
+    return { key: { $in: keys } };
+}
+
 async function countAll(db, id) {
     const counts = {};
-    const found = await Promise.all(PLACES.map(p => db.collection(p.collection).countDocuments(p.filter(id))));
+    const [found, cacheFilter] = await Promise.all([
+        Promise.all(PLACES.map(p => db.collection(p.collection).countDocuments(p.filter(id)))),
+        habboCacheFilter(db, id)
+    ]);
     PLACES.forEach((p, i) => { counts[p.label] = found[i]; });
+    counts.habbo_cache = cacheFilter ? await db.collection("habbo_cache").countDocuments(cacheFilter) : 0;
     return counts;
 }
 
@@ -285,6 +319,12 @@ async function forget(db, id) {
        If any of them throws, the handler answers 503 and the owner runs it
        again — every step is idempotent, so a second run finishes the job
        and reports only what the first one missed. */
+    /* Their Habbo's cache rows are found from the players row, so before
+       the PLACES delete it (see habboCacheFilter). A second run, after the
+       row has gone, finds none to take — the first run's delete is the one
+       that counts, and it is made here, not raced against the row. */
+    const cacheFilter = await habboCacheFilter(db, id);
+    const cacheGone = cacheFilter ? (await db.collection("habbo_cache").deleteMany(cacheFilter)).deletedCount || 0 : 0;
     const done = await Promise.all(PLACES.map(async p => {
         const col = db.collection(p.collection);
         // An unlink that needs the id itself is a function of it (notifications).
@@ -294,6 +334,7 @@ async function forget(db, id) {
     }));
     const counts = {};
     PLACES.forEach((p, i) => { counts[p.label] = done[i]; });
+    counts.habbo_cache = cacheGone;
     return counts;
 }
 

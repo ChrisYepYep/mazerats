@@ -885,7 +885,11 @@
     listEl.addEventListener("click", e => {
         const pl = e.target.closest("[data-pl]");
         if (pl) {
-            if (pl.dataset.pl === "reload") location.reload();
+            // Said to the error reporter first (26 Oct 2026): what a reload cuts off is not a fault.
+            if (pl.dataset.pl === "reload") {
+                if (window.MazeErrors && typeof MazeErrors.leaving === "function") MazeErrors.leaving();
+                location.reload();
+            }
             if (pl.dataset.pl === "retry") load();
             return;
         }
@@ -1747,6 +1751,7 @@
     const FORGET_LABELS = {
         "players": "Player account (name and picture)",
         "player_state": "Saved progress (walked and saved mazes)",
+        "advent_doors": "Advent calendar doors opened",
         "guess_scores": "Guess the Maze scores",
         "daily_scores": "Daily game scores",
         "daily_starts": "Daily game start times",
@@ -1769,7 +1774,9 @@
         "bans.playerId": "Network bans (player link removed, ban kept)",
         "event_entries.from": "Event entries (account removed, entry kept)",
         "event_entries.sender": "Event entries (sender key removed)",
-        "notifications.to": "Console notifications sent to them (taken off)"
+        "notifications.to": "Console notifications sent to them (taken off)",
+        // Counted by the preview, and deleted, since 26 Oct 2026.
+        "habbo_cache": "Their Habbo's cached profile (avatar and motto)"
     };
     /* player-forget.js reports counts by where they are kept (its PLACES);
        said plainly here. A key this list does not know yet is still shown,
@@ -2115,21 +2122,35 @@
     new MutationObserver(onShownChange).observe(panel, { attributes: true, attributeFilter: ["hidden"] });
 
     // The badge: everybody who has signed in, read once the Warren opens.
+    let badgeAsking = false;
     async function badge() {
         if (!token() || !navCount || !apiReady()) return;
-        if (loadedAt) return;
+        if (loadedAt || badgeAsking) return;
+        // An answer for the account before a reset() is not this one's badge.
+        const mine = sessionNo;
+        badgeAsking = true;
         try {
             const data = await Api.getPlayers(token(), { limit: 1 });
+            if (mine !== sessionNo || loadedAt) return;
             if (data && data.counts && has(data.counts.all)) setBadge(data.counts);
         } catch (e) { /* the panel says so when opened */ }
+        finally { badgeAsking = false; }
     }
+    /* Every time admin.js reveals the rail, not only the first (26 Oct
+       2026, the bug scan). A log out empties the badge (reset) while no
+       token is left to read it again with, and signing back in on the same
+       tab is not an account switch, so reset never ran again: the flagged
+       and clash count stayed blank until somebody opened this tab. */
     const rail = document.getElementById("admin-rail");
     if (rail) {
-        const once = new MutationObserver(() => {
-            if (rail.style.display !== "none") { once.disconnect(); badge(); }
-        });
-        once.observe(rail, { attributes: true, attributeFilter: ["style"] });
-        if (rail.style.display !== "none") { once.disconnect(); badge(); }
+        let railShown = false;
+        const railSeen = () => {
+            const on = rail.style.display !== "none";
+            if (on && !railShown) badge();
+            railShown = on;
+        };
+        new MutationObserver(railSeen).observe(rail, { attributes: true, attributeFilter: ["style"] });
+        railSeen();
     }
 
     /* Everything the last account read, gone: admin.js calls this on log
@@ -2161,6 +2182,7 @@
         bansAt = 0;
         bansError = "";
         busy = false;
+        badgeAsking = false;
         filtersBuilt = false;
         filtersEl.innerHTML = "";
         listEl.innerHTML = "";

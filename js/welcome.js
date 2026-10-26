@@ -154,6 +154,15 @@ async function freshSettings() {
    instead of a blank window. */
 let handedOff = false;
 
+/* Every trip this page starts itself says so first (26 Oct 2026): what
+   fails while the next page loads is the leaving, not a fault, and
+   js/error-report.js holds it back as it does for a link click. */
+function goTo(url) {
+    if (window.MazeErrors && typeof MazeErrors.leaving === "function") MazeErrors.leaving();
+    if (url) location.assign(url);
+    else location.reload();
+}
+
 /* THE DOOR SAYS IT IS OPEN THE MOMENT IT IS (1 Oct 2026). The hand-off
    below can take a few seconds — the plain-address wait, or a window the
    visitor is reading — and the button used to say "Coming Soon" all the
@@ -222,7 +231,7 @@ async function goInside(state) {
     let noted = false;
     try { noted = localStorage.getItem("mazerats_landing_state") === state; } catch (e) { /* not kept */ }
     if (noted) {
-        location.assign("/home");
+        goTo("/home");
         return;
     }
     for (let i = 0; i < 3; i++) {
@@ -242,7 +251,7 @@ async function goInside(state) {
         }
         if (i < 2) await new Promise(r => setTimeout(r, 3000));
     }
-    location.assign("/home");
+    goTo("/home");
 }
 
 /* BACK, AFTER THE HAND-OFF.
@@ -260,7 +269,7 @@ async function goInside(state) {
    looked at another site is still polling (its timers resume with it), and
    an open one is already an Enter link. */
 window.addEventListener("pageshow", e => {
-    if (e.persisted && handedOff) location.reload();
+    if (e.persisted && handedOff) goTo();
 });
 
 /* Asks, jittered, until the site opens — then goes in. Runs for as long as
@@ -649,7 +658,7 @@ function showCoolDown(block, returnTo) {
     const left = overlay.querySelector("[data-left]");
     const tick = () => {
         const text = blockTimeLeft(block.until);
-        if (!text) { forgetBlock(); location.reload(); return; }
+        if (!text) { forgetBlock(); goTo(); return; }
         left.textContent = text;
     };
     tick();

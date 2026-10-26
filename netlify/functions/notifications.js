@@ -34,7 +34,8 @@
                          (noticesDeleted on their players row; the console's
                          Delete, 5 Oct 2026), and marks them seen. Signed
                          out, the browser keeps that too.
-   With the Warren's admin token (Authorization), ?admin=1:
+   With the Warren's admin token (the x-admin-token header, as every Warren
+   call sends it; this said Authorization, 26 Oct 2026), ?admin=1:
      GET                 the latest LIST_MAX sent, each with how many have
                          seen it, and for chosen players who they were.
      POST { text, audience, to }   sends one.

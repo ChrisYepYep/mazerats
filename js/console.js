@@ -676,7 +676,12 @@ document.addEventListener("DOMContentLoaded", () => {
         // Back to the form, for its own words about what went wrong.
         failedSending(from) {
             const showing = MazeConsole.stillSending(from);
-            sendingFrom = null;
+            /* Only this form's own send is let go (26 Oct 2026). Sent from
+               another form meanwhile (an entry's picture still going up while
+               a Contact message was sent from the tabs), the failure of the
+               first emptied sendingFrom under the second, whose success then
+               found nothing "still sending" and left Sending... up for good. */
+            if (sendingFrom === from) sendingFrom = null;
             if (showing) showPage(from);
             return showing;
         },

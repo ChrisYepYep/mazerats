@@ -38,6 +38,8 @@ html[data-skin="halloween"] .hw-splat { transition: opacity 0.7s ease-out; }
 html[data-skin="halloween"] .hw-bats {
     position: fixed;
     inset: 0;
+    /* Never wider than the page, whatever size it was last drawn at (26 Oct 2026). */
+    max-width: 100%;
     z-index: 45;
     pointer-events: none;
     image-rendering: pixelated;
@@ -84,10 +86,15 @@ html[data-skin="halloween"] .console-close-btn {
     background-color: transparent;
     background-image: url("../assets/img/skin-halloween/console/witch/cnsl-top-x-close.png");
 }
-html[data-skin="halloween"] .console-title { color: #2b173a; text-shadow: none; }
+/* Light lilac ink on the purple (26 Oct 2026, the bug scan): the title and
+   the open tab's label were the dark #2b173a, 2.2:1 on the frame and 1.3:1
+   on the pressed tab, so neither could be read. The open tab is the pressed
+   one, darker, and its label the brightest, as the site's own console lights
+   its open tab's label; the others a step dimmer. All over 6.5:1. */
+html[data-skin="halloween"] .console-title { color: #f4e6ff; text-shadow: none; }
 html[data-skin="halloween"] .console-tab-btn { border: none; background-color: transparent; }
-html[data-skin="halloween"] .console-tab-label { color: #f4e6ff; }
-html[data-skin="halloween"] .console-tab-btn.active .console-tab-label { color: #2b173a; }
+html[data-skin="halloween"] .console-tab-label { color: #d8c2ea; }
+html[data-skin="halloween"] .console-tab-btn.active .console-tab-label { color: #fbf5ff; }
 html[data-skin="halloween"] .console-frame::before { border-color: rgba(0, 0, 0, 0.45) transparent transparent rgba(0, 0, 0, 0.45); }
 html[data-skin="halloween"] .console-frame::after { border-color: transparent rgba(255, 255, 255, 0.5) rgba(255, 255, 255, 0.5) transparent; }
 
@@ -163,6 +170,13 @@ html[data-skin="halloween"].hw-batgame body > .site-footer {
     transition-timing-function: cubic-bezier(0.6, 0, 0.8, 0.3);
     pointer-events: none;
 }
+/* And the page stops scrolling while it is cleared (26 Oct 2026, the bug
+   scan): the boxes keep their places under the transforms, and the footer
+   pushed a screen further down only added to them, so a wheel or a swipe
+   scrolled on through empty sky to nothing. As body.modal-open does it
+   (handed up to the viewport; the gutter is kept, so nothing shifts); End
+   game takes the class away and the scrolling with it. */
+html[data-skin="halloween"].hw-batgame body { overflow: hidden; }
 html[data-skin="halloween"] .hw-batscore.is-hit { animation: hw-score-hit 0.35s steps(2, end); }
 html[data-skin="halloween"] .hw-batscore.is-miss { animation: hw-score-miss 0.35s steps(2, end); }
 @keyframes hw-score-hit { 0%, 100% { border-color: #2f2140; } 50% { border-color: #9fe068; } }

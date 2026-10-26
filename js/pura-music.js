@@ -315,25 +315,50 @@
        pressed. Opened from the menu that has happened; arriving straight at
        /purapanic it has not, so the splash's music waits for the first
        press anywhere on the page and starts then. */
+    /* AND A TAP COUNTS (26 Oct 2026, the bug scan, as js/ff-audio.js has
+       it). A finger's pointerdown is not a press a browser lets start
+       sound — its pointerup and touchend are — so on a phone the first tap
+       anywhere had its resume refused and took the listener away with it,
+       and the splash stayed silent until Play. Those two are listened for
+       as well now, and the listeners stay until the context is running. */
     let waiting = false;
+    const WAKE_ON = ["pointerdown", "pointerup", "touchend", "keydown"];
     function wake() {
-        if (!ctx || ctx.state === "running") return;
+        if (!ctx || ctx.state === "running" || ctx.state === "closed") return;
         ctx.resume().catch(() => {});
         if (waiting) return;
         waiting = true;
-        const go = () => {
+        const done = () => {
             waiting = false;
-            document.removeEventListener("pointerdown", go, true);
-            document.removeEventListener("keydown", go, true);
-            if (ctx && playing && ctx.state !== "running") ctx.resume().catch(() => {});
+            WAKE_ON.forEach(ev => document.removeEventListener(ev, go, true));
         };
-        document.addEventListener("pointerdown", go, true);
-        document.addEventListener("keydown", go, true);
+        const go = () => {
+            if (!ctx || ctx.state === "running" || ctx.state === "closed") { done(); return; }
+            // Stopped or paused since: nothing to wake for, and nothing to wait on.
+            if (!playing) { done(); return; }
+            ctx.resume().then(() => { if (ctx && ctx.state === "running") done(); }, () => {});
+        };
+        WAKE_ON.forEach(ev => document.addEventListener(ev, go, true));
     }
 
+    /* And the audio clock let go once the last notes booked have played
+       (26 Oct 2026, the bug scan): stopping only stopped the booking, so a
+       window closed on the splash or the game-over screen left the
+       context running, and the page's audio device with it, for the rest
+       of the visit. Suspended a moment later — nothing is booked further
+       ahead than a tenth of a second (tick) — and only if nothing has
+       started again since; start() and gameOver() wake it as ever. */
+    let idleTimer = 0;
     function stop() {
         playing = false;
         clearInterval(timer);
+        clearTimeout(idleTimer);
+        idleTimer = setTimeout(() => {
+            if (playing || !ctx || ctx.state !== "running") return;
+            /* Started again while the suspend was on its way (wake saw the
+               context still running and left it): woken straight after. */
+            Promise.resolve(ctx.suspend()).then(() => { if (playing) wake(); }).catch(() => {});
+        }, 400);
     }
 
     // Pausing stops the audio clock itself, so nothing booked plays on.

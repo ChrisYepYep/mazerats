@@ -96,7 +96,7 @@
 
        One earned back per ten levels cleared, uncapped. A run that is going
        well builds a cushion before the levels get fast, and a run that is not
-       does not: losing them faster than one per five IS the difficulty curve,
+       does not: losing them faster than one per ten IS the difficulty curve,
        so the ramp needs no second lever to express itself.
 
        A RETRIED ROUND BANKS NOTHING. Its seats are put back and played again,
@@ -256,7 +256,11 @@
                Asked from two places on purpose — see `finish`. */
             complete() {
                 if (!this.round || this.round.started === null) return false;
-                if (this.round.queue.length || this.round.falling.length) return false;
+                /* A power-up still in the air is not something left to do
+                   (26 Oct 2026): one that came down after the last seat held
+                   the finish until it landed, and the clock's bonus with it.
+                   Its landing does not move round.quietAt either. */
+                if (this.round.queue.length || this.round.falling.some(p => !p.furni.power)) return false;
                 return !this.remaining().length;
             },
 
@@ -657,7 +661,7 @@
 
                Written next to `advance` because it is `advance`'s arithmetic
                and must change with it: the round in hand banked, a life back
-               if this win is a fifth, and the life bonus on a finished run.
+               if this win is a tenth, and the life bonus on a finished run.
                A lost run gets no bonus, as in `advance`. */
             settled() {
                 const g = this.game;

@@ -9,7 +9,7 @@
    completely inert until js/site.js puts that attribute on <html>. The
    classic palette is not defined here and is not affected by anything in it.
 
-   1119 rules, 1799 declarations, hues 214 (surfaces) / 196 (accents).
+   1116 rules, 1796 declarations, hues 214 (surfaces) / 196 (accents).
 */
 :root[data-theme="frost"] {
     --bg-black: #02060c;
@@ -3164,10 +3164,6 @@ html[data-theme="frost"]::-webkit-scrollbar-button {
     color: var(--parchment-dim);
 }
 
-[data-theme="frost"] .guess-score {
-    color: var(--parchment);
-}
-
 [data-theme="frost"] .guess-score strong {
     color: var(--amber-bright);
 }
@@ -4299,10 +4295,6 @@ html[data-theme="frost"]::-webkit-scrollbar-button {
     color: var(--danger-text);
 }
 
-[data-theme="frost"] body[data-page="admin"] .admin-nav-grid .chrome-nav-btn {
-    text-shadow: none;
-}
-
 [data-theme="frost"] .admin-nav-count {
     background: var(--amber);
     color: #02080f;
@@ -4951,10 +4943,6 @@ html[data-theme="frost"]::-webkit-scrollbar-button {
 [data-theme="frost"] body[data-page="admin"] .btn-enter-mini[data-ff-state="coming-soon"].active,
 [data-theme="frost"] body[data-page="admin"] .btn-enter-mini[data-ff-state="maintenance"].active {
     box-shadow: inset 0 1px 0 var(--chrome-highlight), 0 0 8px 1px rgba(16, 71, 116, 0.8);
-}
-
-[data-theme="frost"] .admin-tab-where {
-    color: var(--amber-bright);
 }
 
 [data-theme="frost"] body[data-page="admin"] .ctl-seg,

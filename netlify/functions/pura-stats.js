@@ -184,7 +184,12 @@ async function report(db, event) {
     for (const g of games) {
         const kind = g.playerId ? "player" : g.habbo ? "habbo" : g.rat ? "rat" : "anon";
         const key = kind === "player" ? "p:" + g.playerId
-            : kind === "habbo" ? "h:" + (g.hotel || "COM") + ":" + String(g.habbo).toLowerCase().replace(/[^a-z0-9]/g, "")
+            /* By the Habbo's own name, lower-cased, as the board keys guests
+               since 10 Oct 2026 (guestId in pura-scores.js). Letters and
+               digits only, as it was here until 26 Oct 2026, put "Bob" and
+               ".Bob." — two Habbos — on one line, and every punctuation-only
+               name on one line together. */
+            : kind === "habbo" ? "h:" + (g.hotel || "COM") + ":" + String(g.habbo).toLowerCase()
             : kind === "rat" ? "r:" + g.rat : "";
         let p = people.get(key);
         if (!p) people.set(key, p = {

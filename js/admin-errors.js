@@ -93,6 +93,8 @@
     let dropped = {};
     // The site-wide rate limit's refusals (netlify/functions/_ratelimit.js).
     let limited = {};
+    // What visitors' browsers filtered out and only counted (26 Oct 2026).
+    let filtered = {};
     let loadedAt = 0;               // Date.now() of the last good list read
     let loadError = null;           // the last list read's failure, if any
     let loadGen = 0;
@@ -424,7 +426,20 @@
             stat(t.last24h, "report in the last 24h", "reports in the last 24h") +
             stat(t.last7d, "report in the last 7 days", "reports in the last 7 days") +
             (d24 > 0 ? `<span class="admin-activity-stat is-warn" title="Reports the server refused because too many were arriving — from one network, or across the site. One each, however many repeats a report carried."><strong>${escapeHtml(num(d24))}</strong> ${d24 === 1 ? "report" : "reports"} dropped by the rate limit in 24h</span>` : "") +
-            limitedStat();
+            limitedStat() + filteredStat();
+    }
+
+    /* What visitors' browsers chose not to send in the last 24 hours (26 Oct
+       2026): the server has counted these all along (`ignored.last24h`) and
+       the tab never said so. Not a warning — js/error-report.js filters what
+       is not the site's fault: an extension's error, another site's script or
+       file, a picture the page expects to miss, whatever fails as a visitor
+       leaves the page. */
+    function filteredStat() {
+        const n = Number(filtered && filtered.last24h) || 0;
+        if (!n) return "";
+        const title = "Problems visitors' browsers saw and did not send, because they were not the site's fault: a browser extension's error, another site's script or file, a picture the page expects to be missing, or something cut off as the visitor left the page. Counted, not kept.";
+        return `<span class="admin-activity-stat" title="${escapeHtml(title)}"><strong>${escapeHtml(num(n))}</strong> filtered in the browser (24h)</span>`;
     }
 
     /* Visitors the site-wide rate limit turned away (4 Oct 2026): each is a
@@ -636,7 +651,11 @@
     listEl.addEventListener("click", e => {
         const se = e.target.closest("[data-se]");
         if (se) {
-            if (se.dataset.se === "reload") location.reload();
+            // Said to the error reporter first (26 Oct 2026): what a reload cuts off is not a fault.
+            if (se.dataset.se === "reload") {
+                if (window.MazeErrors && typeof MazeErrors.leaving === "function") MazeErrors.leaving();
+                location.reload();
+            }
             if (se.dataset.se === "retry") load();
             return;
         }
@@ -1129,6 +1148,8 @@
             totals = (data && data.totals) || {};
             dropped = (data && data.dropped) || {};
             limited = (data && data.limited) || {};
+            // `ignored` in the answer: not the triage status of that name.
+            filtered = (data && data.ignored && typeof data.ignored === "object") ? data.ignored : {};
             loadedAt = Date.now();
             loadError = null;
             /* The same question the badge asks, answered for free — but only
@@ -1413,12 +1434,18 @@
 
     const rail = document.getElementById("admin-rail");
     if (rail) {
-        // admin.js reveals the rail once the session is verified.
-        const once = new MutationObserver(() => {
-            if (rail.style.display !== "none") { once.disconnect(); startBadgeTimer(); }
-        });
-        once.observe(rail, { attributes: true, attributeFilter: ["style"] });
-        if (rail.style.display !== "none") { once.disconnect(); startBadgeTimer(); }
+        /* admin.js reveals the rail once the session is verified, and again
+           on every sign-in after: then the badge is read at once (26 Oct
+           2026, the bug scan) rather than up to a minute later, as a log
+           out had emptied it with no token left to read it again with. */
+        let railShown = false;
+        const railSeen = () => {
+            const on = rail.style.display !== "none";
+            if (on && !railShown) { if (badgeTimer) badge(); else startBadgeTimer(); }
+            railShown = on;
+        };
+        new MutationObserver(railSeen).observe(rail, { attributes: true, attributeFilter: ["style"] });
+        railSeen();
     }
 
     /* Forget everything the last account read — admin.js calls this on log
@@ -1438,6 +1465,7 @@
         totals = {};
         dropped = {};
         limited = {};
+        filtered = {};
         loadedAt = 0;
         loadError = null;
         openId = null;

@@ -33,8 +33,14 @@
           play: () => window.openGuessGame },
         { key: "odd", label: "Odd One Out", url: "/.netlify/functions/daily-scores?game=odd",
           play: () => window.openOddOneOut },
+        /* Its Play too (26 Oct 2026): the window home.js opens (the game's
+           page on a phone). The tab, and so the button, is only there once
+           the game is open — never while it is Coming Soon or in
+           maintenance — so the Games menu's admins-only-while-Coming-Soon
+           rule has nothing to decide here. */
         { key: "ff", label: "Fallin' Furni", url: "/.netlify/functions/ff-scores", ff: true,
-          span: "Everyone's best run. Points first, then the faster time." },
+          span: "Everyone's best run. Points first, then the faster time.",
+          play: () => (ffOpen ? window.openFallinFurni : null) },
         { key: "pura", label: "Pura Panic", url: "/.netlify/functions/pura-scores", ff: true, pura: true,
           span: "Everyone's best game, all time.",
           play: () => window.openPuraPanic }

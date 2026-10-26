@@ -772,7 +772,8 @@
                         this.landed.push(p.furni);
                         // When it landed, not when this frame saw it; see quietAt.
                         const landedAt = Math.min(now, p.at + level.rules.dropSpeedMs);
-                        this.quietAt = this.quietAt === null ? landedAt : Math.max(this.quietAt, landedAt);
+                        // Not for a power-up, which the round never waits for (complete in room-game.js, 26 Oct 2026).
+                        if (!p.furni.power) this.quietAt = this.quietAt === null ? landedAt : Math.max(this.quietAt, landedAt);
                         this.landings.set(p.furni, landedAt);
                         changed = true;
                     } else {

@@ -210,7 +210,10 @@ exports.handler = async (event) => {
         db = await getDb();
     } catch (e) {
         console.error("bans: database connection failed", e);
-        return json(500, { error: "Database connection failed" });
+        /* AUTH_UNAVAILABLE, as a database dropping mid-request is answered
+           below: an outage the Warren waits out and retries, not a fault
+           (26 Oct 2026; it was a 500). */
+        return AUTH_UNAVAILABLE;
     }
     const bans = db.collection("bans");
 

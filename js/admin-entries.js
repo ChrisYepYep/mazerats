@@ -10,8 +10,8 @@
    object URL.
 
      ENTRIES GO TO  Which event a NEW entry is filed under: Automatic (the
-                    one event whose dates say it is running now, none while
-                    there are several or none), No event, Closed (none
+                    event running now; of several, the shortest, then the
+                    latest started; none while none is live), No event, Closed (none
                     taken at all, and the form says so), or one picked.
      THE FILTERS    By status (New, Approved, Winner, Rejected, All) and by
                     event. "Usernames (.txt)" saves every name the filters
@@ -214,8 +214,15 @@
             config = (data && data.config) || config;
             open = (data && data.open) || null;
             loadedAt = Date.now();
-            // A page emptied by deletes steps back rather than showing nothing.
-            if (!entries.length && page > 0 && total > 0) { page = Math.max(0, Math.ceil(total / pageSize) - 1); return load(opts); }
+            /* A page emptied by deletes steps back rather than showing nothing.
+               Once (26 Oct 2026, the bug scan): a total that disagreed with
+               the pages (an entry deleted between the count and the read)
+               stepped to the same empty page and asked again, for good. */
+            if (!entries.length && page > 0 && total > 0 && !(opts && opts.stepped)) {
+                const last = Math.max(0, Math.ceil(total / pageSize) - 1);
+                page = last < page ? last : 0;
+                return load(Object.assign({}, opts, { stepped: true }));
+            }
             setBadge(Number(counts.new) || 0);
             render();
         } catch (err) {
@@ -354,7 +361,8 @@
     function openViewer(url, label, from) {
         if (!viewer) {
             const overlay = document.createElement("div");
-            overlay.className = "lightbox-overlay";
+            // In the workshop's colours (26 Oct 2026; css/warren.css).
+            overlay.className = "lightbox-overlay wr-dialog";
             overlay.setAttribute("role", "dialog");
             overlay.setAttribute("aria-modal", "true");
             overlay.tabIndex = -1;
@@ -524,13 +532,19 @@
 
     // ------------------------------------------------------------ writes
 
+    /* Each write's answer is dropped if the account changed while it was
+       out (26 Oct 2026, the bug scan), as the reads' are: its flash and its
+       re-read landed under whoever had signed in by then. */
     async function setStatus(entry, next) {
         if (busy || !canWrite()) return;
+        const mine = sessionNo;
         busy = true;
         try {
             await Api.updateEventEntry(token(), entry.id, { status: next });
+            if (mine !== sessionNo) return;
             flash(next === "winner" ? `${entry.habboName || "That entry"} is marked as a winner.` : `Marked ${STATUS_WORD[next].toLowerCase()}.`);
         } catch (err) {
+            if (mine !== sessionNo) return;
             busy = false;
             if (!sessionGone(err)) flash(`Not saved: ${(err && err.message) || "something went wrong"}`, true);
             return;
@@ -544,11 +558,14 @@
         const note = await askText(`A note on ${escapeHtml(entry.habboName || "this entry")}'s entry, for the admins only.`,
             { title: "Entry Note", label: "Note", maxlength: 500, value: entry.note || "" });
         if (note === null) return;
+        const mine = sessionNo;
         busy = true;
         try {
             await Api.updateEventEntry(token(), entry.id, { note: note.trim() });
+            if (mine !== sessionNo) return;
             flash("Note saved.");
         } catch (err) {
+            if (mine !== sessionNo) return;
             busy = false;
             if (!sessionGone(err)) flash(`Not saved: ${(err && err.message) || "something went wrong"}`, true);
             return;
@@ -561,12 +578,15 @@
         if (busy || !canWrite()) return;
         const ok = await ask(`Delete ${escapeHtml(entry.habboName || "this")}'s entry and its picture? This cannot be undone.`, { danger: true });
         if (!ok) return;
+        const mine = sessionNo;
         busy = true;
         try {
             await Api.deleteEventEntry(token(), entry.id);
+            if (mine !== sessionNo) return;
             if (entry.image && entry.image.key) dropImage(entry.image.key);
             flash("Entry deleted.");
         } catch (err) {
+            if (mine !== sessionNo) return;
             busy = false;
             if (!sessionGone(err)) flash(`Not deleted: ${(err && err.message) || "something went wrong"}`, true);
             return;
@@ -666,12 +686,19 @@
     }
     const rail = document.getElementById("admin-rail");
     if (rail) {
-        // admin.js reveals the rail once the session is verified.
-        const once = new MutationObserver(() => {
-            if (rail.style.display !== "none") { once.disconnect(); badge(); }
-        });
-        once.observe(rail, { attributes: true, attributeFilter: ["style"] });
-        if (rail.style.display !== "none") { once.disconnect(); badge(); }
+        /* admin.js reveals the rail once the session is verified — and again
+           on every sign-in after (26 Oct 2026, the bug scan): a log out
+           empties the badge (reset) with no token left to read it again, and
+           signing back in on the same tab never ran reset, so the count of
+           new entries stayed blank until this tab was opened. */
+        let railShown = false;
+        const railSeen = () => {
+            const on = rail.style.display !== "none";
+            if (on && !railShown) badge();
+            railShown = on;
+        };
+        new MutationObserver(railSeen).observe(rail, { attributes: true, attributeFilter: ["style"] });
+        railSeen();
     }
 
     /* Forget everything the last account read — admin.js calls this on log

@@ -117,7 +117,7 @@ exports.handler = async (event) => {
         const [rooms, events, settings, retiredRooms, retiredEvents, retiredGuides] = await Promise.all([
             db.collection("rooms").find({}, { projection: { ...SLUG_FIELDS, updatedAt: 1, createdAt: 1 } }).toArray(),
             db.collection("events").find({}, { projection: { ...SLUG_FIELDS, updatedAt: 1, createdAt: 1 } }).toArray(),
-            db.collection("settings").findOne({ _id: "site" }, { projection: { fallinFurniState: 1, puraPanicState: 1 } }).catch(() => SETTINGS_UNREAD),
+            db.collection("settings").findOne({ _id: "site" }, { projection: { fallinFurniState: 1, puraPanicState: 1, ratRaceState: 1 } }).catch(() => SETTINGS_UNREAD),
             retiredOf(db, "maze"), retiredOf(db, "event"), retiredOf(db, "guide")
         ]);
         /* A settings read that FAILED is not a settings document that is
@@ -148,6 +148,18 @@ exports.handler = async (event) => {
         if (!settingsUnread && settings && settings.puraPanicState === "live") {
             const after = entries.findIndex(e => e.includes(`<loc>${esc(`${origin}/guides`)}</loc>`));
             entries.splice(after === -1 ? entries.length : after + 1, 0, url(`${origin}/purapanic`, "", "0.6"));
+        }
+        /* Scout's Trail (26 Oct 2026), at /scout, the same way: only an
+           explicit "live" lists it (ratRaceState is "maintenance" until
+           the owner sets it, and "hidden" while it is tested in secret),
+           which is exactly when share.js stops sending /scout's noindex —
+           see SWITCHED there; the two follow the one switch together. */
+        if (!settingsUnread && settings && settings.ratRaceState === "live") {
+            // After /purapanic when it is listed, else after /guides.
+            const after = entries.findIndex(e => e.includes(`<loc>${esc(`${origin}/purapanic`)}</loc>`));
+            const guidesAt = entries.findIndex(e => e.includes(`<loc>${esc(`${origin}/guides`)}</loc>`));
+            const at = after !== -1 ? after + 1 : guidesAt !== -1 ? guidesAt + 1 : entries.length;
+            entries.splice(at, 0, url(`${origin}/scout`, "", "0.6"));
         }
         /* Each at its own address, /maze/<slug> — the canonical the page
            names there, worked out by the same rule (see _slugs.js). Listing

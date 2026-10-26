@@ -1487,6 +1487,39 @@
         });
     }
 
+    /* ---- ONE GAME IN FRONT (26 Oct 2026). In the homepage's window this
+       game can be open beside Pura Panic and Scout's Trail, and only the
+       front one plays. The window (js/ff-window.js) keeps the homepage's
+       `data-game-front` and calls FFGameFront when it changes; behind
+       another game the round pauses as the Pause button pauses it, every
+       sound stops (FFAudio.hold, the lobby's drift too) and keys are
+       ignored. Brought forward, the sound comes back and the round stays
+       paused until the player resumes it. A press anywhere on the game
+       brings it forward (FFWindow.front) — inside the frame the homepage
+       never sees it. */
+    const EMBED = document.documentElement.classList.contains("ff-embed");
+    let behindGame = false;
+    const hostWindow = () => { try { return EMBED && window.parent.FFWindow ? window.parent.FFWindow : null; } catch (e) { return null; } };
+    function frontChanged() {
+        let g = null;
+        try { g = window.parent.document.documentElement.dataset.gameFront || null; } catch (e) { /* on its own page */ }
+        const was = behindGame;
+        behindGame = EMBED && Boolean(g) && g !== "ff";
+        // Refused unless a round is running; the tick pauses one that
+        // starts behind (the room loading, the three-two-one).
+        if (behindGame) setPaused(true);
+        if (window.FFAudio && behindGame !== was) FFAudio.hold(behindGame);
+    }
+    function watchFront() {
+        if (!EMBED) return;
+        window.FFGameFront = frontChanged;
+        window.addEventListener("pointerdown", () => {
+            const W = hostWindow();
+            if (W && W.front) W.front();
+        }, true);
+        frontChanged();
+    }
+
     /* ---- PAUSE, and the cover that makes it one.
 
        Stopping the clock is the easy half and `frozen` already does it. The
@@ -1535,7 +1568,9 @@
         if (paused) {
             pauseMenu();
             const r = document.getElementById("ff-resume");
-            if (r) r.focus({ preventScroll: true });
+            /* Not when paused from behind another game (26 Oct 2026): the
+               focus would come into this frame, and bring it forward again. */
+            if (r && !behindGame) r.focus({ preventScroll: true });
         } else if (resumed && pauseEls.cover && (pauseEls.cover.contains(document.activeElement)
             || document.activeElement === document.body)) {
             /* AND BRINGS IT BACK when it lifts. The Resume button the focus
@@ -1659,7 +1694,15 @@
                 }
                 b.setAttribute("aria-pressed", String(Boolean(on)));
             }
+            // The two volume sliders say the same as each other (26 Oct 2026).
+            if (window.FFAudio) for (const r of document.querySelectorAll("input[data-vol]")) showVolume(r, FFAudio.volume);
         };
+        function showVolume(r, v) {
+            if (document.activeElement !== r) r.value = String(v);
+            r.setAttribute("aria-valuetext", v + "%");
+            const n = r.parentElement && r.parentElement.querySelector(".ff-vol-n");
+            if (n) n.textContent = v + "%";
+        }
         // The window calls this when its own button changes the size.
         window.FFOptionsSync = audioLabels;
         audioLabels();
@@ -1674,15 +1717,31 @@
                 audioLabels();
             });
         }
+        /* THE VOLUME (26 Oct 2026, the owner's): one slider for the music and
+           the effects together, on the title and the pause menu, heard as it
+           moves and remembered by js/ff-audio.js (80 until it is moved). */
+        for (const r of document.querySelectorAll("input[data-vol]")) {
+            r.addEventListener("input", () => {
+                if (!window.FFAudio) return;
+                FFAudio.setVolume(r.value);
+                for (const other of document.querySelectorAll("input[data-vol]")) {
+                    if (other !== r) other.value = String(FFAudio.volume);
+                    showVolume(other, FFAudio.volume);
+                }
+            });
+        }
+        /* One press, one toggle (26 Oct 2026): a key held down repeats, and
+           F held flicked the window between its sizes and M the music on
+           and off for as long as it was down. */
         document.addEventListener("keydown", (ev) => {
-            if ((ev.key !== "f" && ev.key !== "F") || ev.ctrlKey || ev.metaKey || ev.altKey) return;
+            if ((ev.key !== "f" && ev.key !== "F") || ev.ctrlKey || ev.metaKey || ev.altKey || ev.repeat || behindGame) return;
             const el = document.activeElement;
             if (el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.tagName === "SELECT" || el.isContentEditable)) return;
             const W = host();
             if (W) { W.toggleEnlarge(); audioLabels(); }
         });
         document.addEventListener("keydown", (ev) => {
-            if ((ev.key !== "m" && ev.key !== "M") || ev.ctrlKey || ev.metaKey || ev.altKey) return;
+            if ((ev.key !== "m" && ev.key !== "M") || ev.ctrlKey || ev.metaKey || ev.altKey || ev.repeat || behindGame) return;
             const el = document.activeElement;
             if (el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.tagName === "SELECT" || el.isContentEditable)) return;
             if (!Sound.on()) return;
@@ -1695,7 +1754,17 @@
            hides the room by accident in the middle of a round; this one only
            ever puts it back. */
         document.addEventListener("keydown", (ev) => {
-            if (ev.key === "Escape" && paused) { ev.preventDefault(); setPaused(false); }
+            if (ev.key === "Escape" && paused && !behindGame) { ev.preventDefault(); setPaused(false); }
+        });
+        /* AND IN THE HOMEPAGE'S WINDOW, an Escape nothing in here used —
+           not the pause, not one of this page's own windows (its
+           EscapeLayers acts first, and says so) — goes to the homepage's,
+           which closes its front window as Escape on the homepage does
+           (26 Oct 2026). On window, so it comes after everything above. */
+        window.addEventListener("keydown", (ev) => {
+            if (ev.key !== "Escape" || ev.defaultPrevented || behindGame) return;
+            const W = hostWindow();
+            if (W && W.escape) { ev.preventDefault(); W.escape(); }
         });
         syncPause();
     }
@@ -1728,8 +1797,18 @@
        Measured off `screen` rather than the viewport because the viewport is
        the thing that changes when the device turns — asking the window how
        wide it is would make "is this a phone" flip every time the phone
-       moved. */
+       moved.
+
+       NEVER IN THE HOMEPAGE'S WINDOW (26 Oct 2026). There the window
+       (js/ff-window.js) decides the size: it scales the whole frame to fit
+       the browser, and the homepage sends a phone (short edge under 600) to
+       the full page instead. A tablet whose short edge is 600-819 did get
+       the window, and inside it the game took this for a phone: the
+       immersive layout in a 720px frame, an offer of fullscreen, and upright
+       below the room's width the rotate gate, which froze the round behind
+       a notice the frame was too small to show. */
     function isHandheld() {
+        if (document.documentElement.classList.contains("ff-embed")) return false;
         if (!window.matchMedia) return false;
         if (!window.matchMedia("(pointer: coarse)").matches) return false;
         const shortEdge = Math.min(screen.width || 0, screen.height || 0);
@@ -2104,6 +2183,8 @@
            stray frame — some browsers still fire one occasionally — from
            advancing a round nobody is watching. */
         if (frozen() || loading) return;
+        // A round that began behind another game pauses as it starts (26 Oct 2026).
+        if (behindGame && game && game.state === Game.RUNNING) { setPaused(true); return; }
 
         const now = gameNow();
         // The board's crawl wants every frame, and it has nothing to draw on
@@ -3775,7 +3856,7 @@
             if (!Editor.playable(cls)) {
                 status(Editor.spriteUrl(cls, 0, 0)
                     ? "Nothing records that furni's size, so the room cannot place it."
-                    : "That furni has no artwork - it would be invisible in the room.", "bad");
+                    : `No game art for ${cls} - a round would leave it out.`, "bad");
                 return;
             }
             Editor.addItem(cls,
@@ -3823,10 +3904,9 @@
                     : publish === false ? "Unpublishing…" : "Saving…", "busy");
                 const saved = await Editor.saveServer(publish);
                 const live = saved.published === true;
-                status(publish === true ? `Published “${saved.name}” - it is in the run.`
+                sayWithArt(publish === true ? `Published “${saved.name}” - it is in the run.`
                     : publish === false ? `Unpublished “${saved.name}” - players no longer get it.`
-                        : `Saved “${saved.name}” - ${live ? "published, so players get this version." : "still a draft."}`,
-                    "good");
+                        : `Saved “${saved.name}” - ${live ? "published, so players get this version." : "still a draft."}`);
                 syncPublishButtons();
                 await refreshLevelList();
                 document.getElementById("ff-level-list").value = saved.id;
@@ -3908,7 +3988,7 @@
             if (!id) return;
             // The unsaved draft's line goes with the draft.
             for (const o of [...ev.target.options]) if (!o.value) o.remove();
-            try { await Editor.loadServer(id); status("Loaded.", "good"); }
+            try { await Editor.loadServer(id); sayWithArt("Loaded."); }
             catch (e) { status(e.message || "Could not load.", "bad"); }
         });
 
@@ -3938,7 +4018,7 @@
             }
             try {
                 await Editor.loadServer(L.id);
-                status("Back to the last saved version.", "good");
+                sayWithArt("Back to the last saved version.");
             } catch (e) {
                 status(e.message || "Could not reload the saved version.", "bad");
             }
@@ -3972,7 +4052,8 @@
             Editor.restore();
             syncEditor();
             setMode("room");
-            status(`Editor ready - ${counts.catalogue} furni with artwork.`, "good");
+            // The furni the picker offers: since 26 Oct 2026 the client's art alone, not the catalogue's count.
+            sayWithArt(`Editor ready - ${counts.placeable} furni with artwork.`);
             refreshLevelList();
         }).catch(() => status("Could not load the furni catalogue.", "bad"));
     }
@@ -4336,6 +4417,15 @@
        "carries little to no context"): "Round started.", "Playing as …", the
        run's board result — said elsewhere already, or nothing to act on —
        clear it instead. The builder's bar shows everything. */
+    /* The builder's "loaded" or "saved", and after it what a round would
+       leave out of this level for want of the client's art (26 Oct 2026,
+       RoomEditor.missingArt and leaveOutNoArt). */
+    function sayWithArt(text) {
+        const gone = Editor && Editor.missingArt ? Editor.missingArt() : [];
+        if (!gone.length) { status(text, "good"); return; }
+        status(`${text} No game art for ${gone.join(", ")} - left out of the round, so replace ${gone.length > 1 ? "them" : "it"}.`, "bad");
+    }
+
     function status(text, kind) {
         if (statusEl) {
             const show = Editor || kind === "error";
@@ -4570,7 +4660,6 @@
        levels actually use — see `loadLevelFurni`. Same two lookups either way;
        only where they are filled from differs. */
     const playerMeta = new Map();
-    const playerSprites = new Map();     // className -> [state][rotation]
 
     function metaFor(c) {
         if (Editor) return Editor.metaFor(c);
@@ -4580,26 +4669,48 @@
        question against the handful of sprite grids their levels pulled in, by
        the same rule, so a rotation looks identical in the game and in the
        editor that authored it. */
+    /* THE CLIENT'S ART AND NOTHING ELSE (26 Oct 2026, the owner's: "only
+       use real furni sprite images from the game"). This fell back to
+       FurniIndex's pictures for a class js/furni-library.js does not carry;
+       now such a class never reaches a round (leaveOutNoArt, below), and
+       this has nothing to fall back to. */
     function urlFor(c, st, r) {
         if (Editor) return Editor.spriteFor(c, st, r);
-        const own = Furni.librarySprite(c, st || 0, r || 0);
-        if (own) return own;
-        const grid = playerSprites.get(c);
-        if (!grid) return { url: null, flip: false };
-        const states = grid[Math.min(st || 0, grid.length - 1)] || [];
-        if (!states.length) return { url: null, flip: false };
-        const rot = r || 0;
-        if (rot < states.length) return { url: states[rot], flip: false };
-        const cycle = Furni.rotationsOf(c) || states.length;
-        const mirrored = cycle - 1 - rot;
-        if (mirrored >= 0 && mirrored < states.length) return { url: states[mirrored], flip: true };
-        return { url: states[states.length - 1], flip: false };
+        return Furni.librarySprite(c, st || 0, r || 0) || { url: null, flip: false };
     }
 
-    /* Metadata and artwork for exactly the classes these levels use.
+    /* A CLASS THE CLIENT'S ART CANNOT DRAW IS LEFT OUT OF THE ROUND (26 Oct
+       2026). Not drawn from another site any more, and not dropped in
+       invisible either — an unseen seat is a round nobody can finish. So
+       a level arrives without it: decor and drop-zone pieces of that class
+       are taken out, and a power-up's machine goes back to its standard one
+       (or the power-up goes, if that has no art either). The editor says
+       "No game art for ..." so a level is not built with one
+       (js/room-editor.js). In place, on the levels as fetched, before
+       anything is built from them. */
+    function leaveOutNoArt(levels) {
+        const has = (c) => Boolean(c && Furni.librarySprite(c, 0, 0));
+        const gone = new Set();
+        const keep = (c) => { if (has(c)) return true; if (c) gone.add(c); return false; };
+        const POW = (Levels.POWERUPS || {});
+        for (const lv of levels) {
+            if (Array.isArray(lv.decor)) lv.decor = lv.decor.filter(d => keep(d.className));
+            for (const z of lv.zones || []) if (Array.isArray(z.items)) z.items = z.items.filter(i => keep(i.className));
+            if (Array.isArray(lv.powerups)) {
+                lv.powerups = lv.powerups.filter(p => {
+                    if (keep(p.cls)) return true;
+                    const std = POW[p.kind] && POW[p.kind].classes && POW[p.kind].classes[0];
+                    if (!has(std)) return false;
+                    p.cls = std;
+                    return true;
+                });
+            }
+        }
+        if (gone.size) console.warn("Fallin' Furni: no game art for " + [...gone].sort().join(", ") + " - left out of the rounds.");
+        return gone;
+    }
 
-       TWO REQUESTS THAT ARE NOT THE SAME KIND OF REQUEST, and it is worth
-       being clear about which is which, because they look alike here.
+    /* Metadata for exactly the classes these levels use.
 
        FURNIDATA IS NOT OPTIONAL. It is the only thing on the page that knows
        whether a furni can be SAT ON — Furni.libraryMeta answers the footprint
@@ -4610,19 +4721,11 @@
        across the fifty published levels: 109 seat classes, all 109 of them
        sittable on furnidata's word alone. It stays unconditional.
 
-       THE CATALOGUE IS ARTWORK, AND THE LIBRARY MOSTLY HAS IT. Sprite URLs
-       are a fallback for classes js/furni-library.js does not carry; urlFor
-       reaches for them only after Furni.librarySprite has missed. So the set
-       worth asking for is not "every class the levels use" — it is the ones
-       the library cannot draw. Of the 250 classes across the published
-       levels, 248 are in the library. The other two cost 929KB of catalogue
-       to fetch, because the endpoint had no way to be asked for less.
-
-       Now it has, so this asks for the two by name, and for none at all when
-       the library covers everything — at which point the request stops being
-       made. The client-side filter below is unchanged and still runs: the
-       server narrowing and this one agree, and keeping both means a server
-       that ignores the parameter still produces the right answer. */
+       THE ARTWORK IS THE LIBRARY'S ALONE (26 Oct 2026). A second request
+       here fetched FurniIndex's sprite grids for the classes
+       js/furni-library.js does not carry; it went with the owner's "only
+       use real furni sprite images from the game", and those classes are
+       now taken out of the levels first (leaveOutNoArt). */
     /* RETURNS WHETHER THE FURNIDATA ARRIVED, and the callers act on it.
 
        It used to be `.then(r => r.json()).catch(() => ({ items: {} }))`,
@@ -4636,7 +4739,7 @@
        answer, not a thin one, and it is treated like no answer.
 
        ONLY THE CLASSES THE LEVELS USE are asked for now, by name, the same
-       way the catalogue request below already was — 34KB instead of 1.32MB
+       way the catalogue request used to be — 34KB instead of 1.32MB
        of all 15,291 records. The editor is unaffected: it has its own
        unfiltered fetch in js/room-editor.js and never comes through here.
        Sorted, so every player asks the identical URL and the edge copy
@@ -4647,18 +4750,10 @@
     const MIN_META_COVERAGE = 0.5;
 
     async function loadLevelFurni(levels) {
+        leaveOutNoArt(levels);
         const wanted = new Set();
         for (const lv of levels) for (const c of Levels.furniUsed(lv)) wanted.add(c);
         if (!wanted.size) return true;
-
-        /* Which of them the local library cannot draw. Furni.librarySprite is
-           the same lookup urlFor will make at draw time — asked here against
-           state 0, rotation 0, because a class the library holds at all holds
-           every rotation it ships. */
-        const noArt = [...wanted].filter(c => !Furni.librarySprite(c, 0, 0));
-
-        const catUrl = "/.netlify/functions/furni-catalogue?sprites=1&classes="
-            + encodeURIComponent(noArt.join(","));
 
         const classList = [...wanted].sort().map(encodeURIComponent).join(",");
         const metaUrl = classList.length <= META_QUERY_MAX
@@ -4677,18 +4772,8 @@
                 .then(read)
                 .finally(() => clearTimeout(timer));
         };
-        const [cat, meta] = await Promise.all([
-            // The artwork stays forgiving: a missing sprite grid is a piece
-            // drawn late or not at all, not a game with no seats.
-            noArt.length
-                ? leashed(catUrl, r => r.json()).catch(() => ({ items: [] }))
-                : Promise.resolve({ items: [] }),
-            leashed(metaUrl, r => (r.ok ? r.json() : null))
-                .catch(() => null)
-        ]);
-        for (const row of cat.items || []) {
-            if (wanted.has(row.className)) playerSprites.set(row.className, row.largeImages || []);
-        }
+        const meta = await leashed(metaUrl, r => (r.ok ? r.json() : null))
+            .catch(() => null);
         const items = meta && meta.items && typeof meta.items === "object" ? meta.items : null;
         if (!items) return false;
         let known = 0;
@@ -4698,16 +4783,11 @@
         return true;
     }
 
-    /* How many ways a class turns, for the random facing a drop lands at.
-       The client's artwork answers for everything it ships; for the quarter it
-       does not, the count is the width of FurniIndex's sprite grid, and only
-       this page is holding that. */
+    /* How many ways a class turns, for the random facing a drop lands at:
+       the client's artwork's answer, the only art a round now holds. */
     function rotationsOf(c) {
         if (Editor) return Editor.rotationCount(c);
-        const own = Furni.rotationsOf(c);
-        if (own) return own;
-        const grid = playerSprites.get(c);
-        return (grid && grid[0] && grid[0].length) || 1;
+        return Furni.rotationsOf(c) || 1;
     }
 
     const gameOpts = () => ({ metaFor, urlFor, rotationsOf, playerTile: () => state.pos });
@@ -6219,7 +6299,7 @@
            view you just pressed Play on. */
         dirty = true;
         draw(gameNow());
-        /* THE LIFE CALLOUT, if this room is a retry or the reward for a fifth
+        /* THE LIFE CALLOUT, if this room is a retry or the reward for a tenth
            clear, goes up as the count's opening beat - inside the same freeze,
            so it costs the round nothing either, and BEFORE the 3 rather than
            over it, so the two never share the screen. */
@@ -6839,7 +6919,7 @@
             const d = ARROW[ev.key];
             if (!d || ev.altKey || ev.ctrlKey || ev.metaKey) return;
             ev.preventDefault();            // the page does not scroll under it
-            if (paused) return;
+            if (paused || behindGame) return;
             if (!game || game.state !== Game.RUNNING) return;
             const t = { x: state.pos.x + d.dx, y: state.pos.y + d.dy };
             if (!Iso.has(t.x, t.y)) return;
@@ -7127,6 +7207,8 @@
            business and never waits behind it. The figure's progress is the
            share of its sprites that have arrived (or failed — they are not
            coming), and the hotel view's comes from RoomLobby.progress. */
+        // Before the lobby's music: behind another game it is held from the start.
+        watchFront();
         if (Editor || EDITING) Boot.hide();
         else {
             Boot.start();
@@ -7334,7 +7416,10 @@
                 trail.set(k, (trail.get(k) || 0) + 1);
             },
             openRecord(type, id) {
-                location.href = `/home#${type === "event" ? "event" : "maze"}-${encodeURIComponent(id)}`;
+                const url = `/home#${type === "event" ? "event" : "maze"}-${encodeURIComponent(id)}`;
+                // The error reports' "visitor is leaving" window, as for a link (26 Oct 2026).
+                if (window.MazeErrors && typeof MazeErrors.leaving === "function") MazeErrors.leaving(url);
+                location.href = url;
             },
             onChange(fn) { if (typeof fn === "function") listeners.push(fn); }
         };

@@ -86,7 +86,11 @@
         }
         leadsEl.innerHTML = '<p class="admin-empty">Your session has expired. <button type="button" class="ctl-btn" data-de-reload>Sign in again</button></p>';
         const btn = leadsEl.querySelector("[data-de-reload]");
-        if (btn) btn.addEventListener("click", () => location.reload());
+        // Said to the error reporter first (26 Oct 2026): what a reload cuts off is not a fault.
+        if (btn) btn.addEventListener("click", () => {
+            if (window.MazeErrors && typeof MazeErrors.leaving === "function") MazeErrors.leaving();
+            location.reload();
+        });
         recordsEl.innerHTML = "";
         return true;
     }
@@ -112,10 +116,21 @@
 
     function keyOf(type, id) { return `${type}:${id}`; }
 
+    /* In UTC, with your own time on hover (26 Oct 2026), as every other
+       panel shows a time: this was local time with no zone said. */
     function when(iso) {
         const d = new Date(iso);
         if (Number.isNaN(d.getTime())) return "";
-        return d.toLocaleString("en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+        return d.toLocaleString("en-GB", {
+            timeZone: "UTC", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", hour12: false
+        }).replace(",", "") + " UTC";
+    }
+    function whenLocal(iso) {
+        const d = new Date(iso);
+        if (Number.isNaN(d.getTime())) return "";
+        return d.toLocaleString("en-GB", {
+            day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit", hour12: false, timeZoneName: "short"
+        }) + " (your time)";
     }
 
     function pieceLabel(key) {
@@ -319,7 +334,12 @@
         const meta = document.createElement("span");
         meta.className = "admin-contributor-count";
         const kindWord = lead.type === "new" ? "Not in the archive yet" : lead.type === "event" ? "Event" : "Maze";
-        meta.textContent = ` - ${kindWord} · ${when(lead.createdAt)}`;
+        meta.textContent = ` - ${kindWord} · `;
+        const at = document.createElement("time");
+        at.textContent = when(lead.createdAt);
+        at.title = whenLocal(lead.createdAt);
+        if (at.textContent) at.dateTime = new Date(lead.createdAt).toISOString();
+        meta.appendChild(at);
         h.appendChild(meta);
         info.appendChild(h);
 
@@ -1018,11 +1038,14 @@
        is one small indexed count. */
     async function badge() {
         if (!token() || !navCount) return;
+        // An answer for the account before a reset() is dropped (26 Oct 2026).
+        const gen = loadGen;
         try {
             // The counts alone (30 Sept 2026) — see ?counts=1 in
             // dead-end-leads.js. A server from before it answers the whole
             // new list as it always did, counts and all, which works too.
             const data = await call(`${LEADS_URL}?status=new&counts=1`, "GET");
+            if (gen !== loadGen) return;
             counts = data.counts || counts;
             navCount.textContent = counts.new ? String(counts.new) : "";
             navCount.hidden = !counts.new;
@@ -1030,11 +1053,18 @@
     }
     const rail = document.getElementById("admin-rail");
     if (rail) {
-        // admin.js reveals the rail once the session is verified.
-        const once = new MutationObserver(() => {
-            if (rail.style.display !== "none") { once.disconnect(); badge(); }
-        });
-        once.observe(rail, { attributes: true, attributeFilter: ["style"] });
-        if (rail.style.display !== "none") { once.disconnect(); badge(); }
+        /* admin.js reveals the rail once the session is verified — and again
+           on every sign-in after (26 Oct 2026, the bug scan): a log out
+           empties the badge (reset) with no token left to read it again, and
+           signing back in on the same tab never ran reset, so the count of
+           new leads stayed blank until this tab was opened. */
+        let railShown = false;
+        const railSeen = () => {
+            const on = rail.style.display !== "none";
+            if (on && !railShown) badge();
+            railShown = on;
+        };
+        new MutationObserver(railSeen).observe(rail, { attributes: true, attributeFilter: ["style"] });
+        railSeen();
     }
 })();

@@ -143,6 +143,11 @@ window.AdminWizard = (function () {
         }
         trailFrom = null;
         view.setData(data);
+        /* An opening view picked with "Open here" and not yet saved is
+           unsaved typing too, and the map settings carry theirs across this
+           reload (26 Oct 2026): put it back on the fresh map, as
+           onMapFormClick did, so the "Opens at" line still tells the truth. */
+        if (pendingStart) Object.assign(view.getMap(), pendingStart);
         view.render();
         if (selected && !find(selected.kind, selected.id)) selected = null;
         restoreSelection();
@@ -152,6 +157,7 @@ window.AdminWizard = (function () {
         renderInspector();
         renderMapSettings();
         updateDirty();
+        return true;
     }
 
     function find(kind, id) {
@@ -270,7 +276,11 @@ window.AdminWizard = (function () {
         /* Where it was when the save went out (5 Oct 2026, the bug scan): a
            move made while this was in flight is not in it, so it stays on
            the unsaved pile, as savePositions already does with its own. */
-        const where = r => JSON.stringify([r.x, r.y, r.points || null, r.w, r.h]);
+        /* Every carried field, not only the position (26 Oct 2026): a zoom
+           band, a size or a turn changed while this was in flight is just as
+           unsent, and came off the pile with the position check passing. The
+           same comparison savePositions makes. */
+        const where = r => JSON.stringify(carriedOf(r));
         const sent = where(record);
         try {
             await ctx.api.updateWizardItem(ctx.token(), kind, record);
@@ -1139,9 +1149,20 @@ window.AdminWizard = (function () {
 
     // Inserts a bend into the selected trail where it was clicked, between
     // whichever two existing points that spot falls between.
+    /* The bend the last click dropped, kept for a moment in case that click
+       was the first half of a double-click (26 Oct 2026). See
+       undoClickBend. */
+    let lastBend = null;
+
     function addBendAt(clientX, clientY) {
         const path = find("path", selected.id);
         if (!path) return;
+        lastBend = {
+            pathId: path.id,
+            points: path.points.map(p => p.slice()),
+            wasPending: pending.has(`path:${path.id}`),
+            x: clientX, y: clientY, at: performance.now()
+        };
         const at = view.screenToPct(clientX, clientY);
         let bestAt = 1;
         let best = Infinity;
@@ -1207,8 +1228,42 @@ window.AdminWizard = (function () {
         lockPop.style.top = `${y}px`;
     }
 
+    /* Double-clicking a trail that is already selected (26 Oct 2026). The
+       second click of a double-click is kept from adding a bend (e.detail in
+       onMapClick), but the FIRST had already added one — a click on the
+       selected trail is how a bend is made — and its new dot then sat under
+       the pointer, so the double-click landed on that dot and took it out
+       again: the shape came back, the trail stayed on the unsaved pile with
+       nothing changed, and the padlock never appeared. The bend is put back
+       exactly as it was, pile included, and the trail's padlock offered as
+       for anything else. Only for a double-click at the spot the bend went
+       in, a moment after it. */
+    function undoClickBend(e) {
+        const bend = lastBend;
+        lastBend = null;
+        if (!bend || performance.now() - bend.at > 800) return null;
+        if (Math.hypot(e.clientX - bend.x, e.clientY - bend.y) > 6) return null;
+        const path = find("path", bend.pathId);
+        if (!path) return null;
+        path.points = bend.points;
+        redrawTrail(path);
+        if (!bend.wasPending) {
+            pending.delete(`path:${path.id}`);
+            updateDirty();
+        }
+        return path;
+    }
+
     function onMapDoubleClick(e) {
         if (!ctx.canWrite()) return;
+
+        const unbent = undoClickBend(e);
+        if (unbent) {
+            select("path", unbent.id);
+            showLockPop("path", unbent, e.clientX, e.clientY);
+            e.preventDefault();
+            return;
+        }
 
         /* A trail's control point: double-clicking one removes it, which is
            the older meaning of this gesture and stays as it was. Only
@@ -2193,24 +2248,102 @@ window.AdminWizard = (function () {
         }
     }
 
+    /* ---------- typing that survives a reload (26 Oct 2026) ----------
+
+       load() builds the open room form, the open secret form and the map
+       settings afresh from the server's copy, and it runs after plenty that
+       has nothing to do with them: saving another room's details, adding or
+       deleting a secret, saving the map settings, signing back in after the
+       session ran out. Each time, whatever had been typed and not yet saved
+       went with the old form. So the fields that differ from what their form
+       was built with are read off the old one before it goes and written
+       into the new one: what was typed stays, and everything left alone
+       comes from the fresh record. A picture chosen or removed moves across
+       whole, dropzone and all, because a file input can't be filled in by
+       script. The secret form's pickers save the moment they change, so
+       they are never unsaved and are left out. */
+    function typedChanges(form) {
+        const out = { fields: [], pictures: [], focus: null };
+        if (!form) return out;
+        for (const el of form.querySelectorAll("input, select, textarea")) {
+            if (!el.name || el.matches(".admin-wiz-hold-add")) continue;
+            const picture = el.closest("[data-image-field]");
+            if (picture) {
+                const chosen = el.type === "file" && el.files && el.files.length;
+                if ((chosen || picture.dataset.changed) && !out.pictures.includes(picture)) out.pictures.push(picture);
+                continue;
+            }
+            if (el.type === "file" || el.type === "hidden") continue;
+            const changed = el.type === "checkbox" || el.type === "radio" ? el.checked !== el.defaultChecked
+                : el.tagName === "SELECT" ? [...el.options].some(o => o.selected !== o.defaultSelected)
+                : el.value !== el.defaultValue;
+            if (changed) out.fields.push({ name: el.name, value: el.value, checked: el.checked });
+        }
+        const active = document.activeElement;
+        if (active && active.name && form.contains(active)) {
+            let start = null, end = null;
+            try { start = active.selectionStart; end = active.selectionEnd; } catch (err) { /* number inputs */ }
+            out.focus = { name: active.name, start, end };
+        }
+        return out;
+    }
+
+    const hasTyped = typed => !!typed && (typed.fields.length > 0 || typed.pictures.length > 0);
+
+    function carryTyped(form, typed) {
+        if (!form || !typed) return;
+        const named = name => form.querySelector(`[name="${name}"]`);
+        for (const f of typed.fields) {
+            const el = named(f.name);
+            if (!el) continue;
+            if (el.type === "checkbox" || el.type === "radio") el.checked = f.checked;
+            else el.value = f.value;
+            // So anything that reads the field as it is typed (the code's
+            // "opens to" line) reads it again.
+            el.dispatchEvent(new Event("input", { bubbles: true }));
+        }
+        for (const picture of typed.pictures) {
+            const fresh = form.querySelector(`[data-image-field="${picture.dataset.imageField}"]`);
+            if (fresh) fresh.replaceWith(picture);
+        }
+        const focus = typed.focus && named(typed.focus.name);
+        if (focus) {
+            focus.focus({ preventScroll: true });
+            try { if (typed.focus.start != null) focus.setSelectionRange(typed.focus.start, typed.focus.end); } catch (err) { /* number inputs */ }
+        }
+    }
+
     // ---------- the room list ----------
 
     let roomQuery = "";
     let openRoomId = null;
 
     function renderRoomList() {
+        // A room deleted since its form was opened has no form to show.
+        if (openRoomId && !data.rooms.some(r => r.id === openRoomId)) openRoomId = null;
         const query = roomQuery.trim().toLowerCase();
+        /* The room whose form is open stays in the list whatever is typed in
+           the search (26 Oct 2026). Filtering its row out took the form and
+           everything in it along with it. */
         const rooms = data.rooms
-            .filter(r => !query || `${r.name} ${r.note || ""} ${r.floor || ""}`.toLowerCase().includes(query))
+            .filter(r => r.id === openRoomId || !query || `${r.name} ${r.note || ""} ${r.floor || ""}`.toLowerCase().includes(query))
             .slice()
             .sort((a, b) => (a.floor || "").localeCompare(b.floor || "") || a.name.localeCompare(b.name));
 
         /* The open room form is carried over rather than rebuilt (5 Oct
            2026, the bug scan): the list redraws on every selection, padlock,
            Hide and search keystroke, and a fresh form threw away whatever
-           was being typed into it. Kept only while it is the same record —
-           after a reload from the server it is built anew from the new one. */
-        const keptForm = els.roomList.querySelector(".admin-wiz-row.is-open .admin-wiz-row-form > *");
+           was being typed into it. Kept whole while it is the same record.
+           After a reload from the server the record is a new object with
+           the same id (26 Oct 2026: it used to be matched by object, so a
+           reload threw the typing away): the form is built anew from the
+           new record and what was typed is carried into it — or kept whole
+           while its own Save is still going out. */
+        const oldForm = els.roomList.querySelector(".admin-wiz-row.is-open .admin-wiz-row-form > form");
+        const keptForm = oldForm && oldForm.dataset.id === openRoomId ? oldForm : null;
+        const saving = !!(keptForm && keptForm.querySelector("button[type=submit]:disabled"));
+        const typed = keptForm ? typedChanges(keptForm) : null;
+        let rebuilt = null;
         els.roomList.innerHTML = "";
         if (!rooms.length) {
             els.roomList.innerHTML = `<p class="admin-empty">${data.rooms.length ? "No room by that name." : "No rooms on this map yet."}</p>`;
@@ -2253,16 +2386,20 @@ window.AdminWizard = (function () {
             if (openRoomId === room.id) {
                 row.classList.add("is-open");
                 const holder = row.querySelector(".admin-wiz-row-form");
-                if (keptForm && keptForm._room === room) {
+                if (keptForm && (keptForm._room === room || saving)) {
+                    keptForm._room = room;
                     holder.appendChild(keptForm);
                 } else {
                     const form = buildRoomForm(room);
                     form._room = room;
                     holder.appendChild(form);
+                    rebuilt = form;
                 }
             }
             els.roomList.appendChild(row);
         }
+        // Once it is on the page, so a field that had the cursor gets it back.
+        if (rebuilt) carryTyped(rebuilt, typed);
     }
 
     /* ---------- secret passages ----------
@@ -2302,6 +2439,15 @@ window.AdminWizard = (function () {
         const secrets = (data.reveals || []).slice()
             .sort((a, b) => (a.order || 0) - (b.order || 0) || (a.name || "").localeCompare(b.name || ""));
 
+        /* What was typed into the open secret and not yet saved, carried
+           into the form built from the fresh record (26 Oct 2026, see
+           typedChanges). Matched by id: after a reload the record is a new
+           object. */
+        if (openSecretId && !secrets.some(s => s.id === openSecretId)) openSecretId = null;
+        const oldForm = els.secretList.querySelector(".admin-wiz-row.is-open .admin-wiz-row-form > form");
+        const typed = oldForm && oldForm.dataset.id === openSecretId ? typedChanges(oldForm) : null;
+        let rebuilt = null;
+
         els.secretList.innerHTML = "";
         if (!secrets.length) {
             els.secretList.innerHTML = `<p class="admin-empty">No secret passages yet. Everything on this map is on it.</p>`;
@@ -2326,11 +2472,17 @@ window.AdminWizard = (function () {
             });
             if (openSecretId === secret.id) {
                 row.classList.add("is-open");
-                row.querySelector(".admin-wiz-row-form").appendChild(buildSecretForm(secret));
+                rebuilt = buildSecretForm(secret);
+                row.querySelector(".admin-wiz-row-form").appendChild(rebuilt);
             }
             els.secretList.appendChild(row);
         }
+        if (rebuilt) carryTyped(rebuilt, typed);
     }
+
+    // Whether the open secret has typing in it that a Save hasn't kept.
+    const secretTyping = () => hasTyped(typedChanges(
+        els.secretList && els.secretList.querySelector(".admin-wiz-row.is-open .admin-wiz-row-form > form")));
 
     /* What a secret holds, as one removable row each.
 
@@ -2437,6 +2589,7 @@ window.AdminWizard = (function () {
     function buildSecretForm(secret) {
         const form = document.createElement("form");
         form.className = "admin-form is-open admin-wiz-secret-form";
+        form.dataset.id = secret.id;
         form.innerHTML = `
             ${field("Name", `<input type="text" name="name" value="${esc(secret.name || "")}" placeholder="The One-Eyed Witch Passage">`)}
             ${field("Code", `<input type="text" name="code" value="${esc(secret.code || "")}" placeholder="dissendium" autocomplete="off" spellcheck="false">`)}
@@ -2654,7 +2807,11 @@ window.AdminWizard = (function () {
             if (camera) {
                 const raw = camera.value.trim();
                 secret[camera.name] = raw === "" ? null : Number(raw);
-                if (await saveSecret(secret)) say("Saved.", "good");
+                if (await saveSecret(secret)) {
+                    // Saved, so no longer typing a reload has to carry.
+                    camera.defaultValue = camera.value;
+                    say("Saved.", "good");
+                }
                 return;
             }
 
@@ -2819,6 +2976,10 @@ window.AdminWizard = (function () {
                 // throw away the form that was just submitted from, along
                 // with wherever the page was scrolled to.
                 refreshSecretRowSummary(secret);
+                /* The fields now say what is saved, so they stop counting as
+                   typing for the next reload to carry (26 Oct 2026). */
+                for (const name of ["name", "code", "hint", "message"]) read(name).defaultValue = next[name];
+                read("enabled").defaultChecked = next.enabled;
             }
         });
 
@@ -2873,7 +3034,13 @@ window.AdminWizard = (function () {
             if (err.status === 401) return ctx.lockOut();
             return say("Could not add it — " + (err.message || "try again."), "bad");
         }
+        /* The new one opens in place of the one that was open — unless that
+           one has typing in it that hasn't been saved (26 Oct 2026). Opening
+           the new one closed it and threw the typing away; now it stays
+           open, and the new secret waits in the list. */
+        const typing = secretTyping();
         await load();
+        if (typing && openSecretId) return say("Added, not live yet. The open secret has unsaved changes, so it stays open.", "good");
         openSecretId = created.id;
         renderSecretList();
         say("Added, not live yet.", "good");
@@ -2942,6 +3109,8 @@ window.AdminWizard = (function () {
                 const wrap = btn.closest("[data-image-field]");
                 wrap.querySelector("input[type=hidden]").value = "";
                 wrap.querySelector(".admin-wiz-preview").innerHTML = "";
+                // Unsaved, so a reload carries it across (typedChanges).
+                wrap.dataset.changed = "1";
             });
         });
         form.addEventListener("submit", e => submitRoomForm(e, form));
@@ -3067,7 +3236,14 @@ window.AdminWizard = (function () {
 
     // ---------- map settings ----------
 
-    function renderMapSettings() {
+    /* Built afresh on every load(), with whatever was typed and not yet
+       saved carried into it (26 Oct 2026, see typedChanges) — it used to be
+       replaced outright by the server's copy. Left alone entirely while its
+       own Save is going out; `fresh` is that Save's rebuild once it lands,
+       which takes everything from the map as saved, pictures included. */
+    function renderMapSettings(fresh) {
+        if (!fresh && els.mapForm.querySelector("button[type=submit]:disabled")) return;
+        const typed = fresh ? null : typedChanges(els.mapForm);
         const map = view.getMap();
         els.mapForm.innerHTML = `
             ${field("Map title", `<input type="text" name="title" value="${esc(map.title || "")}">`)}
@@ -3090,7 +3266,12 @@ window.AdminWizard = (function () {
                 ${field("Sheet height (px)", `<input type="number" name="height" min="200" value="${esc(map.height)}">`, true)}
                 ${field("Closest zoom", `<input type="number" name="maxZoom" step="0.5" min="1" value="${esc(map.maxZoom)}">`, true)}
                 ${field("Footprint gap", `<input type="number" name="footprintSpacing" step="0.1" min="0" value="${esc(map.footprintSpacing || 0)}">`, true)}
-                ${field("Gap from room names", `<input type="number" name="labelGap" step="0.05" min="0" max="6" value="${esc(map.labelGap == null ? 0.34 : map.labelGap)}">`, true)}
+                ${/* Steps of 0.01 (26 Oct 2026). It was 0.05, and the
+                     default it shows, 0.34, is not a step of 0.05 — so on a
+                     map that had never set its own gap the browser refused
+                     the whole form ("enter a valid value") and Save map
+                     settings did nothing. */ ""}
+                ${field("Gap from room names", `<input type="number" name="labelGap" step="0.01" min="0" max="6" value="${esc(map.labelGap == null ? 0.34 : map.labelGap)}">`, true)}
                 ${field("Big sheet loads at", `<input type="number" name="backgroundDetailZoom" step="0.5" min="1" value="${esc(map.backgroundDetailZoom == null ? 2.5 : map.backgroundDetailZoom)}">`, true)}
             </div>
             <p class="admin-hint">How near a trail may come to a name, as a percentage of the sheet's
@@ -3115,8 +3296,10 @@ window.AdminWizard = (function () {
                 const wrap = btn.closest("[data-image-field]");
                 wrap.querySelector("input[type=hidden]").value = "";
                 wrap.querySelector(".admin-wiz-preview").innerHTML = "";
+                wrap.dataset.changed = "1";
             });
         });
+        carryTyped(els.mapForm, typed);
     }
 
     // The "Opens at …" line, on its own so the buttons below can repaint
@@ -3196,7 +3379,9 @@ window.AdminWizard = (function () {
                 ...images
             });
             pendingStart = null;
-            await load();
+            // The reload leaves this form alone while its Save is out, so it
+            // is rebuilt from the saved map here (26 Oct 2026).
+            if (await load()) renderMapSettings(true);
             // Sheets replaced or removed by this save — see submitRoomForm.
             before.filter(url => !Object.values(images).includes(url)).forEach(dropUpload);
             say("Map settings saved.", "good");

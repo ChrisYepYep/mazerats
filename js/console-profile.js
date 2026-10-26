@@ -454,6 +454,12 @@ document.addEventListener("DOMContentLoaded", () => {
                 signal: abort ? abort.signal : undefined
             });
             const body = await res.json().catch(() => ({}));
+            /* A session revoked or expired while the page sat open (26 Oct
+               2026): `me` is asked again, as load() and hvPost do, so the
+               page redraws signed out rather than saying "Not signed in"
+               under a player it still shows. Through Account's own
+               once-a-minute leash. */
+            if (res.status === 401 && window.Account && typeof Account.sessionEnded === "function") Account.sessionEnded();
             if (!res.ok) throw new Error(body && body.error ? body.error : "");
             const p = body && body.profile;
             if (p && data === forData && data) {
@@ -778,6 +784,9 @@ document.addEventListener("DOMContentLoaded", () => {
             if (act === "hv-start") {
                 const r = await hvPost("start");
                 if (r.code) { hv.phase = "code"; hv.code = r.code; hv.checked = false; }
+                /* Turned away by the site-wide limit (a 429 with no code;
+                   26 Oct 2026): the press did nothing and said nothing. */
+                else if (r.status === 429) { hv.msg = "Give it a moment and try again."; hv.tone = ""; }
                 /* Linked meanwhile (an admin in the Warren, or another tab;
                    10 Oct 2026): the server answers { linked: true } with no
                    code, and the press used to do nothing at all. */
@@ -808,12 +817,15 @@ document.addEventListener("DOMContentLoaded", () => {
                 hv.tone = "";
                 hvCountdown(r.wait || 30000);
             } else if (act === "hv-decline") {
-                await hvPost("decline");
-                if (data && data.habboGuess) data.habboGuess.asked = true;
+                // The same limit kept nothing, so nothing is shown as kept (26 Oct 2026).
+                if ((await hvPost("decline")).status === 429) { hv.msg = "Give it a moment and try again."; hv.tone = ""; }
+                else if (data && data.habboGuess) data.habboGuess.asked = true;
             } else if (act === "hv-notme") {
-                await hvPost("notme");
-                if (data) data.habboGuess = null;
-                await load(true);
+                if ((await hvPost("notme")).status === 429) { hv.msg = "Give it a moment and try again."; hv.tone = ""; }
+                else {
+                    if (data) data.habboGuess = null;
+                    await load(true);
+                }
             } else if (act === "hv-cancel") {
                 hv.phase = "offer";
                 clearInterval(hvTimer);
@@ -997,6 +1009,14 @@ document.addEventListener("DOMContentLoaded", () => {
         if (again && lost) again.focus({ preventScroll: true });
     }
 
+    /* A trip this page starts itself says so first (26 Oct 2026): what fails
+       while the next page loads is the leaving, and js/error-report.js holds
+       it back as it does for a link click. */
+    function goTo(url) {
+        try { if (window.MazeErrors && typeof MazeErrors.leaving === "function") MazeErrors.leaving(url); } catch (e) { /* never in the way */ }
+        location.href = url;
+    }
+
     host.addEventListener("click", e => {
         const toggle = e.target.closest('button[data-pref="hidden"]');
         if (toggle && !toggle.disabled && data) { savePref("hidden", { hidden: !data.hidden }); return; }
@@ -1010,11 +1030,10 @@ document.addEventListener("DOMContentLoaded", () => {
            whatever opened it), then the window opens and takes focus. */
         else if (act === "progress" && window.ArchiveProgress) { Console.close(); window.ArchiveProgress.open(); }
         else if (act === "boards" && window.Leaderboards) { Console.close(); window.Leaderboards.open(); }
-        // Off the homepage neither window exists, so both buttons go there.
         // Off the homepage neither window exists: /profile opens Your Profile
         // there (4 Oct 2026), and the Leaderboards are on the archive page.
-        else if (act === "progress") location.href = "/profile";
-        else if (act === "boards") location.href = "/home";
+        else if (act === "progress") goTo("/profile");
+        else if (act === "boards") goTo("/home");
         else if (act === "info") Console.openInfo(null);
         else if (act.startsWith("hv-")) hvAct(act);
     });

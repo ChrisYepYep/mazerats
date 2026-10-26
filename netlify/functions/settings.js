@@ -1,10 +1,13 @@
 /* /.netlify/functions/settings — site-wide settings: which state the
-   welcome page's button is in (enter | coming-soon | maintenance), whether
-   Fallin' Furni is playable or under maintenance, and the About blurb shown
-   on the console modal's About page. GET is public; PUT
-   requires an admin session and updates whichever fields are present in
-   the request body, leaving the other untouched. Stored as a single
-   document with a fixed _id, since there's only ever one. */
+   welcome page's button is in (enter | coming-soon | maintenance) and what
+   Maintenance says, each game's own state (Fallin' Furni, Pura Panic,
+   Scout's Trail), the palette and the seasonal skin with its dates, the
+   title screen's furni, and the two launch dates. (It said "the About
+   blurb" here, which has never been stored in this document; 26 Oct
+   2026.) GET is public; PUT requires an admin session and updates
+   whichever fields are present in the request body, leaving the others
+   untouched. Stored as a single document with a fixed _id, since there's
+   only ever one. */
 const { getDb } = require("./_db");
 const { isAuthorized, canWrite, refuseWrite, UNAUTHORIZED, AUTH_UNAVAILABLE, isAuthUnavailable } = require("./_auth");
 const { SECURITY_HEADERS } = require("./_headers");
@@ -76,7 +79,8 @@ const ratState = (doc) => (doc && VALID_RAT_STATES.includes(doc.ratRaceState)) ?
    "classic" is the brown the archive has always been, and is what everyone
    gets unless this is deliberately changed. Every other name is a palette in
    css/theme-<name>.css, generated from that same stylesheet and the same
-   pixel art by tools/themes.js — purple, and the three Halloween ones.
+   pixel art by tools/themes.js — purple, the three Halloween ones
+   (pumpkin, witch, crimson) and Christmas's frost.
 
    This list is the gate: a name that is not on it is refused, so a typo or a
    stale bookmark cannot put the site into a theme whose stylesheet does not
@@ -106,13 +110,17 @@ const DEFAULT_THEME = "classic";
        { skin, from: "YYYY-MM-DDTHH:mm", to: "YYYY-MM-DDTHH:mm",
          zone: "local" | "utc", yearly: true | false, theme?: <palette> | null }
    theme is the palette worn alongside while the window is on. Left out, it
-   is the skin's own default (Halloween wears Witching Hour, Christmas
-   leaves the palette alone); null keeps the site's palette; a name is that
-   palette.
+   is the skin's own default (PAIRED in js/skin-wear.js: Halloween wears
+   Witching Hour, Christmas wears Frost); null keeps the site's palette; a
+   name is that palette.
    Wall-clock stamps rather than instants, on purpose: "local" means each
    visitor's own midnight, which no single instant can say. A yearly window
    ignores its years and may run across New Year, so its end only has to
-   differ from its start; any other window has to end after it starts. */
+   differ from its start; any other window has to end after it starts.
+   A yearly window may not start or end on 29 February (26 Oct 2026): in the
+   three years out of four without one, js/skin-wear.js reads it as 1 March,
+   so "29 Feb to 1 Mar" became a window from 1 March to 1 March of the next
+   year — the skin on for a whole year. */
 const VALID_SKINS = ["xmas", "halloween"];
 const SKIN_MODES = ["auto", "off"].concat(VALID_SKINS);
 const DEFAULT_SKIN = "auto";
@@ -137,6 +145,7 @@ function cleanSkinSchedule(list) {
         if (!realStamp(w.from) || !realStamp(w.to)) return n + "from and to must be dates and times (YYYY-MM-DDTHH:mm)";
         const zone = w.zone === "utc" ? "utc" : "local";
         const yearly = w.yearly === true;
+        if (yearly && (w.from.slice(5, 10) === "02-29" || w.to.slice(5, 10) === "02-29")) return n + "a yearly window can't start or end on 29 February";
         if (yearly ? w.to.slice(5) === w.from.slice(5) : w.to <= w.from) return n + (yearly ? "it starts and ends at the same moment" : "it ends before it starts");
         const clean = { skin: w.skin, from: w.from, to: w.to, zone, yearly };
         /* The palette worn with it while it is on. Left out, the skin's own

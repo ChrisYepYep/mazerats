@@ -27,8 +27,10 @@
    ANCHORED TO AN ID. style.css has a hundred-odd Warren-only rules written
    body[data-page="admin"] … with the old browns in them, which outrank any
    class selector here; so every rule below starts at #wr-app (or, for the
-   sign-in box, #login-modal — `:is(#wr-app .wr-ui, #login-modal)`), and an
-   id outranks them all without a single !important. */
+   sign-in box, #login-modal — `:is(#wr-app .wr-ui, #login-modal, .modal-overlay.wr-dialog)`), and an
+   id outranks them all without a single !important. (:is() takes its
+   most specific argument's weight, so the Warren's pop-ups — .wr-dialog,
+   26 Oct 2026, hung off <body> outside #wr-app — rank as an id too.) */
 
 /* ---- THE PALETTE */
 body.wr-on {
@@ -109,8 +111,15 @@ body.wr-on > .site-footer { display: none !important; }
 #wr-app .wr-top { grid-row: 1; }
 #wr-app .wr-content { grid-row: 2; }
 #wr-app .wr-status { grid-row: 3; }
-#wr-app *, #wr-app *::before, #wr-app *::after { box-sizing: border-box; }
-#wr-app :focus-visible { outline: 2px solid var(--wr-blue); outline-offset: 1px; }
+/* Not inside Recolour (26 Oct 2026): it wears the site's own dress for its
+   preview, and these two re-sized the ::before/::after of its frames (the
+   site sizes only the elements themselves border-box) and put the
+   workshop's blue ring where the site draws its own focus. In :where(), so
+   the exception adds no weight and the rules that turn the ring off (the
+   inputs' own focus) still outrank it as before. */
+#wr-app *, #wr-app *:where(:not(.admin-panel[data-panel="recolour"], .admin-panel[data-panel="recolour"] *))::before,
+#wr-app *:where(:not(.admin-panel[data-panel="recolour"], .admin-panel[data-panel="recolour"] *))::after { box-sizing: border-box; }
+#wr-app :focus-visible:where(:not(.admin-panel[data-panel="recolour"] *)) { outline: 2px solid var(--wr-blue); outline-offset: 1px; }
 #wr-app .wr-spacer { flex: 1; }
 
 /* The top bar. */
@@ -421,7 +430,7 @@ body.wr-on > .site-footer { display: none !important; }
    The panel heading: a title, a line on what the section is for, and its
    main action on the right. */
 #wr-app .wr-ui.admin-panel { background: none; border: 0; padding: 0; box-shadow: none; }
-:is(#wr-app .wr-ui, #login-modal) .admin-panel-head {
+:is(#wr-app .wr-ui, #login-modal, .modal-overlay.wr-dialog) .admin-panel-head {
     display: flex;
     align-items: flex-start;
     justify-content: space-between;
@@ -431,31 +440,31 @@ body.wr-on > .site-footer { display: none !important; }
     border-bottom: 1px solid var(--wr-line);
     background: none;
 }
-:is(#wr-app .wr-ui, #login-modal) .admin-panel-head-sub { margin-top: 26px; padding-bottom: 10px; }
-:is(#wr-app .wr-ui, #login-modal) .admin-panel-title {
+:is(#wr-app .wr-ui, #login-modal, .modal-overlay.wr-dialog) .admin-panel-head-sub { margin-top: 26px; padding-bottom: 10px; }
+:is(#wr-app .wr-ui, #login-modal, .modal-overlay.wr-dialog) .admin-panel-title {
     margin: 0;
     font: 650 22px/1.2 var(--wr-font);
     color: var(--wr-text);
     letter-spacing: -0.2px;
 }
-:is(#wr-app .wr-ui, #login-modal) .admin-panel-title .admin-hint { font-size: 12px; font-weight: 500; vertical-align: middle; }
-:is(#wr-app .wr-ui, #login-modal) .admin-subheading,
-:is(#wr-app .wr-ui, #login-modal) h3.admin-subheading {
+:is(#wr-app .wr-ui, #login-modal, .modal-overlay.wr-dialog) .admin-panel-title .admin-hint { font-size: 12px; font-weight: 500; vertical-align: middle; }
+:is(#wr-app .wr-ui, #login-modal, .modal-overlay.wr-dialog) .admin-subheading,
+:is(#wr-app .wr-ui, #login-modal, .modal-overlay.wr-dialog) h3.admin-subheading {
     font: 650 15px/1.3 var(--wr-font);
     color: var(--wr-text);
     letter-spacing: 0;
     text-transform: none;
 }
-:is(#wr-app .wr-ui, #login-modal) .admin-subheading-spaced { border-top-color: var(--wr-line); }
-:is(#wr-app .wr-ui, #login-modal) .admin-hint { color: var(--wr-dim); font-family: var(--wr-font); font-size: 12.5px; }
-:is(#wr-app .wr-ui, #login-modal) h1, :is(#wr-app .wr-ui, #login-modal) h2, :is(#wr-app .wr-ui, #login-modal) h3, :is(#wr-app .wr-ui, #login-modal) h4 { font-family: var(--wr-font); letter-spacing: 0; text-shadow: none; }
+:is(#wr-app .wr-ui, #login-modal, .modal-overlay.wr-dialog) .admin-subheading-spaced { border-top-color: var(--wr-line); }
+:is(#wr-app .wr-ui, #login-modal, .modal-overlay.wr-dialog) .admin-hint { color: var(--wr-dim); font-family: var(--wr-font); font-size: 12.5px; }
+:is(#wr-app .wr-ui, #login-modal, .modal-overlay.wr-dialog) h1, :is(#wr-app .wr-ui, #login-modal, .modal-overlay.wr-dialog) h2, :is(#wr-app .wr-ui, #login-modal, .modal-overlay.wr-dialog) h3, :is(#wr-app .wr-ui, #login-modal, .modal-overlay.wr-dialog) h4 { font-family: var(--wr-font); letter-spacing: 0; text-shadow: none; }
 
 /* Buttons. The pills (actions on a record) and the old pixel-framed
    buttons all become the editors' buttons; the solid one is gold. */
-:is(#wr-app .wr-ui, #login-modal) .admin-action-pill,
-:is(#wr-app .wr-ui, #login-modal) .ctl-btn,
-:is(#wr-app .wr-ui, #login-modal) .btn,
-:is(#wr-app .wr-ui, #login-modal) .btn-enter-mini {
+:is(#wr-app .wr-ui, #login-modal, .modal-overlay.wr-dialog) .admin-action-pill,
+:is(#wr-app .wr-ui, #login-modal, .modal-overlay.wr-dialog) .ctl-btn,
+:is(#wr-app .wr-ui, #login-modal, .modal-overlay.wr-dialog) .btn,
+:is(#wr-app .wr-ui, #login-modal, .modal-overlay.wr-dialog) .btn-enter-mini {
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -477,24 +486,24 @@ body.wr-on > .site-footer { display: none !important; }
     image-rendering: auto;
     cursor: pointer;
 }
-:is(#wr-app .wr-ui, #login-modal) .admin-action-pill:hover,
-:is(#wr-app .wr-ui, #login-modal) .ctl-btn:hover,
-:is(#wr-app .wr-ui, #login-modal) .btn:hover,
-:is(#wr-app .wr-ui, #login-modal) .btn-enter-mini:hover { background: var(--wr-raised-2); border-color: #444a55; color: var(--wr-text); }
-:is(#wr-app .wr-ui, #login-modal) .admin-pill-solid,
-:is(#wr-app .wr-ui, #login-modal) .btn-solid {
+:is(#wr-app .wr-ui, #login-modal, .modal-overlay.wr-dialog) .admin-action-pill:hover,
+:is(#wr-app .wr-ui, #login-modal, .modal-overlay.wr-dialog) .ctl-btn:hover,
+:is(#wr-app .wr-ui, #login-modal, .modal-overlay.wr-dialog) .btn:hover,
+:is(#wr-app .wr-ui, #login-modal, .modal-overlay.wr-dialog) .btn-enter-mini:hover { background: var(--wr-raised-2); border-color: #444a55; color: var(--wr-text); }
+:is(#wr-app .wr-ui, #login-modal, .modal-overlay.wr-dialog) .admin-pill-solid,
+:is(#wr-app .wr-ui, #login-modal, .modal-overlay.wr-dialog) .btn-solid {
     background: var(--wr-gold);
     border-color: var(--wr-gold);
     color: var(--wr-gold-ink);
 }
-:is(#wr-app .wr-ui, #login-modal) .admin-pill-solid:hover,
-:is(#wr-app .wr-ui, #login-modal) .btn-solid:hover { background: #ffd95f; border-color: #ffd95f; color: var(--wr-gold-ink); }
-:is(#wr-app .wr-ui, #login-modal) :is(.admin-action-pill, .ctl-btn, .btn, .btn-enter-mini):disabled,
-:is(#wr-app .wr-ui, #login-modal) :is(.admin-action-pill, .ctl-btn, .btn, .btn-enter-mini)[aria-disabled="true"] { opacity: 0.45; cursor: default; }
+:is(#wr-app .wr-ui, #login-modal, .modal-overlay.wr-dialog) .admin-pill-solid:hover,
+:is(#wr-app .wr-ui, #login-modal, .modal-overlay.wr-dialog) .btn-solid:hover { background: #ffd95f; border-color: #ffd95f; color: var(--wr-gold-ink); }
+:is(#wr-app .wr-ui, #login-modal, .modal-overlay.wr-dialog) :is(.admin-action-pill, .ctl-btn, .btn, .btn-enter-mini):disabled,
+:is(#wr-app .wr-ui, #login-modal, .modal-overlay.wr-dialog) :is(.admin-action-pill, .ctl-btn, .btn, .btn-enter-mini)[aria-disabled="true"] { opacity: 0.45; cursor: default; }
 
 /* A segmented choice — the landing switch, the palettes, a game's state: one
    track, the current answer filled in gold. */
-:is(#wr-app .wr-ui, #login-modal) .ctl-seg {
+:is(#wr-app .wr-ui, #login-modal, .modal-overlay.wr-dialog) .ctl-seg {
     display: inline-flex;
     flex-wrap: wrap;
     align-items: center;
@@ -505,8 +514,8 @@ body.wr-on > .site-footer { display: none !important; }
     border: 1px solid var(--wr-line);
     width: auto;
 }
-:is(#wr-app .wr-ui, #login-modal) .ctl-seg > .btn-enter-mini,
-:is(#wr-app .wr-ui, #login-modal) .ctl-seg > .ctl-btn {
+:is(#wr-app .wr-ui, #login-modal, .modal-overlay.wr-dialog) .ctl-seg > .btn-enter-mini,
+:is(#wr-app .wr-ui, #login-modal, .modal-overlay.wr-dialog) .ctl-seg > .ctl-btn {
     /* Each as wide as its words: style.css shares a strip out in equal
        parts, which cut "Follow the dates" down to its middle. */
     flex: 0 0 auto;
@@ -518,23 +527,23 @@ body.wr-on > .site-footer { display: none !important; }
     background: transparent;
     color: var(--wr-text-2);
 }
-:is(#wr-app .wr-ui, #login-modal) .ctl-seg > .btn-enter-mini:hover { background: var(--wr-raised); color: var(--wr-text); }
-:is(#wr-app .wr-ui, #login-modal) .ctl-seg > .btn-enter-mini.active,
-:is(#wr-app .wr-ui, #login-modal) .ctl-seg > .btn-enter-mini[aria-pressed="true"] {
+:is(#wr-app .wr-ui, #login-modal, .modal-overlay.wr-dialog) .ctl-seg > .btn-enter-mini:hover { background: var(--wr-raised); color: var(--wr-text); }
+:is(#wr-app .wr-ui, #login-modal, .modal-overlay.wr-dialog) .ctl-seg > .btn-enter-mini.active,
+:is(#wr-app .wr-ui, #login-modal, .modal-overlay.wr-dialog) .ctl-seg > .btn-enter-mini[aria-pressed="true"] {
     background: var(--wr-gold);
     border-color: var(--wr-gold);
     color: var(--wr-gold-ink);
 }
-:is(#wr-app .wr-ui, #login-modal) .ctl-seg > input { margin-right: 4px; }
-:is(#wr-app .wr-ui, #login-modal) .theme-dot { box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.15); }
+:is(#wr-app .wr-ui, #login-modal, .modal-overlay.wr-dialog) .ctl-seg > input { margin-right: 4px; }
+:is(#wr-app .wr-ui, #login-modal, .modal-overlay.wr-dialog) .theme-dot { box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.15); }
 
 /* Fields. */
-:is(#wr-app .wr-ui, #login-modal) input[type="text"], :is(#wr-app .wr-ui, #login-modal) input[type="search"], :is(#wr-app .wr-ui, #login-modal) input[type="url"],
-:is(#wr-app .wr-ui, #login-modal) input[type="email"], :is(#wr-app .wr-ui, #login-modal) input[type="number"], :is(#wr-app .wr-ui, #login-modal) input[type="password"],
-:is(#wr-app .wr-ui, #login-modal) input[type="date"], :is(#wr-app .wr-ui, #login-modal) input[type="datetime-local"], :is(#wr-app .wr-ui, #login-modal) input[type="time"],
-:is(#wr-app .wr-ui, #login-modal) input:not([type]), :is(#wr-app .wr-ui, #login-modal) select, :is(#wr-app .wr-ui, #login-modal) textarea,
-:is(#wr-app .wr-ui, #login-modal) .admin-field input, :is(#wr-app .wr-ui, #login-modal) .admin-field select, :is(#wr-app .wr-ui, #login-modal) .admin-field textarea,
-:is(#wr-app .wr-ui, #login-modal) .ctl-input, :is(#wr-app .wr-ui, #login-modal) .search-box input, :is(#wr-app .wr-ui, #login-modal) .sort-box select {
+:is(#wr-app .wr-ui, #login-modal, .modal-overlay.wr-dialog) input[type="text"], :is(#wr-app .wr-ui, #login-modal, .modal-overlay.wr-dialog) input[type="search"], :is(#wr-app .wr-ui, #login-modal, .modal-overlay.wr-dialog) input[type="url"],
+:is(#wr-app .wr-ui, #login-modal, .modal-overlay.wr-dialog) input[type="email"], :is(#wr-app .wr-ui, #login-modal, .modal-overlay.wr-dialog) input[type="number"], :is(#wr-app .wr-ui, #login-modal, .modal-overlay.wr-dialog) input[type="password"],
+:is(#wr-app .wr-ui, #login-modal, .modal-overlay.wr-dialog) input[type="date"], :is(#wr-app .wr-ui, #login-modal, .modal-overlay.wr-dialog) input[type="datetime-local"], :is(#wr-app .wr-ui, #login-modal, .modal-overlay.wr-dialog) input[type="time"],
+:is(#wr-app .wr-ui, #login-modal, .modal-overlay.wr-dialog) input:not([type]), :is(#wr-app .wr-ui, #login-modal, .modal-overlay.wr-dialog) select, :is(#wr-app .wr-ui, #login-modal, .modal-overlay.wr-dialog) textarea,
+:is(#wr-app .wr-ui, #login-modal, .modal-overlay.wr-dialog) .admin-field input, :is(#wr-app .wr-ui, #login-modal, .modal-overlay.wr-dialog) .admin-field select, :is(#wr-app .wr-ui, #login-modal, .modal-overlay.wr-dialog) .admin-field textarea,
+:is(#wr-app .wr-ui, #login-modal, .modal-overlay.wr-dialog) .ctl-input, :is(#wr-app .wr-ui, #login-modal, .modal-overlay.wr-dialog) .search-box input, :is(#wr-app .wr-ui, #login-modal, .modal-overlay.wr-dialog) .sort-box select {
     background: var(--wr-bg);
     border: 1px solid var(--wr-line-2);
     border-radius: var(--wr-radius);
@@ -544,26 +553,26 @@ body.wr-on > .site-footer { display: none !important; }
     box-shadow: none;
     background-image: none;
 }
-:is(#wr-app .wr-ui, #login-modal) select,
-:is(#wr-app .wr-ui, #login-modal) select.ctl-input,
-:is(#wr-app .wr-ui, #login-modal) .sort-box select,
-:is(#wr-app .wr-ui, #login-modal) .admin-field select {
+:is(#wr-app .wr-ui, #login-modal, .modal-overlay.wr-dialog) select,
+:is(#wr-app .wr-ui, #login-modal, .modal-overlay.wr-dialog) select.ctl-input,
+:is(#wr-app .wr-ui, #login-modal, .modal-overlay.wr-dialog) .sort-box select,
+:is(#wr-app .wr-ui, #login-modal, .modal-overlay.wr-dialog) .admin-field select {
     padding-right: 28px;
     appearance: none;
     background: var(--wr-bg) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='M3 4.5l3 3 3-3' fill='none' stroke='%23b4b0a6' stroke-width='1.6' stroke-linecap='round'/%3E%3C/svg%3E") right 9px center / 12px no-repeat;
 }
-:is(#wr-app .wr-ui, #login-modal) input:focus, :is(#wr-app .wr-ui, #login-modal) select:focus, :is(#wr-app .wr-ui, #login-modal) textarea:focus {
+:is(#wr-app .wr-ui, #login-modal, .modal-overlay.wr-dialog) input:focus, :is(#wr-app .wr-ui, #login-modal, .modal-overlay.wr-dialog) select:focus, :is(#wr-app .wr-ui, #login-modal, .modal-overlay.wr-dialog) textarea:focus {
     outline: none;
     border-color: var(--wr-blue);
     box-shadow: 0 0 0 3px rgba(79, 209, 255, 0.16);
 }
-:is(#wr-app .wr-ui, #login-modal) input::placeholder, :is(#wr-app .wr-ui, #login-modal) textarea::placeholder { color: var(--wr-dim); }
-:is(#wr-app .wr-ui, #login-modal) input[type="checkbox"], :is(#wr-app .wr-ui, #login-modal) input[type="radio"] { accent-color: var(--wr-gold); }
-:is(#wr-app .wr-ui, #login-modal) .admin-field > span,
-:is(#wr-app .wr-ui, #login-modal) .admin-field-label { color: var(--wr-text-2); font: 600 12px/1.3 var(--wr-font); letter-spacing: 0; text-transform: none; }
+:is(#wr-app .wr-ui, #login-modal, .modal-overlay.wr-dialog) input::placeholder, :is(#wr-app .wr-ui, #login-modal, .modal-overlay.wr-dialog) textarea::placeholder { color: var(--wr-dim); }
+:is(#wr-app .wr-ui, #login-modal, .modal-overlay.wr-dialog) input[type="checkbox"], :is(#wr-app .wr-ui, #login-modal, .modal-overlay.wr-dialog) input[type="radio"] { accent-color: var(--wr-gold); }
+:is(#wr-app .wr-ui, #login-modal, .modal-overlay.wr-dialog) .admin-field > span,
+:is(#wr-app .wr-ui, #login-modal, .modal-overlay.wr-dialog) .admin-field-label { color: var(--wr-text-2); font: 600 12px/1.3 var(--wr-font); letter-spacing: 0; text-transform: none; }
 
 /* Lists and rows: the archive's chrome lists as the editors' tables. */
-:is(#wr-app .wr-ui, #login-modal) .chrome-list {
+:is(#wr-app .wr-ui, #login-modal, .modal-overlay.wr-dialog) .chrome-list {
     background: var(--wr-panel);
     border: 1px solid var(--wr-line);
     border-radius: 10px;
@@ -574,23 +583,23 @@ body.wr-on > .site-footer { display: none !important; }
 /* A row's words: the name, who built it, and its marks in the plain face.
    The description stays in Volter at its 9px — it can hold the Volter
    picture glyphs (stars and the rest), which only that face draws. */
-:is(#wr-app .wr-ui, #login-modal) .chrome-list-row h3 {
+:is(#wr-app .wr-ui, #login-modal, .modal-overlay.wr-dialog) .chrome-list-row h3 {
     font: 600 14px/1.3 var(--wr-font);
     color: var(--wr-text);
     letter-spacing: 0;
     text-transform: none;
 }
-:is(#wr-app .wr-ui, #login-modal) .row-creator {
+:is(#wr-app .wr-ui, #login-modal, .modal-overlay.wr-dialog) .row-creator {
     font: 12px/1.4 var(--wr-font);
     color: var(--wr-text-2);
     letter-spacing: 0;
 }
-:is(#wr-app .wr-ui, #login-modal) .admin-furni-complete {
+:is(#wr-app .wr-ui, #login-modal, .modal-overlay.wr-dialog) .admin-furni-complete {
     font: 12px/1.3 var(--wr-font);
     color: var(--wr-text-2);
     letter-spacing: 0;
 }
-:is(#wr-app .wr-ui, #login-modal) .status-badge {
+:is(#wr-app .wr-ui, #login-modal, .modal-overlay.wr-dialog) .status-badge {
     font: 700 10.5px/1 var(--wr-font);
     letter-spacing: 0.5px;
     border-radius: 999px;
@@ -601,7 +610,7 @@ body.wr-on > .site-footer { display: none !important; }
    here too. (Listed by walking every section for Volter, Pixelify and
    Silkscreen; what is left in them is content — descriptions and the glyph
    buttons, which are the glyphs.) */
-:is(#wr-app .wr-ui, #login-modal) :is(.act-tile-value, .act-tile strong, .admin-stats strong) { font-family: var(--wr-font); font-weight: 650; letter-spacing: -0.2px; }
+:is(#wr-app .wr-ui, #login-modal, .modal-overlay.wr-dialog) :is(.act-tile-value, .act-tile strong, .admin-stats strong) { font-family: var(--wr-font); font-weight: 650; letter-spacing: -0.2px; }
 #wr-app .wr-ui :is([data-panel="activity"], [data-panel="errors"]) strong { font-family: var(--wr-font); font-weight: 650; }
 #wr-app .wr-ui th {
     font: 700 10.5px/1.3 var(--wr-font);
@@ -640,37 +649,37 @@ body.wr-on > .site-footer { display: none !important; }
    thin dress: no arrows, a dark track, a small rounded thumb. The script
    sizes the thumb itself (15px) and measures the track, so only the look
    changes. */
-:is(#wr-app .wr-ui, #login-modal) .custom-scrollbar:not(.custom-scrollbar--horizontal) { width: 10px; margin-left: 4px; }
-:is(#wr-app .wr-ui, #login-modal) .custom-scrollbar--horizontal { height: 10px; margin-top: 4px; }
-:is(#wr-app .wr-ui, #login-modal) .custom-scrollbar-arrow { display: none; }
-:is(#wr-app .wr-ui, #login-modal) .custom-scrollbar-track { width: auto; min-height: 0; border-radius: 5px; background: rgba(255, 255, 255, 0.03); cursor: pointer; }
-:is(#wr-app .wr-ui, #login-modal) .custom-scrollbar-track-segment { background: none; }
-:is(#wr-app .wr-ui, #login-modal) .custom-scrollbar-thumb {
+:is(#wr-app .wr-ui, #login-modal, .modal-overlay.wr-dialog) .custom-scrollbar:not(.custom-scrollbar--horizontal) { width: 10px; margin-left: 4px; }
+:is(#wr-app .wr-ui, #login-modal, .modal-overlay.wr-dialog) .custom-scrollbar--horizontal { height: 10px; margin-top: 4px; }
+:is(#wr-app .wr-ui, #login-modal, .modal-overlay.wr-dialog) .custom-scrollbar-arrow { display: none; }
+:is(#wr-app .wr-ui, #login-modal, .modal-overlay.wr-dialog) .custom-scrollbar-track { width: auto; min-height: 0; border-radius: 5px; background: rgba(255, 255, 255, 0.03); cursor: pointer; }
+:is(#wr-app .wr-ui, #login-modal, .modal-overlay.wr-dialog) .custom-scrollbar-track-segment { background: none; }
+:is(#wr-app .wr-ui, #login-modal, .modal-overlay.wr-dialog) .custom-scrollbar-thumb {
     background: var(--wr-line-2);
     background-image: none;
     border-radius: 5px;
 }
-:is(#wr-app .wr-ui, #login-modal) .custom-scrollbar:not(.custom-scrollbar--horizontal) .custom-scrollbar-thumb { left: 1px; width: 8px; }
-:is(#wr-app .wr-ui, #login-modal) .custom-scrollbar--horizontal .custom-scrollbar-thumb { top: 1px; height: 8px; }
-:is(#wr-app .wr-ui, #login-modal) .custom-scrollbar-thumb:hover,
-:is(#wr-app .wr-ui, #login-modal) .custom-scrollbar-thumb.is-dragging { background: #565d6a; background-image: none; }
+:is(#wr-app .wr-ui, #login-modal, .modal-overlay.wr-dialog) .custom-scrollbar:not(.custom-scrollbar--horizontal) .custom-scrollbar-thumb { left: 1px; width: 8px; }
+:is(#wr-app .wr-ui, #login-modal, .modal-overlay.wr-dialog) .custom-scrollbar--horizontal .custom-scrollbar-thumb { top: 1px; height: 8px; }
+:is(#wr-app .wr-ui, #login-modal, .modal-overlay.wr-dialog) .custom-scrollbar-thumb:hover,
+:is(#wr-app .wr-ui, #login-modal, .modal-overlay.wr-dialog) .custom-scrollbar-thumb.is-dragging { background: #565d6a; background-image: none; }
 
 /* The control cards (the Controls section): the editors' panels. */
-:is(#wr-app .wr-ui, #login-modal) .ctl-section { margin: 0 0 26px; }
-:is(#wr-app .wr-ui, #login-modal) .ctl-section-title {
+:is(#wr-app .wr-ui, #login-modal, .modal-overlay.wr-dialog) .ctl-section { margin: 0 0 26px; }
+:is(#wr-app .wr-ui, #login-modal, .modal-overlay.wr-dialog) .ctl-section-title {
     margin: 0 0 10px;
     font: 700 11px/1.2 var(--wr-font);
     letter-spacing: 0.9px;
     text-transform: uppercase;
     color: var(--wr-dim);
 }
-:is(#wr-app .wr-ui, #login-modal) .ctl-grid {
+:is(#wr-app .wr-ui, #login-modal, .modal-overlay.wr-dialog) .ctl-grid {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
     gap: 12px;
     align-items: start;
 }
-:is(#wr-app .wr-ui, #login-modal) .ctl-card {
+:is(#wr-app .wr-ui, #login-modal, .modal-overlay.wr-dialog) .ctl-card {
     flex-direction: column;
     align-items: flex-start;
     gap: 8px;
@@ -680,16 +689,16 @@ body.wr-on > .site-footer { display: none !important; }
     border: 1px solid var(--wr-line);
     border-radius: 10px;
 }
-:is(#wr-app .wr-ui, #login-modal) .ctl-card-wide { grid-column: 1 / -1; }
-:is(#wr-app .wr-ui, #login-modal) .ctl-label {
+:is(#wr-app .wr-ui, #login-modal, .modal-overlay.wr-dialog) .ctl-card-wide { grid-column: 1 / -1; }
+:is(#wr-app .wr-ui, #login-modal, .modal-overlay.wr-dialog) .ctl-label {
     font: 650 13px/1.3 var(--wr-font);
     letter-spacing: 0;
     text-transform: none;
     color: var(--wr-text);
 }
-:is(#wr-app .wr-ui, #login-modal) .ctl-sublabel { margin-top: 4px; font-size: 12px; color: var(--wr-text-2); }
-:is(#wr-app .wr-ui, #login-modal) .ctl-status { font-family: var(--wr-font); font-size: 12px; }
-:is(#wr-app .wr-ui, #login-modal) .ctl-row, :is(#wr-app .wr-ui, #login-modal) .ctl-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+:is(#wr-app .wr-ui, #login-modal, .modal-overlay.wr-dialog) .ctl-sublabel { margin-top: 4px; font-size: 12px; color: var(--wr-text-2); }
+:is(#wr-app .wr-ui, #login-modal, .modal-overlay.wr-dialog) .ctl-status { font-family: var(--wr-font); font-size: 12px; }
+:is(#wr-app .wr-ui, #login-modal, .modal-overlay.wr-dialog) .ctl-row, :is(#wr-app .wr-ui, #login-modal, .modal-overlay.wr-dialog) .ctl-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 
 /* ---- THE SEASONAL SKINS CARD (js/admin-skin.js): three parts, top to
    bottom — what visitors see, each skin's dates, a preview for you. */
@@ -830,14 +839,23 @@ body.wr-on > .site-footer { display: none !important; }
     box-shadow: 0 -12px 30px rgba(0, 0, 0, 0.4);
     border-image: none;
 }
-:is(#wr-app .wr-ui, #login-modal) .admin-floating-actions-label { color: var(--wr-amber); font: 600 12.5px/1.2 var(--wr-font); }
+:is(#wr-app .wr-ui, #login-modal, .modal-overlay.wr-dialog) .admin-floating-actions-label { color: var(--wr-amber); font: 600 12.5px/1.2 var(--wr-font); }
 
-/* ---- SIGNING IN: a card in the middle of the workshop. */
+/* ---- SIGNING IN: a card in the middle of the workshop.
+   The Warren's pop-ups wear the same card (26 Oct 2026): Are You Sure?, the
+   one-button box, the one with a text box, and the maze form's Entrance/
+   Finish question. js/admin.js builds them on <body>, outside #wr-app, so
+   they opened in the site's brown pixel dress over the dark workshop; it
+   now gives them .wr-ui .wr-dialog — except over Recolour, whose boxes stay
+   dressed as the site the panel is previewing. */
 body.wr-on #login-modal.modal-overlay {
     background: radial-gradient(1200px 600px at 50% 30%, rgba(242, 204, 78, 0.05), transparent 60%), rgba(8, 9, 11, 0.86);
     backdrop-filter: blur(2px);
 }
-body.wr-on #login-modal .modal {
+/* Over a workshop that is already there: a plainer dimming than the sign-in
+   screen's, which has nothing behind it to show. */
+body.wr-on .modal-overlay.wr-dialog { background: rgba(8, 9, 11, 0.72); backdrop-filter: blur(1px); }
+body.wr-on :is(#login-modal, .modal-overlay.wr-dialog) .modal {
     width: min(400px, calc(100vw - 32px));
     background: var(--wr-panel-2);
     border: 1px solid var(--wr-line-2);
@@ -847,7 +865,7 @@ body.wr-on #login-modal .modal {
     padding: 0;
     overflow: hidden;
 }
-body.wr-on #login-modal .chrome-titlebar {
+body.wr-on :is(#login-modal, .modal-overlay.wr-dialog) .chrome-titlebar {
     height: auto;
     padding: 22px 24px 0;
     background: none;
@@ -855,9 +873,9 @@ body.wr-on #login-modal .chrome-titlebar {
     border-image: none;
     justify-content: flex-start;
 }
-body.wr-on #login-modal .chrome-titlebar::before,
-body.wr-on #login-modal .chrome-titlebar::after { content: none; }
-body.wr-on #login-modal .chrome-titlebar h2 {
+body.wr-on :is(#login-modal, .modal-overlay.wr-dialog) .chrome-titlebar::before,
+body.wr-on :is(#login-modal, .modal-overlay.wr-dialog) .chrome-titlebar::after { content: none; }
+body.wr-on :is(#login-modal, .modal-overlay.wr-dialog) .chrome-titlebar h2 {
     position: static;
     transform: none;
     margin: 0;
@@ -868,21 +886,77 @@ body.wr-on #login-modal .chrome-titlebar h2 {
     text-shadow: none;
     letter-spacing: 0;
 }
-body.wr-on #login-modal .chrome-frame {
+body.wr-on :is(#login-modal, .modal-overlay.wr-dialog) .chrome-frame {
     background: none;
     border: 0;
     border-image: none;
     padding: 0;
     box-shadow: none;
 }
-body.wr-on #login-modal .modal-body { padding: 8px 24px 24px; background: none; }
-body.wr-on #login-modal .room-desc-full {
+/* No rule under the title (26 Oct 2026): style.css's .modal-body border and
+   inset shadow drew one against the heading's descenders. */
+body.wr-on :is(#login-modal, .modal-overlay.wr-dialog) .modal-body { padding: 10px 24px 24px; background: none; border-top: 0; box-shadow: none; }
+body.wr-on :is(#login-modal, .modal-overlay.wr-dialog) .room-desc-full {
     margin: 0 0 18px;
     padding: 0;
     border: 0;
     color: var(--wr-text-2);
     font: 13px/1.5 var(--wr-font);
 }
+/* What only the pop-ups have: a close ×, a message, a row of answers on
+   the right, and (the delete questions) a red Yes. Written
+   :is(#login-modal, …) for an id's weight, as above: the sign-in box has
+   none of these, and the button rules they adjust rank as an id. */
+body.wr-on .modal-overlay.wr-dialog .chrome-titlebar { position: relative; padding-right: 56px; }
+body.wr-on :is(#login-modal, .modal-overlay.wr-dialog) .chrome-close {
+    top: 16px;
+    right: 14px;
+    transform: none;
+    width: 28px;
+    height: 28px;
+    background: none;
+    border: 0;
+    border-radius: var(--wr-radius);
+    box-shadow: none;
+    color: var(--wr-dim);
+    font: 400 20px/1 var(--wr-font);
+}
+body.wr-on :is(#login-modal, .modal-overlay.wr-dialog) .chrome-close:hover { background: var(--wr-raised); color: var(--wr-text); }
+body.wr-on :is(#login-modal, .modal-overlay.wr-dialog) .chrome-close:focus-visible { outline: 2px solid var(--wr-blue); outline-offset: 1px; }
+body.wr-on :is(#login-modal, .modal-overlay.wr-dialog) .confirm-message { text-align: left; }
+body.wr-on :is(#login-modal, .modal-overlay.wr-dialog) .confirm-message strong { color: var(--wr-text); }
+body.wr-on :is(#login-modal, .modal-overlay.wr-dialog) .confirm-actions { justify-content: flex-end; gap: 8px; }
+body.wr-on :is(#login-modal, .modal-overlay.wr-dialog) .confirm-actions > * { min-width: 72px; }
+body.wr-on :is(#login-modal, .modal-overlay.wr-dialog) .confirm-prompt { margin-bottom: 18px; }
+body.wr-on :is(#login-modal, .modal-overlay.wr-dialog) .admin-pill-danger { color: var(--wr-red); border-color: rgba(255, 106, 95, 0.45); }
+body.wr-on :is(#login-modal, .modal-overlay.wr-dialog) .admin-pill-danger:hover { background: #b8473c; border-color: #b8473c; color: #fff; }
+body.wr-on .modal-overlay.wr-dialog :focus-visible { outline: 2px solid var(--wr-blue); outline-offset: 1px; }
+body.wr-on .modal-overlay.wr-dialog *, body.wr-on .modal-overlay.wr-dialog *::before, body.wr-on .modal-overlay.wr-dialog *::after { box-sizing: border-box; }
+
+/* An Event Entry's picture full size (js/admin-entries.js): the homepage's
+   lightbox, its round close button in the workshop's colours. */
+body.wr-on .lightbox-overlay.wr-dialog { background: rgba(8, 9, 11, 0.92); }
+body.wr-on .lightbox-overlay.wr-dialog .lightbox-close {
+    background: var(--wr-raised);
+    border: 1px solid var(--wr-line-2);
+    color: var(--wr-text);
+    font: 400 20px/1 var(--wr-font);
+}
+body.wr-on .lightbox-overlay.wr-dialog .lightbox-close:hover { background: var(--wr-raised-2); }
+body.wr-on .lightbox-overlay.wr-dialog .lightbox-counter {
+    padding: 5px 12px;
+    background: var(--wr-raised);
+    border: 1px solid var(--wr-line-2);
+    border-image: none;
+    border-radius: 999px;
+    box-shadow: none;
+    color: var(--wr-text-2);
+    font: 600 12px/1.2 var(--wr-font);
+    letter-spacing: 0;
+    text-transform: none;
+    text-shadow: none;
+}
+body.wr-on .lightbox-overlay.wr-dialog .lightbox-close:focus-visible { outline: 2px solid var(--wr-blue); outline-offset: 2px; }
 body.wr-on #login-modal .admin-form { gap: 12px; border: 0; padding: 0; margin: 0; background: none; }
 body.wr-on #login-modal .admin-field { gap: 6px; }
 body.wr-on #login-modal .admin-form-actions .btn { width: 100%; min-height: 36px; }
@@ -934,4 +1008,10 @@ body.wr-on #login-modal .admin-form-actions .btn { width: 100%; min-height: 36px
 }
 @media (max-width: 420px) {
     #wr-app .wr-where { display: none; }
+}
+/* The smallest phones (26 Oct 2026): at 320px the bar, icons and all, came
+   to about 322px and spilled sideways; the logo alone still says where you
+   are. */
+@media (max-width: 360px) {
+    #wr-app .wr-brand-text { display: none; }
 }

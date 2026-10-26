@@ -196,7 +196,12 @@ document.addEventListener("DOMContentLoaded", () => {
        Choosing a section closes the Nav panel too: the whole point of
        pressing Mazes is to look at the mazes, not at the menu in front of
        them. The Control panel deliberately does NOT close on use — setting
-       the palette and then the landing state is one visit, not two. */
+       the palette and then the landing state is one visit, not two.
+
+       (26 Oct 2026: since the workshop redesign the tabs left are Glyphs
+       and your account in the top bar; the sections are the rail and the
+       Controls a section of their own. A rail press still closes any
+       open tab, below.) */
     const adminTabs = Array.from(document.querySelectorAll(".admin-tab"));
 
     function closeAdminTabs(except) {
@@ -929,6 +934,11 @@ document.addEventListener("DOMContentLoaded", () => {
         const recolour = typeof AdminRecolour !== "undefined" && AdminRecolour && AdminRecolour.state ? AdminRecolour : null;
         let paletteAsked = false;
         const paletteDirty = () => !paletteAsked && !!(recolour && recolour.state.dirty);
+        /* And a half-written notification (26 Oct 2026; js/admin-
+           notifications.js), asked the same once-only way: its draft is
+           only emptied by resetAccountPanels, after the loop. */
+        const notices = window.AdminNotifications && typeof window.AdminNotifications.isDirty === "function" ? window.AdminNotifications : null;
+        const noticeDirty = () => !paletteAsked && !!(notices && notices.isDirty());
         let loggedOut = false;
         try {
             /* Round again if, once the awaits are back, something is open
@@ -939,7 +949,7 @@ document.addEventListener("DOMContentLoaded", () => {
                leaves this admin signed in: nothing has been dropped yet. */
             for (;;) {
                 if (refused()) return;
-                if (dirty() || paletteDirty()) {
+                if (dirty() || paletteDirty() || noticeDirty()) {
                     const ok = await showConfirmDialog("Log out and discard your unsaved changes? Anything you have added or edited in the open form will be lost.");
                     if (!ok) return;
                     paletteAsked = true;
@@ -1183,7 +1193,12 @@ document.addEventListener("DOMContentLoaded", () => {
         "pura-lights": "Pura Panic lights",
         "bat-start": "Found the bat game",
         "bat-end": "Ended a bat game",
-        "bat-share": "Copied or saved the bat game's card"
+        "bat-share": "Copied or saved the bat game's card",
+        // The game windows opening (26 Oct 2026; js/home.js countOpen, js/rat-race.js).
+        "ff-open": "Opened Fallin' Furni",
+        "scout-open": "Opened Scout's Trail",
+        "advent-open": "Pressed Advent",
+        "advent-door": "Opened an advent door"
     };
     const PAGE_NAMES = {
         home: "The archive", welcome: "Landing page", wizard: "Atlas", legal: "Privacy & terms",
@@ -1196,8 +1211,13 @@ document.addEventListener("DOMContentLoaded", () => {
         "profile-open": { "self": "Their own", "other": "Somebody else's" },
         "daily-open": { odd: "Odd One Out", guess: "Guess the Maze" },
         "boards-open": { all: "All dailies", guess: "Guess the Maze", odd: "Odd One Out", ff: "Fallin' Furni", pura: "Pura Panic" },
+        "ff-open": { menu: "From the menu", link: "From a link", route: "At /fallinfurni", other: "Other" },
         // The bat game's score, as the band js/skin-halloween.js sends (never the score itself).
-        "bat-end": { "0-99": "Under 100", "100-499": "100–499", "500-999": "500–999", "1000-2499": "1,000–2,499", "2500+": "2,500 or more" }
+        "bat-end": { "0-99": "Under 100", "100-499": "100–499", "500-999": "500–999", "1000-2499": "1,000–2,499", "2500+": "2,500 or more" },
+        // Whether the Advent button found them signed in (js/skin-xmas-advent.js).
+        "advent-open": { "signed-in": "Signed in: the calendar opened", "signed-out": "Signed out: asked to sign in" },
+        // Each door by its number.
+        "advent-door": Object.fromEntries(Array.from({ length: 24 }, (_, i) => [String(i + 1), "Door " + (i + 1)]))
     };
     const ACT_DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
     const actNum = n => Number(n || 0).toLocaleString("en-GB");
@@ -1361,6 +1381,7 @@ document.addEventListener("DOMContentLoaded", () => {
         const pura = f.pura;
         // An answer from before the bat game existed has no bats.
         const bats = f.bats || { started: 0, ended: 0, shared: 0 };
+        const advent = f.advent || { opened: 0, doors: 0 };
         const levels = ((v.labels && v.labels["pura-finish"]) || []).reduce((acc, r) => {
             const l = Number(r.label) || 1;
             const band = l <= 1 ? "Level 1" : l <= 3 ? "Levels 2–3" : l <= 5 ? "Levels 4–5" : l <= 10 ? "Levels 6–10" : l <= 20 ? "Levels 11–20" : "Level 21+";
@@ -1419,6 +1440,19 @@ document.addEventListener("DOMContentLoaded", () => {
                     { label: "Copied or saved the card", n: Math.min(bats.shared, bats.started) }
                 ], "Nobody found the bat game in this range.") + '<p class="admin-hint act-note">Visits. The game only shows while the Halloween skin is on.</p>', true) +
                 actCard("Scores", actBars(actLabels(v, "bat-end", LABEL_NAMES["bat-end"]), "No bat games ended yet.") + '<p class="admin-hint act-note">Every game that ended, by its final score.</p>') +
+            '</div>' +
+
+            /* The Christmas skin's advent calendar (26 Oct 2026): visits that
+               pressed Advent and went on to open a door; whether Advent found
+               them signed in; and which doors were opened. */
+            '<h3 class="admin-subheading admin-subheading-spaced">Advent calendar (Christmas)</h3>' +
+            '<div class="act-grid">' +
+                actCard("Pressed Advent, opened a door", actFunnel([
+                    { label: "Pressed Advent", n: advent.opened },
+                    { label: "Opened a door", n: Math.min(advent.doors, advent.opened) }
+                ], "Nobody pressed Advent in this range.") + '<p class="admin-hint act-note">Visits. The button only shows in December, while the Christmas skin is on.</p>', true) +
+                actCard("Signed in?", actBars(actLabels(v, "advent-open", LABEL_NAMES["advent-open"]), "Nobody pressed Advent yet.")) +
+                actCard("Doors opened", actBars(actLabels(v, "advent-door", LABEL_NAMES["advent-door"], 24), "No doors opened yet.")) +
             '</div>' +
 
             '<h3 class="admin-subheading admin-subheading-spaced">Mazes</h3>' +
@@ -2292,7 +2326,12 @@ document.addEventListener("DOMContentLoaded", () => {
             loadBannerEl.style.border = "1px solid currentColor";
         }
         loadBannerEl.textContent = message;
-        adminContent.prepend(loadBannerEl);
+        /* At the top of the stage, the section's own scroller (26 Oct 2026).
+           Put before the workshop's body, inside #admin-content, it sat above
+           a rail and stage that are the whole height of their row, so it
+           pushed both that far down under the status line: the foot of every
+           list, and the floating Save bar, out of reach. */
+        (adminContent.querySelector(".admin-stage") || adminContent).prepend(loadBannerEl);
     }
     function clearLoadBanner() {
         if (loadBannerEl) loadBannerEl.remove();
@@ -2301,6 +2340,11 @@ document.addEventListener("DOMContentLoaded", () => {
     async function enterAdmin() {
         loginModal.classList.remove("open");
         adminContent.style.display = "block";
+        /* Every top-bar menu shut (26 Oct 2026). Log out is pressed inside
+           the account menu, which kept its .is-open under the sign-in box;
+           signing back in with Enter (no click to close it) brought the
+           workshop back with that menu hanging open over the section. */
+        closeAdminTabs(null);
         if (adminRailEl) adminRailEl.style.display = "flex";
         if (adminSessionUserEl) {
             adminSessionUserEl.textContent = currentUsername || "";
@@ -4021,7 +4065,14 @@ document.addEventListener("DOMContentLoaded", () => {
             // The admin's scroll container is .admin-stage, not the document —
             // body is overflow: hidden here. Falls back to the page for any
             // future layout that does not have one.
-            const scroller = wrap.closest(".admin-stage") || document.scrollingElement;
+            /* And for the narrow one (26 Oct 2026): under 860px the stage is
+               overflow: visible and the PAGE scrolls, as revealPicker above
+               already allows for, so the drift was handed to a box that
+               cannot scroll and the picker jumped by a chip on every add on
+               a phone. Whichever of the two is actually scrolling gets it. */
+            const stageEl = wrap.closest(".admin-stage");
+            const scroller = stageEl && /auto|scroll/.test(getComputedStyle(stageEl).overflowY)
+                ? stageEl : document.scrollingElement;
             const was = anchor();
             // And the results list's own scroll, which the rebuild resets.
             const resultsEl = listEl.querySelector(".admin-furni-results");
@@ -4032,7 +4083,11 @@ document.addEventListener("DOMContentLoaded", () => {
             const now = anchor();
             if (scroller && was != null && now != null) {
                 const drift = now - was;
-                if (drift) scroller.scrollTop += drift;
+                /* The page at once, not through html's scroll-behavior:
+                   smooth (css/style.css), which would let the picker be seen
+                   to slide away and back. */
+                if (drift && scroller === stageEl) scroller.scrollTop += drift;
+                else if (drift) window.scrollBy({ top: drift, behavior: "instant" });
             }
         }
 
@@ -4455,11 +4510,20 @@ document.addEventListener("DOMContentLoaded", () => {
     // modals) instead of a native confirm() so it can offer three real
     // choices, and it blocks the rest of the form while open so the row
     // index the caller is acting on can't go stale underneath it.
+    /* The workshop's dress for the pop-ups below (26 Oct 2026; css/
+       warren.css). They hang off <body>, outside #wr-app, so they opened in
+       the site's brown pixel look over the dark workshop. Not over Recolour:
+       that panel stays dressed as the site for its live preview, and its
+       Save As New and Delete boxes are part of what it is previewing. */
+    function dialogDress() {
+        return shownPanel === "recolour" ? "" : " wr-ui wr-dialog";
+    }
+
     function showBookendConflictDialog(kind, existingLabel) {
         return new Promise(resolve => {
             const kindLabel = kind === "entrance" ? "Entrance" : "Finish";
             const overlay = document.createElement("div");
-            overlay.className = "modal-overlay open";
+            overlay.className = "modal-overlay open" + dialogDress();
             overlay.innerHTML = `
                 <div class="modal">
                     <div class="chrome-titlebar">
@@ -4526,7 +4590,7 @@ document.addEventListener("DOMContentLoaded", () => {
         const danger = !!(opts && opts.danger);
         return new Promise(resolve => {
             const overlay = document.createElement("div");
-            overlay.className = "modal-overlay open";
+            overlay.className = "modal-overlay open" + dialogDress();
             overlay.innerHTML = `
                 <div class="modal confirm-modal">
                     <div class="chrome-titlebar">
@@ -4573,7 +4637,7 @@ document.addEventListener("DOMContentLoaded", () => {
     function showInfoDialog(message, title) {
         return new Promise(resolve => {
             const overlay = document.createElement("div");
-            overlay.className = "modal-overlay open";
+            overlay.className = "modal-overlay open" + dialogDress();
             overlay.innerHTML = `
                 <div class="modal confirm-modal">
                     <div class="chrome-titlebar">
@@ -4622,7 +4686,7 @@ document.addEventListener("DOMContentLoaded", () => {
         const o = opts || {};
         return new Promise(resolve => {
             const overlay = document.createElement("div");
-            overlay.className = "modal-overlay open";
+            overlay.className = "modal-overlay open" + dialogDress();
             overlay.innerHTML = `
                 <div class="modal confirm-modal">
                     <div class="chrome-titlebar">
@@ -5651,9 +5715,15 @@ document.addEventListener("DOMContentLoaded", () => {
                this event's old copy — was written into THAT event's draft. */
             const session = formEl._openSession;
             let failed = "";
+            let warned = [];
             try {
                 const article = await Api.readArticle(adminToken, url);
                 if (formEl._openSession !== session) return;
+                /* What the import still saw as code once cleaned (26 Oct
+                   2026; see leftovers in netlify/functions/article.js). Said
+                   below, not stored: Save sends the draft, which events.js
+                   cleans to its listed fields. */
+                warned = Array.isArray(article.warnings) ? article.warnings.filter(w => typeof w === "string") : [];
                 formEl._articleDraft = article;
                 // Whatever was typed is replaced by the URL actually read,
                 // so the field and the stored copy cannot disagree.
@@ -5675,6 +5745,9 @@ document.addEventListener("DOMContentLoaded", () => {
                 if (failed) {
                     say("bad", "<p>" + escapeHtml(failed) + "</p>" +
                         (previous && previous.body ? "<p>The article already stored is kept unless you clear the link.</p>" : ""));
+                } else if (warned.length) {
+                    say("bad", "<p>The article came through, but some of it still looks like code (" + escapeHtml(warned.join(", ")) +
+                        "). Habbo may have changed how its articles are written. Check it in the preview before you save.</p>");
                 }
             }
         });
@@ -8082,8 +8155,14 @@ document.addEventListener("DOMContentLoaded", () => {
             ["mouseenter", "focusin", "click"].forEach(type =>
                 landingWarningTab.addEventListener(type, sayLandingMismatch));
         }
+        /* "On screen" is the Controls section showing (26 Oct 2026). The
+           drop-down it replaced was only open under the pointer, so asking
+           for :hover was the same question; a section stays open with the
+           pointer anywhere, and a warning not yet up has no box of its own
+           to measure — so the launch passing while the pointer sat on the
+           rail went unsaid until the section was pointed at again. */
         setInterval(() => {
-            if (landingMismatchEl.getClientRects().length || (landingWarningTab && landingWarningTab.matches(".is-open, :hover, :focus-within"))) {
+            if (landingMismatchEl.getClientRects().length || (landingWarningTab && (landingWarningTab.getClientRects().length || landingWarningTab.matches(".is-open, :hover, :focus-within")))) {
                 sayLandingMismatch();
             }
         }, 60000);
@@ -8102,8 +8181,9 @@ document.addEventListener("DOMContentLoaded", () => {
             ["mouseenter", "focusin", "click"].forEach(type =>
                 ffWarningTab.addEventListener(type, sayFfMismatch));
         }
+        // The section showing counts as on screen — see the landing warning's timer above.
         setInterval(() => {
-            if (ffMismatchEl.getClientRects().length || (ffWarningTab && ffWarningTab.matches(".is-open, :hover, :focus-within"))) {
+            if (ffMismatchEl.getClientRects().length || (ffWarningTab && (ffWarningTab.getClientRects().length || ffWarningTab.matches(".is-open, :hover, :focus-within")))) {
                 sayFfMismatch();
             }
         }, 60000);
@@ -9110,6 +9190,7 @@ document.addEventListener("DOMContentLoaded", () => {
     // Sidebar shortcuts to the same two forms — openForm's own
     // scrollIntoView already brings the form into view within .admin-main's
     // internal scroll, so these just save hunting down the page for them.
+    // (The + Maze and + Event in the workshop's top bar since 25 Oct 2026.)
     const sidebarAddRoomBtn = document.getElementById("sidebar-add-room-btn");
     const sidebarAddEventBtn = document.getElementById("sidebar-add-event-btn");
     if (sidebarAddRoomBtn) sidebarAddRoomBtn.addEventListener("click", () => requestOpenForm("rooms"));
@@ -9145,7 +9226,9 @@ document.addEventListener("DOMContentLoaded", () => {
         // The contributor form as well (30 Sept 2026).
         // And a What's New post being written (4 Oct 2026, the bug scan).
         const whatsNewDirty = !!(window.AdminWhatsNew && typeof AdminWhatsNew.isDirty === "function" && AdminWhatsNew.isDirty());
-        if (!Object.keys(COLLECTIONS).some(isFormDirty) && !isContributorFormDirty() && !whatsNewDirty) return;
+        // And a notification being written (26 Oct 2026).
+        const noticeDirty = !!(window.AdminNotifications && typeof AdminNotifications.isDirty === "function" && AdminNotifications.isDirty());
+        if (!Object.keys(COLLECTIONS).some(isFormDirty) && !isContributorFormDirty() && !whatsNewDirty && !noticeDirty) return;
         e.preventDefault();
         e.returnValue = "";
     });
@@ -9164,6 +9247,39 @@ document.addEventListener("DOMContentLoaded", () => {
 
     const adminNavEl = document.getElementById("admin-nav");
     const adminPanelEls = Array.from(document.querySelectorAll(".admin-panel"));
+
+    /* The strip's button for the section shown, scrolled into sight at
+       narrow widths (26 Oct 2026; see showPanel). And again for a few
+       seconds after, as the rail settles: the counts on Missing Pieces,
+       Errors, Event Entries and Players arrive after sign-in and widen
+       their buttons, which pushed a section further along (Bans, say) back
+       off the edge it had just been brought to. Not once you take the
+       strip in hand — a press, wheel or touch on it ends the watch. */
+    let railReveal = null;
+    function revealRailButton(btn) {
+        const narrow = () => window.matchMedia && window.matchMedia("(max-width: 860px)").matches;
+        const reveal = () => {
+            if (narrow() && adminNavEl.offsetParent !== null && typeof btn.scrollIntoView === "function") {
+                btn.scrollIntoView({ block: "nearest", inline: "nearest" });
+            }
+        };
+        if (railReveal) railReveal.stop();
+        reveal();
+        if (typeof MutationObserver === "undefined") return;
+        const watch = new MutationObserver(reveal);
+        watch.observe(adminNavEl, { subtree: true, childList: true, characterData: true, attributes: true, attributeFilter: ["hidden"] });
+        // So is #admin-content being shown: a sign-in lands here before it is.
+        if (adminContent) watch.observe(adminContent, { attributes: true, attributeFilter: ["style"] });
+        const stop = () => {
+            watch.disconnect();
+            clearTimeout(timer);
+            ["pointerdown", "wheel", "touchstart"].forEach(t => adminNavEl.removeEventListener(t, stop));
+            if (railReveal && railReveal.stop === stop) railReveal = null;
+        };
+        const timer = setTimeout(stop, 8000);
+        ["pointerdown", "wheel", "touchstart"].forEach(t => adminNavEl.addEventListener(t, stop, { passive: true }));
+        railReveal = { stop };
+    }
 
     function showPanel(name) {
         if (!adminNavEl) return;
@@ -9184,25 +9300,21 @@ document.addEventListener("DOMContentLoaded", () => {
         adminNavEl.querySelectorAll(".chrome-nav-btn").forEach(btn => {
             const on = btn.dataset.panel === name;
             btn.classList.toggle("active", on);
-            btn.setAttribute("aria-selected", on ? "true" : "false");
+            /* aria-current, not aria-selected (26 Oct 2026): the rail is a
+               nav of plain buttons now, not a tablist (see warren.html). */
+            if (on) btn.setAttribute("aria-current", "true");
+            else btn.removeAttribute("aria-current");
+            /* And the one you land on is scrolled into sight (26 Oct 2026):
+               under 860px the rail is a sideways strip, and a section
+               remembered from last time, or chosen off its edge, opened
+               with its button out of view. "nearest" moves the strip only
+               as far as it must, and nothing at all when it is in view —
+               so it never shifts the page on the full-width rail. */
+            if (on) revealRailButton(btn);
         });
-        /* Where you are, on the tab itself (30 Sept 2026). The sections
-           live in a drop-down, so with it closed nothing on the page said
-           which one was showing except the panel's own heading, which
-           scrolls away. The NAV tab now reads "Nav · Mazes". */
-        const navTab = document.querySelector('.admin-tab[data-menu="nav"] > .admin-tab-btn');
-        const picked = adminNavEl.querySelector(".chrome-nav-btn.active .chrome-nav-btn-label");
-        if (navTab) {
-            const where = picked ? picked.textContent.trim() : "";
-            navTab.textContent = "Nav";
-            if (where) {
-                const span = document.createElement("span");
-                span.className = "admin-tab-where";
-                span.textContent = " · " + where;
-                navTab.appendChild(span);
-            }
-            navTab.setAttribute("aria-label", where ? `Sections, showing ${where}` : "Sections");
-        }
+        /* Where you are is said by the workshop's top bar now (26 Oct 2026):
+           js/warren-shell.js reads the .active button above into #wr-where.
+           The "Nav · Mazes" label this wrote went with the Nav drop-down. */
         /* The map has to be measured to be drawn, and a hidden element
            measures zero — so the atlas panel's first view is only
            correct once it is actually on screen. Every other panel here is
@@ -9288,20 +9400,11 @@ document.addEventListener("DOMContentLoaded", () => {
             const btn = e.target.closest(".chrome-nav-btn");
             if (!btn) return;
             showPanel(btn.dataset.panel);
-            /* Focus follows the choice into the panel. Left on the nav
-               button, it kept the Nav tab open by :focus-within after the
-               click had closed its .is-open — the menu sat over the very
-               panel it had just brought up until you clicked somewhere
-               else. The panel is made focusable for this alone (-1: never
-               a Tab stop), and preventScroll because the stage is already
-               where it should be. */
-            const panel = adminPanelEls.find(p => p.dataset.panel === btn.dataset.panel);
-            if (panel) {
-                if (!panel.hasAttribute("tabindex")) panel.setAttribute("tabindex", "-1");
-                panel.focus({ preventScroll: true });
-            } else {
-                btn.blur();
-            }
+            /* Focus stays on the rail button you pressed (26 Oct 2026). It
+               used to be moved into the panel, for the Nav drop-down, which
+               stayed open by :focus-within while its button held focus; the
+               rail is always open, and moving focus away lost your place in
+               it — the next Tab or arrow started from the panel instead. */
         });
     }
 

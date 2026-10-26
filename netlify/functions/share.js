@@ -487,7 +487,9 @@ const FIXED_PAGES = {
     },
     /* Scout's Trail (15 Oct 2026; Ariadne's Thread from 13 Oct, and Rat
        Race before that), the platform game through the labyrinths. The
-       site's own picture until it has one of its own. */
+       site's own picture until it has one of its own. Only while it is
+       live or in maintenance; hidden, /scout is the archive's own page
+       (26 Oct 2026, see SWITCHED below). */
     scout: {
         title: "Scout's Trail",
         description: "In search of Ariadne."
@@ -500,7 +502,8 @@ const FIXED_PAGES = {
         image: "og-glyphs.png"
     },
     /* Fallin' Furni (25 Oct 2026), a window on the homepage now: the card
-       its own page always had, its words and its picture. */
+       its own page always had, its words and its picture. Those words
+       only while it is live (26 Oct 2026, see SWITCHED below). */
     fallinfurni: {
         title: "Fallin' Furni",
         description: "Look up before you sit down. Furni drops from the ceiling and you sit on every seat in the order it landed — fifty rooms, three lives, one run.",
@@ -515,8 +518,53 @@ const FIXED_PAGES = {
    noindex it was allowed to fetch. /profiles comes here as "profile", and
    /profile?p=<id> is the same generic Profiles card (no per-player card, the
    owner's). tools/check-share-headers.js checks both stay listed. */
-// Scout's Trail too, while it is in beta (11 Oct 2026).
-const NOINDEX_PAGES = new Set(["glyphs", "profile", "scout"]);
+// Scout's Trail and Fallin' Furni are kept out while they are not live: see switchedPage.
+const NOINDEX_PAGES = new Set(["glyphs", "profile"]);
+
+/* THE GAMES ON A SWITCH OF THEIR OWN (26 Oct 2026, the bug scan; the
+   owner's "Fix all"). /fallinfurni's card said the game was there to play —
+   "fifty rooms, three lives, one run" — while fallinFurniState had it Coming
+   Soon, and both it and /scout could be indexed whatever their switch said;
+   /scout's card even named the hidden game to anybody pasting the address.
+   Each now follows its switch in the settings document, read as
+   settings.js reads it (the same defaults: Fallin' Furni live, Scout's
+   Trail maintenance), and sitemap.js lists each only while it is live, so
+   the card, the index and the sitemap agree:
+
+     fallinfurni  live: its own card, indexable. Coming Soon or
+                  maintenance: the same card saying so, kept out.
+     scout        live: its own card, indexable. Maintenance (its menu row
+                  says so to everybody): its card, kept out. Hidden: the
+                  archive's own page and card, as if it were /home, kept out.
+
+   A settings read that fails is not live (as sitemap.js treats it) and is
+   never stored, so the next request has the real answer. A switch thrown
+   in the Warren reaches a cached card within the edge's ten minutes. */
+const SWITCHED = {
+    // settings.js: (doc && doc.fallinFurniState) || DEFAULT_FF_STATE, which is "live".
+    fallinfurni: { field: "fallinFurniState", read: v => v || "live" },
+    // settings.js's ratState: one of its VALID_RAT_STATES, else DEFAULT_RAT_STATE ("maintenance").
+    scout: { field: "ratRaceState", read: v => (["maintenance", "live", "hidden"].includes(v) ? v : "maintenance") }
+};
+const FF_NOT_LIVE = {
+    "coming-soon": "Look up before you sit down. Furni will soon be dropping from the ceiling, and you'll sit on every seat in the order it landed. Coming soon to Maze Rats.",
+    maintenance: "Look up before you sit down. Fallin' Furni is being worked on just now. Back soon."
+};
+// The switch's state from the settings document; null for one that could not be read.
+function switchState(page, doc, unread) {
+    if (unread) return null;
+    const s = SWITCHED[page];
+    return s.read(doc ? doc[s.field] : undefined);
+}
+/* What /fallinfurni or /scout answers in a given state: { tags, noindex },
+   tags null for the archive's own page as it stands. */
+function switchedPage(page, state, origin) {
+    const live = state === "live";
+    if (page === "scout" && state !== "live" && state !== "maintenance") return { tags: null, noindex: true };
+    const tags = fixedTags(page, origin);
+    if (page === "fallinfurni" && FF_NOT_LIVE[state]) tags.description = FF_NOT_LIVE[state];
+    return { tags, noindex: !live };
+}
 
 function fixedTags(page, origin) {
     const f = FIXED_PAGES[page];
@@ -642,6 +690,23 @@ exports.handler = async (event) => {
     const MISS_CACHE = fresh ? "no-store" : "public, max-age=0, must-revalidate, s-maxage=60";
     const HIT_CACHE = fresh ? "no-store" : CACHE;
     if (!asked) return pageResponse(404, notFound, MISS_CACHE);
+    if (asked.page && SWITCHED[asked.page]) {
+        // See SWITCHED: the settings first, then the card the switch calls for.
+        let doc = null, unread = false;
+        try {
+            doc = await withinTime((async () => {
+                const db = await getDb();
+                return db.collection("settings").findOne({ _id: "site" }, { projection: { _id: 0, [SWITCHED[asked.page].field]: 1 } });
+            })(), LOOKUP_MS);
+        } catch (e) {
+            console.error("share: settings unreadable", e);
+            unread = true;
+        }
+        const { tags, noindex } = switchedPage(asked.page, switchState(asked.page, doc, unread), origin);
+        const robots = noindex ? { "X-Robots-Tag": "noindex" } : {};
+        if (unread) return pageResponse(200, tags, "no-store", robots);
+        return pageResponse(200, tags, HIT_CACHE, fresh ? robots : { "Netlify-CDN-Cache-Control": CDN_CACHE, ...robots });
+    }
     if (asked.page) {
         // See NOINDEX_PAGES.
         const robots = NOINDEX_PAGES.has(asked.page) ? { "X-Robots-Tag": "noindex" } : {};
@@ -720,7 +785,7 @@ exports.handler = async (event) => {
 };
 
 // For tools/check-share-headers.js and the local tests.
-exports._test = { withTags, PAGE_HEADERS, requestedSlug, tagsFor, fixedTags, NOINDEX_PAGES };
+exports._test = { withTags, PAGE_HEADERS, requestedSlug, tagsFor, fixedTags, NOINDEX_PAGES, SWITCHED, switchState, switchedPage };
 
 /* Failures reported to /warren's Errors tab (28 Sept 2026): see
    withErrorReporting in _errors.js. Last, so it wraps the handler as finally

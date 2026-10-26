@@ -38,6 +38,12 @@
    prizetrophy set, a grand piano, a sci-fi door and the uncoloured base of
    several colourway families are in there with it.
 
+   ONE SOURCE OF ARTWORK SINCE 26 OCT 2026, the owner's: "only use real furni
+   sprite images from the game". FurniIndex's pictures are no longer drawn,
+   offered or used as icons; the catalogue is still read, for its colourway
+   names. A level built before with a class the casts cannot draw is named
+   on load and save ("No game art for ..."), and a round leaves it out.
+
    ----------------------------------------------------------------------
    Rotation
 
@@ -85,29 +91,16 @@
        Which one does it mirror? The cycle runs out and back — direction 0,
        direction 2, direction 2 flipped, direction 0 flipped — so rotation r
        mirrors rotation (cycle length - 1 - r). */
+    /* THE LIBRARY ALONE (26 Oct 2026, the owner's: "only use real furni
+       sprite images from the game"). It knows which direction this rotation
+       is and has a file for exactly that direction, so image and anchor
+       match by construction. FurniIndex's sprite grids were the fallback for
+       the classes it does not carry; a round now leaves those out
+       (leaveOutNoArt in js/fallinfurni.js), so the editor neither offers
+       them nor draws them, and says so when a level has one
+       (missingArt, below). */
     function spriteFor(className, stateIndex, rotation) {
-        /* The library first: it knows which direction this rotation is and
-           has a file for exactly that direction, so image and anchor match by
-           construction. Everything below is the fallback for the handful of
-           classes it does not carry. */
-        const own = Furni.librarySprite(className, stateIndex || 0, rotation || 0);
-        if (own) return own;
-
-        const row = state.catalogue.get(className);
-        if (!row) return { url: null, flip: false };
-        const grid = row.largeImages || [];
-        const states = grid[Math.min(stateIndex || 0, grid.length - 1)] || [];
-        if (!states.length) return { url: null, flip: false };
-
-        const r = rotation || 0;
-        if (r < states.length) return { url: states[r], flip: false };
-
-        const cycle = Furni.rotationsOf(className) || states.length;
-        const mirrored = cycle - 1 - r;
-        if (mirrored >= 0 && mirrored < states.length) {
-            return { url: states[mirrored], flip: true };
-        }
-        return { url: states[states.length - 1] || states[0], flip: false };
+        return Furni.librarySprite(className, stateIndex || 0, rotation || 0) || { url: null, flip: false };
     }
 
     // Kept for callers that only want the picture (the furni picker's icons).
@@ -130,14 +123,11 @@
        gothiccandelabra through seven. The list is the state NUMBERS rather
        than a count, because a class need not number them 0..n.
 
-       The client's own artwork answers first. Anything it does not carry
-       falls back to the catalogue, where a state is a row of the image grid. */
+       The client's own artwork answers, the only artwork there is (26 Oct
+       2026: the catalogue's image grid was the fallback). */
     function stateList(className) {
         const fromClient = Furni.statesOf(className);
-        if (fromClient.length) return fromClient;
-        const row = state.catalogue.get(className);
-        const grid = (row && row.largeImages) || [];
-        return grid.length ? grid.map((_, i) => i) : [0];
+        return fromClient.length ? fromClient : [0];
     }
 
     /* Step the held furni to its next state and wrap. One button does both
@@ -167,12 +157,7 @@
     }
 
     function rotationCount(className) {
-        const fromClient = Furni.rotationsOf(className);
-        if (fromClient) return fromClient;
-        const row = state.catalogue.get(className);
-        if (!row) return 1;
-        const grid = row.largeImages || [];
-        return Math.max(1, (grid[0] || []).length);
+        return Furni.rotationsOf(className) || 1;
     }
 
     /* Furnidata first; for the 119 classes it has never heard of, the size
@@ -210,12 +195,16 @@
         if (state.icons.has(own)) return `assets/furni-icons/${own}.png`;
         const b = iconStem(className.replace(/\*\d+$/, ""));
         if (state.icons.has(b)) return `assets/furni-icons/${b}.png`;
-        return (row && row.icon) || null;   // FurniIndex, for the last 2%
+        // FurniIndex's picture stood here for the last 2% (26 Oct 2026: the client's or none).
+        return null;
     }
 
+    /* The catalogue for its NAMES now, the colourway's "Deep Moss Chair"
+       where furnidata says "Chair" — without ?sprites=1, so no FurniIndex
+       picture comes with it (26 Oct 2026). */
     async function load() {
         const [cat, meta, icons] = await Promise.all([
-            fetch("/.netlify/functions/furni-catalogue?sprites=1").then(r => r.json()),
+            fetch("/.netlify/functions/furni-catalogue").then(r => r.json()),
             fetch("/.netlify/functions/furni-meta").then(r => r.json()),
             /* Missing is survivable: every row falls back to FurniIndex, which
                is what it did before this existed. */
@@ -251,8 +240,8 @@
             const row = state.catalogue.get(className);
             const rotations = rotationCount(className);
             const fromClient = Furni.rotationsOf(className) > 0;
-            const fromIndex = !!(row && (row.largeImages || []).length);
-            if (!fromClient && !fromIndex) continue;
+            // The client's art or not offered (26 Oct 2026): a FurniIndex sprite grid was the other half.
+            if (!fromClient) continue;
             /* The catalogue names a furni for its COLOURWAY — "Deep Moss
                Chair" — and furnidata for its family — "Chair". The colourway
                is the more useful of the two when it exists. */
@@ -662,6 +651,18 @@
         return !!(m && m.x) && !!spriteUrl(className, 0, 0);
     }
 
+    /* WHAT IN THIS LEVEL HAS NO GAME ART (26 Oct 2026): decor, drop-zone
+       pieces and power-up machines the client's casts cannot draw, which a
+       round leaves out (leaveOutNoArt in js/fallinfurni.js). Nothing new can
+       be added with one — the picker does not offer them and addItem asks
+       playable() — so this is for levels built before, and the page names
+       them as one loads or saves. */
+    function missingArt(level) {
+        const L = level || state.level;
+        if (!L) return [];
+        return Levels.furniUsed(L).filter(c => !Furni.librarySprite(c, 0, 0)).sort();
+    }
+
     /* ---- zones
 
        A zone is an AREA and, separately, the items that fall into it. The two
@@ -884,7 +885,16 @@
        a level that moves on again in between is refused again rather than
        overwritten. `publish` is the button that was pressed, as for
        saveServer. */
-    const DRAFT_FIELDS = ["name", "model", "floor", "wall", "start", "startDir", "decor", "zones"];
+    /* AND ITS POWER-UPS AND SOUNDTRACK (26 Oct 2026). Both came after this
+       list (25 Oct), both are set by hand in the editor — the power-ups'
+       tiles, moments, facings and machines on the Rules tab, the tune on
+       Soundtrack — and nothing that retunes levels writes either, so they
+       are the builder's like the room: left out, a merge dropped them and
+       saved the server's over them. The draft's power-ups replace the
+       server's whole, the first version's single `coffee` field included,
+       which would otherwise come back in front of them (normalise in
+       js/room-levels.js reads it first). */
+    const DRAFT_FIELDS = ["name", "model", "floor", "wall", "start", "startDir", "decor", "zones", "powerups", "music"];
 
     async function mergeOntoServer(publish) {
         commit();
@@ -897,6 +907,7 @@
         for (const k of DRAFT_FIELDS) {
             if (draft[k] !== undefined) merged[k] = JSON.parse(JSON.stringify(draft[k]));
         }
+        if (draft.powerups !== undefined && draft.coffee === undefined) delete merged.coffee;
         setLevel(merged);
         save();
         return saveServer(publish);
@@ -1080,7 +1091,7 @@
         selectAt, moveSelected, pickUpAt, isCarrying, rotateSelected, deleteSelected,
         addZone, removeZone, selectZone, setZoneArea, renameZone, zone,
         addItem, removeItem, setRoom, save, restore, discardDraft,
-        drawOverlay, drawDragArea, spriteUrl, spriteFor, rotationCount, metaFor, playable,
+        drawOverlay, drawDragArea, spriteUrl, spriteFor, rotationCount, metaFor, playable, missingArt,
         listServer, saveServer, loadServer, deleteServer, authToken,
         mergeOntoServer, draftJson,
         onChange(cb) { onChange = cb || (() => { }); }

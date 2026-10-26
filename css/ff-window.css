@@ -69,22 +69,31 @@
 .ff-console-bar i { display: block; height: 100%; width: 0; }
 .ff-console-screen.is-booted .ff-console-wait { visibility: hidden; }
 
-/* FULLSCREEN: the screen alone, the game in the middle of black, scaled in
-   whole pixels by js/ff-window.js (scaleFull). */
-.ff-console-screen:fullscreen {
-    border: 0;
-    border-radius: 0;
-    background: #000;
-    display: grid;
-    place-items: center;
+/* THE GAME'S PAGE DID NOT LOAD (26 Oct 2026): "Couldn't load" and a Retry
+   where "Loading..." was, in its letters, the Retry dressed as the bar. */
+.ff-console-failed { display: none; }
+.ff-console-screen.is-failed .ff-console-wait { visibility: hidden; }
+.ff-console-screen.is-failed .ff-console-failed { display: flex; visibility: visible; }
+.ff-console-retry {
+    margin-left: 10px;
+    padding: 4px 10px;
+    font: inherit;
+    letter-spacing: inherit;
+    color: #f5c46a;
+    background: #1a120a;
+    border: 1px solid #c8902e;
+    border-radius: 2px;
+    cursor: var(--cursor-pointer, pointer);
 }
-.ff-console-screen:fullscreen .ff-console-game {
-    position: static;
-    transform-origin: center;
-}
+.ff-console-retry:hover,
+.ff-console-retry:focus-visible { background: #2e2010; outline: none; border-color: #f5c46a; }
+
+/* (The fullscreen rules that stood here went on 26 Oct 2026: Enlarge
+   replaced fullscreen the day it shipped, and nothing puts this screen
+   into fullscreen any more.) */
 
 /* The buttons on the grip: the close box's size and height, left of it —
-   the bulb 4px from the close box, as Pura Panic's, and fullscreen beside
+   the bulb 4px from the close box, as Pura Panic's, and Enlarge beside
    that. Their colours are set by the script from the frame and its title. */
 .ff-console-btn {
     position: absolute;

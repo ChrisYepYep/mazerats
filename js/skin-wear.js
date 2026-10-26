@@ -87,10 +87,16 @@
     const SKIN_THEME_KEY = "mazerats_skin_theme";           // { theme, until }: a skin's palette, for first paint
     const TOKEN_KEY = "mazerats_admin_token";
     const VERIFIED_KEY = "mazerats_skin_preview_verified";  // sessionStorage: { tail, at }
-    const REFUSED_KEY = "mazerats_skin_preview_refused";    // sessionStorage: the refused token's tail
+    const REFUSED_KEY = "mazerats_skin_preview_refused";    // localStorage: the refused token's tail
     const SKINS = ["xmas", "halloween"];
     // The palette a skin brings when nothing else says: Witching Hour (the Halloween one Chris signed off), and Frost for Christmas.
     const PAIRED = { halloween: "witch", xmas: "frost" };
+    /* Things worn WITH a skin, in files of their own (26 Oct 2026): the
+       advent calendar beside the Christmas skin. Each is a pair like a skin's,
+       css/skin-<extra>.css and js/skin-<extra>.js registering
+       SiteSkins[<extra>] = { start, stop }, loaded once the skin has started
+       and taken off with it. A failed one is left out; the skin stays on. */
+    const EXTRAS = { xmas: ["xmas-advent"] };
     const RECHECK_MS = 10 * 60 * 1000;
     const passive = !!window.__skinWearPassive;
 
@@ -170,7 +176,12 @@
         const p = get(localStorage, PREVIEW_KEY);
         const token = get(localStorage, TOKEN_KEY);
         // A session the check refused (expired) stays refused on the next page too, not a flash per page.
-        let no = null; try { no = token && sessionStorage.getItem(REFUSED_KEY); } catch (e) { /* storage blocked */ }
+        /* In localStorage, not sessionStorage (26 Oct 2026): a 401 is final
+           for that token, and per tab it was a flash of the preview's skin
+           (and its palette, remembered for first paint) in every new tab an
+           expired admin session, or a shared computer, ever opened. A new
+           sign-in is a new token, so its tail no longer matches. */
+        const no = token ? get(localStorage, REFUSED_KEY) : null;
         if (token && no === token.slice(-12)) return null;
         return !refused && p && SKINS.includes(p) && token ? p : null;
     }
@@ -202,7 +213,11 @@
         const link = document.createElement("link");
         link.rel = "stylesheet"; link.id = "skin-css"; link.href = "/css/skin-" + name + ".css?v=1";
         // The pieces are placed by this sheet: started without it, they land in the page's flow and measure wrong.
-        const styled = new Promise((ok) => { link.onload = link.onerror = ok; });
+        /* So a sheet that fails to load means no skin on this page (26 Oct
+           2026): it used to start anyway, and every piece, the bats' and the
+           ghost's screen-sized canvases among them, went into the page's flow
+           at the foot of the page. The next page asks again. */
+        const styled = new Promise((ok) => { link.onload = () => ok(true); link.onerror = () => ok(false); });
         document.head.appendChild(link);
         Promise.all([styled, new Promise((ok) => {
             if (window.SiteSkins && window.SiteSkins[name]) return ok();
@@ -211,15 +226,44 @@
             s.onload = ok;
             s.onerror = () => { remove(); ok(); };
             document.head.appendChild(s);
-        })]).then(() => whenReady(() => {
+        })]).then(([sheet]) => whenReady(() => {
             if (current !== name) return;
+            if (!sheet) { remove(); return; }
             const skin = window.SiteSkins && window.SiteSkins[name];
-            if (skin) try { skin.start(); } catch (e) { remove(); setTimeout(() => { throw e; }); }   // off, and still reported
+            if (skin) try { skin.start(); } catch (e) { remove(); setTimeout(() => { throw e; }); return; }   // off, and still reported
+            (EXTRAS[name] || []).forEach((x) => wearExtra(name, x));
         }));
+    }
+
+    function wearExtra(name, x) {
+        const link = document.createElement("link");
+        link.rel = "stylesheet"; link.className = "skin-extra-css"; link.href = "/css/skin-" + x + ".css?v=1";
+        const styled = new Promise((ok) => { link.onload = () => ok(true); link.onerror = () => ok(false); });
+        document.head.appendChild(link);
+        const loaded = new Promise((ok) => {
+            if (window.SiteSkins && window.SiteSkins[x]) return ok(true);
+            const s = document.createElement("script");
+            s.className = "skin-extra-js"; s.src = "/js/skin-" + x + ".js?v=1";
+            s.onload = () => ok(true); s.onerror = () => ok(false);
+            document.head.appendChild(s);
+        });
+        Promise.all([styled, loaded]).then(([sheet, script]) => {
+            const extra = window.SiteSkins && window.SiteSkins[x];
+            if (current !== name || !sheet || !script || !extra) { if (current !== name || !sheet) link.remove(); return; }
+            try { extra.start(); } catch (e) { setTimeout(() => { throw e; }); }
+        });
+    }
+    function removeExtras(name) {
+        (EXTRAS[name] || []).forEach((x) => {
+            const extra = window.SiteSkins && window.SiteSkins[x];
+            if (extra) try { extra.stop(); } catch (e) { setTimeout(() => { throw e; }); }
+        });
+        document.querySelectorAll("link.skin-extra-css, script.skin-extra-js").forEach((n) => n.remove());
     }
 
     function remove() {
         if (!current) return;
+        removeExtras(current);
         const skin = window.SiteSkins && window.SiteSkins[current];
         // A skin that throws on the way out is still taken off.
         if (skin) try { skin.stop(); } catch (e) { setTimeout(() => { throw e; }); }   // reported, and the rest below still runs
@@ -276,11 +320,21 @@
         const href = "/css/theme-" + name + ".css";
         if ((link.getAttribute("href") ? link.href.split("?")[0] : "") !== new URL(href, location.href).href) link.href = href;
     }
+    /* Said when the skin's palette comes on, changes or goes off (26 Oct
+       2026), after the page's palette has been switched: js/palette-wear.js
+       takes a live custom palette off while a skin wears its own, and puts
+       it back after. */
+    function told(was) {
+        if ((window.__mrSkinPalette || null) === (was || null)) return;
+        try { document.dispatchEvent(new CustomEvent("mazerats:skin-palette", { detail: { palette: window.__mrSkinPalette || null } })); } catch (e) { /* an old browser: the palette stays as it was */ }
+    }
     function wearTheme(paired, until) {
+        const was = window.__mrSkinPalette;
         if (paired && /^[a-z]+$/.test(paired)) {
             window.__mrSkinPalette = paired;   // Api.applyTheme leaves the page alone meanwhile
             setPalette(paired);
             put(localStorage, SKIN_THEME_KEY, JSON.stringify({ theme: paired, until: until || Date.now() + 864e5 }));
+            told(was);
             return;
         }
         put(localStorage, SKIN_THEME_KEY, null);
@@ -288,6 +342,7 @@
         // Back to the site's own: the settings' answer if known, else what this browser remembers.
         const own = (site && site.theme) || get(localStorage, "mazerats_theme") || "classic";
         if (/^[a-z]+$/.test(own)) setPalette(own);
+        told(was);
     }
     /* A browser left remembering a paired palette by the old code (Witching
        Hour as its own, while the site's is something else) is put right. */
@@ -313,7 +368,7 @@
         Api.verifySession(token).then((who) => {
             if (who) { put(sessionStorage, VERIFIED_KEY, JSON.stringify({ tail, at: Date.now() })); return; }
             put(sessionStorage, VERIFIED_KEY, null);
-            put(sessionStorage, REFUSED_KEY, tail);
+            put(localStorage, REFUSED_KEY, tail);
             refused = true;
             refresh();
         }, () => { /* a blip, not a refusal: keep it on, ask on the next page */ });
@@ -340,6 +395,15 @@
         refresh();
         verify();
     });
+
+    /* A page coming back into view looks at the clock again (26 Oct 2026).
+       The boundary timer above is a setTimeout, and a computer asleep or a
+       page held in the back-forward cache does not count down: a tab left
+       open on 1 Nov and woken on the 3rd still wore Halloween until its
+       late timer fired. Cheap when nothing has changed: apply() and the
+       palette both see they already have what is wanted. */
+    addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") refresh(); });
+    addEventListener("pageshow", (e) => { if (e.persisted) refresh(); });
 
     Object.assign(window.SkinWear, { apply, remove, today, current: () => current, source: () => source });
 })();

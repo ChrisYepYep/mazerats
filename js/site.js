@@ -19,6 +19,7 @@
     try {
         const blocked = JSON.parse(localStorage.getItem("mazerats_blocked") || "null");
         if (blocked && typeof blocked === "object" && (!blocked.until || Date.parse(blocked.until) > Date.now())) {
+            if (window.MazeErrors && typeof MazeErrors.leaving === "function") MazeErrors.leaving("/");
             location.replace("/");
         }
     } catch (e) { /* unreadable: nothing to act on */ }
@@ -770,7 +771,11 @@ document.addEventListener("DOMContentLoaded", async () => {
        its start, which has passed (25 Oct 2026, the owner's: "Ends in 3
        days"). Only one with a real end more than a day after its start: a
        party of a few hours keeps its date. Whole days while there are any,
-       then hours, then minutes, each rounded down, as a countdown reads. */
+       then hours, then minutes, the hours and minutes rounded down, as a
+       countdown reads. The days go to the NEAREST day (26 Oct 2026, the
+       owner's): rounded down, a three-day event read "Ends in 2 days"
+       within its first hour; now 2d 23h is "3 days", 1d 11h "1 day" and
+       1d 13h "2 days". Under a day it is hours, as before. */
     const DAY_MS = 24 * 60 * 60 * 1000;
     function endsIn(event) {
         if (EventStatus.derive(event) !== "live") return null;
@@ -778,9 +783,12 @@ document.addEventListener("DOMContentLoaded", async () => {
         if (isNaN(start) || isNaN(end) || end - start <= DAY_MS) return null;
         const left = end - Date.now();
         const say = (n, unit) => `Ends in ${n} ${unit}${n === 1 ? "" : "s"}`;
-        if (left >= DAY_MS) return say(Math.floor(left / DAY_MS), "day");
+        if (left >= DAY_MS) return say(Math.round(left / DAY_MS), "day");
         if (left >= 60 * 60 * 1000) return say(Math.floor(left / (60 * 60 * 1000)), "hour");
-        return say(Math.max(1, Math.ceil(left / 60000)), "minute");
+        // Down, as the rest are (26 Oct 2026, the bug scan): rounded up, the
+        // last minute of the final hour read "Ends in 60 minutes", straight
+        // after "Ends in 1 hour". Never "0 minutes" while it is still on.
+        return say(Math.max(1, Math.floor(left / 60000)), "minute");
     }
     function whenText(event) {
         return endsIn(event) || formatEventWhen(event.date);

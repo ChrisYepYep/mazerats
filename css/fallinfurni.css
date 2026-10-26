@@ -484,6 +484,53 @@ body.is-editing .ff-title { display: none; }
 /* While the title is still loading or closed there is nothing to set yet. */
 .ff-title[data-state="loading"] .ff-title-opts { display: none; }
 
+/* THE VOLUME (26 Oct 2026): a slider in the row of buttons, on the title and
+   the pause menu, dressed as one of them: the same box, the same 9px Volter,
+   a thin track and a square thumb in the game's amber. */
+.ff-vol {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 9px;
+    padding: 3px 9px;
+    background: rgba(42, 28, 16, 0.85);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--parchment-dim);
+}
+.ff-vol input[type="range"] {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 72px;
+    height: 11px;
+    margin: 0;
+    background: transparent;
+    cursor: pointer;
+}
+.ff-vol input[type="range"]::-webkit-slider-runnable-track { height: 3px; background: var(--border); }
+.ff-vol input[type="range"]::-moz-range-track { height: 3px; background: var(--border); }
+.ff-vol input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 7px;
+    height: 11px;
+    margin-top: -4px;
+    background: var(--amber-bright);
+    border: 1px solid rgba(0, 0, 0, 0.6);
+    border-radius: 0;
+}
+.ff-vol input[type="range"]::-moz-range-thumb {
+    width: 7px;
+    height: 11px;
+    background: var(--amber-bright);
+    border: 1px solid rgba(0, 0, 0, 0.6);
+    border-radius: 0;
+}
+.ff-vol input[type="range"]:focus-visible { outline: 1px solid var(--amber-bright); outline-offset: 2px; }
+.ff-vol-n { min-width: 4ch; text-align: right; }
+/* On the pause menu, the pause menu's buttons' wood. */
+.ff-paused-audio .ff-vol { background: var(--wood-mid); }
+
 .ff-title .ff-status { text-align: center; }
 
 /* No percentages, no max-width: the canvas is its own size or it is wrong. */
@@ -2255,8 +2302,11 @@ main.ff-page { width: 100%; }
    none of these rules apply and the page is what it always was. */
 .ff-title-maint { display: none; }
 
-/* The title's own face and colour, a size down, so it reads as the second
-   line of the title rather than as a message bolted underneath one. */
+/* The title's own face and colour, a size down, so it reads as part of the
+   title rather than as a message bolted on. Since 26 Oct 2026 it sits UNDER
+   the tagline (the owner's: the title, the tagline, then COMING SOON), and
+   is the last thing on the screen, so it ends the box with no margin of its
+   own; the tagline above it closes up a little to make the three one block. */
 body[data-ff-closed] .ff-title-maint {
     display: block;
     font-family: "Silkscreen", "Pixelify Sans", monospace;
@@ -2265,8 +2315,9 @@ body[data-ff-closed] .ff-title-maint {
     letter-spacing: 0.02em;
     text-transform: uppercase;
     text-shadow: 0 2px 0 rgba(0, 0, 0, 0.6);
-    margin: 0 0 14px;
+    margin: 0;
 }
+body[data-ff-closed] .ff-title-sub { margin-bottom: 12px; }
 
 /* What is taken away: the way in, the board, and the instruction for a game
    nobody can start. The title, the notice and the room stay.
@@ -2283,12 +2334,12 @@ body[data-ff-closed] .ff-title-maint {
    absence of one and is cleared by every path out of the question, including
    the failures. Anything that leaves html[data-ff-gate] set for good would be
    a game nobody can start, so nothing is allowed to depend on it. */
-body[data-ff-closed] .ff-title-sub,
+/* The tagline is not among them (26 Oct 2026): it is no way in, and the
+   owner wants it on the closed title, above COMING SOON. */
 body[data-ff-closed] .ff-title-form,
 body[data-ff-closed] .ff-title-who,
 body[data-ff-closed] #ff-play-status,
 body[data-ff-closed] .ff-board,
-html[data-ff-gate="checking"] .ff-title-sub,
 html[data-ff-gate="checking"] .ff-title-form,
 html[data-ff-gate="checking"] .ff-title-who,
 html[data-ff-gate="checking"] #ff-play-status,

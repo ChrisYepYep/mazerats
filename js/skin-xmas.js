@@ -33,6 +33,8 @@
         };
     }
     const smooth = (t) => t <= 0 ? 0 : t >= 1 ? 1 : t * t * (3 - 2 * t);
+    // The lesser of a and b, rounded off over k where they meet: a capped drift becomes a dome, not a plateau.
+    const smin = (a, b, k) => { const h = Math.max(k - Math.abs(a - b), 0) / k; return Math.min(a, b) - h * h * k / 4; };
 
     // ---------- the ice palette: the frozen HUD's, exactly ----------
     const C = {
@@ -101,16 +103,23 @@
         const rnd = prng(o.seed);
         const n = profile.length, PX = 3;
         const lowest = Math.min(0, ...profile.filter((v) => v != null));
+        /* And room for a surface that starts below the host's top (26 Oct
+           2026): the landing page's title inks eight pixels down, and its
+           snow was drawn off the foot of the canvas, all but a stray dab. */
+        const deepest = Math.ceil(Math.max(0, ...profile.filter((v) => v != null)));
         const TOPROOM = Math.ceil(o.depth * 1.9) + 6 - lowest;
         const slip = Math.max(o.slipL || 0, o.slipR || 0);
-        const W = n + PX * 2, H = TOPROOM + 4 + (o.mode === "box" ? Math.ceil(o.radius || 0) : 0) + slip;
+        const W = n + PX * 2, H = TOPROOM + deepest + 4 + (o.mode === "box" ? Math.ceil(o.radius || 0) : 0) + slip;
         const edge = (x) => { const v = profile[x - PX]; return v == null ? null : TOPROOM + v; };
 
-        // Swells measured in pixels, not fractions, so a wide window is not a stretched narrow one.
+        /* Swells measured in pixels, not fractions, so a wide window is not a
+           stretched narrow one. The shortest is a ripple only: at its old
+           size it rounded into one-pixel nubs all along the top (the owner's,
+           26 Oct: "a bit rough/jagged, which should be smoother"). */
         const waves = [
             { wl: 150 + rnd() * 140, a: 0.9 + rnd() * 0.7, ph: rnd() * 6.3 },
             { wl: 44 + rnd() * 36,   a: 0.6 + rnd() * 0.5, ph: rnd() * 6.3 },
-            { wl: 13 + rnd() * 9,    a: 0.3 + rnd() * 0.3, ph: rnd() * 6.3 }
+            { wl: 13 + rnd() * 9,    a: 0.12 + rnd() * 0.12, ph: rnd() * 6.3 }
         ];
         // Drifts where the wind piled it, and thin spots it scoured.
         const mounds = [];
@@ -146,24 +155,50 @@
 
         const depth = new Array(W).fill(0);
         const T = o.mode === "box" ? Math.max(14, (o.radius || 0) * 2.2) : 3.5;
+        const raw = new Array(n).fill(null);
         for (let x = 0; x < n; x++) {
             if (!ok[x] || profile[x] == null) continue;
             let h = o.depth;
             for (const wv of waves) h += wv.a * (o.depth / 3.6) * Math.sin(x / wv.wl * Math.PI * 2 + wv.ph);
             for (const m of mounds) h += m.h * Math.exp(-Math.pow((x - m.at) / m.w, 2));
             if (o.tilt) h *= 1 + o.tilt * (x / n - 0.5) * 1.3;
-            // Never a wall of it, and a narrow top holds only a dab.
-            h = Math.min(h, o.depth * (o.maxMul || 1.6), o.mode === "text" ? runLen[x] / 3 : 99);
+            raw[x] = h;
+        }
+        /* Never a wall of it. A drift too tall is SQUASHED to fit, all of it
+           by the same amount, so it keeps its shape: cut off at the cap, a
+           big one was a flat plateau with a straight ramp down from it. */
+        const cap = o.depth * (o.maxMul || 1.6), peak = Math.max(0, ...raw.filter((v) => v != null));
+        const squash = peak > cap ? (cap - o.depth) / Math.max(1e-6, peak - o.depth) : 1;
+        for (let x = 0; x < n; x++) {
+            if (raw[x] == null) continue;
+            let h = raw[x] > o.depth ? o.depth + (raw[x] - o.depth) * squash : raw[x];
+            // And a narrow top holds only a dab, rounded off where it meets that limit.
+            if (o.mode === "text") h = smin(h, runLen[x] / 3, 1.5);
             for (const c of o.clamp || []) {
                 const d = x < c.x0 ? c.x0 - x : x > c.x1 ? x - c.x1 : 0;
                 h = Math.min(h, c.max + d * 0.5);
                 if (c.min != null) h = Math.max(h, c.min - d * 0.5);
             }
-            const ends = o.mode === "box" && !(o.bare && o.bare.length)
-                ? Math.min(smooth((x + 1) / T), smooth((n - x) / T))
-                : Math.min(o.mode === "box" ? Math.min(smooth((x + 1) / T), smooth((n - x) / T)) : 1, smooth((runEnds[x] + 1) / 4));
+            /* How it ends. Over a box's corner, the long taper into the curl.
+               At a bare patch, thinning away over ten columns (four was a
+               cliff). On a letter, a PILLOW: the end rounded like a quarter
+               circle, so a cap on a letter is a cushion, not a trapezoid. */
+            let ends = o.mode === "box" ? Math.min(smooth((x + 1) / T), smooth((n - x) / T)) : 1;
+            if (o.mode === "text") {
+                const R = Math.max(2.5, Math.min(h * 1.3, runLen[x] / 2)), k = runEnds[x] + 0.5;
+                if (k < R) ends = Math.sqrt(1 - Math.pow((R - k) / R, 2));
+            } else if (o.bare && o.bare.length) ends = Math.min(ends, smooth((runEnds[x] + 1) / 10));
             h = 1 + (h - 1) * ends;
             depth[x + PX] = Math.max(1, Math.round(h));
+        }
+        /* A column or two standing a pixel proud of (or sunk below) level
+           neighbours is a nub, not a shape: levelled. */
+        for (let pass = 0; pass < 2; pass++) for (let x = 1; x < W - 1; x++) {
+            if (!depth[x]) continue;
+            let e = x; while (e + 1 < W && depth[e + 1] === depth[x]) e++;
+            const a = depth[x - 1], b = depth[e + 1];
+            if (e - x < 2 && a && a === b && Math.abs(depth[x] - a) === 1) for (let k = x; k <= e; k++) depth[k] = a;
+            x = e;
         }
         for (let pass = 0; pass < 3; pass++) for (let x = 1; x < W; x++) {
             if (depth[x] - depth[x - 1] > 2 && depth[x - 1] > 0) depth[x] = depth[x - 1] + 2;
@@ -311,17 +346,22 @@
         return { canvas: g.canvas(), ox: PX, oy: EDGE };
     }
 
-    /* ---------- SNOW PILED IN A PANE'S BOTTOM CORNER (a thumbnail) ---------- */
+    /* ---------- SNOW PILED IN A PANE'S BOTTOM CORNER (a thumbnail) ----------
+       A bank, not a wedge: level against the frame, rounding over, and
+       running out in a long soft tail (half a cosine, eased by a seeded
+       lean), so its steps come evenly. It was a straight slope with a wobble
+       on it, which drew as a ragged staircase. */
     function paneSnow(w, h, seed, corner) {
         const rnd = prng(seed);
         const g = Grid(w, h);
         const right = corner === "br";
-        const wob = []; for (let i = 0; i <= w; i++) wob.push((rnd() - 0.5) * 1.6);
-        for (let i = 1; i < w; i++) wob[i] = (wob[i - 1] + wob[i] * 2 + wob[i + 1]) / 4;
+        const lean = 0.75 + rnd() * 0.5;
+        // No taller than four tenths of its length: a steeper bank only steps one pixel over, one down.
+        const hh = Math.min(h - 0.6, w * 0.4);
         const top = [];
         for (let i = 0; i < w; i++) {
             const u = right ? (w - 1 - i) / (w - 1) : i / (w - 1);
-            top.push(Math.round((h - 1) * Math.pow(1 - u, 1.5) + wob[i] * (1 - u)));
+            top.push(Math.round(hh * (0.5 + 0.5 * Math.cos(Math.PI * Math.pow(u, lean)))));
         }
         for (let x = 0; x < w; x++) {
             if (top[x] < 1) continue;
@@ -678,7 +718,8 @@
     const madeRelative = new Set();     // every host it gave position:relative
     const hosts = new Map();            // host -> { width, draw, pieces }
     const timers = [];
-    let ro = null, mo = null, rafId = 0;
+    let ro = null, mo = null, rafId = 0, roTimer = 0;
+    const resized = new Set();          // hosts the ResizeObserver reported, redrawn together
 
     // Raised with the CSS translate property, which moves nothing else and leaves any transform alone.
     const RAT_LEDGE = 5;
@@ -963,8 +1004,11 @@
     }
 
     function decorateMisc() {
-        // Snow on the tab icons. Not on the console handset in the top bar (the owner's: "looks odd, remove that").
+        /* Snow on the tab icons. Not on the console handset in the top bar (the
+           owner's: "looks odd, remove that"), nor on the Events tab's microphone
+           (26 Oct: "remove the snow from the microphone events icon"). */
         document.querySelectorAll(".chrome-nav-icon").forEach((im) => {
+            if (im.closest(".chrome-nav-btn-events")) return;
             if (im.__xm) return; im.__xm = true; capImage(im);
         });
         // The title's own words only, never the snow this put inside them.
@@ -1222,36 +1266,59 @@
         paintDrift();
     }
 
-    /* ---------- CHRISTMAS TREES IN THE MAZE (the background) ----------
-       The owner's: "add Christmas Tree 1 and 2 into the background image of
-       the website, in its switched on glowing state … scattered randomly in
-       that background maze … make them look like they are actually within
-       that maze. It must be random across the page and not just repeated
-       tiling."
+    /* ---------- THE SNOWED-IN MAZE (the background) ----------
+       The owner's, first: "add Christmas Tree 1 and 2 into the background
+       image ... make them look like they are actually within that maze. It
+       must be random across the page and not just repeated tiling." Then, 26
+       Oct: "have our own trees scattered around the maze background, that
+       just have snow, no christmas decorations. Maybe some piles of snow etc
+       on the maze background image too." And of the first go at that: "make
+       them slightly bigger, and make them appear naturally embedded into the
+       maze ... The floor heaps just look like random little blobs of snow,
+       not naturally fallen snow, same for the snow on/in the maze too, it
+       barely resembles snow. Top quality only."
 
-       The Origins client's own small-scale art: Christmas Tree 1 (s_tree3,
-       which has no "on" state) and Christmas Tree 2 (s_tree4) switched on,
-       its lights layer drawn additively as the client draws it. One fixed
-       canvas under everything, because the maze is a fixed background
-       (MazeBG.png tiled at 220px from the window's corner).
+       So the snow is not laid on the picture, it falls on the maze the
+       picture shows. The tile is read for what each pixel is (a wall's top,
+       its lit or its shaded face, an edge line, the floor, and how much light
+       that floor gets), and then, like real snow:
+         every wall's top carries a slab of it, a couple of pixels deep and
+         never quite even, its crest catching the light, its front edge the
+         slab's own side (lit over a lit face, in shade over a shaded one)
+         and a soft lip hanging over the wall's face;
+         every floor has a blanket of it, lit as the floor under it is lit,
+         banked up into a drift against the foot of the wall behind, with a
+         line of shade where the drift meets the wall.
+       Thickness, drifts and lips wander with a smooth noise over the whole
+       window, never per tile, so nothing repeats.
 
-       IN the maze, not on it: each tree is put on a patch of real floor
-       (the tile's floor colours), and every pixel of it that a wall in front
-       would cover is left out. "In front" is read off the picture itself —
-       from a wall pixel, walk down the column to where that wall meets the
-       floor; if that is lower on the screen than the tree's foot, the wall
-       is nearer, and it wins. Then the background's own top-to-bottom shade
-       is laid on the tree (the lights only half as much), and a soft shadow
-       goes on the floor under it.
+       And the trees are our own (conifer): built in three dimensions from
+       whorls of drooping branches, each a run of needle sprays, lit from the
+       maze's own side (the left), darker towards the trunk, with snow lying
+       wherever a spray has open sky above it. Each stands on a corridor's
+       floor, sunk in a little rise of the snow, with its shadow cast across
+       the snow to the right.
 
-       Placed at random over the window (seeded by its size, so it holds
-       still), kept apart from each other and out from under the windows,
-       the bars and the title, where they would only be hidden. */
-    const TILE_PX = 220, TILE_SRC = 200;
-    const TREE_SCALE = 0.78;      // the trees, against the client's small scale
-    const TREE_ROOM = 7;          // the least clear floor round a tree's foot (in half-steps along a diagonal)
-    const AMBIENT = [58, 38, 20]; // the maze's own warm dark, which the trees are graded towards
-    const FLOOR = new Set(["31,19,10", "22,13,6", "35,25,18", "26,19,13"]);
+       Everything is drawn at the TILE'S scale, on the tile's own pixel grid
+       (the page shows the 200px tile at 220px, smoothed), into one picture
+       that is then shown exactly as the maze is: enlarged a tenth and
+       smoothed. Then nothing here is sharper or blurrier than the maze.
+
+       IN the maze, not on it: every pixel knows how near the viewer it is,
+       as the ground row it stands on (a wall's pixels stand where that wall
+       meets the floor; a tree's where its own ground is), and the nearer
+       wins. So a wall in front hides a tree's foot, the snow in front of a
+       trunk covers its base, and a drift banks against the wall behind it. */
+    const TILE_PX = 220, TILE_SRC = 200, K_TILE = TILE_PX / TILE_SRC;
+    const TREE_ROOM = 6;          // the least clear floor round a tree's foot (in half-steps along a diagonal, tile pixels)
+    // How much of the day's light each keeps, before the page's own shade: snow on the ground, snow on a tree, needles, bark.
+    const NIGHT = { g: 0.66, s: 0.88, f: 0.8, t: 0.8, o: 1 };
+    // What each colour of the original tile is.
+    const T_TOP = 1, T_LEFT = 2, T_RIGHT = 3, T_LINE = 4, T_FLOOR = 5;
+    const TILE_KIND = { "85,55,30": T_TOP, "52,33,17": T_LEFT, "38,22,11": T_RIGHT, "0,0,0": T_LINE,
+                        "31,19,10": T_FLOOR, "22,13,6": T_FLOOR, "35,25,18": T_FLOOR, "26,19,13": T_FLOOR };
+    // How much light each floor colour shows: the open floor, the dithered half-shade, the shade beside a wall.
+    const FLOOR_LIGHT = { "31,19,10": 1, "35,25,18": 0.72, "26,19,13": 0.5, "22,13,6": 0.22 };
     const SHADE = [[0, 0.792], [0.05, 0.7899], [0.10, 0.7771], [0.15, 0.748], [0.20, 0.7015], [0.25, 0.64], [0.30, 0.5685],
                    [0.35, 0.4935], [0.40, 0.422], [0.45, 0.3605], [0.50, 0.314], [0.55, 0.2849], [0.60, 0.2721], [0.65, 0.27], [1, 0.27]];
     function shadeAt(u) {
@@ -1264,75 +1331,216 @@
     const loadImg = (src) => new Promise((ok, fail) => { const i = new Image(); i.onload = () => ok(i); i.onerror = fail; i.src = src; });
     const pixels = (img) => { const c = document.createElement("canvas"); c.width = img.width; c.height = img.height; const x = c.getContext("2d"); x.drawImage(img, 0, 0); return x.getImageData(0, 0, img.width, img.height); };
 
+    // Smooth value noise: a seeded lattice, eased between its points.
+    function lattice(i, j, s) { let h = (Math.imul(i, 374761393) + Math.imul(j, 668265263) + s) | 0; h = Math.imul(h ^ (h >>> 13), 1274126177); return ((h ^ (h >>> 16)) >>> 0) / 4294967296; }
+    function vnoise(x, y, s) {
+        const i = Math.floor(x), j = Math.floor(y), u = smooth(x - i), v = smooth(y - j);
+        const a = lattice(i, j, s), b = lattice(i + 1, j, s), c = lattice(i, j + 1, s), d = lattice(i + 1, j + 1, s);
+        return a + (b - a) * u + (c - a) * v + (a - b - c + d) * u * v;
+    }
+
+    /* The snow's colours, and the trees': cold, as moonlight is. Ramps from
+       shade to light; a pixel's light (0..1) picks its step, with a 2x2
+       ordered dither between steps, the way the maze's own floor is dithered. */
+    const SNOW_RAMP = [[52, 78, 138], [78, 110, 172], [114, 148, 206], [158, 190, 234], [204, 224, 248], [236, 244, 255], [255, 255, 255]];
+    const NEEDLE_RAMP = [[8, 22, 24], [14, 36, 34], [20, 52, 44], [30, 70, 54], [42, 90, 64], [60, 112, 76], [84, 136, 92]];
+    const BARK_RAMP = [[34, 22, 18], [56, 38, 28], [82, 58, 40], [108, 78, 54]];
+    const BAYER = [0, 0.5, 0.75, 0.25];
+    function ramp(R, v, x, y) {
+        const p = Math.max(0, Math.min(1, v)) * (R.length - 1) + (BAYER[(y & 1) * 2 + (x & 1)] - 0.375) * 0.9;
+        return R[Math.max(0, Math.min(R.length - 1, Math.round(p)))];
+    }
+
+    /* A CONIFER, never the same one twice (seeded): a fir (tall, narrow), a
+       spruce (broad), or a sapling (small: always, when small is set).
+
+       Built as a real tree is: a trunk, and up it whorls of branches, each
+       whorl turned from the last, every branch drooping out from the trunk
+       and lifting a little at its tip, and along each branch a run of
+       needle sprays, flat ovals widest near the trunk. Seen as the maze is
+       seen (heights straight up the screen, the ground at half its depth),
+       each spray is drawn as a little lit volume: its light from the maze's
+       own side, darker the nearer the trunk and the more sprays hang over
+       it, with a grain in the needles. Snow lies on every spray with open
+       sky above it, heaped as a flattened cushion, deeper out at the tips
+       where the branches spread. Nearer sprays hide farther ones. Outlined
+       in near-black, as every edge in the maze is.
+
+       Returns its pixels (g), how far each pixel stands in front of the
+       trunk (zs, in ground rows, for the maze's depth test), its foot
+       (fx, fy) and its spread (R). */
+    function conifer(seed, small) {
+        const rnd = prng(seed);
+        const kind = small ? 0.84 + rnd() * 0.16 : rnd();
+        const fir = kind < 0.45, sapling = kind >= 0.84;
+        const Ht = Math.round(fir ? 52 + rnd() * 14 : sapling ? 28 + rnd() * 8 : 42 + rnd() * 12);
+        const Rmax = Ht * (fir ? 0.3 : sapling ? 0.36 : 0.4) * (0.92 + rnd() * 0.16);
+        const low = Ht * (sapling ? 0.1 : 0.12);
+        const snowy = 0.85 + rnd() * 0.35;
+        const L = (() => { const v = [-0.62, 0.62, 0.48], n = Math.hypot(...v); return v.map((c) => c / n); })();
+
+        const sprays = [];
+        const nW = Math.max(4, Math.round((Ht * 0.94 - low) / (fir ? 3.6 : 4.2)));
+        for (let w = 0; w < nW; w++) {
+            const f = w / (nW - 1);
+            const y = low + (Ht * 0.93 - low) * Math.pow(f, 0.95) + (rnd() - 0.5) * 1.1;
+            const R = Rmax * Math.pow(1 - f, fir ? 0.95 : 0.85) * (0.86 + rnd() * 0.26) + 1.4;
+            const nb = Math.max(5, Math.round(5 + R * 0.45));
+            const rot = rnd() * 6.283;
+            for (let b = 0; b < nb; b++) {
+                const phi = rot + b * 6.283 / nb + (rnd() - 0.5) * 0.55;
+                const len = R * (0.8 + rnd() * 0.3);
+                const droop = (0.22 + rnd() * 0.14) * (1 - f * 0.45);
+                const steps = Math.max(2, Math.round(len / 2));
+                for (let s = 1; s <= steps; s++) {
+                    const t = s / steps, r = len * (0.15 + 0.85 * t);
+                    const a = (1.5 + 1.5 * (1 - t) + R * 0.05) * (0.85 + rnd() * 0.3) * (sapling ? 0.85 : 1);
+                    sprays.push({ x: Math.cos(phi) * r, z: Math.sin(phi) * r, y: y - droop * len * t * t + 0.09 * len * Math.pow(t, 4), a, b: a * 0.5, t, f });
+                }
+            }
+        }
+        // The leader: the last hand's breadth of the top.
+        for (let i = 0; i < 4; i++) sprays.push({ x: 0, z: 0, y: Ht - 0.5 - i * 1.5, a: 0.9 + i * 0.45, b: 1.1, t: 1, f: 1 });
+
+        // Open sky over each spray: how much of the sprays above overhang it.
+        for (const p of sprays) {
+            let cover = 0;
+            for (const q of sprays) {
+                if (q === p || q.y < p.y + p.b * 0.6) continue;
+                const d = Math.hypot(q.x - p.x, q.z - p.z), reach = (p.a + q.a) * 0.62;
+                if (d < reach) cover += (1 - d / reach) * Math.min(1, (q.y - p.y) / 6 + 0.4);
+            }
+            p.cover = cover;
+        }
+        // The snow: a cushion on each spray the sky can reach.
+        const caps = [];
+        for (const p of sprays) {
+            const open = Math.max(0, 1 - p.cover * 0.9);
+            if (open < 0.22) continue;
+            const k = snowy * open * (0.55 + 0.45 * p.t);
+            if (k < 0.26) continue;
+            // Wide enough that the cushions along a branch run together into a shelf.
+            caps.push({ x: p.x * 1.04, z: p.z * 1.04, y: p.y + p.b * 0.5, a: p.a * (0.8 + 0.34 * k), b: p.b * (0.5 + 0.45 * k), snow: true, open });
+        }
+
+        const P = 3, W = Math.ceil(Rmax * 2.4) + P * 2, H = Math.ceil(Ht + Rmax * 0.6) + P * 2 + 4;
+        const ox = W / 2, oy = P + Ht + 1;                  // where the trunk meets the ground
+        const col = new Array(W * H).fill(null), zb = new Float32Array(W * H).fill(-1e9);
+        const put = (x, y, c, z) => { if (x < 0 || y < 0 || x >= W || y >= H) return; const i = y * W + x; if (z >= zb[i]) { zb[i] = z; col[i] = c; } };
+
+        // The trunk, a lit cylinder, up into the crown.
+        const rt = 0.9 + Ht * 0.022;
+        for (let y = Math.floor(oy - Ht * 0.45); y <= oy; y++) for (let x = Math.floor(ox - rt - 1); x <= ox + rt + 1; x++) {
+            const nx = (x + 0.5 - ox) / rt; if (Math.abs(nx) > 1) continue;
+            const nz = Math.sqrt(1 - nx * nx), lit = nx * L[0] + nz * L[2];
+            put(x, y, ramp(BARK_RAMP, 0.35 + lit * 0.55, x, y).concat([255, "t"]), nz * rt);
+        }
+        // The crown's heart: deep shade round the trunk, so a gap between sprays shows the inside of the tree, never through it.
+        for (let y = Math.floor(oy - Ht * 0.92); y <= oy - low; y++) {
+            const h = oy - y, rc = Rmax * 0.42 * Math.min(1, (Ht - h) / (Ht - low)) + 0.6;
+            for (let x = Math.floor(ox - rc); x <= ox + rc; x++) {
+                const nx = (x + 0.5 - ox) / rc; if (Math.abs(nx) > 1) continue;
+                put(x, y, ramp(NEEDLE_RAMP, 0.08 + (1 - nx) * 0.06, x, y).concat([255, "f"]), -rc);
+            }
+        }
+        // Sprays and snow, each a lit oval volume, with a ragged needle edge (snow keeps a soft one).
+        const splat = (p) => {
+            const ry = Math.sqrt(p.b * p.b + p.a * p.a * 0.25);
+            const cx = ox + p.x, cy = oy - p.y + p.z * 0.5;
+            for (let y = Math.floor(cy - ry - 1); y <= cy + ry + 1; y++) for (let x = Math.floor(cx - p.a - 1); x <= cx + p.a + 1; x++) {
+                const nx = (x + 0.5 - cx) / p.a, ny = (y + 0.5 - cy) / ry;
+                const grain = lattice(x + Math.round(cx * 7), y, seed) - 0.5;
+                const q = 1 - nx * nx - ny * ny - (p.snow ? 0.06 * grain : 0.32 * grain);
+                if (q <= 0) continue;
+                const nz = Math.sqrt(Math.max(0, 1 - nx * nx - ny * ny));
+                const lit = nx * L[0] - ny * L[1] + nz * L[2];
+                const z = p.z + nz * p.a;
+                if (p.snow) {
+                    const v = 0.42 + lit * 0.5 + (p.open - 0.6) * 0.25 + (ny < -0.2 ? 0.08 : 0);
+                    put(x, y, ramp(SNOW_RAMP, v, x, y).concat([255, "s"]), z + 0.6);
+                } else {
+                    // Darker inside the crown and under the sprays above; a grain of light and dark through the needles.
+                    const inner = 1 - Math.min(1, Math.hypot(p.x, p.z) / (Rmax * 0.9));
+                    const v = 0.5 + lit * 0.42 - inner * 0.3 - Math.min(0.35, p.cover * 0.12) + grain * 0.28;
+                    put(x, y, ramp(NEEDLE_RAMP, v, x, y).concat([255, "f"]), z);
+                }
+            }
+        };
+        // Farthest first is not needed (the depth test sorts it), but sprays before their snow is.
+        sprays.forEach(splat); caps.forEach(splat);
+
+        // Outlined in near-black, as every edge of the maze is.
+        const g = Grid(W, H), zs = new Float32Array(W * H);
+        for (let i = 0; i < W * H; i++) if (col[i]) { g.set(i % W, (i / W) | 0, col[i]); zs[i] = zb[i] * 0.5; }
+        const OUT = [4, 10, 14, 255, "o"];
+        for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+            if (col[y * W + x]) continue;
+            let near = -1e9;
+            for (const [a, b] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { const j = (y + b) * W + (x + a); if (x + a >= 0 && x + a < W && y + b >= 0 && y + b < H && col[j]) near = Math.max(near, zb[j]); }
+            if (near > -1e9) { g.set(x, y, OUT); zs[y * W + x] = near * 0.5; }
+        }
+        return { g, zs, fx: Math.round(ox), fy: oy, R: Rmax, height: Ht, kind: fir ? "fir" : sapling ? "sapling" : "spruce" };
+    }
+
     let bgTrees = null;
     async function backgroundTrees() {
         /* Not on an iPhone or iPad: Safari there ignores a fixed background
-           and scrolls the maze with the page, and trees pinned to the window
+           and scrolls the maze with the page, and snow pinned to the window
            would slide across its walls. */
         const ios = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
         if (ios) return;
-        let art;
+        // The maze's shape from the original tile (every palette's tile is a recolouring of it), its colour from the one on show.
+        const shown = (/url\(["']?([^"')]*MazeBG[^"')]*)["']?\)/.exec(getComputedStyle(document.body).backgroundImage) || [])[1];
+        let maze, tint = [6, 20, 40];
         try {
-            const [maze, t3, t4a, t4b] = await Promise.all(["/assets/img/MazeBG.png", "/assets/furni/s_tree3_0_0_a.png",
-                "/assets/furni/s_tree4_0_0_a.png", "/assets/furni/s_tree4_1_0_b.png"].map(loadImg));
-            art = { maze: pixels(maze), t3: pixels(t3), t4a: pixels(t4a), t4b: pixels(t4b) };
-        } catch (e) { return; }                   // no art, no trees: nothing else depends on them
+            maze = pixels(await loadImg("/assets/img/MazeBG.png"));
+            const t = pixels(await loadImg(shown || "/assets/img/MazeBG.png"));
+            let r = 0, g = 0, b = 0;
+            for (let i = 0; i < t.data.length; i += 4) { r += t.data[i]; g += t.data[i + 1]; b += t.data[i + 2]; }
+            const k = t.data.length / 4; tint = [r / k, g / k, b / k];
+        } catch (e) { if (!maze) return; }          // no maze, no snow: nothing else depends on it
         if (!on) return;
-        // Floor or wall, for every pixel of the source tile.
-        const floor = new Uint8Array(TILE_SRC * TILE_SRC);
-        for (let i = 0; i < floor.length; i++) {
-            const d = art.maze.data;
-            floor[i] = FLOOR.has(d[i * 4] + "," + d[i * 4 + 1] + "," + d[i * 4 + 2]) ? 1 : 0;
-        }
-        const isFloor = (x, y) => {
-            const u = Math.floor((((x % TILE_PX) + TILE_PX) % TILE_PX) / (TILE_PX / TILE_SRC));
-            const v = Math.floor((((y % TILE_PX) + TILE_PX) % TILE_PX) / (TILE_PX / TILE_SRC));
-            return floor[Math.min(TILE_SRC - 1, v) * TILE_SRC + Math.min(TILE_SRC - 1, u)] === 1;
-        };
-        // Where the wall at (x, y) stands on the floor: the first floor pixel below it.
-        const wallFoot = (x, y) => { for (let k = 1; k < 90; k++) if (isFloor(x, y + k)) return y + k; return y + 90; };
 
-        // The two trees as sprites: their pixels, the lights layer, and where the pot touches the floor.
-        function sprite(kind) {
-            const W = kind === 3 ? 30 : 38, H = 68;
-            const body = new ImageData(W, H), glow = new ImageData(W, H);
-            const blit = (src, ox, oy, into) => {
-                for (let y = 0; y < src.height; y++) for (let x = 0; x < src.width; x++) {
-                    const s = (y * src.width + x) * 4, X = x + ox, Y = y + oy;
-                    if (X < 0 || Y < 0 || X >= W || Y >= H || !src.data[s + 3]) continue;
-                    const d = (Y * W + X) * 4;
-                    for (let c = 0; c < 4; c++) into.data[d + c] = src.data[s + c];
-                }
-            };
-            if (kind === 3) blit(art.t3, 0, 0, body);
-            else { blit(art.t4a, 3, 0, body); blit(art.t4b, 0, 6, glow); }
-            /* At the MAZE'S scale, not the client's. The maze's corridors are
-               about seven tenths of a small-scale Habbo tile, and it is shown
-               a tenth enlarged and smoothed; at full size a tree was wider
-               than the corridor it stood in and nearly three walls tall. So
-               it is drawn at TREE_SCALE, smoothly, the way the maze itself is
-               drawn — about two walls tall, and as soft as its surroundings. */
-            const sw = Math.round(W * TREE_SCALE), sh = Math.round(H * TREE_SCALE);
-            const scaled = (img) => {
-                const a = document.createElement("canvas"); a.width = W; a.height = H; a.getContext("2d").putImageData(img, 0, 0);
-                const b = document.createElement("canvas"); b.width = sw; b.height = sh;
-                const x = b.getContext("2d"); x.imageSmoothingEnabled = true; x.imageSmoothingQuality = "high";
-                x.drawImage(a, 0, 0, sw, sh);
-                return x.getImageData(0, 0, sw, sh);
-            };
-            const sBody = scaled(body), sGlow = scaled(glow);
-            let foot = 0, sum = 0, n = 0;
-            for (let y = sh - 1; y >= 0 && !n; y--) for (let x = 0; x < sw; x++) if (sBody.data[(y * sw + x) * 4 + 3] > 110) { foot = y; sum += x; n++; }
-            return { W: sw, H: sh, body: sBody, glow: sGlow, lit: kind === 4, fx: Math.round(sum / Math.max(1, n)), fy: foot };
+        // What each tile pixel is, how much light a floor pixel gets, and how far down its wall meets the floor.
+        const N = TILE_SRC, kindT = new Uint8Array(N * N), lightT = new Float32Array(N * N), footT = new Uint8Array(N * N);
+        for (let i = 0; i < N * N; i++) {
+            const d = maze.data, key = d[i * 4] + "," + d[i * 4 + 1] + "," + d[i * 4 + 2];
+            kindT[i] = TILE_KIND[key] || T_LINE;
+            lightT[i] = FLOOR_LIGHT[key] != null ? FLOOR_LIGHT[key] : 0.5;
         }
-        const sprites = { 3: sprite(3), 4: sprite(4) };
+        // The floor's light, softened over its dither.
+        const soft = new Float32Array(N * N);
+        for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
+            let s = 0, n = 0;
+            for (let b = -1; b <= 1; b++) for (let a = -1; a <= 1; a++) { const j = ((y + b + N) % N) * N + ((x + a + N) % N); if (kindT[j] === T_FLOOR) { s += lightT[j]; n++; } }
+            soft[y * N + x] = n ? s / n : 0.5;
+        }
+        for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
+            let k = 0;
+            if (kindT[y * N + x] !== T_FLOOR) { k = 1; while (k < 90 && kindT[((y + k) % N) * N + x] !== T_FLOOR) k++; }
+            footT[y * N + x] = k;
+        }
+        /* Which way each wall top runs: along one of the maze's two diagonals,
+           two across for one down (1) or two across for one up (-1),
+           whichever its top carries on further along. For the thaw's breaks,
+           which follow the strip they are in. */
+        const dirT = new Int8Array(N * N);
+        const topT = (x, y) => kindT[(((y % N) + N) % N) * N + (((x % N) + N) % N)] === T_TOP;
+        for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
+            if (kindT[y * N + x] !== T_TOP) continue;
+            const run = (dx, dy) => { let k = 0; while (k < 40 && topT(x + dx * (k + 1), y + dy * (k + 1))) k++; return k; };
+            dirT[y * N + x] = run(2, 1) + run(-2, -1) >= run(2, -1) + run(-2, 1) ? 1 : -1;
+        }
+        const tileAt = (u, v) => (((v % N) + N) % N) * N + (((u % N) + N) % N);
+        const kindAt = (u, v) => kindT[tileAt(u, v)];
+        const isFloor = (u, v) => kindAt(Math.round(u), Math.round(v)) === T_FLOOR;
+        // How near the viewer the maze is at (u, v): the ground row it stands on.
+        const ground = (u, v) => v + footT[tileAt(u, v)];
 
         const cv = document.createElement("canvas");
         cv.className = "xm-bgtrees"; cv.setAttribute("aria-hidden", "true");
-        const lights = document.createElement("canvas");
-        lights.className = "xm-bgtrees xm-bgtrees-lights"; lights.setAttribute("aria-hidden", "true");
-        document.body.prepend(lights); document.body.prepend(cv);
-        added.add(cv); added.add(lights);
+        document.body.prepend(cv);
+        added.add(cv);
 
         /* Out from under the page's furniture. By the boxes things are drawn
            in, not by asking what is at a point: the archive's gate keeps the
@@ -1351,115 +1559,248 @@
             return out;
         }
         const clearOf = (boxes, x0, y0, x1, y1) => !boxes.some((r) => x0 < r.right + 6 && x1 > r.left - 6 && y0 < r.bottom + 6 && y1 > r.top - 6);
-        /* How much clear floor there is around (x, y) along the maze's own
+        /* How much clear floor there is around (u, v) along the maze's own
            diagonals (two across for one down), in the tightest of the four
            directions. In a corridor that is the distance to the nearer side
            wall, so the best spot is the middle of the corridor. */
         const DIRS = [[2, 1], [-2, 1], [2, -1], [-2, -1]];
-        function clearance(x, y) {
+        function clearance(u, v) {
             let least = 99;
-            for (const [dx, dy] of DIRS) {
+            for (const [du, dv] of DIRS) {
                 let k = 0;
-                while (k < 24 && isFloor(x + dx * (k + 1) / 2, y + dy * (k + 1) / 2)) k++;
+                while (k < 24 && isFloor(u + du * (k + 1) / 2, v + dv * (k + 1) / 2)) k++;
                 least = Math.min(least, k);
             }
             return least;
         }
-        // The middle of the corridor nearest (x, y), or null if there is none worth standing in.
-        function footing(x, y) {
+        // The middle of the corridor nearest (u, v), or null if there is none with `room` to stand in.
+        function footing(u, v, room, reach) {
             let best = null, bestC = 0;
-            for (let dy = -14; dy <= 14; dy++) for (let dx = -24; dx <= 24; dx += 2) {
-                const X = Math.round(x + dx), Y = Math.round(y + dy);
-                if (!isFloor(X, Y)) continue;
-                const c = clearance(X, Y) - Math.hypot(dx, dy * 2) * 0.02;
-                if (c > bestC) { bestC = c; best = [X, Y]; }
+            for (let dv = -reach; dv <= reach; dv++) for (let du = -reach * 1.7; du <= reach * 1.7; du += 2) {
+                const U = Math.round(u + du), V = Math.round(v + dv);
+                if (!isFloor(U, V)) continue;
+                const c = clearance(U, V) - Math.hypot(du, dv * 2) * 0.02;
+                if (c > bestC) { bestC = c; best = [U, V]; }
             }
-            return bestC >= TREE_ROOM ? best : null;
+            return bestC >= room ? best : null;
         }
 
         function draw() {
-            const W = innerWidth, H = innerHeight;
-            cv.width = lights.width = W; cv.height = lights.height = H;
-            const ctx = cv.getContext("2d"), lctx = lights.getContext("2d");
-            const out = ctx.createImageData(W, H), lout = lctx.createImageData(W, H);
-            const rnd = prng(hash("trees:" + W + "x" + H));
-            const want = Math.max(4, Math.min(16, Math.round(W * H / 120000)));
-            const placed = [], boxes = furniture();
-            for (let tries = 0; tries < want * 30 && placed.length < want; tries++) {
-                const x = 20 + rnd() * (W - 40), y = 90 + rnd() * (H - 100);
-                const spot = footing(x, y);
+            const W = innerWidth, H = innerHeight, dpr = Math.min(2, window.devicePixelRatio || 1);
+            // The picture, in tile pixels: one per pixel of the tile as the page lays it, from the window's corner.
+            const SW = Math.ceil(W / K_TILE) + 2, SH = Math.ceil(H / K_TILE) + 2;
+            const out = new ImageData(SW, SH), zb = new Float32Array(SW * SH).fill(-1e9);
+            const rnd = prng(hash("trees:" + W + "x" + H)), sN = hash("snow:" + W + "x" + H);
+            // Graded into the maze's night: some of its own colour, then the page's shade, which runs down the screen.
+            const night = new Float32Array(SH);
+            for (let v = 0; v < SH; v++) night[v] = 1 - shadeAt(Math.min(1, v * K_TILE / H)) * 0.95;
+            function paint(u, v, c, z, k, a) {
+                if (u < 0 || v < 0 || u >= SW || v >= SH) return false;
+                // Behind the maze's own nearer walls: hidden. Behind our nearer snow or tree: hidden.
+                if (z < ground(u, v) - 0.5) return false;
+                const i = v * SW + u;
+                if (z < zb[i]) return false;
+                zb[i] = z;
+                const f = (NIGHT[k] || 0.8) * night[v], d = i * 4;
+                out.data[d] = (c[0] + (tint[0] - c[0]) * 0.08) * f;
+                out.data[d + 1] = (c[1] + (tint[1] - c[1]) * 0.08) * f;
+                out.data[d + 2] = (c[2] + (tint[2] - c[2]) * 0.08) * f;
+                out.data[d + 3] = a == null ? 255 : a;
+                return true;
+            }
+
+            // ---- where the trees stand (chosen first: the snow rises round their feet) ----
+            const boxes = furniture();
+            const want = Math.max(5, Math.min(22, Math.round(W * H / 90000)));
+            const trees = [];
+            for (let tries = 0; tries < want * 30 && trees.length < want; tries++) {
+                const spot = footing(20 / K_TILE + rnd() * (SW - 40 / K_TILE), 90 / K_TILE + rnd() * (SH - 100 / K_TILE), TREE_ROOM, 12);
                 if (!spot) continue;
-                if (placed.some((p) => Math.hypot(p[0] - spot[0], (p[1] - spot[1]) * 1.6) < 100)) continue;
-                if (!clearOf(boxes, spot[0] - 18, spot[1] - 58, spot[0] + 18, spot[1] + 6)) continue;
-                placed.push(spot);
-            }
-            // Back to front, so a nearer tree covers a farther one.
-            placed.sort((a, b) => a[1] - b[1]);
-            const stats = [];
-            placed.forEach(([sx, sy], i) => {
-                const sp = sprites[(hash("k" + i + sx) % 2) ? 4 : 3];
-                const ox = sx - sp.fx, oy = sy - sp.fy;
-                const st = { x: sx, y: sy, hidden: 0 }; stats.push(st);
-                st.lit = sp.lit;
-                // The shadow first, on the floor only: a flattened oval, as the maze's floor is.
-                for (let dy = -4; dy <= 4; dy++) for (let dx = -9; dx <= 9; dx++) {
-                    const e = (dx * dx) / 72 + (dy * dy) / 13;
-                    if (e > 1) continue;
-                    const X = sx + dx, Y = sy + dy;
-                    if (X < 0 || Y < 0 || X >= W || Y >= H || !isFloor(X, Y)) continue;
-                    const d = (Y * W + X) * 4;
-                    out.data[d + 3] = Math.max(out.data[d + 3], Math.round(110 * (1 - e)));
+                const [su, sv] = spot, X = su * K_TILE, Y = sv * K_TILE;
+                if (trees.some((p) => Math.hypot(p.u - su, (p.v - sv) * 1.6) < 92)) continue;
+                if (!clearOf(boxes, X - 26, Y - 80, X + 26, Y + 8)) continue;
+                trees.push({ u: su, v: sv, seed: hash("tree:" + su + "," + sv) });
+                if (rnd() < 0.3) {
+                    const side = rnd() < 0.5 ? -1 : 1, near = footing(su + side * (15 + rnd() * 8), sv + 5 + rnd() * 5, 4, 6);
+                    if (near && Math.hypot(near[0] - su, near[1] - sv) > 11) trees.push({ u: near[0], v: near[1], seed: hash("sap:" + near[0] + "," + near[1]), small: true });
                 }
-                const put = (src, into, keep, grade) => {
-                    for (let y = 0; y < sp.H; y++) for (let x = 0; x < sp.W; x++) {
-                        const s = (y * sp.W + x) * 4, a = src.data[s + 3];
-                        if (!a) continue;
-                        const X = ox + x, Y = oy + y;
-                        if (X < 0 || Y < 0 || X >= W || Y >= H) continue;
-                        // Hidden where a wall nearer than the tree's foot covers it.
-                        if (!isFloor(X, Y) && wallFoot(X, Y) > sy + 1) { st.hidden++; continue; }
-                        const f = 1 - shadeAt(Y / H) * keep;
-                        const d = (Y * W + X) * 4;
-                        let r = src.data[s], g = src.data[s + 1], b = src.data[s + 2];
-                        if (grade) {
-                            // A little of the maze's ambient in it, and a little less colour: lit by the same dim light.
-                            r += (AMBIENT[0] - r) * 0.22; g += (AMBIENT[1] - g) * 0.22; b += (AMBIENT[2] - b) * 0.22;
-                            const l = r * 0.3 + g * 0.59 + b * 0.11;
-                            r += (l - r) * 0.18; g += (l - g) * 0.18; b += (l - b) * 0.18;
-                        }
-                        into.data[d] = r * f; into.data[d + 1] = g * f; into.data[d + 2] = b * f;
-                        into.data[d + 3] = Math.max(into.data[d + 3], a);
-                    }
-                };
-                put(sp.body, out, 0.95, true);
-                put(sp.glow, lout, 0.45, false);
-            });
-            ctx.putImageData(out, 0, 0);
-            lctx.putImageData(lout, 0, 0);
-            /* The lit tree lights the maze round it: warm light on the walls
-               near it and a pool on the floor at its foot, added like the
-               lights themselves, and breathing with them (it is on the same
-               layer). */
-            lctx.globalCompositeOperation = "lighter";
-            for (const t of stats) {
-                if (!t.lit) continue;
-                const k = 1 - shadeAt(t.y / H) * 0.5;
-                const cy = t.y - 22;
-                const g = lctx.createRadialGradient(t.x, cy, 0, t.x, cy, 48);
-                g.addColorStop(0, "rgba(255,186,96," + (0.16 * k).toFixed(3) + ")");
-                g.addColorStop(0.5, "rgba(255,160,70," + (0.06 * k).toFixed(3) + ")");
-                g.addColorStop(1, "rgba(255,150,60,0)");
-                lctx.fillStyle = g; lctx.fillRect(t.x - 48, cy - 48, 96, 96);
-                lctx.save();
-                lctx.translate(t.x, t.y); lctx.scale(1, 0.5);
-                const p = lctx.createRadialGradient(0, 0, 0, 0, 0, 30);
-                p.addColorStop(0, "rgba(255,180,90," + (0.14 * k).toFixed(3) + ")");
-                p.addColorStop(1, "rgba(255,160,70,0)");
-                lctx.fillStyle = p; lctx.fillRect(-30, -30, 60, 60);
-                lctx.restore();
             }
-            lctx.globalCompositeOperation = "source-over";
-            if (bgTrees) bgTrees.stats = stats;
+            trees.forEach((t) => { t.sp = conifer(t.seed, t.small); });
+            // The little rise of snow round each trunk, as extra depth on the floor's blanket.
+            const rise = (u, v) => {
+                let r = 0;
+                for (const t of trees) {
+                    const du = (u - t.u) / (t.sp.R * 0.55), dv = (v - t.v) * 2 / (t.sp.R * 0.55);
+                    const e = du * du + dv * dv;
+                    if (e < 4) r += (1.4 + t.sp.R * 0.07) * Math.exp(-e * 1.4);
+                }
+                return r;
+            };
+
+            /* THAWING, EVENLY (the owner's, of the full cover: "felt it covered
+               too much, have it melting away in places"; and of melting it in
+               broad patches across the window: "looks horrific, it looks broken
+               as if the background is just not loading properly"). So the thaw
+               follows the maze, the same everywhere, never by region: the
+               corridors' floors have thawed, all but the drifts banked against
+               their walls and the snow round the trees' feet; the walls' tops
+               keep their snow (or, with BREAKS, are broken here and there
+               where it has begun to go). Every edge of what is left is a proper snow edge. */
+            /* THAW: false is the full cover, every floor and every wall top
+               snowed (the owner's, 26 Oct 2026, with the classic maze back
+               under it: "with the normal snow (not thawing)"); true is the
+               thaw below. Kept, so either is one word away. */
+            const THAW = false;
+            const BREAKS = THAW ? 0.2 : 0;  // how much of the walls' tops has thawed through: 0 none; 0.2 is breaks here and there along every strip
+            /* WHERE A WALL'S SNOW HAS MELTED THROUGH (the owner's, of round
+               holes scattered over the tops: "closer to what I want, but it
+               needs to look more natural and better quality"). A break follows
+               the strip it is in: its noise runs along the strip's own diagonal
+               and is stretched across it, so a break cuts the whole strip
+               through, as snow on a ridge melts through, rather than a hole
+               punched in the middle of it. And the strip's sides go first (they
+               are the warm edges), by up to EDGE at the very side, so the snow
+               either side of a break ends round, and a break narrows into the
+               middle of the strip as it closes. The same everywhere: never by
+               region. */
+            const EDGE = 0.13, ALONG = 46, ACROSS = 44;
+            const goneMap = new Uint8Array(SW * (SH + 14));
+            if (BREAKS > 0) {
+                const topish0 = (u, v) => { const k = kindAt(u, v); return k === T_TOP || (k === T_LINE && (kindAt(u - 1, v) === T_TOP || kindAt(u + 1, v) === T_TOP)); };
+                for (let u = 0; u < SW; u++) for (let v = -6; v < SH + 7; v++) {
+                    if (!topish0(u, v) || topish0(u, v - 1)) continue;
+                    let b = v; while (topish0(u, b + 1)) b++;
+                    for (let src = v; src <= b; src++) {
+                        if (src < -6 || src >= SH + 8) continue;
+                        const d = dirT[tileAt(u, src)] || dirT[tileAt(u - 1, src)] || dirT[tileAt(u + 1, src)] || 1;
+                        // Along the strip and across it, in its own diagonal's terms.
+                        const s = d > 0 ? 2 * u + src : 2 * u - src, n = d > 0 ? u - 2 * src : u + 2 * src;
+                        const g = vnoise(s / ALONG, n / ACROSS, sN + 33 + (d > 0 ? 0 : 977));
+                        const side = Math.min(src - v, b - src);
+                        if (g < BREAKS + EDGE * Math.max(0, 1 - side / 2.5)) goneMap[(src + 6) * SW + u] = 1;
+                    }
+                    v = b;
+                }
+            }
+            const topGone = (u, v) => u >= 0 && u < SW && v >= -6 && v < SH + 8 && goneMap[(v + 6) * SW + u] === 1;
+
+            // ---- the snow on the floors: column by column, each run of floor a blanket banked against the wall behind ----
+            for (let u = 0; u < SW; u++) {
+                for (let v = 0; v < SH; v++) {
+                    if (kindAt(u, v) !== T_FLOOR || (v > 0 && kindAt(u, v - 1) === T_FLOOR)) continue;
+                    let b = v; while (b + 1 < SH + 40 && kindAt(u, b + 1) === T_FLOOR) b++;
+                    const a = v;
+                    // How tall the wall behind is here: a drift climbs a quarter of the way up it at most.
+                    let wall = 0; while (wall < 40 && kindAt(u, a - 1 - wall) !== T_FLOOR && kindAt(u, a - 1 - wall) !== T_TOP) wall++;
+                    const bank = (0.4 + 2.6 * Math.pow(vnoise(u / 17, a / 9, sN + 3), 1.5)) * (0.55 + 0.45 * vnoise(u / 53, a / 27, sN + 4));
+                    let top = Infinity;
+                    // How far out from the wall the drift still lies, before the floor has thawed bare.
+                    const reach = 0.8 + bank * 1.5;
+                    const gone = (y) => THAW && y - a > reach && rise(u, y) < 0.25;
+                    const depth = (y) => {
+                        const base = 0.7 + 0.7 * vnoise(u / 31, y / 15, sN + 1) + rise(u, y);
+                        return Math.min(base + bank * Math.exp(-(y - a) / 2.2), Math.max(1, wall * 0.25 + 0.5) + rise(u, y));
+                    };
+                    // From the back of the run to the front, so the nearer snow is laid last (and wins the depth test).
+                    for (let y = a; y <= b; y++) {
+                        if (gone(y)) continue;
+                        // Where the snow stops, it is thinner: a melting edge sinks, it does not stand as a wall.
+                        const edge = gone(y + 1);
+                        const f = edge ? Math.min(1, depth(y)) : depth(y), s = Math.round(y - f);
+                        const lightV = soft[tileAt(u, y)];
+                        for (let r = s; r <= y; r++) {
+                            if (r < 0 || r >= SH || y >= SH + 2) continue;
+                            // Rising into a drift (r above the floor's back edge) the snow faces the viewer and is a little brighter.
+                            const crest = r === s && r < a, onWall = r < a;
+                            const tex = vnoise(u / 5, r / 2.5, sN + 7) - 0.5;
+                            const v2 = 0.12 + lightV * 0.46 + (onWall ? 0.08 : 0) + (crest ? 0.16 : 0) + tex * 0.1 - (edge ? 0.08 : 0);
+                            paint(u, r, ramp(SNOW_RAMP, v2, u, r), Math.min(y, SH + 40), "g");
+                        }
+                        top = Math.min(top, s);
+                    }
+                    // A line of shade on the wall where the drift meets it (on the wall's face only, never on an edge line).
+                    const wk = kindAt(u, top - 1);
+                    if (top < a && top - 1 >= 0 && (wk === T_LEFT || wk === T_RIGHT)) paint(u, top - 1, [0, 0, 0], a - 0.4, "o", 70);
+                    v = b;
+                }
+            }
+
+            // ---- the snow on the walls' tops: a slab on each run of top, its crest, its side, its lip ----
+            // A top, and the edge line beside one: the slab rounds over the end of a wall as well as its front.
+            const topish = (u, v) => { const k = kindAt(u, v); return k === T_TOP || (k === T_LINE && (kindAt(u - 1, v) === T_TOP || kindAt(u + 1, v) === T_TOP)); };
+            for (let u = 0; u < SW; u++) {
+                for (let v = -6; v < SH + 6; v++) {
+                    if (!topish(u, v) || topish(u, v - 1)) continue;
+                    let b = v; while (topish(u, b + 1)) b++;
+                    const a = v, z = ground(u, b);
+                    const full = Math.max(1, Math.min(3, Math.round(1.1 + 1.6 * vnoise(u / 23, a / 11, sN + 11) - (vnoise(u / 7, a / 4, sN + 12) > 0.82 ? 1 : 0))));
+                    // Which face the top's front edge stands over: the slab's side is lit or shaded as that face is.
+                    let face = T_LEFT; for (let k = 1; k < 4; k++) { const c = kindAt(u, b + k); if (c === T_LEFT || c === T_RIGHT) { face = c; break; } }
+                    const lit = face === T_LEFT;
+                    /* Pixel by pixel along the run, back to front: each pixel of top
+                       that still has snow lays its surface th rows up; where the
+                       snow stops (the wall's edge, or melted ground in front) its
+                       slab's side shows below its crest. Near a melted edge the
+                       slab thins to a pixel, as a melting edge does. */
+                    let prev = null;
+                    for (let src = a; src <= b; src++) {
+                        if (topGone(u, src)) { prev = null; continue; }
+                        const nearGone = topGone(u, src - 2) || topGone(u, src + 2) || topGone(u - 2, src) || topGone(u + 2, src);
+                        const th = nearGone ? 1 : full;
+                        const front = src === b || topGone(u, src + 1), back = src === a || topGone(u, src - 1);
+                        const side = topGone(u - 1, src) || topGone(u + 1, src);
+                        const r0 = src - th;
+                        let val = front ? 0.98 : back ? 0.7 : lattice(u, r0, sN + 16) > 0.994 ? 1 : 0.8 + (vnoise(u / 6, r0 / 3, sN + 13) - 0.5) * 0.12;
+                        if (side && !front) val -= 0.14;            // the patch's end, turning away
+                        paint(u, r0, ramp(SNOW_RAMP, val, u, r0), z, "g");
+                        // Where the slab thins towards the front, no gap between its surface rows.
+                        if (prev != null) for (let r = prev + 1; r < r0; r++) paint(u, r, ramp(SNOW_RAMP, 0.8, u, r), z, "g");
+                        prev = r0;
+                        if (front) for (let r = r0 + 1; r <= src; r++) {
+                            // The slab's own side: over the wall's face, lit or shaded as the face is; over bare top, as the lit face.
+                            const sv = (src === b ? (lit ? 0.6 : 0.36) : 0.5) - (r - r0 - 1) * 0.07;
+                            paint(u, r, ramp(SNOW_RAMP, sv, u, r), z, "g");
+                        }
+                    }
+                    // The lip: the slab's edge rolling over the wall's edge onto its face, wandering slowly, where the edge still has snow.
+                    if (kindAt(u, b + 1) !== T_FLOOR && !topGone(u, b)) {
+                        const lip = topGone(u - 1, b) || topGone(u + 1, b) ? 1 : 1 + Math.round(vnoise(u / 7, b / 11, sN + 14) * 1.15 - 0.15);
+                        for (let k = 1; k <= lip; k++) paint(u, b + k, ramp(SNOW_RAMP, (lit ? 0.46 : 0.26) - k * 0.06, u, b + k), z, "g");
+                    }
+                    v = b;
+                }
+            }
+
+            // ---- the trees, back to front, and their shadows across the snow ----
+            trees.sort((p, q) => p.v - q.v);
+            const stats = [];
+            for (const t of trees) {
+                const sp = t.sp, st = { x: Math.round(t.u * K_TILE), y: Math.round(t.v * K_TILE), hidden: 0, kind: sp.kind, height: sp.height };
+                stats.push(st);
+                // The shadow first (the snow in front of the trunk then covers its foot by the depth test alone): long and soft, to the right (the light is from the left), on the snow only.
+                const sr = sp.R * 1.1;
+                for (let dv = -Math.ceil(sr * 0.4); dv <= Math.ceil(sr * 0.4); dv++) for (let du = -2; du <= Math.ceil(sr * 2); du++) {
+                    const U = t.u + du, V = t.v + dv, e = Math.pow((du - sr * 0.8) / (sr * 1.05), 2) + Math.pow(dv / (sr * 0.36), 2);
+                    if (e > 1 || U < 0 || V < 0 || U >= SW || V >= SH || kindAt(U, V) !== T_FLOOR) continue;
+                    const d = (V * SW + U) * 4, k = 1 - 0.32 * smooth(1 - e);
+                    out.data[d] *= k; out.data[d + 1] *= k; out.data[d + 2] *= k * 0.96 + 0.04;
+                }
+                const ou = t.u - sp.fx, ov = t.v - sp.fy;
+                for (let y = 0; y < sp.g.h; y++) for (let x = 0; x < sp.g.w; x++) {
+                    const c = sp.g.get(x, y); if (!c) continue;
+                    if (!paint(ou + x, ov + y, c, t.v + sp.zs[y * sp.g.w + x], c[4])) st.hidden++;
+                }
+            }
+
+            // Shown as the maze is shown: enlarged a tenth, smoothed.
+            const src = document.createElement("canvas"); src.width = SW; src.height = SH;
+            src.getContext("2d").putImageData(out, 0, 0);
+            cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr);
+            cv.style.width = W + "px"; cv.style.height = H + "px";
+            const ctx = cv.getContext("2d");
+            ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = "low";
+            ctx.drawImage(src, 0, 0, SW * K_TILE * dpr, SH * K_TILE * dpr);
+            bgTrees.stats = stats;
         }
         bgTrees = { stats: [] };
         draw();
@@ -1472,7 +1813,8 @@
     function decorateAll() {
         if (!on) return;
         // Rows a re-render threw away: forget them (their pieces went with them).
-        for (const [el, rec] of hosts) if (!el.isConnected) { rec.pieces.forEach((p) => added.delete(p)); hosts.delete(el); }
+        // And stop watching them (26 Oct 2026): the observer held every thrown-away row, snow and all, for the life of the page.
+        for (const [el, rec] of hosts) if (!el.isConnected) { rec.pieces.forEach((p) => added.delete(p)); hosts.delete(el); if (ro) ro.unobserve(el); }
         for (const [el, st] of standIns) if (!el.isConnected) { st.stop(); st.box.remove(); added.delete(st.box); standIns.delete(el); }
         decorateHeader();
         decorateWindows();
@@ -1513,17 +1855,35 @@
         if (on) return;
         on = true;
         if (embedded()) return;
+        /* Every host that changed size in the 120ms is redrawn (26 Oct 2026):
+           each callback used to replace the last one's list, so a row that
+           resized a moment before a window did kept snow drawn for its old
+           width. */
         ro = new ResizeObserver((entries) => {
-            clearTimeout(ro.t);
-            ro.t = setTimeout(() => entries.forEach((e) => redraw(e.target)), 120);
+            entries.forEach((e) => resized.add(e.target));
+            clearTimeout(roTimer);
+            roTimer = setTimeout(() => { const els = [...resized]; resized.clear(); els.forEach((el) => redraw(el)); }, 120);
         });
         // New rows and opened windows, decorated as they arrive (batched to a frame).
         let pending = 0;
-        mo = new MutationObserver(() => {
-            if (pending) return;
+        /* Not for our own nodes, nor for a style change that only MOVES an
+           element (26 Oct 2026). Dragging the console, the Fallin' Furni window
+           or Pura Panic's sets left and top on every pointermove, and its
+           stand-in is copied after it (standIn), and each of those re-ran the
+           whole decoration pass mid-drag. A stand-in follows its window by
+           itself; a change of size is the ResizeObserver's. Anything else in
+           the style (display, visibility, a width) still counts. */
+        const ours = (n) => n.classList && (n.classList.contains("xm-piece") || n.classList.contains("xm-standin"));
+        const MOVE_ONLY = /(?:^|;)\s*(?:left|top|right|bottom|transform|translate|z-index|cursor|will-change)\s*:[^;]*/gi;
+        const unmoved = (s) => String(s || "").replace(MOVE_ONLY, "").replace(/[\s;]+/g, "");
+        const movedOnly = (r) => r.attributeName === "style" && unmoved(r.oldValue) === unmoved(r.target.getAttribute("style"));
+        mo = new MutationObserver((records) => {
+            if (pending || records.every((r) => r.type === "childList"
+                ? [...r.addedNodes, ...r.removedNodes].every(ours)
+                : ours(r.target) || movedOnly(r))) return;
             pending = requestAnimationFrame(() => { pending = 0; decorateAll(); });
         });
-        mo.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ["class", "style", "hidden"] });
+        mo.observe(document.body, { childList: true, subtree: true, attributes: true, attributeOldValue: true, attributeFilter: ["class", "style", "hidden"] });
         decorateAll();
         snowfall();
         // After the windows are up, so it can tell where they are.
@@ -1543,6 +1903,7 @@
         document.querySelectorAll(".xm-snowed").forEach((p) => p.classList.remove("xm-snowed"));
         if (mo) mo.disconnect(); if (ro) ro.disconnect();
         mo = ro = null;
+        clearTimeout(roTimer); resized.clear();
         cancelAnimationFrame(rafId);
         if (snow) snow.stop(); snow = null;
         if (bgTrees) bgTrees.stop(); bgTrees = null;
@@ -1562,9 +1923,9 @@
         cost: () => ({ snow: +cost.snow.toFixed(2), lights: +cost.lights.toFixed(2), holes: cost.holes }),
         // The footer drift as it will be after this many seconds of gentle snow (for trying it out).
         grow: (secs) => { fallen += secs * FOOTER_RATE; settle(0); return footerDepth; },
-        // Where the background trees stood, and how much of each a nearer wall hid.
+        // Where the background trees stood (and which kind each is), and how much of each a nearer wall hid.
         trees: () => (bgTrees ? bgTrees.stats : []),
         // The art, for tools and previews.
-        art: { snowCap, icicles, paneSnow, santaHat, festoon, holly, boxTop }
+        art: { snowCap, icicles, paneSnow, santaHat, festoon, holly, boxTop, conifer }
     };
 })();
