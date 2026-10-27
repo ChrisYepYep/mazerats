@@ -180,6 +180,11 @@ document.addEventListener("DOMContentLoaded", () => {
     // Its second row: the palettes saved in Recolour (28 Sept 2026).
     const paletteToggleRow = document.getElementById("palette-toggle-saved");
     const paletteToggleEmpty = document.getElementById("palette-toggle-empty");
+    // The spotlight's order (27 Oct 2026): see renderSpotlightOrder.
+    const spotOrderEl = document.getElementById("spotlight-order");
+    const spotOrderList = document.getElementById("spotlight-order-list");
+    const spotOrderSave = document.getElementById("spotlight-order-save");
+    const spotOrderStatus = document.getElementById("spotlight-order-status");
 
     /* ---- the Nav and Control tabs.
 
@@ -774,6 +779,7 @@ document.addEventListener("DOMContentLoaded", () => {
         if (puraCardEl) puraCardEl.style.display = "none";
         if (ratCardEl) ratCardEl.style.display = "none";
         if (themeToggleEl) themeToggleEl.style.display = "none";
+        if (spotOrderEl) spotOrderEl.style.display = "none";
         /* Passwords out of every field, and the run log out of its tables
            (ffClear) — the next person to sign in on this tab may not be
            this one. The open edits are deliberately KEPT: the point of
@@ -1093,6 +1099,8 @@ document.addEventListener("DOMContentLoaded", () => {
         if (puraCardEl) puraCardEl.style.display = "none";
         if (ratCardEl) ratCardEl.style.display = "none";
         if (themeToggleEl) themeToggleEl.style.display = "none";
+        if (spotOrderEl) spotOrderEl.style.display = "none";
+        spotOrderDraft = null;
         // The role's classes too — see lockOut for what they did to the
         // sign-in box of a view-only account.
         document.body.classList.remove("is-viewer", "is-albus");
@@ -2445,6 +2453,7 @@ document.addEventListener("DOMContentLoaded", () => {
         if (puraCardEl) puraCardEl.style.display = "flex";
         if (ratCardEl) ratCardEl.style.display = "flex";
         if (themeToggleEl) themeToggleEl.style.display = "flex";
+        if (spotOrderEl) spotOrderEl.style.display = "flex";
         /* The glyph palette used to be shown here, when it was a docked
            column of its own. It is a tab panel now: the strip is what login
            reveals (#admin-rail above) and the panel opens with its tab. */
@@ -5397,6 +5406,8 @@ document.addEventListener("DOMContentLoaded", () => {
 
     function renderList(key) {
         const cfg = COLLECTIONS[key];
+        // Controls' spotlight order is drawn from the same list (27 Oct 2026).
+        if (key === "events") renderSpotlightOrder();
         const entries = key === "rooms" ? visibleRoomEntries()
             : key === "events" ? visibleEventEntries()
             : cfg.getAll().map((item, index) => ({ item, index }));
@@ -6771,6 +6782,106 @@ document.addEventListener("DOMContentLoaded", () => {
             if (hex !== null && hex !== box.value) box.value = hex;
         });
     }
+
+    /* ---------- the spotlight's order (27 Oct 2026, the owner's) ----------
+
+       A card in Controls listing every event ticked for the spotlight, in
+       the order they take turns (the pages' own sort: the saved place, then
+       start, then title). Up and Down move one in a draft; Save sends the
+       whole list (Api.setSpotlightOrder), and only then is it live. The
+       draft survives the list being redrawn under it — an event saved, or
+       ticked, meanwhile joins at the end. Stored as spotlightOrder; see THE
+       SPOTLIGHT'S ORDER in netlify/functions/events.js. */
+    let spotOrderDraft = null;
+    const spotOrderPlace = ev => Number.isInteger(ev.spotlightOrder) ? ev.spotlightOrder : Infinity;
+    const spotOrderTime = v => { const t = typeof v === "string" && v ? Date.parse(v) : NaN; return isNaN(t) ? null : t; };
+    function spotOrderSaved() {
+        return workingEvents.filter(ev => ev && ev.spotlight === true && ev.id)
+            .sort((a, b) => (spotOrderPlace(a) - spotOrderPlace(b))
+                || (spotOrderTime(a.spotlightFrom) || 0) - (spotOrderTime(b.spotlightFrom) || 0)
+                || String(a.title || "").localeCompare(String(b.title || "")));
+    }
+    function spotOrderWhen(ev, now) {
+        const short = t => {
+            const d = new Date(t);
+            return `${d.getUTCDate()} ${d.toLocaleString("en-GB", { month: "short", timeZone: "UTC" })} ${String(d.getUTCHours()).padStart(2, "0")}:${String(d.getUTCMinutes()).padStart(2, "0")} UTC`;
+        };
+        if (![ev.thumb, ev.thumbnail, ev.image].some(v => typeof v === "string" && v)) return "No thumbnail, so not shown";
+        const from = spotOrderTime(ev.spotlightFrom), until = spotOrderTime(ev.spotlightUntil);
+        if (until !== null && now >= until) return "Ended " + short(until);
+        if (from !== null && now < from) return "From " + short(from);
+        return until !== null ? "On now, until " + short(until) : "On now";
+    }
+    function sayOrderStatus(text, bad) {
+        if (!spotOrderStatus) return;
+        spotOrderStatus.textContent = text;
+        spotOrderStatus.classList.toggle("is-bad", !!bad);
+        spotOrderStatus.style.display = text ? "block" : "none";
+    }
+    function renderSpotlightOrder() {
+        if (!spotOrderList) return;
+        const saved = spotOrderSaved();
+        const byId = new Map(saved.map(ev => [ev.id, ev]));
+        const ids = spotOrderDraft
+            ? spotOrderDraft.filter(id => byId.has(id)).concat(saved.map(ev => ev.id).filter(id => !spotOrderDraft.includes(id)))
+            : saved.map(ev => ev.id);
+        if (spotOrderDraft) spotOrderDraft = ids;
+        const now = Date.now();
+        spotOrderList.innerHTML = "";
+        if (!ids.length) {
+            const li = document.createElement("li");
+            li.className = "ctl-status";
+            li.textContent = "No events are ticked for the spotlight.";
+            spotOrderList.appendChild(li);
+        }
+        ids.forEach((id, i) => {
+            const ev = byId.get(id);
+            const li = document.createElement("li");
+            li.className = "spot-order-row";
+            li.innerHTML = `<span class="spot-order-place">${i + 1}</span>
+                <span class="spot-order-title">${escapeHtml(ev.title || id)}</span>
+                <span class="spot-order-when">${escapeHtml(spotOrderWhen(ev, now))}</span>
+                <button type="button" class="ctl-btn" data-move="-1" aria-label="Move ${escapeHtml(ev.title || id)} up" ${i === 0 ? "disabled" : ""}>&#9650; Up</button>
+                <button type="button" class="ctl-btn" data-move="1" aria-label="Move ${escapeHtml(ev.title || id)} down" ${i === ids.length - 1 ? "disabled" : ""}>&#9660; Down</button>`;
+            li.querySelectorAll("[data-move]").forEach(btn => btn.addEventListener("click", () => {
+                const to = i + Number(btn.dataset.move);
+                if (to < 0 || to >= ids.length) return;
+                const next = ids.slice();
+                [next[i], next[to]] = [next[to], next[i]];
+                spotOrderDraft = next;
+                sayOrderStatus("");
+                renderSpotlightOrder();
+                // Focus follows the event moved, so pressing again keeps moving it.
+                const moved = spotOrderList.children[to] && spotOrderList.children[to].querySelector(`[data-move="${btn.dataset.move}"]:not(:disabled)`);
+                (moved || spotOrderList.children[to].querySelector("[data-move]:not(:disabled)") || spotOrderSave).focus();
+            }));
+            spotOrderList.appendChild(li);
+        });
+        const changed = !!spotOrderDraft && spotOrderDraft.join("\n") !== saved.map(ev => ev.id).join("\n");
+        if (spotOrderSave) spotOrderSave.disabled = !changed;
+    }
+    if (spotOrderSave) spotOrderSave.addEventListener("click", async () => {
+        if (!spotOrderDraft) return;
+        const ids = spotOrderDraft.slice();
+        spotOrderSave.disabled = true;
+        sayOrderStatus("Saving…");
+        try {
+            await Api.setSpotlightOrder(adminToken, ids);
+            // As stored: each placed event its index, every other one none.
+            workingEvents.forEach(ev => {
+                const at = ids.indexOf(ev.id);
+                if (at >= 0) ev.spotlightOrder = at;
+                else delete ev.spotlightOrder;
+            });
+            spotOrderDraft = null;
+            renderSpotlightOrder();
+            sayOrderStatus("Saved. Visitors see the new order on their next page load.");
+        } catch (err) {
+            if (err.status === 401) { lockOut(); return; }
+            sayOrderStatus(err.message || "Couldn't save the spotlight order.", true);
+            renderSpotlightOrder();
+        }
+    });
 
     function spotlightFault(d) {
         const pairs = [["from", d.spotlightFromDate, d.spotlightFromTime], ["until", d.spotlightUntilDate, d.spotlightUntilTime]];
@@ -9425,6 +9536,8 @@ document.addEventListener("DOMContentLoaded", () => {
             rereadSwitches();
             if (landingMismatchEl) sayLandingMismatch();
             if (ffMismatchEl) sayFfMismatch();
+            // "On now" / "From …" against the clock as it is now.
+            renderSpotlightOrder();
         }
         /* The run log is the heaviest read on this page and most visits to
            the admin never open it, so it is fetched when the panel is first

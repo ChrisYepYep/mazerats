@@ -265,6 +265,37 @@ async function handle(event) {
         return json(400, { error: "Invalid request body" });
     }
 
+    /* THE SPOTLIGHT'S ORDER (27 Oct 2026, the owner's), set from the
+       Warren's Controls: a PUT of { spotlightOrder: [id, id, …] } and
+       nothing else. Each event named gets its place (0, 1, …) as
+       spotlightOrder; every other event loses any it had, so one unticked
+       and ticked again later joins at the end rather than jumping back to
+       an old place. The pages sort on it first (showSpotlight in
+       js/welcome.js, wireSpotlight in js/home.js), then by start and title
+       as before.
+
+       Its own request, and the only way in: an event's ordinary save drops
+       the field (below), because the form sends back the record it opened
+       with, and an editor open across a reorder would put the old place
+       back. Not an edit to the events either — updatedAt is left alone, so
+       no open form is told someone else changed it, and _changes.js
+       ignores the field. */
+    if (event.httpMethod === "PUT" && body && Array.isArray(body.spotlightOrder)) {
+        const ids = body.spotlightOrder;
+        if (ids.length > 50 || !ids.every(id => typeof id === "string" && id) || new Set(ids).size !== ids.length) {
+            return json(400, { error: "The spotlight order should be a list of different event ids." });
+        }
+        const found = await events.find({ id: { $in: ids } }, { projection: { _id: 0, id: 1 } }).toArray();
+        if (found.length !== ids.length) {
+            return json(409, { error: "One of those events has been deleted since the list was loaded. Reload the Warren and try again.", conflict: true });
+        }
+        if (ids.length) {
+            await events.bulkWrite(ids.map((id, i) => ({ updateOne: { filter: { id }, update: { $set: { spotlightOrder: i } } } })));
+        }
+        await events.updateMany({ id: { $nin: ids }, spotlightOrder: { $exists: true } }, { $unset: { spotlightOrder: "" } });
+        return json(200, { spotlightOrder: ids });
+    }
+
     if (event.httpMethod === "POST" || event.httpMethod === "PUT") {
         if (!body || typeof body !== "object" || Array.isArray(body)) {
             return json(400, { error: "Invalid request body" });
@@ -315,6 +346,8 @@ async function handle(event) {
         delete body._baseUpdatedAt;
         // The server's, as on an edit (see spotlightAt under PUT).
         delete body.spotlightAt;
+        // Set only by the order's own request (THE SPOTLIGHT'S ORDER).
+        delete body.spotlightOrder;
         // The id is the server's to choose; one sent with the body skipped
         // the address clash check for that record. See rooms.js.
         delete body.id;
@@ -426,6 +459,8 @@ async function handle(event) {
            client never sets it. */
         const sentSpotlightAt = stamp(update.spotlightAt);
         delete update.spotlightAt;
+        // The form's copy of the place, possibly stale: see THE SPOTLIGHT'S ORDER.
+        delete update.spotlightOrder;
         if (previous) {
             // An unset tick is an untick: an event from before the spotlight
             // is not "changed" by its first save writing spotlight: false.

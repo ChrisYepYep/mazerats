@@ -716,11 +716,17 @@ let spotlightFocus = false;
    the image CDN turned away, was a dark empty frame with a caption over it,
    in its turn like any other. Dropped for this page load instead. */
 const spotlightBroken = new Set();
+// Focus the browser draws a ring for: see startSpotlight.
+function spotlightFocusShown(node) {
+    try { return !!node && node.matches(":focus-visible"); } catch (e) { return true; }
+}
 
 const spotlightTime = v => {
     const t = typeof v === "string" && v ? Date.parse(v) : NaN;
     return isNaN(t) ? null : t;
 };
+// Unplaced is last; two unplaced give NaN, which the sort reads as a tie.
+const spotlightPlace = ev => Number.isInteger(ev.spotlightOrder) ? ev.spotlightOrder : Infinity;
 function spotlightThumb(ev) {
     return [ev.thumb, ev.thumbnail, ev.image].find(v => typeof v === "string" && v) || "";
 }
@@ -812,12 +818,17 @@ async function showSpotlight() {
     const now = Date.now();
     const live = (Array.isArray(events) ? events : [])
         .filter(ev => spotlightLive(ev, now))
-        .sort((a, b) => (spotlightTime(a.spotlightFrom) || 0) - (spotlightTime(b.spotlightFrom) || 0)
+        // The order set in the Warren's Controls first (27 Oct 2026; see
+        // THE SPOTLIGHT'S ORDER in netlify/functions/events.js), any not
+        // placed after those, then by start and title as before.
+        .sort((a, b) => (spotlightPlace(a) - spotlightPlace(b))
+            || (spotlightTime(a.spotlightFrom) || 0) - (spotlightTime(b.spotlightFrom) || 0)
             || String(a.title || "").localeCompare(String(b.title || "")));
     /* What a slide is drawn from, not only which events (1 Oct 2026): keyed
        on the ids alone, a caption, colour or picture changed in the Warren
        was fetched by the three-minute refresh and then never drawn, because
        the same events were still on. */
+    // In order, so a reorder alone redraws too.
     const key = JSON.stringify(live.map(ev => [ev.id, spotlightThumb(ev), ev.spotlightCaption || "", ev.spotlightColour || "", ev.spotlightCaptionAt || "", ev.title || ""]));
     if (!live.length) {
         el.hidden = true;
@@ -861,7 +872,7 @@ async function showSpotlight() {
             const shown = el.querySelector(".welcome-promo-slide.is-shown");
             if (shown) shown.focus({ preventScroll: true });
         }
-        spotlightFocus = el.contains(document.activeElement);
+        spotlightFocus = el.contains(document.activeElement) && spotlightFocusShown(document.activeElement);
         spotlightSchedule();
     }
     el.hidden = false;
@@ -870,9 +881,15 @@ async function showSpotlight() {
 function startSpotlight() {
     const el = document.getElementById("welcome-promo");
     if (!el) return;
-    el.addEventListener("pointerenter", () => { spotlightPointer = true; });
+    /* A mouse over it and keyboard focus in it, not a finger (27 Oct 2026,
+       the owner's: on a phone the turns stopped). A touch is no hover, and
+       the event window opened by a tap hands focus back to the slide when
+       it closes, where nothing on a phone ever moves it again — so the
+       turns held for good. Only a pointer that hovers, and only focus the
+       browser shows (:focus-visible, which a tap's never is), hold them. */
+    el.addEventListener("pointerenter", e => { spotlightPointer = e.pointerType !== "touch"; });
     el.addEventListener("pointerleave", () => { spotlightPointer = false; });
-    el.addEventListener("focusin", () => { spotlightFocus = true; });
+    el.addEventListener("focusin", e => { spotlightFocus = spotlightFocusShown(e.target); });
     el.addEventListener("focusout", e => { if (!el.contains(e.relatedTarget)) spotlightFocus = false; });
     // The setting changed while the page is open: the turns stop or start.
     if (spotlightReducedMotion && typeof spotlightReducedMotion.addEventListener === "function") {

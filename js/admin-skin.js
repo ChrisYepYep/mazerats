@@ -63,7 +63,7 @@
           dates: [["10-31", "31 Oct"]] }
     ];
     const skinOf = (name) => SKINS.find((s) => s.name === name);
-    const labelOf = (name) => (skinOf(name) || { label: name }).label;
+    const labelOf = (name) => name === "none" ? "the normal site, with no skin," : (skinOf(name) || { label: name }).label;
     // The palettes a window can wear (VALID_THEMES in netlify/functions/settings.js).
     const THEMES = [["", "Site's own"], ["classic", "Classic"], ["purple", "Purple"], ["pumpkin", "Pumpkin"], ["witch", "Witching Hour"], ["crimson", "Crimson"], ["frost", "Frost"]];
     const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
@@ -371,7 +371,9 @@
         const skins = $("skin-preview-skins"), dates = $("skin-preview-dates");
         if (!skins || !dates) return;
         const mine = get(PREVIEW_KEY), date = get(DATE_KEY);
+        // "Normal site" (27 Oct 2026, the owner's): no skin, the site's own palette — see NO_SKIN in js/skin-wear.js.
         skins.replaceChildren(segBtn("skin-preview-btn", "skinPreview", "", "Off"),
+            segBtn("skin-preview-btn", "skinPreview", "none", "Normal site"),
             ...SKINS.map((s) => segBtn("skin-preview-btn", "skinPreview", s.name, s.label)));
         // Pressed or not, said as well as lit, as the switch above says it (26 Oct 2026).
         skins.querySelectorAll("button").forEach((b) => { b.classList.toggle("active", b.dataset.skinPreview === mine); b.setAttribute("aria-pressed", String(b.dataset.skinPreview === mine)); });

@@ -2851,6 +2851,12 @@ document.addEventListener("DOMContentLoaded", () => {
         if (o.text) x.n.customChange = o.text;
     }
 
+    // A post's chosen label, if it has one (see logBadgeClass).
+    function postBadge(p) {
+        const custom = p.badge === "custom" && typeof p.badgeText === "string" ? p.badgeText.trim().slice(0, 14) : "";
+        return { badge: ["added", "updated", "news", "note"].includes(p.badge) ? p.badge : "", badgeText: custom };
+    }
+
     // The posts, as log entries.
     function whatsNewPosts() {
         const out = [];
@@ -2866,7 +2872,8 @@ document.addEventListener("DOMContentLoaded", () => {
                 if (!raw) return;
                 const n = Object.assign({}, normalize(raw, isEvent), {
                     isNote: true, postId: p.id, noteText: String(p.text || ""),
-                    activityAt: p.day, activity: "note"
+                    activityAt: p.day, activity: "note",
+                    ...postBadge(p)
                 });
                 n._haystack = [n.name, n.owner, p.text, "note"].join(" ").toLowerCase();
                 out.push({ n, at: p.day, own: "" });
@@ -2878,6 +2885,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 thumb: typeof p.image === "string" ? p.image : "",
                 link: typeof p.link === "string" ? p.link : "",
                 activityAt: p.day, activity: "news",
+                ...postBadge(p),
                 _haystack: [p.title, p.text, "news"].join(" ").toLowerCase()
             };
             out.push({ n, at: p.day, own: "" });
@@ -3068,6 +3076,11 @@ document.addEventListener("DOMContentLoaded", () => {
     /* The word at the head of each entry. News and Note are the Warren's own
        (WHAT'S NEW, BY HAND). */
     const LOG_VERBS = { added: "Added", updated: "Updated", news: "News", note: "Note" };
+    /* A post's own label (27 Oct 2026, the owner's; badge in
+       netlify/functions/whats-new.js): another of these words and its
+       colour, or words typed in the Warren (badgeText) in the kind's. Only
+       the label: the entry is still news or a note in every other way. */
+    const logBadgeClass = n => (n.badge && LOG_VERBS[n.badge] ? n.badge : n.activity);
 
     /* THE LOG'S PICTURES, ZOOMED INTO THE MIDDLE (4 Oct 2026, the owner's).
        A room screenshot at 34x24 was a smear: it was fetched as a 160px
@@ -3213,7 +3226,7 @@ document.addEventListener("DOMContentLoaded", () => {
                             ${group.entries.map(({ n, i }) => `
                                 <li>
                                     <${n.isPost && !n.link ? "div" : 'button type="button"'} class="updatelog-entry${n.isPost && !n.link ? " is-static" : ""}" data-log-index="${i}" data-record-id="${escapeHtml(n.id || "")}" data-focus-key="${escapeHtml(n.isPost ? "post:" + n.postId : n.isNote ? "note:" + n.postId : recordKey(n))}">
-                                        <span class="updatelog-verb is-${n.activity}">${LOG_VERBS[n.activity] || "Added"}</span>
+                                        <span class="updatelog-verb is-${logBadgeClass(n)}${n.badgeText ? " is-custom" : ""}">${n.badgeText ? escapeHtml(n.badgeText) : LOG_VERBS[logBadgeClass(n)] || "Added"}</span>
                                         ${n.thumb
                                             /* A guide's picture is pixel art, so it is never put
                                                through the 160px crop maze screenshots get. It
@@ -11715,6 +11728,7 @@ document.addEventListener("DOMContentLoaded", () => {
             return isNaN(t) ? null : t;
         };
         const thumb = ev => [ev.thumb, ev.thumbnail, ev.image].find(v => typeof v === "string" && v) || "";
+        const place = ev => Number.isInteger(ev.spotlightOrder) ? ev.spotlightOrder : Infinity;
         const live = (ev, now) => {
             if (!ev || ev.spotlight !== true || !ev.id || !thumb(ev) || broken.has(ev.id)) return false;
             const from = time(ev.spotlightFrom), until = time(ev.spotlightUntil);
@@ -11722,6 +11736,9 @@ document.addEventListener("DOMContentLoaded", () => {
         };
         const isOpen = () => drawer.classList.contains("is-open");
         const slides = () => [...card.querySelectorAll(".welcome-promo-slide")];
+        const shownFocus = node => {
+            try { return !!node && node.matches(":focus-visible"); } catch (e) { return true; }
+        };
 
         function setOpen(open) {
             drawer.classList.toggle("is-open", open);
@@ -11839,7 +11856,9 @@ document.addEventListener("DOMContentLoaded", () => {
             const now = Date.now();
             const on = (Array.isArray(list) ? list : [])
                 .filter(ev => live(ev, now))
-                .sort((a, b) => (time(a.spotlightFrom) || 0) - (time(b.spotlightFrom) || 0)
+                // The Warren's order first (27 Oct 2026), as on the landing page.
+                .sort((a, b) => (place(a) - place(b))
+                    || (time(a.spotlightFrom) || 0) - (time(b.spotlightFrom) || 0)
                     || String(a.title || "").localeCompare(String(b.title || "")));
             const next = JSON.stringify(on.map(ev => [ev.id, thumb(ev), ev.spotlightCaption || "", ev.spotlightColour || "", ev.spotlightCaptionAt || "", ev.title || "", ev.slug || ""]));
             if (!on.length) {
@@ -11883,15 +11902,17 @@ document.addEventListener("DOMContentLoaded", () => {
                     const shown = card.querySelector(".welcome-promo-slide.is-shown");
                     if (shown) shown.focus({ preventScroll: true });
                 }
-                focused = card.contains(document.activeElement);
+                focused = card.contains(document.activeElement) && shownFocus(document.activeElement);
                 schedule();
             }
             drawer.hidden = false;
         }
 
-        card.addEventListener("pointerenter", () => { pointer = true; });
+        // A mouse and keyboard focus hold the turns, a finger doesn't (27 Oct
+        // 2026): see startSpotlight in js/welcome.js.
+        card.addEventListener("pointerenter", e => { pointer = e.pointerType !== "touch"; });
         card.addEventListener("pointerleave", () => { pointer = false; });
-        card.addEventListener("focusin", () => { focused = true; });
+        card.addEventListener("focusin", e => { focused = shownFocus(e.target); });
         card.addEventListener("focusout", e => { if (!card.contains(e.relatedTarget)) focused = false; });
         if (reduced && typeof reduced.addEventListener === "function") reduced.addEventListener("change", schedule);
 

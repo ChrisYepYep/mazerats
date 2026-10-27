@@ -161,19 +161,23 @@
     if (passive) return;
 
     // ---------- the preview ----------
+    /* "none": the normal site previewed (27 Oct 2026, the owner's) — no
+       skin and the site's own palette in this browser, whatever the
+       visitors are wearing. The Warren's "Normal site" button. */
+    const NO_SKIN = "none";
     // The URL switch, for an admin: read, remembered, and taken out of the address.
     try {
         const q = new URLSearchParams(location.search);
         const asked = q.get("skin-preview");
         if (asked && get(localStorage, TOKEN_KEY)) {
-            put(localStorage, PREVIEW_KEY, SKINS.includes(asked) ? asked : null);
+            put(localStorage, PREVIEW_KEY, SKINS.includes(asked) || asked === NO_SKIN ? asked : null);
             q.delete("skin-preview");
             const rest = q.toString();
             history.replaceState(history.state, "", location.pathname + (rest ? "?" + rest : "") + location.hash);
         }
     } catch (e) { /* an address it cannot rewrite: harmless */ }
 
-    let refused = false;                 // the session check said no
+    let refused = false;                // the session check said no
     function preview() {
         const p = get(localStorage, PREVIEW_KEY);
         const token = get(localStorage, TOKEN_KEY);
@@ -185,7 +189,7 @@
            sign-in is a new token, so its tail no longer matches. */
         const no = token ? get(localStorage, REFUSED_KEY) : null;
         if (token && no === token.slice(-12)) return null;
-        return !refused && p && SKINS.includes(p) && token ? p : null;
+        return !refused && p && (SKINS.includes(p) || p === NO_SKIN) && token ? p : null;
     }
 
     let site = null;
@@ -283,14 +287,15 @@
     function refresh() {
         const p = preview();
         const pub = resolve(site, Date.now());
-        const want = p || pub.skin;
+        const want = p === NO_SKIN ? null : p || pub.skin;
         const was = source;
         source = p ? "preview" : pub.skin ? "site" : null;
         // A change of pretend date or of source restarts the skin, so its calendar things re-read.
         if (want && want === current && was !== source) remove();
         if (want) apply(want); else remove();
         unstick();
-        wearTheme(p ? pairedTheme(site, p) : pub.theme, p ? null : pub.until);
+        if (p === NO_SKIN) wearTheme(null, null, true);
+        else wearTheme(p ? pairedTheme(site, p) : pub.theme, p ? null : pub.until);
         // Wake at the schedule's next boundary. setTimeout holds about 24 days; a longer wait re-arms.
         clearTimeout(boundary);
         const next = nextChange(site, Date.now());
@@ -334,7 +339,11 @@
         if ((window.__mrSkinPalette || null) === (was || null)) return;
         try { document.dispatchEvent(new CustomEvent("mazerats:skin-palette", { detail: { palette: window.__mrSkinPalette || null } })); } catch (e) { /* an old browser: the palette stays as it was */ }
     }
-    function wearTheme(paired, until) {
+    /* `hold` (the "none" preview): the site's own palette is remembered in
+       SKIN_THEME_KEY as a skin's would be, so the pages' <head> paints it
+       first rather than the visitors' skin palette from the settings, and
+       nothing changes colour once this runs. */
+    function wearTheme(paired, until, hold) {
         const was = window.__mrSkinPalette;
         if (paired && /^[a-z]+$/.test(paired)) {
             window.__mrSkinPalette = paired;   // Api.applyTheme leaves the page alone meanwhile
@@ -348,6 +357,7 @@
         // Back to the site's own: the settings' answer if known, else what this browser remembers.
         const own = (site && site.theme) || get(localStorage, "mazerats_theme") || "classic";
         if (/^[a-z]+$/.test(own)) setPalette(own);
+        if (hold && /^[a-z]+$/.test(own)) put(localStorage, SKIN_THEME_KEY, JSON.stringify({ theme: own, until: Date.now() + 864e5 }));
         told(was);
     }
     /* A browser left remembering a paired palette by the old code (Witching

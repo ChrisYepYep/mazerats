@@ -123,7 +123,9 @@
             name: p.kind === "news" ? p.title : (byTarget.get(p.target) || {}).name || p.target,
             meta: p.kind === "news" ? "Site news" : (byTarget.get(p.target) || {}).meta || "Gone from the archive",
             day: p.day,
-            activity: p.kind,
+            // Its chosen label (27 Oct 2026): another word's colour, or the kind's for words of your own.
+            activity: p.badge && p.badge !== "custom" ? p.badge : p.kind,
+            verb: p.badge === "custom" && p.badgeText ? p.badgeText : "",
             line: p.text,
             hidden: p.hidden === true
         }));
@@ -162,7 +164,7 @@
         return `
             <div class="chrome-list-row admin-row wn-row${e.hidden ? " is-hidden" : ""}" data-key="${esc(key)}">
                 <div class="row-info">
-                    <h3><span class="wn-verb is-${esc(e.activity)}">${esc(VERBS[e.activity] || "Added")}</span> ${esc(e.name || "(untitled)")}</h3>
+                    <h3><span class="wn-verb is-${esc(e.activity)}">${esc(e.verb || VERBS[e.activity] || "Added")}</span> ${esc(e.name || "(untitled)")}</h3>
                     <p class="row-creator">${esc(e.meta)}${flags.length ? ` <span class="wn-flags">Changed here: ${esc(flags.join(", "))}</span>` : ""}</p>
                     ${e.line ? `<p class="row-creator wn-line">${esc(e.line)}</p>` : ""}
                 </div>
@@ -279,6 +281,9 @@
         if (!(await mayDiscard())) return;
         if (editing) closePost();
         editing = p ? { ...p } : { kind: kind === "note" ? "note" : "news", day: today(), title: "", text: "", image: "", link: "", target: "" };
+        // A post from before labels had none: the same as the kind's own, so opening one isn't a change.
+        editing.badge = editing.badge || "";
+        editing.badgeText = editing.badgeText || "";
         opened = JSON.stringify(editing);
         if (openOverride) { openOverride = null; render(); }
         renderForm();
@@ -333,6 +338,16 @@
                 </select></label>
             <label class="admin-field"><span>Date (the day it's filed under)</span>
                 <input type="date" data-p="day" value="${esc(p.day)}" required></label>
+            <label class="admin-field"><span>Label</span>
+                <select data-p="badge">
+                    <option value=""${!p.badge ? " selected" : ""}>Automatic (${news ? "News" : "Note"})</option>
+                    ${["added", "updated", "news", "note"].map(b => `<option value="${b}"${p.badge === b ? " selected" : ""}>${VERBS[b]}</option>`).join("")}
+                    <option value="custom"${p.badge === "custom" ? " selected" : ""}>Your own words…</option>
+                </select></label>
+            ${p.badge === "custom" ? `
+                <label class="admin-field"><span>Label says (14 characters at most)</span>
+                    <input type="text" maxlength="14" data-p="badgeText" value="${esc(p.badgeText)}" placeholder="e.g. Fixed" required></label>` : ""}
+            <p class="admin-hint wn-wide">The word in the box at the start of the entry. Your own words show in ${news ? "News" : "Note"}'s colour, in capitals.</p>
             ${news ? `
                 <label class="admin-field wn-wide"><span>Title</span>
                     <input type="text" maxlength="120" data-p="title" value="${esc(p.title)}" required></label>
@@ -379,7 +394,8 @@
         if (busy) return;
         readForm();
         const p = editing;
-        const body = { kind: p.kind, day: p.day, text: p.text || "", title: p.title || "", image: p.image || "", link: (p.link || "").trim(), target: p.target || "", hidden: p.hidden === true };
+        const body = { kind: p.kind, day: p.day, text: p.text || "", title: p.title || "", image: p.image || "", link: (p.link || "").trim(), target: p.target || "", hidden: p.hidden === true,
+            badge: p.badge || "", badgeText: p.badge === "custom" ? (p.badgeText || "").trim() : "" };
         if (p.id) body.id = p.id;
         busy = true;
         formError("");
@@ -495,7 +511,15 @@
     });
     formEl.addEventListener("submit", e => { e.preventDefault(); savePost(); });
     formEl.addEventListener("change", e => {
-        if (e.target.matches('[data-p="kind"]')) { readForm(); renderForm(); }
+        // A label of your own opens a box to type it in.
+        if (e.target.matches('[data-p="kind"], [data-p="badge"]')) {
+            readForm();
+            renderForm();
+            if (e.target.matches('[data-p="badge"]') && editing.badge === "custom") {
+                const box = formEl.querySelector('[data-p="badgeText"]');
+                if (box) box.focus();
+            }
+        }
         else if (e.target.matches("[data-p-upload]") && e.target.files && e.target.files[0]) upload(e.target.files[0]);
     });
 

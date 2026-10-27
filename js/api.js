@@ -314,6 +314,8 @@ const Api = {
        result and it is saved with the event, like every other field. */
     readArticle(token, url) { return this._write("/.netlify/functions/article", "POST", token, { url }); },
     updateEvent(token, ev) { return this._write("/.netlify/functions/events", "PUT", token, ev); },
+    // The spotlight's turns, in order (27 Oct 2026): see THE SPOTLIGHT'S ORDER in events.js.
+    setSpotlightOrder(token, ids) { return this._write("/.netlify/functions/events", "PUT", token, { spotlightOrder: ids }); },
     deleteEvent(token, id) { return this._write(`/.netlify/functions/events?id=${encodeURIComponent(id)}`, "DELETE", token); },
 
     /* folder decides both where the image is filed in blob storage and who

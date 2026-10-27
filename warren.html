@@ -349,6 +349,25 @@
                                 <p class="ctl-status" id="theme-toggle-status" style="display:none;"></p>
                             </div>
 
+                            <!-- The spotlight's order (27 Oct 2026, the owner's).
+                                 Every event ticked for the landing page
+                                 spotlight, in the order they take turns there
+                                 and in the archive's spotlight tab; Up and
+                                 Down move one, Save puts the order live. Built
+                                 by renderSpotlightOrder in js/admin.js; stored
+                                 as spotlightOrder on each event (see THE
+                                 SPOTLIGHT'S ORDER in netlify/functions/events.js). -->
+                            <div class="ctl-card ctl-card-wide" id="spotlight-order" style="display:none;"
+                                 title="The order spotlighted events take turns in, on the landing page and in the archive's spotlight tab.">
+                                <span class="ctl-label">Spotlight order</span>
+                                <ol class="spot-order-list" id="spotlight-order-list"></ol>
+                                <div class="ctl-row">
+                                    <button type="button" class="ctl-btn btn-solid" id="spotlight-order-save" disabled>Save order</button>
+                                </div>
+                                <p class="admin-hint">Ticked in an event's own Landing page spotlight section. One not yet started or already ended keeps its place for when it is on.</p>
+                                <p class="ctl-status" id="spotlight-order-status" style="display:none;"></p>
+                            </div>
+
                         </div>
                         </div>
                         <!-- SEASONAL (25 Oct 2026): the skins, a group of their own. The block

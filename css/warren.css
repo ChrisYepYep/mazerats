@@ -721,6 +721,47 @@ body.wr-on > .site-footer { display: none !important; }
 :is(#wr-app .wr-ui, #login-modal, .modal-overlay.wr-dialog) .ctl-status { font-family: var(--wr-font); font-size: 12px; }
 :is(#wr-app .wr-ui, #login-modal, .modal-overlay.wr-dialog) .ctl-row, :is(#wr-app .wr-ui, #login-modal, .modal-overlay.wr-dialog) .ctl-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 
+/* ---- THE SPOTLIGHT'S ORDER (27 Oct 2026; renderSpotlightOrder in
+   js/admin.js): one row per spotlighted event — its place, title and when
+   it is on, then Up and Down. */
+#wr-app .wr-ui .spot-order-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    width: 100%;
+    max-width: 720px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+#wr-app .wr-ui .spot-order-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 6px 6px 6px 12px;
+    background: var(--wr-panel-2);
+    border: 1px solid var(--wr-line);
+    border-radius: var(--wr-radius);
+    font-family: var(--wr-font);
+}
+#wr-app .wr-ui .spot-order-place { flex: 0 0 1.4em; font: 700 13px/1 var(--wr-font); color: var(--wr-gold); }
+#wr-app .wr-ui .spot-order-title {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--wr-text);
+}
+#wr-app .wr-ui .spot-order-when { flex: 0 0 auto; font-size: 12px; color: var(--wr-dim); white-space: nowrap; }
+#wr-app .wr-ui .spot-order-row .ctl-btn { min-height: 26px; padding: 3px 10px; }
+@media (max-width: 560px) {
+    #wr-app .wr-ui .spot-order-row { flex-wrap: wrap; }
+    #wr-app .wr-ui .spot-order-when { order: 3; flex-basis: 100%; padding-left: calc(1.4em + 10px); }
+}
+
 /* ---- THE SEASONAL SKINS CARD (js/admin-skin.js): three parts, top to
    bottom — what visitors see, each skin's dates, a preview for you. */
 #wr-app .wr-ui .sk-card { gap: 0; padding: 0; overflow: hidden; }

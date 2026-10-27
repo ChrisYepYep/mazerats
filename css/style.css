@@ -1501,10 +1501,17 @@ body[data-page="home"] .hero { padding-top: 18px; }
 
    One frame, the slides stacked in it: each event's thumbnail is fitted to
    the frame (cover), so events whose pictures differ in shape still take
-   turns in a frame that does not change size under the title. */
+   turns in a frame that does not change size under the title.
+
+   THE ROW IS THE FRAME'S HEIGHT, NOT THE PICTURE'S (27 Oct 2026). An auto
+   row grows to its tallest slide's own height, so a 16:9 picture (The
+   Secrets of Glukko) made the row 209px in a 190px frame and the bottom
+   19px — its caption — were clipped. minmax(0, 1fr) holds the row (and the
+   column) to the frame, and cover crops the picture to it as intended. */
 .welcome-promo {
     position: relative;
     display: grid;
+    grid-template: minmax(0, 1fr) / minmax(0, 1fr);
     width: 0;
     min-width: 100%;
     aspect-ratio: 957 / 487;
@@ -7671,6 +7678,8 @@ body.is-viewer #launch-at-save,
 body.is-viewer #launch-at-clear,
 body.is-viewer #ff-launch-at-save,
 body.is-viewer #ff-launch-at-clear,
+body.is-viewer #spotlight-order-save,
+body.is-viewer .spot-order-list .ctl-btn,
 body.is-viewer .admin-daily-actions .admin-action-pill,
 body.is-viewer .admin-panel[data-panel="deadends"] .de-write {
     opacity: 0.4;
@@ -13218,6 +13227,8 @@ body[data-page="admin"] #activity-sessions {
 .spotlight-frame {
     position: relative;
     display: grid;
+    /* Held to the frame, as .welcome-promo's (27 Oct 2026). */
+    grid-template: minmax(0, 1fr) / minmax(0, 1fr);
     aspect-ratio: 957 / 487;
     border: 1px solid var(--chrome-border);
     border-radius: 4px;
@@ -16910,6 +16921,13 @@ button.tag.tag-by { background: transparent; border-style: dashed; }
        place. In ems, so it follows the label's own size. */
     width: 6.5em;
     text-align: center;
+}
+/* Words typed in the Warren (27 Oct 2026): up to 14 letters, so the box
+   grows past the shared width for a long one rather than spilling out. */
+.updatelog-verb.is-custom {
+    width: auto;
+    min-width: 6.5em;
+    box-sizing: border-box;
 }
 
 .updatelog-verb.is-added {

@@ -104,7 +104,9 @@ const IGNORED = new Set([
     "id", "_id", "createdAt", "updatedAt", "changes",
     "slug", "slugAliases", "slugManual", "_slugAuto",
     "furniRev", "furniPatch",
-    "spotlight", "spotlightFrom", "spotlightUntil", "spotlightCaption", "spotlightColour", "spotlightCaptionAt", "spotlightAt"
+    "spotlight", "spotlightFrom", "spotlightUntil", "spotlightCaption", "spotlightColour", "spotlightCaptionAt", "spotlightAt",
+    // Its place in the turns (27 Oct 2026), set from the Warren's Controls.
+    "spotlightOrder"
 ]);
 
 // Anything real that is not in a group above still deserves to be reported,

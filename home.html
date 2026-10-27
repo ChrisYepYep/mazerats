@@ -452,7 +452,8 @@
                            settings cannot say), so it stands: the same test as
                            skin-wear's preview(), keys and all. */
                         var pv = localStorage.getItem("mazerats_skin_preview"), tk = localStorage.getItem("mazerats_admin_token");
-                        var previewing = !!(pv && tk && Object.prototype.hasOwnProperty.call(SKIN_PAIRED, pv) && localStorage.getItem("mazerats_skin_preview_refused") !== tk.slice(-12));
+                        // "none" too: the normal site previewed (27 Oct 2026; see NO_SKIN in js/skin-wear.js).
+                        var previewing = !!(pv && tk && (Object.prototype.hasOwnProperty.call(SKIN_PAIRED, pv) || pv === "none") && localStorage.getItem("mazerats_skin_preview_refused") !== tk.slice(-12));
                         if (previewing || skinPaletteAt(settings, Date.now()) === worn.theme) {
                             localStorage.setItem("mazerats_theme", wanted);
                             return settings.landingState;

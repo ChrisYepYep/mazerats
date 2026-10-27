@@ -9,7 +9,7 @@
 
    POSTS — entries of their own:
      { id, type: "post", kind: "news" | "note", day: "YYYY-MM-DD",
-       title, text, image, link, target, createdAt, updatedAt }
+       title, text, image, link, target, badge, badgeText, createdAt, updatedAt }
        news   site news: a title, a few lines, an optional picture
               (uploaded to the "news/" image folder) and an optional link
        note   a line about a maze or event already in the archive; `target`
@@ -47,6 +47,9 @@ const TITLE_MAX = 120;
 const TEXT_MAX = 600;
 const URL_MAX = 400;
 const MAX_BODY = 16 * 1024;
+// A post's label: see cleanPost.
+const BADGES = ["added", "updated", "news", "note", "custom"];
+const BADGE_MAX = 14;
 
 const json = (statusCode, data) => ({
     statusCode,
@@ -97,6 +100,13 @@ function cleanPost(b) {
        every entry can be hidden on its own, posts as well as the automatic
        ones). */
     const out = { kind, day: b.day, text: text(b.text, TEXT_MAX), hidden: b.hidden === true };
+    /* The word on its label (27 Oct 2026, the owner's): "" is the kind's own
+       (NEWS / NOTE), one of the log's other words borrows that word and its
+       colour, and "custom" is badgeText, typed in the Warren, in the kind's
+       colour. */
+    out.badge = BADGES.includes(b.badge) ? b.badge : "";
+    out.badgeText = out.badge === "custom" ? text(b.badgeText, BADGE_MAX).replace(/\s+/g, " ") : "";
+    if (out.badge === "custom" && !out.badgeText) return { error: "Type what the label should say, or pick one from the list." };
     if (kind === "news") {
         out.title = text(b.title, TITLE_MAX);
         if (!out.title) return { error: "News needs a title." };
