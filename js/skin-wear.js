@@ -69,6 +69,8 @@
           window.HeaderTickerExtras.push(fn)   a slide in the top bar's
               ticker (js/site.js): fn() answers { key, title, when } or null,
               and is asked afresh every turn, so answer null once stopped.
+              Dispatch "mazerats:ticker-extras" on document on starting and
+              stopping, and the ticker shows (or drops) it at once.
    One skin at a time: putting one on takes the other off.
 
    "Pretend it's" (DATE_KEY, "MM-DD"): the date the skin's own calendar
@@ -231,7 +233,11 @@
             if (!sheet) { remove(); return; }
             const skin = window.SiteSkins && window.SiteSkins[name];
             if (skin) try { skin.start(); } catch (e) { remove(); setTimeout(() => { throw e; }); return; }   // off, and still reported
-            (EXTRAS[name] || []).forEach((x) => wearExtra(name, x));
+            /* Not inside the homepage's game window (html.ff-embed, 27 Oct
+               2026): the skins draw nothing there and the advent calendar
+               starts as nothing, so its sheet and script were two requests
+               for no use on every window opened. */
+            if (!document.documentElement.classList.contains("ff-embed")) (EXTRAS[name] || []).forEach((x) => wearExtra(name, x));
         }));
     }
 

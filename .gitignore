@@ -14,3 +14,6 @@ tools/ariadne-editor/.vsco/
 tools/ariadne-editor/epic-cache/
 # The game's trailer, rendered by the editor page (overnight 22 Oct 2026): big video files, not for git
 tools/ariadne-editor/trailer/
+
+# What Netlify publishes, built by tools/build-dist.js at deploy time; never committed
+dist/

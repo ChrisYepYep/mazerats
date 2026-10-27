@@ -48,6 +48,12 @@
         ["unverified", "Players whose Habbo isn't verified", "Signed-in players whose Habbo isn't verified see"]
     ];
     const opt = { days: 30, later: false, start: "", who: "everyone", quiet: false };
+    /* The options as they stood when the form was last clean: reset()'s
+       defaults, or what the last notice went out with (27 Oct 2026, the bug
+       scan). They are kept after a Send, for the next one, and isDirty
+       measured them against the defaults, so a sent notice with its options
+       changed still asked at Log out and on leaving the page. */
+    let optBase = Object.assign({}, opt);
     let results = [];
     let searchGen = 0;
     let busy = false;
@@ -358,6 +364,7 @@
             draft = "";
             chosen = [];
             results = [];
+            optBase = Object.assign({}, opt);
             busy = false;
             renderCompose();
             say("Sent. It shows on their next visit.");
@@ -470,6 +477,10 @@
             await Api.withdrawNotification(token(), b.dataset.withdraw);
             load();
         } catch (err) {
+            /* The last account's Withdraw, answered after a log out or a
+               switch (27 Oct 2026, the bug scan): its 401 is about a token
+               nobody is using now, and must not lock out the new session. */
+            if (mine !== sessionNo) return;
             b.disabled = false;
             if (sessionGone(err)) return;
             /* The page's own box, as every other panel's (26 Oct 2026, the
@@ -519,6 +530,7 @@
         loadGen++;
         // The last account's options too (10 Oct 2026, the bug scan).
         Object.assign(opt, { days: 30, later: false, start: "", who: "everyone", quiet: false });
+        optBase = Object.assign({}, opt);
         loading = false;
         again = false;
         notices = null;
@@ -537,12 +549,13 @@
 
     /* A notification half written (26 Oct 2026, the bug scan): words in
        the box, players chosen, or an everyone-notice's options moved off
-       where reset() puts them. js/admin.js asks before Log out throws it
+       where reset() puts them (since 27 Oct 2026, off where the last Send
+       left them: optBase). js/admin.js asks before Log out throws it
        away, and the browser before the tab closes, as for a guide or a
        What's New post. */
     function isDirty() {
         if (draft.trim() || chosen.length) return true;
-        return opt.days !== 30 || opt.later || opt.start !== "" || opt.who !== "everyone" || opt.quiet;
+        return Object.keys(optBase).some(k => opt[k] !== optBase[k]);
     }
     window.AdminNotifications = { reset, isDirty };
 

@@ -170,6 +170,10 @@
             dx = e.clientX - r.left; dy = e.clientY - r.top;
             try { frame.setPointerCapture(e.pointerId); } catch (err) { /* gone */ }
             e.preventDefault();
+            /* (27 Oct 2026) and the keys go to the game: the preventDefault
+               kept the focus where it was, in Pura Panic's or Scout's window,
+               so the game came forward and heard nothing. */
+            if (iframe) iframe.focus(); else frame.focus({ preventScroll: true });
         });
         window.addEventListener("pointermove", e => {
             if (pointer === null || e.pointerId !== pointer) return;

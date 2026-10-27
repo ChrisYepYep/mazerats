@@ -12,6 +12,13 @@
    the music sit in the score bar (PAUSE AND MUSIC, below). */
 
 .pura-console { z-index: 91; }
+/* The front game's window paints over the others (27 Oct 2026): all at 91,
+   the last one built painted on top whichever was in front, so a window
+   reopened behind another played unseen and Escape closed the one over it.
+   EscapeLayers (js/site.js) reads this z-index, so Escape follows it too.
+   Fallin' Furni's is in css/ff-window.css. */
+html[data-game-front="pura"] #pura-overlay,
+html[data-game-front="scout"] #rr-overlay { z-index: 92; }
 
 #pura-window .console-screen,
 #pura-window .console-screen * { color: #eeeeee; }

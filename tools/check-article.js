@@ -82,8 +82,19 @@ ok(sanitiseHtml("<p>unclosed <!-- comment runs to the end <script>x</script>", B
 ok(leftovers("<p>Plain text with [sic] and 3 &lt; 4</p>").length === 0, "ordinary text is not flagged");
 ok(leftovers("<p>&lt;div&gt; and {{ name }}</p>").length === 2, "markup-as-text and placeholders are flagged");
 
+/* 6. Time (27 Oct 2026). events.js cleans every stored article on public
+   reads, so a body built to make the cleaner backtrack is an outage, not a
+   slow save: 320KB of "<a" took 35 seconds before the tag pattern stopped
+   at "<", and the overnight scan found the comment patterns doing the same.
+   Generous bounds, so a slow build machine does not fail them. */
+const timed = (label, fn) => { const t = Date.now(); fn(); const ms = Date.now() - t; ok(ms < 1500, `${label} cleaned in ${ms}ms`); };
+timed("320KB of \"<a\"", () => sanitiseHtml("<a".repeat(160 * 1024), BASE));
+timed("320KB of \"<!a\"", () => sanitiseHtml("<!a".repeat(110 * 1024), BASE));
+timed("320KB of \"<!--\"", () => sanitiseHtml("<!--".repeat(80 * 1024), BASE));
+timed("2MB article saved through cleanArticle", () => cleanArticle({ url: BASE, body: "<p>" + "<a".repeat(1024 * 1024) }));
+
 if (failures) {
     console.error(`check-article: ${failures} of ${checks} checks failed.`);
     process.exit(1);
 }
-console.log(`check-article OK — ${checks} checks: WordPress block files, saved broken copies, the old shape, a renamed body box, and what the cleaner stops.`);
+console.log(`check-article OK — ${checks} checks: WordPress block files, saved broken copies, the old shape, a renamed body box, what the cleaner stops, and how long it takes.`);

@@ -812,7 +812,16 @@ const classicChromeFill = () => classicVar("--chrome-fill");
    box is --frame-bg under a 22% black wash (.guide-contents), and Crimson's
    solved value came out at 4.47:1 there. The archive rows' wash is darker
    (25%), so the box is the one that binds. The answer is the lightest of
-   the two, so a palette that already clears both still keeps its --amber. */
+   the two, so a palette that already clears both still keeps its --amber.
+
+   And on --frame-bg with no wash at all (27 Oct 2026, the overnight audit).
+   Witching Hour's builder lines on the Featured rows came to 4.57:1 —
+   through, but only just, and the audit measured them against the bare
+   frame, where they were 4.23:1 (Deep Purple 4.24, Crimson 4.12, Frost
+   4.08). The Featured rows' wash is a translucent black, so anything that
+   thins it, or a line set straight on the frame, lands there. 4.5:1 on the
+   bare frame puts every one of them clear on every surface it is set on;
+   Pumpkin already was, and keeps its value. */
 const CONTENTS_WASH = 0.22;
 function solveAmberText() {
     const fg = classicVar("--amber");
@@ -824,7 +833,9 @@ function solveAmberText() {
     // Not rounded: the wash composites in floats, and rounded down the box
     // read a shade darker than measured and let 4.49:1 through.
     const themedBox = themedFrame.map(c => c * (1 - CONTENTS_WASH));
-    const passes = px => contrast(px, themedBg) >= target && contrast(px, themedBox) >= 4.5;
+    // The bare frame is the lightest of the three, so with it in, it is the one that binds.
+    const passes = px => contrast(px, themedBg) >= target && contrast(px, themedBox) >= 4.5
+        && contrast(px, themedFrame) >= 4.5;
     const themedFg = toPurple(fg[0], fg[1], fg[2]) || fg;
     if (passes(themedFg)) return themedFg;
     const [h, s, l0] = rgbToHsl(themedFg[0], themedFg[1], themedFg[2]);
@@ -1261,6 +1272,54 @@ function corrections() {
                   > contrast(bridge, hexToRgb(paleLabel));
     const subLabel = subDark ? darkLabel : paleLabel;
 
+    /* THE CONSOLE'S TWO LABELS, MEASURED THE SAME WAY (27 Oct 2026, the
+       overnight scan).
+
+       The active tab's label was left to the transform, which darkened
+       classic's #996600 along with everything else, onto a tab sprite the
+       transform had darkened too: 1.29:1 in Witching Hour, 1.50:1 in Frost
+       — the selected tab was the one whose name could not be read. Its
+       unselected neighbours were already inverted (the list further down);
+       this one out-specifies that rule (three classes), so it needs its
+       own. And the title, on the frame's own fill, came to 2.1-4.1:1.
+
+       Both are measured, as the sub-nav's label is: the dark label and the
+       pale against what they actually sit on, and the better one taken;
+       short of 4.5:1, pushed to black or white on the same side. The tab
+       is read out of the recoloured sprites themselves — every opaque
+       pixel in the band the label covers, on all four active tabs, and the
+       label has to clear the worst of them. The title sits on the frame's
+       flat fill (.console-frame's #ffcb00, recoloured as the generated rule
+       recolours it), between the grips. */
+    function measuredLabel(grounds) {
+        const worst = label => Math.min(...grounds.map(g => contrast(g, hexToRgb(label))));
+        const darkWins = worst(darkLabel) >= worst(paleLabel);
+        let label = darkWins ? darkLabel : paleLabel;
+        if (worst(label) < 4.5) label = darkWins ? "#000000" : "#ffffff";
+        return { label, ratio: worst(label) };
+    }
+    const tabGrounds = [];
+    for (const tab of ["profile", "contact", "people", "privacy"]) {
+        const file = path.join(ROOT, "assets/img", THEME, "console", "cnsl-tab-site-" + tab + "-active.png");
+        if (!fs.existsSync(file)) continue;
+        const img = decodePng(fs.readFileSync(file));
+        // .console-tab-label: top 27px, 0.4rem (6.4px) type; inset from the tab's bevelled sides.
+        for (let y = 27; y < 35; y++) {
+            for (let x = 6; x < img.width - 6; x++) {
+                const i = (y * img.width + x) * 4;
+                if (img.data[i + 3] < 128) continue;
+                const px = [img.data[i], img.data[i + 1], img.data[i + 2]];
+                if (!tabGrounds.some(g => g[0] === px[0] && g[1] === px[1] && g[2] === px[2])) tabGrounds.push(px);
+            }
+        }
+    }
+    const tabLabel = tabGrounds.length ? measuredLabel(tabGrounds) : { label: paleLabel, ratio: NaN };
+    const consoleFill = toPurple(0xff, 0xcb, 0x00) || [0xff, 0xcb, 0x00];
+    const titleLabel = measuredLabel([consoleFill]);
+    for (const [what, m] of [["console tab label", tabLabel], ["console title", titleLabel]]) {
+        if (!(m.ratio >= 4.5)) console.warn("  !! " + THEME + ": the best " + what + " is " + m.label + " at " + m.ratio.toFixed(2) + ":1");
+    }
+
     /* THE LABELS ON AN --amber FILL, MEASURED THE SAME WAY.
 
        The chips and counts that fill with --amber — the selected tag chip,
@@ -1410,6 +1469,18 @@ function corrections() {
 [data-theme="${THEME}"] .chrome-nav-top .chrome-nav-btn.active {
     color: ${darkLabel};
     text-shadow: none;
+}
+
+/* The console's selected tab and its title: measured, not inverted (see
+   tools/themes.js). The tab label ${tabLabel.ratio.toFixed(2)}:1 on its sprite at its
+   worst pixel, the title ${titleLabel.ratio.toFixed(2)}:1 on the frame. Three classes on the
+   tab, as style.css has it, so it beats the generated one. */
+[data-theme="${THEME}"] .console-tab-btn.active .console-tab-label {
+    color: ${tabLabel.label};
+}
+
+[data-theme="${THEME}"] .console-title {
+    color: ${titleLabel.label};
 }
 
 /* ------------------------------------------------ SPRITES IN THE MARKUP

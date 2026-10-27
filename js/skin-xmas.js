@@ -851,6 +851,12 @@
         return piece(el, cap.canvas, "xm-cap", { left: -cap.ox, top: -cap.oy });
     }
     // Snow on a sprite: its own outline, read from its alpha. In the parent, since an <img> has no children.
+    /* Drawn for the sprite's size and place at the time, and drawn again
+       when either changes (27 Oct 2026, the bug scan): a phone turned on its
+       side gives the Mazes tab a bigger icon, and its cap stayed the small
+       one, up in a corner. The cap and where it was drawn for ride on the
+       <img> (__xmCap, __xmAt); capIcons() compares. */
+    const geomOf = (img) => [img.offsetWidth, img.offsetHeight, img.offsetLeft, img.offsetTop].join(",");
     function capImage(img) {
         const parent = img.parentElement;
         if (!parent) return;
@@ -859,18 +865,32 @@
         const im = new Image();
         im.onload = () => {
             if (!on) return;
+            if (img.__xmCap) { img.__xmCap.remove(); added.delete(img.__xmCap); img.__xmCap = null; }
             const w = img.offsetWidth, h = img.offsetHeight;
-            if (!w || !h) return;
+            if (!w || !h) { img.__xmAt = geomOf(img); return; }
             ensurePositioned(parent);
+            img.__xmAt = geomOf(img);
             const cv = document.createElement("canvas"); cv.width = w; cv.height = h;
             const ctx = cv.getContext("2d"); ctx.imageSmoothingEnabled = false;
             ctx.drawImage(im, 0, 0, w, h);
             const d = ctx.getImageData(0, 0, w, h).data, prof = [];
             for (let x = 0; x < w; x++) { let t = null; for (let y = 0; y < h; y++) if (d[(y * w + x) * 4 + 3] > 140) { t = y; break; } prof.push(t); }
             const cap = snowCap(prof, { mode: "text", depth: 2.4, seed: hash("img:" + src), sparkles: false });
-            piece(parent, cap.canvas, "xm-cap", { left: img.offsetLeft - cap.ox, top: img.offsetTop - cap.oy, zIndex: 3 });
+            img.__xmCap = piece(parent, cap.canvas, "xm-cap", { left: img.offsetLeft - cap.ox, top: img.offsetTop - cap.oy, zIndex: 3 });
         };
         im.src = src;
+    }
+    /* Snow on the tab icons. Not on the console handset in the top bar (the
+       owner's: "looks odd, remove that"), nor on the Events tab's microphone
+       (26 Oct: "remove the snow from the microphone events icon"). An icon
+       already capped is capped again if it has changed size or place since
+       (__xmAt is cleared while that is under way, so it is asked once). */
+    function capIcons() {
+        document.querySelectorAll(".chrome-nav-icon").forEach((im) => {
+            if (im.closest(".chrome-nav-btn-events")) return;
+            if (!im.__xm) { im.__xm = true; capImage(im); return; }
+            if (im.__xmAt != null && im.__xmAt !== geomOf(im)) { im.__xmAt = null; capImage(im); }
+        });
     }
 
     // ---------- what goes where ----------
@@ -990,27 +1010,24 @@
                 piece(word, h, "xm-holly", { left: ink.x + 1 - h.pinX, top: ink.y + 1 - h.pinY, zIndex: 3 });
             }
         });
-        // One slow clock for the lights: twelve frames a second is plenty for a breath.
-        if (!reduceMq.matches) {
-            let last = 0;
-            const tick = (now) => {
-                rafId = requestAnimationFrame(tick);
-                if (now - last < 83) return;
-                last = now;
-                if (hd.__xmPaint) hd.__xmPaint(now / 1000);
-            };
+        lightsClock();
+    }
+    // One slow clock for the lights: twelve frames a second is plenty for a breath.
+    function lightsClock() {
+        const hd = document.querySelector(".site-header");
+        if (rafId || reduceMq.matches || !hd) return;
+        let last = 0;
+        const tick = (now) => {
             rafId = requestAnimationFrame(tick);
-        }
+            if (now - last < 83) return;
+            last = now;
+            if (hd.__xmPaint) hd.__xmPaint(now / 1000);
+        };
+        rafId = requestAnimationFrame(tick);
     }
 
     function decorateMisc() {
-        /* Snow on the tab icons. Not on the console handset in the top bar (the
-           owner's: "looks odd, remove that"), nor on the Events tab's microphone
-           (26 Oct: "remove the snow from the microphone events icon"). */
-        document.querySelectorAll(".chrome-nav-icon").forEach((im) => {
-            if (im.closest(".chrome-nav-btn-events")) return;
-            if (im.__xm) return; im.__xm = true; capImage(im);
-        });
+        capIcons();
         // The title's own words only, never the snow this put inside them.
         document.querySelectorAll(".hero-title > span:not(.xm-piece)").forEach((s) => {
             if (!hosts.has(s)) host(s, (el, w) => capText(el, w, { depth: 3.2 }));
@@ -1163,7 +1180,8 @@
         id = requestAnimationFrame(frame);
         addEventListener("resize", resize);
         snow = {
-            stop() { cancelAnimationFrame(id); removeEventListener("resize", resize); storm = 0; },
+            // Its canvas goes too: reduced motion turned on stops the snowfall without the rest of the skin.
+            stop() { cancelAnimationFrame(id); removeEventListener("resize", resize); storm = 0; cv.remove(); added.delete(cv); },
             // For trying it out: a blizzard now.
             blizzard() { next = performance.now() / 1000; start = -1; }
         };
@@ -1859,10 +1877,39 @@
        nothing: no hidden layers costing the game frames. */
     const embedded = () => document.documentElement.classList.contains("ff-embed");
 
+    /* REDUCED MOTION, FOLLOWED (27 Oct 2026, the bug scan), as the
+       Halloween skin does: it was read once, as the pieces were made, so
+       turning it on with the page open kept the snowfall and the breathing
+       lights until a reload, and turning it off never brought them. Now the
+       snowfall goes and the lights rest at their still frame, or both start
+       again, as the setting changes. */
+    function onMotion() {
+        if (!on || embedded()) return;
+        if (reduceMq.matches) {
+            if (snow) snow.stop(); snow = null;
+            cancelAnimationFrame(rafId); rafId = 0;
+            const hd = document.querySelector(".site-header");
+            if (hd && hd.__xmPaint) hd.__xmPaint(null);
+        } else {
+            if (!snow) snowfall();
+            lightsClock();
+        }
+    }
+    // A turned phone or a resized window: the tab icons' caps are checked against their new size.
+    let rzTimer = 0;
+    function onResize() { clearTimeout(rzTimer); rzTimer = setTimeout(() => { if (on) capIcons(); }, 150); }
+    /* The top bar's ticker is told the countdown has come or gone (27 Oct
+       2026): it asks HeaderTickerExtras only every ten seconds, so the first
+       slide was whatever came before this skin had started. */
+    const tellTicker = () => { try { document.dispatchEvent(new CustomEvent("mazerats:ticker-extras")); } catch (e) { /* the next turn shows it */ } };
+
     function start() {
         if (on) return;
         on = true;
+        tellTicker();
         if (embedded()) return;
+        reduceMq.addEventListener("change", onMotion);
+        addEventListener("resize", onResize);
         /* Every host that changed size in the 120ms is redrawn (26 Oct 2026):
            each callback used to replace the last one's list, so a row that
            resized a moment before a window did kept snow drawn for its old
@@ -1901,7 +1948,7 @@
         /* And a light look every two seconds for windows and rows that came
            since: a window can finish opening (the game's does) after the last
            change to the page that would have prompted one. */
-        timers.push(setInterval(() => { if (on && !document.hidden) { decorateWindows(); decorateRows(); standIns.forEach((v) => v.sync()); } }, 2000));
+        timers.push(setInterval(() => { if (on && !document.hidden) { decorateWindows(); decorateRows(); capIcons(); standIns.forEach((v) => v.sync()); } }, 2000));
     }
 
     function stop() {
@@ -1912,16 +1959,19 @@
         if (mo) mo.disconnect(); if (ro) ro.disconnect();
         mo = ro = null;
         clearTimeout(roTimer); resized.clear();
-        cancelAnimationFrame(rafId);
+        reduceMq.removeEventListener("change", onMotion);
+        removeEventListener("resize", onResize); clearTimeout(rzTimer);
+        cancelAnimationFrame(rafId); rafId = 0;
         if (snow) snow.stop(); snow = null;
         if (bgTrees) bgTrees.stop(); bgTrees = null;
         timers.splice(0).forEach((t) => { clearTimeout(t); clearInterval(t); });
         added.forEach((n) => n.remove()); added.clear();
         hosts.forEach((rec, el) => { delete el.__xmPaint; }); hosts.clear();
-        document.querySelectorAll(".chrome-nav-icon").forEach((im) => { delete im.__xm; });
+        document.querySelectorAll(".chrome-nav-icon").forEach((im) => { delete im.__xm; delete im.__xmAt; delete im.__xmCap; });
         madeRelative.forEach((el) => { el.style.position = ""; }); madeRelative.clear();
         lifted.forEach((v, el) => { el.style.translate = v.was; }); lifted.clear();
         standIns.forEach((v) => v.stop()); standIns.clear();
+        tellTicker();
     }
 
     (window.SiteSkins = window.SiteSkins || {}).xmas = {

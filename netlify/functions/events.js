@@ -201,10 +201,16 @@ async function handle(event) {
            again here, on the way out, so no stored copy needs re-importing;
            only a body that shows the signs is touched, and the cleaner is
            idempotent, so a clean one would come out the same anyway. A
-           re-save then stores the clean copy, since ?full=1 serves it too. */
+           re-save then stores the clean copy, since ?full=1 serves it too.
+
+           Every stored article now, not only one showing those signs
+           (27 Oct 2026). The cleaner is linear-time since the overnight scan
+           and this only runs when the CDN misses, so the whole list costs a
+           few milliseconds; in exchange, whatever the cleaner learns next
+           reaches every stored copy without anyone knowing what to look
+           for. */
         all.forEach(r => {
-            const b = r.article && typeof r.article.body === "string" ? r.article.body : "";
-            if (b && /&lt;[!?]|<!--|<\?/.test(b)) r.article = cleanArticle(r.article);
+            if (r.article && typeof r.article.body === "string" && r.article.body) r.article = cleanArticle(r.article);
         });
         // ?full=1 is the admin page's route: the records exactly as stored,
         // every reviewer field and hidden detection included, because that is

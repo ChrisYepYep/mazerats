@@ -1985,7 +1985,14 @@
         // Upright AND too narrow to hold the room. A tablet that can hold it
         // upright falls through to the immersive branch below rather than
         // being asked to turn — see roomFitsUpright.
-        const shut = handheld && isPortrait() && !roomFitsUpright();
+        /* NOT WHILE THE GAME IS CLOSED (27 Oct 2026, the owner's decision):
+           there is no round to turn the phone for, and "Turn your screen
+           sideways" covered the splash and its COMING SOON. Upright, the
+           immersive layout shows them scaled to the screen. The head script
+           sets data-ff-closed after its settings answer, so watchOrientation
+           runs this again when it changes. */
+        const closed = document.body.hasAttribute("data-ff-closed");
+        const shut = handheld && isPortrait() && !roomFitsUpright() && !closed;
 
         body.classList.toggle("ff-handheld", handheld);
         body.classList.toggle("ff-rotate-shut", shut);
@@ -2027,6 +2034,8 @@
             if (mq.addEventListener) mq.addEventListener("change", applyOrientation);
             else if (mq.addListener) mq.addListener(applyOrientation);
         }
+        // The game closed or opened by the head script's answer (see applyOrientation).
+        if (window.MutationObserver) new MutationObserver(applyOrientation).observe(document.body, { attributes: true, attributeFilter: ["data-ff-closed"] });
 
         /* The gesture that buys fullscreen — at most once per rotation, and
            not at all once the player has left it; see goFullscreen.
@@ -2038,7 +2047,8 @@
            had just changed size. Released, it is a tap; and a touch
            pointerup is itself a gesture the browsers accept for this. */
         document.addEventListener("pointerup", () => {
-            if (document.body.classList.contains("ff-immersive") && goFullscreen()) {
+            // (27 Oct 2026) not for a closed game, which has nothing to play in it
+            if (document.body.classList.contains("ff-immersive") && !document.body.hasAttribute("data-ff-closed") && goFullscreen()) {
                 fullscreenAskAt = performance.now();
             }
         }, { passive: true });
@@ -4706,7 +4716,10 @@
                 });
             }
         }
-        if (gone.size) console.warn("Fallin' Furni: no game art for " + [...gone].sort().join(", ") + " - left out of the rounds.");
+        /* Said to whoever can act on it (27 Oct 2026, the live audit): the
+           editor and the dev server. It was in every player's console on
+           every load, about levels they cannot change. */
+        if (gone.size && (EDITING || location.hostname === "localhost")) console.warn("Fallin' Furni: no game art for " + [...gone].sort().join(", ") + " - left out of the rounds.");
         return gone;
     }
 
@@ -6550,7 +6563,11 @@
            it (see #ff-canvas:focus-visible in css/fallinfurni.css). */
         if (!Editor && canvas) {
             canvas.classList.add("is-playing");
-            canvas.focus({ preventScroll: true });
+            /* Not from behind another game (27 Oct 2026, the night scan): a
+               room that finished loading after the player had gone to Pura
+               Panic or Scout's Trail pulled the focus into this frame, and
+               that game's keys with it, while it stayed the front one. */
+            if (!behindGame) canvas.focus({ preventScroll: true });
         }
         /* NOT AWAITED, so a throw inside it becomes an unhandled rejection
            and the freeze it set is never lifted: `loading` stays true, the
@@ -7091,8 +7108,8 @@
                    A lookup that merely FAILED is not the player's fault, so
                    that one still plays - saying so once the round is up. */
                 if (found === "missing") {
-                    nameInput.focus();
-                    nameInput.select();
+                    // (27 Oct 2026: not from behind another game, as beginLevel)
+                    if (!behindGame) { nameInput.focus(); nameInput.select(); }
                     return;
                 }
                 await startRound();

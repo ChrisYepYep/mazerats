@@ -215,8 +215,29 @@ document.addEventListener("DOMContentLoaded", () => {
        not on a page change inside an open console. */
     let opener = null;
 
+    /* A WINDOW TO A SCREEN READER, AND FOCUS INSIDE IT (27 Oct 2026, the
+       overnight audit). It was a plain <div>: nothing announced a window
+       or its name on opening, and focus stayed on the header button behind
+       it, so Tab went on through the page underneath. Named by its title,
+       as the Profiles window is; not aria-modal, since it is not modal (the
+       page behind stays usable; see FLOATING in js/site.js). The frame
+       takes the focus itself, with no ring (style.css), so nothing about
+       how it looks changes; closing already hands it back (closeConsole). */
+    if (frame) {
+        frame.setAttribute("role", "dialog");
+        if (document.getElementById("console-drag-handle-title")) frame.setAttribute("aria-labelledby", "console-drag-handle-title");
+        frame.setAttribute("tabindex", "-1");
+    }
+    function focusConsole() {
+        if (!frame || modal.style.display !== "block") return;
+        // A page that has already put focus on its own field (Set a nickname) keeps it.
+        if (modal.contains(document.activeElement)) return;
+        frame.focus({ preventScroll: true });
+    }
+
     function openConsole(defaultPage) {
-        if (modal.style.display !== "block") {
+        const opening = modal.style.display !== "block";
+        if (opening) {
             if (window.Track && typeof Track.event === "function") Track.event("console-open", defaultPage || "home");
             const active = document.activeElement;
             opener = active && active !== document.body && !modal.contains(active) ? active : null;
@@ -242,6 +263,19 @@ document.addEventListener("DOMContentLoaded", () => {
         // loadContributors sets dataLoaded itself, and only on a list that
         // actually arrived — so a failed read is asked again on the next open.
         if (!dataLoaded) loadContributors();
+        // Only on a real open: a page change inside an open console leaves focus where it is.
+        if (opening) {
+            focusConsole();
+            /* Opened on arrival (#privacy, #submit-entry) while home.html's
+               gate still hides the page, focus() did nothing: again once
+               it is shown, unless the focus has gone somewhere since. */
+            if (!window.__mrRevealed) {
+                document.addEventListener("mazerats:revealed", () => {
+                    const a = document.activeElement;
+                    if (!a || a === document.body || a === document.documentElement) focusConsole();
+                }, { once: true });
+            }
+        }
     }
 
     // Something the opener can no longer take: gone from the page, hidden,

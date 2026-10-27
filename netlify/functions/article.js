@@ -262,9 +262,14 @@ const RENAME = { h1: "h3", h2: "h3", figcaption: "p" };
    And the same once more on the TEXT, after its entities are decoded
    (STRAY_MARKUP in sanitiseHtml): an article saved while the bug above was
    live holds those comments escaped, as text, and is cleaned on its next
-   pass through here — a re-save, or events.js's read. */
-const NOT_ELEMENTS = /<!--[\s\S]*?(?:--!?>|$)|<!\[CDATA\[[\s\S]*?(?:\]\]>|$)|<![^>]*>|<\?[\s\S]*?(?:\?>|$)/g;
-const STRAY_MARKUP = /<!--[\s\S]*?(?:-->|$)|<!\[CDATA\[[\s\S]*?(?:\]\]>|$)|<![a-zA-Z][^>]*>|<\?[\s\S]*?\?>/g;
+   pass through here — a re-save, or events.js's read.
+
+   No run in these patterns may cross a "<" unless it ends at the end of
+   the text (27 Oct 2026, the overnight scan): "[^>]*>" was tried afresh
+   from every "<!" with no ">" after it, each try to the end, so 320KB of
+   "<!a" took 14 seconds — and events.js runs this on a public read. */
+const NOT_ELEMENTS = /<!--[\s\S]*?(?:--!?>|$)|<!\[CDATA\[[\s\S]*?(?:\]\]>|$)|<![^<>]*>|<\?[\s\S]*?(?:\?>|$)/g;
+const STRAY_MARKUP = /<!--[\s\S]*?(?:-->|$)|<!\[CDATA\[[\s\S]*?(?:\]\]>|$)|<![a-zA-Z][^<>]*>|<\?[^<]*?\?>/g;
 
 /* Rebuilds the body from scratch against ALLOWED.
 
@@ -284,7 +289,12 @@ function sanitiseHtml(html, base) {
     html = String(html || "").replace(NOT_ELEMENTS, "");
     const text_ = (t) => escapeHtml(decodeEntities(t).replace(STRAY_MARKUP, ""));
 
-    const TAG = /<\/?([a-zA-Z][a-zA-Z0-9-]*)((?:[^>"']|"[^"]*"|'[^']*')*)>/g;
+    /* No "<" in a tag's unquoted part (27 Oct 2026). With it allowed, every
+       "<a" in a run of them with no ">" after scanned to the end of the body
+       before giving up, so 320KB of "<a" took 35 seconds; now each one stops
+       at the next "<". A "<" there is never real markup anyway: the text it
+       falls into is escaped and shown, as it would have been. */
+    const TAG = /<\/?([a-zA-Z][a-zA-Z0-9-]*)((?:[^<>"']|"[^"]*"|'[^']*')*)>/g;
     let m;
     while ((m = TAG.exec(html)) !== null) {
         const text = html.slice(i, m.index);
@@ -350,6 +360,13 @@ function sanitiseHtml(html, base) {
     while (open.length) out.push("</" + open.pop() + ">");
 
     return out.join("")
+        /* Long runs of breaks cut to three FIRST (27 Oct 2026, the overnight
+           scan): the end-of-paragraph pattern below was tried from every
+           <br> of a long run and read to its end each time, so 320,000
+           characters of them took six seconds. Three, and the space after
+           the last kept, because every step below reads three exactly as it
+           reads more — so the result is what it always was. */
+        .replace(/<br>(?:\s*<br>){3,}/g, "<br><br><br>")
         /* A line break at the very start or end of a paragraph (26 Oct 2026):
            WordPress's block comments sat on lines of their own, and with
            them gone each paragraph opened and closed on a <br>, a blank line
@@ -373,14 +390,17 @@ function sanitiseHtml(html, base) {
    leftover seen or likely: markup that came through as text, a template
    placeholder the app was meant to fill ({{ … }}), a WordPress block name,
    a shortcode. A list of short descriptions; empty is clean. */
+/* No run crosses the next opener (27 Oct 2026, the overnight scan): see
+   NOT_ELEMENTS. "[^>]*" from every "<" of a text with no ">" took 24
+   seconds over 320KB. */
 const LEFTOVERS = [
-    [/<\/?[a-zA-Z!?][^>]*>/, "HTML tags shown as text"],
-    [/\{\{[\s\S]*?\}\}/, "unfilled {{ }} placeholders"],
+    [/<\/?[a-zA-Z!?][^<>]*>/, "HTML tags shown as text"],
+    [/\{\{[^{]*?\}\}/, "unfilled {{ }} placeholders"],
     [/\bwp:[a-z]/i, "WordPress block markers"],
-    [/\[\/?(?:caption|gallery|embed|video|audio|playlist)\b[^\]]*\]/i, "[shortcodes]"]
+    [/\[\/?(?:caption|gallery|embed|video|audio|playlist)\b[^[\]]*\]/i, "[shortcodes]"]
 ];
 function leftovers(body) {
-    const visible = decodeEntities(String(body || "").replace(/<[^>]*>/g, " "));
+    const visible = decodeEntities(String(body || "").replace(/<[^<>]*>/g, " "));
     return LEFTOVERS.filter(([re]) => re.test(visible)).map(([, what]) => what);
 }
 
@@ -557,8 +577,14 @@ exports.handler = async (event) => {
    comes out the same. The url must be http(s) or it is dropped, as are the
    hero image and every link inside; the plain-text fields are coerced to
    short strings, since the page writes some of them into markup too.
-   Anything that is not an object is not an article. */
+   Anything that is not an object is not an article.
+
+   The body is cut at ARTICLE_BODY_MAX first (27 Oct 2026). events.js runs
+   this on public reads as well as saves, and nothing else bounded what a
+   token-holder's save could store; the longest real article is a few tens
+   of KB, so the cap only ever meets something that is not one. */
 const ARTICLE_TEXT_MAX = 500;
+const ARTICLE_BODY_MAX = 300 * 1024;
 function cleanArticle(article) {
     if (!article || typeof article !== "object" || Array.isArray(article)) return null;
     const str = (v) => (typeof v === "string" ? v : "").slice(0, ARTICLE_TEXT_MAX);
@@ -573,7 +599,7 @@ function cleanArticle(article) {
         category: str(article.category),
         summary: str(article.summary),
         image: safeUrl(typeof article.image === "string" ? article.image : "", base),
-        body: sanitiseHtml(typeof article.body === "string" ? article.body : "", base),
+        body: sanitiseHtml(typeof article.body === "string" ? article.body.slice(0, ARTICLE_BODY_MAX) : "", base),
         fetchedAt: str(article.fetchedAt)
     };
 }

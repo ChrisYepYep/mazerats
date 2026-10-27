@@ -61,8 +61,25 @@
 # editor writes from them on every save. js/rat-race-epic.js goes with them
 # (26 Oct 2026): the epic Mine tunes, loaded only by the editor's jukebox
 # (tools/ariadne-editor/index.html); no page of the site loads it.
+#
+# build-dist runs LAST and is what makes the deploy safe (27 Oct 2026). The
+# site is published from dist/, which holds only the pages, assets, css and
+# js a browser needs, copied there once everything above has finished with
+# them. Publishing the checkout itself (publish = ".") left the function
+# source, the tools, the backups and the README on the CDN, kept away only
+# by the 404 redirects further down — and those are case-sensitive while
+# Netlify's file lookup is not, so /Netlify/functions/_db.js was served to
+# anyone who capitalised one letter. What is not in dist/ cannot be reached
+# by any spelling. See the header of tools/build-dist.js; a new top-level
+# page has to be added to its list.
+#
+# [dev] keeps `netlify dev` serving the checkout as before, so local work
+# needs no build step and sees edits at once.
 [build]
-  command = "rm -rf tools/ariadne-editor assets/ariadne-levels js/rat-race-epic.js && npm install && node tools/check-daily-parity.js && node tools/check-changes.js && node tools/check-share-headers.js && node tools/check-article.js && node tools/themes.js && node tools/build-minify.js && rm -f dungeon.html js/dungeon.js"
+  command = "rm -rf tools/ariadne-editor assets/ariadne-levels js/rat-race-epic.js && npm install && node tools/check-daily-parity.js && node tools/check-changes.js && node tools/check-share-headers.js && node tools/check-article.js && node tools/themes.js && node tools/build-minify.js && rm -f dungeon.html js/dungeon.js && node tools/build-dist.js"
+  publish = "dist"
+
+[dev]
   publish = "."
 
 [functions]
@@ -470,7 +487,14 @@
   to = "/.netlify/functions/share"
   status = 200
 
-# publish = "." above means the whole repo root — including this directory
+# Since 27 Oct 2026 the live site publishes dist/ (tools/build-dist.js),
+# which none of the paths below are copied into, so on the live site these
+# rules are a second line rather than the only one; they still guard
+# `netlify dev`, which serves the checkout. They could never be the only
+# line: they match case-sensitively and Netlify's file lookup does not, so
+# /Netlify/functions/… walked straight past them.
+#
+# publish = "." meant the whole repo root — including this directory
 # of function SOURCE files — is otherwise served as plain static assets
 # alongside the real site (e.g. mazerats.net/netlify/functions/contact.js
 # would 200 with the raw source, distinct from the actual function
@@ -968,5 +992,17 @@
 # good: while the game is Coming Soon this kept the placeholder out too.
 [[headers]]
   for = "/fallinfurni/play"
+  [headers.values]
+    X-Robots-Tag = "noindex"
+
+# And the level editor at /fallinfurni?edit=1 (27 Oct 2026), which is the
+# same page reached by the query rule near the top. Headers here cannot
+# match a query string, so this names the bare path; that is safe because
+# /fallinfurni WITHOUT ?edit is answered by share.js, and Netlify applies
+# none of these [[headers]] to a function's response (see
+# tools/check-share-headers.js) — so this reaches only the editor, never
+# the game's real, indexable address.
+[[headers]]
+  for = "/fallinfurni"
   [headers.values]
     X-Robots-Tag = "noindex"

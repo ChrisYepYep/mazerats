@@ -45,6 +45,17 @@ html[data-skin="xmas"] .xm-bgtrees {
     position: fixed; inset: 0; z-index: -1; pointer-events: none;
 }
 
+/* ROOM FOR THE PEEKING RAT'S SANTA HAT (27 Oct 2026, the bug scan). The
+   gap under the /home intro is measured to the rat's ears (css/style.css,
+   .hero: 18px beside the title, 40px stacked). With the skin on he is
+   lifted 5px onto the snow and the hat's tip stands 14px above that, so
+   it covered "ary s" of the intro's third line, and "forgotten." on a
+   phone. 14px more clears the hat's top by 2-3px at every width. */
+html[data-skin="xmas"] .hero { padding-bottom: 32px; }
+@media (max-width: 640px) {
+    html[data-skin="xmas"] .hero { padding-bottom: 54px; }
+}
+
 /* The ticker's countdown slide ("12 sleeps 'til Christmas!"), in the lights' gold. */
 html[data-skin="xmas"] .header-events-extra { color: #ffd24a; }
 

@@ -6,6 +6,9 @@
    grip, the frame the game sits in, and the lights. */
 
 .ff-console { z-index: 91; }
+/* In front of Pura Panic's and Scout's windows while it is the front game
+   (27 Oct 2026; see css/pura-panic.css). */
+html[data-game-front="ff"] #ff-overlay { z-index: 92; }
 
 /* The game's 720 x 498 exactly inside the screen's line: the console's
    sides (11px) and top (28px), and 14px at the foot as the Profiles window

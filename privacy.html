@@ -69,7 +69,66 @@
          and a colour scheme is not worth a blank page. -->
     <link rel="stylesheet" href="css/style.css?v=2">
     <link id="theme-css" rel="stylesheet">
-    <script>(function(){try{var t=localStorage.getItem("mazerats_theme"),k=JSON.parse(localStorage.getItem("mazerats_skin_theme")||"null");if(k&&k.theme&&Date.now()<k.until)t=k.theme;if(!t||t==="classic"||!/^[a-z]+$/.test(t))return;document.documentElement.setAttribute("data-theme",t);document.getElementById("theme-css").href="css/theme-"+t+".css";}catch(e){}})();</script>
+    <script>
+    /* THE FIRST PAINT'S PALETTE. The site's own (mazerats_theme), unless a
+       seasonal skin's palette is remembered for now (mazerats_skin_theme,
+       written by js/skin-wear.js) or, with none remembered, the last
+       settings skin-wear kept (mazerats_skin_cache) put a skin with a
+       palette on at this moment (27 Oct 2026, the bug scan): the first
+       visit to this page since a window opened painted the site's palette,
+       then changed to the skin's once skin-wear ran.
+
+       skinPalette is home.html's skinPaletteAt, which is skin-wear's
+       resolve() and themeOf() for the public: keep the three in step. The
+       same script, character for character, in index.html, privacy.html,
+       404.html, wizard.html and fallinfurni.html; the path is absolute
+       because the 404 page answers at any depth. */
+    (function () {
+        var PAIRED = { halloween: "witch", xmas: "frost" };
+        function skinPalette(site, t) {
+            if (!site || typeof site !== "object") return null;
+            var mode = site.skin || "auto", i, j, w, s, e, y, years;
+            var list = Object.prototype.toString.call(site.skinSchedule) === "[object Array]" ? site.skinSchedule : [];
+            var isSkin = function (n) { return Object.prototype.hasOwnProperty.call(PAIRED, n); };
+            var themeOf = function (x) { return "theme" in x ? (x.theme || null) : (PAIRED[x.skin] || null); };
+            var instant = function (stamp, zone, year) {
+                var m = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/.exec(stamp || "");
+                if (!m) return NaN;
+                var Y = year != null ? year : Number(m[1]);
+                return zone === "utc" ? Date.UTC(Y, m[2] - 1, +m[3], +m[4], +m[5]) : new Date(Y, m[2] - 1, +m[3], +m[4], +m[5]).getTime();
+            };
+            if (mode === "off") return null;
+            if (isSkin(mode)) {
+                for (i = 0; i < list.length; i++) if (list[i] && list[i].skin === mode) return themeOf(list[i]);
+                return PAIRED[mode];
+            }
+            for (i = 0; i < list.length; i++) {
+                w = list[i];
+                if (!w || !isSkin(w.skin)) continue;
+                y = new Date(t).getFullYear();
+                years = w.yearly ? [y - 1, y, y + 1] : [null];
+                for (j = 0; j < years.length; j++) {
+                    s = instant(w.from, w.zone, years[j]); e = instant(w.to, w.zone, years[j]);
+                    if (w.yearly && e <= s) e = instant(w.to, w.zone, years[j] + 1);      // across New Year
+                    if (s <= t && t < e) return themeOf(w);
+                }
+            }
+            return null;
+        }
+        try {
+            var t = localStorage.getItem("mazerats_theme"), k = JSON.parse(localStorage.getItem("mazerats_skin_theme") || "null"), p;
+            if (k && k.theme && Date.now() < k.until) t = k.theme;
+            else {
+                // Its own try: settings it cannot read still leave the site's palette painted.
+                try { p = skinPalette(JSON.parse(localStorage.getItem("mazerats_skin_cache") || "null"), Date.now()); } catch (e2) { p = null; }
+                if (p) t = p;
+            }
+            if (!t || t === "classic" || !/^[a-z]+$/.test(t)) return;
+            document.documentElement.setAttribute("data-theme", t);
+            document.getElementById("theme-css").href = "/css/theme-" + t + ".css";
+        } catch (e) { /* private mode, or something unreadable: the site's default */ }
+    })();
+    </script>
     <!-- Umami, the aggregate visit counts. Loaded by this line rather than a
          plain <script src>, because a plain tag cannot ask the browser first:
          with Global Privacy Control on, it is not loaded at all. Do Not Track

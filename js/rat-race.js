@@ -311,6 +311,8 @@
             dx = e.clientX - r.left; dy = e.clientY - r.top;
             try { frame.setPointerCapture(e.pointerId); } catch (err) { /* gone */ }
             e.preventDefault();
+            // (27 Oct 2026) and the keys with it: the preventDefault kept the focus where it was, often inside Fallin' Furni's frame
+            if (!frame.contains(document.activeElement)) frame.focus({ preventScroll: true });
         });
         window.addEventListener("pointermove", e => {
             if (pointer === null || e.pointerId !== pointer) return;
@@ -497,6 +499,9 @@
         return true;
     }
     function press(k) {
+        /* (27 Oct 2026) a key Scout takes makes it the front game: hushed behind a game since closed, PLAY ON
+           resumed it and the next frame paused it again (see ONE GAME IN FRONT), with the focus outside the window */
+        toFront();
         pressedAt[k] = frameNo;
         if (state.mode === "select") { selectKey(k); return; }
         if (state.mode === "paused" && (k === "up" || k === "down")) { pauseMove(k === "up" ? -1 : 1); return; }
@@ -539,7 +544,7 @@
             return;
         }
         const k = KEYS[e.key];
-        if (e.key === "p" || e.key === "P") { e.preventDefault(); if (state.mode === "play" || state.mode === "card") pause(); else if (state.mode === "paused") resume(); return; }
+        if (e.key === "p" || e.key === "P") { e.preventDefault(); toFront(); if (state.mode === "play" || state.mode === "card") pause(); else if (state.mode === "paused") resume(); return; }
         if (e.key === "m" || e.key === "M") { e.preventDefault(); toggleMusic(); return; }
         if ((e.key === "f" || e.key === "F") && canFull()) { e.preventDefault(); toggleFull(); return; }
         if (!k) return;

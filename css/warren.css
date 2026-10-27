@@ -270,6 +270,18 @@ body.wr-on > .site-footer { display: none !important; }
 }
 #wr-app .wr-top .admin-drop::before { content: none; }
 #wr-app .wr-top .admin-drop-glyphs { width: 380px; }
+/* The Glyphs menu opens on a click, a tap or Enter (.is-open) or under the
+   pointer, but not because its button has keyboard focus (27 Oct 2026, the
+   bug scan): tabbing along the bar opened it, and the next Tab went into
+   its 147 glyphs. Closed, they cannot take focus (visibility: hidden), so
+   Tab goes past; open, the grid is one stop, with arrows inside it (see
+   the glyph grid in js/admin.js). */
+#wr-app .wr-top .admin-tab[data-menu="glyphs"]:not(.is-open):not(:hover) .admin-drop {
+    opacity: 0;
+    visibility: hidden;
+    transform: translateY(-4px);
+    transition: opacity 0.14s ease, transform 0.14s ease, visibility 0s linear 0.18s;
+}
 
 /* The body: the rail and the stage. */
 #wr-app .wr-content { min-height: 0; }
@@ -973,7 +985,11 @@ body.wr-on #login-modal .admin-form-actions .btn { width: 100%; min-height: 36px
    js/admin.js, which reads which of the two is scrolling). */
 @media (max-width: 860px) {
     body.wr-on { height: auto; overflow: auto; }
-    .wr-app { position: static; display: block; min-height: 100vh; }
+    /* A column, not a block (27 Oct 2026, the bug scan): as a block, the
+       status line followed the section, so a short one (Bans at 768) left
+       it halfway down the screen. Its margin-top: auto, below, now takes it
+       to the foot whatever is above it. */
+    .wr-app { position: static; display: flex; flex-direction: column; min-height: 100vh; }
     #wr-app .wr-top { position: sticky; top: 0; height: 52px; }
     #wr-app .wr-brand-text span, #wr-app .wr-live { display: none; }
     #wr-app .wr-body { display: block; height: auto; }
@@ -992,7 +1008,27 @@ body.wr-on #login-modal .admin-form-actions .btn { width: 100%; min-height: 36px
     #wr-app .wr-rail .chrome-nav-btn { width: auto; flex: none; }
     #wr-app .wr-rail .chrome-nav-btn.active::before { content: none; }
     #wr-app .wr-stage { overflow: visible; padding: 16px 14px 90px; }
-    #wr-app .wr-status { position: sticky; bottom: 0; }
+    /* Wrapped onto a second line rather than cut off at the right (27 Oct
+       2026, the bug scan): at 320 and 390 "Changes save straight to the
+       live site" ran off the edge, and a longer session or offline warning
+       would have gone the same way. Each part stays whole on its line. */
+    #wr-app .wr-status {
+        position: sticky;
+        bottom: 0;
+        margin-top: auto;
+        flex-wrap: wrap;
+        row-gap: 2px;
+        min-height: 28px;
+        padding: 5px 14px;
+        white-space: normal;
+    }
+    #wr-app .wr-status > span { white-space: nowrap; }
+    /* The spacer could wrap onto the second line by itself or not, by a
+       pixel or two, so the last part sat left or right by chance; and an
+       empty part still took a gap. The last part is pushed right by its own
+       margin instead, on whichever line it lands. */
+    #wr-app .wr-status > span:empty, #wr-app .wr-status > .wr-spacer { display: none; }
+    #wr-app .wr-status > span:last-child { margin-left: auto; }
     #wr-app .wr-top .admin-tab-btn .wr-btn-text, #wr-app .wr-btn .wr-btn-text { display: none; }
     /* One row, icons only: the bar's tools spilled onto a second line over
        the section strip at phone width. The account button's text is the

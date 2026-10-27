@@ -241,6 +241,8 @@
            the steps already past are let go rather than all booked at once
            into the same instant, which came out as a burst of noise (10 Oct
            2026). */
+        // (27 Oct 2026) nothing booked on a stopped clock: each note was refused with a warning before the first press
+        if (ctx.state !== "running") return;
         if (nextAt < ctx.currentTime - 0.25) {
             const behind = Math.ceil((ctx.currentTime - nextAt) / stepLen());
             step += behind;
@@ -323,9 +325,15 @@
        as well now, and the listeners stay until the context is running. */
     let waiting = false;
     const WAKE_ON = ["pointerdown", "pointerup", "touchend", "keydown"];
+    /* (27 Oct 2026, the live audit, as js/ff-audio.js) not asked before
+       the page has been pressed: refused, and said so in the console. The
+       listeners below ask on the first press. */
+    function mayStart() {
+        try { const ua = navigator.userActivation; return !ua || ua.hasBeenActive; } catch (e) { return true; }
+    }
     function wake() {
         if (!ctx || ctx.state === "running" || ctx.state === "closed") return;
-        ctx.resume().catch(() => {});
+        if (mayStart()) ctx.resume().catch(() => {});
         if (waiting) return;
         waiting = true;
         const done = () => {

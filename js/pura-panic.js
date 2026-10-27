@@ -358,6 +358,11 @@
             dx = e.clientX - r.left; dy = e.clientY - r.top;
             try { frame.setPointerCapture(e.pointerId); } catch (err) { /* gone */ }
             e.preventDefault();
+            /* (27 Oct 2026) the press brought the game forward and left the
+               keys where they were — often inside Fallin' Furni's frame, which
+               this page never hears — since the preventDefault keeps a press
+               from moving the focus. So the window takes it. */
+            if (!frame.contains(document.activeElement)) frame.focus({ preventScroll: true });
         });
         window.addEventListener("pointermove", e => {
             if (pointer === null || e.pointerId !== pointer) return;
@@ -1293,6 +1298,7 @@
                 ${testLevel() ? `<p class="pura-beta-note">Test mode: every game starts at level ${testLevel()}. Not saved.</p>` : ""}
                 <p class="pura-beta-note">This game is in beta, if you spot anything you think might be a bug, please let us know via the <a href="#" data-go="contact">contact form</a> in the Console, thank you!</p>`;
         } else if (which === "who") {
+            // On the way from GAME OVER's Save as a Guest, its button says the same (27 Oct 2026).
             const was = guest && guest.kind === "habbo" ? guest : claim;
             html = `<p class="pura-big">WHO'S PLAYING?</p>
                 <div class="console-hashline" aria-hidden="true"></div>
@@ -1305,7 +1311,7 @@
                         ${HOTELS.map(h => `<option value="${h}"${(was ? was.hotel : "COM") === h ? " selected" : ""}>${h}</option>`).join("")}
                     </select>
                 </div>
-                <button type="button" class="pura-text-btn" data-go="asguest">Play as a Guest</button>
+                <button type="button" class="pura-text-btn" data-go="asguest">${pendingSubmit ? "Save as a Guest" : "Play as a Guest"}</button>
                 <p class="pura-who-status" id="pura-who-status" aria-live="polite"></p>
                 <div class="pura-buttons">
                     <button type="button" class="console-btn" data-go="whonext">Next</button>
@@ -1349,7 +1355,7 @@
                 <p class="pura-note">You started this game signed in. Sign in to save it to your account, or save it as a guest.</p>
                 <div class="pura-buttons">
                     <button type="button" class="console-btn" data-go="runsignin">Sign in</button>
-                    <button type="button" class="console-btn" data-go="runguest">Save as a guest</button>
+                    <button type="button" class="console-btn" data-go="runguest">Save as a Guest</button>
                 </div>
                 <button type="button" class="pura-text-btn" data-go="rundrop">Don't save it</button>`;
         } else if (which === "over" && fromLeave && (!result || result.state === "recorded" || result.state === "kept")) {
@@ -1386,7 +1392,8 @@
         else if (isOpen() && document.activeElement && document.activeElement.closest(".pura-hud")) frame.focus({ preventScroll: true });
         hudReach(false);
         if (which === "who") wireWho();
-        if (which === "code" && !touchy()) { const b = panel.querySelector('[data-go="whocheck"]'); if (b) b.focus({ preventScroll: true }); }
+        // (27 Oct 2026, the night scan: not from behind another game, whose focus and keys it took, after the lookup answered)
+        if (which === "code" && !touchy() && !behind()) { const b = panel.querySelector('[data-go="whocheck"]'); if (b) b.focus({ preventScroll: true }); }
     }
 
     function me() { return window.Account ? Account.current : null; }
@@ -1774,8 +1781,10 @@
         if (panel.querySelector("#pura-who-name") !== input) return;
         if (btn) btn.disabled = false;
         const d = r ? r.data : {};
-        if (d.refused === "name-taken") { whoSay("Username taken, try again!"); input.focus(); input.select(); return; }
-        if (d.refused === "name-unknown") { whoSay(`No Habbo called ${name} on Origins ${hotel}.`); input.focus(); input.select(); return; }
+        // (27 Oct 2026: the box refocused only while in front, as the code panel's Check)
+        const again = () => { if (!behind()) { input.focus(); input.select(); } };
+        if (d.refused === "name-taken") { whoSay("Username taken, try again!"); again(); return; }
+        if (d.refused === "name-unknown") { whoSay(`No Habbo called ${name} on Origins ${hotel}.`); again(); return; }
         if (!r || !r.res.ok || !d.claim) {
             if (r && r.res.status === 403 && window.Account && Account.writeRefused(403, d, "play")) return;
             whoSay(d.error || "That couldn't be checked just now. Try again in a moment.");
@@ -2130,6 +2139,12 @@
         if (!window.Account || !Account.known || (Account.unsure && !me())) return;
         const u = unsentGame();
         if (!u) return;
+        /* Not if it is another account's (27 Oct 2026, the night scan): at a
+           shared computer the next person to sign in was shown the last
+           one's GAME OVER, and the server then refused it as stale. Left
+           kept for its own account, for as long as it is kept. */
+        const sub = runSub(u.token);
+        if (sub && me() && sub !== String(me().id)) return;
         const back = replayed(u.seed, u.log);
         if (!back) { keep(UNSENT_KEY, null); return; }
         g = back;
@@ -2156,7 +2171,10 @@
         try { r = await submit({ asGuest }); } finally { sendingAgain = false; }
         result = r;
         // Answered, it is put away, as a finished game's one sending is; still nobody's, it is kept.
-        if (r.state !== "signed-out-run") keep(UNSENT_KEY, null);
+        /* Not answered at all is kept too (27 Oct 2026, the night scan): the
+           board unreachable on the way back from signing in dropped the game
+           it had been kept for. Sent again the next time the window opens. */
+        if (r.state !== "signed-out-run" && r.state !== "offline") keep(UNSENT_KEY, null);
         if (mode === "over") showPanel("over");
     }
 

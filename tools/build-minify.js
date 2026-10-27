@@ -34,9 +34,11 @@
    ----------------------------------------------------------------------
    Why it is safe to run in place
 
-   Netlify builds from a fresh clone in a container and publishes the working
-   directory (publish = "." in netlify.toml), so rewriting files here touches
-   that throwaway checkout and nothing else. Your own copy is never involved.
+   Netlify builds from a fresh clone in a container, so rewriting files here
+   touches that throwaway checkout and nothing else; tools/build-dist.js then
+   copies the minified files into dist/, which is what is published (since
+   27 Oct 2026; before that it was the working directory itself). Your own
+   copy is never involved.
 
    To make sure of it, this REFUSES TO RUN outside Netlify's build. Run by
    hand it prints what it would have done and exits. Without that guard, one

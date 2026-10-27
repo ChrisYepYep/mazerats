@@ -271,6 +271,82 @@ document.addEventListener("DOMContentLoaded", () => {
         if (btn) btn.focus();
     });
 
+    /* ---- the glyph grid, by keyboard (27 Oct 2026, the bug scan).
+
+       The Glyphs menu no longer opens on focus (css/warren.css), only on a
+       click, a tap or Enter; and its 147 glyphs were 147 Tab stops. Now the
+       grid is ONE stop — the glyph last used, or the first — and the arrow
+       keys move inside it, Home and End to either end; Tab leaves it. The
+       buttons are js/glyph-palette.js's, built after this runs, so they are
+       given their tabindex when they arrive. And a menu opened from the
+       keyboard closes when focus leaves it (an insert hands focus back to
+       the field), rather than staying open over the page; one opened by a
+       click or a tap stays, as before, for the next glyph. */
+    const glyphList = document.getElementById("glyph-palette-list");
+    const glyphTab = glyphList ? glyphList.closest(".admin-tab") : null;
+    if (glyphList && glyphTab) {
+        const glyphBtns = () => Array.from(glyphList.querySelectorAll(".glyph-btn"));
+        const rove = to => glyphBtns().forEach(b => { b.tabIndex = b === to ? 0 : -1; });
+        const settle = () => {
+            const all = glyphBtns();
+            if (all.length && !all.some(b => b.tabIndex === 0)) rove(all[0]);
+        };
+        new MutationObserver(settle).observe(glyphList, { childList: true, subtree: true });
+        settle();
+        glyphList.addEventListener("focusin", e => {
+            const b = e.target.closest(".glyph-btn");
+            if (b) rove(b);
+        });
+        glyphList.addEventListener("keydown", e => {
+            const cur = e.target.closest(".glyph-btn");
+            if (!cur || e.altKey || e.ctrlKey || e.metaKey) return;
+            const all = glyphBtns();
+            const i = all.indexOf(cur);
+            let to = null;
+            if (e.key === "ArrowRight") to = all[i + 1];
+            else if (e.key === "ArrowLeft") to = all[i - 1];
+            else if (e.key === "Home") to = all[0];
+            else if (e.key === "End") to = all[all.length - 1];
+            else if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+                /* By position, not a column count: the three groups are
+                   grids of their own, of different lengths, with a heading
+                   between, so the row above or below is found on screen and
+                   the glyph in it nearest the same column is taken. */
+                const down = e.key === "ArrowDown";
+                const at = cur.getBoundingClientRect();
+                const mid = at.left + at.width / 2;
+                let rowTop = null;
+                for (const b of all) {
+                    const r = b.getBoundingClientRect();
+                    const beyond = down ? r.top > at.top + 2 : r.top < at.top - 2;
+                    if (beyond && (rowTop === null || (down ? r.top < rowTop : r.top > rowTop))) rowTop = r.top;
+                }
+                if (rowTop !== null) {
+                    let best = Infinity;
+                    for (const b of all) {
+                        const r = b.getBoundingClientRect();
+                        if (Math.abs(r.top - rowTop) > 2) continue;
+                        const d = Math.abs(r.left + r.width / 2 - mid);
+                        if (d < best) { best = d; to = b; }
+                    }
+                }
+            } else return;
+            e.preventDefault();
+            if (to) { rove(to); to.focus(); }
+        });
+        const glyphBtn = glyphTab.querySelector(".admin-tab-btn");
+        if (glyphBtn) glyphBtn.addEventListener("click", e => {
+            // detail is 0 for a click made by Enter or Space.
+            glyphTab.dataset.byKey = e.detail === 0 ? "1" : "";
+        });
+        glyphTab.addEventListener("focusout", e => {
+            if (!glyphTab.dataset.byKey || glyphTab.contains(e.relatedTarget)) return;
+            glyphTab.dataset.byKey = "";
+            glyphTab.classList.remove("is-open");
+            if (glyphBtn) glyphBtn.setAttribute("aria-expanded", "false");
+        });
+    }
+
     /* ---- your own account.
 
        Log out, and change your own password. Both are about the PERSON using
@@ -784,6 +860,10 @@ document.addEventListener("DOMContentLoaded", () => {
         // The Recolour editor's palette and preview (1 Oct 2026) — the same
         // inheritance, after a lock-out with somebody else signing in.
         if (typeof AdminRecolour !== "undefined" && AdminRecolour && typeof AdminRecolour.reset === "function") AdminRecolour.reset();
+        // The Atlas editor's unsaved moves and typing (27 Oct 2026, the bug
+        // scan): its forms carry typing across a reload, so they carried it
+        // across to the next account too.
+        if (window.AdminWizard && typeof window.AdminWizard.reset === "function") window.AdminWizard.reset();
     }
 
     /* The panels that live in files of their own (js/admin-guides.js,
@@ -939,6 +1019,12 @@ document.addEventListener("DOMContentLoaded", () => {
            only emptied by resetAccountPanels, after the loop. */
         const notices = window.AdminNotifications && typeof window.AdminNotifications.isDirty === "function" ? window.AdminNotifications : null;
         const noticeDirty = () => !paletteAsked && !!(notices && notices.isDirty());
+        /* And the Atlas editor's unsaved moves and typing (27 Oct 2026, the
+           bug scan; isDirty in js/admin-wizard.js), the same once-only way:
+           nothing in the loop closes its forms either, and resetAccountPanels
+           empties them after it. */
+        const wizard = window.AdminWizard && typeof window.AdminWizard.isDirty === "function" ? window.AdminWizard : null;
+        const wizardDirty = () => !paletteAsked && !!(wizard && wizard.isDirty());
         let loggedOut = false;
         try {
             /* Round again if, once the awaits are back, something is open
@@ -949,7 +1035,7 @@ document.addEventListener("DOMContentLoaded", () => {
                leaves this admin signed in: nothing has been dropped yet. */
             for (;;) {
                 if (refused()) return;
-                if (dirty() || paletteDirty() || noticeDirty()) {
+                if (dirty() || paletteDirty() || noticeDirty() || wizardDirty()) {
                     const ok = await showConfirmDialog("Log out and discard your unsaved changes? Anything you have added or edited in the open form will be lost.");
                     if (!ok) return;
                     paletteAsked = true;
@@ -1211,7 +1297,7 @@ document.addEventListener("DOMContentLoaded", () => {
         "profile-open": { "self": "Their own", "other": "Somebody else's" },
         "daily-open": { odd: "Odd One Out", guess: "Guess the Maze" },
         "boards-open": { all: "All dailies", guess: "Guess the Maze", odd: "Odd One Out", ff: "Fallin' Furni", pura: "Pura Panic" },
-        "ff-open": { menu: "From the menu", link: "From a link", route: "At /fallinfurni", other: "Other" },
+        "ff-open": { menu: "From the menu", link: "From a link", route: "At /fallinfurni", boards: "From the leaderboards", other: "Other" },
         // The bat game's score, as the band js/skin-halloween.js sends (never the score itself).
         "bat-end": { "0-99": "Under 100", "100-499": "100–499", "500-999": "500–999", "1000-2499": "1,000–2,499", "2500+": "2,500 or more" },
         // Whether the Advent button found them signed in (js/skin-xmas-advent.js).
@@ -9270,14 +9356,18 @@ document.addEventListener("DOMContentLoaded", () => {
         watch.observe(adminNavEl, { subtree: true, childList: true, characterData: true, attributes: true, attributeFilter: ["hidden"] });
         // So is #admin-content being shown: a sign-in lands here before it is.
         if (adminContent) watch.observe(adminContent, { attributes: true, attributeFilter: ["style"] });
+        /* A key or focus on it too (27 Oct 2026, the bug scan): tabbing
+           along the strip scrolled it to the button being tabbed to, and
+           the next count to arrive yanked it back to the active one. */
+        const HANDS = ["pointerdown", "wheel", "touchstart", "keydown", "focusin"];
         const stop = () => {
             watch.disconnect();
             clearTimeout(timer);
-            ["pointerdown", "wheel", "touchstart"].forEach(t => adminNavEl.removeEventListener(t, stop));
+            HANDS.forEach(t => adminNavEl.removeEventListener(t, stop));
             if (railReveal && railReveal.stop === stop) railReveal = null;
         };
         const timer = setTimeout(stop, 8000);
-        ["pointerdown", "wheel", "touchstart"].forEach(t => adminNavEl.addEventListener(t, stop, { passive: true }));
+        HANDS.forEach(t => adminNavEl.addEventListener(t, stop, { passive: true }));
         railReveal = { stop };
     }
 

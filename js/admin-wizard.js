@@ -2639,7 +2639,7 @@ window.AdminWizard = (function () {
             <div class="admin-form-actions">
                 <button type="submit" class="admin-action-pill admin-pill-solid">Save the secret</button>
                 <button type="button" class="admin-action-pill admin-wiz-cancel">Close</button>
-                <button type="button" class="admin-action-pill admin-danger-pill" data-act="delete">Delete it</button>
+                <button type="button" class="admin-action-pill admin-pill-danger" data-act="delete">Delete it</button>
             </div>
         `;
 
@@ -2978,7 +2978,13 @@ window.AdminWizard = (function () {
                 refreshSecretRowSummary(secret);
                 /* The fields now say what is saved, so they stop counting as
                    typing for the next reload to carry (26 Oct 2026). */
-                for (const name of ["name", "code", "hint", "message"]) read(name).defaultValue = next[name];
+                /* The value too, trimmed as saved (27 Oct 2026): a stray
+                   space left in a field kept it "typed" for isDirty, and
+                   Log out asked about a secret that was saved. */
+                for (const name of ["name", "code", "hint", "message"]) {
+                    read(name).defaultValue = next[name];
+                    read(name).value = next[name];
+                }
                 read("enabled").defaultChecked = next.enabled;
             }
         });
@@ -3202,11 +3208,17 @@ window.AdminWizard = (function () {
                replace in onInspectorInput decides. A 401 keeps them too. */
             const refused = !sent || (err.status >= 400 && err.status < 500 && err.status !== 401);
             if (refused) fresh.forEach(dropUpload);
+            /* The Save is over either way, so its button comes back first
+               (27 Oct 2026, the bug scan). Left saying "Saving…" through the
+               sign-in box, it told renderRoomList this form's Save was still
+               going out, so the reload after signing back in kept the form
+               whole with the button greyed for good: the typing it kept
+               could never be saved. */
+            submitBtn.disabled = false;
+            submitBtn.textContent = "Save";
             if (err.status === 401) return ctx.lockOut();
             errorEl.textContent = err.message || "Could not save that room.";
             errorEl.style.display = "block";
-            submitBtn.disabled = false;
-            submitBtn.textContent = "Save";
         }
     }
 
@@ -3571,10 +3583,11 @@ window.AdminWizard = (function () {
         $("wiz-admin-zoom-out").addEventListener("click", () => view.zoomBy(1 / 1.5));
         $("wiz-admin-zoom-reset").addEventListener("click", () => view.setZoom(1));
 
-        /* Leaving with unsaved moves is the one way to lose real work here —
-           a pass over the map is deliberately not saved as it goes. */
+        /* Leaving with unsaved moves loses real work — a pass over the map
+           is deliberately not saved as it goes — and so, since 27 Oct 2026,
+           does leaving with unsaved typing (isDirty). */
         window.addEventListener("beforeunload", e => {
-            if (!pending.size) return;
+            if (!isDirty()) return;
             e.preventDefault();
             e.returnValue = "";
         });
@@ -3590,5 +3603,39 @@ window.AdminWizard = (function () {
         if (view) view.refit();
     }
 
-    return { init, onShown, reload: load };
+    /* Whether leaving would lose anything (27 Oct 2026, the bug scan):
+       unsaved moves, an opening view picked and not saved, or typing in the
+       open room, the open secret or the map settings — which load() carries
+       across a reload, so it is real work. js/admin.js asks before Log out
+       throws it away, and the beforeunload in init before the tab closes;
+       both used to see the moves alone. */
+    function isDirty() {
+        if (!view) return false;
+        const openForm = list => list && list.querySelector(".admin-wiz-row.is-open .admin-wiz-row-form > form");
+        return pending.size > 0 || !!pendingStart || secretTyping() ||
+            hasTyped(typedChanges(openForm(els.roomList))) || hasTyped(typedChanges(els.mapForm));
+    }
+
+    /* Everything the next account must not inherit (27 Oct 2026, the bug
+       scan): called by resetAccountPanels in js/admin.js on a log out or
+       when somebody else signs in over a lock-out. The forms are emptied
+       rather than redrawn, because renderRoomList, renderSecretList and
+       renderMapSettings carry whatever they find typed in the old ones into
+       the new (typedChanges) — which is how the last admin's typing reached
+       whoever signed in next. The next init's load() draws them afresh. */
+    function reset() {
+        if (!view) return;
+        pending.clear();
+        pendingStart = null;
+        openRoomId = null;
+        openSecretId = null;
+        roomQuery = "";
+        if (els.roomSearch) els.roomSearch.value = "";
+        els.roomList.innerHTML = "";
+        if (els.secretList) els.secretList.innerHTML = "";
+        els.mapForm.innerHTML = "";
+        updateDirty();
+    }
+
+    return { init, onShown, reload: load, isDirty, reset };
 })();

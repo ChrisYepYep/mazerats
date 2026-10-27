@@ -970,6 +970,23 @@ document.addEventListener("DOMContentLoaded", async () => {
         if (!widget.contains(e.relatedTarget)) focused = false;
     });
 
+    /* AN EXTRA SLIDE THAT ARRIVES LATE goes up at once (27 Oct 2026, the
+       bug scan). The Christmas skin starts after this first slide is
+       written, so its countdown waited up to a turn, ten seconds, behind
+       "No upcoming events". The skin says "mazerats:ticker-extras" when it
+       starts or stops: an extra now first and not on screen, or a slide on
+       screen that has gone, is put right in place. Not while held. */
+    document.addEventListener("mazerats:ticker-extras", () => {
+        if (hovered || focused) return;
+        upcoming = currentUpcoming();
+        fitWidth(false);
+        const first = upcoming[0] || null;
+        if (first === showing || (!(first && first.extra) && upcoming.includes(showing))) return;
+        showing = first;
+        index = 0;
+        writeSlide(showing);
+    });
+
     /* prefers-reduced-motion: it still turns over, but in place, with no
        slide. The slide is the motion somebody has asked not to be shown; the
        other events are information, and not rotating at all would leave the

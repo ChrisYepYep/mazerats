@@ -20,7 +20,7 @@
    player write goes through (writeRefusal in _bans.js). A banned player can
    still read which doors they opened. */
 const { getDb, ensureUniqueIndex } = require("./_db");
-const { livePlayerFrom } = require("./_player");
+const { playerFrom, sessionRevoked } = require("./_player");
 const { SECURITY_HEADERS } = require("./_headers");
 const { writeRefusal } = require("./_bans");
 
@@ -77,9 +77,22 @@ async function handler(event) {
         console.error("advent: database connection failed", e);
         return json(503, { error: "Database connection failed" });
     }
-    // The session, and that it has not been ended (signed out everywhere, forgotten).
-    const player = await livePlayerFrom(db, event);
+    /* The session, and that it has not been ended (signed out everywhere,
+       forgotten): livePlayerFrom's check, made here so that a players read
+       that FAILS is told apart from a session that has ended. livePlayerFrom
+       answers null for both, and a 401 is what sends the page to "Sign in
+       with Discord" — a database blink must not sign anybody out (see
+       sessionRevoked in _player.js). It is a 503 the page offers to retry. */
+    const player = playerFrom(event);
     if (!player) return json(401, { error: "Not signed in" });
+    let row;
+    try {
+        row = await db.collection("players").findOne({ id: String(player.id) }, { projection: { _id: 0, sv: 1, svStrict: 1 } });
+    } catch (e) {
+        console.error("advent: could not read the players row", e);
+        return json(503, { error: "Your calendar could not be reached just now" });
+    }
+    if (sessionRevoked(player, row)) return json(401, { error: "Not signed in" });
 
     const col = db.collection(COLLECTION);
     const now = Date.now();
@@ -112,24 +125,32 @@ async function handler(event) {
        calendar without this door, so opening it twice changes nothing. A
        calendar that has it already makes the upsert try to insert a second
        document, which the unique index refuses — that refusal is the
-       "already open" answer, not a fault. */
+       "already open" answer, not a fault.
+       EXCEPT WHEN TWO TABS RACE the first doors of a calendar (27 Oct 2026,
+       the overnight scan): both match nothing, both try to insert, and the
+       one refused had its door in no document at all, answered as if it
+       were open. The server does not retry an upsert whose filter is not
+       all equalities (the $ne here), so it is retried once by hand, as a
+       plain update: the calendar exists by then, so it pushes the door if
+       it is missing and matches nothing if it is there. */
     try {
         await ensureUniqueIndex(col, ["playerId", "year"]);
     } catch (e) {
         console.error("advent: unique index unavailable", e);
         return json(503, { error: "Could not open the door just now" });
     }
+    const filter = { playerId: player.id, year, opened: { $ne: day } };
+    const update = { $push: { opened: day }, $set: { [`at.${day}`]: new Date(now).toISOString(), updatedAt: new Date(now).toISOString() } };
     try {
-        await col.updateOne(
-            { playerId: player.id, year, opened: { $ne: day } },
-            { $push: { opened: day }, $set: { [`at.${day}`]: new Date(now).toISOString(), updatedAt: new Date(now).toISOString() } },
-            { upsert: true }
-        );
-    } catch (e) {
-        if (!(e && e.code === 11000)) {
-            console.error("advent: open failed", e);
-            return json(500, { error: "Could not open the door" });
+        try {
+            await col.updateOne(filter, update, { upsert: true });
+        } catch (e) {
+            if (!(e && e.code === 11000)) throw e;
+            await col.updateOne(filter, update);
         }
+    } catch (e) {
+        console.error("advent: open failed", e);
+        return json(500, { error: "Could not open the door" });
     }
     try {
         const doc = await col.findOne({ playerId: player.id, year }, { projection: { _id: 0, opened: 1 } });

@@ -327,6 +327,15 @@ async function originsProfileFor(db, hotelCode, name) {
               $unset: { expiresAt: "" } },
             { upsert: true }
         ).catch(e => console.warn("habbo.js: could not cache", key, "-", e.message));
+        /* And no longer a search's (27 Oct 2026, the overnight scan): a row
+           a search wrote first kept source "search" through the write above
+           ($setOnInsert), so the next search past the half hour dated it
+           again (lookupOriginsName), and keepSearchesBounded dated it on
+           every warm instance — a player's Habbo deleted after 90 days
+           unviewed. Both look only at "search"; the fast path ignores
+           "player" exactly as it ignores "search". */
+        await cache.updateOne({ key, source: "search" }, { $set: { source: "player" }, $unset: { expiresAt: "" } })
+            .catch(e => console.warn("habbo.js: could not mark", key, "as a player's -", e.message));
         return result.found ? result.profile : null;
     } catch (e) {
         // Origins having a bad minute: the copy we had, however old.

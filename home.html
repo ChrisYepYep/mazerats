@@ -442,8 +442,22 @@
                     var worn = null;
                     try { worn = JSON.parse(localStorage.getItem("mazerats_skin_theme") || "null"); } catch (e) { worn = null; }
                     if (worn && worn.theme && Date.now() < worn.until) {
-                        localStorage.setItem("mazerats_theme", wanted);
-                        return settings.landingState;
+                        /* ...while these settings still wear it (27 Oct 2026,
+                           the bug scan). The owner switching the skin off, or
+                           changing its palette, mid-window: the remembered one
+                           was revealed and then changed when skin-wear heard.
+                           Now it is forgotten here, with the page still
+                           hidden, and the settings' palette is painted below.
+                           An admin's preview is skin-wear's alone (the
+                           settings cannot say), so it stands: the same test as
+                           skin-wear's preview(), keys and all. */
+                        var pv = localStorage.getItem("mazerats_skin_preview"), tk = localStorage.getItem("mazerats_admin_token");
+                        var previewing = !!(pv && tk && Object.prototype.hasOwnProperty.call(SKIN_PAIRED, pv) && localStorage.getItem("mazerats_skin_preview_refused") !== tk.slice(-12));
+                        if (previewing || skinPaletteAt(settings, Date.now()) === worn.theme) {
+                            localStorage.setItem("mazerats_theme", wanted);
+                            return settings.landingState;
+                        }
+                        localStorage.removeItem("mazerats_skin_theme");
                     }
                     /* Nothing remembered, but these settings put a skin on now
                        that brings its own palette (26 Oct 2026): that palette

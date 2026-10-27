@@ -9,7 +9,7 @@
    completely inert until js/site.js puts that attribute on <html>. The
    classic palette is not defined here and is not affected by anything in it.
 
-   1116 rules, 1796 declarations, hues 214 (surfaces) / 196 (accents).
+   1117 rules, 1797 declarations, hues 214 (surfaces) / 196 (accents).
 */
 :root[data-theme="frost"] {
     --bg-black: #02060c;
@@ -23,7 +23,7 @@
     --parchment-dim: #8ba2aa;
     --unknown: #7b8e94;
     --unknown-text: #9caaaf;
-    --amber-text: #4e8ca4;
+    --amber-text: #5294ac;
     --border: rgba(64, 161, 197, 0.35);
     --chrome-fill: #041224;
     --chrome-highlight: #0e2442;
@@ -1833,7 +1833,7 @@ html[data-theme="frost"]::-webkit-scrollbar-button {
 }
 
 [data-theme="frost"] .console-title {
-    color: #0a274e;
+    color: #081f3e;
     text-shadow: none;
 }
 
@@ -1841,6 +1841,10 @@ html[data-theme="frost"]::-webkit-scrollbar-button {
     border: none;
     background-color: transparent;
     background-image: url('../assets/img/frost/console/cnsl-top-x-close.png?v=9a00d736');
+}
+
+[data-theme="frost"] #console-frame:focus {
+    outline: none;
 }
 
 [data-theme="frost"] .console-screen {
@@ -2086,7 +2090,7 @@ html[data-theme="frost"]::-webkit-scrollbar-button {
 }
 
 [data-theme="frost"] .console-tab-btn.active .console-tab-label {
-    color: #0a274e;
+    color: #040f1f;
 }
 
 [data-theme="frost"] #profile-btn {
@@ -5737,6 +5741,18 @@ html[data-theme="frost"]::-webkit-scrollbar-button {
 [data-theme="frost"] .chrome-nav-top .chrome-nav-btn.active {
     color: #0a1729;
     text-shadow: none;
+}
+
+/* The console's selected tab and its title: measured, not inverted (see
+   tools/themes.js). The tab label 8.87:1 on its sprite at its
+   worst pixel, the title 5.00:1 on the frame. Three classes on the
+   tab, as style.css has it, so it beats the generated one. */
+[data-theme="frost"] .console-tab-btn.active .console-tab-label {
+    color: #e6f8ff;
+}
+
+[data-theme="frost"] .console-title {
+    color: #000000;
 }
 
 /* ------------------------------------------------ SPRITES IN THE MARKUP

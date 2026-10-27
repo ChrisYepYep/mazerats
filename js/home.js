@@ -4514,6 +4514,7 @@ document.addEventListener("DOMContentLoaded", () => {
         // Furni is recorded against the individual room image, so the strip
         // changes with the picture rather than listing the whole maze at once.
         renderFurniStrip(activeFurni && g.image ? activeFurni[g.image] : null);
+        warmFurniIcons(nearbyFurni());
         const newAlt = `${modalName.textContent} — ${label}`;
         const oldSrc = modalGalleryImg.getAttribute("src");
 
@@ -5104,16 +5105,36 @@ document.addEventListener("DOMContentLoaded", () => {
     // Furni detected in the room image showing above (see the admin scan).
     // One icon per item; the strip is rebuilt on every gallery change, since
     // each room image has its own furni.
-    /* Fetches every room's icons the moment the maze opens, not just the
-       room on screen. Paging through a maze otherwise re-runs the same wait
-       at every room, even though the icons repeat heavily between them — the
-       whole site only has 374 distinct ones. They go straight into the HTTP
-       cache, so by the time a room is reached its icons are already there.
+    /* Fetches the icons of the rooms either side of the one on screen, so
+       paging through a maze finds them already in the HTTP cache rather than
+       re-running the wait at every room.
+
+       Only the neighbours, since 27 Oct 2026 (the overnight scan). It used
+       to be every room the moment the maze opened, back when the whole site
+       had 374 distinct icons; The Little Maze alone now has 797, and opening
+       it fetched all of them from FurniIndex for a visitor who might look at
+       two rooms. FURNI_WARM_AHEAD rooms forward and FURNI_WARM_BEHIND back
+       keep the next click instant at a few dozen requests.
 
        Deliberately unawaited and error-swallowing: this is a nicety, and a
        furni whose icon 404s should cost nothing more than that icon. */
     const warmedFurniIcons = new Set();
     const FURNI_WARM_BATCH = 12;
+    const FURNI_WARM_AHEAD = 3;
+    const FURNI_WARM_BEHIND = 1;
+    // The furni records of the rooms around activeIndex, shaped as
+    // activeFurni is (image -> record), for warmFurniIcons.
+    function nearbyFurni() {
+        if (!activeFurni || !activeGallery || !activeGallery.length) return null;
+        const near = {};
+        const n = activeGallery.length;
+        for (let d = -FURNI_WARM_BEHIND; d <= FURNI_WARM_AHEAD; d++) {
+            if (!d || Math.abs(d) >= n) continue;
+            const g = activeGallery[(activeIndex + d + n) % n];
+            if (g && g.image && activeFurni[g.image]) near[g.image] = activeFurni[g.image];
+        }
+        return near;
+    }
     function warmFurniIcons(furni) {
         if (!furni) return;
         const queue = [];
@@ -8487,8 +8508,9 @@ document.addEventListener("DOMContentLoaded", () => {
         modalThumb.classList.toggle("is-event", !!n.isEvent);
         activeIsEvent = !!n.isEvent;
         activeRoomId = n.isEvent ? "" : (n.id || "");
+        // Its icons are warmed a few rooms at a time as the gallery moves
+        // (nearbyFurni), not all at once here.
         activeFurni = n.furni || null;
-        warmFurniIcons(activeFurni);
         renderRelatedImages(n);
 
         if (combinedGallery.length) {
@@ -10610,6 +10632,21 @@ document.addEventListener("DOMContentLoaded", () => {
         try { pid = new URLSearchParams(location.search).get("p"); } catch (e) { /* none */ }
         try { history.replaceState(history.state, "", "/home"); } catch (e) { /* a sandboxed frame */ }
         openProgress(pid && /^[A-Za-z0-9_-]{16}$/.test(pid) ? pid : null);
+        /* Focused again once the page is shown (27 Oct 2026, the overnight
+           scan). The gate in home.html's <head> keeps <html> hidden while it
+           decides, and focus() on anything hidden does nothing, so the first
+           Tab began at the top of the page behind the window. Not if the
+           focus has gone somewhere since, or the window has shut. */
+        if (!window.__mrRevealed) {
+            document.addEventListener("mazerats:revealed", () => {
+                const overlay = document.getElementById("progress-overlay");
+                const win = document.getElementById("progress-window");
+                const active = document.activeElement;
+                if (!overlay || !win || !overlay.classList.contains("open")) return;
+                if (active && active !== document.body && active !== document.documentElement) return;
+                win.focus({ preventScroll: true });
+            }, { once: true });
+        }
     }
 
     /* PURA PANIC (6 Oct 2026): fetched the first time somebody opens it, as
@@ -10640,7 +10677,11 @@ document.addEventListener("DOMContentLoaded", () => {
                 .catch(err => { puraLoading = null; throw err; });
         }
         puraLoading.then(() => { if (window.PuraPanic) window.PuraPanic.open(); })
-            .catch(e => console.warn("Pura Panic could not be loaded", e));
+            // Said to the visitor too, as Fallin' Furni's is (27 Oct 2026; tellNotLoaded below).
+            .catch(e => {
+                console.warn("Pura Panic could not be loaded", e);
+                tellNotLoaded("Pura Panic", "Pura Panic");
+            });
     };
     // The address stays /purapanic while the window is open, as /guess does;
     // closing it puts the archive's back (js/pura-panic.js).
@@ -10722,7 +10763,11 @@ document.addEventListener("DOMContentLoaded", () => {
                 .catch(err => { ratLoading = null; throw err; });
         }
         ratLoading.then(() => { if (window.RatRace) window.RatRace.open(); })
-            .catch(e => console.warn("Rat Race could not be loaded", e));
+            // Said to the visitor too, as Fallin' Furni's is (27 Oct 2026).
+            .catch(e => {
+                console.warn("Scout's Trail could not be loaded", e);
+                tellNotLoaded("Scout's Trail", "Scout's Trail");
+            });
     };
     /* AN ADMIN, CHECKED (26 Oct 2026, the bug scan). A Warren token merely
        sitting in this browser is a hint, not an admin: on a shared computer
@@ -10734,30 +10779,46 @@ document.addEventListener("DOMContentLoaded", () => {
        12 hours; a refusal clears it. Nothing is asked without a token. */
     const ADMIN_VERIFIED_KEY = "mazerats_skin_preview_verified";
     const ADMIN_SESSION_MS = 12 * 60 * 60 * 1000;
+    /* ASKED AGAIN AFTER TEN MINUTES (27 Oct 2026, the overnight scan). The
+       flag's `at` is when it was checked, not when the session began, so
+       trusted for 12 hours from there it could outlive the token by most
+       of a day, and a shared computer showed the hidden row long after.
+       Past ten minutes it still counts (an admin's menu does not blink),
+       but the server is asked again behind it, and a refusal clears it. */
+    const ADMIN_RECHECK_MS = 10 * 60 * 1000;
     let adminCheck = null;
     function adminToken() { try { return localStorage.getItem("mazerats_admin_token") || ""; } catch (e) { return ""; } }
-    function adminVerifiedNow() {
+    // How long ago this token was last vouched for; Infinity for never (or another token).
+    function adminFlagAge() {
         const token = adminToken();
-        if (!token) return false;
+        if (!token) return Infinity;
         try {
             const v = JSON.parse(sessionStorage.getItem(ADMIN_VERIFIED_KEY) || "null");
-            return Boolean(v && v.tail === token.slice(-12) && Date.now() - v.at < ADMIN_SESSION_MS);
-        } catch (e) { return false; }
+            return v && v.tail === token.slice(-12) && Number.isFinite(v.at) ? Math.max(0, Date.now() - v.at) : Infinity;
+        } catch (e) { return Infinity; }
+    }
+    function adminVerifiedNow() {
+        const age = adminFlagAge();
+        if (!(age < ADMIN_SESSION_MS)) return false;
+        if (age >= ADMIN_RECHECK_MS) adminVerified();
+        return true;
     }
     function adminVerified() {
-        if (adminVerifiedNow()) return Promise.resolve(true);
+        if (adminFlagAge() < ADMIN_RECHECK_MS) return Promise.resolve(true);
         const token = adminToken();
         if (!token || typeof Api === "undefined" || typeof Api.verifySession !== "function") return Promise.resolve(false);
         if (!adminCheck) {
             const tail = token.slice(-12);
             adminCheck = Api.verifySession(token).then(who => {
+                adminCheck = null;   // settled: the next stale flag asks afresh
                 const ok = Boolean(who && who.username);
                 try {
                     if (ok) sessionStorage.setItem(ADMIN_VERIFIED_KEY, JSON.stringify({ tail, at: Date.now() }));
                     else sessionStorage.removeItem(ADMIN_VERIFIED_KEY);
                 } catch (e) { /* private mode: asked again next time */ }
                 return ok;
-            }, () => { adminCheck = null; return false; });   // a blip: not an admin this time, asked again next time
+            // A blip: the flag as it stands (good for its 12 hours), asked again next time.
+            }, () => { adminCheck = null; return adminFlagAge() < ADMIN_SESSION_MS; });
         }
         return adminCheck;
     }
@@ -10766,9 +10827,9 @@ document.addEventListener("DOMContentLoaded", () => {
        scan). /scout (and /ratrace, /ariadne, which netlify.toml sends there)
        and What's New links used to open the window and fetch ~1.8MB of game
        for anybody, only for the game to say it was being worked on. Now
-       the settings are read first: live, it opens; otherwise only for an
-       admin the server has vouched for, and anybody else stays on the
-       archive, the address quietly put back to /home. The Games-menu row
+       the settings are read first: live or in maintenance, it opens;
+       hidden, only for an admin the server has vouched for, and anybody
+       else stays on the archive, the address quietly put back to /home. The Games-menu row
        keeps calling openRatRace itself: it is only offered while the game
        is live or in maintenance, or hidden to a checked admin. */
     const SCOUT_PATH = /^\/(scout|ariadne|ratrace)\/?$/;
@@ -10776,7 +10837,11 @@ document.addEventListener("DOMContentLoaded", () => {
         const settings = (typeof Api !== "undefined" && typeof Api.getSiteSettings === "function")
             ? Api.getSiteSettings().catch(() => null) : Promise.resolve(null);
         return settings
-            .then(s => (s && s.ratRaceState === "live") || adminVerified())
+            /* In maintenance too (27 Oct 2026, the owner's): the window says it
+               is being worked on, as the Games-menu row's press does, rather
+               than the address quietly going back to /home. A real answer
+               only, as ratState's: the fallback has no ratRaceState. */
+            .then(s => (s && (s.ratRaceState === "live" || (!s.fromCache && s.ratRaceState === "maintenance"))) || adminVerified())
             .then(ok => {
                 if (ok) { window.openRatRace(); return; }
                 if (SCOUT_PATH.test(location.pathname)) {

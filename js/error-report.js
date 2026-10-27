@@ -506,6 +506,25 @@
                that fails greys its row out as "No picture yet" — about one in
                three of them, by design, so not a fault either. */
             if (el.hasAttribute && el.hasAttribute("data-unlisted")) { ignored++; return; }
+            /* A picture from the image CDN gets one more go before it counts
+               (27 Oct 2026). The overnight audit found the Safari reports
+               behind "/.netlify/images failed to load" could not be made to
+               happen: every address in them loaded, in every browser tried,
+               so what fails is a moment's network rather than the picture.
+               One quiet retry a little later shows the picture instead of a
+               gap, and only a second failure is reported. Not when the page
+               has already put something else there (its own fallback), nor
+               for a srcset, whose chosen candidate a retry could not name. */
+            var cdn = tag === "img" && /^\/\.netlify\/images(?:\?|$)/.test(clean);
+            if (cdn && !el.hasAttribute("data-retried") && !el.srcset && !leaving && !departing()) {
+                var again = el.getAttribute("src");
+                el.setAttribute("data-retried", "");
+                setTimeout(function () {
+                    try { if (el.isConnected && el.getAttribute("src") === again) { el.removeAttribute("src"); el.setAttribute("src", again); } } catch (x) { /* never */ }
+                }, 1500);
+                ignored++;
+                return;
+            }
             var what = tag === "img" ? "A picture" : tag === "script" ? "A script" : "A stylesheet or linked file";
             /* Every picture from FurniIndex's new API is one failure on this
                page (1 Oct 2026), as the server groups them (groupSource in
@@ -519,7 +538,21 @@
                which says why): leaving the page fails whatever is still
                loading, and a page on its way out reports none of it. */
             if (leaving || departing()) { ignored++; return; }
-            hold("resource", { message: what + " failed to load", source: clean, tag: tag, group: group });
+            /* Which picture it was, for the image CDN (27 Oct 2026). The
+               address keeps only known query keys, so every CDN failure read
+               "/.netlify/images?q=…" whatever it was a picture of, and they
+               could not be told apart. The picture's own path and size go in
+               the report's context instead, with what the page was doing. */
+            var context;
+            if (cdn) {
+                context = { retried: el.hasAttribute("data-retried"), online: navigator.onLine !== false, hidden: document.visibilityState === "hidden", msSinceLoad: sinceLoad() };
+                try {
+                    var sp = new URL(url, location.href).searchParams;
+                    if (sp.get("url")) context.picture = cleanUrl(sp.get("url"), 200);
+                    ["w", "h", "fm", "fit"].forEach(function (k) { if (sp.get(k)) context[k] = cut(sp.get(k), 20); });
+                } catch (x) { /* the address alone, then */ }
+            }
+            hold("resource", { message: what + " failed to load", source: clean, tag: tag, group: group, context: context });
         }
 
         function onRejection(e) {
@@ -753,8 +786,17 @@
             } catch (x) { /* never */ }
         });
         window.addEventListener("pagehide", function () { leaving = true; hides++; safe(flush, true); });
-        // Back from the back/forward cache: the page is in use again.
-        window.addEventListener("pageshow", function () { leaving = false; departAt = 0; });
+        /* Back from the back/forward cache: the page is in use again. Only
+           then (26 Oct 2026, the night scan): every page also gets a pageshow
+           when it first finishes loading, and that one closed the departure
+           window that a trip begun before it had opened — home.html's gate
+           bouncing a visitor from <head>, the welcome page's hand-off, a
+           Sign in pressed while the page was still loading — so whatever
+           failed after load, before the next page came, was filed again. */
+        window.addEventListener("pageshow", function (e) {
+            if (e && e.persisted === false) return;
+            leaving = false; departAt = 0;
+        });
         /* A click on a link that loads another page here: an ordinary left
            click on an <a>, nothing on the page having taken it over (the
            homepage opens its windows in place), not to a new tab, not a

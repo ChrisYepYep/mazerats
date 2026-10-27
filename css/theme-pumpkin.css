@@ -9,7 +9,7 @@
    completely inert until js/site.js puts that attribute on <html>. The
    classic palette is not defined here and is not affected by anything in it.
 
-   1116 rules, 1796 declarations, hues 18 (surfaces) / 38 (accents).
+   1117 rules, 1797 declarations, hues 18 (surfaces) / 38 (accents).
 */
 :root[data-theme="pumpkin"] {
     --bg-black: #0a0401;
@@ -1833,7 +1833,7 @@ html[data-theme="pumpkin"]::-webkit-scrollbar-button {
 }
 
 [data-theme="pumpkin"] .console-title {
-    color: #4e1c06;
+    color: #3d1605;
     text-shadow: none;
 }
 
@@ -1841,6 +1841,10 @@ html[data-theme="pumpkin"]::-webkit-scrollbar-button {
     border: none;
     background-color: transparent;
     background-image: url('../assets/img/pumpkin/console/cnsl-top-x-close.png?v=7c93729d');
+}
+
+[data-theme="pumpkin"] #console-frame:focus {
+    outline: none;
 }
 
 [data-theme="pumpkin"] .console-screen {
@@ -2086,7 +2090,7 @@ html[data-theme="pumpkin"]::-webkit-scrollbar-button {
 }
 
 [data-theme="pumpkin"] .console-tab-btn.active .console-tab-label {
-    color: #4e1c06;
+    color: #1c0a02;
 }
 
 [data-theme="pumpkin"] #profile-btn {
@@ -5737,6 +5741,18 @@ html[data-theme="pumpkin"]::-webkit-scrollbar-button {
 [data-theme="pumpkin"] .chrome-nav-top .chrome-nav-btn.active {
     color: #29130a;
     text-shadow: none;
+}
+
+/* The console's selected tab and its title: measured, not inverted (see
+   tools/themes.js). The tab label 8.15:1 on its sprite at its
+   worst pixel, the title 5.17:1 on the frame. Three classes on the
+   tab, as style.css has it, so it beats the generated one. */
+[data-theme="pumpkin"] .console-tab-btn.active .console-tab-label {
+    color: #fff6e6;
+}
+
+[data-theme="pumpkin"] .console-title {
+    color: #29130a;
 }
 
 /* ------------------------------------------------ SPRITES IN THE MARKUP

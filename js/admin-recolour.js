@@ -1547,7 +1547,9 @@ window.AdminRecolour = (function () {
     function skinUntil(r) {
         if (r.why === "override") return " (switched on by hand)";
         if (r.why !== "schedule" || !Number.isFinite(r.until)) return "";
-        return " (until " + new Date(r.until).toLocaleString("en-GB", { day: "numeric", month: "short" }) + ")";
+        // In UTC and labelled so (27 Oct 2026, the bug scan), as the Warren's
+        // other dates are: it was the reader's own local day, unmarked.
+        return " (until " + new Date(r.until).toLocaleString("en-GB", { timeZone: "UTC", day: "numeric", month: "short" }) + " UTC)";
     }
     async function readSkinSite() {
         try {

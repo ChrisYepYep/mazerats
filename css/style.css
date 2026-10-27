@@ -137,6 +137,44 @@
     font-display: swap;
 }
 
+/* ---- THE MIDDOT, FOR EVERY LINE SET IN VOLTER (27 Oct 2026) ----
+
+   VolterGoldfish.ttf maps U+00B7 to an EMPTY glyph, so every "·" in Volter
+   text was a gap: Pura Panic's "Level 1 · 0 rows", the menu's lines, the
+   advent door's caption, the quiz's saved game. 'Volter Punct' below fixed
+   it element by element; this fixes it for the family itself. The same
+   family name again, for that one codepoint only: where unicode-ranges
+   overlap, the face declared LAST is asked first, so these, coming after
+   the faces above, draw the middot and Volter draws everything else. No
+   download, local() only; a device with none of them is where it was.
+
+   Verdana first: at Volter's 9px its dot is a clean square at the middle
+   of the x-height, the closest of the system faces to the pixel letters
+   round it (measured beside Arial, Segoe UI and Tahoma). Not "•" in the
+   strings instead: U+2022 is one of Volter's picture glyphs (see 'Volter
+   Glyphs'), and a bullet there is a little drawing, not a dot. */
+@font-face {
+    font-family: 'Volter Goldfish';
+    src: local('Verdana'), local('Roboto'), local('Arial'), local('Helvetica'), local('DejaVu Sans');
+    font-weight: normal;
+    font-style: normal;
+    unicode-range: U+00B7;
+}
+@font-face {
+    font-family: 'Volter Goldfish';
+    src: local('Verdana Bold'), local('Verdana-Bold'), local('Roboto Bold'), local('Arial Bold'), local('Arial-BoldMT'), local('Helvetica Bold'), local('DejaVu Sans Bold');
+    font-weight: bold;
+    font-style: normal;
+    unicode-range: U+00B7;
+}
+@font-face {
+    font-family: 'Volter Goldfish Bold';
+    src: local('Verdana Bold'), local('Verdana-Bold'), local('Roboto Bold'), local('Arial Bold'), local('Arial-BoldMT'), local('Helvetica Bold'), local('DejaVu Sans Bold');
+    font-weight: normal;
+    font-style: normal;
+    unicode-range: U+00B7;
+}
+
 /* ---- THE PICTURE GLYPHS, AND ONLY THE PICTURE GLYPHS ----
 
    The same Volter file a fourth time, restricted by unicode-range to the
@@ -8838,7 +8876,10 @@ body[data-page="admin"] .search-box input {
     text-overflow: ellipsis;
     padding: 0 4px;
     margin: 7px 0 0;
-    color: #996600;
+    /* #7b4a00, the tabs' own brown, rather than #996600 (27 Oct 2026, the
+       bug scan): on the frame's #ffcb00 that was 3.24:1; this is 4.89:1.
+       The palettes measure their own (measuredLabel in tools/themes.js). */
+    color: #7b4a00;
     /* The window titles' face and size (see .chrome-titlebar h2). */
     font-family: 'Volter Goldfish Bold', 'Volter Goldfish', 'Pixelify Sans', monospace;
     font-weight: 400;
@@ -8895,6 +8936,9 @@ body[data-page="admin"] .search-box input {
     --scr-foot: 62px;
     --scr-radius: 12px;
 }
+/* The console's frame takes the focus on opening (27 Oct 2026, js/console.js),
+   as the Profiles window's does, and with no ring, as that one has none. */
+#console-frame:focus { outline: none; }
 
 .console-screen {
     position: absolute;
@@ -9764,8 +9808,12 @@ body[data-page="admin"] .search-box input {
     pointer-events: none;
 }
 
+/* Darker on the selected tab, not lighter (27 Oct 2026, the bug scan): its
+   sprite is the darker gold, and #996600 on it measured 1.63:1, the one tab
+   whose name could not be read. #3d2400 clears the worst pixel under the
+   label at 4.78:1. The palettes measure their own in tools/themes.js. */
 .console-tab-btn.active .console-tab-label {
-    color: #996600;
+    color: #3d2400;
 }
 
 /* The tab strip in its order: PROFILE, CONTACT, SOURCE, PRIVACY.

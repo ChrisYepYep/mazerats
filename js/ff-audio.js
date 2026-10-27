@@ -1594,6 +1594,12 @@
     let timer = 0, playing = false, nextAt = 0, step = 0;
 
     function tick() {
+        /* Nothing booked on a stopped clock (27 Oct 2026, the live audit):
+           before the first press every note started on it was refused with
+           a warning in the console, about thirty in the page's first
+           seconds. The clock stands still meanwhile, so the tune starts from
+           its top on the press. */
+        if (A.ctx.state !== "running") return;
         const now = A.ctx.currentTime;
         // Fallen behind (a stall, a throttled timer): let those steps go
         // rather than book them all into one instant.
@@ -1633,10 +1639,25 @@
     let held = false;
     let waiting = false;
     const WAKE_ON = ["pointerdown", "pointerup", "touchend", "keydown"];
+    /* NOT ASKED BEFORE A PRESS (27 Oct 2026, the live audit). A resume()
+       before the page has been pressed is refused, and the browser says so
+       in the console every time: once for each start() and sting, 31 times
+       in the page's first eight seconds. The listeners below ask on the
+       first press instead. In the homepage's window the press that opened
+       it counts (the frame may play sound on its parent's press). A browser
+       that cannot say is asked, as before. */
+    function mayStart() {
+        try {
+            const ua = navigator.userActivation;
+            if (!ua || ua.hasBeenActive) return true;
+            const up = window.parent !== window && window.parent.navigator.userActivation;
+            return Boolean(up && up.hasBeenActive);
+        } catch (e) { return true; }
+    }
     function wake() {
         if (!A || A.ctx.state === "running" || A.ctx.state === "closed") return;
         if (document.hidden || held) return;
-        A.ctx.resume().catch(() => {});
+        if (mayStart()) A.ctx.resume().catch(() => {});
         if (waiting) return;
         waiting = true;
         const done = () => {

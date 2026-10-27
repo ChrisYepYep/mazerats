@@ -26,7 +26,8 @@
 
    SIGNED IN WITH DISCORD, AND KEPT WITH THE ACCOUNT. The "Advent" button
    asks a signed-out visitor to sign in (and brings them back to the
-   calendar, #advent) instead of opening it. The doors a player has opened
+   calendar, #advent) instead of opening it; on a page without the account
+   script it goes to /home#advent. The doors a player has opened
    are kept by netlify/functions/advent.js, which also holds each door to
    its day. An admin's preview (the Warren's "Pretend it's") opens doors
    for that page only and never writes them. What is counted for the
@@ -133,7 +134,8 @@
     function stateOf(n) {
         if (ui.opened.has(n)) return "open";
         if (n > ui.day) return "locked";
-        return n === Math.min(ui.day, 24) ? "today" : "ready";
+        // From the 25th no door is today's (27 Oct 2026): door 24 stayed ringed and breathing to New Year.
+        return n === ui.day ? "today" : "ready";
     }
 
     function build() {
@@ -239,12 +241,17 @@
             else if (kind === "locked") { head = `Door ${n}`; line = `Opens on ${n} December. No peeking!`; pill("status-unknown", "Locked"); }
             else if (!ui.day) { head = "The doors open from 1 December"; line = "One a day, all the way to Christmas Eve."; }
             else {
-                const next = [...Array(Math.min(ui.day, 24)).keys()].map((i) => i + 1).find((d) => !ui.opened.has(d));
+                const shut = [...Array(Math.min(ui.day, 24)).keys()].map((i) => i + 1).filter((d) => !ui.opened.has(d));
+                const next = shut[0];
                 if (next) {
                     big.textContent = String(next);
-                    head = next === Math.min(ui.day, 24) ? `Door ${next} is ready` : `Door ${next} is still waiting`;
+                    head = next === ui.day ? `Door ${next} is ready` : `Door ${next} is still waiting`;
                     line = "Click it to see what's behind it.";
-                    pill("status-collab", next === Math.min(ui.day, 24) ? "Today" : "Waiting");
+                    /* After Christmas Eve (27 Oct 2026): every door's day has
+                       come, so none is "Today", and the row says how many are
+                       still shut rather than seeming to wait on one. */
+                    if (ui.day > 24) line = shut.length === 1 ? "Christmas is here, and it's the last one still shut. Click it to see what's behind it." : `Christmas is here, and ${shut.length} doors are still shut. Click one to open it.`;
+                    pill("status-collab", next === ui.day ? "Today" : "Waiting");
                 } else if (ui.day < 24) { head = `Door ${ui.day + 1} opens tomorrow`; line = "Click any open door to look at it again."; }
                 else { head = "Merry Christmas, Maze Rats!"; line = "Every door is open. Click any of them to look again."; }
             }
@@ -296,6 +303,12 @@
             ui.opened = new Set(body.opened);
             ui.opened.add(n);
             rememberSeen(ui.opened);
+            /* Doors still on their way stay open (27 Oct 2026, the bug scan):
+               two doors clicked quickly, the first one's answer was the
+               calendar before the second, and the second door flipped shut
+               and then open again when its own answer came. Not remembered
+               above until their own answers keep them. */
+            ui.busy.forEach((d) => ui.opened.add(d));
             track("advent-door", String(n));
             updateButton();
             refresh();
@@ -385,6 +398,12 @@
     async function open() {
         if (ui || !on) return;
         const A = window.Account;
+        /* A page without js/account.js (the landing page, privacy, the 404,
+           the wizard; 27 Oct 2026, the bug scan): it can neither ask who is
+           signed in nor offer the sign-in, so the button did nothing all
+           December. It goes to the archive, which opens the calendar from
+           #advent (start(), below), or asks a signed-out visitor to sign in. */
+        if (!A) { location.href = "/home#advent"; return; }
         if (A && !A.known && A.ready) { try { await A.ready(); } catch (e) { /* asked below */ } }
         if (ui || !on) return;
         if (A && A.ban && A.mayPlay && !A.mayPlay()) return;
@@ -396,7 +415,16 @@
         wasModalOpen = document.body.classList.contains("modal-open");
         document.body.classList.add("modal-open");
         refresh();
-        ui.grid.addEventListener("click", (e) => { const t = e.target.closest(".xa-tile"); if (t) openDoor(Number(t.dataset.day)); });
+        /* And the row under the grid brought into view (27 Oct 2026, the bug
+           scan): on a phone held sideways (844x390) the window scrolls, the
+           row sat below the fold, and a door clicked seemed to do nothing.
+           openDoor has filled the row by the time it first waits. */
+        ui.grid.addEventListener("click", (e) => {
+            const t = e.target.closest(".xa-tile");
+            if (!t) return;
+            openDoor(Number(t.dataset.day));
+            if (ui) ui.detail.scrollIntoView({ block: "nearest", behavior: reduceMq.matches ? "auto" : "smooth" });
+        });
         ui.close.addEventListener("click", shut);
         ui.overlay.addEventListener("mousedown", (e) => { if (e.target === ui.overlay) shut(); });
         addEventListener("keydown", onKey, true);

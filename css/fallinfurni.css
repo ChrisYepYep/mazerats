@@ -531,6 +531,29 @@ body.is-editing .ff-title { display: none; }
 /* On the pause menu, the pause menu's buttons' wood. */
 .ff-paused-audio .ff-vol { background: var(--wood-mid); }
 
+/* A FINGER'S SIZE ON A PHONE (27 Oct 2026, the night scan). Scaled with
+   the room to a phone's screen (body.ff-immersive, --ff-fit), the row was
+   a slider 8px tall and Music and Sound 15px: hard to hit. Each now
+   answers a touch some 12px above and below what is drawn — 24 to 33px
+   of the screen on a phone held sideways — and nothing drawn moves: the
+   buttons by an invisible ::after, the slider taller with the height
+   given back in negative margins, its track and thumb drawn in the middle
+   as before. That stays inside the stage's edge under the title's row
+   and the gap over the pause menu's, so it covers nothing else that can
+   be pressed. */
+body.ff-immersive .ff-title-opts button,
+body.ff-immersive .ff-paused-audio button { position: relative; }
+body.ff-immersive .ff-title-opts button::after,
+body.ff-immersive .ff-paused-audio button::after {
+    content: "";
+    position: absolute;
+    inset: -12px -3px;
+}
+body.ff-immersive .ff-vol input[type="range"] {
+    height: 41px;
+    margin: -15px 0;
+}
+
 .ff-title .ff-status { text-align: center; }
 
 /* No percentages, no max-width: the canvas is its own size or it is wrong. */

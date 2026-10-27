@@ -40,7 +40,9 @@
            rule has nothing to decide here. */
         { key: "ff", label: "Fallin' Furni", url: "/.netlify/functions/ff-scores", ff: true,
           span: "Everyone's best run. Points first, then the faster time.",
-          play: () => (ffOpen ? window.openFallinFurni : null) },
+          /* Counted as reached from here (27 Oct 2026, the overnight scan):
+             called bare, the window's "ff-open" was labelled "other". */
+          play: () => (ffOpen && typeof window.openFallinFurni === "function" ? () => window.openFallinFurni(false, "boards") : null) },
         { key: "pura", label: "Pura Panic", url: "/.netlify/functions/pura-scores", ff: true, pura: true,
           span: "Everyone's best game, all time.",
           play: () => window.openPuraPanic }
