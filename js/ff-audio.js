@@ -1770,20 +1770,32 @@
             [86, 90, 93, 98].forEach((n, i) => V.vibes(hit + (2 + i) * SIX, 0.3, hz(n), 0.07, bus));
             return 2.4;
         },
-        // A furni coming down on you: three falling PSG notes, a run down, a
-        // low timpani.
+        /* GAME OVER: POWERING DOWN (27 Oct 2026, the owner's: "an appropriate
+           powering down sound sting when losing"). The machine winds down —
+           a buzzing FM tone sliding two and a half octaves from D, losing its
+           edge as it goes, with a twin a few cents under it — while the PSG
+           falls down the D minor chord, each note later than the last, like
+           a tape slowing. It ends on a tape-stop thud and the click of the
+           power going off. The sad tune follows it (showRoundEnd). */
         lost(at) {
             const bus = A.sting;
-            [69, 68, 67].forEach((n, i) => {
-                V.lead(at + i * SIX * 2, SIX * 1.8, hz(n), 0.17, bus, 0);
-                V.psg(at + i * SIX * 2, SIX * 1.8, hz(n + 12), 0.03, bus, { rate: 2, floor: 0.4 });
+            const wind = 1.5;
+            [0, -14].forEach((cents, i) => fm(at, wind, hz(74), {
+                to: hz(38), cents, vol: i ? 0.09 : 0.14, bus, attack: 0.01, sustain: 1, decay: 0.3, release: 0.08,
+                cut: 2600, mods: [{ ratio: 1, index: 2.2, indexTo: 0.25, indexTime: wind }]
+            }));
+            let t = at + 0.05;
+            [86, 81, 77, 74, 69, 65, 62].forEach((n, i) => {
+                const len = 0.09 + i * 0.035;
+                V.psg(t, len * 0.9, hz(n), 0.035 - i * 0.003, bus, { rate: 1, floor: 0.35 });
+                t += len;
             });
-            for (let k = 0; k < 10; k++) V.psg(at + 6 * SIX + k * 0.045, 0.05, hz(86 - k * 2.4), 0.03, bus, { rate: 1, floor: 0.3 });
-            const thud = at + 6 * SIX + 0.5;
-            V.kick(thud, 0.45, bus);
-            V.thumb(thud, 0.4, hz(38), 0.45, bus);
-            V.timpani(thud + 0.02, 73, 0.3, bus);
-            return 1.9;
+            const stop = at + wind - 0.05;
+            drop(stop, 95, 28, 0.45, 0.7, 0.4, bus);
+            V.thumb(stop, 0.5, hz(26), 0.4, bus);
+            V.timpani(stop + 0.02, 55, 0.28, bus);
+            hiss(stop + 0.55, 0.05, 0.08, "lowpass", 1800, 0, bus);
+            return wind + 0.8;
         },
         // A life back: the PSG's quick run up the D major chord, vibes on top.
         won(at) {

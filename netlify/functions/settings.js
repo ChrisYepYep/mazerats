@@ -52,8 +52,27 @@ const DEFAULT_STATE = "enter";
 const VALID_MAINTENANCE_NOTES = ["5", "soon", "later"];
 const DEFAULT_MAINTENANCE_NOTE = "soon";
 
-const VALID_FF_STATES = ["live", "coming-soon", "maintenance"];
+const VALID_FF_STATES = ["live", "coming-soon", "maintenance", "beta"];
 const DEFAULT_FF_STATE = "live";
+
+/* BETA (27 Oct 2026, the owner's: "when the game is in its beta state, it
+   shows as coming soon to normal users still, but selected users can access
+   it by a secret code"). The Warren sends "beta"; it is STORED as
+   fallinFurniState "coming-soon" with fallinFurniBeta: true beside it, and
+   said the same way. So every page and function that already shuts the game
+   for Coming Soon goes on shutting it without learning a new word — and that
+   includes a deployed site running code from before Beta existed, which
+   reads the same database as the dev server and would have taken an unknown
+   word for open (the game page's gate does). Only the game page (to listen
+   for the code) and the Warren (to light its Beta button) read the flag.
+   Who gets in is ff-beta.js's: a player the Warren has marked a beta
+   tester. A stored "beta" (none was ever written) still reads as Beta. */
+const ffStateOf = (doc) => {
+    const s = (doc && doc.fallinFurniState) || DEFAULT_FF_STATE;
+    return s === "beta" ? "coming-soon" : s;
+};
+const ffBetaOf = (doc) => Boolean(doc && (doc.fallinFurniState === "beta"
+    || (doc.fallinFurniState === "coming-soon" && doc.fallinFurniBeta === true)));
 
 /* PURA PANIC: "maintenance" or "live" (6 Oct 2026, the owner's). In
    maintenance the game is in the Games menu saying so, as Fallin' Furni is
@@ -229,7 +248,8 @@ function settingsReply(event, doc) {
     const res = cachedJson(event, {
         landingState: (doc && doc.landingState) || DEFAULT_STATE,
         lobbyFurni: (doc && Array.isArray(doc.lobbyFurni)) ? doc.lobbyFurni : [],
-        fallinFurniState: (doc && doc.fallinFurniState) || DEFAULT_FF_STATE,
+        fallinFurniState: ffStateOf(doc),
+        fallinFurniBeta: ffBetaOf(doc),
         puraPanicState: puraState(doc),
         ratRaceState: ratState(doc),
         maintenanceNote: (doc && doc.maintenanceNote) || DEFAULT_MAINTENANCE_NOTE,
@@ -318,7 +338,9 @@ async function write(event, settings, db) {
             if (!VALID_FF_STATES.includes(body.fallinFurniState)) {
                 return json(400, { error: "fallinFurniState must be one of: " + VALID_FF_STATES.join(", ") });
             }
-            update.fallinFurniState = body.fallinFurniState;
+            // Beta is Coming Soon with a flag (see BETA above); any other state clears it.
+            update.fallinFurniState = body.fallinFurniState === "beta" ? "coming-soon" : body.fallinFurniState;
+            update.fallinFurniBeta = body.fallinFurniState === "beta";
         }
         if (body.puraPanicState !== undefined) {
             if (!VALID_PURA_STATES.includes(body.puraPanicState)) {
@@ -430,7 +452,8 @@ async function write(event, settings, db) {
         return json(200, {
             landingState: (doc && doc.landingState) || DEFAULT_STATE,
             lobbyFurni: (doc && Array.isArray(doc.lobbyFurni)) ? doc.lobbyFurni : [],
-            fallinFurniState: (doc && doc.fallinFurniState) || DEFAULT_FF_STATE,
+            fallinFurniState: ffStateOf(doc),
+            fallinFurniBeta: ffBetaOf(doc),
             puraPanicState: puraState(doc),
             ratRaceState: ratState(doc),
             maintenanceNote: (doc && doc.maintenanceNote) || DEFAULT_MAINTENANCE_NOTE,

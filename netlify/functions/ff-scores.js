@@ -81,7 +81,9 @@ const BOARD_READ = TOP * 2;
    `ffLaunchAt` is also returned on its own, because Launch Week hangs off
    the game's date and only the game's: a week that started with the site
    would be half over before anybody could play in it. See A TOURNAMENT. */
-const CLOSED_STATES = ["coming-soon", "maintenance"];
+// Beta is closed too (27 Oct 2026): the testers play as an admin does on a
+// closed game, with no run token and nothing on the boards. See settings.js.
+const CLOSED_STATES = ["coming-soon", "maintenance", "beta"];
 
 // An ISO string, or null for missing or unparseable. settings.js stores
 // both dates through toISOString(), and every `at` on this board is written

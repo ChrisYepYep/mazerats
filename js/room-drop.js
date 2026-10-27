@@ -298,6 +298,44 @@
         return out;
     }
 
+    /* THE NOOK BEHIND A POWER-UP (27 Oct 2026). A power-up lands on the one
+       tile the builder chose, so it cannot be moved somewhere kinder the way
+       a queued piece is. Level 50's coffee stands at the mouth of a two-tile
+       dead end in the Library, and spotsFor's rule that no part of the floor
+       may lose its way to a seat refused it for as long as any seat was
+       waiting to be sat on — which was the whole round, so it never fell.
+
+       So a nook of at most NOOK_TILES that the power-up cuts off may go, as
+       long as the player is not within NEAR_STEPS of it, nothing the round
+       keeps clear (`reserved`: a power-up's tile, or the tile in front of
+       one) is in it, and NO SEAT TOUCHES IT. That last is not spotsFor's to
+       catch: asked with the nook closed, a seat whose only way off was the
+       nook looks bricked in already, and a seat bricked in already is
+       excused (level 10, seed 18, in tools/ff-sim.js: the ice cream closed
+       the one tile off the bar chair at (4,6), with that chair still owed).
+       It is closed for the rest of the round, as CLOSES does, and spotsFor
+       is asked again with it closed. Returns the tiles to close, or null. */
+    function nookBehind(list, pu, avoid, closed, reserved) {
+        if (!avoid) return null;
+        const blocked = Furni.blockedTiles(list);
+        if (closed) for (const k of closed) blocked.add(k);
+        const before = standingRoom(avoid, blocked);
+        const near = new Set(nearRoom(avoid, blocked, NEAR_STEPS).map(t => key(t.x, t.y)));
+        blocked.add(key(pu.x, pu.y));
+        const after = new Set(standingRoom(avoid, blocked).map(t => key(t.x, t.y)));
+        const nook = before.map(t => key(t.x, t.y)).filter(k => !blocked.has(k) && !after.has(k));
+        if (!nook.length || nook.length > NOOK_TILES) return null;
+        if (nook.some(k => near.has(k) || (reserved && reserved.has(k)))) return null;
+        const nookKeys = new Set(nook);
+        for (const f of list) {
+            if (!f.sit) continue;
+            for (const t of Furni.tilesOf(f)) {
+                for (const d of Path.DIRS) if (nookKeys.has(key(t.x + d.dx, t.y + d.dy))) return null;
+            }
+        }
+        return nook;
+    }
+
     /* Can the player reach this seat AND GET OFF IT AGAIN?
 
        Getting off is the half that is easy to forget, and forgetting it leaves
@@ -804,8 +842,18 @@
                     const others = this.placed.concat(this.falling.map(p => p.furni));
                     const entry = { className: pu.cls, rotation: rot, role: "power",
                         area: { x: pu.x, y: pu.y, w: fp.w, h: fp.h } };
-                    const puSpots = spotsFor(others, entry, meta, playerTile, 0, sat, false, null, this.offLimits);
-                    if (!puSpots.some(s => s.x === pu.x && s.y === pu.y)) continue;
+                    const lands = (spots) => spots.some(s => s.x === pu.x && s.y === pu.y);
+                    let puSpots = spotsFor(others, entry, meta, playerTile, 0, sat, false, null, this.offLimits);
+                    // Its tile may be the mouth of a small dead end: see nookBehind.
+                    let nook = null;
+                    if (!lands(puSpots)) {
+                        nook = nookBehind(others, pu, playerTile, this.offLimits, this.reserved);
+                        if (!nook) continue;
+                        puSpots = spotsFor(others, entry, meta, playerTile, 0, sat, false, null,
+                            new Set([...this.offLimits, ...nook]));
+                        if (!lands(puSpots)) continue;
+                    }
+                    if (nook) for (const k of nook) this.offLimits.add(k);
                     if (puSpots.closes) for (const k of puSpots.closes) this.offLimits.add(k);
                     const furni = Furni.make(pu.cls, pu.x, pu.y, {
                         meta, rotation: rot, role: "power", ...urlFor(pu.cls, 0, rot)

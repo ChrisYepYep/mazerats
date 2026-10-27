@@ -247,11 +247,14 @@
 body.is-editing .ff-boot { display: none; }
 .ff-boot.is-done { opacity: 0; pointer-events: none; }
 
+/* Volter Goldfish Bold at 0.5625rem, weight 400, as the homepage window's
+   own "Loading..." (css/ff-window.css), 27 Oct 2026. */
 .ff-boot-text {
     margin: 0;
-    font-family: "Silkscreen", "Pixelify Sans", monospace;
-    font-size: 14px;
-    letter-spacing: 0.08em;
+    font-family: 'Volter Goldfish Bold', 'Volter Goldfish', 'Pixelify Sans', monospace;
+    font-size: 0.5625rem;
+    font-weight: 400;
+    letter-spacing: 0;
     color: var(--amber-bright);
 }
 
@@ -484,6 +487,41 @@ body.is-editing .ff-title { display: none; }
 /* While the title is still loading or closed there is nothing to set yet. */
 .ff-title[data-state="loading"] .ff-title-opts { display: none; }
 
+/* THE TIPS TICKER (27 Oct 2026), just above the options: the tip alone (the
+   owner took the TIP label off), fading slowly out and in as it changes (see
+   startTips in js/fallinfurni.js, which waits TIP_FADE_MS on the fade). */
+.ff-tips {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 40px;
+    margin: 0;
+    padding: 0 24px;
+    display: flex;
+    justify-content: center;
+    align-items: baseline;
+    gap: 8px;
+    /* The owner's: Volter Goldfish Bold at 0.5625rem, weight 400 (27 Oct 2026). */
+    font-family: 'Volter Goldfish Bold', 'Volter Goldfish', 'Pixelify Sans', monospace;
+    font-size: 0.5625rem;
+    font-weight: 400;
+    color: var(--parchment);
+    pointer-events: none;
+}
+.ff-tips[hidden] { display: none; }
+/* No room between the title's last line and the options (placeTips). */
+.ff-tips.is-crowded { visibility: hidden; }
+.ff-tips-text { transition: opacity 0.9s ease; }
+.ff-tips-text.is-out { opacity: 0; }
+@media (prefers-reduced-motion: reduce) {
+    .ff-tips-text { transition: none; }
+}
+/* Not over the level selector, which runs down to the options, nor while a
+   tournament's board is up over the best runs: the two boards fill the
+   title to its foot. */
+.ff-title[data-select] .ff-tips,
+.ff-title:has(#ff-meet-board:not([hidden])) .ff-tips { display: none; }
+
 /* THE VOLUME (26 Oct 2026): a slider in the row of buttons, on the title and
    the pause menu, dressed as one of them: the same box, the same 9px Volter,
    a thin track and a square thumb in the game's amber. */
@@ -526,7 +564,12 @@ body.is-editing .ff-title { display: none; }
     border: 1px solid rgba(0, 0, 0, 0.6);
     border-radius: 0;
 }
-.ff-vol input[type="range"]:focus-visible { outline: 1px solid var(--amber-bright); outline-offset: 2px; }
+/* NO RING AT ALL (27 Oct 2026, the owner's: "a weird green glow when
+   adjusting it … it shouldn't glow at all"). Clicking a slider counts as
+   focusing it from the keyboard, so the ring came up while dragging, in
+   the theme's accent; the thumb moving is what shows it has the focus. */
+.ff-vol input[type="range"]:focus,
+.ff-vol input[type="range"]:focus-visible { outline: none; box-shadow: none; }
 .ff-vol-n { min-width: 4ch; text-align: right; }
 /* On the pause menu, the pause menu's buttons' wood. */
 .ff-paused-audio .ff-vol { background: var(--wood-mid); }
@@ -2324,6 +2367,18 @@ main.ff-page { width: 100%; }
    <body> -- script blocked, request failed, nobody signed in to close it --
    none of these rules apply and the page is what it always was. */
 .ff-title-maint { display: none; }
+
+/* Under COMING SOON while the game is in beta: what typing the code came to,
+   when it was not a way in ("Sign in with Discord to use that."). */
+.ff-beta-note {
+    margin: 10px 0 0;
+    font-family: 'Volter Goldfish Bold', 'Volter Goldfish', 'Pixelify Sans', monospace;
+    font-size: 0.5625rem;
+    font-weight: 400;
+    color: var(--parchment);
+}
+.ff-beta-note[hidden],
+body:not([data-ff-closed]) .ff-beta-note { display: none; }
 
 /* The title's own face and colour, a size down, so it reads as part of the
    title rather than as a message bolted on. Since 26 Oct 2026 it sits UNDER

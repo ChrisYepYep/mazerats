@@ -53,12 +53,16 @@ html[data-game-front="ff"] #ff-overlay { z-index: 92; }
     justify-content: center;
     gap: 12px;
 }
+/* Volter Goldfish Bold at 0.5625rem, weight 400 (27 Oct 2026, the owner's:
+   Silkscreen at 14px is off its pixel grid and came out distorted). The
+   game's own .ff-boot-text matches, so the hand-over does not jump. */
 .ff-console-wait p {
     margin: 0;
-    font-family: "Silkscreen", "Pixelify Sans", monospace;
-    font-size: 14px;
+    font-family: 'Volter Goldfish Bold', 'Volter Goldfish', 'Pixelify Sans', monospace;
+    font-size: 0.5625rem;
+    font-weight: 400;
     line-height: 1.2;
-    letter-spacing: 0.08em;
+    letter-spacing: 0;
     color: #f5c46a;
 }
 .ff-console-bar {
@@ -115,6 +119,26 @@ html[data-game-front="ff"] #ff-overlay { z-index: 92; }
 .ff-console-btn svg { display: block; }
 .ff-console-light { right: 31px; }
 .ff-console-full { right: 48px; }
+
+/* BETA, on the grip at the left (27 Oct 2026, the owner's; Pura Panic's
+   pill, which moved here when that game came out of beta). Coloured by the
+   script like the buttons. */
+.ff-console-beta {
+    position: absolute;
+    top: 7px;
+    left: 14px;
+    z-index: 5;
+    height: 13px;
+    padding: 0 4px;
+    border-radius: 3px;
+    background: #996600;
+    color: #ffcb00;
+    font-family: 'Volter Goldfish Bold', 'Volter Goldfish', 'Pixelify Sans', monospace;
+    font-size: 0.5625rem;
+    line-height: 14px;
+    letter-spacing: 0;
+    pointer-events: none;
+}
 
 /* ---- LIGHTS OFF: the site behind dimmed and kept out of reach, under the
    window (91), over the page and its header; the frame in deep grey. */

@@ -8332,7 +8332,7 @@ document.addEventListener("DOMContentLoaded", () => {
         settingsTriedAt = Date.now();
         try {
             // One read, every switch: they all live in the same settings document.
-            const { landingState, fallinFurniState, puraPanicState, ratRaceState, maintenanceNote, theme, palette: livePalette, launchAt, ffLaunchAt, fromCache } = await freshSiteSettings();
+            const { landingState, fallinFurniState, fallinFurniBeta, puraPanicState, ratRaceState, maintenanceNote, theme, palette: livePalette, launchAt, ffLaunchAt, fromCache } = await freshSiteSettings();
             /* The stand-in getSiteSettings answers with during an outage
                (fromCache, see js/api.js) has a GUESSED landing state and no
                Fallin' Furni state or palette at all. Lighting buttons from it
@@ -8364,7 +8364,8 @@ document.addEventListener("DOMContentLoaded", () => {
                 landingToggleBtns.forEach(btn => btn.classList.toggle("active", btn.dataset.state === landingState));
                 renderDevModeLink(landingState);
                 currentLandingState = landingState || "";
-                const ff = fallinFurniState || "live";
+                // Beta is said as coming-soon with a flag beside it (settings.js).
+                const ff = fallinFurniBeta ? "beta" : fallinFurniState || "live";
                 ffToggleBtns.forEach(btn => btn.classList.toggle("active", btn.dataset.ffState === ff));
                 currentFfState = ff;
                 lightPura(puraPanicState);
@@ -8423,7 +8424,7 @@ document.addEventListener("DOMContentLoaded", () => {
             currentLandingState = s.landingState;
             if (launchFieldsLoaded) currentLaunchAt = s.launchAt || "";
             sayLandingMismatch();
-            const ff = s.fallinFurniState || "live";
+            const ff = s.fallinFurniBeta ? "beta" : s.fallinFurniState || "live";
             ffToggleBtns.forEach(btn => btn.classList.toggle("active", btn.dataset.ffState === ff));
             currentFfState = ff;
             lightPura(s.puraPanicState);
@@ -8814,6 +8815,13 @@ document.addEventListener("DOMContentLoaded", () => {
         "coming-soon": {
             confirm: "Set Fallin' Furni to coming soon? Players will see a “Coming soon!” notice instead of the game.",
             done: "Fallin' Furni is marked coming soon. You can still play and edit it while signed in."
+        },
+        /* BETA (27 Oct 2026, the owner's): Coming Soon to everybody but
+           the beta testers marked in Players, who type the code on the
+           Coming Soon screen (see settings.js and ff-beta.js). */
+        "beta": {
+            confirm: "Put Fallin' Furni into beta? Everyone still sees “Coming soon”, except players you've marked as beta testers in Players: they can play by typing betafurni on the Coming Soon screen while signed in.",
+            done: "Fallin' Furni is in beta. Beta testers get in with the code; their runs don't go on the boards. Mark testers in Players."
         },
         "maintenance": {
             confirm: "Put Fallin' Furni into maintenance? Players will see a notice instead of the game.",

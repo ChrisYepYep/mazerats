@@ -542,7 +542,8 @@ const NOINDEX_PAGES = new Set(["glyphs", "profile"]);
    in the Warren reaches a cached card within the edge's ten minutes. */
 const SWITCHED = {
     // settings.js: (doc && doc.fallinFurniState) || DEFAULT_FF_STATE, which is "live".
-    fallinfurni: { field: "fallinFurniState", read: v => v || "live" },
+    // Beta is Coming Soon to everybody but its testers (settings.js, 27 Oct 2026).
+    fallinfurni: { field: "fallinFurniState", read: v => (v === "beta" ? "coming-soon" : v || "live") },
     // settings.js's ratState: one of its VALID_RAT_STATES, else DEFAULT_RAT_STATE ("maintenance").
     scout: { field: "ratRaceState", read: v => (["maintenance", "live", "hidden"].includes(v) ? v : "maintenance") }
 };

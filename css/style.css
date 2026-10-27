@@ -10260,10 +10260,13 @@ html[data-gate-peek] body > *:not(.site-loader) {
 .site-loader-wordmark span { display: block; }
 .site-loader-wordmark span:last-child { font-size: 1.1em; }
 
+/* Volter Goldfish Bold at 0.5625rem, its own 9px (27 Oct 2026, the owner's:
+   at 0.6875rem the pixel face was scaled off its grid and came out
+   distorted). */
 .site-loader-label {
     margin: 0;
-    font-family: 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace;
-    font-size: 0.6875rem;
+    font-family: 'Volter Goldfish Bold', 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace;
+    font-size: 0.5625rem;
     font-weight: 400;
     letter-spacing: 1px;
     color: var(--parchment);

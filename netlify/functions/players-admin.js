@@ -80,6 +80,13 @@
           exactly as the detail's `nickTurnedDown` lists it (the stored
           nameKey). On its own, like a review. Audited; answers { player }.
 
+     PUT  { id, ffBeta: true | false }                    (27 Oct 2026)
+          Marks the player a Fallin' Furni BETA TESTER, or takes the mark
+          off (ffBetaSet). While the game's switch is on Beta, a tester who
+          types the code on its Coming Soon screen is let in (ff-beta.js).
+          On its own. Every row carries `ffBeta`; the "beta" filter lists
+          the testers and counts.beta counts them. Audited; answers { player }.
+
    Refusals: 401 no session, 403 a role that may not (below), 400 a bad
    request or a nickname the rules refuse ({ error, field: "nick" }), 404
    nobody by that id, 409 the nickname is somebody else's, 413 too large,
@@ -163,7 +170,7 @@ const MAX_BODY = 2048;
 // player-forget.js), since one goes into a regex below.
 const ID_SHAPE = /^[A-Za-z0-9_-]{1,64}$/;
 const REF_SHAPE = /^p_[0-9a-f]{20}$/;
-const FILTERS = ["all", "nick", "nonick", "locked", "unasked", "flagged", "clash", "motto", "habbo", "banned"];
+const FILTERS = ["all", "nick", "nonick", "locked", "unasked", "flagged", "clash", "motto", "habbo", "banned", "beta"];
 const REVIEWS = ["allow", "reject"];
 /* A flagged row, as a Mongo filter (29 Sept 2026). On the flag's `reason`
    being a string rather than on nickFlag existing, for the same reason the
@@ -281,6 +288,8 @@ function shape(row, seesIds, act, bans) {
            kind }, or null. `hasNetHash` says whether the Warren can ban
            their network — only the fact, never the code itself. */
         ban: Bans.banOfPlayer(bans, row),
+        // A Fallin' Furni beta tester (27 Oct 2026; see ffBetaSet).
+        ffBeta: row.ffBeta === true,
         hasNetHash: typeof row.netHash === "string" && row.netHash.length > 0,
         joinedAt: str(row.joinedAt),
         seenAt: str(row.seenAt),
@@ -355,6 +364,7 @@ function listFilter(filter, q, seesIds, bans) {
     // still reads as none.
     if (filter === "nonick") and.push({ $or: [{ nick: { $exists: false } }, { nick: null }, { nick: "" }] });
     if (filter === "locked") and.push({ nickLocked: true });
+    if (filter === "beta") and.push({ ffBeta: true });
     if (filter === "unasked") and.push({ nickAsked: { $ne: true } });
     if (filter === "flagged") and.push(FLAGGED);
     if (filter === "clash") and.push(CLASHING);
@@ -553,7 +563,7 @@ async function list(event, db, seesIds) {
     // the "banned" filter and count (29 Sept 2026). A handful of rows.
     const bans = await Bans.accountBans(db);
     const where = listFilter(filter, q, seesIds, bans);
-    const [rows, total, all, nick, locked, flagged, banned, clash, motto, habbo, waiting] = await Promise.all([
+    const [rows, total, all, nick, locked, flagged, banned, clash, motto, habbo, waiting, beta] = await Promise.all([
         pageOf(players, where, sort, skip, limit),
         players.countDocuments(where),
         players.countDocuments({}),
@@ -570,13 +580,15 @@ async function list(event, db, seesIds) {
         players.countDocuments(HABBO_WAITING),
         /* All of them at once, each player once, for the nav badge (the
            quick scan): a flagged name with a clash too was counted twice. */
-        players.countDocuments({ $or: [FLAGGED, CLASHING, MOTTO_WAITING, HABBO_WAITING] })
+        players.countDocuments({ $or: [FLAGGED, CLASHING, MOTTO_WAITING, HABBO_WAITING] }),
+        // Fallin' Furni's beta testers (27 Oct 2026; see ffBetaSet).
+        players.countDocuments({ ffBeta: true })
     ]);
     const act = await activityFor(db, rows.map(r => String(r.id)), false);
     return json(200, {
         players: rows.map(r => shape(r, seesIds, act.get(String(r.id)), bans)),
         total,
-        counts: { all, nick, locked, flagged, banned, clash, motto, habbo, waiting },
+        counts: { all, nick, locked, flagged, banned, clash, motto, habbo, waiting, beta },
         now: new Date().toISOString()
     });
 }
@@ -640,6 +652,11 @@ async function update(event, db, role) {
         if (hasNick || body.locked !== undefined || body.resetPrompt !== undefined || body.review !== undefined || body.motto !== undefined) return json(400, { error: "A Habbo review goes on its own." });
         if (typeof body.seen !== "string") return json(400, { error: "seen is the Habbo name you were looking at." });
         return await habboGuessReview(event, db, body);
+    }
+    if (body.ffBeta !== undefined) {
+        if (typeof body.ffBeta !== "boolean") return json(400, { error: "ffBeta is true or false." });
+        if (hasNick || body.locked !== undefined || body.resetPrompt !== undefined || body.review !== undefined || body.motto !== undefined) return json(400, { error: "Marking a beta tester goes on its own." });
+        return await ffBetaSet(event, db, body);
     }
     if (body.dismissClash !== undefined) {
         if (body.dismissClash !== true) return json(400, { error: "dismissClash is true." });
@@ -812,6 +829,32 @@ async function dismissClash(event, db, body) {
     await players.updateOne({ id: body.id }, { $set: { "habbo.clashDismissed": true } });
     const after = await players.findOne({ id: body.id }, { projection: { _id: 0 } });
     return json(200, { player: detailShape(after || row, true, null, await bansOr(db)), changed: ["name clash dismissed"] });
+}
+
+/* A FALLIN' FURNI BETA TESTER (27 Oct 2026, the owner's: "mark signed up
+   users as beta testers - without that, the code won't work"). `ffBeta` on
+   the players row, which ff-beta.js reads when somebody types the code on
+   the Coming Soon screen while the game's switch is on Beta. update() has
+   already checked the role and the body. */
+async function ffBetaSet(event, db, body) {
+    const players = db.collection("players");
+    const row = await players.findOne({ id: body.id }, { projection: { _id: 0 } });
+    if (!row) return json(404, { error: "No player by that id." });
+    if ((row.ffBeta === true) === body.ffBeta) return json(200, { player: detailShape(row, true, null, await bansOr(db)), changed: [] });
+    const who = usernameFromToken(event) || "unknown";
+    const did = body.ffBeta ? "made a beta tester" : "no longer a beta tester";
+    await record(event, "write", {
+        username: who,
+        session: sessionOf(event),
+        method: "PUT",
+        endpoint: "players-admin",
+        target: `${body.id}: ${did}`.slice(0, 200)
+    });
+    await players.updateOne({ id: body.id }, body.ffBeta
+        ? { $set: { ffBeta: true, ffBetaBy: who, ffBetaAt: new Date().toISOString() } }
+        : { $unset: { ffBeta: "", ffBetaBy: "", ffBetaAt: "" } });
+    const after = await players.findOne({ id: body.id }, { projection: { _id: 0 } });
+    return json(200, { player: detailShape(after || row, true, null, await bansOr(db)), changed: [did] });
 }
 
 /* A MOTTO REVIEWED (5 Oct 2026; see MOTTO_WAITING). update() has already

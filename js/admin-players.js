@@ -449,7 +449,7 @@
     const navCount = document.getElementById("players-nav-count");
 
     // "banned" (29 Sept 2026): banned or cooling down, account or network.
-    const FILTERS = [["all", "All"], ["flagged", "Flagged"], ["clash", "Name clash"], ["motto", "Motto flagged"], ["habbo", "Habbo to approve"], ["banned", "Banned"], ["nick", "Has a nickname"], ["nonick", "No nickname"], ["locked", "Locked"], ["unasked", "Not asked yet"]];
+    const FILTERS = [["all", "All"], ["flagged", "Flagged"], ["clash", "Name clash"], ["motto", "Motto flagged"], ["habbo", "Habbo to approve"], ["banned", "Banned"], ["nick", "Has a nickname"], ["nonick", "No nickname"], ["locked", "Locked"], ["unasked", "Not asked yet"], ["beta", "Beta testers"]];
     const Kit = window.AdminBanKit;
     const FLAG_REASONS = { profanity: "filter word", reserved: "reserved word" };
     const SORTS = [["seen", "Last signed in"], ["joined", "First signed in"], ["name", "Discord name"], ["nick", "Nickname"]];
@@ -729,7 +729,7 @@
     function renderFilters() {
         buildFilters();
         const c = counts || {};
-        const n = { all: c.all, nick: c.nick, locked: c.locked, flagged: c.flagged, clash: c.clash, motto: c.motto, habbo: c.habbo, banned: c.banned, nonick: has(c.all) && has(c.nick) ? Number(c.all) - Number(c.nick) : null };
+        const n = { all: c.all, nick: c.nick, locked: c.locked, flagged: c.flagged, clash: c.clash, motto: c.motto, habbo: c.habbo, banned: c.banned, beta: c.beta, nonick: has(c.all) && has(c.nick) ? Number(c.all) - Number(c.nick) : null };
         filtersEl.querySelector('[data-f="filter"]').innerHTML = FILTERS.map(([k, label]) =>
             `<button type="button" class="btn-enter-mini${k === filter ? " active" : ""}" data-filter="${k}" aria-pressed="${k === filter}">${escapeHtml(label)}${has(n[k]) && Number(n[k]) ? ` (${escapeHtml(num(n[k]))})` : ""}</button>`).join("");
     }
@@ -768,6 +768,8 @@
            the row read as something wrong with the account, when all it
            meant was that the player can't change their own nickname. It is
            the "Nickname lock" line in the row's detail instead. */
+        // A Fallin' Furni beta tester (27 Oct 2026): a quiet chip, as Not asked is.
+        if (p.ffBeta) out.push(`<span class="de-chip pl-chip-unasked" title="Marked a Fallin' Furni beta tester: while the game is on Beta, typing the code on its Coming Soon screen lets them play">Beta tester</span>`);
         if (!p.nickAsked) out.push(`<span class="de-chip pl-chip-unasked" title="Hasn't seen the Choose a nickname? window yet — it opens on their next visit">Not asked</span>`);
         return out.join("");
     }
@@ -939,7 +941,8 @@
                 : "Not rejected"],
             ["Their changes today", has(p.changesToday) ? `${escapeHtml(num(p.changesToday))} of ${escapeHtml(num(p.changesPerDay || 5))}` : "—"],
             // What OriginsBot said (3 Oct 2026; see _originsbot.js).
-            ["Habbo (OriginsBot)", habboText(p.habbo)]
+            ["Habbo (OriginsBot)", habboText(p.habbo)],
+            ["Fallin' Furni beta", p.ffBeta ? "Beta tester — while the game is on Beta, the code lets them play" : "Not a beta tester"]
         ];
         return `<dl class="se-grid pl-facts">${f.map(([k, v]) => `<dt>${escapeHtml(k)}</dt><dd>${v}</dd>`).join("")}</dl>`;
     }
@@ -1009,6 +1012,7 @@
                 ${habboGuessHtml(p)}
                 ${habboLinkHtml(p)}
                 ${mottoHtml(p)}
+                ${betaHtml(p)}
                 ${reviewHtml(p)}
                 <label class="ctl-label" for="pl-nick-${domId(ref)}">Nickname</label>
                 <div class="ctl-row">
@@ -1117,6 +1121,23 @@
        OriginsBot leaves it be. The server checks it exists on that hotel and
        is nobody else's. Unlink takes it away. */
     const HOTELS = [["COM", ".com"], ["ES", ".es"], ["BR", ".com.br"]];
+    /* FALLIN' FURNI BETA TESTER (27 Oct 2026, the owner's): while the
+       game's switch is on Beta, a tester who types the code on its Coming
+       Soon screen gets in; nobody else does (ff-beta.js). */
+    function betaHtml(p) {
+        const off = busy ? " disabled" : "";
+        return `
+            <div class="pl-review pl-beta">
+                <span class="ctl-label">Fallin' Furni beta</span>
+                <p class="admin-hint">${p.ffBeta
+                    ? "<strong>Beta tester.</strong> While the game is on Beta, the code on its Coming Soon screen lets them play. Their runs don't go on the boards."
+                    : "Not a beta tester. Make them one and, while the game is on Beta, the code on its Coming Soon screen lets them play."}</p>
+                <div class="ctl-row">
+                    <button type="button" class="ctl-btn${p.ffBeta ? " admin-delete-btn" : ""} pl-write" data-a="beta"${off}>${p.ffBeta ? "Remove beta tester" : "Make beta tester"}</button>
+                </div>
+            </div>`;
+    }
+
     function habboLinkHtml(p) {
         const h = p.habbo && p.habbo.name ? p.habbo : null;
         const off = busy ? " disabled" : "";
@@ -1498,6 +1519,7 @@
             if (a === "save") writeNick(p, (el.querySelector(".pl-nick-input") || {}).value || "");
             else if (a === "clear") clearNick(p);
             else if (a === "lock") write(p, { locked: !p.nickLocked }, p.nickLocked ? "Unlocked. They can change their nickname again." : "Locked. They can't change their nickname themselves now.");
+            else if (a === "beta") write(p, { ffBeta: !p.ffBeta }, p.ffBeta ? "No longer a beta tester." : "Beta tester. While Fallin' Furni is on Beta, the code lets them play.");
             else if (a === "allow" || a === "reject") reviewNick(p, a);
             else if (a === "motto-approve") write(p, { motto: "approve", seen: p.mottoFlag ? p.mottoFlag.text : "" }, "Approved. That motto shows on their profile and can go on their Mazer Card.");
             else if (a === "motto-hide") write(p, { motto: "hide" }, "Kept hidden. It stays off their profile and Mazer Card.");
@@ -1631,7 +1653,7 @@
             detailErrors.delete(ref);
             // The list's copy follows what the detail says.
             const row = players.find(x => refOf(x) === ref);
-            if (row) ["nick", "displayName", "nickLocked", "nickLockedBy", "nickLockedAt", "nickAsked", "nickAt", "nickFlag", "nickRejected", "nameClash", "mottoFlag", "mottoApproved", "habboGuess", "habbo", "name", "username", "avatar", "seenAt", "ban", "hasNetHash"].forEach(k => { row[k] = p[k]; });
+            if (row) ["nick", "displayName", "nickLocked", "nickLockedBy", "nickLockedAt", "nickAsked", "nickAt", "nickFlag", "nickRejected", "nameClash", "mottoFlag", "mottoApproved", "habboGuess", "habbo", "name", "username", "avatar", "seenAt", "ban", "hasNetHash", "ffBeta"].forEach(k => { row[k] = p[k]; });
         } catch (err) {
             if (mine !== sessionNo) return;
             if (sessionGone(err)) return;
@@ -1656,7 +1678,7 @@
         const prev = details.get(ref) || {};
         details.set(ref, Object.assign({}, prev, player, { activity: prev.activity }));
         const row = players.find(x => refOf(x) === ref);
-        if (row) ["nick", "displayName", "nickLocked", "nickLockedBy", "nickLockedAt", "nickAsked", "nickAt", "nickFlag", "nickRejected", "nameClash", "mottoFlag", "mottoApproved", "habboGuess", "habbo"].forEach(k => { row[k] = player[k]; });
+        if (row) ["nick", "displayName", "nickLocked", "nickLockedBy", "nickLockedAt", "nickAsked", "nickAt", "nickFlag", "nickRejected", "nameClash", "mottoFlag", "mottoApproved", "habboGuess", "habbo", "ffBeta"].forEach(k => { row[k] = player[k]; });
     }
 
     async function write(p, change, okText) {
@@ -1667,7 +1689,7 @@
         setBusy(true);
         say(ref, "Saving…");
         // Taken before the write: takeWrite updates p in place when it is the list row.
-        const had = { nick: !!p.nick, locked: !!p.nickLocked, flagged: !!p.nickFlag, clash: !!p.nameClash, motto: mottoWaiting(p), habbo: habboWaiting(p) };
+        const had = { nick: !!p.nick, locked: !!p.nickLocked, flagged: !!p.nickFlag, clash: !!p.nameClash, motto: mottoWaiting(p), habbo: habboWaiting(p), beta: !!p.ffBeta };
         try {
             const res = await Api.updatePlayer(token(), Object.assign({ id: p.id }, change));
             if (mine !== sessionNo) return false;
@@ -1678,6 +1700,7 @@
             const now = details.get(ref) || {};
             if (has(counts.nick)) counts.nick += (now.nick ? 1 : 0) - (had.nick ? 1 : 0);
             if (has(counts.locked)) counts.locked += (now.nickLocked ? 1 : 0) - (had.locked ? 1 : 0);
+            if (has(counts.beta)) counts.beta = Math.max(0, counts.beta + (now.ffBeta ? 1 : 0) - (had.beta ? 1 : 0));
             if (has(counts.clash)) counts.clash = Math.max(0, counts.clash + (now.nameClash ? 1 : 0) - (had.clash ? 1 : 0));
             if (has(counts.motto)) counts.motto = Math.max(0, counts.motto + (mottoWaiting(now) ? 1 : 0) - (had.motto ? 1 : 0));
             if (has(counts.habbo)) counts.habbo = Math.max(0, counts.habbo + (habboWaiting(now) ? 1 : 0) - (had.habbo ? 1 : 0));
@@ -2061,6 +2084,7 @@
             ["Nickname locked", p => (p.nickLocked ? "yes" : "no")],
             ["Nickname flagged", p => (p.nickFlag ? `${p.nickFlag.reason || ""}: ${p.nickFlag.word || ""}` : "")],
             ["Nickname rejected", p => (p.nickRejected ? "yes" : "no")],
+            ["Fallin' Furni beta tester", p => (p.ffBeta ? "yes" : "no")],
             ["Ban", p => (p.ban ? `${p.ban.level || ""} ${p.ban.kind === "nethash" ? "network" : "account"}${p.ban.until ? " until " + p.ban.until : " permanent"}` : "")],
             ["Daily games played", p => (p.activity && has(p.activity.dailyDays) ? p.activity.dailyDays : "")],
             ["Daily points", p => (p.activity && has(p.activity.dailyPoints) ? p.activity.dailyPoints : "")],

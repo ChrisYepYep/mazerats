@@ -199,9 +199,6 @@
             <div class="console-frame profile-console-frame" id="pura-window" role="dialog" aria-labelledby="pura-title" tabindex="-1">
                 <div class="console-border" aria-hidden="true"></div>
                 <div class="console-top-pattern"><h2 class="console-title" id="pura-title">Pura Panic</h2></div>
-                <!-- BETA, on the grip at the left as the close box is on it at
-                     the right (the owner's, 6 Oct 2026). -->
-                <span class="pura-beta">BETA</span>
                 <!-- The lights (6 Oct 2026, the owner's): dims the site behind
                      and turns the frame a deep grey. See LIGHTS OFF. -->
                 <button type="button" class="pura-light" id="pura-light" aria-label="Lights off" aria-pressed="false">${pixelSvg(BULB, 1)}</button>
@@ -460,10 +457,7 @@
         if (!root) return;
         const ink = getComputedStyle(root.querySelector("#pura-title")).color;
         const fill = getComputedStyle(frame).backgroundColor;
-        const pill = root.querySelector(".pura-beta");
         const bulb = root.querySelector("#pura-light");
-        pill.style.background = ink;
-        pill.style.color = fill;
         bulb.style.color = ink;
         bulb.style.backgroundColor = fill;
     }

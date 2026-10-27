@@ -83,6 +83,7 @@
             <div class="console-frame profile-console-frame ff-frame" id="ff-console" role="dialog" aria-labelledby="ff-console-title" tabindex="-1">
                 <div class="console-border" aria-hidden="true"></div>
                 <div class="console-top-pattern"><h2 class="console-title" id="ff-console-title">Fallin' Furni</h2></div>
+                <span class="ff-console-beta">BETA</span>
                 <button type="button" class="ff-console-btn ff-console-full" id="ff-console-full" aria-label="Enlarge" aria-pressed="false" title="Enlarge (F)">${pixelSvg(FULL)}</button>
                 <button type="button" class="ff-console-btn ff-console-light" id="ff-console-light" aria-label="Lights off" aria-pressed="false">${pixelSvg(BULB)}</button>
                 <button type="button" class="console-close-btn" id="ff-console-close" aria-label="Close"></button>
@@ -199,7 +200,9 @@
         if (dim) dim.hidden = !dark;
         paintChrome();
         if (!iframe) loadGame();
-        frame.focus({ preventScroll: true });
+        // Opened again with the game already up: straight to it (see booting).
+        if (iframe && screen.classList.contains("is-booted")) iframe.focus({ preventScroll: true });
+        else frame.focus({ preventScroll: true });
         watchFront(true);
         bringForward();
         // The tab and the address name the game while it is open.
@@ -248,6 +251,15 @@
     // Called by the game's page (fallinfurni.html) the moment its loading screen is drawn.
     function booting() {
         if (screen) screen.classList.add("is-booted");
+        /* THE KEYS GO TO THE GAME once it is on the screen (27 Oct 2026).
+           Opening left the focus on this page's frame, so until the player
+           clicked into the room every key landed here: typed on the Coming
+           Soon screen, which has nothing to click, the beta code never
+           reached the game and its F flicked the window to Enlarge. Only
+           while the focus is still the window's own, so somebody who has
+           moved on to something else on the page keeps their place. */
+        const a = document.activeElement;
+        if (isOpen() && iframe && (!a || a === document.body || root.contains(a))) iframe.focus({ preventScroll: true });
     }
 
     /* ---- ONE GAME IN FRONT (26 Oct 2026). Pura Panic and Scout's Trail
@@ -336,6 +348,9 @@
         const ink = getComputedStyle(root.querySelector("#ff-console-title")).color;
         const fill = getComputedStyle(frame).backgroundColor;
         root.querySelectorAll(".ff-console-btn").forEach(b => { b.style.color = ink; b.style.backgroundColor = fill; });
+        const pill = root.querySelector(".ff-console-beta");
+        pill.style.background = ink;
+        pill.style.color = fill;
     }
 
     function setDark(on, quiet) {

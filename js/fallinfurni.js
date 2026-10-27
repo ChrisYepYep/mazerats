@@ -4877,9 +4877,100 @@
        than cached at startup. */
     const gameClosed = () => document.body.hasAttribute("data-ff-closed");
 
+    /* THE TIPS TICKER (27 Oct 2026, the owner's: "on the splash screen,
+       including the coming soon version, above the control buttons display
+       the power up tips on a ticker, changing them every 6 seconds, add in
+       some generic how-to-play tips too"). The power-ups' own tips from
+       RoomLevels.POWERUPS, then GENERAL_TIPS, in turn from a random one,
+       one every TIP_MS. It keeps time only while the title is up. */
+    const TIP_MS = 6000;
+    const TIP_FADE_MS = 900;            // css/fallinfurni.css .ff-tips-text; slowed at the owner's ask
+    /* The how-to-play tips, the owner's pick and wording (27 Oct 2026).
+       F only enlarges inside the homepage's window (see the F key in the
+       options), so on the game's own page that tip is about M alone. */
+    // Skipped for somebody already signed in (see renderWho), as it asks nothing of them.
+    const SIGN_IN_TIP = "Sign in with Discord to put your runs on the leaderboard.";
+    const tipFits = (t) => t !== SIGN_IN_TIP || !(window.Account && Account.current);
+    const inWindow = (() => { try { return window.parent !== window && Boolean(window.parent.FFWindow); } catch (e) { return false; } })();
+    const GENERAL_TIPS = [
+        "Sit on every seat in the order it landed.",
+        "The wrong seat costs you 3 seconds and your streak.",
+        "Not everything that falls is a seat. Some furni is just in the way.",
+        "Click a tile to walk there.",
+        "One wrong seat resets your streak.",
+        "Clear 10 levels to earn a life back.",
+        SIGN_IN_TIP,
+        "Double-click a power-up to walk over and grab it.",
+        "Each power-up can be used once a round.",
+        inWindow ? "Press F to enlarge the game, M to switch the music on or off." : "Press M to switch the music on or off.",
+        "Press Escape to pause.",
+        "Look up before you sit down.",
+        "Fifty rooms. Three lives. One run."
+    ];
+    let tipsTimer = 0;
+    function startTips() {
+        const el = document.getElementById("ff-tips");
+        if (!el || tipsTimer) return;
+        const text = el.querySelector(".ff-tips-text");
+        const tips = Object.values(POWERS()).map(p => p.tip).filter(Boolean).concat(GENERAL_TIPS);
+        if (!tips.length) return;
+        let i = Math.floor(Math.random() * tips.length);
+        if (!tipFits(tips[i])) i = (i + 1) % tips.length;
+        text.textContent = tips[i];
+        el.hidden = false;
+        placeTips();
+        window.addEventListener("resize", placeTips);
+        const inner = el.parentElement && el.parentElement.querySelector(".ff-title-inner");
+        if (inner && window.ResizeObserver) new ResizeObserver(placeTips).observe(inner);
+        if (tips.length < 2) return;
+        tipsTimer = setInterval(() => {
+            const title = document.getElementById("ff-title");
+            if (!title || title.dataset.state === "playing") return;
+            text.classList.add("is-out");
+            setTimeout(() => {
+                i = (i + 1) % tips.length;
+                if (!tipFits(tips[i])) i = (i + 1) % tips.length;
+                text.textContent = tips[i];
+                text.classList.remove("is-out");
+                placeTips();
+            }, TIP_FADE_MS);
+        }, TIP_MS);
+    }
+
+    /* HALFWAY BETWEEN THE TITLE'S LAST LINE AND THE OPTIONS (the owner's:
+       "halfway up between the buttons and the 'on the board as...' text").
+       That gap changes with what the title shows — signed in or not, a
+       board or none, Coming Soon — so it is measured rather than set: the
+       bottom of the last line with something in it, the top of the
+       options, and the tip centred between them. Measured on the screen
+       and put back into the title's own pixels, since the whole stage may
+       be scaled to fit (--ff-fit). With no room between them it stands
+       aside (`is-crowded`) rather than sit on either. */
+    function placeTips() {
+        const el = document.getElementById("ff-tips");
+        const title = el && el.parentElement;
+        if (!title || el.hidden || !title.offsetHeight) return;
+        const inner = title.querySelector(".ff-title-inner");
+        const opts = title.querySelector(".ff-title-opts");
+        const box = title.getBoundingClientRect();
+        const scale = box.height / title.offsetHeight || 1;
+        let last = null;
+        for (const c of [...inner.children].reverse()) {
+            if (c.offsetHeight && c.textContent.trim() && getComputedStyle(c).visibility !== "hidden") { last = c; break; }
+        }
+        if (!last) return;
+        const above = last.getBoundingClientRect().bottom;
+        const below = opts && opts.offsetHeight ? opts.getBoundingClientRect().top : box.bottom - 12 * scale;
+        const h = el.offsetHeight * scale;
+        el.classList.toggle("is-crowded", below - above < h + 8 * scale);
+        el.style.bottom = "auto";
+        el.style.top = `${Math.round(((above + below) / 2 - h / 2 - box.top) / scale)}px`;
+    }
+
     function titleState(name, note) {
         const el = document.getElementById("ff-title");
         if (!el) return;
+        startTips();
         if (name) el.dataset.state = name;
         const load = document.getElementById("ff-title-load");
         if (load && note !== undefined) load.textContent = note || "";
@@ -5906,11 +5997,15 @@
         const hasNext = Boolean(run && won && run.index + 1 < run.levels.length);
         /* The sting for how it went, then the level's tune from the next
            room while the result is read. The last level cleared plays its
-           sting into the winning version, which showRunEnd starts. */
-        if (!Editor) Sound.sting(won ? "clear" : "lost", { track: Sound.levelTrack(), muffled: true });
+           sting into the winning version, which showRunEnd starts. A round
+           lost powers down into the sad version, lives left or not (27 Oct
+           2026, the owner's: "instead of saying 'ROUND LOST' it should say
+           'GAME OVER'", with the slow sad music and a powering-down sting). */
+        if (!Editor) Sound.sting(won ? "clear" : "lost", won
+            ? { track: Sound.levelTrack(), muffled: true } : { track: "sad" });
 
         document.getElementById("ff-round-title").textContent =
-            won ? "Round complete" : "Round over";
+            won ? "Round complete" : "Game over";
         document.getElementById("ff-round-why").textContent = game.message || "";
 
         /* Seconds TAKEN rather than left: "you did it in 12s" is the number a
@@ -5966,7 +6061,6 @@
             : won ? (run ? "Finish the run" : "Play again")
                 : retrying ? "Try again"
                     : (run ? "See how you did" : "Try again");
-        if (retrying) document.getElementById("ff-round-title").textContent = "Round lost";
         box.dataset.outcome = won ? "won" : "lost";
         box.hidden = false;
         /* THE FOCUS GOES WITH THE PANEL, as it does for the pause cover. It
