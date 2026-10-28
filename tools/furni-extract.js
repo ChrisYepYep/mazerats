@@ -691,7 +691,8 @@ function main() {
             const layers = [];
             let bad = false;
             for (const part of parts) {
-                const { pitch, w, h, paletteMember, regX, regY, bitDepth } = part.bmp;
+                const { w, h, paletteMember, regX, regY } = part.bmp;
+                let { pitch, bitDepth } = part.bmp;
                 const bitdId = cast.childOf.get(`${part.id}:BITD`);
                 if (bitdId === undefined) { bad = true; break; }
                 let bytes;
@@ -700,8 +701,37 @@ function main() {
                     bytes = raw.length === pitch * h ? raw : unpackBits(raw, pitch * h);
                 } catch { bad = true; break; }
                 if (!bytes || bytes.length < pitch * h) { bad = true; break; }
+                /* 1, 2 AND 4-BIT LAYERS, unpacked here into ordinary 8-bit
+                   indices so everything below sees one format. Six classes
+                   have one, and one undecodable layer drops the whole sprite:
+                   rainbow_parasol and rare_parasol lost their floor shadows'
+                   2-bit ellipses and with them the parasols, which then landed
+                   in Fallin' Furni as red "no artwork" tiles. Pixels are packed
+                   high bits first. A layer with its own CLUT of exactly 2^depth
+                   colours (the 4-bit snow rug and xmas08_hole) is coloured by
+                   it; any other is the Mac's ramp for that depth, white down to
+                   black, which is what makes the shadows' index 3 black. Index
+                   0 stays transparent, as it is for 8-bit. */
+                let lowPal = null;
+                if (bitDepth === 1 || bitDepth === 2 || bitDepth === 4) {
+                    const n = 1 << bitDepth, per = 8 / bitDepth;
+                    const own = paletteMember > 0 ? paletteFor(paletteMember) : null;
+                    lowPal = own && own.length === n ? own
+                        : Array.from({ length: n }, (_, i) => {
+                            const v = Math.round(255 * (1 - i / (n - 1)));
+                            return [v, v, v];
+                        });
+                    const out = Buffer.alloc(w * h);
+                    for (let y = 0; y < h; y++) {
+                        for (let x = 0; x < w; x++) {
+                            const byte = bytes[y * pitch + Math.floor(x / per)];
+                            out[y * w + x] = (byte >> (8 - bitDepth * (1 + x % per))) & (n - 1);
+                        }
+                    }
+                    bytes = out; pitch = w; bitDepth = 8;
+                }
                 if (bitDepth !== 8 && bitDepth !== 32) { bad = true; break; }
-                const pal = bitDepth === 8 ? paletteFor(paletteMember) : null;
+                const pal = lowPal || (bitDepth === 8 ? paletteFor(paletteMember) : null);
                 /* An 8-bit layer whose palette will not resolve has no colours
                    at all, and inventing them produces a flat magenta furni —
                    worse than not shipping it, because the game would use it.
