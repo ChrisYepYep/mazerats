@@ -114,10 +114,12 @@ async function build(db, col, b) {
             const url = absolute(site, p.link);
             if (url) embed.url = url;
             if (p.text) embed.description = p.text;
-            /* No picture (28 Oct 2026, the owner's): a news post's picture is
-               the small icon the log shows beside the entry, and in Discord
-               it was either lost under the post or a stray square in the
-               corner. */
+            /* Every news post carries the same banner (28 Oct 2026, the
+               owner's): "MAZERATS.NET — Every maze. One place." over the
+               maze. The picture uploaded in the Warren was the small icon
+               beside the entry, lost in Discord; the site's log now shows a
+               piece of this banner instead (NEWS_THUMB in js/home.js). */
+            embed.image = { url: `${site}/assets/img/news-banner.png` };
             return { embed };
         }
         // A note: its words, on the card of the maze or event it is about.

@@ -393,16 +393,7 @@
                     <input type="text" maxlength="120" data-p="title" value="${esc(p.title)}" required></label>
                 <label class="admin-field wn-wide"><span>Text (optional, a few lines)</span>
                     <textarea rows="3" maxlength="600" data-p="text">${esc(p.text)}</textarea></label>
-                <div class="admin-field"><span>Picture (optional)</span>
-                    <div class="guides-pic">
-                        ${p.image ? `<img src="${esc(p.image)}" alt="">` : `<span class="guides-pic-empty">No picture</span>`}
-                        <div class="guides-pic-actions">
-                            <label class="admin-action-pill guides-pic-upload">${p.image ? "Replace" : "Upload picture"}
-                                <input type="file" class="admin-gallery-thumb-file" accept="image/png,image/jpeg,image/gif,image/webp" data-p-upload></label>
-                            ${p.image ? `<button type="button" class="admin-action-pill admin-pill-danger" data-wn="unpic">Remove</button>` : ""}
-                            <span class="guides-pic-status" data-p-status></span>
-                        </div>
-                    </div></div>
+                <p class="admin-hint wn-wide">Every news post has the same picture: a piece of the maze on What's New, and the Maze Rats banner when it is posted to Discord.</p>
                 <label class="admin-field"><span>Link (optional: /profile, /guides, /maze/…, or https://…)</span>
                     <input type="text" maxlength="400" data-p="link" value="${esc(p.link)}" placeholder="/profile"></label>`
             : `

@@ -2858,6 +2858,7 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     // The posts, as log entries.
+    const NEWS_THUMB = "/assets/img/news-thumb.png";
     function whatsNewPosts() {
         const out = [];
         whatsNewHand.posts.forEach(p => {
@@ -2882,7 +2883,12 @@ document.addEventListener("DOMContentLoaded", () => {
             const n = {
                 isPost: true, postId: p.id, id: p.id,
                 name: String(p.title || ""), noteText: String(p.text || ""),
-                thumb: typeof p.image === "string" ? p.image : "",
+                /* Every news post has the same picture (28 Oct 2026, the
+                   owner's): a piece of the maze from the Discord banner
+                   (assets/img/news-banner.png, which whats-new-discord.js
+                   posts with it), cut from below its words. A picture
+                   uploaded in the Warren is no longer shown. */
+                thumb: NEWS_THUMB,
                 link: typeof p.link === "string" ? p.link : "",
                 activityAt: p.day, activity: "news",
                 ...postBadge(p),
@@ -3143,6 +3149,8 @@ document.addEventListener("DOMContentLoaded", () => {
         if (n.isGuide) return `<img class="updatelog-thumb" src="${escapeHtml(guideLogThumb(n.thumb))}" ${attrs}>`;
         if (n.isPost) {
             const t = String(n.thumb);
+            // Our own file, already the box's shape at four times its size.
+            if (t === NEWS_THUMB) return `<img class="updatelog-thumb is-smooth" src="${t}" ${attrs}>`;
             return `<img class="updatelog-thumb is-smooth" src="${escapeHtml(/^\/(?![\/\\])/.test(t) ? imgCdn(t, 102, null, 75) : t)}" ${attrs}>`;
         }
         return `<span class="updatelog-thumb-crop"><img class="updatelog-thumb-zoom" src="${escapeHtml(imgCdn(n.thumb, 204, 144, 75))}" ${attrs}></span>`;
