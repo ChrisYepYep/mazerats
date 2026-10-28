@@ -114,7 +114,10 @@ async function build(db, col, b) {
             const url = absolute(site, p.link);
             if (url) embed.url = url;
             if (p.text) embed.description = p.text;
-            if (p.image) embed.image = { url: cards.guideImage(site, p.image) };
+            /* No picture (28 Oct 2026, the owner's): a news post's picture is
+               the small icon the log shows beside the entry, and in Discord
+               it was either lost under the post or a stray square in the
+               corner. */
             return { embed };
         }
         // A note: its words, on the card of the maze or event it is about.
