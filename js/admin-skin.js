@@ -317,6 +317,8 @@
                 rm.addEventListener("click", () => { r.kept.splice(i, 1); paintCal(); paintSave(); });
                 return el("p", { className: "sk-kept" }, [el("span", { textContent: "Also: " + keptWords(w) }), rm]);
             });
+            // Under the palette: the skin's own switch, saved at once (gooLine).
+            if (s.name === "halloween") range.append(gooLine(line));
             return el("div", { className: "sk-row", dataset: { skin: s.name } }, [name, range, ...kept]);
         }));
 
@@ -330,6 +332,26 @@
             box.replaceChildren(el("span", { className: "sk-word", textContent: "The times are" }),
                 opt("local", "each visitor's own"), opt("utc", "UTC, the same moment for everyone"));
         }
+    }
+
+    /* THE HALLOWEEN GOO (28 Oct 2026, the owner's: "an option … to remove all
+       goo/slime"). One tick, saved the moment it changes, as the switch above
+       is: it is not a date, so it does not wait for the dates' Save. Off, the
+       skin keeps its bats, ghost, cobwebs, moon and palette, with no goo,
+       drips or splats anywhere (halloweenGoo in netlify/functions/settings.js;
+       pages already open follow on their next settings read). */
+    function gooLine(line) {
+        const tick = el("input", { type: "checkbox", checked: site.halloweenGoo !== false, disabled: !editable() });
+        const note = el("span", { className: "sk-len" });
+        tick.addEventListener("change", async () => {
+            const want = tick.checked;
+            tick.disabled = true;
+            const ok = await save({ halloweenGoo: want }, "", (m, bad) => { note.textContent = m; note.classList.toggle("is-bad", Boolean(bad)); });
+            tick.checked = site.halloweenGoo !== false;
+            tick.disabled = !editable();
+            if (ok) { note.classList.remove("is-bad"); note.textContent = want ? "Goo on" : "No goo anywhere"; }
+        });
+        return line("Goo", [el("label", { className: "sk-radio" }, [tick, "Goo, slime and drips"]), note]);
     }
 
     // Two skins on at once: the first in the list wins (skin-wear.js takes
@@ -391,7 +413,7 @@
 
     // ---------------- reading and saving ----------------
     function take(s) {
-        site = { skin: s.skin || "auto", skinSchedule: Array.isArray(s.skinSchedule) ? s.skinSchedule : [] };
+        site = { skin: s.skin || "auto", skinSchedule: Array.isArray(s.skinSchedule) ? s.skinSchedule : [], halloweenGoo: s.halloweenGoo !== false };
     }
 
     async function load() {

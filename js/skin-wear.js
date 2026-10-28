@@ -85,7 +85,7 @@
 
     const PREVIEW_KEY = "mazerats_skin_preview";            // "xmas", in localStorage
     const DATE_KEY = "mazerats_skin_preview_date";          // "12-12", in localStorage
-    const CACHE_KEY = "mazerats_skin_cache";                // the last { skin, skinSchedule, theme } served
+    const CACHE_KEY = "mazerats_skin_cache";                // the last { skin, skinSchedule, theme, halloweenGoo } served
     const SKIN_THEME_KEY = "mazerats_skin_theme";           // { theme, until }: a skin's palette, for first paint
     const TOKEN_KEY = "mazerats_admin_token";
     const VERIFIED_KEY = "mazerats_skin_preview_verified";  // sessionStorage: { tail, at }
@@ -397,8 +397,12 @@
     if (typeof Api !== "undefined" && Api.getSiteSettings) {
         Api.getSiteSettings().then((s) => {
             if (!s || s.fromCache) return;          // an outage: keep what was remembered
-            site = { skin: s.skin || "auto", skinSchedule: Array.isArray(s.skinSchedule) ? s.skinSchedule : [], theme: s.theme || "classic" };
+            const was = option("halloweenGoo");
+            site = { skin: s.skin || "auto", skinSchedule: Array.isArray(s.skinSchedule) ? s.skinSchedule : [], theme: s.theme || "classic",
+                halloweenGoo: s.halloweenGoo !== false };
             put(localStorage, CACHE_KEY, JSON.stringify(site));
+            // The goo switched in the Warren since this browser last looked: worn again, with or without it.
+            if (current === "halloween" && was !== option("halloweenGoo")) remove();
             refresh();
         }, () => { /* unreadable: the remembered answer stands */ });
     }
@@ -421,5 +425,13 @@
     addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") refresh(); });
     addEventListener("pageshow", (e) => { if (e.persisted) refresh(); });
 
-    Object.assign(window.SkinWear, { apply, remove, today, current: () => current, source: () => source });
+    /* A skin's own switches in the settings (28 Oct 2026): halloweenGoo, false
+       for the Halloween skin without its goo. A setting the answer has not
+       carried yet is on. */
+    function option(name) {
+        if (name === "halloweenGoo") return !(site && site.halloweenGoo === false);
+        return undefined;
+    }
+
+    Object.assign(window.SkinWear, { apply, remove, today, option, current: () => current, source: () => source });
 })();

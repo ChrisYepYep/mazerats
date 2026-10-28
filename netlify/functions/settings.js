@@ -182,6 +182,11 @@ function cleanSkinSchedule(list) {
 }
 const skinOf = (doc) => (doc && SKIN_MODES.includes(doc.skin)) ? doc.skin : DEFAULT_SKIN;
 const scheduleOf = (doc) => (doc && Array.isArray(doc.skinSchedule)) ? doc.skinSchedule : [];
+/* The Halloween skin's goo (28 Oct 2026, the owner's: an option to take all
+   the goo and slime away). On unless switched off, so a database that has
+   never heard of it wears the skin as it was. js/skin-halloween.js reads it
+   through SkinWear.option; the Warren's skins card sets it. */
+const gooOf = (doc) => !(doc && doc.halloweenGoo === false);
 
 /* Which furni falls past Fallin' Furni's title screen. A site-wide choice
    rather than a per-level one — the title screen is not a level — so it
@@ -258,7 +263,8 @@ function settingsReply(event, doc) {
         launchAt: (doc && doc.launchAt) || "",
         ffLaunchAt: (doc && doc.ffLaunchAt) || "",
         skin: skinOf(doc),
-        skinSchedule: scheduleOf(doc)
+        skinSchedule: scheduleOf(doc),
+        halloweenGoo: gooOf(doc)
     }, { cdn: GATE_CDN_CACHE });
     res.headers = { ...res.headers, "Netlify-Vary": "query=fresh" };
     return res;
@@ -421,6 +427,10 @@ async function write(event, settings, db) {
             if (typeof cleaned === "string") return json(400, { error: cleaned });
             update.skinSchedule = cleaned;
         }
+        if (body.halloweenGoo !== undefined) {
+            if (typeof body.halloweenGoo !== "boolean") return json(400, { error: "halloweenGoo must be true or false" });
+            update.halloweenGoo = body.halloweenGoo;
+        }
         if (body.lobbyFurni !== undefined) {
             if (!Array.isArray(body.lobbyFurni)) {
                 return json(400, { error: "lobbyFurni must be an array of furni class names" });
@@ -468,7 +478,8 @@ async function write(event, settings, db) {
             ffLaunchAt: (doc && doc.ffLaunchAt) || "",
             // The skin and its dates (25 Oct 2026), for the Warren's skins card.
             skin: skinOf(doc),
-            skinSchedule: scheduleOf(doc)
+            skinSchedule: scheduleOf(doc),
+            halloweenGoo: gooOf(doc)
         });
     }
 

@@ -647,10 +647,15 @@
         return { floor, ceil };
     }
 
+    // Goo, drips and splats, unless the Warren's skins card has them off.
+    const gooOn = () => !(window.SkinWear && typeof SkinWear.option === "function" && SkinWear.option("halloweenGoo") === false);
+
     /* Goo on el's top edge, as a piece of `into` (el itself unless it clips,
        when its parent). The one drip with the most room may be animated: the
        picture is drawn without it and its column becomes a strip of frames. */
     function slime(el, w, o) {
+        // None at all while the Warren has the goo switched off (SkinWear.option; 28 Oct 2026).
+        if (!gooOn()) return null;
         const into = o.into || el;
         ensurePositioned(into);
         const pad = o.pad ?? 6, up = o.up ?? 11, down = o.down ?? 60;
@@ -1590,7 +1595,8 @@
        answered; the windows above still go on at once. */
     let rowsQueued = false;
     function decorateRows() {
-        if (rowsQueued) return;
+        // Rows wear nothing but goo, so without it there is nothing to measure.
+        if (rowsQueued || !gooOn()) return;
         rowsQueued = true;
         idle(() => {
             rowsQueued = false;
