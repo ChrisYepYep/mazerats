@@ -10,7 +10,10 @@
            and notes about a maze or event (a line that opens it);
      AMEND any automatic entry: take it off the log, file it under another
            day, label it Added or Updated whatever the dates say, or give it
-           its own line instead of the automatic one.
+           its own line instead of the automatic one;
+     POST  any entry to the Maze Rats Discord, by hand, one at a time (28 Oct
+           2026): netlify/functions/whats-new-discord.js. The row says when
+           it last went, and posting it again asks first.
 
    Both are kept by netlify/functions/whats-new.js, and js/home.js applies
    them when it builds the log (WHAT'S NEW, BY HAND there). The days here
@@ -30,6 +33,7 @@
 
     const TOKEN_KEY = "mazerats_admin_token";
     const URL_ = "/.netlify/functions/whats-new";
+    const DISCORD_URL = "/.netlify/functions/whats-new-discord";
     // The day every record catalogued before createdAt existed shares
     // (ARCHIVE_BACKFILL_DATE in js/home.js).
     const BACKFILL = "2026-08-21";
@@ -51,6 +55,7 @@
 
     let mounted = false;
     let rooms = [], events = [], guides = [], posts = [], overrides = new Map();
+    let discord = new Map();    // key -> when it was last posted to Discord
     let openOverride = null;    // the target whose override editor is open
     let editing = null;         // the post in the form ({} for a new one)
     let opened = "";            // editing as it was opened, for "unsaved changes?"
@@ -161,11 +166,12 @@
             if (e.o.text) flags.push("own text");
         }
         const key = e.post ? `post:${e.post.id}` : e.target;
+        const posted = discord.get(key);
         return `
             <div class="chrome-list-row admin-row wn-row${e.hidden ? " is-hidden" : ""}" data-key="${esc(key)}">
                 <div class="row-info">
                     <h3><span class="wn-verb is-${esc(e.activity)}">${esc(e.verb || VERBS[e.activity] || "Added")}</span> ${esc(e.name || "(untitled)")}</h3>
-                    <p class="row-creator">${esc(e.meta)}${flags.length ? ` <span class="wn-flags">Changed here: ${esc(flags.join(", "))}</span>` : ""}</p>
+                    <p class="row-creator">${esc(e.meta)}${flags.length ? ` <span class="wn-flags">Changed here: ${esc(flags.join(", "))}</span>` : ""}${posted ? ` <span class="wn-flags">Posted to Discord ${esc(shortDay(posted.postedAt))}</span>` : ""}</p>
                     ${e.line ? `<p class="row-creator wn-line">${esc(e.line)}</p>` : ""}
                 </div>
                 <div class="admin-row-actions">
@@ -175,6 +181,7 @@
                            <button type="button" class="btn admin-delete-btn" data-wn="delete-post">Delete</button>`
                         : `<button type="button" class="btn admin-edit-btn" data-wn="amend">${openOverride === e.target ? "Close" : "Amend"}</button>
                            <button type="button" class="btn admin-edit-btn" data-wn="toggle-hide">${e.hidden ? "Show" : "Hide"}</button>`}
+                    ${e.hidden ? "" : `<button type="button" class="btn admin-edit-btn" data-wn="discord">${posted ? "Post again" : "Discord"}</button>`}
                 </div>
             </div>
             ${!e.post && openOverride === e.target ? overrideHtml(e) : ""}`;
@@ -224,6 +231,7 @@
             guides = Array.isArray(g) ? g : (g && Array.isArray(g.records) ? g.records : []);
             posts = Array.isArray(wn && wn.posts) ? wn.posts : [];
             overrides = new Map((Array.isArray(wn && wn.overrides) ? wn.overrides : []).map(o => [o.target, o]));
+            discord = new Map((Array.isArray(wn && wn.discord) ? wn.discord : []).map(d => [d.key, d]));
             render();
         } catch (err) {
             if (gen !== loadGen) return;
@@ -263,6 +271,38 @@
             text: val("text").value.trim(),
             hidden: val("hidden").checked
         };
+    }
+
+    // ------------------------------------------------------------ discord
+
+    const shortDay = iso => {
+        const d = new Date(iso);
+        return isNaN(d) ? "" : d.toLocaleDateString("en-GB", { day: "numeric", month: "short", timeZone: "UTC" });
+    };
+
+    /* One entry to the Discord, as the row reads: its label, name and line.
+       The server reads the rest (address, picture) from the record. Asked
+       first, always, and said plainly when it has gone before. */
+    async function postToDiscord(key) {
+        const e = entries().find(x => (x.post ? `post:${x.post.id}` : x.target) === key);
+        if (!e) return;
+        const label = e.verb || VERBS[e.activity] || "Added";
+        const before = discord.get(key);
+        const again = before
+            ? `<br><br><strong>It was posted on ${esc(shortDay(before.postedAt))}${before.count > 1 ? ` (${before.count} times so far)` : ""}.</strong> This posts it again.`
+            : "";
+        if (!await ask(`Post this to the Maze Rats Discord?<br><br><strong>${esc(label)}: ${esc(e.name || "(untitled)")}</strong>${e.line ? `<br>${esc(e.line)}` : ""}${again}`)) return;
+        if (busy) { await tell("Still saving the last change. Try again in a moment."); return; }
+        busy = true;
+        try {
+            const res = await call(DISCORD_URL, "POST", { key, activity: e.activity, label, line: e.line || "" });
+            if (res && res.discord) discord.set(key, res.discord);
+            render();
+        } catch (err) {
+            if (!sessionGone(err)) await tell(err.message || "That couldn't be posted.");
+        } finally {
+            busy = false;
+        }
     }
 
     // ------------------------------------------------------------ posts
@@ -450,6 +490,7 @@
             render();
             return;
         }
+        if (act === "discord") { postToDiscord(key); return; }
         if (act === "toggle-hide") {
             const o = overrides.get(key) || {};
             /* This row's Amend box, if it is open, is saved as typed rather
@@ -554,7 +595,7 @@
             uploaded.clear();
             closePost();
             openOverride = null;
-            rooms = []; events = []; guides = []; posts = []; overrides = new Map();
+            rooms = []; events = []; guides = []; posts = []; overrides = new Map(); discord = new Map();
             listEl.innerHTML = "";
             mounted = false;
             maybeMount();

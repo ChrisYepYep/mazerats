@@ -26,6 +26,10 @@
        text      this line instead of the automatic "what changed" one
      An override with nothing left in it is deleted rather than kept empty.
 
+   And DISCORD rows, { id: "d:" + key, type: "discord", key, postedAt, count }:
+   an entry posted to the Discord, written by whats-new-discord.js and read
+   back here (?full=1 only) so the panel can say so.
+
    GET          { posts, overrides } for everybody, through the edge as rooms
                 and events are (cachedJson); ?full=1 for a Warren account
                 skips the edge, so the panel reads its own save straight away.
@@ -153,7 +157,9 @@ async function read(col) {
     const rows = await col.find({}, { projection: { _id: 0 } }).toArray();
     return {
         posts: rows.filter(r => r.type === "post").sort((a, b) => String(b.day).localeCompare(String(a.day))),
-        overrides: rows.filter(r => r.type === "override")
+        overrides: rows.filter(r => r.type === "override"),
+        // What has been posted to Discord, and when (whats-new-discord.js): the Warren's only.
+        discord: rows.filter(r => r.type === "discord")
     };
 }
 
@@ -181,6 +187,7 @@ exports.handler = async (event) => {
                is a draft, and a draft is the Warren's. Overrides stay whole —
                a hidden one is how an automatic entry is taken off. */
             data.posts = data.posts.filter(p => p.hidden !== true);
+            delete data.discord;
             return cachedJson(event, data, { vary: "full" });
         } catch (e) {
             if (isAuthUnavailable(e)) return AUTH_UNAVAILABLE;
@@ -198,6 +205,8 @@ exports.handler = async (event) => {
             const id = String((event.queryStringParameters || {}).id || "");
             if (!id || id.length > 260) return json(400, { error: "Nothing named to delete" });
             await col.deleteOne({ id });
+            // A deleted post's "posted to Discord" goes with it.
+            if (id.startsWith("p-")) await col.deleteOne({ id: "d:post:" + id });
             return json(200, { deleted: id });
         }
 
