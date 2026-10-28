@@ -232,10 +232,12 @@ html[data-skin="halloween"] .hw-share-card {
 
 /* MOONLIGHT ON THE EDGES THAT FACE IT. The moon hangs up and to the left of
    the archive window, so the light comes from the upper left: a fine cool
-   rim just outside the top and left of every window, the console and the
-   title, and a softer spill beyond it. Each window keeps its own drop
-   shadow, restated first. The halo and the wash are js/skin-halloween.js's
-   (night). */
+   rim just outside the top and left of every window and the title, and a
+   softer spill beyond it. Each window keeps its own drop shadow, restated
+   first. The halo and the wash are js/skin-halloween.js's (night).
+   Not on the console-styled windows (.console-frame: the console, the
+   profile, Pura Panic, Fallin' Furni; 28 Oct 2026, the owner's: on those it
+   "doesn't look right"), which keep their own shadow. */
 html[data-skin="halloween"] .chrome-window {
     box-shadow:
         0 16px 44px rgba(0, 0, 0, 0.6),
@@ -247,12 +249,6 @@ html[data-skin="halloween"] .modal {
         0 22px 55px rgba(0, 0, 0, 0.85),
         -1px -1px 0 rgba(206, 220, 255, 0.62),
         -10px -10px 28px -8px rgba(160, 186, 255, 0.30);
-}
-html[data-skin="halloween"] .console-frame {
-    box-shadow:
-        2px 2px 0 0 rgba(0, 0, 0, 0.22),
-        -1px -1px 0 rgba(214, 224, 255, 0.62),
-        -8px -8px 22px -6px rgba(160, 186, 255, 0.28);
 }
 /* The title: lit on its upper-left edges, with the skin's green glow behind. */
 html[data-skin="halloween"] .hero-title {
