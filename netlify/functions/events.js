@@ -4,7 +4,7 @@ const { isAuthorized, hasAccount, canWrite, refuseWrite, UNAUTHORIZED } = requir
 const { packRecords } = require("./_furni-payload");
 const { cachedJson } = require("./_cache");
 const { SECURITY_HEADERS } = require("./_headers");
-const { describe: describeChanges, changedFields, canon } = require("./_changes");
+const { describe: describeChanges, changedFields, keepPastDay, canon } = require("./_changes");
 const { checkRecord } = require("./_url");
 const { cleanArticle } = require("./article");
 const { assignSlugs, settleSlug, idFor, recheckSlug, loadRetired, retireAddresses, PROJECTION: SLUG_FIELDS } = require("./_slugs");
@@ -342,6 +342,7 @@ async function handle(event) {
         delete body.furniPatch;
         delete body.furniRev;
         delete body.changes;
+        delete body.pastChanges;
         delete body.updatedAt;
         delete body._baseUpdatedAt;
         // The server's, as on an edit (see spotlightAt under PUT).
@@ -397,6 +398,7 @@ async function handle(event) {
         const { _id, createdAt: _ignored, ...update } = body;
         // Never a client-sent change list — see the same line in rooms.js.
         delete update.changes;
+        delete update.pastChanges;
         /* Nor furni in any form. rooms.js takes furni only as a patch it
            merges under furniRev; this route never had that step, so a body
            carrying furniPatch stored it as a field of its own, and a whole
@@ -498,6 +500,8 @@ async function handle(event) {
         } else {
             const changed = describeChanges(previous, update);
             if (changed) update.changes = changed;
+            // The day it replaces, kept as its own What's New entry.
+            keepPastDay(previous, update);
         }
 
         const result = await events.findOneAndUpdate(

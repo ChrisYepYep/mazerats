@@ -2942,7 +2942,8 @@ document.addEventListener("DOMContentLoaded", () => {
         const auto = rooms.concat(events, guideLogItems());
         // The Warren's changes to them, and its own posts (WHAT'S NEW, BY HAND).
         auto.forEach(applyWhatsNewOverride);
-        return auto.filter(x => !(x.n.override && x.n.override.hidden))
+        const shown = auto.filter(x => !(x.n.override && x.n.override.hidden));
+        return shown.concat(...shown.filter(x => !x.n.isGuide).map(earlierEntries))
             .concat(whatsNewPosts())
             .filter(x => x.at)
             /* Most recent activity first — added or edited, whichever came
@@ -2958,6 +2959,49 @@ document.addEventListener("DOMContentLoaded", () => {
                 || (/^\d{4}-\d{2}-\d{2}$/.test(String(b.at)) - /^\d{4}-\d{2}-\d{2}$/.test(String(a.at)))
                 || String(b.at).localeCompare(String(a.at)) || String(b.own).localeCompare(String(a.own)))
             .map(x => x.n);
+    }
+
+    /* A record's earlier days, each an entry of its own (28 Oct 2026, the
+       owner's). The entry above is the record's latest day; a record edited
+       on three days was that one line, and the days before it were gone —
+       The Secrets of Glukko, added on the 26th and edited on the 27th and
+       28th, was a single "Updated" under the 28th. Now it is three: Added
+       on the day it arrived, and one Updated for each day it was edited,
+       from pastChanges (kept by keepPastDay in netlify/functions/_changes.js
+       from that date on — a day before then is not known, so not drawn).
+       The Warren's override is the latest entry's; these keep their own day,
+       label and line. Two kept days that fall on one of the reader's days
+       share an entry, as the log groups by the reader's day (localDayKey). */
+    function earlierEntries(x) {
+        const n = x.n;
+        if (n.activity !== "updated" || !n.archivedAt) return [];
+        const latest = localDayKey(x.at);
+        const born = localDayKey(n.archivedAt);
+        const byDay = new Map();
+        const raw = (n.isEvent ? EVENTS : ROOMS).find(r => r.id === n.id);
+        (raw && Array.isArray(raw.pastChanges) ? raw.pastChanges : []).forEach(p => {
+            if (!p || typeof p.at !== "string") return;
+            const day = localDayKey(p.at);
+            if (day <= born || day >= latest) return;
+            const had = byDay.get(day);
+            const keys = Array.isArray(p.changes) ? p.changes : [];
+            if (!had) byDay.set(day, { at: p.at, changes: keys.slice() });
+            else keys.forEach(k => { if (!had.changes.includes(k)) had.changes.push(k); });
+        });
+        const entry = (at, activity, changes) => ({
+            n: Object.assign({}, n, {
+                activityAt: at, activity, changes, updatedAt: activity === "updated" ? at : "",
+                override: null, customChange: "", logKey: recordKey(n) + "@" + localDayKey(at)
+            }),
+            at, own: x.own
+        });
+        const out = [...byDay.values()].map(d => entry(d.at, "updated", d.changes));
+        /* Added only on a real arrival stamp: a record from before createdAt
+           sits on the backfill date, the archive's starting state rather
+           than news, and the 35 of those edited since would otherwise have
+           crowded back onto 21 August. */
+        if (raw && raw.createdAt && born < latest) out.push(entry(n.archivedAt, "added", []));
+        return out;
     }
 
     /* How far back "lately" reaches, for the side menu's badge only — the
@@ -3225,7 +3269,7 @@ document.addEventListener("DOMContentLoaded", () => {
                         <ul class="updatelog-entries">
                             ${group.entries.map(({ n, i }) => `
                                 <li>
-                                    <${n.isPost && !n.link ? "div" : 'button type="button"'} class="updatelog-entry${n.isPost && !n.link ? " is-static" : ""}" data-log-index="${i}" data-record-id="${escapeHtml(n.id || "")}" data-focus-key="${escapeHtml(n.isPost ? "post:" + n.postId : n.isNote ? "note:" + n.postId : recordKey(n))}">
+                                    <${n.isPost && !n.link ? "div" : 'button type="button"'} class="updatelog-entry${n.isPost && !n.link ? " is-static" : ""}" data-log-index="${i}" data-record-id="${escapeHtml(n.id || "")}" data-focus-key="${escapeHtml(n.isPost ? "post:" + n.postId : n.isNote ? "note:" + n.postId : n.logKey || recordKey(n))}">
                                         <span class="updatelog-verb is-${logBadgeClass(n)}${n.badgeText ? " is-custom" : ""}">${n.badgeText ? escapeHtml(n.badgeText) : LOG_VERBS[logBadgeClass(n)] || "Added"}</span>
                                         ${n.thumb
                                             /* A guide's picture is pixel art, so it is never put

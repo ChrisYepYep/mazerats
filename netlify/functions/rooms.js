@@ -7,7 +7,7 @@ const { isAuthorized, hasAccount, canWrite, refuseWrite, UNAUTHORIZED } = requir
 const { packRecords } = require("./_furni-payload");
 const { cachedJson } = require("./_cache");
 const { SECURITY_HEADERS } = require("./_headers");
-const { describe: describeChanges, changedFields } = require("./_changes");
+const { describe: describeChanges, changedFields, keepPastDay } = require("./_changes");
 const { checkRecord } = require("./_url");
 const { cleanArticle } = require("./article");
 const { assignSlugs, settleSlug, idFor, recheckSlug, loadRetired, retireAddresses, PROJECTION: SLUG_FIELDS } = require("./_slugs");
@@ -155,6 +155,8 @@ function fieldsToSet(before, update, furni) {
     } else {
         const changed = describeChanges(before, judged);
         if (changed) set.changes = changed;
+        // The day it replaces, kept as its own What's New entry (see _changes.js).
+        keepPastDay(before, set);
     }
     return set;
 }
@@ -460,6 +462,7 @@ async function handle(event) {
         delete body.furniRev;
         delete body.furniComplete;   // set from the list row only
         delete body.changes;
+        delete body.pastChanges;
         delete body.updatedAt;
         delete body._baseUpdatedAt;
         /* Nor its id. The id is the server's to choose (idFor, below), and
@@ -549,6 +552,7 @@ async function handle(event) {
            arrived — so the What's New line could be any list a browser
            cared to send. The server works it out or leaves it alone. */
         delete update.changes;
+        delete update.pastChanges;
 
         /* FURNI ARRIVES AS A PATCH, never as the whole object.
 

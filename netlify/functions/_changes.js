@@ -101,7 +101,7 @@ const GROUPS = [
    the five new fields as "Updated details". spotlightAt is their version
    stamp, written by events.js, and no more a change than updatedAt. */
 const IGNORED = new Set([
-    "id", "_id", "createdAt", "updatedAt", "changes",
+    "id", "_id", "createdAt", "updatedAt", "changes", "pastChanges",
     "slug", "slugAliases", "slugManual", "_slugAuto",
     "furniRev", "furniPatch",
     "spotlight", "spotlightFrom", "spotlightUntil", "spotlightCaption", "spotlightColour", "spotlightCaptionAt", "spotlightAt",
@@ -331,4 +331,42 @@ function order(keys) {
     return out;
 }
 
-module.exports = { describe, changedFields, GROUPS, canon };
+/* ---------- the days before (28 Oct 2026, the owner's) ----------
+ *
+ * One list per record is one entry in What's New, under the day of the last
+ * save — so The Secrets of Glukko, added on the 26th and edited on the 27th
+ * and 28th, was one "Updated" line on the 28th, and the 27th's edit was gone
+ * from the log altogether. It should be three entries.
+ *
+ * So when a save starts a new day's list, the day it replaces is kept on the
+ * record as `pastChanges`, newest first: { at, changes } — `at` the old
+ * updatedAt, `changes` that day's keys, empty for a day saved before change
+ * lists existed (still an entry, just without a line). js/home.js draws one
+ * entry per day. A day that was the record's first is left out: that day's
+ * entry is "Added", which the log draws from createdAt.
+ *
+ * `set` is the $set about to be written; it gains pastChanges only when it
+ * moves updatedAt to a new day. Like describe, this can never break a save. */
+const PAST_MAX = 30;
+const dayOf = v => {
+    const s = v instanceof Date && !isNaN(v.getTime()) ? v.toISOString() : String(v || "");
+    return /^\d{4}-\d{2}-\d{2}/.test(s) ? s.slice(0, 10) : "";
+};
+
+function keepPastDay(before, set) {
+    try {
+        if (!before || typeof before !== "object" || !set || !set.updatedAt) return;
+        const last = dayOf(before.updatedAt);
+        if (!last || last === dayOf(set.updatedAt) || last === dayOf(before.createdAt)) return;
+        const at = before.updatedAt instanceof Date ? before.updatedAt.toISOString() : String(before.updatedAt);
+        const past = (Array.isArray(before.pastChanges) ? before.pastChanges : [])
+            .filter(p => p && typeof p.at === "string" && Array.isArray(p.changes));
+        if (past.some(p => dayOf(p.at) === last)) return;
+        const changes = (Array.isArray(before.changes) ? before.changes : []).filter(k => typeof k === "string");
+        set.pastChanges = [{ at, changes }, ...past].slice(0, PAST_MAX);
+    } catch (e) {
+        // A lost day in the log is never worth a failed save.
+    }
+}
+
+module.exports = { describe, changedFields, keepPastDay, GROUPS, canon };
