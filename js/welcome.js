@@ -700,6 +700,8 @@ function showCoolDown(block, returnTo) {
 const SPOTLIGHT_TURN_MS = 7000;
 const SPOTLIGHT_RECHECK_MS = 20000;
 const DEFAULT_SPOTLIGHT_CAPTION = "Click for more details.";
+// ^…^ in a caption is raised, like the "st" of 1st (28 Oct 2026).
+const SPOTLIGHT_RAISED = /\^([^^]*)\^/g;
 let spotlightEvents = null;
 let spotlightKey = "";
 let spotlightIndex = 0;
@@ -741,7 +743,7 @@ function spotlightSlide(ev) {
     a.className = "welcome-promo-slide";
     a.href = `#event-${encodeURIComponent(ev.id)}`;
     const caption = (typeof ev.spotlightCaption === "string" && ev.spotlightCaption.trim()) || DEFAULT_SPOTLIGHT_CAPTION;
-    a.setAttribute("aria-label", `${ev.title || "Event"}: ${caption}`);
+    a.setAttribute("aria-label", `${ev.title || "Event"}: ${caption.replace(SPOTLIGHT_RAISED, "$1")}`);
     const img = document.createElement("img");
     img.className = "welcome-promo-img";
     img.alt = "";
@@ -759,7 +761,14 @@ function spotlightSlide(ev) {
     const cta = document.createElement("span");
     // Over the top of the picture, if the Warren says so (4 Oct 2026).
     cta.className = ev.spotlightCaptionAt === "top" ? "welcome-promo-cta is-top" : "welcome-promo-cta";
-    cta.textContent = caption;
+    caption.split(SPOTLIGHT_RAISED).forEach((part, i) => {
+        if (!part) return;
+        if (i % 2 === 0) { cta.append(part); return; }
+        const sup = document.createElement("sup");
+        sup.className = "welcome-promo-sup";
+        sup.textContent = part;
+        cta.append(sup);
+    });
     if (/^#[0-9a-f]{6}$/i.test(ev.spotlightColour || "")) cta.style.color = ev.spotlightColour;
     a.append(img, cta);
     return a;

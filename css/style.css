@@ -1659,11 +1659,14 @@ body[data-page="home"] .hero { padding-top: 18px; }
     padding: 18px 10px 7px;
     background: linear-gradient(rgba(6, 6, 20, 0), rgba(6, 6, 20, 0.7));
     color: #ebe8ff;
-    font-family: 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace;
-    font-size: 0.5625rem;
-    font-weight: 400;
-    line-height: 1.6;
-    letter-spacing: 0.02em;
+    /* Roboto, not Volter (28 Oct 2026, the owner's): Volter is drawn for
+       9px and only stays sharp at whole multiples of it, so the smaller
+       raised text (.welcome-promo-sup) came out squashed. */
+    font-family: 'Roboto', sans-serif;
+    font-size: 0.6875rem;
+    font-weight: 500;
+    line-height: 1.45;
+    letter-spacing: 0.01em;
     text-align: center;
     white-space: nowrap;
     /* A caption too long for the frame ends in "…" (30 Sept 2026) rather
@@ -1686,6 +1689,13 @@ body[data-page="home"] .hero { padding-top: 18px; }
     bottom: auto;
     padding: 7px 10px 18px;
     background: linear-gradient(rgba(6, 6, 20, 0.7), rgba(6, 6, 20, 0));
+}
+
+/* Raised text in a caption, ^…^ in the Warren (28 Oct 2026). */
+.welcome-promo-sup {
+    font-size: 0.75em;
+    line-height: 0;
+    vertical-align: 0.4em;
 }
 
 /* WIDER THAN THE BUTTON ON A PHONE (10 Oct 2026). At the Enter button's
@@ -7119,6 +7129,25 @@ body[data-page="admin"] .admin-contributor-count {
     max-width: 120px;
 }
 .admin-colour-pair input.is-invalid { border-color: #c0392b; }
+/* The caption box and its 1st button — see wireSpotlightRaise. */
+.admin-caption-pair {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+.admin-caption-pair input[type="text"] { flex: 1 1 auto; min-width: 0; }
+/* Raised as the caption's own ^…^ is (.welcome-promo-sup), so the button
+   shows what it does; its Roboto is set with the Warren's buttons, below. */
+.admin-raise-btn {
+    flex: 0 0 auto;
+    align-self: stretch;
+}
+.admin-raise-btn sup {
+    font-size: 0.75em;
+    line-height: 0;
+    vertical-align: 0.4em;
+}
+.admin-hint sup { font-size: 0.7em; line-height: 0; }
 
 /* Between the button groups: text style, block kind, links and lists, clear. */
 .admin-fmt-gap {
@@ -19459,6 +19488,16 @@ body[data-page="admin"] .header-state-link {
     cursor: var(--cursor-pointer);
     transform: none;
     transition: background-color 0.12s ease-out, color 0.12s ease-out, border-color 0.12s ease-out;
+}
+/* The spotlight caption's 1st button keeps the caption's own Roboto, so
+   its raised "st" is not squashed (see .admin-raise-btn). */
+body[data-page="admin"] .admin-raise-btn {
+    gap: 0;
+    padding: 0 12px;
+    font-family: 'Roboto', sans-serif;
+    font-size: 0.8125rem;
+    font-weight: 500;
+    line-height: 1;
 }
 
 body[data-page="admin"] .btn:hover:not([disabled]),

@@ -11744,6 +11744,8 @@ document.addEventListener("DOMContentLoaded", () => {
         const TURN_MS = 7000;
         const RECHECK_MS = 20000;
         const DEFAULT_CAPTION = "Click for more details.";
+        const RAISED = /\^([^^]*)\^/g;
+        const homeAt = ev => ev.spotlightCaptionAtHome || ev.spotlightCaptionAt;
         const reduced = window.matchMedia ? window.matchMedia("(prefers-reduced-motion: reduce)") : null;
         const broken = new Set();
         let events = null;
@@ -11786,7 +11788,7 @@ document.addEventListener("DOMContentLoaded", () => {
             a.href = window.RecordAddress.of("event", ev);
             a.dataset.id = ev.id;
             const caption = (typeof ev.spotlightCaption === "string" && ev.spotlightCaption.trim()) || DEFAULT_CAPTION;
-            a.setAttribute("aria-label", `${ev.title || "Event"}: ${caption}`);
+            a.setAttribute("aria-label", `${ev.title || "Event"}: ${caption.replace(RAISED, "$1")}`);
             const img = document.createElement("img");
             img.className = "welcome-promo-img";
             img.alt = "";
@@ -11800,9 +11802,18 @@ document.addEventListener("DOMContentLoaded", () => {
             }, { once: true });
             img.src = imgCdn(thumb(ev), 640, null, 80);
             const cta = document.createElement("span");
-            // Over the top of the picture, if the Warren says so (4 Oct 2026).
-            cta.className = ev.spotlightCaptionAt === "top" ? "welcome-promo-cta is-top" : "welcome-promo-cta";
-            cta.textContent = caption;
+            // Over the top of the picture, if the Warren says so (4 Oct 2026):
+            // the homepage's own position since 28 Oct, else the landing page's.
+            cta.className = homeAt(ev) === "top" ? "welcome-promo-cta is-top" : "welcome-promo-cta";
+            // ^…^ is raised, like the "st" of 1st (28 Oct 2026, the Warren's 1st button).
+            caption.split(RAISED).forEach((part, i) => {
+                if (!part) return;
+                if (i % 2 === 0) { cta.append(part); return; }
+                const sup = document.createElement("sup");
+                sup.className = "welcome-promo-sup";
+                sup.textContent = part;
+                cta.append(sup);
+            });
             if (/^#[0-9a-f]{6}$/i.test(ev.spotlightColour || "")) cta.style.color = ev.spotlightColour;
             a.append(img, cta);
             // Closed before the event window opens over it, focus parked on
@@ -11891,7 +11902,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 .sort((a, b) => (place(a) - place(b))
                     || (time(a.spotlightFrom) || 0) - (time(b.spotlightFrom) || 0)
                     || String(a.title || "").localeCompare(String(b.title || "")));
-            const next = JSON.stringify(on.map(ev => [ev.id, thumb(ev), ev.spotlightCaption || "", ev.spotlightColour || "", ev.spotlightCaptionAt || "", ev.title || "", ev.slug || ""]));
+            const next = JSON.stringify(on.map(ev => [ev.id, thumb(ev), ev.spotlightCaption || "", ev.spotlightColour || "", homeAt(ev) || "", ev.title || "", ev.slug || ""]));
             if (!on.length) {
                 if (isOpen()) setOpen(false);
                 drawer.hidden = true;

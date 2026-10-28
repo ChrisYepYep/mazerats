@@ -6731,6 +6731,9 @@ document.addEventListener("DOMContentLoaded", () => {
         const from = splitIso(item.spotlightFrom), until = splitIso(item.spotlightUntil);
         const stored = spotlightHex(item.spotlightColour) || "";
         const colour = stored || SPOTLIGHT_DEFAULT_COLOUR;
+        // The homepage's own position (28 Oct 2026); until one is saved it
+        // follows the landing page's, as the homepage itself does.
+        const homeAt = item.spotlightCaptionAtHome || item.spotlightCaptionAt;
         return `
             <div class="admin-spotlight">
                 <h4 class="admin-subheading">Landing page spotlight</h4>
@@ -6741,12 +6744,17 @@ document.addEventListener("DOMContentLoaded", () => {
                 ${fieldRow("Spotlight until (UTC, optional)", `<input type="date" name="spotlightUntilDate" value="${until.date}">`)}
                 ${fieldRow("Spotlight until time (UTC, 24-hour)", `<input type="time" name="spotlightUntilTime" value="${until.time}">`)}
                 <p class="admin-hint">Leave both blank to spotlight it from now until you untick it. It comes off the landing page by itself the moment the end passes.</p>
-                ${fieldRow("Spotlight caption (optional)", `<input type="text" name="spotlightCaption" maxlength="80" placeholder="Click for more details." value="${escapeHtml(item.spotlightCaption || "")}">`)}
+                ${fieldRow("Spotlight caption (optional)", `<span class="admin-caption-pair"><input type="text" name="spotlightCaption" maxlength="120" placeholder="Click for more details." value="${escapeHtml(item.spotlightCaption || "")}"><button type="button" class="admin-pill-btn admin-raise-btn" title="Raise the selected text, like the st in 1st. With nothing selected, raises every st, nd, rd and th after a number, and UTC. Press again to lower." aria-label="Raise text, like the st in 1st">1<sup>st</sup></button></span>`)}
+                <p class="admin-hint">Text between ^ marks is raised, like the st in 1<sup>st</sup>: the 1st button adds them.</p>
                 ${fieldRow("Caption colour (hex, optional)", `<span class="admin-colour-pair"><input type="color" class="admin-colour-swatch" value="${colour}" aria-label="Pick the caption colour"><input type="text" name="spotlightColour" maxlength="7" spellcheck="false" autocomplete="off" placeholder="${SPOTLIGHT_DEFAULT_COLOUR}" value="${stored}"></span>`)}
                 <p class="admin-hint">Blank caption reads "Click for more details." Type a hex code such as #ebe8ff, or pick one from the swatch, to match the lettering in the event's thumbnail. Blank colour is ${SPOTLIGHT_DEFAULT_COLOUR}.</p>
-                ${fieldRow("Caption position", `<select name="spotlightCaptionAt">
+                ${fieldRow("Caption position on the landing page", `<select name="spotlightCaptionAt">
                     <option value="bottom"${item.spotlightCaptionAt === "top" ? "" : " selected"}>Bottom of the picture</option>
                     <option value="top"${item.spotlightCaptionAt === "top" ? " selected" : ""}>Top of the picture</option>
+                </select>`)}
+                ${fieldRow("Caption position on the homepage", `<select name="spotlightCaptionAtHome">
+                    <option value="bottom"${homeAt === "top" ? "" : " selected"}>Bottom of the picture</option>
+                    <option value="top"${homeAt === "top" ? " selected" : ""}>Top of the picture</option>
                 </select>`)}
             </div>`;
     }
@@ -6764,6 +6772,7 @@ document.addEventListener("DOMContentLoaded", () => {
        2026 — a bare colour input takes no typed code in most browsers). Each
        follows the other, and the box is tidied to #rrggbb when it is left. */
     function wireSpotlightColour(formEl) {
+        wireSpotlightRaise(formEl);
         const swatch = formEl.querySelector(".admin-colour-swatch");
         const box = formEl.querySelector('input[name="spotlightColour"]');
         if (!swatch || !box) return;
@@ -6780,6 +6789,40 @@ document.addEventListener("DOMContentLoaded", () => {
         box.addEventListener("blur", () => {
             const hex = spotlightHex(box.value);
             if (hex !== null && hex !== box.value) box.value = hex;
+        });
+    }
+
+    /* The caption's 1st button (28 Oct 2026, the owner's): ^…^ is raised on
+       the page, like the "st" of 1st. A selection is wrapped in the marks,
+       or unwrapped if it already is; with nothing selected every ordinal
+       ending and UTC is raised, and if they all already are, lowered. */
+    function wireSpotlightRaise(formEl) {
+        const box = formEl.querySelector('input[name="spotlightCaption"]');
+        const btn = formEl.querySelector(".admin-raise-btn");
+        if (!box || !btn) return;
+        // Pressing the button would otherwise take the selection with the focus.
+        btn.addEventListener("mousedown", (e) => e.preventDefault());
+        btn.addEventListener("click", () => {
+            const v = box.value;
+            let s = box.selectionStart, e = box.selectionEnd, next;
+            if (s !== e) {
+                if (v[s] === "^" && v[e - 1] === "^" && e - s > 1) { s++; e--; }
+                if (v[s - 1] === "^" && v[e] === "^") {
+                    next = v.slice(0, s - 1) + v.slice(s, e) + v.slice(e + 1);
+                    s--; e--;
+                } else {
+                    next = v.slice(0, s) + "^" + v.slice(s, e) + "^" + v.slice(e);
+                    s++; e++;
+                }
+            } else {
+                next = v.replace(/(\d)(st|nd|rd|th)\b(?!\^)/gi, "$1^$2^").replace(/(^|[^^])\bUTC\b(?!\^)/g, "$1^UTC^");
+                if (next === v) next = v.replace(/(\d)\^(st|nd|rd|th)\^/gi, "$1$2").replace(/\^UTC\^/g, "UTC");
+                s = e = null;
+            }
+            box.value = next;
+            box.focus();
+            if (s !== null) box.setSelectionRange(s, e);
+            box.dispatchEvent(new Event("input", { bubbles: true }));
         });
     }
 
@@ -7003,13 +7046,14 @@ document.addEventListener("DOMContentLoaded", () => {
             payload.spotlight = data.spotlight === "1";
             payload.spotlightFrom = pairIso(data.spotlightFromDate, data.spotlightFromTime);
             payload.spotlightUntil = pairIso(data.spotlightUntilDate, data.spotlightUntilTime);
-            payload.spotlightCaption = (data.spotlightCaption || "").trim().slice(0, 80);
+            payload.spotlightCaption = (data.spotlightCaption || "").trim().slice(0, 120);
             /* The hex box, not the swatch, is what saves (wireSpotlightColour):
                left blank it stays "", the landing page's own default, so an
                old event never gains a colour nobody chose (30 Sept 2026). */
             payload.spotlightColour = spotlightHex(data.spotlightColour) || "";
             // Over the top or across the foot of the picture (4 Oct 2026).
             payload.spotlightCaptionAt = data.spotlightCaptionAt === "top" ? "top" : "bottom";
+            payload.spotlightCaptionAtHome = data.spotlightCaptionAtHome === "top" ? "top" : "bottom";
             /* "live" is never sent. The status box works it out from the
                dates and can say LIVE (see wireDerivedStatus), but it is not
                a status the events endpoint stores — a live event is an
