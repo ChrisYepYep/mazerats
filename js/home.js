@@ -10773,11 +10773,42 @@ document.addEventListener("DOMContentLoaded", () => {
             Account.notice({ title, html: `<p class="notice-lines">${what} couldn't be loaded just now. Check your connection and try again.</p>` });
         }
     }
+    /* THE PRESS THAT OPENS IT STARTS ITS SOUND, ON A PHONE (28 Oct 2026, the
+       owner's: the music did not play by itself on his phone). A phone's
+       browser lets sound start only inside a press on the page that makes
+       it, and the game's sound is made in its frame, which had not been
+       pressed: the title's tune waited for a tap on the game. So the press
+       on the Games row makes the game's audio here, there and then — made,
+       started, and a moment of silence played through it, which is what
+       an iPhone needs to call it started — and the game in the frame plays
+       through this one (setup in js/ff-audio.js) instead of making its own.
+       The window closes it (close in js/ff-window.js). A finger only: a
+       desk's browser already lets the frame play on the homepage's click. */
+    function primeFFAudio() {
+        try {
+            if (!(window.matchMedia && window.matchMedia("(pointer: coarse)").matches)) return;
+            const old = window.FFAudioCtx;
+            if (old && old.state !== "closed") { if (old.state !== "running") old.resume().catch(() => {}); return; }
+            const AC = window.AudioContext || window.webkitAudioContext;
+            if (!AC) return;
+            // Plays with the ring/silent switch on silent (see setup in js/ff-audio.js).
+            if (navigator.audioSession) navigator.audioSession.type = "playback";
+            const ctx = new AC();
+            const hush = ctx.createBuffer(1, 1, ctx.sampleRate);
+            const src = ctx.createBufferSource();
+            src.buffer = hush;
+            src.connect(ctx.destination);
+            src.start(0);
+            if (ctx.state !== "running") ctx.resume().catch(() => {});
+            window.FFAudioCtx = ctx;
+        } catch (e) { /* the game makes its own, and waits for a tap, as before */ }
+    }
     window.openFallinFurni = function (replace, how) {
+        if (how !== "route") primeFFAudio();
         if (!(window.FFWindow && window.FFWindow.isOpen)) countOpen("ff-open", how || "other");
         if (window.FFWindow) { window.FFWindow.open(); return; }
         if (!ffLoading) {
-            ffLoading = loadPuraScript("js/ff-window.js?v=2")
+            ffLoading = loadPuraScript("js/ff-window.js?v=3")
                 .catch(err => { ffLoading = null; throw err; });
         }
         ffLoading.then(() => { if (window.FFWindow) window.FFWindow.open(); })

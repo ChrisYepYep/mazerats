@@ -932,7 +932,16 @@
         [window, window.parent].forEach(w => {
             try { if (w.navigator.audioSession) w.navigator.audioSession.type = "playback"; } catch (e) { /* not ours, or not Safari */ }
         });
-        try { A = build(new AC()); } catch (e) { A = null; return false; }
+        /* THE HOMEPAGE'S, IF IT MADE ONE (28 Oct 2026; primeFFAudio in
+           js/home.js): on a phone the press on the Games row started an
+           audio context for this game, and that one plays without waiting
+           for a tap in here. */
+        let ctx = null;
+        try {
+            const given = window.parent !== window && window.parent.FFAudioCtx;
+            if (given && given.state !== "closed") ctx = given;
+        } catch (e) { /* not ours to read */ }
+        try { A = build(ctx || new AC()); } catch (e) { A = null; return false; }
         // Made while behind another game: a context can start out running.
         if (held) A.ctx.suspend();
         return true;

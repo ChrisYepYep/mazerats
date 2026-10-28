@@ -282,3 +282,12 @@ html[data-skin="halloween"] .hw-share-signin {
 }
 html[data-skin="halloween"] .hw-share-signin:hover,
 html[data-skin="halloween"] .hw-share-signin:focus-visible { color: #c4f592; text-decoration: underline; outline: none; }
+
+/* THE EC NAME PLATE KEEPS ITS OWN COLOURS (28 Oct 2026, the owner's). The
+   skin wears the witch palette, whose theme sheet swaps in a purple copy of
+   the plate; under the skin it is the original artwork and ink. More
+   specific than [data-theme] .ec-title-s1 by the html[data-skin] in front. */
+html[data-skin="halloween"] .ec-title-s1 { border-image-source: url('../assets/img/ec/ec-name-player-s1.png'); }
+html[data-skin="halloween"] .ec-title-s2 { border-image-source: url('../assets/img/ec/ec-name-player-s2.png'); }
+html[data-skin="halloween"] .chrome-list-row .ec-title .ec-title-name,
+html[data-skin="halloween"] #featured-frame-list .chrome-list-row .ec-title .ec-title-name { color: #fff8ec; }

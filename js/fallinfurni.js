@@ -1460,11 +1460,13 @@
        and the effects: furni falling and landing, every seat sat on (higher
        up the scale with the streak), the wrong one, a decoy, the auto-kick
        chair, the three-two-one, the last five seconds. The builder's page
-       has none of it. */
+       has the effects and the level's tune while a level is played in it,
+       and nothing else. */
     const Sound = {
         on: () => Boolean(window.FFAudio) && !Editor && !EDITING,
         music(track, muffled) { if (Sound.on()) FFAudio.start({ track, muffled: Boolean(muffled) }); },
-        sfx(name, arg) { if (Sound.on()) FFAudio.play(name, arg); },
+        // And in the builder while a level is played (28 Oct 2026, the owner's), with its soundtrack.
+        sfx(name, arg) { if (Sound.on() || (window.FFAudio && Editor && game)) FFAudio.play(name, arg); },
         sting(name, then) { if (Sound.on()) FFAudio.sting(name, then); },
         muffle(on) { if (Sound.on()) FFAudio.setMuffled(on); },
         /* The tune the run's current level plays: the one the builder gave
@@ -1751,11 +1753,15 @@
         });
         if (submitQuit) submitQuit.addEventListener("click", () => quitRun(true));
         if (quit) quit.addEventListener("click", () => quitRun(false));
-        /* Escape resumes and never pauses. A key that toggles is a key that
-           hides the room by accident in the middle of a round; this one only
-           ever puts it back. */
+        /* Escape pauses a running round and resumes a paused one (28 Oct
+           2026, the owner's: the tips said "Press Escape to pause" while it
+           closed the window). It used only to resume; in the homepage's
+           window that left Escape mid-round to the rule below, which shut
+           the game. Between rounds it still closes, as before. */
         document.addEventListener("keydown", (ev) => {
-            if (ev.key === "Escape" && paused && !behindGame) { ev.preventDefault(); setPaused(false); }
+            if (ev.key !== "Escape" || ev.repeat || ev.defaultPrevented || behindGame) return;
+            if (paused) { ev.preventDefault(); setPaused(false); return; }
+            if (game && game.state === Game.RUNNING && !loading && !Editor) { ev.preventDefault(); setPaused(true); }
         });
         /* AND IN THE HOMEPAGE'S WINDOW, an Escape nothing in here used —
            not the pause, not one of this page's own windows (its
@@ -2282,6 +2288,7 @@
             roundEndedAt = (game.endedAt !== null && game.endedAt !== undefined)
                 ? Math.min(now, game.endedAt) || now : now;
             showRoundEnd(now);
+            playTestMusic(false);
             // If that was the run's last round, the board is told now rather
             // than when the button is pressed - see settleRun.
             settleRun();
@@ -2730,20 +2737,30 @@
        this drives FFAudio directly, and stops when the button is pressed
        again or the level is played. */
     let musicPreview = false;
+    // The tune the level being built plays: its Soundtrack, or else its place in the run.
+    function editorTrack() {
+        const A = window.FFAudio;
+        const L = Editor && Editor.state.level;
+        return (L && A.hasTrack(L.music)) ? L.music : (autoTrackFor(L) || "theme");
+    }
     function previewMusic(on) {
         const A = window.FFAudio;
         const btn = document.getElementById("ff-music-play");
         musicPreview = Boolean(on && A);
         if (A) {
-            if (musicPreview) {
-                const L = Editor && Editor.state.level;
-                const auto = autoTrackFor(L) || "theme";
-                A.start({ track: (L && A.hasTrack(L.music)) ? L.music : auto, muffled: false });
-            } else {
-                A.stop();
-            }
+            if (musicPreview) A.start({ track: editorTrack(), muffled: false });
+            else A.stop();
         }
         if (btn) btn.textContent = musicPreview ? "Stop" : "Listen";
+    }
+    /* AND WHILE A LEVEL IS PLAYED IN THE BUILDER (28 Oct 2026, the owner's:
+       "have it play that level's soundtrack"): from Play until Stop, or the
+       round ending. The effects play too - see Sound.sfx. */
+    function playTestMusic(on) {
+        const A = window.FFAudio;
+        if (!Editor || !A) return;
+        if (on) A.start({ track: editorTrack(), muffled: false });
+        else if (!musicPreview) A.stop();
     }
 
     // Each power-up where it will drop, see-through, while building — its
@@ -3414,6 +3431,168 @@
         return A.trackForLevel(i + 1, total || 50);
     }
 
+    /* ---- REORDER BY DRAGGING (28 Oct 2026, the owner's).
+
+       A list of every level opens under the Reorder button; drag a row by
+       any part of it (or Alt+Up/Down on a focused row) and the new order is
+       saved as it drops. The levels keep the numbers they already had, in
+       their new places, so only the ones that moved are renumbered (and the
+       act curve's 1-50 stays 1-50); numbers that were never a clean run
+       (two levels sharing one) are made 1, 2, 3 instead. */
+    let reorderBox = null, reorderBusy = false;
+    function closeReorder() {
+        if (!reorderBox) return;
+        reorderBox.remove();
+        reorderBox = null;
+        document.removeEventListener("pointerdown", reorderOutside, true);
+        document.removeEventListener("keydown", reorderEscape, true);
+        const b = document.getElementById("ff-level-reorder");
+        if (b) b.setAttribute("aria-expanded", "false");
+    }
+    // Escape closes it wherever the focus is: a save rebuilds the rows under it.
+    function reorderEscape(ev) {
+        if (ev.key !== "Escape" || !reorderBox) return;
+        ev.preventDefault();
+        ev.stopPropagation();
+        closeReorder();
+        const b = document.getElementById("ff-level-reorder");
+        if (b) b.focus();
+    }
+    function reorderOutside(ev) {
+        const b = document.getElementById("ff-level-reorder");
+        if (reorderBox && !reorderBox.contains(ev.target) && !(b && b.contains(ev.target))) closeReorder();
+    }
+    function renderReorder() {
+        const list = reorderBox.querySelector("ol");
+        list.innerHTML = "";
+        const cur = Editor.state.level && Editor.state.level.id;
+        editorLevels.forEach((l, i) => {
+            const li = document.createElement("li");
+            li.dataset.id = l.id;
+            li.tabIndex = 0;
+            li.className = (l.id === cur ? "is-current " : "") + (l.published ? "" : "is-draft");
+            li.innerHTML = `<span class="fe-grip" aria-hidden="true">⋮⋮</span><b>${i + 1}</b><span class="fe-ro-name"></span>${l.published ? "" : '<small>draft</small>'}`;
+            li.querySelector(".fe-ro-name").textContent = l.name || l.id;
+            list.appendChild(li);
+        });
+    }
+    function renumberReorder() {
+        [...reorderBox.querySelectorAll("li")].forEach((li, i) => { li.querySelector("b").textContent = i + 1; });
+    }
+    async function saveReorder() {
+        const ids = [...reorderBox.querySelectorAll("li")].map(li => li.dataset.id);
+        const held = document.activeElement && document.activeElement.closest && document.activeElement.closest(".fe-reorder li");
+        const heldId = held ? held.dataset.id : null;
+        const old = editorLevels.map(l => Number(l.order) || 0);
+        if (ids.join() === editorLevels.map(l => l.id).join()) return;
+        // The same numbers in the new places, if they were a clean rising run.
+        const nums = old.every((n, i) => i === 0 || n > old[i - 1]) ? old : ids.map((_, i) => i + 1);
+        const byId = new Map(editorLevels.map(l => [l.id, l]));
+        const list = ids.map((id, i) => ({ id, order: nums[i] }));
+        reorderBusy = true;
+        reorderBox.classList.add("is-busy");
+        status("Saving the new order…", "busy");
+        try {
+            const changed = await Editor.reorderServer(list);
+            /* The open level's draft follows its own level on the server: its
+               new order, and the version the next Save has to name — but only
+               when the draft was opened from the version just replaced, so a
+               draft that was already behind is still refused as it was. */
+            const L = Editor.state.level;
+            const mine = L && L.id && changed.find(c => c.id === L.id);
+            if (mine) {
+                const before = byId.get(L.id);
+                L.order = mine.order;
+                if (before && (Number(L.rev) || 0) === (Number(before.rev) || 0)) L.rev = mine.rev;
+                Editor.save();
+                const o = document.getElementById("ff-level-order");
+                if (o) o.value = mine.order;
+            }
+            await refreshLevelList();
+            status(changed.length ? `New order saved - ${changed.length} level${changed.length === 1 ? "" : "s"} renumbered.` : "Order unchanged.", "good");
+        } catch (e) {
+            status(`${e.message || "Could not save the new order."} The list is back as it was.`, "bad");
+        }
+        reorderBusy = false;
+        if (reorderBox) {
+            reorderBox.classList.remove("is-busy");
+            renderReorder();
+            // The row that was moved keeps the focus, for the next Alt+arrow.
+            const again = heldId && [...reorderBox.querySelectorAll("li")].find(li => li.dataset.id === heldId);
+            if (again) again.focus({ preventScroll: true });
+        }
+    }
+    function wireReorderList() {
+        const list = reorderBox.querySelector("ol");
+        let drag = null;
+        list.addEventListener("pointerdown", (ev) => {
+            const li = ev.target.closest("li");
+            if (!li || reorderBusy || ev.button !== 0) return;
+            ev.preventDefault();
+            li.focus({ preventScroll: true });
+            list.setPointerCapture(ev.pointerId);
+            drag = { li, y: ev.clientY, moved: false };
+        });
+        list.addEventListener("pointermove", (ev) => {
+            if (!drag) return;
+            if (!drag.moved && Math.abs(ev.clientY - drag.y) < 4) return;
+            if (!drag.moved) { drag.moved = true; drag.li.classList.add("is-dragging"); list.classList.add("is-dragging"); }
+            // Before the first row whose middle is below the pointer.
+            const rows = [...list.children].filter(r => r !== drag.li);
+            const next = rows.find(r => { const b = r.getBoundingClientRect(); return ev.clientY < b.top + b.height / 2; }) || null;
+            if (drag.li.nextElementSibling !== next) { list.insertBefore(drag.li, next); renumberReorder(); }
+            // The list scrolls when dragged against its top or bottom.
+            const box = list.getBoundingClientRect();
+            if (ev.clientY < box.top + 24) list.scrollTop -= 12;
+            else if (ev.clientY > box.bottom - 24) list.scrollTop += 12;
+        });
+        const end = () => {
+            if (!drag) return;
+            const moved = drag.moved;
+            drag.li.classList.remove("is-dragging");
+            list.classList.remove("is-dragging");
+            drag = null;
+            if (moved) saveReorder();
+        };
+        list.addEventListener("pointerup", end);
+        list.addEventListener("pointercancel", end);
+        list.addEventListener("keydown", (ev) => {
+            const li = ev.target.closest("li");
+            if (!li || reorderBusy || !ev.altKey || (ev.key !== "ArrowUp" && ev.key !== "ArrowDown")) return;
+            ev.preventDefault();
+            const to = ev.key === "ArrowUp" ? li.previousElementSibling : li.nextElementSibling && li.nextElementSibling.nextElementSibling;
+            if (ev.key === "ArrowUp" && !to) return;
+            if (ev.key === "ArrowDown" && !li.nextElementSibling) return;
+            list.insertBefore(li, to);
+            renumberReorder();
+            li.focus();
+            saveReorder();
+        });
+    }
+    async function openReorder() {
+        if (reorderBox) { closeReorder(); return; }
+        const btn = document.getElementById("ff-level-reorder");
+        reorderBox = document.createElement("div");
+        reorderBox.className = "fe-reorder";
+        reorderBox.setAttribute("role", "dialog");
+        reorderBox.setAttribute("aria-label", "Reorder levels");
+        reorderBox.innerHTML = '<p>Drag a level to move it. Each move is saved as you drop it.</p><ol></ol>';
+        (btn.closest(".fe-app") || document.body).appendChild(reorderBox);
+        const r = btn.getBoundingClientRect();
+        reorderBox.style.left = `${Math.round(r.left)}px`;
+        reorderBox.style.top = `${Math.round(r.bottom + 6)}px`;
+        btn.setAttribute("aria-expanded", "true");
+        document.addEventListener("pointerdown", reorderOutside, true);
+        document.addEventListener("keydown", reorderEscape, true);
+        // The list as the server has it now, not as it was when the page opened.
+        try { await refreshLevelList(); } catch (e) { /* the copy already held */ }
+        if (!reorderBox) return;
+        renderReorder();
+        wireReorderList();
+        const cur = reorderBox.querySelector("li.is-current");
+        if (cur) cur.scrollIntoView({ block: "center" });
+    }
+
     async function refreshLevelList() {
         const sel = document.getElementById("ff-level-list");
         if (!sel) return;
@@ -3690,6 +3869,16 @@
         const put = (name, ...els) => els.forEach(el => { if (el) slot(name).appendChild(el); });
 
         put("level", $("ff-level-list"));
+        // Reorder: every level in a list to drag (see openReorder).
+        const reorder = document.createElement("button");
+        reorder.type = "button";
+        reorder.id = "ff-level-reorder";
+        reorder.title = "Reorder the levels";
+        reorder.setAttribute("aria-haspopup", "dialog");
+        reorder.setAttribute("aria-expanded", "false");
+        reorder.innerHTML = svgIcon('<path d="M8 6h12M8 12h12M8 18h12M3 5l1.5-1.5L6 5M3 19l1.5 1.5L6 19M4.5 3.5v17"/>', 15) + "<span>Reorder</span>";
+        reorder.addEventListener("click", () => { openReorder().catch(() => {}); });
+        put("level", reorder);
         const meta = document.querySelector(".ff-levelmeta");
         put("meta", meta);
         put("view", $("ff-guides-wrap"));
@@ -6532,7 +6721,10 @@
                 const def = POWERS()[kind] || {};
                 const line = document.createElement("p");
                 const img = document.createElement("img");
-                img.src = def.icon || `assets/avatar/handitem-${kind}.png`;
+                // The panel's badge where there is one (28 Oct 2026, the
+                // owner's: the brain freeze's snowflake, not the ice cream).
+                img.src = def.badge || def.icon || `assets/avatar/handitem-${kind}.png`;
+                if (def.badge) img.className = "is-badge";
                 img.alt = "";
                 const span = document.createElement("span");
                 span.textContent = def.tip || "";
@@ -6893,6 +7085,7 @@
         game = null; run = null;
         hideSay();
         queuedTap = null;
+        playTestMusic(false);
         if (Editor) syncEditor();
         else {
             // Back to the title, which is the hotel view rather than a room.
@@ -7263,7 +7456,8 @@
            rejection and the button just appears to do nothing. Say so instead. */
         document.getElementById("ff-start").addEventListener("click", () => {
             if (musicPreview) previewMusic(false);
-            startRound().catch((e) => status(`Could not start the round: ${e.message}`, "error"));
+            startRound().then(() => { if (game) playTestMusic(true); })
+                .catch((e) => status(`Could not start the round: ${e.message}`, "error"));
         });
         document.getElementById("ff-stop").addEventListener("click", stopRound);
 

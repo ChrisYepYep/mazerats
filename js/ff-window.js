@@ -73,6 +73,14 @@
     let root = null, frame = null, screen = null, iframe = null, dim = null;
     let dark = false, opener = null, scale = 1, big = false;
     let phone = false, rotateShut = false;
+    let fitW = 0, fitH = 0;
+    // The text box in the game that has the focus, if one has (see fit).
+    const typingIn = () => {
+        try {
+            const el = iframe && iframe.contentDocument && iframe.contentDocument.activeElement;
+            return el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA") ? el : null;
+        } catch (e) { return null; }
+    };
 
     const isOpen = () => Boolean(root && root.classList.contains("open"));
 
@@ -197,6 +205,23 @@
         if (!root) return;
         if (phone) {
             const w = window.innerWidth, h = window.innerHeight;
+            /* THE KEYBOARD IS NOT A SMALLER SCREEN (28 Oct 2026). Typing a
+               name on the title, the keyboard takes most of a sideways
+               phone, and fitted to what was left the whole game shrank to
+               a strip with the box in it too small to read. While a box in
+               the game has the focus, the same width keeps the same size,
+               and the game slides up instead, so the box sits in the middle
+               of what the keyboard leaves. */
+            const field = typingIn();
+            if (field && w === fitW) {
+                const seen = window.visualViewport ? window.visualViewport.height : h;
+                const r = field.getBoundingClientRect();
+                const mid = (r.top + r.height / 2) * scale;
+                const top = Math.round(Math.min(0, Math.max(seen - GAME_H * scale, seen / 2 - mid)));
+                frame.style.top = (seen < fitH - 40 ? top : Math.round((fitH - GAME_H * scale) / 2)) + "px";
+                return;
+            }
+            fitW = w; fitH = h;
             scale = Math.min(w / GAME_W, h / GAME_H);
             frame.style.transform = `scale(${scale})`;
             frame.style.left = Math.round((w - GAME_W * scale) / 2) + "px";
@@ -373,6 +398,10 @@
             const mo = new MutationObserver(syncRotate);
             mo.observe(doc.documentElement, { attributes: true, attributeFilter: ["data-ff-gate"] });
             mo.observe(doc.body, { attributes: true, attributeFilter: ["data-ff-closed"] });
+            // A box taking the focus or giving it up: the game keeps its size or gets it back (see fit).
+            const refit = () => setTimeout(fit, 0);
+            doc.addEventListener("focusin", refit);
+            doc.addEventListener("focusout", refit);
         } catch (e) { /* not ours to read */ }
         syncRotate();
     }
@@ -420,6 +449,8 @@
             if (mq.addEventListener) mq.addEventListener("change", turn);
             else if (mq.addListener) mq.addListener(turn);
         }
+        // An iPhone keeps the page its size under the keyboard; what is left to see is this.
+        if (window.visualViewport) window.visualViewport.addEventListener("resize", () => { if (isOpen()) fit(); });
         /* BACK CLOSES IT. Opening pushed an entry; Back takes it away and
            closes the window. Closing it any other way takes the entry back
            too, so Back afterwards leaves the homepage as it would have. */
@@ -485,6 +516,11 @@
             fullAsked = false;
         }
         dropGame();
+        // The sound the Games row started for it (primeFFAudio in js/home.js) goes with it.
+        if (window.FFAudioCtx) {
+            try { window.FFAudioCtx.close(); } catch (e) { /* closed already */ }
+            window.FFAudioCtx = null;
+        }
         screen.classList.remove("is-failed");
         watchFront(false);
         if (document.documentElement.dataset.gameFront === GAME) {

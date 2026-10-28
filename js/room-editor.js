@@ -931,6 +931,18 @@
         return true;
     }
 
+    // A new order for every level, [{ id, order }]; see the PATCH in ff-levels.js.
+    async function reorderServer(list) {
+        const res = await fetch("/.netlify/functions/ff-levels", {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json", ...authHeaders() },
+            body: JSON.stringify({ reorder: list })
+        });
+        const out = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(out.error || "Could not save the new order.");
+        return out.changed || [];
+    }
+
     async function loadServer(id) {
         const all = await listServer(true);
         const hit = all.find(l => l.id === id);
@@ -1092,7 +1104,7 @@
         addZone, removeZone, selectZone, setZoneArea, renameZone, zone,
         addItem, removeItem, setRoom, save, restore, discardDraft,
         drawOverlay, drawDragArea, spriteUrl, spriteFor, rotationCount, metaFor, playable, missingArt,
-        listServer, saveServer, loadServer, deleteServer, authToken,
+        listServer, saveServer, loadServer, deleteServer, reorderServer, authToken,
         mergeOntoServer, draftJson,
         onChange(cb) { onChange = cb || (() => { }); }
     };

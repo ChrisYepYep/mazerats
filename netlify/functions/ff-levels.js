@@ -473,6 +473,37 @@ async function handle(event) {
         return json(200, result);
     }
 
+    /* REORDER (28 Oct 2026, the owner's: "reorder the levels by dragging
+       them" in the editor). The body is { reorder: [{ id, order }] } and must
+       name EVERY level, once — a list made from a stale copy of the
+       collection (a level added or deleted since) is refused rather than
+       half-applied. Only levels whose order changes are written, and each
+       goes through writeLevel, so it is a new version like any save and a
+       run already dealt the old order is still judged by it. */
+    if (event.httpMethod === "PATCH") {
+        if (!isAuthorized(event)) return UNAUTHORIZED;
+        if (!(await isOwnerWrite(event))) return NOT_OWNER;
+        const list = Array.isArray(body.reorder) ? body.reorder : null;
+        if (!list || !list.length) return json(400, { error: "Missing the new order" });
+        const all = await levels.find({}, { projection: { _id: 0, id: 1, order: 1 } }).toArray();
+        const ids = new Set(list.map(r => r && String(r.id)));
+        const bad = list.some(r => !r || !Number.isFinite(Number(r.order)) || Number(r.order) < 0 || Number(r.order) > 999);
+        if (bad) return json(400, { error: "Each level needs an order from 0 to 999" });
+        if (ids.size !== list.length || list.length !== all.length || all.some(l => !ids.has(l.id))) {
+            return json(409, { error: "The level list has changed since it was loaded. Reload the editor and try again.", stale: true });
+        }
+        const was = new Map(all.map(l => [l.id, l.order]));
+        const at = new Date().toISOString();
+        const changed = [];
+        for (const r of list) {
+            const order = Number(r.order);
+            if (was.get(String(r.id)) === order) continue;
+            const w = await writeLevel(db, String(r.id), { order, updatedAt: at });
+            if (w) changed.push({ id: w.id, order: w.order, rev: w.rev });
+        }
+        return json(200, { changed });
+    }
+
     if (event.httpMethod === "DELETE") {
         if (!isAuthorized(event)) return UNAUTHORIZED;
         if (!(await isOwnerWrite(event))) return NOT_OWNER;

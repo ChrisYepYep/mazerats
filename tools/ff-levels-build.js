@@ -153,6 +153,20 @@ const JSON_OUT = jsonAt > -1 ? argv[jsonAt + 1] : null;
    exactly the ones it now has to retune instead. */
 const RULES_ONLY = argv.includes("--rules");
 const RETUNE = RULES_ONLY || argv.includes("--retune");
+/* THE ACT CURVE LIVES IN THE DATABASE NOW (28 Oct 2026, the owner's). Every
+   level's clock is its act's — 20s for levels 1-10, then 30, 40, 50, and 60
+   for 41-50 — and its seat counts and drop gap were fitted to that clock by
+   playing it in tools/ff-sim.js, so a good player finishes with three
+   seconds left in Act 1 down to a second and a half in Act 5. Act 1 lost
+   seats to do it; later acts gained them. The curve below (ratesFor,
+   clockFor) is the one that was replaced, and --retune or --rules would put
+   it back over every level — and so would a plain --write, which rewrites
+   21-49 whole — so every write is refused unless asked for by name. */
+if (WRITE && !argv.includes("--replace-act-curve")) {
+    console.error("Refusing to write: the levels now carry the act curve of 28 Oct 2026, which this tool's own curve would overwrite.\n" +
+        "Pass --replace-act-curve as well if that is really what you mean.");
+    process.exit(1);
+}
 
 /* ---- the room models, read from the game's own file so there is one
    definition of where the floor is and where the door stands. */

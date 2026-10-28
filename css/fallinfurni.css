@@ -2251,6 +2251,8 @@ main.ff-page { width: 100%; }
 .ff-countin-tip p { display: flex; align-items: center; gap: 10px; margin: 0; }
 /* The hand item doubled, from its own pixel size. */
 .ff-countin-tip img { zoom: 2; image-rendering: pixelated; filter: drop-shadow(1px 1px 0 rgba(10, 7, 4, 0.9)); }
+/* A badge (the brain freeze's 10px snowflake) trebled, to stand as tall as a hand item. */
+.ff-countin-tip img.is-badge { zoom: 3; }
 @keyframes ff-countin-tip {
     from { opacity: 0; transform: translateY(6px); }
 }
