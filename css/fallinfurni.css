@@ -2495,10 +2495,14 @@ body.ff-rotate-shut { overflow: hidden; }
 
 .ff-rotate-inner { max-width: 22em; }
 
+/* Silkscreen in amber, as the homepage window's gate (28 Oct 2026). */
 .ff-rotate-say {
-    font-size: 19px;
-    font-weight: 700;
     margin: 18px 0 6px;
+    font-family: 'Silkscreen', monospace;
+    font-weight: 700;
+    font-size: 1rem;
+    letter-spacing: 0.5px;
+    color: var(--amber-bright, #c7a679);
 }
 
 .ff-rotate-sub {
@@ -2518,33 +2522,27 @@ body.ff-rotate-shut { overflow: hidden; }
    same env() the gate's own padding uses. 44px min-height because this is
    the one control on a screen that exists to be pressed by a thumb.
 
-   Borrowed from .ff-round-buttons: the same wood fill, border and hover the
-   game's own round-end buttons use, so it reads as part of the game rather
-   than as browser furniture. */
+   The site's own .btn (style.css) since 28 Oct 2026, the owner's: the
+   wooden box with an emoji arrow in it looked unprofessional. Silkscreen in
+   the amber pill, a drawn pixel chevron, as the homepage window's rotate
+   screen has (.ff-phone-rotate-back in css/ff-window.css). */
 .ff-rotate-back {
     position: absolute;
     left: 50%;
     transform: translateX(-50%);
-    bottom: max(24px, env(safe-area-inset-bottom));
+    bottom: max(28px, env(safe-area-inset-bottom));
     display: inline-flex;
     align-items: center;
-    justify-content: center;
+    gap: 10px;
     min-height: 44px;
-    padding: 8px 20px;
-    background: var(--wood-mid, #3a2a18);
-    border: 1px solid var(--border, #000);
-    border-radius: 8px;
-    color: var(--parchment, #f4e4c1);
-    font-size: 13px;
-    text-decoration: none;
+    padding: 0 24px 0 20px;
+    text-transform: uppercase;
     white-space: nowrap;
+    font-size: 0.75rem;
 }
-
-.ff-rotate-back:hover,
-.ff-rotate-back:focus-visible {
-    background: var(--chrome-highlight, #4a3a24);
-    color: var(--amber-bright, #f0b040);
-}
+.ff-rotate-back:hover { transform: translateX(-50%) translateY(-1px); }
+.ff-rotate-back:active { transform: translateX(-50%) translateY(1px); }
+.ff-rotate-back svg { display: block; flex: none; }
 
 /* The phone that turns. Two boxes and a transform rather than an SVG or a
    GIF: it is the only illustration on this page that is not furni, and a

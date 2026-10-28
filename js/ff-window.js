@@ -41,7 +41,26 @@
    sharp, or the most that fits on a screen too small for two. Remembered on
    this browser. The bulb dims the site behind the window and turns
    the frame a deep grey, as Pura Panic's does, remembered on this
-   browser. */
+   browser.
+
+   ----------------------------------------------------------------------
+   ON A PHONE (28 Oct 2026, the owner's: "opening fallin furni on mobile
+   should feel as seamless as it does on desktop")
+
+   A phone was sent off to the game's own page, /fallinfurni/play: a new
+   page, its own loading, its own idea of the screen. Now it gets this same
+   window, opened over the homepage the way it opens on a desk, with the
+   frame's chrome taken away (#ff-overlay.is-phone in css/ff-window.css):
+   the game fills the screen, scaled to fit it, with a close box in the
+   corner. The phone's Back button closes it, as it would close a page.
+
+   Upright, with a game to play, the window shows its own "Turn your screen
+   sideways" over the game and the round underneath stands still
+   (FFRotateGate in js/fallinfurni.js); the game's page cannot tell, since
+   its frame is always 720 x 498 whichever way up the phone is. Its button
+   closes the window. Sideways, the first tap asks for fullscreen where the
+   browser has it (Android), once per turn of the phone, and never again
+   once the player has left it. */
 (function () {
     "use strict";
 
@@ -53,17 +72,30 @@
 
     let root = null, frame = null, screen = null, iframe = null, dim = null;
     let dark = false, opener = null, scale = 1, big = false;
+    let phone = false, rotateShut = false;
 
     const isOpen = () => Boolean(root && root.classList.contains("open"));
+
+    // A finger and a short edge under 600: what the homepage sent to the game's page before.
+    const isPhone = () => {
+        try {
+            return window.matchMedia("(pointer: coarse)").matches && Math.min(window.screen.width, window.screen.height) < 600;
+        } catch (e) { return false; }
+    };
+    const isPortrait = () => (window.matchMedia
+        ? window.matchMedia("(orientation: portrait)").matches
+        : window.innerHeight > window.innerWidth);
+    // The left-pointing chevron on the gate's button, one pixel to a pixel like the bulb.
+    const BACK = ["...##", "..##.", ".##..", "##...", ".##..", "..##.", "...##"];
 
     // The bulb and the enlarge box, one pixel to a pixel, as Pura's bulb is drawn.
     const BULB = ["..###..", ".#...#.", "#.....#", "#.....#", ".#...#.", "..###..", "..###..", "..###.."];
     const FULL = ["###.###", "#.....#", "#.....#", ".......", "#.....#", "#.....#", "###.###"];
-    function pixelSvg(rows) {
-        const w = rows[0].length, h = rows.length;
+    function pixelSvg(rows, px) {
+        const w = rows[0].length, h = rows.length, k = px || 1;
         let rects = "";
         rows.forEach((r, y) => [...r].forEach((c, x) => { if (c === "#") rects += `<rect x="${x}" y="${y}" width="1" height="1"/>`; }));
-        return `<svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" fill="currentColor" shape-rendering="crispEdges" aria-hidden="true">${rects}</svg>`;
+        return `<svg width="${w * k}" height="${h * k}" viewBox="0 0 ${w} ${h}" fill="currentColor" shape-rendering="crispEdges" aria-hidden="true">${rects}</svg>`;
     }
 
     function build() {
@@ -71,7 +103,7 @@
         if (!document.querySelector('link[data-ff-window]')) {
             const l = document.createElement("link");
             l.rel = "stylesheet";
-            l.href = "css/ff-window.css?v=2";
+            l.href = "css/ff-window.css?v=3";
             l.setAttribute("data-ff-window", "");
             l.onload = paintChrome;
             document.head.appendChild(l);
@@ -97,6 +129,22 @@
                     </div>
                 </div>
             </div>`;
+        /* The phone's own close box and rotate screen, outside the frame so
+           its scale does not reach them. */
+        phone = isPhone();
+        if (phone) {
+            root.classList.add("is-phone");
+            root.insertAdjacentHTML("beforeend", `
+                <button type="button" class="ff-phone-close" aria-label="Close Fallin' Furni"><i aria-hidden="true"></i></button>
+                <div class="ff-phone-rotate" role="alertdialog" aria-hidden="true" aria-labelledby="ff-phone-rotate-say" aria-describedby="ff-phone-rotate-sub">
+                    <div class="ff-phone-rotate-inner">
+                        <div class="ff-phone-rotate-phone" aria-hidden="true"><i class="ff-phone-rotate-body"></i><i class="ff-phone-rotate-arrow"></i></div>
+                        <p class="ff-phone-rotate-say" id="ff-phone-rotate-say">Turn your screen sideways</p>
+                        <p class="ff-phone-rotate-sub" id="ff-phone-rotate-sub">Fallin' Furni needs the long edge of your screen.</p>
+                    </div>
+                    <button type="button" class="btn ff-phone-rotate-back">${pixelSvg(BACK, 2)}<span>Back to Maze Rats</span></button>
+                </div>`);
+        }
         document.body.appendChild(root);
         frame = root.querySelector("#ff-console");
         screen = root.querySelector(".ff-console-screen");
@@ -105,6 +153,11 @@
         dim.hidden = true;
         document.body.insertBefore(dim, root);
 
+        if (phone) {
+            root.querySelector(".ff-phone-close").addEventListener("click", close);
+            root.querySelector(".ff-phone-rotate-back").addEventListener("click", close);
+            wirePhone();
+        }
         root.querySelector("#ff-console-close").addEventListener("click", close);
         root.querySelector("#ff-console-light").addEventListener("click", () => setDark(!dark));
         root.querySelector("#ff-console-full").addEventListener("click", toggleEnlarge);
@@ -125,8 +178,8 @@
         try { big = localStorage.getItem(BIG_KEY) === "1"; } catch (e) { /* private mode */ }
         syncBig();
         setDark(dark, true);
-        wireDrag();
-        window.addEventListener("resize", () => { fit(); clamp(); });
+        if (!phone) wireDrag();
+        window.addEventListener("resize", () => { fit(); clamp(); syncRotate(); });
         if (window.EscapeLayers) {
             window.EscapeLayers.register({ elements: () => (isOpen() ? [root] : []), close: () => close() });
         }
@@ -137,8 +190,19 @@
        narrower or shorter than that gets the whole window scaled down to
        fit, rather than a frame hanging off the edge. Enlarged, it is two
        times — or the most the screen has room for, if that is less. */
+    /* A phone has no frame round the game: the game alone, as big as the
+       screen allows (up or down; the art is drawn pixelated either way),
+       in the middle of it. */
     function fit() {
         if (!root) return;
+        if (phone) {
+            const w = window.innerWidth, h = window.innerHeight;
+            scale = Math.min(w / GAME_W, h / GAME_H);
+            frame.style.transform = `scale(${scale})`;
+            frame.style.left = Math.round((w - GAME_W * scale) / 2) + "px";
+            frame.style.top = Math.round((h - GAME_H * scale) / 2) + "px";
+            return;
+        }
         scale = Math.min(big ? 2 : 1, (window.innerWidth - 16) / FRAME_W, (window.innerHeight - 16) / FRAME_H);
         // Any scale but one, up as well as down: this read `scale < 1`,
         // so Enlarge made the room for a bigger window and left the game
@@ -149,12 +213,13 @@
     }
 
     function place() {
+        if (phone) return;
         root.style.left = Math.max(0, Math.round((window.innerWidth - root.offsetWidth) / 2)) + "px";
         root.style.top = Math.max(0, Math.round((window.innerHeight - root.offsetHeight) / 2)) + "px";
     }
     // Back into view if any of it is off the screen; where it was dragged otherwise.
     function clamp() {
-        if (!isOpen()) return;
+        if (!isOpen() || phone) return;
         const r = root.getBoundingClientRect();
         if (r.left < 0 || r.top < 0 || r.right > window.innerWidth || r.bottom > window.innerHeight) place();
     }
@@ -205,6 +270,15 @@
         else frame.focus({ preventScroll: true });
         watchFront(true);
         bringForward();
+        if (phone) {
+            document.documentElement.classList.add("ff-phone-open");
+            if (dim) dim.hidden = true;
+            // An entry for the phone's Back button to take away (see wirePhone).
+            if (!(history.state && history.state.ffPhone)) {
+                try { history.pushState(Object.assign({}, history.state, { ffPhone: 1 }), ""); } catch (e) { /* Back leaves the page, then */ }
+            }
+            syncRotate();
+        }
         // The tab and the address name the game while it is open.
         if (window.PageMeta) window.PageMeta.set("fallinfurni", "Fallin' Furni — Maze Rats", "https://mazerats.net/fallinfurni");
     }
@@ -234,6 +308,7 @@
             try { ok = Boolean(mine.contentDocument && mine.contentDocument.getElementById("ff-boot")); } catch (e) { /* the browser's error page */ }
             if (!ok) { dropGame(); screen.classList.add("is-failed"); return; }
             booting();
+            if (phone) watchGame(mine);
             // Not into the frame while another game is in front: it would come forward.
             if (!otherFront()) mine.focus();
         });
@@ -260,6 +335,101 @@
            moved on to something else on the page keeps their place. */
         const a = document.activeElement;
         if (isOpen() && iframe && (!a || a === document.body || root.contains(a))) iframe.focus({ preventScroll: true });
+    }
+
+    /* ---- THE PHONE (see ON A PHONE at the top).
+
+       The rotate screen is up when the phone is upright and there is a game
+       to play: not while the game is closed (its COMING SOON shows, scaled,
+       either way up, as the game's page did — the owner's, 27 Oct), and not
+       while the game's page is still asking whether it is (data-ff-gate). */
+    function gameShut() {
+        try {
+            const doc = iframe && iframe.contentDocument;
+            if (!doc || !doc.body) return true;
+            return doc.documentElement.hasAttribute("data-ff-gate") || doc.body.hasAttribute("data-ff-closed");
+        } catch (e) { return true; }
+    }
+    function syncRotate() {
+        if (!phone || !root) return;
+        const shut = isOpen() && isPortrait() && !gameShut();
+        root.classList.toggle("is-rotate", shut);
+        const gate = root.querySelector(".ff-phone-rotate");
+        gate.setAttribute("aria-hidden", String(!shut));
+        frame.inert = shut;
+        if (shut && !gate.contains(document.activeElement)) gate.querySelector("button").focus({ preventScroll: true });
+        // Upright ends a turn: the next time it goes sideways may ask again.
+        if (isPortrait()) fullAsked = false;
+        if (shut !== rotateShut) {
+            rotateShut = shut;
+            // The round stands still behind the gate, and goes on when it lifts.
+            try { if (iframe && iframe.contentWindow && iframe.contentWindow.FFRotateGate) iframe.contentWindow.FFRotateGate(shut); } catch (e) { /* not loaded */ }
+        }
+    }
+    // The game's answer to "is it open" arrives after its page has loaded.
+    function watchGame(f) {
+        try {
+            const doc = f.contentDocument;
+            const mo = new MutationObserver(syncRotate);
+            mo.observe(doc.documentElement, { attributes: true, attributeFilter: ["data-ff-gate"] });
+            mo.observe(doc.body, { attributes: true, attributeFilter: ["data-ff-closed"] });
+        } catch (e) { /* not ours to read */ }
+        syncRotate();
+    }
+
+    /* FULLSCREEN, asked for and never relied on (iPhones have none): from
+       the first tap on the game once it is sideways, which the game's page
+       passes up (tapped, called from inside the frame, whose tap counts as
+       this page's too). Once per turn of the phone; a player who leaves it
+       is not put back in it. */
+    let fullAsked = false, fullRefused = false, fullOurs = false;
+    function tapped() {
+        if (!phone || !isOpen() || rotateShut || isPortrait() || gameShut()) return;
+        if (fullAsked || fullRefused || document.fullscreenElement || document.webkitFullscreenElement) return;
+        const req = root.requestFullscreen || root.webkitRequestFullscreen;
+        if (!req) return;
+        fullAsked = true;
+        let asking;
+        try { asking = Promise.resolve(req.call(root, { navigationUI: "hide" })); }
+        catch (e) { asking = Promise.reject(e); }
+        asking.then(() => {
+            fullOurs = true;
+            const o = window.screen.orientation;
+            if (o && o.lock) Promise.resolve(o.lock.call(o, "landscape")).catch(() => {});
+        }).catch(() => { fullAsked = false; });
+    }
+    function leaveFullscreen() {
+        if (!fullOurs || !(document.fullscreenElement || document.webkitFullscreenElement)) return;
+        fullOurs = false;
+        const exit = document.exitFullscreen || document.webkitExitFullscreen;
+        if (exit) Promise.resolve(exit.call(document)).catch(() => {});
+    }
+
+    function wirePhone() {
+        const changed = () => {
+            if (document.fullscreenElement || document.webkitFullscreenElement) return;
+            if (fullOurs) fullRefused = true;
+            fullOurs = false;
+            fit();
+        };
+        document.addEventListener("fullscreenchange", changed);
+        document.addEventListener("webkitfullscreenchange", changed);
+        if (window.matchMedia) {
+            const mq = window.matchMedia("(orientation: portrait)");
+            const turn = () => { fit(); syncRotate(); };
+            if (mq.addEventListener) mq.addEventListener("change", turn);
+            else if (mq.addListener) mq.addListener(turn);
+        }
+        /* BACK CLOSES IT. Opening pushed an entry; Back takes it away and
+           closes the window. Closing it any other way takes the entry back
+           too, so Back afterwards leaves the homepage as it would have. */
+        window.addEventListener("popstate", () => {
+            if (isOpen() && !(history.state && history.state.ffPhone)) close(true);
+            // Opened by arriving at /fallinfurni: the homepage's own address back.
+            if (!isOpen() && /^\/fallinfurni\/?$/.test(location.pathname)) {
+                try { history.replaceState(history.state, "", "/home" + location.search + location.hash); } catch (e) { /* stays */ }
+            }
+        });
     }
 
     /* ---- ONE GAME IN FRONT (26 Oct 2026). Pura Panic and Scout's Trail
@@ -304,8 +474,16 @@
     /* Closing ends the game: the frame goes, and with it the run (the game's
        page reports a run left mid-way as it does when its tab is closed) and
        every sound. Opened again, it starts at its title. */
-    function close() {
+    function close(fromBack) {
         if (!isOpen()) return;
+        if (phone) {
+            leaveFullscreen();
+            document.documentElement.classList.remove("ff-phone-open");
+            root.classList.remove("is-rotate");
+            frame.inert = false;
+            rotateShut = false;
+            fullAsked = false;
+        }
         dropGame();
         screen.classList.remove("is-failed");
         watchFront(false);
@@ -318,6 +496,11 @@
         if (opener && typeof opener.focus === "function" && document.contains(opener)) opener.focus({ preventScroll: true });
         opener = null;
         if (window.PageMeta) window.PageMeta.restore("fallinfurni");
+        // Closed with its own buttons: the entry opening pushed goes too (see wirePhone).
+        if (phone && fromBack !== true && history.state && history.state.ffPhone) {
+            history.back();
+            return;
+        }
         if (/^\/fallinfurni\/?$/.test(location.pathname)) {
             try { history.replaceState(history.state, "", "/home" + location.search + location.hash); } catch (e) { /* stays */ }
         }
@@ -368,8 +551,9 @@
        kept for a game page loaded before this one. */
     window.FFWindow = {
         open, close, booting, toggleEnlarge, toggleFullscreen: toggleEnlarge,
-        front: bringForward, escape,
+        front: bringForward, escape, tapped,
         get isOpen() { return isOpen(); },
+        get isPhone() { return phone; },
         get isEnlarged() { return big; }
     };
 })();

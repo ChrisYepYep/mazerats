@@ -922,6 +922,16 @@
         if (A) return true;
         const AC = window.AudioContext || window.webkitAudioContext;
         if (!AC) return false;
+        /* HEARD ON AN IPHONE (28 Oct 2026, the owner's: no sound on his
+           phone). Safari plays a page's Web Audio as "ambient" sound, which
+           the ring/silent switch mutes, so with the switch on silent the
+           game made no sound at all. A game is "playback", as a video is:
+           it plays whatever the switch says, at the phone's volume. Safari
+           16.4 and later; nothing elsewhere. Said in the frame's parent too,
+           where the homepage window is, since the session is the tab's. */
+        [window, window.parent].forEach(w => {
+            try { if (w.navigator.audioSession) w.navigator.audioSession.type = "playback"; } catch (e) { /* not ours, or not Safari */ }
+        });
         try { A = build(new AC()); } catch (e) { A = null; return false; }
         // Made while behind another game: a context can start out running.
         if (held) A.ctx.suspend();

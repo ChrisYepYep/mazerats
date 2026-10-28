@@ -157,3 +157,159 @@ html[data-game-front="ff"] #ff-overlay { z-index: 92; }
 .ff-console.is-dark .console-close-btn { background-image: url('../assets/img/console/dark/cnsl-top-x-close.png'); }
 .ff-console.is-dark .console-title { color: #9a9a9a; }
 .ff-console.is-dark .console-frame::after { border-color: transparent rgba(255, 255, 255, 0.16) rgba(255, 255, 255, 0.16) transparent; }
+
+/* ---- ON A PHONE (28 Oct 2026; ON A PHONE in js/ff-window.js). The window
+   fills the screen over the homepage; the frame's chrome goes and the game
+   alone is left, 720 x 498 scaled by the script to fit, in the middle of
+   black. Named by id so the site's themes, which recolour .console-frame,
+   cannot bring the frame back. */
+html.ff-phone-open,
+html.ff-phone-open body { overflow: hidden; }
+
+#ff-overlay.is-phone {
+    inset: 0;
+    width: auto;
+    height: auto;
+    z-index: 300;               /* over the console (200) and every window */
+    background: #0e0a06;
+    overscroll-behavior: contain;
+}
+#ff-overlay.is-phone .ff-frame {
+    position: absolute;
+    width: 720px;
+    height: 498px;
+    background: none;
+    box-shadow: none;
+    border-radius: 0;
+    overflow: visible;
+    touch-action: auto;
+}
+#ff-overlay.is-phone .ff-frame::before,
+#ff-overlay.is-phone .ff-frame::after,
+#ff-overlay.is-phone .console-border,
+#ff-overlay.is-phone .console-top-pattern,
+#ff-overlay.is-phone .ff-console-beta,
+#ff-overlay.is-phone .ff-console-btn,
+#ff-overlay.is-phone .console-close-btn { display: none; }
+#ff-overlay.is-phone .ff-console-screen {
+    inset: 0;
+    border: 0;
+    border-radius: 0;
+}
+
+/* The close box: the console's own pixel X at twice its size, in a
+   thumb-sized square in the corner, clear of a notch. Sideways the game
+   leaves black either side of it; upright, it sits in the black above. */
+.ff-phone-close {
+    position: absolute;
+    top: max(8px, env(safe-area-inset-top));
+    right: max(8px, env(safe-area-inset-right));
+    z-index: 3;
+    width: 44px;
+    height: 44px;
+    padding: 0;
+    border: 0;
+    background: none;
+    display: grid;
+    place-items: center;
+    cursor: var(--cursor-pointer, pointer);
+}
+.ff-phone-close i {
+    display: block;
+    width: 26px;
+    height: 26px;
+    background: url('../assets/img/console/cnsl-top-x-close.png') center / 100% 100% no-repeat;
+    image-rendering: pixelated;
+}
+.ff-phone-close:focus-visible { outline: 2px solid var(--amber-bright, #c7a679); outline-offset: -4px; border-radius: 8px; }
+
+/* TURN YOUR SCREEN SIDEWAYS, over the game while the phone is upright
+   (js/ff-window.js syncRotate). The game's page has the same screen for a
+   phone that opens it directly (.ff-rotate in css/fallinfurni.css); this is
+   that one, with the site's own button to leave by. */
+.ff-phone-rotate {
+    display: none;
+    position: absolute;
+    inset: 0;
+    z-index: 4;
+    background: var(--bg-black, #1a1008);
+    color: var(--parchment, #f4e4c1);
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    padding: max(24px, env(safe-area-inset-top)) max(24px, env(safe-area-inset-right))
+             max(24px, env(safe-area-inset-bottom)) max(24px, env(safe-area-inset-left));
+}
+#ff-overlay.is-rotate .ff-phone-rotate { display: flex; }
+#ff-overlay.is-rotate .ff-phone-close { display: none; }
+.ff-phone-rotate-inner { max-width: 22em; }
+.ff-phone-rotate-say {
+    margin: 18px 0 6px;
+    font-family: 'Silkscreen', monospace;
+    font-weight: 700;
+    font-size: 1rem;
+    letter-spacing: 0.5px;
+    color: var(--amber-bright, #c7a679);
+}
+.ff-phone-rotate-sub {
+    margin: 0;
+    font-size: 13px;
+    color: var(--parchment-dim, #b9a88a);
+}
+.ff-phone-rotate-phone {
+    display: block;
+    width: 54px;
+    height: 88px;
+    margin: 0 auto;
+    position: relative;
+    animation: ff-phone-turn 3s ease-in-out infinite;
+}
+.ff-phone-rotate-body {
+    position: absolute;
+    inset: 0;
+    border: 3px solid var(--amber-bright, #c7a679);
+    border-radius: 9px;
+    background:
+        linear-gradient(var(--amber-bright, #c7a679), var(--amber-bright, #c7a679)) center 8px / 18px 3px no-repeat,
+        linear-gradient(var(--amber-bright, #c7a679), var(--amber-bright, #c7a679)) center calc(100% - 8px) / 22px 3px no-repeat;
+    opacity: 0.9;
+}
+.ff-phone-rotate-arrow {
+    position: absolute;
+    inset: -20px;
+    border: 3px solid transparent;
+    border-top-color: var(--parchment-dim, #b9a88a);
+    border-right-color: var(--parchment-dim, #b9a88a);
+    border-radius: 50%;
+    opacity: 0.55;
+}
+@keyframes ff-phone-turn {
+    0%, 28%   { transform: rotate(0deg); }
+    45%, 78%  { transform: rotate(-90deg); }
+    95%, 100% { transform: rotate(0deg); }
+}
+@media (prefers-reduced-motion: reduce) {
+    .ff-phone-rotate-phone { animation: none; }
+}
+
+/* The way out: the site's .btn (style.css), Silkscreen in an amber pill,
+   with a drawn pixel chevron where an emoji arrow was (the owner's, 28 Oct
+   2026: the arrow "makes it look unprofessional"). Along the foot, so the
+   message stays in the middle of the screen. */
+.ff-phone-rotate-back {
+    position: absolute;
+    left: 50%;
+    bottom: max(28px, env(safe-area-inset-bottom));
+    transform: translateX(-50%);
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    min-height: 44px;
+    padding: 0 24px 0 20px;
+    text-transform: uppercase;
+    white-space: nowrap;
+    font-size: 0.75rem;
+}
+.ff-phone-rotate-back:hover { transform: translateX(-50%) translateY(-1px); }
+.ff-phone-rotate-back:active { transform: translateX(-50%) translateY(1px); }
+.ff-phone-rotate-back svg { display: block; flex: none; }

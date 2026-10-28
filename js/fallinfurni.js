@@ -1685,7 +1685,8 @@
                 const opt = b.dataset.opt;
                 let on;
                 if (opt === "enlarge") {
-                    b.hidden = !W;
+                    // Not on a phone, whose window already fills the screen (28 Oct 2026).
+                    b.hidden = !W || Boolean(W.isPhone);
                     on = Boolean(W && W.isEnlarged);
                     b.textContent = on ? "Normal size" : "Enlarge";
                 } else if (window.FFAudio) {
@@ -1980,6 +1981,11 @@
     }
 
     function applyOrientation() {
+        /* In the homepage's window the window decides (28 Oct 2026): this
+           frame is 720 x 498 whichever way up a phone is held, so the
+           window puts up its own rotate screen and says so (FFRotateGate,
+           in watchOrientation). Run here, this would lift it again. */
+        if (EMBED) return;
         const body = document.body;
         const handheld = isHandheld();
         // Upright AND too narrow to hold the room. A tablet that can hold it
@@ -2020,6 +2026,23 @@
 
     function watchOrientation() {
         applyOrientation();
+
+        /* THE HOMEPAGE'S WINDOW ON A PHONE (28 Oct 2026, js/ff-window.js):
+           its rotate screen up or down, the round standing still behind it
+           as it does behind this page's own; and a tap on the game passed
+           up, for the window to ask for fullscreen with. */
+        if (EMBED) {
+            window.FFRotateGate = (shut) => {
+                if (Boolean(shut) === gateShut) return;
+                gateShut = Boolean(shut);
+                freezeChanged();
+            };
+            document.addEventListener("pointerup", () => {
+                const W = hostWindow();
+                if (W && W.tapped) W.tapped();
+            }, { passive: true });
+            return;
+        }
 
         /* `resize` covers the orientation change on every browser — including
            the ones where `orientationchange` fires before the viewport has
@@ -4891,7 +4914,8 @@
     // Skipped for somebody already signed in (see renderWho), as it asks nothing of them.
     const SIGN_IN_TIP = "Sign in with Discord to put your runs on the leaderboard.";
     const tipFits = (t) => t !== SIGN_IN_TIP || !(window.Account && Account.current);
-    const inWindow = (() => { try { return window.parent !== window && Boolean(window.parent.FFWindow); } catch (e) { return false; } })();
+    // Not the phone's window (28 Oct 2026), which fills the screen and has no Enlarge.
+    const inWindow = (() => { try { return window.parent !== window && Boolean(window.parent.FFWindow) && !window.parent.FFWindow.isPhone; } catch (e) { return false; } })();
     const GENERAL_TIPS = [
         "Sit on every seat in the order it landed.",
         "The wrong seat costs you 3 seconds and your streak.",

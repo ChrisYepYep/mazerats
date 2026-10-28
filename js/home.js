@@ -10705,18 +10705,11 @@ document.addEventListener("DOMContentLoaded", () => {
     /* FALLIN' FURNI (25 Oct 2026): a console window, its game page in a
        frame (js/ff-window.js, which brings its own stylesheet). Only that
        small file is fetched when it opens; the game's page loads inside it,
-       behind its own loading bar. A phone, which has no room for a window
-       and already plays the game fullscreen, goes to the game's page. */
+       behind its own loading bar. A phone gets the same window, filling
+       its screen (28 Oct 2026, the owner's: it went to the game's own page
+       before, and should open "as seamless as it does on desktop"; see ON
+       A PHONE in js/ff-window.js). */
     let ffLoading = null;
-    const ffHandheld = () => {
-        try {
-            return window.matchMedia("(pointer: coarse)").matches && Math.min(screen.width, screen.height) < 600;
-        } catch (e) { return false; }
-    };
-    /* `replace` (26 Oct 2026, the bug scan): arriving at /fallinfurni on a
-       phone, the hop to the game's page REPLACES the entry. Pushed, Back
-       from the game landed on /fallinfurni, which hopped straight forward
-       again, so the phone's Back button could never leave the game. */
     /* COUNTED (26 Oct 2026, the bug scan): the window opening, as Pura
        Panic's does, labelled with how it was reached — "menu", "link" (a
        What's New link) or "route" (arriving at /fallinfurni). Only the
@@ -10738,15 +10731,9 @@ document.addEventListener("DOMContentLoaded", () => {
     }
     window.openFallinFurni = function (replace, how) {
         if (!(window.FFWindow && window.FFWindow.isOpen)) countOpen("ff-open", how || "other");
-        if (ffHandheld()) {
-            if (window.MazeErrors && typeof MazeErrors.leaving === "function") MazeErrors.leaving("/fallinfurni/play");
-            if (replace === true) window.location.replace("/fallinfurni/play");
-            else window.location.href = "/fallinfurni/play";
-            return;
-        }
         if (window.FFWindow) { window.FFWindow.open(); return; }
         if (!ffLoading) {
-            ffLoading = loadPuraScript("js/ff-window.js?v=1")
+            ffLoading = loadPuraScript("js/ff-window.js?v=2")
                 .catch(err => { ffLoading = null; throw err; });
         }
         ffLoading.then(() => { if (window.FFWindow) window.FFWindow.open(); })
