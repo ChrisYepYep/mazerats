@@ -15649,7 +15649,6 @@ ol.fmt-ol-wide.fmt-ol-wide { padding-left: 3.4em; }
 }
 .wn-tools .ctl-input { flex: 1 1 220px; max-width: 320px; }
 /* What the "by themselves" tick does (30 Oct 2026), between the tools and the list. */
-.wn-auto-hint { margin: -4px 0 14px; }
 .wn-check {
     display: inline-flex;
     align-items: center;

@@ -4,9 +4,8 @@
    The owner's decisions: posting is BY HAND, from the Warren's What's New
    panel (js/admin-whats-new.js), one entry at a time, and ANY entry can go —
    the automatic ones (a maze, event or guide added or updated) as well as
-   the news posts and notes written there. And ON ITS OWN since 30 Oct 2026
-   (the owner's): whats-new-autopost.js sends each new entry through
-   postOne below, and the button stays for posting one again.
+   the news posts and notes written there. (Posting on its own was tried on
+   30 Oct 2026 and taken out the same day, the owner's: by hand only.)
 
    It goes through a channel WEBHOOK, not a bot: Discord's
    "Integrations → Webhooks" on the channel gives an address, kept in the
@@ -247,12 +246,10 @@ let send = async (webhook, payload) => {
     return { error: `Discord refused the post (${res.status}).` };
 };
 
-/* One entry to the channel: built, claimed, sent and noted. Shared with
-   whats-new-autopost.js (30 Oct 2026), so a post by hand and a post on its
-   own go through the same claim and can never both go. { status, data }.
+/* One entry to the channel: built, claimed, sent and noted. { status, data }.
 
    The row also keeps the DAY of the entry that went (body.day, the entry's
-   day as the panel and the autopost work it out): the key names a record,
+   day as the panel works it out): the key names a record,
    not a day, and a maze posted when it was added has a new entry each later
    day it is edited, which is due to go in its turn. `via` says how. */
 async function postOne(db, col, webhook, body, via) {
@@ -321,9 +318,6 @@ exports.handler = async (event) => {
 /* Failures reported to /warren's Errors tab: see withErrorReporting in
    _errors.js. Last, so it wraps the handler as finally defined above. */
 exports.handler = require("./_errors").withErrorReporting("whats-new-discord", exports.handler);
-// For whats-new-autopost.js.
-exports.postOne = postOne;
-exports.WEBHOOK = WEBHOOK;
 // For the tests.
 exports._build = build;
 exports._heading = heading;

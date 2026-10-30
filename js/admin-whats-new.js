@@ -13,9 +13,9 @@
            its own line instead of the automatic one;
      POST  any entry to the Maze Rats Discord, by hand, one at a time (28 Oct
            2026): netlify/functions/whats-new-discord.js. The row says when
-           it last went, and posting it again asks first. New entries also go
-           on their own (30 Oct 2026, whats-new-autopost.js), behind the
-           "Post new entries to Discord by themselves" tick.
+           it last went, and posting it again asks first. (Posting on its
+           own was tried on 30 Oct 2026 and taken out the same day, the
+           owner's: by hand only.)
 
    Both are kept by netlify/functions/whats-new.js, and js/home.js applies
    them when it builds the log (WHAT'S NEW, BY HAND there). The days here
@@ -44,7 +44,6 @@
     const formEl = panel.querySelector("#wn-form");
     const searchEl = panel.querySelector("#wn-search");
     const hiddenEl = panel.querySelector("#wn-show-hidden");
-    const autoEl = panel.querySelector("#wn-discord-auto");
 
     /* The automatic change lines, as the homepage words them (CHANGE_WORDS
        in js/home.js), so an override's placeholder shows what it replaces. */
@@ -250,8 +249,6 @@
             posts = Array.isArray(wn && wn.posts) ? wn.posts : [];
             overrides = new Map((Array.isArray(wn && wn.overrides) ? wn.overrides : []).map(o => [o.target, o]));
             discord = new Map((Array.isArray(wn && wn.discord) ? wn.discord : []).map(d => [d.key, d]));
-            // On unless switched off: before its first run there is no row, and it starts on.
-            if (autoEl) autoEl.checked = !(wn && wn.auto && wn.auto.on === false);
             render();
         } catch (err) {
             if (gen !== loadGen) return;
@@ -575,23 +572,6 @@
     panel.querySelector("#wn-add-note").addEventListener("click", () => openPost(null, "note"));
     searchEl.addEventListener("input", render);
     hiddenEl.addEventListener("change", render);
-
-    /* Posting on its own, on or off (30 Oct 2026). Saved the moment it is
-       ticked, like the Controls switches; put back as it was if the save is
-       refused. Switched back on, it counts from then (whats-new.js), so what
-       was edited while it was off is not sent in a burst. */
-    if (autoEl) autoEl.addEventListener("change", async () => {
-        const on = autoEl.checked;
-        autoEl.disabled = true;
-        try {
-            await call(URL_, "PUT", { discordAuto: { on } });
-        } catch (err) {
-            autoEl.checked = !on;
-            if (!sessionGone(err)) await tell(err.message || "That couldn't be saved.");
-        } finally {
-            autoEl.disabled = false;
-        }
-    });
 
     // ------------------------------------------------------------ mount
 
