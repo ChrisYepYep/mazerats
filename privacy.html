@@ -138,6 +138,17 @@
          purpose: the privacy policy says searches are recorded, and why.
          js/track.js, the site's own record, honours both signals too. -->
     <script>(function(){try{if(navigator.globalPrivacyControl===true)return;var s=document.createElement("script");s.defer=true;s.src="https://cloud.umami.is/script.js";s.setAttribute("data-website-id","8dee5429-29ff-4efb-bec1-c124c8d6fb18");s.setAttribute("data-do-not-track","true");s.setAttribute("data-exclude-hash","true");s.setAttribute("data-domains","mazerats.net");document.head.appendChild(s);}catch(e){}})();</script>
+    <!-- Dark mode (30 Oct 2026): a visitor's own switch, the bulb in the
+         archive window's grab bar, worn over whatever palette or skin is
+         showing. Under Frost, the Christmas palette, which is already dark,
+         the same switch gives LIGHT mode instead (the owner's). Both sheets
+         are built by tools/themes.js (css/theme-dark.css on html[data-dark],
+         css/theme-frostlight.css on html[data-light]), loaded only when worn,
+         and last in the head so they follow every other. Set here, before the
+         first paint, and again whenever the palette changes under the page. -->
+    <link id="dark-css" rel="stylesheet">
+    <link id="light-css" rel="stylesheet">
+    <script>(function(){var d=document.documentElement,dk=document.getElementById("dark-css"),lt=document.getElementById("light-css"),want=false;function sheet(l,h){if(!l.getAttribute("href"))l.href=h;}function apply(){var light=want&&d.getAttribute("data-theme")==="frost",dark=want&&!light;if(dark){sheet(dk,"/css/theme-dark.css");if(!d.hasAttribute("data-dark"))d.setAttribute("data-dark","");}else if(d.hasAttribute("data-dark"))d.removeAttribute("data-dark");if(light){sheet(lt,"/css/theme-frostlight.css");if(!d.hasAttribute("data-light"))d.setAttribute("data-light","");}else if(d.hasAttribute("data-light"))d.removeAttribute("data-light");}window.__mrDarkOn=function(){return want;};window.__mrDarkIsLight=function(){return d.getAttribute("data-theme")==="frost";};window.__mrSetDark=function(v){want=!!v;apply();try{localStorage.setItem("mazerats_dark",want?"1":"0");}catch(e){}};try{want=localStorage.getItem("mazerats_dark")==="1";}catch(e){}apply();try{new MutationObserver(apply).observe(d,{attributes:true,attributeFilter:["data-theme"]});}catch(e){}})();</script>
 </head>
 <!-- data-page="legal" keeps js/site.js from appending a second Privacy
      Policy link to the footer of the privacy policy itself. -->

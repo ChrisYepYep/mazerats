@@ -233,6 +233,91 @@ function cleanLaunchAt(value) {
     return when.toISOString();
 }
 
+/* THE HOMEPAGE MENU'S LAYOUT (30 Oct 2026, the owner's: "give me the
+   ability to reorder the menu tab on the homepage, and hide menu options",
+   then "the ability to move things out of folds, and a drag to reorder").
+   Set in the Warren's Controls (js/admin-menu.js), worn by the menu itself
+   (applyMenuLayout in js/home.js).
+
+     top       the menu from top to bottom: each item is a fold ("archive",
+               "games") or a row out on its own, so a row can stand above,
+               between or below the folds
+     folds     each fold's rows, in order
+     hidden    rows nobody sees
+     admins    rows only a signed-in admin sees (the way Scout's Trail is
+               shown while Hidden), for trying a row before it goes public
+     open      the folds that start open on a page load (they start shut)
+
+   A row placed nowhere goes back where js/home.js writes it. Rows are named
+   by fixed ids (MENU_ROWS), never by their words, so a row's wording can
+   change without losing its place. null puts the menu back as written. */
+const MENU_FOLDS = ["archive", "games"];
+const MENU_ROWS = {
+    archive: ["home", "mazes", "events", "timeline", "furni", "whats-new", "guides", "missing-pieces"],
+    games: ["guess", "odd", "fallin-furni", "pura", "scout", "leaderboards"],
+    loose: ["profile", "alt-codes"]
+};
+const MENU_ALL = [].concat(MENU_ROWS.archive, MENU_ROWS.games, MENU_ROWS.loose);
+function cleanMenuLayout(value) {
+    if (value === null) return null;
+    if (!value || typeof value !== "object" || Array.isArray(value)) return "menuLayout must be an object, or null to reset it";
+    const placed = [];
+    const rows = (list, what) => {
+        if (list === undefined) return [];
+        if (!Array.isArray(list)) return `menuLayout.${what} must be a list`;
+        const out = [];
+        for (const raw of list) {
+            const id = String(raw || "");
+            if (!MENU_ALL.includes(id)) return `Not a menu row: ${id.slice(0, 40)}`;
+            if (placed.includes(id)) return `The menu row ${id} is in two places`;
+            placed.push(id);
+            out.push(id);
+        }
+        return out;
+    };
+    if (!Array.isArray(value.top)) return "menuLayout.top must be a list";
+    const top = [];
+    for (const raw of value.top) {
+        const id = String(raw || "");
+        if (MENU_FOLDS.includes(id)) {
+            if (top.includes(id)) return `The ${id} fold is in two places`;
+            top.push(id);
+            continue;
+        }
+        const one = rows([id], "top");
+        if (typeof one === "string") return one;
+        top.push(id);
+    }
+    if (MENU_FOLDS.some(f => !top.includes(f))) return "menuLayout.top must place both folds, archive and games";
+    const folds = {};
+    const given = value.folds && typeof value.folds === "object" ? value.folds : {};
+    for (const f of MENU_FOLDS) {
+        const list = rows(given[f], "folds." + f);
+        if (typeof list === "string") return list;
+        folds[f] = list;
+    }
+    const plain = (list, what) => {
+        if (list === undefined) return [];
+        if (!Array.isArray(list)) return `menuLayout.${what} must be a list`;
+        const out = [];
+        for (const raw of list) {
+            const id = String(raw || "");
+            if (!MENU_ALL.includes(id)) return `Not a menu row: ${id.slice(0, 40)}`;
+            if (!out.includes(id)) out.push(id);
+        }
+        return out;
+    };
+    const hidden = plain(value.hidden, "hidden");
+    if (typeof hidden === "string") return hidden;
+    const admins = plain(value.admins, "admins");
+    if (typeof admins === "string") return admins;
+    const open = Array.isArray(value.open) ? [...new Set(value.open.map(String))] : [];
+    if (open.some(f => !MENU_FOLDS.includes(f))) return "menuLayout.open may only name archive and games";
+    return { top, folds, hidden, admins: admins.filter(id => !hidden.includes(id)), open };
+}
+// Only the shape cleanMenuLayout writes: anything else is the menu as written.
+const menuLayoutOf = doc => (doc && doc.menuLayout && typeof doc.menuLayout === "object" && Array.isArray(doc.menuLayout.top)) ? doc.menuLayout : null;
+
 /* THE SETTINGS, KEPT FOR A MOMENT (2 Oct 2026). The gate's poll asks with
    ?fresh=<time bucket> on purpose (js/welcome.js), so anybody can ask with a
    ?fresh of their own and miss the edge every time — on the endpoint every
@@ -267,7 +352,9 @@ function settingsReply(event, doc) {
         ffLaunchAt: (doc && doc.ffLaunchAt) || "",
         skin: skinOf(doc),
         skinSchedule: scheduleOf(doc),
-        halloweenGoo: gooOf(doc)
+        halloweenGoo: gooOf(doc),
+        // The homepage menu's order and hidden rows (30 Oct 2026; null is as written).
+        menuLayout: menuLayoutOf(doc)
     }, { cdn: GATE_CDN_CACHE });
     res.headers = { ...res.headers, "Netlify-Vary": "query=fresh" };
     return res;
@@ -434,6 +521,11 @@ async function write(event, settings, db) {
             if (typeof body.halloweenGoo !== "boolean") return json(400, { error: "halloweenGoo must be true or false" });
             update.halloweenGoo = body.halloweenGoo;
         }
+        if (body.menuLayout !== undefined) {
+            const cleaned = cleanMenuLayout(body.menuLayout);
+            if (typeof cleaned === "string") return json(400, { error: cleaned });
+            update.menuLayout = cleaned;
+        }
         if (body.lobbyFurni !== undefined) {
             if (!Array.isArray(body.lobbyFurni)) {
                 return json(400, { error: "lobbyFurni must be an array of furni class names" });
@@ -482,7 +574,8 @@ async function write(event, settings, db) {
             // The skin and its dates (25 Oct 2026), for the Warren's skins card.
             skin: skinOf(doc),
             skinSchedule: scheduleOf(doc),
-            halloweenGoo: gooOf(doc)
+            halloweenGoo: gooOf(doc),
+            menuLayout: menuLayoutOf(doc)
         });
     }
 

@@ -1005,6 +1005,22 @@ document.addEventListener("DOMContentLoaded", async () => {
         btn.removeAttribute("role");
         btn.removeAttribute("tabindex");
         warmTheArchive(btn);
+        /* And straight in (30 Oct 2026, the owner's): a first visit has no
+           note for the <head> of index.html to go on, so it goes once this
+           answer says the site is open. A real answer only, not the stand-in
+           for a failed read; and not for /?landing, or a visitor home.html
+           has just sent back here (see the script at the top of index.html). */
+        let stay = fromCache === true;
+        try {
+            if (/(?:^|&)landing(?:=|&|$)/.test(location.search.slice(1))) stay = true;
+            if (Date.now() - (Number(sessionStorage.getItem("mazerats_bounced")) || 0) < 60000) stay = true;
+        } catch (e) { /* storage refused: the address alone decides */ }
+        if (!stay) {
+            // (The "enter" note for next time is already kept: js/api.js writes it on every real read.)
+            if (window.MazeErrors && typeof MazeErrors.leaving === "function") MazeErrors.leaving("/home");
+            location.replace("/home");
+            return;
+        }
     }
 
     /* The countdown, once the button above has said its piece.
@@ -1651,6 +1667,9 @@ document.addEventListener("DOMContentLoaded", async () => {
             articleLinkEl.href = source || "#";
             const sourceLine = articleLinkEl.closest(".modal-article-source");
             if (sourceLine) sourceLine.hidden = !source;
+            // And the same link under the kicker, gone the same way.
+            const originLine = articleEl.querySelector(".modal-article-origin");
+            if (originLine) { originLine.hidden = !source; originLine.querySelector("a").href = source || "#"; }
             articleEl.hidden = false;
         } else {
             // Emptied, not just hidden: an article left in the DOM is a

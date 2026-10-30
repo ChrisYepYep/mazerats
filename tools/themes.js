@@ -213,12 +213,46 @@ const THEMES = {
                gamma: 1.15, bone: 0.25, lift: 0.08, keep: 0.92, chromeSat: 0.62,
                loudHue: 192, loudSat: 0.42, loudLight: 1.18, activeBright: 1.08,
                glintHue: 186, glintSat: 0.55, glintFrom: 0.10,
-               neon: [150, 222, 255], label: 'Frost' }
+               neon: [150, 222, 255], label: 'Frost' },
+    /* DARK MODE (30 Oct 2026, the owner's: "a nice sleek dark vibe, with
+       some subtle glows ... readable but without it being a blinding
+       white"). Not a palette the site wears but one a visitor switches on,
+       from the bulb in the archive window's grab bar, over whatever palette
+       or skin is showing — so it is built as a LAYER: scoped to
+       html[data-dark] rather than [data-theme], loaded after the theme's
+       sheet, and outranking it (see layerScope).
+       Graphite, not black: the surfaces carry a little of a cool 222 so the
+       five depths stay apart, and the lit end keeps a whisper of the site's
+       own amber so it is still Maze Rats in the dark. The very light end is
+       capped (ceil) and the near-whites the transform would otherwise leave
+       alone are brought down to it (dimWhite), so nothing on the page is
+       paper-white. The glows are a soft warm amber. */
+    dark:    { surfaceHue: 222, accentHue: 36,
+               sat: 0.50, satMax: 0.17, fadeSat: 0.60, fadeSatMax: 0.30,
+               gamma: 1.40, bone: 0.55, lift: 0.04, keep: 0.78, chromeSat: 0.30,
+               loudSat: 0.30, loudLight: 1.04, activeBright: 1.0,
+               ceil: 0.80, dimWhite: true, layer: true,
+               neon: [255, 186, 110], label: 'Dark mode' },
+    /* LIGHT MODE FOR CHRISTMAS (30 Oct 2026, the owner's: "the frost palette
+       is quite dark already"). What the dark-mode bulb gives while Frost is
+       the palette (the switch in each page's head). The same kind of layer
+       as dark mode, on its own attribute (html[data-light]), and the other
+       way round: surfaces go ice, a step lighter at each depth, and every
+       light ink goes a deep winter blue (invert). */
+    frostlight: { surfaceHue: 208, accentHue: 216,
+               sat: 1.0, satMax: 0.42, fadeSat: 1.0, fadeSatMax: 0.55,
+               gamma: 1.0, invert: true, layer: true, layerAttr: 'data-light', activeBright: 1.0,
+               neon: [96, 170, 255], label: 'Light mode (Christmas)' }
 };
 
 
 let THEME = 'purple';
 let SURFACE_HUE, ACCENT_HUE, SAT, SAT_MAX, FADE_SAT, FADE_SAT_MAX, LIGHT_GAMMA, NEON, BONE, LIFT, KEEP, CHROME_SAT;
+// Dark mode's three (see its row): a lightness ceiling, near-whites brought
+// down to it, and output scoped as a layer over any palette.
+let CEIL = 0, DIM_WHITE = false, LAYER = false;
+// Light mode's: the lightness turned over rather than kept, on its own attribute.
+let INVERT = false, LAYER_ATTR = "data-dark";
 
 function useTheme(name) {
     const c = THEMES[name];
@@ -234,6 +268,8 @@ function useTheme(name) {
     ACTIVE_BRIGHT = c.activeBright === undefined ? 0.50 : c.activeBright;
     GLINT_HUE = c.glintHue; GLINT_SAT = c.glintSat === undefined ? 0.18 : c.glintSat;
     GLINT_FROM = c.glintFrom === undefined ? 0.60 : c.glintFrom;
+    CEIL = c.ceil || 0; DIM_WHITE = !!c.dimWhite; LAYER = !!c.layer;
+    INVERT = !!c.invert; LAYER_ATTR = c.layerAttr || "data-dark";
     LOUD_ON = c.loudHue !== undefined || c.loudSat !== undefined
            || c.loudLight !== undefined;
 }
@@ -342,7 +378,21 @@ function mapLight(l, asText) {
     const deep = curved + (l * DARK_SCALE - curved) * KEEP;
     const faded = 0.60 + (l - 0.5) * 0.80 + LIFT * boneness(l);
     const t = asText ? 1 : textness(l);
-    return Math.max(0, Math.min(1, deep * (1 - t) + faded * t));
+    let out = Math.max(0, Math.min(1, deep * (1 - t) + faded * t));
+    // The ceiling compresses the top of the range rather than clipping it,
+    // so the lightest things keep their order under it.
+    if (CEIL && out > 0.62) out = 0.62 + (out - 0.62) * (CEIL - 0.62) / 0.38;
+    return out;
+}
+
+/* The near-whites and pale greys toPurple leaves alone, for dark mode only:
+   brought to the ceiling, with a breath of the accent, so white type and
+   white buttons are not the brightest thing in a dark room. */
+function dimWhite(r, g, b) {
+    if (!DIM_WHITE) return null;
+    const [, s, l] = rgbToHsl(r, g, b);
+    if (l < 0.86 || s > 0.25) return null;
+    return hslToRgb(ACCENT_HUE, 0.12, CEIL - (1 - l) * 0.5);
 }
 
 function mapSat(s, l, asText) {
@@ -454,6 +504,7 @@ function isBrown(h, s, l) {
 function toPurple(r, g, b, asText) {
     const [h, s, l] = rgbToHsl(r, g, b);
     if (!isBrown(h, s, l)) return null;
+    if (INVERT) return invertLight(s, l, asText);
     const sat = mapSat(s, l, asText);
     const light = mapLight(l, asText);
     // Built twice and mixed, rather than once at an interpolated hue — see
@@ -689,6 +740,259 @@ let IN_CHROME = false;
 let IN_LOUD = false;
 // Set while a TEXT_VARS declaration is being shifted, for the same reason.
 let IN_TEXT = false;
+// Dark mode only: what the declaration being shifted paints — "fill" (a
+// background) or "ink" (a text colour) — for darkRole below.
+let ROLE = null;
+// The selector being emitted, for light mode's one exception below.
+let CUR_SEL = "";
+
+/* ------------------------------------------------- DARK MODE'S TWO TURNS
+
+   Every other palette keeps the classic lightness order: a cream panel
+   stays light and the brown ink on it stays dark. Dark mode cannot, or the
+   search drawer, the inputs and the cream rows are the brightest things on
+   a dark page. So in its layer, and only there:
+
+     a LIGHT FILL (a background, l > 0.55) goes to a raised dark surface,
+       keeping its order against the other light fills, so a lit button is
+       still lighter than the panel it sits on;
+     a DARK BROWN INK (the type set on those fills) goes light, under the
+       ceiling, so it reads on them.
+
+   Faint overlays (alpha under 0.6) are left alone: a white wash at 0.1 is a
+   hover's lift, and turned grey it would be a shadow. */
+function darkRole(r, g, b, alpha) {
+    if (!LAYER || INVERT || !ROLE) return null;
+    if (alpha !== undefined && alpha < 0.6) return null;
+    const [h, s, l] = rgbToHsl(r, g, b);
+    const brown = isBrown(h, s, l);
+    /* The console frame's yellow (#ffcb00, .console-frame, which is also
+       Fallin' Furni's window): its corners and edges are sprites, so its
+       flat fill takes exactly what the sprites take (toPurple then
+       sinkArt), or the frame comes out in two shades. */
+    if (ROLE === "fill" && brown && s > 0.8 && l > 0.4) {
+        const px = toPurple(r, g, b);
+        return px ? sinkArt(px) : null;
+    }
+    if (ROLE === "fill" && l > 0.55 && (brown || s < 0.25)) {
+        const light = 0.13 + (l - 0.55) * 0.42;
+        return mixRgb(hslToRgb(SURFACE_HUE, Math.min(SAT_MAX, s * SAT), light),
+                      hslToRgb(ACCENT_HUE, Math.min(SAT_MAX, s * SAT), light), 0.25);
+    }
+    if (ROLE === "ink" && brown && l < 0.36) {
+        return hslToRgb(ACCENT_HUE, Math.min(FADE_SAT_MAX, s * FADE_SAT) * 0.6, CEIL - 0.04 - l * 0.25);
+    }
+    return null;
+}
+/* The art's light end, for dark mode: the cream sprites (the search drawer,
+   the active tab, the spines) are fills too. Squeezed rather than turned,
+   so a sprite's lit edge stays lighter than its face. */
+function sinkArt(px) {
+    const [h, s, l] = rgbToHsl(px[0], px[1], px[2]);
+    // And most of its colour goes: sunk amber is brown, and the furniture
+    // (scrollbars, frames, tabs) should be graphite like the surfaces.
+    if (l <= 0.18) return hslToRgb(h, s * 0.35, l);
+    return hslToRgb(h, s * 0.35, 0.18 + (l - 0.18) * 0.30);
+}
+
+/* What dark mode cannot infer: a light colour held in a variable of a rule's
+   own (not :root), which the role-aware copy never sees used. The opening
+   view's cream and ink (30 Oct 2026) — its headings and On now rows — are
+   a raised dark surface and a soft light ink here, like every other fill
+   and ink in the layer. */
+/* Light mode's own, for what turns the wrong way when everything else is
+   turned over: the search glass's handle (a background, so it went pale
+   while the ring, a border, stayed dark); the Discord pill, whose lavender
+   was picked for a dark header; and the difficulty scale, whose colours are
+   kept on purpose and need the dark ground they were chosen against. */
+function lightExtras() {
+    const glass = asHex(...invertLightAs("line", 0.32, 0.31));
+    return `
+[data-theme="${THEME}"] .opening-search-icon::after {
+    background: ${glass};
+}
+[data-theme="${THEME}"] .header-badge {
+    color: #3c44a8;
+    border-color: #5a63c9;
+    background-color: rgba(255, 255, 255, 0.75);
+}
+[data-theme="${THEME}"] [class*="difficulty-"] {
+    background-color: #2a3442;
+}
+/* The inactive tabs' own filter (saturate(0.5)) turns ice blue grey, which
+   reads as disabled: here they keep their blue, and stay a step darker than
+   the selected tab by their sprite alone. */
+[data-theme="${THEME}"] .chrome-nav-btn:not(.active)::before {
+    filter: none;
+}
+/* The opening view's section banners: their cream is pale here, so the
+   band is a light wash of the ink and the lettering the ink, lifted. */
+[data-theme="${THEME}"] .opening-head-title {
+    background: color-mix(in srgb, var(--opening-ink) 14%, transparent);
+    color: var(--opening-ink);
+    text-shadow: 0 1px 0 rgba(255, 255, 255, 0.6);
+}
+/* Explore's pixel icons: their lit faces stay light here (the parchment
+   they are drawn in turns navy). */
+[data-theme="${THEME}"] .opening-x-ico {
+    --x-ico-lit: #f4f8fc;
+}
+/* Surprise me's die is drawn in the button's text colour, which is a deep
+   navy here: its black pips vanished into it. A white face, as on dark. */
+[data-theme="${THEME}"] .opening-die {
+    color: #f4f8fc;
+}
+/* The status pills (Open, Closed...): their colour IS the word, so they sit
+   on near-white ice rather than a mid blue that swallows the green. */
+[data-theme="${THEME}"] .status-badge {
+    background-color: rgba(246, 250, 253, 0.92);
+}
+/* The Christmas skin outlines the footer in navy so it reads over its drift;
+   on a light page that outline is a smudge round dark type. */
+[data-theme="${THEME}"][data-skin="xmas"] .fellow-fansites a,
+[data-theme="${THEME}"][data-skin="xmas"] .fellow-fansites p,
+[data-theme="${THEME}"][data-skin="xmas"] .fellow-fansites-title {
+    text-shadow: 0 1px 0 rgba(255, 255, 255, 0.7);
+}
+`;
+}
+/* Dark mode's own: the opening view's section banners, whose cream is a dark
+   grey here, take the soft light ink, over a faint wash of it. */
+function darkExtras() {
+    return `
+[data-theme="${THEME}"] .opening-head-title {
+    background: color-mix(in srgb, var(--opening-ink) 12%, transparent);
+    color: var(--opening-ink);
+}
+`;
+}
+function darkCorrections() {
+    const cream = INVERT ? asHex(...hslToRgb(SURFACE_HUE, 0.40, 0.84))
+                         : asHex(...mixRgb(hslToRgb(SURFACE_HUE, 0.10, 0.25), hslToRgb(ACCENT_HUE, 0.10, 0.25), 0.3));
+    const ink = INVERT ? asHex(...hslToRgb(ACCENT_HUE, 0.45, 0.15)) : asHex(...hslToRgb(ACCENT_HUE, 0.16, CEIL - 0.06));
+    return `
+/* Dark mode's own (tools/themes.js darkCorrections). */
+[data-theme="${THEME}"] .opening {
+    --opening-cream: ${cream};
+    --opening-ink: ${ink};
+}
+
+/* The console frame's title (the Habbo Console, Fallin' Furni's window):
+   the frame is graphite here, so its title is the light ink, not black. */
+[data-theme="${THEME}"] .console-title {
+    color: ${ink};
+}
+` + (INVERT ? lightExtras() : darkExtras());
+}
+/* Light mode turns the page over: dark surfaces go pale, light inks go
+   dark. By what the colour paints, because a single inversion would turn the
+   cream drawers dark and the dark outlines pale:
+     art     the sprites: squeezed into the light end, order kept, so a lit
+             edge is still lighter than its face
+     fill    a background: dark ones go pale ice, the cream ones a shade
+             deeper than the page so they still read as panels
+     ink     a text colour: light ones go deep blue, dark ones stay dark
+     var     a palette variable, used every way: turned straight over
+     line    borders, box shadows, outlines: stay dark, so edges hold
+     glow    a text shadow: turned over, a pale lift under dark type */
+function invertLightAs(role, s, l) {
+    const was = ROLE; ROLE = role;
+    try { return invertLight(s, l, false); } finally { ROLE = was; }
+}
+function invertLight(s, l, asText) {
+    const role = asText ? "ink" : (ROLE || "art");
+    /* ONE SURFACE SCALE for the art, the fills and the surface variables
+       (round 2, his notes): mapped two ways, a window's frame art and the
+       flat fill under its title came out two colours (a pale box under
+       every grab bar, a darker rim round the console), and the inverted
+       fill crushed the five depths into one near-white. This keeps their
+       order — the page the deepest ice, each frame inside a step lighter —
+       spread over the dark end where the depths are, and holds a cool tint
+       (S at least 0.24) so no surface reads as greyed out. */
+    /* Round 4 (his note: washed out): deeper at the dark end and more of the
+       blue, so the frames are a real winter blue and the panels inside
+       them ice, rather than everything a pale grey-white. */
+    const surf = v => v <= 0.25 ? 0.50 + v * 1.16 : 0.79 + (v - 0.25) * 0.24;
+    const surfSat = Math.min(SAT_MAX, 0.36 + s * 0.4);
+    let L, S, hue = SURFACE_HUE;
+    if (role === "art")       { L = surf(l); S = surfSat; }
+    else if (role === "fill") { L = surf(l); S = surfSat; }
+    else if (role === "ink")  { L = l > 0.45 ? 0.10 + (1 - l) * 0.35 : 0.10 + l * 0.5; S = Math.max(0.42, Math.min(FADE_SAT_MAX, s * 1.2)); hue = ACCENT_HUE; }
+    /* A box shadow's colour: in the classic palette a brown one is a LIT edge
+       (a button's inset top line, lighter than its face), so here it is a
+       step lighter than the surface scale, never a dark line. */
+    else if (role === "shade") { L = Math.min(0.97, surf(l) + 0.10); S = surfSat; }
+    else if (role === "var")  {
+        if (l > 0.5) { L = 0.10 + (1 - l) * 0.35; S = Math.min(FADE_SAT_MAX, s * 1.2); hue = ACCENT_HUE; }
+        else { L = surf(l); S = surfSat; }
+    }
+    else if (role === "glow") { L = 0.97 - l * 0.5; S = Math.min(SAT_MAX, s * 0.6); }
+    else                      { L = 0.20 + l * 0.35; S = Math.min(SAT_MAX, s); }
+    return hslToRgb(hue, S, Math.max(0, Math.min(1, L)));
+}
+/* Light mode's page background (MazeBG.png): every pixel, its black lines
+   too, held in a narrow pale band, so the maze is a quiet texture that the
+   intro and the footer can be read over rather than a high-contrast print. */
+function softBackground(r, g, b) {
+    const [, , l] = rgbToHsl(r, g, b);
+    // Round 3 (his note: washed out): a wider band and more of the blue, so
+    // the maze reads as a snowy maze again, still pale enough to read over.
+    return hslToRgb(SURFACE_HUE, 0.45, 0.56 + l * 0.40);
+}
+/* The greys and whites the transform leaves alone, in light mode: white type
+   would vanish on the pale panels, and a solid black fill would be a hole. */
+function invertAchroma(r, g, b, alpha) {
+    if (!INVERT) return null;
+    const [, s, l] = rgbToHsl(r, g, b);
+    /* A see-through black wash on a fill (a row's rgba(0,0,0,0.25)) greys a
+       pale panel, which reads as disabled: a near-white ice lift instead, so a
+       row (or a status pill) sits a step brighter than its panel, as each
+       depth inward is. */
+    if (ROLE === "fill" && s <= 0.25 && l < 0.15 && alpha !== undefined && alpha < 0.6 && !/console/.test(CUR_SEL)) return hslToRgb(SURFACE_HUE, 0.60, 0.97);
+    /* The site's solid shadows (a frame's 0 -3px band, a row's 2px drop) are
+       black at 30-45%: on brown they barely show, on ice they read as a
+       second, thicker border. A deep navy at half the strength instead. */
+    if (ROLE === "shade" && s <= 0.25 && l < 0.15 && alpha !== undefined) { const px = hslToRgb(SURFACE_HUE, 0.55, 0.20); px.alphaScale = 0.5; return px; }
+    // A dark shadow under type that is now dark is a smudge: a pale lift.
+    if (ROLE === "glow" && s <= 0.25 && l < 0.3) return [255, 255, 255];
+    if (alpha !== undefined && alpha < 0.6) return null;
+    if (s > 0.25) return null;
+    // Not on the console's screen, which stays the dark screen it is.
+    if (ROLE === "ink" && l > 0.8 && !/console/.test(CUR_SEL)) return hslToRgb(ACCENT_HUE, 0.45, 0.14);
+    if (ROLE === "fill" && l < 0.2) return hslToRgb(SURFACE_HUE, 0.35, 0.90);
+    return null;
+}
+const FILL_PROPS = ["background", "background-color", "background-image"];
+const INK_PROPS = ["color", "-webkit-text-fill-color"];
+
+/* The classic palette's own variables, for a declaration that paints with
+   one: in the dark layer a fill of var(--parchment) is a light fill, and is
+   turned like a written one. Read from style.css's :root. */
+let CLASSIC_VARS = null;
+function classicVars() {
+    if (CLASSIC_VARS) return CLASSIC_VARS;
+    CLASSIC_VARS = {};
+    const css = fs.readFileSync(path.join(ROOT, "css/style.css"), "utf8");
+    const root = css.match(/:root\s*\{([\s\S]*?)\n\}/);
+    if (root) for (const m of root[1].matchAll(/(--[\w-]+):\s*#([0-9a-fA-F]{6})\b/g)) {
+        CLASSIC_VARS[m[1]] = [0, 2, 4].map(i => parseInt(m[2].substr(i, 2), 16));
+    }
+    return CLASSIC_VARS;
+}
+// Held as tokens through shiftValue (which would otherwise shift the
+// already-turned colour a second time) and put back by darkVarsBack.
+const DARK_HELD = [];
+function darkVars(value) {
+    if (!LAYER || !ROLE) return value;
+    return value.replace(/var\((--[\w-]+)\)/g, (match, name) => {
+        const c = classicVars()[name];
+        const px = c && (INVERT ? toPurple(c[0], c[1], c[2]) : darkRole(c[0], c[1], c[2]));
+        if (!px) return match;
+        DARK_HELD.push(asHex(...px));
+        return "@@dark" + (DARK_HELD.length - 1) + "@@";
+    });
+}
+const darkVarsBack = value => value.replace(/@@dark(\d+)@@/g, (m, i) => DARK_HELD[+i]);
 
 /* ------------------------------------------------------------- THE GLINT
 
@@ -919,12 +1223,17 @@ function recolourAssets() {
             if (out[i + 3] === 0) continue;                  // transparent
             let px = grip
                 ? solveGrip([out[i], out[i + 1], out[i + 2]], fill)
-                : toPurple(out[i], out[i + 1], out[i + 2]);
+                : INVERT && /MazeBG/.test(rel)
+                    ? softBackground(out[i], out[i + 1], out[i + 2])
+                    : toPurple(out[i], out[i + 1], out[i + 2]);
             if (!px) continue;                                // grey/black/white
             if (furniture && !grip) {
                 px = calmChrome(px);
                 if (glintFile) px = glint(px);
             }
+            // Not the close boxes (the X and the bulb): small lit marks, not
+            // fills, and sunk with the rest they all but vanished.
+            if (LAYER && !INVERT && !/topclose/.test(rel)) px = sinkArt(px);
             out[i] = px[0]; out[i + 1] = px[1]; out[i + 2] = px[2];
             changed++;
         }
@@ -956,7 +1265,11 @@ function shiftHex(match, body) {
     let alpha = "";
     if (h.length === 8) { alpha = h.slice(6); h = h.slice(0, 6); }
     if (h.length !== 6) return match;
-    let px = toPurple(parseInt(h.slice(0, 2), 16), parseInt(h.slice(2, 4), 16), parseInt(h.slice(4, 6), 16), IN_TEXT);
+    const rgb = [parseInt(h.slice(0, 2), 16), parseInt(h.slice(2, 4), 16), parseInt(h.slice(4, 6), 16)];
+    const turned = darkRole(rgb[0], rgb[1], rgb[2], alpha ? parseInt(alpha, 16) / 255 : undefined);
+    if (turned) return "#" + hex2(turned[0]) + hex2(turned[1]) + hex2(turned[2]) + alpha;
+    let px = toPurple(rgb[0], rgb[1], rgb[2], IN_TEXT);
+    if (!px) { px = invertAchroma(...rgb, alpha ? parseInt(alpha, 16) / 255 : undefined) || dimWhite(...rgb); if (px) return "#" + hex2(px[0]) + hex2(px[1]) + hex2(px[2]) + alpha; }
     if (!px) return match;
     if (IN_CHROME) px = calmChrome(px);
     else if (IN_LOUD) px = loud(px);
@@ -964,9 +1277,14 @@ function shiftHex(match, body) {
 }
 
 function shiftRgb(match, r, g, b, a) {
-    let px = toPurple(+r, +g, +b, IN_TEXT);
-    if (!px) return match;
-    if (IN_CHROME) px = calmChrome(px);
+    let px = darkRole(+r, +g, +b, a === undefined ? undefined : +a);
+    if (px) return a === undefined ? `rgb(${px[0]}, ${px[1]}, ${px[2]})` : `rgba(${px[0]}, ${px[1]}, ${px[2]}, ${a})`;
+    px = toPurple(+r, +g, +b, IN_TEXT);
+    if (!px) {
+        px = invertAchroma(+r, +g, +b, a === undefined ? undefined : +a) || dimWhite(+r, +g, +b);
+        if (px && px.alphaScale && a !== undefined) a = String(+(a * px.alphaScale).toFixed(3));
+        if (!px) return match;
+    } else if (IN_CHROME) px = calmChrome(px);
     else if (IN_LOUD) px = loud(px);
     return a === undefined
         ? `rgb(${px[0]}, ${px[1]}, ${px[2]})`
@@ -1112,6 +1430,7 @@ function buildCss(recoloured) {
             }
             continue;
         }
+        CUR_SEL = rule.selector;
         IN_CHROME = isChromeRule(rule.selector);
         IN_LOUD = isLoudRule(rule.selector);
         const keep = [];
@@ -1175,8 +1494,10 @@ function buildCss(recoloured) {
             }
             if (!touches(value, recoloured) && !PAINT_PROPS.includes(prop)) continue;
             IN_TEXT = TEXT_VARS.includes(prop);
-            keep.push("    " + prop + ": " + shiftValue(value, recoloured) + ";");
-            IN_TEXT = false;
+            ROLE = FILL_PROPS.includes(prop) ? "fill" : INK_PROPS.includes(prop) ? "ink"
+                 : !INVERT ? null : prop.startsWith("--") ? "var" : prop === "text-shadow" ? "glow" : prop === "box-shadow" ? "shade" : "line";
+            keep.push("    " + prop + ": " + darkVarsBack(shiftValue(darkVars(value), recoloured)) + ";");
+            IN_TEXT = false; ROLE = null;
             declCount++;
         }
         IN_CHROME = false; IN_LOUD = false;
@@ -1200,9 +1521,25 @@ function buildCss(recoloured) {
    ${ruleCount} rules, ${declCount} declarations, hues ${SURFACE_HUE} (surfaces) / ${ACCENT_HUE} (accents).
 */
 `;
-    fs.writeFileSync(path.join(ROOT, "css/theme-" + THEME + ".css"),
-        header + parts.join("\n\n") + "\n" + keptBlock(kept) + corrections(), "utf8");
+    const body = header + parts.join("\n\n") + "\n" + keptBlock(kept) + corrections() + (LAYER ? darkCorrections() : "");
+    fs.writeFileSync(path.join(ROOT, "css/theme-" + THEME + ".css"), LAYER ? layerScope(body) : body, "utf8");
     return { ruleCount, declCount };
+}
+
+/* Dark mode is worn OVER a palette, not instead of one, so its sheet is
+   rescoped from [data-theme="dark"] to html[data-dark]: one element and one
+   attribute, which outranks a palette's [data-theme=…] copy of the same rule
+   and ties the classic-only html:not([data-theme]) rules (the sheet is
+   linked after style.css, so it wins those on order). A copy of one of
+   those classic-only rules becomes html[data-dark]:not([data-dark]) and
+   matches nothing, as its [data-theme] copy does in every palette. */
+function layerScope(css) {
+    const own = `[data-theme="${THEME}"]`;
+    return css
+        .split(`:root${own}`).join(`:root[${LAYER_ATTR}]`)
+        .split(`html${own}`).join(`html[${LAYER_ATTR}]`)
+        .split(own).join(`html[${LAYER_ATTR}]`)
+        .split(":not([data-theme])").join(`:not([${LAYER_ATTR}])`);
 }
 
 /* Everything the transform cannot work out for itself, appended after it so
@@ -1226,8 +1563,10 @@ function corrections() {
        SURFACE hue, because it sits on a light tab and belongs with the page.
        Both are almost out of colour already — 95% and 10% lightness — so the
        hue only decides which way the tint leans. */
-    const paleLabel = asHex(...hslToRgb(ACCENT_HUE, 1.0, 0.951));
-    const darkLabel = asHex(...hslToRgb(SURFACE_HUE, 0.608, 0.10));
+    // Dark mode turns every label's ground dark, so both are its soft light
+    // ink, under the ceiling rather than near-white.
+    const paleLabel = INVERT ? asHex(...hslToRgb(ACCENT_HUE, 0.45, 0.14)) : LAYER ? asHex(...hslToRgb(ACCENT_HUE, 0.20, CEIL - 0.02)) : asHex(...hslToRgb(ACCENT_HUE, 1.0, 0.951));
+    const darkLabel = LAYER ? paleLabel : asHex(...hslToRgb(SURFACE_HUE, 0.608, 0.10));
 
     // The chain the active tab and the search drawer keep, minus the
     // hue-rotate: what is left is hue-preserving, so it can be applied to a
@@ -1365,7 +1704,8 @@ function corrections() {
    the browser will. hue-rotate is dropped because it was tuned against brown;
    saturate and brightness are hue-preserving and stay. */
 [data-theme="${THEME}"] .chrome-nav-btn.active::before,
-[data-theme="${THEME}"] #search-wrap::before {
+[data-theme="${THEME}"] #search-wrap::before,
+[data-theme="${THEME}"] #browse-window.is-opening .opening-search-bar::before {
     filter: saturate(1) brightness(${ACTIVE_BRIGHT});
 }
 

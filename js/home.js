@@ -37,6 +37,11 @@ document.addEventListener("DOMContentLoaded", () => {
     const whatsNewBtn = document.getElementById("whats-new-btn");
     const timelineBtn = document.getElementById("timeline-btn");
     const furniBtn = document.getElementById("furni-btn");
+    // The opening view's own pieces (30 Oct 2026): see renderOpening.
+    const browseWindow = document.getElementById("browse-window");
+    const openingInput = document.getElementById("opening-search-input");
+    const openingDice = document.getElementById("opening-dice");
+    const archiveHomeBtn = document.getElementById("archive-home-btn");
     const featuredRefreshBtn = document.getElementById("featured-refresh-btn");
     const featuredFrame = document.getElementById("featured-frame");
     const featuredFrameBody = document.getElementById("featured-frame-body");
@@ -174,6 +179,16 @@ document.addEventListener("DOMContentLoaded", () => {
        is furniFilter's listing, which predates it — this is only the way in.
        Cleared by the same top-nav and sub-nav clicks the other two are. */
     let showFurni = false;
+    /* THE OPENING VIEW (30 Oct 2026, the owner's). The archive used to open
+       on Mazes > Open; now it opens with neither tab picked, the frame
+       raised over the foot of the two tabs, and a view of its own in it:
+       the spotlight, what is on, what was added, today's games, two
+       featured mazes and the ways into the rest (renderOpening). Every
+       visit starts here, a link to a maze or event included (it opens over
+       this). Picking a tab, a section, What's New, the Timeline or Furni
+       leaves it; the tab already showing, pressed again, the window's
+       title and the menu's Home row come back to it. */
+    let showOpening = true;
     // The furni browser's piece opened in place, by key (see placeFurniExpand).
     let furniExpanded = null;
     /* A search carried in the address (?q=), so a filtered list is a link
@@ -997,6 +1012,7 @@ document.addEventListener("DOMContentLoaded", () => {
         /* Your Profile, if the maze was opened from it, would otherwise sit
            over the very list this is taking the visitor to (4 Oct 2026). */
         closeProgressIfOpen();
+        showOpening = false;
         showFeatured = false;
         showWhatsNew = false;
         showTimeline = false;
@@ -1337,10 +1353,17 @@ document.addEventListener("DOMContentLoaded", () => {
         // (see renderSubNav), and aria-expanded on Featured Mazes because
         // what it does is open and close the panel beneath it.
         topNavBtns.forEach(btn => {
-            const on = btn.dataset.top === topView;
+            // Neither, on the opening view (30 Oct 2026).
+            const on = !showOpening && btn.dataset.top === topView;
             btn.classList.toggle("active", on);
             btn.setAttribute("aria-pressed", on ? "true" : "false");
         });
+        // The frame raised over the tabs, the sub-row and search row tucked
+        // under it (css: #browse-window.is-opening).
+        if (browseWindow) browseWindow.classList.toggle("is-opening", showOpening);
+        // The frame's own search box says what is being searched, unless
+        // it is the one being typed in.
+        if (openingInput && openingInput.value !== query && document.activeElement !== openingInput) openingInput.value = query;
         featuredMazesBtn.setAttribute("aria-expanded", showFeatured ? "true" : "false");
         renderSubNav();
 
@@ -3374,6 +3397,465 @@ document.addEventListener("DOMContentLoaded", () => {
         });
     }
 
+    /* ---------- the opening view (30 Oct 2026, the owner's) ----------
+
+       What the archive window opens on: see showOpening. Drawn into the
+       results panel like What's New and the Timeline, top to bottom:
+
+         the spotlight     the slides the Spotlight tab holds, turning;
+         on now            live and upcoming events, three at most;
+         recently added    the newest Added entries on What's New, four;
+         today's games     Guess the Maze and Odd One Out, and the others;
+         featured mazes    two picks, dealt as the Featured panel deals them;
+         explore           the archive's counts and the ways into it;
+         missing pieces    a word for the records that need help.
+
+       Typing in the frame's own box (#opening-search-input) swaps all of it
+       for the search's rows, mazes and events together. Sections with
+       nothing to say leave themselves out. */
+
+    // The spotlight slides as the tab's own code builds them (wireSpotlight sets this).
+    let spotlightSlide = null;
+    // The two featured picks, kept between renders until Refresh deals again.
+    let openingPicks = [];
+
+    /* The spotlight, as a strip of its own at the head of the view. It is
+       one element kept across renders (each render rebuilds the view around
+       it), so its turn and its place are not lost to a status tick.
+       wireSpotlight hands it the live list every time it rechecks. */
+    const openingSpot = (() => {
+        const TURN_MS = 7000;
+        const reduced = window.matchMedia ? window.matchMedia("(prefers-reduced-motion: reduce)") : null;
+        const el = document.createElement("div");
+        el.className = "opening-spot";
+        el.hidden = true;
+        let key = "", index = 0, turn = null, paused = false, pointer = false, focused = false;
+        const slides = () => [...el.querySelectorAll(".welcome-promo-slide")];
+        /* WHERE EACH CAPTION SITS (30 Oct 2026, the owner's): on a computer,
+           where the landing page puts it (the event's spotlightCaptionAt);
+           on a phone, the homepage's own position (spotlightCaptionAtHome,
+           else the landing page's), as the spotlight tab has it. Again when
+           the window crosses the phone width: 640px, FEATURED_PHONE_MAX's
+           number (declared further down, after this has already run). */
+        const phone = window.matchMedia ? window.matchMedia("(max-width: 640px)") : null;
+        let shown = [];
+        function placeCaptions() {
+            const onPhone = !!(phone && phone.matches);
+            slides().forEach(a => {
+                const ev = shown.find(e => e.id === a.dataset.id);
+                const cta = a.querySelector(".welcome-promo-cta");
+                if (!ev || !cta) return;
+                const at = onPhone ? (ev.spotlightCaptionAtHome || ev.spotlightCaptionAt) : ev.spotlightCaptionAt;
+                cta.classList.toggle("is-top", at === "top");
+            });
+        }
+        if (phone && typeof phone.addEventListener === "function") phone.addEventListener("change", placeCaptions);
+        function show(i) {
+            const all = slides();
+            if (!all.length) return;
+            index = ((i % all.length) + all.length) % all.length;
+            all.forEach((s, n) => {
+                const on = n === index;
+                s.classList.toggle("is-shown", on);
+                s.tabIndex = on ? 0 : -1;
+                s.setAttribute("aria-hidden", on ? "false" : "true");
+            });
+            el.querySelectorAll(".welcome-promo-dot").forEach((d, n) => {
+                d.classList.toggle("is-on", n === index);
+                if (n === index) d.setAttribute("aria-current", "true");
+                else d.removeAttribute("aria-current");
+            });
+        }
+        // Turns while it is on screen and nobody is pointing at it, reading it or behind a window.
+        function schedule() {
+            clearTimeout(turn);
+            if (paused || slides().length < 2 || (reduced && reduced.matches)) return;
+            turn = setTimeout(() => {
+                const covered = !!document.querySelector(".modal-overlay.open");
+                if (el.isConnected && !pointer && !focused && !covered && !document.hidden) show(index + 1);
+                schedule();
+            }, TURN_MS);
+        }
+        function update(list) {
+            if (!spotlightSlide) return;
+            const next = JSON.stringify(list.map(ev => [ev.id, ev.thumb || ev.thumbnail || ev.image || "", ev.spotlightCaption || "", ev.spotlightColour || "", ev.spotlightCaptionAtHome || "", ev.spotlightCaptionAt || "", ev.title || "", ev.slug || ""]));
+            el.hidden = !list.length;
+            if (next === key) return;
+            key = next;
+            const was = el.querySelector(".welcome-promo-slide.is-shown");
+            const wasId = was ? was.dataset.id : "";
+            const frame = document.createElement("div");
+            frame.className = "spotlight-frame";
+            frame.append(...list.map(ev => spotlightSlide(ev)));
+            if (list.length > 1) {
+                const dots = document.createElement("span");
+                dots.className = "welcome-promo-dots";
+                list.forEach((ev, i) => {
+                    const d = document.createElement("button");
+                    d.type = "button";
+                    d.className = "welcome-promo-dot";
+                    d.setAttribute("aria-label", `Show spotlight ${i + 1} of ${list.length}`);
+                    d.addEventListener("click", () => { paused = true; clearTimeout(turn); show(i); });
+                    dots.appendChild(d);
+                });
+                frame.appendChild(dots);
+            }
+            el.replaceChildren(frame);
+            shown = list;
+            placeCaptions();
+            const keep = list.findIndex(ev => ev.id === wasId);
+            show(keep >= 0 ? keep : 0);
+            schedule();
+        }
+        el.addEventListener("pointerenter", e => { pointer = e.pointerType !== "touch"; });
+        el.addEventListener("pointerleave", () => { pointer = false; });
+        el.addEventListener("focusin", e => { try { focused = e.target.matches(":focus-visible"); } catch (x) { focused = true; } });
+        el.addEventListener("focusout", e => { if (!el.contains(e.relatedTarget)) focused = false; });
+        el.addEventListener("click", e => { if (e.target.closest(".welcome-promo-slide") && window.Track) Track.event("opening", "spotlight"); });
+        if (reduced && typeof reduced.addEventListener === "function") reduced.addEventListener("change", schedule);
+        return { el, update };
+    })();
+
+    // "Ends in 3 days" for a live event of more than a day, else its start
+    // ("Starts Sat 31 Oct, 17:00 UTC"): the header ticker's rule (endsIn in js/site.js).
+    function openingWhen(raw) {
+        const DAY = 24 * 60 * 60 * 1000;
+        const start = new Date(raw.date), end = new Date(raw.endDate || "");
+        if (eventStatus(raw) === "live") {
+            if (!isNaN(start) && !isNaN(end) && end - start > DAY) {
+                const left = end - Date.now();
+                const say = (n, unit) => `Ends in ${n} ${unit}${n === 1 ? "" : "s"}`;
+                if (left >= DAY) return say(Math.round(left / DAY), "day");
+                if (left >= 3600000) return say(Math.floor(left / 3600000), "hour");
+                return say(Math.max(1, Math.floor(left / 60000)), "minute");
+            }
+            return "On now";
+        }
+        if (isNaN(start)) return "Date to be confirmed";
+        const day = start.toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short", timeZone: "UTC" });
+        const time = start.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", hour12: false, timeZone: "UTC" });
+        return `Starts ${day}, ${time} UTC`;
+    }
+
+    // A section's heading: its name, a dotted rule, and where "more" goes.
+    /* Explore's two icons (30 Oct 2026, the owner's: "a chair" for Furni,
+       "a calendar" for the Timeline): pixel art, one pixel to a CSS pixel,
+       each drawn in the button's amber with a 1px black outline worked out
+       around the shape, as the site's other small pixel marks are. a: the
+       amber, w: the parchment (a lit face), d: black inside the shape. */
+    function pixelIcon(rows) {
+        const H = rows.length, W = rows[0].length;
+        const at = (x, y) => (y >= 0 && y < H && x >= 0 && x < W ? rows[y][x] : ".");
+        // w through its own variable, so a palette that turns parchment dark (Christmas light mode) can keep it light.
+        const fill = { a: "currentColor", w: "var(--x-ico-lit, var(--parchment))", d: "#000" };
+        let rects = "";
+        for (let y = -1; y <= H; y++) for (let x = -1; x <= W; x++) {
+            const c = at(x, y);
+            if (c !== ".") { rects += `<rect x="${x + 1}" y="${y + 1}" width="1" height="1" fill="${fill[c]}"/>`; continue; }
+            // The outline: any empty pixel touching the shape, corners included.
+            let near = false;
+            for (let dy = -1; dy <= 1 && !near; dy++) for (let dx = -1; dx <= 1; dx++) if (at(x + dx, y + dy) !== ".") { near = true; break; }
+            if (near) rects += `<rect x="${x + 1}" y="${y + 1}" width="1" height="1" fill="#000"/>`;
+        }
+        return `<svg width="${W + 2}" height="${H + 2}" viewBox="0 0 ${W + 2} ${H + 2}" shape-rendering="crispEdges" aria-hidden="true" focusable="false">${rects}</svg>`;
+    }
+    const OPENING_ICON = {
+        // A chair, front on, as the plainest chair icons draw it: a back with its panel lit, a lit seat wider than the back, two legs.
+        chair: pixelIcon([
+            "..aaaaaaaa..",
+            "..awwwwwwa..",
+            "..awwwwwwa..",
+            "..awwwwwwa..",
+            "..awwwwwwa..",
+            "..aaaaaaaa..",
+            "aaaaaaaaaaaa",
+            "awwwwwwwwwwa",
+            "aaaaaaaaaaaa",
+            ".aa......aa.",
+            ".aa......aa.",
+            ".aa......aa."
+        ]),
+        // A calendar: two rings over an amber header, a page of day squares in four columns.
+        calendar: pixelIcon([
+            "..a.......a..",
+            "aaaaaaaaaaaaa",
+            "aaaaaaaaaaaaa",
+            "wwwwwwwwwwwww",
+            "wddwddwddwddw",
+            "wddwddwddwddw",
+            "wwwwwwwwwwwww",
+            "wddwddwddwddw",
+            "wddwddwddwddw",
+            "wwwwwwwwwwwww"
+        ])
+    };
+
+    function openingHead(title, more, go) {
+        return `<div class="opening-head"><h3 class="opening-head-title">${escapeHtml(title)}</h3><span class="opening-head-rule" aria-hidden="true"></span>`
+            + (more ? `<button type="button" class="opening-more" data-go="${escapeHtml(go)}" data-track="opening" data-track-label="${escapeHtml(go)}">${escapeHtml(more)}<span class="opening-more-arrow" aria-hidden="true"></span></button>` : "")
+            + `</div>`;
+    }
+
+    /* The games' pictures, chosen by hand (30 Oct 2026, the owner's): a room
+       by its maze and its place in that maze's gallery, so a re-upload keeps
+       the choice. Guess the Maze's is blurred behind its question mark: Alt
+       Maze's sixth room, Mode Paths. Odd One Out's four were picked because
+       the room fills the picture, edge to edge, so no black shows in the
+       squares; the third, The Little Maze's Miftah Madness among Laberinto
+       Cooperativo's three, is outlined as the odd one. */
+    const OPENING_GUESS_ROOM = { maze: "alt-maze", room: 5 };
+    const OPENING_ODD_ROOMS = [
+        { maze: "laberinto-cooperativo", room: 0 },
+        { maze: "laberinto-cooperativo", room: 1 },
+        { maze: "the-little-maze", room: 1 },
+        { maze: "laberinto-cooperativo", room: 2 }
+    ];
+    function openingRoomPicture(pick) {
+        const maze = ROOMS.find(r => r && r.id === pick.maze);
+        const g = maze && Array.isArray(maze.gallery) ? maze.gallery[pick.room] : null;
+        return (g && (typeof g === "string" ? g : g.image)) || "";
+    }
+
+    /* A Recently added card's two dates, each named (30 Oct 2026, the
+       owner's): when the thing itself was, as the archive's rows word it,
+       and when it reached the archive: ["Event 31 Oct 2026", "Added 28 Oct"],
+       ["Opened Jun 2024", "Added 3 Oct"], ["Guide", "Added today"]. Side by
+       side with a dot between, or one to a line on a phone (css). */
+    function openingCardWhen(n) {
+        const at = new Date(n.activityAt);
+        const day = logDayLabel(localDayKey(n.activityAt));
+        const added = "Added " + (/^(Today|Yesterday)$/.test(day) ? day.toLowerCase()
+            : isNaN(at) ? day : at.toLocaleDateString("en-GB", { day: "numeric", month: "short" }));
+        if (n.isGuide) return ["Guide", added];
+        if (n.isEvent) {
+            const start = n.dateValue ? formatUtcParts(n.dateValue) : null;
+            return [start ? `Event ${start.date}` : "Event date TBC", added];
+        }
+        return n.dateValue ? [`Opened ${formatMazeDate(n.dateValue)}`, added] : [added];
+    }
+
+    /* "Archived" rather than "New" on Recently added (30 Oct 2026, the
+       owner's): for something old that has only now reached the archive, so
+       a past event or a maze from last year does not read as just made. An
+       event that had ended by the day it was added; a maze that was closed,
+       or had opened more than a month before. */
+    function openingIsOld(n) {
+        const raw = n && n._raw;
+        const addedAt = Date.parse(n && n.activityAt);
+        if (!raw || isNaN(addedAt) || n.isGuide) return false;
+        if (n.isEvent) {
+            const end = Date.parse(raw.endDate || raw.date || "");
+            return !isNaN(end) && end < addedAt;
+        }
+        if (roomStatus(raw) === "closed") return true;
+        const opened = Date.parse(raw.added || "");
+        return !isNaN(opened) && addedAt - opened > 30 * 86400000;
+    }
+
+    function renderOpening() {
+        // Its own picks; nothing from a list left behind is reachable from here.
+        currentItems = [];
+        emptyEl.style.display = "none";
+
+        /* SEARCHING: the rows, mazes then events, each kind in the list's
+           own order, with a line saying how many of each. */
+        if (query.trim()) {
+            const mazes = sortItems(normalizeAll(kindItems("mazes"), false).filter(matchesQuery));
+            const events = sortItems(normalizeAll(kindItems("events"), true).filter(matchesQuery));
+            const rows = rowsHtml(mazes.concat(events), false);
+            currentItems = rows.items;
+            if (!rows.items.length) {
+                grid.innerHTML = "";
+                emptyEl.textContent = "Nothing in the archive matches that. Try a builder's name, a tag or a piece of furni.";
+                emptyEl.style.display = "block";
+                return;
+            }
+            const m = rows.items.filter(n => !n.isEvent).length, e = rows.items.length - m;
+            const said = [m ? `${m} ${m === 1 ? "maze" : "mazes"}` : "", e ? `${e} ${e === 1 ? "event" : "events"}` : ""].filter(Boolean).join(" and ");
+            grid.innerHTML = `<p class="opening-found">${escapeHtml(said)} found</p>${rows.html}`;
+            wireRowActivation(grid, currentItems);
+            wireThumbFadeIn(grid);
+            return;
+        }
+
+        // ON NOW: live first, then the soonest.
+        const now = EVENTS.filter(e => e && isUpcomingTabEvent(e))
+            .sort((a, b) => (eventStatus(a) === "live" ? 0 : 1) - (eventStatus(b) === "live" ? 0 : 1)
+                || String(a.date || "~").localeCompare(String(b.date || "~")))
+            .slice(0, 3);
+        const nowItems = normalizeAll(now, true);
+
+        // RECENTLY ADDED: the log's own Added entries, so a hidden one stays hidden.
+        const added = (() => {
+            try { return whatsNewItems().filter(n => n.activity === "added" && !n.isPost && !n.isNote).slice(0, 4); } catch (e) { return []; }
+        })();
+
+        // FEATURED: two, kept until Refresh (or until one has left the archive).
+        const pool = normalizeAll(sourceItems("featured"), false);
+        openingPicks = openingPicks.map(old => pool.find(n => n.id === old.id)).filter(Boolean);
+        if (openingPicks.length < 2) openingPicks = pickFeatured(pool, 2);
+        // The Featured panel's own rows (renderFeaturedList), its difficulty colours with them (css).
+        const picks = rowsHtml(openingPicks, false);
+
+        // TODAY'S GAMES, as the menu words them.
+        const g = typeof window.GuessStatus === "function" ? (() => { try { return window.GuessStatus(); } catch (e) { return null; } })() : null;
+        const o = typeof window.OddOneOutStatus === "function" ? (() => { try { return window.OddOneOutStatus(); } catch (e) { return null; } })() : null;
+        const gameLine = (s, idle) => !s ? idle : s.finished ? `Done today: ${s.points} points` : s.started ? `${s.done} of ${s.total} done` : "Not played today";
+        const guessArt = openingRoomPicture(OPENING_GUESS_ROOM);
+        const oddArt = OPENING_ODD_ROOMS.map(openingRoomPicture).filter(Boolean);
+        // Read in a try: it is declared further down this file, by the side menu.
+        let ff = null, pura = "maintenance";
+        try { ff = ffClosedState; pura = puraState; } catch (e) { /* not declared yet: worded as open */ }
+
+        // EXPLORE: the counts behind each way in.
+        const count = v => sourceItems(v).length;
+        const builders = new Set(ROOMS.flatMap(r => String((r && r.creator) || "").split(/\s*(?:,|&|\band\b)\s*/i)).map(s => s.trim().toLowerCase()).filter(Boolean)).size;
+        const firstYear = ROOMS.map(r => String((r && r.added) || "").slice(0, 4)).filter(y => /^\d{4}$/.test(y)).sort()[0];
+        const missing = (() => { try { return deadEndFigures(); } catch (e) { return null; } })();
+
+        const thumbOf = (n, w, h) => n.isGuide ? guideLogThumb(n.thumb) : imgCdn(n.thumb, w, h, 75);
+        grid.innerHTML = `
+            <div class="opening" id="opening">
+                <div class="opening-spot-slot"></div>
+                ${nowItems.length ? `
+                <section class="opening-section">
+                    ${openingHead("On now & coming up", "All events", "events")}
+                    <div class="opening-now">
+                        ${nowItems.map((n, i) => `
+                        <button type="button" class="opening-now-row" data-now="${i}" data-focus-key="${escapeHtml("opening:" + recordKey(n))}" data-track="opening" data-track-label="now">
+                            <span class="opening-now-thumb"${n.thumb ? ` style="background-image:url('${escapeHtml(imgCdn(n.thumb, 120, 120, 75))}')"` : ""} aria-hidden="true"></span>
+                            <span class="opening-now-what">
+                                <span class="opening-name">${escapeHtml(n.name || "")}</span>
+                                <span class="opening-sub">${escapeHtml(openingWhen(now[i]))}${n.owner ? `<span class="opening-by"> <span class="row-date-dot" aria-hidden="true">•</span> by ${escapeHtml(n.owner)}</span>` : ""}</span>
+                            </span>
+                            ${statusPillsHtml(n)}
+                            <span class="chrome-go opening-go">Go<span class="chrome-go-arrow" aria-hidden="true"></span></span>
+                        </button>`).join("")}
+                    </div>
+                </section>` : ""}
+                ${added.length ? `
+                <section class="opening-section">
+                    ${openingHead("Recently added", "What's New", "whatsnew")}
+                    <div class="opening-cards">
+                        ${added.map((n, i) => `
+                        <button type="button" class="opening-card" data-added="${i}" data-focus-key="${escapeHtml("opening-added:" + recordKey(n))}" data-track="opening" data-track-label="added">
+                            <span class="opening-card-pic${n.isGuide ? " is-art" : ""}"${n.thumb ? ` style="background-image:url('${escapeHtml(thumbOf(n, 360, 224))}')"` : ""} aria-hidden="true">
+                                ${openingIsOld(n)
+                                    ? `<span class="opening-flag is-archived">Archived</span>`
+                                    : `<span class="opening-flag is-${n.isGuide ? "guide" : n.isEvent ? "event" : "maze"}">New ${n.isGuide ? "guide" : n.isEvent ? "event" : "maze"}</span>`}
+                            </span>
+                            <span class="opening-card-what">
+                                <span class="opening-name">${escapeHtml(n.name || "")}</span>
+                                ${n.owner ? `<span class="opening-sub">by ${escapeHtml(n.owner)}</span>` : ""}
+                                <span class="opening-sub opening-card-when">${openingCardWhen(n).map(escapeHtml).map(s => `<span>${s}</span>`).join('<span class="opening-when-dot" aria-hidden="true"> · </span>')}</span>
+                            </span>
+                        </button>`).join("")}
+                    </div>
+                </section>` : ""}
+                <section class="opening-section">
+                    ${openingHead("Games", "Leaderboards", "boards")}
+                    <div class="opening-games">
+                        <div class="opening-game">
+                            <span class="opening-game-art is-guess"${guessArt ? ` style="background-image:url('${escapeHtml(imgCdn(guessArt, 240, 140, 70))}')"` : ""} aria-hidden="true"><span>?</span></span>
+                            <span class="opening-game-what">
+                                <span class="opening-name">Guess the Maze <span class="side-menu-tag opening-daily">Daily</span></span>
+                                <span class="opening-sub">${escapeHtml(gameLine(g, "Today's five rooms"))}</span>
+                                <button type="button" class="view-switch-btn opening-play" data-game="guess" data-track="opening" data-track-label="guess">Play</button>
+                            </span>
+                        </div>
+                        <div class="opening-game">
+                            <span class="opening-game-art is-odd" aria-hidden="true">${oddArt.map(p => `<i style="background-image:url('${escapeHtml(imgCdn(p, 120, 120, 75))}')"></i>`).join("")}</span>
+                            <span class="opening-game-what">
+                                <span class="opening-name">Odd One Out <span class="side-menu-tag opening-daily">Daily</span></span>
+                                <span class="opening-sub">${escapeHtml(gameLine(o, "Spot the room that doesn't belong"))}</span>
+                                <button type="button" class="view-switch-btn opening-play" data-game="odd" data-track="opening" data-track-label="odd">Play</button>
+                            </span>
+                        </div>
+                        <!-- The two that are not dailies, tiles of their own (30 Oct 2026, the
+                             owner's), each on the part of its link card that shows the game. -->
+                        <div class="opening-game">
+                            <span class="opening-game-art is-ff" aria-hidden="true"></span>
+                            <span class="opening-game-what">
+                                <span class="opening-name">Fallin' Furni</span>
+                                <span class="opening-sub">${ff === "coming-soon" ? "Coming soon" : ff === "maintenance" ? "Maintenance" : "Sit on every seat, in order"}</span>
+                                <button type="button" class="view-switch-btn opening-play" data-game="ff" data-track="opening" data-track-label="ff">${ff === "coming-soon" ? "Take a look" : "Play"}</button>
+                            </span>
+                        </div>
+                        <div class="opening-game">
+                            <span class="opening-game-art is-pura" aria-hidden="true"></span>
+                            <span class="opening-game-what">
+                                <span class="opening-name">Pura Panic</span>
+                                <span class="opening-sub">${pura === "live" ? "Pure nostalgia, pure panic" : "Maintenance"}</span>
+                                <button type="button" class="view-switch-btn opening-play" data-game="pura" data-track="opening" data-track-label="pura">Play</button>
+                            </span>
+                        </div>
+                    </div>
+                </section>
+                ${picks.items.length ? `
+                <section class="opening-section">
+                    ${openingHead("Featured mazes", "Refresh", "refresh")}
+                    <div class="opening-featured chrome-list">${picks.html}</div>
+                </section>` : ""}
+                <section class="opening-section">
+                    ${openingHead("Explore the archive")}
+                    <p class="opening-stats"><b>${ROOMS.length}</b> mazes <span class="row-date-dot" aria-hidden="true">•</span> <b>${EVENTS.length}</b> events <span class="row-date-dot" aria-hidden="true">•</span> <b>${builders}</b> builders${firstYear ? ` <span class="row-date-dot" aria-hidden="true">•</span> since ${escapeHtml(firstYear)}` : ""}</p>
+                    <div class="opening-explore">
+                        <button type="button" data-go="open" data-track="opening" data-track-label="open"><span class="opening-x-n">${count("open")}</span>Open mazes</button>
+                        <button type="button" data-go="archived" data-track="opening" data-track-label="archived"><span class="opening-x-n">${count("archived")}</span>Archived</button>
+                        <button type="button" data-go="collab" data-track="opening" data-track-label="collab"><span class="opening-x-n">${count("collab")}</span>Collabs</button>
+                        <button type="button" data-go="events" data-track="opening" data-track-label="events"><span class="opening-x-n">${EVENTS.length}</span>Events</button>
+                        <button type="button" data-go="timeline" data-track="opening" data-track-label="timeline"><span class="opening-x-ico is-timeline" aria-hidden="true">${OPENING_ICON.calendar}</span>Timeline</button>
+                        <button type="button" data-go="furni" data-track="opening" data-track-label="furni"><span class="opening-x-ico is-furni" aria-hidden="true">${OPENING_ICON.chair}</span>Furni</button>
+                    </div>
+                </section>
+                ${missing ? `
+                <button type="button" class="opening-nudge" data-go="missing" data-track="opening" data-track-label="missing">
+                    <span class="opening-nudge-mark" aria-hidden="true">!</span>
+                    <span><b>${missing} ${missing === 1 ? "record needs" : "records need"} your help.</b> Know a missing entrance, date or picture? <u>Missing Pieces</u></span>
+                </button>` : ""}
+            </div>`;
+
+        // The spotlight strip, the same element every time.
+        const slot = grid.querySelector(".opening-spot-slot");
+        if (slot) slot.replaceWith(openingSpot.el);
+
+        grid.querySelectorAll(".opening-now-row").forEach(b => b.addEventListener("click", () => openModal(nowItems[Number(b.dataset.now)])));
+        grid.querySelectorAll(".opening-card").forEach(b => b.addEventListener("click", () => {
+            const n = added[Number(b.dataset.added)];
+            if (n && n.isGuide) { if (window.Guides) Guides.open(n.id); }
+            else if (n) openModal(n);
+        }));
+        const featured = grid.querySelector(".opening-featured");
+        if (featured) {
+            openingPicks = picks.items;
+            wireRowActivation(featured, openingPicks);
+            wireThumbFadeIn(featured);
+        }
+        grid.querySelectorAll("[data-game]").forEach(b => b.addEventListener("click", () => {
+            const game = b.dataset.game;
+            if (game === "guess" && typeof window.openGuessGame === "function") window.openGuessGame();
+            else if (game === "odd" && typeof window.openOddOneOut === "function") window.openOddOneOut();
+            else if (game === "ff" && typeof window.openFallinFurni === "function") window.openFallinFurni(false, "opening");
+            else if (game === "pura" && typeof window.openPuraPanic === "function") window.openPuraPanic();
+        }));
+        grid.querySelectorAll("[data-go]").forEach(b => b.addEventListener("click", () => {
+            const go = b.dataset.go;
+            if (go === "open" || go === "archived" || go === "collab") showArchiveView("mazes", go);
+            else if (go === "events") showArchiveView("events");
+            else if (go === "timeline") { if (timelineBtn) timelineBtn.click(); }
+            else if (go === "furni") { if (furniBtn) furniBtn.click(); }
+            else if (go === "whatsnew") toggleWhatsNew();
+            else if (go === "boards") { if (window.Leaderboards) Leaderboards.open("all"); }
+            else if (go === "missing") { if (window.MazeConsole) MazeConsole.openMissing(); }
+            else if (go === "refresh") {
+                const held = new Set(openingPicks.map(n => n.id));
+                const fresh = pickFeatured(pool.filter(n => !held.has(n.id)), 2);
+                openingPicks = fresh.length ? fresh : pickFeatured(pool, 2);
+                renderInPlace();
+            }
+        }));
+    }
+
     /* ---------- the timeline ----------
 
        The archive read as a history rather than a list: every maze and every
@@ -3421,6 +3903,8 @@ document.addEventListener("DOMContentLoaded", () => {
         return matchesQuery(normalize(record, isEvent));
     }
 
+    /* No description on an entry, short or full (30 Oct 2026, the owner's):
+       its name, who made it and its pills. The record it opens holds the words. */
     function timelineEntries() {
         const entries = [];
         ROOMS.forEach(room => {
@@ -3434,7 +3918,6 @@ document.addEventListener("DOMContentLoaded", () => {
                 statusKey: roomStatus(room),
                 statusLabel: TIMELINE_STATUS_LABELS[roomStatus(room)],
                 collab: isCollabRoom(room),
-                note: descPlain(room.description),
                 ecSeason: ""
             });
         });
@@ -3448,7 +3931,6 @@ document.addEventListener("DOMContentLoaded", () => {
                 by: ev.host || "",
                 statusKey: eventStatus(ev),
                 statusLabel: EventStatus.labelFor(ev),
-                note: descPlain(ev.description),
                 ecSeason: ["s1", "s2"].includes(ev.ecSeason) ? ev.ecSeason : ""
             });
         });
@@ -3491,7 +3973,6 @@ document.addEventListener("DOMContentLoaded", () => {
                         ${statusPillsHtml(entry, "timeline-badge")}
                     </p>
                     ${entry.by ? `<p class="timeline-entry-by">${entry.kind === "event" ? "Event hosted" : "Maze built"} by ${escapeHtml(entry.by)}</p>` : ""}
-                    ${entry.note ? `<p class="timeline-entry-note">${escapeHtml(entry.note)}</p>` : ""}
                 </div>
             </li>`;
     }
@@ -3676,6 +4157,10 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     function renderView() {
+        /* Any of the layered views turned on leaves the opening view, from
+           wherever it was turned on (a button, the menu, a maze's furni
+           card), so no way into one has to remember to say so. */
+        if (showOpening && (showFeatured || showWhatsNew || showTimeline || showFurni || furniFilter)) showOpening = false;
         updateChrome();
         syncSearchToUrl();
 
@@ -3699,6 +4184,13 @@ document.addEventListener("DOMContentLoaded", () => {
                 ? "Couldn't load the archive. Try refreshing the page."
                 : "Still loading the archive...";
             emptyEl.style.display = loaderGone ? "block" : "none";
+            return;
+        }
+
+        // The opening view draws itself too, or the search typed into it.
+        if (showOpening) {
+            renderOpening();
+            updateWalkedCount();
             return;
         }
 
@@ -3930,6 +4422,7 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     function jumpKeepingSearch(view, e) {
+        showOpening = false;
         if (MAZE_VIEWS.includes(view)) {
             topView = "mazes";
             mazesSub = view;
@@ -8501,6 +8994,10 @@ document.addEventListener("DOMContentLoaded", () => {
             modalArticleLink.href = source || "#";
             const sourceLine = modalArticleLink.closest(".modal-article-source");
             if (sourceLine) sourceLine.hidden = !source;
+            // And the same link under the kicker (30 Oct 2026, the owner's),
+            // gone the same way.
+            const originLine = modalArticle.querySelector(".modal-article-origin");
+            if (originLine) { originLine.hidden = !source; originLine.querySelector("a").href = source || "#"; }
             modalArticle.hidden = false;
         } else {
             // Emptied, not just hidden: an article left in the DOM is a
@@ -9111,6 +9608,59 @@ document.addEventListener("DOMContentLoaded", () => {
     // address catches up now rather than 600ms later.
     searchInput.addEventListener("blur", flushSearchToUrl);
     searchInput.addEventListener("keydown", e => { if (e.key === "Enter") flushSearchToUrl(); });
+
+    /* The opening view's box (30 Oct 2026): the same search, kept in the
+       same `query`, so leaving for a tab carries nothing over that the main
+       box would not show. The results list mazes and events together, in
+       the opening view itself (renderOpening). Escape in it clears it. */
+    if (openingInput) {
+        // The full hint where it fits; on a phone, the words that matter.
+        const phoneHint = window.matchMedia ? window.matchMedia("(max-width: 640px)") : null;
+        const fitHint = () => { openingInput.placeholder = phoneHint && phoneHint.matches ? "Search the archive" : "Search mazes and events: name, builder, furni…"; };
+        fitHint();
+        if (phoneHint && phoneHint.addEventListener) phoneHint.addEventListener("change", fitHint);
+        openingInput.addEventListener("input", e => {
+            query = e.target.value;
+            searchInput.value = query;
+            if (query.trim()) noteSearch();
+            searchTyping = true;
+            try { render(); } finally { searchTyping = false; }
+            const results = document.querySelector(".home-results");
+            if (results) results.scrollTop = 0;
+        });
+        openingInput.addEventListener("blur", flushSearchToUrl);
+        openingInput.addEventListener("keydown", e => {
+            if (e.key === "Enter") flushSearchToUrl();
+            if (e.key === "Escape" && openingInput.value) {
+                // Only the box, not the layer the Escape rule would close next.
+                e.stopPropagation();
+                openingInput.value = "";
+                openingInput.dispatchEvent(new Event("input"));
+            }
+        });
+    }
+    /* Go, inside the box (30 Oct 2026, the owner's). The search is already
+       live as it is typed, so Go is the end of typing, as Enter is: the
+       address catches up and, on a phone, the keyboard goes so the results
+       can be seen. With nothing typed it puts the cursor in the box. */
+    const wireGo = (go, box) => {
+        if (go && box) go.addEventListener("click", () => {
+            if (!box.value.trim()) { box.focus(); return; }
+            flushSearchToUrl();
+            box.blur();
+            const results = document.querySelector(".home-results");
+            if (results) results.scrollTop = 0;
+        });
+    };
+    wireGo(document.getElementById("opening-go"), openingInput);
+    // The archive's own box has the same Go (30 Oct 2026, the owner's).
+    wireGo(document.getElementById("room-go"), searchInput);
+    // A maze at random, from every maze in the archive (not the Hallway).
+    if (openingDice) openingDice.addEventListener("click", () => {
+        if (!dataLoaded) return;
+        const pool = normalizeAll(kindItems("mazes"), false).filter(n => !isHallway(n));
+        if (pool.length) openModal(pool[Math.floor(Math.random() * pool.length)]);
+    });
 
     sortSelect.addEventListener("change", e => {
         sortBy = e.target.value;
@@ -11073,6 +11623,8 @@ document.addEventListener("DOMContentLoaded", () => {
                 deadEnds.trail = new Map((data.trail || []).map(t => [`${t.type}:${t.id}`, t.leads]));
                 deadEnds.loaded = true;
                 if (modalItem && modalOverlay.classList.contains("open")) renderModalDeadEnd(modalItem);
+                // The opening view's Missing Pieces line, which waited on these (30 Oct 2026).
+                if (showOpening && !query.trim()) renderInPlace();
                 deadEndsListeners.forEach(fn => { try { fn(); } catch (e) { /* a listener's own problem */ } });
             })
             .catch(() => { deadEndsReq = null; })
@@ -11353,6 +11905,8 @@ document.addEventListener("DOMContentLoaded", () => {
        ratRaceState, so for those visitors the hidden game's row came back
        into every menu, saying "Maintenance". Shut stays shut. */
     let ratState = "hidden";
+    // The Warren's order and hidden rows for this menu (applyMenuLayout); null is the menu as written.
+    let menuLayout = null;
 
     if (typeof Api !== "undefined") {
         Api.getSiteSettings()
@@ -11363,6 +11917,9 @@ document.addEventListener("DOMContentLoaded", () => {
                 if (s && !s.fromCache) ratState = (s.ratRaceState === "live" || s.ratRaceState === "hidden") ? s.ratRaceState : "maintenance";
                 // Hidden: a browser holding a Warren token finds out now whether it is still good (see adminVerified).
                 if (ratState === "hidden") adminVerified();
+                menuLayout = (s && s.menuLayout && typeof s.menuLayout === "object") ? s.menuLayout : null;
+                // A row the Warren keeps to admins: find out now whether this browser's token is good.
+                if (menuLayout && Array.isArray(menuLayout.admins) && menuLayout.admins.length) adminVerified();
             })
             .catch(() => { /* fail open, as the game's own gate does */ });
     }
@@ -11387,7 +11944,70 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     }
 
+    /* THE WARREN'S LAYOUT (30 Oct 2026, the owner's): the menu as written
+       below, laid out as the Warren saved it (settings menuLayout, checked
+       by netlify/functions/settings.js) with its hidden rows taken out.
+
+         top    the menu from top to bottom, each item a fold ("archive",
+                "games") or a row standing on its own outside the folds
+         folds  each fold's rows, in order
+
+       Rows are matched by fixed ids, not by their words. A row the layout
+       places nowhere stays where it is written: inside its own fold at the
+       end, or, if it is written outside the folds, at the foot. A row with
+       sections (Mazes, Events) takes them with it. A row kept to admins shows
+       only once the server has vouched for this browser's sign-in
+       (adminVerifiedNow). A fold with no rows left is not shown. */
+    const MENU_IDS = {
+        "Home": "home", "Mazes": "mazes", "Events": "events", "Timeline": "timeline", "Furni": "furni",
+        "What's New": "whats-new", "Guides": "guides", "Missing Pieces": "missing-pieces",
+        "Guess the Maze": "guess", "Odd One Out": "odd", "Fallin' Furni": "fallin-furni", "Pura Panic": "pura",
+        "Scout's Trail": "scout", "Leaderboards": "leaderboards", "Your Profile": "profile", "Alt Codes": "alt-codes"
+    };
+    const MENU_FOLD_NAMES = { archive: "Archive", games: "Games" };
+    function applyMenuLayout(entries) {
+        const layout = menuLayout;
+        if (!layout || !Array.isArray(layout.top)) return entries;
+        // The menu as written, as units (a row and any sections under it), each with where it is written.
+        const units = [];
+        let home = "loose";
+        for (let i = 0; i < entries.length; i++) {
+            const e = entries[i];
+            if (e.group) { home = e.group.toLowerCase() === "games" ? "games" : "archive"; continue; }
+            if (e.endGroup) { home = "loose"; continue; }
+            if (e.heading) continue;
+            const unit = [e];
+            while (e.branch && i + 1 < entries.length && entries[i + 1].sub) unit.push(entries[++i]);
+            units.push({ id: MENU_IDS[e.name] || null, home, unit });
+        }
+        const byId = new Map(units.filter(u => u.id).map(u => [u.id, u]));
+        const folds = layout.folds || {};
+        const placed = new Set(layout.top.concat(folds.archive || [], folds.games || []));
+        const hidden = new Set(Array.isArray(layout.hidden) ? layout.hidden : []);
+        const admins = new Set(Array.isArray(layout.admins) ? layout.admins : []);
+        const shows = u => !u.id || (!hidden.has(u.id) && (!admins.has(u.id) || adminVerifiedNow()));
+        const unplaced = where => units.filter(u => u.home === where && (!u.id || !placed.has(u.id)));
+        const flat = list => [].concat(...list.filter(shows).map(u => u.unit));
+        const out = [];
+        layout.top.forEach(item => {
+            if (MENU_FOLD_NAMES[item]) {
+                const rows = (Array.isArray(folds[item]) ? folds[item] : []).map(id => byId.get(id)).filter(Boolean).concat(unplaced(item));
+                const shown = flat(rows);
+                if (shown.length) out.push({ group: MENU_FOLD_NAMES[item] }, ...shown, { endGroup: true });
+                return;
+            }
+            const u = byId.get(item);
+            if (u) out.push(...flat([u]));
+        });
+        out.push(...flat(unplaced("loose")));
+        return out;
+    }
+
     function sideMenuEntries() {
+        return applyMenuLayout(writtenMenuEntries());
+    }
+
+    function writtenMenuEntries() {
         const g = menuFigure(() => typeof window.GuessStatus === "function" ? window.GuessStatus() : null, null);
         // The last fortnight's worth, not the log's length — see
         // WHATS_NEW_RECENT_DAYS for why the two are different numbers.
@@ -11411,7 +12031,8 @@ document.addEventListener("DOMContentLoaded", () => {
            section. Both leave Featured, What's New, the Timeline and Furni
            as the tabs do (see showArchiveView). The sections carry no
            counts (the owner's): just their names. */
-        const overlay = showFeatured || showWhatsNew || showTimeline || showFurni;
+        // The opening view counts too: no tab is showing while it is up.
+        const overlay = showOpening || showFeatured || showWhatsNew || showTimeline || showFurni;
         const sectionRows = top => SUB_OPTIONS[top].map(([value, label]) => ({
             sub: true,
             name: label.charAt(0) + label.slice(1).toLowerCase(),
@@ -11427,6 +12048,14 @@ document.addEventListener("DOMContentLoaded", () => {
             /* ARCHIVE: the archive's own tools, folded like GAMES and above
                it, since the archive is what the site is for. */
             { group: "Archive" },
+            {
+                // Back to the opening view (30 Oct 2026, the owner's): see showOpeningView.
+                name: "Home",
+                state: "Spotlight, what's on, what's new",
+                badge: "",
+                on: showOpening && !query.trim(),
+                run: showOpeningView
+            },
             {
                 name: "Mazes",
                 branch: "mazes",
@@ -11446,6 +12075,26 @@ document.addEventListener("DOMContentLoaded", () => {
                 run: () => showArchiveView("events")
             },
             ...sectionRows("events"),
+            /* THE TIMELINE AND FURNI (30 Oct 2026, the owner's): the archive
+               window's two other ways of looking across it, under the tabs
+               they sit beside. Pressed, each shows its view as its own button
+               does; one already showing is left as it is rather than shut
+               again, as a menu choice is a choice, not a toggle. */
+            {
+                name: "Timeline",
+                state: "The archive, year by year",
+                badge: "",
+                on: showTimeline,
+                run: () => { if (!showTimeline && timelineBtn) timelineBtn.click(); }
+            },
+            {
+                name: "Furni",
+                state: "Mazes by the furni in them",
+                badge: "",
+                on: showFurni || !!furniFilter,
+                // In a furni's mazes, the button steps back to the furni list.
+                run: () => { if (!(showFurni && !furniFilter) && furniBtn) furniBtn.click(); }
+            },
             {
                 name: "What's New",
                 state: fresh ? "Lately added and changed" : "Nothing new just now",
@@ -11673,7 +12322,9 @@ document.addEventListener("DOMContentLoaded", () => {
            a fold opened once came back open after every reload. The old
            stored values are cleared so nobody is left with one. */
         const folds = new Map();
-        const foldOpen = group => folds.get(group) === true;
+        // Until it is pressed, a fold is as the Warren's layout says it starts (menuLayout.open), else shut.
+        const foldOpen = group => folds.has(group) ? folds.get(group) === true
+            : !!(menuLayout && Array.isArray(menuLayout.open) && menuLayout.open.includes(String(group).toLowerCase()));
         const rememberFold = (group, open) => { folds.set(group, open); };
         try {
             ["archive", "games"].forEach(g => localStorage.removeItem("mazerats_menu_" + g + "_open"));
@@ -11937,7 +12588,20 @@ document.addEventListener("DOMContentLoaded", () => {
         }
         card.setAttribute("inert", "");
 
+        // The opening view's strip builds its slides here too (30 Oct 2026; see openingSpot).
+        // Without this card's own close-on-press: from there it closes nothing.
+        spotlightSlide = ev => slideOf(ev);
         function slide(ev) {
+            const a = slideOf(ev);
+            // Closed before the event window opens over it, focus parked on
+            // the spine first so that window has somewhere to hand it back.
+            a.addEventListener("click", () => {
+                spine.focus({ preventScroll: true });
+                setOpen(false);
+            });
+            return a;
+        }
+        function slideOf(ev) {
             const a = document.createElement("a");
             a.className = "welcome-promo-slide";
             a.href = window.RecordAddress.of("event", ev);
@@ -11971,12 +12635,6 @@ document.addEventListener("DOMContentLoaded", () => {
             });
             if (/^#[0-9a-f]{6}$/i.test(ev.spotlightColour || "")) cta.style.color = ev.spotlightColour;
             a.append(img, cta);
-            // Closed before the event window opens over it, focus parked on
-            // the spine first so that window has somewhere to hand it back.
-            a.addEventListener("click", () => {
-                spine.focus({ preventScroll: true });
-                setOpen(false);
-            });
             return a;
         }
 
@@ -12060,6 +12718,8 @@ document.addEventListener("DOMContentLoaded", () => {
                     || (time(a.spotlightFrom) || 0) - (time(b.spotlightFrom) || 0)
                     || String(a.title || "").localeCompare(String(b.title || "")));
             const next = JSON.stringify(on.map(ev => [ev.id, thumb(ev), ev.spotlightCaption || "", ev.spotlightColour || "", homeAt(ev) || "", ev.title || "", ev.slug || ""]));
+            // The opening view's strip shows the same slides (30 Oct 2026).
+            openingSpot.update(on);
             if (!on.length) {
                 if (isOpen()) setOpen(false);
                 drawer.hidden = true;
@@ -12160,6 +12820,7 @@ document.addEventListener("DOMContentLoaded", () => {
        pressing the tab, and then the section if one is named, so the menu and
        the two rows of tabs can never disagree about what each does. */
     function showArchiveView(top, sub) {
+        showOpening = false;
         topView = top;
         if (sub && top === "mazes") mazesSub = sub;
         else if (sub) {
@@ -12185,6 +12846,13 @@ document.addEventListener("DOMContentLoaded", () => {
         btn.dataset.track = "tab";
         btn.dataset.trackLabel = btn.dataset.top || "";
         btn.addEventListener("click", () => {
+            /* The tab already showing, its list on screen, goes back to the
+               opening view (30 Oct 2026, the owner's). From the opening view,
+               or from a layer over the list, it goes to the tab as before. */
+            const onItsList = !showOpening && btn.dataset.top === topView
+                && !showFeatured && !showWhatsNew && !showTimeline && !showFurni && !furniFilter;
+            if (onItsList) { showOpeningView(); return; }
+            showOpening = false;
             topView = btn.dataset.top;
             showFeatured = false;
             showWhatsNew = false;
@@ -12197,6 +12865,51 @@ document.addEventListener("DOMContentLoaded", () => {
         });
     });
 
+    /* Back to the opening view: the tab already showing pressed again, the
+       window's title, the menu's Home row. Every layer off, the search
+       cleared, and the view from its top. */
+    function showOpeningView() {
+        showOpening = true;
+        showFeatured = false;
+        showWhatsNew = false;
+        showTimeline = false;
+        showFurni = false;
+        furniFilter = null;
+        searchInput.value = "";
+        query = "";
+        render();
+        const results = document.querySelector(".home-results");
+        if (results) results.scrollTop = 0;
+    }
+    if (archiveHomeBtn) archiveHomeBtn.addEventListener("click", showOpeningView);
+
+    /* Dark mode's bulb (30 Oct 2026, the owner's). The page's <head> already
+       put the remembered choice on <html> before the first paint and left
+       window.__mrSetDark to change it; this only keeps the button's state
+       and the label js/track.js counts it under in step. Under Frost (the
+       Christmas palette) the same switch is LIGHT mode, so the words follow
+       whichever it is (__mrDarkIsLight). */
+    const darkToggle = document.getElementById("dark-toggle");
+    if (darkToggle && window.__mrSetDark) {
+        const showDark = () => {
+            const on = window.__mrDarkOn();
+            const name = window.__mrDarkIsLight() ? "Light mode" : "Dark mode";
+            darkToggle.setAttribute("aria-pressed", String(on));
+            darkToggle.setAttribute("aria-label", name + (on ? ": on" : ": off"));
+            darkToggle.title = on ? name + " off" : name;
+            // What the NEXT press does, which is what track.js reads on it.
+            darkToggle.dataset.trackLabel = on ? "off" : "on";
+        };
+        showDark();
+        darkToggle.addEventListener("click", () => {
+            window.__mrSetDark(!window.__mrDarkOn());
+            // After track.js has read the label for this press.
+            setTimeout(showDark, 0);
+        });
+        // The palette can change under the page (a skin's window opening).
+        try { new MutationObserver(showDark).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] }); } catch (e) { /* old browser: the label waits for the next press */ }
+    }
+
     // Sub-row buttons just change the filter within whichever top category
     // is active — no toggle-off, one of the 3 is always selected. Also
     // drops back out of the featured view, same as switching top category.
@@ -12204,6 +12917,7 @@ document.addEventListener("DOMContentLoaded", () => {
         btn.addEventListener("click", () => {
             const value = btn.dataset.subValue;
             if (!value) return;
+            showOpening = false;
             if (topView === "mazes") mazesSub = value;
             else if (topView === "events") {
                 eventsSub = value;
@@ -12481,6 +13195,13 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     function openRecord(kind, record, opts) {
+        /* Over the opening view, it opens where it is and the view stays
+           under it (30 Oct 2026): the visit starts there, a shared link
+           included, and closing the window leaves the visitor on it. */
+        if (showOpening) {
+            openModal(normalize(record, kind === "event"), opts);
+            return;
+        }
         // A maze can sit in any of the three maze tabs, and a link to one
         // should not depend on which tab happens to be showing. Switch to
         // the list it actually lives in before opening it, so closing the

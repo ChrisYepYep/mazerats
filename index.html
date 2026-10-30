@@ -12,6 +12,33 @@
          under this; js/site.js keeps those on the page whenever a <base>
          exists. -->
     <base href="/">
+    <!-- STRAIGHT ON TO THE ARCHIVE WHILE THE SITE IS OPEN (30 Oct 2026, the
+         owner's: many visitors went no further than this page). Here, before
+         anything is drawn, for a browser that last saw the site open
+         (mazerats_landing_state "enter", which home.html's gate and
+         js/api.js keep); js/welcome.js does the same for a first visit once
+         the settings answer. NOT when:
+           - the address asks for this page (/?landing): an admin looking at
+             the spotlight's landing-page captions, say;
+           - this browser carries a whole-site ban (home.html would only send
+             it back);
+           - home.html has just sent this visitor here (mazerats_bounced, in
+             the last minute): its gate found the site shut or the settings
+             unreadable, with the old "enter" note still kept, and going
+             back would go round and round.
+         Anything unreadable stays here, which is where it always stayed. -->
+    <script>
+    (function () {
+        try {
+            if (/(?:^|&)landing(?:=|&|$)/.test(location.search.slice(1))) return;
+            if (localStorage.getItem("mazerats_landing_state") !== "enter") return;
+            var b = JSON.parse(localStorage.getItem("mazerats_blocked") || "null");
+            if (b && typeof b === "object" && (!b.until || Date.parse(b.until) > Date.now())) return;
+            if (Date.now() - (Number(sessionStorage.getItem("mazerats_bounced")) || 0) < 60000) return;
+            location.replace("/home");
+        } catch (e) { /* stay */ }
+    })();
+    </script>
     <!-- Error reporting, first, and the build it was deployed as: see the
          note on these two lines in home.html's <head> (28 Sept 2026). -->
     <meta name="mazerats:build" content="dev">
@@ -143,6 +170,17 @@
          purpose: the privacy policy says searches are recorded, and why.
          js/track.js, the site's own record, honours both signals too. -->
     <script>(function(){try{if(navigator.globalPrivacyControl===true)return;var s=document.createElement("script");s.defer=true;s.src="https://cloud.umami.is/script.js";s.setAttribute("data-website-id","8dee5429-29ff-4efb-bec1-c124c8d6fb18");s.setAttribute("data-do-not-track","true");s.setAttribute("data-exclude-hash","true");s.setAttribute("data-domains","mazerats.net");document.head.appendChild(s);}catch(e){}})();</script>
+    <!-- Dark mode (30 Oct 2026): a visitor's own switch, the bulb in the
+         archive window's grab bar, worn over whatever palette or skin is
+         showing. Under Frost, the Christmas palette, which is already dark,
+         the same switch gives LIGHT mode instead (the owner's). Both sheets
+         are built by tools/themes.js (css/theme-dark.css on html[data-dark],
+         css/theme-frostlight.css on html[data-light]), loaded only when worn,
+         and last in the head so they follow every other. Set here, before the
+         first paint, and again whenever the palette changes under the page. -->
+    <link id="dark-css" rel="stylesheet">
+    <link id="light-css" rel="stylesheet">
+    <script>(function(){var d=document.documentElement,dk=document.getElementById("dark-css"),lt=document.getElementById("light-css"),want=false;function sheet(l,h){if(!l.getAttribute("href"))l.href=h;}function apply(){var light=want&&d.getAttribute("data-theme")==="frost",dark=want&&!light;if(dark){sheet(dk,"/css/theme-dark.css");if(!d.hasAttribute("data-dark"))d.setAttribute("data-dark","");}else if(d.hasAttribute("data-dark"))d.removeAttribute("data-dark");if(light){sheet(lt,"/css/theme-frostlight.css");if(!d.hasAttribute("data-light"))d.setAttribute("data-light","");}else if(d.hasAttribute("data-light"))d.removeAttribute("data-light");}window.__mrDarkOn=function(){return want;};window.__mrDarkIsLight=function(){return d.getAttribute("data-theme")==="frost";};window.__mrSetDark=function(v){want=!!v;apply();try{localStorage.setItem("mazerats_dark",want?"1":"0");}catch(e){}};try{want=localStorage.getItem("mazerats_dark")==="1";}catch(e){}apply();try{new MutationObserver(apply).observe(d,{attributes:true,attributeFilter:["data-theme"]});}catch(e){}})();</script>
 </head>
 <body data-page="welcome">
 
@@ -335,7 +373,10 @@
                                          rebuilt against a tag whitelist on the way in, never from
                                          anything fetched here. -->
                                     <div class="modal-article" id="event-modal-article" hidden>
-                                        <p class="modal-article-kicker">From Habbo Origins</p>
+                                        <p class="modal-article-kicker">Archived from Habbo Origins</p>
+                                        <p class="modal-article-origin" hidden>
+                                            <a href="#" target="_blank" rel="noopener noreferrer">Read it on Habbo Origins</a>
+                                        </p>
                                         <h3 class="modal-article-title" id="event-modal-article-title"></h3>
                                         <p class="modal-article-meta" id="event-modal-article-meta"></p>
                                         <div class="modal-article-body" id="event-modal-article-body"></div>

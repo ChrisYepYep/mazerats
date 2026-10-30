@@ -1612,6 +1612,18 @@
             // Graded into the maze's night: some of its own colour, then the page's shade, which runs down the screen.
             const night = new Float32Array(SH);
             for (let v = 0; v < SH; v++) night[v] = 1 - shadeAt(Math.min(1, v * K_TILE / H)) * 0.95;
+            /* LIGHT MODE (30 Oct 2026, the owner's: under it the trees "look too
+               dark, and some are distorted"): the dark-mode bulb gives Frost a
+               pale daytime page (html[data-light], css/theme-frostlight.css),
+               and trees graded into the night sat on it as dark cut-outs, each
+               with a near-black smear for a shadow. By day they take no night
+               shade, lean to the ice instead of the night's blue, and are lifted
+               (a gamma, so the snow goes white and the needles a living green
+               while the outline stays the darkest thing); the shadow is a soft
+               navy. Redrawn when the mode is switched (see the observer below). */
+            const day = document.documentElement.hasAttribute("data-light");
+            const hue = day ? [196, 220, 240] : tint;
+            const lift = x => day ? 255 * Math.pow(Math.max(0, Math.min(255, x)) / 255, 0.62) : x;
             function paint(u, v, c, z, k, a) {
                 if (u < 0 || v < 0 || u >= SW || v >= SH) return false;
                 // Behind the maze's own nearer walls: hidden. Behind our nearer snow or tree: hidden.
@@ -1619,10 +1631,10 @@
                 const i = v * SW + u;
                 if (z < zb[i]) return false;
                 zb[i] = z;
-                const f = (NIGHT[k] || 0.8) * night[v], d = i * 4;
-                out.data[d] = (c[0] + (tint[0] - c[0]) * 0.08) * f;
-                out.data[d + 1] = (c[1] + (tint[1] - c[1]) * 0.08) * f;
-                out.data[d + 2] = (c[2] + (tint[2] - c[2]) * 0.08) * f;
+                const f = day ? 1 : (NIGHT[k] || 0.8) * night[v], d = i * 4;
+                out.data[d] = lift((c[0] + (hue[0] - c[0]) * 0.08) * f);
+                out.data[d + 1] = lift((c[1] + (hue[1] - c[1]) * 0.08) * f);
+                out.data[d + 2] = lift((c[2] + (hue[2] - c[2]) * 0.08) * f);
                 out.data[d + 3] = a == null ? 255 : a;
                 return true;
             }
@@ -1808,7 +1820,10 @@
                     if (e > 1 || U < 0 || V < 0 || U >= SW || V >= SH || kindAt(U, V) !== T_FLOOR) continue;
                     const d = (V * SW + U) * 4, k = 1 - 0.32 * smooth(1 - e);
                     // On bare floor (no snow laid there), the shadow is a soft dark of its own over the maze.
-                    if (!out.data[d + 3]) { out.data[d] = 2; out.data[d + 1] = 5; out.data[d + 2] = 10; out.data[d + 3] = Math.round(255 * (1 - k) * 1.2); continue; }
+                    if (!out.data[d + 3]) {
+                        if (day) { out.data[d] = 34; out.data[d + 1] = 70; out.data[d + 2] = 118; out.data[d + 3] = Math.round(255 * (1 - k) * 0.55); continue; }
+                        out.data[d] = 2; out.data[d + 1] = 5; out.data[d + 2] = 10; out.data[d + 3] = Math.round(255 * (1 - k) * 1.2); continue;
+                    }
                     out.data[d] *= k; out.data[d + 1] *= k; out.data[d + 2] *= k * 0.96 + 0.04;
                 }
                 const ou = t.u - sp.fx, ov = t.v - sp.fy;
@@ -1833,7 +1848,10 @@
         let t = 0;
         const onResize = () => { clearTimeout(t); t = setTimeout(() => { if (on) draw(); }, 200); };
         addEventListener("resize", onResize);
-        Object.assign(bgTrees, { stop() { removeEventListener("resize", onResize); clearTimeout(t); }, redraw: draw });
+        // Light mode switched on or off (the bulb): the trees change between night and day.
+        let modeWatch = null;
+        try { modeWatch = new MutationObserver(() => { if (on) draw(); }); modeWatch.observe(document.documentElement, { attributes: true, attributeFilter: ["data-light"] }); } catch (e) { modeWatch = null; }
+        Object.assign(bgTrees, { stop() { removeEventListener("resize", onResize); clearTimeout(t); if (modeWatch) modeWatch.disconnect(); }, redraw: draw });
     }
 
     function decorateAll() {

@@ -877,6 +877,8 @@ document.addEventListener("DOMContentLoaded", () => {
         sayOrderStatus("");
         // And the skins' unsaved dates, the same way (js/admin-skin.js).
         if (window.AdminSkin && typeof window.AdminSkin.reset === "function") window.AdminSkin.reset();
+        // And the homepage menu's unsaved layout (js/admin-menu.js, 30 Oct 2026).
+        if (window.AdminMenu && typeof window.AdminMenu.reset === "function") window.AdminMenu.reset();
     }
 
     /* The panels that live in files of their own (js/admin-guides.js,
@@ -1042,7 +1044,8 @@ document.addEventListener("DOMContentLoaded", () => {
            (30 Oct 2026, the bug scan; js/admin-skin.js), the same once-only
            way: resetAccountPanels drops both after the loop. */
         const skins = window.AdminSkin && typeof window.AdminSkin.isDirty === "function" ? window.AdminSkin : null;
-        const settingsDirty = () => !paletteAsked && (spotOrderChanged() || !!(skins && skins.isDirty()));
+        const menuCard = window.AdminMenu && typeof window.AdminMenu.isDirty === "function" ? window.AdminMenu : null;
+        const settingsDirty = () => !paletteAsked && (spotOrderChanged() || !!(skins && skins.isDirty()) || !!(menuCard && menuCard.isDirty()));
         let loggedOut = false;
         try {
             /* Round again if, once the awaits are back, something is open
@@ -1304,7 +1307,11 @@ document.addEventListener("DOMContentLoaded", () => {
         "ff-open": "Opened Fallin' Furni",
         "scout-open": "Opened Scout's Trail",
         "advent-open": "Pressed Advent",
-        "advent-door": "Opened an advent door"
+        "advent-door": "Opened an advent door",
+        // The archive's opening view (30 Oct 2026; js/home.js renderOpening).
+        "opening": "Used the opening view",
+        // The bulb in the archive window (30 Oct 2026).
+        "dark": "Switched dark mode"
     };
     const PAGE_NAMES = {
         home: "The archive", welcome: "Landing page", wizard: "Atlas", legal: "Privacy & terms",
@@ -1317,7 +1324,14 @@ document.addEventListener("DOMContentLoaded", () => {
         "profile-open": { "self": "Their own", "other": "Somebody else's" },
         "daily-open": { odd: "Odd One Out", guess: "Guess the Maze" },
         "boards-open": { all: "All dailies", guess: "Guess the Maze", odd: "Odd One Out", ff: "Fallin' Furni", pura: "Pura Panic" },
-        "ff-open": { menu: "From the menu", link: "From a link", route: "At /fallinfurni", boards: "From the leaderboards", other: "Other" },
+        "ff-open": { menu: "From the menu", link: "From a link", route: "At /fallinfurni", boards: "From the leaderboards", opening: "From the opening view", other: "Other" },
+        "opening": {
+            title: "The window's title (back to it)", surprise: "Surprise me", spotlight: "A spotlight", now: "On now", added: "Recently added",
+            guess: "Guess the Maze", odd: "Odd One Out", ff: "Fallin' Furni", pura: "Pura Panic", boards: "Leaderboards",
+            events: "All events", whatsnew: "What's New", refresh: "Refresh featured", open: "Open mazes", archived: "Archived",
+            collab: "Collabs", timeline: "Timeline", furni: "Furni", missing: "Missing Pieces"
+        },
+        "dark": { on: "Turned it on", off: "Turned it off" },
         // The bat game's score, as the band js/skin-halloween.js sends (never the score itself).
         "bat-end": { "0-99": "Under 100", "100-499": "100–499", "500-999": "500–999", "1000-2499": "1,000–2,499", "2500+": "2,500 or more" },
         // Whether the Advent button found them signed in (js/skin-xmas-advent.js).
@@ -9542,7 +9556,8 @@ document.addEventListener("DOMContentLoaded", () => {
         // And a notification being written (26 Oct 2026).
         const noticeDirty = !!(window.AdminNotifications && typeof AdminNotifications.isDirty === "function" && AdminNotifications.isDirty());
         // And a moved spotlight order, and the skins' dates, unsaved (30 Oct 2026, the bug scan).
-        const settingsDirty = spotOrderChanged() || !!(window.AdminSkin && typeof AdminSkin.isDirty === "function" && AdminSkin.isDirty());
+        const settingsDirty = spotOrderChanged() || !!(window.AdminSkin && typeof AdminSkin.isDirty === "function" && AdminSkin.isDirty())
+            || !!(window.AdminMenu && typeof AdminMenu.isDirty === "function" && AdminMenu.isDirty());
         if (!Object.keys(COLLECTIONS).some(isFormDirty) && !isContributorFormDirty() && !whatsNewDirty && !noticeDirty && !settingsDirty) return;
         e.preventDefault();
         e.returnValue = "";

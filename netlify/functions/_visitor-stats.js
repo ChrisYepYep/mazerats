@@ -39,7 +39,11 @@ const LABELLED = [
     "daily-share", "pura-play", "pura-finish", "pura-name", "pura-lights", "tab",
     "bat-end", "advent-open", "advent-door",
     // How the Fallin' Furni window was reached: "menu", "link" or "route" (26 Oct 2026).
-    "ff-open"
+    "ff-open",
+    // What was pressed on the archive's opening view (30 Oct 2026).
+    "opening",
+    // Dark mode switched "on" or "off" (30 Oct 2026).
+    "dark"
 ];
 
 // A flag per visit: did anything of this name happen in it?

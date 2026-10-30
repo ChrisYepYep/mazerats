@@ -80,6 +80,11 @@
            MazeErrors.leaving opens its "visitor is leaving" window. */
         function bounce() {
             try { if (window.MazeErrors && typeof MazeErrors.leaving === "function") MazeErrors.leaving("/"); } catch (e) { /* reporting is never worth staying */ }
+            /* Said, so the landing page does not send this visitor straight
+               back here (30 Oct 2026: index.html's head goes on to /home
+               when the site was last seen open, and an unreadable settings
+               answer bounces with that note still saying "enter"). */
+            try { sessionStorage.setItem("mazerats_bounced", String(Date.now())); } catch (e) { /* the landing page's own guard */ }
             location.replace("/");
         }
 
@@ -658,6 +663,17 @@
          gated visitor bounced to the landing page is not counted as a visit
          to the archive. index.html, privacy.html, 404.html and wizard.html
          keep their own loaders as they were. -->
+    <!-- Dark mode (30 Oct 2026): a visitor's own switch, the bulb in the
+         archive window's grab bar, worn over whatever palette or skin is
+         showing. Under Frost, the Christmas palette, which is already dark,
+         the same switch gives LIGHT mode instead (the owner's). Both sheets
+         are built by tools/themes.js (css/theme-dark.css on html[data-dark],
+         css/theme-frostlight.css on html[data-light]), loaded only when worn,
+         and last in the head so they follow every other. Set here, before the
+         first paint, and again whenever the palette changes under the page. -->
+    <link id="dark-css" rel="stylesheet">
+    <link id="light-css" rel="stylesheet">
+    <script>(function(){var d=document.documentElement,dk=document.getElementById("dark-css"),lt=document.getElementById("light-css"),want=false;function sheet(l,h){if(!l.getAttribute("href"))l.href=h;}function apply(){var light=want&&d.getAttribute("data-theme")==="frost",dark=want&&!light;if(dark){sheet(dk,"/css/theme-dark.css");if(!d.hasAttribute("data-dark"))d.setAttribute("data-dark","");}else if(d.hasAttribute("data-dark"))d.removeAttribute("data-dark");if(light){sheet(lt,"/css/theme-frostlight.css");if(!d.hasAttribute("data-light"))d.setAttribute("data-light","");}else if(d.hasAttribute("data-light"))d.removeAttribute("data-light");}window.__mrDarkOn=function(){return want;};window.__mrDarkIsLight=function(){return d.getAttribute("data-theme")==="frost";};window.__mrSetDark=function(v){want=!!v;apply();try{localStorage.setItem("mazerats_dark",want?"1":"0");}catch(e){}};try{want=localStorage.getItem("mazerats_dark")==="1";}catch(e){}apply();try{new MutationObserver(apply).observe(d,{attributes:true,attributeFilter:["data-theme"]});}catch(e){}})();</script>
 </head>
 <body data-page="home">
 
@@ -839,7 +855,14 @@
             <div class="chrome-window" id="browse-window" tabindex="-1">
                 <img class="window-peek-rat" src="assets/img/rat_peek.png" alt="" aria-hidden="true">
                 <div class="chrome-titlebar">
-                    <h2>Origins Maze Archive</h2>
+                    <!-- The window's name takes you back to its opening view
+                         (30 Oct 2026, the owner's), as pressing the tab that
+                         is already showing does. -->
+                    <h2><button type="button" class="chrome-title-home" id="archive-home-btn" aria-label="Origins Maze Archive: back to the start" data-track="opening" data-track-label="title">Origins Maze Archive</button></h2>
+                    <!-- Dark mode (30 Oct 2026, the owner's): a bulb where a
+                         window's close box goes, as Pura Panic's and Fallin'
+                         Furni's lights are switched. js/home.js wires it. -->
+                    <button type="button" class="chrome-light" id="dark-toggle" aria-label="Dark mode" aria-pressed="false" data-track="dark" data-track-label="on"></button>
                 </div>
                 <!-- A landmark, so somebody arriving by screen reader can jump
                      to the archive's own navigation rather than tabbing the
@@ -866,15 +889,15 @@
                              control beside it already carries a real label
                              for the same reason. -->
                         <label class="visually-hidden" for="room-search">Search the archive by name, builder or tag</label>
-                        <!-- The placeholder names furni deliberately. The search
-                             reads the whole record now — description, details and
-                             every piece the scan found in the rooms — and the one
-                             part of that nobody would guess at is that "bonsai"
-                             or "piano" finds the mazes containing one. A field
-                             that says "Name, builder or tag" is a field nobody
-                             tries it in. -->
-                        <input type="text" id="room-search" placeholder="Name, builder, tag or furni…"
+                        <!-- "Search the archive" (30 Oct 2026, the owner's): with
+                             Go and the glass inside the box, the old hint naming
+                             furni ("Name, builder, tag or furni…") no longer fit
+                             and was cut mid-word. The search still reads the
+                             whole record, furni included; the label says so. -->
+                        <span class="opening-search-icon" aria-hidden="true"></span>
+                        <input type="text" id="room-search" placeholder="Search the archive"
                                aria-label="Search the archive by name, builder, tag, description or the furni in a room">
+                        <button type="button" class="view-switch-btn opening-search-go" id="room-go">Go<span class="chrome-go-arrow" aria-hidden="true"></span></button>
                     </div>
                     <div class="sort-box">
                         <!-- The option text reads "Sort by: …" and carries the
@@ -949,6 +972,25 @@
                     <div class="chrome-frame">
                         <button type="button" class="chrome-frame-minimize-toggle" id="chrome-frame-minimize-toggle" aria-label="Restore the results"><span class="chrome-frame-minimize-arrow" aria-hidden="true"></span></button>
                         <div class="chrome-body">
+                            <!-- THE OPENING VIEW'S SEARCH (30 Oct 2026, the owner's):
+                                 shown while neither tab is picked, looking through
+                                 mazes and events together. A drawer the frame's full
+                                 width, touching its top, in what the search row wears
+                                 in the Mazes and Events tabs; the list scrolls under it
+                                 and its scrollbar starts below it. Go sits inside the
+                                 box. Shown by #browse-window.is-opening (see
+                                 renderOpening in js/home.js). -->
+                            <div class="opening-search-bar">
+                                <div class="opening-search" id="opening-search">
+                                    <label class="visually-hidden" for="opening-search-input">Search mazes and events by name, builder, tag or furni</label>
+                                    <span class="opening-field">
+                                        <span class="opening-search-icon" aria-hidden="true"></span>
+                                        <input type="text" id="opening-search-input" placeholder="Search mazes and events: name, builder, furni…" autocomplete="off">
+                                        <button type="button" class="view-switch-btn opening-search-go" id="opening-go" data-track="opening" data-track-label="go">Go<span class="chrome-go-arrow" aria-hidden="true"></span></button>
+                                    </span>
+                                    <button type="button" class="view-switch-btn opening-dice" id="opening-dice" aria-label="Surprise me: open a maze at random" data-track="opening" data-track-label="surprise"><svg class="opening-die" viewBox="0 0 14 14" width="14" height="14" aria-hidden="true" shape-rendering="crispEdges"><rect x="0.5" y="0.5" width="13" height="13" rx="2" fill="currentColor" stroke="#000"/><rect x="3" y="3" width="2" height="2" fill="#000"/><rect x="6" y="6" width="2" height="2" fill="#000"/><rect x="9" y="9" width="2" height="2" fill="#000"/></svg><span class="opening-dice-label">Surprise me</span></button>
+                                </div>
+                            </div>
                             <!-- One line over the list: a quiet note on the left
                                  (whichever of the two applies) and "Clear filter" on
                                  the right. Takes no room when all three are hidden. -->
@@ -1774,7 +1816,10 @@
                                                  rebuilt against a tag whitelist on the way in, never from
                                                  anything fetched here. -->
                                             <div class="modal-article" id="modal-article" hidden>
-                                                <p class="modal-article-kicker">From Habbo Origins</p>
+                                                <p class="modal-article-kicker">Archived from Habbo Origins</p>
+                                                <p class="modal-article-origin" hidden>
+                                                    <a href="#" target="_blank" rel="noopener noreferrer">Read it on Habbo Origins</a>
+                                                </p>
                                                 <!-- An h3 under the window's h2 (30 Oct 2026, the bug scan); the
                                                      article's own headings are read a level below it (home.js). -->
                                                 <h3 class="modal-article-title" id="modal-article-title"></h3>

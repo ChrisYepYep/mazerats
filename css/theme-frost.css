@@ -9,7 +9,7 @@
    completely inert until js/site.js puts that attribute on <html>. The
    classic palette is not defined here and is not affected by anything in it.
 
-   1126 rules, 1809 declarations, hues 214 (surfaces) / 196 (accents).
+   1179 rules, 1891 declarations, hues 214 (surfaces) / 196 (accents).
 */
 :root[data-theme="frost"] {
     --bg-black: #02060c;
@@ -544,7 +544,8 @@ html[data-theme="frost"]::-webkit-scrollbar-button {
 
 [data-theme="frost"] .chrome-nav-top .chrome-nav-btn.active::before {
     border-image-source: none;
-    background: #d0e6ec;
+    border: 1px solid #000;
+    background: linear-gradient(#d0e6ec, #d0e6ec) content-box, #ffffff padding-box;
     filter: none;
 }
 
@@ -555,6 +556,10 @@ html[data-theme="frost"]::-webkit-scrollbar-button {
 
 [data-theme="frost"] .chrome-nav-sub .chrome-nav-btn.active::after {
     background: #ced7db;
+}
+
+html[data-theme="frost"]:not([data-theme]) .chrome-nav-top .chrome-nav-btn:not(.active)::before {
+    filter: sepia(0.25) saturate(0.5) brightness(0.95) contrast(1.05);
 }
 
 [data-theme="frost"] .chrome-nav-btn-mazes.active .chrome-nav-icon {
@@ -655,7 +660,8 @@ html[data-theme="frost"]::-webkit-scrollbar-button {
     color: #ffffff;
 }
 
-[data-theme="frost"] #featured-frame-list .chrome-list-row .ec-title .ec-title-name {
+[data-theme="frost"] #featured-frame-list .chrome-list-row .ec-title .ec-title-name,
+[data-theme="frost"] .opening-featured .chrome-list-row .ec-title .ec-title-name {
     color: #ffffff;
 }
 
@@ -714,7 +720,8 @@ html[data-theme="frost"]::-webkit-scrollbar-button {
     background: rgba(2, 6, 13, 0.85);
 }
 
-[data-theme="frost"] #search-wrap::before {
+[data-theme="frost"] #search-wrap::before,
+[data-theme="frost"] #browse-window.is-opening .opening-search-bar::before {
     border-image-source: url('../assets/img/frost/btn_active.png?v=b3d234f7');
     filter: saturate(0.54) brightness(1.18) hue-rotate(4deg);
 }
@@ -775,25 +782,33 @@ html[data-theme="frost"]::-webkit-scrollbar-button {
 }
 
 [data-theme="frost"] #featured-frame-list .chrome-list-row h3,
+[data-theme="frost"] .opening-featured .chrome-list-row h3,
 [data-theme="frost"] #featured-frame-list .chrome-list-row .row-creator,
+[data-theme="frost"] .opening-featured .chrome-list-row .row-creator,
 [data-theme="frost"] #featured-frame-list .chrome-list-row .row-desc,
+[data-theme="frost"] .opening-featured .chrome-list-row .row-desc,
 [data-theme="frost"] #featured-frame-list .chrome-list-row .row-date,
-[data-theme="frost"] #featured-frame-list .chrome-list-row .chrome-go {
+[data-theme="frost"] .opening-featured .chrome-list-row .row-date,
+[data-theme="frost"] #featured-frame-list .chrome-list-row .chrome-go,
+[data-theme="frost"] .opening-featured .chrome-list-row .chrome-go {
     color: #000;
 }
 
-[data-theme="frost"] .search-box input {
+[data-theme="frost"] .search-box input,
+[data-theme="frost"] .opening-search input {
     background: var(--parchment);
     border: 1.5px solid var(--chrome-border);
     color: #051326;
     box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.25);
 }
 
-[data-theme="frost"] .search-box input::placeholder {
+[data-theme="frost"] .search-box input::placeholder,
+[data-theme="frost"] .opening-search input::placeholder {
     color: #162b48;
 }
 
-[data-theme="frost"] .search-box input:focus {
+[data-theme="frost"] .search-box input:focus,
+[data-theme="frost"] .opening-search input:focus {
     outline: none;
     border-color: var(--amber);
 }
@@ -2313,6 +2328,14 @@ html[data-theme="frost"]:not([data-theme]) .room-links-refs-text a:focus-visible
     color: var(--amber-bright);
 }
 
+[data-theme="frost"] .modal-article-origin a {
+    color: var(--amber-text);
+}
+
+[data-theme="frost"] .modal-article-origin a:hover {
+    color: var(--amber-bright);
+}
+
 html[data-theme="frost"]:not([data-theme]) .modal-article-title,
 html[data-theme="frost"]:not([data-theme]) .modal-article-body h3,
 html[data-theme="frost"]:not([data-theme]) .modal-article-body h4,
@@ -2323,11 +2346,13 @@ html[data-theme="frost"]:not([data-theme]) .modal-article-body a {
 }
 
 html[data-theme="frost"]:not([data-theme]) .modal-article-kicker,
+html[data-theme="frost"]:not([data-theme]) .modal-article-origin a,
 html[data-theme="frost"]:not([data-theme]) .modal-article-source a {
     color: color-mix(in srgb, var(--amber-text), var(--parchment) 60%);
 }
 
 html[data-theme="frost"]:not([data-theme]) .modal-article-body a:hover,
+html[data-theme="frost"]:not([data-theme]) .modal-article-origin a:hover,
 html[data-theme="frost"]:not([data-theme]) .modal-article-source a:hover {
     color: var(--parchment);
 }
@@ -2531,12 +2556,7 @@ html[data-theme="frost"]:not([data-theme]) .modal-article-source a:hover {
     color: var(--amber-bright);
 }
 
-[data-theme="frost"] .timeline-entry-by,
-[data-theme="frost"] .timeline-entry-note {
-    color: var(--parchment-dim);
-}
-
-[data-theme="frost"] .timeline-entry-note {
+[data-theme="frost"] .timeline-entry-by {
     color: var(--parchment-dim);
 }
 
@@ -5560,6 +5580,252 @@ html[data-theme="frost"]:not([data-theme]) .modal-article-source a:hover {
     text-shadow: none;
 }
 
+[data-theme="frost"] #browse-window.is-opening > .featured-frame > .chrome-frame {
+    box-shadow: 0 -3px 0 rgba(0, 0, 0, 0.3);
+}
+
+[data-theme="frost"] .chrome-title-home {
+    border: 0;
+    background: none;
+    color: inherit;
+    text-shadow: inherit;
+}
+
+[data-theme="frost"] .chrome-title-home:focus-visible {
+    outline: 1px solid currentColor;
+}
+
+[data-theme="frost"] .opening-search-go {
+    box-shadow: inset 0 1px 0 var(--chrome-highlight);
+}
+
+[data-theme="frost"] .opening-search-icon {
+    border: 2px solid #162b48;
+}
+
+[data-theme="frost"] .opening-search-icon::after {
+    background: #162b48;
+}
+
+[data-theme="frost"] .opening-die {
+    color: var(--parchment);
+}
+
+[data-theme="frost"] .opening {
+    --opening-cream: #cad9df;
+    --opening-ink: #02080f;
+    color: var(--parchment);
+}
+
+[data-theme="frost"] .opening-spot {
+    border: 1px solid var(--chrome-border);
+    box-shadow: 2px 2px 0 rgba(0, 0, 0, 0.4);
+}
+
+[data-theme="frost"] .opening-spot .spotlight-frame {
+    border: 0;
+    box-shadow: none;
+}
+
+[data-theme="frost"] .opening-head-title {
+    border: 0;
+    background: color-mix(in srgb, var(--opening-cream) 30%, transparent);
+    color: var(--opening-cream);
+    text-shadow: 1px 1px 0 #000;
+}
+
+[data-theme="frost"] .opening-head-rule {
+    background: repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.18) 0 2px, transparent 2px 4px);
+}
+
+[data-theme="frost"] .opening-more {
+    border: 0;
+    background: none;
+    color: var(--amber-bright);
+}
+
+[data-theme="frost"] .opening-more:hover,
+[data-theme="frost"] .opening-more:focus-visible {
+    color: var(--parchment);
+}
+
+[data-theme="frost"] .opening-name {
+    color: var(--amber-bright);
+}
+
+[data-theme="frost"] .opening-sub {
+    color: var(--amber-text);
+}
+
+[data-theme="frost"] .opening-found {
+    color: var(--amber-text);
+}
+
+[data-theme="frost"] .opening-now-row,
+[data-theme="frost"] .opening-card,
+[data-theme="frost"] .opening-game,
+[data-theme="frost"] .opening-explore button {
+    border: 1px solid var(--chrome-border);
+    background: rgba(0, 0, 0, 0.25);
+    box-shadow: 2px 2px 0 rgba(0, 0, 0, 0.4);
+    color: var(--parchment);
+}
+
+[data-theme="frost"] .opening-now-row:hover,
+[data-theme="frost"] .opening-card:hover,
+[data-theme="frost"] .opening-explore button:hover,
+[data-theme="frost"] .opening-now-row:focus-visible,
+[data-theme="frost"] .opening-card:focus-visible,
+[data-theme="frost"] .opening-explore button:focus-visible {
+    background: rgba(255, 255, 255, 0.06);
+}
+
+[data-theme="frost"] .opening-now-row:focus-visible,
+[data-theme="frost"] .opening-card:focus-visible,
+[data-theme="frost"] .opening-explore button:focus-visible,
+[data-theme="frost"] .opening-nudge:focus-visible {
+    outline: 2px solid var(--amber-bright);
+}
+
+[data-theme="frost"] .opening-now-row {
+    background: color-mix(in srgb, var(--opening-cream), #000 10%);
+}
+
+[data-theme="frost"] .opening-now-row:hover,
+[data-theme="frost"] .opening-now-row:focus-visible {
+    background: color-mix(in srgb, var(--opening-cream), #000 4%);
+}
+
+[data-theme="frost"] .opening-now-row .opening-name {
+    color: var(--opening-ink);
+}
+
+[data-theme="frost"] .opening-now-row .opening-sub,
+[data-theme="frost"] .opening-now-row .chrome-go {
+    color: color-mix(in srgb, var(--opening-ink) 75%, var(--opening-cream));
+}
+
+[data-theme="frost"] .opening-now-thumb {
+    background: rgba(0, 0, 0, 0.3) center / cover;
+    box-shadow: 0 0 0 1px #000;
+}
+
+[data-theme="frost"] .opening-card-pic {
+    background: rgba(0, 0, 0, 0.3) center / cover;
+}
+
+[data-theme="frost"] .opening-flag {
+    border: 1px solid #000;
+    background: #6f8f4f;
+    box-shadow: 1px 1px 0 rgba(0, 0, 0, 0.5);
+    color: #f4ffe8;
+}
+
+[data-theme="frost"] .opening-flag.is-event {
+    background: #7f94a8;
+    color: #f1f7ff;
+}
+
+[data-theme="frost"] .opening-flag.is-guide {
+    background: #4d8ba2;
+    color: #ffffff;
+}
+
+[data-theme="frost"] .opening-flag.is-archived {
+    background: #6b6271;
+    color: #f1ecf5;
+}
+
+[data-theme="frost"] .opening-game-art {
+    background: rgba(0, 0, 0, 0.35) center / cover;
+}
+
+[data-theme="frost"] .opening-game-art.is-guess::after {
+    background: rgba(10, 4, 16, 0.35);
+}
+
+[data-theme="frost"] .opening-game-art.is-guess span {
+    color: #fff;
+    text-shadow: 2px 2px 0 #000;
+}
+
+[data-theme="frost"] .opening-game-art.is-odd i {
+    background: center / cover;
+    box-shadow: 0 0 0 1px #000;
+}
+
+[data-theme="frost"] .opening-game-art.is-odd i::before {
+    background: inherit;
+}
+
+[data-theme="frost"] .opening-game-art.is-odd i:nth-child(3) {
+    outline: 1px dashed #fff;
+}
+
+[data-theme="frost"] #featured-grid .opening-game-art.is-ff {
+    background: #092346 url("../assets/img/opening-fallinfurni.png") 37% 0 / 214px 74px no-repeat;
+}
+
+[data-theme="frost"] #featured-grid .opening-game-art.is-pura {
+    background: #4f4f4f url("../assets/img/opening-purapanic.png") 50% 0 / 214px 74px no-repeat;
+}
+
+[data-theme="frost"] .opening-stats {
+    color: var(--amber-text);
+}
+
+[data-theme="frost"] .opening-stats b {
+    color: var(--amber-bright);
+}
+
+[data-theme="frost"] .opening-x-n {
+    color: var(--amber-bright);
+}
+
+[data-theme="frost"] .opening-x-ico {
+    color: var(--amber-bright);
+}
+
+[data-theme="frost"] .opening-nudge {
+    border: 1px dashed rgba(255, 255, 255, 0.22);
+    background: none;
+    color: var(--amber-text);
+}
+
+[data-theme="frost"] .opening-nudge:hover {
+    background: rgba(255, 255, 255, 0.04);
+}
+
+[data-theme="frost"] .opening-nudge b {
+    color: var(--amber-bright);
+}
+
+[data-theme="frost"] .opening-nudge u {
+    color: var(--parchment);
+}
+
+[data-theme="frost"] .opening-nudge-mark {
+    background: var(--amber-text);
+    color: #120818;
+}
+
+[data-theme="frost"] .chrome-light {
+    border: 0;
+    background: url('../assets/img/frost/modal_topclose_bulb.png?v=e37e57af') center / 14px 13px no-repeat;
+}
+
+[data-theme="frost"] .chrome-light:focus-visible {
+    outline: 1px solid currentColor;
+}
+
+html[data-theme="frost"][data-dark] .chrome-light {
+    filter: drop-shadow(0 0 3px var(--neon-soft)) brightness(1.15);
+}
+
+html[data-theme="frost"][data-light] .chrome-light {
+    filter: drop-shadow(0 0 3px var(--neon-soft));
+}
+
 /* ------------------------------------------- COLOUR THAT IS INFORMATION
 
    Not recoloured, and re-stated here so it still wins. The difficulty
@@ -5596,43 +5862,59 @@ html[data-theme="frost"]:not([data-theme]) .modal-article-source a:hover {
     border-color: #5c5c5c;
 }
 
-[data-theme="frost"] #featured-frame-list .chrome-list-row[data-difficulty="easy"] {
+[data-theme="frost"] #featured-frame-list .chrome-list-row[data-difficulty="easy"],
+[data-theme="frost"] .opening-featured .chrome-list-row[data-difficulty="easy"] {
     background: #63c07f;
 }
 
-[data-theme="frost"] #featured-frame-list .chrome-list-row[data-difficulty="medium"] {
+[data-theme="frost"] #featured-frame-list .chrome-list-row[data-difficulty="medium"],
+[data-theme="frost"] .opening-featured .chrome-list-row[data-difficulty="medium"] {
     background: #ebcd5d;
 }
 
-[data-theme="frost"] #featured-frame-list .chrome-list-row[data-difficulty="hard"] {
+[data-theme="frost"] #featured-frame-list .chrome-list-row[data-difficulty="hard"],
+[data-theme="frost"] .opening-featured .chrome-list-row[data-difficulty="hard"] {
     background: #fa7646;
 }
 
-[data-theme="frost"] #featured-frame-list .chrome-list-row[data-difficulty="very-hard"] {
+[data-theme="frost"] #featured-frame-list .chrome-list-row[data-difficulty="very-hard"],
+[data-theme="frost"] .opening-featured .chrome-list-row[data-difficulty="very-hard"] {
     background: #ec434a;
 }
 
-[data-theme="frost"] #featured-frame-list .chrome-list-row[data-difficulty="extreme"] {
+[data-theme="frost"] #featured-frame-list .chrome-list-row[data-difficulty="extreme"],
+[data-theme="frost"] .opening-featured .chrome-list-row[data-difficulty="extreme"] {
     background: #731418;
 }
 
-[data-theme="frost"] #featured-frame-list .chrome-list-row[data-difficulty="impossible"] {
+[data-theme="frost"] #featured-frame-list .chrome-list-row[data-difficulty="impossible"],
+[data-theme="frost"] .opening-featured .chrome-list-row[data-difficulty="impossible"] {
     background: #4a4a4a;
 }
 
 [data-theme="frost"] #featured-frame-list .chrome-list-row[data-difficulty="extreme"] h3,
+[data-theme="frost"] .opening-featured .chrome-list-row[data-difficulty="extreme"] h3,
 [data-theme="frost"] #featured-frame-list .chrome-list-row[data-difficulty="extreme"] .row-creator,
+[data-theme="frost"] .opening-featured .chrome-list-row[data-difficulty="extreme"] .row-creator,
 [data-theme="frost"] #featured-frame-list .chrome-list-row[data-difficulty="extreme"] .row-desc,
+[data-theme="frost"] .opening-featured .chrome-list-row[data-difficulty="extreme"] .row-desc,
 [data-theme="frost"] #featured-frame-list .chrome-list-row[data-difficulty="extreme"] .row-date,
-[data-theme="frost"] #featured-frame-list .chrome-list-row[data-difficulty="extreme"] .chrome-go {
+[data-theme="frost"] .opening-featured .chrome-list-row[data-difficulty="extreme"] .row-date,
+[data-theme="frost"] #featured-frame-list .chrome-list-row[data-difficulty="extreme"] .chrome-go,
+[data-theme="frost"] .opening-featured .chrome-list-row[data-difficulty="extreme"] .chrome-go {
     color: #d47979;
 }
 
 [data-theme="frost"] #featured-frame-list .chrome-list-row[data-difficulty="impossible"] h3,
+[data-theme="frost"] .opening-featured .chrome-list-row[data-difficulty="impossible"] h3,
 [data-theme="frost"] #featured-frame-list .chrome-list-row[data-difficulty="impossible"] .row-creator,
+[data-theme="frost"] .opening-featured .chrome-list-row[data-difficulty="impossible"] .row-creator,
 [data-theme="frost"] #featured-frame-list .chrome-list-row[data-difficulty="impossible"] .row-desc,
+[data-theme="frost"] .opening-featured .chrome-list-row[data-difficulty="impossible"] .row-desc,
 [data-theme="frost"] #featured-frame-list .chrome-list-row[data-difficulty="impossible"] .row-date,
-[data-theme="frost"] #featured-frame-list .chrome-list-row[data-difficulty="impossible"] .chrome-go {
+[data-theme="frost"] .opening-featured .chrome-list-row[data-difficulty="impossible"] .row-date,
+[data-theme="frost"] #featured-frame-list .chrome-list-row[data-difficulty="impossible"] .chrome-go,
+[data-theme="frost"] .opening-featured .chrome-list-row[data-difficulty="impossible"] .chrome-go {
     color: #d6d6d6;
 }
 
@@ -5692,7 +5974,8 @@ html[data-theme="frost"]:not([data-theme]) .modal-article-source a:hover {
    the browser will. hue-rotate is dropped because it was tuned against brown;
    saturate and brightness are hue-preserving and stay. */
 [data-theme="frost"] .chrome-nav-btn.active::before,
-[data-theme="frost"] #search-wrap::before {
+[data-theme="frost"] #search-wrap::before,
+[data-theme="frost"] #browse-window.is-opening .opening-search-bar::before {
     filter: saturate(1) brightness(1.08);
 }
 

@@ -134,7 +134,14 @@ const EVENT_NAMES = new Set([
     /* The two game windows opened (26 Oct 2026, the bug scan): Fallin'
        Furni's (js/home.js, labelled with how — "menu", "link", "route") and
        Scout's Trail's (js/rat-race.js). */
-    "ff-open", "scout-open"
+    "ff-open", "scout-open",
+    /* The archive's opening view (30 Oct 2026, js/home.js renderOpening):
+       what was pressed in it, labelled with the piece ("spotlight", "now",
+       "added", "guess", "surprise", "timeline"...), never which record. */
+    "opening",
+    /* Dark mode switched on or off from the bulb in the archive window
+       (30 Oct 2026), labelled "on" or "off". */
+    "dark"
 ]);
 
 function limiterKey(event) {

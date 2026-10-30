@@ -2578,12 +2578,16 @@ body[data-page="home"] .hero { padding-top: 18px; }
    added back by hand since the sprite's own rounded corners go with it. */
 .chrome-nav-top .chrome-nav-btn.active::before {
     border-image-source: none;
-    /* Without this, the base rule's 13px solid border (defaulting to
-       currentColor, i.e. this tab's own #1a0f04 text color) still rendered
-       as a dark ring around the new fill instead of one uniform block. */
-    border-style: none;
+    /* The sprite's edge, drawn here since the sprite is not used (30 Oct
+       2026, the owner's: the picked tab had none, unlike every other tab).
+       btn_inactive.png's: a 1px black outline, then a 1px rim lighter than
+       the fill inside it — the padding ring, in a lighter tone of the fill,
+       which each palette recolours with it. The fill is unchanged. */
+    border: 1px solid #000;
     border-radius: 8px;
-    background: #c3a886;
+    padding: 1px;
+    /* A gradient of one colour: only the last layer may be a bare colour. */
+    background: linear-gradient(#c3a886, #c3a886) content-box, #e8cfae padding-box;
     filter: none;
 }
 
@@ -2651,6 +2655,16 @@ body[data-page="home"] .hero { padding-top: 18px; }
 }
 
 .chrome-nav-top .chrome-nav-btn::before { border-width: 13px; }
+
+/* THE TWO BIG TABS, NOT PICKED (30 Oct 2026, the owner's): a lighter, dull
+   cream rather than the dark brown, nearer the picked tab. The same sprite
+   and the same filter as every unpicked tab, with only its brightness
+   raised (0.66 there), so the outline, highlights and lowlights are the
+   sprite's own. The site's own palette only: each palette keeps its tabs
+   as they were. */
+html:not([data-theme]) .chrome-nav-top .chrome-nav-btn:not(.active)::before {
+    filter: sepia(0.25) saturate(0.5) brightness(0.95) contrast(1.05);
+}
 
 /* Same technique as the sub-nav row's middle button above (see
    .chrome-nav-sub .chrome-nav-btn:nth-child(2)) — Mazes widens 1px into
@@ -3371,7 +3385,8 @@ body[data-page="admin"] .admin-contributor-count {
    fills (see #featured-frame-list). The plate is black, so the name has to
    keep its own colour there — but featured rows are mazes only, so this is
    belt and braces against the day one is not. */
-#featured-frame-list .chrome-list-row .ec-title .ec-title-name { color: #fff8ec; }
+#featured-frame-list .chrome-list-row .ec-title .ec-title-name,
+.opening-featured .chrome-list-row .ec-title .ec-title-name { color: #fff8ec; }
 
 .chrome-list-row .row-desc {
     font-family: 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace;
@@ -3385,8 +3400,11 @@ body[data-page="admin"] .admin-contributor-count {
 /* Featured rows keep the default line-height — the explicit values above
    exist only to hold the plain rows' spacing where it was. */
 #featured-frame-list .chrome-list-row h3,
+.opening-featured .chrome-list-row h3,
 #featured-frame-list .chrome-list-row .row-creator,
-#featured-frame-list .chrome-list-row .row-desc {
+.opening-featured .chrome-list-row .row-creator,
+#featured-frame-list .chrome-list-row .row-desc,
+.opening-featured .chrome-list-row .row-desc {
     line-height: normal;
 }
 
@@ -3647,7 +3665,11 @@ body[data-page="admin"] .admin-contributor-count {
    .chrome-nav-btn.active::before) — on its own pseudo-element rather than
    the element itself, so the brightening filter tints only this painted-on
    background and not the real search/sort controls sitting on top of it. */
-#search-wrap::before {
+/* The opening view's search drawer wears the same (30 Oct 2026, the
+   owner's): named here rather than copied, so it is this row's sprite and
+   filter in every palette (tools/themes.js copies the rule whole). */
+#search-wrap::before,
+#browse-window.is-opening .opening-search-bar::before {
     content: "";
     position: absolute;
     inset: 0;
@@ -4083,12 +4105,18 @@ body[data-page="admin"] .admin-contributor-count {
    background tints toward its own maze's difficulty rating instead of the
    flat rgba(0,0,0,0.25) above, using the same hues as .tag.difficulty-*
    just translated to a low-alpha fill instead of solid text/border. */
-#featured-frame-list .chrome-list-row[data-difficulty="easy"] { background: #63c07f; }
-#featured-frame-list .chrome-list-row[data-difficulty="medium"] { background: #ebcd5d; }
-#featured-frame-list .chrome-list-row[data-difficulty="hard"] { background: #fa7646; }
-#featured-frame-list .chrome-list-row[data-difficulty="very-hard"] { background: #ec434a; }
-#featured-frame-list .chrome-list-row[data-difficulty="extreme"] { background: #731418; }
-#featured-frame-list .chrome-list-row[data-difficulty="impossible"] { background: #4a4a4a; }
+#featured-frame-list .chrome-list-row[data-difficulty="easy"],
+.opening-featured .chrome-list-row[data-difficulty="easy"] { background: #63c07f; }
+#featured-frame-list .chrome-list-row[data-difficulty="medium"],
+.opening-featured .chrome-list-row[data-difficulty="medium"] { background: #ebcd5d; }
+#featured-frame-list .chrome-list-row[data-difficulty="hard"],
+.opening-featured .chrome-list-row[data-difficulty="hard"] { background: #fa7646; }
+#featured-frame-list .chrome-list-row[data-difficulty="very-hard"],
+.opening-featured .chrome-list-row[data-difficulty="very-hard"] { background: #ec434a; }
+#featured-frame-list .chrome-list-row[data-difficulty="extreme"],
+.opening-featured .chrome-list-row[data-difficulty="extreme"] { background: #731418; }
+#featured-frame-list .chrome-list-row[data-difficulty="impossible"],
+.opening-featured .chrome-list-row[data-difficulty="impossible"] { background: #4a4a4a; }
 
 /* The row tints above are solid, mid-to-light colours that the shared
    light-on-dark text tones (h3's --amber-bright, .row-creator/.row-desc's
@@ -4098,10 +4126,15 @@ body[data-page="admin"] .admin-contributor-count {
    .status-badge) keep their own colours: they carry their own dark fill,
    so they stay readable and still colour-code at a glance. */
 #featured-frame-list .chrome-list-row h3,
+.opening-featured .chrome-list-row h3,
 #featured-frame-list .chrome-list-row .row-creator,
+.opening-featured .chrome-list-row .row-creator,
 #featured-frame-list .chrome-list-row .row-desc,
+.opening-featured .chrome-list-row .row-desc,
 #featured-frame-list .chrome-list-row .row-date,
-#featured-frame-list .chrome-list-row .chrome-go {
+.opening-featured .chrome-list-row .row-date,
+#featured-frame-list .chrome-list-row .chrome-go,
+.opening-featured .chrome-list-row .chrome-go {
     color: #000;
     font-family: 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace;
     font-size: 0.5625rem;
@@ -4113,7 +4146,8 @@ body[data-page="admin"] .admin-contributor-count {
    weight alone (see the @font-face pair at the top), so 700 here is what
    loads that file — the shared rule above leaves the rest of the row at
    400 on the regular cut. Size stays as the rest of the row. */
-#featured-frame-list .chrome-list-row h3 {
+#featured-frame-list .chrome-list-row h3,
+.opening-featured .chrome-list-row h3 {
     font-weight: 700;
 }
 
@@ -4124,18 +4158,28 @@ body[data-page="admin"] .admin-contributor-count {
    these more specific than the shared black rule above, so only this one
    difficulty is affected. */
 #featured-frame-list .chrome-list-row[data-difficulty="extreme"] h3,
+.opening-featured .chrome-list-row[data-difficulty="extreme"] h3,
 #featured-frame-list .chrome-list-row[data-difficulty="extreme"] .row-creator,
+.opening-featured .chrome-list-row[data-difficulty="extreme"] .row-creator,
 #featured-frame-list .chrome-list-row[data-difficulty="extreme"] .row-desc,
+.opening-featured .chrome-list-row[data-difficulty="extreme"] .row-desc,
 #featured-frame-list .chrome-list-row[data-difficulty="extreme"] .row-date,
-#featured-frame-list .chrome-list-row[data-difficulty="extreme"] .chrome-go {
+.opening-featured .chrome-list-row[data-difficulty="extreme"] .row-date,
+#featured-frame-list .chrome-list-row[data-difficulty="extreme"] .chrome-go,
+.opening-featured .chrome-list-row[data-difficulty="extreme"] .chrome-go {
     color: #d47979;
 }
 /* Impossible's grey is dark too: a light grey on it (about 6:1). */
 #featured-frame-list .chrome-list-row[data-difficulty="impossible"] h3,
+.opening-featured .chrome-list-row[data-difficulty="impossible"] h3,
 #featured-frame-list .chrome-list-row[data-difficulty="impossible"] .row-creator,
+.opening-featured .chrome-list-row[data-difficulty="impossible"] .row-creator,
 #featured-frame-list .chrome-list-row[data-difficulty="impossible"] .row-desc,
+.opening-featured .chrome-list-row[data-difficulty="impossible"] .row-desc,
 #featured-frame-list .chrome-list-row[data-difficulty="impossible"] .row-date,
-#featured-frame-list .chrome-list-row[data-difficulty="impossible"] .chrome-go {
+.opening-featured .chrome-list-row[data-difficulty="impossible"] .row-date,
+#featured-frame-list .chrome-list-row[data-difficulty="impossible"] .chrome-go,
+.opening-featured .chrome-list-row[data-difficulty="impossible"] .chrome-go {
     color: #d6d6d6;
 }
 
@@ -4143,7 +4187,8 @@ body[data-page="admin"] .admin-contributor-count {
    to the row's own full height (align-items: stretch, overriding the
    shared .chrome-list-row's flex-start) with just a thin 2px reveal of the
    row's own background/border around it. */
-#featured-frame-list .chrome-list-row {
+#featured-frame-list .chrome-list-row,
+.opening-featured .chrome-list-row {
     align-items: stretch;
     padding: 2px;
 }
@@ -4152,10 +4197,12 @@ body[data-page="admin"] .admin-contributor-count {
    the column takes the inset the others get from theirs (4 Oct 2026, the bug
    scan). Equal top and bottom, so Go stays on the row's middle. */
 @media (min-width: 641px) {
-    #featured-frame-list .chrome-list-row .row-side { padding: 7px 7px 7px 0; }
+    #featured-frame-list .chrome-list-row .row-side,
+    .opening-featured .chrome-list-row .row-side { padding: 7px 7px 7px 0; }
 }
 
-#featured-frame-list .row-thumb {
+#featured-frame-list .row-thumb,
+.opening-featured .row-thumb {
     height: auto;
     /* Matches the row's own 8px border-radius (the shared .row-thumb's 10px
        was tuned for the old fixed-size square thumbnail, not this full-
@@ -4170,7 +4217,8 @@ body[data-page="admin"] .admin-contributor-count {
    even that out (a pure paint-position shift, not a margin, so it doesn't
    change .row-info's own content height / feed back into .row-thumb's
    stretch). */
-#featured-frame-list .row-tags {
+#featured-frame-list .row-tags,
+.opening-featured .row-tags {
     position: relative;
     top: -1px;
 }
@@ -4179,18 +4227,21 @@ body[data-page="admin"] .admin-contributor-count {
    height — making it a column lets the tag row take the slack above it
    with margin-top: auto and settle against the bottom, whatever length
    the name and description run to. */
-#featured-frame-list .row-info {
+#featured-frame-list .row-info,
+.opening-featured .row-info {
     display: flex;
     flex-direction: column;
 }
 
-#featured-frame-list .row-tags {
+#featured-frame-list .row-tags,
+.opening-featured .row-tags {
     margin-top: auto;
 }
 
 /* Sits the name 3px lower in the row without moving anything under it —
    the tag row is bottom-anchored now, so this only eats into the slack. */
-#featured-frame-list .chrome-list-row h3 {
+#featured-frame-list .chrome-list-row h3,
+.opening-featured .chrome-list-row h3 {
     margin-top: 3px;
 }
 
@@ -4224,7 +4275,9 @@ body[data-page="admin"] .admin-contributor-count {
     max-width: 210px;
 }
 
-.search-box input {
+/* The opening view's box too (30 Oct 2026): the same field in the same drawer. */
+.search-box input,
+.opening-search input {
     width: 100%;
     background: var(--parchment);
     border: 1.5px solid var(--chrome-border);
@@ -4236,9 +4289,11 @@ body[data-page="admin"] .admin-contributor-count {
     box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.25);
 }
 
-.search-box input::placeholder { color: #6b5638; }
+.search-box input::placeholder,
+.opening-search input::placeholder { color: #6b5638; }
 
-.search-box input:focus {
+.search-box input:focus,
+.opening-search input:focus {
     outline: none;
     border-color: var(--amber);
 }
@@ -11063,6 +11118,16 @@ body[data-page="admin"] .site-footer p {
 .modal-article-source a { color: var(--amber-text); }
 .modal-article-source a:hover { color: var(--amber-bright); }
 
+/* The original's link, straight under the kicker (30 Oct 2026, the owner's):
+   the source link's own look. */
+.modal-article-origin {
+    margin: -2px 0 8px;
+    font-size: 0.78rem;
+}
+.modal-article-origin[hidden] { display: none; }
+.modal-article-origin a { color: var(--amber-text); }
+.modal-article-origin a:hover { color: var(--amber-bright); }
+
 /* THE ARTICLE'S AMBERS, LIFTED FOR THE CLASSIC BROWNS (30 Oct 2026, the bug
    scan). This panel sits on .room-desc-box's #554736, lighter than the
    surfaces the two ambers were picked for: --amber-bright (the title, the
@@ -11084,12 +11149,14 @@ html:not([data-theme]) .modal-article-body a {
     color: color-mix(in srgb, var(--amber-bright), var(--parchment) 50%);
 }
 html:not([data-theme]) .modal-article-kicker,
+html:not([data-theme]) .modal-article-origin a,
 html:not([data-theme]) .modal-article-source a {
     color: color-mix(in srgb, var(--amber-text), var(--parchment) 60%);
 }
 /* And hover still lightens, as above: these outrank those :hover rules, and
    --amber-bright would now be the darker of the two. */
 html:not([data-theme]) .modal-article-body a:hover,
+html:not([data-theme]) .modal-article-origin a:hover,
 html:not([data-theme]) .modal-article-source a:hover { color: var(--parchment); }
 
 /* ---------- the admin's own article field ---------- */
@@ -11600,27 +11667,13 @@ body[data-page="admin"] #activity-sessions {
     font-size: 0.5rem;
 }
 
-.timeline-entry-by,
-.timeline-entry-note {
+/* The entries' descriptions (.timeline-entry-note) are gone (30 Oct 2026, the owner's). */
+.timeline-entry-by {
     margin: 2px 0 0;
     font-family: 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace;
     font-size: 0.5625rem;
     line-height: 1.45;
     color: var(--parchment-dim);
-}
-
-.timeline-entry-note {
-    /* On a card now (5 Oct 2026), where --unknown-text is 4.0:1, as it is
-       on What's New's; its --parchment-dim, as .updatelog-meta. Two lines
-       of description under a name still read apart from the one-line
-       "Event hosted by". */
-    color: var(--parchment-dim);
-    /* Two lines is a summary; four is the archive entry, which is one click
-       away and better placed to hold it. */
-    display: -webkit-box;
-    -webkit-line-clamp: 2;
-    -webkit-box-orient: vertical;
-    overflow: hidden;
 }
 
 /* On a phone the timeline is the desktop's (5 Oct 2026, the owner's): the
@@ -21927,4 +21980,544 @@ body.is-viewer #bans-add { display: none !important; }
     /* Not the name heading's shadow, which it would inherit. */
     text-shadow: none;
     cursor: default;
+}
+
+/* ---- THE OPENING VIEW (30 Oct 2026, the owner's; renderOpening in
+   js/home.js) ----
+   What the archive window opens on: neither tab picked, and the frame
+   raised over the foot of the MAZES and EVENTS tabs, its one-pixel top edge
+   and the two-pixel solid shadow above it lying across them. The row of
+   sections under the tabs and the search row go under it; the frame
+   carries a search box of its own, fixed at its top while the view under
+   it scrolls. At the end of the file, past the narrow-layout block, so
+   nothing above restates these. */
+#browse-window.is-opening #sub-nav,
+#browse-window.is-opening #search-wrap,
+#browse-window.is-opening #featured-mazes-btn,
+#browse-window.is-opening #featured-frame-body,
+#browse-window.is-opening .list-status,
+#browse-window.is-opening .chrome-intro {
+    display: none !important;
+}
+#browse-window.is-opening > #top-nav { position: relative; z-index: 1; }
+#browse-window.is-opening > .featured-frame {
+    position: relative;
+    z-index: 4;
+    margin-top: -16px;
+    /* The frame's own top edge, alone: the wrapper's, which the Featured
+       strip normally sits under, doubled it. And nothing clipped, so the
+       shadow above the frame shows across the tabs. */
+    border-top: 0;
+    overflow: visible;
+}
+/* The sub-row's own shadow (.chrome-nav-sub .chrome-nav-btn), the row it
+   stands in for. */
+#browse-window.is-opening > .featured-frame > .chrome-frame {
+    box-shadow: 0 -3px 0 rgba(0, 0, 0, 0.3);
+}
+/* The sleeping rat stays in front of the raised frame. */
+#browse-window.is-opening .window-sleep-rat { z-index: 6; }
+
+/* The window's name, a way back here: still set as the title. */
+.chrome-title-home {
+    padding: 0;
+    border: 0;
+    background: none;
+    font: inherit;
+    color: inherit;
+    letter-spacing: inherit;
+    text-shadow: inherit;
+    cursor: var(--cursor-pointer);
+}
+.chrome-title-home:hover { text-decoration: underline dotted; text-underline-offset: 2px; }
+.chrome-title-home:focus-visible { outline: 1px solid currentColor; outline-offset: 2px; }
+
+/* The frame's own search: a drawer the frame's full width, touching its top
+   (30 Oct 2026, the owner's, from mock-up A), in what the Mazes and Events
+   search row wears (#search-wrap::before names it). Its top edge is drawn
+   above the frame, so it meets the frame's own. Out of the scrolling list,
+   so the list (and its scrollbar, below) start under it. */
+.opening-search-bar { display: none; }
+#browse-window.is-opening .opening-search-bar {
+    position: relative;
+    isolation: isolate;
+    z-index: 3;
+    display: block;
+    flex: none;
+    margin: 0 -18px;
+    padding: 12px 18px 13px;
+}
+#browse-window.is-opening .opening-search-bar::before { margin-top: -10px; }
+/* The list's scrollbar is placed against its own box here, so it starts
+   under the drawer rather than at the frame's top, behind it. */
+#browse-window.is-opening .custom-scrollbar-wrap--results { position: relative; }
+.opening-search {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+/* The box, with Go inside its right end. Its colours are the archive search
+   box's (.search-box input names it). */
+.opening-field { position: relative; flex: 1; min-width: 0; display: flex; }
+.opening-search input { flex: 1; min-width: 0; }
+/* Both search boxes, this one and the archive's (.search-box), the same
+   way (30 Oct 2026, the owner's): the glass on the left, Go filling the
+   right end to the box's top, right and bottom edges, and the box as tall
+   as the small buttons beside it (.view-switch-btn: its line, 4px padding
+   a side and 1px border a side). */
+/* And the Sort menu beside the archive's box, the same height (30 Oct 2026,
+   the owner's), so the whole row is one line. */
+.sort-box select {
+    height: calc(0.5625rem * 1.6 + 10px);
+    padding-top: 0;
+    padding-bottom: 0;
+}
+.opening-search input,
+.search-box input {
+    display: block;
+    height: calc(0.5625rem * 1.6 + 10px);
+    /* A hint too long for the box ends in an ellipsis, not a cut letter. */
+    text-overflow: ellipsis;
+    padding-top: 0;
+    padding-bottom: 0;
+    padding-left: 30px;
+    padding-right: 52px;
+}
+.opening-search-go {
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    padding: 0 9px;
+    border-radius: 0 5px 5px 0;
+    /* Its lit top only: a drop shadow would hang below the box. */
+    box-shadow: inset 0 1px 0 var(--chrome-highlight);
+    line-height: 1;
+    /* Inside the box on a touch screen too, where the small buttons are
+       otherwise held 44px tall (the box itself is the larger target, and
+       the keyboard's own Go does the same). */
+    min-height: 0;
+}
+/* The archive row's touch and phone rules size its small buttons by id
+   (#search-wrap .view-switch-btn); Go stays inside its box. */
+#search-wrap .search-box .opening-search-go { position: absolute; height: auto; }
+#search-wrap .search-box .opening-search-go::after { content: none; }
+.opening-search-go .chrome-go-arrow { margin-left: 4px; }
+.opening-search-icon {
+    position: absolute;
+    left: 11px;
+    top: 50%;
+    z-index: 1;
+    width: 9px;
+    height: 9px;
+    margin-top: -6px;
+    /* The placeholder's brown, as the box's other ink. */
+    border: 2px solid #6b5638;
+    border-radius: 50%;
+    pointer-events: none;
+}
+.opening-search-icon::after {
+    content: "";
+    position: absolute;
+    right: -5px;
+    bottom: -5px;
+    width: 5px;
+    height: 2px;
+    background: #6b5638;
+    transform: rotate(45deg);
+}
+.opening-dice { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+/* A die, drawn to whole pixels (an SVG in the markup): three pips on the
+   diagonal with a pixel of space round each. The first, made of two
+   pseudo-elements, ran its pips into one another. */
+.opening-die { flex: none; display: block; width: 14px; height: 14px; color: var(--parchment); }
+
+/* The view itself. */
+.opening {
+    /* The view's cream and the dark lettering on it (30 Oct 2026, the
+       owner's): the side MENU tab's own (.side-spine), so each palette
+       recolours them as it recolours that tab. */
+    --opening-cream: #d6bb96;
+    --opening-ink: #1a0f04;
+    padding: 0 0 6px;
+    font-family: 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace;
+    color: var(--parchment);
+}
+.opening-spot {
+    margin: 0 0 4px;
+    overflow: hidden;
+    border: 1px solid var(--chrome-border);
+    border-radius: 8px;
+    box-shadow: 2px 2px 0 rgba(0, 0, 0, 0.4);
+}
+.opening-spot .spotlight-frame { width: 100%; margin: 0; border: 0; border-radius: 0; box-shadow: none; }
+.opening-section { margin-top: 18px; }
+.opening-head { display: flex; align-items: center; gap: 10px; margin: 0 0 8px; }
+/* Each section's name on a banner (30 Oct 2026, the owner's pick, "C" from
+   the mock-ups): the small cream tab it was read as a button, so it is now
+   a band running out to the list's left edge, square there and cut on a
+   slant at its right, with no edge, no shadow and no arrow. Its cream muted, mixed
+   most of the way into the panel behind it (his: "more faded/muted"), the
+   lettering the cream itself with the site's solid shadow. */
+.opening-head { margin-left: -18px; }
+.opening-head-title {
+    margin: 0;
+    padding: 4px 22px 3px 18px;
+    border: 0;
+    border-radius: 0;
+    background: color-mix(in srgb, var(--opening-cream) 30%, transparent);
+    clip-path: polygon(0 0, 100% 0, calc(100% - 9px) 100%, 0 100%);
+    /* Volter Goldfish Bold at its own 9px (the owner's, for clearer
+       lettering): Volter is drawn for 9px and only sharp at it. */
+    font: 400 0.5625rem 'Volter Goldfish Bold', 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace;
+    letter-spacing: 0.75px;
+    text-transform: uppercase;
+    color: var(--opening-cream);
+    text-shadow: 1px 1px 0 #000;
+    white-space: nowrap;
+}
+.opening-head-rule {
+    flex: 1;
+    height: 1px;
+    background: repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.18) 0 2px, transparent 2px 4px);
+}
+.opening-more {
+    padding: 0;
+    border: 0;
+    background: none;
+    font: inherit;
+    font-size: 0.5625rem;
+    color: var(--amber-bright);
+    white-space: nowrap;
+    cursor: var(--cursor-pointer);
+}
+.opening-more:hover,
+.opening-more:focus-visible { color: var(--parchment); }
+.opening-more-arrow {
+    display: inline-block;
+    margin-left: 3px;
+    border-top: 3px solid transparent;
+    border-bottom: 3px solid transparent;
+    border-left: 4px solid currentColor;
+}
+.opening-name { display: block; font-size: 0.5625rem; line-height: 1.5; color: var(--amber-bright); }
+.opening-sub { display: block; font-size: 0.5625rem; line-height: 1.5; color: var(--amber-text); }
+.opening-found { margin: 14px 0 8px; font-size: 0.5625rem; color: var(--amber-text); }
+
+/* Cards: the rows' own dark glass, edge and shadow. */
+.opening-now-row,
+.opening-card,
+.opening-game,
+.opening-explore button {
+    border: 1px solid var(--chrome-border);
+    border-radius: 8px;
+    background: rgba(0, 0, 0, 0.25);
+    box-shadow: 2px 2px 0 rgba(0, 0, 0, 0.4);
+    color: var(--parchment);
+    font: inherit;
+    text-align: left;
+}
+.opening-now-row,
+.opening-card,
+.opening-explore button,
+.opening-nudge { cursor: var(--cursor-pointer); transition: background-color 0.12s ease-out; }
+.opening-now-row:hover, .opening-card:hover, .opening-explore button:hover,
+.opening-now-row:focus-visible, .opening-card:focus-visible, .opening-explore button:focus-visible { background: rgba(255, 255, 255, 0.06); }
+.opening-now-row:focus-visible, .opening-card:focus-visible, .opening-explore button:focus-visible,
+.opening-nudge:focus-visible { outline: 2px solid var(--amber-bright); outline-offset: 1px; }
+
+.opening-now { display: flex; flex-direction: column; gap: 6px; }
+.opening-now-row { display: flex; align-items: center; gap: 10px; width: 100%; padding: 7px 10px 7px 7px; }
+
+/* CREAM, A SHADE DARKER THAN THE SECTION TABS (30 Oct 2026, the owner's):
+   the On now rows, with the dark lettering on them. The Recently added and
+   Games tiles keep the maze rows' dark glass. */
+.opening-now-row { background: color-mix(in srgb, var(--opening-cream), #000 10%); }
+.opening-now-row:hover,
+.opening-now-row:focus-visible { background: color-mix(in srgb, var(--opening-cream), #000 4%); }
+.opening-now-row .opening-name { color: var(--opening-ink); }
+.opening-now-row .opening-sub,
+.opening-now-row .chrome-go { color: color-mix(in srgb, var(--opening-ink) 75%, var(--opening-cream)); }
+.opening-now-thumb {
+    flex: 0 0 44px;
+    height: 44px;
+    border-radius: 5px;
+    background: rgba(0, 0, 0, 0.3) center / cover;
+    box-shadow: 0 0 0 1px #000;
+    image-rendering: pixelated;
+}
+.opening-now-what { flex: 1; min-width: 0; }
+.opening-now-row .opening-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.opening-go { margin-left: 4px; }
+
+.opening-cards { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 8px; }
+.opening-card { display: flex; flex-direction: column; padding: 0; overflow: hidden; }
+.opening-card-pic {
+    position: relative;
+    display: block;
+    aspect-ratio: 16 / 10;
+    background: rgba(0, 0, 0, 0.3) center / cover;
+    border-bottom: 1px solid #000;
+    image-rendering: pixelated;
+}
+/* A guide's pixel art, whole. Under #featured-grid for the same reason as
+   the Guess the Maze picture below. */
+#featured-grid .opening-card-pic.is-art { background-size: contain; background-repeat: no-repeat; }
+.opening-card-what { display: block; padding: 7px 9px 8px; min-width: 0; }
+.opening-card .opening-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Its two dates, under who made it: the line wraps rather than cutting a date. */
+.opening-card-when { margin-top: 1px; }
+.opening-flag {
+    position: absolute;
+    left: 6px;
+    top: 6px;
+    padding: 3px 5px 2px;
+    border: 1px solid #000;
+    border-radius: 3px;
+    background: #6f8f4f;
+    box-shadow: 1px 1px 0 rgba(0, 0, 0, 0.5);
+    color: #f4ffe8;
+    /* Volter at its one crisp size, 9px: at 7.5px its letters broke up. */
+    font-size: 0.5625rem;
+    line-height: 1;
+    letter-spacing: 0;
+    text-transform: uppercase;
+}
+.opening-flag.is-event { background: #7f94a8; color: #f1f7ff; }
+.opening-flag.is-guide { background: #ab8b64; color: #fff8ec; }
+/* Old, and only now in the archive: a quiet grey, not a "new" colour. */
+.opening-flag.is-archived { background: #6b6271; color: #f1ecf5; }
+
+.opening-games { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 8px; }
+.opening-game { display: flex; flex-direction: column; overflow: hidden; }
+.opening-game-art {
+    position: relative;
+    display: block;
+    height: 74px;
+    background: rgba(0, 0, 0, 0.35) center / cover;
+    border-bottom: 1px solid #000;
+    image-rendering: pixelated;
+}
+/* Guess the Maze: a room, too blurred to tell, under a question mark.
+   Drawn larger than the strip, so the room fills it and no black corner
+   of the screenshot shows through the blur. */
+/* Under #featured-grid, so a palette's copy of .opening-game-art's
+   background (tools/themes.js, loaded after this file) cannot reset it. */
+#featured-grid .opening-game-art.is-guess { background-size: 260% auto; background-position: 50% 55%; }
+.opening-game-art.is-guess::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: rgba(10, 4, 16, 0.35);
+    backdrop-filter: blur(3px) saturate(0.7);
+}
+.opening-game-art.is-guess span {
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+    display: grid;
+    place-items: center;
+    font: 1.6rem Silkscreen, monospace;
+    color: #fff;
+    text-shadow: 2px 2px 0 #000;
+}
+/* Odd One Out: four rooms, one of them not like the others. */
+/* The four rooms fill the strip, top to bottom, whatever its width: a square
+   apiece left a band of empty strip under them. Two by two on a phone. */
+.opening-game-art.is-odd { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 3px; padding: 6px; }
+/* Each room drawn a size up inside its square (30 Oct 2026, the owner's:
+   zoomed in, clearer): the picture is a copy on ::before, scaled from the
+   middle and clipped by the square, so it fills whatever shape the square
+   is at any width. */
+.opening-game-art.is-odd i {
+    position: relative;
+    display: block;
+    min-height: 0;
+    overflow: hidden;
+    border-radius: 3px;
+    background: center / cover;
+    box-shadow: 0 0 0 1px #000;
+}
+.opening-game-art.is-odd i::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: inherit;
+    transform: scale(1.45);
+}
+/* The odd one: outlined, in its own colours. */
+.opening-game-art.is-odd i:nth-child(3) { outline: 1px dashed #fff; outline-offset: 1px; }
+/* Fallin' Furni and Pura Panic: the part of each link card that shows the
+   game, its room and its fallen blocks, the title lettering cropped away.
+   Under #featured-grid, as the Guess the Maze picture is, so a palette's
+   copy of .opening-game-art's background cannot reset them. */
+/* Fallin' Furni (30 Oct 2026, the owner's pick): a real frame of Pod Room
+   Gold, round 27, the figure mid-stride towards the bottom right and a pod
+   falling beside it with speed lines (scratchpad ffshots, podshot.js). The
+   game's own pixels at one to a CSS pixel, so never scaled: the strip's
+   full 214×74 on a computer, and on a phone the 128 that hold the whole
+   figure and the near half of the pod (37% across: the two together are
+   wider than a phone's strip). Placed from the border box so the picture's
+   foot sits under the strip's 1px rule rather than being squeezed. */
+#featured-grid .opening-game-art.is-ff {
+    background: #8a5c00 url("../assets/img/opening-fallinfurni.png") 37% 0 / 214px 74px no-repeat;
+    background-origin: border-box;
+}
+/* Pura Panic (30 Oct 2026, the owner's pick): a real frame of the well, a
+   pile in all four colours, at the game's own pixels one to a CSS pixel,
+   so never scaled; on a phone, the middle 128 of it. Played with the
+   module's real art: assets/furni/s_pura_mdl5_0_0_b.png lost the white
+   inside its cushion when it was extracted (every white pixel went see-
+   through, not only the background), which the game shows as a mesh. The
+   frame was played with those pixels put back as white, as the client
+   draws them, so each cushion is solid in its own colour. */
+#featured-grid .opening-game-art.is-pura {
+    background: #4f4f4f url("../assets/img/opening-purapanic.png") 50% 0 / 214px 74px no-repeat;
+    background-origin: border-box;
+}
+/* The name, what it is, and Play at the foot, level across the row. */
+.opening-game-what { flex: 1; display: flex; flex-direction: column; gap: 2px; padding: 8px 9px 9px; }
+.opening-daily { margin-left: 3px; vertical-align: 1px; }
+.opening-play { align-self: flex-start; margin-top: auto; }
+.opening-game-what .opening-sub { margin-bottom: 6px; }
+
+/* A list inside the list: not its padding twice. Its rows are the Featured
+   panel's own, tinted by difficulty: every #featured-frame-list rule names
+   .opening-featured beside it (30 Oct 2026, the owner's). */
+.opening-featured.chrome-list { display: flex; flex-direction: column; gap: 10px; padding: 0; }
+.opening-featured .chrome-list-row { margin: 0; }
+
+.opening-stats { margin: 0 0 8px; font-size: 0.5625rem; color: var(--amber-text); }
+.opening-stats b { font-weight: 400; color: var(--amber-bright); }
+.opening-explore { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+.opening-explore button {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+    padding: 8px 10px;
+    border-radius: 6px;
+    font-size: 0.5625rem;
+    white-space: nowrap;
+}
+/* The number or icon in a column of its own width, so every label starts at
+   the same place; and the number on the label's baseline (30 Oct 2026, the
+   owner's: they did not line up). Silkscreen's digits sat 3px below
+   Volter's line when the two were centred in the box. */
+.opening-x-n {
+    flex: 0 0 24px;
+    position: relative;
+    top: var(--x-n-lift, -2px);
+    font: 0.8rem/1 Silkscreen, monospace;
+    color: var(--amber-bright);
+}
+/* The icons are pictures, not text: centred on the label's capitals. */
+.opening-x-ico {
+    flex: 0 0 24px;
+    display: flex;
+    align-items: center;
+    color: var(--amber-bright);
+}
+.opening-x-ico svg { display: block; }
+
+.opening-nudge {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    margin-top: 16px;
+    padding: 9px 11px;
+    border: 1px dashed rgba(255, 255, 255, 0.22);
+    border-radius: 8px;
+    background: none;
+    font: inherit;
+    font-size: 0.5625rem;
+    line-height: 1.5;
+    text-align: left;
+    color: var(--amber-text);
+}
+.opening-nudge:hover { background: rgba(255, 255, 255, 0.04); }
+.opening-nudge b { font-weight: 400; color: var(--amber-bright); }
+.opening-nudge u { color: var(--parchment); }
+.opening-nudge-mark {
+    flex: 0 0 18px;
+    height: 18px;
+    display: grid;
+    place-items: center;
+    border-radius: 50%;
+    background: var(--amber-text);
+    color: #120818;
+    font: 0.7rem Silkscreen, monospace;
+}
+
+/* 16px on a touch screen or a phone, as the archive's own box is: under it,
+   iOS zooms the page in on the box the moment it is tapped. */
+@media (max-width: 640px), (pointer: coarse) {
+    .opening-search input { font-size: 16px; }
+    /* The box and Surprise me at the archive row's touch height (see "the
+       archive's search row, on a phone"), the die keeping a 44px press
+       through an invisible ::after as Timeline and Furni do. */
+    .opening-search input { height: 32px; }
+    #browse-window .opening-dice {
+        position: relative;
+        min-height: 0;
+        height: 32px;
+    }
+    #browse-window .opening-dice::after {
+        content: "";
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        width: max(100%, 44px);
+        height: 44px;
+        transform: translate(-50%, -50%);
+    }
+}
+@media (max-width: 640px) {
+    /* Just the die beside the search. */
+    .opening-dice-label { display: none; }
+    .opening-explore { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .opening-cards, .opening-games { gap: 6px; }
+    .opening-game-art.is-odd { grid-template-columns: repeat(2, minmax(0, 1fr)); grid-template-rows: repeat(2, minmax(0, 1fr)); }
+    /* A card's two dates one to a line, no dot left hanging at a line's end. */
+    .opening-card-when > span { display: block; }
+    .opening-card-when > .opening-when-dot { display: none; }
+    /* A row's start time and its pill need the width: the host and Go go. */
+    .opening-by, .opening-go { display: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+    .opening-now-row, .opening-card, .opening-explore button, .opening-nudge { transition: none; }
+}
+
+/* DARK MODE'S BULB (30 Oct 2026, the owner's): in the archive window's grab
+   bar where a close box would be, drawn in the close box's own frame with a
+   bulb for its X (modal_topclose_bulb.png, as Pura Panic's is), so each
+   palette recolours it with the rest of the chrome. Dark mode itself is
+   css/theme-dark.css, a layer over any palette (tools/themes.js). */
+.chrome-light {
+    position: absolute;
+    right: 10px;
+    top: calc(var(--titlebar-line, 50%) - 1px);
+    transform: translateY(-50%);
+    z-index: 1;
+    width: 26px;
+    height: 25px;
+    padding: 0;
+    border: 0;
+    background: url('../assets/img/modal_topclose_bulb.png') center / 14px 13px no-repeat;
+    image-rendering: pixelated;
+    cursor: var(--cursor-pointer);
+}
+.chrome-light:focus-visible { outline: 1px solid currentColor; outline-offset: -3px; }
+/* On (dark mode, or light mode under Frost), the bulb is the one lit thing
+   in the bar. */
+html[data-dark] .chrome-light { filter: drop-shadow(0 0 3px var(--neon-soft)) brightness(1.15); }
+/* And under Frost's light mode, lit the same way. */
+html[data-light] .chrome-light { filter: drop-shadow(0 0 3px var(--neon-soft)); }
+/* Where the spines move into the bar (900px and under, see "the spines on a
+   narrow window"), the Menu one takes the bar's right end: the bulb sits
+   just left of it, its art 6px clear. */
+@media (max-width: 900px) {
+    .chrome-light { right: 24px; }
 }

@@ -765,6 +765,110 @@ body.wr-on > .site-footer { display: none !important; }
     #wr-app .wr-ui .spot-order-when { order: 3; flex-basis: 100%; padding-left: calc(1.4em + 10px); }
 }
 
+/* ---- THE CONTROLS' LARGE CARDS, FOLDED (30 Oct 2026; js/admin-ctl-folds.js):
+   a title bar that opens and shuts the rest of the card, shut to start. The
+   card's own top label is the title, so it is not shown twice. */
+#wr-app .wr-ui .ctl-fold-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    background: none;
+    color: var(--wr-text);
+    font: 650 13px/1.3 var(--wr-font);
+    text-align: left;
+    cursor: var(--cursor-pointer, pointer);
+}
+#wr-app .wr-ui .ctl-fold-head:focus-visible { outline: 2px solid var(--wr-gold); outline-offset: 3px; border-radius: 4px; }
+#wr-app .wr-ui .ctl-fold-head:hover .ctl-fold-title { color: var(--wr-gold); }
+#wr-app .wr-ui .ctl-fold-arrow {
+    width: 0;
+    height: 0;
+    border-style: solid;
+    border-width: 5px 0 5px 7px;
+    border-color: transparent transparent transparent currentColor;
+    transition: transform 0.12s ease-out;
+}
+#wr-app .wr-ui .ctl-fold-head[aria-expanded="true"] .ctl-fold-arrow { transform: rotate(90deg); }
+#wr-app .wr-ui .ctl-fold-label { display: none; }
+#wr-app .wr-ui .ctl-card.is-folded > :not(.ctl-fold-head) { display: none !important; }
+/* The seasonal card has no padding of its own (its parts carry it). */
+#wr-app .wr-ui .sk-card > .ctl-fold-head { padding: 12px 16px; }
+#wr-app .wr-ui .sk-card:not(.is-folded) > .ctl-fold-head { border-bottom: 1px solid var(--wr-line); }
+/* The palette, at the foot of the seasonal card. */
+#wr-app .wr-ui .sk-palette { border-top: 1px solid var(--wr-line); }
+/* The launch date: retired, kept in the page for js/admin.js (warren.html). */
+#wr-app .wr-ui #launch-at.ctl-retired { display: none !important; }
+
+@media (prefers-reduced-motion: reduce) {
+    #wr-app .wr-ui .ctl-fold-arrow { transition: none; }
+}
+
+/* ---- THE HOMEPAGE MENU (30 Oct 2026; js/admin-menu.js): the menu top to
+   bottom, folds (a header: handle, name, Starts open, arrows, over its rows)
+   and rows on their own (handle, name, who sees it, arrows), in the
+   spotlight order's row look. A hidden
+   row is dimmed and struck through, an admins-only one marked in gold. */
+#wr-app .wr-ui .menu-lay-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    width: 100%;
+    max-width: 720px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+#wr-app .wr-ui .menu-lay-block {
+    border: 1px solid var(--wr-line);
+    border-radius: var(--wr-radius);
+    padding: 8px;
+    background: var(--wr-panel);
+}
+#wr-app .wr-ui .menu-lay-head { display: flex; align-items: center; gap: 8px; margin: 0 0 6px; font-family: var(--wr-font); }
+#wr-app .wr-ui .menu-lay-block-name { flex: 1 1 auto; font: 700 12px/1.2 var(--wr-font); letter-spacing: 0.06em; color: var(--wr-gold); }
+#wr-app .wr-ui .menu-lay-open { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; color: var(--wr-dim); cursor: var(--cursor-pointer, pointer); }
+#wr-app .wr-ui .menu-lay-rows { display: flex; flex-direction: column; gap: 5px; margin: 0; padding: 0; list-style: none; }
+#wr-app .wr-ui .menu-lay-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 5px 6px 5px 12px;
+    background: var(--wr-panel-2);
+    border: 1px solid var(--wr-line);
+    border-radius: var(--wr-radius);
+    font-family: var(--wr-font);
+}
+#wr-app .wr-ui .menu-lay-name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; font-weight: 600; color: var(--wr-text); }
+#wr-app .wr-ui .menu-lay-row.is-hidden .menu-lay-name { color: var(--wr-dim); text-decoration: line-through; }
+#wr-app .wr-ui .menu-lay-row.is-admins .menu-lay-name { color: var(--wr-gold); }
+#wr-app .wr-ui .menu-lay-seen { flex: 0 0 auto; width: auto; min-height: 26px; padding: 2px 6px; font-size: 12px; }
+#wr-app .wr-ui .menu-lay-row .ctl-btn,
+#wr-app .wr-ui .menu-lay-head .ctl-btn { min-height: 26px; padding: 3px 9px; }
+#wr-app .wr-ui .menu-lay-empty { padding: 10px 12px; font-size: 12px; color: var(--wr-dim); border: 1px dashed var(--wr-line); border-radius: var(--wr-radius); }
+/* Drag to reorder (the owner's): the handle, the one being dragged, and a
+   gold line where it would land (or the fold lit, when it would go in). */
+#wr-app .wr-ui .menu-lay-grip { flex: 0 0 auto; color: var(--wr-dim); font-size: 14px; line-height: 1; padding: 2px 2px; user-select: none; }
+#wr-app .wr-ui .menu-lay-grip[draggable="true"] { cursor: grab; }
+#wr-app .wr-ui .menu-lay-grip[draggable="true"]:hover { color: var(--wr-gold); }
+#wr-app .wr-ui .menu-lay-row.is-dragging,
+#wr-app .wr-ui .menu-lay-block.is-dragging { opacity: 0.4; }
+#wr-app .wr-ui .menu-lay-list .drop-before { box-shadow: 0 -3px 0 0 var(--wr-gold); }
+#wr-app .wr-ui .menu-lay-list .drop-after { box-shadow: 0 3px 0 0 var(--wr-gold); }
+#wr-app .wr-ui .menu-lay-list .drop-into { outline: 2px solid var(--wr-gold); outline-offset: 1px; }
+/* A row out on its own, beside the folds: the same row, said so. */
+#wr-app .wr-ui .menu-lay-loose { flex: 0 0 auto; font-size: 11px; color: var(--wr-dim); }
+/* The bottom of the list, only while dragging. */
+#wr-app .wr-ui .menu-lay-end { display: none; padding: 10px 12px; font-size: 12px; color: var(--wr-dim); border: 1px dashed var(--wr-line); border-radius: var(--wr-radius); }
+#wr-app .wr-ui .menu-lay-list.is-dragging .menu-lay-end { display: block; }
+@media (max-width: 560px) {
+    #wr-app .wr-ui .menu-lay-row { flex-wrap: wrap; }
+    #wr-app .wr-ui .menu-lay-name { flex-basis: 100%; }
+}
+
 /* ---- THE SEASONAL SKINS CARD (js/admin-skin.js): three parts, top to
    bottom — what visitors see, each skin's dates, a preview for you. */
 #wr-app .wr-ui .sk-card { gap: 0; padding: 0; overflow: hidden; }

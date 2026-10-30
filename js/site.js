@@ -20,6 +20,8 @@
         const blocked = JSON.parse(localStorage.getItem("mazerats_blocked") || "null");
         if (blocked && typeof blocked === "object" && (!blocked.until || Date.parse(blocked.until) > Date.now())) {
             if (window.MazeErrors && typeof MazeErrors.leaving === "function") MazeErrors.leaving("/");
+            // Not sent on to /home again by the landing page (30 Oct 2026; see bounce in home.html).
+            try { sessionStorage.setItem("mazerats_bounced", String(Date.now())); } catch (e) { /* the landing page's own guard */ }
             location.replace("/");
         }
     } catch (e) { /* unreadable: nothing to act on */ }
