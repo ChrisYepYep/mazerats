@@ -6,14 +6,16 @@
    added or last edited, with a line of what changed. This panel shows that
    same log and lets an admin
 
-     ADD   site news (a title, a few lines, an optional picture and link)
+     ADD   site news (a title, a few lines and an optional link)
            and notes about a maze or event (a line that opens it);
      AMEND any automatic entry: take it off the log, file it under another
            day, label it Added or Updated whatever the dates say, or give it
            its own line instead of the automatic one;
      POST  any entry to the Maze Rats Discord, by hand, one at a time (28 Oct
            2026): netlify/functions/whats-new-discord.js. The row says when
-           it last went, and posting it again asks first.
+           it last went, and posting it again asks first. New entries also go
+           on their own (30 Oct 2026, whats-new-autopost.js), behind the
+           "Post new entries to Discord by themselves" tick.
 
    Both are kept by netlify/functions/whats-new.js, and js/home.js applies
    them when it builds the log (WHAT'S NEW, BY HAND there). The days here
@@ -22,8 +24,8 @@
    made around midnight can sit a day apart in the two.
 
    A file of its own, like js/admin-guides.js: it shares the session token,
-   Api's authenticated fetch, admin.js's upload (window.AdminUpload) and its
-   question and sign-in boxes, and nothing else.
+   Api's authenticated fetch and admin.js's question and sign-in boxes, and
+   nothing else.
    =========================================================== */
 (function () {
     "use strict";
@@ -42,6 +44,7 @@
     const formEl = panel.querySelector("#wn-form");
     const searchEl = panel.querySelector("#wn-search");
     const hiddenEl = panel.querySelector("#wn-show-hidden");
+    const autoEl = panel.querySelector("#wn-discord-auto");
 
     /* The automatic change lines, as the homepage words them (CHANGE_WORDS
        in js/home.js), so an override's placeholder shows what it replaces. */
@@ -56,6 +59,7 @@
     let mounted = false;
     let rooms = [], events = [], guides = [], posts = [], overrides = new Map();
     let discord = new Map();    // key -> when it was last posted to Discord
+    let posting = null;         // the key on its way to Discord now
     let openOverride = null;    // the target whose override editor is open
     let editing = null;         // the post in the form ({} for a new one)
     let opened = "";            // editing as it was opened, for "unsaved changes?"
@@ -157,6 +161,16 @@
             ${g.items.map(rowHtml).join("")}`).join("");
     }
 
+    /* This entry's post, if it has gone (30 Oct 2026). The row is per record,
+       so a maze posted when it was added is not "posted" again on a later
+       day's Updated entry: that one is due in its turn. The day it went for
+       is kept on the row (`day`); older rows have only the day they went. */
+    function postedFor(e, key) {
+        const d = discord.get(key);
+        if (!d || e.post) return d || null;
+        return (d.day || dayOf(d.postedAt)) >= e.day ? d : null;
+    }
+
     function rowHtml(e) {
         const flags = [];
         if (e.o) {
@@ -166,7 +180,7 @@
             if (e.o.text) flags.push("own text");
         }
         const key = e.post ? `post:${e.post.id}` : e.target;
-        const posted = discord.get(key);
+        const posted = postedFor(e, key);
         return `
             <div class="chrome-list-row admin-row wn-row${e.hidden ? " is-hidden" : ""}" data-key="${esc(key)}">
                 <div class="row-info">
@@ -181,7 +195,11 @@
                            <button type="button" class="btn admin-delete-btn" data-wn="delete-post">Delete</button>`
                         : `<button type="button" class="btn admin-edit-btn" data-wn="amend">${openOverride === e.target ? "Close" : "Amend"}</button>
                            <button type="button" class="btn admin-edit-btn" data-wn="toggle-hide">${e.hidden ? "Show" : "Hide"}</button>`}
-                    ${e.hidden ? "" : `<button type="button" class="btn admin-edit-btn" data-wn="discord">${posted ? "Post again" : "Discord"}</button>`}
+                    ${e.hidden ? "" : posting === key
+                        // Going now (30 Oct 2026, the bug scan): Discord can take seconds to answer.
+                        ? `<button type="button" class="btn admin-edit-btn" data-wn="discord" disabled aria-label="Posting ${esc(e.name || "(untitled)")} to Discord">Posting…</button>`
+                        // Named, so a screen reader hears more than "Discord" on every row (30 Oct 2026).
+                        : `<button type="button" class="btn admin-edit-btn" data-wn="discord" aria-label="Post ${esc(e.name || "(untitled)")} to Discord${posted ? " again" : ""}">${posted ? "Post again" : "Discord"}</button>`}
                 </div>
             </div>
             ${!e.post && openOverride === e.target ? overrideHtml(e) : ""}`;
@@ -232,6 +250,8 @@
             posts = Array.isArray(wn && wn.posts) ? wn.posts : [];
             overrides = new Map((Array.isArray(wn && wn.overrides) ? wn.overrides : []).map(o => [o.target, o]));
             discord = new Map((Array.isArray(wn && wn.discord) ? wn.discord : []).map(d => [d.key, d]));
+            // On unless switched off: before its first run there is no row, and it starts on.
+            if (autoEl) autoEl.checked = !(wn && wn.auto && wn.auto.on === false);
             render();
         } catch (err) {
             if (gen !== loadGen) return;
@@ -287,21 +307,34 @@
         const e = entries().find(x => (x.post ? `post:${x.post.id}` : x.target) === key);
         if (!e) return;
         const label = e.verb || VERBS[e.activity] || "Added";
-        const before = discord.get(key);
+        const before = postedFor(e, key);
         const again = before
             ? `<br><br><strong>It was posted on ${esc(shortDay(before.postedAt))}${before.count > 1 ? ` (${before.count} times so far)` : ""}.</strong> This posts it again.`
             : "";
         if (!await ask(`Post this to the Maze Rats Discord?<br><br><strong>${esc(label)}: ${esc(e.name || "(untitled)")}</strong>${e.line ? `<br>${esc(e.line)}` : ""}${again}`)) return;
         if (busy) { await tell("Still saving the last change. Try again in a moment."); return; }
         busy = true;
+        // The row's button says Posting… and is off until Discord answers (30 Oct 2026).
+        // Put right in place, not by render(), which would drop an open Amend box's typing.
+        posting = key;
+        const btn = () => listEl.querySelector(`.wn-row[data-key="${CSS.escape(key)}"] [data-wn="discord"]`);
+        const was = btn();
+        const wasText = was ? was.textContent : "", wasLabel = was ? was.getAttribute("aria-label") : "";
+        if (was) { was.disabled = true; was.textContent = "Posting…"; was.setAttribute("aria-label", `Posting ${e.name || "(untitled)"} to Discord`); }
         try {
-            const res = await call(DISCORD_URL, "POST", { key, activity: e.activity, label, line: e.line || "" });
+            const res = await call(DISCORD_URL, "POST", { key, activity: e.activity, label, line: e.line || "", day: e.day });
             if (res && res.discord) discord.set(key, res.discord);
+            posting = null;
             render();
         } catch (err) {
+            posting = null;
+            const b = btn();
+            if (b) { b.disabled = false; b.textContent = wasText; b.setAttribute("aria-label", wasLabel); }
+            // A refusal (one already going from another tab, say) is said in the server's own words.
             if (!sessionGone(err)) await tell(err.message || "That couldn't be posted.");
         } finally {
             busy = false;
+            posting = null;
         }
     }
 
@@ -314,7 +347,7 @@
     async function mayDiscard() {
         if (!editing || !window.AdminWhatsNew.isDirty()) return true;
         const ask = window.AdminConfirm || (m => Promise.resolve(window.confirm(m)));
-        return !!(await ask("Discard the post you are writing? What you have typed, and any picture you added to it, will be lost."));
+        return !!(await ask("Discard the post you are writing? What you have typed will be lost."));
     }
 
     async function openPost(p, kind) {
@@ -408,8 +441,8 @@
             </div>`;
     }
 
-    // What's typed, kept on `editing` so a redraw (kind changed, picture
-    // uploaded) keeps it.
+    // What's typed, kept on `editing` so a redraw (kind or label changed)
+    // keeps it.
     function readForm() {
         formEl.querySelectorAll("[data-p]").forEach(el => { editing[el.dataset.p] = el.value; });
     }
@@ -446,26 +479,11 @@
         }
     }
 
-    async function upload(file) {
-        const status = formEl.querySelector("[data-p-status]");
-        if (status) status.textContent = "Uploading…";
-        const forEdit = editing;
-        try {
-            if (typeof window.AdminUpload !== "function") throw new Error("the uploader is not ready - reload the page");
-            const result = await window.AdminUpload(editing.title || "news", file, "news");
-            // The edit it was for has ended or another opened: nothing will
-            // point at this picture, so it goes now.
-            if (editing !== forEdit) { forget([result.key]); return; }
-            uploaded.add(result.key);
-            readForm();
-            editing.image = result.url;
-            renderForm();
-        } catch (err) {
-            if (sessionGone(err)) return;
-            const s = formEl.querySelector("[data-p-status]");
-            if (s) s.textContent = `Upload failed: ${err.message}`;
-        }
-    }
+    /* The news form's picture upload went (ebb778a8, 28 Oct 2026): every
+       news post has the same picture now. upload() and its Remove button
+       went with it (30 Oct 2026, the bug scan). A post saved before keeps
+       its stored image, sent back unchanged on save, and Delete still
+       clears a news/ picture it had. */
 
     // ------------------------------------------------------------ events
 
@@ -539,7 +557,6 @@
         if (!btn) return;
         if (btn.dataset.wn === "save-post") savePost();
         else if (btn.dataset.wn === "cancel-post") mayDiscard().then(ok => { if (ok) closePost(); });
-        else if (btn.dataset.wn === "unpic") { readForm(); editing.image = ""; renderForm(); }
     });
     formEl.addEventListener("submit", e => { e.preventDefault(); savePost(); });
     formEl.addEventListener("change", e => {
@@ -552,13 +569,29 @@
                 if (box) box.focus();
             }
         }
-        else if (e.target.matches("[data-p-upload]") && e.target.files && e.target.files[0]) upload(e.target.files[0]);
     });
 
     panel.querySelector("#wn-add-news").addEventListener("click", () => openPost(null));
     panel.querySelector("#wn-add-note").addEventListener("click", () => openPost(null, "note"));
     searchEl.addEventListener("input", render);
     hiddenEl.addEventListener("change", render);
+
+    /* Posting on its own, on or off (30 Oct 2026). Saved the moment it is
+       ticked, like the Controls switches; put back as it was if the save is
+       refused. Switched back on, it counts from then (whats-new.js), so what
+       was edited while it was off is not sent in a burst. */
+    if (autoEl) autoEl.addEventListener("change", async () => {
+        const on = autoEl.checked;
+        autoEl.disabled = true;
+        try {
+            await call(URL_, "PUT", { discordAuto: { on } });
+        } catch (err) {
+            autoEl.checked = !on;
+            if (!sessionGone(err)) await tell(err.message || "That couldn't be saved.");
+        } finally {
+            autoEl.disabled = false;
+        }
+    });
 
     // ------------------------------------------------------------ mount
 
@@ -586,7 +619,7 @@
             uploaded.clear();
             closePost();
             openOverride = null;
-            rooms = []; events = []; guides = []; posts = []; overrides = new Map(); discord = new Map();
+            rooms = []; events = []; guides = []; posts = []; overrides = new Map(); discord = new Map(); posting = null;
             listEl.innerHTML = "";
             mounted = false;
             maybeMount();

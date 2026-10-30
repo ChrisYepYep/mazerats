@@ -26,9 +26,11 @@
        text      this line instead of the automatic "what changed" one
      An override with nothing left in it is deleted rather than kept empty.
 
-   And DISCORD rows, { id: "d:" + key, type: "discord", key, postedAt, count }:
+   And DISCORD rows, { id: "d:" + key, type: "discord", key, postedAt, day, via, count }:
    an entry posted to the Discord, written by whats-new-discord.js and read
-   back here (?full=1 only) so the panel can say so.
+   back here (?full=1 only) so the panel can say so. And one SWITCH row,
+   { id: "discord-auto", type: "discord-auto", on, since }, for posting
+   on its own (whats-new-autopost.js), set by PUT { discordAuto: { on } }.
 
    GET          { posts, overrides } for everybody, through the edge as rooms
                 and events are (cachedJson); ?full=1 for a Warren account
@@ -159,7 +161,9 @@ async function read(col) {
         posts: rows.filter(r => r.type === "post").sort((a, b) => String(b.day).localeCompare(String(a.day))),
         overrides: rows.filter(r => r.type === "override"),
         // What has been posted to Discord, and when (whats-new-discord.js): the Warren's only.
-        discord: rows.filter(r => r.type === "discord")
+        discord: rows.filter(r => r.type === "discord"),
+        // Whether new entries go to Discord on their own (whats-new-autopost.js): the Warren's only.
+        auto: rows.find(r => r.type === "discord-auto") || null
     };
 }
 
@@ -188,6 +192,7 @@ exports.handler = async (event) => {
                a hidden one is how an automatic entry is taken off. */
             data.posts = data.posts.filter(p => p.hidden !== true);
             delete data.discord;
+            delete data.auto;
             return cachedJson(event, data, { vary: "full" });
         } catch (e) {
             if (isAuthUnavailable(e)) return AUTH_UNAVAILABLE;
@@ -215,6 +220,20 @@ exports.handler = async (event) => {
         if (!body || typeof body !== "object" || Array.isArray(body)) return json(400, { error: "Invalid request body" });
         await ensureUniqueIndex(col, "id");
         const now = new Date().toISOString();
+
+        /* Automatic posting to Discord, on or off (30 Oct 2026). Switched on,
+           it counts from now: what changed while it was off is not sent in a
+           burst (see whats-new-autopost.js). */
+        if (event.httpMethod === "PUT" && body.discordAuto !== undefined) {
+            if (!body.discordAuto || typeof body.discordAuto.on !== "boolean") return json(400, { error: "Automatic posting is on or off." });
+            const on = body.discordAuto.on;
+            const before = await col.findOne({ id: "discord-auto" }, { projection: { _id: 0 } });
+            const set = { type: "discord-auto", on, updatedAt: now };
+            if (on && !(before && before.on === true)) set.since = now;
+            const row = await col.findOneAndUpdate({ id: "discord-auto" }, { $set: set },
+                { upsert: true, returnDocument: "after", projection: { _id: 0 } });
+            return json(200, { auto: row });
+        }
 
         // An override: set, or cleared away when nothing is left in it.
         if (event.httpMethod === "PUT" && body.override !== undefined) {

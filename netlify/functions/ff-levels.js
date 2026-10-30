@@ -492,14 +492,39 @@ async function handle(event) {
         if (ids.size !== list.length || list.length !== all.length || all.some(l => !ids.has(l.id))) {
             return json(409, { error: "The level list has changed since it was loaded. Reload the editor and try again.", stale: true });
         }
+        /* No two levels on one number (30 Oct 2026, the bug scan): Mongo
+           hands ties back in no fixed order, so two levels sharing a number
+           could swap places between one load of the game and the next. The
+           editor never sends a tie; this keeps a crafted list from making one. */
+        if (new Set(list.map(r => Number(r.order))).size !== list.length) {
+            return json(400, { error: "Two levels cannot share a place in the order" });
+        }
         const was = new Map(all.map(l => [l.id, l.order]));
         const at = new Date().toISOString();
+        /* ALL AT ONCE, not one after another (30 Oct 2026, the bug scan).
+           Each writeLevel is several round trips (read, write, the version
+           and its tidying), and moving the first level to the end of a clean
+           1-50 run renumbers every level — a few hundred trips in a row,
+           enough to run into the function's time limit part-way and leave
+           the order half saved. The writes touch one level each and share
+           nothing, so they can go together. One that fails is said, rather
+           than answered as a 500 the editor reads as "nothing changed". */
+        const moves = list.filter(r => was.get(String(r.id)) !== Number(r.order));
+        const results = await Promise.allSettled(moves.map(r =>
+            writeLevel(db, String(r.id), { order: Number(r.order), updatedAt: at })));
         const changed = [];
-        for (const r of list) {
-            const order = Number(r.order);
-            if (was.get(String(r.id)) === order) continue;
-            const w = await writeLevel(db, String(r.id), { order, updatedAt: at });
+        let failed = 0;
+        for (const res of results) {
+            if (res.status === "rejected") { failed++; console.error("ff-levels: a reorder write failed", res.reason); continue; }
+            const w = res.value;
             if (w) changed.push({ id: w.id, order: w.order, rev: w.rev });
+        }
+        if (failed) {
+            return json(503, {
+                error: `${failed} level${failed === 1 ? "" : "s"} could not be renumbered just now, so the order is only partly saved. Reload the editor to see it as it stands, then move them again.`,
+                partial: true,
+                changed
+            });
         }
         return json(200, { changed });
     }

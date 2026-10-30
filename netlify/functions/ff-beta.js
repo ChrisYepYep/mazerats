@@ -17,17 +17,25 @@
    when both are true.
 
    THE CODE IS NOT CHECKED HERE. Typing it on the Coming Soon screen is
-   what makes the page ask (js/fallinfurni.js keeps only its hash), and
-   the answer depends on the tester mark alone: somebody who reads the
-   code out of the page learns nothing they can use, and a tester who
-   never typed it could only ask this for themselves. Not signed in, or a
-   session that has been ended, is a 401: the page says to sign in.
+   what makes the page ask (the code sits in fallinfurni.html in plain
+   text, BETA_CODE), and the answer depends on the tester mark alone:
+   somebody who reads the code out of the page learns nothing they can
+   use, and a tester who never typed it could only ask this for
+   themselves. Not signed in, or a session that has been ended, is a 401:
+   the page says to sign in.
+
+   AND NOT WHILE THEY COULD NOT PLAY ANYWAY (30 Oct 2026, the bug scan): a
+   tester who is banned, or whose nickname the admins have rejected, is
+   answered tester: false — the same writeRefusal (_bans.js) every game
+   write goes through, so the mark lets nobody past what a live game
+   would refuse them.
 
    A beta tester plays as an admin does on a closed game: no run token
    (ff-scores.js counts Beta as closed), so nothing goes on the boards. */
 const { getDb } = require("./_db");
 const { playerFrom, sessionRevoked } = require("./_player");
 const { SECURITY_HEADERS } = require("./_headers");
+const { writeRefusal } = require("./_bans");
 
 const json = (statusCode, data) => ({
     statusCode,
@@ -58,11 +66,18 @@ async function handler(event) {
         return json(503, { error: "That could not be checked just now" });
     }
     if (sessionRevoked(player, row)) return json(401, { error: "Not signed in" });
+    // Only asked for a tester: nobody else's answer can change (see above).
+    let tester = Boolean(row && row.ffBeta === true);
+    if (tester) {
+        const refusal = await writeRefusal(db, event, String(player.id), { game: true });
+        if (refusal && refusal.statusCode === 503) return json(503, { error: "That could not be checked just now" });
+        if (refusal) tester = false;
+    }
     return json(200, {
         // As settings.js stores it: Coming Soon with fallinFurniBeta (or a bare "beta").
         beta: Boolean(settings && (settings.fallinFurniState === "beta"
             || (settings.fallinFurniState === "coming-soon" && settings.fallinFurniBeta === true))),
-        tester: Boolean(row && row.ffBeta === true)
+        tester
     });
 }
 

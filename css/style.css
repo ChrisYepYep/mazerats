@@ -7220,8 +7220,16 @@ body[data-page="admin"] .admin-contributor-count {
     transition: color 0.15s, text-shadow 0.2s;
 }
 
+/* Lifted for the Classic browns, as the event article's links are (30 Oct
+   2026, the bug scan): --amber-bright on this #554736 panel is 3.91:1. */
+html:not([data-theme]) .room-links-refs-text a {
+    color: color-mix(in srgb, var(--amber-bright), var(--parchment) 50%);
+}
+
 .room-links-refs-text a:hover,
-.room-links-refs-text a:focus-visible {
+.room-links-refs-text a:focus-visible,
+html:not([data-theme]) .room-links-refs-text a:hover,
+html:not([data-theme]) .room-links-refs-text a:focus-visible {
     color: #fff8ec;
     text-shadow: 0 0 8px rgba(255, 248, 236, 0.75);
 }
@@ -11055,6 +11063,35 @@ body[data-page="admin"] .site-footer p {
 .modal-article-source a { color: var(--amber-text); }
 .modal-article-source a:hover { color: var(--amber-bright); }
 
+/* THE ARTICLE'S AMBERS, LIFTED FOR THE CLASSIC BROWNS (30 Oct 2026, the bug
+   scan). This panel sits on .room-desc-box's #554736, lighter than the
+   surfaces the two ambers were picked for: --amber-bright (the title, the
+   article's own headings and links) measured 3.91:1 there, and --amber-text
+   (the kicker and the "Read it on Habbo Origins" link) 3.51:1. Each is mixed
+   about halfway towards --parchment, which keeps the amber and the step
+   between the two: 4.73:1 and 4.68:1. Classic only — every theme's own
+   ambers already clear 4.5:1 on its own panel (4.5 to 8.7), so the themes
+   keep their look. Variables only, so tools/themes.js has nothing here to
+   recolour and needs no rerun for it; a copy it did make would be scoped
+   html[data-theme=…]:not([data-theme]), which matches nothing. Each
+   selector spelt out, not :is(h3, h4, …): its scope() splits on commas. */
+html:not([data-theme]) .modal-article-title,
+html:not([data-theme]) .modal-article-body h3,
+html:not([data-theme]) .modal-article-body h4,
+html:not([data-theme]) .modal-article-body h5,
+html:not([data-theme]) .modal-article-body h6,
+html:not([data-theme]) .modal-article-body a {
+    color: color-mix(in srgb, var(--amber-bright), var(--parchment) 50%);
+}
+html:not([data-theme]) .modal-article-kicker,
+html:not([data-theme]) .modal-article-source a {
+    color: color-mix(in srgb, var(--amber-text), var(--parchment) 60%);
+}
+/* And hover still lightens, as above: these outrank those :hover rules, and
+   --amber-bright would now be the darker of the two. */
+html:not([data-theme]) .modal-article-body a:hover,
+html:not([data-theme]) .modal-article-source a:hover { color: var(--parchment); }
+
 /* ---------- the admin's own article field ---------- */
 
 .admin-article-row {
@@ -12969,6 +13006,78 @@ body[data-page="admin"] #activity-sessions {
 }
 
 .side-menu-item.is-on .side-menu-badge { color: #32220d; }
+
+/* MAZES AND EVENTS (30 Oct 2026): a row with its sections folded under it.
+   The row and an arrow sit side by side — the row goes to the tab, the
+   arrow only folds — and the branch as a whole takes the place of one row,
+   with the same hashed rule and space above it that a row has. The sections
+   hang from a dotted line under their row, smaller and closer together,
+   so they read as part of it rather than as more rows of the menu. */
+.side-menu-branch {
+    position: relative;
+    margin-top: 11px;
+}
+.side-menu-branch:first-child { margin-top: 0; }
+.side-menu-item + .side-menu-branch::before,
+.side-menu-branch + .side-menu-branch::before,
+.side-menu-branch + .side-menu-item::before {
+    content: "------------------------------------------------";
+    position: absolute;
+    top: -10px;
+    left: -6px;
+    right: -6px;
+    height: 8px;
+    overflow: hidden;
+    white-space: nowrap;
+    font-size: 0.55rem;
+    line-height: 1;
+    letter-spacing: 1px;
+    color: rgba(26, 15, 4, 0.32);
+}
+.side-menu-branch-head {
+    display: flex;
+    align-items: stretch;
+    gap: 2px;
+}
+.side-menu-branch-head .side-menu-item {
+    flex: 1 1 auto;
+    min-width: 0;
+    margin-top: 0;
+}
+.side-menu-branch-toggle {
+    flex: 0 0 26px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    background: none;
+    border: 0;
+    border-radius: 3px;
+    color: #1a0f04;
+    cursor: var(--cursor-pointer);
+    transition: background-color 0.12s ease-out;
+}
+.side-menu-branch-toggle:hover,
+.side-menu-branch-toggle:focus-visible {
+    background: rgba(26, 15, 4, 0.1);
+    outline: none;
+}
+.side-menu-branch-toggle:focus-visible { outline: 2px solid #6b4b18; outline-offset: -1px; }
+.side-menu-branch-toggle[aria-expanded="true"] .side-menu-group-arrow { transform: rotate(90deg); }
+.side-menu-subfold .side-menu-fold-inner {
+    margin-left: 9px;
+    padding-left: 4px;
+    border-left: 1px dotted rgba(26, 15, 4, 0.4);
+}
+.side-menu-subfold.is-open .side-menu-fold-inner { padding-top: 2px; }
+.side-menu-item.side-menu-sub {
+    /* The whole width, so a lit section is lit edge to edge like a row,
+       not just behind its words. */
+    width: 100%;
+    margin-top: 0;
+    padding: 5px 7px;
+}
+.side-menu-sub + .side-menu-sub::before { content: none; }
 
 /* --- the same tab, on the room modal ------------------------------------
 
@@ -15486,6 +15595,8 @@ ol.fmt-ol-wide.fmt-ol-wide { padding-left: 3.4em; }
     margin: 0 0 12px;
 }
 .wn-tools .ctl-input { flex: 1 1 220px; max-width: 320px; }
+/* What the "by themselves" tick does (30 Oct 2026), between the tools and the list. */
+.wn-auto-hint { margin: -4px 0 14px; }
 .wn-check {
     display: inline-flex;
     align-items: center;
@@ -18812,6 +18923,10 @@ textarea.ctl-input.de-note {
     .guess-btn {
         min-height: 44px;
     }
+
+    /* The arrow that folds Mazes' and Events' sections out (30 Oct 2026):
+       as tall as its row already, and a thumb's width too. */
+    .side-menu-branch-toggle { flex-basis: 44px; }
 
     /* The archive's minimise bar was a 12px sliver spanning the window —
        easy to hit by accident while scrolling and hard to hit on purpose. */

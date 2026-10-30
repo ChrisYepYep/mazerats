@@ -140,6 +140,13 @@
   # `git add` warning applies to both, and to tools/furni-catalogue-seed.js.
   included_files = ["netlify/functions/_furnidata.json", "netlify/functions/_furni-api-map.json", "netlify/functions/_habbo-names.json", "netlify/functions/_furni-catalogue-seed.json", "netlify/functions/_furni-legacy.json", "netlify/functions/_furni-mirror.json", "js/featured-days.js", "js/dead-ends.js", "home.html"]
 
+# What's New posted to the Discord on its own (30 Oct 2026): every ten
+# minutes, each entry half an hour after its last save. A scheduled function
+# runs on the published site only and cannot be called over HTTP there; see
+# the file's header for what it posts and the switch in the Warren.
+[functions."whats-new-autopost"]
+  schedule = "*/10 * * * *"
+
 # ------------------------------------------------------------ THE ADMIN PANEL
 #
 # It lives at /warren, and it used to live at /admin.

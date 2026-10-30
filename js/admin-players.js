@@ -575,10 +575,25 @@
     // Only a Discord CDN picture goes in an <img>; the server says the same.
     function faceHtml(p, cls) {
         const a = p && typeof p.avatar === "string" && /^https:\/\/cdn\.discordapp\.com\//.test(p.avatar) ? p.avatar : "";
-        return a
-            ? `<img class="${cls}" src="${escapeHtml(a)}" alt="" aria-hidden="true" loading="lazy" referrerpolicy="no-referrer">`
+        return a && !deadFaces.has(a)
+            ? `<img class="${cls}" src="${escapeHtml(a)}" alt="" aria-hidden="true" loading="lazy" referrerpolicy="no-referrer" data-fallback="empty">`
             : `<span class="${cls}" aria-hidden="true"></span>`;
     }
+    /* A picture Discord no longer has (30 Oct 2026, the bug scan): the
+       avatar stored at their last sign-in, changed since, answers 404 and
+       showed as a broken image. It becomes the empty circle a player with
+       no picture has, and is not asked for again on the next redraw.
+       data-fallback tells js/error-report.js this failure is handled. */
+    const deadFaces = new Set();
+    document.addEventListener("error", (e) => {
+        const img = e.target;
+        if (!(img instanceof HTMLImageElement) || !img.classList.contains("pl-face")) return;
+        deadFaces.add(img.getAttribute("src"));
+        const span = document.createElement("span");
+        span.className = img.className;
+        span.setAttribute("aria-hidden", "true");
+        img.replaceWith(span);
+    }, true);
 
     // ------------------------------------------------------------- times
     // UTC on screen, as everywhere else in the Warren (see admin-errors.js);

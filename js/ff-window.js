@@ -184,12 +184,20 @@
         });
         try { dark = localStorage.getItem(DARK_KEY) === "1"; } catch (e) { /* private mode */ }
         try { big = localStorage.getItem(BIG_KEY) === "1"; } catch (e) { /* private mode */ }
+        /* The BETA pill as the game's switch was last seen (fallinfurni.html
+           keeps it under mazerats_ff_state), until the game's page says what
+           it is now (gameState). */
+        let lastState = null;
+        try { lastState = localStorage.getItem("mazerats_ff_state"); } catch (e) { /* private mode */ }
+        gameState(lastState || "coming-soon");
         syncBig();
         setDark(dark, true);
         if (!phone) wireDrag();
         window.addEventListener("resize", () => { fit(); clamp(); syncRotate(); });
         if (window.EscapeLayers) {
-            window.EscapeLayers.register({ elements: () => (isOpen() ? [root] : []), close: () => close() });
+            /* Not over a round's result in a run (30 Oct 2026; FFHoldsEscape
+               in js/fallinfurni.js), with the focus out here on the frame. */
+            window.EscapeLayers.register({ elements: () => (isOpen() ? [root] : []), close: () => { if (!gameHoldsEscape()) close(); } });
         }
     }
 
@@ -387,6 +395,12 @@
         if (isPortrait()) fullAsked = false;
         if (shut !== rotateShut) {
             rotateShut = shut;
+            /* Lifted, the gate's Back button had the focus and it fell to
+               the page (30 Oct 2026, the bug scan): back into the game. */
+            if (!shut && iframe) {
+                const a = document.activeElement;
+                if (!a || a === document.body || root.contains(a)) iframe.focus({ preventScroll: true });
+            }
             // The round stands still behind the gate, and goes on when it lifts.
             try { if (iframe && iframe.contentWindow && iframe.contentWindow.FFRotateGate) iframe.contentWindow.FFRotateGate(shut); } catch (e) { /* not loaded */ }
         }
@@ -572,6 +586,20 @@
         pill.style.color = fill;
     }
 
+    /* BETA ON THE GRIP ONLY WHILE THE GAME IS NOT OUT (30 Oct 2026, the
+       owner's): Coming Soon, which is how Beta is said too, keeps it;
+       Live and Maintenance lose it. Told by the game's page from its own
+       settings answer. */
+    function gameHoldsEscape() {
+        try { return Boolean(iframe && iframe.contentWindow && iframe.contentWindow.FFHoldsEscape && iframe.contentWindow.FFHoldsEscape()); }
+        catch (e) { return false; }
+    }
+
+    function gameState(s) {
+        const pill = root && root.querySelector(".ff-console-beta");
+        if (pill) pill.hidden = s !== "coming-soon";
+    }
+
     function setDark(on, quiet) {
         dark = Boolean(on);
         root.classList.toggle("is-dark", dark);
@@ -587,7 +615,7 @@
        kept for a game page loaded before this one. */
     window.FFWindow = {
         open, close, booting, toggleEnlarge, toggleFullscreen: toggleEnlarge,
-        front: bringForward, escape, tapped,
+        front: bringForward, escape, tapped, gameState,
         get isOpen() { return isOpen(); },
         get isPhone() { return phone; },
         get isEnlarged() { return big; }

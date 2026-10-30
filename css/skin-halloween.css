@@ -44,6 +44,8 @@ html[data-skin="halloween"] .hw-bats {
     pointer-events: none;
     image-rendering: pixelated;
 }
+/* Put away while a game's window is open over the page (js/skin-halloween.js, 30 Oct 2026). */
+html[data-skin="halloween"].hw-bats-held .hw-bats { visibility: hidden; }
 
 /* A ghost in the console's glass: barely there. */
 html[data-skin="halloween"] .hw-glass-ghost {

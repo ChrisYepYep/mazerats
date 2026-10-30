@@ -395,6 +395,14 @@
            game is opened after all, and a closed one is already closed. */
         function lateAnswer(settings) {
             var ffState = settings.fallinFurniState;
+            /* Beta arriving after the leash (30 Oct 2026): the leash closed
+               the game before ffBeta was known, so the code was never
+               listened for and a tester on a slow answer could not get in
+               until a reload. */
+            if (closedByDefault && ffState === "coming-soon" && ffBeta && !EDITING) {
+                if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", listenForBetaCode);
+                else listenForBetaCode();
+            }
             if (!closedByDefault || ffState === "maintenance" || ffState === "coming-soon") return;
             lateOpen = true;
             function run() {
@@ -418,6 +426,8 @@
                 // Said as coming-soon (see BETA above); the flag is what listens.
                 ffBeta = settings.fallinFurniBeta === true;
                 try { localStorage.setItem(FF_STATE_KEY, ffState); } catch (e) { /* private mode */ }
+                // The homepage's window, for its BETA pill (30 Oct 2026; gameState in js/ff-window.js).
+                try { if (window.parent !== window && window.parent.FFWindow && window.parent.FFWindow.gameState) window.parent.FFWindow.gameState(ffState); } catch (e) { /* not ours */ }
                 if (decided) { lateAnswer(settings); return null; }
                 var siteGated = settings.landingState === "coming-soon" ||
                                 settings.landingState === "maintenance";

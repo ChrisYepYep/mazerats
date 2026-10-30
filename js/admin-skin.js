@@ -447,12 +447,35 @@
             if (tell) tell(done);
             return true;
         } catch (e) {
+            /* The twelve-hour session run out (30 Oct 2026, the bug scan):
+               it said only "Unauthorized". The sign-in box now comes up over
+               the page, as every other panel's does, with the dates as typed. */
+            if (e && e.status === 401) {
+                fail("Not saved: your session had expired. Sign in, then try again.");
+                if (typeof window.AdminLockOut === "function") window.AdminLockOut();
+                return false;
+            }
             fail((e && e.message) || "Couldn't save. Try again.");
             return false;
         } finally {
             paintModes(); paintNow();
         }
     }
+
+    /* For js/admin.js (30 Oct 2026, the bug scan): dates changed and not
+       saved were lost to a log out or a closed tab without a word. isDirty
+       is asked by both; reset drops them, as Discard does, when the log out
+       goes ahead or somebody else signs in. */
+    window.AdminSkin = {
+        isDirty: () => changed(),
+        reset() {
+            if (!loaded) return;
+            rows = rowsFrom(site.skinSchedule);
+            saved = snapshot();
+            say("");
+            paintCal(); paintSave();
+        }
+    };
 
     document.addEventListener("DOMContentLoaded", () => {
         const card = $("skin-preview-card");

@@ -50,6 +50,13 @@ document.addEventListener("keydown", e => {
     // Pura Panic too (6 Oct 2026): its keys are letters (Z, X, P, W, A, S, D).
     const pura = document.getElementById("pura-overlay");
     if (pura && (pura.classList.contains("open") || pura.contains(active))) return;
+    /* And the homepage's other game windows (30 Oct 2026, the bug scan):
+       Scout's Trail takes P, M and F, Fallin' Furni's window F, and both
+       scrolled the archive behind them. */
+    for (const id of ["ff-overlay", "rr-overlay"]) {
+        const w = document.getElementById(id);
+        if (w && (w.classList.contains("open") || w.contains(active))) return;
+    }
 
     const letter = e.key.toLowerCase();
     /* Matched on the same reading of the name the sort uses (sortableName

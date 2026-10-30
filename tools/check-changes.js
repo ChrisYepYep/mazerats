@@ -16,7 +16,7 @@
  *
  * Exits non-zero and says what failed.
  */
-const { describe, canon } = require("../netlify/functions/_changes.js");
+const { describe, canon, keepPastDay } = require("../netlify/functions/_changes.js");
 
 let pass = 0;
 const failures = [];
@@ -305,6 +305,35 @@ NASTY.forEach(([name, before, update]) => {
     if (threw) failures.push(`did not survive a cyclic body — threw ${threw.message}`);
     else if (!(out === null || Array.isArray(out))) failures.push("cyclic body returned something odd");
     else pass++;
+})();
+
+// ---------- the days before: keepPastDay (30 Oct 2026, the bug scan) ----------
+
+(() => {
+    const past = (before, at) => { const set = { updatedAt: at }; keepPastDay(before, set); return set.pastChanges; };
+    const rec = { ...room(), createdAt: "2026-10-20T09:00:00.000Z", updatedAt: "2026-10-27T23:59:00.000Z", changes: ["imagery"] };
+    check("a new UTC day keeps the day it replaces",
+        past(rec, "2026-10-28T00:00:01.000Z"), [{ at: "2026-10-27T23:59:00.000Z", changes: ["imagery"] }]);
+    check("a second save on the same day keeps nothing",
+        past(rec, "2026-10-27T23:59:59.000Z"), undefined);
+    check("the day it was added is the Added entry, not kept",
+        past({ ...rec, updatedAt: "2026-10-20T18:00:00.000Z" }, "2026-10-21T08:00:00.000Z"), undefined);
+    check("a day already kept is not kept twice",
+        past({ ...rec, pastChanges: [{ at: "2026-10-27T08:00:00.000Z", changes: ["text"] }] }, "2026-10-28T08:00:00.000Z"),
+        undefined);
+    check("newest first, and an odd kept row is dropped",
+        past({ ...rec, pastChanges: [{ at: "2026-10-25T08:00:00.000Z", changes: ["text"] }, null, { at: 5 }] }, "2026-10-29T08:00:00.000Z"),
+        [{ at: "2026-10-27T23:59:00.000Z", changes: ["imagery"] }, { at: "2026-10-25T08:00:00.000Z", changes: ["text"] }]);
+    check("a Date stamp is read as its instant",
+        past({ ...rec, updatedAt: new Date("2026-10-27T10:00:00Z"), changes: undefined }, "2026-10-28T08:00:00.000Z"),
+        [{ at: "2026-10-27T10:00:00.000Z", changes: [] }]);
+    check("never edited: nothing to keep",
+        past({ ...rec, updatedAt: undefined }, "2026-10-28T08:00:00.000Z"), undefined);
+    const long = Array.from({ length: 40 }, (_, i) => ({ at: new Date(Date.UTC(2026, 8, 1 + i)).toISOString(), changes: [] }));
+    check("kept to thirty days", (past({ ...rec, pastChanges: long }, "2026-10-28T08:00:00.000Z") || []).length, 30);
+    let threw = null;
+    try { keepPastDay(null, null); keepPastDay("x", { updatedAt: "y" }); keepPastDay(rec, {}); } catch (e) { threw = e; }
+    check("keepPastDay never throws", threw && threw.message, null);
 })();
 
 // ---------- report ----------

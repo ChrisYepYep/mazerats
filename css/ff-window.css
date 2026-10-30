@@ -150,13 +150,16 @@ html[data-game-front="ff"] #ff-overlay { z-index: 92; }
 }
 .ff-console-dim[hidden] { display: none; }
 
-.ff-console.is-dark .console-frame { background: #242424; box-shadow: 2px 2px 0 0 rgba(0, 0, 0, 0.5); }
-.ff-console.is-dark .console-border { border-image-source: url('../assets/img/console/dark/cnsl-frame-border.png'); }
-.ff-console.is-dark .console-top-pattern::before,
-.ff-console.is-dark .console-top-pattern::after { background-image: url('../assets/img/console/dark/cnsl-top-pattern.png'); }
-.ff-console.is-dark .console-close-btn { background-image: url('../assets/img/console/dark/cnsl-top-x-close.png'); }
-.ff-console.is-dark .console-title { color: #9a9a9a; }
-.ff-console.is-dark .console-frame::after { border-color: transparent rgba(255, 255, 255, 0.16) rgba(255, 255, 255, 0.16) transparent; }
+/* Named by the window's id (30 Oct 2026, the bug scan), so lights off
+   outranks any skin's or palette's console art however they are written:
+   html[data-skin] and [data-theme] rules were only one class short of it. */
+#ff-overlay.is-dark .console-frame { background: #242424; box-shadow: 2px 2px 0 0 rgba(0, 0, 0, 0.5); }
+#ff-overlay.is-dark .console-border { border-image-source: url('../assets/img/console/dark/cnsl-frame-border.png'); }
+#ff-overlay.is-dark .console-top-pattern::before,
+#ff-overlay.is-dark .console-top-pattern::after { background-image: url('../assets/img/console/dark/cnsl-top-pattern.png'); }
+#ff-overlay.is-dark .console-close-btn { background-image: url('../assets/img/console/dark/cnsl-top-x-close.png'); }
+#ff-overlay.is-dark .console-title { color: #9a9a9a; }
+#ff-overlay.is-dark .console-frame::after { border-color: transparent rgba(255, 255, 255, 0.16) rgba(255, 255, 255, 0.16) transparent; }
 
 /* ---- ON A PHONE (28 Oct 2026; ON A PHONE in js/ff-window.js). The window
    fills the screen over the homepage; the frame's chrome goes and the game

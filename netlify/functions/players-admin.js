@@ -655,7 +655,8 @@ async function update(event, db, role) {
     }
     if (body.ffBeta !== undefined) {
         if (typeof body.ffBeta !== "boolean") return json(400, { error: "ffBeta is true or false." });
-        if (hasNick || body.locked !== undefined || body.resetPrompt !== undefined || body.review !== undefined || body.motto !== undefined) return json(400, { error: "Marking a beta tester goes on its own." });
+        // dismissClash too (30 Oct 2026): it is answered after this, so it was dropped unsaid.
+        if (hasNick || body.locked !== undefined || body.resetPrompt !== undefined || body.review !== undefined || body.motto !== undefined || body.dismissClash !== undefined) return json(400, { error: "Marking a beta tester goes on its own." });
         return await ffBetaSet(event, db, body);
     }
     if (body.dismissClash !== undefined) {

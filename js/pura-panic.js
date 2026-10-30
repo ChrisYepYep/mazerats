@@ -1230,7 +1230,9 @@
             if (!isOpen()) return;
             // Another window opened over a game, or another game came in front of it: paused
             // (see ONLY WHILE IT IS THE FRONT WINDOW, and ONE GAME IN FRONT).
-            if (mode === "play" && (covered() || behind())) pause();
+            /* And the focus gone into the Console (30 Oct 2026, the owner's): its keys were the
+               Console's but the pieces fell on, unseen under it. Resumed by the player, as above. */
+            if (mode === "play" && (covered() || behind() || elsewhere())) pause();
             const dt = Math.min(100, now - last);
             last = now;
             step(dt);
@@ -1289,8 +1291,8 @@
                 </div>
                 ${guestLine()}` : `<p class="pura-maint">We're working hard on making Pura Panic better! Bear with us, we'll have it up and running again shortly.</p>`}
                 ${!gate.live && gate.admin && !testLevel() ? `<p class="pura-beta-note">Maintenance: only admins can play right now, and scores aren't kept.</p>` : ""}
-                ${testLevel() ? `<p class="pura-beta-note">Test mode: every game starts at level ${testLevel()}. Not saved.</p>` : ""}
-                <p class="pura-beta-note">This game is in beta, if you spot anything you think might be a bug, please let us know via the <a href="#" data-go="contact">contact form</a> in the Console, thank you!</p>`;
+                ${testLevel() ? `<p class="pura-beta-note">Test mode: every game starts at level ${testLevel()}. Not saved.</p>` : ""}`;
+            // No "This game is in beta" line any more (30 Oct 2026, the owner's): it went with the BETA pill.
         } else if (which === "who") {
             // On the way from GAME OVER's Save as a Guest, its button says the same (27 Oct 2026).
             const was = guest && guest.kind === "habbo" ? guest : claim;

@@ -47,9 +47,11 @@ const PRIVATE_PAGES = ["dungeon.html"];
 // Never copied even though they sit inside a public folder: the level
 // editor's source files (the game reads js/rat-race-levels.js), its epic
 // soundtrack, the dungeon bench's script, and the untracked recordings
-// kept beside the art.
+// and promo pictures kept beside the art (assets/img/promo, 30 Oct 2026:
+// ~11MB nothing on the site loads, which a build run from this checkout
+// would have published).
 const SKIP = new Set([
-    "assets/ariadne-levels", "assets/console-sounds.mp4",
+    "assets/ariadne-levels", "assets/console-sounds.mp4", "assets/img/promo",
     "js/rat-race-epic.js", "js/dungeon.js"
 ]);
 

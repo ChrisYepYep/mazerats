@@ -1483,8 +1483,11 @@
     function watchVisibility() {
         document.addEventListener("visibilitychange", freezeChanged);
         // No sound from a tab nobody is looking at; back when it is.
+        /* The builder too (30 Oct 2026): Sound.on() is false there, but a
+           test play's soundtrack and Listen both drive FFAudio directly, and
+           played on in a hidden tab. pause/resume do nothing with no audio. */
         document.addEventListener("visibilitychange", () => {
-            if (!Sound.on()) return;
+            if (!window.FFAudio) return;
             if (document.hidden) FFAudio.pause(); else FFAudio.resume();
         });
     }
@@ -1511,6 +1514,23 @@
         // starts behind (the room loading, the three-two-one).
         if (behindGame) setPaused(true);
         if (window.FFAudio && behindGame !== was) FFAudio.hold(behindGame);
+    }
+    /* UNDER ONE OF THE SITE'S WINDOWS (30 Oct 2026, the bug scan). Guess the
+       Maze, the leaderboards, the nickname prompt — every .modal-overlay,
+       and a picture's lightbox — open over the homepage's window (100 and
+       up to its 92) without taking the focus out of the frame, and the
+       round ran on unseen behind them. The tick pauses it, as Pura Panic's
+       covered() does, and it stays paused until the player resumes, as
+       after another game came in front. Not the phone's window, which sits
+       over all of them (300): a window opened under it is not over the game.
+       On the game's own page, its own windows count. */
+    function covered() {
+        try {
+            const W = hostWindow();
+            if (W && W.isPhone) return false;
+            const doc = EMBED ? window.parent.document : document;
+            return Boolean(doc.querySelector(".modal-overlay.open:not(.closing), .lightbox-overlay.open"));
+        } catch (e) { return false; }
     }
     function watchFront() {
         if (!EMBED) return;
@@ -1571,8 +1591,10 @@
             pauseMenu();
             const r = document.getElementById("ff-resume");
             /* Not when paused from behind another game (26 Oct 2026): the
-               focus would come into this frame, and bring it forward again. */
-            if (r && !behindGame) r.focus({ preventScroll: true });
+               focus would come into this frame, and bring it forward again.
+               Nor from under a site window (30 Oct 2026; see covered), whose
+               own focus it would take. */
+            if (r && !behindGame && !covered()) r.focus({ preventScroll: true });
         } else if (resumed && pauseEls.cover && (pauseEls.cover.contains(document.activeElement)
             || document.activeElement === document.body)) {
             /* AND BRINGS IT BACK when it lifts. The Resume button the focus
@@ -1664,6 +1686,17 @@
         }
     }
 
+    /* ESCAPE OVER A ROUND'S RESULT IN A RUN DOES NOTHING (30 Oct 2026, the
+       bug scan, the owner's approval). Between rounds Escape closed the
+       homepage's window, and with it the run: one press too many after
+       "Game over" with lives left threw the run away. Over the result
+       panel while a run is under way it is now ignored; with no run, it
+       closes the window as before. */
+    function holdsEscape() {
+        const box = document.getElementById("ff-round");
+        return Boolean(run && !Editor && box && !box.hidden);
+    }
+
     function wirePause() {
         const btn = document.getElementById("ff-pause");
         const resume = document.getElementById("ff-resume");
@@ -1724,6 +1757,10 @@
            the effects together, on the title and the pause menu, heard as it
            moves and remembered by js/ff-audio.js (80 until it is moved). */
         for (const r of document.querySelectorAll("input[data-vol]")) {
+            // A press or drag shows no ring; a key does (30 Oct 2026; css/fallinfurni.css .ff-vol).
+            r.addEventListener("pointerdown", () => { r.dataset.byPointer = "1"; });
+            r.addEventListener("keydown", () => { delete r.dataset.byPointer; });
+            r.addEventListener("blur", () => { delete r.dataset.byPointer; });
             r.addEventListener("input", () => {
                 if (!window.FFAudio) return;
                 FFAudio.setVolume(r.value);
@@ -1770,9 +1807,13 @@
            (26 Oct 2026). On window, so it comes after everything above. */
         window.addEventListener("keydown", (ev) => {
             if (ev.key !== "Escape" || ev.defaultPrevented || behindGame) return;
+            // Not over a round's result in a run (see holdsEscape): nothing at all.
+            if (holdsEscape()) { ev.preventDefault(); return; }
             const W = hostWindow();
             if (W && W.escape) { ev.preventDefault(); W.escape(); }
         });
+        // Asked by the homepage's window before its own Escape closes it (js/ff-window.js).
+        window.FFHoldsEscape = holdsEscape;
         syncPause();
     }
 
@@ -2224,6 +2265,8 @@
         if (frozen() || loading) return;
         // A round that began behind another game pauses as it starts (26 Oct 2026).
         if (behindGame && game && game.state === Game.RUNNING) { setPaused(true); return; }
+        // And under one of the site's own windows (see covered).
+        if (!paused && !Editor && game && game.state === Game.RUNNING && covered()) { setPaused(true); return; }
 
         const now = gameNow();
         // The board's crawl wants every frame, and it has nothing to draw on
@@ -3492,26 +3535,38 @@
         reorderBusy = true;
         reorderBox.classList.add("is-busy");
         status("Saving the new order…", "busy");
-        try {
-            const changed = await Editor.reorderServer(list);
-            /* The open level's draft follows its own level on the server: its
-               new order, and the version the next Save has to name — but only
-               when the draft was opened from the version just replaced, so a
-               draft that was already behind is still refused as it was. */
+        /* The open level's draft follows its own level on the server: its
+           new order, and the version the next Save has to name — but only
+           when the draft was opened from the version just replaced, so a
+           draft that was already behind is still refused as it was. */
+        const follow = (changed) => {
             const L = Editor.state.level;
             const mine = L && L.id && changed.find(c => c.id === L.id);
-            if (mine) {
-                const before = byId.get(L.id);
-                L.order = mine.order;
-                if (before && (Number(L.rev) || 0) === (Number(before.rev) || 0)) L.rev = mine.rev;
-                Editor.save();
-                const o = document.getElementById("ff-level-order");
-                if (o) o.value = mine.order;
-            }
+            if (!mine) return;
+            const before = byId.get(L.id);
+            L.order = mine.order;
+            if (before && (Number(L.rev) || 0) === (Number(before.rev) || 0)) L.rev = mine.rev;
+            Editor.save();
+            const o = document.getElementById("ff-level-order");
+            if (o) o.value = mine.order;
+        };
+        try {
+            const changed = await Editor.reorderServer(list);
+            follow(changed);
             await refreshLevelList();
             status(changed.length ? `New order saved - ${changed.length} level${changed.length === 1 ? "" : "s"} renumbered.` : "Order unchanged.", "good");
         } catch (e) {
-            status(`${e.message || "Could not save the new order."} The list is back as it was.`, "bad");
+            /* PARTLY SAVED (30 Oct 2026): ff-levels.js answers 503 with
+               `partial` when only some of the writes landed. The old copy is
+               then not what the server holds, so the list is read again and
+               the open level follows what did land. */
+            if (e.partial) {
+                follow(e.changed || []);
+                await refreshLevelList().catch(() => {});
+                status(e.message || "The new order was only partly saved.", "bad");
+            } else {
+                status(`${e.message || "Could not save the new order."} The list is back as it was.`, "bad");
+            }
         }
         reorderBusy = false;
         if (reorderBox) {
@@ -5105,21 +5160,24 @@
     const tipFits = (t) => t !== SIGN_IN_TIP || !(window.Account && Account.current);
     // Not the phone's window (28 Oct 2026), which fills the screen and has no Enlarge.
     const inWindow = (() => { try { return window.parent !== window && Boolean(window.parent.FFWindow) && !window.parent.FFWindow.isPhone; } catch (e) { return false; } })();
+    /* A finger (30 Oct 2026, the bug scan, the owner's approval): it taps
+       rather than clicks, and has no Escape key, so that tip is left out. */
+    const byTouch = (() => { try { return window.matchMedia("(pointer: coarse)").matches; } catch (e) { return false; } })();
     const GENERAL_TIPS = [
         "Sit on every seat in the order it landed.",
         "The wrong seat costs you 3 seconds and your streak.",
         "Not everything that falls is a seat. Some furni is just in the way.",
-        "Click a tile to walk there.",
+        byTouch ? "Tap a tile to walk there." : "Click a tile to walk there.",
         "One wrong seat resets your streak.",
         "Clear 10 levels to earn a life back.",
         SIGN_IN_TIP,
         "Double-click a power-up to walk over and grab it.",
         "Each power-up can be used once a round.",
         inWindow ? "Press F to enlarge the game, M to switch the music on or off." : "Press M to switch the music on or off.",
-        "Press Escape to pause.",
+        byTouch ? "" : "Press Escape to pause.",
         "Look up before you sit down.",
         "Fifty rooms. Three lives. One run."
-    ];
+    ].filter(Boolean);
     let tipsTimer = 0;
     function startTips() {
         const el = document.getElementById("ff-tips");

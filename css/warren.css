@@ -472,6 +472,9 @@ body.wr-on > .site-footer { display: none !important; }
 }
 :is(#wr-app .wr-ui, #login-modal, .modal-overlay.wr-dialog) .admin-subheading-spaced { border-top-color: var(--wr-line); }
 :is(#wr-app .wr-ui, #login-modal, .modal-overlay.wr-dialog) .admin-hint { color: var(--wr-dim); font-family: var(--wr-font); font-size: 12.5px; }
+/* The spotlight caption's count, red once over its 80 (30 Oct 2026). */
+#wr-app .wr-ui .admin-caption-count { white-space: nowrap; }
+#wr-app .wr-ui .admin-caption-count.is-over { color: var(--wr-red); font-weight: 700; }
 :is(#wr-app .wr-ui, #login-modal, .modal-overlay.wr-dialog) h1, :is(#wr-app .wr-ui, #login-modal, .modal-overlay.wr-dialog) h2, :is(#wr-app .wr-ui, #login-modal, .modal-overlay.wr-dialog) h3, :is(#wr-app .wr-ui, #login-modal, .modal-overlay.wr-dialog) h4 { font-family: var(--wr-font); letter-spacing: 0; text-shadow: none; }
 
 /* Buttons. The pills (actions on a record) and the old pixel-framed

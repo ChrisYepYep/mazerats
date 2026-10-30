@@ -1010,6 +1010,14 @@
     }
     Account._promptKind = promptKind;
 
+    /* Inside the homepage's Fallin' Furni window (html.ff-embed, set in
+       fallinfurni.html's head) nothing opens by itself (30 Oct 2026, the
+       bug scan): the page outside runs this file too and asks for itself,
+       so a player arriving at /fallinfurni was shown "Choose a nickname?"
+       twice — over the homepage and again inside the game's frame. The
+       game's own "Set a nickname" still opens one in the frame. */
+    const embedded = () => document.documentElement.classList.contains("ff-embed");
+
     function pageIsBusy() {
         if (/^\/warren/.test(location.pathname)) return true;
         if (document.hidden || document.readyState !== "complete") return true;
@@ -1052,7 +1060,7 @@
     // Which window is wanted now, if any (see promptKind); null while one is up.
     function wantsNickPrompt() {
         const me = Account.current;
-        if (nickPromptShowing || !me) return null;
+        if (nickPromptShowing || !me || embedded()) return null;
         /* The profile introduction comes first, and answers the FIRST
            question itself: a new player is taken to Edit Profile, where the
            nickname is the first thing on the page (see PROFILE INTRO). Only
@@ -1469,7 +1477,12 @@
         if (/^\/(?:warren|privacy)/.test(location.pathname)) return;
         rememberBlock();
         leavingNow();
-        location.replace("/");
+        /* The whole tab, from inside the homepage's Fallin' Furni window
+           (30 Oct 2026, the bug scan): the frame's own address put the
+           landing page inside the game's window, over a homepage still up. */
+        let win = window;
+        try { if (embedded() && window.top !== window && window.top.location.origin === location.origin) win = window.top; } catch (e) { /* this frame only */ }
+        win.location.replace("/");
     }
 
     // "23h 14m", "2d 5h", "12m": what is left of a cool-down.
@@ -1738,7 +1751,7 @@
     })();
 
     function wantsIntro() {
-        if (introShowing || introDone) return null;
+        if (introShowing || introDone || embedded()) return null;     // the page outside tells it (see embedded)
         if (introPreview) return introPreview;
         const me = Account.current;
         if (!me || activeBan()) return null;

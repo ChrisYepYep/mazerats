@@ -2884,9 +2884,9 @@ document.addEventListener("DOMContentLoaded", () => {
                 isPost: true, postId: p.id, id: p.id,
                 name: String(p.title || ""), noteText: String(p.text || ""),
                 /* Every news post has the same picture (28 Oct 2026, the
-                   owner's): a piece of the maze from the Discord banner
-                   (assets/img/news-banner.png, which whats-new-discord.js
-                   posts with it), cut from below its words. A picture
+                   owner's): a piece of the maze from the first Discord
+                   banner (assets/img/news-banner.png; whats-new-discord.js
+                   posts a slimmer one now), cut from below its words. A picture
                    uploaded in the Warren is no longer shown. */
                 thumb: NEWS_THUMB,
                 link: typeof p.link === "string" ? p.link : "",
@@ -2985,15 +2985,33 @@ document.addEventListener("DOMContentLoaded", () => {
         const born = localDayKey(n.archivedAt);
         const byDay = new Map();
         const raw = (n.isEvent ? EVENTS : ROOMS).find(r => r.id === n.id);
+        /* A kept day that is the latest entry's own day, read locally, goes
+           into the latest entry's line (30 Oct 2026, the bug scan). The
+           server keeps days by UTC, so saves at 23:30 and 00:30 UTC are two
+           kept days but one day in New York or Sydney, and the 23:30 save's
+           changes were dropped here with nowhere to go. Copied, never pushed
+           into: n.changes is the record's own array (whatsNewItems). Not
+           when the Warren has filed the entry under another day, which is
+           then no longer the day those saves were made. */
+        const sameDay = [];
         (raw && Array.isArray(raw.pastChanges) ? raw.pastChanges : []).forEach(p => {
             if (!p || typeof p.at !== "string") return;
             const day = localDayKey(p.at);
+            if (day === latest && day > born && !(n.override && n.override.day) && Array.isArray(p.changes)) sameDay.push(...p.changes);
             if (day <= born || day >= latest) return;
             const had = byDay.get(day);
             const keys = Array.isArray(p.changes) ? p.changes : [];
             if (!had) byDay.set(day, { at: p.at, changes: keys.slice() });
             else keys.forEach(k => { if (!had.changes.includes(k)) had.changes.push(k); });
         });
+        if (sameDay.length) {
+            const keys = new Set((Array.isArray(n.changes) ? n.changes : []).concat(sameDay));
+            // One imagery line, as the server's order() gives it.
+            if (keys.has("imagery")) keys.delete("imagery-added");
+            // In the server's order, which CHANGE_WORDS follows; unknown keys last.
+            const rank = k => { const i = Object.keys(CHANGE_WORDS).indexOf(k); return i < 0 ? Infinity : i; };
+            n.changes = [...keys].filter(k => typeof k === "string").sort((a, b) => (rank(a) - rank(b)) || 0);
+        }
         const entry = (at, activity, changes) => ({
             n: Object.assign({}, n, {
                 activityAt: at, activity, changes, updatedAt: activity === "updated" ? at : "",
@@ -8458,6 +8476,14 @@ document.addEventListener("DOMContentLoaded", () => {
             modalArticleTitle.textContent = article.title || "";
             modalArticleMeta.textContent = [article.date, article.category].filter(Boolean).join("  —  ");
             modalArticleBody.innerHTML = article.body;
+            /* Read a level below the article's title, an h3 since 30 Oct 2026
+               (the bug scan): the body's own headings open on an h3 too
+               (article.js keeps h3 to h6), which put them beside the title
+               rather than under it. aria-level, not new tags, so they look
+               exactly as before (.modal-article-body h3 … h6). */
+            modalArticleBody.querySelectorAll("h3, h4, h5, h6").forEach(h => {
+                h.setAttribute("aria-level", String(Math.min(6, Number(h.tagName.slice(1)) + 1)));
+            });
             /* The whole line goes when there is nowhere for it to point,
                rather than falling back to "#".
 
@@ -11378,10 +11404,48 @@ document.addEventListener("DOMContentLoaded", () => {
            is a phone" rather than two that can drift apart. */
         const onPhone = window.innerWidth <= FEATURED_PHONE_MAX;
 
+        /* MAZES AND EVENTS (30 Oct 2026, the owner's): the archive window's
+           own two tabs, each with its sections under it in a fold of its own.
+           The row goes to its tab on whichever section was last chosen there,
+           as the tab itself does; a section row goes straight to that
+           section. Both leave Featured, What's New, the Timeline and Furni
+           as the tabs do (see showArchiveView). The sections carry no
+           counts (the owner's): just their names. */
+        const overlay = showFeatured || showWhatsNew || showTimeline || showFurni;
+        const sectionRows = top => SUB_OPTIONS[top].map(([value, label]) => ({
+            sub: true,
+            name: label.charAt(0) + label.slice(1).toLowerCase(),
+            track: `${top === "mazes" ? "Mazes" : "Events"}: ${value}`,
+            state: "",
+            badge: "",
+            on: !overlay && topView === top && (top === "mazes" ? mazesSub : resolvedEventsSub()) === value,
+            run: () => showArchiveView(top, value)
+        }));
+        const upcoming = dataLoaded ? menuFigure(() => sourceItems("upcoming").length, 0) : 0;
+
         return [
             /* ARCHIVE: the archive's own tools, folded like GAMES and above
                it, since the archive is what the site is for. */
             { group: "Archive" },
+            {
+                name: "Mazes",
+                branch: "mazes",
+                // Short, so it stays on one line beside the arrow.
+                state: dataLoaded ? `${ROOMS.length} ${ROOMS.length === 1 ? "maze" : "mazes"} in all` : "Every maze there is",
+                badge: "",
+                on: !overlay && topView === "mazes",
+                run: () => showArchiveView("mazes")
+            },
+            ...sectionRows("mazes"),
+            {
+                name: "Events",
+                branch: "events",
+                state: upcoming ? `${upcoming} upcoming or on now` : "Maze events, past and to come",
+                badge: "",
+                on: !overlay && topView === "events",
+                run: () => showArchiveView("events")
+            },
+            ...sectionRows("events"),
             {
                 name: "What's New",
                 state: fresh ? "Lately added and changed" : "Nothing new just now",
@@ -11642,13 +11706,46 @@ document.addEventListener("DOMContentLoaded", () => {
 
             const entries = sideMenuEntries();
             const row = (e, i) => `
-                <button type="button" class="side-menu-item${e.on ? " is-on" : ""}" data-i="${i}">
+                <button type="button" class="side-menu-item${e.sub ? " side-menu-sub" : ""}${e.on ? " is-on" : ""}" data-i="${i}">
                     <span class="side-menu-name">
                         <span>${escapeHtml(e.name)}${e.tag ? `<span class="side-menu-tag">${escapeHtml(e.tag)}</span>` : ""}</span>
                         ${e.badge ? `<span class="side-menu-badge">${escapeHtml(e.badge)}</span>` : ""}
                     </span>
-                    <span class="side-menu-state">${escapeHtml(e.state)}</span>
+                    ${e.state ? `<span class="side-menu-state">${escapeHtml(e.state)}</span>` : ""}
                 </button>`;
+            /* A row with sections (Mazes, Events: 30 Oct 2026). The row itself
+               goes to its tab; the arrow beside it folds the sections open
+               under it, as ARCHIVE and GAMES fold, shut on every page load.
+               The row is lit only while its sections are folded away — open,
+               the section that is showing is lit instead, and one lit row
+               says where you are better than two. */
+            const branch = (e, i, subs) => {
+                const open = foldOpen("branch:" + e.branch);
+                const id = "side-menu-sub-" + e.branch;
+                const lit = { ...e, on: e.on && !open };
+                return `
+                <div class="side-menu-branch">
+                    <div class="side-menu-branch-head">
+                        ${row(lit, i).replace("side-menu-item", `side-menu-item${e.on ? " is-here" : ""}`)}
+                        <button type="button" class="side-menu-branch-toggle" aria-expanded="${open}" aria-controls="${id}"
+                                data-branch="${escapeHtml(e.branch)}" aria-label="${escapeHtml(e.name)} sections">
+                            <span class="side-menu-group-arrow" aria-hidden="true"></span>
+                        </button>
+                    </div>
+                    <div class="side-menu-fold side-menu-subfold${open ? " is-open" : ""}" id="${id}"${open ? "" : " inert"}>
+                        <div class="side-menu-fold-inner">${subs}</div>
+                    </div>
+                </div>`;
+            };
+            // Row i, or a branch starting at row i with its sections: the
+            // html and the index of the last row it used.
+            const take = i => {
+                const e = entries[i];
+                if (!e.branch) return [row(e, i), i];
+                let subs = "", j = i;
+                while (j + 1 < entries.length && entries[j + 1].sub) { j++; subs += row(entries[j], j); }
+                return [branch(e, i, subs), j];
+            };
             /* A group's rows go inside a fold under its button, up to the
                next heading, group or end marker. The fold is inert while
                shut, so its rows are out of the tab order as well as out of
@@ -11658,12 +11755,13 @@ document.addEventListener("DOMContentLoaded", () => {
                 const e = entries[i];
                 if (e.endGroup) continue;
                 if (e.heading) { html += `<p class="side-menu-heading">${escapeHtml(e.heading)}</p>`; continue; }
-                if (!e.group) { html += row(e, i); continue; }
+                if (!e.group) { const [h, last] = take(i); html += h; i = last; continue; }
                 const open = foldOpen(e.group);
                 let inner = "";
                 while (i + 1 < entries.length && !entries[i + 1].heading && !entries[i + 1].group && !entries[i + 1].endGroup) {
-                    i++;
-                    inner += row(entries[i], i);
+                    const [h, last] = take(i + 1);
+                    inner += h;
+                    i = last;
                 }
                 const id = "side-menu-fold-" + e.group.toLowerCase();
                 html += `
@@ -11693,6 +11791,24 @@ document.addEventListener("DOMContentLoaded", () => {
                 });
             });
 
+            // A row's sections, folded open or shut beside it; like the
+            // groups, choosing nothing.
+            menu.querySelectorAll(".side-menu-branch-toggle").forEach(btn => {
+                btn.addEventListener("click", e => {
+                    e.stopPropagation();
+                    const open = btn.getAttribute("aria-expanded") !== "true";
+                    rememberFold("branch:" + btn.dataset.branch, open);
+                    btn.setAttribute("aria-expanded", String(open));
+                    const fold = document.getElementById(btn.getAttribute("aria-controls"));
+                    if (fold) {
+                        fold.classList.toggle("is-open", open);
+                        fold.toggleAttribute("inert", !open);
+                    }
+                    const head = btn.previousElementSibling;
+                    if (head) head.classList.toggle("is-on", !open && head.classList.contains("is-here"));
+                });
+            });
+
             menu.querySelectorAll(".side-menu-item").forEach(btn => {
                 btn.addEventListener("click", () => {
                     const entry = entries[Number(btn.dataset.i)];
@@ -11705,7 +11821,7 @@ document.addEventListener("DOMContentLoaded", () => {
                     spine.focus({ preventScroll: true });
                     setOpen(false);
                     // Which feature the menu was used to reach (the Warren's Activity).
-                    if (entry) { if (window.Track && typeof Track.event === "function") Track.event("menu", entry.name); entry.run(); }
+                    if (entry) { if (window.Track && typeof Track.event === "function") Track.event("menu", entry.track || entry.name); entry.run(); }
                 });
             });
         }
@@ -11926,11 +12042,13 @@ document.addEventListener("DOMContentLoaded", () => {
                 .then(d => Api._unpack(d))
                 .finally(() => clearTimeout(timer));
         }
+        let asking = false;
         async function draw() {
             if (!events) {
+                asking = true;
                 events = fetchEvents().then(
-                    list => { lastGood = list; return list; },
-                    () => { events = null; return lastGood || standIn; }
+                    list => { asking = false; lastGood = list; return list; },
+                    () => { asking = false; events = null; return lastGood || standIn; }
                 );
             }
             const list = await events;
@@ -12021,7 +12139,42 @@ document.addEventListener("DOMContentLoaded", () => {
 
         draw();
         setInterval(draw, RECHECK_MS);
+
+        /* FROM THE SERVER AGAIN, EVERY THREE MINUTES (30 Oct 2026, the bug
+           scan), as the landing page does (refreshSpotlightEvents in
+           js/welcome.js). A good answer was kept for the life of the page,
+           so the 20-second recheck only re-read it: a spotlight ticked,
+           unticked, recaptioned or reordered in the Warren never reached a
+           homepage left open. One plain GET every three minutes, none while
+           the tab is hidden or an ask is already out; a failed one keeps
+           the last good list (draw's own rule) and is asked again at the
+           next recheck. */
+        setInterval(() => {
+            if (document.hidden || asking || !events) return;
+            events = null;
+            draw();
+        }, 3 * 60 * 1000);
     })();
+
+    /* The side menu's Mazes and Events rows (30 Oct 2026): the same as
+       pressing the tab, and then the section if one is named, so the menu and
+       the two rows of tabs can never disagree about what each does. */
+    function showArchiveView(top, sub) {
+        topView = top;
+        if (sub && top === "mazes") mazesSub = sub;
+        else if (sub) {
+            eventsSub = sub;
+            eventsSubTouched = true;
+        }
+        showFeatured = false;
+        showWhatsNew = false;
+        showTimeline = false;
+        showFurni = false;
+        furniFilter = null;
+        searchInput.value = "";
+        query = "";
+        render();
+    }
 
     // Switches straight to that category, keeping whichever sub-filter was
     // last picked for it (defaulting to the first one) — clicking the

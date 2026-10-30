@@ -9,7 +9,7 @@
    completely inert until js/site.js puts that attribute on <html>. The
    classic palette is not defined here and is not affected by anything in it.
 
-   1117 rules, 1797 declarations, hues 18 (surfaces) / 38 (accents).
+   1126 rules, 1809 declarations, hues 18 (surfaces) / 38 (accents).
 */
 :root[data-theme="pumpkin"] {
     --bg-black: #0a0401;
@@ -1386,8 +1386,14 @@ html[data-theme="pumpkin"]::-webkit-scrollbar-button {
     color: var(--amber-bright);
 }
 
+html[data-theme="pumpkin"]:not([data-theme]) .room-links-refs-text a {
+    color: color-mix(in srgb, var(--amber-bright), var(--parchment) 50%);
+}
+
 [data-theme="pumpkin"] .room-links-refs-text a:hover,
-[data-theme="pumpkin"] .room-links-refs-text a:focus-visible {
+[data-theme="pumpkin"] .room-links-refs-text a:focus-visible,
+html[data-theme="pumpkin"]:not([data-theme]) .room-links-refs-text a:hover,
+html[data-theme="pumpkin"]:not([data-theme]) .room-links-refs-text a:focus-visible {
     color: #ffffff;
     text-shadow: 0 0 8px rgba(255, 255, 255, 0.75);
 }
@@ -1526,6 +1532,8 @@ html[data-theme="pumpkin"]::-webkit-scrollbar-button {
 [data-theme="pumpkin"] body.is-viewer #launch-at-clear,
 [data-theme="pumpkin"] body.is-viewer #ff-launch-at-save,
 [data-theme="pumpkin"] body.is-viewer #ff-launch-at-clear,
+[data-theme="pumpkin"] body.is-viewer #spotlight-order-save,
+[data-theme="pumpkin"] body.is-viewer .spot-order-list .ctl-btn,
 [data-theme="pumpkin"] body.is-viewer .admin-daily-actions .admin-action-pill,
 [data-theme="pumpkin"] body.is-viewer .admin-panel[data-panel="deadends"] .de-write {
     box-shadow: none;
@@ -2305,6 +2313,25 @@ html[data-theme="pumpkin"]::-webkit-scrollbar-button {
     color: var(--amber-bright);
 }
 
+html[data-theme="pumpkin"]:not([data-theme]) .modal-article-title,
+html[data-theme="pumpkin"]:not([data-theme]) .modal-article-body h3,
+html[data-theme="pumpkin"]:not([data-theme]) .modal-article-body h4,
+html[data-theme="pumpkin"]:not([data-theme]) .modal-article-body h5,
+html[data-theme="pumpkin"]:not([data-theme]) .modal-article-body h6,
+html[data-theme="pumpkin"]:not([data-theme]) .modal-article-body a {
+    color: color-mix(in srgb, var(--amber-bright), var(--parchment) 50%);
+}
+
+html[data-theme="pumpkin"]:not([data-theme]) .modal-article-kicker,
+html[data-theme="pumpkin"]:not([data-theme]) .modal-article-source a {
+    color: color-mix(in srgb, var(--amber-text), var(--parchment) 60%);
+}
+
+html[data-theme="pumpkin"]:not([data-theme]) .modal-article-body a:hover,
+html[data-theme="pumpkin"]:not([data-theme]) .modal-article-source a:hover {
+    color: var(--parchment);
+}
+
 [data-theme="pumpkin"] .admin-article-status {
     border: 1px solid var(--chrome-border);
     background: var(--bg-panel);
@@ -2878,6 +2905,32 @@ html[data-theme="pumpkin"]::-webkit-scrollbar-button {
 
 [data-theme="pumpkin"] .side-menu-item.is-on .side-menu-badge {
     color: #170c08;
+}
+
+[data-theme="pumpkin"] .side-menu-item + .side-menu-branch::before,
+[data-theme="pumpkin"] .side-menu-branch + .side-menu-branch::before,
+[data-theme="pumpkin"] .side-menu-branch + .side-menu-item::before {
+    color: rgba(10, 6, 4, 0.32);
+}
+
+[data-theme="pumpkin"] .side-menu-branch-toggle {
+    background: none;
+    border: 0;
+    color: #0a0604;
+}
+
+[data-theme="pumpkin"] .side-menu-branch-toggle:hover,
+[data-theme="pumpkin"] .side-menu-branch-toggle:focus-visible {
+    background: rgba(10, 6, 4, 0.1);
+    outline: none;
+}
+
+[data-theme="pumpkin"] .side-menu-branch-toggle:focus-visible {
+    outline: 2px solid #351c12;
+}
+
+[data-theme="pumpkin"] .side-menu-subfold .side-menu-fold-inner {
+    border-left: 1px dotted rgba(10, 6, 4, 0.4);
 }
 
 @media (max-width: 999px) {

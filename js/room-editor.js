@@ -939,7 +939,15 @@
             body: JSON.stringify({ reorder: list })
         });
         const out = await res.json().catch(() => ({}));
-        if (!res.ok) throw new Error(out.error || "Could not save the new order.");
+        if (!res.ok) {
+            /* A 503 with `partial` (30 Oct 2026): some levels were renumbered
+               and some were not, so the caller has to read the list again
+               rather than put its old copy back; `changed` says which landed. */
+            const err = new Error(out.error || "Could not save the new order.");
+            err.partial = out.partial === true;
+            err.changed = Array.isArray(out.changed) ? out.changed : [];
+            throw err;
+        }
         return out.changed || [];
     }
 

@@ -570,6 +570,12 @@ body.is-editing .ff-title { display: none; }
    the theme's accent; the thumb moving is what shows it has the focus. */
 .ff-vol input[type="range"]:focus,
 .ff-vol input[type="range"]:focus-visible { outline: none; box-shadow: none; }
+/* BUT REACHED BY THE KEYBOARD, a plain ring (30 Oct 2026, the bug scan,
+   the owner's approval): with none, Tab landed on it and nothing showed
+   where. Never from a press or a drag — the script marks those
+   (data-by-pointer, wirePause in js/fallinfurni.js), which is what the
+   browser's own :focus-visible did not tell apart. */
+.ff-vol input[type="range"]:focus-visible:not([data-by-pointer]) { outline: 1px solid var(--amber-bright); outline-offset: 2px; }
 .ff-vol-n { min-width: 4ch; text-align: right; }
 /* On the pause menu, the pause menu's buttons' wood. */
 .ff-paused-audio .ff-vol { background: var(--wood-mid); }

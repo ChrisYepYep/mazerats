@@ -85,6 +85,13 @@ if (/one run/.test(sw("fallinfurni", "coming-soon").tags.description)) rules.pus
 if (!/\[\[headers\]\]\s*\n\s*for\s*=\s*"\/fallinfurni\/play"\s*\n\s*\[headers\.values\]\s*\n\s*X-Robots-Tag\s*=\s*"noindex/.test(toml)) {
     rules.push("  netlify.toml no longer sends X-Robots-Tag: noindex for /fallinfurni/play");
 }
+/* No picture characters in a card's words (30 Oct 2026, the bug scan):
+   Discord and the rest have no font for them. See plainGlyphs in share.js. */
+{
+    const card = _test.tagsFor("maze", { id: "m", name: "*ÕMaze EmpireÕ*", creator: "Rat ª", description: "Find the ª sign." }, origin, "maze-empire");
+    if (card.title !== "Maze Empire") rules.push(`  a glyph-framed name previews as ${JSON.stringify(card.title)}, not "Maze Empire"`);
+    if (card.description !== "Built by Rat. Find the sign.") rules.push(`  a card's description keeps its picture characters: ${JSON.stringify(card.description)}`);
+}
 if (rules.length) {
     console.error("check-share-headers: the games' switched pages (SWITCHED in netlify/functions/share.js) break their rule:\n" + rules.join("\n"));
     process.exit(1);

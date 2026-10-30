@@ -315,6 +315,19 @@ function plainTitle(text) {
     return s || raw;
 }
 
+/* The same picture characters out of running text (30 Oct 2026, the bug
+   scan; the owner's "Fix all"): a description, a creator's name, a What's
+   New line. Only the characters go — no framing stars are guessed at in
+   prose — and the space they leave is closed up. whats-new-discord.js
+   uses it too, through `cards`. */
+function plainGlyphs(text) {
+    return String(text || "").replace(TITLE_PICTURES, " ")
+        .replace(/[[({]\s*[\])}]/g, " ")
+        .replace(/[ \t]{2,}/g, " ")
+        .replace(/ +([.,;:!?])/g, "$1")
+        .replace(/^[ \t]+|[ \t]+$/gm, "");
+}
+
 // The same rule the site uses (GuideText.thumbOf in js/guide-text.js): the
 // guide's own thumbnail, else its first section picture, else none.
 // Sections that are not a list count as none — see textOf.
@@ -398,11 +411,12 @@ function clip(text) {
 function describe(record, isEvent) {
     // Through textOf: a stored value that is not text threw on .trim() —
     // see textOf above.
-    const host = textOf(record.host).trim(), creator = textOf(record.creator).trim();
+    // And without picture characters (30 Oct 2026): see plainGlyphs.
+    const host = plainGlyphs(textOf(record.host)).trim(), creator = plainGlyphs(textOf(record.creator)).trim();
     const who = isEvent
         ? (host ? `Hosted by ${host}.` : "")
         : (creator ? `Built by ${creator}.` : "");
-    const what = plainText(textOf(record.description) || textOf(record.details));
+    const what = plainGlyphs(plainText(textOf(record.description) || textOf(record.details)));
     const tail = isEvent
         ? "An event in the Maze Rats archive of Habbo Origins."
         : "A maze in the Maze Rats archive of Habbo Origins.";
@@ -419,7 +433,7 @@ function tagsFor(kind, record, origin, slug) {
             // list's cards show it: a summary is written in the same
             // format as a guide's sections, and its stars and [words](...)
             // went into the preview as typed.
-            description: clip(plainText(textOf(record.summary))) || "A guide in the Maze Rats archive of Habbo Origins.",
+            description: clip(plainGlyphs(plainText(textOf(record.summary)))) || "A guide in the Maze Rats archive of Habbo Origins.",
             image: guideImage(origin, guideThumb(record)),
             sized: false,
             canonical,
@@ -788,7 +802,7 @@ exports.handler = async (event) => {
 /* A record's card as a link preview draws it, for whats-new-discord.js
    (28 Oct 2026): a What's New entry posted to Discord carries the same
    title, words and picture its link unfurls with. */
-exports.cards = { tagsFor, guideImage, originOf, plainTitle };
+exports.cards = { tagsFor, guideImage, originOf, plainTitle, plainGlyphs };
 
 // For tools/check-share-headers.js and the local tests.
 exports._test = { withTags, PAGE_HEADERS, requestedSlug, tagsFor, fixedTags, NOINDEX_PAGES, SWITCHED, switchState, switchedPage };

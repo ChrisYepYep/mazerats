@@ -4,7 +4,9 @@
    The owner's decisions: posting is BY HAND, from the Warren's What's New
    panel (js/admin-whats-new.js), one entry at a time, and ANY entry can go —
    the automatic ones (a maze, event or guide added or updated) as well as
-   the news posts and notes written there. Nothing is posted on its own.
+   the news posts and notes written there. And ON ITS OWN since 30 Oct 2026
+   (the owner's): whats-new-autopost.js sends each new entry through
+   postOne below, and the button stays for posting one again.
 
    It goes through a channel WEBHOOK, not a bot: Discord's
    "Integrations → Webhooks" on the channel gives an address, kept in the
@@ -12,13 +14,15 @@
    has it can post to that channel). Unset, the panel says so and nothing is
    sent.
 
-   POST { key, activity, label, line }   a Warren account with "site"
+   POST { key, activity, label, line, day }   a Warren account with "site"
        key       "maze:<id>" / "event:<id>" / "guide:<id>" for an automatic
                  entry, "post:<id>" for a news post or note
        activity  added | updated | news | note — the entry's colour
        label     the word on the entry's label, as the panel shows it
        line      the line under it, as the panel shows it (an override's
                  own text, or the automatic "what changed")
+       day       the day the entry is filed under (YYYY-MM-DD), kept on the
+                 row so a later day's entry for the same record is still due
      The panel sends what it shows, so what goes to Discord is what the
      admin was looking at. The record itself — its name, address and
      picture — is read here, through share.js's cards, so the post carries
@@ -26,12 +30,19 @@
 
    A hidden entry, a draft guide and anything gone from the archive are
    refused. Each post is remembered in whats_new as
-     { id: "d:" + key, type: "discord", key, postedAt, count }
+     { id: "d:" + key, type: "discord", key, postedAt, day, via, count }
+   (via "hand" or "auto")
    and whats-new.js hands those to the panel (?full=1 only), which marks the
    entry as posted and asks before posting it twice.
 
    Mentions are switched off on every post (allowed_mentions), so an
-   "@everyone" typed into a line is only text. */
+   "@everyone" typed into a line is only text.
+
+   And one at a time (30 Oct 2026, the bug scan; the owner's "Fix all"):
+   the row is claimed (sendingAt) before anything is sent, so a second
+   tab or a second admin pressing Discord on the same entry meanwhile is
+   told so rather than posting it twice. A claim is let go when the post
+   fails, and one older than CLAIM_MS is taken as abandoned. */
 const { getDb, ensureUniqueIndex } = require("./_db");
 const { isAuthorized, canWrite, refuseWrite, AUTH_UNAVAILABLE, isAuthUnavailable, UNAUTHORIZED } = require("./_auth");
 const { SECURITY_HEADERS } = require("./_headers");
@@ -42,7 +53,12 @@ const COLLECTION = { maze: "rooms", event: "events", guide: "guides" };
 const KEY = /^(maze|event|guide|post):[^\s]{1,200}$/;
 const WEBHOOK = /^https:\/\/(?:canary\.|ptb\.)?discord(?:app)?\.com\/api\/webhooks\/\d+\/[\w-]+$/;
 const MAX_BODY = 4 * 1024;
-const SEND_MS = 8000;
+/* Five seconds, not eight (30 Oct 2026, the bug scan): with a cold
+   database before it, eight could run into the function's own ten-second
+   limit, which ended it after the post went and before it was noted. */
+const SEND_MS = 5000;
+// How long a claim holds off a second post: well past the function's own life.
+const CLAIM_MS = 60 * 1000;
 // The entries' colours on the site (.wn-verb in css/style.css).
 const COLOURS = { added: 0x6f8f4f, updated: 0xab8b64, news: 0xc1b7a7, note: 0x7f94a8 };
 const KIND_WORD = { maze: "maze", event: "event", guide: "guide" };
@@ -53,6 +69,26 @@ const json = (statusCode, data) => ({
     body: JSON.stringify(data)
 });
 const text = (v, max) => (typeof v === "string" ? v.replace(/\r\n?/g, "\n").trim().slice(0, max) : "");
+
+/* Words for an embed's description, as the site shows them (30 Oct 2026,
+   the bug scan; the owner's "Fix all"): without the picture characters
+   Discord has no font for (plainGlyphs in share.js), and with Discord's
+   own markdown escaped, so a "*", "_", "||" or "# " typed for the site is
+   not turned into italics, a spoiler or a heading there. Titles, author
+   and footer are left as they are: plainTitle has already cleaned the
+   title, and the other two are never formatted. */
+function discordText(v) {
+    return cards.plainGlyphs(v)
+        // "<" too: "<@123>" draws as a mention even with pings off.
+        /* A bare address is left whole: Discord links it as typed, and a
+           backslash inside one (twitch.tv/vincent\_leet) went into the link. */
+        .replace(/(https?:\/\/\S+)|[\\*_~|`>#[\]<]/g, (m, url) => url || "\\" + m)
+        // A list or numbered line ("- ", "1. ") at the start of a line.
+        // The mark is escaped, so "1." becomes "1\." ("\1." would show the backslash).
+        .replace(/^(\s*)([-+])(?=\s)/gm, "$1\\$2")
+        .replace(/^(\s*\d+)\.(?=\s)/gm, "$1\\.")
+        .trim();
+}
 
 /* Where links in a post point. Never a local run's own address: a post
    sent while testing on localhost would hand the whole server dead links. */
@@ -113,17 +149,22 @@ async function build(db, col, b) {
             embed.title = cards.plainTitle(p.title).slice(0, 256);
             const url = absolute(site, p.link);
             if (url) embed.url = url;
-            if (p.text) embed.description = p.text;
+            if (discordText(p.text)) embed.description = discordText(p.text);
             /* Every news post carries the same banner (28 Oct 2026, the
                owner's): "MAZERATS.NET — Every maze. One place." over the
                maze. The picture uploaded in the Warren was the small icon
                beside the entry, lost in Discord; the site's log now shows a
                piece of this banner instead (NEWS_THUMB in js/home.js). */
-            embed.image = { url: `${site}/assets/img/news-banner.png` };
+            /* The slim 600x77 strip since 30 Oct 2026 (the owner's), under
+               a new name: Discord keeps its copy of a picture by address,
+               and the posts already sent keep the old card they went with. */
+            embed.image = { url: `${site}/assets/img/discord-news-banner.png` };
             return { embed };
         }
         // A note: its words, on the card of the maze or event it is about.
-        const [tk, tid] = [p.target.slice(0, p.target.indexOf(":")), p.target.slice(p.target.indexOf(":") + 1)];
+        // A row with no target is refused below, not a 500 (30 Oct 2026, the bug scan).
+        const target = typeof p.target === "string" ? p.target : "";
+        const [tk, tid] = [target.slice(0, target.indexOf(":")), target.slice(target.indexOf(":") + 1)];
         if (!COLLECTION[tk]) return { error: "That note's maze or event is unknown." };
         const found = await recordOf(db, tk, tid);
         if (!found) return { error: "The maze or event that note is about is gone from the archive." };
@@ -131,7 +172,7 @@ async function build(db, col, b) {
         embed.author = { name: heading("", activity, label) };
         embed.title = tags.title.slice(0, 256);
         embed.url = tags.canonical;
-        embed.description = p.text || tags.description;
+        embed.description = discordText(p.text) || discordText(tags.description);
         embed.image = { url: tags.image };
         return { embed };
     }
@@ -145,9 +186,41 @@ async function build(db, col, b) {
     embed.title = tags.title.slice(0, 256);
     embed.url = tags.canonical;
     // The What's New line first, as on the site, then what the thing is.
-    embed.description = [line, tags.description].filter(Boolean).join("\n\n");
+    embed.description = [discordText(line), discordText(tags.description)].filter(Boolean).join("\n\n");
     embed.image = { url: tags.image };
     return { embed };
+}
+
+/* The entry's row, claimed for this post (see the header): true, or false
+   when another post of it is under way. A row that has never been posted
+   is made as "discord-sending", which whats-new.js does not hand the panel,
+   so a claim never reads as posted. The filter misses a fresh claim, the
+   upsert then meets the unique id and Mongo refuses it (E11000): that
+   refusal is the answer, atomically, however close the two presses. */
+async function claim(col, id, key, now) {
+    const stale = new Date(Date.parse(now) - CLAIM_MS).toISOString();
+    try {
+        await col.updateOne(
+            { id, $or: [{ sendingAt: { $exists: false } }, { sendingAt: { $lt: stale } }] },
+            { $set: { sendingAt: now }, $setOnInsert: { type: "discord-sending", key } },
+            { upsert: true }
+        );
+        return true;
+    } catch (e) {
+        if (e && e.code === 11000) return false;
+        throw e;
+    }
+}
+
+// This post's claim, let go after a failed send: the row gone if it was only the claim.
+async function letGo(col, id, now) {
+    try {
+        await col.deleteOne({ id, type: "discord-sending", sendingAt: now });
+        await col.updateOne({ id, sendingAt: now }, { $unset: { sendingAt: "" } });
+    } catch (e) {
+        // Left, it lapses by itself after CLAIM_MS.
+        console.error("whats-new-discord: claim not let go", e);
+    }
 }
 
 // Sent, or an { error } worded for the panel. Swappable for the tests.
@@ -161,15 +234,64 @@ let send = async (webhook, payload) => {
             signal: AbortSignal.timeout(SEND_MS)
         });
     } catch (e) {
-        return { error: "Discord didn't answer. Try again in a moment." };
+        /* No answer is not "not sent" (30 Oct 2026, the bug scan): Discord
+           may have taken the post and been slow to say so, and "Try again"
+           posted it twice. */
+        return { error: "Discord didn't answer in time. The post may have gone anyway: check the channel before trying again." };
     }
     if (res.ok) return {};
-    if (res.status === 429) return { error: "Discord says that's too many posts at once. Try again in a few seconds." };
+    if (res.status === 429) return { error: "Discord says that's too many posts at once. Try again in a few seconds.", rateLimited: true };
     if (res.status === 401 || res.status === 404) return { error: "Discord doesn't know that webhook any more. It may have been deleted in the channel's settings." };
     const detail = await res.text().catch(() => "");
     console.error("whats-new-discord: Discord refused", res.status, detail.slice(0, 500));
     return { error: `Discord refused the post (${res.status}).` };
 };
+
+/* One entry to the channel: built, claimed, sent and noted. Shared with
+   whats-new-autopost.js (30 Oct 2026), so a post by hand and a post on its
+   own go through the same claim and can never both go. { status, data }.
+
+   The row also keeps the DAY of the entry that went (body.day, the entry's
+   day as the panel and the autopost work it out): the key names a record,
+   not a day, and a maze posted when it was added has a new entry each later
+   day it is edited, which is due to go in its turn. `via` says how. */
+async function postOne(db, col, webhook, body, via) {
+    const built = await build(db, col, body);
+    if (built.error) return { status: 400, data: { error: built.error } };
+
+    const now = new Date().toISOString();
+    // The key as checked in build: a ["maze:x"] passed the test as a string and was stored as a list.
+    const key = String(body.key);
+    const id = "d:" + key;
+    const day = typeof body.day === "string" && /^\d{4}-\d{2}-\d{2}$/.test(body.day) ? body.day : now.slice(0, 10);
+    // The unique id is what makes the claim atomic, so it is made sure of first.
+    await ensureUniqueIndex(col, "id");
+    if (!(await claim(col, id, key, now))) {
+        return { status: 409, data: { error: "That entry is being posted to Discord right now. Wait a moment, then reload the list to see it.", sending: true } };
+    }
+
+    const sent = await send(webhook, { embeds: [built.embed], allowed_mentions: { parse: [] } });
+    if (sent.error) {
+        await letGo(col, id, now);
+        return { status: 502, data: { error: sent.error, rateLimited: !!sent.rateLimited } };
+    }
+
+    /* It HAS gone to Discord by now (30 Oct 2026, the bug scan): a
+       failure to note that answered "That couldn't be posted.", and the
+       admin posted it again. Logged, and the panel told it went. */
+    let row;
+    try {
+        row = await col.findOneAndUpdate(
+            { id },
+            { $set: { type: "discord", key, postedAt: now, day, via }, $unset: { sendingAt: "" }, $inc: { count: 1 } },
+            { upsert: true, returnDocument: "after", projection: { _id: 0 } }
+        );
+    } catch (e) {
+        console.error("whats-new-discord: posted, but not noted", e);
+        row = { id, type: "discord", key, postedAt: now, day, via, count: 1 };
+    }
+    return { status: 200, data: { discord: row } };
+}
 
 exports.handler = async (event) => {
     if (event.httpMethod !== "POST") return json(405, { error: "Method not allowed" });
@@ -187,22 +309,8 @@ exports.handler = async (event) => {
 
         let db;
         try { db = await getDb(); } catch (e) { return json(503, { error: "Database connection failed" }); }
-        const col = db.collection("whats_new");
-        const built = await build(db, col, body);
-        if (built.error) return json(400, { error: built.error });
-
-        const sent = await send(webhook, { embeds: [built.embed], allowed_mentions: { parse: [] } });
-        if (sent.error) return json(502, { error: sent.error });
-
-        const now = new Date().toISOString();
-        const id = "d:" + body.key;
-        await ensureUniqueIndex(col, "id");
-        const row = await col.findOneAndUpdate(
-            { id },
-            { $set: { type: "discord", key: body.key, postedAt: now }, $inc: { count: 1 } },
-            { upsert: true, returnDocument: "after", projection: { _id: 0 } }
-        );
-        return json(200, { discord: row });
+        const out = await postOne(db, db.collection("whats_new"), webhook, body, "hand");
+        return json(out.status, out.data);
     } catch (e) {
         if (isAuthUnavailable(e)) return AUTH_UNAVAILABLE;
         console.error("whats-new-discord: failed", e);
@@ -213,6 +321,9 @@ exports.handler = async (event) => {
 /* Failures reported to /warren's Errors tab: see withErrorReporting in
    _errors.js. Last, so it wraps the handler as finally defined above. */
 exports.handler = require("./_errors").withErrorReporting("whats-new-discord", exports.handler);
+// For whats-new-autopost.js.
+exports.postOne = postOne;
+exports.WEBHOOK = WEBHOOK;
 // For the tests.
 exports._build = build;
 exports._heading = heading;

@@ -9,7 +9,7 @@
    completely inert until js/site.js puts that attribute on <html>. The
    classic palette is not defined here and is not affected by anything in it.
 
-   1117 rules, 1797 declarations, hues 350 (surfaces) / 212 (accents).
+   1126 rules, 1809 declarations, hues 350 (surfaces) / 212 (accents).
 */
 :root[data-theme="crimson"] {
     --bg-black: #080506;
@@ -1386,8 +1386,14 @@ html[data-theme="crimson"]::-webkit-scrollbar-button {
     color: var(--amber-bright);
 }
 
+html[data-theme="crimson"]:not([data-theme]) .room-links-refs-text a {
+    color: color-mix(in srgb, var(--amber-bright), var(--parchment) 50%);
+}
+
 [data-theme="crimson"] .room-links-refs-text a:hover,
-[data-theme="crimson"] .room-links-refs-text a:focus-visible {
+[data-theme="crimson"] .room-links-refs-text a:focus-visible,
+html[data-theme="crimson"]:not([data-theme]) .room-links-refs-text a:hover,
+html[data-theme="crimson"]:not([data-theme]) .room-links-refs-text a:focus-visible {
     color: #ffffff;
     text-shadow: 0 0 8px rgba(255, 255, 255, 0.75);
 }
@@ -1526,6 +1532,8 @@ html[data-theme="crimson"]::-webkit-scrollbar-button {
 [data-theme="crimson"] body.is-viewer #launch-at-clear,
 [data-theme="crimson"] body.is-viewer #ff-launch-at-save,
 [data-theme="crimson"] body.is-viewer #ff-launch-at-clear,
+[data-theme="crimson"] body.is-viewer #spotlight-order-save,
+[data-theme="crimson"] body.is-viewer .spot-order-list .ctl-btn,
 [data-theme="crimson"] body.is-viewer .admin-daily-actions .admin-action-pill,
 [data-theme="crimson"] body.is-viewer .admin-panel[data-panel="deadends"] .de-write {
     box-shadow: none;
@@ -2305,6 +2313,25 @@ html[data-theme="crimson"]::-webkit-scrollbar-button {
     color: var(--amber-bright);
 }
 
+html[data-theme="crimson"]:not([data-theme]) .modal-article-title,
+html[data-theme="crimson"]:not([data-theme]) .modal-article-body h3,
+html[data-theme="crimson"]:not([data-theme]) .modal-article-body h4,
+html[data-theme="crimson"]:not([data-theme]) .modal-article-body h5,
+html[data-theme="crimson"]:not([data-theme]) .modal-article-body h6,
+html[data-theme="crimson"]:not([data-theme]) .modal-article-body a {
+    color: color-mix(in srgb, var(--amber-bright), var(--parchment) 50%);
+}
+
+html[data-theme="crimson"]:not([data-theme]) .modal-article-kicker,
+html[data-theme="crimson"]:not([data-theme]) .modal-article-source a {
+    color: color-mix(in srgb, var(--amber-text), var(--parchment) 60%);
+}
+
+html[data-theme="crimson"]:not([data-theme]) .modal-article-body a:hover,
+html[data-theme="crimson"]:not([data-theme]) .modal-article-source a:hover {
+    color: var(--parchment);
+}
+
 [data-theme="crimson"] .admin-article-status {
     border: 1px solid var(--chrome-border);
     background: var(--bg-panel);
@@ -2878,6 +2905,32 @@ html[data-theme="crimson"]::-webkit-scrollbar-button {
 
 [data-theme="crimson"] .side-menu-item.is-on .side-menu-badge {
     color: #121010;
+}
+
+[data-theme="crimson"] .side-menu-item + .side-menu-branch::before,
+[data-theme="crimson"] .side-menu-branch + .side-menu-branch::before,
+[data-theme="crimson"] .side-menu-branch + .side-menu-item::before {
+    color: rgba(8, 7, 7, 0.32);
+}
+
+[data-theme="crimson"] .side-menu-branch-toggle {
+    background: none;
+    border: 0;
+    color: #080707;
+}
+
+[data-theme="crimson"] .side-menu-branch-toggle:hover,
+[data-theme="crimson"] .side-menu-branch-toggle:focus-visible {
+    background: rgba(8, 7, 7, 0.1);
+    outline: none;
+}
+
+[data-theme="crimson"] .side-menu-branch-toggle:focus-visible {
+    outline: 2px solid #272324;
+}
+
+[data-theme="crimson"] .side-menu-subfold .side-menu-fold-inner {
+    border-left: 1px dotted rgba(8, 7, 7, 0.4);
 }
 
 @media (max-width: 999px) {

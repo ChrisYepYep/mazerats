@@ -1638,6 +1638,10 @@ document.addEventListener("DOMContentLoaded", async () => {
             articleTitleEl.textContent = article.title || "";
             articleMetaEl.textContent = [article.date, article.category].filter(Boolean).join("  —  ");
             articleBodyEl.innerHTML = article.body;
+            // A level below the title, an h3 since 30 Oct 2026, as home.js does it.
+            articleBodyEl.querySelectorAll("h3, h4, h5, h6").forEach(h => {
+                h.setAttribute("aria-level", String(Math.min(6, Number(h.tagName.slice(1)) + 1)));
+            });
             /* The source line goes when there is nowhere for it to point,
                exactly as home.js does it: an article can be stored without a
                URL, and "Read it on Habbo Origins" leading to "#" jumped the

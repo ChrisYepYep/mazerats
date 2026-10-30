@@ -870,6 +870,13 @@ document.addEventListener("DOMContentLoaded", () => {
         // scan): its forms carry typing across a reload, so they carried it
         // across to the next account too.
         if (window.AdminWizard && typeof window.AdminWizard.reset === "function") window.AdminWizard.reset();
+        /* And an unsaved spotlight order (30 Oct 2026, the bug scan): kept
+           through a lock-out, it was handed to whoever signed in next, with
+           Save lit for an order they never made. */
+        spotOrderDraft = null;
+        sayOrderStatus("");
+        // And the skins' unsaved dates, the same way (js/admin-skin.js).
+        if (window.AdminSkin && typeof window.AdminSkin.reset === "function") window.AdminSkin.reset();
     }
 
     /* The panels that live in files of their own (js/admin-guides.js,
@@ -1031,6 +1038,11 @@ document.addEventListener("DOMContentLoaded", () => {
            empties them after it. */
         const wizard = window.AdminWizard && typeof window.AdminWizard.isDirty === "function" ? window.AdminWizard : null;
         const wizardDirty = () => !paletteAsked && !!(wizard && wizard.isDirty());
+        /* And a moved spotlight order not yet saved, and the skins' dates
+           (30 Oct 2026, the bug scan; js/admin-skin.js), the same once-only
+           way: resetAccountPanels drops both after the loop. */
+        const skins = window.AdminSkin && typeof window.AdminSkin.isDirty === "function" ? window.AdminSkin : null;
+        const settingsDirty = () => !paletteAsked && (spotOrderChanged() || !!(skins && skins.isDirty()));
         let loggedOut = false;
         try {
             /* Round again if, once the awaits are back, something is open
@@ -1041,7 +1053,7 @@ document.addEventListener("DOMContentLoaded", () => {
                leaves this admin signed in: nothing has been dropped yet. */
             for (;;) {
                 if (refused()) return;
-                if (dirty() || paletteDirty() || noticeDirty() || wizardDirty()) {
+                if (dirty() || paletteDirty() || noticeDirty() || wizardDirty() || settingsDirty()) {
                     const ok = await showConfirmDialog("Log out and discard your unsaved changes? Anything you have added or edited in the open form will be lost.");
                     if (!ok) return;
                     paletteAsked = true;
@@ -6727,6 +6739,15 @@ document.addEventListener("DOMContentLoaded", () => {
     // The caption's colour when none is stored: .welcome-promo-cta's own
     // in css/style.css. The form shows it, and saves "" while it is left.
     const SPOTLIGHT_DEFAULT_COLOUR = "#ebe8ff";
+    /* The caption's limit (SPOTLIGHT_CAPTION_MAX in netlify/functions/
+       events.js): 80 characters as read, the ^ marks not counted, and no
+       more than 40 marks on top. Counted as the server counts it, spaces
+       run together and the ends trimmed (30 Oct 2026, the bug scan). */
+    const SPOTLIGHT_CAPTION_MAX = 80;
+    function spotlightCaptionCount(v) {
+        const c = String(v || "").replace(/\s+/g, " ").trim();
+        return { whole: c.length, visible: c.replace(/\^/g, "").length };
+    }
     function spotlightFieldsHtml(item, splitIso) {
         const from = splitIso(item.spotlightFrom), until = splitIso(item.spotlightUntil);
         const stored = spotlightHex(item.spotlightColour) || "";
@@ -6745,7 +6766,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 ${fieldRow("Spotlight until time (UTC, 24-hour)", `<input type="time" name="spotlightUntilTime" value="${until.time}">`)}
                 <p class="admin-hint">Leave both blank to spotlight it from now until you untick it. It comes off the landing page by itself the moment the end passes.</p>
                 ${fieldRow("Spotlight caption (optional)", `<span class="admin-caption-pair"><input type="text" name="spotlightCaption" maxlength="120" placeholder="Click for more details." value="${escapeHtml(item.spotlightCaption || "")}"><button type="button" class="admin-pill-btn admin-raise-btn" title="Raise the selected text, like the st in 1st. With nothing selected, raises every st, nd, rd and th after a number, and UTC. Press again to lower." aria-label="Raise text, like the st in 1st">1<sup>st</sup></button></span>`)}
-                <p class="admin-hint">Text between ^ marks is raised, like the st in 1<sup>st</sup>: the 1st button adds them.</p>
+                <p class="admin-hint">Text between ^ marks is raised, like the st in 1<sup>st</sup>: the 1st button adds them. <span class="admin-caption-count" data-caption-count aria-live="polite"></span></p>
                 ${fieldRow("Caption colour (hex, optional)", `<span class="admin-colour-pair"><input type="color" class="admin-colour-swatch" value="${colour}" aria-label="Pick the caption colour"><input type="text" name="spotlightColour" maxlength="7" spellcheck="false" autocomplete="off" placeholder="${SPOTLIGHT_DEFAULT_COLOUR}" value="${stored}"></span>`)}
                 <p class="admin-hint">Blank caption reads "Click for more details." Type a hex code such as #ebe8ff, or pick one from the swatch, to match the lettering in the event's thumbnail. Blank colour is ${SPOTLIGHT_DEFAULT_COLOUR}.</p>
                 ${fieldRow("Caption position on the landing page", `<select name="spotlightCaptionAt">
@@ -6800,6 +6821,19 @@ document.addEventListener("DOMContentLoaded", () => {
         const box = formEl.querySelector('input[name="spotlightCaption"]');
         const btn = formEl.querySelector(".admin-raise-btn");
         if (!box || !btn) return;
+        /* How long it is, as read (30 Oct 2026, the bug scan): the box holds
+           120 so the marks fit, and 81 to 120 plain letters were only refused
+           by the server on Save. Said as you type; spotlightFault stops the
+           save. */
+        const count = formEl.querySelector("[data-caption-count]");
+        const recount = () => {
+            if (!count) return;
+            const n = spotlightCaptionCount(box.value).visible;
+            count.textContent = `${n} of ${SPOTLIGHT_CAPTION_MAX} characters.`;
+            count.classList.toggle("is-over", n > SPOTLIGHT_CAPTION_MAX);
+        };
+        box.addEventListener("input", recount);
+        recount();
         // Pressing the button would otherwise take the selection with the focus.
         btn.addEventListener("mousedown", (e) => e.preventDefault());
         btn.addEventListener("click", () => {
@@ -6819,10 +6853,20 @@ document.addEventListener("DOMContentLoaded", () => {
                 if (next === v) next = v.replace(/(\d)\^(st|nd|rd|th)\^/gi, "$1$2").replace(/\^UTC\^/g, "UTC");
                 s = e = null;
             }
-            box.value = next;
+            /* Typed in, not set (30 Oct 2026, the bug scan): setting .value
+               wiped the box's undo, so Ctrl+Z could not take a raise back, or
+               anything typed before it. insertText over the whole box is one
+               undo step, and fires the box's own input event. */
             box.focus();
+            box.setSelectionRange(0, v.length);
+            let typed = false;
+            try { typed = document.execCommand("insertText", false, next); } catch (err) { typed = false; }
+            if (!typed || box.value !== next) {
+                box.value = next;
+                box.dispatchEvent(new Event("input", { bubbles: true }));
+            }
             if (s !== null) box.setSelectionRange(s, e);
-            box.dispatchEvent(new Event("input", { bubbles: true }));
+            else box.setSelectionRange(next.length, next.length);
         });
     }
 
@@ -6836,6 +6880,7 @@ document.addEventListener("DOMContentLoaded", () => {
        ticked, meanwhile joins at the end. Stored as spotlightOrder; see THE
        SPOTLIGHT'S ORDER in netlify/functions/events.js. */
     let spotOrderDraft = null;
+    let spotOrderSaving = false;
     const spotOrderPlace = ev => Number.isInteger(ev.spotlightOrder) ? ev.spotlightOrder : Infinity;
     const spotOrderTime = v => { const t = typeof v === "string" && v ? Date.parse(v) : NaN; return isNaN(t) ? null : t; };
     function spotOrderSaved() {
@@ -6900,12 +6945,18 @@ document.addEventListener("DOMContentLoaded", () => {
             }));
             spotOrderList.appendChild(li);
         });
-        const changed = !!spotOrderDraft && spotOrderDraft.join("\n") !== saved.map(ev => ev.id).join("\n");
-        if (spotOrderSave) spotOrderSave.disabled = !changed;
+        // Off while a save is going (30 Oct 2026, the bug scan): a redraw
+        // meanwhile (the events list, the tab coming back) lit it again.
+        if (spotOrderSave) spotOrderSave.disabled = spotOrderSaving || !spotOrderChanged();
+    }
+    // A moved order not yet saved, for the log out and leave-page questions.
+    function spotOrderChanged() {
+        return !!spotOrderDraft && spotOrderDraft.join("\n") !== spotOrderSaved().map(ev => ev.id).join("\n");
     }
     if (spotOrderSave) spotOrderSave.addEventListener("click", async () => {
-        if (!spotOrderDraft) return;
+        if (!spotOrderDraft || spotOrderSaving) return;
         const ids = spotOrderDraft.slice();
+        spotOrderSaving = true;
         spotOrderSave.disabled = true;
         sayOrderStatus("Saving…");
         try {
@@ -6916,13 +6967,18 @@ document.addEventListener("DOMContentLoaded", () => {
                 if (at >= 0) ev.spotlightOrder = at;
                 else delete ev.spotlightOrder;
             });
-            spotOrderDraft = null;
+            // Moved again while it saved: that newer order is still a draft.
+            if (spotOrderDraft && spotOrderDraft.join("\n") === ids.join("\n")) spotOrderDraft = null;
+            spotOrderSaving = false;
             renderSpotlightOrder();
             sayOrderStatus("Saved. Visitors see the new order on their next page load.");
         } catch (err) {
+            spotOrderSaving = false;
             if (err.status === 401) { lockOut(); return; }
             sayOrderStatus(err.message || "Couldn't save the spotlight order.", true);
             renderSpotlightOrder();
+        } finally {
+            spotOrderSaving = false;
         }
     });
 
@@ -6932,6 +6988,10 @@ document.addEventListener("DOMContentLoaded", () => {
             if (date && !time) return `The spotlight ${which} date needs a time as well.`;
             if (time && !date) return `The spotlight ${which} time needs a date as well.`;
         }
+        // Said before the save, as events.js would say it after (30 Oct 2026).
+        const caption = spotlightCaptionCount(d.spotlightCaption);
+        if (caption.visible > SPOTLIGHT_CAPTION_MAX) return `The spotlight caption is ${caption.visible} characters. Please keep it to ${SPOTLIGHT_CAPTION_MAX} or fewer (the ^ marks don't count).`;
+        if (caption.whole > SPOTLIGHT_CAPTION_MAX + 40) return "The spotlight caption has too many ^ marks. Raise less of it.";
         return "";
     }
 
@@ -7046,7 +7106,11 @@ document.addEventListener("DOMContentLoaded", () => {
             payload.spotlight = data.spotlight === "1";
             payload.spotlightFrom = pairIso(data.spotlightFromDate, data.spotlightFromTime);
             payload.spotlightUntil = pairIso(data.spotlightUntilDate, data.spotlightUntilTime);
-            payload.spotlightCaption = (data.spotlightCaption || "").trim().slice(0, 120);
+            /* Not cut short here (30 Oct 2026, the bug scan): the 1st button
+               adds ^ marks past the box's maxlength, and slicing at 120 could
+               drop the end and leave a mark unclosed. events.js checks the
+               length, marks apart, and says so. */
+            payload.spotlightCaption = (data.spotlightCaption || "").trim();
             /* The hex box, not the swatch, is what saves (wireSpotlightColour):
                left blank it stays "", the landing page's own default, so an
                old event never gains a colour nobody chose (30 Sept 2026). */
@@ -9477,7 +9541,9 @@ document.addEventListener("DOMContentLoaded", () => {
         const whatsNewDirty = !!(window.AdminWhatsNew && typeof AdminWhatsNew.isDirty === "function" && AdminWhatsNew.isDirty());
         // And a notification being written (26 Oct 2026).
         const noticeDirty = !!(window.AdminNotifications && typeof AdminNotifications.isDirty === "function" && AdminNotifications.isDirty());
-        if (!Object.keys(COLLECTIONS).some(isFormDirty) && !isContributorFormDirty() && !whatsNewDirty && !noticeDirty) return;
+        // And a moved spotlight order, and the skins' dates, unsaved (30 Oct 2026, the bug scan).
+        const settingsDirty = spotOrderChanged() || !!(window.AdminSkin && typeof AdminSkin.isDirty === "function" && AdminSkin.isDirty());
+        if (!Object.keys(COLLECTIONS).some(isFormDirty) && !isContributorFormDirty() && !whatsNewDirty && !noticeDirty && !settingsDirty) return;
         e.preventDefault();
         e.returnValue = "";
     });

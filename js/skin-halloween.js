@@ -769,19 +769,25 @@
 
     /* ---------- THE DRIP CLOCK ----------
        Every animated drip on the page, stepped through its frames on one
-       requestAnimationFrame, each at its own point in the cycle. Frame
-       RELEASE is the moment its drop lets go. For reduced motion: the drip
-       rests at a mid frame, and nothing falls. */
+       timer, each at its own point in the cycle. Frame RELEASE is the moment
+       its drop lets go. For reduced motion: the drip rests at a mid frame,
+       and nothing falls.
+       A timer at half a frame (30 Oct 2026, the bug scan), not a frame loop:
+       that woke at the screen's rate for the whole visit to change a strip
+       every 150ms. Half a frame, so no frame is ever stepped over; a hidden
+       tab changes nothing. */
     const CYCLE = 7200, FRAME_MS = 150, RELEASE = 36, GRAVITY = 1500, MIN_FALL = 40;
     const dripping = new Set();
-    let dripRaf = 0;
+    let dripRaf = 0;                    // the drip clock's timer
     const pend = new Set();
     const later = (fn, ms) => { const t = setTimeout(() => { pend.delete(t); fn(); }, ms); pend.add(t); };
     function runDrips() {
         if (reduceMq.matches) { dripping.forEach((d) => { if (d.ready) d.strip.style.backgroundPositionX = (-14 * d.cw) + "px"; }); return; }
         if (dripRaf || !dripping.size) return;
-        const tick = (now) => {
-            dripRaf = dripping.size ? requestAnimationFrame(tick) : 0;
+        const tick = () => {
+            dripRaf = dripping.size ? setTimeout(tick, FRAME_MS / 2) : 0;
+            if (document.hidden) return;
+            const now = performance.now();
             dripping.forEach((d) => {
                 if (!d.strip.isConnected) { dripping.delete(d); if (d.drop) { d.drop.remove(); added.delete(d.drop); } return; }
                 if (!d.ready) return;
@@ -793,7 +799,7 @@
                 d.last = f;
             });
         };
-        dripRaf = requestAnimationFrame(tick);
+        dripRaf = setTimeout(tick, 0);
     }
 
     /* THE DROP LETS GO and falls under gravity to the edge beneath it, and
@@ -1472,7 +1478,8 @@
         const PRESSABLE = "a, button, input, select, textarea, label, summary, [role=button], .chrome-list-row";
         const pressable = (e) => e.pointerType !== "mouse" && !!(e.target && e.target.closest && e.target.closest(PRESSABLE));
         const onDown = (e) => {
-            if (e.button > 0 || covered(e.clientX, e.clientY) || pressable(e)) return;
+            // Held behind a game (gameHeld, below), the bats are not there to be shot.
+            if (held || e.button > 0 || covered(e.clientX, e.clientY) || pressable(e)) return;
             const b = batAt(e.clientX, e.clientY);
             if (b) {
                 // Shot: it stops dead, flips over and drops off the bottom.
@@ -1499,7 +1506,7 @@
         }
         const root = document.documentElement;
 
-        let next = 4 + rnd() * 6, last = performance.now(), id = 0;
+        let next = 4 + rnd() * 6, last = performance.now(), id = 0, held = false;
         const frame = (now) => {
             id = requestAnimationFrame(frame);
             const dt = Math.max(0, Math.min(0.05, (now - last) / 1000)); last = now;
@@ -1571,8 +1578,33 @@
         };
         id = requestAnimationFrame(frame);
         addEventListener("resize", resize);
-        bats = { stop() {
+        /* HELD BEHIND A GAME (30 Oct 2026, the owner's, from the bug scan).
+           While Fallin' Furni's window, Pura Panic's or Scout's Trail's is
+           open over the page (or the game fills a phone), the sky is put
+           away: no frame loop redrawing a screen-sized canvas under a game
+           that wants every frame, and no bats to shoot. They fly on from
+           where they were when the window closes. Asked when a game says it
+           came forward or went (mazerats:game-front: the window's own open
+           class is changed just after, hence the wait) and on every
+           decoration pass (a window opened or closed changes the page). The
+           frame loop itself already rests in a hidden tab. */
+        const gameUp = () => root.classList.contains("ff-phone-open") || !!document.querySelector("#ff-overlay.open, #pura-overlay.open, #rr-overlay.open");
+        const hold = () => {
+            if (held === gameUp()) return;
+            held = !held;
+            root.classList.toggle("hw-bats-held", held);
+            if (held) { cancelAnimationFrame(id); id = 0; root.classList.remove("hw-bat-aim"); return; }
+            last = performance.now();
+            id = requestAnimationFrame(frame);
+        };
+        let holdTimer = 0;
+        const onGameFront = () => { clearTimeout(holdTimer); holdTimer = setTimeout(hold, 0); };
+        document.addEventListener("mazerats:game-front", onGameFront);
+        hold();
+        bats = { hold, stop() {
             cancelAnimationFrame(id); removeEventListener("resize", resize);
+            document.removeEventListener("mazerats:game-front", onGameFront); clearTimeout(holdTimer);
+            root.classList.remove("hw-bats-held");
             if (headWatch) headWatch.disconnect();
             document.removeEventListener("pointerdown", onDown, true);
             document.removeEventListener("click", onClick, true);
@@ -1712,17 +1744,20 @@
        more per resize. A painter whose canvas has gone now leaves; and with
        none (a phone, which has no margin to hang him in) the frame loop
        stops instead of running empty at the screen's rate. */
+    /* On a timer of its own twelve frames a second, not a frame loop that
+       let four calls in five go by (30 Oct 2026, the bug scan): that woke
+       every frame of the visit, at the screen's rate, to paint 12. A hidden
+       tab paints nothing. (rafId holds the timer.) */
     function swing() {
         if (rafId || reduceMq.matches || !tickers.size) return;
-        let last = 0;
-        const tick = (now) => {
+        const tick = () => {
             if (!tickers.size) { rafId = 0; return; }
-            rafId = requestAnimationFrame(tick);
-            if (now - last < 83) return;
-            last = now;
+            rafId = setTimeout(tick, 83);
+            if (document.hidden) return;
+            const now = performance.now();
             tickers.forEach((p) => { if (p.canvas && !p.canvas.isConnected) tickers.delete(p); else p(now / 1000); });
         };
-        rafId = requestAnimationFrame(tick);
+        rafId = setTimeout(tick, 83);
     }
 
     /* REDUCED MOTION, FOLLOWED (26 Oct 2026, the bug scan). It was read once
@@ -1736,9 +1771,9 @@
         if (!on) return;
         if (reduceMq.matches) {
             if (bats) bats.stop(); bats = null;
-            cancelAnimationFrame(dripRaf); dripRaf = 0;
+            clearTimeout(dripRaf); dripRaf = 0;
             runDrips();
-            cancelAnimationFrame(rafId); rafId = 0;
+            clearTimeout(rafId); rafId = 0;
             tickers.forEach((p) => p(null)); tickers.clear();
         } else {
             decorateBats();
@@ -1768,6 +1803,7 @@
         decoratePanels();
         decorateConsole();
         decorateBats();
+        if (bats) bats.hold();
     }
 
     function start() {
@@ -1832,8 +1868,8 @@
         removeEventListener("resize", onResize); clearTimeout(rzTimer);
         reduceMq.removeEventListener("change", onMotion);
         clearTimeout(roTimer); resized.clear();
-        cancelAnimationFrame(rafId); rafId = 0;
-        cancelAnimationFrame(dripRaf); dripRaf = 0; dripping.clear();
+        clearTimeout(rafId); rafId = 0;
+        clearTimeout(dripRaf); dripRaf = 0; dripping.clear();
         pend.forEach(clearTimeout); pend.clear();
         // The queue's flags too: with its jobs and timers gone, nothing else would clear them.
         idleJobs.length = 0; idleBusy = false; rowsQueued = false;
