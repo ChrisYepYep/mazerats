@@ -157,7 +157,10 @@ async function build(db, col, b) {
             /* The slim 600x77 strip since 30 Oct 2026 (the owner's), under
                a new name: Discord keeps its copy of a picture by address,
                and the posts already sent keep the old card they went with. */
-            embed.image = { url: `${site}/assets/img/discord-news-banner.png` };
+            // Framed (30 Oct 2026, the owner's): an 8px radius, a 1px black border with a light line inside it
+            // on the top and left and a dark one on the right and bottom, and a 2px solid shadow. A file of its
+            // own, so Discord, which keeps a picture by its address, does not go on showing the plain one.
+            embed.image = { url: `${site}/assets/img/discord-news-banner-framed.png` };
             return { embed };
         }
         // A note: its words, on the card of the maze or event it is about.
