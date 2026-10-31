@@ -41,7 +41,7 @@ const { SECURITY_HEADERS } = require("./_headers");
 // Points here are totals, the day's score plus its speed bonus, as every
 // public board and the Profile count them (see _speed.js). forgetDay is the
 // reset's reach into the day's clock and recorded moves — see the reset.
-const { TOTAL, totalOf, forgetDay, progressFor, isPractice, notePractised } = require("./_speed");
+const { TOTAL, totalOf, forgetDay, progressFor, isPractice, notePractised, REPLAYED } = require("./_speed");
 // The launch cut, for a reset of a practised launch day (1 Oct 2026).
 const { launchCut } = require("./daily-scores");
 
@@ -476,9 +476,16 @@ async function route(event, db, scores, resets) {
                2026), and before anything is deleted, so a note that fails
                leaves the day as it was and the reset is tried again. */
             const cut = await launchCut(db).catch(() => null);
-            if (cut && cut.day === day) {
-                const row = await progressFor(db, meta.key, day, playerId);
-                if (isPractice(row, cut)) await notePractised(db, meta.key, day, playerId, "reset");
+            const row = await progressFor(db, meta.key, day, playerId);
+            if (cut && cut.day === day && isPractice(row, cut)) {
+                await notePractised(db, meta.key, day, playerId, "reset");
+            } else if (row || await db.collection(meta.collection).findOne(Object.assign({ playerId, day }, meta.filter), { projection: { _id: 1 } })) {
+                /* EVERY OTHER DAY GIVEN BACK, too (31 Oct 2026, the owner's;
+                   REPLAYED in _speed.js): the player has seen today's
+                   answers, so the replay is filed with no clock. Only when
+                   they had begun the day (its clock or its filed row): a
+                   reset of a day not yet played gives nothing away. */
+                await notePractised(db, meta.key, day, playerId, REPLAYED);
             }
 
             // Today only. Deleting a player's whole history is a different

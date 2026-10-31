@@ -20,7 +20,7 @@
          and one that got indexed would be a result that promises an archive
          and delivers an apology. -->
     <meta name="robots" content="noindex, nofollow">
-    <title>Lost in the maze — Maze Rats</title>
+    <title>Lost in the maze | Maze Rats</title>
     <meta name="description" content="That page is not in the archive.">
     <!-- Bitmap copies of the MZ mark below, for the browsers that take no SVG
          favicon (Safari, until recently) and for a phone's home screen, which
@@ -52,7 +52,7 @@
 
          Wrapped in try/catch: localStorage throws outright in some privacy modes,
          and a colour scheme is not worth a blank page. -->
-    <link rel="stylesheet" href="/css/style.css?v=2">
+    <link rel="stylesheet" href="/css/style.css?v=3">
     <link id="theme-css" rel="stylesheet">
     <script>
     /* THE FIRST PAINT'S PALETTE. The site's own (mazerats_theme), unless a
@@ -130,10 +130,12 @@
          are built by tools/themes.js (css/theme-dark.css on html[data-dark],
          css/theme-frostlight.css on html[data-light]), loaded only when worn,
          and last in the head so they follow every other. Set here, before the
-         first paint, and again whenever the palette changes under the page. -->
+         first paint, and again whenever the palette changes under the page.
+         And when the switch is pressed in another open tab (31 Oct 2026, the
+         bug scan): the storage event, so every tab follows without a reload. -->
     <link id="dark-css" rel="stylesheet">
     <link id="light-css" rel="stylesheet">
-    <script>(function(){var d=document.documentElement,dk=document.getElementById("dark-css"),lt=document.getElementById("light-css"),want=false;function sheet(l,h){if(!l.getAttribute("href"))l.href=h;}function apply(){var light=want&&d.getAttribute("data-theme")==="frost",dark=want&&!light;if(dark){sheet(dk,"/css/theme-dark.css");if(!d.hasAttribute("data-dark"))d.setAttribute("data-dark","");}else if(d.hasAttribute("data-dark"))d.removeAttribute("data-dark");if(light){sheet(lt,"/css/theme-frostlight.css");if(!d.hasAttribute("data-light"))d.setAttribute("data-light","");}else if(d.hasAttribute("data-light"))d.removeAttribute("data-light");}window.__mrDarkOn=function(){return want;};window.__mrDarkIsLight=function(){return d.getAttribute("data-theme")==="frost";};window.__mrSetDark=function(v){want=!!v;apply();try{localStorage.setItem("mazerats_dark",want?"1":"0");}catch(e){}};try{want=localStorage.getItem("mazerats_dark")==="1";}catch(e){}apply();try{new MutationObserver(apply).observe(d,{attributes:true,attributeFilter:["data-theme"]});}catch(e){}})();</script>
+    <script>(function(){var d=document.documentElement,dk=document.getElementById("dark-css"),lt=document.getElementById("light-css"),want=false;function sheet(l,h){if(!l.getAttribute("href"))l.href=h;}function apply(){var light=want&&d.getAttribute("data-theme")==="frost",dark=want&&!light;if(dark){sheet(dk,"/css/theme-dark.css");if(!d.hasAttribute("data-dark"))d.setAttribute("data-dark","");}else if(d.hasAttribute("data-dark"))d.removeAttribute("data-dark");if(light){sheet(lt,"/css/theme-frostlight.css");if(!d.hasAttribute("data-light"))d.setAttribute("data-light","");}else if(d.hasAttribute("data-light"))d.removeAttribute("data-light");}window.__mrDarkOn=function(){return want;};window.__mrDarkIsLight=function(){return d.getAttribute("data-theme")==="frost";};window.__mrSetDark=function(v){want=!!v;apply();try{localStorage.setItem("mazerats_dark",want?"1":"0");}catch(e){}};try{want=localStorage.getItem("mazerats_dark")==="1";}catch(e){}apply();try{new MutationObserver(apply).observe(d,{attributes:true,attributeFilter:["data-theme"]});}catch(e){}addEventListener("storage",function(e){if(e.key==="mazerats_dark"||e.key===null){want=e.newValue==="1";apply();}});})();</script>
 </head>
 <body data-page="notfound">
 
@@ -183,7 +185,7 @@
         </div>
 
         <p class="lost-foot">If you followed a link from somewhere on this site, it is a fault worth
-            knowing about &mdash; let us know on the <a href="https://discord.gg/Fw4daP4KBg" target="_blank" rel="noopener">Maze Rats Discord</a>.</p>
+            knowing about, so let us know on the <a href="https://discord.gg/Fw4daP4KBg" target="_blank" rel="noopener">Maze Rats Discord</a>.</p>
     </main>
 
     <footer class="site-footer">
@@ -191,7 +193,7 @@
         <p>&copy; 2026 Origins Maze Rats. All rights reserved.</p>
     </footer>
 
-    <script src="/js/api.js?v=2"></script>
+    <script src="/js/api.js?v=3"></script>
     <script src="/js/event-status.js?v=2"></script>
     <!-- Puts the Fellow Fansites row and the Privacy Policy link into the
          footer, exactly as it does on every other page. -->

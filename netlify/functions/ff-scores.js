@@ -785,8 +785,10 @@ function checkBreakdown(body, totals, published, startedAt, view) {
    the level to play it, and it fetches the levels before Play is pressed,
    so any version it can really have played was written before its token.
    One written later cannot have been, and falls through to step 3. An
-   OLDER version is honoured however old it is — a tab left open overnight
-   is still an honest player — for as long as the store keeps it.
+   OLDER version used to be honoured however old it was, for as long as the
+   store kept it (a week); since 31 Oct 2026 it must also still have been
+   current when the token was issued, so only a run under way when its
+   level changed finishes on the old numbers (see playedAs).
 
    AND THE VERSIONS HAVE TO HAVE BEEN LIVE TOGETHER. The page reads every
    level in one request, so the versions it was dealt were all current at
@@ -841,7 +843,7 @@ async function levelsAsPlayed(db, body, all, startedAt) {
     if (revs) {
         const keys = [];
         ids.forEach((id, i) => { keys.push(`${id}:${revs[i]}`, `${id}:${revs[i] + 1}`); });
-        const rows = await col.find({ _id: { $in: keys } }, { projection: { supersededAt: 0 } }).toArray();
+        const rows = await col.find({ _id: { $in: keys } }).toArray();
         for (const s of rows) snaps.set(String(s._id), s);
     }
 
@@ -854,8 +856,22 @@ async function levelsAsPlayed(db, body, all, startedAt) {
         const at = snap ? msOf(snap.at) : NaN;
         if (!snap || snap.published !== true || !(at <= t)) return null;
         const next = snaps.get(`${id}:${rev + 1}`);
-        const until = next ? msOf(next.at)
+        let until = next ? msOf(next.at)
             : (cur && revOf(cur) === rev + 1 ? changedAtOf(cur) : Infinity);
+        // The next version's own stamp gone too: when this one was retired.
+        if (until === Infinity && snap.supersededAt) until = msOf(snap.supersededAt);
+        /* STILL CURRENT WHEN THE RUN BEGAN (31 Oct 2026, the owner's, from
+           the bug scan). A version replaced BEFORE the token was issued used
+           to be honoured for the whole week it is kept, so a run could name
+           the easier clocks from before the 28 Oct retune until 4 Nov. Now
+           only a run already under way when the level changed finishes on
+           its own version; a run begun after is judged by the level as it
+           is (step 3). A tab left open across a change, with Play pressed
+           after it, now has its old version judged by the new rules, so
+           the page should fetch the levels again before a run. A version is
+           still kept for a week (VERSIONS in ff-levels.js); a run in
+           progress only needs its token's three hours of that. */
+        if (!(until > t)) return null;
         return { level: snap, at, until };
     };
 

@@ -268,7 +268,7 @@ document.addEventListener("DOMContentLoaded", () => {
         modalNoImg.hidden = !!picture || bare;
         if (picture) {
             modalImg.src = picture;
-            modalImg.alt = `${view.roomName(room)} — the room as it was`;
+            modalImg.alt = `${view.roomName(room)}, the room as it was`;
         } else {
             // Both, not just the src: an <img> with no src but a leftover
             // alt is drawn as a broken-image box carrying the PREVIOUS
@@ -287,7 +287,7 @@ document.addEventListener("DOMContentLoaded", () => {
         modalMeta.hidden = !meta.length;
 
         modalDesc.textContent = room.description
-            || (bare ? "Nothing recorded for this room yet — no picture, no notes."
+            || (bare ? "Nothing recorded for this room yet: no picture, no notes."
                      : "Nothing has been written about this room yet.");
         modalDesc.classList.toggle("is-empty", !room.description);
 
@@ -419,6 +419,9 @@ document.addEventListener("DOMContentLoaded", () => {
     });
 
     modalLink.addEventListener("focus", () => modalLink.select());
+    // Tab is kept inside the sheet by FocusTrap in js/site.js, which traps
+    // every aria-modal window on the site (checked 31 Oct 2026 in Edge: Tab
+    // and Shift+Tab cycle close, exits and link, and never leave it).
 
     window.addEventListener("popstate", () => {
         const id = roomIdFromPath();
@@ -783,7 +786,8 @@ document.addEventListener("DOMContentLoaded", () => {
            and cannot be styled into looking like a button. */
         const lines = secrets
             .filter(s => s.hint)
-            .map(s => (foundIds.has(s.id) ? "✓ " : "— ") + s.hint);
+            // A dot for one still to find, not a dash (31 Oct 2026: no em dashes where visitors read).
+            .map(s => (foundIds.has(s.id) ? "✓ " : "• ") + s.hint);
         if (secretTally) {
             secretTally.title = lines.length
                 ? lines.join("\n") + "\n\nSome words are best simply spoken aloud."
@@ -815,7 +819,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 const li = document.createElement("li");
                 const done = foundIds.has(s.id);
                 li.className = done ? "is-found" : "";
-                li.textContent = (done ? "✓ " : "— ") + s.hint;
+                li.textContent = (done ? "✓ " : "• ") + s.hint;
                 secretClues.appendChild(li);
             }
         }
@@ -1912,11 +1916,11 @@ document.addEventListener("DOMContentLoaded", () => {
     function sayTrouble(answer) {
         if (!answer) return false;
         if (answer.tooMany) {
-            sayAloud("Too many tries just now — wait a minute and try again.");
+            sayAloud("Too many tries just now. Wait a minute and try again.");
             return true;
         }
         if (answer.failed) {
-            sayAloud("Couldn't check that — try again.");
+            sayAloud("Couldn't check that. Try again.");
             return true;
         }
         return false;
@@ -1997,7 +2001,8 @@ document.addEventListener("DOMContentLoaded", () => {
         view.render();
 
         const map = data.map || {};
-        document.title = `${map.title || "The Sorcerer's Atlas"} — Maze Rats`;
+        // " | Maze Rats", as the page's own <title> (31 Oct 2026).
+        document.title = `${map.title || "The Sorcerer's Atlas"} | Maze Rats`;
         const heading = document.getElementById("wiz-title");
         if (heading) heading.textContent = map.title || "The Sorcerer's Atlas";
         /* The line under the title. It carries a sensible default written

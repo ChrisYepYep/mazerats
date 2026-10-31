@@ -313,7 +313,7 @@
             syncRotate();
         }
         // The tab and the address name the game while it is open.
-        if (window.PageMeta) window.PageMeta.set("fallinfurni", "Fallin' Furni — Maze Rats", "https://mazerats.net/fallinfurni");
+        if (window.PageMeta) window.PageMeta.set("fallinfurni", "Fallin' Furni | Maze Rats", "https://mazerats.net/fallinfurni");
     }
 
     /* The frame comes in hidden and is shown when the game's page says its

@@ -414,7 +414,7 @@
         }
         // The tab and the address name the game while it is open, as Guess
         // the Maze's do (PageMeta in js/site.js).
-        if (window.PageMeta) window.PageMeta.set("purapanic", "Pura Panic — Maze Rats", "https://mazerats.net/purapanic");
+        if (window.PageMeta) window.PageMeta.set("purapanic", "Pura Panic | Maze Rats", "https://mazerats.net/purapanic");
         if (!loaded) {
             showPanel("loading");
             loaded = Promise.all([loadAll(), checkGate()]).then(() => { ready = true; if (mode === "idle") showPanel("title"); hud(); draw(); sendUnsent(); })
@@ -537,7 +537,7 @@
     let mode = "idle";     // idle | dealing | play | paused | over | board
     let boardFrom = "title";
     let g = null;          // the engine's game
-    let run = null;        // { token, seed, reason } from the server, or null
+    let run = null;        // { token, deck, stamp, reason } from the server (DEALT), or null
     let gameMs = 0;
     let fallAt = 0;        // ms of game time until the next half-row step
     let lockAt = null;     // ms of game time left before a landed piece locks
@@ -560,6 +560,9 @@
     // The soundtrack (js/pura-music.js), if it loaded; the game plays without it.
     const music = () => window.PuraMusic || null;
 
+    // Pieces the server dealt, kept only if every one is a piece the rules know.
+    const kindsOf = (list) => (Array.isArray(list) && list.every(k => typeof k === "string" && E.KINDS.includes(k)) ? list.slice() : null);
+
     async function startRun() {
         try {
             const ctl = new AbortController();
@@ -568,11 +571,105 @@
             clearTimeout(timer);
             const body = await res.json().catch(() => ({}));
             if (res.status === 403 && window.Account && Account.writeRefused(403, body, "play")) return { refused: true };
-            if (res.ok && body.token && Number.isInteger(body.seed)) return { token: body.token, seed: body.seed };
+            // The token and the first pieces, never the seed (DEALT, below).
+            const deck = kindsOf(body.deal);
+            if (res.ok && body.token && deck && deck.length) return { token: body.token, deck, stamp: null };
             return { token: null, reason: body.reason || "unavailable" };
         } catch (e) {
             return { token: null, reason: "offline" };
         }
+    }
+
+    /* DEALT (31 Oct 2026, the bug scan; the owner's yes). A game for the
+       board is no longer dealt from a seed on this page: the seed let a
+       script deal itself the whole game and top the board. The server keeps
+       it (netlify/functions/_pura-run.js) and hands the pieces over a few at
+       a time (pura-deal.js): the start brings the first ten, and with four
+       still to come after the one in play this asks for the next, sending
+       the placements so far, so a request goes every five pieces or so and
+       is back long before it is needed. The answer's stamp goes back with
+       the next request and with every save, so the server checks each
+       placement only once.
+
+       NOT HERE IN TIME. If the pieces have not come when the next one is
+       wanted (a slow or dropped connection), the game holds: no piece in
+       the well and nothing to steer, and after a moment a plain "Waiting
+       for the server…" across the middle (the level banner's place), while
+       this asks again (after 1, 2 and 4 seconds, then every 8 while there
+       are still pieces in hand, and every 2 while it holds). It plays on the
+       moment they arrive. A run the server will deal no more of (its three
+       hours up) ends when the pieces it has run out, and is sent as any
+       ended game is. Maintenance, the localhost test levels and a start the
+       server did not answer deal from a seed here, as before, and are not
+       kept on the board. */
+    const DEAL_API = "/.netlify/functions/pura-deal";
+    const DEAL_LOW = 4;          // asked again with this many still to come after the piece in play
+    const WAIT_NOTE_MS = 600;    // dry this long before the note shows (a blip says nothing)
+    let dealing = null;          // { g, at } while a request is out
+    let dealRetryAt = 0, dealFails = 0, dealFailedAt = 0, dealDone = false, dryFor = 0, waitShown = false;
+
+    function resetDealer() {
+        dealing = null; dealRetryAt = 0; dealFails = 0; dealFailedAt = 0; dealDone = false; dryFor = 0;
+        hideWait();
+    }
+
+    function feed() {
+        if (!g || !g.deck || !run || !run.token || dealing || dealDone || g.over) return;
+        if (g.deck.length - g.pieces - 1 > DEAL_LOW) return;
+        const now = performance.now();
+        // The server's own "not yet", then the backoff after a failure (shorter while held).
+        if (now < dealRetryAt) return;
+        if (dealFails && now - dealFailedAt < Math.min(g.piece ? 8000 : 2000, 1000 * Math.pow(2, dealFails - 1))) return;
+        const game = g, from = g.deck.length;
+        const ctl = typeof AbortController === "function" ? new AbortController() : null;
+        const timer = ctl ? setTimeout(() => ctl.abort(), 10000) : 0;
+        const req = dealing = { g: game };
+        const again = (ms) => { dealRetryAt = performance.now() + ms; };
+        fetch(DEAL_API, {
+            method: "POST",
+            credentials: "same-origin",
+            headers: { "Content-Type": "application/json" },
+            ...(ctl ? { signal: ctl.signal } : {}),
+            body: JSON.stringify({ run: run.token, log: game.log, from, stamp: run.stamp })
+        }).then(async res => {
+            const d = await res.json().catch(() => null);
+            if (g !== game) return;
+            if (res.ok && d && Array.isArray(d.kinds) && Number.isInteger(d.from) && d.from <= game.deck.length) {
+                const more = kindsOf(d.kinds.slice(game.deck.length - d.from));
+                if (more) game.deck.push(...more);
+                if (typeof d.stamp === "string") run.stamp = d.stamp;
+                dealFails = 0;
+                drawNext();
+                return;
+            }
+            if (res.ok && d && Number.isFinite(d.wait)) { again(Math.max(100, d.wait)); return; }
+            // No more for this run: it ends when the pieces it has run out.
+            if ((res.ok && d && d.refused) || res.status === 400) { dealDone = true; return; }
+            throw new Error(String(res.status));
+        }).catch(() => {
+            if (g !== game) return;
+            dealFails++;
+            dealFailedAt = performance.now();
+        }).finally(() => {
+            clearTimeout(timer);
+            if (dealing === req) dealing = null;
+        });
+    }
+
+    function showWait() {
+        if (waitShown || !bannerEl) return;
+        waitShown = true;
+        bannerEl.textContent = "Waiting for the server…";
+        bannerEl.classList.remove("is-on");
+        bannerEl.classList.add("pura-banner--wait");
+        bannerEl.hidden = false;
+    }
+
+    function hideWait() {
+        if (!waitShown || !bannerEl) return;
+        waitShown = false;
+        bannerEl.classList.remove("pura-banner--wait");
+        bannerEl.hidden = true;
     }
 
     /* TESTING A LEVEL (6 Oct 2026, the owner's: to try 50, 75 and 100 without
@@ -621,7 +718,9 @@
            track back to the splash's muffled one, not the game's. */
         if (run.refused) { mode = "idle"; if (music()) music().setMuffled(true); showPanel("title"); return; }
         forgetGame();
-        g = E.newGame(run.token ? run.seed : localSeed());
+        resetDealer();
+        // Dealt by the server for the board (DEALT); from a seed of its own otherwise.
+        g = run.token ? E.newGame(null, run.deck) : E.newGame(localSeed());
         if (startAt > 1) {
             g.level = startAt;
             g.bands = (startAt - 1) * E.BANDS_PER_LEVEL;
@@ -671,6 +770,8 @@
 
     function showBanner(level) {
         bannerEl.textContent = "LEVEL " + level;
+        waitShown = false;
+        bannerEl.classList.remove("pura-banner--wait");
         bannerEl.hidden = false;
         // Restart its animation, even for two levels in a row.
         bannerEl.classList.remove("is-on");
@@ -681,7 +782,8 @@
     function hideBanner() {
         if (!bannerEl) return;
         bannerEl.hidden = true;
-        bannerEl.classList.remove("is-on");
+        bannerEl.classList.remove("is-on", "pura-banner--wait");
+        waitShown = false;
     }
 
     function hud() {
@@ -722,8 +824,10 @@
 
     function drawNext() {
         nx.clearRect(0, 0, nextCv.width, nextCv.height);
-        if (!g || !g.queue.length) return;
-        const cells = E.ROTATIONS[g.queue[0]][0].map(([x, y]) => ({ c: x - y, r: x + y }));
+        // The piece after the one in play; none yet while it is still to be dealt (DEALT).
+        const next = g && E.upcoming(g);
+        if (!next) return;
+        const cells = E.ROTATIONS[next][0].map(([x, y]) => ({ c: x - y, r: x + y }));
         const cs = cells.map(p => p.c), rs = cells.map(p => p.r);
         const c0 = Math.min(...cs), r0 = Math.min(...rs);
         const w = (Math.max(...cs) - c0) * MINI_W + 2 * MINI_W;
@@ -737,6 +841,8 @@
     function step(dt) {
         if (mode !== "play") return;
         gameMs += dt;
+        // More pieces asked for in good time, a clear or a level banner playing or not (DEALT).
+        feed();
         if (anim) {
             anim.t += dt;
             if (anim.t >= anim.total) finishAnim();
@@ -747,8 +853,23 @@
             if (banner.t >= banner.total) { banner = null; hideBanner(); fallAt = E.stepMs(g.level); }
             return;
         }
+        if (!g.piece) {
+            // Held for the next piece to be dealt (DEALT), or ended if there will be none.
+            if (E.deal(g)) {
+                hideWait(); dryFor = 0;
+                fallAt = E.stepMs(g.level);
+                lockAt = null; lockResets = 0; deepest = -1;
+                hud();
+                if (g.over) gameOver();
+                return;
+            }
+            if (!g.deck || g.over) return;
+            if (dealDone) { gameOver(); return; }
+            dryFor += dt;
+            if (dryFor >= WAIT_NOTE_MS) showWait();
+            return;
+        }
         const piece = g.piece;
-        if (!piece) return;
         if (E.landed(g.board, piece)) {
             if (lockAt === null) lockAt = lockResets >= LOCK_RESETS ? 0 : E.lockMs(g.level);
             lockAt -= dt;
@@ -1599,9 +1720,16 @@
        Warren's figures, and the server replays it like any other. Nobody
        waits on it. With it, the three things only the page knows, and a
        signed-out player's Habbo name. */
+    /* A game begun signed out and sent signed in (another tab signed in
+       meanwhile) is the guest's who played it, and goes as theirs with
+       `asGuest`: the server files a run that names no account on no account
+       (31 Oct 2026, pura-scores.js ONE RUN, ONE PLAYER). */
+    const guestRun = () => Boolean(me() && run && run.token && !runSub(run.token));
+
     function gameFacts() {
         const out = { touch: touchy(), dark, muted: Boolean(music() && music().muted) };
-        if (!me() && guest) {
+        if (guestRun() && guest) out.asGuest = true;
+        if ((!me() || guestRun()) && guest) {
             if (guest.kind === "habbo") out.habboToken = guest.token;
             else if (rat && rat.token) out.rat = rat.token;
             else out.guest = true;
@@ -1611,7 +1739,7 @@
 
     function logPlayed() {
         if (!run || !run.token || !g || !g.log.length) return;
-        const body = JSON.stringify({ run: run.token, log: g.log, ms: Math.round(gameMs), ...gameFacts() });
+        const body = JSON.stringify({ run: run.token, log: g.log, ms: Math.round(gameMs), stamp: run.stamp || null, ...gameFacts() });
         fetch(API + "?action=played", {
             method: "POST",
             credentials: "same-origin",
@@ -1876,12 +2004,13 @@
 
     function saveProgress() {
         if (!run || !run.token || !g || !g.score || g.score <= savedScore || testLevel()) return;
-        const p = me();
+        // Begun signed out: saved as the guest's, signed in since or not (guestRun).
+        const p = guestRun() ? null : me();
         if (p ? !p.nick : !guest) return;
         // Started signed in, signed out since: not the guest's to save (SIGNED OUT SINCE; the server refuses it too).
         if (!p && runSub(run.token)) return;
         savedScore = g.score;
-        const facts = { run: run.token, log: g.log.slice(), ms: Math.round(gameMs), score: g.score, checkpoint: true };
+        const facts = { run: run.token, log: g.log.slice(), ms: Math.round(gameMs), score: g.score, stamp: run.stamp || null, checkpoint: true };
         /* After the save before it, if that one is still out (10 Oct 2026):
            a Guest Rat is numbered by their first save, and two saves in the
            air at once on a slow connection both went without a number, so
@@ -1916,8 +2045,9 @@
 
        The board side is the saves at each new level (saveProgress) and
        pura-scores.js's CONTINUING. Here: the game is kept in this browser
-       whenever the tab is hidden or the page goes (its run token, seed,
-       every placement and the time played), and offered on the splash for
+       whenever the tab is hidden or the page goes (its run token, the
+       pieces dealt so far, every placement and the time played), and
+       offered on the splash for
        as long as the server will take it back (RESUME_WINDOW). Continue
        asks the server for the game's token again — refused for a game
        continued before — and rebuilds the board by playing the placements
@@ -1936,8 +2066,10 @@
 
     function keepGame() {
         if (!inGame() || !run || !run.token || run.resumed || testLevel() || !g.log.length) return;
+        if (!g.deck) return;
+        // The pieces dealt so far and the last stamp, where the seed was (DEALT, 31 Oct 2026).
         keep(LEFT_KEY, {
-            token: run.token, seed: run.seed, log: g.log, ms: Math.round(gameMs),
+            token: run.token, deck: g.deck, stamp: run.stamp || null, log: g.log, ms: Math.round(gameMs),
             score: g.score, level: g.level, at: Date.now(), account: accountKey(),
             // Signed out: which guest left it (see leftGame).
             guest: !me() && guest ? guest.id : null
@@ -1949,8 +2081,11 @@
     // The game left behind, if it can still be picked up by whoever this is.
     function leftGame() {
         const k = load(LEFT_KEY);
-        if (!k || typeof k.token !== "string" || !Number.isInteger(k.seed) || !Array.isArray(k.log) || !k.log.length) return null;
-        if (Date.now() - k.at > RESUME_WINDOW) { forgetGame(); return null; }
+        if (!k || typeof k.token !== "string" || !Array.isArray(k.log) || !k.log.length) return null;
+        /* Kept by the page from before DEALT, with a seed and no pieces: the
+           server no longer continues those (_pura-run.js, OLD TOKENS), so it
+           is let go rather than offered and then refused. */
+        if (!kindsOf(k.deck) || Date.now() - k.at > RESUME_WINDOW) { forgetGame(); return null; }
         if ((k.account || null) !== accountKey() && !(me() && k.account === me().id)) return null;
         /* Left signed out: only for the same guest (10 Oct 2026, the bug
            scan). It was offered to whoever came next on this browser, under
@@ -1976,11 +2111,16 @@
        exactly as the server replays them; null when it does not play back.
        Each placement checked as the server's replay checks it: a kept game
        that does not (storage tampered with) is let go cleanly. Shared by
-       Continue and by SIGNED OUT SINCE (26 Oct 2026). */
-    function replayed(seed, log) {
-        const game = E.newGame(seed);
+       Continue and by SIGNED OUT SINCE (26 Oct 2026). `source` is the
+       pieces dealt (DEALT), or the seed of a game kept before them. */
+    function replayed(source, log) {
+        const deck = kindsOf(source);
+        if (!deck && !Number.isInteger(source)) return null;
+        const game = deck ? E.newGame(null, deck) : E.newGame(source);
         for (const e of log) {
-            if (game.over || !game.piece) break;
+            if (game.over) break;
+            // A placement for a piece never dealt: not a game that plays back.
+            if (!game.piece) return null;
             const [rot, x, y, lean] = Array.isArray(e) ? e : [];
             const p = { kind: game.piece.kind, rot, x, y, lean };
             /* A turn past four, or a lane that is neither, as the server's
@@ -2035,9 +2175,11 @@
            IN FRONT): held paused and silent the same way. */
         const shut = !isOpen() || hushed || behind();
         if (music() && !shut) music().start(1, { powerUp: true });
-        run = { token: d.token, seed: d.seed, resumed: true };
+        run = { token: d.token, stamp: typeof k.stamp === "string" ? k.stamp : null, resumed: true };
         rowsBase = 0;
-        g = replayed(d.seed, k.log);
+        resetDealer();
+        // The pieces it had; the next come as in any game (DEALT).
+        g = replayed(k.deck, k.log);
         if (!g) {
             g = null; run = null; mode = "idle";
             if (music() && !shut) music().start(1, { muffled: true });
@@ -2117,12 +2259,15 @@
 
     function keepUnsent() {
         if (!run || !run.token || !g || !g.log.length) return;
-        keep(UNSENT_KEY, { token: run.token, seed: run.seed, log: g.log, ms: Math.round(gameMs), at: Date.now() });
+        keep(UNSENT_KEY, { token: run.token, deck: g.deck || null, stamp: run.stamp || null, log: g.log, ms: Math.round(gameMs), at: Date.now() });
     }
 
+    /* Its pieces (DEALT), or the seed of one kept by the page before them:
+       the server still takes that game for the rest of its token's three
+       hours (_pura-run.js, OLD TOKENS), which is as long as it is kept. */
     function unsentGame() {
         const u = load(UNSENT_KEY);
-        if (!u || typeof u.token !== "string" || !Number.isInteger(u.seed) || !Array.isArray(u.log) || !u.log.length) return null;
+        if (!u || typeof u.token !== "string" || !(kindsOf(u.deck) || Number.isInteger(u.seed)) || !Array.isArray(u.log) || !u.log.length) return null;
         if (!(Date.now() - u.at < UNSENT_FOR)) { keep(UNSENT_KEY, null); return null; }
         return u;
     }
@@ -2141,10 +2286,11 @@
            kept for its own account, for as long as it is kept. */
         const sub = runSub(u.token);
         if (sub && me() && sub !== String(me().id)) return;
-        const back = replayed(u.seed, u.log);
+        const back = replayed(kindsOf(u.deck) || u.seed, u.log);
         if (!back) { keep(UNSENT_KEY, null); return; }
         g = back;
-        run = { token: u.token, seed: u.seed, resumed: true };
+        resetDealer();
+        run = { token: u.token, stamp: typeof u.stamp === "string" ? u.stamp : null, resumed: true };
         rowsBase = 0;
         gameMs = u.ms;
         anim = null; banner = null; hideBanner();
@@ -2186,7 +2332,8 @@
         if (saving) await saving.catch(() => {});
         if (run && run.reason === "test") return { state: "test" };
         if (!run || !run.token) return { state: run && (run.reason === "hidden" || run.reason === "maintenance") ? "maintenance" : "offline" };
-        const p = me();
+        // Begun signed out: the guest's, signed in since or not (guestRun).
+        const p = guestRun() ? null : me();
         // Started signed in and signed out since: the player is asked whose it is first.
         if (!p && !asGuest && g.score && runSub(run.token)) return { state: "signed-out-run" };
         if (!p && !guest) { logPlayed(); return { state: "signed-out" }; }
@@ -2197,7 +2344,7 @@
                 method: "POST",
                 credentials: "same-origin",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ run: run.token, log: g.log, ms: Math.round(gameMs), score: g.score, ...gameFacts(), ...(asGuest ? { asGuest: true } : {}) })
+                body: JSON.stringify({ run: run.token, log: g.log, ms: Math.round(gameMs), score: g.score, stamp: run.stamp || null, ...gameFacts(), ...(asGuest ? { asGuest: true } : {}) })
             });
             const body = await res.json().catch(() => ({}));
             // A Guest Rat's first score brings their number (pura-scores.js, GUESTS).
@@ -2267,7 +2414,7 @@
         if (document.querySelector('link[data-pura]')) return;
         const l = document.createElement("link");
         l.rel = "stylesheet";
-        l.href = "css/pura-panic.css?v=30";
+        l.href = "css/pura-panic.css?v=31";
         l.dataset.pura = "1";
         l.addEventListener("load", () => paintChrome());
         document.head.appendChild(l);

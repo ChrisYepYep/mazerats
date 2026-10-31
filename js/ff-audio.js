@@ -1674,8 +1674,10 @@
         } catch (e) { return true; }
     }
     function wake() {
-        if (!A || A.ctx.state === "running" || A.ctx.state === "closed") return;
         if (document.hidden || held) return;
+        // (31 Oct 2026) a pause's suspend still on its way: woken once it lands, unless paused again since (see pause)
+        if (suspending) { const n = pauses; suspending.then(() => { if (n === pauses) wake(); }); return; }
+        if (!A || A.ctx.state === "running" || A.ctx.state === "closed") return;
         if (mayStart()) A.ctx.resume().catch(() => {});
         if (waiting) return;
         waiting = true;
@@ -1731,15 +1733,26 @@
         A.musicVol.gain.linearRampToValueAtTime(musicLevel(), t + 0.4);
         nextAt = t + 0.06;
         playing = true;
-        clearInterval(timer);
-        timer = setInterval(tick, 25);
+        clockOff();
+        clockOn();
     }
+
+    /* THE BOOKING TIMER ONLY WHILE THERE IS SOMETHING TO BOOK (31 Oct 2026,
+       the bug scan): pause() stopped the audio clock but left the timer
+       waking every 25ms to find it stopped, all the while the tab was
+       hidden or another game was in front. Now it stops with the clock and
+       starts again on resume(), or hold(false); a track started meanwhile
+       (a sting's promise, say) waits for that too. What is booked is the
+       same either way: tick() works from the audio clock, which stood
+       still meanwhile. */
+    function clockOn() { if (playing && !timer && !held && !document.hidden) timer = setInterval(tick, 25); }
+    function clockOff() { clearInterval(timer); timer = 0; }
 
     // Fades out over `fade` seconds (default a fifth) and stops booking.
     function stop(fade) {
         if (!playing) return;
         playing = false;
-        clearInterval(timer);
+        clockOff();
         if (!A) return;
         const t = A.ctx.currentTime;
         A.musicVol.gain.cancelScheduledValues(t);
@@ -1761,8 +1774,26 @@
     }
 
     // Pausing stops the audio clock itself, so nothing booked plays on.
-    function pause() { if (A && A.ctx.state === "running") A.ctx.suspend(); }
-    function resume() { if (A && A.ctx.state !== "running" && A.ctx.state !== "closed") wake(); }
+    // (31 Oct 2026) and the booking timer with it, back with resume() (see THE BOOKING TIMER)
+    /* AND A RESUME RIGHT AFTER IT IS NOT LOST (31 Oct 2026, the bug scan).
+       A suspend takes a moment to land: a resume in the meantime (the tab
+       back, or this game in front again, at once) found the clock still
+       "running" and did nothing, then the suspend landed and the music
+       stayed silent. The suspend on its way is kept (`suspending`), and
+       wake() waits for it; `pauses` counts the pauses, so a pause after
+       that resume still wins. */
+    let suspending = null, pauses = 0;
+    function pause() {
+        clockOff();
+        pauses++;
+        if (A && A.ctx.state === "running") {
+            const p = suspending = Promise.resolve(A.ctx.suspend()).catch(() => {}).then(() => { if (suspending === p) suspending = null; });
+        }
+    }
+    function resume() {
+        if (A && A.ctx.state !== "closed") clockOn();
+        if (A && A.ctx.state !== "closed" && (suspending || A.ctx.state !== "running")) wake();
+    }
     // Behind another game and back (see `held` above wake).
     function hold(on) {
         held = Boolean(on);

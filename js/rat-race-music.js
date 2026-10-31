@@ -1844,9 +1844,16 @@
 
     function run() {
         playing = true;
-        clearInterval(timer);
-        timer = setInterval(tick, 25);
+        clockOff();
+        clockOn();
     }
+    /* THE BOOKING TIMER ONLY WHILE THERE IS SOMETHING TO BOOK (31 Oct 2026, the bug scan, as Pura Panic's and
+       Fallin' Furni's): pause() and hush() stopped the audio clock but left the timer waking every 25ms, for
+       the rest of the visit when a paused game's window was closed. Now they stop it too, and resume() starts it
+       again (not while hushed). What is booked is the same either way: tick() works from the audio clock, which
+       stood still meanwhile. */
+    function clockOn() { if (playing && !timer && !hushed) timer = setInterval(tick, 25); }
+    function clockOff() { clearInterval(timer); timer = 0; }
 
     /* From the top, at a level. `opts.muffled` for the splash and the other
        screens between games; `opts.zone` to start in a zone other than Wood.
@@ -1905,7 +1912,10 @@
        anywhere on the page and starts then. */
     let waiting = false, hushed = false;   // (hushed: see HUSHED)
     function wake() {
-        if (hushed || !ctx || ctx.state === "running" || ctx.state === "closed") return;
+        if (hushed) return;
+        // (31 Oct 2026) a pause's suspend still on its way: woken once it lands, unless paused again since (see pause)
+        if (suspending) { const n = pauses; suspending.then(() => { if (n === pauses) wake(); }); return; }
+        if (!ctx || ctx.state === "running" || ctx.state === "closed") return;
         try { const p = ctx.resume(); if (p && p.catch) p.catch(() => {}); } catch (e) { /* not yet */ }
         if (waiting || typeof document === "undefined") return;
         waiting = true;
@@ -1924,7 +1934,7 @@
     function stop() {
         playing = false;
         danger = 0;
-        clearInterval(timer);
+        clockOff();
     }
 
     /* Stopped, and the audio clock let go (26 Oct 2026, the bug scan): for the window closing, which only
@@ -1939,14 +1949,27 @@
     }
 
     // Pausing stops the audio clock itself, so nothing booked plays on.
+    /* AND A RESUME RIGHT AFTER IT IS NOT LOST (31 Oct 2026, the bug scan, as Pura Panic's and Fallin' Furni's).
+       A suspend takes a moment to land: a resume in the meantime found the clock still "running" and did nothing,
+       then the suspend landed and the tune stayed silent till the next resume. The suspend on its way is kept
+       (`suspending`), and wake() waits for it; `pauses` counts the pauses, so a pause after that resume still wins.
+       (31 Oct 2026) The booking timer stops here too (see THE BOOKING TIMER). */
+    let suspending = null, pauses = 0;
     function pause() {
+        clockOff();
+        pauses++;
         if (ctx && ctx.state === "running") {
-            try { const p = ctx.suspend(); if (p && p.catch) p.catch(() => {}); } catch (e) { /* fine */ }
+            try {
+                const p = suspending = Promise.resolve(ctx.suspend()).catch(() => {}).then(() => { if (suspending === p) suspending = null; });
+            } catch (e) { /* fine */ }
         }
     }
     /* Safari also has "interrupted" (a call, another tab's audio, the phone
        locked), so anything but running or closed is woken. */
-    function resume() { if (ctx && playing && ctx.state !== "running" && ctx.state !== "closed") wake(); }
+    function resume() {
+        if (ctx && ctx.state !== "closed") clockOn();
+        if (ctx && playing && ctx.state !== "closed" && (suspending || ctx.state !== "running")) wake();
+    }
 
     /* HUSHED (26 Oct 2026, one game in front): while another game's window is in front, the audio clock is
        stopped and nothing wakes it, not a start, a resume, nor the first press on the page (a key pressed in

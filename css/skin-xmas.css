@@ -58,6 +58,10 @@ html[data-skin="xmas"] .hero { padding-bottom: 32px; }
 
 /* The ticker's countdown slide ("12 sleeps 'til Christmas!"), in the lights' gold. */
 html[data-skin="xmas"] .header-events-extra { color: #ffd24a; }
+/* In light mode (31 Oct 2026) the top bar is mid-blue, and the gold read at
+   2.32:1. A deep holly red instead, 4.7:1 there (navy was tried too, and
+   looked like the rest of the ticker). */
+html[data-skin="xmas"][data-light] .header-events-extra { color: #4a0707; }
 
 /* The footer's drift grows up over the fansites strip and the bottom of the
    main window (js/skin-xmas.js, "the footer's snow piles up"). The strip's

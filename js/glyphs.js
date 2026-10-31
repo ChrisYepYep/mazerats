@@ -306,7 +306,7 @@
     const SITE = "https://mazerats.net";
 
     function setMeta() {
-        if (window.PageMeta) window.PageMeta.set("glyphs", "Alt Codes — Maze Rats", SITE + ADDRESS);
+        if (window.PageMeta) window.PageMeta.set("glyphs", "Alt Codes | Maze Rats", SITE + ADDRESS);
     }
 
     function restoreMeta() {

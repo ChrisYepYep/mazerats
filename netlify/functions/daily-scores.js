@@ -976,6 +976,9 @@ exports.handler = async (event) => {
                 practised = await speed.practisedOn(db, game, day, player.id);
                 if (practised) clock = null;
             }
+            // A day an admin gave back: no clock either (REPLAYED in
+            // _speed.js; 31 Oct 2026), and no practice line on the card.
+            if (!practiceRun && !practice.now && clock && await speed.replayedOn(db, game, day, player.id)) clock = null;
         } catch (e) {
             console.error("daily-scores: could not check the day", e);
             return json(500, { error: "Could not check the day" });

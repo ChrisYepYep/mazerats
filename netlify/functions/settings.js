@@ -12,6 +12,7 @@ const { getDb } = require("./_db");
 const { isAuthorized, canWrite, refuseWrite, UNAUTHORIZED, AUTH_UNAVAILABLE, isAuthUnavailable } = require("./_auth");
 const { SECURITY_HEADERS } = require("./_headers");
 const { cachedJson, GATE_CDN_CACHE } = require("./_cache");
+const { maintenanceKickAt } = require("./_maintenance");
 
 const json = (statusCode, data) => ({
     statusCode,
@@ -317,6 +318,13 @@ function cleanMenuLayout(value) {
 }
 // Only the shape cleanMenuLayout writes: anything else is the menu as written.
 const menuLayoutOf = doc => (doc && doc.menuLayout && typeof doc.menuLayout === "object" && Array.isArray(doc.menuLayout.top)) ? doc.menuLayout : null;
+// The last menu save's stamp, "" for never (31 Oct 2026; see menuLayoutBase in write).
+const menuStampOf = doc => (doc && typeof doc.menuLayoutAt === "string") ? doc.menuLayoutAt : "";
+const menuConflict = doc => json(409, {
+    error: "Someone else has changed the homepage menu since this page read it.",
+    menuLayout: menuLayoutOf(doc),
+    menuLayoutAt: menuStampOf(doc)
+});
 
 /* THE SETTINGS, KEPT FOR A MOMENT (2 Oct 2026). The gate's poll asks with
    ?fresh=<time bucket> on purpose (js/welcome.js), so anybody can ask with a
@@ -346,6 +354,9 @@ function settingsReply(event, doc) {
         puraPanicState: puraState(doc),
         ratRaceState: ratState(doc),
         maintenanceNote: (doc && doc.maintenanceNote) || DEFAULT_MAINTENANCE_NOTE,
+        // When an open archive page is moved to the landing page (30 Oct
+        // 2026): see js/maintenance-warn.js. "" outside Maintenance.
+        maintenanceKickAt: maintenanceKickAt(doc),
         theme: (doc && doc.theme) || DEFAULT_THEME,
         palette: (doc && doc.palette) || null,
         launchAt: (doc && doc.launchAt) || "",
@@ -354,7 +365,9 @@ function settingsReply(event, doc) {
         skinSchedule: scheduleOf(doc),
         halloweenGoo: gooOf(doc),
         // The homepage menu's order and hidden rows (30 Oct 2026; null is as written).
-        menuLayout: menuLayoutOf(doc)
+        menuLayout: menuLayoutOf(doc),
+        // When it was last saved (31 Oct 2026): the Warren's card sends it back as menuLayoutBase.
+        menuLayoutAt: menuStampOf(doc)
     }, { cdn: GATE_CDN_CACHE });
     res.headers = { ...res.headers, "Netlify-Vary": "query=fresh" };
     return res;
@@ -386,8 +399,6 @@ exports.handler = async (event) => {
         settingsMemo = { at: Date.now(), doc };
         return settingsReply(event, doc);
     }
-    // A save on this instance is read back as saved — see SETTINGS_MEMO_MS.
-    settingsMemo = null;
 
     /* The write half inside one try, as the GET above already is. The save
        and its read-back had nothing around them, so a database that dropped
@@ -396,7 +407,15 @@ exports.handler = async (event) => {
        _auth.js), which has to reach the admin page as a 503 it retries, not
        as the 401 that signs it out. */
     try {
-        return await write(event, settings, db);
+        const res = await write(event, settings, db);
+        /* A save on this instance is read back as saved — see
+           SETTINGS_MEMO_MS. After the save, and only a save (30 Oct 2026):
+           forgotten before it, any stranger's refused PUT emptied the memo
+           (a free database read for the next ?fresh GET), and a GET
+           answered during the save put the old document back for the memo's
+           three seconds. */
+        if (res && res.statusCode === 200) settingsMemo = null;
+        return res;
     } catch (e) {
         console.error("settings: write failed", e);
         /* Only the tagged lookup failure is an outage to retry; anything
@@ -429,6 +448,20 @@ async function write(event, settings, db) {
                 return json(400, { error: "landingState must be one of: " + VALID_STATES.join(", ") });
             }
             update.landingState = body.landingState;
+            /* THE MOMENT MAINTENANCE BEGAN (30 Oct 2026), stamped when the
+               switch goes TO it, not when Maint. is pressed again, so the
+               two-minute warning on open pages (js/maintenance-warn.js) is
+               not started over by a second press. */
+            /* Or when there is no stamp to keep (30 Oct 2026): a site already
+               in Maintenance when this was deployed had none, and pressing
+               Maint. again never gave it one, so the Warren showed no
+               countdown and each tab counted its own two minutes. */
+            if (body.landingState === "maintenance") {
+                const was = await settings.findOne({ _id: "site" }, { projection: { landingState: 1, maintenanceAt: 1 } });
+                if (!was || was.landingState !== "maintenance" || !Number.isFinite(Date.parse(was.maintenanceAt))) {
+                    update.maintenanceAt = new Date().toISOString();
+                }
+            }
         }
         if (body.fallinFurniState !== undefined) {
             if (!VALID_FF_STATES.includes(body.fallinFurniState)) {
@@ -521,10 +554,28 @@ async function write(event, settings, db) {
             if (typeof body.halloweenGoo !== "boolean") return json(400, { error: "halloweenGoo must be true or false" });
             update.halloweenGoo = body.halloweenGoo;
         }
+        /* THE MENU SAVED OVER AN OLDER COPY (31 Oct 2026, the bug scan): the
+           Warren's card sends the whole layout, so two admins, or two tabs,
+           undid each other without a word. Each save is stamped
+           menuLayoutAt; the card sends the stamp it read as menuLayoutBase,
+           and a stamp that has moved on since is answered 409 with the
+           layout now stored, for the card to offer. A PUT without a base
+           (any other caller) saves as before. The stamp is a string or
+           nothing: it goes into the update's filter below. */
+        let menuBase;
         if (body.menuLayout !== undefined) {
             const cleaned = cleanMenuLayout(body.menuLayout);
             if (typeof cleaned === "string") return json(400, { error: cleaned });
+            if (body.menuLayoutBase !== undefined) {
+                if (typeof body.menuLayoutBase !== "string" || body.menuLayoutBase.length > 40) {
+                    return json(400, { error: "menuLayoutBase must be the menuLayoutAt the layout was read with" });
+                }
+                const was = await settings.findOne({ _id: "site" }, { projection: { menuLayout: 1, menuLayoutAt: 1 } });
+                if (menuStampOf(was) !== body.menuLayoutBase) return menuConflict(was);
+                menuBase = { exists: !!was, at: body.menuLayoutBase };
+            }
             update.menuLayout = cleaned;
+            update.menuLayoutAt = new Date().toISOString();
         }
         if (body.lobbyFurni !== undefined) {
             if (!Array.isArray(body.lobbyFurni)) {
@@ -548,11 +599,26 @@ async function write(event, settings, db) {
         if (Object.keys(update).length === 0) {
             return json(400, { error: "Nothing to update" });
         }
-        await settings.updateOne(
-            { _id: "site" },
-            { $set: update },
-            { upsert: true }
-        );
+        if (menuBase && menuBase.exists) {
+            /* Only over the copy it was checked against: a save landing
+               between that read and this write is a conflict too. No upsert
+               here, since the document is there (an upsert that missed
+               would try to make a second "site"). null matches a document
+               saved before menuLayoutAt was kept. */
+            const done = await settings.updateOne(
+                { _id: "site", menuLayoutAt: menuBase.at || null },
+                { $set: update }
+            );
+            if (done && done.matchedCount === 0) {
+                return menuConflict(await settings.findOne({ _id: "site" }, { projection: { menuLayout: 1, menuLayoutAt: 1 } }));
+            }
+        } else {
+            await settings.updateOne(
+                { _id: "site" },
+                { $set: update },
+                { upsert: true }
+            );
+        }
         const doc = await settings.findOne({ _id: "site" });
         return json(200, {
             landingState: (doc && doc.landingState) || DEFAULT_STATE,
@@ -562,6 +628,7 @@ async function write(event, settings, db) {
             puraPanicState: puraState(doc),
             ratRaceState: ratState(doc),
             maintenanceNote: (doc && doc.maintenanceNote) || DEFAULT_MAINTENANCE_NOTE,
+            maintenanceKickAt: maintenanceKickAt(doc),
             theme: (doc && doc.theme) || DEFAULT_THEME,
             // Answered alongside the theme, now that the Controls panel
             // sets them together and lights one of the two from the reply.
@@ -575,7 +642,8 @@ async function write(event, settings, db) {
             skin: skinOf(doc),
             skinSchedule: scheduleOf(doc),
             halloweenGoo: gooOf(doc),
-            menuLayout: menuLayoutOf(doc)
+            menuLayout: menuLayoutOf(doc),
+            menuLayoutAt: menuStampOf(doc)
         });
     }
 

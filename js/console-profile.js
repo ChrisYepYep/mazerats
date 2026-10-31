@@ -30,7 +30,8 @@
    console is closed. Set in Volter Goldfish like the rest of the console,
    so no em dashes, bullets or curly quotes (PICTURE_GLYPHS in js/site.js);
    the two dashes the nickname's wording asks for are set in Roboto through
-   .console-dash, as the privacy text does.
+   .console-dash (the privacy text used it too until it lost its dashes,
+   30 Oct 2026).
    =========================================================== */
 document.addEventListener("DOMContentLoaded", () => {
     const host = document.getElementById("console-profile-body");

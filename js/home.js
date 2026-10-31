@@ -2661,7 +2661,7 @@ document.addEventListener("DOMContentLoaded", () => {
            not have thrown, it would just have quietly dropped the
            attribution from every one of them. */
         const by = (n.owner || "").trim();
-        return by ? `${name} — a ${kind} by ${by}` : `${name} — a ${kind}`;
+        return by ? `${name}, a ${kind} by ${by}` : `${name}, a ${kind}`;
     }
 
     /* A record's status as pills: its one status, or for a collab maze
@@ -3307,7 +3307,7 @@ document.addEventListener("DOMContentLoaded", () => {
         });
 
         grid.innerHTML = `
-            <p class="updatelog-intro">The archive's own record of itself — what has been catalogued and what has been corrected, most recent first.</p>
+            <p class="updatelog-intro">The archive's own record of itself: what has been catalogued and what has been corrected, most recent first.</p>
             <div class="updatelog">
                 ${days.map(group => `
                     <section class="updatelog-day">
@@ -3466,10 +3466,24 @@ document.addEventListener("DOMContentLoaded", () => {
                 else d.removeAttribute("aria-current");
             });
         }
-        // Turns while it is on screen and nobody is pointing at it, reading it or behind a window.
+        /* Turns while it is on screen and nobody is pointing at it, reading it or behind a window.
+           NO TIMER AT ALL WHILE NOBODY CAN SEE IT (31 Oct 2026, the bug scan):
+           the opening view swapped for another (the strip is taken out of the
+           page), scrolled out of the panel, or the tab in the background. It
+           used to wake every 7 seconds regardless, to do nothing. Back on
+           screen it starts a fresh 7 seconds, as it does after a pointer leaves. */
+        let onScreen = typeof IntersectionObserver !== "function";
+        if (!onScreen) {
+            new IntersectionObserver(entries => {
+                onScreen = entries[entries.length - 1].isIntersecting;
+                schedule();
+            }).observe(el);
+        }
+        document.addEventListener("visibilitychange", () => schedule());
         function schedule() {
             clearTimeout(turn);
-            if (paused || slides().length < 2 || (reduced && reduced.matches)) return;
+            turn = null;
+            if (!onScreen || document.hidden || paused || slides().length < 2 || (reduced && reduced.matches)) return;
             turn = setTimeout(() => {
                 const covered = !!document.querySelector(".modal-overlay.open");
                 if (el.isConnected && !pointer && !focused && !covered && !document.hidden) show(index + 1);
@@ -3511,7 +3525,18 @@ document.addEventListener("DOMContentLoaded", () => {
         el.addEventListener("pointerleave", () => { pointer = false; });
         el.addEventListener("focusin", e => { try { focused = e.target.matches(":focus-visible"); } catch (x) { focused = true; } });
         el.addEventListener("focusout", e => { if (!el.contains(e.relatedTarget)) focused = false; });
-        el.addEventListener("click", e => { if (e.target.closest(".welcome-promo-slide") && window.Track) Track.event("opening", "spotlight"); });
+        /* The slide takes focus before the event window opens from it (31 Oct
+           2026, the bug scan): Safari, and a click made in script, leave a
+           pressed link unfocused, so the window remembered <body> as what
+           opened it and handed focus to the archive window on close instead
+           of back to this slide. Runs before the page's link handler (on
+           document) opens the window. */
+        el.addEventListener("click", e => {
+            const a = e.target.closest(".welcome-promo-slide");
+            if (!a) return;
+            if (document.activeElement !== a) a.focus({ preventScroll: true });
+            if (window.Track) Track.event("opening", "spotlight");
+        });
         if (reduced && typeof reduced.addEventListener === "function") reduced.addEventListener("change", schedule);
         return { el, update };
     })();
@@ -3536,6 +3561,33 @@ document.addEventListener("DOMContentLoaded", () => {
         const time = start.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", hour12: false, timeZone: "UTC" });
         return `Starts ${day}, ${time} UTC`;
     }
+
+    /* "Ends in N" KEPT CURRENT (31 Oct 2026, the bug scan): the On now rows
+       were only drawn again when an event's status changed, so "Ends in 40
+       minutes" could sit there for the best part of an hour. Every 30
+       seconds while the rows are in the page and the tab is in front, each
+       row's words are worked out again and changed only if they differ (the
+       rows themselves stay, so focus and hover are not disturbed). Stops by
+       itself once the opening view is gone; a hidden tab waits, and is
+       brought up to date the moment it is shown again. */
+    let openingNowRaw = [];
+    let openingWhenTimer = null;
+    function tickOpeningWhen() {
+        clearTimeout(openingWhenTimer);
+        openingWhenTimer = null;
+        const rows = grid.querySelectorAll(".opening-now-row");
+        if (!rows.length || document.hidden) return;
+        rows.forEach(b => {
+            const raw = openingNowRaw[Number(b.dataset.now)];
+            const sub = b.querySelector(".opening-sub");
+            const words = sub && sub.firstChild;
+            if (!raw || !words || words.nodeType !== Node.TEXT_NODE) return;
+            const said = openingWhen(raw);
+            if (words.nodeValue !== said) words.nodeValue = said;
+        });
+        openingWhenTimer = setTimeout(tickOpeningWhen, 30000);
+    }
+    document.addEventListener("visibilitychange", tickOpeningWhen);
 
     // A section's heading: its name, a dotted rule, and where "more" goes.
     /* Explore's two icons (30 Oct 2026, the owner's: "a chair" for Furni,
@@ -3713,7 +3765,15 @@ document.addEventListener("DOMContentLoaded", () => {
         const firstYear = ROOMS.map(r => String((r && r.added) || "").slice(0, 4)).filter(y => /^\d{4}$/.test(y)).sort()[0];
         const missing = (() => { try { return deadEndFigures(); } catch (e) { return null; } })();
 
-        const thumbOf = (n, w, h) => n.isGuide ? guideLogThumb(n.thumb) : imgCdn(n.thumb, w, h, 75);
+        /* A guide's picture at the card's size (31 Oct 2026, the bug scan): it
+           went through the What's New log's 60px copy, drawn here at up to five
+           times that and blurred. GuideText.thumbSrc asks for a whole-number
+           scale-down, so pixel art stays crisp; GUIDE_CARD_PX is the widest
+           the art is drawn in a card. */
+        const GUIDE_CARD_PX = 300;
+        const thumbOf = (n, w, h) => n.isGuide
+            ? (typeof GuideText !== "undefined" && GuideText.thumbSrc ? GuideText.thumbSrc(n.thumb, GUIDE_CARD_PX) : n.thumb)
+            : imgCdn(n.thumb, w, h, 75);
         grid.innerHTML = `
             <div class="opening" id="opening">
                 <div class="opening-spot-slot"></div>
@@ -3760,7 +3820,7 @@ document.addEventListener("DOMContentLoaded", () => {
                             <span class="opening-game-what">
                                 <span class="opening-name">Guess the Maze <span class="side-menu-tag opening-daily">Daily</span></span>
                                 <span class="opening-sub">${escapeHtml(gameLine(g, "Today's five rooms"))}</span>
-                                <button type="button" class="view-switch-btn opening-play" data-game="guess" data-track="opening" data-track-label="guess">Play</button>
+                                <button type="button" class="view-switch-btn opening-play" data-game="guess" data-track="opening" data-track-label="guess" aria-label="Play Guess the Maze">Play</button>
                             </span>
                         </div>
                         <div class="opening-game">
@@ -3768,7 +3828,7 @@ document.addEventListener("DOMContentLoaded", () => {
                             <span class="opening-game-what">
                                 <span class="opening-name">Odd One Out <span class="side-menu-tag opening-daily">Daily</span></span>
                                 <span class="opening-sub">${escapeHtml(gameLine(o, "Spot the room that doesn't belong"))}</span>
-                                <button type="button" class="view-switch-btn opening-play" data-game="odd" data-track="opening" data-track-label="odd">Play</button>
+                                <button type="button" class="view-switch-btn opening-play" data-game="odd" data-track="opening" data-track-label="odd" aria-label="Play Odd One Out">Play</button>
                             </span>
                         </div>
                         <!-- The two that are not dailies, tiles of their own (30 Oct 2026, the
@@ -3778,7 +3838,7 @@ document.addEventListener("DOMContentLoaded", () => {
                             <span class="opening-game-what">
                                 <span class="opening-name">Fallin' Furni</span>
                                 <span class="opening-sub">${ff === "coming-soon" ? "Coming soon" : ff === "maintenance" ? "Maintenance" : "Sit on every seat, in order"}</span>
-                                <button type="button" class="view-switch-btn opening-play" data-game="ff" data-track="opening" data-track-label="ff">${ff === "coming-soon" ? "Take a look" : "Play"}</button>
+                                <button type="button" class="view-switch-btn opening-play" data-game="ff" data-track="opening" data-track-label="ff" aria-label="${ff === "coming-soon" ? "Take a look at" : "Play"} Fallin' Furni">${ff === "coming-soon" ? "Take a look" : "Play"}</button>
                             </span>
                         </div>
                         <div class="opening-game">
@@ -3786,7 +3846,7 @@ document.addEventListener("DOMContentLoaded", () => {
                             <span class="opening-game-what">
                                 <span class="opening-name">Pura Panic</span>
                                 <span class="opening-sub">${pura === "live" ? "Pure nostalgia, pure panic" : "Maintenance"}</span>
-                                <button type="button" class="view-switch-btn opening-play" data-game="pura" data-track="opening" data-track-label="pura">Play</button>
+                                <button type="button" class="view-switch-btn opening-play" data-game="pura" data-track="opening" data-track-label="pura" aria-label="Play Pura Panic">Play</button>
                             </span>
                         </div>
                     </div>
@@ -3820,6 +3880,8 @@ document.addEventListener("DOMContentLoaded", () => {
         if (slot) slot.replaceWith(openingSpot.el);
 
         grid.querySelectorAll(".opening-now-row").forEach(b => b.addEventListener("click", () => openModal(nowItems[Number(b.dataset.now)])));
+        openingNowRaw = now;
+        tickOpeningWhen();
         grid.querySelectorAll(".opening-card").forEach(b => b.addEventListener("click", () => {
             const n = added[Number(b.dataset.added)];
             if (n && n.isGuide) { if (window.Guides) Guides.open(n.id); }
@@ -5091,7 +5153,7 @@ document.addEventListener("DOMContentLoaded", () => {
         // changes with the picture rather than listing the whole maze at once.
         renderFurniStrip(activeFurni && g.image ? activeFurni[g.image] : null);
         warmFurniIcons(nearbyFurni());
-        const newAlt = `${modalName.textContent} — ${label}`;
+        const newAlt = `${modalName.textContent}: ${label}`;
         const oldSrc = modalGalleryImg.getAttribute("src");
 
         // A room added without a screenshot yet (see admin.js's gallery
@@ -5168,7 +5230,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 // left the lightbox one image behind the arrows.
                 lightboxImg.src = imgCdn(g.image, 900, null, 78);
                 lightboxImg.alt = newAlt;
-                lightboxCounter.textContent = position ? `${label} — ${position}` : label;
+                lightboxCounter.textContent = position ? `${label} · ${position}` : label;
             }
         }
         rescueModalFocus(focusBefore);
@@ -6500,8 +6562,8 @@ document.addEventListener("DOMContentLoaded", () => {
             ? `only in ${escapeHtml(f.only.name)}`
             : `${f.mazes} mazes`;
         const label = f.only
-            ? `${f.name} — used only by ${f.only.name}`
-            : `${f.name} — in ${f.mazes} mazes`;
+            ? `${f.name}: used only by ${f.only.name}`
+            : `${f.name}: in ${f.mazes} mazes`;
         return `
             <button type="button" class="furni-tile" data-furni-key="${escapeHtml(f.key)}" data-focus-key="${escapeHtml("furni:" + f.key)}"
                     aria-label="${escapeHtml(label)}">
@@ -6704,7 +6766,7 @@ document.addEventListener("DOMContentLoaded", () => {
         const fewBand = {
             key: "few",
             title: "Shared by a handful",
-            note: `In ${FURNI_SOLO + 1} to ${FURNI_FEW_MAX} mazes — the pieces a few builders found and the rest did not.`,
+            note: `In ${FURNI_SOLO + 1} to ${FURNI_FEW_MAX} mazes: the pieces a few builders found and the rest did not.`,
             items: few, cap
         };
         const bandsHtml = searching
@@ -8133,9 +8195,10 @@ document.addEventListener("DOMContentLoaded", () => {
         /* Keyed on whether there IS a position, as showGalleryImage does,
            not on kind === "room": bonus and run-through rooms are rooms with
            no number, and they captioned as "Bonus Room — " with a dash
-           leading nowhere. */
+           leading nowhere. A dot between them since 31 Oct 2026, as
+           showGalleryImage has it: no em dashes where visitors read. */
         lightboxCounter.textContent = galleryPosition.textContent
-            ? `${galleryCounter.textContent} — ${galleryPosition.textContent}`
+            ? `${galleryCounter.textContent} · ${galleryPosition.textContent}`
             : galleryCounter.textContent;
         if (!lightboxOverlay.classList.contains("open")) lightboxTriggerEl = document.activeElement;
         lightboxOverlay.classList.add("open");
@@ -8268,7 +8331,7 @@ document.addEventListener("DOMContentLoaded", () => {
         oldVersionShown = i;
 
         oldVersionImg.src = imgCdn(v.image, 900, null, 78);
-        oldVersionImg.alt = v.label ? `${modalName.textContent} — ${v.label}` : modalName.textContent;
+        oldVersionImg.alt = v.label ? `${modalName.textContent}: ${v.label}` : modalName.textContent;
         oldVersionLayer.style.display = "block";
 
         /* Only the first one slides. Switching between older versions while
@@ -8967,7 +9030,8 @@ document.addEventListener("DOMContentLoaded", () => {
         const article = n.article;
         if (article && article.body) {
             modalArticleTitle.textContent = article.title || "";
-            modalArticleMeta.textContent = [article.date, article.category].filter(Boolean).join("  —  ");
+            // A dot between, not a dash (31 Oct 2026: no em dashes where visitors read).
+            modalArticleMeta.textContent = [article.date, article.category].filter(Boolean).join(" · ");
             modalArticleBody.innerHTML = article.body;
             /* Read a level below the article's title, an h3 since 30 Oct 2026
                (the bug scan): the body's own headings open on an h3 too
@@ -9490,7 +9554,8 @@ document.addEventListener("DOMContentLoaded", () => {
         const url = modalAddress(n);
         shownModalAddress = url || null;
         if (!url) return;
-        if (window.PageMeta) window.PageMeta.set("modal", `${n.name || "Maze Rats"} — Maze Rats`, "https://mazerats.net" + url);
+        // " | Maze Rats" (31 Oct 2026): the site's titles carry no em dash.
+        if (window.PageMeta) window.PageMeta.set("modal", `${n.name || "Maze Rats"} | Maze Rats`, "https://mazerats.net" + url);
         if (pendingBack) { pendingPush = url; return; }
         const here = location.pathname + location.search;
         const target = url;
@@ -9614,11 +9679,33 @@ document.addEventListener("DOMContentLoaded", () => {
        box would not show. The results list mazes and events together, in
        the opening view itself (renderOpening). Escape in it clears it. */
     if (openingInput) {
-        // The full hint where it fits; on a phone, the words that matter.
-        const phoneHint = window.matchMedia ? window.matchMedia("(max-width: 640px)") : null;
-        const fitHint = () => { openingInput.placeholder = phoneHint && phoneHint.matches ? "Search the archive" : "Search mazes and events: name, builder, furni…"; };
+        /* The full hint where it fits; where it doesn't, the words that matter.
+           MEASURED, NOT GUESSED FROM THE WIDTH (31 Oct 2026, the bug scan): a
+           landscape phone or a touch tablet draws the box at the touch size
+           (16px, css), so the full hint was cut off at 812px ("Search mazes and
+           events: name, buil…"), and at 320px even "Search the archive" was.
+           The longest hint whose words fit the box's text room, measured in
+           the box's own font; again whenever the box changes size (the opening
+           view shown, a turn of the phone) and once the fonts have loaded. */
+        const HINTS = ["Search mazes and events: name, builder, furni…", "Search the archive", "Search"];
+        const hintPen = document.createElement("canvas").getContext("2d");
+        const fitHint = () => {
+            const cs = getComputedStyle(openingInput);
+            const room = openingInput.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
+            // Not drawn (another view is showing): left as it is until it is.
+            if (!hintPen || !(room > 0)) return;
+            hintPen.font = cs.font;
+            if ("letterSpacing" in hintPen) hintPen.letterSpacing = cs.letterSpacing === "normal" ? "0px" : cs.letterSpacing;
+            const hint = HINTS.find(h => hintPen.measureText(h).width <= room) || HINTS[HINTS.length - 1];
+            if (openingInput.placeholder !== hint) openingInput.placeholder = hint;
+        };
         fitHint();
-        if (phoneHint && phoneHint.addEventListener) phoneHint.addEventListener("change", fitHint);
+        if (typeof ResizeObserver === "function") new ResizeObserver(fitHint).observe(openingInput);
+        else window.addEventListener("resize", fitHint);
+        // The css's own switch to the touch size, which can change the font without the width.
+        const touchSize = window.matchMedia ? window.matchMedia("(max-width: 640px), (pointer: coarse)") : null;
+        if (touchSize && touchSize.addEventListener) touchSize.addEventListener("change", fitHint);
+        if (document.fonts && document.fonts.ready) document.fonts.ready.then(fitHint, () => {});
         openingInput.addEventListener("input", e => {
             query = e.target.value;
             searchInput.value = query;
@@ -11310,10 +11397,10 @@ document.addEventListener("DOMContentLoaded", () => {
     window.openPuraPanic = function () {
         if (window.PuraPanic) { window.PuraPanic.open(); return; }
         if (!puraLoading) {
-            puraLoading = loadPuraScript("js/pura-engine.js?v=14")
+            puraLoading = loadPuraScript("js/pura-engine.js?v=15")
                 // The soundtrack is a nicety: a failed load plays on in silence.
-                .then(() => loadPuraScript("js/pura-music.js?v=5").catch(() => {}))
-                .then(() => loadPuraScript("js/pura-panic.js?v=48"))
+                .then(() => loadPuraScript("js/pura-music.js?v=6").catch(() => {}))
+                .then(() => loadPuraScript("js/pura-panic.js?v=49"))
                 // A failed load forgets itself, so the next press asks again.
                 .catch(err => { puraLoading = null; throw err; });
         }
@@ -11416,9 +11503,9 @@ document.addEventListener("DOMContentLoaded", () => {
         if (!ratLoading) {
             // The art, the lettering and the maps, then the game (12 Oct 2026: the platform game);
             // the other zones' art and drawing (js/rat-race-zones.js) with them (13 Oct 2026).
-            ratLoading = loadPuraScript("js/rat-race-music.js?v=28").catch(() => {})
+            ratLoading = loadPuraScript("js/rat-race-music.js?v=29").catch(() => {})
                 .then(() => Promise.all(["js/rat-race-art.js?v=18", "js/rat-race-font.js?v=3", "js/rat-race-levels.js?v=20", "js/rat-race-zones.js?v=24"].map(loadPuraScript)))
-                .then(() => loadPuraScript("js/rat-race.js?v=97"))
+                .then(() => loadPuraScript("js/rat-race.js?v=98"))
                 .catch(err => { ratLoading = null; throw err; });
         }
         ratLoading.then(() => { if (window.RatRace) window.RatRace.open(); })
@@ -11920,6 +12007,11 @@ document.addEventListener("DOMContentLoaded", () => {
                 menuLayout = (s && s.menuLayout && typeof s.menuLayout === "object") ? s.menuLayout : null;
                 // A row the Warren keeps to admins: find out now whether this browser's token is good.
                 if (menuLayout && Array.isArray(menuLayout.admins) && menuLayout.admins.length) adminVerified();
+                /* The opening view's game tiles read the two states above
+                   (30 Oct 2026, the bug scan): drawn before a slow answer
+                   landed, Pura Panic said "Maintenance" until some other
+                   render came along. */
+                if (dataLoaded && showOpening && !query.trim()) renderInPlace();
             })
             .catch(() => { /* fail open, as the game's own gate does */ });
     }
@@ -12134,7 +12226,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 // morning. See .side-menu-tag.
                 tag: "Daily",
                 state: menuFigure(() => !g ? "Today's five rooms"
-                    : g.finished ? `Done — ${g.points} points`
+                    : g.finished ? `Done: ${g.points} points`
                         : g.started ? `${g.done} of ${g.total} rooms done`
                             : "Not played today", "Today's five rooms"),
                 /* No points badge: the line below already says "Done — N
@@ -12150,7 +12242,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 name: "Odd One Out",
                 tag: "Daily",
                 state: menuFigure(() => !o ? "Spot the room that does not belong"
-                    : o.finished ? `Done — ${o.points} points`
+                    : o.finished ? `Done: ${o.points} points`
                         : o.started ? `${o.done} of ${o.total} rounds done`
                             : "Not played today", "Spot the room that does not belong"),
                 badge: "",
@@ -12901,13 +12993,19 @@ document.addEventListener("DOMContentLoaded", () => {
             darkToggle.dataset.trackLabel = on ? "off" : "on";
         };
         showDark();
+        let pressing = false;
         darkToggle.addEventListener("click", () => {
+            pressing = true;
             window.__mrSetDark(!window.__mrDarkOn());
             // After track.js has read the label for this press.
-            setTimeout(showDark, 0);
+            setTimeout(() => { pressing = false; showDark(); }, 0);
         });
-        // The palette can change under the page (a skin's window opening).
-        try { new MutationObserver(showDark).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] }); } catch (e) { /* old browser: the label waits for the next press */ }
+        // The palette can change under the page (a skin's window opening), and
+        // so can the switch itself, pressed in another tab (31 Oct 2026; the
+        // head script's storage listener moves data-dark / data-light). Not
+        // for this tab's own press, which waits for track.js as above: the
+        // observer would otherwise turn the label before it is read.
+        try { new MutationObserver(() => { if (!pressing) showDark(); }).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme", "data-dark", "data-light"] }); } catch (e) { /* old browser: the label waits for the next press */ }
     }
 
     // Sub-row buttons just change the filter within whichever top category
@@ -13326,7 +13424,7 @@ document.addEventListener("DOMContentLoaded", () => {
                some screen readers and silently skipped by others. */
             const text = note.querySelector(".missing-note-text");
             setTimeout(() => {
-                text.textContent = `That ${what} isn't in the archive — it may have been renamed or removed.`;
+                text.textContent = `That ${what} isn't in the archive. It may have been renamed or removed.`;
             }, 60);
 
             let timer = null;
@@ -13731,7 +13829,7 @@ document.addEventListener("DOMContentLoaded", () => {
             : onlyEvents ? "The events are offline" : "Part of the archive is offline";
         const say = roomsOffline
             ? "We can't reach the live " + escapeHtml(what) +
-                " right now, so you're seeing a small offline copy — most of the archive isn't here. " +
+                " right now, so you're seeing a small offline copy. Most of the archive isn't here. " +
                 "This is usually brief; the full archive should be back shortly."
             : onlyEvents
                 ? "We can't reach the event list right now. The mazes are all here; the events should be back shortly."

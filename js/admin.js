@@ -32,7 +32,9 @@ document.addEventListener("DOMContentLoaded", () => {
         if (/^https?:\/\//i.test(s)) return s;
         // Protocol-relative ("//evil.example") would be another host, and a
         // colon before the first slash is a scheme of some kind.
-        if (s.startsWith("//")) return "";
+        // Browsers read a backslash as a slash here, so "/\evil.example" and
+        // "\\evil.example" are that other host too (30 Oct 2026, the bug scan).
+        if (/^[\/\\]{2}/.test(s)) return "";
         const firstSlash = s.indexOf("/");
         const colon = s.indexOf(":");
         if (colon !== -1 && (firstSlash === -1 || colon < firstSlash)) return "";
@@ -8597,6 +8599,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 landingToggleBtns.forEach(btn => btn.classList.toggle("active", btn.dataset.state === landingState));
                 renderDevModeLink(landingState);
                 currentLandingState = landingState || "";
+                watchPresence();
                 // Beta is said as coming-soon with a flag beside it (settings.js).
                 const ff = fallinFurniBeta ? "beta" : fallinFurniState || "live";
                 ffToggleBtns.forEach(btn => btn.classList.toggle("active", btn.dataset.ffState === ff));
@@ -8655,6 +8658,7 @@ document.addEventListener("DOMContentLoaded", () => {
             landingToggleBtns.forEach(btn => btn.classList.toggle("active", btn.dataset.state === s.landingState));
             renderDevModeLink(s.landingState);
             currentLandingState = s.landingState;
+            watchPresence();
             if (launchFieldsLoaded) currentLaunchAt = s.launchAt || "";
             sayLandingMismatch();
             const ff = s.fallinFurniBeta ? "beta" : s.fallinFurniState || "live";
@@ -8736,6 +8740,95 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     }
 
+    /* ---- WHO IS STILL ON THE SITE (30 Oct 2026, the owner's: "this countdown
+       should be visible in the warren too, displaying the amount of current
+       users on the site, so i can see when everyone has been moved to the
+       landing page"). While the switch is on Maint., the line under it counts
+       down to the moment open pages are moved (js/maintenance-warn.js) and
+       says how many are left, from presence.js every PRESENCE_MS. It stops
+       asking a minute after the count is over with nobody left, or when the
+       switch leaves Maint. Signed-in admins stay, and are not counted. */
+    const PRESENCE_MS = 5000;
+    const landingPresence = document.getElementById("landing-presence");
+    let presence = { kickAt: 0, count: null, done: false, timer: 0, ticker: 0 };
+    /* The server's clock, not this computer's (31 Oct 2026, the bug scan): a
+       computer a minute out showed the countdown a minute out. presence.js
+       answers its own time, and the difference is kept here, from the middle
+       of the request, as js/maintenance-warn.js keeps it for visitors. */
+    let presenceSkew = 0;
+    const presenceNow = () => Date.now() + presenceSkew;
+    function watchPresence() {
+        if (!landingPresence) return;
+        if (currentLandingState !== "maintenance") {
+            clearInterval(presence.timer); clearInterval(presence.ticker);
+            presence = { kickAt: 0, count: null, done: false, timer: 0, ticker: 0 };
+            landingPresence.style.display = "none";
+            return;
+        }
+        if (presence.timer || presence.done) return;
+        // Tabs, not people (31 Oct 2026): presence.js counts each open tab.
+        landingPresence.title = "Each open browser tab counts once, so one visitor with two tabs counts as two. Tabs where an admin is signed in stay on the site and are not counted.";
+        readPresence();
+        presence.timer = setInterval(readPresence, PRESENCE_MS);
+        presence.ticker = setInterval(sayPresence, 1000);
+    }
+    async function readPresence() {
+        if (!adminToken || document.visibilityState === "hidden") return;
+        try {
+            const sentAt = Date.now();
+            const r = await Api.getPresence(adminToken);
+            if (!r) return;
+            const serverAt = Date.parse(r.now);
+            if (Number.isFinite(serverAt)) presenceSkew = serverAt - (sentAt + Date.now()) / 2;
+            /* Out of Maint. already (30 Oct 2026, the bug scan): another
+               admin, or this one in another tab, switched it. This panel
+               only re-reads the switches when Controls is opened, so the
+               line went on saying "Countdown over, 2 people still on the
+               site" under a lit Maint., asking every 5 seconds for good.
+               The switches are read again instead, which lights the real
+               state and, through watchPresence, stops this. Not while a
+               switch save is out: it bumps switchSaves and settles it. */
+            if (r.landingState !== "maintenance") {
+                if (!Array.from(landingToggleBtns).some(b => b.disabled)) relightSwitches();
+                return;
+            }
+            presence.kickAt = Date.parse(r.kickAt) || 0;
+            presence.count = typeof r.count === "number" ? r.count : null;
+            // No kickAt is a Maint. switched on before maintenanceAt was
+            // stamped (30 Oct 2026, the bug scan): no countdown to wait out,
+            // and asking every 5 seconds for as long as the Warren was open.
+            if (presence.count === 0 && (!presence.kickAt || presenceNow() > presence.kickAt + 60000)) {
+                presence.done = true;
+                clearInterval(presence.timer); clearInterval(presence.ticker);
+                presence.timer = presence.ticker = 0;
+            }
+            sayPresence();
+        } catch (err) {
+            if (err && err.status === 401) { lockOut(); return; }
+            /* the next read tries again */
+        }
+    }
+    function sayPresence() {
+        if (!landingPresence || currentLandingState !== "maintenance" || presence.count === null) return;
+        const n = presence.count;
+        /* Tabs, not people (31 Oct 2026, the owner's approval list): each
+           open tab pings on its own, so "3 people" could be one visitor. */
+        const tabs = n === 0 ? "no other tabs open on the site" : n === 1 ? "1 tab still open on the site" : n + " tabs still open on the site";
+        const left = presence.kickAt ? presence.kickAt - presenceNow() : 0;
+        let text;
+        if (left > 0) {
+            const secs = Math.ceil(left / 1000);
+            text = "Moving open tabs to the landing page in " + Math.floor(secs / 60) + ":" + String(secs % 60).padStart(2, "0") + ", " + tabs + ".";
+        } else if (n === 0) {
+            text = "Every open tab has been moved to the landing page.";
+        } else {
+            // A tab asleep in the background hears it within about a minute.
+            text = "Countdown over, " + tabs + ". Tabs in the background can take a minute to move.";
+        }
+        landingPresence.textContent = text;
+        landingPresence.style.display = "block";
+    }
+
     async function setLandingState(state, clickedBtn) {
         landingToggleBtns.forEach(b => b.disabled = true);
         landingToggleStatus.style.display = "none";
@@ -8746,6 +8839,7 @@ document.addEventListener("DOMContentLoaded", () => {
             renderDevModeLink(state);
             currentLandingState = state;
             sayLandingMismatch();
+            watchPresence();
             return true;
         } catch (err) {
             if (err.status === 401) { lockOut(); return false; }
@@ -8770,7 +8864,8 @@ document.addEventListener("DOMContentLoaded", () => {
         },
         "maintenance": {
             confirmSteps: ["You're about to take Maze Rats offline! Are you sure?", "Sure you're sure?"],
-            success: "Maintenance mode activated. Website closed to visitors."
+            // The two-minute warning (30 Oct 2026): see js/maintenance-warn.js and watchPresence.
+            success: "Maintenance mode activated. New visitors are kept out now, and anyone already on the site gets a two-minute warning before being moved to the landing page. The count is under the switch."
         },
         "enter": {
             confirmSteps: ["You're about to bring Maze Rats back online! Are you sure?"],

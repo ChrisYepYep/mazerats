@@ -59,15 +59,15 @@
          repeated it, which stopped being true). Lift the tag and the headers
          together. -->
     <meta name="robots" content="noindex, nofollow">
-    <title>The Sorcerer's Atlas — Maze Rats</title>
-    <meta name="description" content="An interactive map of the magical hallways within Habbo Hotel: Origins — every room, the passages between them, and what each one held.">
+    <title>The Sorcerer's Atlas | Maze Rats</title>
+    <meta name="description" content="An interactive map of the magical hallways within Habbo Hotel: Origins. Every room, the passages between them, and what each one held.">
     <!-- A link preview of its own (2 Oct 2026, the owner's): a pasted /wizard
          link unfurled bare. noindex keeps it out of search, not out of chat
          previews, so the two don't conflict. -->
     <meta property="og:url" content="https://mazerats.net/wizard">
     <meta property="og:site_name" content="Maze Rats">
     <meta property="og:title" content="The Sorcerer's Atlas">
-    <meta property="og:description" content="An interactive map of the magical hallways within Habbo Hotel: Origins — every room, the passages between them, and what each one held.">
+    <meta property="og:description" content="An interactive map of the magical hallways within Habbo Hotel: Origins. Every room, the passages between them, and what each one held.">
     <meta property="og:type" content="website">
     <meta property="og:image" content="https://mazerats.net/assets/img/og-thumbnail.png">
     <meta property="og:image:width" content="1200">
@@ -104,7 +104,7 @@
 
          Wrapped in try/catch: localStorage throws outright in some privacy modes,
          and a colour scheme is not worth a blank page. -->
-    <link rel="stylesheet" href="css/style.css?v=2">
+    <link rel="stylesheet" href="css/style.css?v=3">
     <link id="theme-css" rel="stylesheet">
     <script>
     /* THE FIRST PAINT'S PALETTE. The site's own (mazerats_theme), unless a
@@ -183,10 +183,12 @@
          are built by tools/themes.js (css/theme-dark.css on html[data-dark],
          css/theme-frostlight.css on html[data-light]), loaded only when worn,
          and last in the head so they follow every other. Set here, before the
-         first paint, and again whenever the palette changes under the page. -->
+         first paint, and again whenever the palette changes under the page.
+         And when the switch is pressed in another open tab (31 Oct 2026, the
+         bug scan): the storage event, so every tab follows without a reload. -->
     <link id="dark-css" rel="stylesheet">
     <link id="light-css" rel="stylesheet">
-    <script>(function(){var d=document.documentElement,dk=document.getElementById("dark-css"),lt=document.getElementById("light-css"),want=false;function sheet(l,h){if(!l.getAttribute("href"))l.href=h;}function apply(){var light=want&&d.getAttribute("data-theme")==="frost",dark=want&&!light;if(dark){sheet(dk,"/css/theme-dark.css");if(!d.hasAttribute("data-dark"))d.setAttribute("data-dark","");}else if(d.hasAttribute("data-dark"))d.removeAttribute("data-dark");if(light){sheet(lt,"/css/theme-frostlight.css");if(!d.hasAttribute("data-light"))d.setAttribute("data-light","");}else if(d.hasAttribute("data-light"))d.removeAttribute("data-light");}window.__mrDarkOn=function(){return want;};window.__mrDarkIsLight=function(){return d.getAttribute("data-theme")==="frost";};window.__mrSetDark=function(v){want=!!v;apply();try{localStorage.setItem("mazerats_dark",want?"1":"0");}catch(e){}};try{want=localStorage.getItem("mazerats_dark")==="1";}catch(e){}apply();try{new MutationObserver(apply).observe(d,{attributes:true,attributeFilter:["data-theme"]});}catch(e){}})();</script>
+    <script>(function(){var d=document.documentElement,dk=document.getElementById("dark-css"),lt=document.getElementById("light-css"),want=false;function sheet(l,h){if(!l.getAttribute("href"))l.href=h;}function apply(){var light=want&&d.getAttribute("data-theme")==="frost",dark=want&&!light;if(dark){sheet(dk,"/css/theme-dark.css");if(!d.hasAttribute("data-dark"))d.setAttribute("data-dark","");}else if(d.hasAttribute("data-dark"))d.removeAttribute("data-dark");if(light){sheet(lt,"/css/theme-frostlight.css");if(!d.hasAttribute("data-light"))d.setAttribute("data-light","");}else if(d.hasAttribute("data-light"))d.removeAttribute("data-light");}window.__mrDarkOn=function(){return want;};window.__mrDarkIsLight=function(){return d.getAttribute("data-theme")==="frost";};window.__mrSetDark=function(v){want=!!v;apply();try{localStorage.setItem("mazerats_dark",want?"1":"0");}catch(e){}};try{want=localStorage.getItem("mazerats_dark")==="1";}catch(e){}apply();try{new MutationObserver(apply).observe(d,{attributes:true,attributeFilter:["data-theme"]});}catch(e){}addEventListener("storage",function(e){if(e.key==="mazerats_dark"||e.key===null){want=e.newValue==="1";apply();}});})();</script>
 </head>
 <body data-page="wizard" class="wiz-page">
 
@@ -403,7 +405,7 @@
         <p>&copy; 2026 Origins Maze Rats. All rights reserved.</p>
     </footer>
 
-    <script src="js/api.js?v=2"></script>
+    <script src="js/api.js?v=3"></script>
     <!-- js/site.js is what puts the Fellow Fansites row and the Privacy
          Policy link into .site-footer, and js/track.js is what records the
          data-track events. Without them this page had a footer with no links
@@ -419,7 +421,7 @@
          the editor and the page can never disagree about where a name sits.
          Must load before wizard.js, which calls it. -->
     <script src="js/wizard-map.js?v=2"></script>
-    <script src="js/wizard.js?v=2"></script>
+    <script src="js/wizard.js?v=3"></script>
     <script src="js/track.js?v=2"></script>
 </body>
 </html>

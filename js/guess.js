@@ -911,7 +911,7 @@
                 if (reply.status === 400 && state && state.day !== forDay) {
                     const now = roundSheet(state.round);
                     if (now) {
-                        now.refs.status.textContent = "That was yesterday's room — here are today's.";
+                        now.refs.status.textContent = "That was yesterday's room. Here are today's.";
                         now.refs.status.hidden = false;
                         announce(now, now.refs.status.textContent);
                     }
@@ -1020,7 +1020,7 @@
     // unrecorded play to carry on with; 10 Oct 2026.)
     function signInLapsed(sheet) {
         statusWithAction(sheet,
-            "You've been signed out, so that guess wasn't recorded. Sign in again to carry on — the rooms already recorded are kept.",
+            "You've been signed out, so that guess wasn't recorded. Sign in again to carry on. The rooms already recorded are kept.",
             "Sign in again", () => { if (window.Account && Account.signIn) Account.signIn(); });
     }
 
@@ -1335,9 +1335,9 @@
                 <p class="guess-reveal-points ${result.won ? "is-won" : "is-lost"}">
                     ${result.won
                         ? `<strong>+${scored}</strong> ${result.guesses.length === 1
-                            ? "— named on the first view"
+                            ? "for naming it on the first view"
                             : `for view ${result.guesses.length}${" · "}${POINTS[0]} on the first`}`
-                        : `<strong>+0</strong> — no points for a room you don't place`}
+                        : `<strong>+0</strong>: no points for a room you don't place`}
                 </p>
                 ${maze ? `<a class="guess-reveal-link" href="${window.RecordAddress ? window.RecordAddress.of("maze", maze) : `/maze/${encodeURIComponent(maze.id)}`}">See it in the archive &rsaquo;</a>` : ""}
                 <button type="button" class="guess-btn guess-btn--lead guess-advance">${last ? "See how you did &rsaquo;" : `Room ${i + 2} &rsaquo;`}</button>`;
@@ -1992,7 +1992,7 @@
             if (launchDay) {
                 const left = cut - at;
                 if (left <= 0) {
-                    target.textContent = "Today's real rooms are open — close this and reopen it to play.";
+                    target.textContent = "Today's real rooms are open. Close this and reopen it to play.";
                     // The bonus line above too (2 Oct 2026): it went on
                     // saying "nothing counts until … 08:00 UTC" after 08:00.
                     drawBonus();
@@ -2004,7 +2004,7 @@
             }
             const ms = next - at;
             if (ms <= 0) {
-                target.textContent = "Five new rooms are ready — close this and reopen it to play.";
+                target.textContent = "Five new rooms are ready. Close this and reopen it to play.";
                 clearInterval(countdownTimer);
                 return;
             }
@@ -2362,7 +2362,7 @@
         document.body.classList.add("modal-open");
         // The tab names the game while it is open, as the Alt Codes and the
         // Guides do (PageMeta in js/site.js; 30 Sept 2026).
-        if (window.PageMeta) window.PageMeta.set("guess", "Guess the Maze — Maze Rats", "https://mazerats.net/guess");
+        if (window.PageMeta) window.PageMeta.set("guess", "Guess the Maze | Maze Rats", "https://mazerats.net/guess");
         view = "intro";
         el.window.focus();
         // Counted once per open (Daily.track; 30 Sept 2026).

@@ -224,6 +224,18 @@
         };
     }
 
+    /* The first n pieces a seed deals, in order: what the server hands out a
+       few at a time (DEALT A FEW AT A TIME, below). The same pieces a game
+       from that seed draws, because fillersFor gives every level the same
+       four; were the fillers ever to change with the level, this would have
+       to open each bag at the level the game was at, as `newGame` does. */
+    function kinds(seed, n) {
+        const next = bag(seed);
+        const out = [];
+        for (let i = 0; i < n; i++) out.push(next(1));
+        return out;
+    }
+
     /* ---------------------------------------------------------------- THE BOARD
 
        board[r][c] is null or what is standing there ({ kind, colour } and
@@ -358,6 +370,45 @@
         return null;
     }
 
+    /* STEERED THERE (31 Oct 2026, the bug scan; the owner's yes). Whether a
+       piece could have been brought from where it appeared (`start`) to
+       `target` with the page's own controls: left and right (a tuck when
+       landed, else a slide), a turn either way, and falling half a row at a
+       time (a hard drop is only falling all the way). Lock resets and the
+       landing pause are left out, so this allows more than a hand ever has
+       time for and never less: no honest game is refused by it. A search
+       over (turn, x, y, lane), stopped as soon as the target turns up; one
+       that grows past `max` positions gives the benefit of the doubt. */
+    const posKey = (p) => ((p.rot * 2 + (p.lean ? 1 : 0)) * 512 + (p.x + 256)) * 512 + (p.y + 256);
+    function reachable(board, start, target, max) {
+        const want = posKey(target);
+        const seen = new Set([posKey(start)]);
+        if (seen.has(want)) return true;
+        const stack = [start];
+        const cap = max || 20000;
+        while (stack.length) {
+            const p = stack.pop();
+            const down = fall(board, p);
+            const next = [
+                down,
+                (!down && tuck(board, p, "left")) || move(board, p, "left"),
+                (!down && tuck(board, p, "right")) || move(board, p, "right"),
+                rotate(board, p, 1),
+                rotate(board, p, -1)
+            ];
+            for (const n of next) {
+                if (!n) continue;
+                const k = posKey(n);
+                if (seen.has(k)) continue;
+                if (k === want) return true;
+                seen.add(k);
+                if (seen.size > cap) return true;
+                stack.push(n);
+            }
+        }
+        return false;
+    }
+
     // Where it would land if dropped now: the ghost, and the hard drop.
     function dropped(board, piece) {
         let p = piece, n;
@@ -488,13 +539,26 @@
     /* ---------------------------------------------------------------- A GAME
 
        The state machine both sides drive. The page calls these as the
-       player plays; `replay` calls `place` straight from a log. */
-    function newGame(seed) {
-        const next = bag(seed);
+       player plays; `replay` calls `place` straight from a log.
+
+       DEALT A FEW AT A TIME (31 Oct 2026, the bug scan; the owner's yes).
+       A game for the board no longer has its seed on the page: the start
+       handed it over, and a script that knew it could deal the whole game
+       to itself and top the board (406,192 points in the scan's harness).
+       Now the server keeps the seed and sends the pieces a few at a time
+       (netlify/functions/pura-deal.js), and the page plays from that list,
+       `deck`: piece n is deck[n]. When the next piece has not arrived yet,
+       the game holds with no piece (`piece` null) until `deal` finds it.
+       Without a deck (maintenance, a test level, no server) it deals from
+       a seed of its own exactly as before. */
+    function newGame(seed, deck) {
+        const dealt = Array.isArray(deck) ? deck : null;
+        const next = dealt ? null : bag(seed);
         const g = {
-            seed: seed >>> 0,
+            seed: dealt ? null : seed >>> 0,
+            deck: dealt,
             board: emptyBoard(),
-            queue: [next(1), next(1), next(1)],
+            queue: dealt ? [] : [next(1), next(1), next(1)],
             draw: null,
             piece: null,
             score: 0,
@@ -504,10 +568,29 @@
             over: false,
             log: []
         };
+        if (dealt) { deal(g); return g; }
         g.draw = () => next(g.level);
         g.piece = spawn(g.queue.shift());
         g.queue.push(g.draw());
         return g;
+    }
+
+    /* A dealt game with no piece in play: the next one, if it has come.
+       True when a piece was put in play (the game may have ended there, if
+       the well has no room for it). */
+    function deal(g) {
+        if (!g.deck || g.piece || g.over) return false;
+        const kind = g.deck[g.pieces];
+        if (!kind) return false;
+        g.piece = spawn(kind);
+        if (!fits(g.board, g.piece)) g.over = true;
+        return true;
+    }
+
+    // The piece after the one in play, for the Next box, or null.
+    function upcoming(g) {
+        if (g.deck) return g.deck[g.pieces + 1] || null;
+        return g.queue[0] || null;
     }
 
 
@@ -530,6 +613,10 @@
         if (res.topOut) {
             g.over = true;
             g.piece = null;
+        } else if (g.deck) {
+            // Dealt: the next piece if it is here, else the game holds (see deal).
+            g.piece = null;
+            deal(g);
         } else {
             g.piece = spawn(g.queue.shift());
             g.queue.push(g.draw());
@@ -547,11 +634,15 @@
        inside the well, on nothing else — and RESTING, not hanging in the air
        where it could still have fallen.
 
-       It does not prove the piece could have been steered there; a ledge
-       reached by a tuck is a legal place for a piece to be, and so is one no
-       real hand could reach. That is the honest limit, and it rules out the
-       realistic cheat — a score typed into a request — entirely. */
-    function replay(seed, log, limit) {
+       It used not to prove the piece could have been steered there, and a
+       script put pieces in caves no hand could reach. Since 31 Oct 2026
+       `opts.reachFrom` asks that of every placement from that one on
+       (`reachable`); the server checks each piece once, as it is dealt
+       further pieces (pura-deal.js), not the whole game every time.
+       `opts.reachMax` is the search's size limit for one piece. */
+    function replay(seed, log, limit, opts) {
+        const reachFrom = opts && Number.isInteger(opts.reachFrom) ? opts.reachFrom : Infinity;
+        const reachMax = opts && opts.reachMax;
         if (!Array.isArray(log)) return { ok: false, error: "No placements" };
         if (log.length > (limit || 20000)) return { ok: false, error: "Too many placements" };
         const g = newGame(seed);
@@ -572,6 +663,9 @@
             const p = { kind: g.piece.kind, rot, x, y, lean };
             if (!fits(g.board, p)) return { ok: false, error: `Piece ${i + 1} is somewhere it cannot be` };
             if (!landed(g.board, p)) return { ok: false, error: `Piece ${i + 1} was left in the air` };
+            if (i >= reachFrom && !reachable(g.board, g.piece, p, reachMax)) {
+                return { ok: false, error: `Piece ${i + 1} could not have been steered there`, unreachable: true };
+            }
             g.piece = p;
             const res = settle(g);
             const n = res.cleared.length;
@@ -584,7 +678,8 @@
     const api = {
         COLS, ROWS, BANDS, SHAPES, KINDS, ROTATIONS, CLEAR_POINTS, BANDS_PER_LEVEL, MAX_LEVEL,
         toScreen, cellsOf, fits, fall, landed, move, tuck, open, rotate, dropped, lock, spawn,
-        newGame, settle, replay, stepMs, lockMs, levelFor, fillersFor, bag, rng, drop
+        newGame, settle, replay, stepMs, lockMs, levelFor, fillersFor, bag, rng, drop,
+        kinds, deal, upcoming, reachable
     };
 
     if (typeof module === "object" && module.exports) module.exports = api;

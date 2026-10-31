@@ -147,8 +147,8 @@ function dealOdd(rooms, day, seedOf) {
 
 /* Guess the Maze: five room pictures from five different mazes where the
    archive allows it, each with the five names it is offered against — the
-   right one and four decoys, preferring decoys that share a tag with the
-   answer. Moved from js/guess.js (pickDay and optionsFor), which had to
+   right one and four decoys, all four sharing one tag with the answer
+   where the archive allows it (see THE TAGS GAVE THE ANSWER AWAY). Moved from js/guess.js (pickDay and optionsFor), which had to
    deal it in the browser; the page now gets the picture and the five names
    and nothing that says which name is right. `crop` is the seed the page
    uses to choose where to cut the picture, handed out rather than derived
@@ -189,17 +189,53 @@ function dealGuess(rooms, day, seedOf) {
         if (!chosen.includes(item)) chosen.push(item);
     }
 
+    /* THE TAGS GAVE THE ANSWER AWAY (31 Oct 2026, the bug scan). The decoys
+       used to be any four mazes sharing SOME tag with the answer, so the
+       answer was the one name sharing a tag with all four others: read off
+       the public /rooms list, without looking at the picture, that was right
+       27.5% of the time against 20% by chance. Now one of the answer's tags
+       is picked and all four decoys carry THAT tag, so every name shares it
+       with every other. Only a tag with four other mazes to lend will do
+       (`usable`); an answer with none (a small archive, a rare tag) gets four
+       others with none first, then any.
+
+       And the decoys are drawn as the answer was. An answer is a maze picked
+       through its pictures, so one with eight is picked far more often than
+       one with one, and then one of its usable tags is picked: drawn evenly,
+       the decoys were the mazes with fewer pictures (the most pictures named
+       the answer 40% of the time) and more tags. So each is weighted by its
+       pictures over its usable tags, which leaves the five names looking
+       alike in what /rooms says about them. Days already dealt are stored
+       (WHY THE DEAL IS STORED, above) and keep their names. */
+    const carrying = new Map();
+    live.forEach(r => new Set(tagsOf(r)).forEach(t => carrying.set(t, (carrying.get(t) || 0) + 1)));
+    const usable = r => [...new Set(tagsOf(r))].filter(t => carrying.get(t) - 1 >= GUESS_OPTIONS - 1).sort();
+    const weightOf = r => Math.max(1, (r.gallery || []).filter(g => g && g.image).length) / Math.max(1, usable(r).length);
+    // `n` from `list` (in a fixed order), each kept with odds by weightOf:
+    // the largest log(u)/w of a seeded u wins, a weighted draw without
+    // putting back.
+    const drawn = (list, n, seed) => {
+        const rand = seededRandom(seed);
+        return list.map(r => ({ r, k: Math.log(rand()) / weightOf(r) }))
+            .sort((a, b) => b.k - a.k).slice(0, n).map(o => o.r);
+    };
+
     return chosen.map((pick, i) => {
         const answer = pick.maze;
-        const mine = new Set(tagsOf(answer));
         const others = live.filter(r => r.id !== answer.id);
         const seed = seedOf("guess:options", i, answer.id);
-        const related = others.filter(r => tagsOf(r).some(t => mine.has(t)));
-        const relatedIds = new Set(related.map(r => r.id));
-        const rest = others.filter(r => !relatedIds.has(r.id));
-        const decoys = shuffle(related, seed)
-            .concat(shuffle(rest, (seed ^ 0x9e3779b9) >>> 0))
-            .slice(0, GUESS_OPTIONS - 1);
+        const tags = usable(answer);
+        let decoys;
+        if (tags.length) {
+            const tag = tags[seed % tags.length];
+            decoys = drawn(others.filter(r => tagsOf(r).includes(tag)), GUESS_OPTIONS - 1, seed);
+        } else {
+            const rare = others.filter(r => !usable(r).length);
+            decoys = drawn(rare, GUESS_OPTIONS - 1, seed);
+            if (decoys.length < GUESS_OPTIONS - 1) {
+                decoys = decoys.concat(drawn(others.filter(r => !rare.includes(r)), GUESS_OPTIONS - 1 - decoys.length, (seed ^ 0x9e3779b9) >>> 0));
+            }
+        }
         const options = shuffle([answer].concat(decoys), (seed ^ 0x85ebca6b) >>> 0).map(r => r.name);
         return {
             id: answer.id,

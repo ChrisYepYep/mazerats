@@ -805,7 +805,8 @@ async function handlePost(event, body, db, admins) {
 
     if (body.action === "verify") {
         const payload = tokenPayload(event);
-        const username = payload && payload.sub;
+        // Text only, as usernameFromToken in _auth.js reads it (30 Oct 2026).
+        const username = payload && typeof payload.sub === "string" ? payload.sub : null;
         if (!username) return UNAUTHORIZED;
         const admin = await admins.findOne({ username });
         // A token for an account that has since been deleted, or minted

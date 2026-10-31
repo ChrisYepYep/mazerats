@@ -5,9 +5,12 @@
                           ({ taken }), for the signed-out name prompt
    GET ?guest=X&hotel=COM the board, with a signed-out Habbo's own row
    GET ?rat=N             the board, with Guest Rat N's own row
-   POST ?action=start     a signed run token carrying the game's SEED
-   POST {run, log, ms}    a finished game: `run` that token, `log` where
-                          every piece came to rest ([rot, x, y, lane] each)
+   POST ?action=start     a signed run token naming the game, and its first
+                          pieces (the rest come from pura-deal.js)
+   POST {run, log, ms, stamp}
+                          a finished game: `run` that token, `log` where
+                          every piece came to rest ([rot, x, y, lane] each),
+                          `stamp` the last deal's (see _pura-run.js)
    POST ?action=claim     {habbo, hotel}: a motto code for a signed-out
                           player to prove the Habbo is theirs (see GUESTS)
    POST ?action=verify    {claim}: their motto read fresh from Origins; the
@@ -22,19 +25,19 @@
    THE SCORE IS WORKED OUT HERE, NOT SENT
 
    Pura Panic is deterministic. The pieces come from a seven-bag shuffled by
-   a seed, and the seed is in the run token, signed here when Play was
-   pressed — so the page cannot choose an easy sequence. The submission is
-   the list of where each piece ended up, and the server REPLAYS it through
-   the very rules file the page plays with (js/pura-engine.js): every piece
-   has to be somewhere it can be and resting there, and the score is
-   whatever those placements actually clear. A number typed into a request
-   has nothing to attach to.
+   a seed the server keeps to itself and deals from a few pieces at a time
+   (31 Oct 2026; _pura-run.js and pura-deal.js), so the page can neither
+   choose an easy sequence nor see the whole of the one it has. The
+   submission is the list of where each piece ended up, and the server
+   REPLAYS it through the very rules file the page plays with
+   (js/pura-engine.js): every piece has to be somewhere it can be, resting
+   there, and somewhere the page's own controls could have steered it; the
+   score is whatever those placements actually clear. A number typed into a
+   request has nothing to attach to.
 
-   What a replay cannot prove is that a hand steered each piece there; see
-   `replay` in the engine for why that limit is acceptable. On top, the
-   same wall-clock check Fallin' Furni makes (no more game time than has
-   passed since the token) and a floor of PIECE_MIN_MS a piece, which no
-   human sustains under.
+   On top, the same wall-clock check Fallin' Furni makes (no more game time
+   than has passed since the token) and a floor of PIECE_MIN_MS a piece,
+   which no human sustains under.
 
    ----------------------------------------------------------------------
    OPEN OR IN MAINTENANCE
@@ -101,9 +104,10 @@ const jwt = require("jsonwebtoken");
 const { getDb, ensureUniqueIndex, ensureIndex } = require("./_db");
 const { playerFrom, publicName, nameKey } = require("./_player");
 const { SECURITY_HEADERS } = require("./_headers");
-const { writeRefusal, withoutBanned } = require("./_bans");
+const { writeRefusal, withoutBanned, accountBans, netHashFor } = require("./_bans");
 const { habboHeads } = require("./_publicid");
-const Engine = require("../../js/pura-engine.js");
+// The run token, the clock's slack, the floor and the replay's checks (31 Oct 2026: shared with pura-deal.js).
+const { RUN_LIFE_S, RUN_TOLERANCE_MS, PIECE_MIN_MS, MAX_PIECES, MAX_BODY, signRun, resignRun, readRun, checkLog } = require("./_pura-run");
 
 const COLLECTION = "pura_scores";
 const RUN_TOKENS = "pura_run_tokens";
@@ -111,15 +115,50 @@ const TOP = 25;
 const BOARD_READ = TOP * 2;
 const BOARD_READ_MAX = BOARD_READ * 16;
 
-const RUN_AUDIENCE = "mazerats-purarun";
-const RUN_LIFE_S = 3 * 60 * 60;
-const RUN_TOLERANCE_MS = 15 * 1000;
-const PIECE_MIN_MS = 120;
-// A three-hour game at the floor's pace, and the body that carries it.
-const MAX_PIECES = Math.floor(RUN_LIFE_S * 1000 / PIECE_MIN_MS);
-const MAX_BODY = 400 * 1024;
-
 const DEFAULT_STATE = "maintenance";
+
+/* PER NETWORK, PER HOUR (31 Oct 2026, the bug scan; the owner's yes): the
+   signed-out writes that cost the site something whoever sends them, each
+   counted for the caller's network (its code from _bans.js, an HMAC that
+   names nobody), a counter row per network and hour, deleted after two.
+     claim     a motto code: each one is a fresh Habbo Origins lookup, and
+               the gap between checks (CHECK_GAP_MS) is per code, so codes
+               minted one after another let a script have the site ask
+               Origins as often as it liked
+     verify    a motto read fresh from Origins; more than claims, since a
+               person checks a few times while Origins catches up
+     rat       a new Guest Rat number, given at a browser's first score
+     start     a pura_starts row for the Warren's figures (the game itself
+               is never refused: past this the start is just not counted)
+   Fails OPEN, as the site's rate limit does: a counter that cannot be read
+   never stops a game or a proof. */
+const CAPS = "pura_caps";
+const CAP_PER_HOUR = { claim: 10, verify: 20, rat: 10, start: 60 };
+let capsIndexed = false;
+async function overCap(db, event, kind) {
+    const net = netHashFor(event);
+    if (!net) return false;
+    const hour = Math.floor(Date.now() / 3600000);
+    const col = db.collection(CAPS);
+    try {
+        if (!capsIndexed) {
+            capsIndexed = true;
+            await col.createIndex({ at: 1 }, { expireAfterSeconds: 2 * 3600 }).catch(() => { capsIndexed = false; });
+        }
+        const bump = () => col.findOneAndUpdate(
+            { _id: `${kind}:${net}:${hour}` },
+            { $inc: { n: 1 }, $setOnInsert: { at: new Date(hour * 3600000) } },
+            { upsert: true, returnDocument: "after", projection: { n: 1 } });
+        let r;
+        try { r = await bump(); }
+        catch (e) { if (!(e && e.code === 11000)) throw e; r = await bump(); }
+        const doc = r && r.ok !== undefined && r.value !== undefined ? r.value : r;
+        return Boolean(doc && Number(doc.n) > CAP_PER_HOUR[kind]);
+    } catch (e) {
+        console.error("pura-scores: could not count a " + kind, e);
+        return false;
+    }
+}
 
 const STARTS = "pura_starts";
 const GAMES = "pura_games";
@@ -147,26 +186,15 @@ async function placeOf(db, scores, best) {
     return 1 + (await shown(db, ahead)).length;
 }
 
-function signRun(player, now) {
-    if (!process.env.SESSION_SECRET) return null;
-    const seed = crypto.randomBytes(4).readUInt32BE(0);
-    const claims = { rid: crypto.randomBytes(12).toString("hex"), t: now, seed };
-    if (player) claims.sub = player.id;
-    return {
-        seed,
-        token: jwt.sign(claims, process.env.SESSION_SECRET, {
-            audience: RUN_AUDIENCE, expiresIn: RUN_LIFE_S, algorithm: "HS256"
-        })
-    };
-}
-
 /* CONTINUING (7 Oct 2026, the owner's). A game left part-way — the tab
    closed, the browser shut — already stands on the board at the last level
    it reached (the saves at each new level, A SAVE ON THE WAY). The page
-   keeps the game (its token, seed and placements) and, on the player's
-   return, offers to pick it up where it stopped. "continue" re-issues the
-   game's token, the same game (rid, seed, start time) with a fresh three
-   hours and `resumed` set, so a continued game can never be continued
+   keeps the game (its token, its pieces so far and placements) and, on the
+   player's return, offers to pick it up where it stopped. "continue"
+   re-issues the game's token, the same game (rid, start time) with a fresh
+   three hours and `resumed` set, and the page asks pura-deal.js for its
+   next pieces as usual (31 Oct 2026: the seed went with it before; a token
+   from before then, which carries one, is not continued: "too-old"), so a continued game can never be continued
    again (the owner's: "once per game, they cannot keep leaving and coming
    back"). Refused when the game was finished (its token spent), when it
    started more than RESUME_WINDOW_MS ago, or when it was continued before
@@ -179,16 +207,12 @@ const RESUME_WINDOW_MS = 24 * 60 * 60 * 1000;
 async function continueRun(db, event, player) {
     let body;
     try { body = JSON.parse(event.body || "{}"); } catch { return json(400, { error: "Body is not JSON" }); }
-    let c = null;
-    try {
-        c = jwt.verify(String(body.run || ""), process.env.SESSION_SECRET || "", { audience: RUN_AUDIENCE, algorithms: ["HS256"], ignoreExpiration: true });
-    } catch (e) { c = null; }
-    if (!c || typeof c.rid !== "string" || !/^[0-9a-f]{24}$/.test(c.rid) || !Number.isInteger(c.seed) || !Number.isFinite(c.t)) {
-        return json(200, { token: null, reason: "unknown" });
-    }
+    const c = readRun(String(body.run || ""), null, { ignoreExpiration: true });
+    if (!c) return json(200, { token: null, reason: "unknown" });
     if (c.sub && (!player || String(c.sub) !== String(player.id))) return json(200, { token: null, reason: "someone-else" });
     if (c.resumed) return json(200, { token: null, reason: "already-continued" });
-    if (Date.now() - c.t > RESUME_WINDOW_MS) return json(200, { token: null, reason: "too-old" });
+    // An old page's token, with the seed in it (_pura-run.js, OLD TOKENS): never given a new life.
+    if (c.legacy || Date.now() - c.t > RESUME_WINDOW_MS) return json(200, { token: null, reason: "too-old" });
     if (!(await isOpen(db).catch(() => false))) return json(200, { token: null, reason: "maintenance" });
     try {
         if (await db.collection(RUN_TOKENS).findOne({ _id: c.rid })) return json(200, { token: null, reason: "finished" });
@@ -205,23 +229,7 @@ async function continueRun(db, event, player) {
         console.error("pura-scores: could not continue a game", e);
         return json(503, { error: "That game can't be picked up just now." });
     }
-    const claims = { rid: c.rid, t: c.t, seed: c.seed, resumed: true };
-    if (c.sub) claims.sub = c.sub;
-    const token = jwt.sign(claims, process.env.SESSION_SECRET, { audience: RUN_AUDIENCE, expiresIn: RUN_LIFE_S, algorithm: "HS256" });
-    return json(200, { token, seed: c.seed });
-}
-
-function readRun(token, player) {
-    if (!token || typeof token !== "string" || !process.env.SESSION_SECRET) return null;
-    try {
-        const c = jwt.verify(token, process.env.SESSION_SECRET, { audience: RUN_AUDIENCE, algorithms: ["HS256"] });
-        if (!c || typeof c.rid !== "string" || !/^[0-9a-f]{24}$/.test(c.rid)) return null;
-        if (!Number.isFinite(c.t) || !Number.isInteger(c.seed)) return null;
-        if (c.sub && player && String(c.sub) !== String(player.id)) return null;
-        return c;
-    } catch (e) {
-        return null;
-    }
+    return json(200, { token: resignRun(c) });
 }
 
 // One token, one entry: the unique _id is the lock (see ff-scores.js).
@@ -383,10 +391,18 @@ async function nextRat(db) {
    one of the same game gets the same back. Kept as long as the token can
    be continued. */
 const RUN_RATS = "pura_run_rats";
-async function ratForRun(db, rid) {
+/* A NEW NUMBER COSTS SOMETHING (31 Oct 2026, the bug scan; the owner's
+   yes). Scripted starts with a tiny scoring game each minted a Guest Rat
+   number and a board row apiece. A number still comes only with a first
+   score, which since the deal (_pura-run.js) is a game played in real
+   time; and no more than CAP_PER_HOUR.rat new ones an hour from one
+   network ("busy": the game is not saved, and can be sent again). A browser
+   that has its number never asks for another. */
+async function ratForRun(db, rid, event) {
     const col = db.collection(RUN_RATS);
     const had = await col.findOne({ _id: rid });
     if (had && Number.isInteger(had.n)) return had.n;
+    if (await overCap(db, event, "rat")) return "busy";
     const n = await nextRat(db);
     if (!n) return null;
     await col.createIndex({ at: 1 }, { expireAfterSeconds: RESUME_WINDOW_MS / 1000 + RUN_LIFE_S + 3600 }).catch(() => {});
@@ -425,26 +441,69 @@ async function guestOf(db, body) {
 }
 
 /* The board's own filter: accounts through withoutBanned (banned players
-   and players with no nickname off), guests kept as they are. Order kept. */
+   and players with no nickname off), guests kept as they are. Order kept.
+   A HABBO'S ROWS GO WITH ITS BANNED ACCOUNT (31 Oct 2026, the bug scan;
+   the owner's yes): a guest row played as a Habbo that is now linked to a
+   banned account is hidden too, or the banned player stayed on the board
+   under their Habbo. Fails open, as the bans do (bannedAmong). */
 async function shown(db, rows) {
     const accounts = rows.filter(r => r && !isGuest(r.playerId));
-    const [kept] = await withoutBanned(db, [accounts], r => r && r.playerId);
+    const [kept, bannedHabbos] = await Promise.all([
+        withoutBanned(db, [accounts], r => r && r.playerId).then(([k]) => k),
+        habbosOfBanned(db, rows)
+    ]);
     const ok = new Set(kept);
-    return rows.filter(r => r && (isGuest(r.playerId) || ok.has(r)));
+    return rows.filter(r => r && (isGuest(r.playerId) ? !bannedHabbos.has(habboKeyOf(r)) : ok.has(r)));
+}
+
+// A Habbo guest row's "HOTEL:name" (lower-cased), or null for a Guest Rat or an account.
+function habboKeyOf(row) {
+    const m = /^guest:([A-Z]+):/.exec(String(row && row.playerId));
+    return m && typeof row.name === "string" ? m[1] + ":" + row.name.toLowerCase() : null;
+}
+
+/* The "HOTEL:name" of the Habbo linked to each banned account, when any
+   guest row is on the board to hide. From the ban list (a handful of
+   rows) to those accounts, so the players are read by id, not searched. */
+async function habbosOfBanned(db, rows) {
+    const out = new Set();
+    if (!rows.some(r => habboKeyOf(r))) return out;
+    try {
+        const { byPlayer } = await accountBans(db);
+        if (!byPlayer.size) return out;
+        const linked = await db.collection("players").find(
+            { id: { $in: [...byPlayer.keys()] } },
+            { projection: { _id: 0, id: 1, habbo: 1 } }).toArray();
+        for (const p of linked) {
+            if (!p.habbo || typeof p.habbo.name !== "string" || !p.habbo.name) continue;
+            out.add(hotelOf(p.habbo.hotel || "COM") + ":" + p.habbo.name.toLowerCase());
+        }
+    } catch (e) {
+        console.error("pura-scores: could not read the Habbos of banned accounts; showing guests as they are", e);
+    }
+    return out;
 }
 
 /* A NAME ALREADY SOMEBODY'S (6 Oct 2026, the owner's): a signed-out
-   player may not play as a signed-up player. Taken is a nickname that reads
-   the same (nameKey, the rule nicknames are unique by), or the Habbo linked
-   to an account on that hotel. Fails OPEN: an unreadable answer lets
-   the name through rather than stopping a game over our own trouble. */
+   player may not play as a signed-up player. Taken is the Habbo linked to
+   an account on that hotel (habbo.name: by OriginsBot, by the Profile's
+   motto check, or by an admin), or a nickname locked to that very Habbo
+   (OriginsBot's lock, which carries habbo.applied). Fails OPEN: an
+   unreadable answer lets the name through rather than stopping a game over
+   our own trouble.
+   NOT A BARE NICKNAME (31 Oct 2026, the bug scan; the owner's yes). Any
+   nickname that read the same counted, and nicknames are not checked
+   against Habbo: so anybody who chose "Zed" as a nickname locked the real
+   Habbo Zed, proved by the motto code, off the board for good. A nickname
+   is the account's word; a linked Habbo is a Habbo's. */
 async function nameTaken(db, habbo, hotel) {
     const key = nameKey(habbo);
     const h = hotelOf(hotel);
+    const onHotel = { $in: h === "COM" ? ["COM", null] : [h] };
     // A name with no letters or digits reads as no nickname, but can still
     // be a linked Habbo's (10 Oct 2026: it used to skip both checks).
-    const either = [{ "habbo.name": sameName(habbo), "habbo.hotel": { $in: h === "COM" ? ["COM", null] : [h] } }];
-    if (key) either.unshift({ nickKey: key });
+    const either = [{ "habbo.name": sameName(habbo), "habbo.hotel": onHotel }];
+    if (key) either.push({ nickKey: key, nickLocked: true, "habbo.applied": sameName(habbo), "habbo.hotel": onHotel });
     try {
         const row = await db.collection("players").findOne(
             { $or: either },
@@ -466,9 +525,13 @@ async function logIndexes(db) {
     }
 }
 
-// A Play pressed while live. Never in the way of the game.
-async function logStart(db, claims, player) {
+/* A Play pressed while live. Never in the way of the game. One row per run
+   (its id is the key), and past CAP_PER_HOUR.start from one network in an
+   hour not counted at all (31 Oct 2026, the bug scan): a script pressing
+   Play could otherwise fill the Warren's starts. */
+async function logStart(db, claims, player, event) {
     try {
+        if (await overCap(db, event, "start")) return;
         await logIndexes(db);
         await db.collection(STARTS).insertOne({ _id: claims.rid, at: new Date(), playerId: player ? player.id : null });
     } catch (e) {
@@ -543,9 +606,10 @@ function checkGame(body, player) {
     if (ms < log.length * PIECE_MIN_MS) {
         return { refuse: json(400, { error: "Those pieces came down faster than anybody plays" }) };
     }
-    const result = Engine.replay(claims.seed, log, MAX_PIECES);
-    if (!result.ok) return { refuse: json(400, { error: result.error }) };
-    return { claims, ms, result };
+    // The replay, each placement since the last deal's stamp searched for a way there (_pura-run.js).
+    const checked = checkLog(claims, log, body.stamp);
+    if (checked.error) return { refuse: json(400, { error: checked.error }) };
+    return { claims, ms, result: checked.result };
 }
 
 async function spendRun(db, claims, player) {
@@ -602,7 +666,8 @@ exports.handler = async (event) => {
         return json(503, { error: "Database connection failed" });
     }
     const scores = db.collection(COLLECTION);
-    const player = playerFrom(event);
+    // Let, not const: a guest's game sent while signed in is filed as nobody's account (ONE RUN, ONE PLAYER).
+    let player = playerFrom(event);
 
     if (event.httpMethod === "GET" && (event.queryStringParameters || {}).name !== undefined) {
         const q = event.queryStringParameters;
@@ -663,6 +728,11 @@ exports.handler = async (event) => {
         let body;
         try { body = JSON.parse(event.body || "{}"); } catch { return json(400, { error: "Body is not JSON" }); }
         if (!body || typeof body !== "object") return json(400, { error: "Body is not JSON" });
+        // So many an hour from one network (PER NETWORK, PER HOUR): each is a question to Origins.
+        if (await overCap(db, event, act)) {
+            const wait = 3600000 - (Date.now() % 3600000);
+            return json(429, { error: "Too many tries from here just now. Try again a little later.", wait });
+        }
         return act === "claim" ? claimHabbo(db, body) : verifyHabbo(db, body);
     }
 
@@ -695,8 +765,9 @@ exports.handler = async (event) => {
         if (refused) return refused;
         const run = signRun(player, Date.now());
         if (!run) return json(200, { token: null, reason: "unavailable" });
-        await logStart(db, jwt.decode(run.token), player);
-        return json(200, run);
+        await logStart(db, { rid: run.rid }, player, event);
+        // The token and the first pieces; never the seed (31 Oct 2026, _pura-run.js).
+        return json(200, { token: run.token, deal: run.deal });
     }
 
     /* A GAME NOT FOR THE BOARD: signed out, no nickname, or no rows. Logged
@@ -704,6 +775,12 @@ exports.handler = async (event) => {
        passes, and nothing more. Live only, as the token it carries was. */
     if ((event.queryStringParameters || {}).action === "played") {
         if ((event.body || "").length > MAX_BODY) return json(413, { error: "That game is too long to send" });
+        /* The bans too (30 Oct 2026, the bug scan): this was the one write
+           here that skipped them, so a token got before a ban went on
+           filing games into the Warren's figures. The page never reads
+           the answer (logPlayed), so nobody is shown the refusal. */
+        const refused = await writeRefusal(db, event, player ? player.id : null, { game: true });
+        if (refused) return refused;
         let body;
         try { body = JSON.parse(event.body || "{}"); }
         catch { return json(400, { error: "Body is not JSON" }); }
@@ -715,16 +792,35 @@ exports.handler = async (event) => {
         return json(200, { logged: true });
     }
 
-    // Signed in with a nickname, not banned — as the daily games ask; or a
-    // guest, under a name (GUESTS above), from a network that is not banned.
-    const refusal = await writeRefusal(db, event, player ? player.id : null, player ? { game: true, daily: true } : { game: true });
-    if (refusal) return refusal;
-
     if ((event.body || "").length > MAX_BODY) return json(413, { error: "That game is too long to send" });
     let body;
     try { body = JSON.parse(event.body || "{}"); }
     catch { return json(400, { error: "Body is not JSON" }); }
     if (!body || typeof body !== "object") return json(400, { error: "Body is not JSON" });
+
+    /* ONE RUN, ONE PLAYER (31 Oct 2026, the bug scan; the owner's yes). A
+       run started signed out names no account, and was taken from whoever
+       sent it signed in: one script's game, saved on the way, was filed on
+       as many accounts as it had. Now a signed-in sender is refused it
+       ("guest-run") unless it is sent `asGuest`, which files it as the
+       guest who played it, as any guest's game, and never on the account.
+       (The page does that by itself for a game begun before signing in
+       elsewhere.) Read before the ban check, which then asks of the
+       account its bans but not a nickname, as for any guest. */
+    let asGuestRun = false;
+    if (player) {
+        const c = readRun(body.run, null);
+        if (c && !c.sub) {
+            if (body.asGuest !== true) return json(200, { recorded: false, reason: "guest-run" });
+            asGuestRun = true;
+        }
+    }
+
+    // Signed in with a nickname, not banned, as the daily games ask; or a
+    // guest, under a name (GUESTS above), from a network that is not banned.
+    const refusal = await writeRefusal(db, event, player ? player.id : null, player && !asGuestRun ? { game: true, daily: true } : { game: true });
+    if (refusal) return refusal;
+    if (asGuestRun) player = null;
 
     /* A GAME STARTED SIGNED IN, SENT SIGNED OUT (26 Oct 2026, the owner's
        answer: "ask the player"). Its run token names the account, and it
@@ -790,7 +886,11 @@ exports.handler = async (event) => {
     let newRat = null;
     if (guest && guest.kind === "rat" && !guest.n) {
         let n = null;
-        try { n = await ratForRun(db, claims.rid); } catch (e) { console.error("pura-scores: could not number a Guest Rat", e); }
+        try { n = await ratForRun(db, claims.rid, event); } catch (e) { console.error("pura-scores: could not number a Guest Rat", e); }
+        if (n === "busy") {
+            await unspend();
+            return json(429, { error: "Too many new Guest Rats from here just now. Try again later." });
+        }
         const token = n ? signRat(n) : null;
         if (!n || !token) {
             await unspend();

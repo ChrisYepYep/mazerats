@@ -297,9 +297,18 @@
             nextAt = t + 0.06;
         }
         playing = true;
-        clearInterval(timer);
-        timer = setInterval(tick, 25);
+        clockOff();
+        clockOn();
     }
+
+    /* THE BOOKING TIMER ONLY WHILE THERE IS SOMETHING TO BOOK (31 Oct 2026,
+       the bug scan): pause() stopped the audio clock but left the timer
+       waking every 25ms to find it stopped, for the rest of the visit when
+       a paused game's window was closed. Now pause() stops it too and
+       resume() starts it again. What is booked is the same either way:
+       tick() works from the audio clock, which stood still meanwhile. */
+    function clockOn() { if (playing && !timer) timer = setInterval(tick, 25); }
+    function clockOff() { clearInterval(timer); timer = 0; }
 
     /* Muffled or open, eased over a fifth of a second so it sounds like a
        door closing rather than a switch. */
@@ -332,6 +341,8 @@
         try { const ua = navigator.userActivation; return !ua || ua.hasBeenActive; } catch (e) { return true; }
     }
     function wake() {
+        // (31 Oct 2026) a pause's suspend still on its way: woken once it lands, unless paused again since (see pause)
+        if (suspending) { const n = pauses; suspending.then(() => { if (n === pauses) wake(); }); return; }
         if (!ctx || ctx.state === "running" || ctx.state === "closed") return;
         if (mayStart()) ctx.resume().catch(() => {});
         if (waiting) return;
@@ -359,7 +370,7 @@
     let idleTimer = 0;
     function stop() {
         playing = false;
-        clearInterval(timer);
+        clockOff();
         clearTimeout(idleTimer);
         idleTimer = setTimeout(() => {
             if (playing || !ctx || ctx.state !== "running") return;
@@ -370,11 +381,29 @@
     }
 
     // Pausing stops the audio clock itself, so nothing booked plays on.
-    function pause() { if (ctx && ctx.state === "running") ctx.suspend(); }
+    // (31 Oct 2026) and the booking timer with it (see THE BOOKING TIMER)
+    /* AND A RESUME RIGHT AFTER IT IS NOT LOST (31 Oct 2026, the bug scan).
+       A suspend takes a moment to land: a resume in the meantime found the
+       clock still "running" and did nothing, then the suspend landed and the
+       tune stayed silent till the next resume. The suspend on its way is
+       kept (`suspending`), and wake() waits for it; `pauses` counts the
+       pauses, so a pause after that resume still wins. */
+    let suspending = null, pauses = 0;
+    function pause() {
+        clockOff();
+        pauses++;
+        if (ctx && ctx.state === "running") {
+            const p = suspending = Promise.resolve(ctx.suspend()).catch(() => {}).then(() => { if (suspending === p) suspending = null; });
+        }
+    }
     /* Safari also has "interrupted" (a call, another tab's audio, the
        phone locked), and only "suspended" was woken, so the track stayed
        silent on coming back to the tab (10 Oct 2026). */
-    function resume() { if (ctx && playing && ctx.state !== "running" && ctx.state !== "closed") wake(); }
+    // (31 Oct 2026) the timer whatever the clock's state, and woken through a suspend still on its way
+    function resume() {
+        if (ctx && ctx.state !== "closed") clockOn();
+        if (ctx && playing && ctx.state !== "closed" && (suspending || ctx.state !== "running")) wake();
+    }
 
     function setLevel(lv) { level = lv; }
 
@@ -411,8 +440,8 @@
         lowpass.frequency.setValueAtTime(SAD_HZ, at + 1.6);
         nextAt = at + 1.9;
         playing = true;
-        clearInterval(timer);
-        timer = setInterval(tick, 25);
+        clockOff();
+        clockOn();
     }
 
     function setMuted(m) {

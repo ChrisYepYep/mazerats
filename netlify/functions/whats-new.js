@@ -190,7 +190,6 @@ exports.handler = async (event) => {
                a hidden one is how an automatic entry is taken off. */
             data.posts = data.posts.filter(p => p.hidden !== true);
             delete data.discord;
-            delete data.auto;
             return cachedJson(event, data, { vary: "full" });
         } catch (e) {
             if (isAuthUnavailable(e)) return AUTH_UNAVAILABLE;

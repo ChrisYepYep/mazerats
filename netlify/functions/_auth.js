@@ -98,9 +98,13 @@ function tokenPayload(event) {
     }
 }
 
+/* Text or nothing (30 Oct 2026): `sub` goes straight into
+   admins.findOne({ username }) in lookUpRole, where an object such as
+   { $ne: null } would match the first account on file. Nothing this site
+   signs can carry one today, so this is the belt to the signature's braces. */
 function usernameFromToken(event) {
     const payload = tokenPayload(event);
-    return (payload && payload.sub) || null;
+    return (payload && typeof payload.sub === "string" && payload.sub) || null;
 }
 
 /* Which sign-in a request belongs to. The JWT's issued-at claim is minted
@@ -190,7 +194,7 @@ async function roleOf(event) {
 
 async function lookUpRole(event) {
     const payload = tokenPayload(event);
-    const username = payload && payload.sub;
+    const username = usernameFromToken(event);
     if (!username) return null;
     try {
         const db = await getDb();

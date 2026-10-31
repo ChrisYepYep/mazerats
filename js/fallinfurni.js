@@ -1692,9 +1692,13 @@
        "Game over" with lives left threw the run away. Over the result
        panel while a run is under way it is now ignored; with no run, it
        closes the window as before. */
+    /* AND NOT ONCE THE RUN IS OVER (31 Oct 2026, the bug scan): `run` is
+       kept till the panel's button, so over the last round's "run over"
+       panel Escape did nothing either. A settled run has nothing left to
+       throw away (it was sent when it settled), so Escape closes. */
     function holdsEscape() {
         const box = document.getElementById("ff-round");
-        return Boolean(run && !Editor && box && !box.hidden);
+        return Boolean(run && !run.settled() && !Editor && box && !box.hidden);
     }
 
     function wirePause() {
@@ -5080,6 +5084,37 @@
        title, so pressing Play reveals a room rather than building one. */
     let published = null;
 
+    /* AND FETCHED AGAIN BEFORE A SCORED RUN ONCE IT IS OLD (31 Oct 2026, the
+       bug scan). ff-scores.js judges a run by the levels as they were when
+       its token was given, so a tab left open across an edit to a level (a
+       shorter clock, say) played the old version and had its run refused.
+       Play on a list more than LEVELS_STALE_MS old asks for it again first:
+       the same list changes nothing, a changed one is played (its furni
+       records fetched again only if it uses other furni), and a failed ask
+       plays what is here, as before. `publishedRaw` and `publishedFurni` are
+       the list as it arrived, before leaveOutNoArt trims it. */
+    const LEVELS_STALE_MS = 10 * 60 * 1000;
+    let publishedAt = 0, publishedRaw = null, publishedFurni = "";
+    const furniKey = (levels) => {
+        const s = new Set();
+        for (const lv of levels) for (const c of Levels.furniUsed(lv)) s.add(c);
+        return [...s].sort().join(",");
+    };
+    async function fetchLevels() {
+        const got = await Levels.fetchPublished();
+        if (got) { publishedAt = Date.now(); publishedRaw = JSON.stringify(got); publishedFurni = furniKey(got); }
+        return got;
+    }
+    async function freshenLevels() {
+        if (Editor || !published || !published.length || Date.now() - publishedAt < LEVELS_STALE_MS) return;
+        const wasRaw = publishedRaw, wasFurni = publishedFurni;
+        const fresh = await fetchLevels();
+        if (!fresh || !fresh.length || publishedRaw === wasRaw) return;
+        published = fresh;
+        if (publishedFurni === wasFurni) leaveOutNoArt(published);
+        else furniLoaded = loadLevelFurni(published);
+    }
+
     /* THE FURNIDATA HAS TO BE IN BEFORE A ROUND STARTS, and having the LEVELS
        is not the same thing as having it.
 
@@ -5402,7 +5437,7 @@
         // The loading bar says it now (Boot); the title's line is kept for
         // the things that went wrong.
         titleState("loading", "");
-        published = await Levels.fetchPublished();
+        published = await fetchLevels();
         Boot.set("levels", 1);
         /* NULL IS "COULD NOT ASK", not "nobody has published anything" - see
            fetchPublished. The two used to be the same empty list, so a dropped
@@ -7007,7 +7042,7 @@
         if (!title || !panel || !list) return;
         if (!published) {
             status("Loading levels…", "busy");
-            published = await Levels.fetchPublished();
+            published = await fetchLevels();
             if (published && published.length) furniLoaded = loadLevelFurni(published);
         }
         if (!published || !published.length) {
@@ -7082,9 +7117,11 @@
         /* Already loaded by `prepare` at page load, so this does not touch the
            network — the room behind the title screen IS the first level. Only
            a reload that somehow raced it falls back to fetching here. */
+        // (31 Oct 2026) unless it is old, for a scored run: see LEVELS_STALE_MS
+        if (from === null) await freshenLevels();
         if (!published) {
             status("Loading levels…", "busy");
-            published = await Levels.fetchPublished();
+            published = await fetchLevels();
             if (published && published.length) furniLoaded = loadLevelFurni(published);
         }
         // See `furniLoaded`: the levels being in says nothing about the

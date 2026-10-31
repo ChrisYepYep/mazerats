@@ -33,7 +33,7 @@
             const showing = content && content.style.display !== "none";
             const name = on && showing ? on.textContent.trim() : "";
             where.textContent = name;
-            document.title = (name ? name + " · " : "") + "The Warren — Maze Rats";
+            document.title = (name ? name + " · " : "") + "The Warren | Maze Rats";
         }
         if (nav) new MutationObserver(sayWhere).observe(nav, { subtree: true, attributes: true, attributeFilter: ["class"] });
         sayWhere();

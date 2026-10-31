@@ -27,7 +27,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="theme-color" content="#120c07">
     <meta name="robots" content="noindex, nofollow">
-    <title>Admin — Maze Rats</title>
+    <title>Admin | Maze Rats</title>
     <!-- Bitmap copies of the MZ mark below, for the browsers that take no SVG
          favicon (Safari, until recently) and for a phone's home screen, which
          asks for a 180px picture of its own and showed a blank tile without
@@ -58,7 +58,7 @@
 
          Wrapped in try/catch: localStorage throws outright in some privacy modes,
          and a colour scheme is not worth a blank page. -->
-    <link rel="stylesheet" href="css/style.css?v=2">
+    <link rel="stylesheet" href="css/style.css?v=3">
     <link id="theme-css" rel="stylesheet">
     <script>(function(){try{var t=localStorage.getItem("mazerats_theme");if(!t||t==="classic"||!/^[a-z]+$/.test(t))return;document.documentElement.setAttribute("data-theme",t);document.getElementById("theme-css").href="css/theme-"+t+".css";}catch(e){}})();</script>
     <!-- The atlas panel's map, and the editor around it. Shared with
@@ -78,10 +78,12 @@
          are built by tools/themes.js (css/theme-dark.css on html[data-dark],
          css/theme-frostlight.css on html[data-light]), loaded only when worn,
          and last in the head so they follow every other. Set here, before the
-         first paint, and again whenever the palette changes under the page. -->
+         first paint, and again whenever the palette changes under the page.
+         And when the switch is pressed in another open tab (31 Oct 2026, the
+         bug scan): the storage event, so every tab follows without a reload. -->
     <link id="dark-css" rel="stylesheet">
     <link id="light-css" rel="stylesheet">
-    <script>(function(){var d=document.documentElement,dk=document.getElementById("dark-css"),lt=document.getElementById("light-css"),want=false;function sheet(l,h){if(!l.getAttribute("href"))l.href=h;}function apply(){var light=want&&d.getAttribute("data-theme")==="frost",dark=want&&!light;if(dark){sheet(dk,"/css/theme-dark.css");if(!d.hasAttribute("data-dark"))d.setAttribute("data-dark","");}else if(d.hasAttribute("data-dark"))d.removeAttribute("data-dark");if(light){sheet(lt,"/css/theme-frostlight.css");if(!d.hasAttribute("data-light"))d.setAttribute("data-light","");}else if(d.hasAttribute("data-light"))d.removeAttribute("data-light");}window.__mrDarkOn=function(){return want;};window.__mrDarkIsLight=function(){return d.getAttribute("data-theme")==="frost";};window.__mrSetDark=function(v){want=!!v;apply();try{localStorage.setItem("mazerats_dark",want?"1":"0");}catch(e){}};try{want=localStorage.getItem("mazerats_dark")==="1";}catch(e){}apply();try{new MutationObserver(apply).observe(d,{attributes:true,attributeFilter:["data-theme"]});}catch(e){}})();</script>
+    <script>(function(){var d=document.documentElement,dk=document.getElementById("dark-css"),lt=document.getElementById("light-css"),want=false;function sheet(l,h){if(!l.getAttribute("href"))l.href=h;}function apply(){var light=want&&d.getAttribute("data-theme")==="frost",dark=want&&!light;if(dark){sheet(dk,"/css/theme-dark.css");if(!d.hasAttribute("data-dark"))d.setAttribute("data-dark","");}else if(d.hasAttribute("data-dark"))d.removeAttribute("data-dark");if(light){sheet(lt,"/css/theme-frostlight.css");if(!d.hasAttribute("data-light"))d.setAttribute("data-light","");}else if(d.hasAttribute("data-light"))d.removeAttribute("data-light");}window.__mrDarkOn=function(){return want;};window.__mrDarkIsLight=function(){return d.getAttribute("data-theme")==="frost";};window.__mrSetDark=function(v){want=!!v;apply();try{localStorage.setItem("mazerats_dark",want?"1":"0");}catch(e){}};try{want=localStorage.getItem("mazerats_dark")==="1";}catch(e){}apply();try{new MutationObserver(apply).observe(d,{attributes:true,attributeFilter:["data-theme"]});}catch(e){}addEventListener("storage",function(e){if(e.key==="mazerats_dark"||e.key===null){want=e.newValue==="1";apply();}});})();</script>
 </head>
 <body data-page="admin" class="wr-on">
 
@@ -266,6 +268,9 @@
                                      Soon (the countdown goes at zero). See
                                      sayLandingMismatch. -->
                                 <p class="ctl-status" id="landing-state-warning" style="display:none;"></p>
+                                <!-- While Maintenance moves open pages to the landing page (30 Oct
+                                     2026): the countdown and how many are left. See watchPresence. -->
+                                <p class="ctl-status ctl-presence" id="landing-presence" style="display:none;" aria-live="polite"></p>
                                 <!-- What the landing page's button says while
                                      the site is in Maint. (4 Oct 2026). Saved
                                      on its own, whatever the switch is on, so
@@ -1523,7 +1528,7 @@
 
     <script src="js/rooms-data.js?v=2"></script>
     <script src="js/events-data.js?v=2"></script>
-    <script src="js/api.js?v=2"></script>
+    <script src="js/api.js?v=3"></script>
     <script src="js/event-status.js?v=2"></script>
     <script src="js/site.js?v=2"></script>
     <!-- Both before admin.js, which calls into them once a session is
@@ -1537,7 +1542,7 @@
     <script src="js/recolour.js?v=2"></script>
     <script src="js/admin-recolour.js?v=2"></script>
     <script src="js/admin-address.js?v=2"></script>
-    <script src="js/admin.js?v=2"></script>
+    <script src="js/admin.js?v=3"></script>
     <script src="js/dead-ends.js?v=2"></script>
     <script src="js/admin-dead-ends.js?v=2"></script>
     <!-- The Guides panel: the text format, the starter guide, the editor. -->
@@ -1546,17 +1551,17 @@
     <script src="js/admin-guides.js?v=2"></script>
     <script src="js/admin-whats-new.js?v=1"></script>
     <script src="js/admin-errors.js?v=1"></script>
-    <script src="js/admin-players.js?v=1"></script>
+    <script src="js/admin-players.js?v=2"></script>
     <script src="js/admin-entries.js?v=1"></script>
     <script src="js/admin-notifications.js?v=1"></script>
     <script src="js/password-field.js?v=3"></script>
-    <script src="js/glyph-palette.js?v=2"></script>
+    <script src="js/glyph-palette.js?v=3"></script>
     <script src="js/custom-scrollbar.js?v=3"></script>
     <script src="js/letter-jump.js?v=2"></script>
     <script src="js/admin-skin.js?v=6"></script><!-- SKINS: the seasonal skins card's script (see SKINS:start) -->
-    <script src="js/admin-menu.js?v=2"></script><!-- the homepage menu card (#menu-layout-card) -->
+    <script src="js/admin-menu.js?v=3"></script><!-- the homepage menu card (#menu-layout-card) -->
     <script src="js/admin-ctl-folds.js?v=1"></script><!-- the Controls' large cards, folded (css/warren.css) -->
     <!-- The workshop shell's top-bar title and status line (css/warren.css). -->
-    <script src="js/warren-shell.js?v=1"></script>
+    <script src="js/warren-shell.js?v=2"></script>
 </body>
 </html>

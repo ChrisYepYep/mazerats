@@ -178,11 +178,17 @@ exports.handler = async (event) => {
             remember(key, { at: Date.now(), value: null });
             return json(404, { error: noSuch });
         }
-        // Only what the room needs to draw somebody.
+        /* Only what the room needs to draw somebody. A motto with profanity
+           in it goes out blank (31 Oct 2026), as the profiles and the
+           builder cards send it (mottoHit in player-nick.js). Required here,
+           as habbo.js does, so a lookup that never gets this far does not
+           load the nickname rules. */
+        const { mottoHit } = require("./player-nick");
+        const motto = user.motto || "";
         const value = {
             name: user.name || name,
             figureString: user.figureString,
-            motto: user.motto || ""
+            motto: mottoHit(motto) ? "" : motto
         };
         remember(key, { at: Date.now(), value });
         return json(200, value);

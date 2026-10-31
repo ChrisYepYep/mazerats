@@ -1519,12 +1519,26 @@ window.WizardMap = function WizardMap(options) {
         // The background is drawn by drawLayers now, inside the same sheet
         // as the pictures — see the note there about blending.
         drawLayers();
+        /* The room the keyboard was on, found again once it is redrawn (30
+           Oct 2026). drawRooms replaces every name, so a render under a
+           focused one (a code typed at the map while a room had focus, which
+           re-renders to add the passage, or the late pass for the fonts
+           below) dropped focus on <body>: the arrow keys stopped panning and
+           the next Tab began again at the site bar. */
+        const had = document.activeElement;
+        const hadRoom = had && roomsEl.contains(had) && had.closest(".wiz-room");
+        const focusedId = hadRoom ? hadRoom.dataset.id : null;
         // Rooms before trails, and it matters: the trails step around the
         // names, and to do that they have to measure them. See labelBoxes.
         drawRooms();
         drawTrails();
         fit = computeFit();
         applyTransform();
+        if (focusedId && document.activeElement !== had) {
+            const again = roomEls.get(focusedId);
+            // Without scrolling: see returnFocusFromSheet in js/wizard.js.
+            try { (again || stage).focus({ preventScroll: true }); } catch (e) { /* nothing to hand it to */ }
+        }
 
         /* And once more when the handwriting arrives.
 

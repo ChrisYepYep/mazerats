@@ -722,7 +722,7 @@ async function route(event, wizard) {
            a minute. See subscriberOf in _net.js. */
         const raw = event.headers["x-nf-client-connection-ip"] || event.headers["client-ip"];
         const address = raw ? subscriberOf(raw) : "unknown";
-        const tooMany = () => json(429, { error: "Too many tries just now — wait a minute and think again." });
+        const tooMany = () => json(429, { error: "Too many tries just now. Wait a minute and think again." });
         // Already out of allowance: refused before it costs a database read.
         if (unlockSpent(address) >= UNLOCK_MAX) return tooMany();
         if (!codes.length) {

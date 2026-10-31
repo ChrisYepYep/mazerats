@@ -444,7 +444,7 @@
         if (dim) dim.hidden = !dark;
         paintChrome();
         // (15 Oct 2026: Scout's Trail, at /scout; it was Ariadne's Thread at /ariadne, and Rat Race before that)
-        if (window.PageMeta) window.PageMeta.set("scout", "Scout's Trail — Maze Rats", "https://mazerats.net/scout");
+        if (window.PageMeta) window.PageMeta.set("scout", "Scout's Trail | Maze Rats", "https://mazerats.net/scout");
         if (!gateChecked) gateChecked = checkGate().catch(() => {}).then(() => { gateDone = true; });
         if (state.mode === "paused") { sfx("setMuffled", true); sfx("resume"); }
         else if (state.mode === "dying") sfx("resume");   // (26 Oct 2026: see close)
@@ -494,9 +494,18 @@
         if (e.type === "keydown" && e.key === "`" && window.RatRace.dev && window.RatRace.dev.isEmbedded()) { debug.boxes = !debug.boxes; e.preventDefault(); return false; }
         const t = e.target;
         if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.tagName === "SELECT" || t.isContentEditable)) return false;
-        if (document.querySelector(".modal-overlay.open:not(.closing), .lightbox-overlay.open")) return false;
+        if (underWindow() || awayInWindow()) return false;
         if (behind()) return false;   // (26 Oct 2026: another game's window in front has the keys, see ONE GAME IN FRONT)
         return true;
+    }
+    /* UNDER ONE OF THE SITE'S WINDOWS (31 Oct 2026, the bug scan, as Pura Panic's covered() and elsewhere()):
+       Guess the Maze, the leaderboards, any .modal-overlay or a picture's lightbox, open over the window, or the
+       focus in the Console, which floats above it. They have the keys, and the loop pauses a passage under them
+       (see update); the player plays on from the pause menu, as after another game came in front. */
+    const underWindow = () => Boolean(document.querySelector(".modal-overlay.open:not(.closing), .lightbox-overlay.open"));
+    function awayInWindow() {
+        const a = document.activeElement;
+        return Boolean(a && root && !root.contains(a) && a.closest(".modal-overlay, .lightbox-overlay, .console-modal"));
     }
     function press(k) {
         /* (27 Oct 2026) a key Scout takes makes it the front game: hushed behind a game since closed, PLAY ON
@@ -6562,6 +6571,8 @@
         for (const d of act.deco) if (d.kind === "t" && frameNo % 7 === 0) d.t = (d.t + 1) % 4;
         // (26 Oct 2026) behind another game, a life lost a moment before comes back paused (see ONE GAME IN FRONT)
         if (hushed && (state.mode === "play" || state.mode === "card")) { pause(true); return; }
+        // (31 Oct 2026) and under one of the site's windows, which ran on unseen (see UNDER ONE OF THE SITE'S WINDOWS)
+        if ((state.mode === "play" || state.mode === "card") && isOpen() && (underWindow() || awayInWindow())) { pause(true); return; }
         if (state.mode === "card") { if (state.t > 150) state.mode = "play"; stepCamera(); return; }
         if (state.mode === "play") {
             state.time++;

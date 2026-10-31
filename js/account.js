@@ -197,7 +197,7 @@
                 if (everywhere && e && e.name === "AbortError") {
                     notice({
                         title: "Couldn't Confirm",
-                        html: `<p class="notice-lines">Couldn't confirm — if you're still signed in on another device, try again.</p>`
+                        html: `<p class="notice-lines">Couldn't confirm. If you're still signed in on another device, try again.</p>`
                     });
                     try { Account.refresh(); } catch (e2) { /* the notice stands */ }
                     return false;
@@ -218,8 +218,8 @@
                     notice({
                         title: "Couldn't Sign Out",
                         html: `<p class="notice-lines">${everywhere
-                            ? "Couldn't sign you out of your other devices — you're still signed in everywhere. Try again in a minute."
-                            : "Couldn't sign you out — check your connection and try again."}</p>`
+                            ? "Couldn't sign you out of your other devices. You're still signed in everywhere. Try again in a minute."
+                            : "Couldn't sign you out. Check your connection and try again."}</p>`
                     });
                     return false;
                 }
@@ -1102,7 +1102,7 @@
            titlebar keeps 84px each side clear for the ×, which leaves 144px
            of Volter, and the longer one was cut to "Please choose a ne…"
            (measured, 29 Sept 2026). */
-        const asked = `The site's admins have asked you to pick a different nickname <span class="nick-dash">&mdash;</span> '${escapeHtml(me.nick || "")}' isn't one they can show on the boards.`;
+        const asked = `The site's admins have asked you to pick a different nickname: '${escapeHtml(me.nick || "")}' isn't one they can show on the boards.`;
         if (kind === "rejected") {
             return {
                 title: "Pick a new nickname",
@@ -1117,7 +1117,7 @@
         }
         return {
             title: "Choose a nickname?",
-            text: `This is how you'll appear on the scoreboards. It's optional <span class="nick-dash">&mdash;</span> you can skip this and set or change it any time from your Profile in the Console.`
+            text: `This is how you'll appear on the scoreboards. It's optional. You can skip this and set or change it any time from your Profile in the Console.`
         };
     }
 
@@ -1655,7 +1655,7 @@
 
         const said = {
             cancelled: "Sign-in cancelled.",
-            expired: "That sign-in took too long — try again.",
+            expired: "That sign-in took too long. Try again.",
             failed: "Discord sign-in did not work. Try again in a moment.",
             // discord-auth refused a banned account or network (29 Sept 2026).
             banned: "This account or network has been blocked from signing in."

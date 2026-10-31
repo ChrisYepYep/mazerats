@@ -445,7 +445,7 @@
     <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@700;800;900&family=Roboto:wght@400;500;700&family=Pixelify+Sans:wght@400;700&family=Silkscreen:wght@400;700&display=swap" rel="stylesheet">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="theme-color" content="#120c07">
-    <title>Fallin' Furni — Maze Rats</title>
+    <title>Fallin' Furni | Maze Rats</title>
 
     <!-- ---------- WHAT THIS PAGE LOOKS LIKE SOMEWHERE ELSE.
 
@@ -524,7 +524,8 @@
 
          Wrapped in try/catch: localStorage throws outright in some privacy modes,
          and a colour scheme is not worth a blank page. -->
-    <link rel="stylesheet" href="css/style.css?v=2">
+    <link rel="stylesheet" href="css/style.css?v=3">
+    <link rel="stylesheet" href="css/maintenance-warn.css?v=1">
     <link id="theme-css" rel="stylesheet">
     <script>
     /* THE FIRST PAINT'S PALETTE. The site's own (mazerats_theme), unless a
@@ -603,10 +604,12 @@
          are built by tools/themes.js (css/theme-dark.css on html[data-dark],
          css/theme-frostlight.css on html[data-light]), loaded only when worn,
          and last in the head so they follow every other. Set here, before the
-         first paint, and again whenever the palette changes under the page. -->
+         first paint, and again whenever the palette changes under the page.
+         And when the switch is pressed in another open tab (31 Oct 2026, the
+         bug scan): the storage event, so every tab follows without a reload. -->
     <link id="dark-css" rel="stylesheet">
     <link id="light-css" rel="stylesheet">
-    <script>(function(){var d=document.documentElement,dk=document.getElementById("dark-css"),lt=document.getElementById("light-css"),want=false;function sheet(l,h){if(!l.getAttribute("href"))l.href=h;}function apply(){var light=want&&d.getAttribute("data-theme")==="frost",dark=want&&!light;if(dark){sheet(dk,"/css/theme-dark.css");if(!d.hasAttribute("data-dark"))d.setAttribute("data-dark","");}else if(d.hasAttribute("data-dark"))d.removeAttribute("data-dark");if(light){sheet(lt,"/css/theme-frostlight.css");if(!d.hasAttribute("data-light"))d.setAttribute("data-light","");}else if(d.hasAttribute("data-light"))d.removeAttribute("data-light");}window.__mrDarkOn=function(){return want;};window.__mrDarkIsLight=function(){return d.getAttribute("data-theme")==="frost";};window.__mrSetDark=function(v){want=!!v;apply();try{localStorage.setItem("mazerats_dark",want?"1":"0");}catch(e){}};try{want=localStorage.getItem("mazerats_dark")==="1";}catch(e){}apply();try{new MutationObserver(apply).observe(d,{attributes:true,attributeFilter:["data-theme"]});}catch(e){}})();</script>
+    <script>(function(){var d=document.documentElement,dk=document.getElementById("dark-css"),lt=document.getElementById("light-css"),want=false;function sheet(l,h){if(!l.getAttribute("href"))l.href=h;}function apply(){var light=want&&d.getAttribute("data-theme")==="frost",dark=want&&!light;if(dark){sheet(dk,"/css/theme-dark.css");if(!d.hasAttribute("data-dark"))d.setAttribute("data-dark","");}else if(d.hasAttribute("data-dark"))d.removeAttribute("data-dark");if(light){sheet(lt,"/css/theme-frostlight.css");if(!d.hasAttribute("data-light"))d.setAttribute("data-light","");}else if(d.hasAttribute("data-light"))d.removeAttribute("data-light");}window.__mrDarkOn=function(){return want;};window.__mrDarkIsLight=function(){return d.getAttribute("data-theme")==="frost";};window.__mrSetDark=function(v){want=!!v;apply();try{localStorage.setItem("mazerats_dark",want?"1":"0");}catch(e){}};try{want=localStorage.getItem("mazerats_dark")==="1";}catch(e){}apply();try{new MutationObserver(apply).observe(d,{attributes:true,attributeFilter:["data-theme"]});}catch(e){}addEventListener("storage",function(e){if(e.key==="mazerats_dark"||e.key===null){want=e.newValue==="1";apply();}});})();</script>
 </head>
 <body data-page="fallinfurni">
 
@@ -656,7 +659,7 @@
             </div>
             <p class="ff-blurb">
                 Furni drops from the ceiling. Sit on every seat in the order it
-                landed, before the clock runs out — and mind the things that
+                landed, before the clock runs out, and mind the things that
                 fall which are not seats at all.
             </p>
         </header>
@@ -1620,9 +1623,9 @@
     <!-- The shared chrome's own dependencies, in home.html's order: site.js
          reads EventStatus for the header's ticker and Api for everything, and
          the console reads PrivacyContent for its privacy page. -->
-    <script src="js/api.js?v=2"></script>
+    <script src="js/api.js?v=3"></script>
     <script src="js/event-status.js?v=2"></script>
-    <script src="js/privacy-content.js?v=2"></script>
+    <script src="js/privacy-content.js?v=3"></script>
     <script src="js/palette-wear.js?v=2"></script>
     <script src="js/skin-wear.js?v=1"></script>
     <script src="js/site.js?v=2"></script>
@@ -1631,7 +1634,7 @@
     <script src="js/select-list.js?v=2"></script>
     <!-- Before console.js and the console's pages, which ask it who is
          signed in while they set themselves up (see home.html). -->
-    <script src="js/account.js?v=2"></script>
+    <script src="js/account.js?v=3"></script>
     <!-- What a record can be missing; console-info.js draws its form and
          list from it and does nothing at all without it. -->
     <script src="js/dead-ends.js?v=2"></script>
@@ -1665,5 +1668,7 @@
          plays on in silence if this one never arrives. -->
     <script src="js/ff-audio.js"></script>
     <script src="js/fallinfurni.js"></script>
+    <!-- The two-minute warning before Maintenance moves this page to the landing page (30 Oct 2026). -->
+    <script src="js/maintenance-warn.js?v=2"></script>
 </body>
 </html>

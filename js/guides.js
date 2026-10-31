@@ -348,14 +348,14 @@
        window is open they name what it shows, so a bookmark, a share sheet or
        a crawler that runs the page gets the guide's address, not /home's.
        The archive's are put back on close (PageMeta in js/site.js). */
-    /* "X — Maze Rats", as netlify/functions/share.js titles a guide's
+    /* "X | Maze Rats", as netlify/functions/share.js titles a guide's
        page (1 Oct 2026): it said "X — Maze Rats Guides", so the tab's title
        changed under the reader the moment the list arrived. */
     let metaHeld = false;       // this window has named the page (see draw)
     function setMeta(g) {
         if (!window.PageMeta) return;
         metaHeld = true;
-        window.PageMeta.set("guides", g ? `${g.title} — Maze Rats` : "Guides — Maze Rats",
+        window.PageMeta.set("guides", g ? `${g.title} | Maze Rats` : "Guides | Maze Rats",
             "https://mazerats.net" + addressFor(g ? g.id : null));
     }
 

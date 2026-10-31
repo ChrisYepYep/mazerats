@@ -178,6 +178,8 @@ const { playerFrom, playerView, signPlayer, setCookie, clearCookie, nameKey, ses
 const { SECURITY_HEADERS } = require("./_headers");
 // See BANNED in the header.
 const { writeRefusal } = require("./_bans");
+// See THE ADMINS' OWN NAMES, below.
+const { PERMANENT_OWNER } = require("./_auth");
 
 const NICK_MIN = 2;
 const NICK_MAX = 20;
@@ -207,6 +209,46 @@ const WORD_BREAK = /[ _.'!?-]+/;
    hobby. */
 const RESERVED = new Set(["admin", "administrator", "mod", "moderator", "mazerats", "staff", "owner", "system", "habbo"].map(nameKey));
 const RESERVED_ENDS = ["admin", "moderator", "mazerats", "mazerat"];
+/* A GUEST RAT'S NAME (31 Oct 2026, the owner's). Pura Panic's board names
+   its signed-out players "Guest Rat 1", "Guest Rat 2"... (pura-scores.js),
+   so a nickname reading as one passes a player off as a guest. Flagged like
+   the words above, by nameKey, so "guest rat 7", "GuestRat7" and "Guest-Rat
+   07" are all caught. */
+const GUEST_RAT = /^guestrat\d*$/;
+
+/* THE ADMINS' OWN NAMES (31 Oct 2026, the owner's). The rule that refused
+   any admin account's username went on 29 Sept (see NOT ANOTHER PLAYER'S
+   NICKNAME in the header) because it refused the admins themselves; that
+   left anybody free to be "ChrisYepYep" on every board. So an admin
+   account's username is REFUSED as taken (it is somebody's name, not a
+   matter of taste for the review), except to the player it plainly
+   belongs to: one whose own Discord name, Discord username or linked Habbo
+   is that name. A player who already holds such a name keeps it (a name
+   held is never taken), and the Warren can still set one for anybody.
+   The usernames are read from the admins collection, kept for five minutes
+   a warm instance; the permanent owner is always on the list, so a failed
+   read still guards that one. */
+const ADMIN_NAMES_MS = 5 * 60 * 1000;
+let adminNames = null;
+async function adminNameKeys(db) {
+    const now = Date.now();
+    if (adminNames && now - adminNames.at < ADMIN_NAMES_MS) return adminNames.keys;
+    const keys = new Set([nameKey(PERMANENT_OWNER)]);
+    try {
+        const rows = await db.collection("admins").find({}, { projection: { _id: 0, username: 1 } }).toArray();
+        rows.forEach(r => { const k = nameKey(r && r.username); if (k.length >= NICK_MIN) keys.add(k); });
+        adminNames = { at: now, keys };
+    } catch (e) {
+        console.error("player-nick: could not read the admin accounts; guarding the owner's name only", e);
+    }
+    return keys;
+}
+async function adminNameRefused(db, key, player, row) {
+    if (!(await adminNameKeys(db)).has(key)) return false;
+    const habbo = row && row.habbo && typeof row.habbo.name === "string" ? row.habbo.name : "";
+    const own = [player.name, player.username, row && row.name, row && row.username, habbo].map(nameKey);
+    return !own.includes(key);
+}
 
 /* See A MODEST PROFANITY LIST in the header. Compared after folding the
    usual digit-for-letter swaps back (0 for o, 1 for i and so on). "cunt",
@@ -311,6 +353,7 @@ function filterHit(nick) {
     if (reservedWord) return { reason: "reserved", word: reservedWord };
     const reservedEnd = RESERVED_ENDS.find(r => key.startsWith(r) || key.endsWith(r));
     if (reservedEnd) return { reason: "reserved", word: reservedEnd };
+    if (GUEST_RAT.test(key)) return { reason: "reserved", word: "guestrat" };
     const folded = unLeet(nick);
     const foldedWords = nick.split(WORD_BREAK).map(unLeet).filter(Boolean);
     const anywhere = ANYWHERE.find(w => folded.includes(w));
@@ -596,7 +639,7 @@ async function handler(event) {
             return await reply();
         }
 
-        const found = await players.findOne({ id: player.id }, { projection: { _id: 0, nick: 1, name: 1, nickLocked: 1, nickRejected: 1, nickTurnedDown: 1, sv: 1, svStrict: 1 } });
+        const found = await players.findOne({ id: player.id }, { projection: { _id: 0, nick: 1, name: 1, username: 1, habbo: 1, nickLocked: 1, nickRejected: 1, nickTurnedDown: 1, sv: 1, svStrict: 1 } });
         if (sessionRevoked(player, found)) return revoked();
         const current = found || {};
         const had = (typeof current.nick === "string" && current.nick) || "";
@@ -636,6 +679,8 @@ async function handler(event) {
 
         const key = mode === "set" ? nameKey(nick) : null;
         if (mode === "set" && await takenBy(players, player.id, key)) return json(409, { error: TAKEN_MESSAGE });
+        // An admin's name, to anyone but its owner (see THE ADMINS' OWN NAMES).
+        if (mode === "set" && await adminNameRefused(db, key, player, found)) return json(409, { error: TAKEN_MESSAGE });
 
         /* THE CHANGE AND THE DAY'S COUNT, IN ONE WRITE. Two shapes, because
            the count is either today's and under the cap (add one) or from

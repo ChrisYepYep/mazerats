@@ -1018,7 +1018,8 @@ document.addEventListener("DOMContentLoaded", async () => {
         if (!stay) {
             // (The "enter" note for next time is already kept: js/api.js writes it on every real read.)
             if (window.MazeErrors && typeof MazeErrors.leaving === "function") MazeErrors.leaving("/home");
-            location.replace("/home");
+            // With its hash, as the <head> of index.html goes (30 Oct 2026).
+            location.replace("/home" + location.hash);
             return;
         }
     }
@@ -1652,7 +1653,8 @@ document.addEventListener("DOMContentLoaded", async () => {
         const article = event.article;
         if (article && article.body) {
             articleTitleEl.textContent = article.title || "";
-            articleMetaEl.textContent = [article.date, article.category].filter(Boolean).join("  —  ");
+            // A dot between, not a dash (31 Oct 2026), as home.js has it.
+            articleMetaEl.textContent = [article.date, article.category].filter(Boolean).join(" · ");
             articleBodyEl.innerHTML = article.body;
             // A level below the title, an h3 since 30 Oct 2026, as home.js does it.
             articleBodyEl.querySelectorAll("h3, h4, h5, h6").forEach(h => {

@@ -327,7 +327,17 @@
         let link = document.getElementById("theme-css");
         if (name === "classic") { root.removeAttribute("data-theme"); if (link) link.remove(); return; }
         root.setAttribute("data-theme", name);
-        if (!link) { link = document.createElement("link"); link.id = "theme-css"; link.rel = "stylesheet"; document.head.appendChild(link); }
+        /* Put back where the page had it, before the dark and light layers
+           (30 Oct 2026, the bug scan). Api.applyTheme takes the link away for
+           Classic, and on a first visit it does that before this runs, so the
+           new one went at the end of <head>: its :root colours then beat the
+           layer's equal-ranked :root ones, and dark mode (or Frost's light
+           mode) wore the palette's variables wherever a rule used one. */
+        if (!link) {
+            link = document.createElement("link"); link.id = "theme-css"; link.rel = "stylesheet";
+            const layer = document.getElementById("dark-css");
+            if (layer && layer.parentNode === document.head) document.head.insertBefore(link, layer); else document.head.appendChild(link);
+        }
         const href = "/css/theme-" + name + ".css";
         if ((link.getAttribute("href") ? link.href.split("?")[0] : "") !== new URL(href, location.href).href) link.href = href;
     }

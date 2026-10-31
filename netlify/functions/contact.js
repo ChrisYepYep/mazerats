@@ -283,12 +283,12 @@ exports.handler = async (event) => {
                 // A cheap early refusal for the caller already well over the cap.
                 // Not the real check — see after the insert below for that.
                 if (await countRecent(messages, net) >= RATE_LIMIT_COUNT) {
-                    return json(429, { error: "Too many messages sent — please wait a bit before trying again." });
+                    return json(429, { error: "Too many messages sent. Please wait a bit before trying again." });
                 }
                 // Indexed before it is counted, like countRecent's own after the insert.
                 await ensureIndexes(messages);
                 if (await overSiteCeiling(messages)) {
-                    return json(429, { error: "Lots of messages are arriving just now — please try again in a little while." });
+                    return json(429, { error: "Lots of messages are arriving just now. Please try again in a little while." });
                 }
             } catch (e) {
                 console.error("contact: could not check the sender", e);
@@ -326,7 +326,7 @@ exports.handler = async (event) => {
             await messages.insertOne({ ...entry, from, ip, net });
             if (net && await countRecent(messages, net) > RATE_LIMIT_COUNT) {
                 await messages.deleteOne({ id: entry.id });
-                return json(429, { error: "Too many messages sent — please wait a bit before trying again." });
+                return json(429, { error: "Too many messages sent. Please wait a bit before trying again." });
             }
         } catch (e) {
             console.error("contact: could not save a message", e);

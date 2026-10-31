@@ -9,7 +9,7 @@
    completely inert until js/site.js puts that attribute on <html>. The
    classic palette is not defined here and is not affected by anything in it.
 
-   1179 rules, 1891 declarations, hues 350 (surfaces) / 212 (accents).
+   1183 rules, 1899 declarations, hues 350 (surfaces) / 212 (accents).
 */
 :root[data-theme="crimson"] {
     --bg-black: #080506;
@@ -1901,6 +1901,14 @@ html[data-theme="crimson"]:not([data-theme]) .room-links-refs-text a:focus-visib
     color: #eeeeee;
 }
 
+[data-theme="crimson"] .console-privacy-list {
+    color: #eeeeee;
+}
+
+[data-theme="crimson"] .console-privacy-list li::before {
+    background: currentColor;
+}
+
 [data-theme="crimson"] .console-empty-page {
     color: #eeeeee;
 }
@@ -2608,6 +2616,15 @@ html[data-theme="crimson"]:not([data-theme]) .modal-article-source a:hover {
 
 [data-theme="crimson"] .legal-section p {
     color: var(--parchment);
+}
+
+[data-theme="crimson"] .legal-list {
+    color: var(--parchment);
+}
+
+[data-theme="crimson"] .legal-list li::before {
+    color: var(--amber-bright);
+    background: currentColor;
 }
 
 [data-theme="crimson"] .legal-section a {
@@ -4246,6 +4263,7 @@ html[data-theme="crimson"]:not([data-theme]) .modal-article-source a:hover {
     background: var(--wood-mid);
     border: 1px solid var(--amber-bright);
     box-shadow: 1px 1px 0 rgba(0, 0, 0, 0.4);
+    color: var(--amber-bright);
 }
 
 [data-theme="crimson"] .updatelog-entry:hover,
@@ -4255,7 +4273,7 @@ html[data-theme="crimson"]:not([data-theme]) .modal-article-source a:hover {
 
 [data-theme="crimson"] .updatelog-entry:hover::before,
 [data-theme="crimson"] .updatelog-entry:focus-visible::before {
-    background: var(--amber-bright);
+    background: currentColor;
 }
 
 [data-theme="crimson"] .updatelog-entry:focus-visible {
@@ -4568,12 +4586,14 @@ html[data-theme="crimson"]:not([data-theme]) .modal-article-source a:hover {
 }
 
 [data-theme="crimson"] .daily-bar > span {
-    background: var(--parchment);
+    color: var(--parchment);
+    background: currentColor;
 }
 
 [data-theme="crimson"] .guess-sheet.is-fetching .guess-picture::after {
     border: 1px solid var(--parchment);
-    background: linear-gradient(var(--parchment), var(--parchment)) no-repeat;
+    color: var(--parchment);
+    background-image: linear-gradient(currentColor, currentColor);
 }
 
 [data-theme="crimson"] .daily-head {
@@ -5716,18 +5736,18 @@ html[data-theme="crimson"]:not([data-theme]) .modal-article-source a:hover {
 
 [data-theme="crimson"] .opening-flag {
     border: 1px solid #000;
-    background: #6f8f4f;
+    background: #5c7a3f;
     box-shadow: 1px 1px 0 rgba(0, 0, 0, 0.5);
     color: #f4ffe8;
 }
 
 [data-theme="crimson"] .opening-flag.is-event {
-    background: #7f94a8;
+    background: #56708b;
     color: #f1f7ff;
 }
 
 [data-theme="crimson"] .opening-flag.is-guide {
-    background: #6b7887;
+    background: #423136;
     color: #ffffff;
 }
 

@@ -324,12 +324,12 @@ for (const rel of ["js/guess.js", "js/oddoneout.js", "js/daily.js"]) {
             const text = (served, base) => Daily.shareText(Object.assign({ game: "Odd One Out", day: "2026-10-03", right: 4, of: 5,
                 grid: "GGRGG", path: "odd" }, Daily.shareScore(served, base))).split("\n");
             const shared = text({ points: 40, bonus: 147 }, 40);
-            check(shared.length === 4 && shared[0] === "Maze Rats · Odd One Out" && shared[1] === "3 Oct 2026 — 4/5 · 187 pts incl. speed" &&
+            check(shared.length === 4 && shared[0] === "Maze Rats · Odd One Out" && shared[1] === "3 Oct 2026 · 4/5 · 187 pts incl. speed" &&
                 shared[2] === "GGRGG" && shared[3] === "https://mazerats.net/odd",
                 `Daily.shareText is not the four-line result with the labelled total (saw ${JSON.stringify(shared)})`);
-            check(text(null, 40)[1] === "3 Oct 2026 — 4/5 · 40 pts",
+            check(text(null, 40)[1] === "3 Oct 2026 · 4/5 · 40 pts",
                 `Daily.shareText before the day is filed should be the base points unlabelled (saw ${JSON.stringify(text(null, 40)[1])})`);
-            check(text({ points: 40, bonus: 0 }, 40)[1] === "3 Oct 2026 — 4/5 · 40 pts",
+            check(text({ points: 40, bonus: 0 }, 40)[1] === "3 Oct 2026 · 4/5 · 40 pts",
                 "Daily.shareText labels a filed day that earned no speed bonus");
         }
 
@@ -355,7 +355,7 @@ for (const rel of ["js/guess.js", "js/oddoneout.js", "js/daily.js"]) {
             "Daily.bonusLine does not say a practised day earns no bonus");
         check(typeof Daily.shareText === "function" &&
             Daily.shareText({ game: "Odd One Out", day: "2026-10-03", right: 4, of: 5, points: 40, grid: "G", path: "odd", practice: true })
-                .split("\n")[1] === "3 Oct 2026 (practice) — 4/5 · 40 pts",
+                .split("\n")[1] === "3 Oct 2026 (practice) · 4/5 · 40 pts",
             "Daily.shareText does not mark a practice run's result \"(practice)\"");
         const pf = Daily.filed(200, { recorded: false, reason: "practice", practice: cut, points: 40 }, "2026-10-03");
         check(pf.final && !pf.ok && pf.practice, "Daily.filed: a practice run is not settled as practice (final, not filed)");

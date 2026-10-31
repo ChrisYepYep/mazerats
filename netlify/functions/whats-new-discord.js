@@ -30,7 +30,8 @@
    A hidden entry, a draft guide and anything gone from the archive are
    refused. Each post is remembered in whats_new as
      { id: "d:" + key, type: "discord", key, postedAt, day, via, count }
-   (via "hand" or "auto")
+   (via "hand"; "auto" only on the few sent by the automatic posting tried
+   on 30 Oct 2026 and taken out)
    and whats-new.js hands those to the panel (?full=1 only), which marks the
    entry as posted and asks before posting it twice.
 

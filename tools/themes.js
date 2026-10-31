@@ -811,7 +811,12 @@ function lightExtras() {
 [data-theme="${THEME}"] .opening-search-icon::after {
     background: ${glass};
 }
-[data-theme="${THEME}"] .header-badge {
+/* a.header-badge as well (30 Oct 2026): the Discord pill is the one <a>
+   badge, and the turned copy of style.css's a.header-badge outranked the
+   plain class, so it kept the pale lavender on the white. */
+[data-theme="${THEME}"] .header-badge,
+[data-theme="${THEME}"] a.header-badge,
+[data-theme="${THEME}"] a.header-badge:hover {
     color: #3c44a8;
     border-color: #5a63c9;
     background-color: rgba(255, 255, 255, 0.75);
@@ -842,10 +847,34 @@ function lightExtras() {
 [data-theme="${THEME}"] .opening-die {
     color: #f4f8fc;
 }
+/* The landing page's privacy modal (30 Oct 2026) borrows the console's
+   classes for its text, and the console's white type is kept white here for
+   the console's dark screen; the modal's panel is ice, so it vanished. */
+[data-theme="${THEME}"] #privacy-modal .console-blurb,
+[data-theme="${THEME}"] #privacy-modal .console-privacy-list,
+[data-theme="${THEME}"] #privacy-modal .console-hashline {
+    color: var(--parchment);
+}
+/* A builder's "Online" (30 Oct 2026): its green was picked for a dark
+   panel and all but vanished on the ice (1.0:1). A deep green, 4:1 here. */
+[data-theme="${THEME}"] .builder-status.is-online {
+    color: #0f4d27;
+}
 /* The status pills (Open, Closed...): their colour IS the word, so they sit
    on near-white ice rather than a mid blue that swallows the green. */
 [data-theme="${THEME}"] .status-badge {
     background-color: rgba(246, 250, 253, 0.92);
+}
+/* Guess the Maze's pips for a room solved in three or four, and a room lost
+   (31 Oct 2026): their fills turned pale and dark the wrong way round under
+   type that stayed as it was (pale on pale, navy on brown). The classic
+   fills and type, which read on the ice as they do on brown. */
+[data-theme="${THEME}"] .guess-pip.is-won.g3,
+[data-theme="${THEME}"] .guess-pip.is-won.g4 {
+    background: #5a4a22;
+}
+[data-theme="${THEME}"] .guess-pip.is-lost {
+    color: #e8c0b4;
 }
 /* The Christmas skin outlines the footer in navy so it reads over its drift;
    on a light page that outline is a smudge round dark type. */
@@ -859,10 +888,54 @@ function lightExtras() {
 /* Dark mode's own: the opening view's section banners, whose cream is a dark
    grey here, take the soft light ink, over a faint wash of it. */
 function darkExtras() {
+    /* The search glass is drawn in the placeholder's brown, as a border and a
+       background, so it sank with the box while the placeholder (an ink) went
+       light: here it takes the placeholder's own colour again (30 Oct 2026). */
+    const was = ROLE; ROLE = "ink";
+    const glass = asHex(...darkRole(0x6b, 0x56, 0x38));
+    ROLE = was;
     return `
 [data-theme="${THEME}"] .opening-head-title {
     background: color-mix(in srgb, var(--opening-ink) 12%, transparent);
     color: var(--opening-ink);
+}
+[data-theme="${THEME}"] .opening-search-icon {
+    border-color: ${glass};
+}
+[data-theme="${THEME}"] .opening-search-icon::after {
+    background: ${glass};
+}
+/* The Missing Pieces nudge's "!" disc: its amber, a fill, sank to a dark
+   grey under the disc's dark mark, which vanished. The layer's own amber. */
+[data-theme="${THEME}"] .opening-nudge-mark {
+    background: var(--amber-text);
+}
+/* The spotlight's dot for the picture showing: a near-white fill, so it sank
+   below the other dots' wash. Light again, the brightest of the row. */
+[data-theme="${THEME}"] .welcome-promo-dot.is-on::before {
+    background: var(--parchment);
+}
+/* Guess the Maze's pips for a room solved in three or four (31 Oct 2026):
+   their amber brown sank to the graphite of an unplayed pip, while one and
+   two guesses kept their greens. The classic brown again, a step on from
+   those greens as it is in every palette. */
+[data-theme="${THEME}"] .guess-pip.is-won.g3,
+[data-theme="${THEME}"] .guess-pip.is-won.g4 {
+    background: #5a4a22;
+}
+/* A parchment menu's highlighted option (31 Oct 2026): its amber went a
+   shade darker than the menu, which hid it. The layer's muted amber, under
+   dark type, as the classic amber bar is. */
+[data-theme="${THEME}"] .select-list.is-parchment .select-list-opt.is-active {
+    background: var(--amber);
+    color: #120c06;
+}
+/* The opening view's "New guide" flag (31 Oct 2026): its deeper tan sinks to
+   graphite here, which made it a plain dark tab beside the green and blue
+   flags. A muted tan of its own, under pale type, 5.9:1. */
+[data-theme="${THEME}"] .opening-flag.is-guide {
+    background: #6b5a42;
+    color: #f4efe6;
 }
 `;
 }

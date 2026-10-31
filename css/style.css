@@ -1690,6 +1690,16 @@ body[data-page="home"] .hero { padding-top: 18px; }
     padding: 7px 10px 18px;
     background: linear-gradient(rgba(6, 6, 20, 0.7), rgba(6, 6, 20, 0));
 }
+/* CLEAR OF THE DOTS (31 Oct 2026, the owner's). With more than one slide
+   the dots sit in the top right, and a caption up there ran under them: on
+   a phone "17:00" and "UTC" were covered. The caption starts below the
+   dots instead (their 3px keyboard ring included), so it keeps its full
+   width and stays centred. Side padding was measured and lost: at 320px it
+   left the home strip's caption about 100px to wrap in, five lines over a
+   102px picture, and cut the landing page's one line to "…". Only when
+   there are dots; a lone slide's caption sits where it did. The home
+   spotlight's own padding is further down (.spotlight-frame). */
+.welcome-promo:has(> .welcome-promo-dots) .welcome-promo-cta.is-top { padding-top: 19px; }
 
 /* Raised text in a caption, ^…^ in the Warren (28 Oct 2026). */
 .welcome-promo-sup {
@@ -9171,9 +9181,52 @@ body[data-page="admin"] .search-box input {
     color: #eeeeee;
 }
 
+/* The privacy policy's points (30 Oct 2026; js/privacy-content.js): a
+   heading, then a short list. The bullet is a 3px square drawn here, since
+   Volter Goldfish draws the bullet character as a picture. */
+.console-privacy-head { margin-bottom: 4px; }
+.console-privacy-list {
+    margin: 0 0 8px;
+    padding: 0;
+    list-style: none;
+    font-size: 0.5625rem;
+    line-height: 1.4;
+    color: #eeeeee;
+}
+.console-privacy-list li {
+    position: relative;
+    margin: 0 0 4px;
+    padding-left: 10px;
+}
+.console-privacy-list li::before {
+    content: "";
+    position: absolute;
+    left: 1px;
+    top: 5px;
+    width: 3px;
+    height: 3px;
+    background: currentColor;
+    opacity: 0.7;
+}
+/* THE LANDING PAGE'S COPY, SIZED FOR ROBOTO (31 Oct 2026, the owner's).
+   index.html's privacy window builds the same blocks (#welcome-privacy-body,
+   js/privacy-content.js), but sets them in the window's Roboto, where the
+   9px above, chosen for Volter, was too small to read on a computer and
+   squinting on a phone. The console's own page keeps Volter at 9px. The
+   bullet grows with the text and sits on the middle of its first line's
+   lowercase letters (0.8em down, less half its 4px). */
+#welcome-privacy-body .console-blurb,
+#welcome-privacy-body .console-privacy-list { font-size: 0.8rem; line-height: 1.5; }
+#welcome-privacy-body .console-privacy-head { margin-bottom: 6px; }
+#welcome-privacy-body .console-privacy-list { margin-bottom: 12px; }
+#welcome-privacy-body .console-privacy-list li { margin-bottom: 6px; padding-left: 14px; }
+#welcome-privacy-body .console-privacy-list li::before { left: 2px; top: calc(0.8em - 2px); width: 4px; height: 4px; }
+#welcome-privacy-body .console-hashline { margin-bottom: 10px; }
+
 /* One em dash in a Volter paragraph, set in Roboto — Volter Goldfish draws
-   U+2014 as a musical note. See appendPrivacyText in js/privacy-content.js;
-   the same one-character swap as .row-date-dot and .timeline-sep. Left at
+   U+2014 as a musical note. Used by js/console-profile.js (the privacy
+   text, which first needed it, has no dashes since 30 Oct 2026); the same
+   one-character swap as .row-date-dot and .timeline-sep. Left at
    the paragraph's own size, since here it is a word-sized aside rather
    than a separator dot. */
 .console-dash {
@@ -11882,6 +11935,39 @@ body[data-page="admin"] #activity-sessions {
     color: var(--parchment);
 }
 
+/* The policy's points (30 Oct 2026): the same measure and type as a
+   paragraph, with a small square bullet in the headings' amber. */
+.legal-list {
+    margin: 0;
+    padding: 0;
+    max-width: 62ch;
+    list-style: none;
+    font-family: 'Roboto', sans-serif;
+    font-size: 0.95rem;
+    line-height: 1.65;
+    color: var(--parchment);
+}
+.legal-list li {
+    position: relative;
+    margin: 0 0 8px;
+    padding-left: 20px;
+}
+.legal-list li:last-child { margin-bottom: 0; }
+.legal-list li::before {
+    content: "";
+    position: absolute;
+    left: 3px;
+    top: 0.68em;
+    width: 6px;
+    height: 6px;
+    /* The amber as the colour and the square painted in it (30 Oct 2026):
+       as a background, tools/themes.js read it as a light fill and dark mode
+       sank it to the page's grey (and light mode to the page's ice), so the
+       bullets all but vanished. As ink it follows the headings in every mode. */
+    color: var(--amber-bright);
+    background: currentColor;
+}
+
 .legal-section a { color: var(--amber-bright); }
 .legal-section a:hover,
 .legal-section a:focus-visible { color: var(--parchment); }
@@ -13456,6 +13542,8 @@ body[data-page="admin"] #activity-sessions {
     line-height: 1.45;
 }
 .spotlight-frame .welcome-promo-cta.is-top { padding: 5px 8px 14px; }
+/* Below the dots when there are some (31 Oct 2026): see .welcome-promo-cta.is-top. */
+.spotlight-frame:has(> .welcome-promo-dots) .welcome-promo-cta.is-top { padding-top: 17px; }
 
 @media (prefers-reduced-motion: reduce) {
     .spotlight-card { transition: none; }
@@ -17082,6 +17170,10 @@ button.tag.tag-by { background: transparent; border-style: dashed; }
     background: var(--wood-mid);
     border: 1px solid var(--amber-bright);
     box-shadow: 1px 1px 0 rgba(0, 0, 0, 0.4);
+    /* For the lit marker below (31 Oct 2026): filled with currentColor, an
+       ink, so tools/themes.js leaves its amber lit. As a background it was
+       read as a light fill and sunk to graphite in dark mode. */
+    color: var(--amber-bright);
 }
 
 .updatelog-entry:hover,
@@ -17090,7 +17182,7 @@ button.tag.tag-by { background: transparent; border-style: dashed; }
     outline: none;
 }
 .updatelog-entry:hover::before,
-.updatelog-entry:focus-visible::before { background: var(--amber-bright); }
+.updatelog-entry:focus-visible::before { background: currentColor; }
 .updatelog-entry:focus-visible { outline: 2px solid var(--amber-bright); outline-offset: 1px; }
 
 /* What happened, not what the thing is — which is the whole difference
@@ -18270,7 +18362,10 @@ textarea.ctl-input.de-note {
     bottom: 2px;
     left: 2px;
     width: 40px;
-    background: var(--parchment);
+    /* currentColor, an ink, so dark mode keeps it lit (31 Oct 2026): as a
+       background tools/themes.js sank it to graphite inside its light frame. */
+    color: var(--parchment);
+    background: currentColor;
     animation: daily-bar-slide 1.2s steps(48) infinite;
 }
 @keyframes daily-bar-slide {
@@ -18292,7 +18387,13 @@ textarea.ctl-input.de-note {
     box-sizing: border-box;
     border: 1px solid var(--parchment);
     border-radius: 2px;
-    background: linear-gradient(var(--parchment), var(--parchment)) no-repeat;
+    /* The slider in currentColor, as .daily-bar's (31 Oct 2026): dark mode's
+       copy of the gradient was graphite. And as longhands, because every
+       palette's copy of a "background" shorthand reset the size below, so
+       the bar was filled solid and never slid. */
+    color: var(--parchment);
+    background-image: linear-gradient(currentColor, currentColor);
+    background-repeat: no-repeat;
     background-size: 30px 6px;
     background-origin: content-box;
     padding: 2px;
@@ -20676,11 +20777,6 @@ body.is-viewer .admin-panel[data-panel="errors"] .se-write { display: none !impo
     text-align: center;
 }
 
-/* Volter Goldfish draws U+2014 as a musical note (PICTURE_GLYPHS in
-   js/site.js), so the one dash in the sentence is set in Roboto, as
-   .console-dash does in the console. */
-.nick-dash { font-family: 'Roboto', sans-serif; }
-
 .nick-prompt-label {
     margin: 0 0 4px;
     font-family: 'Volter Goldfish Bold', 'Volter Goldfish', 'Pixelify Sans', monospace;
@@ -22274,7 +22370,9 @@ body.is-viewer #bans-add { display: none !important; }
     padding: 3px 5px 2px;
     border: 1px solid #000;
     border-radius: 3px;
-    background: #6f8f4f;
+    /* A deeper moss (31 Oct 2026): the pale type read at 3.55:1 on #6f8f4f,
+       4.71:1 on this. */
+    background: #5c7a3f;
     box-shadow: 1px 1px 0 rgba(0, 0, 0, 0.5);
     color: #f4ffe8;
     /* Volter at its one crisp size, 9px: at 7.5px its letters broke up. */
@@ -22283,8 +22381,11 @@ body.is-viewer #bans-add { display: none !important; }
     letter-spacing: 0;
     text-transform: uppercase;
 }
-.opening-flag.is-event { background: #7f94a8; color: #f1f7ff; }
-.opening-flag.is-guide { background: #ab8b64; color: #fff8ec; }
+/* A deeper dusk blue (31 Oct 2026): the white read at 2.91:1 on #7f94a8,
+   4.77:1 on this. Dark mode used to sink the paler blue to near black too. */
+.opening-flag.is-event { background: #56708b; color: #f1f7ff; }
+/* A deeper tan (31 Oct 2026): 3.01:1 on #ab8b64, 5.04:1 on this. */
+.opening-flag.is-guide { background: #836644; color: #fff8ec; }
 /* Old, and only now in the archive: a quiet grey, not a "new" colour. */
 .opening-flag.is-archived { background: #6b6271; color: #f1ecf5; }
 

@@ -15,7 +15,7 @@
    elsewhere, and each one is deleted by the database two minutes after its
    minute began (a TTL index on `at`).
 
-   FOUR BUDGETS, each counted separately, so a burst of pictures cannot use
+   FIVE BUDGETS, each counted separately, so a burst of pictures cannot use
    up a visitor's searches or saves:
      media    pictures and other things a page loads many of at once — maze
               pictures, Habbo avatars and outlines, room figures, the furni
@@ -25,7 +25,9 @@
               types: plenty for a person, nothing like enough for a script
               reading the player list;
      write    anything that changes something (POST, PUT, PATCH, DELETE);
-     read     every other GET.
+     read     every other GET;
+     signin   discord-auth, apart from the rest (31 Oct 2026; see NOT
+              LIMITED AT ALL, below).
    Function-specific caps (the sign-in throttle, contact and Missing Pieces
    caps, the daily games' own limits, …) still apply on top of these; this
    is the floor under all of them, not a replacement.
@@ -59,8 +61,9 @@ const { SECURITY_HEADERS } = require("./_headers");
 
 const COLLECTION = "rate_limits";
 
-// Requests per network per minute, by budget.
-const LIMITS = { media: 600, search: 40, write: 60, read: 240 };
+// Requests per network per minute, by budget. `signin` is discord-auth's
+// own (31 Oct 2026; see NOT LIMITED AT ALL, below).
+const LIMITS = { media: 600, search: 40, write: 60, read: 240, signin: 300 };
 
 /* The functions a page asks for many times over: one request a picture.
    A first visit to the archive after a deploy (when the edge has nothing
@@ -77,12 +80,31 @@ const MEDIA = new Set([
                    an open site. Edge-cached and cheap.
      discord-auth  sign-in. A refused callback strands the visitor on a JSON
                    page with Discord's one-use code spent, and a refused
-                   `me` shows them signed out for the visit.
+                   `me` shows them signed out for the visit. (Only the
+                   callback now; the rest has its own budget, below.)
      share         the maze, event and guide pages and their link previews:
                    a refusal is JSON to a person and nothing to Discord's
                    unfurler, which asks from a handful of shared addresses.
-     sitemap       search engines. */
-const EXEMPT = new Set(["settings", "discord-auth", "share", "sitemap"]);
+     sitemap       search engines.
+
+   DISCORD-AUTH IS LIMITED AGAIN, GENEROUSLY (31 Oct 2026, the owner's,
+   from the bug scan). Fully exempt, `me` could be asked without end by a
+   script, each ask a database connection and a bans lookup. So it has a
+   budget of its own, `signin`, at 300 a minute per network: far past what
+   any office of tabs asks, and apart from the other budgets, so a busy
+   network's reads and saves never cost it a sign-in. The callback is
+   still never limited (above: a refusal spends Discord's one-use code),
+   nor is anything carrying a Warren token, and a counter that cannot be
+   reached still lets everything through. */
+const EXEMPT = new Set(["settings", "share", "sitemap"]);
+
+/* discord-auth's callback, found as discord-auth's actionFrom finds it: an
+   explicit ?action, else the /auth/discord/callback path (a rewrite). */
+function isSigninCallback(event) {
+    const named = ((event && event.queryStringParameters) || {}).action;
+    if (named) return named === "callback";
+    return String((event && (event.path || event.rawUrl)) || "").includes("/auth/discord/callback");
+}
 
 const WAIT_MS = 400;
 const MINUTE_MS = 60 * 1000;
@@ -96,6 +118,16 @@ function budgetOf(name, event) {
        POST only, so it fell to "write" and an office of open tabs spent the
        network's saves and game moves on analytics. */
     if (name === "track") return "media";
+    /* The Maintenance countdown's pings (30 Oct 2026): every open tab sends
+       one each ten seconds, so a school or a phone network's shared address
+       spent its whole write budget on them, and its score saves were refused. */
+    if (name === "presence") return "media";
+    /* Pura Panic's dealer (31 Oct 2026): a request every five pieces or so
+       of every game, and no database, so counted with the pictures rather
+       than the saves (a school network of players would empty `write`). */
+    if (name === "pura-deal") return "media";
+    // Sign-in's own budget, sign-out's POST included (see NOT LIMITED AT ALL).
+    if (name === "discord-auth") return "signin";
     const method = String((event && event.httpMethod) || "GET").toUpperCase();
     if (method !== "GET" && method !== "HEAD") return "write";
     if (MEDIA.has(name)) return "media";
@@ -205,6 +237,7 @@ async function checkRateLimit(name, event) {
     try {
         if (off()) return null;
         if (EXEMPT.has(name)) return null;
+        if (name === "discord-auth" && isSigninCallback(event)) return null;
         const method = String((event && event.httpMethod) || "GET").toUpperCase();
         if (method === "OPTIONS") return null;
         const key = keyOf(event);

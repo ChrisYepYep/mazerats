@@ -93,6 +93,37 @@ for (const [, to] of toml.matchAll(/^\s*to\s*=\s*"(\/[^"]*)"/gm)) {
     if (to.startsWith("/.netlify/") || !/\.[a-z0-9]+$/i.test(to)) continue;
     if (!fs.existsSync(path.join(OUT, to))) problems.push(`netlify.toml rewrites to ${to}, which is not in dist/`);
 }
+/* And every file a published page or stylesheet names must be in dist/ too
+   (30 Oct 2026). The deploy builds from a clean clone, so a script or
+   stylesheet that exists only in this checkout (written, linked from a page,
+   never `git add`ed: js/maintenance-warn.js was in that state when this was
+   written) is simply missing there, and the page that loads it ships broken
+   with nothing to say so. Only what the markup and the CSS name literally:
+   src="..." and href="..." in the pages, url(...) in the stylesheets. Paths
+   a script builds at run time are not checked. */
+// Not a file: another site, a data: picture, or a fragment (a filter inside
+// an inline SVG names its own #id, written %23 in a data: URL).
+const localRef = ref => ref && !/^(?:[a-z][a-z0-9+.-]*:|\/\/|#|%23)/i.test(ref) && !/[\s${}+]/.test(ref);
+const refPath = ref => decodeURIComponent(ref.split(/[?#]/)[0]);
+for (const page of fs.readdirSync(OUT).filter(n => /\.html$/i.test(n))) {
+    const html = fs.readFileSync(path.join(OUT, page), "utf8");
+    for (const [, ref] of html.matchAll(/\b(?:src|href)\s*=\s*["']([^"']*)["']/gi)) {
+        // Every page sits at the root and the deep ones carry <base href="/">,
+        // so a relative path and an absolute one both start from dist/.
+        const rel = localRef(ref) && refPath(ref).replace(/^\//, "");
+        if (!rel || !/\.[a-z0-9]+$/i.test(rel)) continue;   // a route, not a file
+        if (!fs.existsSync(path.join(OUT, rel))) problems.push(`${page} loads ${ref}, which is not in dist/`);
+    }
+}
+for (const sheet of fs.readdirSync(path.join(OUT, "css")).filter(n => /\.css$/i.test(n))) {
+    const css = fs.readFileSync(path.join(OUT, "css", sheet), "utf8");
+    for (const [, , ref] of css.matchAll(/url\(\s*(["']?)([^"')]*)\1\s*\)/g)) {
+        if (!localRef(ref)) continue;
+        const rel = refPath(ref);
+        const file = rel.startsWith("/") ? path.join(OUT, rel) : path.join(OUT, "css", rel);
+        if (!fs.existsSync(file)) problems.push(`css/${sheet} uses ${ref}, which is not in dist/`);
+    }
+}
 if (problems.length) {
     console.error("build-dist:\n  " + problems.join("\n  "));
     process.exit(1);

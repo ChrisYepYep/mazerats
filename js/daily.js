@@ -154,7 +154,11 @@ window.Daily = (function () {
                found no clock at round 0, wrote the replay as noClock, and
                the day the reset was meant to give back earned no speed
                bonus at all. So every start this page remembers for the game
-               is forgotten here, whatever the day (28 Sept 2026). */
+               is forgotten here, whatever the day (28 Sept 2026). Since
+               31 Oct 2026 a reset day that was already begun is replayed
+               without the speed bonus on purpose (the answers are known by
+               then; daily-games.js notes it), so this now only keeps the
+               page's starts in step with the server's. */
             forgetStarts(game);
             return true;
         } catch (e) {
@@ -389,10 +393,10 @@ window.Daily = (function () {
        with the day), `day` the day played, `at` the time to read it at
        (the server's now by default). Pure given `at`, for the parity check.
 
-         before the cut, launch day   "A practice run — nothing counts until
+         before the cut, launch day   "A practice run: nothing counts until
                                        the site opens at 08:00 UTC, when
                                        today's rounds start fresh."
-         before the cut, earlier day  "A practice run — nothing counts until
+         before the cut, earlier day  "A practice run: nothing counts until
                                        the site opens, so this one isn't on
                                        the boards."
          after the cut                "A practice run from before the site
@@ -406,9 +410,9 @@ window.Daily = (function () {
             return "A practice run from before the site opened, so it isn't on the boards. Reopen the game to play today's rounds for real.";
         }
         if (Number.isFinite(cut) && day === new Date(cut).toISOString().slice(0, 10)) {
-            return `A practice run — nothing counts until the site opens at ${new Date(cut).toISOString().slice(11, 16)} UTC, when today's rounds start fresh.`;
+            return `A practice run: nothing counts until the site opens at ${new Date(cut).toISOString().slice(11, 16)} UTC, when today's rounds start fresh.`;
         }
-        return "A practice run — nothing counts until the site opens, so this one isn't on the boards.";
+        return "A practice run: nothing counts until the site opens, so this one isn't on the boards.";
     }
 
     /* The rule both splashes add, in the site's plain words, from the real
@@ -476,7 +480,7 @@ window.Daily = (function () {
        board. */
     function shareText(o) {
         return `Maze Rats · ${o.game}\n` +
-            `${shareDate(o.day)}${o.practice ? " (practice)" : ""} — ${o.right}/${o.of} · ${o.points} pts${o.speed ? " incl. speed" : ""}\n` +
+            `${shareDate(o.day)}${o.practice ? " (practice)" : ""} · ${o.right}/${o.of} · ${o.points} pts${o.speed ? " incl. speed" : ""}\n` +
             `${o.grid}\n` +
             `${SHARE_SITE}/${o.path}`;
     }

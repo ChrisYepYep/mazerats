@@ -21,7 +21,7 @@
     <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@700;800;900&family=Roboto:wght@400;500;700&family=Pixelify+Sans:wght@400;700&family=Silkscreen:wght@400;700&display=swap" rel="stylesheet">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="theme-color" content="#120c07">
-    <title>Privacy Policy — Maze Rats</title>
+    <title>Privacy Policy | Maze Rats</title>
     <meta name="description" content="How Maze Rats handles the information you give it: what is collected, what it is used for, how long it is kept, and how to have it removed.">
     <link rel="canonical" href="https://mazerats.net/privacy">
     <!-- A link to this page pasted into Discord or anywhere else unfurled
@@ -29,7 +29,7 @@
          same card as the rest of the site, with this page's own title. -->
     <meta property="og:url" content="https://mazerats.net/privacy">
     <meta property="og:site_name" content="Maze Rats">
-    <meta property="og:title" content="Privacy Policy — Maze Rats">
+    <meta property="og:title" content="Privacy Policy | Maze Rats">
     <meta property="og:description" content="How Maze Rats handles the information you give it: what is collected, what it is used for, how long it is kept, and how to have it removed.">
     <meta property="og:type" content="website">
     <meta property="og:image" content="https://mazerats.net/assets/img/og-thumbnail.png">
@@ -67,7 +67,7 @@
 
          Wrapped in try/catch: localStorage throws outright in some privacy modes,
          and a colour scheme is not worth a blank page. -->
-    <link rel="stylesheet" href="css/style.css?v=2">
+    <link rel="stylesheet" href="css/style.css?v=3">
     <link id="theme-css" rel="stylesheet">
     <script>
     /* THE FIRST PAINT'S PALETTE. The site's own (mazerats_theme), unless a
@@ -145,10 +145,12 @@
          are built by tools/themes.js (css/theme-dark.css on html[data-dark],
          css/theme-frostlight.css on html[data-light]), loaded only when worn,
          and last in the head so they follow every other. Set here, before the
-         first paint, and again whenever the palette changes under the page. -->
+         first paint, and again whenever the palette changes under the page.
+         And when the switch is pressed in another open tab (31 Oct 2026, the
+         bug scan): the storage event, so every tab follows without a reload. -->
     <link id="dark-css" rel="stylesheet">
     <link id="light-css" rel="stylesheet">
-    <script>(function(){var d=document.documentElement,dk=document.getElementById("dark-css"),lt=document.getElementById("light-css"),want=false;function sheet(l,h){if(!l.getAttribute("href"))l.href=h;}function apply(){var light=want&&d.getAttribute("data-theme")==="frost",dark=want&&!light;if(dark){sheet(dk,"/css/theme-dark.css");if(!d.hasAttribute("data-dark"))d.setAttribute("data-dark","");}else if(d.hasAttribute("data-dark"))d.removeAttribute("data-dark");if(light){sheet(lt,"/css/theme-frostlight.css");if(!d.hasAttribute("data-light"))d.setAttribute("data-light","");}else if(d.hasAttribute("data-light"))d.removeAttribute("data-light");}window.__mrDarkOn=function(){return want;};window.__mrDarkIsLight=function(){return d.getAttribute("data-theme")==="frost";};window.__mrSetDark=function(v){want=!!v;apply();try{localStorage.setItem("mazerats_dark",want?"1":"0");}catch(e){}};try{want=localStorage.getItem("mazerats_dark")==="1";}catch(e){}apply();try{new MutationObserver(apply).observe(d,{attributes:true,attributeFilter:["data-theme"]});}catch(e){}})();</script>
+    <script>(function(){var d=document.documentElement,dk=document.getElementById("dark-css"),lt=document.getElementById("light-css"),want=false;function sheet(l,h){if(!l.getAttribute("href"))l.href=h;}function apply(){var light=want&&d.getAttribute("data-theme")==="frost",dark=want&&!light;if(dark){sheet(dk,"/css/theme-dark.css");if(!d.hasAttribute("data-dark"))d.setAttribute("data-dark","");}else if(d.hasAttribute("data-dark"))d.removeAttribute("data-dark");if(light){sheet(lt,"/css/theme-frostlight.css");if(!d.hasAttribute("data-light"))d.setAttribute("data-light","");}else if(d.hasAttribute("data-light"))d.removeAttribute("data-light");}window.__mrDarkOn=function(){return want;};window.__mrDarkIsLight=function(){return d.getAttribute("data-theme")==="frost";};window.__mrSetDark=function(v){want=!!v;apply();try{localStorage.setItem("mazerats_dark",want?"1":"0");}catch(e){}};try{want=localStorage.getItem("mazerats_dark")==="1";}catch(e){}apply();try{new MutationObserver(apply).observe(d,{attributes:true,attributeFilter:["data-theme"]});}catch(e){}addEventListener("storage",function(e){if(e.key==="mazerats_dark"||e.key===null){want=e.newValue==="1";apply();}});})();</script>
 </head>
 <!-- data-page="legal" keeps js/site.js from appending a second Privacy
      Policy link to the footer of the privacy policy itself. -->
@@ -170,11 +172,7 @@
             <p class="legal-eyebrow">Maze Rats</p>
             <h1>Privacy Policy</h1>
             <p class="legal-standfirst">
-                What this site collects when you use it, what it is used for, how long it is kept,
-                and how to have it removed. It is short because the site does little: there is no
-                advertising, nothing is sold or shared, and signing in is optional — the archive,
-                Fallin' Furni and Pura Panic work fully without an account, while the daily games
-                need one, with a nickname.
+                What this site keeps when you use it, why, for how long, and how to get it deleted.
             </p>
 
             <!-- Filled by renderPrivacyDocument (js/privacy-content.js) from
@@ -185,12 +183,10 @@
             <section class="legal-section">
                 <h2>Getting in touch</h2>
                 <p>
-                    Requests to review or delete anything held about you, and any question about
-                    this policy, go through the Contact page in the site's console — the small
-                    Habbo console button in the header on the
-                    <a href="/home">archive</a>. While the archive is closed before it opens, or
-                    for maintenance, the console cannot be reached, so you can also ask on the
-                    <a href="https://discord.gg/Fw4daP4KBg" target="_blank" rel="noopener">Maze Rats Discord</a>.
+                    To see or delete what we hold about you, or to ask about this policy, use the
+                    Contact page in the console (the small Habbo console button at the top of the
+                    <a href="/home">archive</a>). If the archive is closed for maintenance, ask on the
+                    <a href="https://discord.gg/Fw4daP4KBg" target="_blank" rel="noopener">Maze Rats Discord</a> instead.
                 </p>
             </section>
 
@@ -208,9 +204,9 @@
         <p>&copy; 2026 Origins Maze Rats. All rights reserved.</p>
     </footer>
 
-    <script src="js/api.js?v=2"></script>
+    <script src="js/api.js?v=3"></script>
     <script src="js/event-status.js?v=2"></script>
-    <script src="js/privacy-content.js?v=2"></script>
+    <script src="js/privacy-content.js?v=3"></script>
     <script src="js/palette-wear.js?v=2"></script>
     <script src="js/skin-wear.js?v=1"></script>
     <script src="js/site.js?v=2"></script>

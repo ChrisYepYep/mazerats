@@ -1793,7 +1793,7 @@
         "guess_scores": "Guess the Maze scores",
         "daily_scores": "Daily game scores",
         "daily_starts": "Daily game start times",
-        "daily_practised": "Launch-day practice notes",
+        "daily_practised": "Launch-day practice and reset-day notes",
         "daily_resets": "Daily game reset tickets",
         "ff_scores": "Fallin' Furni leaderboard entries",
         "ff_tournament": "Fallin' Furni tournament entries",

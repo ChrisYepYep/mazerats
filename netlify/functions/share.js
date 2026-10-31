@@ -195,7 +195,8 @@ function withTags(html, t) {
     ARCHIVE_TAGS.forEach(re => { out = out.replace(re, ""); });
     const e = escapeHtml;
     const block = [
-        `<title data-archive="${archive.title}">${e(t.title)} — Maze Rats</title>`,
+        // " | Maze Rats", as every page's own title has it (31 Oct 2026: no em dashes where visitors read).
+        `<title data-archive="${archive.title}">${e(t.title)} | Maze Rats</title>`,
         `<meta name="description" content="${e(t.description)}">`,
         `<link rel="canonical" href="${e(t.canonical)}" data-archive="${archive.canonical}">`,
         `<meta property="og:site_name" content="Maze Rats">`,
@@ -520,7 +521,7 @@ const FIXED_PAGES = {
        only while it is live (26 Oct 2026, see SWITCHED below). */
     fallinfurni: {
         title: "Fallin' Furni",
-        description: "Look up before you sit down. Furni drops from the ceiling and you sit on every seat in the order it landed — fifty rooms, three lives, one run.",
+        description: "Look up before you sit down. Furni drops from the ceiling and you sit on every seat in the order it landed: fifty rooms, three lives, one run.",
         image: "og-fallinfurni.png"
     }
 };
@@ -690,7 +691,7 @@ exports.handler = async (event) => {
     const asked = requestedSlug(event);
     const notFound = {
         title: "Not in the archive",
-        description: "That isn't in the Maze Rats archive — it may have been removed.",
+        description: "That isn't in the Maze Rats archive. It may have been removed.",
         image: `${origin}/assets/img/og-thumbnail.png`,
         sized: true,
         canonical: `${origin}/home`

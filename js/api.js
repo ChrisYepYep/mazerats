@@ -564,7 +564,14 @@ const Api = {
             link = document.createElement("link");
             link.id = "theme-css";
             link.rel = "stylesheet";
-            document.head.appendChild(link);
+            /* Before the dark layer's sheet, not after it (31 Oct 2026), as
+               js/skin-wear.js does: appended last, the palette's :root
+               variables outranked the layer's equal-ranked ones, so a palette
+               picked while a page was open wore its own colours over dark
+               mode (or Frost's light mode) wherever a rule used a variable. */
+            const layer = document.getElementById("dark-css");
+            if (layer && layer.parentNode === document.head) document.head.insertBefore(link, layer);
+            else document.head.appendChild(link);
         }
         // Absolute, because 404.html is served at whatever depth the wrong
         // address was (/maze/a/b), where a relative path points somewhere that
@@ -854,6 +861,11 @@ const Api = {
         });
         const qs = q.toString();
         return this._write("/.netlify/functions/site-errors" + (qs ? "?" + qs : ""), "GET", token);
+    },
+    /* Who still has the archive open while Maintenance counts down (30 Oct
+       2026): { count, kickAt, landingState }. See netlify/functions/presence.js. */
+    getPresence(token) {
+        return this._write("/.netlify/functions/presence", "GET", token);
     },
     // One group in full, samples and every breakdown included.
     getSiteError(token, id) {

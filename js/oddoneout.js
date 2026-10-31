@@ -337,7 +337,7 @@
                later: today's first round is asked for afresh. */
             if (reply.status === 400 && !state.picks.length) {
                 return refreshDay().then(() => {
-                    if (state && state.day !== forDay) swappedNote = "That was yesterday's round — here are today's.";
+                    if (state && state.day !== forDay) swappedNote = "That was yesterday's round. Here are today's.";
                     render();
                     settleFocus();
                 });
@@ -448,7 +448,7 @@
        10 Oct 2026.) */
     function signInLapsed(index) {
         noteWithActions(index,
-            "You've been signed out, so that pick wasn't recorded. Sign in again to carry on — the rounds already recorded are kept.",
+            "You've been signed out, so that pick wasn't recorded. Sign in again to carry on. The rounds already recorded are kept.",
             [["Sign in again", () => { if (window.Account && Account.signIn) Account.signIn(); }]]);
     }
 
@@ -919,7 +919,7 @@
         if (Number.isFinite(cut) && new Date(cut).toISOString().slice(0, 10) === day()) {
             return window.Daily.now() < cut
                 ? `The real rounds start at ${new Date(cut).toISOString().slice(11, 16)} UTC today.`
-                : "The real rounds are open — close this and reopen it to play them.";
+                : "The real rounds are open. Close this and reopen it to play them.";
         }
         return "Five more rounds tomorrow.";
     }
@@ -1014,7 +1014,7 @@
         if (right === of) return `All ${NUMBER_WORDS[of] || of}. Nothing got past you.`;
         if (right === 0) return "Not a single one. Brutal.";
         if (right === of - 1) return "One slipped through.";
-        return right + " of " + of + " — those builders know what they are doing.";
+        return right + " of " + of + ". Those builders know what they are doing.";
     }
 
     const shareGrid = () => state.picks.map(p => (p.right ? "🟩" : "🟥")).join("");
@@ -1147,14 +1147,14 @@
                 window.Daily.track("share", "odd");
                 try {
                     await navigator.clipboard.writeText(text);
-                    if (foot) foot.textContent = "Copied — paste it wherever you like.";
+                    if (foot) foot.textContent = "Copied. Paste it wherever you like.";
                 } catch (e) {
                     /* Refused: the same selectable box Guess the Maze
                        offers, so the result can still be copied by hand
                        rather than only being told it could not be (30 Sept
                        2026; see Daily.shareFallback). */
                     window.Daily.shareFallback(share, text);
-                    if (foot) foot.textContent = "Your browser would not copy it — select the text above and copy it yourself.";
+                    if (foot) foot.textContent = "Your browser would not copy it. Select the text above and copy it yourself.";
                 }
             });
         }
@@ -1208,7 +1208,7 @@
         /* The tab's title and canonical name the game while it is open, as
            the Alt Codes and the Guides do (PageMeta in js/site.js): /odd
            used to keep the archive's title (30 Sept 2026). */
-        if (window.PageMeta) window.PageMeta.set("odd", "Odd One Out — Maze Rats", "https://mazerats.net/odd");
+        if (window.PageMeta) window.PageMeta.set("odd", "Odd One Out | Maze Rats", "https://mazerats.net/odd");
         if (!retrying && el.window) el.window.focus();
         /* The loading bar while the day is dealt (Daily.waiting in
            js/daily.js; 4 Oct 2026, the owner's), where a "Dealing…" line was.

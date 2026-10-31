@@ -46,6 +46,9 @@ html[data-skin="halloween"] .hw-bats {
 }
 /* Put away while a game's window is open over the page (js/skin-halloween.js, 30 Oct 2026). */
 html[data-skin="halloween"].hw-bats-held .hw-bats { visibility: hidden; }
+/* And while the Atlas's search list is open (31 Oct 2026): on a phone the
+   bats crossed the matches, which sit under their sky. */
+html[data-skin="halloween"]:has(#wiz-results:not([hidden])) .hw-bats { visibility: hidden; }
 
 /* A ghost in the console's glass: barely there. */
 html[data-skin="halloween"] .hw-glass-ghost {

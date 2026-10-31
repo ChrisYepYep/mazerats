@@ -9,7 +9,7 @@
    completely inert until js/site.js puts that attribute on <html>. The
    classic palette is not defined here and is not affected by anything in it.
 
-   1179 rules, 1891 declarations, hues 208 (surfaces) / 216 (accents).
+   1183 rules, 1899 declarations, hues 208 (surfaces) / 216 (accents).
 */
 :root[data-light] {
     --bg-black: #5f91bd;
@@ -1901,6 +1901,14 @@ html[data-light] .console-blurb {
     color: #eeeeee;
 }
 
+html[data-light] .console-privacy-list {
+    color: #eeeeee;
+}
+
+html[data-light] .console-privacy-list li::before {
+    background: currentColor;
+}
+
 html[data-light] .console-empty-page {
     color: #eeeeee;
 }
@@ -2608,6 +2616,15 @@ html[data-light] .legal-section h2 {
 
 html[data-light] .legal-section p {
     color: #1b2a41;
+}
+
+html[data-light] .legal-list {
+    color: #1b2a41;
+}
+
+html[data-light] .legal-list li::before {
+    color: #1e3558;
+    background: currentColor;
 }
 
 html[data-light] .legal-section a {
@@ -4246,6 +4263,7 @@ html[data-light] .updatelog-entry::before {
     background: #9bbad6;
     border: 1px solid #3f6e97;
     box-shadow: 1px 1px 0 rgba(23, 53, 79, 0.2);
+    color: #1e3558;
 }
 
 html[data-light] .updatelog-entry:hover,
@@ -4255,7 +4273,7 @@ html[data-light] .updatelog-entry:focus-visible {
 
 html[data-light] .updatelog-entry:hover::before,
 html[data-light] .updatelog-entry:focus-visible::before {
-    background: #d4e1ed;
+    background: currentColor;
 }
 
 html[data-light] .updatelog-entry:focus-visible {
@@ -4568,12 +4586,14 @@ html[data-light] .daily-bar {
 }
 
 html[data-light] .daily-bar > span {
-    background: #e0eaf2;
+    color: #1b2a41;
+    background: currentColor;
 }
 
 html[data-light] .guess-sheet.is-fetching .guess-picture::after {
     border: 1px solid #517b9f;
-    background: linear-gradient(#e0eaf2, #e0eaf2) no-repeat;
+    color: #1b2a41;
+    background-image: linear-gradient(currentColor, currentColor);
 }
 
 html[data-light] .daily-head {
@@ -5716,18 +5736,18 @@ html[data-light] .opening-card-pic {
 
 html[data-light] .opening-flag {
     border: 1px solid #000;
-    background: #6f8f4f;
+    background: #5c7a3f;
     box-shadow: 1px 1px 0 rgba(23, 53, 79, 0.25);
     color: #f4ffe8;
 }
 
 html[data-light] .opening-flag.is-event {
-    background: #7f94a8;
+    background: #56708b;
     color: #f1f7ff;
 }
 
 html[data-light] .opening-flag.is-guide {
-    background: #cbdcea;
+    background: #bfd3e5;
     color: #0d1a2d;
 }
 
@@ -6212,7 +6232,12 @@ html[data-light] .console-title {
 html[data-light] .opening-search-icon::after {
     background: #355068;
 }
-html[data-light] .header-badge {
+/* a.header-badge as well (30 Oct 2026): the Discord pill is the one <a>
+   badge, and the turned copy of style.css's a.header-badge outranked the
+   plain class, so it kept the pale lavender on the white. */
+html[data-light] .header-badge,
+html[data-light] a.header-badge,
+html[data-light] a.header-badge:hover {
     color: #3c44a8;
     border-color: #5a63c9;
     background-color: rgba(255, 255, 255, 0.75);
@@ -6243,10 +6268,34 @@ html[data-light] .opening-x-ico {
 html[data-light] .opening-die {
     color: #f4f8fc;
 }
+/* The landing page's privacy modal (30 Oct 2026) borrows the console's
+   classes for its text, and the console's white type is kept white here for
+   the console's dark screen; the modal's panel is ice, so it vanished. */
+html[data-light] #privacy-modal .console-blurb,
+html[data-light] #privacy-modal .console-privacy-list,
+html[data-light] #privacy-modal .console-hashline {
+    color: var(--parchment);
+}
+/* A builder's "Online" (30 Oct 2026): its green was picked for a dark
+   panel and all but vanished on the ice (1.0:1). A deep green, 4:1 here. */
+html[data-light] .builder-status.is-online {
+    color: #0f4d27;
+}
 /* The status pills (Open, Closed...): their colour IS the word, so they sit
    on near-white ice rather than a mid blue that swallows the green. */
 html[data-light] .status-badge {
     background-color: rgba(246, 250, 253, 0.92);
+}
+/* Guess the Maze's pips for a room solved in three or four, and a room lost
+   (31 Oct 2026): their fills turned pale and dark the wrong way round under
+   type that stayed as it was (pale on pale, navy on brown). The classic
+   fills and type, which read on the ice as they do on brown. */
+html[data-light] .guess-pip.is-won.g3,
+html[data-light] .guess-pip.is-won.g4 {
+    background: #5a4a22;
+}
+html[data-light] .guess-pip.is-lost {
+    color: #e8c0b4;
 }
 /* The Christmas skin outlines the footer in navy so it reads over its drift;
    on a light page that outline is a smudge round dark type. */

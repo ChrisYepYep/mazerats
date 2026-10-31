@@ -9,7 +9,7 @@
    completely inert until js/site.js puts that attribute on <html>. The
    classic palette is not defined here and is not affected by anything in it.
 
-   1184 rules, 1899 declarations, hues 222 (surfaces) / 36 (accents).
+   1188 rules, 1907 declarations, hues 222 (surfaces) / 36 (accents).
 */
 :root[data-dark] {
     --bg-black: #050607;
@@ -1905,6 +1905,14 @@ html[data-dark] .console-blurb {
     color: #cbc5bc;
 }
 
+html[data-dark] .console-privacy-list {
+    color: #cbc5bc;
+}
+
+html[data-dark] .console-privacy-list li::before {
+    background: currentColor;
+}
+
 html[data-dark] .console-empty-page {
     color: #cbc5bc;
 }
@@ -2621,6 +2629,15 @@ html[data-dark] .legal-section h2 {
 
 html[data-dark] .legal-section p {
     color: var(--parchment);
+}
+
+html[data-dark] .legal-list {
+    color: var(--parchment);
+}
+
+html[data-dark] .legal-list li::before {
+    color: var(--amber-bright);
+    background: currentColor;
 }
 
 html[data-dark] .legal-section a {
@@ -4269,6 +4286,7 @@ html[data-dark] .updatelog-entry::before {
     background: var(--wood-mid);
     border: 1px solid var(--amber-bright);
     box-shadow: 1px 1px 0 rgba(0, 0, 0, 0.4);
+    color: var(--amber-bright);
 }
 
 html[data-dark] .updatelog-entry:hover,
@@ -4278,7 +4296,7 @@ html[data-dark] .updatelog-entry:focus-visible {
 
 html[data-dark] .updatelog-entry:hover::before,
 html[data-dark] .updatelog-entry:focus-visible::before {
-    background: #26282d;
+    background: currentColor;
 }
 
 html[data-dark] .updatelog-entry:focus-visible {
@@ -4591,12 +4609,14 @@ html[data-dark] .daily-bar {
 }
 
 html[data-dark] .daily-bar > span {
-    background: #35373e;
+    color: var(--parchment);
+    background: currentColor;
 }
 
 html[data-dark] .guess-sheet.is-fetching .guess-picture::after {
     border: 1px solid var(--parchment);
-    background: linear-gradient(#35373e, #35373e) no-repeat;
+    color: var(--parchment);
+    background-image: linear-gradient(currentColor, currentColor);
 }
 
 html[data-dark] .daily-head {
@@ -5739,18 +5759,18 @@ html[data-dark] .opening-card-pic {
 
 html[data-dark] .opening-flag {
     border: 1px solid #000;
-    background: #6f8f4f;
+    background: #5c7a3f;
     box-shadow: 1px 1px 0 rgba(0, 0, 0, 0.5);
     color: #f4ffe8;
 }
 
 html[data-dark] .opening-flag.is-event {
-    background: #232426;
+    background: #56708b;
     color: #f1f7ff;
 }
 
 html[data-dark] .opening-flag.is-guide {
-    background: #8d7d65;
+    background: #333741;
     color: #d3cdc5;
 }
 
@@ -6235,4 +6255,42 @@ html[data-dark] .console-title {
 html[data-dark] .opening-head-title {
     background: color-mix(in srgb, var(--opening-ink) 12%, transparent);
     color: var(--opening-ink);
+}
+html[data-dark] .opening-search-icon {
+    border-color: #b7afa4;
+}
+html[data-dark] .opening-search-icon::after {
+    background: #b7afa4;
+}
+/* The Missing Pieces nudge's "!" disc: its amber, a fill, sank to a dark
+   grey under the disc's dark mark, which vanished. The layer's own amber. */
+html[data-dark] .opening-nudge-mark {
+    background: var(--amber-text);
+}
+/* The spotlight's dot for the picture showing: a near-white fill, so it sank
+   below the other dots' wash. Light again, the brightest of the row. */
+html[data-dark] .welcome-promo-dot.is-on::before {
+    background: var(--parchment);
+}
+/* Guess the Maze's pips for a room solved in three or four (31 Oct 2026):
+   their amber brown sank to the graphite of an unplayed pip, while one and
+   two guesses kept their greens. The classic brown again, a step on from
+   those greens as it is in every palette. */
+html[data-dark] .guess-pip.is-won.g3,
+html[data-dark] .guess-pip.is-won.g4 {
+    background: #5a4a22;
+}
+/* A parchment menu's highlighted option (31 Oct 2026): its amber went a
+   shade darker than the menu, which hid it. The layer's muted amber, under
+   dark type, as the classic amber bar is. */
+html[data-dark] .select-list.is-parchment .select-list-opt.is-active {
+    background: var(--amber);
+    color: #120c06;
+}
+/* The opening view's "New guide" flag (31 Oct 2026): its deeper tan sinks to
+   graphite here, which made it a plain dark tab beside the green and blue
+   flags. A muted tan of its own, under pale type, 5.9:1. */
+html[data-dark] .opening-flag.is-guide {
+    background: #6b5a42;
+    color: #f4efe6;
 }

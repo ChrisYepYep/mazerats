@@ -599,7 +599,25 @@ async function notePractised(db, game, day, playerId, why) {
 // Whether a player is noted as having practised the day. Throws on a read
 // that fails, so the finish answers 500 and is sent again rather than
 // filing a bonus it could not check.
+// A reset day's note (REPLAYED, below) is not practice, and is left out.
 async function practisedOn(db, game, day, playerId) {
+    const doc = await db.collection(PRACTISED_COLLECTION).findOne({ _id: practisedId(game, day, playerId), why: { $ne: REPLAYED } }, { projection: { _id: 1 } });
+    return Boolean(doc);
+}
+
+/* A DAY GIVEN BACK IS REPLAYED WITH NO CLOCK (31 Oct 2026, the owner's,
+   from the bug scan). An admin's reset (daily-games.js) gives a player a
+   day they have already seen, so they replay it knowing every answer, and
+   at the 1.2s floor that is most of the 180 bonus: the top of the day's
+   board. Only launch day used to be noted. Now every reset of a day the
+   player had begun is noted here with `why` REPLAYED, and the finish (both
+   endpoints) files the day with no clock, on its base points, whatever the
+   day. Kept apart from practice so the card does not tell them they
+   practised before the site opened. replayedOn reads any note at all, a
+   practice one too, since either means the answers were known. Throws on
+   a failed read, as above. */
+const REPLAYED = "replay";
+async function replayedOn(db, game, day, playerId) {
     const doc = await db.collection(PRACTISED_COLLECTION).findOne({ _id: practisedId(game, day, playerId) }, { projection: { _id: 1 } });
     return Boolean(doc);
 }
@@ -608,5 +626,5 @@ module.exports = {
     COLLECTION, ROUND_BONUS_SECONDS, NO_TIME, TOTAL, MAX_START_BODY, MAX_FINISH_BODY, MIN_MOVE_MS,
     totalOf, roundBonusFor, markRound, recordStart, progressFor, clockOf, clockFor, movesOf, lastMarkAt,
     recordOddPick, recordGuess, forgetDay, dayBonus, normalise, optionFor,
-    beforeCut, isPractice, dropPractice, PRACTISED_COLLECTION, notePractised, practisedOn
+    beforeCut, isPractice, dropPractice, PRACTISED_COLLECTION, notePractised, practisedOn, REPLAYED, replayedOn
 };

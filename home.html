@@ -580,7 +580,7 @@
     <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@700;800;900&family=Roboto:wght@400;500;700&family=Silkscreen:wght@400;700&family=Pixelify+Sans:wght@400;700&display=swap" rel="stylesheet">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="theme-color" content="#120c07">
-    <title>Maze Rats — A Habbo Hotel Maze Room Archive</title>
+    <title>Maze Rats | A Habbo Hotel Maze Room Archive</title>
     <meta name="description" content="Maze Rats is a fan-run archive preserving the history of maze rooms across Habbo Hotel.">
     <!-- This page answers to three addresses, not one. /guess and /odd are
          rewrites to this same file (see netlify.toml) so that a link pasted
@@ -655,7 +655,8 @@
 
          Wrapped in try/catch: localStorage throws outright in some privacy modes,
          and a colour scheme is not worth a blank page. -->
-    <link rel="stylesheet" href="css/style.css?v=2">
+    <link rel="stylesheet" href="css/style.css?v=3">
+    <link rel="stylesheet" href="css/maintenance-warn.css?v=1">
     <link id="theme-css" rel="stylesheet">
     <script>(function(){try{var t=localStorage.getItem("mazerats_theme"),k=JSON.parse(localStorage.getItem("mazerats_skin_theme")||"null"),p;if(k&&k.theme&&Date.now()<k.until)t=k.theme;else if(window.__mrSkinPaletteAt&&(p=window.__mrSkinPaletteAt(JSON.parse(localStorage.getItem("mazerats_skin_cache")||"null"),Date.now())))t=p;if(!t||t==="classic"||!/^[a-z]+$/.test(t))return;document.documentElement.setAttribute("data-theme",t);document.getElementById("theme-css").href="css/theme-"+t+".css";}catch(e){}})();</script>
     <!-- Umami is not loaded here. On this page it waits for the gate at the
@@ -670,10 +671,12 @@
          are built by tools/themes.js (css/theme-dark.css on html[data-dark],
          css/theme-frostlight.css on html[data-light]), loaded only when worn,
          and last in the head so they follow every other. Set here, before the
-         first paint, and again whenever the palette changes under the page. -->
+         first paint, and again whenever the palette changes under the page.
+         And when the switch is pressed in another open tab (31 Oct 2026, the
+         bug scan): the storage event, so every tab follows without a reload. -->
     <link id="dark-css" rel="stylesheet">
     <link id="light-css" rel="stylesheet">
-    <script>(function(){var d=document.documentElement,dk=document.getElementById("dark-css"),lt=document.getElementById("light-css"),want=false;function sheet(l,h){if(!l.getAttribute("href"))l.href=h;}function apply(){var light=want&&d.getAttribute("data-theme")==="frost",dark=want&&!light;if(dark){sheet(dk,"/css/theme-dark.css");if(!d.hasAttribute("data-dark"))d.setAttribute("data-dark","");}else if(d.hasAttribute("data-dark"))d.removeAttribute("data-dark");if(light){sheet(lt,"/css/theme-frostlight.css");if(!d.hasAttribute("data-light"))d.setAttribute("data-light","");}else if(d.hasAttribute("data-light"))d.removeAttribute("data-light");}window.__mrDarkOn=function(){return want;};window.__mrDarkIsLight=function(){return d.getAttribute("data-theme")==="frost";};window.__mrSetDark=function(v){want=!!v;apply();try{localStorage.setItem("mazerats_dark",want?"1":"0");}catch(e){}};try{want=localStorage.getItem("mazerats_dark")==="1";}catch(e){}apply();try{new MutationObserver(apply).observe(d,{attributes:true,attributeFilter:["data-theme"]});}catch(e){}})();</script>
+    <script>(function(){var d=document.documentElement,dk=document.getElementById("dark-css"),lt=document.getElementById("light-css"),want=false;function sheet(l,h){if(!l.getAttribute("href"))l.href=h;}function apply(){var light=want&&d.getAttribute("data-theme")==="frost",dark=want&&!light;if(dark){sheet(dk,"/css/theme-dark.css");if(!d.hasAttribute("data-dark"))d.setAttribute("data-dark","");}else if(d.hasAttribute("data-dark"))d.removeAttribute("data-dark");if(light){sheet(lt,"/css/theme-frostlight.css");if(!d.hasAttribute("data-light"))d.setAttribute("data-light","");}else if(d.hasAttribute("data-light"))d.removeAttribute("data-light");}window.__mrDarkOn=function(){return want;};window.__mrDarkIsLight=function(){return d.getAttribute("data-theme")==="frost";};window.__mrSetDark=function(v){want=!!v;apply();try{localStorage.setItem("mazerats_dark",want?"1":"0");}catch(e){}};try{want=localStorage.getItem("mazerats_dark")==="1";}catch(e){}apply();try{new MutationObserver(apply).observe(d,{attributes:true,attributeFilter:["data-theme"]});}catch(e){}addEventListener("storage",function(e){if(e.key==="mazerats_dark"||e.key===null){want=e.newValue==="1";apply();}});})();</script>
 </head>
 <body data-page="home">
 
@@ -1389,7 +1392,7 @@
                                  pictures come from. -->
                             <ol class="guess-rules">
                                 <li><span class="guess-rules-n" aria-hidden="true">1</span>
-                                    <p>Five pieces of five real rooms, cut out of the archive. Pick the maze each one came from — <strong>five names</strong>, one of them right.</p></li>
+                                    <p>Five pieces of five real rooms, cut out of the archive. Pick the maze each one came from: <strong>five names</strong>, one of them right.</p></li>
                                 <li><span class="guess-rules-n" aria-hidden="true">2</span>
                                     <p>Three guesses a room. Every miss <strong>pulls the view back a little</strong>, so a room you cannot place yet you probably can in a moment.</p></li>
                                 <li><span class="guess-rules-n" aria-hidden="true">3</span>
@@ -1847,9 +1850,9 @@
 
     <script src="js/rooms-data.js?v=2"></script>
     <script src="js/events-data.js?v=2"></script>
-    <script src="js/api.js?v=2"></script>
+    <script src="js/api.js?v=3"></script>
     <script src="js/event-status.js?v=2"></script>
-    <script src="js/privacy-content.js?v=2"></script>
+    <script src="js/privacy-content.js?v=3"></script>
     <script src="js/palette-wear.js?v=2"></script>
     <script src="js/skin-wear.js?v=1"></script>
     <script src="js/site.js?v=2"></script>
@@ -1863,7 +1866,7 @@
          run time enough: the object simply did not exist yet and every one
          of those checks silently did nothing. A shared service belongs with
          site.js, not among the things that consume it. -->
-    <script src="js/account.js?v=2"></script>
+    <script src="js/account.js?v=3"></script>
     <!-- What a record can be missing — shared with /warren and the
          Dead Ends functions, so it loads before home.js asks it. -->
     <script src="js/dead-ends.js?v=2"></script>
@@ -1871,7 +1874,7 @@
          and event descriptions with it from the first render (30 Sept 2026),
          and guides.js below renders the Guides window with it too. -->
     <script src="js/guide-text.js?v=2"></script>
-    <script src="js/home.js?v=2"></script>
+    <script src="js/home.js?v=3"></script>
     <script src="js/custom-scrollbar.js?v=3"></script>
     <script src="js/letter-jump.js?v=2"></script>
     <script src="js/console.js?v=10"></script>
@@ -1881,9 +1884,9 @@
     <script src="js/console-profile.js?v=2"></script>
     <script src="js/mazer-card.js?v=2"></script>
     <!-- The Guides window. guide-text.js is loaded above, before home.js. -->
-    <script src="js/guides.js?v=2"></script>
+    <script src="js/guides.js?v=3"></script>
     <!-- The Alt Codes window. Needs nothing but site.js's EscapeLayers. -->
-    <script src="js/glyphs.js?v=2"></script>
+    <script src="js/glyphs.js?v=3"></script>
     <!-- The seats that fall when Fallin' Furni is pressed while Coming Soon. -->
     <script src="js/furni-rain.js?v=2"></script>
     <!-- The two daily games, and the day rules they share (after site.js,
@@ -1903,11 +1906,13 @@
          asserted by tools/check-daily-parity.js so a page cannot quietly
          load one without the other. -->
     <script src="js/featured-days.js?v=2"></script>
-    <script src="js/daily.js?v=4"></script>
+    <script src="js/daily.js?v=5"></script>
     <script src="js/daily-loader.js?v=3"></script>
     <!-- After daily.js: the window draws its rows with Daily.ranks and the
          same row markup the games' own boards use. -->
     <script src="js/leaderboards.js?v=3"></script>
     <script src="js/track.js?v=2"></script>
+    <!-- The two-minute warning before Maintenance moves an open page to the landing page (30 Oct 2026). -->
+    <script src="js/maintenance-warn.js?v=2"></script>
 </body>
 </html>

@@ -178,7 +178,11 @@ function cleanLevel(body) {
    an afternoon of the editor's Save button cannot grow it without bound —
    a version that far back is one nobody's page is still holding. Past
    either limit, a run naming a version that is gone is judged against the
-   level as it is now, which is exactly how every run was judged before. */
+   level as it is now, which is exactly how every run was judged before.
+   (31 Oct 2026: a version is now only honoured for a run whose token was
+   issued while it was still current, so the week no longer lets a fresh
+   run claim an old, easier version; see playedAs in ff-scores.js. The
+   week is left as it was: it costs a few hundred bytes a save.) */
 const VERSIONS = "ff_level_versions";
 const VERSION_LIFE_S = 7 * 24 * 60 * 60;
 const KEEP_VERSIONS = 100;

@@ -3,154 +3,218 @@
    It renders in three separate spots: the homepage console modal's Privacy
    page (js/console.js), the landing page's own privacy modal
    (js/welcome.js), and the formal page at /privacy (privacy.html), which is
-   the one with an address of its own — linkable, printable, and readable
+   the one with an address of its own: linkable, printable, and readable
    without a 204px porthole. The landing page needs its own copy of the view
-   because
-   home.html is off-limits to regular visitors during Coming Soon/
-   Maintenance — the gate in home.html's <head> bounces them straight back
-   to index.html — so a footer link pointing at home.html#privacy simply
-   dead-ends for exactly the visitors who can only ever see the landing
-   page. Same reasoning as the Upcoming Events widget having its own
-   lightweight modal there.
+   because home.html is off-limits to regular visitors during Coming Soon/
+   Maintenance (the gate in home.html's <head> bounces them straight back to
+   index.html), so a footer link pointing at home.html#privacy simply
+   dead-ends for exactly the visitors who can only ever see the landing page.
 
    Two renderers, one source: edit the wording here and both update.
 
-   HOUSE STYLE, because this file is prose and prose drifts. Headings are
-   sentence case and end in a full stop — they read as a lead-in to the
-   paragraph in the console view, and renderPrivacyDocument below strips
-   the stop for the standalone page. Half of them were Title Case with an
-   ampersand and half were not, which is the sort of thing nobody notices
-   one heading at a time and everybody notices reading the page.
+   SHORT POINTS SINCE 30 OCT 2026 (the owner's: "rework our privacy policy so
+   it's more readable, make it so its shorter and easy to read bullet points
+   ... make it so it looks like it was written by a human, so for example
+   dont use any emdashes"). Each section is a heading and a few points. Keep
+   it that way when something is added:
 
-   An aside is set off with an em dash (—), not a hyphen. Every other page
-   on the site does; this one used " - " throughout, which is the only
-   punctuation difference between the policy and the writing around it.
+     - one fact per point, in plain words, as you'd say it to somebody;
+     - no em dashes or en dashes, and no " - " asides either: a full stop,
+       a comma or brackets instead;
+     - straight quotes and apostrophes only. Volter Goldfish, which the
+       console sets this in, draws the curly ones (and the bullet character)
+       as pictures, which is why the bullets are drawn by CSS;
+     - British spelling, as everywhere else: authorised, honour.
 
-   And British spelling, as everywhere else: enquiry, authorised, honour. */
+   Each point still has to be TRUE of the code. The notes beside a section
+   say which files decide what it promises: change one, change both. */
 const PRIVACY_SECTIONS = [
     {
-        heading: "What we collect.",
-        body: "When you submit a form via the Contact Us page, we collect the details you provide — your message content, your Habbo Origins username, and an optional Discord handle — solely to process and respond to your enquiry. If you are signed in with Discord when you send it, the message also carries your Discord display name, username and ID, taken from your account in place of a typed handle, so that we can tell who it really came from; they are kept with the message and included in the notification email described under Who else handles it below. Sending what you know through Add Maze Info works the same way and is described in its own section below. A message is kept until an administrator deletes it, but the IP address it was sent from is kept with it only for spam and abuse handling — limiting how many messages one connection can send, and letting an administrator block one that is sending spam — and is removed from the message automatically soon after the message is 30 days old. An address that has been blocked stays on the block list until the block is lifted, or until a week after a block made for a set time has ended, and when it is lifted, the address is noted in the site's admin log, kept for 90 days, along with the administrator who lifted it. Attempts to sign in to the site's admin panel, successful or not and by anyone, are logged for 90 days, for security, with the IP address and browser they came from and the name that was typed — or, if that name is not an administrator's, only a scrambled stand-in for it, since a name typed there by mistake is so often a password. An administrator who signs in successfully is also given a cookie that lets the site recognise that device at their next sign-in, so that someone else's failed guesses at their name cannot lock them out; it holds only a random value and a signature, is sent to nothing but the sign-in itself, stops working when that administrator's password changes, and expires after 180 days. There is one other place an IP address is kept, for a different reason: every round of Fallin' Furni records the address it was played from, described in full below. The daily games can only be played signed in with Discord and with a nickname chosen. If you choose to sign in, we also hold what your Discord account tells us and what you do while signed in, both described below."
+        heading: "The short version.",
+        points: [
+            "We don't sell or share your data, and there are no adverts.",
+            "You can read the archive and play Fallin' Furni and Pura Panic without an account.",
+            "Signing in with Discord is optional. We only ask Discord for your basic profile.",
+            "We count how the site is used without following you around, and nothing here tracks you on other websites.",
+            "We don't keep mailing lists, build profiles of you or use your data for marketing.",
+            "Ask us through the Contact Us form and we'll delete what we hold about you."
+        ]
     },
+    /* discord-auth.js, _originsbot.js, player-nick.js, players-admin.js. */
     {
         heading: "Signing in with Discord.",
-        body: "Signing in is entirely optional. The archive, Fallin' Furni, Pura Panic and marking a maze as completed all work without an account. Only four things need one: playing the daily games, which also need a nickname; sending images through Add Maze Info, so that the pictures can be answered for; a place on the leaderboards — the daily games' and Fallin' Furni's — which show only players with a nickname, under that nickname and beside the head of your Habbo if one is linked to your account, and never your Discord name or picture (Pura Panic's board also takes players who are not signed in, as described under Playing Pura Panic below); and a profile that other people can find. If you do sign in, we ask Discord for one permission only: \"identify\", which returns your Discord user ID, your username, your display name and your avatar picture. We do not ask for your email address, your servers, your friends, or anything else, and we cannot see them. We keep your ID, username, display name and avatar URL, and the dates you first and last signed in. When you sign in, and about once a week after that until a Habbo Origins name has been found for you, we also send your Discord user ID, and nothing else, to OriginsBot, a Habbo Origins Discord bot that lets players link their Discord and Habbo Origins accounts, to ask whether you have linked yours. If you have, it tells us your Habbo Origins name and which hotel it is on; we keep both with your account, and that name becomes your nickname on this site, locked so that the leaderboards show the name you are known by in the hotel (the administrators can change or unlock it). If you have not, we keep only a note of when we asked. If the name it gives cannot be used here (because the leaderboards cannot display it, or because another player's nickname is too close to it to tell apart), we keep the name and hotel with your account, with a note of why, for the administrators to sort out. If another player already has your Habbo Origins name, or one too close to it, as their nickname here, neither of you is changed: nobody's nickname is taken from them, and the site's administrators are shown the clash to settle by hand. We also keep, with your account, a one-way scrambled code of the network you last used the site from — not your IP address, which is never stored against your account, and from which the address cannot be worked back out — and when it was last updated, so that if an account is used to troll or abuse the site, the administrators can block the network it is being used from, as described under Blocking accounts and networks below. You can also choose a nickname for this site: if you do, we keep it with your account, along with when you last changed it and how many times that day, and show it on the leaderboards and everywhere else your name appears in place of your Discord name; you can change it or remove it at any time from the console's Profile page. We also keep a short history of your last ten nickname changes, with when each was made and whether you or an administrator made it. If the administrators turn a nickname of yours down, it is kept on a list with your account — the last ten such names, stored in a simplified form with capitals, accents, spaces and punctuation taken out — so that the same name cannot simply be chosen again; and when an administrator turns down or locks your nickname, which administrator did it and when is kept with your account too. The site's administrators can see the list of everyone who has signed in — each person's Discord display name, username and ID, avatar, the dates they first and last signed in, their nickname and its history, counts of what they have played and sent, and whether they are blocked — and can set, change or remove a nickname, for example one that impersonates someone or breaks the site's rules, or lock it so that it can only be changed by asking them. Whenever an administrator sets, changes, removes, locks or reviews a nickname, or reviews a motto, that is also noted in the site's admin log, kept for 90 days, by your Discord ID rather than by any name, with what was done and the administrator who did it; when an administrator links, unlinks, approves or turns down a Habbo for your account, the entry also names that Habbo. That list is never shown publicly. The access token Discord issues during sign-in is used once to read that profile and is then discarded, never stored — so nothing here can act on your behalf on Discord, and there is no credential of yours for anyone to steal from us."
+        points: [
+            "You need to sign in to play the daily games, send pictures through Add Maze Info, appear on the leaderboards (apart from Pura Panic's) and have a profile people can find.",
+            "We only ask Discord for the \"identify\" permission. That gives us your user ID, username, display name and avatar. We can't see your email, servers or friends.",
+            "We keep those details, plus the dates you first and last signed in.",
+            "The token Discord gives us is used once to read your profile and then thrown away, so we can't do anything on Discord as you.",
+            "When you sign in, and about once a week until it finds one, we send your Discord ID (and nothing else) to OriginsBot to see if you've linked a Habbo Origins account. If you have, we keep that Habbo name and hotel, and it becomes your nickname here, locked so it matches the hotel.",
+            "If that Habbo name can't be used, or is too close to another player's nickname, nobody's name is taken away. The admins sort it out by hand.",
+            "We keep a scrambled code of the network you last used. It isn't your IP address, and nobody outside the site can turn it back into one. It lets the admins block a network that's being used to abuse the site."
+        ]
     },
+    {
+        heading: "Your nickname.",
+        points: [
+            "You can choose a nickname, and it's shown instead of your Discord name everywhere on the site. You can change or remove it from the console's Profile page.",
+            "We keep your last ten nickname changes, when each was made and by whom, and how many times you changed it that day.",
+            "Nicknames go through a word filter. The admins can ask you to pick another, change or remove it, or lock it. Until you pick a new one when asked, the games stay closed to you.",
+            "If the admins turn a nickname down, we keep a simplified copy (up to ten) so the same name can't just be picked again.",
+            "Anything an admin does to your nickname or motto goes in the admin log for 90 days, under your Discord ID."
+        ]
+    },
+    {
+        heading: "What your account keeps.",
+        points: [
+            "Mazes you've marked as completed or saved for later, your daily game progress and scores, and in December the advent calendar doors you've opened. This means they follow you between devices.",
+            "Your favourite maze, featured badge, whether your profile is hidden, and when the site first showed you your profile.",
+            "Which console notifications you've read or deleted.",
+            "If the admins make you a Fallin' Furni beta tester, that mark, who added it and when. It's never shown publicly.",
+            "If a Habbo with your nickname is suggested as yours, we keep its name and hotel with your account, and so that they aren't suggested again, up to ten Habbos that were unlinked from you or that you said aren't yours.",
+            "The admins can see a list of everyone who has signed in: Discord names, ID and avatar, sign-in dates, nickname history, counts of what each person has played and sent, and whether they're blocked. That list is never public."
+        ]
+    },
+    /* profiles.js decides what a profile shows and who is found by search. */
+    {
+        heading: "What other people can see.",
+        points: [
+            "Leaderboards show your nickname, your scores and the head of your linked Habbo (or a plain disc). The daily games also show your result grid, which gives nothing about the maze away. Without a nickname you're not on the boards at all.",
+            "Your Discord avatar, username and ID are never shown anywhere. Each leaderboard row carries a scrambled stand-in for your account so the page can find your own row.",
+            "Your profile stays hidden until the site has shown you what a profile is, or you choose to show it. After that anyone can find it by your nickname or your linked Habbo. Before then, a search for your linked Habbo only shows the Habbo, the month you joined and that your profile isn't active yet.",
+            "A profile shows your name, the month you joined, the mazes you've completed and what they add up to, your badges, favourite maze and featured badge, daily game streaks and points, your best Fallin' Furni run and Pura Panic game, and how many of your Add Maze Info sends were accepted.",
+            "With a Habbo linked, it also shows that Habbo's name, avatar, motto and whether it's online, as Habbo itself does. With no Habbo linked, a Habbo with exactly your nickname is shown marked \"Not verified\" (never whether it's online). You can prove it's yours with a code in your motto, or tell us it isn't you.",
+            "The Contributor, Maze Owner and Event Host badges are worked out from your Habbo name and checked again at most every half hour.",
+            "A motto with a filtered word in it isn't shown. We keep a note of it so an admin can approve it or keep it hidden.",
+            "You can hide your profile at any time. Your To do list is never shown to anyone but you."
+        ]
+    },
+    /* ff-runs.js and ff-scores.js. */
     {
         heading: "Playing Fallin' Furni.",
-        body: "Every round of Fallin' Furni is recorded so the game can be tuned — which levels people clear, which they run out of time on, and where a run ends. A record holds what happened in the game: the levels played, how long each took, how many seats were taken, how the round ended, the points scored, the size of the browser window, and whether the screen was a touchscreen. If you are signed in it carries your Discord display name and ID, the same account the leaderboard already shows. If you typed a Habbo Origins name into the game to play as that avatar, that name is kept on the record too, along with which Origins hotel you chose for it — the English, Spanish or Brazilian one — whether or not you are signed in, so that runs played without an account can be told apart instead of all counting as one anonymous player. It is only ever treated as something you told us rather than something we checked, it is never used to sign you in or to rank you, and it is never shown publicly — the leaderboard takes its name from your account alone: your nickname, and a run by a player with no nickname is not shown on it at all. It also holds the IP address the round was played from, whether or not you are signed in, and we group runs by that address so that we can see when one leaderboard is being played by several accounts from the same connection. That means a run played without signing in is not anonymous: it can be grouped with other runs from the same address, including ones where somebody did sign in. Apart from the admin panel's sign-in log described above, which is kept for security, this is the only part of the site that keeps an IP address against what you did, and the only one that keeps it to see how the site is used rather than to stop spam and abuse; it applies to Fallin' Furni alone — the interaction records described below still have no address on them. These records are never shown publicly and are only ever read by an administrator looking at how the game is playing; they are deleted automatically after 180 days, address and all."
+        points: [
+            "Every round is recorded so we can tune the game: levels played, times, seats taken, how it ended, points, your window size and whether it was a touchscreen.",
+            "Signed in, a round carries your Discord name and ID. If you typed a Habbo name to play as, it keeps that name and hotel too. We don't check that name and never show it.",
+            "Each round also keeps the IP address it was played from, signed in or not, so we can spot one connection playing on several accounts. This means a round played signed out isn't anonymous.",
+            "Only the admins see these records, and they're deleted after 180 days.",
+            "Your best run is kept while you have no nickname, but it isn't shown on the boards until you choose one."
+        ]
     },
-    /* Pura Panic (7 Oct 2026): what netlify/functions/pura-scores.js keeps
-       (its GUESTS, THE GAME LOG and CONTINUING notes) and js/pura-panic.js
-       stores in the browser. Change one, change both. */
+    /* pura-scores.js (GUESTS, THE GAME LOG, CONTINUING) and js/pura-panic.js. */
     {
         heading: "Playing Pura Panic.",
-        body: "Pura Panic can be played signed in or not, and every finished game is recorded so the game can be tuned while it is new — how far people get, how a game ends, and which clears they make. Our server works each game out again for itself from where every piece came to rest, rather than taking the page's word for the score, so a record holds the game's own figures: the score, the rows cleared, the level reached, how many pieces were played, how long the game lasted, how it ended (the pile reaching the top, the game ended from the pause screen, or the page closed part-way), how many clears of each size and how many chains it made, and whether it was a game left part-way and continued; and three things only your browser can tell us, taken as it says them: whether the screen was a touchscreen, whether the lights were off, and whether the music was muted. While a game is being played, where it has got to is also sent each time it reaches a new level, so that a game cut short by a closed browser still counts, at the last level it reached; the finished game replaces that record. If you are signed in, a record carries your Discord ID and the name you go by on the site; if you are not, it carries the Habbo Origins name and hotel you proved as yours (described below), or your Guest Rat number, or nothing about you at all. We also note each time Play is pressed, with when and, if you are signed in, your Discord ID, so that we can see how many games are started and never finished. Unlike Fallin' Furni, no IP address is kept with any of it. These records are never shown publicly; they are only ever read by the site's administrators, in the admin panel, as figures for the game and a list of who has played it and how; and they are deleted automatically after 180 days. The leaderboard keeps one row for each player, their best game — the name it is shown under, that game's score, rows, level, pieces and length, and when it was played — until the player's account is deleted or they ask for it to be removed. Signed in, you are on it under your nickname, as on the other leaderboards. Signed out, you can be on it in one of two ways. You can play as your Habbo: you type its name and pick its hotel, our server asks Habbo Origins whether that Habbo exists, and refuses a name that is already a signed-up player's nickname or the Habbo linked to their account; it then gives you a short code to put in your Habbo motto, which we read from Habbo Origins to see that the Habbo is yours. The code itself is not stored by us — your browser holds it, and it works for half an hour — and we keep only a one-way scrambled copy of it, with a note of when it was last checked so that it is not checked too often, deleted within the hour. Once it is proved, your row on the board shows that Habbo's name and head, and keeps its hotel and its look (the code describing its clothes and colours) to draw the head with. A Habbo name that has not been proved this way never goes on the board. Or you can play as a Guest Rat: the first time a game of yours scores, you are given the next number, and the board shows you as \"Guest Rat\" and that number, with nothing else about you. Either way your browser keeps a token from us, described under Browser storage below, which is the only way to play as that Habbo or Guest Rat again; \"Not you?\" on the game's first screen makes this browser forget them, though their scores stay on the board. To keep the scores honest, two other short-lived records are kept: one marking each game whose score has been sent, with the account, Habbo or Guest Rat it was for, so that a game can only be counted once, deleted after four hours; and one marking a game that has been continued, so that it can only be continued once, deleted after a little over a day."
+        points: [
+            "Every finished game is recorded so we can tune it: score, rows, level, pieces, length, how it ended, the clears and chains made, and whether it was continued. We also note whether you were on a touchscreen, had the lights off or muted the music.",
+            "A game in progress is sent each time it reaches a new level, so one cut short by a closed tab still counts. We also note each press of Play, to see how many games go unfinished.",
+            "Signed in, a record carries your Discord ID and the name you go by here. Signed out, it carries your proved Habbo or your Guest Rat number.",
+            "No IP address is kept. The records are only seen by the admins and are deleted after 180 days.",
+            "The leaderboard keeps each player's best game until they delete their account or ask us to remove it.",
+            "Signed out, you can play as your Habbo. We check with Habbo Origins that it exists, and you prove it's yours with a short code in your motto. We only keep a scrambled copy of the code, and delete it within the hour. Or you can play as a numbered Guest Rat.",
+            "Your browser keeps a token so you can play as that Habbo or Guest Rat again. \"Not you?\" on the first screen makes it forget them.",
+            "To stop a score counting twice, we keep a short note for each game sent (for four hours) and each game continued (for just over a day)."
+        ]
+    },
+    /* contact.js, dead-end-leads.js, event-entries.js. */
+    {
+        heading: "Messages and submissions.",
+        points: [
+            "Contact Us keeps your message, Habbo name and an optional Discord handle. If you're signed in it uses your Discord name, username and ID instead of a typed handle.",
+            "Add Maze Info keeps what you write, which maze or event it's about, a Habbo name if you give one and, if you're signed in, your Discord name, username and ID. Pictures need you to be signed in. Accepted pictures go into the archive, and rejected ones are deleted straight away.",
+            "Event Submission keeps your Habbo name, your picture, which event it's for and, if you're signed in, your Discord details. Only the admins judging the event see the picture.",
+            "All three keep the IP address they were sent from, only for dealing with spam and abuse. It's removed after 30 days. Event entries also keep a scrambled code for two days to count how many have been sent.",
+            "Messages and submissions are kept until an admin deletes them. Ask and we'll delete yours. If a submission of yours is accepted, your name may go on the Contributors list."
+        ]
+    },
+    /* track.js, error-report.js and site-errors.js, presence.js, _ratelimit.js. */
+    {
+        heading: "Analytics and keeping the site running.",
+        points: [
+            "Umami counts visits and visitors in total, without knowing who anyone is. Archive searches are part of the page address, so Umami sees what was searched for, but not who searched.",
+            "We also log which parts of the site get used, like which mazes are opened. No IP address or account is attached, just a random ID that's gone when you close the tab. These logs are deleted after 60 days.",
+            "If your browser sends \"Do Not Track\" or Global Privacy Control, none of that is logged. Bots and search engine crawlers aren't logged either.",
+            "If something breaks in your browser, it sends us an error report: what went wrong, the page (with anything you typed taken out), your browser and device type, window size, the country you're in and the last few buttons clicked. No IP address, account or name. Reports are deleted once an error hasn't happened for 90 days. They're sent with Do Not Track on, but not with Global Privacy Control.",
+            "When the site is about to go down for maintenance, an open page tells us it's still there every few seconds, using a random ID made for that tab. That's how we know everyone has left. Nothing else is sent, and each ID is deleted a few minutes after its last message.",
+            "To stop anyone flooding the site, we count each connection's requests using a scrambled code that changes daily. A few Pura Panic steps (motto codes, new Guest Rat numbers, game starts) are counted by the network code instead. The counts are deleted within a couple of hours.",
+            "Sign-in attempts on the admin panel are logged for 90 days with the IP address, browser and name typed (scrambled if it isn't an admin's name). Admins who sign in get a cookie for 180 days so other people's wrong guesses can't lock them out."
+        ]
+    },
+    /* Everything in localStorage, sessionStorage and cookies.
+       TO ADD WHEN SCOUT'S TRAIL GOES LIVE (26 Oct 2026): a point saying it
+       keeps the furthest zone and rubies found (mazerats_ratrace_progress),
+       best scores (mazerats_ratrace_best2), lights (mazerats_ratrace_dark)
+       and music (mazerats_ratrace_music), all on the device alone. */
+    {
+        heading: "What's stored in your browser.",
+        points: [
+            "Your colour scheme and a copy of the site's colours, whether the site was last seen open, seasonal decoration settings, and how far your clock is from ours (so the daily games agree on the day).",
+            "Mazes you've completed or saved (only on your device unless you sign in), and which notifications you've seen.",
+            "Daily game progress, marked with a scrambled stand-in for your account, never your Discord ID.",
+            "Fallin' Furni: your room, your avatar, any Habbo name you typed, and your window and sound settings.",
+            "Pura Panic: your lights and music settings, your proved Habbo or Guest Rat and its token, a game you left part-way (for up to a day) and a finished game waiting to be saved after you were signed out (for up to three hours).",
+            "The Halloween bat game's best score, which never leaves your device. In December, signed in, a copy of which advent doors you've opened, so the button can show when one is waiting.",
+            "If a site-wide block applies to you, when it ends and why.",
+            "Cookies: one for ten minutes while you approve Discord sign-in, then a session cookie for 30 days that the page's scripts can't read. Admins also have a session token and their own panel settings.",
+            "None of it follows you to other websites, and clearing your browser data removes all of it."
+        ]
     },
     {
-        heading: "Adding what you know about a maze.",
-        body: "The console's Add Maze Info form lets anyone send what they know about a maze or event, whether it is in the archive yet or not, and its Missing Pieces page lists the ones we most need help with. A submission holds what you write, which maze or event it is about, the Habbo Origins name you give if you give one, and — like a contact message — the IP address it was sent from, which is used only for spam and abuse handling and is removed from the submission automatically soon after the submission is 30 days old. If you are signed in with Discord it also carries your Discord display name, username and ID, and images can only be sent while signed in, so that the pictures can be answered for. Nothing in a submission is public: it is read by an administrator, and an image is only ever shown on the site if it is accepted into the archive, where it becomes one of that record's pictures. If a submission is accepted and you gave a name, it may be added to the site's list of contributors. Images from a rejected submission are deleted at once, and an image that was uploaded but never sent is deleted after a day or so. The words of a submission are kept with the archive's records until an administrator deletes them, and you can ask for yours to be removed at any time through the Contact Us form. An entry sent through Event Submission, on the same Contact page, holds the Habbo Origins username you give, the one picture you send, which event it was entered for and — if you are signed in with Discord, which it does not need — your Discord display name, username and ID; like a contact message it keeps the IP address it was sent from only for spam and abuse handling, removed automatically soon after the entry is 30 days old, and a one-way scrambled code of your connection or account is kept for two days to count how much has been sent from it. The picture is never public: only the administrators judging the event see it, and the entry and its picture are kept until an administrator deletes them, which you can ask for at any time through the Contact Us form."
+        heading: "Who else handles your data.",
+        points: [
+            "Netlify hosts the site and stores its pictures. MongoDB Atlas is our database.",
+            "Resend emails us a copy of each Contact Us and Add Maze Info message, including your Discord details if you were signed in.",
+            "Umami does our visitor counts, and Discord handles signing in (so Discord knows you signed in here).",
+            "OriginsBot is only sent your Discord ID. Habbo Origins is only sent Habbo names, to look up profiles, check motto codes and run the profile search. Habbo's imaging service is only sent an avatar's look, to draw heads.",
+            "Habbos we look up are kept for 90 days after they were last checked, for as long as an account is linked to them, or for good if they're credited in the archive.",
+            "Your browser also loads things straight from Google Fonts, Habbo (avatars and article pictures), FurniIndex (furni pictures) and Umami. Like any website, they see your IP address and browser."
+        ]
+    },
+    /* _bans.js and discord-auth.js. */
+    {
+        heading: "Blocks.",
+        points: [
+            "To deal with abuse, the admins can block a Discord account, an IP address or range, or a network code, for good or for a set time.",
+            "A block either stops everything except reading, or closes the whole site apart from this policy.",
+            "The site checks blocks each time you use it. A block keeps what it's on, how long it lasts, the reason and which admin made it. Only the admins see the list.",
+            "Ended blocks are deleted a week later, and lifted ones straight away. Making, changing or lifting one goes in the admin log for 90 days."
+        ]
     },
     {
-        heading: "What your account holds.",
-        body: "Signed in, the things this site would otherwise remember only in your browser are kept against your account instead, so they follow you between your phone and your computer: which mazes you have marked as completed, which you have saved to complete later, your progress through the current day of each daily game, and your finished daily scores. In December, the advent calendar's doors you have opened, and when you opened each, are kept against your account too, one calendar for each year, until your account is deleted; the calendar is only for players who are signed in. Your nickname, your score and your result grid — the row of coloured squares saying how each round went, which names no maze and so gives nothing away — are shown publicly on the daily games' leaderboards; your Discord avatar is never shown anywhere on the site; the section on what's public on the leaderboards, below, has the detail. Signed in, you also have a profile that other people can find, described under What's public on your profile below. It stays hidden from everyone else until the site has shown you what a profile is, and you can hide it again at any time. The mazes you have saved to complete later (your To do list) are never shown to anybody but you. The console's Profile page is where you edit your profile: we keep the favourite maze (which you can also pick with the Favourite button on a maze) and featured badge you choose there, whether your profile is hidden, and when the site first showed you your profile, with your account. If the administrators make you a beta tester for Fallin' Furni, which lets you play it while it is being tested, that mark is kept with your account, with which administrator made it and when, until they take it off; making or removing it is noted in the site's admin log, kept for 90 days, by your Discord ID, and the mark is never shown publicly."
+        heading: "Deleting your data.",
+        points: [
+            "You can sign out at any time, or sign out on every device at once. You can also remove our access in Discord's Authorised Apps settings.",
+            "To delete your account (your profile, scores, leaderboard rows, game records, completed mazes and advent doors), ask through the Contact Us form.",
+            "Played Pura Panic signed out? Ask the same way and we'll remove that leaderboard row and those records.",
+            "A block stays after your account is deleted, or anyone blocked could just ask to be forgotten.",
+            "Your deletion request stays in the admin log for up to 90 days, under your Discord ID. Contributor credits stay unless you ask us to remove them too."
+        ]
     },
-    {
-        heading: "Use of data.",
-        body: "Submitted information is used strictly to review, process, and reply to enquiries, including maze submissions, content corrections, and general feedback. Account information is used only to show you your own progress, to place your name on the leaderboards, to show your profile as described under What's public on your profile, and to look up your linked Habbo through OriginsBot as described under Who else handles it. We do not maintain marketing mailing lists, we do not profile you, and we do not use any of it for promotional purposes."
-    },
-    {
-        heading: "Analytics and privacy.",
-        body: "We use Umami, a lightweight, privacy-focused analytics service, to monitor aggregate website traffic and performance, and we keep our own record of which parts of the site are used — for example which mazes are opened, which tabs are viewed, or when an image is enlarged. These interaction records are not linked to you: no IP address or account is stored against them, nothing is shared with other websites, and the only identifier attached is a random value that lasts for a single browsing session and is discarded when you close the tab. What you type into the archive's search box is recorded by Umami, because the search is part of the page's address and Umami counts the addresses visited; we look at those terms to see what people are looking for and whether the archive has it. Like everything else Umami collects, a search is counted in aggregate and is not linked to you or to an account. Visits by automated browsers and search-engine crawlers are not recorded at all; to tell them apart, the description your browser gives of itself is checked by our server, but not kept. We honour \"Do Not Track\" and Global Privacy Control signals and keep no interaction records at all when either is set, and every interaction record is deleted automatically after 60 days."
-    },
-    {
-        heading: "Error reports.",
-        body: "When something on the site goes wrong in your browser — a script fails, a picture or file does not load, or one of our servers does not answer — the page sends us a report so that it can be fixed, and our servers keep a report of their own failures in the same way. A report holds: what went wrong, with the error message, the file, line and technical trace where it happened; the page it happened on, with its address cut down to the page itself (anything you typed, such as a search, is removed, and a search is recorded only as how many characters it had); the page's title; when it happened, your time zone's offset from UTC, and how long the page had been open; your browser and operating system and their versions and whether the device is a phone, tablet or computer (worked out from what your browser tells every site, after which that description itself is discarded), your language, the size of your window and screen and its pixel density, whether the screen is a touchscreen, whether you point with a mouse or a finger, whether the page was in view or in the background, whether you were online, and your connection type and device memory where the browser offers them; the site's colour scheme, whether the site was open or closed, which of its windows were open, which version of the site you were running, and whether you were signed in, as a yes or no; the country your connection comes from, and nothing more precise; and the last fifteen things that happened on the page before the error, such as which buttons were clicked (by their labels, never anything typed into a field) and which pages were opened. It carries the same random, single-session identifier as the interaction records above, stored only in a scrambled form, so that we can count how many visits an error affected. No IP address, account, name or Discord ID is ever stored with a report. So that one connection cannot flood us with reports, we also count how many each connection sends; for that count the connection is kept only as a one-way scrambled code, never as the address itself, the code changes every day, and each count is deleted after about two hours. Because this is about keeping the site working rather than about how it is used, reports are still sent when \"Do Not Track\" is set, but never when Global Privacy Control is set. Reports are only read by an administrator, and are deleted automatically once an error has not been seen for 90 days."
-    },
-    /* TO ADD WHEN SCOUT'S TRAIL GOES LIVE (26 Oct 2026, the bug scan). This
-       text has no way to show a sentence only once a game is live, so
-       Scout's Trail (js/rat-race.js, js/rat-race-music.js, hidden from
-       visitors for now) is not described yet. At launch, after the Pura
-       Panic part below, add what it keeps: the furthest zone reached and
-       every ruby found (mazerats_ratrace_progress), the best scores
-       (mazerats_ratrace_best2), whether the lights are off
-       (mazerats_ratrace_dark) and whether the music is muted
-       (mazerats_ratrace_music); all on the device alone, nothing sent. */
-    {
-        heading: "Browser storage.",
-        body: "Your browser holds a small amount of information for this site on your own device. For visitors that is: a short-lived session identifier used only for the interaction records and error reports described above, with a count of the error reports sent during that session; a note of whether the site, and Fallin' Furni, were last seen as open, so the page can say the right thing if our server is briefly unreachable; the colour scheme you picked, and a copy of the site's current colours so the page does not flash while they load; for the daily games, how far your device's clock is from ours, so the games agree with everybody else about which day it is; and — if you have marked a maze as completed or saved it for later — that progress, which stays on your device alone unless you sign in, and a note that you have been shown where saved mazes go, so it is only said once. While you are signed out, it keeps which of the console's notifications you have read or deleted (signed in, your account keeps that instead); and it keeps which notifications it has already played its arrival sound for, one list for each account that signs in on it, filed under a scrambled tag rather than your Discord ID, so that none is shown or sounded twice. If you play the daily games, it keeps your progress through the day and your running totals, marked with your account's scrambled leaderboard stand-in (never your Discord ID), so that on a shared browser one player's day is never shown to another. If you sign in, it also keeps a note of which completed and saved mazes came from your account and which changes are still waiting to reach it, with each waiting change marked with the Discord ID of the account it was made under, so that a change is never sent to somebody else's account on a shared browser. While you're signed in, it also keeps your account's scrambled leaderboard stand-in, so that other tabs you have open notice when you sign in or out; it is cleared when you sign out. If you have played Fallin' Furni, it also remembers your room and avatar there, including any Habbo Origins name you typed into the game and the hotel you picked for it, and whether you turned its window's lights off, enlarged it, muted its music or sounds, or set its volume. If you are one of Fallin' Furni's beta testers, it also keeps, for that tab alone, a note that the game has let you in, so that reloading the page does not ask our server again; it goes when the tab is closed. If you have played Pura Panic, it remembers whether you turned the lights off and whether you muted its music; if you played it signed out, it also keeps the Habbo you proved as yours — its name, its hotel and the token from us that proves it — or that you chose to play as a Guest Rat, with your Guest Rat number and its token once you have one, and, while you are proving a Habbo, the code you were given for your motto and the name it is for; each of these guests is also given a random id, made in your browser and never sent to us. If you leave a game of Pura Panic part-way, it keeps that game — where each piece came to rest, its score, level and time so far, its token and, if you were signed in, your Discord ID, or if not, the random id of the guest who left it, so that it is offered back only to the same account or guest — so that you can continue it once within a day; it is removed when you continue it, when you finish or start another game, or when the day is up. If a game you started signed in finishes after you have been signed out — in another tab, or because your session ran out — the game asks whether to sign in again, save it as a guest or not save it at all, and while you decide it keeps that finished game — where each piece came to rest, how long it lasted and its token, which names the account it was started under — for up to three hours, so that it can still be sent when you are back; it is removed once it has been sent, when you choose not to save it, or when the three hours are up. \"Not you?\" on the game's first screen removes the remembered Habbo and its token, the Guest Rat number and its token, any motto code in waiting, and a game that guest left part-way. If a block that closes the whole site applies to you, it keeps the note of when the block ends and the reason given, described under Blocking accounts and networks below. For the site's seasonal decorations (at Halloween and Christmas), it keeps a copy of which decoration is on and when, so the page is decorated from the moment it loads, and while a decoration brings its own colour scheme, a note of which one and until when; and if you play the bat game hidden in the Halloween decoration, it keeps your best score, which stays on your device and is not sent to us. In December, signed in, it also keeps a copy of which of this year's advent calendar doors you have opened, marked with your account's scrambled leaderboard stand-in (never your Discord ID), so that the calendar's button can show whether a door is waiting before our server answers; the doors themselves are kept against your account, as described under What your account holds above. Signing in with Discord sets a cookie for ten minutes while you approve it, holding only a random value that lets us check the sign-in you come back with is the one you started; it is removed once you are back. After that, a session cookie lets the site know it is still you: it is marked HttpOnly, which means the page's own scripts cannot read it, it holds nothing but your Discord ID, username, display name and avatar, your nickname if you have chosen one, whether you have been offered one yet, and a version number that lets 'Sign out on every device' end it, and it expires after thirty days. For signed-in administrators there is also an admin session token, along with a few of the admin panel's own conveniences — which of its pages was open last, which of its sections are folded, and unsaved drafts and previews of their own work. None of it is used to follow you across other websites, none of it is sold or shared, and clearing your browser data removes all of it."
-    },
-    {
-        heading: "Who else handles it.",
-        body: "We do not sell, rent, trade or share your personal information, and there is no advertising on this site. A small number of companies necessarily handle it in the course of running the site, and these are all of the ones we send it to. Netlify hosts the site, runs the code behind it and stores the pictures. MongoDB Atlas is the database that everything described above is kept in. Resend delivers a single notification email to us when you send a message through the Contact Us form or through Add Maze Info, carrying what you wrote, whatever name you put on it and, if you were signed in when you sent it, your Discord display name, username and ID, so that it is read rather than left sitting in a database. Umami collects the aggregate traffic figures described above. Discord holds your own account and tells us the profile described above when you choose to sign in — signing in sends you to Discord to approve it, which means Discord knows you signed in here; we send them nothing about you beyond the request itself, and no information about you travels the other way except that profile. OriginsBot (api.originsbot.online) is sent your Discord user ID when you sign in, as described under Signing in with Discord, and tells us the Habbo Origins name and hotel linked to it, if there is one; it is sent nothing else about you. Habbo Origins (origins.habbo.com, and its Spanish and Brazilian hotels) is asked by our server for the public profile of the Habbo name OriginsBot linked to your account, or of a Habbo with the same name as your nickname, to show on your profile and to check a verification code in its motto; it is sent that Habbo name and nothing else about you. In the same way, when you play Pura Panic signed out as your Habbo, it is asked whether a Habbo exists with the name you type, on the hotel you pick, and then for that Habbo's motto, to check the code in it; it is sent that name and nothing else about you, and we keep a copy only of the Habbo it finds. It is also asked by our server whether a Habbo exists with a name somebody types into the profile search, on each of its three hotels, so that any Habbo can be looked up; it is sent the name typed and nothing about who typed it, and we keep a copy only of the Habbos it finds, deleted 90 days after Habbo Origins was last asked about one (a copy of a Habbo credited in the archive is kept for good instead, and of one linked to a player's account, or matched to their nickname, until that account is deleted, since that copy is what is shown when Habbo Origins does not answer). Habbo's imaging service (habbo.com) is asked by our server for that Habbo's avatar picture, which we redraw in outline for your profile and for your head on the leaderboards; it is sent the avatar's look (the code describing its clothes and colours) and nothing else. Each of these is used for the one job named here and for nothing else."
-    },
-    {
-        heading: "What your browser fetches from elsewhere.",
-        body: "Some of what you see on the site is loaded by your browser straight from other companies' servers rather than from ours. When it does, that server receives your IP address and the ordinary details every web request carries — your browser and operating system, your language, the time, and which page asked for it — exactly as it would if you visited it yourself; we send it nothing else about you, and what it does with those details is covered by its own privacy policy, not this one. Google Fonts (fonts.googleapis.com and fonts.gstatic.com) supplies the site's typefaces, on every page. Habbo's own servers (habbo.com, through its habbo-imaging service) draw the Habbo avatars on the builders' and hosts' cards and your avatar in Fallin' Furni (the avatars on profiles and the heads on the leaderboards are fetched by our server instead, as described under Who else handles it, so your browser does not contact Habbo for those), and when an event shows the Habbo news article it comes from, the pictures inside that article are loaded from Habbo's servers too (origins.habbo.com and images.habbo.com). FurniIndex (api.furniindex.com) supplies the pictures and icons of Habbo furni that some pages and games show; the few it no longer has are copies kept on this site. Those three — Google Fonts, Habbo and FurniIndex, at the addresses named here — and Umami's analytics script described above, are all of them."
-    },
-    {
-        heading: "What's public on the leaderboards.",
-        body: "If you are signed in, have chosen a nickname and play, the leaderboards show that nickname with your scores; a player with no nickname is left off them altogether, and their Discord name is never shown there instead. A Fallin' Furni best run of yours is still kept while you have no nickname, under your Discord display name, but it is on neither of that game's boards, and the name is not shown, until you choose one. Beside the name is the head of your Habbo, in outline, if one is linked to your account and the site has already looked your Habbo up for your profile; otherwise a plain disc. Your Discord avatar is never shown beside it, or anywhere else on the site. A Fallin' Furni leaderboard entry also keeps which Origins hotel (the English, Spanish or Brazilian one) the habbo you played as was on, though never the Habbo name itself, and the hotel is not shown on the board. The leaderboards never show your Discord ID or username: each row carries a scrambled stand-in for your account that only this site can work out, which is how the page picks out your own row. Nicknames are checked against the site's word filter, and one that trips it is flagged for the administrators to review; an administrator may ask you to choose a different nickname, or change or remove it, as described under Signing in with Discord above. If an administrator asks you to choose a different nickname, you can keep browsing the site, but the games stay closed to you until you choose one. Pura Panic's leaderboard also shows players who are not signed in, under the Habbo they proved as theirs, with its head, or as a numbered Guest Rat, as described under Playing Pura Panic above; it never shows the hotel."
-    },
-    /* Profiles (3 Oct 2026): netlify/functions/profiles.js decides what a
-       profile shows and who is found by search. Change one, change both. */
-    {
-        heading: "What's public on your profile.",
-        body: "If you are signed in, you have a profile. Nobody else can see it until the site has shown you what a profile is — when you first sign in, it opens the console's Profile page for you; if you signed in before profiles existed, a message tells you about them on your next visit — or until you choose to show it yourself from that page. Until then, if your Habbo Origins account is linked through OriginsBot, someone searching for that Habbo name sees your Habbo as Habbo itself shows it, the month you first signed in, and that you have not activated your profile yet, and nothing else. From then on, anyone visiting the site, signed in or not, can find it by searching for your nickname, or for your Habbo if one is linked to your account. Your Discord name is never shown on it and never finds it: without a nickname, your profile is called simply \"A Maze Rat\" and is found only by your Habbo. Your profile shows that name, the month you first signed in, which mazes you have marked as completed and what they add up to (how many, by difficulty, the toughest and the most recent), the badges you have earned, the favourite maze and featured badge you have chosen, your daily game streaks, days played, points and places, your best Fallin' Furni run, your best Pura Panic game once you have played it, and how many things you sent through Add Maze Info were accepted. If a Habbo Origins account is linked to yours — through OriginsBot, by the check described next, or by an administrator — it also shows your Habbo's name, avatar, motto and whether it is online, which Habbo itself shows to anyone. If none is, but you have a nickname, we look for a Habbo with exactly that name on Habbo Origins and, if there is one, show its name, avatar and motto on your profile marked \"Not verified\", never whether it is online, and keep its name and hotel with your account; your profile shows no badges until it is verified, and its avatar and motto never go on a Mazer Card. A Habbo linked to another player is never matched to you this way, nor is one an administrator has unlinked from you: we keep the name and hotel of up to ten such Habbos with your account so that they are not matched again. You can verify it from the console's Profile page by putting a short code we give you in your Habbo motto, which we then read from Habbo Origins (the code works for half an hour, and is removed from your account the next time your profile is opened or checked after that), or tell us it is not yours, and it is taken off your profile and not suggested again for that nickname (its name and hotel stay with your account, marked as not yours, for that reason). The site's administrators can also confirm it as yours or turn it down, and can link a Habbo to your account, or unlink one, themselves. The site can leave you a notification in the Habbo Console (for example, that an event entry you sent while signed in has been approved, or a message from the administrators to everyone or to particular players); we keep which notifications you have read, and which you have deleted from your list, with your account, so that they are the same on every device you sign in on. Signed out, your browser keeps those lists instead. A motto with a word in it that the site's filter does not allow is not shown (and cannot go on a Mazer Card); we keep a note of that motto, the word and when it was caught with your account, so that an administrator can look at it and either approve it, which shows that exact motto again, or keep it hidden. Three badges are worked out from that Habbo name: Contributor, when it is on the site's Contributors list (or an Add Maze Info submission of yours was accepted), and Maze Owner and Event Host, when it is credited as the builder of a maze or the host of an event in the archive; we look these up from Habbo Origins when your profile is opened or turns up in a search, and keep a copy, which is looked up again once it is more than half an hour old (and shown as it was if Habbo Origins does not answer). Your profile never shows your Discord avatar, username or ID, or your To do list. You can hide your profile at any time from the console's Profile page: a hidden profile does not appear in search and cannot be opened by anyone but you, and a search for your Habbo name shows your Habbo exactly as it would for somebody who has never signed in here, though your name and scores stay on the leaderboards as described above. Profiles of blocked Discord accounts are not shown, and a search for their Habbo shows it as it would for somebody who has never signed in here."
-    },
-    /* Moderation (29 Sept 2026): the bans netlify/functions/_bans.js
-       enforces, and the network code discord-auth.js stores. Change one,
-       change both. */
-    {
-        heading: "Blocking accounts and networks.",
-        body: "To deal with abuse, the site's administrators can block a Discord account, an internet connection or network (by its IP address or the block of addresses it belongs to), or the network a signed-in account was last used from (by the scrambled code described under Signing in with Discord above), either permanently or for a set time, after which the block ends by itself. A block either stops everything but reading — signing in, playing the games and appearing on the leaderboards, choosing a nickname, and sending messages or Add Maze Info — or closes the whole site, apart from this privacy policy. While a block that closes the whole site applies, your browser keeps a note of when it ends and the reason given, so that every page can stay closed to you without asking our server each time; the note is removed when the block ends or is lifted. The site checks your account and your connection against the list of blocks each time you use it, to tell whether a block applies to you, and the page is told whether it does and until when. A block records what it is on, how long it lasts, the reason given (which may be shown to you with the block) and which administrator made it; the list is only ever seen by the administrators. A block that has ended is deleted automatically a week later, and one that is lifted is deleted at once; making, changing or lifting a block is noted in the site's admin log, kept for 90 days, with what it was on and the administrator who did it. Separately from blocks, so that no one connection can overload the site, our server counts how many requests each connection makes in a minute and asks one that makes far more than a person browsing could to wait a moment. For that count the connection is kept only as a one-way scrambled code that changes every day, never as its address, and each count is deleted automatically two minutes after it starts; the administrators see only how many times the limit was reached, and on which parts of the site, never by whom."
-    },
-    {
-        heading: "Data rights and contact.",
-        body: "Signing out clears your session immediately, and Sign out on every device ends it on all of them at once; you can withdraw this site's access at any time from Discord's own Authorised Apps settings without asking us. To have the account itself deleted — your profile, your scores, your leaderboard entries, your Fallin' Furni run records, your Pura Panic game records, your completed mazes and the advent calendar doors you have opened, permanently and in full — or to review or remove any stored contact data, send a message through the Contact Us form and your request will be processed promptly. If you played Pura Panic without signing in, as your Habbo or as a Guest Rat, there is no account to delete, but you can ask in the same way for that leaderboard row and those game records to be removed. The one exception is a block: a block on your account, or on a network you used, stays in force after your account is deleted, until it ends or an administrator lifts it, because otherwise anybody blocked for abuse could undo the block simply by asking to be forgotten. A block on your Discord account keeps your Discord ID, since that is what it is on; a block on the network your account was last used from keeps only the scrambled network code, and the link to your account is removed from it. Two other things outlast a deletion. The request itself is noted in the site's admin log by your Discord ID, as the administrators' nickname actions are, and that log keeps each entry for 90 days, so your ID can stay there for up to 90 days after the rest of your account has gone. And if you have been credited as a contributor — on the Contributors page under the console's Source tab, or for a Missing Pieces lead that was accepted — that credit stays, because it is public attribution that the administrators look after rather than part of your account; ask through the Contact Us form and it will be removed."
-    },
-    /* Who is answerable for all of the above, and when it last changed
-       (29 Sept 2026). The name is the one the site already goes by
-       everywhere else — the builder credits, The Little Maze, the event
-       host's card — and the date is written out here rather than left to
-       privacy.html's own "last revised" line, because the console's copy
+    /* Who is answerable for all of the above, and when it last changed. The
+       date is here rather than in privacy.html, because the console's copy
        and the landing page's modal show only these sections. */
     {
         heading: "Who runs this site.",
-        body: "Maze Rats is run by ChrisYepYep, who is responsible for the information described in this policy. Last updated: 30 October 2026."
+        points: [
+            "Maze Rats is run by ChrisYepYep, who is responsible for everything in this policy.",
+            "Last updated: 30 October 2026."
+        ]
     }
 ];
 
-/* Fills a container with the policy: one .console-blurb per section, with a
-   .console-hashline rule between each pair (not after the last). Built from
-   DOM nodes rather than an innerHTML string so the copy above never has to
-   be HTML-escaped by hand.
-
-   Both callers pass a container that already sits inside console-styled
-   chrome, so the classes are the console's own either way.
-
-   EVERY EM DASH IS BORROWED FROM ROBOTO. Inside the homepage console this
-   text is set in Volter Goldfish, which draws U+2014 as a PICTURE — a
-   musical note (see PICTURE_GLYPHS in js/site.js) — so the policy's
-   asides, and there are dozens, were each punctuated with a little note.
-   The dashes are right (see HOUSE STYLE above), and the policy is shared
-   with privacy.html, which is not in Volter at all, so the words stay as
-   they are and just that one character changes face: the same trick
-   .row-date-dot and .timeline-sep use. On the landing page's modal, which
-   is not Volter either, the span is harmless. */
-function appendPrivacyText(parent, text) {
-    const parts = String(text).split("—");
-    parts.forEach((part, i) => {
-        if (i > 0) {
-            const dash = document.createElement("span");
-            dash.className = "console-dash";
-            dash.textContent = "—";
-            parent.appendChild(dash);
-        }
-        if (part) parent.appendChild(document.createTextNode(part));
+function pointList(points, className) {
+    const ul = document.createElement("ul");
+    ul.className = className;
+    points.forEach(text => {
+        const li = document.createElement("li");
+        li.textContent = text;
+        ul.appendChild(li);
     });
+    return ul;
 }
 
+/* Fills a container with the policy for the two console-styled views: each
+   section's heading as a .console-blurb, its points as a list, and a
+   .console-hashline rule between sections (not after the last). Built from
+   DOM nodes rather than an innerHTML string so the copy above never has to
+   be HTML-escaped by hand. */
 function renderPrivacySections(container) {
     if (!container) return;
     container.innerHTML = "";
@@ -162,26 +226,18 @@ function renderPrivacySections(container) {
             container.appendChild(rule);
         }
         const p = document.createElement("p");
-        p.className = "console-blurb";
+        p.className = "console-blurb console-privacy-head";
         const strong = document.createElement("strong");
         strong.textContent = section.heading;
         p.appendChild(strong);
-        appendPrivacyText(p, " " + section.body);
         container.appendChild(p);
+        container.appendChild(pointList(section.points, "console-privacy-list"));
     });
 }
 
-/* The same policy as an ordinary document, for privacy.html.
-
-   A separate renderer rather than a flag on the one above, because the two
-   want genuinely different markup: the console version is a run of styled
-   paragraphs inside chrome that already supplies the heading, while this is
-   a standalone legal page and its sections need to be real headings a
-   screen reader, a search engine and a print stylesheet can all navigate by.
-
-   The wording is shared, which is the whole point — the console page and
-   this page cannot drift apart, because there is only one copy of the
-   words. */
+/* The same policy as an ordinary document, for privacy.html: real headings
+   that a screen reader, a search engine and a print stylesheet can all
+   navigate by. The wording is shared, so the pages cannot drift apart. */
 function renderPrivacyDocument(container) {
     if (!container) return;
     container.innerHTML = "";
@@ -191,13 +247,10 @@ function renderPrivacyDocument(container) {
 
         const h = document.createElement("h2");
         // The stored headings end in a full stop, which reads correctly as a
-        // lead-in to a paragraph and wrongly as a heading of its own.
+        // lead-in in the console and wrongly as a heading of its own.
         h.textContent = section.heading.replace(/\.\s*$/, "");
         sec.appendChild(h);
-
-        const p = document.createElement("p");
-        p.textContent = section.body;
-        sec.appendChild(p);
+        sec.appendChild(pointList(section.points, "legal-list"));
 
         container.appendChild(sec);
     });

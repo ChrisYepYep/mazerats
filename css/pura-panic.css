@@ -233,6 +233,14 @@ html[data-game-front="scout"] #rr-overlay { z-index: 92; }
 @media (prefers-reduced-motion: reduce) {
     .pura-banner.is-on { animation: none; opacity: 1; }
 }
+/* "Waiting for the server…" in the banner's place while the next pieces
+   are on their way (31 Oct 2026; DEALT in js/pura-panic.js): still, and
+   smaller than a level, since it is a note and not news. */
+.pura-banner--wait {
+    opacity: 1;
+    font-size: 0.75rem;
+    letter-spacing: 0;
+}
 
 /* ---- BETA, on the grip at the left: the close box's size and height on
    the right, mirrored. Its colours are set by js/pura-panic.js from the

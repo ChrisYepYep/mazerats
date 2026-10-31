@@ -50,6 +50,7 @@
     }
 
     let saved = null;      // the layout as stored (null: the menu as written)
+    let savedAt = "";      // its menuLayoutAt, sent back on Save as menuLayoutBase (31 Oct 2026)
     let draft = null;      // the layout being edited, always whole
     let loaded = false;
     let saving = false;
@@ -343,6 +344,7 @@
             if (!res.ok) throw new Error("settings " + res.status);
             const s = await res.json();
             saved = s.menuLayout || null;
+            savedAt = typeof s.menuLayoutAt === "string" ? s.menuLayoutAt : "";
             draft = whole(saved);
             loaded = true;
             say("");
@@ -360,19 +362,48 @@
         paint();
         say("Saving…");
         try {
-            const s = await Api.updateSiteSettings(t, { menuLayout: layout });
+            const s = await Api.updateSiteSettings(t, { menuLayout: layout, menuLayoutBase: savedAt });
             saved = s && "menuLayout" in s ? s.menuLayout : layout;
+            if (s && typeof s.menuLayoutAt === "string") savedAt = s.menuLayoutAt;
             draft = whole(saved);
             saving = false;
             say(done);
         } catch (e) {
             saving = false;
+            if (e && e.status === 409 && e.data && typeof e.data === "object") {
+                await conflict(e.data);
+                return;
+            }
             if (e && e.status === 401) {
                 say("Not saved: your session had expired. Sign in, then try again.", true);
                 if (typeof window.AdminLockOut === "function") window.AdminLockOut();
             } else {
                 say((e && e.message) || "Couldn't save the menu. Try again.", true);
             }
+        }
+        paint();
+    }
+
+    /* SOMEONE ELSE SAVED FIRST (31 Oct 2026, the bug scan): another admin,
+       or this one in another tab, saved the menu after this page read it,
+       and settings.js refused to save over it unseen (409, with the layout
+       now stored). Yes takes theirs and drops this draft; No keeps the draft
+       and takes their stamp, so pressing Save again puts this one live over
+       theirs, knowingly. Either way the stored layout is what `saved` is. */
+    async function conflict(data) {
+        saved = data.menuLayout || null;
+        savedAt = typeof data.menuLayoutAt === "string" ? data.menuLayoutAt : "";
+        paint();
+        const ask = window.AdminConfirm
+            ? window.AdminConfirm("Someone else (or you, in another tab) has saved the homepage menu since you opened this page, so yours was not saved.<br><br>Load their menu instead? Your changes here will be thrown away. Press No to keep your changes; Save then puts yours live over theirs.")
+            : Promise.resolve(false);
+        if (await ask) {
+            draft = whole(saved);
+            say("Their menu is loaded. This is what visitors see now.");
+        } else {
+            say(changed()
+                ? "Not saved: someone else changed the menu first. Press Save again to put yours live over theirs, or Discard to take theirs."
+                : "Someone else had already saved the same layout as yours, so there is nothing to save.", changed());
         }
         paint();
     }
@@ -399,12 +430,29 @@
             say("");
             paint();
         });
-        $("menu-layout-reset").addEventListener("click", () => {
-            if (!window.confirm("Put the homepage menu back as it was built? Every row shown, in its own place, and both folds shut. You can still Discard before saving.")) return;
+        $("menu-layout-reset").addEventListener("click", async () => {
+            /* The Warren's own Yes/No box (31 Oct 2026, the bug scan), as
+               everywhere else since the native ones went on 30 Sept; the
+               browser's confirm() only if js/admin.js hasn't given it. */
+            const msg = "Put the homepage menu back as it was built? Every row shown, in its own place, and both folds shut. You can still Discard before saving.";
+            if (!(await (window.AdminConfirm ? window.AdminConfirm(msg) : Promise.resolve(window.confirm(msg))))) return;
             draft = whole(null);
             say("Back as built. Press Save to put it live.");
             paint();
         });
+        /* The role is known only once someone has signed in (30 Oct 2026, the
+           bug scan): the settings read usually lands first, and the card was
+           painted for the page's default role, so a view-only account found
+           every select, arrow and handle live (the Save then refused). Painted
+           again when js/admin.js puts body.is-viewer on or takes it off, as
+           js/admin-skin.js does. */
+        let viewer = document.body.classList.contains("is-viewer");
+        new MutationObserver(() => {
+            const now = document.body.classList.contains("is-viewer");
+            if (now === viewer) return;
+            viewer = now;
+            paint();
+        }).observe(document.body, { attributes: true, attributeFilter: ["class"] });
         load();
     });
 })();

@@ -152,7 +152,7 @@ document.addEventListener("DOMContentLoaded", () => {
         },
         {
             title: "No Alt code",
-            note: "Above U+00FF — click to insert or copy",
+            note: "Above U+00FF: click to insert or copy",
             items: [
                 [0x0131, null, null],
                 [0x02C7, null, null],
@@ -224,7 +224,7 @@ document.addEventListener("DOMContentLoaded", () => {
     function copy(ch) {
         if (navigator.clipboard && navigator.clipboard.writeText) {
             navigator.clipboard.writeText(ch).then(
-                () => say("Copied — paste it in"),
+                () => say("Copied. Paste it in"),
                 () => say("Click a text field first")
             );
         } else {
@@ -279,7 +279,7 @@ document.addEventListener("DOMContentLoaded", () => {
         g.items.forEach(([code, alt, name]) => {
             const ch = String.fromCodePoint(code);
             const hex = "U+" + code.toString(16).toUpperCase().padStart(4, "0");
-            const label = (name ? name + " — " : "") + (alt !== null ? "Alt+0" + alt : hex);
+            const label = (name ? name + ": " : "") + (alt !== null ? "Alt+0" + alt : hex);
             const btn = document.createElement("button");
             btn.type = "button";
             btn.className = "glyph-btn";
@@ -323,7 +323,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 }
                 if (!ink) {
                     btn.classList.add("is-blank");
-                    btn.title = btn.title + " — draws nothing";
+                    btn.title = btn.title + " (draws nothing)";
                 }
             });
         }, () => { /* no font, no flags: the buttons still insert */ });
