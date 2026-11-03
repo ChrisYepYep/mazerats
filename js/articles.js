@@ -327,6 +327,9 @@
         const edited = editedDay(a);
         if (edited) textEl.insertAdjacentHTML("beforeend", `<p class="art-updated">Updated: ${esc(edited)}</p>`);
         if (window.ArticleEmbeds) window.ArticleEmbeds.hydrate(textEl, drawCtx);
+        // Justified if it was written so; side pictures cut to whole lines (ArticleText.fitPictures).
+        textEl.classList.toggle("is-justified", a.justify === true);
+        ArticleText.fitPictures(textEl);
         descBox.scrollTop = 0;
         say("");
     }

@@ -1402,15 +1402,19 @@ document.addEventListener("DOMContentLoaded", () => {
         // aria-pressed beside .active for the same reason as the sub-nav's
         // (see renderSubNav), and aria-expanded on Featured Mazes because
         // what it does is open and close the panel beneath it.
+        /* Neither tab, on the opening view (30 Oct 2026) and on What's New,
+           the Timeline and Furni (3 Nov 2026, the owner's: they are not
+           inside Mazes, so they wear the opening view's look: the frame
+           raised over the tabs, the sub-row and search row tucked under it,
+           the frame's own search box at its top; css:
+           #browse-window.is-opening). */
+        const raised = showOpening || showWhatsNew || showTimeline || showFurni || !!furniFilter;
         topNavBtns.forEach(btn => {
-            // Neither, on the opening view (30 Oct 2026).
-            const on = !showOpening && btn.dataset.top === topView;
+            const on = !raised && btn.dataset.top === topView;
             btn.classList.toggle("active", on);
             btn.setAttribute("aria-pressed", on ? "true" : "false");
         });
-        // The frame raised over the tabs, the sub-row and search row tucked
-        // under it (css: #browse-window.is-opening).
-        if (browseWindow) browseWindow.classList.toggle("is-opening", showOpening);
+        if (browseWindow) browseWindow.classList.toggle("is-opening", raised);
         // The frame's own search box says what is being searched, unless
         // it is the one being typed in.
         if (openingInput && openingInput.value !== query && document.activeElement !== openingInput) openingInput.value = query;
@@ -9996,6 +10000,14 @@ document.addEventListener("DOMContentLoaded", () => {
         openingInput.addEventListener("input", e => {
             query = e.target.value;
             searchInput.value = query;
+            /* The same box over What's New, the Timeline and Furni (3 Nov
+               2026): what is typed searches the archive as it does on the
+               opening view, so it goes there. */
+            if (query.trim() && (showWhatsNew || showTimeline || showFurni || furniFilter)) {
+                showWhatsNew = showTimeline = showFurni = false;
+                furniFilter = null;
+                showOpening = true;
+            }
             if (query.trim()) noteSearch();
             searchTyping = true;
             try { render(); } finally { searchTyping = false; }

@@ -206,6 +206,7 @@
             thumb: a ? a.thumb || "" : "",
             gallery: a && Array.isArray(a.gallery) ? a.gallery.map(g => ({ image: g.image || "", caption: g.caption || "" })) : [],
             body: a ? a.body || "" : "",
+            justify: !!(a && a.justify === true),
             embedData: a && a.embedData && typeof a.embedData === "object" ? JSON.parse(JSON.stringify(a.embedData)) : {},
             wn: { day: wn.day || "", title: wn.title || "", text: wn.text || "", badge: wn.badge || "", badgeText: wn.badgeText || "", hidden: wn.hidden === true, image: wn.image || "" }
         };
@@ -268,7 +269,7 @@
     function picHtml(which, src, emptyWords) {
         return `
             <div class="guides-pic art-pic" data-pic="${which}">
-                ${src ? `<img src="${esc(src)}" alt="">` : `<span class="guides-pic-empty">${esc(emptyWords || "No picture")}</span>`}
+                ${src ? `<img src="${esc(src)}" alt="">` : `<span class="guides-pic-empty">${esc(emptyWords || "No picture: drop one here")}</span>`}
                 <div class="guides-pic-actions">
                     <label class="admin-action-pill guides-pic-upload">${src ? "Replace" : "Upload picture"}
                         <input type="file" class="admin-gallery-thumb-file" accept="image/png,image/jpeg,image/gif,image/webp" data-upload="${which}">
@@ -296,11 +297,14 @@
         bullets: ["Bullets", "Bulleted list"],
         numbers: ["Numbers", "Numbered list"],
         picture: ["Picture", "Picture: upload one and put it here, at the caret, with a caption under it"],
+        alignleft: ["Align left", "Align left: the picture the caret is on to the left, the text beside it (again for the full width)"],
+        alignright: ["Align right", "Align right: the picture the caret is on to the right, the text beside it (again for the full width)"],
+        justify: ["Justify", "Justify: the whole article's text with both edges straight (press again to turn it off)"],
         clear: ["Clear", "Clear formatting from the selection, or from the current line"]
     };
     const BAR = ["bold", "italic", "underline", "strike", "|", "heading", "subheading", "quote", "blockquote", "divider",
-        "|", "link", "bullets", "numbers", "|", "picture"];
-    const FORMAT_HELP = `Text format: a blank line starts a new paragraph · **bold** · *italic* · __underline__ · ~~crossed out~~ · "## " a heading and "### " a subheading (own line) · "---" a divider · "- " a bullet · "1. " a numbered list · "> " a tip box · ">> " a quote · [words](https://...) links out · [words](maze:id), (event:id), (guide:id) or (article:id) link inside the site · a picture is a line of its own, ![its caption](its address), which the Picture button writes for you.`;
+        "|", "link", "bullets", "numbers", "|", "picture", "alignleft", "alignright", "|", "justify"];
+    const FORMAT_HELP = `Text format: a blank line starts a new paragraph · **bold** · *italic* · __underline__ · ~~crossed out~~ · "## " a heading and "### " a subheading (own line) · "---" a divider · "- " a bullet · "1. " a numbered list · "> " a tip box · ">> " a quote · [words](https://...) links out · [words](maze:id), (event:id), (guide:id) or (article:id) link inside the site · a picture is a line of its own, ![its caption](its address), which the Picture button (or dropping a picture file on the text) writes for you; {left} or {right} at its end (the Align buttons) sets it to that side with the text beside it.`;
 
     function barHtml() {
         const embeds = window.ArticleEmbeds ? window.ArticleEmbeds.buttons() : [];
@@ -314,7 +318,9 @@
                 face = esc(b.label || k.slice(6));
                 title = esc(b.title || b.label || k.slice(6));
             } else { [face, title] = BUTTONS[k]; }
-            return `<button type="button" class="admin-pill-btn admin-fmt-btn" data-fmt="${esc(k)}" tabindex="${i === first ? 0 : -1}" title="${title}" aria-label="${title}">${face}</button>`;
+            // Justify is a switch for the whole article, so it says whether it is on.
+            const on = k === "justify" ? ` aria-pressed="${editing && editing.justify ? "true" : "false"}"` : "";
+            return `<button type="button" class="admin-pill-btn admin-fmt-btn" data-fmt="${esc(k)}"${on} tabindex="${i === first ? 0 : -1}" title="${title}" aria-label="${title}">${face}</button>`;
         }).join("");
     }
 
@@ -334,7 +340,7 @@
                 </div>
             </div>`).join("");
         return `
-            <div class="admin-gallery-list art-gallery-list">${rows || `<p class="admin-empty">No pictures yet. The thumbnail shows at the top until there are some.</p>`}</div>
+            <div class="admin-gallery-list art-gallery-list">${rows || `<p class="admin-empty">No pictures yet: drop them here or use Add pictures. The thumbnail shows at the top until there are some.</p>`}</div>
             <div class="art-gallery-add">
                 <label class="admin-action-pill guides-pic-upload">Add pictures
                     <input type="file" class="admin-gallery-thumb-file" accept="image/png,image/jpeg,image/gif,image/webp" multiple data-upload="gallery">
@@ -455,6 +461,8 @@
         wrap.hidden = !ta.value.trim();
         live.innerHTML = wrap.hidden ? "" : ArticleText.render(ta.value, { level: 4, pictureAlt: "A picture in this article" });
         if (window.ArticleEmbeds) window.ArticleEmbeds.hydrate(live, { article: editing, embedData: editing && editing.embedData, preview: true });
+        live.classList.toggle("is-justified", !!(editing && editing.justify));
+        ArticleText.fitPictures(live);
     }
 
     /* A change to the text from a button, as js/admin.js's applyFormat
@@ -549,6 +557,26 @@
             return;
         }
         if (kind.startsWith("embed:")) { runEmbedButton(kind.slice(6)); return; }
+        // The whole text justified or not: saved with the article as justify.
+        if (kind === "justify") {
+            if (!editing) return;
+            editing.justify = !editing.justify;
+            const b = formEl.querySelector('[data-fmt="justify"]');
+            if (b) b.setAttribute("aria-pressed", editing.justify ? "true" : "false");
+            refreshLive();
+            return;
+        }
+        // The picture line the caret is on, to a side and back (ArticleText.alignPicture).
+        if (kind === "alignleft" || kind === "alignright") {
+            const ta = bodyBox();
+            const s = formEl.querySelector('[data-pic-status="body"]');
+            if (!ta) return;
+            const r = ArticleText.alignPicture(ta.value, ta.selectionStart, kind === "alignleft" ? "left" : "right");
+            if (!r) { if (s) s.textContent = "Put the caret on a picture's line first, then press Align."; return; }
+            putText(ta, r.text, r.start, r.end);
+            if (s) s.textContent = r.align ? `Picture set to the ${r.align}, the text beside it.` : "Picture back to the full width.";
+            return;
+        }
         applyFormat(kind);
     }
 
@@ -729,6 +757,70 @@
         }
     });
 
+    /* DROPPING PICTURES IN (3 Nov 2026, the owner's): picture files dragged
+       from the computer onto the thumbnail, the What's New picture, the
+       gallery or the text go up as the Upload buttons' would. Into the
+       text each goes in at the caret, as the Picture button's does. While
+       files are dragged over the form every place that takes them is
+       outlined, the one under the pointer lit; a drop anywhere else in the
+       form is caught rather than opening the picture in the tab. The
+       gallery's own reordering drags carry no files and pass by. */
+    const PIC_TYPES = /^image\/(png|jpeg|gif|webp)$/;
+    const hasFiles = e => !!(e.dataTransfer && Array.from(e.dataTransfer.types || []).includes("Files"));
+    function dropSpot(t) {
+        if (!t || !t.closest) return null;
+        const pic = t.closest(".art-pic[data-pic]");
+        if (pic) return { el: pic, which: pic.dataset.pic };
+        const gal = t.closest(".art-gallery-list, .art-gallery-add");
+        if (gal) return { el: formEl.querySelector(".art-gallery-list") || gal, which: "gallery" };
+        const body = t.closest("textarea[data-a='body']");
+        if (body) return { el: body, which: "body" };
+        return null;
+    }
+    let dragDepth = 0;
+    const clearDrag = () => {
+        dragDepth = 0;
+        formEl.classList.remove("is-dragging-files");
+        formEl.querySelectorAll(".is-drop-target").forEach(x => x.classList.remove("is-drop-target"));
+    };
+    formEl.addEventListener("dragenter", e => {
+        if (!editing || !hasFiles(e)) return;
+        dragDepth++;
+        formEl.classList.add("is-dragging-files");
+    });
+    formEl.addEventListener("dragleave", e => {
+        if (!hasFiles(e)) return;
+        if (--dragDepth <= 0) clearDrag();
+    });
+    formEl.addEventListener("dragover", e => {
+        if (!editing || !hasFiles(e)) return;
+        e.preventDefault();
+        const spot = dropSpot(e.target);
+        e.dataTransfer.dropEffect = spot ? "copy" : "none";
+        formEl.querySelectorAll(".is-drop-target").forEach(x => { if (!spot || x !== spot.el) x.classList.remove("is-drop-target"); });
+        if (spot) spot.el.classList.add("is-drop-target");
+    });
+    formEl.addEventListener("drop", e => {
+        if (!hasFiles(e)) return;
+        e.preventDefault();
+        const spot = editing ? dropSpot(e.target) : null;
+        clearDrag();
+        if (!spot) return;
+        const all = Array.from(e.dataTransfer.files || []);
+        const files = all.filter(f => PIC_TYPES.test(f.type))
+            .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: "base" }));
+        const status = formEl.querySelector(`[data-pic-status="${spot.which}"]`);
+        if (!files.length) { if (status) status.textContent = "Only PNG, JPEG, GIF or WebP pictures can go here."; return; }
+        // One picture for the thumbnail and What's New; the gallery and the text take them all, in name order.
+        const batch = spot.which === "thumb" || spot.which === "wn" ? files.slice(0, 1) : files;
+        if (spot.which === "body") spot.el.focus({ preventScroll: true });
+        batch.reduce((p, f) => p.then(() => uploadInto(spot.which, f)), Promise.resolve())
+            .then(() => {
+                const now = formEl.querySelector(`[data-pic-status="${spot.which}"]`);
+                if (now && files.length < all.length) now.textContent += (now.textContent ? " " : "") + `${all.length - files.length} file${all.length - files.length === 1 ? " wasn't a picture" : "s weren't pictures"}, so left out.`;
+            });
+    });
+
     formEl.addEventListener("click", async e => {
         if (!editing) return;
         const t = e.target;
@@ -782,7 +874,7 @@
         if (addressProblem) { showError(addressProblem); return; }
         const body = {
             title: a.title.trim(), summary: a.summary, status: a.status, eventId: a.eventId,
-            thumb: a.thumb, gallery: a.gallery.filter(g => g.image), body: a.body, embedData: a.embedData,
+            thumb: a.thumb, gallery: a.gallery.filter(g => g.image), body: a.body, justify: a.justify === true, embedData: a.embedData,
             wn: { ...a.wn, badgeText: a.wn.badge === "custom" ? a.wn.badgeText.trim() : "" },
             ...spot.fields
         };
@@ -894,7 +986,7 @@
                             <div class="modal-meta">
                                 <div class="modal-meta-items art-meta"><span class="status-badge art-badge">Article</span><span>Published: ${esc(shortDay(day, true))}</span>${evDays ? `<span>Event: ${esc(evDays)}</span>` : ""}${words ? `<span>Reading time: ${Math.max(1, Math.round(words / 200))} min</span>` : ""}${pics.length > 1 ? `<span>${pics.length} pictures</span>` : ""}</div>
                                 <div class="room-desc-panel">
-                                    <div class="room-desc-box"><div class="room-desc-full art-text">${body.innerHTML}${edited ? `<p class="art-updated">Updated: ${esc(edited)}</p>` : ""}</div></div>
+                                    <div class="room-desc-box"><div class="room-desc-full art-text${a.justify ? " is-justified" : ""}">${body.innerHTML}${edited ? `<p class="art-updated">Updated: ${esc(edited)}</p>` : ""}</div></div>
                                     ${stripped ? `<div class="gallery-strip">${topHtml ? '<span class="art-strip-draw active"></span>' : ""}${pics.map((g, i) => `<img src="${esc(g.image)}" alt=""${i === 0 && !topHtml ? ' class="active"' : ""}>`).join("")}</div>` : ""}
                                 </div>
                             </div>
@@ -920,6 +1012,7 @@
             if (!d) return;
             if (window.ArticleEmbeds) {
                 window.ArticleEmbeds.hydrate(d.querySelector(".art-text"), { article: a, embedData: a.embedData, preview: true });
+                ArticleText.fitPictures(d.querySelector(".art-text"));
                 window.ArticleEmbeds.hydrate(d.querySelector(".art-top"), { article: a, embedData: a.embedData, preview: true });
             }
             // Its pictures and fonts load after: fitted again as they do.

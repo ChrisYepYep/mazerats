@@ -561,12 +561,12 @@ body.wr-on > .site-footer { display: none !important; }
     border-color: #444a55;
     color: var(--wr-text);
 }
-#wr-app .wr-ui :is(.admin-pill-btn.active, .admin-wiz-modes button.active, .admin-wiz-modes button[aria-pressed="true"]) {
+#wr-app .wr-ui :is(.admin-pill-btn.active, .admin-fmt-btn[aria-pressed="true"], .admin-wiz-modes button.active, .admin-wiz-modes button[aria-pressed="true"]) {
     background: var(--wr-gold);
     border-color: var(--wr-gold);
     color: var(--wr-gold-ink);
 }
-#wr-app .wr-ui :is(.admin-pill-btn.active, .admin-wiz-modes button.active, .admin-wiz-modes button[aria-pressed="true"]):is(:hover:not([disabled]), :focus-visible) { background: #ffd95f; border-color: #ffd95f; color: var(--wr-gold-ink); }
+#wr-app .wr-ui :is(.admin-pill-btn.active, .admin-fmt-btn[aria-pressed="true"], .admin-wiz-modes button.active, .admin-wiz-modes button[aria-pressed="true"]):is(:hover:not([disabled]), :focus-visible) { background: #ffd95f; border-color: #ffd95f; color: var(--wr-gold-ink); }
 #wr-app .wr-ui .admin-pill-btn.admin-pill-danger { color: var(--wr-red); border-color: rgba(255, 106, 95, 0.45); }
 #wr-app .wr-ui .admin-pill-btn.admin-pill-danger:hover:not([disabled]) { background: #b8473c; border-color: #b8473c; color: #fff; }
 #wr-app .wr-ui :is(.admin-pill-btn, .admin-wiz-zoom-btn, .admin-wiz-modes button)[disabled] { opacity: 0.45; cursor: default; }
@@ -1381,12 +1381,26 @@ body.wr-on #login-modal .admin-form-actions .btn { width: 100%; min-height: 36px
 /* The live preview of the text: the room window's own description styles
    (.room-desc-full), held to a readable height. */
 #wr-app .wr-ui .art-live .admin-fmt-preview { max-height: 460px; overflow-y: auto; }
-#wr-app .wr-ui .art-live .art-figure-img { max-height: 280px; width: auto; }
+#wr-app .wr-ui .art-live .art-figure-img { max-height: 280px; }
 /* The gallery: the maze editor's rows, each picture as its square. */
 #wr-app .wr-ui .art-gallery-list { display: grid; gap: 8px; }
 #wr-app .wr-ui .art-gallery-thumb { width: 64px; height: 48px; background-size: cover; }
 #wr-app .wr-ui .art-gallery-row .admin-gallery-label { flex: 1 1 auto; min-width: 0; }
 #wr-app .wr-ui .art-gallery-add { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 10px; }
+/* Picture files dragged over the form (DROPPING PICTURES IN in
+   js/admin-articles.js): every place that takes them dashed, the one under
+   the pointer lit. */
+#wr-app .wr-ui .art-form.is-dragging-files .art-pic,
+#wr-app .wr-ui .art-form.is-dragging-files .art-gallery-list,
+#wr-app .wr-ui .art-form.is-dragging-files textarea[data-a="body"] {
+    outline: 2px dashed var(--wr-line-2);
+    outline-offset: 3px;
+    border-radius: 6px;
+}
+#wr-app .wr-ui .art-form.is-dragging-files .is-drop-target {
+    outline-color: var(--wr-gold);
+    background-color: rgba(242, 204, 78, 0.08);
+}
 /* The article as the site draws it, at the window's own width. */
 #wr-app .wr-ui .art-preview { margin: 16px 0 0; }
 #wr-app .wr-ui .art-preview-bar { padding: 0 0 8px; }

@@ -15,7 +15,10 @@
                              "articles/" image folder, written as its
                              address: /.netlify/functions/image?key=articles/...
                              The caption may be empty, and takes bold,
-                             italic and links like any line.
+                             italic and links like any line. {left} or
+                             {right} straight after it sets the picture to
+                             that side with the text running beside it
+                             (3 Nov 2026); without, it takes the width.
      {{type name=value ...}} an EMBED: a block drawn by a script of its own
                              (a video, a replay of a prize-wheel draw)
 
@@ -113,7 +116,7 @@
 
     const IMAGE_PREFIX = "/.netlify/functions/image?key=";
     // A picture line: the caption (one line, no "]"), then this site's own upload in "articles/".
-    const PICTURE = /^!\[([^\]\n]{0,300})\]\((\/\.netlify\/functions\/image\?key=(articles\/[A-Za-z0-9._/-]{1,240}))\)$/;
+    const PICTURE = /^!\[([^\]\n]{0,300})\]\((\/\.netlify\/functions\/image\?key=(articles\/[A-Za-z0-9._/-]{1,240}))\)(?:\{(left|right)\})?$/;
     // An embed line, whole. Each value is spaces-free, so a run cannot backtrack into the next.
     const EMBED = /^\{\{([a-z][a-z0-9-]{0,23})((?:[ \t]+[a-z][a-z0-9]{0,23}=[A-Za-z0-9._/:-]{1,240})*)[ \t]*\}\}$/;
     const ATTR = /([a-z][a-z0-9]{0,23})=([A-Za-z0-9._/:-]{1,240})/g;
@@ -124,7 +127,7 @@
     function parsePicture(line) {
         const m = PICTURE.exec(line);
         if (!m || m[3].includes("..")) return null;
-        return { kind: "picture", caption: m[1].trim(), src: m[2], key: m[3] };
+        return { kind: "picture", caption: m[1].trim(), src: m[2], key: m[3], align: m[4] || "" };
     }
     function parseEmbed(line) {
         const m = EMBED.exec(line);
@@ -143,7 +146,7 @@
     /* The body as a list of blocks, in order:
          { kind: "text", text }      GuideText's, rendered as it is
          { kind: "quote", text }     the quote's lines, its ">>" marks off
-         { kind: "picture", caption, src, key }
+         { kind: "picture", caption, src, key, align }   align "", "left" or "right"
          { kind: "embed", type, attrs, ref } */
     function blocks(text) {
         const lines = String(text == null ? "" : text).replace(/\r\n?/g, "\n").split("\n");
@@ -180,7 +183,10 @@
         const caption = b.caption ? `<figcaption class="art-caption">${G.inline(b.caption)}</figcaption>` : "";
         // opts.pictureSrc: the page's own sizing of the picture (the image CDN), given the stored address.
         const src = opts && typeof opts.pictureSrc === "function" ? opts.pictureSrc(b.src) : b.src;
-        return `<figure class="art-figure"><img class="art-figure-img" src="${esc(src)}" alt="${esc(alt)}" loading="lazy" decoding="async">${caption}</figure>`;
+        /* The picture fills its frame, which carries the edge and its light
+           and dark lines over the picture (3 Nov 2026, the owner's). */
+        const side = b.align === "left" || b.align === "right" ? ` art-figure--${b.align}` : "";
+        return `<figure class="art-figure${side}"><span class="art-figure-frame"><img class="art-figure-img" src="${esc(src)}" alt="${esc(alt)}" loading="lazy" decoding="async"></span>${caption}</figure>`;
     }
     function embedHtml(b) {
         const data = Object.keys(b.attrs).map(k => ` data-${k}="${esc(b.attrs[k])}"`).join("");
@@ -208,15 +214,76 @@
         return G.plain(blocks(text).map(b => b.kind === "picture" ? b.caption : b.kind === "embed" ? "" : b.text).join("\n\n"));
     }
 
+    /* SIDE PICTURES END ON A LINE (3 Nov 2026, the owner's: "slightly
+       smaller, not bigger"). A {left} or {right} picture's height is cut to
+       a whole number of the text's lines, caption and gap included, so the
+       text beside it wraps under it with no empty band; the picture is
+       cropped to the frame (object-fit: cover), never stretched past its
+       own shape. Its top meets the paragraph beside it (the css gives it the
+       paragraphs' own 1.6em), and a paragraph's gap is one line, so the
+       lines run on a grid from there. Called once a block of text is in the
+       page, and again by itself as its pictures load, its width changes or
+       the fonts arrive. */
+    function fitPictures(container) {
+        if (!container || typeof container.querySelectorAll !== "function") return;
+        const doc = container.ownerDocument, win = doc && doc.defaultView;
+        if (!win) return;
+        const fit = () => {
+            const lh = parseFloat(win.getComputedStyle(container).lineHeight);
+            if (!(lh > 0)) return;
+            container.querySelectorAll(".art-figure--left, .art-figure--right").forEach(fig => {
+                const img = fig.querySelector(".art-figure-img");
+                const frame = fig.querySelector(".art-figure-frame");
+                if (!img || !frame || !img.naturalWidth || !frame.clientWidth) return;
+                const edges = frame.offsetHeight - frame.clientHeight;     // its two 1px borders
+                const ideal = frame.clientWidth * img.naturalHeight / img.naturalWidth + edges;
+                const cap = fig.querySelector(".art-caption");
+                const capOuter = cap ? cap.getBoundingClientRect().height + (parseFloat(win.getComputedStyle(cap).marginTop) || 0) : 0;
+                const gap = lh * 0.35;
+                const lines = Math.max(2, Math.floor((ideal + capOuter + gap) / lh));
+                const frameH = Math.max(lh, Math.min(ideal, lines * lh - capOuter - gap));
+                img.style.height = (frameH - edges) + "px";
+                fig.style.marginBottom = Math.max(0, lines * lh - frameH - capOuter - 0.5) + "px";
+            });
+        };
+        fit();
+        container.querySelectorAll(".art-figure--left .art-figure-img, .art-figure--right .art-figure-img").forEach(img => {
+            if (!img.complete) img.addEventListener("load", fit, { once: true });
+        });
+        if (!container.__artFit) {
+            container.__artFit = true;
+            if (win.ResizeObserver) new win.ResizeObserver(() => fit()).observe(container);
+            if (doc.fonts && doc.fonts.ready) doc.fonts.ready.then(fit, () => {});
+        }
+    }
+
     const pictures = text => blocks(text).filter(b => b.kind === "picture");
     const embeds = text => blocks(text).filter(b => b.kind === "embed");
 
     /* ---------- for the Warren's formatting bar ---------- */
 
-    // A picture's line, its caption made safe to sit between [ and ].
-    function pictureLine(src, caption) {
+    // A picture's line, its caption made safe to sit between [ and ], and its side if it has one.
+    function pictureLine(src, caption, align) {
         const c = String(caption || "").replace(/[\]\r\n]+/g, " ").replace(/\s+/g, " ").trim().slice(0, CAPTION_MAX);
-        return `![${c}](${src})`;
+        return `![${c}](${src})${align === "left" || align === "right" ? `{${align}}` : ""}`;
+    }
+    /* The Align left and Align right buttons: the picture line the caret is
+       on set to that side, or back to the full width if it is there
+       already. null when the caret is not on a picture's line. */
+    function alignPicture(text, start, align) {
+        const t = String(text == null ? "" : text);
+        const s = Math.max(0, Math.min(t.length, start | 0));
+        const lineStart = t.lastIndexOf("\n", s - 1) + 1;
+        let lineEnd = t.indexOf("\n", s);
+        if (lineEnd === -1) lineEnd = t.length;
+        const line = t.slice(lineStart, lineEnd);
+        const pic = parsePicture(line.trim());
+        if (!pic) return null;
+        const to = pic.align === align ? "" : align;
+        const lead = line.match(/^\s*/)[0];
+        const next = pictureLine(pic.src, pic.caption, to);
+        const caret = Math.min(s, lineStart + lead.length + next.length);
+        return { text: t.slice(0, lineStart) + lead + next + t.slice(lineEnd), start: caret, end: caret, align: to };
     }
     /* An embed's line from its type and attributes, or "" for one this file
        would not read back as an embed (a bad name or value). */
@@ -276,7 +343,7 @@
     }
 
     const ArticleText = {
-        blocks, render, plain, pictures, embeds, format, pictureLine, embedLine, insertBlock,
+        blocks, render, plain, pictures, embeds, format, pictureLine, alignPicture, fitPictures, embedLine, insertBlock,
         parsePicture, parseEmbed, esc, IMAGE_PREFIX, CAPTION_MAX
     };
     if (typeof module !== "undefined" && module.exports) { module.exports = ArticleText; return; }

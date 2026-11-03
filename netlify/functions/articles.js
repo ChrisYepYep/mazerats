@@ -29,6 +29,7 @@
      body                    the text, in js/article-text.js's format (the
                              guides' format, quotes, pictures and embeds);
                              never HTML
+     justify                 true: the text set justified, both edges straight
      embedData               { ref: object }, what an embed block keeps
                              beyond its attributes (_article-embeds.js)
      eventId                 the event it is about, or "": the article links
@@ -161,6 +162,8 @@ function shape(b) {
         thumb,
         gallery,
         body,
+        // The text set justified (3 Nov 2026, the owner's Justify button).
+        justify: b.justify === true,
         eventId: typeof b.eventId === "string" ? b.eventId : "",
         status,
         wn
@@ -179,7 +182,7 @@ function shape(b) {
 
 const revOf = a => Number(a && a.rev) || 0;
 // What a reader reads: a change to any of these after it went public sets editedAt.
-const READ_FIELDS = ["title", "summary", "thumb", "gallery", "body", "embedData", "eventId"];
+const READ_FIELDS = ["title", "summary", "thumb", "gallery", "body", "justify", "embedData", "eventId"];
 const publicCopy = a => {
     const out = { ...a };
     PRIVATE.forEach(k => { delete out[k]; });
@@ -339,7 +342,9 @@ exports.handler = async (event) => {
             // Its first day in public is its byline's date, kept through later unpublishing.
             if (article.status === "published" && !before.publishedAt) update.publishedAt = now;
             // Its "Updated" date (3 Nov 2026): the reader's part changed after it first went public.
-            if (before.publishedAt && READ_FIELDS.some(k => JSON.stringify(article[k] ?? null) !== JSON.stringify(before[k] ?? null))) update.editedAt = now;
+            // (justify: an article saved before it existed reads as false, not as a change.)
+            const readOf = (r, k) => JSON.stringify(k === "justify" ? r[k] === true : r[k] ?? null);
+            if (before.publishedAt && READ_FIELDS.some(k => readOf(article, k) !== readOf(before, k))) update.editedAt = now;
             const res = await articles.findOneAndUpdate(
                 { id, rev: before.rev === undefined ? { $exists: false } : before.rev },
                 { $set: update },

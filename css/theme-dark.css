@@ -9,7 +9,7 @@
    completely inert until js/site.js puts that attribute on <html>. The
    classic palette is not defined here and is not affected by anything in it.
 
-   1214 rules, 1949 declarations, hues 222 (surfaces) / 36 (accents).
+   1215 rules, 1950 declarations, hues 222 (surfaces) / 36 (accents).
 */
 :root[data-dark] {
     --bg-black: #050607;
@@ -5966,14 +5966,17 @@ html[data-dark] .art-text .art-updated {
     color: var(--parchment-dim);
 }
 
-html[data-dark] .art-text .art-figure {
+html[data-dark] .art-figure-frame {
     border: 1px solid var(--chrome-border);
+    box-shadow: 2px 2px 0 rgba(0, 0, 0, 0.45);
+    background: rgba(0, 0, 0, 0.28);
+}
+
+html[data-dark] .art-figure-frame::after {
     box-shadow: inset 0 1px 0 var(--chrome-highlight),
         inset 1px 0 0 var(--chrome-highlight),
         inset -1px 0 0 rgba(0, 0, 0, 0.45),
-        inset 0 -1px 0 rgba(0, 0, 0, 0.45),
-        2px 2px 0 rgba(0, 0, 0, 0.45);
-    background: rgba(0, 0, 0, 0.28);
+        inset 0 -1px 0 rgba(0, 0, 0, 0.45);
 }
 
 html[data-dark] .art-caption {
