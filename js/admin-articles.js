@@ -855,7 +855,19 @@
         const words = ArticleText.plain(a.body).split(/\s+/).filter(Boolean).length;
         const author = stored ? stored.author || "" : (typeof window.AdminUsername === "function" ? window.AdminUsername() : "");
         const day = stored && stored.publishedAt ? new Date(stored.publishedAt) : new Date();
-        const byline = [day.toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" }), author ? `by ${author}` : ""].filter(Boolean).join(" · ");
+        /* Updated (at the text's foot) and the meta line's Event dates, as js/articles.js gives
+           them (editedDay, eventDays there): Updated from the saved copy, so
+           it shows once a change after publishing has been saved. */
+        const shortDay = (d, year, zone) => d.toLocaleDateString("en-GB", Object.assign({ day: "numeric", month: "short" }, year ? { year: "numeric" } : {}, zone ? { timeZone: zone } : {}));
+        const editedAt = stored && stored.editedAt ? new Date(stored.editedAt) : null;
+        const edited = editedAt && !isNaN(editedAt) && editedAt > day && editedAt.toDateString() !== day.toDateString() ? shortDay(editedAt, true) : "";
+        let evDays = "";
+        if (ev && !isNaN(new Date(ev.date))) {
+            const s = new Date(ev.date), e = new Date(ev.endDate);
+            const key = d => d.toISOString().slice(0, 10);
+            evDays = isNaN(e) || key(e) <= key(s) ? shortDay(s, true, "UTC")
+                : `${shortDay(s, s.getUTCFullYear() !== e.getUTCFullYear(), "UTC")} – ${shortDay(e, true, "UTC")}`;
+        }
         const doc = `<!doctype html><html lang="en"${theme ? ` data-theme="${esc(theme)}"` : ""}${root.hasAttribute("data-dark") ? " data-dark" : ""}${root.hasAttribute("data-light") ? " data-light" : ""}><head>
             <meta charset="utf-8"><base href="${esc(location.origin)}/">
             <link rel="stylesheet" href="${esc(v('link[href*="css/style.css"]'))}">
@@ -867,7 +879,7 @@
             <div class="modal art-window is-reading" role="presentation">
                 <div class="chrome-titlebar"><h2>${esc(a.title || "Untitled article")}</h2><span class="chrome-close" aria-hidden="true"><img src="assets/img/modal_topclose_x.png" alt=""></span></div>
                 <div class="chrome-frame">
-                    <div class="modal-thumb modal-thumb-full is-event art-reader${pics.length > 1 ? " has-gallery" : ""}">
+                    <div class="modal-thumb modal-thumb-full is-event art-reader${stripped ? " has-gallery" : ""}">
                         <div class="modal-thumb-frame"${p0 ? "" : " hidden"}>
                             ${p0 ? `<div class="gallery-viewport"><img class="modal-gallery-img" src="${esc(p0.image)}" alt="" style="display:block"></div>
                             ${pics.length > 1 ? `<span class="gallery-nav gallery-prev">&#10094;</span><span class="gallery-nav gallery-next">&#10095;</span><span class="gallery-counter gallery-position art-position">1 of ${pics.length}</span>` : ""}
@@ -875,12 +887,14 @@
                         </div>
                         <div class="art-top"${topHtml ? "" : " hidden"}>${topHtml}</div>
                         <div class="modal-body">
-                            <div class="modal-top-row"><p class="room-creator art-byline">${esc(byline)}</p></div>
-                            <p class="modal-visit-link art-actions">${ev ? `<span class="btn">See the event</span>` : ""}<span class="btn art-copy">Copy link</span></p>
+                            <div class="modal-top-row">
+                                <div class="builder-list art-byline">${author ? `<div class="builder-card art-writer"><div class="builder-text"><p class="builder-name">Article written by ${esc(author)}</p></div></div>` : ""}</div>
+                                <div class="room-tags art-actions">${ev ? `<span class="tag tag-filter">See the event</span>` : ""}<span class="tag tag-filter art-copy">Copy link</span></div>
+                            </div>
                             <div class="modal-meta">
-                                <div class="modal-meta-items art-meta"><span class="status-badge art-badge">Article</span>${words ? `<span>${Math.max(1, Math.round(words / 200))} min read</span>` : ""}${pics.length > 1 ? `<span>${pics.length} pictures</span>` : ""}</div>
+                                <div class="modal-meta-items art-meta"><span class="status-badge art-badge">Article</span><span>Published: ${esc(shortDay(day, true))}</span>${evDays ? `<span>Event: ${esc(evDays)}</span>` : ""}${words ? `<span>Reading time: ${Math.max(1, Math.round(words / 200))} min</span>` : ""}${pics.length > 1 ? `<span>${pics.length} pictures</span>` : ""}</div>
                                 <div class="room-desc-panel">
-                                    <div class="room-desc-box"><div class="room-desc-full art-text">${body.innerHTML}</div></div>
+                                    <div class="room-desc-box"><div class="room-desc-full art-text">${body.innerHTML}${edited ? `<p class="art-updated">Updated: ${esc(edited)}</p>` : ""}</div></div>
                                     ${stripped ? `<div class="gallery-strip">${topHtml ? '<span class="art-strip-draw active"></span>' : ""}${pics.map((g, i) => `<img src="${esc(g.image)}" alt=""${i === 0 && !topHtml ? ' class="active"' : ""}>`).join("")}</div>` : ""}
                                 </div>
                             </div>
@@ -914,6 +928,19 @@
             // ...and the blocks drawn by scripts of their own, which grow once drawn (2 Nov 2026, the wheel's replay).
             if (d.defaultView && d.defaultView.ResizeObserver && d.body) new d.defaultView.ResizeObserver(fit).observe(d.body);
             d.addEventListener("click", ev2 => { if (ev2.target.closest("a")) ev2.preventDefault(); });
+            // The writer's Habbo figure, as the site adds it (THE WRITER in js/articles.js).
+            if (author && typeof Api !== "undefined" && typeof Api.getHabboProfile === "function") {
+                Api.getHabboProfile(author).then(p => {
+                    const card = d.querySelector(".art-writer");
+                    if (!p || !p.avatar || !card) return;
+                    const img = d.createElement("img");
+                    img.className = "builder-avatar";
+                    img.src = p.avatar;
+                    img.alt = "";
+                    img.addEventListener("error", () => img.remove());
+                    card.prepend(img);
+                }).catch(() => {});
+            }
             fit();
             setTimeout(fit, 400);
         });

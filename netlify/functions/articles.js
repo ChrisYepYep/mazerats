@@ -37,6 +37,10 @@
      author                  the Warren account that wrote it, from the
                              session, never from the request
      publishedAt             when it first went public: the byline's date
+     editedAt                when what a reader reads (title, summary,
+                             pictures, text, event) last changed after it
+                             first went public: the reader's "Updated" date.
+                             A spotlight or What's New change isn't one.
      wn                      its What's New entry: { day, title, text,
                              badge, badgeText, hidden, image }, each "" for
                              the article's own (the day it was published,
@@ -174,6 +178,8 @@ function shape(b) {
 }
 
 const revOf = a => Number(a && a.rev) || 0;
+// What a reader reads: a change to any of these after it went public sets editedAt.
+const READ_FIELDS = ["title", "summary", "thumb", "gallery", "body", "embedData", "eventId"];
 const publicCopy = a => {
     const out = { ...a };
     PRIVATE.forEach(k => { delete out[k]; });
@@ -332,6 +338,8 @@ exports.handler = async (event) => {
             if (slugProblem) return json(400, { error: slugProblem });
             // Its first day in public is its byline's date, kept through later unpublishing.
             if (article.status === "published" && !before.publishedAt) update.publishedAt = now;
+            // Its "Updated" date (3 Nov 2026): the reader's part changed after it first went public.
+            if (before.publishedAt && READ_FIELDS.some(k => JSON.stringify(article[k] ?? null) !== JSON.stringify(before[k] ?? null))) update.editedAt = now;
             const res = await articles.findOneAndUpdate(
                 { id, rev: before.rev === undefined ? { $exists: false } : before.rev },
                 { $set: update },

@@ -23052,15 +23052,24 @@ html[data-light] .chrome-light { filter: drop-shadow(0 0 3px var(--neon-soft)); 
 }
 .art-reader .modal-gallery-img { cursor: default; }
 .art-reader .gallery-strip img[role="button"] { cursor: var(--cursor-pointer); }
-.art-reader .modal-top-row { align-items: center; }
+/* The writer and the two chips (THE WRITER in js/articles.js): the maze
+   window's builder card and tag column, as they are. A line with no
+   figure (still loading, or a name not on Origins) sits on the row's
+   own edge rather than pulled left for a figure that isn't there. */
+.art-reader .modal-top-row { align-items: center; min-height: 34px; }
 .art-byline { overflow-wrap: anywhere; }
+.art-writer:not(:has(.builder-avatar)) { left: 0; padding-left: 0; }
+.art-writer .builder-name { display: block; }
+/* "See the event" is a link (so it opens in a new tab on a middle click):
+   button.tag.tag-filter's look, by hand. */
+.art-actions a.tag.tag-filter { text-decoration: none; cursor: var(--cursor-pointer); transition: border-color 0.15s, color 0.15s; }
+.art-actions a.tag.tag-filter:hover,
+.art-actions a.tag.tag-filter:focus-visible { border-color: var(--amber); color: var(--parchment); }
+.art-actions a.tag.tag-filter:focus-visible { outline: 2px solid var(--amber-bright); outline-offset: 2px; }
 /* "Article" in the meta row and on a search result, in the log's rose for an article. */
 .status-badge.art-badge { color: #ecc7d6; border-color: #a8708a; }
 .art-crumbs { margin: 0; font-size: 0.78rem; }
 .art-crumbs[hidden] { display: none; }
-.art-actions { display: flex; flex-wrap: wrap; gap: 8px; }
-/* Text that leaves its button rather than running out of it on a phone. */
-.art-actions .btn { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* "Read the article" beside Visit Room in the event window. */
 .modal-article-links { display: inline-flex; flex-wrap: wrap; gap: 8px; vertical-align: top; }
 .modal-article-links:empty { display: none; }
@@ -23070,6 +23079,14 @@ html[data-light] .chrome-light { filter: drop-shadow(0 0 3px var(--neon-soft)); 
    with the article's own blocks. A picture sits whole on a plate framed as
    the site's panels are, at its own size where it fits. */
 .art-text { margin: 0.6em 0 1em; }
+/* "Updated: 5 Nov 2026" at the foot of the text (js/articles.js), in the
+   meta line's small text (.modal-meta) rather than the article's own. */
+.art-text .art-updated {
+    margin: 1.6em 0 0;
+    font-size: 0.78rem;
+    line-height: 1.4;
+    color: var(--parchment-dim);
+}
 .art-text .art-figure {
     padding: 6px;
     border: 1px solid var(--chrome-border);
@@ -23132,8 +23149,6 @@ html[data-light] .chrome-light { filter: drop-shadow(0 0 3px var(--neon-soft)); 
 
 @media (max-width: 640px) {
     .art-list { padding: 14px 12px 18px; }
-    /* The two buttons one to a line, full width, as the room window's are on a phone. */
-    .art-actions .btn { flex: 1 1 100%; text-align: center; }
 }
 
 /* Netlify's "Powered by Netlify" pill, which its servers add to every page on the free

@@ -1800,11 +1800,13 @@
                     <!-- An article's prize draw, in the picture's place (js/articles.js, THE DRAW AT THE TOP). -->
                     <div class="art-top" id="article-top" hidden></div>
                     <div class="modal-body">
+                        <!-- The writer where a maze's builder is, and its two
+                             chips where a maze's tags are (js/articles.js, THE WRITER). -->
                         <div class="modal-top-row">
-                            <p class="room-creator art-byline" id="article-byline"></p>
+                            <div class="builder-list art-byline" id="article-byline"></div>
+                            <div class="room-tags art-actions" id="article-actions"></div>
                         </div>
                         <p class="art-crumbs" id="article-crumbs" hidden><button type="button" class="guides-textbtn" data-act="list">&lsaquo; All articles</button></p>
-                        <p class="modal-visit-link art-actions" id="article-actions"></p>
                         <div class="modal-meta">
                             <div class="modal-meta-items art-meta" id="article-meta"></div>
                             <div class="room-desc-panel">
@@ -2079,8 +2081,8 @@
     <script src="js/guides.js?v=3"></script>
     <!-- The Articles window (2 Nov 2026): article-text.js reads an article's
          text (the guides' format and its own blocks), articles.js is the window. -->
-    <script src="js/article-text.js?v=3"></script>
-    <script src="js/articles.js?v=2"></script>
+    <script src="js/article-text.js?v=4"></script>
+    <script src="js/articles.js?v=5"></script>
     <!-- The Alt Codes window. Needs nothing but site.js's EscapeLayers. -->
     <script src="js/glyphs.js?v=3"></script>
     <!-- The seats that fall when Fallin' Furni is pressed while Coming Soon. -->

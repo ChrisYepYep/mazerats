@@ -30,22 +30,45 @@
    the pictures' plate and captions its own way; this sheet isn't one
    themes.js reads, so the same here by hand. */
 /* At the top of the article, in the picture's place (THE DRAW AT THE TOP
-   in js/articles.js): the window's width, as a picture is there. */
+   in js/articles.js): no plate, the stage filling the space framed as a
+   picture's viewport is (.gallery-viewport: the fine edge, 8px corners,
+   the hard shadow and the faint lit edge over it), and the "Drawn at"
+   line small and quiet across the stage's foot (3 Nov 2026, the owner's).
+   A rebuilt draw's longer note stays under the stage. */
 .art-top .art-embed.awh-host {
+    position: relative;
     margin: 0;
-    padding: 6px;
-    border: 1px solid var(--chrome-border);
-    border-radius: 8px;
-    box-shadow:
-        inset 0 1px 0 var(--chrome-highlight),
-        inset 1px 0 0 var(--chrome-highlight),
-        inset -1px 0 0 rgba(0, 0, 0, 0.45),
-        inset 0 -1px 0 rgba(0, 0, 0, 0.45),
-        2px 2px 0 rgba(0, 0, 0, 0.45);
-    background: rgba(0, 0, 0, 0.28);
     line-height: 1.4;
 }
-html[data-light] .art-top .art-embed.awh-host,
+.art-top .awh-stage {
+    border: 1px solid var(--chrome-border);
+    border-radius: 8px;
+    box-shadow: 2px 2px 0 rgba(0, 0, 0, 0.4);
+    padding-bottom: 30px;
+}
+.art-top .awh-stage::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: 4;
+    pointer-events: none;
+    border-radius: inherit;
+    box-shadow:
+        inset 0 1px 0 rgba(255, 248, 236, 0.22),
+        inset 1px 0 0 rgba(255, 248, 236, 0.22);
+}
+.art-top .awh-note:not(:has(.awh-rebuilt)) {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 7px;
+    margin: 0;
+    padding: 0 10px;
+    font-size: 0.72rem;
+    color: rgba(216, 203, 178, 0.5);
+    pointer-events: none;
+}
+html[data-light] .art-top .awh-note:not(:has(.awh-rebuilt)) { color: rgba(216, 203, 178, 0.5); }
 html[data-light] .art-text .art-embed.awh-host {
     box-shadow:
         inset 0 1px 0 #d9e5f0,
@@ -285,26 +308,36 @@ html[data-light] .awh-note { color: #1e2f49; }
     overflow-wrap: anywhere;
     animation: awh-rise .5s ease-out .65s both;
 }
-/* Watch again: small and quiet, bottom right, as the live wheel's Done. */
+/* Watch again: a pill, as the maze window's room counter and Older
+   versions are (.gallery-counter, .old-versions-pill in css/style.css:
+   a dark fill, the amber edge, small bold capitals; 3 Nov 2026, the
+   owner's), bottom right. In the stage's own fixed colours, the site's
+   Classic amber, so it is the same pill in every palette. */
 .awh .awh-again {
     position: absolute;
     right: 12px;
     bottom: 12px;
     margin: 0;
-    padding: 9px 14px 8px;
-    font: 500 13px/1 'Roboto', sans-serif;
-    letter-spacing: .2px;
+    padding: 3px 11px;
+    font: 700 0.58rem/1 'Roboto', sans-serif;
+    letter-spacing: 0.4px;
+    text-transform: uppercase;
     text-shadow: none;
-    color: #e6d9be;
-    background: rgba(20, 13, 7, .9);
-    border: 2px solid #5a3f22;
-    border-radius: 0;
-    box-shadow: 0 3px 0 rgba(0, 0, 0, .5);
+    color: #c7a679;
+    background: rgba(0, 0, 0, 0.72);
+    border: 1px solid #ab8b64;
+    border-radius: 12px;
+    box-shadow: none;
     cursor: var(--cursor-pointer, pointer);
     animation: awh-in .4s ease 1.2s both;
 }
-.awh .awh-again:hover { background: #2a1c10; border-color: #8a6c48; }
-.awh .awh-again:focus-visible { outline: 2px solid #fff1c4; outline-offset: 3px; }
+/* On a narrow stage, a phone's, in the middle and up off the "Drawn at"
+   line, which runs the stage's width there. */
+@container awh (max-width: 499px) {
+    .awh .awh-again { right: auto; left: 50%; transform: translateX(-50%); bottom: 34px; }
+}
+.awh .awh-again:hover { color: #fff8ec; }
+.awh .awh-again:focus-visible { color: #fff8ec; outline: 2px solid #c7a679; outline-offset: 2px; }
 @keyframes awh-in { from { opacity: 0; } to { opacity: 1; } }
 @keyframes awh-rise { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
 @keyframes awh-slam { from { opacity: 0; transform: scale(1.7); } 40% { opacity: 1; } to { opacity: 1; transform: scale(1); } }

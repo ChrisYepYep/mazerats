@@ -135,7 +135,26 @@
         const d = new Date(iso);
         return isNaN(d) ? "" : d.toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" });
     }
-    const bylineOf = a => [longDate(a.publishedAt), a.author ? `by ${a.author}` : ""].filter(Boolean).join(" · ");
+    /* Two dates (3 Nov 2026, the owner's), the second on the meta line.
+       UPDATED: the day the reader's part last changed after it went public
+       (editedAt, set by netlify/functions/articles.js), shown only when it
+       is a later day than the one it went public; at the text's foot. EVENT: the event's own
+       days, in UTC as the event window gives them, the year said once. */
+    const shortDay = (d, year, zone) => d.toLocaleDateString("en-GB", Object.assign({ day: "numeric", month: "short" }, year ? { year: "numeric" } : {}, zone ? { timeZone: zone } : {}));
+    function editedDay(a) {
+        const e = new Date(a.editedAt), p = new Date(a.publishedAt);
+        if (isNaN(e) || isNaN(p) || e.toDateString() === p.toDateString() || e < p) return "";
+        return shortDay(e, true);
+    }
+    function eventDays(ev) {
+        const s = new Date(ev.date), e = new Date(ev.endDate);
+        if (isNaN(s)) return "";
+        const key = d => d.toISOString().slice(0, 10);
+        if (isNaN(e) || key(e) <= key(s)) return shortDay(s, true, "UTC");
+        const sameYear = s.getUTCFullYear() === e.getUTCFullYear();
+        return `${shortDay(s, !sameYear, "UTC")} – ${shortDay(e, true, "UTC")}`;
+    }
+    const bylineOf = a =>[longDate(a.publishedAt), a.author ? `by ${a.author}` : ""].filter(Boolean).join(" · ");
     // Its pictures: the gallery, or else the thumbnail on its own.
     function picturesOf(a) {
         const g = (Array.isArray(a.gallery) ? a.gallery : []).filter(p => p && typeof p.image === "string" && p.image);
@@ -232,6 +251,35 @@
         if (tile) { tile.classList.remove("active"); tile.removeAttribute("aria-current"); }
     }
 
+    /* THE WRITER (3 Nov 2026, the owner's): the author's Habbo figure in the
+       maze window's builder place, with "Article written by <name>" beside
+       it in the builder name's face, and no online status or motto. The
+       figure is the maze window's own lookup (Api.getHabboProfile); until
+       it answers, or where it can't (a name not on Origins), the line
+       stands alone. */
+    const profiles = new Map();     // name -> Promise of a profile or null
+    let writerToken = 0;
+    function drawWriter(a) {
+        const token = ++writerToken;
+        const name = String(a.author || "").trim();
+        byline.innerHTML = name
+            ? `<div class="builder-card art-writer"><div class="builder-text"><p class="builder-name">Article written by ${esc(name)}</p></div></div>`
+            : "";
+        if (!name || typeof Api === "undefined" || typeof Api.getHabboProfile !== "function") return;
+        if (!profiles.has(name)) profiles.set(name, Api.getHabboProfile(name).catch(() => null));
+        profiles.get(name).then(p => {
+            if (token !== writerToken || !p || !p.avatar) return;
+            const card = byline.querySelector(".art-writer");
+            if (!card) return;
+            const img = document.createElement("img");
+            img.className = "builder-avatar";
+            img.src = p.avatar;
+            img.alt = "";
+            img.addEventListener("error", () => img.remove());
+            card.prepend(img);
+        });
+    }
+
     function drawReader(a) {
         titleEl.textContent = a.title || "Article";
         /* The pictures in the text as uploaded, as a guide's are (js/guides.js):
@@ -256,18 +304,28 @@
         strip.style.display = stripped ? "" : "none";
         if (drawHtml) showDraw();
         else if (pics.length) showPic(0);
-        byline.textContent = bylineOf(a);
-        /* The meta row, as the room window's status line: what it is, and how
-           long it takes to read (the words, at about 200 a minute). */
+        drawWriter(a);
+        /* The meta row, as the room window's status line: what it is, the day
+           it went public, and how long it takes to read (the words, at about
+           200 a minute). */
         const words = ArticleText.plain(a.body || "").split(/\s+/).filter(Boolean).length;
-        meta.innerHTML = `<span class="status-badge art-badge">Article</span>${words ? `<span>${Math.max(1, Math.round(words / 200))} min read</span>` : ""}${pics.length > 1 ? `<span>${pics.length} pictures</span>` : ""}`;
+        const pub = new Date(a.publishedAt);
+        const day = isNaN(pub) ? "" : shortDay(pub, true);
         const ev = eventOf(a);
+        const evDays = ev ? eventDays(ev) : "";
+        meta.innerHTML = `<span class="status-badge art-badge">Article</span>${day ? `<span>Published: ${esc(day)}</span>` : ""}${evDays ? `<span>Event: ${esc(evDays)}</span>` : ""}${words ? `<span>Reading time: ${Math.max(1, Math.round(words / 200))} min</span>` : ""}${pics.length > 1 ? `<span>${pics.length} pictures</span>` : ""}`;
+        /* Where a maze's tag chips are, and in their look (3 Nov 2026, the
+           owner's): the writer on the left, these on the right. */
         actions.innerHTML = [
-            // Its name in the button's accessible name and tooltip: in the pill it ran out of room on a phone.
-            ev ? `<a class="btn" href="${esc(window.RecordAddress.of("event", ev))}" data-act="event" title="${esc(ev.title || "")}" aria-label="See the event: ${esc(ev.title || "")}">See the event</a>` : "",
-            `<button type="button" class="btn art-copy" data-act="copy">Copy link</button>`
+            // Its name in the chip's accessible name and tooltip.
+            ev ? `<a class="tag tag-filter" href="${esc(window.RecordAddress.of("event", ev))}" data-act="event" title="${esc(ev.title || "")}" aria-label="See the event: ${esc(ev.title || "")}">See the event</a>` : "",
+            `<button type="button" class="tag tag-filter art-copy" data-act="copy">Copy link</button>`
         ].join("");
         crumbs.hidden = !listPlace;
+        /* Updated, at the very foot of the text in the meta line's small
+           text (3 Nov 2026, the owner's: off the meta line). */
+        const edited = editedDay(a);
+        if (edited) textEl.insertAdjacentHTML("beforeend", `<p class="art-updated">Updated: ${esc(edited)}</p>`);
         if (window.ArticleEmbeds) window.ArticleEmbeds.hydrate(textEl, drawCtx);
         descBox.scrollTop = 0;
         say("");

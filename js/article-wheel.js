@@ -36,7 +36,7 @@
 
     // Kept in step with the files, as a <script> tag's ?v= would be.
     const DRAW_SRC = "/js/wheel-draw.js?v=1";
-    const CSS_SRC = "/css/article-wheel.css?v=2";
+    const CSS_SRC = "/css/article-wheel.css?v=3";
     const MUTE_KEY = "mazerats_replay_muted";
     const SVG_NS = "http://www.w3.org/2000/svg";
     const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
@@ -189,8 +189,8 @@
         const live = mk("p", "awh-live");
         live.setAttribute("aria-live", "polite");
         const note = mk("figcaption", "awh-note");
-        const bits = [snap.drawnAt ? `Drawn at ${when(snap.drawnAt)}` : "", countWords].filter(Boolean);
-        note.textContent = bits.join(" · ") + ".";
+        // The count is on the stage already (.awh-count), so this is the when alone (3 Nov 2026).
+        note.textContent = snap.drawnAt ? `Drawn at ${when(snap.drawnAt)}.` : "";
         if (snap.rebuilt) {
             note.appendChild(doc.createTextNode(" "));
             note.appendChild(mk("span", "awh-rebuilt", "The wheel's slice order wasn't recorded for this draw, so its names are set out afresh; the winner and the prize are the real ones."));
