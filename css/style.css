@@ -23068,10 +23068,16 @@ html[data-light] .chrome-light { filter: drop-shadow(0 0 3px var(--neon-soft)); 
 .art-writer .builder-name { display: block; }
 /* "See the event" is a link (so it opens in a new tab on a middle click):
    button.tag.tag-filter's look, by hand. */
-.art-actions a.tag.tag-filter { text-decoration: none; cursor: var(--cursor-pointer); transition: border-color 0.15s, color 0.15s; }
+.art-actions a.tag.tag-filter,
+.room-tags a.tag.tag-filter { text-decoration: none; cursor: var(--cursor-pointer); transition: border-color 0.15s, color 0.15s; }
 .art-actions a.tag.tag-filter:hover,
-.art-actions a.tag.tag-filter:focus-visible { border-color: var(--amber); color: var(--parchment); }
-.art-actions a.tag.tag-filter:focus-visible { outline: 2px solid var(--amber-bright); outline-offset: 2px; }
+.art-actions a.tag.tag-filter:focus-visible,
+.room-tags a.tag.tag-filter:hover,
+.room-tags a.tag.tag-filter:focus-visible { border-color: var(--amber); color: var(--parchment); }
+.art-actions a.tag.tag-filter:focus-visible,
+.room-tags a.tag.tag-filter:focus-visible { outline: 2px solid var(--amber-bright); outline-offset: 2px; }
+/* An event's "Read the article" chip (3 Nov 2026): kept within the chips' column. */
+.room-tags a.tag-article { max-width: 100%; }
 /* "Article" in the meta row and on a search result, in the log's rose for an article. */
 .status-badge.art-badge { color: #ecc7d6; border-color: #a8708a; }
 .art-crumbs { margin: 0; font-size: 0.78rem; }

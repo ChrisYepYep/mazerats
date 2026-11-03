@@ -101,16 +101,22 @@ document.addEventListener("DOMContentLoaded", () => {
     const modalVisitWrap = document.getElementById("modal-visit-wrap");
     // An event's "Read the article" buttons, beside Visit Room (2 Nov 2026).
     const modalArticleLinks = document.getElementById("modal-article-links");
+    /* As a chip among the event's own, in the article's look (3 Nov 2026,
+       the owner's: the big button beside Visit Room was "awful"): the same
+       .tag.tag-filter the article's "See the event" is, at the right of the
+       builder's row. Its title in the tooltip and accessible name. */
     function drawModalArticleLinks(n, hasRoomLink) {
         const list = n && n.isEvent && window.Articles && Articles.loaded() ? Articles.forEvent(n.id) : [];
-        modalArticleLinks.innerHTML = list.map(a => `<a class="btn" href="${escapeHtml(window.RecordAddress.of("article", a))}" data-article-link="${escapeHtml(a.id)}"${list.length > 1 ? ` aria-label="Read the article: ${escapeHtml(a.title || "")}"` : ""}>${list.length > 1 ? `Read: ${escapeHtml(a.title || "")}` : "Read the article"}</a>`).join("");
-        modalVisitWrap.style.display = hasRoomLink || list.length ? "" : "none";
+        modalArticleLinks.innerHTML = "";
+        modalTags.querySelectorAll("[data-article-link]").forEach(x => x.remove());
+        modalTags.insertAdjacentHTML("beforeend", list.map(a => `<a class="tag tag-filter tag-article" href="${escapeHtml(window.RecordAddress.of("article", a))}" data-article-link="${escapeHtml(a.id)}" title="${escapeHtml(a.title || "")}" aria-label="Read the article: ${escapeHtml(a.title || "")}">${list.length > 1 ? `Read: ${escapeHtml(a.title || "")}` : "Read the article"}</a>`).join(""));
+        modalVisitWrap.style.display = hasRoomLink ? "" : "none";
     }
     // The articles can land after an event's window opened from its address: its buttons then.
     if (window.Articles) Articles.onLoad(() => {
         if (modalItem && modalOverlay.classList.contains("open")) drawModalArticleLinks(modalItem, modalLink.style.display !== "none");
     });
-    modalArticleLinks.addEventListener("click", e => {
+    modalTags.addEventListener("click", e => {
         const a = e.target.closest("[data-article-link]");
         if (!a || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || !window.Articles) return;
         e.preventDefault();
