@@ -17209,10 +17209,13 @@ button.progress-badge.is-locked[aria-pressed="true"] { opacity: 0.85; }
    list it used to be drawn as. Read down the page as a sequence of things
    that happened rather than across as a catalogue of things that exist: a
    date heading, then entries strung on a rule with a marker each. */
+/* In the site's small pixel face (3 Nov 2026, the owner's). */
 .updatelog-intro {
     margin: 0 0 14px;
-    font-size: 0.72rem;
-    line-height: 1.5;
+    font-family: 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace;
+    font-size: 0.5625rem;
+    font-weight: 400;
+    line-height: 1.6;
     color: var(--parchment-dim);
 }
 

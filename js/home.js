@@ -3438,7 +3438,7 @@ document.addEventListener("DOMContentLoaded", () => {
         });
 
         grid.innerHTML = `
-            <p class="updatelog-intro">The archive's own record of itself: what has been catalogued and what has been corrected, most recent first.</p>
+            <p class="updatelog-intro">What's been added, changed and announced on Maze Rats, most recent first.</p>
             <div class="updatelog">
                 ${days.map(group => `
                     <section class="updatelog-day">

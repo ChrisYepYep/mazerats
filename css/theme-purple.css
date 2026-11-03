@@ -9,7 +9,7 @@
    completely inert until js/site.js puts that attribute on <html>. The
    classic palette is not defined here and is not affected by anything in it.
 
-   1203 rules, 1933 declarations, hues 272 (surfaces) / 272 (accents).
+   1209 rules, 1941 declarations, hues 272 (surfaces) / 272 (accents).
 */
 :root[data-theme="purple"] {
     --bg-black: #020104;
@@ -5908,9 +5908,39 @@ html[data-theme="purple"][data-light] .chrome-light {
     color: var(--parchment);
 }
 
+[data-theme="purple"] .art-strip-draw {
+    border: 1px solid transparent;
+    background: radial-gradient(circle, #c8b5d9 0 3px, #32164a 3px 4px, transparent 4.5px),
+        radial-gradient(circle, transparent 0 16px, #c8b5d9 16.5px 18px, #010002 18.5px),
+        conic-gradient(#b8392f 0 60deg, #c8b5d9 0 120deg, #2f6b8f 0 180deg, #6b8f2f 0 240deg, #8f2f6b 0 300deg, #7833b4 0),
+        #010002;
+}
+
+[data-theme="purple"] .art-strip-draw.active {
+    border-color: var(--amber);
+}
+
+[data-theme="purple"] .art-strip-draw:focus-visible {
+    outline: 2px solid var(--amber);
+}
+
+[data-theme="purple"] .art-actions a.tag.tag-filter:hover,
+[data-theme="purple"] .art-actions a.tag.tag-filter:focus-visible {
+    border-color: var(--amber);
+    color: var(--parchment);
+}
+
+[data-theme="purple"] .art-actions a.tag.tag-filter:focus-visible {
+    outline: 2px solid var(--amber-bright);
+}
+
 [data-theme="purple"] .status-badge.art-badge {
     color: #ecc7d6;
     border-color: #a8708a;
+}
+
+[data-theme="purple"] .art-text .art-updated {
+    color: var(--parchment-dim);
 }
 
 [data-theme="purple"] .art-text .art-figure {

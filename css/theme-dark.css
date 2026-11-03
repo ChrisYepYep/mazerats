@@ -9,7 +9,7 @@
    completely inert until js/site.js puts that attribute on <html>. The
    classic palette is not defined here and is not affected by anything in it.
 
-   1208 rules, 1941 declarations, hues 222 (surfaces) / 36 (accents).
+   1214 rules, 1949 declarations, hues 222 (surfaces) / 36 (accents).
 */
 :root[data-dark] {
     --bg-black: #050607;
@@ -5931,9 +5931,39 @@ html[data-dark] .art-list {
     color: var(--parchment);
 }
 
+html[data-dark] .art-strip-draw {
+    border: 1px solid transparent;
+    background: radial-gradient(circle, #303239 0 3px, #292e3a 3px 4px, transparent 4.5px),
+        radial-gradient(circle, transparent 0 16px, #303239 16.5px 18px, #030304 18.5px),
+        conic-gradient(#b8392f 0 60deg, #303239 0 120deg, #2f6b8f 0 180deg, #6b8f2f 0 240deg, #8f2f6b 0 300deg, #857154 0),
+        #030304;
+}
+
+html[data-dark] .art-strip-draw.active {
+    border-color: var(--amber);
+}
+
+html[data-dark] .art-strip-draw:focus-visible {
+    outline: 2px solid var(--amber);
+}
+
+html[data-dark] .art-actions a.tag.tag-filter:hover,
+html[data-dark] .art-actions a.tag.tag-filter:focus-visible {
+    border-color: var(--amber);
+    color: var(--parchment);
+}
+
+html[data-dark] .art-actions a.tag.tag-filter:focus-visible {
+    outline: 2px solid var(--amber-bright);
+}
+
 html[data-dark] .status-badge.art-badge {
     color: #ecc7d6;
     border-color: #a8708a;
+}
+
+html[data-dark] .art-text .art-updated {
+    color: var(--parchment-dim);
 }
 
 html[data-dark] .art-text .art-figure {

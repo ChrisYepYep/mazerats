@@ -9,7 +9,7 @@
    completely inert until js/site.js puts that attribute on <html>. The
    classic palette is not defined here and is not affected by anything in it.
 
-   1203 rules, 1933 declarations, hues 208 (surfaces) / 216 (accents).
+   1209 rules, 1941 declarations, hues 208 (surfaces) / 216 (accents).
 */
 :root[data-light] {
     --bg-black: #5f91bd;
@@ -5908,9 +5908,39 @@ html[data-light] .art-list {
     color: #1b2a41;
 }
 
+html[data-light] .art-strip-draw {
+    border: 1px solid transparent;
+    background: radial-gradient(circle, #dce7f1 0 3px, #bbd0e3 3px 4px, transparent 4.5px),
+        radial-gradient(circle, transparent 0 16px, #dce7f1 16.5px 18px, #568cba 18.5px),
+        conic-gradient(#b8392f 0 60deg, #dce7f1 0 120deg, #2f6b8f 0 180deg, #6b8f2f 0 240deg, #8f2f6b 0 300deg, #cadae9 0),
+        #568cba;
+}
+
+html[data-light] .art-strip-draw.active {
+    border-color: #456480;
+}
+
+html[data-light] .art-strip-draw:focus-visible {
+    outline: 2px solid #456480;
+}
+
+html[data-light] .art-actions a.tag.tag-filter:hover,
+html[data-light] .art-actions a.tag.tag-filter:focus-visible {
+    border-color: #456480;
+    color: #1b2a41;
+}
+
+html[data-light] .art-actions a.tag.tag-filter:focus-visible {
+    outline: 2px solid #3f6e97;
+}
+
 html[data-light] .status-badge.art-badge {
     color: #ecc7d6;
     border-color: #a8708a;
+}
+
+html[data-light] .art-text .art-updated {
+    color: #1e2f49;
 }
 
 html[data-light] .art-text .art-figure {

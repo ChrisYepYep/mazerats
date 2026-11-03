@@ -9,7 +9,7 @@
    completely inert until js/site.js puts that attribute on <html>. The
    classic palette is not defined here and is not affected by anything in it.
 
-   1203 rules, 1933 declarations, hues 18 (surfaces) / 38 (accents).
+   1209 rules, 1941 declarations, hues 18 (surfaces) / 38 (accents).
 */
 :root[data-theme="pumpkin"] {
     --bg-black: #0a0401;
@@ -5908,9 +5908,39 @@ html[data-theme="pumpkin"][data-light] .chrome-light {
     color: var(--parchment);
 }
 
+[data-theme="pumpkin"] .art-strip-draw {
+    border: 1px solid transparent;
+    background: radial-gradient(circle, #ecdcc0 0 3px, #52230f 3px 4px, transparent 4.5px),
+        radial-gradient(circle, transparent 0 16px, #ecdcc0 16.5px 18px, #060201 18.5px),
+        conic-gradient(#b8392f 0 60deg, #ecdcc0 0 120deg, #2f6b8f 0 180deg, #6b8f2f 0 240deg, #8f2f6b 0 300deg, #c78512 0),
+        #060201;
+}
+
+[data-theme="pumpkin"] .art-strip-draw.active {
+    border-color: var(--amber);
+}
+
+[data-theme="pumpkin"] .art-strip-draw:focus-visible {
+    outline: 2px solid var(--amber);
+}
+
+[data-theme="pumpkin"] .art-actions a.tag.tag-filter:hover,
+[data-theme="pumpkin"] .art-actions a.tag.tag-filter:focus-visible {
+    border-color: var(--amber);
+    color: var(--parchment);
+}
+
+[data-theme="pumpkin"] .art-actions a.tag.tag-filter:focus-visible {
+    outline: 2px solid var(--amber-bright);
+}
+
 [data-theme="pumpkin"] .status-badge.art-badge {
     color: #ecc7d6;
     border-color: #a8708a;
+}
+
+[data-theme="pumpkin"] .art-text .art-updated {
+    color: var(--parchment-dim);
 }
 
 [data-theme="pumpkin"] .art-text .art-figure {
