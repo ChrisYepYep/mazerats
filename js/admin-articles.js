@@ -304,7 +304,7 @@
     };
     const BAR = ["bold", "italic", "underline", "strike", "|", "heading", "subheading", "quote", "blockquote", "divider",
         "|", "link", "bullets", "numbers", "|", "picture", "alignleft", "alignright", "|", "justify"];
-    const FORMAT_HELP = `Text format: a blank line starts a new paragraph · **bold** · *italic* · __underline__ · ~~crossed out~~ · "## " a heading and "### " a subheading (own line) · "---" a divider · "- " a bullet · "1. " a numbered list · "> " a tip box · ">> " a quote · [words](https://...) links out · [words](maze:id), (event:id), (guide:id) or (article:id) link inside the site · a picture is a line of its own, ![its caption](its address), which the Picture button (or dropping a picture file on the text) writes for you; {left} or {right} at its end (the Align buttons) sets it to that side with the text beside it.`;
+    const FORMAT_HELP = `Text format: a blank line starts a new paragraph · **bold** · *italic* · __underline__ · ~~crossed out~~ · "## " a heading and "### " a subheading (own line) · "---" a divider · "- " a bullet · "1. " a numbered list · "> " a tip box · ">> " a quote · [words](https://...) links out · [words](maze:id), (event:id), (guide:id) or (article:id) link inside the site · a picture is a line of its own, ![its caption](its address), which the Picture button (or dropping a picture file on the text) writes for you; {left} or {right} at its end (the Align buttons) sets it to that side, at the start of the paragraph it sits beside.`;
 
     function barHtml() {
         const embeds = window.ArticleEmbeds ? window.ArticleEmbeds.buttons() : [];

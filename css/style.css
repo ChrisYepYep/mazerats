@@ -23130,9 +23130,14 @@ html[data-light] .chrome-light { filter: drop-shadow(0 0 3px var(--neon-soft)); 
 .art-text .art-figure--left,
 .art-text .art-figure--right { width: 45%; margin-top: 1.6em; margin-bottom: 0.8em; }
 /* The paragraphs' own gap above, so the picture's top meets the line
-   beside it; its height and the gap under it are ArticleText.fitPictures's. */
+   beside it; its height and the gap under it are ArticleText.fitPictures's.
+   At the top of the text neither the picture nor the paragraph beside it
+   has a gap, so the two start level (3 Nov 2026: the paragraph had kept
+   its own and started a line below the picture). */
 .art-text .art-figure--left:first-child,
-.art-text .art-figure--right:first-child { margin-top: 0; }
+.art-text .art-figure--right:first-child,
+.art-text .art-figure--left:first-child + *,
+.art-text .art-figure--right:first-child + * { margin-top: 0; }
 /* The Justify button (3 Nov 2026, the owner's): both edges straight, words
    broken where English allows so the gaps between them stay even. */
 .art-text.is-justified p,

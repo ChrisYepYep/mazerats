@@ -2729,7 +2729,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const PANEL_FILES = {
         guides: ["js/guides-starter.js?v=2", "js/admin-guides.js?v=3"],
         // The Articles section's editor and its text format first (2 Nov 2026), which the log reads.
-        whatsnew: ["js/article-text.js?v=6", "js/admin-articles.js?v=9", "js/admin-whats-new.js?v=3"],
+        whatsnew: ["js/article-text.js?v=7", "js/admin-articles.js?v=10", "js/admin-whats-new.js?v=3"],
         notifications: ["js/admin-notifications.js?v=1"]
     };
     function openFilesPanel(name) {

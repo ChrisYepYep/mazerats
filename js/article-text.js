@@ -18,7 +18,10 @@
                              italic and links like any line. {left} or
                              {right} straight after it sets the picture to
                              that side with the text running beside it
-                             (3 Nov 2026); without, it takes the width.
+                             (3 Nov 2026); without, it takes the width. A
+                             side picture may start its paragraph's first
+                             line, the words straight after it, as the
+                             Align buttons write it.
      {{type name=value ...}} an EMBED: a block drawn by a script of its own
                              (a video, a replay of a prize-wheel draw)
 
@@ -117,6 +120,10 @@
     const IMAGE_PREFIX = "/.netlify/functions/image?key=";
     // A picture line: the caption (one line, no "]"), then this site's own upload in "articles/".
     const PICTURE = /^!\[([^\]\n]{0,300})\]\((\/\.netlify\/functions\/image\?key=(articles\/[A-Za-z0-9._/-]{1,240}))\)(?:\{(left|right)\})?$/;
+    /* A {left} or {right} picture at the start of its paragraph's first
+       line, the words straight after it (3 Nov 2026, the owner's: the
+       picture sits on the line of the text it goes beside). */
+    const PICTURE_LEAD = /^!\[([^\]\n]{0,300})\]\((\/\.netlify\/functions\/image\?key=(articles\/[A-Za-z0-9._/-]{1,240}))\)\{(left|right)\}[ \t]+(\S.*)$/;
     // An embed line, whole. Each value is spaces-free, so a run cannot backtrack into the next.
     const EMBED = /^\{\{([a-z][a-z0-9-]{0,23})((?:[ \t]+[a-z][a-z0-9]{0,23}=[A-Za-z0-9._/:-]{1,240})*)[ \t]*\}\}$/;
     const ATTR = /([a-z][a-z0-9]{0,23})=([A-Za-z0-9._/:-]{1,240})/g;
@@ -128,6 +135,12 @@
         const m = PICTURE.exec(line);
         if (!m || m[3].includes("..")) return null;
         return { kind: "picture", caption: m[1].trim(), src: m[2], key: m[3], align: m[4] || "" };
+    }
+    // { pic, rest } for a line led by a side picture (PICTURE_LEAD), else null.
+    function parseLeadPicture(line) {
+        const m = PICTURE_LEAD.exec(line);
+        if (!m || m[3].includes("..")) return null;
+        return { pic: { kind: "picture", caption: m[1].trim(), src: m[2], key: m[3], align: m[4] }, rest: m[5] };
     }
     function parseEmbed(line) {
         const m = EMBED.exec(line);
@@ -161,6 +174,9 @@
             const t = line.trim();
             const pic = t.startsWith("![") ? parsePicture(t) : null;
             if (pic) { flush(); out.push(pic); continue; }
+            // A side picture leading a paragraph: the picture, then the paragraph from its words.
+            const lead = t.startsWith("![") ? parseLeadPicture(t) : null;
+            if (lead) { flush(); out.push(lead.pic); buf.push(lead.rest); continue; }
             const emb = t.startsWith("{{") ? parseEmbed(t) : null;
             if (emb) { flush(); out.push(emb); continue; }
             if (QUOTE.test(line)) {
@@ -276,15 +292,35 @@
         const lineStart = t.lastIndexOf("\n", s - 1) + 1;
         let lineEnd = t.indexOf("\n", s);
         if (lineEnd === -1) lineEnd = t.length;
-        const line = t.slice(lineStart, lineEnd);
-        const pic = parsePicture(line.trim());
-        if (!pic) return null;
+        const line = t.slice(lineStart, lineEnd).trim();
+        let pic = parsePicture(line), rest = "";
+        if (!pic) {
+            const lead = parseLeadPicture(line);
+            if (!lead) return null;
+            pic = lead.pic;
+            rest = lead.rest;
+        }
         const to = pic.align === align ? "" : align;
-        const lead = line.match(/^\s*/)[0];
-        const next = pictureLine(pic.src, pic.caption, to);
-        const caret = Math.min(s, lineStart + lead.length + next.length);
-        return { text: t.slice(0, lineStart) + lead + next + t.slice(lineEnd), start: caret, end: caret, align: to };
+        const code = pictureLine(pic.src, pic.caption, to);
+        let after = t.slice(lineEnd), joined = code;
+        if (to && rest) joined = code + " " + rest;
+        else if (to) {
+            /* To a side: the paragraph after it, when what comes next is
+               words (not a heading, list, quote, picture or block), joined
+               onto its line, so the picture sits on the line of the text it
+               goes beside. */
+            const m = /^\n(?:[ \t]*\n)*([^\n]*)/.exec(after);
+            if (m && isWords(m[1])) { joined = code + " " + m[1].trim(); after = after.slice(m[0].length); }
+        } else if (rest) {
+            // Back to the full width: the picture on a line of its own again, its paragraph under it.
+            joined = code + "\n\n" + rest;
+        }
+        const caret = lineStart + code.length;
+        return { text: t.slice(0, lineStart) + joined + after, start: caret, end: caret, align: to };
     }
+    // A line of ordinary words: not blank, a heading, a list, a quote or tip, a divider, a picture or a block.
+    const isWords = line => !!String(line || "").trim() &&
+        !/^\s*(#{2,3}\s|-\s|\d+\.\s|>|!\[|\{\{|-{3,}\s*$)/.test(line);
     /* An embed's line from its type and attributes, or "" for one this file
        would not read back as an embed (a bad name or value). */
     function embedLine(type, attrs) {
