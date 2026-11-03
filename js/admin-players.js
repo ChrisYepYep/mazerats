@@ -1802,6 +1802,7 @@
         "pura_scores": "Pura Panic leaderboard entries",
         "pura_run_tokens": "Pura Panic run tokens",
         "pura_games": "Pura Panic games played",
+        "pura_flags": "Pura Panic scores flagged in the Warren",
         "pura_starts": "Pura Panic games started",
         "dead_end_upload_quotas": "Missing Pieces upload counters",
         "event_entry_quotas": "Event entry upload counters",

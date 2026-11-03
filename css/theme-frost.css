@@ -9,7 +9,7 @@
    completely inert until js/site.js puts that attribute on <html>. The
    classic palette is not defined here and is not affected by anything in it.
 
-   1202 rules, 1932 declarations, hues 214 (surfaces) / 196 (accents).
+   1203 rules, 1933 declarations, hues 214 (surfaces) / 196 (accents).
 */
 :root[data-theme="frost"] {
     --bg-black: #02060c;
@@ -2556,7 +2556,7 @@ html[data-theme="frost"]:not([data-theme]) .modal-article-source a:hover {
 }
 
 [data-theme="frost"] .timeline-year-number {
-    color: var(--amber-bright);
+    color: #cadbe1;
 }
 
 [data-theme="frost"] .timeline-year-note {
@@ -2988,6 +2988,10 @@ html[data-theme="frost"]:not([data-theme]) .modal-article-source a:hover {
 
 [data-theme="frost"] .side-menu-item.is-on .side-menu-badge {
     color: #09111b;
+}
+
+[data-theme="frost"] .side-menu-item.is-on .side-menu-state {
+    color: #0a1018;
 }
 
 [data-theme="frost"] .side-menu-item + .side-menu-branch::before,
@@ -5715,7 +5719,7 @@ html[data-theme="frost"]:not([data-theme]) .guess-board-rank {
 [data-theme="frost"] .opening-more {
     border: 0;
     background: none;
-    color: var(--amber-bright);
+    color: #cadbe1;
 }
 
 [data-theme="frost"] .opening-more:hover,
@@ -5732,7 +5736,7 @@ html[data-theme="frost"]:not([data-theme]) .guess-board-rank {
 }
 
 [data-theme="frost"] .opening-found {
-    color: var(--amber-text);
+    color: #cadbe1;
 }
 
 [data-theme="frost"] .opening-now-row,

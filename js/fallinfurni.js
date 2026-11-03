@@ -2403,7 +2403,7 @@
             decor: "Click a furni, then a tile to place it. Alt-click moves, shift-click turns, ctrl-click removes.",
             zones: "Drag across the room to draw a drop zone.",
             rules: "Set the clock and how hard this round should be.",
-            splash: "Pick what falls past the title screen. Saves as you change it."
+            splash: "Pick what falls past the title screen, and its tips. Saves as you change it."
         }[mode] || "";
     }
 
@@ -3352,6 +3352,115 @@
         if (addBtn) addBtn.disabled = !splashPick || splashFurni.length >= max;
     }
 
+    /* ---- THE SPLASH TAB'S TIPS (3 Nov 2026, the owner's: "build in the
+       functionality for me to edit, remove, or add new splash screen tips").
+
+       The list the title's ticker plays (startTips, further down), saved to
+       the site's settings as ffTips like the furni above: every change saves
+       at once. Until the first save the game plays its own list
+       (DEFAULT_TIPS), shown here as the starting point; Back to default
+       saves null, which hands it back. The power-up tips are in the list as
+       ordinary tips, so editing one here changes the title screen only, not
+       the tip shown in the first level a power-up turns up in. */
+    let tipsList = null;            // [{ text, who }], null until read
+    let tipsCustom = false;         // a saved list, rather than the game's own
+    let tipEditing = -1;            // the row in the form, or -1 for a new tip
+    let tipsBusy = false;
+
+    async function loadTips() {
+        let data = null;
+        try { data = (typeof Api !== "undefined" ? await Api.getSiteSettings() : null) || null; } catch { /* the game's own list */ }
+        tipsCustom = !!(data && Array.isArray(data.ffTips));
+        tipsList = tipsCustom ? data.ffTips.map(t => ({ text: t.text, who: t.who })) : DEFAULT_TIPS();
+        renderTips();
+    }
+
+    async function saveTips(list, done) {
+        if (tipsBusy) return;
+        tipsBusy = true;
+        renderTips();
+        try {
+            const res = await fetch("/.netlify/functions/settings", {
+                method: "PUT",
+                credentials: "same-origin",
+                headers: {
+                    "Content-Type": "application/json",
+                    "x-admin-token": Editor.authToken() || ""
+                },
+                body: JSON.stringify({ ffTips: list })
+            });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) { status(data.error || "Could not save the tips.", "bad"); return; }
+            // As saveSplash: the page's shared copy of the settings is stale now.
+            if (typeof Api !== "undefined") Api.forgetSiteSettings();
+            tipsCustom = Array.isArray(data.ffTips);
+            tipsList = tipsCustom ? data.ffTips.map(t => ({ text: t.text, who: t.who })) : DEFAULT_TIPS();
+            if (done) done();
+            status(list === null ? "Tips back to the game's own." : "Tips saved.", "good");
+        } catch (e) {
+            status(`Could not save the tips: ${e.message}`, "bad");
+        } finally {
+            tipsBusy = false;
+            renderTips();
+        }
+    }
+
+    function tipForm(index) {
+        tipEditing = index;
+        const t = index >= 0 && tipsList ? tipsList[index] : null;
+        document.getElementById("ff-tip-text").value = t ? t.text : "";
+        document.getElementById("ff-tip-who").value = t ? t.who : "all";
+        renderTips();
+        if (t) document.getElementById("ff-tip-text").focus();
+    }
+
+    function renderTips() {
+        const listEl = document.getElementById("ff-tips-list");
+        const countEl = document.getElementById("ff-tips-count");
+        if (!listEl || !countEl) return;
+        const whoEl = document.getElementById("ff-tip-who");
+        if (whoEl && !whoEl.options.length) {
+            for (const [key, label] of Object.entries(TIP_WHO)) whoEl.add(new Option(label, key));
+        }
+        if (!tipsList) { countEl.textContent = "Reading the tips…"; return; }
+
+        countEl.textContent = `${tipsList.length} of ${TIP_MAX}` + (tipsCustom ? "" : " - the game's own list, until you change it.");
+        listEl.innerHTML = "";
+        tipsList.forEach((t, n) => {
+            const row = document.createElement("div");
+            row.className = "ff-item ff-tip" + (n === tipEditing ? " is-editing" : "");
+            row.innerHTML = `<span class="ff-tip-words">${escapeText(t.text)}` +
+                (t.who !== "all" ? `<small>${escapeText(TIP_WHO[t.who] || t.who)}</small>` : "") + "</span>";
+            const edit = document.createElement("button");
+            edit.type = "button";
+            edit.className = "ff-tip-edit";
+            edit.textContent = "Edit";
+            edit.disabled = tipsBusy;
+            edit.addEventListener("click", () => tipForm(n));
+            const rm = document.createElement("button");
+            rm.type = "button";
+            rm.textContent = "Remove";
+            rm.disabled = tipsBusy;
+            rm.setAttribute("aria-label", `Remove the tip: ${t.text}`);
+            rm.addEventListener("click", () => {
+                const next = tipsList.filter((_, k) => k !== n);
+                saveTips(next, () => { if (tipEditing === n) tipEditing = -1; else if (tipEditing > n) tipEditing--; });
+            });
+            row.append(edit, rm);
+            listEl.appendChild(row);
+        });
+
+        const textEl = document.getElementById("ff-tip-text");
+        const left = TIP_MAX_LEN - textEl.value.length;
+        document.getElementById("ff-tip-left").textContent = `${left} character${left === 1 ? "" : "s"} left`;
+        document.getElementById("ff-tip-form-title").textContent = tipEditing >= 0 ? "Edit the tip" : "Add a tip";
+        const saveBtn = document.getElementById("ff-tip-save");
+        saveBtn.textContent = tipEditing >= 0 ? "Save tip" : "Add tip";
+        saveBtn.disabled = tipsBusy || !textEl.value.trim() || (tipEditing < 0 && tipsList.length >= TIP_MAX);
+        document.getElementById("ff-tip-cancel").hidden = tipEditing < 0;
+        document.getElementById("ff-tips-reset").disabled = tipsBusy || !tipsCustom;
+    }
+
     function renderEditorPanel() {
         if (!Editor || !Editor.state.level) return;
         const sel = Editor.state.selected;
@@ -3876,7 +3985,7 @@
         zones: ["Drop zones", "Where furni falls, and what. Drag on the room to draw a zone."],
         rules: ["Rules", "How long the round lasts and how fast things fall."],
         walk: ["Walkable", "Paint which tiles of a public room can be walked on."],
-        splash: ["Title screen", "The furni that falls past the hotel view on the title."]
+        splash: ["Title screen", "The furni that falls past the hotel view on the title, and the tips above its buttons."]
     };
     const TOOL_ICONS = {
         room: '<path d="M3 10l9-6 9 6v10H3z"/><path d="M9 20v-6h6v6"/>',
@@ -4112,6 +4221,29 @@
             saveSplash();
         });
         loadSplash();
+
+        // Splash: the title screen's tips (see loadTips).
+        document.getElementById("ff-tip-text").addEventListener("input", renderTips);
+        document.getElementById("ff-tip-save").addEventListener("click", () => {
+            const text = document.getElementById("ff-tip-text").value.replace(/\s+/g, " ").trim();
+            const who = document.getElementById("ff-tip-who").value || "all";
+            if (!text || !tipsList) return;
+            const next = tipsList.slice();
+            if (tipEditing >= 0) next[tipEditing] = { text, who };
+            else {
+                if (next.length >= TIP_MAX) { status(`${TIP_MAX} tips is the limit.`, "bad"); return; }
+                next.push({ text, who });
+            }
+            saveTips(next, () => { tipEditing = -1; document.getElementById("ff-tip-text").value = ""; document.getElementById("ff-tip-who").value = "all"; });
+        });
+        document.getElementById("ff-tip-cancel").addEventListener("click", () => {
+            tipForm(-1);
+        });
+        document.getElementById("ff-tips-reset").addEventListener("click", () => {
+            if (!confirm("Put back the game's own tips? Your list will be lost.")) return;
+            saveTips(null, () => { tipEditing = -1; });
+        });
+        loadTips();
 
         // Zones: the area is its own thing, its contents are another.
         document.getElementById("ff-zone-add").addEventListener("click", () => {
@@ -5183,64 +5315,114 @@
        including the coming soon version, above the control buttons display
        the power up tips on a ticker, changing them every 6 seconds, add in
        some generic how-to-play tips too"). The power-ups' own tips from
-       RoomLevels.POWERUPS, then GENERAL_TIPS, in turn from a random one,
+       RoomLevels.POWERUPS, then the general ones, in turn from a random one,
        one every TIP_MS. It keeps time only while the title is up. */
     const TIP_MS = 6000;
     const TIP_FADE_MS = 900;            // css/fallinfurni.css .ff-tips-text; slowed at the owner's ask
-    /* The how-to-play tips, the owner's pick and wording (27 Oct 2026).
-       F only enlarges inside the homepage's window (see the F key in the
-       options), so on the game's own page that tip is about M alone. */
-    // Skipped for somebody already signed in (see renderWho), as it asks nothing of them.
-    const SIGN_IN_TIP = "Sign in with Discord to put your runs on the leaderboard.";
-    const tipFits = (t) => t !== SIGN_IN_TIP || !(window.Account && Account.current);
-    // Not the phone's window (28 Oct 2026), which fills the screen and has no Enlarge.
+    /* The how-to-play tips, the owner's pick and wording (27 Oct 2026),
+       now his to edit (3 Nov 2026): the level editor's Splash tab saves a
+       list to the site's settings (settings.ffTips), which replaces this one
+       whole, power-up tips included. Until he saves one, this is the list.
+
+       WHO SEES A TIP:
+         all        everyone;
+         mouse      not on a touch screen (a finger taps rather than clicks,
+                    and has no Escape key: 30 Oct 2026, the bug scan);
+         touch      only on a touch screen;
+         signedout  only somebody not signed in (checked as each tip comes
+                    up, since signing in happens while the title is up);
+         window     only inside the homepage's window, where F enlarges
+                    (not the phone's window, which fills the screen);
+         page       anywhere but that window. */
+    const TIP_WHO = {
+        all: "Everyone",
+        mouse: "Mouse and keyboard only",
+        touch: "Touch screens only",
+        signedout: "Signed-out players only",
+        window: "In the homepage's window only",
+        page: "Outside the homepage's window only"
+    };
+    const TIP_MAX = 40, TIP_MAX_LEN = 140;      // netlify/functions/settings.js cleanFfTips
+    const DEFAULT_TIPS = () => Object.values(POWERS()).map(p => p.tip).filter(Boolean).map(text => ({ text, who: "all" })).concat([
+        { text: "Sit on every seat in the order it landed.", who: "all" },
+        { text: "The wrong seat costs you 3 seconds and your streak.", who: "all" },
+        { text: "Not everything that falls is a seat. Some furni is just in the way.", who: "all" },
+        { text: "Click a tile to walk there.", who: "mouse" },
+        { text: "Tap a tile to walk there.", who: "touch" },
+        { text: "One wrong seat resets your streak.", who: "all" },
+        { text: "Clear 10 levels to earn a life back.", who: "all" },
+        { text: "Sign in with Discord to put your runs on the leaderboard.", who: "signedout" },
+        { text: "Double-click a power-up to walk over and grab it.", who: "all" },
+        { text: "Each power-up can be used once a round.", who: "all" },
+        { text: "Press F to enlarge the game, M to switch the music on or off.", who: "window" },
+        { text: "Press M to switch the music on or off.", who: "page" },
+        { text: "Press Escape to pause.", who: "mouse" },
+        { text: "Look up before you sit down.", who: "all" },
+        { text: "Fifty rooms. Three lives. One run.", who: "all" }
+    ]);
     const inWindow = (() => { try { return window.parent !== window && Boolean(window.parent.FFWindow) && !window.parent.FFWindow.isPhone; } catch (e) { return false; } })();
-    /* A finger (30 Oct 2026, the bug scan, the owner's approval): it taps
-       rather than clicks, and has no Escape key, so that tip is left out. */
     const byTouch = (() => { try { return window.matchMedia("(pointer: coarse)").matches; } catch (e) { return false; } })();
-    const GENERAL_TIPS = [
-        "Sit on every seat in the order it landed.",
-        "The wrong seat costs you 3 seconds and your streak.",
-        "Not everything that falls is a seat. Some furni is just in the way.",
-        byTouch ? "Tap a tile to walk there." : "Click a tile to walk there.",
-        "One wrong seat resets your streak.",
-        "Clear 10 levels to earn a life back.",
-        SIGN_IN_TIP,
-        "Double-click a power-up to walk over and grab it.",
-        "Each power-up can be used once a round.",
-        inWindow ? "Press F to enlarge the game, M to switch the music on or off." : "Press M to switch the music on or off.",
-        byTouch ? "" : "Press Escape to pause.",
-        "Look up before you sit down.",
-        "Fifty rooms. Three lives. One run."
-    ].filter(Boolean);
+    const tipForDevice = (t) => t.who === "mouse" ? !byTouch : t.who === "touch" ? byTouch
+        : t.who === "window" ? inWindow : t.who === "page" ? !inWindow : true;
+    const tipFits = (t) => t.who !== "signedout" || !(window.Account && Account.current);
+    // undefined until the settings answer: null is the game's own list.
+    let savedTips;
+    const tipsHere = () => (Array.isArray(savedTips) ? savedTips : DEFAULT_TIPS()).filter(tipForDevice);
     let tipsTimer = 0;
     function startTips() {
         const el = document.getElementById("ff-tips");
-        if (!el || tipsTimer) return;
+        if (!el || tipsTimer || el.dataset.started) return;
+        el.dataset.started = "1";
         const text = el.querySelector(".ff-tips-text");
-        const tips = Object.values(POWERS()).map(p => p.tip).filter(Boolean).concat(GENERAL_TIPS);
-        if (!tips.length) return;
-        let i = Math.floor(Math.random() * tips.length);
-        if (!tipFits(tips[i])) i = (i + 1) % tips.length;
-        text.textContent = tips[i];
-        el.hidden = false;
-        placeTips();
+        let tips = [], i = 0;
+        // The next tip from i on that this player should see; -1 if none.
+        const nextFit = (from) => {
+            for (let n = 0; n < tips.length; n++) {
+                const k = (from + n) % tips.length;
+                if (tipFits(tips[k])) return k;
+            }
+            return -1;
+        };
+        const show = () => {
+            const k = nextFit(i);
+            if (k < 0) { el.hidden = true; return; }
+            i = k;
+            text.textContent = tips[i].text;
+            el.hidden = false;
+            placeTips();
+        };
+        const begin = () => {
+            tips = tipsHere();
+            if (!tips.length) { el.hidden = true; return; }
+            i = Math.floor(Math.random() * tips.length);
+            show();
+            if (tipsTimer) return;
+            tipsTimer = setInterval(() => {
+                const title = document.getElementById("ff-title");
+                if (!title || title.dataset.state === "playing" || tips.length < 2) return;
+                text.classList.add("is-out");
+                setTimeout(() => {
+                    i = (i + 1) % tips.length;
+                    show();
+                    text.classList.remove("is-out");
+                }, TIP_FADE_MS);
+            }, TIP_MS);
+        };
         window.addEventListener("resize", placeTips);
         const inner = el.parentElement && el.parentElement.querySelector(".ff-title-inner");
         if (inner && window.ResizeObserver) new ResizeObserver(placeTips).observe(inner);
-        if (tips.length < 2) return;
-        tipsTimer = setInterval(() => {
-            const title = document.getElementById("ff-title");
-            if (!title || title.dataset.state === "playing") return;
-            text.classList.add("is-out");
-            setTimeout(() => {
-                i = (i + 1) % tips.length;
-                if (!tipFits(tips[i])) i = (i + 1) % tips.length;
-                text.textContent = tips[i];
-                text.classList.remove("is-out");
-                placeTips();
-            }, TIP_FADE_MS);
-        }, TIP_MS);
+        /* The page's one settings request (js/api.js), usually answered by
+           now. Waited for briefly so a saved list doesn't flash the old one
+           first; a slow or failed answer starts the game's own list. */
+        const read = (typeof Api !== "undefined" && Api.getSiteSettings) ? Promise.resolve(Api.getSiteSettings()).catch(() => null) : Promise.resolve(null);
+        let begun = false;
+        const go = () => { if (!begun) { begun = true; begin(); } };
+        read.then((data) => {
+            savedTips = data && Array.isArray(data.ffTips) ? data.ffTips : null;
+            if (begun) { tips = tipsHere(); i = Math.min(i, Math.max(0, tips.length - 1)); if (tips.length) show(); else el.hidden = true; }
+            go();
+        });
+        setTimeout(go, 1500);
     }
 
     /* HALFWAY BETWEEN THE TITLE'S LAST LINE AND THE OPTIONS (the owner's:

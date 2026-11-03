@@ -1402,3 +1402,18 @@ body.wr-on #login-modal .admin-form-actions .btn { width: 100%; min-height: 36px
     #wr-app .wr-ui .art-admin-head { flex-direction: column; }
     #wr-app .wr-ui .art-body-field textarea { min-height: 240px; }
 }
+
+/* ---- PURA PANIC: SCORES TO LOOK AT (3 Nov 2026, js/admin-pura-flags.js).
+   Each flagged row is followed by its reasons and buttons, under the
+   figures, as one block; the dealt-with list folds shut under it. */
+#wr-app .wr-ui .pf-flags { margin: 0 0 18px; }
+#wr-app .wr-ui .pf-flags > .admin-subheading { margin-top: 0; }
+#wr-app .wr-ui .pf-flags > .ctl-status { margin: 0 0 8px; }
+#wr-app .wr-ui .pf-flags .ctl-status:empty { display: none; }
+#wr-app .wr-ui .pf-flags .ff-table tr:has(+ .pf-why) td { border-bottom: 0; }
+#wr-app .wr-ui .pf-why td { padding-top: 0; }
+/* Held inside the screen on a phone, where the table scrolls sideways under it. */
+#wr-app .wr-ui .pf-reasons { margin: 0 0 8px; padding-left: 18px; line-height: 1.5; max-width: min(90ch, calc(100vw - 100px)); }
+#wr-app .wr-ui .pf-reasons li + li { margin-top: 3px; }
+#wr-app .wr-ui .pf-dealt { margin-top: 10px; }
+#wr-app .wr-ui .pf-dealt > summary { cursor: pointer; margin-bottom: 6px; }

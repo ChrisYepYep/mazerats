@@ -601,6 +601,8 @@ async function logGame(db, claims, player, result, ms, body, guest) {
             level: result.level,
             pieces: result.pieces,
             ms,
+            // Play to this report on the server's clock (3 Nov 2026, pura-flags.js).
+            wall: Math.max(0, Date.now() - claims.t),
             ended: result.over ? "topout" : checkpoint ? "closed" : "quit",
             // Picked up again after being left (CONTINUING).
             resumed: claims.resumed === true,
@@ -901,6 +903,16 @@ exports.handler = async (event) => {
         console.warn("pura-scores: the page and the replay disagree", body.score, result.score);
     }
     if (!result.score) return json(200, { recorded: false, reason: "no-score", score: 0 });
+    /* TAKEN OFF THE BOARD (3 Nov 2026, pura-flags.js): a game whose score
+       an admin removed in the Warren never goes back on, or its own later
+       saves (the finish after a save on the way, a retry) would put it
+       straight back. Answered as a game already sent, which the page says
+       quietly. Fails open: an unreadable answer lets the save through. */
+    try {
+        if (await db.collection("pura_flags").findOne({ _id: claims.rid, status: "removed" }, { projection: { _id: 1 } })) {
+            return json(200, { recorded: false, reason: "already-submitted" });
+        }
+    } catch (e) { console.error("pura-scores: could not read the Warren's removals", e); }
 
     let who = player || (guest.kind === "habbo" ? { id: guest.id } : guest.n ? { id: ratId(guest.n) } : { id: "guestrat:new" });
     /* Only a finished game spends the token, so only a finished game hands
@@ -964,7 +976,15 @@ exports.handler = async (event) => {
            …" — its own score. The row's game id says the best is this
            game's, so it is answered as the new best it is. Never sent out
            (clean picks the fields the board shows). */
-        rid: claims.rid
+        rid: claims.rid,
+        /* For the Warren's outlier flags (3 Nov 2026, pura-flags.js), never
+           sent out either: the time from Play to this save on the SERVER's
+           clock, which a script cannot shorten as it can `ms`; and the
+           replay's clears and chains, so the least time their animations
+           take is still known once the game's log row has aged out. */
+        wall: Math.max(0, Date.now() - claims.t),
+        clears: result.clears || [0, 0, 0, 0],
+        chains: result.chains || 0
     };
     let better;
     try {

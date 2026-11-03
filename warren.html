@@ -69,7 +69,7 @@
          before css/warren.css (2 Nov 2026, see loadFiles there). -->
     <!-- The Warren's workshop dress (25 Oct 2026). data-recolour-skip: it is
          not the site's colours, so the Recolour editor does not catalogue it. -->
-    <link rel="stylesheet" href="css/warren.css?v=3" data-recolour-skip>
+    <link rel="stylesheet" href="css/warren.css?v=4" data-recolour-skip>
     <link rel="stylesheet" href="css/prize-wheel.css?v=5" data-recolour-skip>
     <link rel="stylesheet" href="css/admin-speed.css?v=1" data-recolour-skip>
     <!-- No Umami here. The admin page is not traffic worth counting, and the
@@ -221,7 +221,7 @@
                 <p class="wr-rail-group">Games</p>
                 <button type="button" class="chrome-nav-btn" data-panel="daily"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2.5v2.5M12 19v2.5M2.5 12H5M19 12h2.5M5.3 5.3l1.8 1.8M16.9 16.9l1.8 1.8M5.3 18.7l1.8-1.8M16.9 7.1l1.8-1.8"/></svg><span class="chrome-nav-btn-label">Daily</span></button>
                 <button type="button" class="chrome-nav-btn" data-panel="ffdata"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 11V5.5A1.5 1.5 0 0 1 8.5 4h7A1.5 1.5 0 0 1 17 5.5V11"/><path d="M5 11h14v3H5zM6.5 14v6M17.5 14v6"/></svg><span class="chrome-nav-btn-label">Fallin&#39; Furni</span></button>
-                <button type="button" class="chrome-nav-btn" data-panel="puradata"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13 2.5L5 13.5h6l-1 8 8-11h-6z"/></svg><span class="chrome-nav-btn-label">Pura Panic</span></button>
+                <button type="button" class="chrome-nav-btn" data-panel="puradata"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13 2.5L5 13.5h6l-1 8 8-11h-6z"/></svg><span class="chrome-nav-btn-label">Pura Panic</span><span class="admin-nav-count" id="pura-nav-count" title="Pura Panic scores to look at" hidden></span></button>
                 <button type="button" class="chrome-nav-btn" data-panel="wizard"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 4.5L3.5 6.5v13l5.5-2 6 2 5.5-2v-13l-5.5 2z"/><path d="M9 4.5v13M15 6.5v13"/></svg><span class="chrome-nav-btn-label">Atlas</span></button>
                 <button type="button" class="chrome-nav-btn" data-panel="entries"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7.5a2 2 0 0 0 2-2h12a2 2 0 0 0 2 2v9a2 2 0 0 0-2 2H6a2 2 0 0 0-2-2z"/><path d="M9.5 12h5"/></svg><span class="chrome-nav-btn-label">Event Entries</span><span class="admin-nav-count" id="entries-nav-count" title="Entries nobody has looked at yet" hidden></span></button>
                 <p class="wr-rail-group">People</p>
@@ -1351,6 +1351,51 @@
                                     </div>
                                 </header>
 
+                                <!-- Scores to look at (3 Nov 2026): board rows
+                                     that look out of line, judged by
+                                     netlify/functions/pura-flags.js, drawn and
+                                     acted on by js/admin-pura-flags.js. -->
+                                <div class="pf-flags" id="pura-flags">
+                                    <h3 class="admin-subheading">Scores to look at <span class="admin-hint" id="pura-flags-count"></span></h3>
+                                    <p class="admin-hint">Scores on the board that look out of line: a game faster than the real one can run, pieces placed faster than people manage, or a score far ahead of everybody else's. A flag is a question, not proof. <strong>It's fine</strong> stops it showing; <strong>Take off the board</strong> removes the score (the player's next game can go on as usual, and Undo puts it back). To stop someone for good, ban them from the Players or Bans tab.</p>
+                                    <p class="ctl-status" id="pura-flags-status" role="status"></p>
+                                    <div class="ff-table-wrap">
+                                        <table class="ff-table" id="pura-flags-table">
+                                            <thead>
+                                                <tr>
+                                                    <th scope="col">#</th>
+                                                    <th scope="col">Player</th>
+                                                    <th scope="col" class="ff-num">Points</th>
+                                                    <th scope="col" class="ff-num">Level</th>
+                                                    <th scope="col" class="ff-num">Pieces</th>
+                                                    <th scope="col" class="ff-num">Game clock</th>
+                                                    <th scope="col" class="ff-num">Server clock</th>
+                                                    <th scope="col">When</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody></tbody>
+                                        </table>
+                                    </div>
+                                    <details class="pf-dealt" id="pura-flags-dealt" hidden>
+                                        <summary class="admin-hint">Dealt with <span id="pura-flags-dealt-count"></span></summary>
+                                        <div class="ff-table-wrap">
+                                            <table class="ff-table">
+                                                <thead>
+                                                    <tr>
+                                                        <th scope="col">Player</th>
+                                                        <th scope="col" class="ff-num">Points</th>
+                                                        <th scope="col">Decision</th>
+                                                        <th scope="col">By</th>
+                                                        <th scope="col">When</th>
+                                                        <th scope="col"></th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody></tbody>
+                                            </table>
+                                        </div>
+                                    </details>
+                                </div>
+
                                 <div class="admin-activity-summary" id="pura-summary"></div>
                                 <div class="admin-visitors" id="pura-charts"></div>
 
@@ -1579,7 +1624,7 @@
          their section is first opened (2 Nov 2026, WIZARD_FILES and
          RECOLOUR_FILES there): most visits open neither. -->
     <script src="js/admin-address.js?v=3"></script>
-    <script src="js/admin.js?v=4"></script>
+    <script src="js/admin.js?v=5"></script>
     <script src="js/dead-ends.js?v=2"></script>
     <script src="js/admin-dead-ends.js?v=3"></script>
     <!-- The Guides panel's text format (the maze list and the formatting bar
@@ -1593,6 +1638,7 @@
     <script src="js/wheel-draw.js?v=1"></script><!-- the wheel's drawing, spin and sound, shared with an article's replay (js/article-wheel.js) -->
     <script src="js/prize-wheel.js?v=5"></script><!-- the Prize Wheel, opened from Event Entries -->
     <script src="js/admin-entries.js?v=5"></script>
+    <script src="js/admin-pura-flags.js?v=1"></script><!-- Pura Panic's "Scores to look at" (netlify/functions/pura-flags.js) -->
     <script src="js/password-field.js?v=3"></script>
     <script src="js/glyph-palette.js?v=3"></script>
     <script src="js/custom-scrollbar.js?v=4"></script>

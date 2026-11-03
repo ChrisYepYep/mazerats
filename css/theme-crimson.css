@@ -9,7 +9,7 @@
    completely inert until js/site.js puts that attribute on <html>. The
    classic palette is not defined here and is not affected by anything in it.
 
-   1202 rules, 1932 declarations, hues 350 (surfaces) / 212 (accents).
+   1203 rules, 1933 declarations, hues 350 (surfaces) / 212 (accents).
 */
 :root[data-theme="crimson"] {
     --bg-black: #080506;
@@ -2556,7 +2556,7 @@ html[data-theme="crimson"]:not([data-theme]) .modal-article-source a:hover {
 }
 
 [data-theme="crimson"] .timeline-year-number {
-    color: var(--amber-bright);
+    color: #ced1d5;
 }
 
 [data-theme="crimson"] .timeline-year-note {
@@ -2988,6 +2988,10 @@ html[data-theme="crimson"]:not([data-theme]) .modal-article-source a:hover {
 
 [data-theme="crimson"] .side-menu-item.is-on .side-menu-badge {
     color: #121010;
+}
+
+[data-theme="crimson"] .side-menu-item.is-on .side-menu-state {
+    color: #110f0f;
 }
 
 [data-theme="crimson"] .side-menu-item + .side-menu-branch::before,
@@ -5715,7 +5719,7 @@ html[data-theme="crimson"]:not([data-theme]) .guess-board-rank {
 [data-theme="crimson"] .opening-more {
     border: 0;
     background: none;
-    color: var(--amber-bright);
+    color: #ced1d5;
 }
 
 [data-theme="crimson"] .opening-more:hover,
@@ -5732,7 +5736,7 @@ html[data-theme="crimson"]:not([data-theme]) .guess-board-rank {
 }
 
 [data-theme="crimson"] .opening-found {
-    color: var(--amber-text);
+    color: #ced1d5;
 }
 
 [data-theme="crimson"] .opening-now-row,

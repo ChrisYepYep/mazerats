@@ -898,6 +898,8 @@ document.addEventListener("DOMContentLoaded", () => {
         if (window.AdminPlayers) window.AdminPlayers.reset();
         // The Event Entries panel (js/admin-entries.js, 30 Sept 2026).
         if (window.AdminEntries) window.AdminEntries.reset();
+        // Pura Panic's Scores to look at (js/admin-pura-flags.js, 3 Nov 2026).
+        if (window.AdminPuraFlags) window.AdminPuraFlags.reset();
         if (window.AdminWhatsNew) window.AdminWhatsNew.reset();
         // The Notifications panel (js/admin-notifications.js, 5 Oct 2026).
         if (window.AdminNotifications) window.AdminNotifications.reset();

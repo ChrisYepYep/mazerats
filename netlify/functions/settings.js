@@ -206,6 +206,32 @@ const gooOf = (doc) => !(doc && doc.halloweenGoo === false);
 const MAX_LOBBY_FURNI = 10;
 const CLASS_NAME = /^[A-Za-z0-9_]{1,64}$/;
 
+/* The tips on Fallin' Furni's title screen (3 Nov 2026, the owner's: edit,
+   remove or add them from the level editor's Splash tab). null means the
+   game's own list (DEFAULT_TIPS in js/fallinfurni.js); a saved list replaces
+   it whole, power-up tips included. Each tip says who sees it, since some
+   only make sense on a phone, with a mouse, signed out, or in the
+   homepage's window. Plain text: the game shows it with textContent. */
+const FF_TIP_WHO = ["all", "mouse", "touch", "signedout", "window", "page"];
+const MAX_FF_TIPS = 40;
+const MAX_FF_TIP_LEN = 140;
+function cleanFfTips(value) {
+    if (value === null) return null;
+    if (!Array.isArray(value)) return "ffTips must be a list of tips, or null for the game's own";
+    if (value.length > MAX_FF_TIPS) return `At most ${MAX_FF_TIPS} tips`;
+    const out = [];
+    for (const t of value) {
+        if (!t || typeof t !== "object" || typeof t.text !== "string") return "Each tip needs its text";
+        const text = t.text.replace(/[\u0000-\u001f\u007f\u2028\u2029]+/g, " ").replace(/\s+/g, " ").trim();
+        if (!text) return "A tip can't be empty";
+        if (text.length > MAX_FF_TIP_LEN) return `A tip can be at most ${MAX_FF_TIP_LEN} characters`;
+        const who = FF_TIP_WHO.includes(t.who) ? t.who : "all";
+        if (!out.some(o => o.text === text && o.who === who)) out.push({ text, who });
+    }
+    return out;
+}
+const ffTipsOf = (doc) => (doc && Array.isArray(doc.ffTips)) ? doc.ffTips : null;
+
 /* When the site opens, as an instant in time, for the countdown on the
    landing page (see js/welcome.js).
 
@@ -350,6 +376,7 @@ function settingsReply(event, doc) {
     const res = cachedJson(event, {
         landingState: (doc && doc.landingState) || DEFAULT_STATE,
         lobbyFurni: (doc && Array.isArray(doc.lobbyFurni)) ? doc.lobbyFurni : [],
+        ffTips: ffTipsOf(doc),
         fallinFurniState: ffStateOf(doc),
         fallinFurniBeta: ffBetaOf(doc),
         puraPanicState: puraState(doc),
@@ -597,6 +624,11 @@ async function write(event, settings, db) {
             }
             update.lobbyFurni = seen;
         }
+        if (body.ffTips !== undefined) {
+            const cleaned = cleanFfTips(body.ffTips);
+            if (typeof cleaned === "string") return json(400, { error: cleaned });
+            update.ffTips = cleaned;
+        }
         if (Object.keys(update).length === 0) {
             return json(400, { error: "Nothing to update" });
         }
@@ -624,6 +656,7 @@ async function write(event, settings, db) {
         return json(200, {
             landingState: (doc && doc.landingState) || DEFAULT_STATE,
             lobbyFurni: (doc && Array.isArray(doc.lobbyFurni)) ? doc.lobbyFurni : [],
+            ffTips: ffTipsOf(doc),
             fallinFurniState: ffStateOf(doc),
             fallinFurniBeta: ffBetaOf(doc),
             puraPanicState: puraState(doc),

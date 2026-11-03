@@ -296,3 +296,8 @@ html[data-skin="halloween"] .ec-title-s1 { border-image-source: url('../assets/i
 html[data-skin="halloween"] .ec-title-s2 { border-image-source: url('../assets/img/ec/ec-name-player-s2.png'); }
 html[data-skin="halloween"] .chrome-list-row .ec-title .ec-title-name,
 html[data-skin="halloween"] #featured-frame-list .chrome-list-row .ec-title .ec-title-name { color: #fff8ec; }
+
+/* LIVE on the skin's green rows (3 Nov 2026, the sweep's leftovers): the site's
+   #e8563f measured 3.6:1 there at 9.6px. A lighter coral of the same red,
+   5.3:1; its pulse ring keeps the old red. */
+html[data-skin="halloween"] .status-live { color: #ff8a70; }

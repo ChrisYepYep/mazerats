@@ -1407,6 +1407,28 @@
                             <button type="button" id="ff-splash-add" class="ff-primary">Add to splash</button>
                             <button type="button" id="ff-splash-reset">Back to default</button>
                         </div>
+
+                        <!-- THE TIPS (3 Nov 2026, the owner's): the ticker
+                             above the title's buttons. Site-wide like the furni
+                             above, saved to settings.ffTips on every change. -->
+                        <h3>Tips</h3>
+                        <p class="ff-hint">
+                            The tips that take turns above the buttons on the
+                            title screen, one every six seconds. Each one says
+                            who sees it. Saves as you change it.
+                        </p>
+                        <p id="ff-tips-count" class="ff-sel"></p>
+                        <div id="ff-tips-list" class="ff-item-list ff-tip-list"></div>
+                        <h3 id="ff-tip-form-title">Add a tip</h3>
+                        <textarea id="ff-tip-text" class="ff-select ff-tip-text" rows="3" maxlength="140"
+                                  placeholder="A new tip…" aria-label="Tip text"></textarea>
+                        <p id="ff-tip-left" class="ff-hint ff-tip-left"></p>
+                        <select id="ff-tip-who" class="ff-select" aria-label="Who sees this tip"></select>
+                        <div class="ff-btn-row">
+                            <button type="button" id="ff-tip-save" class="ff-primary">Add tip</button>
+                            <button type="button" id="ff-tip-cancel" hidden>Cancel</button>
+                            <button type="button" id="ff-tips-reset">Back to default</button>
+                        </div>
                     </section>
                 </div>
             </aside>

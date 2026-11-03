@@ -9,7 +9,7 @@
    completely inert until js/site.js puts that attribute on <html>. The
    classic palette is not defined here and is not affected by anything in it.
 
-   1207 rules, 1940 declarations, hues 222 (surfaces) / 36 (accents).
+   1208 rules, 1941 declarations, hues 222 (surfaces) / 36 (accents).
 */
 :root[data-dark] {
     --bg-black: #050607;
@@ -2569,7 +2569,7 @@ html[data-dark] .timeline-summary {
 }
 
 html[data-dark] .timeline-year-number {
-    color: var(--amber-bright);
+    color: #c1b7a8;
 }
 
 html[data-dark] .timeline-year-note {
@@ -3001,6 +3001,10 @@ html[data-dark] .side-menu-badge {
 
 html[data-dark] .side-menu-item.is-on .side-menu-badge {
     color: #c6bcad;
+}
+
+html[data-dark] .side-menu-item.is-on .side-menu-state {
+    color: #c4bcb0;
 }
 
 html[data-dark] .side-menu-item + .side-menu-branch::before,
@@ -5738,7 +5742,7 @@ html[data-dark] .opening-head-rule {
 html[data-dark] .opening-more {
     border: 0;
     background: none;
-    color: var(--amber-bright);
+    color: #c1b7a8;
 }
 
 html[data-dark] .opening-more:hover,
@@ -5755,7 +5759,7 @@ html[data-dark] .opening-sub {
 }
 
 html[data-dark] .opening-found {
-    color: var(--amber-text);
+    color: #c1b7a8;
 }
 
 html[data-dark] .opening-now-row,

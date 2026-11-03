@@ -863,9 +863,11 @@ function lightExtras() {
     color: var(--parchment);
 }
 /* A builder's "Online" (30 Oct 2026): its green was picked for a dark
-   panel and all but vanished on the ice (1.0:1). A deep green, 4:1 here. */
+   panel and all but vanished on the ice (1.0:1). A deep green, 4:1 here.
+   A step deeper again (3 Nov 2026, the sweep's leftovers): 4:1 measured
+   4.3 on the builder card's blue, and 9px type needs 4.5. Now 5.6:1. */
 [data-theme="${THEME}"] .builder-status.is-online {
-    color: #0f4d27;
+    color: #08341a;
 }
 /* The status pills (Open, Closed...): their colour IS the word, so they sit
    on near-white ice rather than a mid blue that swallows the green. */
@@ -970,6 +972,35 @@ function lightExtras() {
 [data-theme="${THEME}"][data-skin="xmas"] .fellow-fansites p,
 [data-theme="${THEME}"][data-skin="xmas"] .fellow-fansites-title {
     text-shadow: 0 1px 0 rgba(255, 255, 255, 0.7);
+}
+/* The last of the sweep's light-mode leftovers (3 Nov 2026, the owner's
+   "fix"). Extreme and Very Hard on their dark pill (#2a3442, above):
+   4.1 and 3.3:1, so each a lighter step of its own red, 6.0 and 5.9:1. */
+[data-theme="${THEME}"] .difficulty-extreme {
+    color: #e89a9a;
+}
+[data-theme="${THEME}"] .difficulty-very-hard {
+    color: #ff8a8e;
+}
+/* The picture's pills (the room's name, "1 of 16", Pause, the arrows): the
+   accent navy over their grey glass measured 4.0 to 4.5:1. The deepest
+   navy, 4.8:1 at the glass's lightest. */
+[data-theme="${THEME}"] .gallery-counter,
+[data-theme="${THEME}"] #gallery-counter,
+[data-theme="${THEME}"] #gallery-position,
+[data-theme="${THEME}"] #gallery-pause:not(.is-paused),
+[data-theme="${THEME}"] #gallery-prev,
+[data-theme="${THEME}"] #gallery-next {
+    color: #0f1a2b;
+}
+/* The privacy page's eyebrow, headings and links, and the 404 page's
+   Discord link: the accent navy on the page's mid blue, 4.0 to 4.4:1. The
+   footer's navy, 4.7:1 and over; a hovered link keeps its own colour. */
+[data-theme="${THEME}"] .legal-eyebrow,
+[data-theme="${THEME}"] .legal-section h2,
+[data-theme="${THEME}"] .legal-section a:not(:hover):not(:focus-visible),
+[data-theme="${THEME}"] .lost-foot a:not(:hover):not(:focus-visible) {
+    color: #142136;
 }
 `;
 }

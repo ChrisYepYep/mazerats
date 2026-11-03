@@ -9,7 +9,7 @@
    completely inert until js/site.js puts that attribute on <html>. The
    classic palette is not defined here and is not affected by anything in it.
 
-   1202 rules, 1932 declarations, hues 208 (surfaces) / 216 (accents).
+   1203 rules, 1933 declarations, hues 208 (surfaces) / 216 (accents).
 */
 :root[data-light] {
     --bg-black: #5f91bd;
@@ -2556,7 +2556,7 @@ html[data-light] .timeline-summary {
 }
 
 html[data-light] .timeline-year-number {
-    color: #1e3558;
+    color: #172d4f;
 }
 
 html[data-light] .timeline-year-note {
@@ -2988,6 +2988,10 @@ html[data-light] .side-menu-badge {
 
 html[data-light] .side-menu-item.is-on .side-menu-badge {
     color: #132540;
+}
+
+html[data-light] .side-menu-item.is-on .side-menu-state {
+    color: #15253d;
 }
 
 html[data-light] .side-menu-item + .side-menu-branch::before,
@@ -5715,7 +5719,7 @@ html[data-light] .opening-head-rule {
 html[data-light] .opening-more {
     border: 0;
     background: none;
-    color: #1e3558;
+    color: #172d4f;
 }
 
 html[data-light] .opening-more:hover,
@@ -5732,7 +5736,7 @@ html[data-light] .opening-sub {
 }
 
 html[data-light] .opening-found {
-    color: #233856;
+    color: #172d4f;
 }
 
 html[data-light] .opening-now-row,
@@ -6376,9 +6380,11 @@ html[data-light] #privacy-modal .console-hashline {
     color: var(--parchment);
 }
 /* A builder's "Online" (30 Oct 2026): its green was picked for a dark
-   panel and all but vanished on the ice (1.0:1). A deep green, 4:1 here. */
+   panel and all but vanished on the ice (1.0:1). A deep green, 4:1 here.
+   A step deeper again (3 Nov 2026, the sweep's leftovers): 4:1 measured
+   4.3 on the builder card's blue, and 9px type needs 4.5. Now 5.6:1. */
 html[data-light] .builder-status.is-online {
-    color: #0f4d27;
+    color: #08341a;
 }
 /* The status pills (Open, Closed...): their colour IS the word, so they sit
    on near-white ice rather than a mid blue that swallows the green. */
@@ -6483,4 +6489,33 @@ html[data-light][data-skin="xmas"] .fellow-fansites a,
 html[data-light][data-skin="xmas"] .fellow-fansites p,
 html[data-light][data-skin="xmas"] .fellow-fansites-title {
     text-shadow: 0 1px 0 rgba(255, 255, 255, 0.7);
+}
+/* The last of the sweep's light-mode leftovers (3 Nov 2026, the owner's
+   "fix"). Extreme and Very Hard on their dark pill (#2a3442, above):
+   4.1 and 3.3:1, so each a lighter step of its own red, 6.0 and 5.9:1. */
+html[data-light] .difficulty-extreme {
+    color: #e89a9a;
+}
+html[data-light] .difficulty-very-hard {
+    color: #ff8a8e;
+}
+/* The picture's pills (the room's name, "1 of 16", Pause, the arrows): the
+   accent navy over their grey glass measured 4.0 to 4.5:1. The deepest
+   navy, 4.8:1 at the glass's lightest. */
+html[data-light] .gallery-counter,
+html[data-light] #gallery-counter,
+html[data-light] #gallery-position,
+html[data-light] #gallery-pause:not(.is-paused),
+html[data-light] #gallery-prev,
+html[data-light] #gallery-next {
+    color: #0f1a2b;
+}
+/* The privacy page's eyebrow, headings and links, and the 404 page's
+   Discord link: the accent navy on the page's mid blue, 4.0 to 4.4:1. The
+   footer's navy, 4.7:1 and over; a hovered link keeps its own colour. */
+html[data-light] .legal-eyebrow,
+html[data-light] .legal-section h2,
+html[data-light] .legal-section a:not(:hover):not(:focus-visible),
+html[data-light] .lost-foot a:not(:hover):not(:focus-visible) {
+    color: #142136;
 }

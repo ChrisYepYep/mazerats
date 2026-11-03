@@ -11865,7 +11865,9 @@ body[data-page="admin"] #activity-sessions {
     font-weight: 800;
     font-size: 1.4rem;
     letter-spacing: 0.02em;
-    color: var(--amber-bright);
+    /* The paler gold of .opening-more (3 Nov 2026, the sweep's leftovers):
+       --amber-bright measured 3.9:1 here, and at this size it needs 4.5. */
+    color: #dbbf93;
 }
 
 .timeline-year-note {
@@ -13468,6 +13470,10 @@ body[data-page="admin"] #activity-sessions {
 }
 
 .side-menu-item.is-on .side-menu-badge { color: #32220d; }
+/* And the open row's line under its name (3 Nov 2026, the owner's "fix" of
+   the sweep's leftovers): #4f3f25 passes on the cream but not on the open
+   row's darker wash (3.45:1 measured). The menu's darkest ink, 5.2:1. */
+.side-menu-item.is-on .side-menu-state { color: #2b1d12; }
 
 /* MAZES AND EVENTS (30 Oct 2026): a row with its sections folded under it.
    The row and an arrow sit side by side — the row goes to the tab, the
@@ -22617,7 +22623,9 @@ body.is-viewer #bans-add { display: none !important; }
     background: none;
     font: inherit;
     font-size: 0.5625rem;
-    color: var(--amber-bright);
+    /* Not --amber-bright (3 Nov 2026, the sweep's leftovers): at 9px on the
+       opening view's brown that measured 3.9:1. A paler gold, 5.6:1. */
+    color: #dbbf93;
     white-space: nowrap;
     cursor: var(--cursor-pointer);
 }
@@ -22632,7 +22640,10 @@ body.is-viewer #bans-add { display: none !important; }
 }
 .opening-name { display: block; font-size: 0.5625rem; line-height: 1.5; color: var(--amber-bright); }
 .opening-sub { display: block; font-size: 0.5625rem; line-height: 1.5; color: var(--amber-text); }
-.opening-found { margin: 14px 0 8px; font-family: 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace; font-size: 0.5625rem; font-weight: 400; color: var(--amber-text); }
+/* The count line's ink (3 Nov 2026, the sweep's leftovers): --amber-text
+   measured 3.5:1 on the opening view's brown at 9px. The pale gold that
+   "What's New ›" and the timeline's year now share, 5.6:1. */
+.opening-found { margin: 14px 0 8px; font-family: 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace; font-size: 0.5625rem; font-weight: 400; color: #dbbf93; }
 
 /* Cards: the rows' own dark glass, edge and shadow. */
 .opening-now-row,
