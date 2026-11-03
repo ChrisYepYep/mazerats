@@ -746,6 +746,15 @@ function spotlightLive(ev, now) {
    (refreshSpotlightEvents); a failed read keeps the last good list. */
 let spotlightArticles = null;
 let spotlightArticlesGood = [];
+/* NOT WHILE THIS PAGE IS THE GATE (3 Nov 2026, the bug scan). An article's
+   slide links to /article/<slug>, which is home.html, whose gate sends a
+   visitor straight back here while the site is Coming Soon or in
+   Maintenance: a slide that went nowhere. So articles join the spotlight
+   only once this page's own settings answer says the site is open (a
+   visitor kept here by /?landing, or just bounced), and are not even asked
+   for until then. Events, which open in this page's own window, show in
+   every state. Set by the DOMContentLoaded handler below. */
+let spotlightArticlesOpen = false;
 function spotlightArticleList() {
     if (!spotlightArticles) {
         spotlightArticles = fetch("/.netlify/functions/articles", { headers: { Accept: "application/json" } })
@@ -854,7 +863,7 @@ async function showSpotlight() {
     if (!el) return;
     if (!spotlightEvents) spotlightEvents = Api.getEvents().catch(() => []);
     const events = await spotlightEvents;
-    const articles = await spotlightArticleList();
+    const articles = spotlightArticlesOpen ? await spotlightArticleList() : [];
     const now = Date.now();
     const live = (Array.isArray(events) ? events : []).concat(articles)
         .filter(ev => spotlightLive(ev, now))
@@ -1055,6 +1064,9 @@ document.addEventListener("DOMContentLoaded", async () => {
             location.replace("/home" + location.hash);
             return;
         }
+        // Open, and staying: an article's slide leads somewhere now (see spotlightArticlesOpen).
+        spotlightArticlesOpen = true;
+        showSpotlight();
     }
 
     /* The countdown, once the button above has said its piece.

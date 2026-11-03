@@ -808,19 +808,18 @@
                     const data = await wheelCall("GET", { action: "draws", event: ev });
                     return Array.isArray(data && data.draws) ? data.draws : [];
                 },
-                // A view-only account draws for practice: nothing is logged or saved.
-                logDraw: writer ? async d => (await wheelCall("PUT", { action: "draw", id: d.id }, {
-                    eventId: d.eventId, name: d.name, entryIds: d.entryIds, onWheel: d.onWheel,
-                    leftOutWinners: d.leftOutWinners, drawnAt: d.drawnAt, prize: d.prize || "",
-                    // The wheel as it spun, for an article's replay (2 Nov 2026).
-                    ...(d.replay ? { replay: d.replay } : {})
-                })).draw : null,
+                /* The server makes the draw (3 Nov 2026, the bug scan): it is sent
+                   the wheel and answers with the logged draw and the spin to show.
+                   A view-only account draws for practice: nothing is logged or saved. */
+                spinDraw: writer ? async (d, slices, rot) => await wheelCall("PUT", { action: "spin", id: d.id }, {
+                    eventId: d.eventId, slices, leftOutWinners: d.leftOutWinners, prize: d.prize || "", from: rot
+                }) : null,
                 // Put in an article, on a saved winner's row (2 Nov 2026).
                 article: writer && window.WheelDraw ? drawArticles : null,
                 voidDraw: writer ? async (d, reason) => (await wheelCall("PUT", { action: "void-draw", id: d.id }, { reason })).draw : null,
                 markWinner: writer ? async d => {
                     const at = sessionNo;
-                    const out = await wheelCall("PUT", { action: "winner", draw: d.id }, { eventId: d.eventId, entryIds: d.entryIds });
+                    const out = await wheelCall("PUT", { action: "winner", draw: d.id }, { eventId: d.eventId });
                     if (at === sessionNo) load({ auto: true });
                     return out && out.draw;
                 } : null,

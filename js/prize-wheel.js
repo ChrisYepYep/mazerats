@@ -44,7 +44,8 @@
      eventId      the event shown
      loadEvent    async id -> { title, entrants }   (for the picker)
      loadDraws    async id -> [draw]      the event's draw log
-     logDraw      async draw -> draw      (absent: draws aren't logged)
+     spinDraw     async (draw, slices, rot) -> { draw, plan }   the server makes
+                  the draw (3 Nov 2026; absent: practice spins, logged nowhere)
      voidDraw     async (draw, reason) -> draw
      markWinner   async draw -> draw      (absent: no "Save as winner" in the log)
      prize        the event's prize line
@@ -559,23 +560,54 @@
         if (mode !== "idle" || wheel.length === 0 || !root || root.hidden) return;
         Sound.wake();
         setDrawer(false);
+        /* THE SERVER DRAWS (3 Nov 2026, the bug scan): an account that logs
+           draws asks event-entries.js (action=spin), which checks the wheel
+           against the approved entries, picks the winner and the spin, logs
+           the draw and says how to land; this only animates it. A view-only
+           account's practice spin, logged nowhere, is still picked here. */
+        if (typeof opts.spinDraw === "function") { askSpin(); return; }
         const n = wheel.length;
         const winIndex = fairIndex(n);
-        current = wheel[winIndex];
         const sp = spans()[winIndex];
         const where = sp[0] + (sp[1] - sp[0]) * (0.14 + 0.72 * fairUnit());
-        const turns = 6 + fairIndex(3);
-        const decel = 8.6 + 1.6 * fairUnit();
-        const from = rot;
-        spin = Object.assign(WD.plan(from, where, n, turns, decel), { t0: performance.now(), chase: 0, whooshed: false });
-        // For the draw log: the field, and whether winners were left out of it.
-        draw = newDraw(current, n);
-        /* And the wheel exactly as it spun (2 Nov 2026), so an article can
-           replay this draw: the names in their order, each slice's colour,
-           which won, and the spin's numbers. Names only, as shown. */
-        if (n <= WD.SNAP_MAX) {
-            draw.replay = { names: wheel.map(w => w.name), colours: wheel.map((w, i) => WD.jewelIndex(i, n)), win: winIndex, from, where, turns, decel };
+        draw = null;
+        runSpin(wheel[winIndex], { from: rot, where, turns: 6 + fairIndex(3), decel: 8.6 + 1.6 * fairUnit() });
+    }
+    async function askSpin() {
+        const at = openNo, field = wheel.slice(), n = field.length;
+        mode = "asking";
+        ui.spinBtn.disabled = true;
+        const d = newDraw(null, n);
+        let res;
+        try {
+            res = await opts.spinDraw(d, field.map(w => ({ name: w.name, entryIds: w.entryIds.slice() })), rot);
+        } catch (err) {
+            if (at !== openNo) return;
+            mode = "idle";
+            ui.spinBtn.disabled = false;
+            const again = await confirmInStage(err && err.status === 401
+                ? "Your Warren session has ended, so the wheel can't draw. Close it, sign in again and reopen the wheel."
+                : `The draw couldn't be made: ${(err && err.message) || "something went wrong"}`, "Try again", "OK");
+            if (again && at === openNo) startSpin();
+            return;
         }
+        if (at !== openNo || mode !== "asking") return;
+        const row = res && res.draw, p = res && res.plan;
+        const who = p && field[p.win];
+        // The server's draw is of this wheel, or nothing is shown as won.
+        if (!row || !who || who.name.toLowerCase() !== String(row.name).toLowerCase()) {
+            mode = "idle";
+            ui.spinBtn.disabled = false;
+            confirmInStage("The server's draw didn't match the wheel on screen. Close and reopen the wheel, then spin again.", "OK", "Close");
+            return;
+        }
+        draw = Object.assign(d, { name: row.name, entryIds: Array.isArray(row.entryIds) ? row.entryIds.slice() : [], logged: true, drawnAt: row.drawnAt || d.drawnAt });
+        mergeRow(row);
+        runSpin(who, p);
+    }
+    function runSpin(who, p) {
+        current = who;
+        spin = Object.assign(WD.plan(p.from, p.where, wheel.length, p.turns, p.decel), { t0: performance.now(), chase: 0, whooshed: false });
         mode = "spinning";
         root.classList.add("pw-spinning");
         ui.spinBtn.disabled = true;
@@ -684,7 +716,7 @@
         Sound.fanfare();
         burst();
         // Into the log as it lands, saved or not.
-        if (draw && typeof opts.logDraw === "function") {
+        if (draw && typeof opts.spinDraw === "function") {
             keepDraw(draw);
             syncDraw(draw);
         }
@@ -813,8 +845,9 @@
             id: newId(),
             eventId: opts.eventId || "none",
             eventTitle: opts.title || "",
-            name: who.name,
-            entryIds: who.entryIds.slice(),
+            // The winner is the server's to say (askSpin): blank until it has.
+            name: who ? who.name : "",
+            entryIds: who ? who.entryIds.slice() : [],
             onWheel,
             leftOutWinners: skipWinners && all.some(x => x.won && x.on),
             prize: ui.evPrize.textContent,
@@ -877,7 +910,7 @@
     /* Log a draw, then carry out a void decided for it. Whatever fails stays
        kept, to try again (the row's Try again, or the next opening). */
     function syncDraw(d) {
-        if (typeof opts.logDraw !== "function") return Promise.resolve();
+        if (typeof opts.spinDraw !== "function") return Promise.resolve();
         if (saving.has(d.id)) return saving.get(d.id);
         const job = syncNow(d);
         saving.set(d.id, job);
@@ -889,8 +922,8 @@
         const at = openNo;
         try {
             if (!d.logged) {
-                mergeRow(await opts.logDraw(d));
-                d.logged = true;
+                // Every logged draw is made by the server (askSpin); one that wasn't can't be logged after.
+                throw new Error("this draw was never recorded by the server, so spin again");
             }
             if (d.want === "void" && typeof opts.voidDraw === "function") mergeRow(await opts.voidDraw(d, d.reason));
             d.error = "";
@@ -908,7 +941,7 @@
     function voidDraw(d, reason) {
         d.want = "void";
         d.reason = reason;
-        if (typeof opts.logDraw !== "function") return;
+        if (typeof opts.spinDraw !== "function") return;
         keepDraw(d);
         syncDraw(d);
     }
@@ -928,8 +961,8 @@
         keepDraw(d);
         try {
             if (!d.logged) {
-                mergeRow(await opts.logDraw(d));
-                d.logged = true;
+                // Every logged draw is made by the server (askSpin); one that wasn't can't be logged after.
+                throw new Error("this draw was never recorded by the server, so spin again");
             }
             mergeRow(await opts.markWinner(d));
             forgetDraw(d.id);
@@ -1043,7 +1076,7 @@
         ui.tLogCount.textContent = rows.length ? String(rows.length) : "";
         const list = ui.lList;
         list.textContent = "";
-        const writer = typeof opts.logDraw === "function";
+        const writer = typeof opts.spinDraw === "function";
         const saved = rows.filter(d => !d.kept && d.status === "saved").length;
         const owed = rows.filter(d => d.kept && d.want === "saved").length;
         ui.lHint.textContent = !writer ? "This account is view-only, so its draws aren't logged or saved."

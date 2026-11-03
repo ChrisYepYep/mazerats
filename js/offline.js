@@ -22,14 +22,22 @@
     const sw = navigator.serviceWorker;
     const home = document.body && document.body.dataset.page === "home";
 
-    // A ban this browser knows of, or a last answer other than "open", or
-    // storage that can't be read (the gate's own rule: unreadable is shut).
-    function shut() {
+    /* "shut": a ban this browser knows of, a last answer other than "open",
+       or storage that can't be read (the gate's own rule: unreadable is
+       shut). "open": last told "enter". null: NOT YET KNOWN (3 Nov 2026, the
+       bug scan). A missing mazerats_landing_state used to count as shut, but
+       on a first visit nothing has stored one yet when this runs, so the
+       very visit this worker exists for forgot everything and never
+       registered it. Now a missing one waits for the gate's answer (see
+       whenKnown), and only a state known to be shut forgets. */
+    function state() {
         try {
             const b = JSON.parse(localStorage.getItem("mazerats_blocked") || "null");
-            if (b && typeof b === "object" && (!b.until || Date.parse(b.until) > Date.now())) return true;
-            return localStorage.getItem("mazerats_landing_state") !== "enter";
-        } catch (e) { return true; }
+            if (b && typeof b === "object" && (!b.until || Date.parse(b.until) > Date.now())) return "shut";
+            const s = localStorage.getItem("mazerats_landing_state");
+            if (s === null) return null;
+            return s === "enter" ? "open" : "shut";
+        } catch (e) { return "shut"; }
     }
 
     function forget() {
@@ -39,15 +47,34 @@
         }, () => {});
     }
 
-    if (shut()) { forget(); return; }
+    if (state() === "shut") { forget(); return; }
     if (!home) return;
 
     const wasControlled = !!sw.controller;
 
+    /* Runs go once the state is known to be open. Not yet known: home.html's
+       gate publishes its settings answer as the promise window.__mrSettings
+       and stores the state it says (rememberState) in its own handler on that
+       promise, which was attached before this one; so once it settles, and a
+       turn later, the stored state is the answer. Shut then forgets; still
+       unknown (no answer, offline on a first visit) does neither. */
+    function whenKnown(go) {
+        const now = state();
+        if (now === "open") { go(); return; }
+        if (now === "shut") { forget(); return; }
+        const asked = window.__mrSettings;
+        if (!asked || typeof asked.then !== "function") return;
+        asked.then(() => {}, () => {}).then(() => setTimeout(() => {
+            const then = state();
+            if (then === "open") go();
+            else if (then === "shut") forget();
+        }, 0));
+    }
+
     function register() {
         sw.register("/sw.js", { scope: "/", updateViaCache: "none" }).then(() => sw.ready).then(reg => {
             // Asked again: the gate may have heard a shut answer meanwhile.
-            if (shut()) { forget(); return; }
+            if (state() === "shut") { forget(); return; }
             if (wasControlled || !reg.active) return;
             const urls = [location.href];
             try {
@@ -58,8 +85,9 @@
             reg.active.postMessage({ type: "mr-seen", urls });
         }).catch(() => { /* no offline copy, and nothing else changes */ });
     }
-    if (document.readyState === "complete") setTimeout(register, 0);
-    else window.addEventListener("load", () => setTimeout(register, 0), { once: true });
+    const start = () => setTimeout(() => whenKnown(register), 0);
+    if (document.readyState === "complete") start();
+    else window.addEventListener("load", start, { once: true });
 
     /* ---- OFFLINE ON THE PAGE ---- */
 
@@ -178,12 +206,47 @@
     // Back on the network: the notice says so; the games stay guarded only
     // until then (what they need is the network, not this page reloaded).
     let backSeen = false;
-    window.addEventListener("online", () => { backSeen = true; words(); });
+    function backOnline() {
+        if (!offline || backSeen) return;
+        backSeen = true;
+        words();
+    }
+    window.addEventListener("online", backOnline);
     window.addEventListener("offline", () => { backSeen = false; if (offline) words(); else goOffline(); });
 
+    /* NOT ONLY THE `online` EVENT (3 Nov 2026, the bug scan). That event
+       only fires after the browser itself went offline, so a page put here
+       by a failed request while the browser stayed online (the page's own
+       load served from the copy in a blip) stayed "offline" for good, with
+       the games and Sign in blocked. Now it is also back when the worker
+       says the network answered one of this page's requests (mr-online), or
+       when the page is looked at again (visible, or focused) with
+       navigator.onLine true and a same-origin request the worker leaves
+       alone (/sw.js itself, not stored, never answered from a copy) gets an
+       answer. */
+    let probing = false;
+    function check() {
+        if (!offline || backSeen || probing || navigator.onLine !== true) return;
+        if (document.visibilityState === "hidden") return;
+        probing = true;
+        fetch("/sw.js", { method: "HEAD", cache: "no-store" })
+            .then(() => backOnline(), () => { /* still no network */ })
+            .then(() => { probing = false; });
+    }
+    document.addEventListener("visibilitychange", check);
+    window.addEventListener("focus", check);
+
     if (navigator.onLine === false) goOffline();
-    // Handed a copy by the worker: on load (asked), or later (told).
-    sw.addEventListener("message", e => { if (e.data && e.data.type === "mr-offline") goOffline(); });
+    /* Handed a copy by the worker: on load (asked), or later (told). Only the
+       page itself coming from the copy (page: true) is offline outright; any
+       other request answered from it (a thumbnail, a script, a data read the
+       network dropped once) only counts while the browser says it is offline
+       (3 Nov 2026, the bug scan: one dropped thumbnail used to do it). */
+    sw.addEventListener("message", e => {
+        const d = e.data || {};
+        if (d.type === "mr-offline" && (d.page !== false || navigator.onLine === false)) goOffline();
+        else if (d.type === "mr-online") backOnline();
+    });
     if (wasControlled && typeof MessageChannel === "function") {
         const ch = new MessageChannel();
         ch.port1.onmessage = e => { if (e.data && e.data.offline) goOffline(); };

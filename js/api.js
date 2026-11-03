@@ -459,6 +459,16 @@ const Api = {
         return data; // { token, username }
     },
 
+    // Log out on the server too (3 Nov 2026): the token stops working at once.
+    async endSession(token) {
+        const res = await this._timedFetch("/.netlify/functions/auth", {
+            method: "POST",
+            headers: { "Content-Type": "application/json", "x-admin-token": token },
+            body: JSON.stringify({ action: "logout" })
+        });
+        return res.ok;
+    },
+
     async verifySession(token) {
         const res = await this._timedFetch("/.netlify/functions/auth", {
             method: "POST",

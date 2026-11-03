@@ -120,6 +120,7 @@ const PRIVACY_SECTIONS = [
             "Contact Us keeps your message, Habbo name and an optional Discord handle. If you're signed in it uses your Discord name, username and ID instead of a typed handle.",
             "Add Maze Info keeps what you write, which maze or event it's about, a Habbo name if you give one and, if you're signed in, your Discord name, username and ID. Pictures need you to be signed in. Accepted pictures go into the archive, and rejected ones are deleted straight away.",
             "Event Submission keeps your Habbo name, your picture, which event it's for and, if you're signed in, your Discord details. Only the admins judging the event see the picture.",
+            "When the winner of a prize draw is announced in an article, the wheel shown there carries the Habbo names of everyone whose entry was approved for that draw, so anyone can watch it spin. It stays in the article after the event.",
             "All three keep the IP address they were sent from, only for dealing with spam and abuse. It's removed after 30 days. Event entries also keep a scrambled code for two days to count how many have been sent.",
             "Messages and submissions are kept until an admin deletes them. Ask and we'll delete yours. If a submission of yours is accepted, your name may go on the Contributors list."
         ]
@@ -194,7 +195,7 @@ const PRIVACY_SECTIONS = [
         heading: "Who runs this site.",
         points: [
             "Maze Rats is run by ChrisYepYep, who is responsible for everything in this policy.",
-            "Last updated: 31 October 2026."
+            "Last updated: 3 November 2026."
         ]
     }
 ];

@@ -1381,7 +1381,13 @@ body.wr-on #login-modal .admin-form-actions .btn { width: 100%; min-height: 36px
 /* The live preview of the text: the room window's own description styles
    (.room-desc-full), held to a readable height. */
 #wr-app .wr-ui .art-live .admin-fmt-preview { max-height: 460px; overflow-y: auto; }
-#wr-app .wr-ui .art-live .art-figure-img { max-height: 280px; }
+/* Full-width pictures only (3 Nov 2026, the bug scan): the cap beat the
+   height ArticleText.fitPictures gives a side picture, cutting a tall one
+   short with a gap under it. On a phone a side picture is full width too. */
+#wr-app .wr-ui .art-live .art-figure:not(.art-figure--left):not(.art-figure--right) .art-figure-img { max-height: 280px; }
+@media (max-width: 640px) {
+    #wr-app .wr-ui .art-live .art-figure .art-figure-img { max-height: 280px; }
+}
 /* The gallery: the maze editor's rows, each picture as its square. */
 #wr-app .wr-ui .art-gallery-list { display: grid; gap: 8px; }
 #wr-app .wr-ui .art-gallery-thumb { width: 64px; height: 48px; background-size: cover; }

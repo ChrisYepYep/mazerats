@@ -4,7 +4,9 @@
    An ENTRY is one visitor's go at an event: the Habbo Origins name they
    entered under and one picture (a screenshot of the finished maze, the
    room they built, whatever the event asked for). Nothing about it is
-   public. The row lives in `event_entries`, and the picture in the image
+   public, but for one thing: a saved draw put in an article shows the
+   approved entrants' Habbo names on its wheel (3 Nov 2026; the privacy
+   policy says so). The row lives in `event_entries`, and the picture in the image
    store under entries/, which image.js serves only to somebody signed in to
    /warren — exactly the quarantine Missing Pieces' tips/ has.
 
@@ -65,24 +67,27 @@
         each without its `replay` (below), which only one draw is read with:
    GET  ?action=draw&id=<drawId>                  Any Warren account.
         { draw }: one draw, whole (2 Nov 2026: for an article's replay).
-   PUT  ?action=draw&id=<drawId>  { eventId, name, entryIds, onWheel,
-        leftOutWinners, drawnAt, prize, replay }  canWrite: one draw, logged
-        once (the id is the wheel's own, so a retry is the same row).
-        `replay` (2 Nov 2026, optional) is the wheel as it spun, kept so an
-        article can replay the draw (js/article-wheel.js): { names, the
-        display names in wheel order, one per slice; colours, each slice's
-        place in the wheel's palette; win, the winning slice, whose name is
-        the draw's; from, where, turns, decel, the spin's numbers, `where`
-        inside the winning slice }. Checked strictly (cleanReplay); one that
-        fails is left off, and the draw is logged without it.
+   PUT  ?action=spin&id=<drawId>  { eventId, slices: [{ name, entryIds }],
+        leftOutWinners, prize, from }  canWrite (3 Nov 2026): the draw, made
+        HERE (handleSpin): the slices checked against the event's approved
+        entries, the winner and the spin chosen with crypto.randomInt, the
+        row logged once (the id is the wheel's, so a retry gets the same
+        draw). { draw, plan: { win, from, where, turns, decel } }. The draw
+        keeps `replay`, the wheel as it spun, so an article can replay it
+        (js/article-wheel.js): { names, the display names in wheel order;
+        colours, each slice's place in the palette; win, the winning slice;
+        from, where, turns, decel, `where` inside the winning slice }.
+   PUT  ?action=draw  Retired (3 Nov 2026): 410. It logged a draw the
+        browser had made, winner and all.
    PUT  ?action=prize&event=<id>|none  { text }   canWrite: the prize line
         the wheel shows under the event's name (PRIZE_MAX, one line; empty
         takes it away). One row per event in event_entry_prizes.
    PUT  ?action=void-draw&id=<drawId>  { reason: respin|absent }  canWrite
-   PUT  ?action=winner&draw=<drawId>  { eventId, entryIds }       canWrite
-        Marks EVERY approved entry the entrant has for the event a winner
-        (by id, and by name for the ones the wheel didn't list), and the
-        draw saved.
+   PUT  ?action=winner&draw=<drawId>  { eventId }                 canWrite
+        Marks EVERY approved entry the draw's winner has for the event a
+        winner (the draw's own ids, and their name however it was written),
+        and the draw saved. Since 3 Nov 2026 only by a logged draw that is
+        this event's and not set aside; ids the page sends are not used.
 
    Every write passes canWrite, which is where the admin action log is
    written (see _audit.js); the id rides in the query string so the log
@@ -107,6 +112,16 @@ const json = (statusCode, data) => ({
 const text = (v) => (typeof v === "string" ? v : "");
 // A one-line field, as one line — see the POST's habboName.
 const oneLine = (s) => s.replace(/[\u0000-\u001f\u007f]/g, " ").replace(/\s+/g, " ").trim();
+/* NAMES AS HABBO WRITES THEM (3 Nov 2026, the bug scan). A Habbo name is
+   printable ASCII with no spaces; an entry's is held to that, so invisible
+   characters (a zero-width space, a soft hyphen, a direction mark) or
+   letters from another alphabet can't make one person several entrants
+   that all look the same in the Warren and on the wheel. Names are matched
+   by nameFold: compatibility forms folded, anything invisible taken out,
+   case ignored, so rows saved before this group with their owner too. */
+const HABBO_NAME_OK = /^[\x21-\x7e]+$/;
+const nameFold = (s) => oneLine(String(s || "").normalize("NFKC"))
+    .replace(/[\p{Cf}\p{M}\p{Co}\p{Cs}\s]/gu, "").toLowerCase();
 
 const COLLECTION = "event_entries";
 const CONFIG = "event_entries_config";
@@ -137,11 +152,9 @@ const DRAW_LIST = 200;
 const DRAWS_PER_EVENT = 2000;
 const ENTRY_IDS_MAX = 10;
 const DRAW_REASONS = ["respin", "absent"];
-/* A draw's replay (2 Nov 2026): no more slices than this (js/wheel-draw.js's
-   SNAP_MAX; past it the names are too small to draw anyway), five colours
-   (its JEWELS), and the spin's numbers within the ranges the wheel picks. */
+/* A draw's replay (2 Nov 2026): kept for no more slices than this
+   (js/wheel-draw.js's SNAP_MAX; past it the names are too small to draw). */
 const REPLAY_MAX = 400;
-const REPLAY_COLOURS = 5;
 const DRAW_ID = /^[A-Za-z0-9-]{8,64}$/;
 const ENTRY_ID = /^[A-Za-z0-9_-]{1,64}$/;
 
@@ -417,6 +430,9 @@ async function handlePost(event, db) {
     if (habboName.length > HABBO_NAME_MAX) {
         return json(400, { error: `Username is too long. Please keep it to ${HABBO_NAME_MAX} characters or fewer.` });
     }
+    if (!HABBO_NAME_OK.test(habboName)) {
+        return json(400, { error: "That doesn't look like a Habbo username: no spaces, and only letters, numbers and marks like - = ? ! @ : . , in it. Check how yours is spelt." });
+    }
 
     // `*`, not `+`: an empty file's data: URL has nothing after the comma,
     // and is told "That file is empty." below, not "Add a picture".
@@ -494,7 +510,7 @@ async function handlePost(event, db) {
        correction, for the Warren. Counted before the insert for the words
        and again after it, like the caps above, so two tabs sending at once
        can't make it three. */
-    const nameKey = habboName.toLowerCase();
+    const nameKey = nameFold(habboName);
     const mineForEvent = ev ? (player ? { eventId: ev.id, "from.id": player.id } : { eventId: ev.id, from: null, net, nameKey }) : null;
     const countForEvent = () => (mineForEvent ? entries.countDocuments(mineForEvent) : Promise.resolve(0));
     const EVENT_FULL = ev ? `You've already sent two entries for ${ev.title}: your entry and its correction. That's as many as there can be.` : "";
@@ -730,8 +746,8 @@ async function handleNames(event, db, q) {
     const byName = new Map();
     rows.forEach(x => {
         const name = oneLine(text(x.habboName));
-        if (!name) return;
-        const key = name.toLowerCase();
+        const key = nameFold(name);
+        if (!key) return;
         if (!byName.has(key)) byName.set(key, { name, entryIds: [], won: false });
         const who = byName.get(key);
         if (typeof x.id === "string") who.entryIds.push(x.id);
@@ -762,32 +778,7 @@ async function handlePrize(event, db, q) {
     return json(200, { prize });
 }
 
-/* A draw's replay, checked (2 Nov 2026; see the header): the object to
-   keep, or null for one that isn't exactly the wheel that drew `name` with
-   `onWheel` slices. Nothing in it but display names and numbers. */
 const TAU = Math.PI * 2;
-function cleanReplay(v, name, onWheel) {
-    if (!v || typeof v !== "object" || Array.isArray(v)) return null;
-    const { names, colours, win, from, where, turns, decel } = v;
-    if (!Array.isArray(names) || names.length < 1 || names.length > REPLAY_MAX || names.length !== onWheel) return null;
-    const n = names.length;
-    const clean = [];
-    for (const x of names) {
-        if (typeof x !== "string") return null;
-        const s = oneLine(x);
-        if (!s || s.length > HABBO_NAME_MAX) return null;
-        clean.push(s);
-    }
-    if (!Array.isArray(colours) || colours.length !== n || colours.some(c => !Number.isInteger(c) || c < 0 || c >= REPLAY_COLOURS)) return null;
-    if (!Number.isInteger(win) || win < 0 || win >= n || clean[win] !== name) return null;
-    const num = x => typeof x === "number" && Number.isFinite(x);
-    if (!num(from) || Math.abs(from) > TAU) return null;
-    // Inside the winning slice: the wheel never stops on a divider.
-    if (!num(where) || where <= win * TAU / n || where >= (win + 1) * TAU / n) return null;
-    if (!Number.isInteger(turns) || turns < 6 || turns > 8) return null;
-    if (!num(decel) || decel < 8.6 || decel > 10.2) return null;
-    return { names: clean, colours: colours.slice(), win, from, where, turns, decel };
-}
 
 async function handleDrawList(event, db, q) {
     if (!(await hasAccount(event))) return UNAUTHORIZED;
@@ -814,38 +805,101 @@ async function handleDrawOne(event, db, q) {
    expired session and logged after signing in again) is the same row, not a
    second one. Who drew it is the session's account, never the body's; when,
    the wheel's own time if it is a believable one (up to a day old). */
-async function handleDrawLog(event, db, q) {
+async function handleDrawLog() {
+    /* Retired (3 Nov 2026, the bug scan): a draw logged by the wheel was
+       whatever the browser sent, winner included. Draws are made here now
+       (handleSpin); a Warren still sending these is an old copy. */
+    return json(410, { error: "This Warren page is out of date: reload it, then spin again." });
+}
+
+/* THE DRAW IS MADE HERE (3 Nov 2026, the bug scan: the winner used to be
+   picked in the browser and logged as sent, so a signed-in account could
+   log any name). SPIN sends the wheel as it stands: its slices in order,
+   each a name with the entry ids behind it (none for a name typed in by
+   hand). Every slice with entries must be that name's approved entries for
+   this event, each name once; then the winner, the spot inside their slice
+   and the spin's numbers are chosen here with crypto.randomInt, the draw
+   goes in the log as it is, and the wheel only animates what it is told.
+   Which names are on the wheel stays the host's (unticked, past winners
+   left out, typed by hand); who wins does not. The id is the wheel's, so a
+   retry gets the same draw back, never a second roll. */
+const SPIN_SLICES_MAX = 2000;
+const WheelDrawShared = require("../../js/wheel-draw.js").WheelDraw;
+async function handleSpin(event, db, q) {
     const id = text(q.id);
     if (!DRAW_ID.test(id)) return json(400, { error: "Which draw?" });
     const body = bodyOf(event);
     if (!body) return json(400, { error: "Invalid request body" });
     const eventId = wheelEvent(body.eventId);
     if (eventId === undefined) return json(400, { error: "Which event?" });
-    const name = oneLine(text(body.name));
-    if (!name || name.length > HABBO_NAME_MAX) return json(400, { error: "Which name was drawn?" });
-    const entryIds = entryIdList(body.entryIds === undefined ? [] : body.entryIds);
-    if (!entryIds) return json(400, { error: "Invalid entry ids" });
-    const onWheel = body.onWheel;
-    if (typeof onWheel !== "number" || !Number.isInteger(onWheel) || onWheel < 1 || onWheel > 100000) return json(400, { error: "How many were on the wheel?" });
-    // The prize line it was drawn for, as the wheel showed it (2 Nov 2026).
-    const prize = oneLine(text(body.prize));
-    if (prize.length > PRIZE_MAX) return json(400, { error: "Invalid prize" });
-    const now = Date.now();
-    const said = Date.parse(text(body.drawnAt));
-    const drawnAt = new Date(Number.isFinite(said) && said <= now + 5 * 60 * 1000 && said >= now - DAY_MS ? said : now);
     const draws = db.collection(DRAWS);
     const prior = await draws.findOne({ id }, { projection: { _id: 0 } });
-    if (prior) return json(200, { draw: prior });
+    if (prior) return json(200, { draw: prior, plan: planOf(prior) });
+
+    if (!Array.isArray(body.slices) || !body.slices.length || body.slices.length > SPIN_SLICES_MAX) {
+        return json(400, { error: "There's nobody on the wheel." });
+    }
+    const slices = [];
+    const seen = new Set();
+    for (const s of body.slices) {
+        if (!s || typeof s !== "object" || Array.isArray(s)) return json(400, { error: "Invalid wheel" });
+        const name = oneLine(text(s.name));
+        const key = nameFold(name);
+        if (!name || !key || name.length > HABBO_NAME_MAX) return json(400, { error: "A name on the wheel isn't one the draw can use." });
+        if (seen.has(key)) return json(400, { error: `${name} is on the wheel twice. Refresh the wheel.` });
+        seen.add(key);
+        const entryIds = entryIdList(s.entryIds === undefined ? [] : s.entryIds);
+        if (!entryIds) return json(400, { error: "Invalid entry ids" });
+        slices.push({ name, key, entryIds });
+    }
+    // Every entry named must be this event's, approved (or a past winner's), and belong to its slice's name.
+    const allIds = slices.flatMap(s => s.entryIds);
+    if (allIds.length) {
+        const rows = await db.collection(COLLECTION).find({ id: { $in: allIds }, eventId },
+            { projection: { _id: 0, id: 1, habboName: 1, status: 1 } }).toArray();
+        const byId = new Map(rows.map(r => [r.id, r]));
+        for (const s of slices) {
+            for (const eid of s.entryIds) {
+                const r = byId.get(eid);
+                if (!r || (r.status !== "reviewed" && r.status !== "winner") || nameFold(text(r.habboName)) !== s.key) {
+                    return json(409, { error: `${s.name}'s entries have changed since the wheel was filled. Refresh the wheel and spin again.` });
+                }
+            }
+        }
+    }
+    const prize = oneLine(text(body.prize));
+    if (prize.length > PRIZE_MAX) return json(400, { error: "Invalid prize" });
     if (await draws.countDocuments({ eventId }) >= DRAWS_PER_EVENT) return json(429, { error: "That event's draw log is full." });
-    // The wheel as it spun (2 Nov 2026): kept when it checks out, else the draw alone.
-    const replay = cleanReplay(body.replay, name, onWheel);
-    await draws.updateOne({ id }, { $setOnInsert: {
-        eventId, name, entryIds, byHand: !entryIds.length, onWheel,
+
+    const n = slices.length;
+    const unit = () => crypto.randomInt(0, 1 << 30) / (1 << 30);
+    const win = crypto.randomInt(0, n);
+    const where = (win + 0.14 + 0.72 * unit()) * TAU / n;
+    const turns = 6 + crypto.randomInt(0, 3);
+    const decel = 8.6 + 1.6 * unit();
+    // Where the wheel was resting: only where the animation starts, never who wins.
+    const fromSaid = Number(body.from);
+    const from = Number.isFinite(fromSaid) && Math.abs(fromSaid) <= TAU ? fromSaid : 0;
+    const winner = slices[win];
+    const row = {
+        id, eventId, name: winner.name, entryIds: winner.entryIds, byHand: !winner.entryIds.length, onWheel: n,
         leftOutWinners: body.leftOutWinners === true, prize,
-        ...(replay ? { replay } : {}),
-        status: "drawn", drawnBy: usernameFromToken(event), drawnAt, loggedAt: new Date(now)
-    } }, { upsert: true });
-    return json(201, { draw: await draws.findOne({ id }, { projection: { _id: 0 } }) });
+        // The wheel as it spun, for an article's replay (at most REPLAY_MAX slices, as before).
+        ...(n <= REPLAY_MAX ? { replay: {
+            names: slices.map(s => s.name), colours: slices.map((s, i) => WheelDrawShared.jewelIndex(i, n)),
+            win, from, where, turns, decel
+        } } : {}),
+        plan: { win, from, where, turns, decel },
+        status: "drawn", drawnBy: usernameFromToken(event), drawnAt: new Date(), loggedAt: new Date(), byServer: true
+    };
+    await draws.updateOne({ id }, { $setOnInsert: row }, { upsert: true });
+    const saved = await draws.findOne({ id }, { projection: { _id: 0 } });
+    return json(201, { draw: saved, plan: planOf(saved) });
+}
+// The spin to animate: the stored plan (the replay's numbers for a draw made before plans were kept).
+function planOf(row) {
+    const p = row && (row.plan || row.replay);
+    return p ? { win: p.win, from: p.from, where: p.where, turns: p.turns, decel: p.decel } : null;
 }
 
 /* A draw set aside: spun again, or the winner wasn't in the room. A saved
@@ -873,35 +927,39 @@ async function handleDrawVoid(event, db, q) {
    winners); the rest of that name's approved entries for the event go with
    them. The draw, when named, is marked saved. */
 async function handleWinner(event, db, q) {
-    const body = bodyOf(event);
-    if (!body) return json(400, { error: "Invalid request body" });
-    const eventId = wheelEvent(body.eventId);
-    if (eventId === undefined) return json(400, { error: "Which event?" });
-    const ids = entryIdList(body.entryIds);
-    if (!ids || !ids.length) return json(400, { error: "Which entries?" });
+    /* BY THE DRAW (3 Nov 2026, the bug scan): the winner is the draw's own
+       name and entries, read here from the log, never the ids the page
+       sends; and only a draw that is in the log, this event's, and drawn
+       (or already saved) is saved. A voided draw, or none, marks nobody. */
     const drawId = text(q.draw);
-    if (drawId && !DRAW_ID.test(drawId)) return json(400, { error: "Which draw?" });
+    if (!DRAW_ID.test(drawId)) return json(400, { error: "Which draw?" });
+    const draws = db.collection(DRAWS);
+    const draw = await draws.findOne({ id: drawId }, { projection: { _id: 0 } });
+    if (!draw) return json(404, { error: "That draw isn't in the log." });
+    const body = bodyOf(event) || {};
+    const said = body.eventId === undefined ? draw.eventId : wheelEvent(body.eventId);
+    if (said !== draw.eventId) return json(409, { error: "That draw is from another event. Refresh the wheel." });
+    if (draw.status !== "drawn" && draw.status !== "saved") return json(409, { error: "That draw was set aside, so it can't be saved as the winner.", draw });
+    const eventId = draw.eventId;
+    const ids = Array.isArray(draw.entryIds) ? draw.entryIds : [];
+    if (!ids.length) return json(409, { error: "A name typed in by hand has no entries to mark.", draw });
     const entries = db.collection(COLLECTION);
-    const named = await entries.find({ id: { $in: ids }, eventId },
-        { projection: { _id: 0, id: 1, habboName: 1, nameKey: 1, status: 1 } }).toArray();
-    if (named.length !== ids.length) return json(404, { error: "Those entries aren't all in this event any more. Refresh the wheel." });
-    if (named.some(x => x.status !== "reviewed" && x.status !== "winner")) {
-        return json(409, { error: "One of those entries is no longer approved. Refresh the wheel." });
+    const key = nameFold(draw.name);
+    // Every approved entry of the winner's for the event: theirs by id, and by their name however it was written.
+    const theirs = (await entries.find({ eventId, status: { $in: ["reviewed", "winner"] } },
+        { projection: { _id: 0, id: 1, habboName: 1, status: 1 } }).limit(NAMES_MAX).toArray())
+        .filter(x => ids.includes(x.id) || nameFold(text(x.habboName)) === key);
+    if (!ids.every(eid => theirs.some(x => x.id === eid))) {
+        return json(409, { error: "One of the winner's entries is no longer approved. Refresh the wheel.", draw });
     }
-    const keys = Array.from(new Set(named.map(x => oneLine(text(x.nameKey || x.habboName)).toLowerCase()).filter(Boolean)));
     const who = usernameFromToken(event);
     const now = new Date();
     const res = await entries.updateMany(
-        { eventId, status: "reviewed", $or: [{ id: { $in: ids } }, { nameKey: { $in: keys } }] },
+        { eventId, status: "reviewed", id: { $in: theirs.map(x => x.id) } },
         { $set: { status: "winner", reviewedBy: who, reviewedAt: now } }
     );
-    let draw = null;
-    if (drawId) {
-        const draws = db.collection(DRAWS);
-        await draws.updateOne({ id: drawId, status: "drawn" }, { $set: { status: "saved", savedBy: who, savedAt: now } });
-        draw = await draws.findOne({ id: drawId }, { projection: { _id: 0 } });
-    }
-    return json(200, { marked: res.modifiedCount || 0, draw });
+    await draws.updateOne({ id: drawId, status: "drawn" }, { $set: { status: "saved", savedBy: who, savedAt: now } });
+    return json(200, { marked: res.modifiedCount || 0, draw: await draws.findOne({ id: drawId }, { projection: { _id: 0 } }) });
 }
 
 // --------------------------------------------------------------- handler
@@ -949,7 +1007,8 @@ exports.handler = async (event) => {
 
         if (event.httpMethod === "PUT") {
             if (q.action === "open") return await handleOpen(event, db);
-            if (q.action === "draw") return await handleDrawLog(event, db, q);
+            if (q.action === "draw") return await handleDrawLog();
+            if (q.action === "spin") return await handleSpin(event, db, q);
             if (q.action === "void-draw") return await handleDrawVoid(event, db, q);
             if (q.action === "winner") return await handleWinner(event, db, q);
             if (q.action === "prize") return await handlePrize(event, db, q);

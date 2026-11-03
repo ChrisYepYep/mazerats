@@ -28,7 +28,8 @@
    Authorization header, every function that is not a public archive read
    (auth, discord-auth, profiles, player-*, daily games, scores, presence,
    track, contact, the Warren's reads...), every other site, the Warren and
-   anything it loads, and every page but /, /home and the record addresses.
+   anything it loads, and every page but /, /home, the record addresses and
+   the other addresses that are home.html (see classify).
 
    ----------------------------------------------------------------------
    THE GATE STILL DECIDES
@@ -113,7 +114,15 @@ function classify(req, url) {
         // A maze, event or guide's own address is the archive page with that
         // record's preview tags (share.js); offline it is the archive page.
         // An article's own address and the Articles list too (2 Nov 2026).
-        if (/^\/(?:maze|event|guides|article)\/[^/]+\/?$/.test(path) || /^\/articles\/?$/.test(path)) return "shell";
+        // And the other addresses netlify.toml sends through share.js, which
+        // serves home.html for each (3 Nov 2026, the bug scan: /news,
+        // /timeline and /furni would not open offline): the three views, the
+        // Profiles and Guides windows, the glyph sheet, and the two daily
+        // games, which offline open the archive and say they need a
+        // connection. Not /purapanic, /scout or /fallinfurni, games whose
+        // whole page is the game.
+        if (/^\/(?:maze|event|guides|article)\/[^/]+\/?$/.test(path) ||
+            /^\/(?:articles|news|timeline|furni|profiles?|glyphs|guess|odd|guides)\/?$/.test(path)) return "shell";
         return null;
     }
     if (path === SETTINGS_KEY) return "settings";
@@ -149,9 +158,11 @@ async function networkFirst(event, req, url, kind) {
     } catch (err) {
         const hit = await fromCache(req, url, kind).catch(() => null);
         if (!hit) throw err;
-        tell(event.resultingClientId || event.clientId);
+        tell(event.resultingClientId || event.clientId, kind === "page" || kind === "shell");
         return hit;
     }
+    // The network answered for a page that was told it was offline: it isn't now.
+    if (event.clientId && fellBack.has(event.clientId)) untell(event.clientId);
     // Pictures and scripts already stored in this run are not stored again.
     if ((kind === "pic" || kind === "static") && recent.has(req.url)) return res;
     if (res.ok && res.status === 200 && res.type === "basic") {
@@ -172,10 +183,26 @@ async function fromWarren(clientId) {
     return !!(c && /^\/warren/i.test(new URL(c.url).pathname));
 }
 
-function tell(id) {
+/* Which fallbacks say "offline" (3 Nov 2026, the bug scan). It used to be
+   every one, so a single dropped request (one thumbnail, one script, one
+   data read, on a page whose own load came from the network) put the page
+   into "You're offline" for good: js/offline.js blocked the games and Sign
+   in until an `online` event, which never comes when the browser was never
+   offline. Now only the page itself coming from the copy (a "page" or
+   "shell" navigation) says so outright, and is remembered for mr-status;
+   any other fallback is passed on as page: false, and the page only takes
+   that as offline when its own navigator.onLine is false (asked there, as
+   the page's view of the connection is what decides). And the first request
+   for that page the network does answer afterwards tells it mr-online. */
+function tell(id, page) {
     if (!id) return;
-    fellBack.add(id);
-    self.clients.get(id).then(c => { if (c) c.postMessage({ type: "mr-offline" }); }, () => {});
+    if (page || self.navigator.onLine === false) fellBack.add(id);
+    self.clients.get(id).then(c => { if (c) c.postMessage({ type: "mr-offline", page: !!page }); }, () => {});
+}
+
+function untell(id) {
+    fellBack.delete(id);
+    self.clients.get(id).then(c => { if (c) c.postMessage({ type: "mr-online" }); }, () => {});
 }
 
 // What a response's own Cache-Control allows: never a private or no-store one.

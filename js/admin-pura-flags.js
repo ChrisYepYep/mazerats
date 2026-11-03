@@ -117,6 +117,11 @@
             '<td>' + date(f.at) + '</td>' +
         '</tr>' +
         '<tr class="pf-why"><td></td><td colspan="7">' +
+            /* Marked fine before at a lower score, and the same game has
+               saved a better one since (3 Nov 2026, the bug scan): open again. */
+            (f.fine ? '<p class="admin-hint">Flagged again: marked as fine at ' + escapeHtml(num(f.fine.score)) + ' points' +
+                (f.fine.by ? ' by ' + escapeHtml(f.fine.by) : "") + (f.fine.when ? ' (' + escapeHtml(date(f.fine.when)) + ')' : "") +
+                ', and the same game has saved ' + escapeHtml(num(f.score)) + ' since.</p>' : "") +
             '<ul class="pf-reasons">' + (f.reasons || []).map(r => '<li>' + escapeHtml(r.text) + '</li>').join("") + '</ul>' +
             (writer ? '<div class="ctl-actions">' +
                 '<button type="button" class="ctl-btn" data-pf="ok" data-key="' + escapeHtml(f.key) + '"' + (busy ? " disabled" : "") + ' title="Looked at, and it\'s a real game: the flag stops showing">It\'s fine</button>' +
@@ -132,6 +137,7 @@
                 '<td>' + escapeHtml(d.name || "Someone") + '</td>' +
                 '<td class="ff-num">' + num(d.score) + '</td>' +
                 '<td>' + (d.status === "removed" ? "Taken off the board" : "Marked as fine") +
+                    (d.flaggedAgain ? ' <span class="admin-hint" title="The same game has saved a better score since: it is in the list above again">(flagged again)</span>' : "") +
                     (d.reasons && d.reasons.length ? ' <span class="admin-hint" title="' + escapeHtml(d.reasons.join(" ")) + '">(why)</span>' : "") + '</td>' +
                 '<td>' + escapeHtml(d.by || "—") + '</td>' +
                 '<td>' + date(d.when) + '</td>' +

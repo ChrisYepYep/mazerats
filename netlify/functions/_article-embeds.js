@@ -149,4 +149,46 @@ function checkEmbeds(blocks, embedData, article) {
     return { embedData: out };
 }
 
-module.exports = { EMBEDS, checkEmbeds, REF };
+/* A WHEEL IS THE DRAW LOG'S (3 Nov 2026, the bug scan): checking a
+   snapshot only for sense let a hand-made wheel with any winner be saved
+   into an article. Each {{wheel}} block's data is now made here from the
+   draw it names: a draw in event_entry_draws, saved as the winner, its own
+   replay (or, for a draw from before the wheel kept one, rebuilt by
+   WheelDraw.snapshot around the event's approved entrants, kept as first
+   made while the block names the same draw). Whatever the page sent for a
+   wheel is not used. Returns { embedData } or { error }. */
+const WheelDraw = require("../../js/wheel-draw.js").WheelDraw;
+async function bindWheels(db, blocks, embedData, before) {
+    const out = { ...(embedData || {}) };
+    const wheels = blocks.filter(b => b.type === "wheel");
+    if (!wheels.length) return { embedData: out };
+    const beforeData = before && before.embedData && typeof before.embedData === "object" ? before.embedData : {};
+    const beforeDraw = new Map();
+    if (before && typeof before.body === "string") {
+        const ArticleText = require("../../js/article-text.js");
+        ArticleText.embeds(before.body).filter(b => b.type === "wheel").forEach(b => beforeDraw.set(b.attrs.ref, b.attrs.draw));
+    }
+    for (const b of wheels) {
+        const ref = b.attrs.ref, drawId = b.attrs.draw;
+        const row = await db.collection("event_entry_draws").findOne({ id: drawId }, { projection: { _id: 0 } });
+        if (!row || row.status !== "saved") {
+            return { error: "A {{wheel}} block's draw isn't saved as the winner in the draw log. Put the draw in again with the Wheel draw button." };
+        }
+        let snap = null;
+        if (!row.replay && beforeDraw.get(ref) === drawId && beforeData[ref]) snap = beforeData[ref];
+        else {
+            const ev = row.eventId ? await db.collection("events").findOne({ id: row.eventId }, { projection: { _id: 0, title: 1 } }) : null;
+            const title = row.eventId ? (ev && ev.title) || row.eventId : "No event";
+            const now = row.replay ? [] : (await db.collection("event_entries").find(
+                { eventId: row.eventId, status: { $in: ["reviewed", "winner"] } }, { projection: { _id: 0, habboName: 1 } }
+            ).limit(5000).toArray()).map(x => String(x.habboName || ""));
+            snap = WheelDraw.snapshot(row, title, now);
+        }
+        const clean = snap ? wheelData(snap) : { error: "can't be replayed" };
+        if (!clean || clean.error) return { error: "That draw can't be replayed in an article." };
+        out[ref] = clean;
+    }
+    return { embedData: out };
+}
+
+module.exports = { EMBEDS, checkEmbeds, bindWheels, REF };

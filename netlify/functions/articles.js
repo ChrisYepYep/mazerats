@@ -38,8 +38,8 @@
      author                  the Warren account that wrote it, from the
                              session, never from the request
      publishedAt             when it first went public: the byline's date
-     editedAt                when what a reader reads (title, summary,
-                             pictures, text, event) last changed after it
+     editedAt                when what a reader reads (title, pictures,
+                             text, justify, event) last changed after it
                              first went public: the reader's "Updated" date.
                              A spotlight or What's New change isn't one.
      wn                      its What's New entry: { day, title, text,
@@ -62,7 +62,7 @@ const { cachedJson } = require("./_cache");
 const { SECURITY_HEADERS } = require("./_headers");
 const { isSafeKey } = require("./_keys");
 const { checkSpotlight, SPOTLIGHT_FIELDS } = require("./_spotlight");
-const { checkEmbeds } = require("./_article-embeds");
+const { checkEmbeds, bindWheels } = require("./_article-embeds");
 const { assignSlugs, settleSlug, idFor, recheckSlug, loadRetired, retireAddresses, PROJECTION: SLUG_FIELDS } = require("./_slugs");
 const ArticleText = require("../../js/article-text.js");
 
@@ -182,7 +182,8 @@ function shape(b) {
 
 const revOf = a => Number(a && a.rev) || 0;
 // What a reader reads: a change to any of these after it went public sets editedAt.
-const READ_FIELDS = ["title", "summary", "thumb", "gallery", "body", "justify", "embedData", "eventId"];
+// (Not the summary: it is never shown in the article, 3 Nov 2026.)
+const READ_FIELDS = ["title", "thumb", "gallery", "body", "justify", "embedData", "eventId"];
 const publicCopy = a => {
     const out = { ...a };
     PRIVATE.forEach(k => { delete out[k]; });
@@ -294,7 +295,17 @@ exports.handler = async (event) => {
             if (!ev) return json(400, { error: "That event isn't in the archive any more. Pick another, or none." });
         }
 
+        // Each {{wheel}} block's data from the draw log it names, never the page's (_article-embeds.js bindWheels).
+        const bindDraws = async before => {
+            const bound = await bindWheels(db, ArticleText.embeds(article.body), article.embedData, before);
+            if (bound.error) return bound.error;
+            article.embedData = bound.embedData;
+            return "";
+        };
+
         if (event.httpMethod === "POST") {
+            const drawProblem = await bindDraws(null);
+            if (drawProblem) return json(400, { error: drawProblem });
             await ensureUniqueIndex(articles, "id");
             article.slug = typeof body.slug === "string" ? body.slug : "";
             article._slugAuto = body._slugAuto === true;
@@ -333,6 +344,8 @@ exports.handler = async (event) => {
             if (body._baseRev === undefined || body._baseRev === null || Number(body._baseRev) !== revOf(before)) {
                 return json(409, { error: CONFLICT });
             }
+            const drawProblem = await bindDraws(before);
+            if (drawProblem) return json(400, { error: drawProblem });
             const update = { ...article, updatedAt: now, updatedBy: who, rev: revOf(before) + 1 };
             update.slug = typeof body.slug === "string" ? body.slug : "";
             update._slugAuto = body._slugAuto === true;

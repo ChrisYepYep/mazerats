@@ -250,6 +250,16 @@
             container.querySelectorAll(".art-figure--left, .art-figure--right").forEach(fig => {
                 const img = fig.querySelector(".art-figure-img");
                 const frame = fig.querySelector(".art-figure-frame");
+                /* Only a picture the text wraps beside (3 Nov 2026, the bug
+                   scan): on a phone the css sets side pictures full width,
+                   unfloated, and one fitted while the window was wider gets
+                   its own height and gap back. */
+                const fcs = win.getComputedStyle(fig);
+                if ((fcs.float || fcs.cssFloat) === "none") {
+                    if (img) img.style.height = "";
+                    fig.style.marginBottom = "";
+                    return;
+                }
                 if (!img || !frame || !img.naturalWidth || !frame.clientWidth) return;
                 const edges = frame.offsetHeight - frame.clientHeight;     // its two 1px borders
                 const ideal = frame.clientWidth * img.naturalHeight / img.naturalWidth + edges;
@@ -309,7 +319,9 @@
                words (not a heading, list, quote, picture or block), joined
                onto its line, so the picture sits on the line of the text it
                goes beside. */
-            const m = /^\n(?:[ \t]*\n)*([^\n]*)/.exec(after);
+            /* Only across one blank line or none (3 Nov 2026, the bug
+               scan): more is the writer's own spacing, left as it is. */
+            const m = /^\n(?:[ \t]*\n)?([^\n]*)/.exec(after);
             if (m && isWords(m[1])) { joined = code + " " + m[1].trim(); after = after.slice(m[0].length); }
         } else if (rest) {
             // Back to the full width: the picture on a line of its own again, its paragraph under it.
@@ -337,7 +349,24 @@
        (a picture's caption, to type straight in), else after it. */
     function insertBlock(text, start, end, line, select) {
         const t = String(text == null ? "" : text);
-        const at = Math.max(0, Math.min(t.length, Math.max(start | 0, end | 0)));
+        let at = Math.max(0, Math.min(t.length, Math.max(start | 0, end | 0)));
+        /* NEVER INSIDE ANOTHER BLOCK'S LINE (3 Nov 2026, the bug scan): a
+           picture leaves the caret in its caption's [ ], so the next one (a
+           second dropped file, or Picture pressed again) went in between the
+           brackets and broke both. A caret inside a picture's or an embed's
+           line, or inside the picture code leading a paragraph, puts the
+           block in after that line; at the very start of the line it still
+           goes in before it. In a side picture's words it splits the
+           paragraph there, as in any other. */
+        const lineStart = t.lastIndexOf("\n", at - 1) + 1;
+        if (at > lineStart) {
+            let lineEnd = t.indexOf("\n", at);
+            if (lineEnd === -1) lineEnd = t.length;
+            const raw = t.slice(lineStart, lineEnd), cur = raw.trim();
+            const lead = cur.startsWith("![") ? PICTURE_LEAD.exec(cur) : null;
+            const wordsAt = lead ? lineStart + raw.indexOf(cur) + cur.length - lead[5].length : -1;
+            if ((cur.startsWith("![") && parsePicture(cur)) || (cur.startsWith("{{") && parseEmbed(cur)) || (lead && at < wordsAt)) at = lineEnd;
+        }
         const before = t.slice(0, at), after = t.slice(at);
         const pre = !before.trim() ? "" : /\n[ \t]*\n$/.test(before) ? "" : before.endsWith("\n") ? "\n" : "\n\n";
         const post = !after.trim() ? "" : /^[ \t]*\n[ \t]*\n/.test(after) ? "" : after.startsWith("\n") ? "\n" : "\n\n";
@@ -421,7 +450,7 @@
         SCRIPTS: {
             video: "js/article-video.js?v=1",
             // A prize-wheel draw's replay (it loads js/wheel-draw.js and its stylesheet itself).
-            wheel: "js/article-wheel.js?v=3"
+            wheel: "js/article-wheel.js?v=4"
         },
         register(type, def) {
             if (typeof type !== "string" || !/^[a-z][a-z0-9-]{0,23}$/.test(type)) return;

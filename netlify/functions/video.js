@@ -5,17 +5,18 @@
    RANGES, AND NEVER MORE THAN ONE PIECE'S WORTH AT ONCE. A browser plays a
    video by asking for byte ranges ("Range: bytes=1000-"), and seeking is
    just another range; Safari on an iPhone will not play a video at all
-   from a server that cannot answer them. Every answer here is a 206 with
+   from a server that cannot answer them. Every answer to a Range is a 206 with
    the range it really holds in Content-Range, and holds at most CHUNK
    bytes (2MB) however much was asked for: a function's answer is capped at
    about 6MB, sent as base64, so a whole 50MB video could never go in one.
    The browser reads Content-Range, sees it has less than it asked for, and
    asks again from there; that is how every media player treats a short
    206, and it is checked in the tests with a real one.
-     no Range       answered as "bytes=0-", a 206 of the first piece (a
-                    plain 200 when the whole video fits in one)
-     bytes=a-b      a to b, or to the end of the next piece, whichever is
-     bytes=a-       sooner
+     no Range       a 200 of the whole video when it fits in one piece;
+                    otherwise a 416 saying to ask for ranges (a HEAD, a
+                    200 with the whole size)
+     bytes=a-b      a to b, or to the end of the piece a is in, whichever
+     bytes=a-       is sooner
      bytes=-n       the last n bytes, likewise
      several        the first; one range at a time is all a player asks
      past the end   416, with the size in Content-Range
@@ -26,8 +27,9 @@
    Netlify-Vary on the Range header), or a seek could be answered with
    another part of the video. The browser keeps a year: a key is never
    written twice (each has its upload's time in it), which is the owner's
-   "long cache with immutable keys". The edge keeps an hour, so a video
-   deleted is gone from the site within about one. */
+   "long cache with immutable keys". The edge keeps an hour (and may serve
+   five minutes past it while it re-asks), so a video deleted is gone from
+   the site within about one. */
 const { headersFor } = require("./_headers");
 const V = require("./_videos");
 
@@ -39,7 +41,8 @@ const refuse = (statusCode, body, extra) => ({
 
 const CACHE = {
     "Cache-Control": "public, max-age=31536000, immutable",
-    "Netlify-CDN-Cache-Control": "public, durable, s-maxage=3600, stale-while-revalidate=86400",
+    // A short stale window (3 Nov 2026, the bug scan): a day of it kept a deleted video playing for a day.
+    "Netlify-CDN-Cache-Control": "public, durable, s-maxage=3600, stale-while-revalidate=300",
     "Netlify-Vary": "query=key,header=Range",
     "Vary": "Range",
     "Accept-Ranges": "bytes"
@@ -89,15 +92,35 @@ exports.handler = async (event) => {
     const headers = event.headers || {};
     const asked = parseRange(headers.range || headers.Range, size);
     if (asked === "bad") return refuse(416, "Range Not Satisfiable", { "Content-Range": `bytes */${size}`, "Accept-Ranges": "bytes" });
+    /* NO RANGE (3 Nov 2026, the bug scan). A 206 answers a Range and only
+       a Range, so a plain GET is a 200 of the whole video or nothing. One
+       that fits in a piece is sent whole; a bigger one cannot be (a
+       function's answer is capped), and a short 200 would be a truncated
+       file. Browsers' <video> always sends Range (even the first request,
+       "bytes=0-"), and nothing on the site fetches a video any other way,
+       so a plain GET of a bigger one is told to ask for ranges: a 416 with
+       the size, which is what a client that can resume reads. A HEAD is
+       answered as the whole video's 200, with its size: headers only. */
+    if (!asked && size > rec.chunkSize && method === "GET") {
+        return refuse(416, "This video is sent in pieces: ask for a byte range (Range: bytes=0-).", { "Content-Range": `bytes */${size}`, "Accept-Ranges": "bytes" });
+    }
     const [start, wanted] = asked || [0, size - 1];
-    // At most one piece's worth: the rest of the piece `start` is in, and as much of the next.
-    const end = Math.min(wanted, start + rec.chunkSize - 1, size - 1);
-    const whole = start === 0 && end === size - 1 && !asked;
+    /* At most one piece's worth, and never past the end of the piece
+       `start` is in (3 Nov 2026, the bug scan). The edge keys its copies on
+       the Range asked, which this cannot change, so a seek to any byte is a
+       fresh copy whatever is answered (and starting the answer earlier than
+       asked is not safe with every player). But stopping at the piece's end
+       makes the player's next ask start on a piece boundary, a Range every
+       viewer of the video asks the same way, so after one seek the rest of
+       the video comes from the edge again; and a miss reads one piece from
+       the store, never two. */
+    const end = Math.min(wanted, (Math.floor(start / rec.chunkSize) + 1) * rec.chunkSize - 1, size - 1);
+    const whole = !asked;
 
     const out = { ...CACHE, ...(whole ? {} : { "Content-Range": `bytes ${start}-${end}/${size}` }) };
     // The length said only here: for a body, the platform counts it itself.
     if (method === "HEAD") {
-        return { statusCode: whole ? 200 : 206, headers: headersFor(type, { ...out, "Content-Length": String(end - start + 1) }), body: "" };
+        return { statusCode: whole ? 200 : 206, headers: headersFor(type, { ...out, "Content-Length": String(whole ? size : end - start + 1) }), body: "" };
     }
 
     let body;

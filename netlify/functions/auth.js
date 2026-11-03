@@ -29,7 +29,7 @@
 const crypto = require("crypto");
 const bcrypt = require("bcryptjs");
 const { getDb, ensureUniqueIndex } = require("./_db");
-const { isAuthorized, hasAccount, canWrite, refuseWrite, usernameFromToken, sessionOf, tokenPayload, tokenIsCurrent, UNAUTHORIZED, READ_ONLY, ROLES, PERMANENT_OWNER, resolveRole, signAdminToken, AUTH_UNAVAILABLE, isAuthUnavailable } = require("./_auth");
+const { isAuthorized, hasAccount, canWrite, refuseWrite, usernameFromToken, sessionOf, tokenPayload, tokenIsCurrent, UNAUTHORIZED, READ_ONLY, ROLES, PERMANENT_OWNER, resolveRole, signAdminToken, AUTH_UNAVAILABLE, isAuthUnavailable, sessionEnded, endSession } = require("./_auth");
 const { record, ensureIndexes: ensureActivityIndexes, COLLECTION: ACTIVITY } = require("./_audit");
 const { SECURITY_HEADERS } = require("./_headers");
 // The cookie reader the player session already uses; see isKnownDevice.
@@ -803,6 +803,18 @@ async function handlePost(event, body, db, admins) {
         return withDevice(json(200, { token, username, role: resolveRole(admin) }), admin);
     }
 
+    /* Log out (3 Nov 2026, the bug scan): this token's session ends here,
+       so a copy of it stops working at once (endSession in _auth.js). A
+       token that doesn't verify has nothing to end. */
+    if (body.action === "logout") {
+        const payload = tokenPayload(event);
+        if (payload && typeof payload.sub === "string") {
+            await endSession(db, payload);
+            await record(event, "logout", { username: payload.sub, session: sessionOf(event) }).catch(() => {});
+        }
+        return json(200, { ok: true });
+    }
+
     if (body.action === "verify") {
         const payload = tokenPayload(event);
         // Text only, as usernameFromToken in _auth.js reads it (30 Oct 2026).
@@ -813,6 +825,7 @@ async function handlePost(event, body, db, admins) {
         // before its password last changed, is a signed-out session, not an
         // admin one — see lookUpRole and tokenIsCurrent in _auth.js.
         if (!admin || !tokenIsCurrent(admin, payload)) return UNAUTHORIZED;
+        if (await sessionEnded(db, payload)) return UNAUTHORIZED;
         /* Every admin page load verifies its token, so this is a free
            heartbeat: the gap between a session's first and last record is
            how long that person had the admin open. */

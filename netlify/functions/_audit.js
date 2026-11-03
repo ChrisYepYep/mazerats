@@ -65,7 +65,7 @@ function agentOf(event) {
     return ua.slice(0, 180);            // enough to tell a browser apart, not a fingerprint
 }
 
-/* type: "login" | "login-failed" | "session" | "write"
+/* type: "login" | "login-failed" | "session" | "logout" | "write"
    Anything not given is simply left off the record. */
 /* A backstop on the one field a stranger can fill: a failed login logs the
    username that was TRIED, and nothing bounded it (auth.js now cuts it too;

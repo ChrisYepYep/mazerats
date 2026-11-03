@@ -42,7 +42,8 @@ function signAdminToken(username, version) {
        the next one without signing in again mid-task. A password change
        still ends every session at once (tokenIsCurrent below), and roles
        and deleted accounts are looked up on every write, so the longer life
-       only lengthens how long a lost token can READ the admin views. */
+       only lengthens how long a lost token works: and since 3 Nov 2026 (the
+       bug scan) Log out ends its session on the server (endSession below). */
     return jwt.sign(payload, process.env.SESSION_SECRET, {
         expiresIn: "48h", audience: ADMIN_AUDIENCE, algorithm: "HS256"
     });
@@ -197,6 +198,27 @@ async function roleOf(event) {
     return role;
 }
 
+/* A SESSION ENDS AT LOG OUT (3 Nov 2026, the bug scan). A token used to
+   stay good until it ran out, 48 hours, however its admin had logged out;
+   a copy of it could still write. Log out (auth.js, action "logout") now
+   records that one session, by account and the token's issued-at time,
+   which are the same for its life (see sessionOf), and a recorded session
+   is signed out everywhere it is checked. Rows go by themselves once the
+   token would have expired anyway (a TTL index on expireAt). */
+const ENDED_SESSIONS = "admin_ended_sessions";
+const sessionKey = payload => `${payload.sub}:${payload.iat}`;
+async function sessionEnded(db, payload) {
+    if (!payload || typeof payload.sub !== "string" || !payload.iat) return false;
+    return Boolean(await db.collection(ENDED_SESSIONS).findOne({ _id: sessionKey(payload) }, { projection: { _id: 1 } }));
+}
+async function endSession(db, payload) {
+    if (!payload || typeof payload.sub !== "string" || !payload.iat) return;
+    const col = db.collection(ENDED_SESSIONS);
+    await col.createIndex({ expireAt: 1 }, { expireAfterSeconds: 0 }).catch(() => {});
+    const expireAt = new Date(((Number(payload.exp) || 0) * 1000) || Date.now() + 48 * 60 * 60 * 1000);
+    await col.updateOne({ _id: sessionKey(payload) }, { $setOnInsert: { at: new Date(), expireAt } }, { upsert: true });
+}
+
 async function lookUpRole(event) {
     const payload = tokenPayload(event);
     const username = usernameFromToken(event);
@@ -206,8 +228,9 @@ async function lookUpRole(event) {
         const admin = await db.collection("admins").findOne({ username });
         /* A token minted before the account's last password change is a
            signed-out session, exactly as one for a deleted account is. See
-           tokenIsCurrent above. */
+           tokenIsCurrent above. So is one logged out (sessionEnded). */
         if (admin && !tokenIsCurrent(admin, payload)) return null;
+        if (admin && await sessionEnded(db, payload)) return null;
         /* No row, no role. This used to be resolveRole(admin || { username }),
            which read a missing account as "admin" — so a deleted account kept
            full write access for the rest of its token's life, and any token
@@ -359,5 +382,5 @@ module.exports = {
     ADMIN_AUDIENCE, signAdminToken, tokenPayload, tokenIsCurrent,
     PERMANENT_OWNER, ROLES, resolveRole, roleOf, isOwner, isOwnerWrite, canWrite,
     forbidden, READ_ONLY, OUT_OF_SCOPE, refuseWrite, WRITE_SCOPES,
-    AUTH_UNAVAILABLE, isAuthUnavailable
+    AUTH_UNAVAILABLE, isAuthUnavailable, sessionEnded, endSession
 };

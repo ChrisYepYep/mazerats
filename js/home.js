@@ -1415,6 +1415,13 @@ document.addEventListener("DOMContentLoaded", () => {
             btn.setAttribute("aria-pressed", on ? "true" : "false");
         });
         if (browseWindow) browseWindow.classList.toggle("is-opening", raised);
+        /* And is-raised on the three views and a furni's list, not the opening
+           view itself (3 Nov 2026, the bug scan): is-opening hid the line
+           over the list, so their order ("Newest first", "Most mazes first")
+           and Clear filter went with it. The css shows that line again under
+           is-raised; the sort chip still keeps off the opening view itself
+           (updateSortChip). */
+        if (browseWindow) browseWindow.classList.toggle("is-raised", raised && !showOpening);
         // The frame's own search box says what is being searched, unless
         // it is the one being typed in.
         if (openingInput && openingInput.value !== query && document.activeElement !== openingInput) openingInput.value = query;
@@ -1461,7 +1468,8 @@ document.addEventListener("DOMContentLoaded", () => {
         // actually matters — sitting in the Archive listing itself, rather
         // than as a note somewhere the visitor has to go looking for.
         if (eventsArchiveNote) {
-            eventsArchiveNote.hidden = !(isEvents && !showFeatured && resolvedEventsSub() === "archive");
+            // Not over the raised views (3 Nov 2026), which are not Events > Archive.
+            eventsArchiveNote.hidden = !(isEvents && !showFeatured && !raised && resolvedEventsSub() === "archive");
         }
         difficultySortOptions.forEach(opt => { opt.hidden = isEvents; });
 
@@ -9881,8 +9889,17 @@ document.addEventListener("DOMContentLoaded", () => {
         showFurni = key === "furni";
         furniFilter = null;
         if (backToOpening) showOpening = true;
-        searchInput.value = "";
-        query = "";
+        /* Back on /home, the search its address carries (3 Nov 2026, the bug
+           scan): this cleared the box and left ?q= in the address, so the
+           list and the link disagreed. Read as on load; a view's own address
+           still starts with an empty box. */
+        let fromUrl = "";
+        if (key === null) {
+            try { fromUrl = (new URLSearchParams(location.search).get("q") || "").slice(0, 200); } catch (e) { fromUrl = ""; }
+        }
+        searchInput.value = fromUrl;
+        query = fromUrl;
+        syncedSearch = null;
         viewFromHistory = true;
         try { render(); } finally { viewFromHistory = false; }
         const results = document.querySelector(".home-results");

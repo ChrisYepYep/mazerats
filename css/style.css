@@ -22433,10 +22433,13 @@ body.is-viewer #bans-add { display: none !important; }
 #browse-window.is-opening #search-wrap,
 #browse-window.is-opening #featured-mazes-btn,
 #browse-window.is-opening #featured-frame-body,
-#browse-window.is-opening .list-status,
+#browse-window.is-opening:not(.is-raised) .list-status,
 #browse-window.is-opening .chrome-intro {
     display: none !important;
 }
+/* The line over the list (the order, Clear filter) stays on What's New, the
+   Timeline, Furni and a furni's list, which wear this look with .is-raised
+   as well (3 Nov 2026, the bug scan); only the opening view itself loses it. */
 #browse-window.is-opening > #top-nav { position: relative; z-index: 1; }
 #browse-window.is-opening > .featured-frame {
     position: relative;
@@ -23151,6 +23154,18 @@ html[data-light] .chrome-light { filter: drop-shadow(0 0 3px var(--neon-soft)); 
 .art-text .art-embed,
 .art-text hr,
 .art-text .art-figure:not(.art-figure--left):not(.art-figure--right) { clear: both; }
+/* On a phone a side picture is a full-width one (3 Nov 2026, the bug
+   scan): 45% of a ~300px box left the words a column a few letters wide.
+   ArticleText.fitPictures leaves an unfloated picture alone, and gives one
+   it fitted while the window was wider its own height back. */
+@media (max-width: 640px) {
+    .art-text .art-figure--left,
+    .art-text .art-figure--right { float: none; clear: both; width: auto; margin-left: 0; margin-right: 0; margin-bottom: 0; }
+    .art-text .art-figure--left .art-caption,
+    .art-text .art-figure--right .art-caption { text-align: center; }
+    .art-text .art-figure--left:first-child + *,
+    .art-text .art-figure--right:first-child + * { margin-top: 1.6em; }
+}
 .art-caption {
     margin: 6px 4px 0;
     font-size: 0.86em;

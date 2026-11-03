@@ -792,9 +792,13 @@ exports.handler = async (event) => {
             const { all, retired } = await addressesOf(db, kind, !fresh ? ADDRESSES_MS : admin ? 0 : FRESH_ADDRESSES_MS);
             let hit = resolveSlug(all, kind, slug, retired);
             if (hit && !isPublic(kind, hit.record)) hit = null;
-            const doc = hit && hit.current
+            let doc = hit && hit.current
                 ? await coll.findOne({ id: hit.record.id }, { projection: { _id: 0 } })
                 : null;
+            /* The record as read now, not the address book's copy, decides
+               (3 Nov 2026, the bug scan): an article unpublished seconds ago
+               still read as public there, and its draft's tags were served. */
+            if (doc && !isPublic(kind, doc)) { doc = null; hit = null; }
             return { found: hit, record: doc, gone: !hit && isRetired(retired, slug) };
         })(), LOOKUP_MS));
     } catch (e) {

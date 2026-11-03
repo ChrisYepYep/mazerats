@@ -995,6 +995,21 @@ exports.handler = async (event) => {
         await unspend();
         return json(503, { error: "The leaderboard could not be updated just now." });
     }
+    /* Removed while this save was on its way (3 Nov 2026, the bug scan):
+       the check above can pass just before the Warren writes its removal,
+       and this write then land after its delete, putting the row back
+       while the Warren shows it dealt with. pura-flags.js writes the
+       decision before it deletes, so a write landing after the delete
+       always sees it here, and takes this game's row back off. Fails open,
+       as the check above does (pura-flags.js re-deletes by run id too). */
+    if (better) {
+        try {
+            if (await db.collection("pura_flags").findOne({ _id: claims.rid, status: "removed" }, { projection: { _id: 1 } })) {
+                await scores.deleteOne({ playerId: who.id, rid: claims.rid });
+                return json(200, { recorded: false, reason: "already-submitted" });
+            }
+        } catch (e) { console.error("pura-scores: could not re-check the Warren's removals", e); }
+    }
     const held = better ? null : await scores.findOne({ playerId: who.id }).catch(() => null);
     const best = better ? row : held || row;
     /* This game's best already, at this very score, set by its own save on

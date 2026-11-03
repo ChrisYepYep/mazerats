@@ -75,6 +75,8 @@
     let listPlace = null;       // { scroll, card }: the list as it was left for an article
     let pics = [];              // the reader's pictures: [{ image, caption }]
     let picAt = 0;
+    let drawn = null;           // the article the reader was last built for (refresh())
+    const drawnParts = { meta: "", actions: "" };   // what drawEventParts last wrote
 
     // ------------------------------------------------------------ loading
 
@@ -143,8 +145,12 @@
     const shortDay = (d, year, zone) => d.toLocaleDateString("en-GB", Object.assign({ day: "numeric", month: "short" }, year ? { year: "numeric" } : {}, zone ? { timeZone: zone } : {}));
     function editedDay(a) {
         const e = new Date(a.editedAt), p = new Date(a.publishedAt);
-        if (isNaN(e) || isNaN(p) || e.toDateString() === p.toDateString() || e < p) return "";
-        return shortDay(e, true);
+        /* UTC days, compared and shown (3 Nov 2026, the bug scan): the
+           reader's own time zone moved an edit near midnight onto or off
+           the day it was published. */
+        const utcDay = d => d.toISOString().slice(0, 10);
+        if (isNaN(e) || isNaN(p) || utcDay(e) === utcDay(p) || e < p) return "";
+        return shortDay(e, true, "UTC");
     }
     function eventDays(ev) {
         const s = new Date(ev.date), e = new Date(ev.endDate);
@@ -290,6 +296,13 @@
         drawHtml = wheel ? wheel.outerHTML : "";
         drawCtx = { article: a, embedData: a.embedData };
         if (wheel) wheel.remove();
+        /* A text that was only the draw is empty once it moves to the top
+           (3 Nov 2026, the bug scan): the summary in its place, as for no
+           text at all. */
+        if (wheel && !textEl.textContent.trim() && !textEl.querySelector("img, figure, video, iframe")) {
+            textEl.innerHTML = `<p>${esc(GuideText.plain(a.summary || ""))}</p>`;
+        }
+        drawn = a;
         // With the draw at the top, only a gallery's pictures, never the thumbnail.
         pics = drawHtml ? picturesOf({ gallery: a.gallery }) : picturesOf(a);
         picAt = 0;
@@ -305,22 +318,8 @@
         if (drawHtml) showDraw();
         else if (pics.length) showPic(0);
         drawWriter(a);
-        /* The meta row, as the room window's status line: what it is, the day
-           it went public, and how long it takes to read (the words, at about
-           200 a minute). */
-        const words = ArticleText.plain(a.body || "").split(/\s+/).filter(Boolean).length;
-        const pub = new Date(a.publishedAt);
-        const day = isNaN(pub) ? "" : shortDay(pub, true);
-        const ev = eventOf(a);
-        const evDays = ev ? eventDays(ev) : "";
-        meta.innerHTML = `<span class="status-badge art-badge">Article</span>${day ? `<span>Published: ${esc(day)}</span>` : ""}${evDays ? `<span>Event: ${esc(evDays)}</span>` : ""}${words ? `<span>Reading time: ${Math.max(1, Math.round(words / 200))} min</span>` : ""}${pics.length > 1 ? `<span>${pics.length} pictures</span>` : ""}`;
-        /* Where a maze's tag chips are, and in their look (3 Nov 2026, the
-           owner's): the writer on the left, these on the right. */
-        actions.innerHTML = [
-            // Its name in the chip's accessible name and tooltip.
-            ev ? `<a class="tag tag-filter" href="${esc(window.RecordAddress.of("event", ev))}" data-act="event" title="${esc(ev.title || "")}" aria-label="See the event: ${esc(ev.title || "")}">See the event</a>` : "",
-            `<button type="button" class="tag tag-filter art-copy" data-act="copy">Copy link</button>`
-        ].join("");
+        drawnParts.meta = drawnParts.actions = "";
+        drawEventParts(a);
         crumbs.hidden = !listPlace;
         /* Updated, at the very foot of the text in the meta line's small
            text (3 Nov 2026, the owner's: off the meta line). */
@@ -332,6 +331,40 @@
         ArticleText.fitPictures(textEl);
         descBox.scrollTop = 0;
         say("");
+    }
+
+    /* The parts of the reader that hang on the event (3 Nov 2026, the bug
+       scan): the meta line, with the event's days, and the chips with See
+       the event. refresh() redraws only these once the archive's events
+       arrive, so an article opened from a shared link isn't built again
+       (which stopped its draw mid-spin, its video, and put the text back to
+       the top). */
+    function drawEventParts(a) {
+        /* The meta row, as the room window's status line: what it is, the day
+           it went public, and how long it takes to read (the words, at about
+           200 a minute). */
+        const words = ArticleText.plain(a.body || "").split(/\s+/).filter(Boolean).length;
+        const pub = new Date(a.publishedAt);
+        const day = isNaN(pub) ? "" : shortDay(pub, true, "UTC");  // the UTC day, as Updated: and Event: are
+        const ev = eventOf(a);
+        const evDays = ev ? eventDays(ev) : "";
+        const metaHtml = `<span class="status-badge art-badge">Article</span>${day ? `<span>Published: ${esc(day)}</span>` : ""}${evDays ? `<span>Event: ${esc(evDays)}</span>` : ""}${words ? `<span>Reading time: ${Math.max(1, Math.round(words / 200))} min</span>` : ""}${pics.length > 1 ? `<span>${pics.length} pictures</span>` : ""}`;
+        /* Where a maze's tag chips are, and in their look (3 Nov 2026, the
+           owner's): the writer on the left, these on the right. */
+        const actionsHtml = [
+            // Its name in the chip's accessible name and tooltip.
+            ev ? `<a class="tag tag-filter" href="${esc(window.RecordAddress.of("event", ev))}" data-act="event" title="${esc(ev.title || "")}" aria-label="See the event: ${esc(ev.title || "")}">See the event</a>` : "",
+            `<button type="button" class="tag tag-filter art-copy" data-act="copy">Copy link</button>`
+        ].join("");
+        // Written only when they change, so a chip keeps its focus and its "Copied".
+        if (metaHtml !== drawnParts.meta) { meta.innerHTML = metaHtml; drawnParts.meta = metaHtml; }
+        if (actionsHtml !== drawnParts.actions) {
+            const was = actions.contains(document.activeElement) ? document.activeElement.dataset.act : "";
+            actions.innerHTML = actionsHtml;
+            drawnParts.actions = actionsHtml;
+            const back = was ? actions.querySelector(`[data-act="${was}"]`) : null;
+            if (back) back.focus({ preventScroll: true });
+        }
     }
 
     function draw(opts) {
@@ -364,6 +397,11 @@
         if (reading) drawReader(a);
         else {
             if (topEl) { topEl.replaceChildren(); topEl.hidden = true; }
+            /* The text taken out too, not just hidden (3 Nov 2026, the bug
+               scan): a video in it played on, and a second draw in it kept
+               spinning and ticking, behind the list. */
+            textEl.replaceChildren();
+            drawn = null;
             titleEl.textContent = view.id ? "Article" : "Articles";
             listEl.innerHTML = note || listHtml();
         }
@@ -479,6 +517,11 @@
         textEl.querySelectorAll("video, audio").forEach(m => { try { m.pause(); } catch (e) { /* fine */ } });
         // The draw at the top, taken out of the page: a spin stops with it.
         if (topEl && !topEl.hidden) { topEl.replaceChildren(); topEl.hidden = true; }
+        /* ...and the text taken out of the page (3 Nov 2026, the bug scan):
+           a second {{wheel}} left in it stayed connected and kept going.
+           Opening it again builds it afresh. */
+        textEl.replaceChildren();
+        drawn = null;
         let deferred = false;
         if (!o.fromHistory) {
             if (pendingBack) {
@@ -666,7 +709,15 @@
         forEvent: id => articles.filter(a => a.eventId && a.eventId === id),
         thumbOf,
         onLoad(fn) { if (typeof fn === "function") listeners.push(fn); },
-        // Redraws an open reader once the events have arrived (its event button).
-        refresh() { if (isOpen() && view.id) draw(); }
+        /* Redraws an open reader once the events have arrived (its event
+           button). The article already drawn gets only its event's parts
+           (drawEventParts, 3 Nov 2026, the bug scan); a full draw only
+           when it isn't drawn yet or the list has brought a new copy. */
+        refresh() {
+            if (!isOpen() || !view.id) return;
+            const a = byKey(view.id);
+            if (a && a === drawn && !reader.hidden) drawEventParts(a);
+            else draw();
+        }
     };
 })();

@@ -1132,6 +1132,10 @@ document.addEventListener("DOMContentLoaded", () => {
             if (!loggedOut) setLoggingOut(false);
         }
         stopFurniPolling();
+        /* And the session ended on the server (3 Nov 2026, the bug scan): a
+           token copied before Log out stopped working only when it ran out,
+           48 hours on. Not waited for: the page is signed out either way. */
+        if (adminToken) Api.endSession(adminToken).catch(() => {});
         // Only this tab's own session (3 Oct 2026): a newer one signed in
         // from another tab, which this tab never used, is left alone — see
         // the same check in lockOut.
@@ -1243,6 +1247,7 @@ document.addEventListener("DOMContentLoaded", () => {
         "login": "Signed in",
         "login-failed": "Failed sign-in",
         "session": "Opened the admin",
+        "logout": "Logged out",
         "write": "Changed something",
     };
 
@@ -2729,7 +2734,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const PANEL_FILES = {
         guides: ["js/guides-starter.js?v=2", "js/admin-guides.js?v=3"],
         // The Articles section's editor and its text format first (2 Nov 2026), which the log reads.
-        whatsnew: ["js/article-text.js?v=7", "js/admin-articles.js?v=10", "js/admin-whats-new.js?v=3"],
+        whatsnew: ["js/article-text.js?v=8", "js/admin-articles.js?v=11", "js/admin-whats-new.js?v=3"],
         notifications: ["js/admin-notifications.js?v=1"]
     };
     function openFilesPanel(name) {

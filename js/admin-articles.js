@@ -777,24 +777,30 @@
         if (body) return { el: body, which: "body" };
         return null;
     }
-    let dragDepth = 0;
+    /* No enter/leave count (3 Nov 2026, the bug scan): an upload finishing
+       mid-drag redraws the form, the elements the count came in through are
+       gone and never send their dragleave, and the outline stayed on. It
+       clears when the pointer leaves the form itself (relatedTarget outside
+       it, or null for out of the window), and on any drop or drag end. */
     const clearDrag = () => {
-        dragDepth = 0;
         formEl.classList.remove("is-dragging-files");
         formEl.querySelectorAll(".is-drop-target").forEach(x => x.classList.remove("is-drop-target"));
     };
     formEl.addEventListener("dragenter", e => {
         if (!editing || !hasFiles(e)) return;
-        dragDepth++;
         formEl.classList.add("is-dragging-files");
     });
     formEl.addEventListener("dragleave", e => {
         if (!hasFiles(e)) return;
-        if (--dragDepth <= 0) clearDrag();
+        const to = e.relatedTarget;
+        if (!to || !(to instanceof Node) || !formEl.contains(to)) clearDrag();
     });
+    window.addEventListener("drop", clearDrag);
+    window.addEventListener("dragend", clearDrag);
     formEl.addEventListener("dragover", e => {
         if (!editing || !hasFiles(e)) return;
         e.preventDefault();
+        formEl.classList.add("is-dragging-files");
         const spot = dropSpot(e.target);
         e.dataTransfer.dropEffect = spot ? "copy" : "none";
         formEl.querySelectorAll(".is-drop-target").forEach(x => { if (!spot || x !== spot.el) x.classList.remove("is-drop-target"); });
@@ -939,6 +945,8 @@
         const wheel = body.querySelector("figure.art-embed[data-embed='wheel']");
         const topHtml = wheel ? wheel.outerHTML : "";
         if (wheel) wheel.remove();
+        // A text that was only the draw: the summary in its place, as on the site (3 Nov 2026, the bug scan).
+        if (!body.textContent.trim() && !body.querySelector("img, figure, video, iframe")) body.innerHTML = `<p>${esc(GuideText.plain(a.summary || ""))}</p>`;
         const gallery = a.gallery.filter(g => g.image);
         const pics = gallery.length || topHtml ? gallery : (a.thumb ? [{ image: a.thumb, caption: "" }] : []);
         const p0 = topHtml ? null : pics[0];
@@ -952,7 +960,9 @@
            it shows once a change after publishing has been saved. */
         const shortDay = (d, year, zone) => d.toLocaleDateString("en-GB", Object.assign({ day: "numeric", month: "short" }, year ? { year: "numeric" } : {}, zone ? { timeZone: zone } : {}));
         const editedAt = stored && stored.editedAt ? new Date(stored.editedAt) : null;
-        const edited = editedAt && !isNaN(editedAt) && editedAt > day && editedAt.toDateString() !== day.toDateString() ? shortDay(editedAt, true) : "";
+        // UTC days, the same for every reader wherever they are (3 Nov 2026, the bug scan).
+        const utcDay = d => d.toISOString().slice(0, 10);
+        const edited = editedAt && !isNaN(editedAt) && !isNaN(day) && editedAt > day && utcDay(editedAt) !== utcDay(day) ? shortDay(editedAt, true, "UTC") : "";
         let evDays = "";
         if (ev && !isNaN(new Date(ev.date))) {
             const s = new Date(ev.date), e = new Date(ev.endDate);
@@ -984,7 +994,7 @@
                                 <div class="room-tags art-actions">${ev ? `<span class="tag tag-filter">See the event</span>` : ""}<span class="tag tag-filter art-copy">Copy link</span></div>
                             </div>
                             <div class="modal-meta">
-                                <div class="modal-meta-items art-meta"><span class="status-badge art-badge">Article</span><span>Published: ${esc(shortDay(day, true))}</span>${evDays ? `<span>Event: ${esc(evDays)}</span>` : ""}${words ? `<span>Reading time: ${Math.max(1, Math.round(words / 200))} min</span>` : ""}${pics.length > 1 ? `<span>${pics.length} pictures</span>` : ""}</div>
+                                <div class="modal-meta-items art-meta"><span class="status-badge art-badge">Article</span><span>Published: ${esc(shortDay(day, true, "UTC"))}</span>${evDays ? `<span>Event: ${esc(evDays)}</span>` : ""}${words ? `<span>Reading time: ${Math.max(1, Math.round(words / 200))} min</span>` : ""}${pics.length > 1 ? `<span>${pics.length} pictures</span>` : ""}</div>
                                 <div class="room-desc-panel">
                                     <div class="room-desc-box"><div class="room-desc-full art-text${a.justify ? " is-justified" : ""}">${body.innerHTML}${edited ? `<p class="art-updated">Updated: ${esc(edited)}</p>` : ""}</div></div>
                                     ${stripped ? `<div class="gallery-strip">${topHtml ? '<span class="art-strip-draw active"></span>' : ""}${pics.map((g, i) => `<img src="${esc(g.image)}" alt=""${i === 0 && !topHtml ? ' class="active"' : ""}>`).join("")}</div>` : ""}
@@ -1089,10 +1099,23 @@
             if (i >= 0 && saved && saved.id) articles[i] = saved;
             if (stored && stored.id === id && saved && saved.wn) {
                 stored = saved;
-                if (editing) {
-                    editing.wn.hidden = saved.wn.hidden === true;
-                    const box = formEl.querySelector('[data-wn="hidden"]');
-                    if (box) box.checked = editing.wn.hidden;
+                /* The saved copy the unsaved-changes check compares with
+                   takes the new value too (3 Nov 2026, the bug scan: an open,
+                   unchanged edit turned "unsaved"). A Hidden tick changed in
+                   the form and not yet saved is the writer's, and stays. */
+                if (editing && snapshot) {
+                    let snap = null;
+                    try { snap = JSON.parse(snapshot); } catch (e) { snap = null; }
+                    if (snap && snap.wn) {
+                        const mine = editing.wn.hidden !== (snap.wn.hidden === true);
+                        snap.wn.hidden = saved.wn.hidden === true;
+                        snapshot = JSON.stringify(snap);
+                        if (!mine) {
+                            editing.wn.hidden = saved.wn.hidden === true;
+                            const box = formEl.querySelector('[data-wn="hidden"]');
+                            if (box) box.checked = editing.wn.hidden;
+                        }
+                    }
                 }
             }
             renderList();

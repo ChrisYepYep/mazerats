@@ -200,7 +200,17 @@
 
         // ---- the drawing
 
-        let px = 0, parts = null, rot = snap.from;
+        /* AT REST IT TURNS SLOWLY (3 Nov 2026, the owner's, from the bug scan:
+           resting where the live wheel did, the pointer sat on a name that
+           readers took for the winner). It starts on a divider, between two
+           names, and turns a full circle in IDLE_TURN seconds until Watch
+           the draw is pressed; the spin then sets off from wherever it has
+           got to and still lands on the real winner (WheelDraw.plan lands on
+           `where` from any start). Only while it is on screen, and not at all
+           for a reader who asks for reduced motion (it rests on the divider). */
+        const IDLE_TURN = 90;
+        let drifting = true;
+        let px = 0, parts = null, rot = 0;
         // idle | spinning | landing | reveal | done (the reveal up, the bulbs at rest)
         let mode = "idle";
         const moving = () => mode === "spinning" || mode === "landing" || mode === "reveal";
@@ -245,6 +255,7 @@
             if (!el.isConnected) { stop(); return; }
             const dt = Math.min(0.05, (t - (lastT || t)) / 1000);
             lastT = t;
+            if (mode === "idle" && driftNow()) rot = WD.mod(rot + WD.TAU / IDLE_TURN * dt, WD.TAU);
             if (mode === "spinning" && spin) {
                 const s = (t - t0) / 1000;
                 const [r, v] = WD.at(spin, s);
@@ -267,7 +278,7 @@
             pointer.a = clamp(pointer.a + pointer.v * dt, -0.5, 0.5);
             frame(t);
             if (confetti.length) stepConfetti(dt);
-            if (moving() || confetti.length || Math.abs(pointer.a) > 0.001 || Math.abs(pointer.v) > 0.001) raf = win.requestAnimationFrame(step);
+            if (moving() || driftNow() || confetti.length || Math.abs(pointer.a) > 0.001 || Math.abs(pointer.v) > 0.001) raf = win.requestAnimationFrame(step);
         }
         function go() {
             if (!raf) { lastT = 0; raf = win.requestAnimationFrame(step); }
@@ -278,10 +289,13 @@
             clearTimeout(revealTimer);
             clearTimeout(restTimer);
             if (ro) ro.disconnect();
+            if (io) io.disconnect();
             played(no);
         }
 
         const reduced = () => !!(win.matchMedia && win.matchMedia("(prefers-reduced-motion: reduce)").matches);
+        let onScreen = false, io = null;
+        const driftNow = () => drifting && onScreen && !reduced();
 
         // ---- play
 
@@ -295,8 +309,9 @@
             clearTimeout(restTimer);
             confetti = [];
             pointer = { a: 0, v: 0 };
-            rot = snap.from;
-            spin = Object.assign(WD.plan(snap.from, snap.where, n, snap.turns, snap.decel), { chase: 0, whooshed: false });
+            // From where the wheel is now (see AT REST IT TURNS SLOWLY): it lands on the draw's own spot.
+            drifting = false;
+            spin = Object.assign(WD.plan(rot, snap.where, n, snap.turns, snap.decel), { chase: 0, whooshed: false });
             box.classList.add("is-playing");
             // No "…": the pixel face has no such glyph.
             play.textContent = "Spinning";
@@ -470,7 +485,17 @@
             ro.observe(wheelBox);
             ro.observe(stage);
         }
+        // The slow turn runs only while the wheel is on screen (AT REST IT TURNS SLOWLY).
+        if (win.IntersectionObserver) {
+            io = new win.IntersectionObserver(seen => {
+                if (!el.isConnected) { stop(); return; }
+                onScreen = seen.some(x => x.isIntersecting);
+                if (driftNow()) go();
+            });
+            io.observe(stage);
+        } else onScreen = true;
         still();
+        if (driftNow()) go();
         // The names wait on Montserrat; drawn again once it is in.
         const fonts = doc.fonts;
         if (fonts && fonts.load) {

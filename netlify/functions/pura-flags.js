@@ -8,7 +8,8 @@
                             decisions (`dealt`). Any Warren account.
    POST {key, action}       owners and admins ("site" scope), each one in
                             the activity log:
-          "ok"              looked at, it's fine: the flag stops showing
+          "ok"              looked at, it's fine: the flag stops showing,
+                            until that game saves a better score
           "remove"          the score comes off the public board (the row
                             is deleted, a copy kept here so it can go back)
           "undo"            takes a decision back: an "ok" flag shows again;
@@ -130,6 +131,15 @@ function keyOf(row) {
     return crypto.createHash("sha256").update("pura-flag:" + String(row && row.playerId) + ":" + String(row && row.at)).digest("hex").slice(0, 24);
 }
 
+/* Whether a board row is better than the score a decision was made on,
+   as keepBest (pura-scores.js) ranks them: more points, or the same in
+   fewer pieces. A decision from before `pieces` was kept compares points. */
+function beats(row, d) {
+    const score = Number(row && row.score) || 0, was = Number(d && d.score) || 0;
+    if (score !== was) return score > was;
+    return d.pieces != null && Number.isFinite(Number(d.pieces)) && (Number(row.pieces) || 0) < Number(d.pieces);
+}
+
 /* The least game time the real page could have shown for this game: every
    level-up banner, every clearing piece's flash, and every chain's. The
    clears come from the row (saved since 3 Nov 2026) or its pura_games row;
@@ -178,8 +188,11 @@ function judge(row, game, wall, field) {
 
 /* Every board row judged. `rows` newest-best first, as the board sorts.
    Reads the run ids' pura_games and (for rows with no `wall`) pura_starts
-   rows in one go each. */
-async function judgeAll(db, rows) {
+   rows in one go each. `fieldOf(i)`, when given, is row i's field median
+   instead of the next best among `rows` themselves: a decision judges its
+   one row against the board (3 Nov 2026, the bug scan: judged alone, its
+   field was 0 and any 5,000 got a "lead" reason). */
+async function judgeAll(db, rows, fieldOf) {
     const rids = rows.map(r => r.rid).filter(r => typeof r === "string");
     const needStart = rows.filter(r => r.wall == null || !Number.isFinite(Number(r.wall))).map(r => r.rid).filter(r => typeof r === "string");
     const [games, starts] = await Promise.all([
@@ -196,8 +209,8 @@ async function judgeAll(db, rows) {
             const t = new Date(row.at).getTime() - new Date(startOf.get(row.rid).at).getTime();
             if (Number.isFinite(t) && t >= 0) { wall = t; wallFrom = "start"; }
         }
-        const others = scores.slice(0, i).concat(scores.slice(i + 1)).slice(0, LEAD_FIELD);
-        const reasons = judge(row, gameOf.get(row.rid) || null, wall, median(others));
+        const field = fieldOf ? fieldOf(i) : median(scores.slice(0, i).concat(scores.slice(i + 1)).slice(0, LEAD_FIELD));
+        const reasons = judge(row, gameOf.get(row.rid) || null, wall, field);
         return { row, key: keyOf(row), wall, wallFrom, reasons };
     });
 }
@@ -232,7 +245,18 @@ async function report(db, event) {
     }
     const decided = new Map(decisions.map(d => [d._id, d]));
     const flagged = judged.filter(j => j.reasons.length);
-    const open = flagged.filter(j => !decided.has(j.key));
+    /* An "It's fine" is for the score it was given at (3 Nov 2026, the bug
+       scan). One game saves to the board several times under the same run
+       id (saves on the way, then its finish), so a decision keyed on the
+       run alone let a later, much bigger save from the same game through
+       unseen. A row now better than the decided one is open again. */
+    const reopened = new Set();
+    const open = flagged.filter(j => {
+        const d = decided.get(j.key);
+        if (!d) return true;
+        if (d.status === "ok" && beats(j.row, d)) { reopened.add(j.key); return true; }
+        return false;
+    });
     const dealt = decisions.slice(0, DEALT_SHOWN);
 
     const nameOf = await namer(db, event, open.map(j => j.row.playerId).concat(dealt.map(d => d.playerId)));
@@ -258,7 +282,9 @@ async function report(db, event) {
             wall: j.wall,
             wallFrom: j.wallFrom,
             at: j.row.at,
-            reasons: j.reasons
+            reasons: j.reasons,
+            // Marked fine before, at a lower score: what was decided, for the panel to say so.
+            fine: reopened.has(j.key) ? (d => ({ score: Number(d.score) || 0, by: d.by || null, when: d.when || null }))(decided.get(j.key)) : null
         })),
         dealt: dealt.map(d => ({
             key: d._id,
@@ -271,7 +297,9 @@ async function report(db, event) {
             by: d.by || null,
             when: d.when || null,
             // An "ok" whose row is still the player's best: the flag would show again on Undo.
-            stillOnBoard: d.status === "ok" ? judged.some(j => j.key === d._id) : false
+            stillOnBoard: d.status === "ok" ? judged.some(j => j.key === d._id) : false,
+            // An "ok" the same game has since beaten: its row is in `open` again.
+            flaggedAgain: reopened.has(d._id)
         })),
         counts: { open: open.length, flagged: flagged.length, board: rows.length },
         rules: { PACE_PPS, PACE_MIN_PIECES, LEAD_MIN, LEAD_TIMES, LEAD_FIELD }
@@ -345,12 +373,20 @@ async function act(db, event) {
 
     const row = await rowByKey(db, key);
     if (!row) return json(404, { error: "That score isn't on the board any more. Refresh to see the board as it is now." });
-    const [j] = await judgeAll(db, [row]);
+    /* Judged against the board, as the GET judges it: the field is the
+       next LEAD_FIELD best scores without this row (3 Nov 2026, the bug
+       scan). A row with nothing against it now (the board moved on since
+       the Warren read it) is not decided on. */
+    const top = await scores.find({}, { projection: { score: 1 } }).sort({ score: -1, pieces: 1, at: 1 }).limit(LEAD_FIELD + 1).toArray();
+    const field = median(top.filter(r => String(r._id) !== String(row._id)).slice(0, LEAD_FIELD).map(r => Number(r.score) || 0));
+    const [j] = await judgeAll(db, [row], () => field);
+    if (!j.reasons.length) return json(409, { error: "That score isn't flagged on the board as it is now, so there's nothing to decide. Refresh to see the board as it is now." });
     const decision = {
         status: action === "ok" ? "ok" : "removed",
         by: who, when: new Date(),
         playerId: row.playerId, name: row.name || null,
-        score: Number(row.score) || 0, level: Number(row.level) || 1, rowAt: row.at || null,
+        // The score (and pieces) decided on: a better save from the same game is flagged again (report).
+        score: Number(row.score) || 0, pieces: Number(row.pieces) || 0, level: Number(row.level) || 1, rowAt: row.at || null,
         reasons: j.reasons.map(r => r.text)
     };
 
@@ -371,6 +407,15 @@ async function act(db, event) {
     } catch (e) {
         await flags.deleteOne({ _id: key }).catch(() => {});
         throw e;
+    }
+    /* And again by the run id (3 Nov 2026, the bug scan): a save from this
+       game that passed pura-scores.js's removal check just before the
+       decision was written can land after the delete and put the row back.
+       pura-scores.js checks again after its own write too; this is the
+       belt to that brace. */
+    if (row.rid === key) {
+        try { await scores.deleteOne({ rid: key }); }
+        catch (e) { console.error("pura-flags: could not re-check a removed run", e); }
     }
     await audit(event, `remove ${row.name || "?"} ${num(row.score)} points from the board`);
     return json(200, { done: "remove", message: "Taken off the board. That game can't be saved to it again; their next game can." });
@@ -395,6 +440,6 @@ exports.handler = async (event) => {
 
 // For the save path (pura-scores.js): a run whose score was taken off the board.
 exports.FLAGS = FLAGS;
-exports._test = { judge, judgeAll, keyOf, animationMs, clock, FLASH_MS, BANNER_MS, PACE_PPS, PACE_MIN_PIECES, LEAD_MIN, LEAD_TIMES };
+exports._test = { judge, judgeAll, keyOf, beats, animationMs, clock, FLASH_MS, BANNER_MS, PACE_PPS, PACE_MIN_PIECES, LEAD_MIN, LEAD_TIMES };
 
 exports.handler = require("./_errors").withErrorReporting("pura-flags", exports.handler);
