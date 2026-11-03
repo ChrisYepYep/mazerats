@@ -39,6 +39,9 @@ const OUT = path.join(ROOT, "dist");
 const PUBLIC = [
     "index.html", "home.html", "404.html", "privacy.html", "fallinfurni.html",
     "quiz.html", "warren.html", "wizard.html", "robots.txt",
+    // The offline archive's service worker (2 Nov 2026): at the root, so it
+    // may look after the whole site; js/offline.js registers it.
+    "sw.js",
     "assets", "css", "js"
 ];
 // Root files that look like pages but are deliberately not published.

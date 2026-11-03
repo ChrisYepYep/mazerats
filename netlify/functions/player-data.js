@@ -265,7 +265,7 @@ async function statsFor(db, playerId, collection = SCORES, match = {}) {
         .toArray();
 
     if (!rows.length) {
-        return { days: 0, points: 0, solved: 0, rounds: 0, bestDay: 0, streak: 0, best: 0, lastDay: "" };
+        return { days: 0, points: 0, solved: 0, rounds: 0, bestDay: 0, streak: 0, best: 0, lastDay: "", recent: [] };
     }
 
     /* Points and best day are BASE points — what each day scored for its
@@ -318,7 +318,29 @@ async function statsFor(db, playerId, collection = SCORES, match = {}) {
         best = Math.max(best, run);
     });
 
-    return { days: rows.length, points, solved, rounds, bestDay, streak, best, lastDay };
+    /* THE LAST FIVE WEEKS, day by day (2 Nov 2026), for the streak strip on
+       the results card (Daily.streakStrip in js/daily.js): each day played
+       in the last RECENT_DAYS, today included, with how many rounds it
+       found out of how many it had. Only this player's own rows, from the
+       same query as everything above, so the launch cut and an
+       administrator's reset (which deletes the day's row) shape it exactly
+       as they shape the streak. A day not in the list was not played. */
+    const from = daysBefore(day, RECENT_DAYS - 1);
+    const recent = rows.filter(r => r.day >= from && r.day <= day).map(r => ({
+        day: r.day,
+        solved: Number(r.solved) || 0,
+        rounds: Number.isInteger(r.rounds) && r.rounds > 0 ? r.rounds : ROUNDS
+    }));
+
+    return { days: rows.length, points, solved, rounds, bestDay, streak, best, lastDay, recent };
+}
+
+// Five Monday-to-Sunday weeks always fit inside 35 days ending today.
+const RECENT_DAYS = 35;
+function daysBefore(iso, n) {
+    const d = new Date(iso + "T00:00:00Z");
+    d.setUTCDate(d.getUTCDate() - n);
+    return d.toISOString().slice(0, 10);
 }
 
 // Odd One Out's figures — see ODD ONE OUT TOO above.

@@ -1,0 +1,209 @@
+/* The streak strip on the daily games' results cards (2 Nov 2026; the
+   owner's pick, Option A of three mock-ups). Built by Daily.streakStrip in
+   js/daily.js: the flame, the streak and the best run, then five weeks of
+   that game's own UTC days.
+
+   Every colour is a palette variable, so the palettes, dark mode and the
+   Frost light mode (all variables redefined by tools/themes.js's layers)
+   recolour it without a rule of their own. Guess the Maze's days are the
+   palette's amber, Odd One Out's its green (--ok), through --sk-c. A day
+   is that colour mixed into the card's black by how much of it was found
+   (--sk-x, the l0 to l5 classes). */
+
+.daily-streak {
+    --sk-c: var(--amber-bright);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 7px;
+    margin: 2px 0 0;
+}
+.daily-streak--odd { --sk-c: var(--ok); }
+
+.daily-streak-top {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 7px;
+}
+.daily-streak-flame { display: block; image-rendering: pixelated; }
+
+.daily-streak-n {
+    display: inline-block;
+    font-family: 'Montserrat', sans-serif;
+    font-weight: 800;
+    font-size: 1.25rem;
+    line-height: 1;
+    color: var(--amber-bright);
+    font-variant-numeric: tabular-nums;
+}
+.daily-streak-lab,
+.daily-streak-best {
+    font-size: 0.6rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--unknown-text);
+}
+.daily-streak-best {
+    padding-left: 9px;
+    border-left: 1px solid var(--border);
+}
+.daily-streak-best b {
+    font-family: 'Montserrat', sans-serif;
+    font-weight: 800;
+    font-size: 0.8rem;
+    letter-spacing: 0;
+    color: var(--amber-bright);
+}
+
+/* The calendar: a column of week labels (each week's Monday), then
+   Monday to Sunday. The corner over the labels says the days are UTC. */
+.daily-streak-cal {
+    display: grid;
+    grid-template-columns: 30px repeat(7, 17px);
+    gap: 3px;
+    align-items: center;
+}
+.daily-streak-dow,
+.daily-streak-utc {
+    font-size: 0.55rem;
+    color: var(--unknown-text);
+    text-align: center;
+}
+.daily-streak-utc {
+    text-align: right;
+    padding-right: 3px;
+    letter-spacing: 0.04em;
+    cursor: default;
+}
+.daily-streak-wk {
+    font-size: 0.55rem;
+    color: var(--unknown-text);
+    text-align: right;
+    padding-right: 3px;
+    white-space: nowrap;
+}
+
+.daily-streak-c {
+    position: relative;
+    width: 17px;
+    height: 17px;
+    box-sizing: border-box;
+    border: 1px solid rgba(0, 0, 0, 0.55);
+    border-radius: 2px;
+    background: var(--bg-black);
+}
+.daily-streak-c.is-miss { box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.04); }
+.daily-streak-c.is-pre { background: transparent; border-color: transparent; }
+.daily-streak-c.is-future {
+    background: transparent;
+    border: 1px dotted var(--border);
+}
+/* Today, not played yet: still to come, and the square the stamp lands on. */
+.daily-streak-c.is-open {
+    background: transparent;
+    border: 1px dashed var(--parchment-dim);
+}
+
+.daily-streak-c.l0 { --sk-x: 18%; }
+.daily-streak-c.l1 { --sk-x: 30%; }
+.daily-streak-c.l2 { --sk-x: 42%; }
+.daily-streak-c.l3 { --sk-x: 56%; }
+.daily-streak-c.l4 { --sk-x: 74%; }
+.daily-streak-c.l5 { --sk-x: 100%; }
+.daily-streak-c.is-on {
+    background: var(--sk-c);
+    background: color-mix(in srgb, var(--sk-c) var(--sk-x), var(--bg-black));
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.18);
+}
+/* The day the card is about. */
+.daily-streak-c.is-focus {
+    outline: 1px solid var(--parchment);
+    outline-offset: 1px;
+}
+/* A perfect day: a dot in the middle. */
+.daily-streak-c.is-perfect::after {
+    content: "";
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: 3px;
+    height: 3px;
+    margin: -1.5px 0 0 -1.5px;
+    background: #fff;
+    opacity: 0.85;
+    box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.35);
+}
+
+/* The key under it. */
+.daily-streak-key {
+    margin: 0;
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    align-items: center;
+    gap: 10px;
+    font-size: 0.6rem;
+    color: var(--unknown-text);
+}
+.daily-streak-key i {
+    display: inline-block;
+    width: 9px;
+    height: 9px;
+    box-sizing: border-box;
+    margin-right: 3px;
+    vertical-align: -1px;
+    border: 1px solid rgba(0, 0, 0, 0.55);
+    border-radius: 1px;
+    background: var(--bg-black);
+}
+.daily-streak--guess .daily-streak-key i.l2 { background: color-mix(in srgb, var(--amber-bright) 42%, var(--bg-black)); }
+.daily-streak--guess .daily-streak-key i.l5 { background: var(--amber-bright); }
+.daily-streak--odd .daily-streak-key i.l2 { background: color-mix(in srgb, var(--ok) 42%, var(--bg-black)); }
+.daily-streak--odd .daily-streak-key i.l5 { background: var(--ok); }
+
+/* THE STAMP: the day just finished comes down big and tilted, like a
+   rubber stamp, and settles into its square; then the streak ticks up and
+   a +1 floats off it. Played once by Daily.streakStrip's play(). */
+.daily-streak-c.is-stamping {
+    z-index: 2;
+    animation: daily-streak-stamp 0.62s cubic-bezier(0.3, 0, 0.4, 1) both;
+}
+@keyframes daily-streak-stamp {
+    0%   { transform: scale(2.6) rotate(-16deg); opacity: 0; box-shadow: 0 0 0 1px #000, 6px 6px 0 rgba(0, 0, 0, 0.35); }
+    30%  { transform: scale(1.9) rotate(-10deg); opacity: 1; box-shadow: 0 0 0 1px #000, 3px 3px 0 rgba(0, 0, 0, 0.5); }
+    58%  { transform: scale(1.9) rotate(-10deg); box-shadow: 0 0 0 1px #000, 3px 3px 0 rgba(0, 0, 0, 0.5); }
+    78%  { transform: scale(0.88) rotate(-1deg); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.18); }
+    90%  { transform: scale(1.06) rotate(1deg); }
+    100% { transform: none; }
+}
+.daily-streak-n.is-bump { animation: daily-streak-bump 0.42s ease-out; }
+@keyframes daily-streak-bump {
+    0%   { transform: translateY(-6px) scale(1.35); }
+    60%  { transform: translateY(1px) scale(0.96); }
+    100% { transform: none; }
+}
+.daily-streak-plus {
+    position: absolute;
+    left: 30px;
+    top: -12px;
+    font-family: 'Montserrat', sans-serif;
+    font-weight: 800;
+    font-size: 0.7rem;
+    color: var(--amber-bright);
+    text-shadow: 1px 1px 0 #000;
+    pointer-events: none;
+    animation: daily-streak-plus 0.9s ease-out both;
+}
+@keyframes daily-streak-plus {
+    0%   { transform: translateY(4px); opacity: 0; }
+    25%  { transform: none; opacity: 1; }
+    100% { transform: translateY(-10px); opacity: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .daily-streak-c.is-stamping,
+    .daily-streak-n.is-bump,
+    .daily-streak-plus { animation: none; }
+    .daily-streak-plus { display: none; }
+}

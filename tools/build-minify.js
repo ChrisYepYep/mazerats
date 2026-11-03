@@ -126,6 +126,41 @@ function stampPages() {
     console.log((dryRun ? "build stamp (DRY RUN) " : "build stamp ") + JSON.stringify(stamp) + " -> " + (stamped.join(", ") || "no pages"));
 }
 
+/* THE PAGES THEMSELVES (1 Nov 2026). The same treatment as the files, for
+   the markup: <!-- --> notes come out, and each inline <script> and <style>
+   goes through minifyJs/minifyCss above, so it loses its comments and
+   nothing else. home.html was half comment: 33.5KB brotli as written,
+   10.7KB like this, and it is the first thing every visit downloads (and
+   what share.js serves for /maze, /event and the game addresses, since the
+   function bundle is packed after this runs).
+
+   A comment is only a comment outside script, style, textarea and title,
+   whose text the browser reads raw; the pattern meets those elements first
+   whenever one starts earlier, so a "<!--" inside one is left alone. A
+   script with a src or any type (JSON-LD, say) is copied as it is.
+   Conditional comments are kept, though no page has one. */
+const RAW_OR_COMMENT = /<!--[\s\S]*?-->|<(script|style|textarea|title)\b([^>]*)>([\s\S]*?)<\/\1\s*>/gi;
+
+async function minifyHtml(html, file) {
+    let out = "";
+    let at = 0;
+    for (const m of html.matchAll(RAW_OR_COMMENT)) {
+        out += html.slice(at, m.index);
+        at = m.index + m[0].length;
+        if (!m[1]) {
+            if (/^<!--\[if|<!\[endif\]-->$/i.test(m[0])) out += m[0];
+            continue;
+        }
+        const tag = m[1].toLowerCase();
+        const attrs = m[2];
+        let body = m[3];
+        if (tag === "script" && body.trim() && !/\b(?:src|type)\s*=/i.test(attrs)) body = await minifyJs(body, file + " (inline script)");
+        else if (tag === "style" && body.trim()) body = minifyCss(body, file + " (inline style)");
+        out += "<" + m[1] + attrs + ">" + body + "</" + m[1] + ">";
+    }
+    return out + html.slice(at);
+}
+
 (async () => {
     try {
         stampPages();
@@ -174,6 +209,26 @@ function stampPages() {
             rows.push([dir + "/" + name, Buffer.byteLength(source), Buffer.byteLength(output)]);
             if (!dryRun) fs.writeFileSync(file, output, "utf8");
         }
+    }
+    // The pages at the root, after the stamp above has been written into them.
+    for (const name of fs.readdirSync(ROOT)) {
+        if (!/\.html$/.test(name)) continue;
+        const file = path.join(ROOT, name);
+        const source = fs.readFileSync(file, "utf8");
+        let output;
+        try {
+            output = await minifyHtml(source, name);
+        } catch (err) {
+            console.error("  !! " + name + " will not parse: " + err.message);
+            failed.push(name);
+            before += Buffer.byteLength(source);
+            after += Buffer.byteLength(source);
+            continue;
+        }
+        before += Buffer.byteLength(source);
+        after += Buffer.byteLength(output);
+        rows.push([name, Buffer.byteLength(source), Buffer.byteLength(output)]);
+        if (!dryRun) fs.writeFileSync(file, output, "utf8");
     }
 
     rows.sort((a, b) => (b[1] - b[2]) - (a[1] - a[2]));

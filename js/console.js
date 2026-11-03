@@ -1221,11 +1221,17 @@ if (typeof renderPrivacySections === "function") {
        when who is signed in changes (deletedHere, below, is the same for
        Delete). */
     let markedHere = new Set();
+    /* The quiet notices still unread (2 Nov 2026): never queued or alerted,
+       only counted into the Notifications button's badge (paintNoticeIcon)
+       and marked in the list. Ids from the check (quietUnread in
+       notifications.js), less what this visitor has read here. */
+    let quietUnread = [];
     function localSeen() {
         try { return JSON.parse(localStorage.getItem(NOTICE_SEEN_KEY) || "[]") || []; } catch (e) { return []; }
     }
     function rememberSeen(nid) {
         markedHere.add(nid);
+        quietUnread = quietUnread.filter(x => x !== nid);
         if (!browserKeeps()) return;
         try {
             const list = localSeen().filter(x => x !== nid);
@@ -1291,6 +1297,33 @@ if (typeof renderPrivacySections === "function") {
         if (openImg) openImg.src = n ? ICON_ALERT : ICON;
         openBtn.classList.toggle("has-notice", n > 0);
         openBtn.setAttribute("aria-label", n ? `Console: ${n} new ${n === 1 ? "notification" : "notifications"}` : "Console");
+        paintUnreadBadge();
+    }
+
+    /* THE UNREAD BADGE (2 Nov 2026, the owner's): on the Profile page's
+       Notifications button, how many are unread, the quiet ones included
+       (they alert nobody, so this is the one place they are counted). */
+    const choiceNoticesBtn = document.getElementById("console-choice-notices");
+    function unreadCount() {
+        return notices.length + quietUnread.length;
+    }
+    function paintUnreadBadge() {
+        if (!choiceNoticesBtn) return;
+        const n = unreadCount();
+        let badge = choiceNoticesBtn.querySelector(".console-unread-badge");
+        if (!n) {
+            if (badge) badge.remove();
+            choiceNoticesBtn.removeAttribute("aria-label");
+            return;
+        }
+        if (!badge) {
+            badge = document.createElement("span");
+            badge.className = "console-unread-badge";
+            badge.setAttribute("aria-hidden", "true");
+            choiceNoticesBtn.appendChild(badge);
+        }
+        badge.textContent = n > 99 ? "99+" : String(n);
+        choiceNoticesBtn.setAttribute("aria-label", `Notifications, ${n} unread`);
     }
 
     // The nid on screen, so OK marks THAT one read even if a check has
@@ -1356,6 +1389,7 @@ if (typeof renderPrivacySections === "function") {
                 noticeAcct = data.signedIn ? String(data.acct || "account") : null;
                 const seen = new Set([...markedHere, ...deletedHere, ...(browserKeeps() ? [...localSeen(), ...localDeleted()] : [])]);
                 notices = data.notices.filter(n => n && n.nid && !seen.has(n.nid));
+                quietUnread = (Array.isArray(data.quietUnread) ? data.quietUnread : []).filter(nid => typeof nid === "string" && !seen.has(nid));
                 paintNoticeIcon();
                 // The sound, once for each notice however often it is asked
                 // about: a reload or another tab does not play it again.
@@ -1440,6 +1474,69 @@ if (typeof renderPrivacySections === "function") {
         });
         if (noticesViewBtn) noticesViewBtn.hidden = !nid;
     }
+    /* UNREAD IN THE LIST, AND MARK ALL READ (2 Nov 2026, the owner's). A
+       notice is unread until the account (its `seen` in the list's answer)
+       or, signed out, this browser (mazerats_notices_seen) has it read, or
+       it was read on this page. Unread ones say New beside their date, and
+       a line over the list counts them, with Mark all read: every unread
+       one in the list read at once, through the same POST { seen } the OK
+       and View use (notifications.js caps it at fifty, the list at thirty). */
+    function listedUnread(n) {
+        if (!n || n.seen || markedHere.has(n.nid) || deletedHere.has(n.nid)) return false;
+        return !(browserKeeps() && localSeen().includes(n.nid));
+    }
+    function noticesHeadHtml(unread) {
+        if (!unread) return "";
+        return `<div class="console-notices-head">
+                    <span class="console-notices-count">${unread} unread</span>
+                    <button type="button" class="console-notices-markall" id="console-notices-markall">Mark all read</button>
+                </div>`;
+    }
+    // Read on the server too: the account, if there is one (signed out, the
+    // function answers 200 and the browser has it already).
+    function postSeen(nids) {
+        if (!nids.length) return;
+        fetch(NOTICE_URL, {
+            method: "POST",
+            credentials: "same-origin",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ seen: nids })
+        }).catch(() => { /* the browser has it; the account learns next time */ });
+    }
+    function markAllRead() {
+        const nids = [...listed.values()].filter(listedUnread).map(n => n.nid);
+        if (!nids.length) return;
+        nids.forEach(rememberSeen);
+        notices = notices.filter(n => !nids.includes(n.nid));
+        paintNoticeIcon();
+        postSeen(nids);
+        if (noticesListEl) {
+            noticesListEl.querySelectorAll(".console-notices-item.is-unread").forEach(el => {
+                el.classList.remove("is-unread");
+                const tag = el.querySelector(".console-notices-new");
+                if (tag) tag.textContent = "";
+            });
+            const head = noticesListEl.querySelector(".console-notices-head");
+            if (head) head.remove();
+        }
+        // Focus was on the button just taken away: onto the list's first notice.
+        const first = noticesListEl && noticesListEl.querySelector(".console-notices-item");
+        if (first && modal.style.display === "block") first.focus({ preventScroll: true });
+    }
+    // One read from the list: its New and the count over the list follow.
+    function unmarkListed(nid) {
+        if (!noticesListEl) return;
+        const el = noticesListEl.querySelector(`.console-notices-item[data-nid="${nid}"]`);
+        if (el) {
+            el.classList.remove("is-unread");
+            const tag = el.querySelector(".console-notices-new");
+            if (tag) tag.textContent = "";
+        }
+        const left = [...listed.values()].filter(listedUnread).length;
+        const head = noticesListEl.querySelector(".console-notices-head");
+        if (head && !left) head.remove();
+        else if (head) head.querySelector(".console-notices-count").textContent = `${left} unread`;
+    }
     function showNoticeHistory() {
         showPage("notices");
         pickNotice(null);
@@ -1457,6 +1554,7 @@ if (typeof renderPrivacySections === "function") {
                 const gone = new Set([...deletedHere, ...(browserKeeps() ? localDeleted() : [])]);
                 const list = ((data && Array.isArray(data.notices)) ? data.notices : []).filter(n => n && n.nid && !gone.has(n.nid));
                 listed = new Map(list.map(n => [n.nid, n]));
+                const unread = list.filter(listedUnread).length;
                 /* Previews (5 Oct 2026, the owner's): two lines of each at
                    most; picked, View opens it whole on the notification
                    page. data-crumb (10 Oct 2026): a press on one used to put
@@ -1464,9 +1562,9 @@ if (typeof renderPrivacySections === "function") {
                    report's click breadcrumb (js/error-report.js), and one
                    sent to chosen players can name them. */
                 noticesListEl.innerHTML = list.length
-                    ? list.map(n => `
-                        <button type="button" class="console-notices-item" data-nid="${n.nid}" data-crumb="Notification" aria-pressed="false">
-                            <span class="console-notices-day">${fmtNoticeDay(n.at)}</span>
+                    ? noticesHeadHtml(unread) + list.map(n => `
+                        <button type="button" class="console-notices-item${listedUnread(n) ? " is-unread" : ""}" data-nid="${n.nid}" data-crumb="Notification" aria-pressed="false">
+                            <span class="console-notices-day">${fmtNoticeDay(n.at)}<span class="console-notices-new">${listedUnread(n) ? " New" : ""}</span></span>
                             <span class="console-notices-text">${noticeHtml(n.text)}</span>
                         </button>`).join('<div class="console-dotline"></div>')
                     : NO_NOTICES;
@@ -1496,21 +1594,21 @@ if (typeof renderPrivacySections === "function") {
         showPage("notice");
         if (screenScroll) screenScroll.scrollTop = 0;
         const i = notices.findIndex(x => x.nid === nid);
-        if (i >= 0) {
-            notices.splice(i, 1);
-            paintNoticeIcon();
+        /* Any unread one, not only a queued alert (2 Nov 2026): a quiet
+           notice opened here was never marked read, so it stayed New and
+           counted in the badge however often it was read. */
+        if (i >= 0 || listedUnread(n)) {
+            if (i >= 0) notices.splice(i, 1);
             rememberSeen(nid);
-            fetch(NOTICE_URL, {
-                method: "POST",
-                credentials: "same-origin",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ seen: [nid] })
-            }).catch(() => { /* the browser has it; the account learns next time */ });
+            paintNoticeIcon();
+            unmarkListed(nid);
+            postSeen([nid]);
         }
         if (noticeBackBtn && modal.style.display === "block") noticeBackBtn.focus({ preventScroll: true });
     }
     if (noticesListEl) {
         noticesListEl.addEventListener("click", e => {
+            if (e.target.closest(".console-notices-markall")) { markAllRead(); return; }
             const item = e.target.closest(".console-notices-item");
             if (item) pickNotice(item.dataset.nid === pickedNid ? null : item.dataset.nid);
         });
@@ -1529,9 +1627,13 @@ if (typeof renderPrivacySections === "function") {
             if (item) {
                 // The dotted line that went with it: the one before, or for
                 // the first notice, the one after.
-                const line = item.previousElementSibling || item.nextElementSibling;
-                if (line && line.classList.contains("console-dotline")) line.remove();
+                // (The first notice's previous sibling can be the unread line
+                // over the list, 2 Nov 2026, so each side is tried.)
+                const isLine = el => el && el.classList.contains("console-dotline");
+                const line = isLine(item.previousElementSibling) ? item.previousElementSibling : item.nextElementSibling;
+                if (isLine(line)) line.remove();
                 item.remove();
+                unmarkListed(nid);
                 if (!noticesListEl.querySelector(".console-notices-item")) noticesListEl.innerHTML = NO_NOTICES;
             }
             pickNotice(null);
@@ -1568,15 +1670,19 @@ if (typeof renderPrivacySections === "function") {
        load-time check has not already. */
     let noticedFor;   // undefined until Account's first answer
     const whoNow = () => (window.Account && Account.current && Account.current.id != null ? String(Account.current.id) : null);
-    setTimeout(() => { if (!noticeCheckedAt) checkNotices(); }, 1500);
+    /* Not while the tab is hidden (1 Nov 2026, the bug scan): a page opened
+       in a background tab asked anyway. The visibilitychange below asks the
+       moment it is shown, since nothing has been asked yet. */
+    setTimeout(() => { if (!noticeCheckedAt && !document.hidden) checkNotices(); }, 1500);
     if (window.Account && typeof Account.onChange === "function") {
         Account.onChange(() => {
             const id = whoNow();
             if (id === noticedFor) return;
             const first = noticedFor === undefined;
             noticedFor = id;
-            if (first) { if (!noticeCheckedAt) checkNotices(); return; }
+            if (first) { if (!noticeCheckedAt && !document.hidden) checkNotices(); return; }
             notices = [];
+            quietUnread = [];
             noticeAcct = undefined;
             markedHere = new Set();
             deletedHere = new Set();

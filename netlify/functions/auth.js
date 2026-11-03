@@ -1,7 +1,7 @@
 /* /.netlify/functions/auth — real username/password admin login, backed by
    an "admins" collection in MongoDB (username + bcrypt password hash), plus
    account management (create/list/delete/reset password) for logged-in
-   admins. Issues a JWT session token (see _auth.js) that expires after 12
+   admins. Issues a JWT session token (see _auth.js) that expires after 48
    hours, so a stolen token stops working on its own.
 
    Roles: every account is "owner", "admin", "viewer" or "wizard" (see
@@ -1068,7 +1068,7 @@ async function handleRest(event, db, admins) {
         /* A new tokenVersion with the new password, which signs out every
            session the account had — see tokenIsCurrent in _auth.js. A reset
            is usually BECAUSE somebody else has the old password, and a reset
-           that left their session running for twelve hours reset nothing.
+           that left their session running for two days reset nothing.
 
            For the same reason an owner's reset of another account forgets
            that account's known networks: if somebody else had the password,

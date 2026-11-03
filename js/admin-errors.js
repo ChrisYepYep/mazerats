@@ -159,7 +159,7 @@
     }
     function isOwner() { return role() === "owner"; }
 
-    /* 401: the twelve-hour session ran out. admin.js puts the sign-in box up
+    /* 401: the 48-hour session ran out. admin.js puts the sign-in box up
        over the page, as it does for every other panel (see sessionGone in
        js/admin-dead-ends.js); the panel stays as it was underneath. */
     function sessionGone(err) {
@@ -1408,9 +1408,14 @@
         if (!panel.hidden && listIsBadgeList() && loadedAt && !loadError && listComplete()) return;
         const mine = sessionNo;
         try {
-            const data = await Api.getSiteErrors(token(), { status: "open", sort: "last", limit: BADGE_LIMIT });
+            /* The count alone (2 Nov 2026, ?badge=1 in site-errors.js): one
+               indexed count, where the list at BADGE_LIMIT was eight reads
+               and up to 500 groups a minute. A server from before it
+               answers the list, which is counted here as it always was. */
+            const data = await Api.getSiteErrors(token(), { status: "open", sort: "last", limit: BADGE_LIMIT, badge: 1 });
             if (mine !== sessionNo) return;
             takeClock(data);
+            if (data && typeof data.recentOpen === "number") { setBadge(data.recentOpen); return; }
             const list = Array.isArray(data && data.groups) ? data.groups : [];
             setBadge(countRecent(list));
         } catch (e) { /* the panel says so when opened */ }

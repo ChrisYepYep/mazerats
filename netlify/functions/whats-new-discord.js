@@ -15,8 +15,9 @@
 
    POST { key, activity, label, line, day }   a Warren account with "site"
        key       "maze:<id>" / "event:<id>" / "guide:<id>" for an automatic
-                 entry, "post:<id>" for a news post or note
-       activity  added | updated | news | note — the entry's colour
+                 entry, "post:<id>" for a news post or note, "article:<id>"
+                 for an article's entry (2 Nov 2026)
+       activity  added | updated | news | note | article — the entry's colour
        label     the word on the entry's label, as the panel shows it
        line      the line under it, as the panel shows it (an override's
                  own text, or the automatic "what changed")
@@ -49,8 +50,9 @@ const { SECURITY_HEADERS } = require("./_headers");
 const { resolveSlug, loadRetired, PROJECTION: SLUG_FIELDS } = require("./_slugs");
 const { cards } = require("./share");
 
-const COLLECTION = { maze: "rooms", event: "events", guide: "guides" };
-const KEY = /^(maze|event|guide|post):[^\s]{1,200}$/;
+// An article's entry too (2 Nov 2026; netlify/functions/articles.js): "article:<id>".
+const COLLECTION = { maze: "rooms", event: "events", guide: "guides", article: "articles" };
+const KEY = /^(maze|event|guide|post|article):[^\s]{1,200}$/;
 const WEBHOOK = /^https:\/\/(?:canary\.|ptb\.)?discord(?:app)?\.com\/api\/webhooks\/\d+\/[\w-]+$/;
 const MAX_BODY = 4 * 1024;
 /* Five seconds, not eight (30 Oct 2026, the bug scan): with a cold
@@ -60,7 +62,7 @@ const SEND_MS = 5000;
 // How long a claim holds off a second post: well past the function's own life.
 const CLAIM_MS = 60 * 1000;
 // The entries' colours on the site (.wn-verb in css/style.css).
-const COLOURS = { added: 0x6f8f4f, updated: 0xab8b64, news: 0xc1b7a7, note: 0x7f94a8 };
+const COLOURS = { added: 0x6f8f4f, updated: 0xab8b64, news: 0xc1b7a7, note: 0x7f94a8, article: 0xa8708a };
 const KIND_WORD = { maze: "maze", event: "event", guide: "guide" };
 
 const json = (statusCode, data) => ({
@@ -112,14 +114,14 @@ function heading(kind, activity, label) {
     if (what && (activity === "added" || activity === "updated") && (!label || /^(added|updated)$/i.test(label))) {
         return activity === "added" ? `New ${what}` : `${what[0].toUpperCase()}${what.slice(1)} updated`;
     }
-    return label || (activity === "news" ? "News" : activity === "note" ? "Note" : "What's New");
+    return label || (activity === "news" ? "News" : activity === "note" ? "Note" : activity === "article" ? "Article" : "What's New");
 }
 
 // The record an entry is about, and its current address; null when it is not public.
 async function recordOf(db, kind, id) {
     const coll = db.collection(COLLECTION[kind]);
     const record = await coll.findOne({ id }, { projection: { _id: 0 } });
-    if (!record || (kind === "guide" && record.status !== "published")) return null;
+    if (!record || ((kind === "guide" || kind === "article") && record.status !== "published")) return null;
     const [all, retired] = await Promise.all([
         coll.find({}, { projection: { ...SLUG_FIELDS, status: 1 } }).toArray(),
         loadRetired(db, kind).catch(() => [])
@@ -176,6 +178,23 @@ async function build(db, col, b) {
         embed.title = tags.title.slice(0, 256);
         embed.url = tags.canonical;
         embed.description = discordText(p.text) || discordText(tags.description);
+        embed.image = { url: tags.image };
+        return { embed };
+    }
+
+    /* An article (2 Nov 2026): its What's New fields are its own (wn on the
+       record, articles.js), so hidden is read there; the post carries its
+       What's New title, the panel's line, and its card's address and picture. */
+    if (kind === "article") {
+        const found = await recordOf(db, kind, id);
+        if (!found) return { error: "That article isn't published." };
+        const wn = found.record.wn && typeof found.record.wn === "object" ? found.record.wn : {};
+        if (wn.hidden === true) return { error: "That article is hidden from What's New. Show it first." };
+        const tags = cards.tagsFor(kind, found.record, site, found.slug);
+        embed.author = { name: heading(kind, activity, label) };
+        embed.title = cards.plainTitle(typeof wn.title === "string" && wn.title ? wn.title : tags.title).slice(0, 256);
+        embed.url = tags.canonical;
+        embed.description = discordText(line) || discordText(tags.description);
         embed.image = { url: tags.image };
         return { embed };
     }

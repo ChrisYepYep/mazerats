@@ -138,7 +138,29 @@
   # seed is a catalogue that fills over many refreshes, no legacy file is
   # every old detection's small sprite and classname lost. The same
   # `git add` warning applies to both, and to tools/furni-catalogue-seed.js.
-  included_files = ["netlify/functions/_furnidata.json", "netlify/functions/_furni-api-map.json", "netlify/functions/_habbo-names.json", "netlify/functions/_furni-catalogue-seed.json", "netlify/functions/_furni-legacy.json", "netlify/functions/_furni-mirror.json", "js/featured-days.js", "js/dead-ends.js", "home.html"]
+  #
+  # js/article-text.js and js/guide-text.js (2 Nov 2026): articles.js reads
+  # an article's text with the same file the page draws it with, to check
+  # every picture and embed line before storing it (see that file's
+  # header). Required statically, but named for the same silent-failure
+  # reason as the others: without them every article save would fail.
+  included_files = ["netlify/functions/_furnidata.json", "netlify/functions/_furni-api-map.json", "netlify/functions/_habbo-names.json", "netlify/functions/_furni-catalogue-seed.json", "netlify/functions/_furni-legacy.json", "netlify/functions/_furni-mirror.json", "js/featured-days.js", "js/dead-ends.js", "js/article-text.js", "js/guide-text.js", "home.html"]
+
+# The live site's speed on a phone (2 Nov 2026), for the Warren's Speed card.
+# Wakes every five minutes and nearly always does nothing: Google's PageSpeed
+# Insights measures the landing page and /home once a week (Mondays from 06:00
+# UTC) and when an admin presses Measure now. A scheduled function runs on the
+# published site only and cannot be called over HTTP there; see
+# netlify/functions/speed-checks.js for why the button doesn't measure itself.
+[functions."speed-measure"]
+  schedule = "*/5 * * * *"
+
+# The articles' video uploads left behind (2 Nov 2026): hourly, at 17 past.
+# One stopped part way is deleted once it is two hours old, a finished one
+# no article uses once it is two days old; usually there are none and the
+# run is one small list. See netlify/functions/video-sweep.js and _videos.js.
+[functions."video-sweep"]
+  schedule = "17 * * * *"
 
 # ------------------------------------------------------------ THE ADMIN PANEL
 #
@@ -468,6 +490,27 @@
   to = "/.netlify/functions/share"
   status = 200
 
+# The list's three views (2 Nov 2026, the owner's): /timeline, /furni and
+# /news (What's New) are the homepage open on that view, and js/home.js puts
+# the address in the bar when a visitor opens one there (syncViewAddress).
+# Through the share function, as /glyphs is, for each view's own title and
+# description when the link is pasted. Indexed, unlike /glyphs: each is the
+# archive itself, read another way.
+[[redirects]]
+  from = "/timeline"
+  to = "/.netlify/functions/share"
+  status = 200
+
+[[redirects]]
+  from = "/furni"
+  to = "/.netlify/functions/share"
+  status = 200
+
+[[redirects]]
+  from = "/news"
+  to = "/.netlify/functions/share"
+  status = 200
+
 # Your Profile (4 Oct 2026): /profile is the homepage with the profile
 # window open, and /profile?p=<public id> opens one player's. On the same
 # terms as /glyphs above; js/home.js opens the window and puts the address
@@ -697,6 +740,18 @@
 
 [[redirects]]
   from = "/event/:id"
+  to = "/.netlify/functions/share"
+  status = 200
+
+# An article's own address, and the Articles list (2 Nov 2026): home.html
+# with the article's (or the list's) preview tags, as /maze/:id above.
+[[redirects]]
+  from = "/article/:id"
+  to = "/.netlify/functions/share"
+  status = 200
+
+[[redirects]]
+  from = "/articles"
   to = "/.netlify/functions/share"
   status = 200
 
@@ -961,6 +1016,17 @@
   for = "/js/*"
   [headers.values]
     Cache-Control = "public, max-age=0, must-revalidate"
+
+# The offline archive's service worker (2 Nov 2026; see the header of
+# sw.js). Never kept by the browser without asking: it is the file a new
+# deploy, or the kill switch in it, reaches visitors through, and browsers
+# check it on every visit. js/offline.js registers it with updateViaCache
+# "none" as well, so neither side can hold an old copy. At the root and
+# matched by its exact name, so no other rule overlaps it.
+[[headers]]
+  for = "/sw.js"
+  [headers.values]
+    Cache-Control = "no-cache"
 
 # The Sorcerer's Atlas stays out of search results (28 Sept 2026). robots.txt
 # used to Disallow it, which is the wrong tool: a crawler that may not fetch

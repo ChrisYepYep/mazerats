@@ -81,7 +81,8 @@ async function report(db, event) {
     try {
         [games, starts, board, state] = await Promise.all([
             db.collection("pura_games").find(when, { projection: { _id: 0 } }).sort({ at: -1 }).limit(MAX_ROWS).toArray(),
-            db.collection("pura_starts").find(when, { projection: { _id: 0, at: 1, playerId: 1 } }).limit(MAX_ROWS * 2).toArray(),
+            // Newest first, as the games are (1 Nov 2026): with no sort the cap kept the OLDEST starts and dropped the latest days.
+            db.collection("pura_starts").find(when, { projection: { _id: 0, at: 1, playerId: 1 } }).sort({ at: -1 }).limit(MAX_ROWS * 2).toArray(),
             db.collection("pura_scores").find({}, { projection: { _id: 0, playerId: 1, name: 1, score: 1, rows: 1, level: 1, pieces: 1, ms: 1, at: 1 } })
                 .sort({ score: -1, pieces: 1, at: 1 }).limit(10).toArray(),
             db.collection("settings").findOne({ _id: "site" }, { projection: { puraPanicState: 1 } })

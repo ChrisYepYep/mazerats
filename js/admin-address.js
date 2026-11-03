@@ -77,7 +77,8 @@
     }
 
     // What a deleted record of each kind is called in the notes.
-    const NOUNS = { maze: "maze", event: "event", guides: "guide" };
+    // An article's too, /article/<slug> (2 Nov 2026; js/admin-articles.js).
+    const NOUNS = { maze: "maze", event: "event", guides: "guide", article: "article" };
 
     const esc = s => String(s == null ? "" : s).replace(/[&<>"']/g, c => ({
         "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"

@@ -31,12 +31,17 @@
     const ROWS = [
         ["home", "Home", "archive"], ["mazes", "Mazes (with its sections)", "archive"], ["events", "Events (with its sections)", "archive"],
         ["timeline", "Timeline", "archive"], ["furni", "Furni", "archive"], ["whats-new", "What's New", "archive"],
-        ["guides", "Guides", "archive"], ["missing-pieces", "Missing Pieces", "archive"],
+        ["guides", "Guides", "archive"], ["articles", "Articles", "archive"], ["missing-pieces", "Missing Pieces", "archive"],
         ["guess", "Guess the Maze", "games"], ["odd", "Odd One Out", "games"], ["fallin-furni", "Fallin' Furni", "games"],
         ["pura", "Pura Panic", "games"], ["scout", "Scout's Trail", "games"], ["leaderboards", "Leaderboards", "games"],
         ["profile", "Your Profile", "loose"], ["alt-codes", "Alt Codes (never on a phone)", "loose"]
     ].map(([id, name, home]) => ({ id, name, home }));
     const NAME = Object.fromEntries(ROWS.map(r => [r.id, r.name]));
+    /* Rows that are Admins only until a saved layout places them (2 Nov
+       2026, the owner's: the Articles row, "ADMIN-ONLY for now"), as the
+       homepage reads them (ADMINS_FIRST in js/home.js). A layout from before
+       the row existed does not place it, so it reads here as Admins only. */
+    const ADMINS_FIRST = ["articles"];
     const isFold = id => Object.prototype.hasOwnProperty.call(FOLDS, id);
 
     const $ = id => document.getElementById(id);
@@ -77,13 +82,17 @@
         Object.keys(FOLDS).forEach(f => { if (!top.includes(f)) top.push(f); });
         // A row placed nowhere goes back where it is written.
         if (!l) { top.length = 0; top.push("archive", "games"); }
+        const unplaced = [];
         ROWS.forEach(r => {
             if (placed.has(r.id)) return;
             if (r.home === "loose") top.push(r.id); else folds[r.home].push(r.id);
             placed.add(r.id);
+            unplaced.push(r.id);
         });
         const hidden = (l && Array.isArray(l.hidden) ? l.hidden : []).filter(id => NAME[id]);
         const admins = (l && Array.isArray(l.admins) ? l.admins : []).filter(id => NAME[id] && !hidden.includes(id));
+        // See ADMINS_FIRST: placed by no saved layout, they are Admins only.
+        ADMINS_FIRST.forEach(id => { if (unplaced.includes(id) && !hidden.includes(id) && !admins.includes(id)) admins.push(id); });
         const open = (l && Array.isArray(l.open) ? l.open : []).filter(isFold);
         return { top, folds, hidden, admins, open };
     }
@@ -340,9 +349,15 @@
 
     async function load() {
         try {
-            const res = await fetch("/.netlify/functions/settings?fresh=" + Date.now(), { cache: "no-store" });
-            if (!res.ok) throw new Error("settings " + res.status);
-            const s = await res.json();
+            /* The Warren's one settings read (2 Nov 2026, window.AdminFreshSettings
+               in js/admin.js), or a read of its own on a page without it. */
+            let s;
+            if (typeof window.AdminFreshSettings === "function") s = await window.AdminFreshSettings(30000);
+            else {
+                const res = await fetch("/.netlify/functions/settings?fresh=" + Date.now(), { cache: "no-store" });
+                if (!res.ok) throw new Error("settings " + res.status);
+                s = await res.json();
+            }
             saved = s.menuLayout || null;
             savedAt = typeof s.menuLayoutAt === "string" ? s.menuLayoutAt : "";
             draft = whole(saved);
@@ -453,6 +468,13 @@
             viewer = now;
             paint();
         }).observe(document.body, { attributes: true, attributeFilter: ["class"] });
-        load();
+        /* Read when the Controls are first shown (2 Nov 2026), as the
+           seasonal card is (js/admin-skin.js): the card is there alone. */
+        const panel = $("menu-layout-card").closest(".admin-panel");
+        if (!panel || !panel.hidden) load();
+        else {
+            const watch = new MutationObserver(() => { if (!panel.hidden) { watch.disconnect(); load(); } });
+            watch.observe(panel, { attributes: true, attributeFilter: ["hidden"] });
+        }
     });
 })();

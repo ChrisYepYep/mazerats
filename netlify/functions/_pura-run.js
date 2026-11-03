@@ -59,9 +59,17 @@ const RUN_LIFE_S = 3 * 60 * 60;
    seed, with no wait at all. */
 const RUN_TOLERANCE_MS = 3 * 1000;
 const PIECE_MIN_MS = 120;
-// A three-hour game at the floor's pace, and the body that carries it.
-const MAX_PIECES = Math.floor(RUN_LIFE_S * 1000 / PIECE_MIN_MS);
-const MAX_BODY = 400 * 1024;
+/* THE LONGEST GAME (2 Nov 2026, the bug scan; the owner's yes). It was a
+   three-hour game at the floor's pace, 90,000 pieces, and every deal
+   replays the whole log: a script feeding it 400KB bodies kept a deal busy
+   for about 140ms a time. Now 6,000 pieces, about 70KB of placements and
+   25ms a deal. Nobody gets there: level 100 comes at about 1,400 pieces,
+   and 6,000 is somewhere past level 400, hours of play at the fastest
+   speed. A game that does is dealt no more (pura-deal.js "full"), ends
+   when its last piece is down, and is saved like any other. The body
+   limit is twice what 6,000 placements take. */
+const MAX_PIECES = 6000;
+const MAX_BODY = 160 * 1024;
 
 /* How far ahead of the last checked placement the page is dealt: the piece
    in play, the one in the Next box, and enough behind them that the page
@@ -79,8 +87,8 @@ function seedOf(rid) {
     return crypto.createHmac("sha256", secret()).update("mazerats-pura-seed:" + String(rid)).digest().readUInt32BE(0);
 }
 
-// The first n pieces of a run.
-const dealOf = (claims, n) => Engine.kinds(claims.seed, Math.max(0, Math.min(n, MAX_PIECES + WINDOW)));
+// The first n pieces of a run, never more than a game may place (dealt past it, they could not be saved).
+const dealOf = (claims, n) => Engine.kinds(claims.seed, Math.max(0, Math.min(n, MAX_PIECES)));
 
 /* A new run's token, and its first WINDOW pieces. The token names the run,
    its start and (signed in) the account: no seed. */
@@ -92,9 +100,12 @@ function signRun(player, now) {
     return { token, rid: claims.rid, deal: Engine.kinds(seedOf(claims.rid), WINDOW) };
 }
 
-// The same run again, for CONTINUING (pura-scores.js): same id and start, fresh three hours.
-function resignRun(c) {
-    const claims = { rid: c.rid, t: c.t, resumed: true };
+/* The same run again, for CONTINUING (pura-scores.js): same id and start,
+   fresh three hours. `renewing` for RENEWING there (2 Nov 2026): the game
+   was never left, so it is not marked continued; it keeps whatever it had. */
+function resignRun(c, renewing) {
+    const claims = { rid: c.rid, t: c.t, resumed: renewing ? Boolean(c.resumed) : true };
+    if (!claims.resumed) delete claims.resumed;
     if (c.sub) claims.sub = c.sub;
     return jwt.sign(claims, secret(), { audience: RUN_AUDIENCE, expiresIn: RUN_LIFE_S, algorithm: "HS256" });
 }

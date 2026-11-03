@@ -45,8 +45,11 @@
          run. Until it does, this comment describes the map as it actually
          is, because a comment promising otherwise is how somebody spends an
          afternoon looking for the bug that is stopping the cut-outs from
-         showing. -->
-    <link href="https://fonts.googleapis.com/css2?family=Caveat:wght@500;700&family=Montserrat:wght@700;800;900&family=Roboto:wght@400;500;700&family=Pixelify+Sans:wght@400;700&family=Silkscreen:wght@400;700&display=swap" rel="stylesheet">
+         showing.
+
+         Caveat alone is still fetched from Google; the site's other fonts
+         are its own files (2 Nov 2026; see home.html). -->
+    <link href="https://fonts.googleapis.com/css2?family=Caveat:wght@500;700&display=swap" rel="stylesheet">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="theme-color" content="#120c07">
     <!-- Unlisted while the map is still being filled in — half its rooms
@@ -104,7 +107,7 @@
 
          Wrapped in try/catch: localStorage throws outright in some privacy modes,
          and a colour scheme is not worth a blank page. -->
-    <link rel="stylesheet" href="css/style.css?v=3">
+    <link rel="stylesheet" href="css/style.css?v=5">
     <link id="theme-css" rel="stylesheet">
     <script>
     /* THE FIRST PAINT'S PALETTE. The site's own (mazerats_theme), unless a
@@ -405,7 +408,7 @@
         <p>&copy; 2026 Origins Maze Rats. All rights reserved.</p>
     </footer>
 
-    <script src="js/api.js?v=3"></script>
+    <script src="js/api.js?v=4"></script>
     <!-- js/site.js is what puts the Fellow Fansites row and the Privacy
          Policy link into .site-footer, and js/track.js is what records the
          data-track events. Without them this page had a footer with no links
@@ -416,7 +419,7 @@
     <script src="js/event-status.js?v=2"></script>
     <script src="js/palette-wear.js?v=2"></script>
     <script src="js/skin-wear.js?v=1"></script>
-    <script src="js/site.js?v=2"></script>
+    <script src="js/site.js?v=3"></script>
     <!-- The map engine, shared with the atlas panel in the admin page so
          the editor and the page can never disagree about where a name sits.
          Must load before wizard.js, which calls it. -->

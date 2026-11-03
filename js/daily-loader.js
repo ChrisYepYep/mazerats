@@ -72,8 +72,10 @@
                would deal its own day and have every move refused.
                v=4 (30 Sept 2026): the deal reply stopped carrying every
                round (ONE ROUND AT A TIME in js/daily.js), and a v=3 copy
-               would open onto rounds it has no pictures for. */
-            src: "js/guess.js?v=4",
+               would open onto rounds it has no pictures for.
+               v=5 (2 Nov 2026): the streak strip, which needs daily.js's
+               Daily.streakStrip; both games and daily.js moved together. */
+            src: "js/guess.js?v=5",
             open: "openGuessGame",
             overlay: "guess-overlay",
             win: "guess-window",
@@ -84,7 +86,7 @@
             body: "guess-deck"
         },
         odd: {
-            src: "js/oddoneout.js?v=4",
+            src: "js/oddoneout.js?v=5",
             open: "openOddOneOut",
             overlay: "odd-overlay",
             win: "odd-window",

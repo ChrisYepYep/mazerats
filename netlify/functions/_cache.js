@@ -18,6 +18,7 @@
    asking for ?full=1, which is never cached. */
 
 const zlib = require("zlib");
+const crypto = require("crypto");
 const { SECURITY_HEADERS } = require("./_headers");
 
 /* `durable` is not decoration — without it the durable cache is never used.
@@ -134,6 +135,28 @@ function cachedJson(event, data, { cache = true, cdn = CDN_CACHE, vary = null } 
     };
     if (cache) headers["Netlify-CDN-Cache-Control"] = cdn;
     if (cache && vary) headers["Netlify-Vary"] = `query=${vary}`;
+    /* An ETag, and a 304 for a caller that already has this answer (2 Nov
+       2026). BROWSER_CACHE says revalidate every time, which only saves
+       anything when there is something to revalidate against, and there was
+       not: no ETag and no Last-Modified, so every visit to /home downloaded
+       the whole archive again (about 115KB on the wire), and so did the
+       homepage's spotlight recheck every three minutes.
+       Weak, because the edge re-encodes the body; matched on the hash alone,
+       in case the edge adds its own mark to the tag on the way out.
+       Only on a cacheable answer: `cache: false` is how every admin and
+       per-caller read comes through here, and those get no tag at all.
+       The 304 is never offered to the edge to keep, as it has no body to
+       serve anybody else. */
+    if (cache) {
+        const tag = crypto.createHash("sha1").update(body).digest("base64url");
+        headers.ETag = `W/"${tag}"`;
+        const asked = (event.headers || {})["if-none-match"] || (event.headers || {})["If-None-Match"] || "";
+        if (String(asked).includes(tag)) {
+            const notModified = { ...headers };
+            delete notModified["Netlify-CDN-Cache-Control"];
+            return { statusCode: 304, headers: notModified, body: "" };
+        }
+    }
 
     if (acceptsGzip(event) && Buffer.byteLength(body) >= MIN_COMPRESS_BYTES) {
         const zipped = zlib.gzipSync(Buffer.from(body));

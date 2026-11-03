@@ -23,7 +23,9 @@
      the ID.
 
    Mazes, events and guides are three separate namespaces: /maze/x and
-   /event/x are different pages, so they may share a slug.
+   /event/x are different pages, so they may share a slug. Articles
+   (/article/<slug>, articles.js; 2 Nov 2026) are a fourth, worked out by
+   the same rules from their title.
 
    Resolution order is slug, then ID, then alias. A slug may not be another
    record's ID or alias (settleSlug refuses it), and a new record's ID may

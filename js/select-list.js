@@ -154,6 +154,7 @@
         if (!items.length) return;
         document.body.appendChild(list);
         open = { select, list, items, active: -1 };
+        watch(true);
         select.setAttribute("aria-expanded", "true");
         select.setAttribute("aria-controls", list.id);
         place(select, list);
@@ -166,6 +167,7 @@
         if (!open) return;
         const { select, list } = open;
         open = null;
+        watch(false);
         list.remove();
         select.removeAttribute("aria-activedescendant");
         select.removeAttribute("aria-controls");
@@ -315,10 +317,17 @@
     }, true);
     window.addEventListener("resize", () => close(false));
 
-    // A select taken away or switched off while its list is open.
-    new MutationObserver(() => {
+    /* A select taken away or switched off while its list is open. Watched
+       only while one is (1 Nov 2026, the bug scan): it watched the whole
+       page for good, so every change the games and the archive make, many
+       a second, was queued up for it to look at. */
+    const watcher = new MutationObserver(() => {
         if (open && (!open.select.isConnected || open.select.disabled)) close(false);
-    }).observe(document.documentElement, { childList: true, subtree: true, attributes: true, attributeFilter: ["disabled", "hidden"] });
+    });
+    const watch = on => {
+        if (on) watcher.observe(document.documentElement, { childList: true, subtree: true, attributes: true, attributeFilter: ["disabled", "hidden"] });
+        else watcher.disconnect();
+    };
 
     function register() {
         if (!window.EscapeLayers) return false;

@@ -4,7 +4,9 @@
    Reached as /maze/<slug>, /event/<slug> or /guides/<slug> (see the
    rewrites in netlify.toml, which are 200s rather than redirects so the page
    is served at the address that was pasted). And, since 1 Oct 2026, as
-   /guess, /odd and /guides, the windows' own addresses — see FIXED_PAGES.
+   /guess, /odd and /guides, the windows' own addresses — see FIXED_PAGES
+   (and since 2 Nov 2026 /timeline, /furni and /news, the list's views,
+   and /articles). And as /article/<slug>, an article's own (2 Nov 2026).
 
    ONE ADDRESS FOR PEOPLE AND FOR PREVIEWS. This used to answer with a small
    stand-in page carrying the record's preview tags and a redirect on to
@@ -47,8 +49,9 @@ const CACHE = "public, max-age=0, must-revalidate, s-maxage=600, stale-while-rev
    so the browser still revalidates every time. */
 const CDN_CACHE = "public, durable, s-maxage=600, stale-while-revalidate=86400";
 
-const PATH_KINDS = { maze: "maze", event: "event", guides: "guide" };
-const PREFIX = { maze: "maze", event: "event", guide: "guides" };
+// An article's own page, /article/<slug>, since 2 Nov 2026 (netlify/functions/articles.js).
+const PATH_KINDS = { maze: "maze", event: "event", guides: "guide", article: "article" };
+const PREFIX = { maze: "maze", event: "event", guide: "guides", article: "article" };
 
 /* Which record was asked for, read off the request path.
 
@@ -71,6 +74,7 @@ function requestedSlug(event) {
     if (params.maze) return { slug: params.maze, kind: "maze" };
     if (params.event) return { slug: params.event, kind: "event" };
     if (params.guide) return { slug: params.guide, kind: "guide" };
+    if (params.article) return { slug: params.article, kind: "article" };
     return null;
 }
 
@@ -85,10 +89,11 @@ function slugFromPath(event) {
         try { pathname = new URL(event.rawUrl).pathname; } catch (e) { /* keep event.path */ }
     }
     // A window's own address (1 Oct 2026): see FIXED_PAGES below.
-    const page = /^\/(guess|odd|guides|profiles?|purapanic|scout|glyphs|fallinfurni)\/?$/.exec(pathname);
+    // /articles: the Articles list (2 Nov 2026).
+    const page = /^\/(guess|odd|guides|profiles?|purapanic|scout|glyphs|fallinfurni|timeline|furni|news|articles)\/?$/.exec(pathname);
     // /profiles is /profile by another name (4 Oct 2026).
     if (page) return { page: page[1] === "profiles" ? "profile" : page[1] };
-    const m = /^\/(maze|event|guides)\/([^/]+)\/?$/.exec(pathname);
+    const m = /^\/(maze|event|guides|article)\/([^/]+)\/?$/.exec(pathname);
     if (!m) return undefined;
     /* A stray % in a pasted link ("/maze/100%-maze") makes decodeURIComponent
        throw, and uncaught that was a bare 502 from the function. A link that
@@ -106,7 +111,7 @@ function carriedQuery(event) {
     const params = new URLSearchParams();
     const q = event.queryStringParameters || {};
     Object.keys(q).forEach(k => {
-        if (k !== "maze" && k !== "event" && k !== "guide" && q[k] != null) params.append(k, q[k]);
+        if (k !== "maze" && k !== "event" && k !== "guide" && k !== "article" && q[k] != null) params.append(k, q[k]);
     });
     const s = params.toString();
     return s ? "?" + s : "";
@@ -354,7 +359,8 @@ function plainText(text) {
     const line = l => {
         if (/^\s*-{3,}\s*$/.test(l)) return "";
         const h = /^\s*(#{2,3})\s+(\S[^\n]*)$/.exec(l);
-        if (!h) return l.replace(/^\s*(?:[-*]\s+|\d+[.)]\s+|>\s?)/, "");
+        // ">> " is an article's quote (2 Nov 2026), as in GuideText.plain.
+        if (!h) return l.replace(/^\s*(?:[-*]\s+|\d+[.)]\s+|>{1,2}\s?)/, "");
         let s = h[2].trimEnd(), j = s.length;
         while (j > 0 && s[j - 1] === "#") j--;
         if (j < s.length && j > 0 && /\s/.test(s[j - 1])) s = s.slice(0, j).trimEnd();
@@ -427,6 +433,24 @@ function describe(record, isEvent) {
 function tagsFor(kind, record, origin, slug) {
     const canonical = `${origin}/${PREFIX[kind]}/${encodeURIComponent(slug)}`;
     const recordRef = `${kind}:${record.id}`;
+    /* An article (2 Nov 2026): its title, its summary (else the start of its
+       text, with its picture and embed lines left out), and its thumbnail
+       or first gallery picture, whole like a guide's (guideImage): drawn
+       for the article, so not cropped to a room's shape. */
+    if (kind === "article") {
+        const first = Array.isArray(record.gallery) ? record.gallery[0] : null;
+        const thumb = textOf(record.thumb) || textOf(first && first.image) || "";
+        const words = textOf(record.summary) || textOf(record.body).split("\n")
+            .filter(l => !/^\s*(?:!\[|\{\{)/.test(l)).join("\n");
+        return {
+            title: plainTitle(textOf(record.title)) || "Maze Rats",
+            description: clip(plainGlyphs(plainText(words))) || "An article from Maze Rats, the archive of Habbo Origins mazes.",
+            image: guideImage(origin, thumb),
+            sized: false,
+            canonical,
+            record: recordRef
+        };
+    }
     if (kind === "guide") {
         return {
             title: plainTitle(textOf(record.title)) || "Guides",
@@ -523,6 +547,28 @@ const FIXED_PAGES = {
         title: "Fallin' Furni",
         description: "Look up before you sit down. Furni drops from the ceiling and you sit on every seat in the order it landed: fifty rooms, three lives, one run.",
         image: "og-fallinfurni.png"
+    },
+    /* The archive's three views over the list (2 Nov 2026, the owner's):
+       /timeline, /furni and /news (What's New) open the homepage on that
+       view (VIEW_PATHS in js/home.js), and the page puts the address in the
+       bar when a visitor opens one there. The site's own picture. */
+    timeline: {
+        title: "Timeline",
+        description: "Every maze and event in the Maze Rats archive in order: the history of Habbo Origins mazes, newest first."
+    },
+    furni: {
+        title: "Furni",
+        description: "Browse the Maze Rats archive by furni: every piece spotted in a Habbo Origins maze, and the mazes it is in."
+    },
+    news: {
+        title: "What's New",
+        description: "What's new in the Maze Rats archive: the mazes and events added and updated lately, newest first."
+    },
+    /* The Articles list (2 Nov 2026, the owner's): every article, newest
+       first. Its menu row is for admins for now; the address works for all. */
+    articles: {
+        title: "Articles",
+        description: "News from Maze Rats: event winners, announcements and write-ups from the archive of Habbo Origins mazes."
     }
 };
 /* KEPT OUT OF SEARCH HERE, NOT IN robots.txt (10 Oct 2026). /glyphs and
@@ -603,7 +649,7 @@ function fixedTags(page, origin) {
    `fresh` (/warren's View link, which must never be handed a cached copy —
    see the redirect below; its answers are no-store) and the direct-call test
    parameters read by requestedSlug. Everything else now shares one copy. */
-const VARY = { "Netlify-Vary": "query=fresh|maze|event|guide" };
+const VARY = { "Netlify-Vary": "query=fresh|maze|event|guide|article" };
 
 // `extra` is any header this one answer needs on top (the DB-down page's
 // noindex, below).
@@ -638,11 +684,12 @@ function withinTime(promise, ms) {
     return Promise.race([promise, late]).finally(() => clearTimeout(timer));
 }
 
-const COLLECTION = { maze: "rooms", event: "events", guide: "guides" };
+const COLLECTION = { maze: "rooms", event: "events", guide: "guides", article: "articles" };
 // A draft guide is not public anywhere else, so it has no page here. Its
 // address still counts when the addresses are worked out, as it does in
-// the API, or the two could name a guide differently.
-const isPublic = (kind, r) => kind !== "guide" || (r && r.status === "published");
+// the API, or the two could name a guide differently. A draft article is
+// the same (2 Nov 2026).
+const isPublic = (kind, r) => (kind !== "guide" && kind !== "article") || (r && r.status === "published");
 
 /* THE ADDRESS BOOK, KEPT FOR A FEW SECONDS (2 Oct 2026).
 

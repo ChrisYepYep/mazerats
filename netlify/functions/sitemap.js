@@ -95,6 +95,11 @@ exports.handler = async (event) => {
            with its own title, description and canonical (FIXED_PAGES there),
            it is a page of its own like the two above. */
         url(`${origin}/guides`, "", "0.6"),
+        /* The Timeline, Furni and What's New views' own addresses (2 Nov
+           2026), served by share.js as /guides is (FIXED_PAGES there). */
+        url(`${origin}/timeline`, "", "0.5"),
+        url(`${origin}/furni`, "", "0.5"),
+        url(`${origin}/news`, "", "0.5"),
         /* The privacy policy, last and lowest, because nobody searches for
            it — but it belongs here.
 
@@ -200,6 +205,20 @@ exports.handler = async (event) => {
            which carry their own canonicals. */
         published.forEach(g => {
             if (g.id) entries.push(url(`${origin}/guides/${encodeURIComponent(guideSlugs.get(g.id))}`, lastmod(g.updatedAt), "0.6"));
+        });
+        /* Each published article at its own address, /article/<slug> (2 Nov
+           2026), worked out over drafts too as articles.js does. Read on its
+           own, as the guides are, so a failure costs only these entries and
+           the hour's cache. The /articles list is not listed while its menu
+           row is for admins only. */
+        const [arts, retiredArticles] = await Promise.all([
+            db.collection("articles").find({}, { projection: { ...SLUG_FIELDS, status: 1, updatedAt: 1 } }).toArray()
+                .catch(() => { cache = FALLBACK_CACHE; return []; }),
+            retiredOf(db, "article")
+        ]);
+        const articleSlugs = assignSlugs(arts, "article", retiredArticles);
+        arts.filter(a => a.status === "published").forEach(a => {
+            if (a.id) entries.push(url(`${origin}/article/${encodeURIComponent(articleSlugs.get(a.id))}`, lastmod(a.updatedAt), "0.5"));
         });
     } catch (e) {
         // A sitemap listing the pages is worth more than a 500. The archive's

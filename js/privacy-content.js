@@ -194,7 +194,7 @@ const PRIVACY_SECTIONS = [
         heading: "Who runs this site.",
         points: [
             "Maze Rats is run by ChrisYepYep, who is responsible for everything in this policy.",
-            "Last updated: 30 October 2026."
+            "Last updated: 31 October 2026."
         ]
     }
 ];

@@ -418,11 +418,18 @@
 
     async function load() {
         try {
-            const res = await fetch("/.netlify/functions/settings?fresh=" + Date.now(), { cache: "no-store" });
-            // A database blip answers 503 with an error body: read as settings, that was "no schedule",
-            // and the next Save would have written over every stored window.
-            if (!res.ok) throw new Error("settings " + res.status);
-            take(await res.json());
+            /* The Warren's one settings read (2 Nov 2026, window.AdminFreshSettings
+               in js/admin.js), or a read of its own on a page without it. */
+            let s;
+            if (typeof window.AdminFreshSettings === "function") s = await window.AdminFreshSettings(30000);
+            else {
+                const res = await fetch("/.netlify/functions/settings?fresh=" + Date.now(), { cache: "no-store" });
+                // A database blip answers 503 with an error body: read as settings, that was "no schedule",
+                // and the next Save would have written over every stored window.
+                if (!res.ok) throw new Error("settings " + res.status);
+                s = await res.json();
+            }
+            take(s);
             rows = rowsFrom(site.skinSchedule);
             saved = snapshot();
             loaded = true;
@@ -447,7 +454,7 @@
             if (tell) tell(done);
             return true;
         } catch (e) {
-            /* The twelve-hour session run out (30 Oct 2026, the bug scan):
+            /* The 48-hour session run out (30 Oct 2026, the bug scan):
                it said only "Unauthorized". The sign-in box now comes up over
                the page, as every other panel's does, with the dates as typed. */
             if (e && e.status === 401) {
@@ -547,14 +554,28 @@
             viewer = now;
             paintModes(); paintCal(); paintSave();
         }).observe(document.body, { attributes: true, attributeFilter: ["class"] });
-        // The same arithmetic the public pages use, without wearing anything here.
-        window.__skinWearPassive = true;
-        const s = document.createElement("script");
-        s.src = "/js/skin-wear.js?v=2";
-        s.onload = paintNow;
-        document.head.appendChild(s);
-        load();
-        // Keep "until …" and "Next: …" true on a Warren left open.
-        setInterval(paintNow, 60 * 1000);
+        /* Read and set going when the Controls are first shown (2 Nov 2026,
+           the owner's "load times are typically quite slow"): the card is
+           there and nowhere else, and most visits to the Warren never open it. */
+        let started = false;
+        const start = () => {
+            if (started) return;
+            started = true;
+            // The same arithmetic the public pages use, without wearing anything here.
+            window.__skinWearPassive = true;
+            const s = document.createElement("script");
+            s.src = "/js/skin-wear.js?v=2";
+            s.onload = paintNow;
+            document.head.appendChild(s);
+            load();
+            // Keep "until …" and "Next: …" true on a Warren left open.
+            setInterval(paintNow, 60 * 1000);
+        };
+        const panel = card.closest(".admin-panel");
+        if (!panel || !panel.hidden) start();
+        else {
+            const watch = new MutationObserver(() => { if (!panel.hidden) { watch.disconnect(); start(); } });
+            watch.observe(panel, { attributes: true, attributeFilter: ["hidden"] });
+        }
     });
 })();

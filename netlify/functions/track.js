@@ -114,6 +114,8 @@ const EVENT_NAMES = new Set([
        Leaderboards (which board), the Console (which page), Profiles
        (their own or another's, never whose), Alt Codes. */
     "menu", "guide-open", "boards-open", "console-open", "profile-open", "glyphs-open",
+    // The Articles window (2 Nov 2026, js/articles.js): the article's id, or "list".
+    "article-open",
     /* Pura Panic (js/pura-panic.js, WHAT IS COUNTED): opened, a game
        started (as whom: signed-in / habbo / guest-rat), continued,
        finished (the level), Submit Score, the leaderboard, the name

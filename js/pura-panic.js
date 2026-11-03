@@ -266,6 +266,7 @@
         soundIcon();
         wireDrag();
         wireTouch();
+        wireTabs();
         /* Signed in or out while the splash is up: it is drawn again, so the
            Continue offer (which belongs to one account, CONTINUING) appears
            for the player it is theirs — the splash can be up before the
@@ -573,7 +574,7 @@
             if (res.status === 403 && window.Account && Account.writeRefused(403, body, "play")) return { refused: true };
             // The token and the first pieces, never the seed (DEALT, below).
             const deck = kindsOf(body.deal);
-            if (res.ok && body.token && deck && deck.length) return { token: body.token, deck, stamp: null };
+            if (res.ok && body.token && deck && deck.length) return { token: body.token, deck, stamp: null, got: Date.now() };
             return { token: null, reason: body.reason || "unavailable" };
         } catch (e) {
             return { token: null, reason: "offline" };
@@ -607,9 +608,11 @@
     const WAIT_NOTE_MS = 600;    // dry this long before the note shows (a blip says nothing)
     let dealing = null;          // { g, at } while a request is out
     let dealRetryAt = 0, dealFails = 0, dealFailedAt = 0, dealDone = false, dryFor = 0, waitShown = false;
+    // Why the dealing stopped, when the server said: "full" is every piece a game may have (THE LONGEST GAME).
+    let dealEnd = null;
 
     function resetDealer() {
-        dealing = null; dealRetryAt = 0; dealFails = 0; dealFailedAt = 0; dealDone = false; dryFor = 0;
+        dealing = null; dealRetryAt = 0; dealFails = 0; dealFailedAt = 0; dealDone = false; dryFor = 0; dealEnd = null;
         hideWait();
     }
 
@@ -620,7 +623,16 @@
         // The server's own "not yet", then the backoff after a failure (shorter while held).
         if (now < dealRetryAt) return;
         if (dealFails && now - dealFailedAt < Math.min(g.piece ? 8000 : 2000, 1000 * Math.pow(2, dealFails - 1))) return;
-        const game = g, from = g.deck.length;
+        // The token's three hours nearly up (left paused a long while): a fresh one first (RENEWING).
+        if (renewDue(run)) {
+            if (!renewing) {
+                const req = dealing = { g };
+                renew(run).then(got => { if (!got) { dealFails++; dealFailedAt = performance.now(); } })
+                    .finally(() => { if (dealing === req) dealing = null; });
+            }
+            return;
+        }
+        const game = g, from = g.deck.length, r = run;
         const ctl = typeof AbortController === "function" ? new AbortController() : null;
         const timer = ctl ? setTimeout(() => ctl.abort(), 10000) : 0;
         const req = dealing = { g: game };
@@ -630,19 +642,24 @@
             credentials: "same-origin",
             headers: { "Content-Type": "application/json" },
             ...(ctl ? { signal: ctl.signal } : {}),
-            body: JSON.stringify({ run: run.token, log: game.log, from, stamp: run.stamp })
+            body: JSON.stringify({ run: r.token, log: game.log, from, stamp: r.stamp })
         }).then(async res => {
             const d = await res.json().catch(() => null);
             if (g !== game) return;
             if (res.ok && d && Array.isArray(d.kinds) && Number.isInteger(d.from) && d.from <= game.deck.length) {
                 const more = kindsOf(d.kinds.slice(game.deck.length - d.from));
                 if (more) game.deck.push(...more);
-                if (typeof d.stamp === "string") run.stamp = d.stamp;
+                if (typeof d.stamp === "string") r.stamp = d.stamp;
                 dealFails = 0;
                 drawNext();
                 return;
             }
             if (res.ok && d && Number.isFinite(d.wait)) { again(Math.max(100, d.wait)); return; }
+            /* Run out, though this page's reckoning said not (a clock that
+               was put back): renewed and asked again, once a token (RENEWING). */
+            if (res.ok && d && d.refused === "stale-run" && !r.noRenew && r.staleTried !== r.token) { r.staleTried = r.token; r.due = true; return; }
+            // Every piece a game may have: the finish is checked from this stamp (THE LONGEST GAME).
+            if (res.ok && d && d.refused === "full") { dealEnd = "full"; if (typeof d.stamp === "string") r.stamp = d.stamp; }
             // No more for this run: it ends when the pieces it has run out.
             if ((res.ok && d && d.refused) || res.status === 400) { dealDone = true; return; }
             throw new Error(String(res.status));
@@ -671,6 +688,68 @@
         bannerEl.classList.remove("pura-banner--wait");
         bannerEl.hidden = true;
     }
+
+    /* RENEWING (2 Nov 2026, the bug scan; the owner's yes). A run token is
+       good for three hours, and a game left paused in a tab that stayed
+       open longer (a laptop shut, a phone asleep) used to come back to
+       "started too long ago" and be lost, although Continue would have
+       given it three more. Now, with a quarter of an hour left, or when a
+       deal says the token has run out, it is quietly renewed before the
+       next deal or save (pura-scores.js ?action=renew: the same game, its
+       first start kept, while it is under a day old). Not a continue: a
+       renewed game can still be picked up once. Past a day it ends as it
+       always did. When the token runs out is reckoned from when this page
+       was given it, not from the token's own time, so a computer clock
+       that is out does not matter. */
+    const RENEW_AHEAD = 15 * 60 * 1000;
+    let renewing = null;   // { r, p } while a renewal is out
+
+    // A token's claims, read and never trusted (the server checks everything).
+    function tokenClaims(token) {
+        try {
+            const part = String(token).split(".")[1].replace(/-/g, "+").replace(/_/g, "/");
+            const c = JSON.parse(atob(part));
+            return c && typeof c === "object" ? c : null;
+        } catch (e) { return null; }
+    }
+
+    function renewDue(r) {
+        if (!r || !r.token || r.noRenew || r.reason === "test") return false;
+        if (r.due) return true;
+        const c = tokenClaims(r.token);
+        if (!c || !Number.isFinite(c.exp)) return false;
+        const ends = r.got && Number.isFinite(c.iat) ? r.got + (c.exp - c.iat) * 1000 : c.exp * 1000;
+        return ends - Date.now() < RENEW_AHEAD;
+    }
+
+    // True once `r` holds a fresh token. Refused for good (finished, a day old): never asked again.
+    function renew(r) {
+        if (renewing && renewing.r === r) return renewing.p;
+        const p = (async () => {
+            try {
+                const res = await fetch(API + "?action=renew", {
+                    method: "POST", credentials: "same-origin",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ run: r.token })
+                });
+                const d = await res.json().catch(() => null);
+                if (res.ok && d && typeof d.token === "string" && d.token) {
+                    r.token = d.token; r.got = Date.now(); r.due = false;
+                    return true;
+                }
+                if (res.ok && d && d.reason) r.noRenew = d.reason;
+                if (res.status === 403) r.noRenew = "refused";
+            } catch (e) { /* asked again the next time it is wanted */ }
+            return false;
+        })();
+        const held = { r, p };
+        renewing = held;
+        p.finally(() => { if (renewing === held) renewing = null; });
+        return p;
+    }
+
+    // Renewed first if it is due; never fails, and never holds a save up long.
+    const fresh = (r) => (renewDue(r) ? renew(r).catch(() => false) : Promise.resolve(false));
 
     /* TESTING A LEVEL (6 Oct 2026, the owner's: to try 50, 75 and 100 without
        playing up to them). On the dev server only, /pura?level=75 starts every
@@ -1490,6 +1569,7 @@
             html = `<p class="pura-big">GAME OVER</p>
                 <div class="console-hashline" aria-hidden="true"></div>
                 <p>${num(g && g.score)} points · ${num(g && g.bands - rowsBase)} ${g && g.bands - rowsBase === 1 ? "row" : "rows"} · level ${g ? g.level : 1}</p>
+                ${dealEnd === "full" && g ? `<p>That's all ${num(g.log.length)} pieces a game can have. What a game!</p>` : ""}
                 <div class="pura-note" id="pura-note">${overNote()}</div>
                 <div class="pura-buttons">
                     <button type="button" class="console-btn" data-go="play">Play again</button>
@@ -1739,14 +1819,19 @@
 
     function logPlayed() {
         if (!run || !run.token || !g || !g.log.length) return;
-        const body = JSON.stringify({ run: run.token, log: g.log, ms: Math.round(gameMs), stamp: run.stamp || null, ...gameFacts() });
-        fetch(API + "?action=played", {
-            method: "POST",
-            credentials: "same-origin",
-            headers: { "Content-Type": "application/json" },
-            body,
-            // Survives the window or the tab closing, when small enough to.
-            keepalive: body.length < 60000
+        const r = run;
+        const facts = { log: g.log, ms: Math.round(gameMs), stamp: run.stamp || null, ...gameFacts() };
+        // Renewed first if it is due (RENEWING).
+        fresh(r).then(() => {
+            const body = JSON.stringify({ run: r.token, ...facts });
+            return fetch(API + "?action=played", {
+                method: "POST",
+                credentials: "same-origin",
+                headers: { "Content-Type": "application/json" },
+                body,
+                // Survives the window or the tab closing, when small enough to.
+                keepalive: body.length < 60000
+            });
         }).catch(() => { /* a figure lost, never a game */ });
     }
 
@@ -2010,14 +2095,16 @@
         // Started signed in, signed out since: not the guest's to save (SIGNED OUT SINCE; the server refuses it too).
         if (!p && runSub(run.token)) return;
         savedScore = g.score;
-        const facts = { run: run.token, log: g.log.slice(), ms: Math.round(gameMs), score: g.score, stamp: run.stamp || null, checkpoint: true };
+        // The token read when it goes, renewed first if it is due (RENEWING).
+        const r = run;
+        const facts = { log: g.log.slice(), ms: Math.round(gameMs), score: g.score, stamp: run.stamp || null, checkpoint: true };
         /* After the save before it, if that one is still out (10 Oct 2026):
            a Guest Rat is numbered by their first save, and two saves in the
            air at once on a slow connection both went without a number, so
            the server gave each its own — one player, two Guest Rats on the
            board. Who is playing is read when the save goes, not now. */
-        const send = () => {
-            const body = JSON.stringify({ ...facts, ...gameFacts() });
+        const send = () => fresh(r).then(() => {
+            const body = JSON.stringify({ run: r.token, ...facts, ...gameFacts() });
             return fetch(API, {
                 method: "POST",
                 credentials: "same-origin",
@@ -2026,7 +2113,7 @@
                 // Survives the tab closing, when small enough to.
                 keepalive: body.length < 60000
             });
-        };
+        });
         const req = (saving ? saving.catch(() => {}).then(send) : send()).then(res => res.json().catch(() => ({}))).then(d => {
             // A Guest Rat numbered by this save (pura-scores.js, GUESTS).
             if (d && d.rat && Number.isInteger(d.rat.n) && d.rat.token && (!rat || rat.n !== d.rat.n)) { rat = { n: d.rat.n, token: d.rat.token }; keep(RAT_KEY, rat); hud(); }
@@ -2064,16 +2151,19 @@
        Discord id before this is still recognised (leftGame). */
     const accountKey = () => { const p = me(); return p ? String(p.publicId || p.id) : null; };
 
+    // What was kept, or null (ONE GAME, ONE TAB hands it to the other tab too).
     function keepGame() {
-        if (!inGame() || !run || !run.token || run.resumed || testLevel() || !g.log.length) return;
-        if (!g.deck) return;
+        if (!inGame() || !run || !run.token || run.resumed || testLevel() || !g.log.length) return null;
+        if (!g.deck) return null;
         // The pieces dealt so far and the last stamp, where the seed was (DEALT, 31 Oct 2026).
-        keep(LEFT_KEY, {
+        const k = {
             token: run.token, deck: g.deck, stamp: run.stamp || null, log: g.log, ms: Math.round(gameMs),
             score: g.score, level: g.level, at: Date.now(), account: accountKey(),
             // Signed out: which guest left it (see leftGame).
             guest: !me() && guest ? guest.id : null
-        });
+        };
+        keep(LEFT_KEY, k);
+        return k;
     }
 
     function forgetGame() { keep(LEFT_KEY, null); }
@@ -2136,16 +2226,105 @@
         return game;
     }
 
+    /* ---------------------------------------------------------------- ONE GAME, ONE TAB
+
+       (2 Nov 2026, the bug scan; the owner's yes.) A game kept on this
+       browser could be picked up with Continue in a second tab while the
+       first still had it open, paused: two pages on one game, the first
+       holding a token the Continue had replaced. Now the tab pressing
+       Continue asks the others first ("claim"). A tab with that game open
+       pauses it, keeps it on this browser as it stands (so the Continue
+       picks up its latest, not what was kept when it was last hidden) and
+       answers with it ("handover"). Once the Continue is through
+       ("taken"), that tab lets the game go and says where it went; if the
+       Continue fails, it is still there, paused, to carry on with. Nothing
+       is lost either way: it is the one game, and the board already has
+       its last level. Without BroadcastChannel (Safari before 15.4) the
+       tabs are not told, as before. */
+    const TAB_WAIT_MS = 400;
+    let tabs = null;
+    const ridOf = (token) => { const c = tokenClaims(token); return c && typeof c.rid === "string" ? c.rid : null; };
+
+    function tellTabs(t, token, kept) {
+        const rid = ridOf(token);
+        if (!tabs || !rid) return;
+        try { tabs.postMessage(kept ? { t, rid, kept } : { t, rid }); } catch (e) { /* the other tab just isn't told */ }
+    }
+
+    function wireTabs() {
+        if (typeof BroadcastChannel !== "function") return;
+        try { tabs = new BroadcastChannel("mazerats-pura"); } catch (e) { tabs = null; return; }
+        tabs.addEventListener("message", (e) => {
+            const m = e.data || {};
+            if (typeof m.rid !== "string" || !inGame() || !run || ridOf(run.token) !== m.rid) return;
+            if (m.t === "claim") {
+                pause();
+                const kept = keepGame();
+                if (kept) tellTabs("handover", kept.token, kept);
+            } else if (m.t === "taken") stepAside();
+        });
+    }
+
+    /* The kept game `k`, or the newer one a tab that has it open hands
+       over, waited for a moment. Only ever the same game (its run id), and
+       only with every placement `k` had. */
+    function claimGame(k) {
+        const rid = ridOf(k.token);
+        if (!tabs || !rid) return Promise.resolve(k);
+        return new Promise((done) => {
+            const onMsg = (e) => {
+                const m = e.data || {};
+                const h = m.kept;
+                if (m.t !== "handover" || m.rid !== rid || !h || ridOf(h.token) !== rid) return;
+                if (!Array.isArray(h.log) || h.log.length < k.log.length || !kindsOf(h.deck)) return;
+                finish({ ...k, ...h, account: k.account, guest: k.guest });
+            };
+            const timer = setTimeout(() => finish(k), TAB_WAIT_MS);
+            function finish(out) {
+                clearTimeout(timer);
+                tabs.removeEventListener("message", onMsg);
+                done(out);
+            }
+            tabs.addEventListener("message", onMsg);
+            tellTabs("claim", k.token);
+        });
+    }
+
+    // This tab's game, picked up in another: let go here, and said so.
+    function stepAside() {
+        releaseAll();
+        anim = null; banner = null; hideBanner();
+        resetDealer();
+        g = null; run = null; result = null;
+        leaving = false; fromLeave = false;
+        mode = "idle";
+        if (music()) music().setMuffled(true);
+        hud();
+        nx.clearRect(0, 0, nextCv.width, nextCv.height);
+        showPanel("title");
+        titleNote("You carried on with this game in another tab.");
+    }
+
+    /* A line on the splash just drawn, over its buttons. It went in before
+       the beta note, which went with the BETA pill (30 Oct 2026), so since
+       then Continue's "can't be picked up" was never shown (2 Nov 2026). */
+    function titleNote(text) {
+        const at = panel.querySelector(".pura-buttons, .pura-maint");
+        if (at) at.insertAdjacentHTML("beforebegin", `<p class="pura-beta-note">${esc(text)}</p>`);
+    }
+
     let continuing = false;
     // Continue pressed with nobody named (signed out, name cleared): who first.
     let pendingContinue = false;
     async function continueGame() {
-        const k = leftGame();
+        let k = leftGame();
         if (!k || continuing || mode === "dealing") return;
         if (needsName()) { pendingContinue = true; showPanel("who"); return; }
         continuing = true;
         const btn = panel.querySelector('[data-go="continue"]');
         if (btn) { btn.disabled = true; btn.textContent = "Picking up…"; }
+        // Still open in another tab: that tab's game as it stands now, and it waits (ONE GAME, ONE TAB).
+        k = await claimGame(k);
         let d = null;
         try {
             const res = await fetch(API + "?action=continue", {
@@ -2161,12 +2340,13 @@
             // Gone for good (finished, continued before, too old) unless it was only our trouble.
             if (d && d.reason) forgetGame();
             showPanel("title");
-            const note = panel.querySelector(".pura-maint, .pura-beta-note");
-            if (note) note.insertAdjacentHTML("beforebegin", `<p class="pura-beta-note">${d && d.reason ? "That game can't be picked up any more." : "That game couldn't be picked up just now. Try again in a moment."}</p>`);
+            titleNote(d && d.reason ? "That game can't be picked up any more." : "That game couldn't be picked up just now. Try again in a moment.");
             return;
         }
         // Never kept again: this is its one continue.
         forgetGame();
+        // Any other tab that had it open lets it go (ONE GAME, ONE TAB).
+        tellTabs("taken", k.token);
         /* Shut while the server was answering (10 Oct 2026): its one
            continue is spent, so the game is still picked up, but held
            paused and silent behind the shut window, not playing on unseen
@@ -2175,7 +2355,7 @@
            IN FRONT): held paused and silent the same way. */
         const shut = !isOpen() || hushed || behind();
         if (music() && !shut) music().start(1, { powerUp: true });
-        run = { token: d.token, stamp: typeof k.stamp === "string" ? k.stamp : null, resumed: true };
+        run = { token: d.token, stamp: typeof k.stamp === "string" ? k.stamp : null, resumed: true, got: Date.now() };
         rowsBase = 0;
         resetDealer();
         // The pieces it had; the next come as in any game (DEALT).
@@ -2250,11 +2430,8 @@
 
     // The account a run token was issued to, if any (its payload's sub; read, never trusted: the server checks).
     function runSub(token) {
-        try {
-            const part = String(token).split(".")[1].replace(/-/g, "+").replace(/_/g, "/");
-            const claims = JSON.parse(atob(part));
-            return claims && claims.sub ? String(claims.sub) : null;
-        } catch (e) { return null; }
+        const claims = tokenClaims(token);
+        return claims && claims.sub ? String(claims.sub) : null;
     }
 
     function keepUnsent() {
@@ -2340,6 +2517,8 @@
         if (p && !p.nick) { logPlayed(); return { state: "no-nick" }; }
         if (!g.score) { logPlayed(); return { state: "no-score" }; }
         try {
+            // Left paused past its token's three hours: renewed first (RENEWING).
+            await fresh(run);
             const res = await fetch(API, {
                 method: "POST",
                 credentials: "same-origin",

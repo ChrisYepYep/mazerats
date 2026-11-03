@@ -102,9 +102,16 @@
    (any browser/device that requests this stylesheet gets the file), but
    not yet assigned to anything via font-family — that's a deliberate
    follow-up, not an oversight. */
+/* WOFF2 since 2 Nov 2026, the same file packed (14.9KB against 55.6KB, and
+   still smaller than the TTF brotlied on the way): every glyph outline,
+   metric and instruction comes back out identical. The TTFs stay beside
+   them for tools/dev-console.ps1, which loads them itself (Windows can't
+   read a WOFF2). Every face below
+   that names a Volter file names the WOFF2, so each is still one download
+   however many faces share it. */
 @font-face {
     font-family: 'Volter Goldfish';
-    src: url('../assets/fonts/VolterGoldfish.ttf') format('truetype');
+    src: url('../assets/fonts/VolterGoldfish.woff2') format('woff2');
     font-weight: normal;
     font-style: normal;
     font-display: swap;
@@ -116,7 +123,7 @@
    font-family change needed at each call site. */
 @font-face {
     font-family: 'Volter Goldfish';
-    src: url('../assets/fonts/VolterGoldfishBold.ttf') format('truetype');
+    src: url('../assets/fonts/VolterGoldfishBold.woff2') format('woff2');
     font-weight: bold;
     font-style: normal;
     font-display: swap;
@@ -131,7 +138,7 @@
    emboldening applied on top of an already-bold face. */
 @font-face {
     font-family: 'Volter Goldfish Bold';
-    src: url('../assets/fonts/VolterGoldfishBold.ttf') format('truetype');
+    src: url('../assets/fonts/VolterGoldfishBold.woff2') format('woff2');
     font-weight: normal;
     font-style: normal;
     font-display: swap;
@@ -213,7 +220,7 @@
    it. */
 @font-face {
     font-family: 'Volter Glyphs';
-    src: url('../assets/fonts/VolterGoldfish.ttf') format('truetype');
+    src: url('../assets/fonts/VolterGoldfish.woff2') format('woff2');
     font-weight: normal;
     font-style: normal;
     font-display: swap;
@@ -228,7 +235,7 @@
    thicken a pixel drawing into a smudge. */
 @font-face {
     font-family: 'Volter Glyphs';
-    src: url('../assets/fonts/VolterGoldfishBold.ttf') format('truetype');
+    src: url('../assets/fonts/VolterGoldfishBold.woff2') format('woff2');
     font-weight: bold;
     font-style: normal;
     font-display: swap;
@@ -259,6 +266,171 @@
     font-weight: normal;
     font-style: normal;
     unicode-range: U+00B7, U+2014;
+}
+
+/* ---- MONTSERRAT, ROBOTO, PIXELIFY SANS, SILKSCREEN: SELF-HOSTED ----
+
+   Served from here since 2 Nov 2026, not from Google Fonts. Google's
+   stylesheet was a render-blocking request to a third host before the
+   first paint of every page, and its font files a fourth connection (slow
+   outliers of nearly ten seconds to first paint were measured on it).
+
+   These are Google's own files, the latin subset as its CSS hands it to
+   Chrome on Windows (with hinting: browsers that ignore hinting draw them
+   exactly as they drew the unhinted copies Google sent them), and the faces
+   are written out as Google writes them, one per weight, so a weight in
+   between still picks the face it picked before rather than a new instance
+   of the variable font. Roboto keeps its "math" and "symbols" subsets too
+   (arrows, ticks, stars, the coloured squares in the daily games' results):
+   the site prints those in Roboto, and without them they would come out of
+   a system font instead. They load only when such a character is on screen,
+   as before. Where ranges overlap, the face declared last is asked first,
+   so the order (math, symbols, latin) is Google's.
+
+   The latin-ext, cyrillic, greek and vietnamese subsets are left out: none
+   of those characters is in the site's text or the archive's names, and
+   one that turns up falls back to the next font in the stack.
+
+   Names carry Google's version (v31 and so on) because /assets/fonts/ is
+   cached for a year: a newer cut gets a new name. All four are under the
+   SIL Open Font Licence. Caveat (the Atlas's handwriting, wizard.html and
+   warren.html) is still fetched from Google. */
+@font-face {
+    font-family: 'Montserrat';
+    font-style: normal;
+    font-weight: 700;
+    font-display: swap;
+    src: url('../assets/fonts/montserrat-v31-latin.woff2') format('woff2');
+    unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+    font-family: 'Montserrat';
+    font-style: normal;
+    font-weight: 800;
+    font-display: swap;
+    src: url('../assets/fonts/montserrat-v31-latin.woff2') format('woff2');
+    unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+    font-family: 'Montserrat';
+    font-style: normal;
+    font-weight: 900;
+    font-display: swap;
+    src: url('../assets/fonts/montserrat-v31-latin.woff2') format('woff2');
+    unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+    font-family: 'Pixelify Sans';
+    font-style: normal;
+    font-weight: 400;
+    font-display: swap;
+    src: url('../assets/fonts/pixelify-sans-v3-latin.woff2') format('woff2');
+    unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+    font-family: 'Pixelify Sans';
+    font-style: normal;
+    font-weight: 700;
+    font-display: swap;
+    src: url('../assets/fonts/pixelify-sans-v3-latin.woff2') format('woff2');
+    unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+    font-family: 'Roboto';
+    font-style: normal;
+    font-weight: 400;
+    font-stretch: 100%;
+    font-display: swap;
+    src: url('../assets/fonts/roboto-v51-math.woff2') format('woff2');
+    unicode-range: U+0302-0303, U+0305, U+0307-0308, U+0310, U+0312, U+0315, U+031A, U+0326-0327, U+032C, U+032F-0330, U+0332-0333, U+0338, U+033A, U+0346, U+034D, U+0391-03A1, U+03A3-03A9, U+03B1-03C9, U+03D1, U+03D5-03D6, U+03F0-03F1, U+03F4-03F5, U+2016-2017, U+2034-2038, U+203C, U+2040, U+2043, U+2047, U+2050, U+2057, U+205F, U+2070-2071, U+2074-209F, U+20D0-20DC, U+20E1, U+20E5-20EF, U+2100-2112, U+2114-2115, U+2117-2121, U+2123-214F, U+2190, U+2192, U+2194-21AE, U+21B0-21E5, U+21F1-21F2, U+21F4-2211, U+2213-2214, U+2216-22FF, U+2308-230B, U+2310, U+2319, U+231C-2321, U+2336-237A, U+237C, U+2395, U+239B-23B7, U+23D0, U+23DC-23E1, U+2474-2475, U+25AF, U+25B3, U+25B7, U+25BD, U+25C1, U+25CA, U+25CC, U+25FB, U+266D-266F, U+27C0-27FF, U+2900-2AFF, U+2B0E-2B11, U+2B30-2B4C, U+2BFE, U+3030, U+FF5B, U+FF5D, U+1D400-1D7FF, U+1EE00-1EEFF;
+}
+@font-face {
+    font-family: 'Roboto';
+    font-style: normal;
+    font-weight: 400;
+    font-stretch: 100%;
+    font-display: swap;
+    src: url('../assets/fonts/roboto-v51-symbols.woff2') format('woff2');
+    unicode-range: U+0001-000C, U+000E-001F, U+007F-009F, U+20DD-20E0, U+20E2-20E4, U+2150-218F, U+2190, U+2192, U+2194-2199, U+21AF, U+21E6-21F0, U+21F3, U+2218-2219, U+2299, U+22C4-22C6, U+2300-243F, U+2440-244A, U+2460-24FF, U+25A0-27BF, U+2800-28FF, U+2921-2922, U+2981, U+29BF, U+29EB, U+2B00-2BFF, U+4DC0-4DFF, U+FFF9-FFFB, U+10140-1018E, U+10190-1019C, U+101A0, U+101D0-101FD, U+102E0-102FB, U+10E60-10E7E, U+1D2C0-1D2D3, U+1D2E0-1D37F, U+1F000-1F0FF, U+1F100-1F1AE, U+1F1E6-1F1FF, U+1F30D-1F30F, U+1F315, U+1F31C, U+1F31E, U+1F320-1F32C, U+1F336, U+1F378, U+1F37D, U+1F382, U+1F393-1F39F, U+1F3A7-1F3A8, U+1F3AC-1F3AF, U+1F3C2, U+1F3C4-1F3C6, U+1F3CA-1F3CE, U+1F3D4-1F3E0, U+1F3ED, U+1F3F1-1F3F3, U+1F3F5-1F3F7, U+1F408, U+1F415, U+1F41F, U+1F426, U+1F43F, U+1F441-1F442, U+1F444, U+1F446-1F449, U+1F44C-1F44E, U+1F453, U+1F46A, U+1F47D, U+1F4A3, U+1F4B0, U+1F4B3, U+1F4B9, U+1F4BB, U+1F4BF, U+1F4C8-1F4CB, U+1F4D6, U+1F4DA, U+1F4DF, U+1F4E3-1F4E6, U+1F4EA-1F4ED, U+1F4F7, U+1F4F9-1F4FB, U+1F4FD-1F4FE, U+1F503, U+1F507-1F50B, U+1F50D, U+1F512-1F513, U+1F53E-1F54A, U+1F54F-1F5FA, U+1F610, U+1F650-1F67F, U+1F687, U+1F68D, U+1F691, U+1F694, U+1F698, U+1F6AD, U+1F6B2, U+1F6B9-1F6BA, U+1F6BC, U+1F6C6-1F6CF, U+1F6D3-1F6D7, U+1F6E0-1F6EA, U+1F6F0-1F6F3, U+1F6F7-1F6FC, U+1F700-1F80B, U+1F810-1F847, U+1F850-1F859, U+1F860-1F887, U+1F890-1F8AD, U+1F8B0-1F8BB, U+1F8C0-1F8C1, U+1F8D0-1F8D8, U+1F900-1F90B, U+1F93B, U+1F946, U+1F984, U+1F996, U+1F9E9, U+1FA00-1FA6F, U+1FA70-1FA7C, U+1FA80-1FAC6, U+1FAC8, U+1FACC-1FADD, U+1FADF-1FAEB, U+1FAEF-1FAFA, U+1FB00-1FBFF;
+}
+@font-face {
+    font-family: 'Roboto';
+    font-style: normal;
+    font-weight: 400;
+    font-stretch: 100%;
+    font-display: swap;
+    src: url('../assets/fonts/roboto-v51-latin.woff2') format('woff2');
+    unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+    font-family: 'Roboto';
+    font-style: normal;
+    font-weight: 500;
+    font-stretch: 100%;
+    font-display: swap;
+    src: url('../assets/fonts/roboto-v51-math.woff2') format('woff2');
+    unicode-range: U+0302-0303, U+0305, U+0307-0308, U+0310, U+0312, U+0315, U+031A, U+0326-0327, U+032C, U+032F-0330, U+0332-0333, U+0338, U+033A, U+0346, U+034D, U+0391-03A1, U+03A3-03A9, U+03B1-03C9, U+03D1, U+03D5-03D6, U+03F0-03F1, U+03F4-03F5, U+2016-2017, U+2034-2038, U+203C, U+2040, U+2043, U+2047, U+2050, U+2057, U+205F, U+2070-2071, U+2074-209F, U+20D0-20DC, U+20E1, U+20E5-20EF, U+2100-2112, U+2114-2115, U+2117-2121, U+2123-214F, U+2190, U+2192, U+2194-21AE, U+21B0-21E5, U+21F1-21F2, U+21F4-2211, U+2213-2214, U+2216-22FF, U+2308-230B, U+2310, U+2319, U+231C-2321, U+2336-237A, U+237C, U+2395, U+239B-23B7, U+23D0, U+23DC-23E1, U+2474-2475, U+25AF, U+25B3, U+25B7, U+25BD, U+25C1, U+25CA, U+25CC, U+25FB, U+266D-266F, U+27C0-27FF, U+2900-2AFF, U+2B0E-2B11, U+2B30-2B4C, U+2BFE, U+3030, U+FF5B, U+FF5D, U+1D400-1D7FF, U+1EE00-1EEFF;
+}
+@font-face {
+    font-family: 'Roboto';
+    font-style: normal;
+    font-weight: 500;
+    font-stretch: 100%;
+    font-display: swap;
+    src: url('../assets/fonts/roboto-v51-symbols.woff2') format('woff2');
+    unicode-range: U+0001-000C, U+000E-001F, U+007F-009F, U+20DD-20E0, U+20E2-20E4, U+2150-218F, U+2190, U+2192, U+2194-2199, U+21AF, U+21E6-21F0, U+21F3, U+2218-2219, U+2299, U+22C4-22C6, U+2300-243F, U+2440-244A, U+2460-24FF, U+25A0-27BF, U+2800-28FF, U+2921-2922, U+2981, U+29BF, U+29EB, U+2B00-2BFF, U+4DC0-4DFF, U+FFF9-FFFB, U+10140-1018E, U+10190-1019C, U+101A0, U+101D0-101FD, U+102E0-102FB, U+10E60-10E7E, U+1D2C0-1D2D3, U+1D2E0-1D37F, U+1F000-1F0FF, U+1F100-1F1AE, U+1F1E6-1F1FF, U+1F30D-1F30F, U+1F315, U+1F31C, U+1F31E, U+1F320-1F32C, U+1F336, U+1F378, U+1F37D, U+1F382, U+1F393-1F39F, U+1F3A7-1F3A8, U+1F3AC-1F3AF, U+1F3C2, U+1F3C4-1F3C6, U+1F3CA-1F3CE, U+1F3D4-1F3E0, U+1F3ED, U+1F3F1-1F3F3, U+1F3F5-1F3F7, U+1F408, U+1F415, U+1F41F, U+1F426, U+1F43F, U+1F441-1F442, U+1F444, U+1F446-1F449, U+1F44C-1F44E, U+1F453, U+1F46A, U+1F47D, U+1F4A3, U+1F4B0, U+1F4B3, U+1F4B9, U+1F4BB, U+1F4BF, U+1F4C8-1F4CB, U+1F4D6, U+1F4DA, U+1F4DF, U+1F4E3-1F4E6, U+1F4EA-1F4ED, U+1F4F7, U+1F4F9-1F4FB, U+1F4FD-1F4FE, U+1F503, U+1F507-1F50B, U+1F50D, U+1F512-1F513, U+1F53E-1F54A, U+1F54F-1F5FA, U+1F610, U+1F650-1F67F, U+1F687, U+1F68D, U+1F691, U+1F694, U+1F698, U+1F6AD, U+1F6B2, U+1F6B9-1F6BA, U+1F6BC, U+1F6C6-1F6CF, U+1F6D3-1F6D7, U+1F6E0-1F6EA, U+1F6F0-1F6F3, U+1F6F7-1F6FC, U+1F700-1F80B, U+1F810-1F847, U+1F850-1F859, U+1F860-1F887, U+1F890-1F8AD, U+1F8B0-1F8BB, U+1F8C0-1F8C1, U+1F8D0-1F8D8, U+1F900-1F90B, U+1F93B, U+1F946, U+1F984, U+1F996, U+1F9E9, U+1FA00-1FA6F, U+1FA70-1FA7C, U+1FA80-1FAC6, U+1FAC8, U+1FACC-1FADD, U+1FADF-1FAEB, U+1FAEF-1FAFA, U+1FB00-1FBFF;
+}
+@font-face {
+    font-family: 'Roboto';
+    font-style: normal;
+    font-weight: 500;
+    font-stretch: 100%;
+    font-display: swap;
+    src: url('../assets/fonts/roboto-v51-latin.woff2') format('woff2');
+    unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+    font-family: 'Roboto';
+    font-style: normal;
+    font-weight: 700;
+    font-stretch: 100%;
+    font-display: swap;
+    src: url('../assets/fonts/roboto-v51-math.woff2') format('woff2');
+    unicode-range: U+0302-0303, U+0305, U+0307-0308, U+0310, U+0312, U+0315, U+031A, U+0326-0327, U+032C, U+032F-0330, U+0332-0333, U+0338, U+033A, U+0346, U+034D, U+0391-03A1, U+03A3-03A9, U+03B1-03C9, U+03D1, U+03D5-03D6, U+03F0-03F1, U+03F4-03F5, U+2016-2017, U+2034-2038, U+203C, U+2040, U+2043, U+2047, U+2050, U+2057, U+205F, U+2070-2071, U+2074-209F, U+20D0-20DC, U+20E1, U+20E5-20EF, U+2100-2112, U+2114-2115, U+2117-2121, U+2123-214F, U+2190, U+2192, U+2194-21AE, U+21B0-21E5, U+21F1-21F2, U+21F4-2211, U+2213-2214, U+2216-22FF, U+2308-230B, U+2310, U+2319, U+231C-2321, U+2336-237A, U+237C, U+2395, U+239B-23B7, U+23D0, U+23DC-23E1, U+2474-2475, U+25AF, U+25B3, U+25B7, U+25BD, U+25C1, U+25CA, U+25CC, U+25FB, U+266D-266F, U+27C0-27FF, U+2900-2AFF, U+2B0E-2B11, U+2B30-2B4C, U+2BFE, U+3030, U+FF5B, U+FF5D, U+1D400-1D7FF, U+1EE00-1EEFF;
+}
+@font-face {
+    font-family: 'Roboto';
+    font-style: normal;
+    font-weight: 700;
+    font-stretch: 100%;
+    font-display: swap;
+    src: url('../assets/fonts/roboto-v51-symbols.woff2') format('woff2');
+    unicode-range: U+0001-000C, U+000E-001F, U+007F-009F, U+20DD-20E0, U+20E2-20E4, U+2150-218F, U+2190, U+2192, U+2194-2199, U+21AF, U+21E6-21F0, U+21F3, U+2218-2219, U+2299, U+22C4-22C6, U+2300-243F, U+2440-244A, U+2460-24FF, U+25A0-27BF, U+2800-28FF, U+2921-2922, U+2981, U+29BF, U+29EB, U+2B00-2BFF, U+4DC0-4DFF, U+FFF9-FFFB, U+10140-1018E, U+10190-1019C, U+101A0, U+101D0-101FD, U+102E0-102FB, U+10E60-10E7E, U+1D2C0-1D2D3, U+1D2E0-1D37F, U+1F000-1F0FF, U+1F100-1F1AE, U+1F1E6-1F1FF, U+1F30D-1F30F, U+1F315, U+1F31C, U+1F31E, U+1F320-1F32C, U+1F336, U+1F378, U+1F37D, U+1F382, U+1F393-1F39F, U+1F3A7-1F3A8, U+1F3AC-1F3AF, U+1F3C2, U+1F3C4-1F3C6, U+1F3CA-1F3CE, U+1F3D4-1F3E0, U+1F3ED, U+1F3F1-1F3F3, U+1F3F5-1F3F7, U+1F408, U+1F415, U+1F41F, U+1F426, U+1F43F, U+1F441-1F442, U+1F444, U+1F446-1F449, U+1F44C-1F44E, U+1F453, U+1F46A, U+1F47D, U+1F4A3, U+1F4B0, U+1F4B3, U+1F4B9, U+1F4BB, U+1F4BF, U+1F4C8-1F4CB, U+1F4D6, U+1F4DA, U+1F4DF, U+1F4E3-1F4E6, U+1F4EA-1F4ED, U+1F4F7, U+1F4F9-1F4FB, U+1F4FD-1F4FE, U+1F503, U+1F507-1F50B, U+1F50D, U+1F512-1F513, U+1F53E-1F54A, U+1F54F-1F5FA, U+1F610, U+1F650-1F67F, U+1F687, U+1F68D, U+1F691, U+1F694, U+1F698, U+1F6AD, U+1F6B2, U+1F6B9-1F6BA, U+1F6BC, U+1F6C6-1F6CF, U+1F6D3-1F6D7, U+1F6E0-1F6EA, U+1F6F0-1F6F3, U+1F6F7-1F6FC, U+1F700-1F80B, U+1F810-1F847, U+1F850-1F859, U+1F860-1F887, U+1F890-1F8AD, U+1F8B0-1F8BB, U+1F8C0-1F8C1, U+1F8D0-1F8D8, U+1F900-1F90B, U+1F93B, U+1F946, U+1F984, U+1F996, U+1F9E9, U+1FA00-1FA6F, U+1FA70-1FA7C, U+1FA80-1FAC6, U+1FAC8, U+1FACC-1FADD, U+1FADF-1FAEB, U+1FAEF-1FAFA, U+1FB00-1FBFF;
+}
+@font-face {
+    font-family: 'Roboto';
+    font-style: normal;
+    font-weight: 700;
+    font-stretch: 100%;
+    font-display: swap;
+    src: url('../assets/fonts/roboto-v51-latin.woff2') format('woff2');
+    unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+    font-family: 'Silkscreen';
+    font-style: normal;
+    font-weight: 400;
+    font-display: swap;
+    src: url('../assets/fonts/silkscreen-v6-latin-400.woff2') format('woff2');
+    unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+    font-family: 'Silkscreen';
+    font-style: normal;
+    font-weight: 700;
+    font-display: swap;
+    src: url('../assets/fonts/silkscreen-v6-latin-700.woff2') format('woff2');
+    unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
 }
 
 * { box-sizing: border-box; }
@@ -1937,6 +2109,21 @@ body[data-page="home"] .hero { padding-top: 18px; }
     margin-bottom: 30px;
 }
 
+/* A PHONE ON ITS SIDE (2 Nov 2026, the owner's). At 844x390 the wordmark
+   took its size from the width (14vw, near its 120px cap), filled the
+   screen under the header, and the button saying Maintenance or Coming
+   Soon, the one thing the page has to say, sat below the fold. On a short
+   landscape screen it takes its size from the height instead, with the
+   page's padding and the gap under it trimmed, so the button is on the
+   first screen with room to spare. */
+@media (orientation: landscape) and (max-height: 500px) {
+    .welcome-screen { padding-top: 18px; padding-bottom: 28px; }
+    .welcome-title {
+        font-size: clamp(2.4rem, 15vh, 7.5rem);
+        margin-bottom: 16px;
+    }
+}
+
 /* Scoped to the landing page's MAZE span specifically (not the homepage
    hero, which reuses .hero-title/span but has no #welcome-maze) so the
    handstanding rat only ever shows up here. */
@@ -2674,6 +2861,16 @@ body[data-page="home"] .hero { padding-top: 18px; }
    as they were. */
 html:not([data-theme]) .chrome-nav-top .chrome-nav-btn:not(.active)::before {
     filter: sepia(0.25) saturate(0.5) brightness(0.95) contrast(1.05);
+}
+/* Their labels, the picked tab's dark ink (2 Nov 2026, the owner's): the
+   cream every unpicked tab wears was 3.3:1 on this lighter fill (#927e68),
+   and 4.85:1 this way, with the picked tab's pressed-in highlight under it
+   rather than the cream's drop shadow. The fill stays the lighter one he
+   chose. Not under dark mode, whose tabs are graphite: there the label
+   stays the layer's light ink. */
+html:not([data-theme]):not([data-dark]) .chrome-nav-top .chrome-nav-btn:not(.active) {
+    color: #1a0f04;
+    text-shadow: 1px 1px 0 rgba(255, 255, 255, 0.3);
 }
 
 /* Same technique as the sub-nav row's middle button above (see
@@ -3546,16 +3743,43 @@ body[data-page="admin"] .admin-contributor-count {
    a slow ring pulse so it's picked out of a list at a glance. */
 .status-live {
     color: #e8563f;
+    position: relative;
+}
+
+/* THE PULSE, ON THE COMPOSITOR (2 Nov 2026, the owner's). It animated the
+   pill's own box-shadow, which repaints it on every frame: about 6% of a
+   CPU for as long as the opening view showed a live event. The same halo
+   is now this ring, drawn once (a 2px spread around a box the pill's size)
+   and only scaled and faded. Behind the pill (z-index -1 on a pill that
+   makes no stacking context of its own), so the part that starts tucked
+   under the pill's edge stays hidden there, as the old shadow never
+   painted under the box. The scales are the old frames: the halo's outer
+   edge runs from the pill's edge (40x18 drawn as 44x22, so 0.909, 0.818)
+   to 5px out (50x28, so 1.136, 1.273) while it fades, over the first 70%,
+   and rests for the last 30%. Whatever holds the pill is isolated, so
+   "behind the pill" stops above that holder's own background (a row, a
+   card) rather than sinking under it; it holds nothing that needs to
+   escape it. */
+:has(> .status-live) { isolation: isolate; }
+.status-live::after {
+    content: "";
+    position: absolute;
+    inset: -1px;
+    z-index: -1;
+    border-radius: inherit;
+    box-shadow: 0 0 0 2px rgba(232, 86, 63, 0.5);
+    pointer-events: none;
+    opacity: 0;
     animation: status-live-pulse 1.9s ease-in-out infinite;
 }
 
 @keyframes status-live-pulse {
-    0%, 100% { box-shadow: 0 0 0 0 rgba(232, 86, 63, 0.5); }
-    70%, 100% { box-shadow: 0 0 0 5px rgba(232, 86, 63, 0); }
+    0% { transform: scale(0.909, 0.818); opacity: 1; }
+    70%, 100% { transform: scale(1.136, 1.273); opacity: 0; }
 }
 
 @media (prefers-reduced-motion: reduce) {
-    .status-live { animation: none; }
+    .status-live::after { animation: none; }
 }
 
 /* Every pill-shaped badge/tag on the site centers its text both ways —
@@ -3938,6 +4162,30 @@ body[data-page="admin"] .admin-contributor-count {
 /* A glow is a colour change, and a colour change alone is not a focus
    indicator anyone can rely on — the site's ring, as everywhere else. */
 .clear-filter-btn:focus-visible { outline: 2px solid var(--amber-bright); outline-offset: 2px; }
+
+/* "Sorted by name", "Newest first" (2 Nov 2026, the owner's; updateSortChip
+   in js/home.js): the order the list is in, at the right of the line over
+   it, after Clear filter when that shows. A quiet pill in the notes' face
+   and colour, so it reads as a caption to the list, not a control. Its top
+   margin keeps the line as tall as the notes' 16px make it. */
+.sort-chip {
+    /* 4px in from the right, so its border keeps clear of the scrollbar. */
+    margin: 11px 4px 0 auto;
+    padding: 2px 6px 1px 6.4px;
+    border: 1px solid color-mix(in srgb, var(--parchment-dim) 35%, transparent);
+    border-radius: 8px;
+    background: rgba(0, 0, 0, 0.18);
+    font-family: 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace;
+    font-size: 0.5625rem;
+    font-weight: 400;
+    letter-spacing: 0.4px;
+    line-height: 1.2;
+    color: var(--parchment-dim);
+    white-space: nowrap;
+    cursor: default;
+}
+.sort-chip[hidden] { display: none; }
+.clear-filter-btn:not([hidden]) + .sort-chip { margin-left: 0; }
 
 /* A thumb-sized target without moving the words: the hit area grows down
    and left into the empty line around them. */
@@ -9532,6 +9780,51 @@ body[data-page="admin"] .search-box input {
     cursor: var(--cursor-pointer);
 }
 .console-notices-item.is-picked { border-color: #eeeeee; }
+/* UNREAD (2 Nov 2026, the owner's; js/console.js). The Notifications
+   button carries how many, as a small filled tab of the screen's own white
+   after its word; in the list an unread notice says New beside its date,
+   and a line over the list counts them, with Mark all read at its right.
+   The console's one-colour look: white on the grey screen, nothing red. */
+.console-unread-badge {
+    display: inline-block;
+    min-width: 11px;
+    margin: 0 0 0 5px;
+    padding: 1px 3px 0;
+    border-radius: 2px;
+    background: #eeeeee;
+    color: #2b2b2b;
+    font-family: 'Volter Goldfish Bold', 'Volter Goldfish', 'Pixelify Sans', monospace;
+    font-size: 0.5625rem;
+    line-height: 1.2;
+    text-align: center;
+    vertical-align: 0;
+}
+.console-notices-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 8px;
+    margin: 0 0 6px;
+    font-family: 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace;
+    font-size: 0.5625rem;
+    color: #eeeeee;
+}
+.console-notices-markall {
+    padding: 0;
+    border: 0;
+    background: none;
+    font: inherit;
+    color: inherit;
+    text-decoration: underline;
+    text-underline-offset: 2px;
+    cursor: var(--cursor-pointer);
+}
+.console-notices-markall:hover { text-decoration-style: dotted; }
+.console-notices-markall:focus-visible { outline: 1px dotted #eeeeee; outline-offset: 2px; }
+.console-notices-new {
+    font-family: 'Volter Goldfish Bold', 'Volter Goldfish', 'Pixelify Sans', monospace;
+}
+.console-notices-item.is-unread .console-notices-day { opacity: 1; }
 .console-notices-item:focus-visible { outline: 1px dotted #eeeeee; outline-offset: 1px; }
 .console-notices-day,
 .console-notices-text { display: block; }
@@ -9958,6 +10251,8 @@ body[data-page="admin"] .search-box input {
     font-family: 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace;
     font-size: 0.4rem;
     font-weight: 400;
+    /* 3.81:1 on the inactive tabs' gold, and kept so: the owner's call
+       (27 Oct, and again 2 Nov 2026 after seeing #6b4100 side by side). */
     color: #7b4a00;
     pointer-events: none;
 }
@@ -12037,6 +12332,11 @@ body[data-page="admin"] #activity-sessions {
    reset so the padding above still decides where the block sits. */
 .archive-empty-say {
     margin: 0;
+    /* The archive's own small pixel type (2 Nov 2026, the owner's), as the
+       results count above a search is. */
+    font-family: 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace;
+    font-size: 0.5625rem;
+    font-weight: 400;
 }
 
 .archive-empty-jumps {
@@ -12178,6 +12478,29 @@ body[data-page="admin"] #activity-sessions {
 #room-sort:focus-visible {
     outline: 2px solid var(--amber-bright);
     outline-offset: 2px;
+}
+
+/* THE SEARCH ROW'S OWN RING IS DARK (2 Nov 2026, the owner's). The search
+   box and the Sort menu sit on the cream drawer, where the amber ring above
+   measured about 1.1:1 against it: tabbing to Sort showed nothing but a
+   tan border (1.5:1). The drawer's own dark ink instead, which every
+   palette and dark mode recolours with the drawer (tools/themes.js). The
+   opening view's search box, on the same cream, had no ring at all.
+   :focus-visible alone still drew it on a click here: a browser counts a
+   text box clicked into as focus-visible, and js/select-list.js focuses
+   the Sort menu from its own mousedown. So js/home.js marks a field that
+   a pointer focused (.is-pointer-focus, until it blurs), and a click
+   draws no ring; the border's own focus colour is unchanged. */
+#search-wrap #room-search:focus-visible,
+#search-wrap #room-sort:focus-visible,
+#opening-search-input:focus-visible {
+    outline: 2px solid #3a2812;
+    outline-offset: 2px;
+}
+#search-wrap #room-search.is-pointer-focus,
+#search-wrap #room-sort.is-pointer-focus,
+#opening-search-input.is-pointer-focus {
+    outline: none;
 }
 
 /* The rows are the one case where an offset ring reads badly: they sit
@@ -14959,6 +15282,13 @@ body[data-page="admin"] #activity-sessions {
     font-size: 0.62rem;
     color: var(--unknown-text);
 }
+
+/* In the site's own palette (2 Nov 2026, the owner's) this line and the
+   ranks measured under 3:1: the line sits on the window's own --frame-bg,
+   where the quiet-copy colour is --parchment-dim (4.53:1), and the ranks on
+   a row, where --amber-text is 4.54:1. The other palettes already clear it. */
+html:not([data-theme]) .guess-board-span { color: var(--parchment-dim); }
+html:not([data-theme]) .guess-board-rank { color: var(--amber-text); }
 
 /* Someone else's five, beside their name. The row gained a column for it;
    it is empty on the ranges that total more than one day, where there is no
@@ -22261,14 +22591,18 @@ body.is-viewer #bans-add { display: none !important; }
     padding: 4px 22px 3px 18px;
     border: 0;
     border-radius: 0;
-    background: color-mix(in srgb, var(--opening-cream) 30%, transparent);
+    /* 20% and the lettering lifted halfway to white (2 Nov 2026, the
+       pre-deploy sweep, the owner's "fix all"): at 30% under the plain
+       cream the names read 2.8:1 on the window's --frame-bg. Now 4.7:1,
+       the band a shade more muted and the lettering still the cream. */
+    background: color-mix(in srgb, var(--opening-cream) 20%, transparent);
     clip-path: polygon(0 0, 100% 0, calc(100% - 9px) 100%, 0 100%);
     /* Volter Goldfish Bold at its own 9px (the owner's, for clearer
        lettering): Volter is drawn for 9px and only sharp at it. */
     font: 400 0.5625rem 'Volter Goldfish Bold', 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace;
     letter-spacing: 0.75px;
     text-transform: uppercase;
-    color: var(--opening-cream);
+    color: color-mix(in srgb, var(--opening-cream), #fff 50%);
     text-shadow: 1px 1px 0 #000;
     white-space: nowrap;
 }
@@ -22298,7 +22632,7 @@ body.is-viewer #bans-add { display: none !important; }
 }
 .opening-name { display: block; font-size: 0.5625rem; line-height: 1.5; color: var(--amber-bright); }
 .opening-sub { display: block; font-size: 0.5625rem; line-height: 1.5; color: var(--amber-text); }
-.opening-found { margin: 14px 0 8px; font-size: 0.5625rem; color: var(--amber-text); }
+.opening-found { margin: 14px 0 8px; font-family: 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace; font-size: 0.5625rem; font-weight: 400; color: var(--amber-text); }
 
 /* Cards: the rows' own dark glass, edge and shadow. */
 .opening-now-row,
@@ -22621,3 +22955,138 @@ html[data-light] .chrome-light { filter: drop-shadow(0 0 3px var(--neon-soft)); 
 @media (max-width: 900px) {
     .chrome-light { right: 24px; }
 }
+
+/* ---------- articles (js/articles.js; 2 Nov 2026, the owner's) ----------
+
+   The article window wears the room window's own classes (home.html,
+   #article-overlay): the titlebar, the image panel with its arrows and
+   pills, the builder row (here the byline), the button row and the
+   description panel with the strip of pictures under it. So it is that
+   window in every palette, in dark mode and under the skins, and on a
+   phone the narrow layout's rules for those classes apply to it as they
+   are. What is here is only what an article does differently: its text is
+   the window's reading area rather than a few lines, it may have no
+   picture at all, and its list view. */
+.modal.art-window { max-width: 640px; }
+/* The text is what an article is for: its box takes the window's height
+   (the card is capped at the viewport; see "Fitting the card to the
+   window") rather than the 160px a maze's description gets. */
+.art-window .modal-thumb-full.is-event .room-desc-box,
+.art-window .room-desc-box { max-height: none; }
+/* The list view, scrolling inside the card the way the text does. */
+.art-list {
+    padding: 18px 20px 22px;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-color: var(--wood-dark) var(--frame-bg);
+    color: var(--parchment);
+}
+.modal:has(.room-desc-box) .chrome-frame > .art-list { flex: 1 1 auto; min-height: 0; }
+.art-list[hidden] { display: none; }
+/* Over the flex column the fitting block gives .modal-thumb-full. */
+.modal.art-window .art-reader[hidden] { display: none; }
+.art-cards .guides-card-title { overflow-wrap: anywhere; }
+/* No picture at all: the body meets the titlebar, with no empty image band. */
+.art-reader:has(> .modal-thumb-frame[hidden]) .modal-body { margin-top: -20px; }
+.art-reader .modal-thumb-frame[hidden] { display: none; }
+/* The place and the caption pills, by class: the room window places its own by id. */
+.art-reader .modal-thumb-frame .art-position { top: 4px; right: 4px; }
+.art-reader .modal-thumb-frame .art-caption-pill {
+    bottom: 4px;
+    font-family: 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace;
+    font-size: 0.5625rem;
+    font-weight: 400;
+    /* A block, so a caption too long for a phone ends in an ellipsis
+       rather than losing both its ends (the pills are centred flex boxes). */
+    display: block;
+    line-height: 1.3;
+}
+.art-reader .modal-gallery-img { cursor: default; }
+.art-reader .gallery-strip img[role="button"] { cursor: var(--cursor-pointer); }
+.art-reader .modal-top-row { align-items: center; }
+.art-byline { overflow-wrap: anywhere; }
+/* "Article" in the meta row and on a search result, in the log's rose for an article. */
+.status-badge.art-badge { color: #ecc7d6; border-color: #a8708a; }
+.art-crumbs { margin: 0; font-size: 0.78rem; }
+.art-crumbs[hidden] { display: none; }
+.art-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+/* Text that leaves its button rather than running out of it on a phone. */
+.art-actions .btn { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* "Read the article" beside Visit Room in the event window. */
+.modal-article-links { display: inline-flex; flex-wrap: wrap; gap: 8px; vertical-align: top; }
+.modal-article-links:empty { display: none; }
+#modal-link[style*="inline-block"] + .modal-article-links { margin-left: 8px; }
+
+/* The text: the room window's formatted description (.room-desc-full),
+   with the article's own blocks. A picture sits whole on a plate framed as
+   the site's panels are, at its own size where it fits. */
+.art-text { margin: 0.6em 0 1em; }
+.art-text .art-figure {
+    padding: 6px;
+    border: 1px solid var(--chrome-border);
+    border-radius: 8px;
+    box-shadow:
+        inset 0 1px 0 var(--chrome-highlight),
+        inset 1px 0 0 var(--chrome-highlight),
+        inset -1px 0 0 rgba(0, 0, 0, 0.45),
+        inset 0 -1px 0 rgba(0, 0, 0, 0.45),
+        2px 2px 0 rgba(0, 0, 0, 0.45);
+    background: rgba(0, 0, 0, 0.28);
+    text-align: center;
+}
+.art-figure-img {
+    display: block;
+    margin: 0 auto;
+    max-width: 100%;
+    height: auto;
+    border-radius: 2px;
+}
+.art-caption {
+    margin: 6px 4px 0;
+    font-size: 0.86em;
+    line-height: 1.45;
+    color: var(--parchment-dim);
+}
+.art-text .art-quote {
+    padding: 2px 0 2px 14px;
+    border-left: 3px solid var(--amber);
+    color: var(--parchment);
+    font-style: italic;
+}
+.art-quote > * { margin: 0; }
+.art-quote > * + * { margin-top: 0.8em; }
+/* An embed's block (THE EMBED CONTRACT, js/article-text.js): what it
+   shows while its script loads, and if it cannot be shown. */
+.art-text .art-embed { min-height: 1em; }
+.art-embed-wait,
+.art-embed-missing {
+    margin: 0;
+    padding: 10px 12px;
+    border: 1px dashed var(--border);
+    border-radius: 6px;
+    background: rgba(0, 0, 0, 0.18);
+    font-size: 0.86em;
+    color: var(--parchment-dim);
+    text-align: center;
+}
+
+/* The log's label for an article (js/home.js) and the Warren's (js/admin-whats-new.js):
+   a dusky rose, apart from the green, amber, parchment and blue-grey already used. */
+.updatelog-verb.is-article {
+    color: #ecc7d6;
+    border-color: #a8708a;
+    background: rgba(168, 112, 138, 0.2);
+}
+.wn-verb.is-article { color: #ecc7d6; border-color: #a8708a; }
+/* An article found by the opening view's search, above the mazes and events. */
+.opening-articles { margin-bottom: 10px; }
+
+@media (max-width: 640px) {
+    .art-list { padding: 14px 12px 18px; }
+    /* The two buttons one to a line, full width, as the room window's are on a phone. */
+    .art-actions .btn { flex: 1 1 100%; text-align: center; }
+}
+
+/* Netlify's "Powered by Netlify" pill, which its servers add to every page on the free
+   plan: hidden at the owner's request (3 Nov 2026). Its frame id is Netlify's and could change. */
+#nl-badge-frame { display: none !important; }

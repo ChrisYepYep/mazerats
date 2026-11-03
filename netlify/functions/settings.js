@@ -254,7 +254,8 @@ function cleanLaunchAt(value) {
    change without losing its place. null puts the menu back as written. */
 const MENU_FOLDS = ["archive", "games"];
 const MENU_ROWS = {
-    archive: ["home", "mazes", "events", "timeline", "furni", "whats-new", "guides", "missing-pieces"],
+    // "articles" (2 Nov 2026): the Articles list, for admins until a layout places it (ADMINS_FIRST in js/home.js).
+    archive: ["home", "mazes", "events", "timeline", "furni", "whats-new", "guides", "articles", "missing-pieces"],
     games: ["guess", "odd", "fallin-furni", "pura", "scout", "leaderboards"],
     loose: ["profile", "alt-codes"]
 };

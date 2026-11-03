@@ -225,8 +225,30 @@
             if (localStorage.getItem("mazerats_landing_state") === "enter") {
                 document.documentElement.setAttribute("data-gate-peek", "1");
                 document.documentElement.style.visibility = "";
+                /* The archive, asked for now (1 Nov 2026, the scan). js/api.js
+                   only asks once every script on the page has loaded, about
+                   6s in on a slow phone; preloaded here it starts at about
+                   0.6s and the page is ready 0.3 to 0.6s sooner. Only for a
+                   visitor this browser has already seen let in, as above.
+                   A first visit (a Discord link to a maze, say) starts it as
+                   soon as the gate below hears the site is open. */
+                preloadArchive();
             }
         } catch (e) { /* private mode: stay dark, which is the old behaviour */ }
+
+        /* These must be exactly the addresses Api.getRooms and Api.getEvents
+           fetch, with no headers, or they are fetched twice. Once only (no
+           initial value here: the peek above may already have run it). */
+        var archivePreloaded;
+        function preloadArchive() {
+            if (archivePreloaded) return;
+            archivePreloaded = true;
+            ["/.netlify/functions/rooms", "/.netlify/functions/events"].forEach(function (href) {
+                var l = document.createElement("link");
+                l.rel = "preload"; l.as = "fetch"; l.crossOrigin = "anonymous"; l.href = href;
+                document.head.appendChild(l);
+            });
+        }
 
         /* Every request in here is on a leash.
 
@@ -284,6 +306,8 @@
                 return fetchWithTimeout("/.netlify/functions/settings?fresh=" + Math.floor(Date.now() / 10000), null, attempts[i])
                     .then(function (res) {
                         if (!res.ok) throw new Error("settings fetch failed");
+                        /* The offline archive's stored copy (sw.js, 2 Nov 2026): believed only by a browser last told the site was open. */
+                        if (res.headers.get("X-MR-Stored") && lastKnownState() !== "enter") throw new Error("stored settings, site last seen shut");
                         return res.json();
                     })
                     .catch(function (e) {
@@ -422,6 +446,7 @@
                     throw new Error("no landing state");
                 }
                 rememberState(settings.landingState);
+                if (!isGated(settings.landingState)) preloadArchive();
                 /* The palette, from the settings this gate has already
                    fetched — no second request for it.
 
@@ -568,8 +593,19 @@
         }
     })();
     </script>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <!-- The fonts are this site's own files now (2 Nov 2026; see the
+         self-hosted faces near the top of css/style.css), so there is no
+         Google stylesheet to wait for before the first paint, and no second
+         and third host to connect to.
+
+         NOT PRELOADED, on measurement. Asking for the loading screen's two
+         (Montserrat, Volter's bold cut) up here made the first paint LATER
+         on a slow phone (1.7-1.8s, against 1.3s without): they shared the line with
+         style.css, which the paint is waiting for, and the text is drawn
+         in a fallback face meanwhile anyway (font-display: swap). Found
+         through the stylesheet, they still arrive well before the archive
+         does. If one is ever preloaded, its address must match the
+         stylesheet's exactly and carry crossorigin, or it downloads twice. -->
     <!-- Furni icons are served by FurniIndex. Opening the connection up front
          saves the DNS and TLS round trips that otherwise land on the first
          icon of the first maze opened — measured at 590ms, against 70-100ms
@@ -577,7 +613,6 @@
          netlify/functions/_furni-payload.js); the old one now serves only
          the few pictures the new API can't. -->
     <link rel="preconnect" href="https://api.furniindex.com">
-    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@700;800;900&family=Roboto:wght@400;500;700&family=Silkscreen:wght@400;700&family=Pixelify+Sans:wght@400;700&display=swap" rel="stylesheet">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="theme-color" content="#120c07">
     <title>Maze Rats | A Habbo Hotel Maze Room Archive</title>
@@ -655,7 +690,8 @@
 
          Wrapped in try/catch: localStorage throws outright in some privacy modes,
          and a colour scheme is not worth a blank page. -->
-    <link rel="stylesheet" href="css/style.css?v=3">
+    <link rel="stylesheet" href="css/style.css?v=5">
+    <link rel="stylesheet" href="css/streak.css?v=1">
     <link rel="stylesheet" href="css/maintenance-warn.css?v=1">
     <link id="theme-css" rel="stylesheet">
     <script>(function(){try{var t=localStorage.getItem("mazerats_theme"),k=JSON.parse(localStorage.getItem("mazerats_skin_theme")||"null"),p;if(k&&k.theme&&Date.now()<k.until)t=k.theme;else if(window.__mrSkinPaletteAt&&(p=window.__mrSkinPaletteAt(JSON.parse(localStorage.getItem("mazerats_skin_cache")||"null"),Date.now())))t=p;if(!t||t==="classic"||!/^[a-z]+$/.test(t))return;document.documentElement.setAttribute("data-theme",t);document.getElementById("theme-css").href="css/theme-"+t+".css";}catch(e){}})();</script>
@@ -715,6 +751,106 @@
             </div>
         </div>
     </div>
+    <!-- THE BAR, FROM THE FIRST MOMENT (1 Nov 2026, the owner's: "it often
+         stays at 5% a while before then loading the rest really quickly").
+
+         Measured on the live site, the archive request does not even START
+         until about 3.7s in: before that the page is downloading its thirty
+         scripts, and js/home.js, which drew the bar, had not run yet. So the
+         bar sat still for the longest part of the wait and then ran through
+         the data, the drawing and the thumbnails in under a second.
+
+         So the bar is drawn from here, before any script loads, and is fed
+         by every stage in turn: each script as it lands, the archive as its
+         bytes arrive (js/api.js reads it as a stream), the drawing, then the
+         first screen's thumbnails. Each stage's share is roughly its share of
+         the real wait. While a stage has nothing new to say it still creeps
+         towards (never to) its end, slower the longer it goes on, and the bar
+         eases towards where it should be rather than jumping, so it is always
+         visibly getting on with it and never goes backwards.
+
+         js/home.js talks to it through window.MazeLoadBar. -->
+    <script>(function(){
+        var fill = document.getElementById("site-loader-fill"),
+            label = document.getElementById("site-loader-label");
+        if (!fill || !label || !window.performance) return;
+        // Shares of the bar, and how quickly each one creeps while it waits
+        // (half of its creep after this many ms, three quarters after three times it).
+        var SHARE = { boot: 34, wait: 10, rooms: 22, events: 4, draw: 10, thumbs: 20 },
+            HALF = { boot: 1500, wait: 1200, rooms: 800, events: 800, draw: 400, thumbs: 800 },
+            BLOCK = 8;      // px per drawn block, matching the CSS gradient
+        var real = {}, began = {}, shown = 0, said = "", slow = false, finishing = false, finished = false, frame = 0;
+        var now = function () { return performance.now(); };
+
+        function target() {
+            var t = now(), sum = 0;
+            for (var k in SHARE) {
+                var f = real[k] || 0;
+                if (f < 1 && began[k] !== undefined) {
+                    var c = 0.9 * (1 - 1 / (1 + (t - began[k]) / HALF[k]));
+                    if (c > f) f = c;
+                }
+                sum += SHARE[k] * Math.min(1, f);
+            }
+            return Math.min(100, sum);
+        }
+
+        /* The track's width, read once (and again after a resize): reading it
+           every frame while the parser was still building the page forced a
+           full layout each time, about 390ms of a slow phone's start-up. And
+           the fill is only written when a whole block changes. */
+        var track = 0, width = -1;
+        addEventListener("resize", function () { track = 0; });
+        function draw() {
+            if (!track) track = fill.parentElement.clientWidth;
+            // Snapped down to whole blocks so none is ever drawn half-width.
+            var w = Math.floor((shown / 100) * track / BLOCK) * BLOCK;
+            if (w !== width) fill.style.width = (width = w) + "px";
+            var text = (slow ? "STILL LOADING " : "LOADING ") + Math.floor(shown) + "%";
+            if (text !== said) label.textContent = said = text;
+        }
+
+        function tick() {
+            frame = 0;
+            if (finished) return;
+            var want = target();
+            // Eased, and never backwards: a big step arrives over a few frames.
+            if (want > shown) shown = Math.min(want, shown + Math.max(0.15, (want - shown) * (finishing ? 0.3 : 0.12)));
+            draw();
+            if (finishing && shown >= 100) { finished = true; return; }
+            frame = requestAnimationFrame(tick);
+        }
+
+        window.MazeLoadBar = {
+            // A stage has started: it begins to creep.
+            begin: function (k) { if (began[k] === undefined) began[k] = now(); if (!frame && !finished) frame = requestAnimationFrame(tick); },
+            // How far through a stage is, 0 to 1; only ever forwards.
+            step: function (k, f) { this.begin(k); if (f > (real[k] || 0)) real[k] = Math.min(1, f); },
+            slow: function () { slow = true; if (!finished) draw(); },
+            /* Everything is in: the rest of the bar fills quickly while the
+               screen fades (a third of the way each frame, so it is full in
+               about a tenth of a second), rather than jumping there. */
+            finish: function () {
+                if (finishing) return;
+                for (var k in SHARE) real[k] = 1;
+                finishing = true;
+                if (!frame) frame = requestAnimationFrame(tick);
+            }
+        };
+
+        /* The first stage: the page's own scripts. Counted as each one
+           finishes, out of however many the page names (the parser is far
+           ahead of the downloads, so they are all known by then). */
+        var loaded = 0;
+        document.addEventListener("load", function (e) {
+            var el = e.target;
+            if (!el || el.tagName !== "SCRIPT" || !el.src || finished) return;
+            loaded++;
+            var all = document.querySelectorAll("script[src]").length;
+            if (all) MazeLoadBar.step("boot", loaded / all);
+        }, true);
+        MazeLoadBar.begin("boot");
+    })();</script>
 
     <header class="site-header">
         <div class="brand-group">
@@ -856,7 +992,7 @@
                 </div>
 
             <div class="chrome-window" id="browse-window" tabindex="-1">
-                <img class="window-peek-rat" src="assets/img/rat_peek.png" alt="" aria-hidden="true">
+                <img class="window-peek-rat" src="assets/img/rat_peek-2x.png" srcset="assets/img/rat_peek-2x.png 2x, assets/img/rat_peek.png 3x" alt="" aria-hidden="true">
                 <div class="chrome-titlebar">
                     <!-- The window's name takes you back to its opening view
                          (30 Oct 2026, the owner's), as pressing the tab that
@@ -1010,6 +1146,9 @@
                                  filter chip from a maze's window, or a furni. Same
                                  look as "Refresh recommendations". -->
                             <button type="button" class="clear-filter-btn" id="clear-filter-btn" hidden>Clear filter</button>
+                            <!-- The order the list is in, always (2 Nov 2026): see
+                                 updateSortChip in js/home.js. -->
+                            <span class="sort-chip" id="sort-chip" hidden></span>
                             </div>
                             <p class="chrome-intro" id="featured-intro"></p>
                             <div class="home-results">
@@ -1631,6 +1770,54 @@
         </div>
     </div>
 
+    <!-- Articles (2 Nov 2026, the owner's): an article in a window built like
+         the room window below, the same classes so it wears the same look in
+         every palette, dark mode and skin: its pictures at the top (the
+         gallery's arrows, place and caption on the picture), the byline, the
+         event button and Copy link, then the text with the strip of pictures
+         under it. The list of every article is drawn in the same window
+         (#article-list). The dialog is the overlay, as the room window's is.
+         js/articles.js fills it; /article/<slug> and /articles open it. -->
+    <div class="modal-overlay article-overlay" id="article-overlay" role="dialog" aria-modal="true" aria-labelledby="article-title">
+        <div class="modal art-window" tabindex="-1">
+            <p class="visually-hidden" id="article-status" role="status" aria-live="polite"></p>
+            <div class="chrome-titlebar">
+                <h2 id="article-title">Articles</h2>
+                <button class="chrome-close" id="article-close" aria-label="Close"><img src="assets/img/modal_topclose_x.png" alt="" aria-hidden="true"></button>
+            </div>
+            <div class="chrome-frame">
+                <div class="art-list" id="article-list"></div>
+                <div class="modal-thumb modal-thumb-full is-event art-reader" id="article-reader" hidden>
+                    <div class="modal-thumb-frame" id="article-frame">
+                        <div class="gallery-viewport">
+                            <img class="modal-gallery-img" id="article-img" alt="" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" style="display:none;">
+                        </div>
+                        <button type="button" class="gallery-nav gallery-prev" id="article-prev" aria-label="Previous picture" style="display:none;">&#10094;</button>
+                        <button type="button" class="gallery-nav gallery-next" id="article-next" aria-label="Next picture" style="display:none;">&#10095;</button>
+                        <span class="gallery-counter art-caption-pill" id="article-caption" style="display:none;"></span>
+                        <span class="gallery-counter gallery-position art-position" id="article-position" style="display:none;"></span>
+                    </div>
+                    <div class="modal-body">
+                        <div class="modal-top-row">
+                            <p class="room-creator art-byline" id="article-byline"></p>
+                        </div>
+                        <p class="art-crumbs" id="article-crumbs" hidden><button type="button" class="guides-textbtn" data-act="list">&lsaquo; All articles</button></p>
+                        <p class="modal-visit-link art-actions" id="article-actions"></p>
+                        <div class="modal-meta">
+                            <div class="modal-meta-items art-meta" id="article-meta"></div>
+                            <div class="room-desc-panel">
+                                <div class="room-desc-box art-desc-box" id="article-desc-box">
+                                    <div class="room-desc-full art-text" id="article-text"></div>
+                                </div>
+                                <div class="gallery-strip" id="article-strip" style="display:none;" role="group" aria-label="The article's pictures"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- Alt Codes: every character Volter Goldfish draws, with the Alt code
          that types it, click to copy. Once a page of its own (glyphs.html);
          js/glyphs.js draws the sheet into #glyphs-body the first time it
@@ -1797,6 +1984,9 @@
                                      card on every event. -->
                                 <p class="modal-visit-link" id="modal-visit-wrap">
                                 <a class="btn" id="modal-link" href="#" target="_blank" rel="noopener">Visit Room</a>
+                                <!-- An event's "Read the article" (2 Nov 2026): one per published
+                                     article about it, filled by js/home.js. -->
+                                <span class="modal-article-links" id="modal-article-links"></span>
                                 </p>
                                 <!-- One panel running to the modal's own edges: the meta items on
                                      top, then the description (and the thumbnail strip inside it)
@@ -1850,15 +2040,15 @@
 
     <script src="js/rooms-data.js?v=2"></script>
     <script src="js/events-data.js?v=2"></script>
-    <script src="js/api.js?v=3"></script>
+    <script src="js/api.js?v=4"></script>
     <script src="js/event-status.js?v=2"></script>
-    <script src="js/privacy-content.js?v=3"></script>
+    <script src="js/privacy-content.js?v=4"></script>
     <script src="js/palette-wear.js?v=2"></script>
     <script src="js/skin-wear.js?v=1"></script>
-    <script src="js/site.js?v=2"></script>
+    <script src="js/site.js?v=3"></script>
     <!-- Dropdowns open the site's own list, not the browser's. After site.js,
          whose EscapeLayers it registers with. -->
-    <script src="js/select-list.js?v=2"></script>
+    <script src="js/select-list.js?v=3"></script>
     <!-- Before home.js, console.js and guess.js, all three of which ask it
          who is signed in while they are setting themselves up. It sat after
          them at first, on the reasoning that they only read window.Account
@@ -1873,11 +2063,11 @@
     <!-- The site's one formatting language, before home.js: it draws maze
          and event descriptions with it from the first render (30 Sept 2026),
          and guides.js below renders the Guides window with it too. -->
-    <script src="js/guide-text.js?v=2"></script>
-    <script src="js/home.js?v=3"></script>
-    <script src="js/custom-scrollbar.js?v=3"></script>
+    <script src="js/guide-text.js?v=3"></script>
+    <script src="js/home.js?v=6"></script>
+    <script src="js/custom-scrollbar.js?v=4"></script>
     <script src="js/letter-jump.js?v=2"></script>
-    <script src="js/console.js?v=10"></script>
+    <script src="js/console.js?v=12"></script>
     <!-- The console's Add Maze Info form and Missing Pieces list. After
          console.js, whose page switching it uses (window.MazeConsole). -->
     <script src="js/console-info.js?v=3"></script>
@@ -1885,6 +2075,10 @@
     <script src="js/mazer-card.js?v=2"></script>
     <!-- The Guides window. guide-text.js is loaded above, before home.js. -->
     <script src="js/guides.js?v=3"></script>
+    <!-- The Articles window (2 Nov 2026): article-text.js reads an article's
+         text (the guides' format and its own blocks), articles.js is the window. -->
+    <script src="js/article-text.js?v=2"></script>
+    <script src="js/articles.js?v=1"></script>
     <!-- The Alt Codes window. Needs nothing but site.js's EscapeLayers. -->
     <script src="js/glyphs.js?v=3"></script>
     <!-- The seats that fall when Fallin' Furni is pressed while Coming Soon. -->
@@ -1906,13 +2100,15 @@
          asserted by tools/check-daily-parity.js so a page cannot quietly
          load one without the other. -->
     <script src="js/featured-days.js?v=2"></script>
-    <script src="js/daily.js?v=5"></script>
-    <script src="js/daily-loader.js?v=3"></script>
+    <script src="js/daily.js?v=6"></script>
+    <script src="js/daily-loader.js?v=4"></script>
     <!-- After daily.js: the window draws its rows with Daily.ranks and the
          same row markup the games' own boards use. -->
     <script src="js/leaderboards.js?v=3"></script>
     <script src="js/track.js?v=2"></script>
     <!-- The two-minute warning before Maintenance moves an open page to the landing page (30 Oct 2026). -->
-    <script src="js/maintenance-warn.js?v=2"></script>
+    <script src="js/maintenance-warn.js?v=3"></script>
+    <!-- The offline archive (2 Nov 2026): registers /sw.js and says when the page is offline. Last, after every opener it guards. -->
+    <script src="js/offline.js?v=1"></script>
 </body>
 </html>

@@ -112,6 +112,20 @@ function cleanFurniPatch(p) {
     return p;
 }
 
+/* A save carrying any of the Warren's lite stand-ins (2 Nov 2026). ?full=1
+   &lite=1 below hands the Warren's list each picture's furni as { lite:
+   true } with the detections left out; saved back, as a whole record or
+   as either side of a { base, draft } patch entry, one would replace the
+   stored detections with nothing. The editor reads its maze whole (?id=)
+   before it saves, so a lite value arriving here is a bug somewhere, and
+   it is refused rather than stored. */
+function carriesLiteFurni(body) {
+    const lite = v => !!v && typeof v === "object" && v.lite === true;
+    const values = o => (o && typeof o === "object" && !Array.isArray(o)) ? Object.values(o) : [];
+    if (values(body.furni).some(lite)) return true;
+    return values(body.furniPatch).some(e => lite(e) || (e && typeof e === "object" && (lite(e.draft) || lite(e.base))));
+}
+
 /* The stored furni with the patch merged in, piece by piece: what the
    admin added, removed or hid goes in, and everything a scan wrote while
    the form was open stays. See _furni-merge.js. */
@@ -344,6 +358,29 @@ async function handle(event) {
             // is not a reviewer any more. One indexed lookup, on an admin-only
             // route the public payload below never takes.
             if (!(await hasAccount(event))) return UNAUTHORIZED;
+            /* ?full=1&id=<id> (2 Nov 2026): one maze, exactly as stored, for
+               the Warren's editor opening a maze it read with &lite=1 below
+               (readFullRoom in js/admin.js). 404 for a maze that is not here.
+               cache: false like every ?full=1 answer: no-store, and no ETag,
+               so nothing is kept or revalidated across sign-ins. */
+            if (typeof params.id === "string" && params.id) {
+                const one = all.find(r => r.id === params.id);
+                return one ? cachedJson(event, one, { cache: false }) : json(404, { error: "Room not found" });
+            }
+            /* &lite=1 (2 Nov 2026, the owner's "load times are typically quite
+               slow" on the Warren): each maze's furni as the pictures it was
+               scanned from, each { lite: true }, without the detections. They
+               are ~96% of this answer (~3.7MB of ~3.8MB) and the Warren's list
+               never draws one; the scan counts need only the pictures, and the
+               editor asks for its maze whole (?id= above). A save carrying one
+               back is refused (carriesLiteFurni). */
+            if (params.lite === "1") {
+                all.forEach(r => {
+                    if (r.furni && typeof r.furni === "object") {
+                        r.furni = Object.fromEntries(Object.keys(r.furni).map(image => [image, { lite: true }]));
+                    }
+                });
+            }
             /* ?full=1&retired=1 (28 Sept 2026): the same records, with the
                deleted mazes' addresses beside them — { records, retired }.
                /warren's Address field needs them to say, before Save, that
@@ -434,6 +471,9 @@ async function handle(event) {
     if (event.httpMethod === "POST" || event.httpMethod === "PUT") {
         const problem = checkShapes(body) || checkRecord(body, CHOICES);
         if (problem) return json(400, { error: problem });
+        if (carriesLiteFurni(body)) {
+            return json(400, { error: "This save carries a maze's furni in its short list form, without the detections, and would have erased them. Nothing was saved: reload /warren and open the maze again." });
+        }
         /* The admin form only attaches articles to events, but the page's
            renderer does not ask which collection a record came from — so a
            room carrying one gets the same sanitising events.js gives it. */

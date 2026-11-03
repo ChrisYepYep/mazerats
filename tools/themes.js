@@ -392,8 +392,15 @@ function dimWhite(r, g, b) {
     if (!DIM_WHITE) return null;
     const [, s, l] = rgbToHsl(r, g, b);
     if (l < 0.86 || s > 0.25) return null;
+    /* The console's screen (2 Nov 2026, the pre-deploy sweep): it keeps its
+       own mid-grey tile in dark mode, and its #eee type brought down to the
+       ceiling read 3.5:1 on the tile's lighter grey. A higher ceiling there
+       only, 4.6:1, still short of classic's #eee. Not the frame round it,
+       its title or its tabs, which are graphite like the rest. */
+    if (/console/.test(CUR_SEL) && !/console-(frame|title|tab)|header-console/.test(CUR_SEL)) return hslToRgb(ACCENT_HUE, 0.12, CONSOLE_CEIL - (1 - l) * 0.5);
     return hslToRgb(ACCENT_HUE, 0.12, CEIL - (1 - l) * 0.5);
 }
+const CONSOLE_CEIL = 0.915;
 
 function mapSat(s, l, asText) {
     const deep = Math.min(SAT_MAX, s * SAT);
@@ -876,6 +883,87 @@ function lightExtras() {
 [data-theme="${THEME}"] .guess-pip.is-lost {
     color: #e8c0b4;
 }
+/* The console's dropdowns' own options (1 Nov 2026, the bug scan): their
+   dark grey is a fill, so it turned to ice, while the console's type stays
+   white for its dark screen. Wherever the browser draws the list itself
+   (type-ahead on a closed select, or anywhere js/select-list.js does not
+   open its own) the options read white on ice. The console's grey again. */
+[data-theme="${THEME}"] .console-select option,
+[data-theme="${THEME}"] .console-select optgroup {
+    background: #2b2b2b;
+}
+/* A maze marked Completed, and To Do's "clearing" state (1 Nov 2026, the
+   bug scan): their green button is a gradient whose lower stop is dark
+   enough to count as black, so it alone turned to ice, and the pale green
+   word faded out down the button. Both stops kept, as on brown. */
+[data-theme="${THEME}"] .modal-meta-actions .walked-toggle.is-walked,
+[data-theme="${THEME}"] .saved-toggle.is-clearing,
+[data-theme="${THEME}"] .modal-meta-actions .saved-toggle.is-clearing {
+    background: linear-gradient(#3d4b32, #2f3a26);
+}
+/* What's New's ADDED and NOTE labels (1 Nov 2026, the bug scan): their
+   pale inks are tinted, so nothing turned them, and they sat pale on the
+   pale row (about 1.3:1). A deep green and a deep slate, over the same
+   washes, as UPDATED's navy is. */
+[data-theme="${THEME}"] .updatelog-verb.is-added {
+    color: #234a17;
+}
+[data-theme="${THEME}"] .updatelog-verb.is-note {
+    color: #2c4560;
+}
+/* And an article's rose label (2 Nov 2026), in the log, the window's meta
+   row and a search result: a deep plum, as the others are deepened. */
+[data-theme="${THEME}"] .updatelog-verb.is-article,
+[data-theme="${THEME}"] .status-badge.art-badge {
+    color: #5a2440;
+}
+/* The small type on the header's and the footer's blue (2 Nov 2026, the
+   owner's): the tagline, the Upcoming Events label, title and time, and the
+   Fellow Fansites links measured 3.7 to 4.4:1 there. The same two navies,
+   a step deeper, 4.6:1 or more on the lightest blue behind them. Later the
+   same day (the pre-deploy sweep) the wordmark beside the tagline (4.3:1),
+   the footer's own line (4.0:1) and its Privacy Policy link (3.5:1) too. */
+[data-theme="${THEME}"] .site-header .brand-text,
+[data-theme="${THEME}"] .site-footer,
+[data-theme="${THEME}"] .site-footer p,
+[data-theme="${THEME}"] .footer-dot,
+[data-theme="${THEME}"] .brand-tagline,
+[data-theme="${THEME}"] .header-events-label,
+[data-theme="${THEME}"] .header-events-when,
+[data-theme="${THEME}"] .fellow-fansites-links,
+[data-theme="${THEME}"] .fellow-fansites-dot {
+    color: #142136;
+}
+[data-theme="${THEME}"] .header-events-title,
+[data-theme="${THEME}"] .fellow-fansites-title,
+[data-theme="${THEME}"] .fellow-fansites-links a,
+[data-theme="${THEME}"] .site-footer a {
+    color: #14243c;
+}
+/* LIVE, and the greens of Open and Upcoming, on the pills' near-white
+   (2 Nov 2026, the owner's): 3.3:1 as they were. The same red and green,
+   deeper, 5.3:1 and over. */
+[data-theme="${THEME}"] .status-live {
+    color: #b8321c;
+}
+[data-theme="${THEME}"] .status-open,
+[data-theme="${THEME}"] .status-upcoming {
+    color: #3f6a26;
+}
+/* A maze's tags (2 Nov 2026, the pre-deploy sweep): the paragraph navy on
+   their mid blue pill, 4.1 to 4.3:1. The deeper navy above, 4.9:1. Not the
+   difficulty tags, which keep their own colours on the dark ground above. */
+[data-theme="${THEME}"] .tag:not([class*="difficulty-"]) {
+    color: #142136;
+}
+/* The Sorcerer's Atlas's zoom label (2 Nov 2026, the pre-deploy sweep):
+   css/wizard.css is not built from, so its var(--parchment-dim) kept the
+   light mode's root value, a pale ice meant for surfaces, on the pale
+   button blue (1.8:1). The deep navy --parchment-dim type is given
+   everywhere else here (a paragraph's), 5.6:1. */
+[data-theme="${THEME}"] .wiz-zoom-label {
+    color: #1e2f49;
+}
 /* The Christmas skin outlines the footer in navy so it reads over its drift;
    on a light page that outline is a smudge round dark type. */
 [data-theme="${THEME}"][data-skin="xmas"] .fellow-fansites a,
@@ -936,6 +1024,20 @@ function darkExtras() {
 [data-theme="${THEME}"] .opening-flag.is-guide {
     background: #6b5a42;
     color: #f4efe6;
+}
+/* The search row's keyboard ring (2 Nov 2026): the drawer's dark ink on
+   the cream, but the drawer is a mid graphite here, where a near-black ring
+   is faint. The layer's light ink instead. */
+[data-theme="${THEME}"] #search-wrap #room-search:focus-visible,
+[data-theme="${THEME}"] #search-wrap #room-sort:focus-visible,
+[data-theme="${THEME}"] #opening-search-input:focus-visible {
+    outline-color: var(--parchment);
+}
+/* The Console's unread count (2 Nov 2026): a tab of the screen's own white,
+   a fill, so it sank to a graphite under its dark figure. The screen's type
+   colour here (see dimWhite), as it is the type's #eee in classic. */
+[data-theme="${THEME}"] .console-unread-badge {
+    background: ${asHex(...hslToRgb(ACCENT_HUE, 0.12, CONSOLE_CEIL - (1 - 0xee / 255) * 0.5))};
 }
 `;
 }

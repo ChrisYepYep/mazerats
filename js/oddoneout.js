@@ -264,10 +264,13 @@
         const count = s => {
             if (!s || (s.lastDay && s.lastDay >= day())) return false;
             s.streak = s.lastDay === window.Daily.dayBefore(day()) ? s.streak + 1 : 1;
+            // The best run and the day's square, for the streak strip (2 Nov 2026).
+            s.best = Math.max(s.best || 0, s.streak);
             s.days += 1;
             s.bestDay = Math.max(s.bestDay || 0, score());
             s.points = (s.points || 0) + score();
             s.lastDay = day();
+            if (window.Daily.noteRecent) window.Daily.noteRecent(s, day(), state.picks.filter(p => p.right).length, dealt().length || ROUNDS);
             return true;
         };
         if (count(localStats)) saveStats();
@@ -384,7 +387,14 @@
         practiceEnded = false;         // said once, on the fresh day's splash
         if (state.picks.length >= dealt().length) state.done = true;
         saveState();
-        if (state.done) { bankDay(); window.Daily.track("finish", "odd"); }
+        if (state.done) {
+            bankDay();
+            window.Daily.track("finish", "odd");
+            /* The day's square is stamped onto the streak strip as the
+               results slide up (render; 2 Nov 2026). Not a practice run,
+               which is no day played. */
+            if (!state.practice && strip()) streakStrip.arm(day());
+        }
         render();
         settleFocus();
     }
@@ -681,8 +691,10 @@
         if (finished()) {
             view = "results";
             el.resultsInner.innerHTML = resultsHtml();
+            placeStrip();
             watchFoot();
             layout();
+            if (streakStrip) streakStrip.play();
             return wireResults();
         }
         if (showSplash) {
@@ -965,6 +977,7 @@
                 <p class="daily-bonus" id="odd-bonus"${bonus ? "" : " hidden"}>${escapeHtml(bonus)}</p>
                 <p class="guess-next-up">${right} of ${rounds.length} spotted</p>
                 <p class="guess-grid" aria-label="Result grid">${shareGrid()}</p>
+                <div id="odd-streak-slot"></div>
                 <dl class="guess-stats" id="odd-stats">${statsHtml()}</dl>
                 <div class="guess-summary-actions">
                     <button type="button" class="guess-btn" id="odd-share">Copy result</button>
@@ -985,10 +998,11 @@
        RUNNING RECORD IS THE ACCOUNT'S), with the same four labels as ever.
        Its own function so the filed day's recount can redraw it alone
        (drawStats) without rewriting the board beneath. */
+    /* The streak itself is the strip above them since 2 Nov 2026 (THE
+       STREAK STRIP in js/daily.js), so three figures here, not four. */
     function statsHtml() {
         const s = shownStats();
         return `
-                    <div><dt>Streak</dt><dd>${escapeHtml(s.streak)}</dd></div>
                     <div><dt>Best day</dt><dd>${escapeHtml(s.bestDay)}</dd></div>
                     <div><dt>Days played</dt><dd>${escapeHtml(s.days)}</dd></div>
                     <div><dt>All-time</dt><dd>${escapeHtml(s.points)}</dd></div>`;
@@ -997,6 +1011,24 @@
     function drawStats() {
         const list = document.getElementById("odd-stats");
         if (list) list.innerHTML = statsHtml();
+        if (streakStrip && streakStrip.el.isConnected) streakStrip.draw(shownStats(), day());
+    }
+
+    /* One long-lived strip, put into the card's slot each time the card is
+       written, so a card rewritten while its stamp plays does not cut it
+       short (as Guess the Maze keeps its boards). None from a daily.js
+       older than it, which a tab left open across a deploy can hold while
+       fetching this file new. */
+    let streakStrip = null;
+    function strip() {
+        if (!streakStrip && window.Daily.streakStrip) streakStrip = window.Daily.streakStrip("odd");
+        return streakStrip;
+    }
+    function placeStrip() {
+        const slot = document.getElementById("odd-streak-slot");
+        if (!slot || !strip()) return;
+        slot.replaceWith(streakStrip.el);
+        streakStrip.draw(shownStats(), day());
     }
 
     /* Something a person might actually say, rather than a status line.

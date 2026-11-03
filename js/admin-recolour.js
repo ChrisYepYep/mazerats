@@ -917,7 +917,7 @@ window.AdminRecolour = (function () {
         return data;
     }
 
-    /* Every failed request lands here. A 401 is the twelve-hour session
+    /* Every failed request lands here. A 401 is the 48-hour session
        running out, and used to show as a bare "Unauthorized" in the status
        line with nothing to do about it; it goes to admin.js's lockOut
        instead (handed over at mount), which puts the sign-in box up. The

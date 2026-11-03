@@ -738,10 +738,40 @@ function spotlightLive(ev, now) {
     return (from === null || from <= now) && (until === null || now < until);
 }
 
+/* ARTICLES ON THE SPOTLIGHT (2 Nov 2026, the owner's): a published article
+   ticked for it in the Warren, with an event's fields and rule. Each stands
+   in as an event-shaped slide, its id marked "article:" so it is never taken
+   for an event's, its thumbnail (or first gallery picture) as the picture.
+   Read once a page load, and again with the events every three minutes
+   (refreshSpotlightEvents); a failed read keeps the last good list. */
+let spotlightArticles = null;
+let spotlightArticlesGood = [];
+function spotlightArticleList() {
+    if (!spotlightArticles) {
+        spotlightArticles = fetch("/.netlify/functions/articles", { headers: { Accept: "application/json" } })
+            .then(res => (res.ok ? res.json() : Promise.reject(new Error(String(res.status)))))
+            .then(list => {
+                spotlightArticlesGood = (Array.isArray(list) ? list : [])
+                    .filter(a => a && a.id && a.status === "published" && a.spotlight === true)
+                    .map(a => Object.assign({}, a, {
+                        id: "article:" + a.id,
+                        thumb: a.thumb || (Array.isArray(a.gallery) && a.gallery[0] && a.gallery[0].image) || "",
+                        spotlightOrder: undefined,
+                        _article: a
+                    }));
+                return spotlightArticlesGood;
+            })
+            .catch(() => { spotlightArticles = null; return spotlightArticlesGood; });
+    }
+    return spotlightArticles;
+}
+
 function spotlightSlide(ev) {
     const a = document.createElement("a");
     a.className = "welcome-promo-slide";
-    a.href = `#event-${encodeURIComponent(ev.id)}`;
+    // An article's slide goes to the article on the archive (2 Nov 2026; see spotlightArticleList).
+    a.href = ev._article ? `/article/${encodeURIComponent(ev._article.slug || ev._article.id)}` : `#event-${encodeURIComponent(ev.id)}`;
+    a.dataset.id = ev.id;
     const caption = (typeof ev.spotlightCaption === "string" && ev.spotlightCaption.trim()) || DEFAULT_SPOTLIGHT_CAPTION;
     a.setAttribute("aria-label", `${ev.title || "Event"}: ${caption.replace(SPOTLIGHT_RAISED, "$1")}`);
     const img = document.createElement("img");
@@ -824,8 +854,9 @@ async function showSpotlight() {
     if (!el) return;
     if (!spotlightEvents) spotlightEvents = Api.getEvents().catch(() => []);
     const events = await spotlightEvents;
+    const articles = await spotlightArticleList();
     const now = Date.now();
-    const live = (Array.isArray(events) ? events : [])
+    const live = (Array.isArray(events) ? events : []).concat(articles)
         .filter(ev => spotlightLive(ev, now))
         // The order set in the Warren's Controls first (27 Oct 2026; see
         // THE SPOTLIGHT'S ORDER in netlify/functions/events.js), any not
@@ -850,7 +881,7 @@ async function showSpotlight() {
     if (key !== spotlightKey) {
         // The one on show stays on show when others come or go around it.
         const was = el.querySelector(".welcome-promo-slide.is-shown");
-        const wasId = was ? decodeURIComponent(was.getAttribute("href").replace(/^#event-/, "")) : "";
+        const wasId = was ? was.dataset.id || "" : "";
         const hadFocus = el.contains(document.activeElement);
         el.replaceChildren(...live.map(spotlightSlide));
         if (live.length > 1) {
@@ -938,6 +969,8 @@ async function refreshSpotlightEvents() {
         }
         return events;
     }, () => kept || []);
+    // The articles too (2 Nov 2026), asked again with them; a failure keeps the last good list.
+    spotlightArticles = null;
     await spotlightEvents;
     showSpotlight();
 }

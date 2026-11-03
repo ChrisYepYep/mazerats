@@ -72,7 +72,11 @@
         if (gone) return;
         const bucketStart = Math.floor(Date.now() / 10000) * 10000;
         try {
-            const res = await fetch(bucketUrl(), { cache: "no-store" });
+            /* A background poll to the error reporter (1 Nov 2026): a phone
+               tab in the background, its network cut by the browser, filed
+               "Network failure on settings" for a poll the next one covers.
+               Now only a run of failures is filed (js/error-report.js). */
+            const res = await fetch(bucketUrl(), { cache: "no-store", headers: { "X-Background": "1" } });
             if (!res.ok) return;
             const s = await res.json();
             if (!s || typeof s.landingState !== "string") return;
@@ -210,7 +214,8 @@
         try {
             const res = await fetch(PRESENCE, {
                 method: "POST",
-                headers: { "Content-Type": "application/json" },
+                // The next ping covers a missed one, as for the poll above.
+                headers: { "Content-Type": "application/json", "X-Background": "1" },
                 body: JSON.stringify({ id })
             });
             const r = res.ok ? await res.json() : null;

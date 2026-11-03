@@ -67,7 +67,7 @@
         return Api._write(url, method, token(), body);
     }
 
-    /* A 401 here means the twelve-hour session ran out while the panel was
+    /* A 401 here means the 48-hour session ran out while the panel was
        open. admin.js owns the sign-in box and knows how to put it back up;
        the cleanest way to hand over is the same reload a fresh visit gets,
        which re-verifies the stored token and asks for the password. Saying
@@ -150,16 +150,23 @@
        over the next one's panel. */
     let loadGen = 0;
 
-    async function loadAll() {
+    /* `shared` (2 Nov 2026): the first opening reads the mazes and events
+       from the copy js/admin.js loaded at sign-in (window.AdminArchiveCopy)
+       instead of asking for the whole archive, ~3.7MB of it, a second time.
+       Refresh, and the reload after a change here, still read it afresh. */
+    async function loadAll(shared) {
         const gen = ++loadGen;
         leadsEl.innerHTML = '<p class="admin-empty">Loading…</p>';
         recordsEl.innerHTML = "";
+        let copy = null;
+        try { if (shared === true && typeof window.AdminArchiveCopy === "function") copy = await window.AdminArchiveCopy(); } catch (e) { /* read it here, below */ }
+        if (gen !== loadGen) return;
         try {
             const [leadData, flagData, rooms, events] = await Promise.all([
                 call(`${LEADS_URL}?status=${encodeURIComponent(leadStatus)}`, "GET"),
                 call(`${FLAGS_URL}?full=1`, "GET"),
-                Api.getRoomsFull(token()),
-                Api.getEventsFull(token())
+                copy ? copy.rooms : Api.getRoomsFull(token()),
+                copy ? copy.events : Api.getEventsFull(token())
             ]);
             if (gen !== loadGen) return;
             leads = leadData.leads || [];
@@ -989,7 +996,7 @@
     function maybeMount() {
         if (mounted || panel.hidden || !token()) return;
         mounted = true;
-        loadAll();
+        loadAll(true);
     }
     new MutationObserver(maybeMount).observe(panel, { attributes: true, attributeFilter: ["hidden"] });
     maybeMount();

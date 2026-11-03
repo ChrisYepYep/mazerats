@@ -983,12 +983,181 @@ window.Daily = (function () {
        netlify/functions/_daily.js) is the one that decides; js/home.js keeps
        the archive's own reading of the tag, as it always did. */
 
+    /* THE STREAK STRIP (2 Nov 2026, the owner's pick of three mock-ups),
+       on both games' results cards between the grid and the figures: a
+       pixel flame, the streak and the best run, and the last five weeks,
+       Monday to Sunday, of that game's own UTC days. A brighter square is
+       more rooms found (or imposters spotted), a dot is a perfect day,
+       black is a day missed, dotted is a day still to come, and days before
+       the site opened are left blank. Its colours are css/streak.css's,
+       all palette variables, so every palette and dark mode recolour it.
+
+       The days come from the account (`recent` in statsFor, in
+       netlify/functions/player-data.js), or from the device's own count
+       when the account's figures cannot be read: that list starts on the
+       first day the device noted (`recentFrom`), and the days before it are
+       blank rather than claimed missed.
+
+       The strip is one long-lived element per game, put into the card's
+       slot each time the card is written, so a card redrawn while the stamp
+       is playing (the filed day's recount arriving) does not cut it short.
+       `arm(day)` is the day just finished: the strip shows it still dashed,
+       and the streak one short, until `play()` once the results sheet is on
+       screen stamps the square down and counts the streak up by one. With
+       reduced motion it simply shows the final state. */
+    const LAUNCH_DAY = "2026-10-03";
+    const STRIP_WEEKS = 5;
+    const RECENT_KEEP = STRIP_WEEKS * 7;
+    // The results sheet's slide (.guess-sheet, 0.44s) and a beat after it.
+    const STAMP_AFTER_MS = 480;
+    const STAMP_COUNT_MS = 380;
+    const STAMP_DONE_MS = 1300;
+    const FLAME = ["...K...", "..KYK..", "..KYYK.", ".KYOYK.", ".KYOOYK", "KYOOROK", "KYORROK", "KOORROK", ".KORRK.", "..KKK.."];
+    const FLAME_INK = { K: "#000", Y: "#f3cf6b", O: "#e08a2e", R: "#b5412a" };
+    let flameSvg = "";
+    function flame() {
+        if (flameSvg) return flameSvg;
+        let rects = "";
+        FLAME.forEach((row, y) => [...row].forEach((c, x) => {
+            if (FLAME_INK[c]) rects += `<rect x="${x}" y="${y}" width="1" height="1" fill="${FLAME_INK[c]}"/>`;
+        }));
+        flameSvg = `<svg class="daily-streak-flame" width="14" height="20" viewBox="0 0 7 10" shape-rendering="crispEdges" aria-hidden="true" focusable="false">${rects}</svg>`;
+        return flameSvg;
+    }
+
+    function shiftDay(iso, n) {
+        const d = new Date(iso + "T00:00:00Z");
+        d.setUTCDate(d.getUTCDate() + n);
+        return d.toISOString().slice(0, 10);
+    }
+    const dayLabel = (iso, opts) => new Date(iso + "T00:00:00Z").toLocaleDateString("en-GB", Object.assign({ timeZone: "UTC" }, opts));
+
+    /* A finished day noted in a record's `recent`, as the server lists it:
+       for the page's own count, before (or instead of) the server's. */
+    function noteRecent(s, day, solved, rounds) {
+        if (!s || !day) return;
+        const had = Array.isArray(s.recent);
+        if (!had) s.recentFrom = day;
+        const list = (had ? s.recent : []).filter(r => r && r.day !== day);
+        list.push({ day, solved: Number(solved) || 0, rounds: Number(rounds) || 5 });
+        list.sort((a, b) => (a.day < b.day ? -1 : a.day > b.day ? 1 : 0));
+        s.recent = list.slice(-RECENT_KEEP);
+    }
+
+    // 0 for a day played with nothing found, then 1 to 5 by the share found.
+    const levelOf = r => (r.solved > 0 ? Math.max(1, Math.min(5, Math.ceil((r.solved / (r.rounds || 5)) * 5))) : 0);
+
+    function streakStrip(game) {
+        const verb = game === "odd" ? "spotted" : "found";
+        const el = document.createElement("div");
+        el.className = "daily-streak daily-streak--" + game;
+        let latest = null;
+        let armed = null;
+        let busy = false;
+
+        function draw(stats, day) {
+            latest = { stats: stats || {}, day: day || today() };
+            if (!busy) paint();
+        }
+
+        function paint() {
+            if (!latest) return;
+            const s = latest.stats;
+            const focus = latest.day;
+            const t = today();
+            if (armed && armed !== focus) armed = null;
+            const list = Array.isArray(s.recent) ? s.recent : null;
+            const played = new Map((list || []).filter(r => r && r.day).map(r => [r.day, r]));
+            // Alive only if the last day played is today or yesterday (UTC),
+            // the server's rule (statsFor) and the splash's (liveStreak).
+            const live = s.lastDay === t || s.lastDay === dayBefore(t) ? Number(s.streak) || 0 : 0;
+            const pending = armed === focus && played.has(focus);
+            const shown = pending ? Math.max(0, live - 1) : live;
+            const best = Math.max(Number(s.best) || 0, live);
+
+            let html = `<div class="daily-streak-top">${flame()}<strong class="daily-streak-n">${shown}</strong>` +
+                `<span class="daily-streak-lab">day streak</span>` +
+                `<span class="daily-streak-best">Best <b>${best}</b></span></div>`;
+
+            if (list) {
+                const from = s.recentFrom && s.recentFrom > LAUNCH_DAY ? s.recentFrom : LAUNCH_DAY;
+                const monday = shiftDay(t, -((new Date(t + "T00:00:00Z").getUTCDay() + 6) % 7) - 7 * (STRIP_WEEKS - 1));
+                let cells = `<span class="daily-streak-utc" title="Days run midnight to midnight UTC">UTC</span>` +
+                    "MTWTFSS".split("").map(c => `<span class="daily-streak-dow">${c}</span>`).join("");
+                let on = 0, missed = 0;
+                for (let w = 0; w < STRIP_WEEKS; w++) {
+                    const mon = shiftDay(monday, w * 7);
+                    cells += `<span class="daily-streak-wk">${dayLabel(mon, { day: "numeric", month: "short" })}</span>`;
+                    for (let i = 0; i < 7; i++) {
+                        const d = shiftDay(mon, i);
+                        const r = played.get(d);
+                        const name = dayLabel(d, { weekday: "short", day: "numeric", month: "short" });
+                        let cls, title, stamp = "";
+                        if (d < from) { cls = "is-pre"; title = ""; }
+                        else if (d > t) { cls = "is-future"; title = name + ": still to come"; }
+                        else if (r) {
+                            on++;
+                            cls = `is-on l${levelOf(r)}${r.solved >= (r.rounds || 5) ? " is-perfect" : ""}${d === focus ? " is-focus" : ""}`;
+                            title = `${name}: ${r.solved} of ${r.rounds || 5} ${verb}`;
+                            if (pending && d === focus) { stamp = ` data-final="daily-streak-c ${cls}"`; cls = "is-open"; }
+                        } else if (d === t) { cls = "is-open"; title = name + ": still to come"; }
+                        else { missed++; cls = "is-miss"; title = name + ": missed"; }
+                        cells += `<span class="daily-streak-c ${cls}"${title ? ` title="${title}"` : ""}${stamp}></span>`;
+                    }
+                }
+                html += `<div class="daily-streak-cal" role="img" aria-label="The last five weeks in UTC days: ${on} played, ${missed} missed">${cells}</div>` +
+                    `<p class="daily-streak-key" aria-hidden="true"><span><i class="l2"></i>fewer</span>` +
+                    `<span><i class="l5"></i>all five ${verb}</span><span><i class="is-miss"></i>missed</span></p>`;
+            }
+            el.innerHTML = html;
+        }
+
+        function arm(day) {
+            armed = day || null;
+        }
+
+        /* Called once the results sheet is coming on screen: waits for its
+           slide, then stamps. Does nothing unless a day is armed and drawn
+           played; an armed day whose card is not on screen yet waits for
+           the next call. */
+        function play() {
+            setTimeout(stamp, STAMP_AFTER_MS);
+        }
+        function stamp() {
+            if (busy || !latest || !armed || armed !== latest.day) return;
+            const cell = el.querySelector("[data-final]");
+            if (!cell || !el.isConnected || !el.getClientRects().length) return;
+            armed = null;
+            if (window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+                paint();
+                return;
+            }
+            busy = true;
+            cell.className = cell.getAttribute("data-final") + " is-stamping";
+            cell.removeAttribute("data-final");
+            setTimeout(() => {
+                const s = latest.stats;
+                const t = today();
+                const live = s.lastDay === t || s.lastDay === dayBefore(t) ? Number(s.streak) || 0 : 0;
+                const n = el.querySelector(".daily-streak-n");
+                if (!n) return;
+                n.textContent = String(live);
+                n.classList.add("is-bump");
+                n.insertAdjacentHTML("afterend", `<span class="daily-streak-plus" aria-hidden="true">+1</span>`);
+            }, STAMP_COUNT_MS);
+            setTimeout(() => { busy = false; paint(); }, STAMP_DONE_MS);
+        }
+
+        return { el, draw, arm, play };
+    }
+
     return {
         today, now, setServerNow, seededRandom, dayBefore, request,
         claimReset, deal, move, afterPractice, submit, filed, fileable, start, opening, takeRound, mergeRounds,
         forgetStarts, track, loadingHtml, waiting,
         clock, scoreCell, boards, ranks, isMine,
         SPEED_BONUS_MAX, bonusLine, practiceLine, bonusRule,
-        shareDate, dayTotal, shareScore, shareText, shareFallback
+        shareDate, dayTotal, shareScore, shareText, shareFallback,
+        streakStrip, noteRecent
     };
 })();

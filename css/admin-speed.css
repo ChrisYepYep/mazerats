@@ -1,0 +1,118 @@
+/* THE SPEED CARD (2 Nov 2026; js/admin-speed.js): the live site's speed on
+   a phone, in the Warren's Controls › Tools. The workshop's own colours
+   (css/warren.css): green, amber and red for Google's good, needs work and
+   slow, always with the word beside the colour. Anchored to #wr-app like
+   everything in the Warren, and marked data-recolour-skip in warren.html. */
+#wr-app .wr-ui #speed-card { gap: 10px; }
+#wr-app .wr-ui .spd-fold-sum {
+    margin-left: auto;
+    padding-left: 12px;
+    font: 600 12px/1.3 var(--wr-font);
+    color: var(--wr-text-2);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    min-width: 0;
+}
+#wr-app .wr-ui .ctl-fold-head .ctl-fold-title { flex: 0 0 auto; }
+#wr-app .wr-ui .spd-body { width: 100%; }
+#wr-app .wr-ui .spd-pages {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: 12px;
+    width: 100%;
+}
+#wr-app .wr-ui .spd-page {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    min-width: 0;
+    padding: 12px;
+    background: var(--wr-panel-2);
+    border: 1px solid var(--wr-line);
+    border-radius: var(--wr-radius);
+}
+#wr-app .wr-ui .spd-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 4px 8px;
+    margin: 0;
+    font: 600 14px/1.3 var(--wr-font);
+    color: var(--wr-text);
+}
+#wr-app .wr-ui .spd-name { color: var(--wr-text-2); font-weight: 600; }
+#wr-app .wr-ui .spd-big { font-size: 18px; font-weight: 700; font-variant-numeric: tabular-nums; }
+#wr-app .wr-ui .spd-when,
+#wr-app .wr-ui .spd-field,
+#wr-app .wr-ui .spd-fail { margin: 0; font: 12px/1.45 var(--wr-font); color: var(--wr-text-2); }
+#wr-app .wr-ui .spd-score { font-weight: 650; }
+#wr-app .wr-ui .spd-fail { color: var(--wr-amber); }
+
+/* The five timings and the download, three to a row (two on a phone). */
+#wr-app .wr-ui .spd-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 6px;
+    margin: 0;
+}
+#wr-app .wr-ui .spd-m {
+    min-width: 0;
+    padding: 7px 9px 7px 11px;
+    background: var(--wr-panel);
+    border: 1px solid var(--wr-line);
+    border-left: 3px solid var(--wr-line-2);
+    border-radius: 5px;
+    cursor: help;
+}
+#wr-app .wr-ui .spd-m.is-good { border-left-color: var(--wr-green); }
+#wr-app .wr-ui .spd-m.is-mid { border-left-color: var(--wr-amber); }
+#wr-app .wr-ui .spd-m.is-poor { border-left-color: var(--wr-red); }
+#wr-app .wr-ui .spd-m dt { margin: 0 0 2px; font: 12px/1.3 var(--wr-font); color: var(--wr-text-2); }
+#wr-app .wr-ui .spd-m dd { display: flex; align-items: baseline; flex-wrap: wrap; gap: 0 6px; margin: 0; font: 12px/1.3 var(--wr-font); }
+#wr-app .wr-ui .spd-m dd b { font-size: 15px; font-weight: 700; color: var(--wr-text); font-variant-numeric: tabular-nums; }
+
+/* Good, needs work, slow: the word and the big number carry the colour. */
+#wr-app .wr-ui .spd-word { font: 600 12px/1.3 var(--wr-font); }
+#wr-app .wr-ui :is(.spd-word, .spd-big, .spd-score, .spd-fold-sum).is-good { color: var(--wr-green); }
+#wr-app .wr-ui :is(.spd-word, .spd-big, .spd-score, .spd-fold-sum).is-mid { color: var(--wr-amber); }
+#wr-app .wr-ui :is(.spd-word, .spd-big, .spd-score, .spd-fold-sum).is-poor { color: var(--wr-red); }
+
+/* The last twelve weeks, small. */
+#wr-app .wr-ui .spd-trend { margin: 2px 0 0; }
+#wr-app .wr-ui .spd-plot {
+    position: relative;
+    height: 64px;
+    background: var(--wr-panel);
+    border: 1px solid var(--wr-line);
+    border-radius: 5px;
+    overflow: hidden;
+}
+#wr-app .wr-ui .spd-spark { position: absolute; inset: 0; display: block; width: 100%; height: 100%; }
+#wr-app .wr-ui .spd-zone-good { fill: var(--wr-green); opacity: 0.09; }
+#wr-app .wr-ui .spd-zone-poor { fill: var(--wr-red); opacity: 0.09; }
+#wr-app .wr-ui .spd-line { fill: none; stroke: var(--wr-text-2); stroke-width: 1.5; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
+#wr-app .wr-ui .spd-dot {
+    position: absolute;
+    width: 7px;
+    height: 7px;
+    margin: -3.5px 0 0 -3.5px;
+    border-radius: 50%;
+    box-shadow: 0 0 0 1px var(--wr-panel);
+    cursor: help;
+}
+#wr-app .wr-ui .spd-dot.is-good { background: var(--wr-green); }
+#wr-app .wr-ui .spd-dot.is-mid { background: var(--wr-amber); }
+#wr-app .wr-ui .spd-dot.is-poor { background: var(--wr-red); }
+#wr-app .wr-ui .spd-files { color: var(--wr-text-2); }
+#wr-app .wr-ui .spd-trend-cap { display: flex; flex-direction: column; gap: 4px; margin-top: 3px; font: 12px/1.45 var(--wr-font); color: var(--wr-text-2); }
+#wr-app .wr-ui .spd-trend-ends { display: flex; justify-content: space-between; font-size: 11px; color: var(--wr-dim); }
+
+#wr-app .wr-ui #speed-status.is-error { color: var(--wr-red); }
+
+@media (max-width: 560px) {
+    #wr-app .wr-ui .spd-pages { grid-template-columns: minmax(0, 1fr); }
+    #wr-app .wr-ui .spd-page { padding: 10px; }
+    #wr-app .wr-ui .spd-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    #wr-app .wr-ui .spd-fold-sum { font-size: 11px; }
+}

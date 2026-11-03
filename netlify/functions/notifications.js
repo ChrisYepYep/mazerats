@@ -28,6 +28,7 @@
 
    GET                   the caller's unseen notices: [{ nid, text, at }],
                          oldest first. Signed out, the everyone-notices.
+                         With quietUnread, the unseen quiet ones' nids.
    POST { seen: [nid] }  marks them seen (signed in; signed out is a 200
                          that changes nothing — the browser keeps its own).
    POST { deleted: [nid] }  takes them off the caller's own list for good
@@ -219,7 +220,15 @@ async function mine(event, db) {
         });
     }
     // The queue of unread alerts: a quiet one is only ever in the list above.
-    return json(200, { signedIn: !!player, acct, notices: rows.filter(r => !seen.has(r.nid) && !r.quiet) });
+    /* And the quiet ones still unread, by id only (2 Nov 2026, the owner's):
+       the console counts them into the Notifications button's unread badge
+       without asking for the whole list. Ids, not a count, so a signed-out
+       browser can leave out the ones it has read itself. */
+    return json(200, {
+        signedIn: !!player, acct,
+        notices: rows.filter(r => !seen.has(r.nid) && !r.quiet),
+        quietUnread: rows.filter(r => !seen.has(r.nid) && r.quiet).map(r => r.nid)
+    });
 }
 
 async function markSeen(event, db) {

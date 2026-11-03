@@ -17,6 +17,11 @@
            own was tried on 30 Oct 2026 and taken out the same day, the
            owner's: by hand only.)
 
+   And since 2 Nov 2026 each published ARTICLE has an entry of its own,
+   its fields set in the article (the Articles section above the log,
+   js/admin-articles.js): Edit opens it, Hide and Show set its wn.hidden,
+   Discord posts it as "article:<id>".
+
    Both are kept by netlify/functions/whats-new.js, and js/home.js applies
    them when it builds the log (WHAT'S NEW, BY HAND there). The days here
    are worked out as the homepage works them out, near enough: the
@@ -53,7 +58,8 @@
         "difficulty": "Difficulty re-rated", "tags": "Tags updated", "dates": "Dates updated", "links": "Links updated",
         "text": "Changes made to texts", "details": "Details updated", "sections": "Sections rewritten", "images": "Pictures updated"
     };
-    const VERBS = { added: "Added", updated: "Updated", news: "News", note: "Note" };
+    // And Article (2 Nov 2026): an article's entry, its fields set in the article (js/admin-articles.js).
+    const VERBS = { added: "Added", updated: "Updated", news: "News", note: "Note", article: "Article" };
 
     let mounted = false;
     let rooms = [], events = [], guides = [], posts = [], overrides = new Map();
@@ -64,6 +70,7 @@
     let opened = "";            // editing as it was opened, for "unsaved changes?"
     const uploaded = new Set(); // news/ picture keys uploaded during this edit
     let busy = false;
+    let logReady = false;       // the log has been read (2 Nov 2026): the articles' changes redraw it only then
 
     const esc = s => String(s == null ? "" : s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
     const token = () => {
@@ -137,8 +144,32 @@
             line: p.text,
             hidden: p.hidden === true
         }));
-        return auto.concat(own).sort((a, b) => b.day.localeCompare(a.day) || String(a.name).localeCompare(String(b.name)));
+        return auto.concat(own, articleEntries()).sort((a, b) => b.day.localeCompare(a.day) || String(a.name).localeCompare(String(b.name)));
     }
+
+    /* The published articles' entries (2 Nov 2026), as the homepage draws
+       them (articleLogItems in js/home.js): each article's own What's New
+       fields, set in its editor, each empty for the article's own. */
+    function articleEntries() {
+        const list = window.AdminArticles ? window.AdminArticles.list() : [];
+        return list.filter(a => a && a.status === "published" && a.publishedAt).map(a => {
+            const wn = a.wn && typeof a.wn === "object" ? a.wn : {};
+            const borrowed = ["added", "updated", "news", "note"].includes(wn.badge) ? wn.badge : "";
+            return {
+                article: a,
+                target: "",
+                name: wn.title || a.title,
+                meta: `Article${a.author ? ` · by ${a.author}` : ""}`,
+                day: /^\d{4}-\d{2}-\d{2}$/.test(wn.day || "") ? wn.day : dayOf(a.publishedAt),
+                activity: borrowed || "article",
+                verb: wn.badge === "custom" && wn.badgeText ? wn.badgeText : "",
+                line: wn.text || GuideText.plain(a.summary || ""),
+                hidden: wn.hidden === true
+            };
+        });
+    }
+    // The Discord key and the row's own for an entry of any kind.
+    const keyOfEntry = e => (e.post ? `post:${e.post.id}` : e.article ? `article:${e.article.id}` : e.target);
 
     function render() {
         const q = (searchEl.value || "").trim().toLowerCase();
@@ -178,7 +209,7 @@
             if (e.o.activity) flags.push("label set");
             if (e.o.text) flags.push("own text");
         }
-        const key = e.post ? `post:${e.post.id}` : e.target;
+        const key = keyOfEntry(e);
         const posted = postedFor(e, key);
         return `
             <div class="chrome-list-row admin-row wn-row${e.hidden ? " is-hidden" : ""}" data-key="${esc(key)}">
@@ -188,7 +219,11 @@
                     ${e.line ? `<p class="row-creator wn-line">${esc(e.line)}</p>` : ""}
                 </div>
                 <div class="admin-row-actions">
-                    ${e.post
+                    ${e.article
+                        // An article's entry: its What's New fields are edited in the article (2 Nov 2026).
+                        ? `<button type="button" class="btn admin-edit-btn" data-wn="edit-article" aria-label="Edit the article ${esc(e.name || "")}">Edit</button>
+                           <button type="button" class="btn admin-edit-btn" data-wn="toggle-article">${e.hidden ? "Show" : "Hide"}</button>`
+                    : e.post
                         ? `<button type="button" class="btn admin-edit-btn" data-wn="edit-post">Edit</button>
                            <button type="button" class="btn admin-edit-btn" data-wn="toggle-post">${e.hidden ? "Show" : "Hide"}</button>
                            <button type="button" class="btn admin-delete-btn" data-wn="delete-post">Delete</button>`
@@ -201,7 +236,7 @@
                         : `<button type="button" class="btn admin-edit-btn" data-wn="discord" aria-label="Post ${esc(e.name || "(untitled)")} to Discord${posted ? " again" : ""}">${posted ? "Post again" : "Discord"}</button>`}
                 </div>
             </div>
-            ${!e.post && openOverride === e.target ? overrideHtml(e) : ""}`;
+            ${!e.post && !e.article && openOverride === e.target ? overrideHtml(e) : ""}`;
     }
 
     // The editor for one automatic entry's override, under its row.
@@ -232,13 +267,20 @@
     // ------------------------------------------------------------ loading
 
     let loadGen = 0;
-    async function load() {
+    /* `shared` (2 Nov 2026): the first opening takes the mazes and events
+       js/admin.js read at sign-in (window.AdminArchiveCopy) rather than the
+       whole archive again, ~3.7MB of it; nothing here reads their furni.
+       Try again reads them afresh. */
+    async function load(shared) {
         const gen = ++loadGen;
         listEl.innerHTML = '<p class="admin-empty">Loading…</p>';
+        let copy = null;
+        try { if (shared === true && typeof window.AdminArchiveCopy === "function") copy = await window.AdminArchiveCopy(); } catch (e) { /* read below */ }
+        if (gen !== loadGen) return;
         try {
             const [r, ev, g, wn] = await Promise.all([
-                Api.getRoomsFull(token()),
-                Api.getEventsFull(token()),
+                copy ? copy.rooms : Api.getRoomsFull(token()),
+                copy ? copy.events : Api.getEventsFull(token()),
                 call("/.netlify/functions/guides?full=1", "GET").catch(() => []),
                 call(`${URL_}?full=1`, "GET")
             ]);
@@ -249,6 +291,7 @@
             posts = Array.isArray(wn && wn.posts) ? wn.posts : [];
             overrides = new Map((Array.isArray(wn && wn.overrides) ? wn.overrides : []).map(o => [o.target, o]));
             discord = new Map((Array.isArray(wn && wn.discord) ? wn.discord : []).map(d => [d.key, d]));
+            logReady = true;
             render();
         } catch (err) {
             if (gen !== loadGen) return;
@@ -301,7 +344,7 @@
        The server reads the rest (address, picture) from the record. Asked
        first, always, and said plainly when it has gone before. */
     async function postToDiscord(key) {
-        const e = entries().find(x => (x.post ? `post:${x.post.id}` : x.target) === key);
+        const e = entries().find(x => keyOfEntry(x) === key);
         if (!e) return;
         const label = e.verb || VERBS[e.activity] || "Added";
         const before = postedFor(e, key);
@@ -497,6 +540,25 @@
             return;
         }
         if (act === "discord") { postToDiscord(key); return; }
+        // An article's entry (2 Nov 2026): Edit opens the article; Hide and Show set its wn.hidden.
+        if (act === "edit-article" || act === "toggle-article") {
+            const id = key.replace(/^article:/, "");
+            if (!window.AdminArticles) return;
+            if (act === "edit-article") { window.AdminArticles.edit(id); return; }
+            if (busy) { await tell("Still saving the last change. Try again in a moment."); return; }
+            const a = window.AdminArticles.list().find(x => x.id === id);
+            if (!a) return;
+            busy = true;
+            try {
+                await window.AdminArticles.setHidden(id, !(a.wn && a.wn.hidden === true));
+            } catch (err) {
+                if (!sessionGone(err)) await tell(err.message || "That couldn't be saved.");
+            } finally {
+                busy = false;
+            }
+            render();
+            return;
+        }
         if (act === "toggle-hide") {
             const o = overrides.get(key) || {};
             /* This row's Amend box, if it is open, is saved as typed rather
@@ -568,6 +630,9 @@
         }
     });
 
+    // The articles' entries redraw the log when the Articles section has read or saved them (2 Nov 2026).
+    if (window.AdminArticles) window.AdminArticles.onChange(() => { if (logReady) render(); });
+
     panel.querySelector("#wn-add-news").addEventListener("click", () => openPost(null));
     panel.querySelector("#wn-add-note").addEventListener("click", () => openPost(null, "note"));
     searchEl.addEventListener("input", render);
@@ -578,21 +643,29 @@
     function maybeMount() {
         if (mounted || panel.hidden || !token()) return;
         mounted = true;
-        load();
+        load(true);
     }
     new MutationObserver(maybeMount).observe(panel, { attributes: true, attributeFilter: ["hidden"] });
     maybeMount();
 
     /* For admin.js, as js/admin-guides.js offers: reset() forgets the last
        account's list and edit, and loads again when next shown. */
+    /* The Articles section's editor rides along (2 Nov 2026, js/admin-articles.js):
+       an article half-written is asked about, closed and reset with the post. */
+    const articlesEd = () => window.AdminArticles || null;
     window.AdminWhatsNew = {
         isDirty() {
+            if (articlesEd() && articlesEd().isDirty()) return true;
             if (!editing) return false;
             readForm();
             return JSON.stringify(editing) !== opened;
         },
-        close() { if (editing) closePost(); },
+        close() {
+            if (editing) closePost();
+            if (articlesEd()) articlesEd().close();
+        },
         reset() {
+            if (articlesEd()) articlesEd().reset();
             loadGen++;
             // Another account's uploads are left, not deleted with this
             // one's token (as js/admin-guides.js leaves them).
@@ -600,6 +673,7 @@
             closePost();
             openOverride = null;
             rooms = []; events = []; guides = []; posts = []; overrides = new Map(); discord = new Map(); posting = null;
+            logReady = false;
             listEl.innerHTML = "";
             mounted = false;
             maybeMount();

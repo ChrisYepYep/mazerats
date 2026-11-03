@@ -56,13 +56,16 @@ const PICTURE_GLYPHS = new Set([
 const TITLE_PICTURES = new RegExp("[" + [...PICTURE_GLYPHS]
     .filter(c => c !== 0x2014 && c !== 0x2018)
     .map(c => String.fromCodePoint(c)).join("") + "]", "gu");
+/* The framing before " | Maze Rats" as well as before " — " (1 Nov 2026,
+   the bug scan): titles say " | " now, and "*ÕMaze EmpireÕ* | Maze Rats"
+   was left as "Maze Empire * | Maze Rats". */
 function plainTitle(text) {
     const raw = String(text || "");
     const s = raw.replace(TITLE_PICTURES, " ")
         .replace(/[[({]\s*[\])}]/g, " ")      // "[ ª ]" leaves an empty pair
         .replace(/\s{2,}/g, " ")
         .replace(/^[\s*~_|]+/, "")
-        .replace(/(?:\s*[*~_|]+)+(?=\s+—|\s*$)/g, "")
+        .replace(/(?:\s*[*~_|]+)+(?=\s+(?:—|\|)\s|\s*$)/g, "")
         .trim();
     return s || raw;
 }
@@ -521,9 +524,17 @@ const FocusTrap = (() => {
         const dialogs = Array.from(document.querySelectorAll('[aria-modal="true"]'));
         const hasDialog = node => node.nodeType === 1
             && (node.matches('[aria-modal="true"]') || !!node.querySelector('[aria-modal="true"]'));
+        /* A script, a text node or a comment arriving at the top of <body>
+           cannot open or shut a window (1 Nov 2026, the bug scan): while the
+           page loads, the parser adds each of the twenty-odd scripts after
+           this one there, and each used to cost a forced layout in refresh(). */
+        const inertNode = n => n.nodeType === 3 || n.nodeType === 8 || n.nodeName === "SCRIPT";
         for (const r of records) {
             if (r.type === "childList") {
-                if (r.target === document.body) return true;
+                if (r.target === document.body) {
+                    if ([...r.addedNodes].every(inertNode) && [...r.removedNodes].every(inertNode)) continue;
+                    return true;
+                }
                 for (const n of r.addedNodes) if (hasDialog(n)) return true;
                 for (const n of r.removedNodes) if (hasDialog(n)) return true;
             } else if (dialogs.some(d => r.target === d || r.target.contains(d))) {
@@ -583,8 +594,9 @@ window.FocusTrap = FocusTrap;
    the id stands in for a record that has none, such as one from the offline
    copy, and the share function sends an id on to the right address. */
 const RecordAddress = (() => {
-    const PREFIX = { maze: "maze", event: "event", guide: "guides" };
-    const PATH = /^\/(maze|event|guides)\/([^/?#]+)\/?$/;
+    // An article's own address too, /article/<slug> (2 Nov 2026; js/articles.js).
+    const PREFIX = { maze: "maze", event: "event", guide: "guides", article: "article" };
+    const PATH = /^\/(maze|event|guides|article)\/([^/?#]+)\/?$/;
     return {
         of(kind, record) {
             const key = record && (record.slug || record.id);
@@ -941,12 +953,13 @@ document.addEventListener("DOMContentLoaded", async () => {
         stage.style.cssText = "display:block;position:absolute;left:-9999px;top:0;visibility:hidden;width:max-content;max-width:none;";
         const stageSlide = stage.querySelector(".header-events-slide");
         widget.parentNode.appendChild(stage);
-        let widest = 0;
-        for (const event of (upcoming.length ? upcoming : [null])) {
-            stageSlide.innerHTML = slideMarkup(event);
-            stageSlide.querySelectorAll(".header-events-title, .header-events-when").forEach(el => { el.style.overflow = "visible"; });
-            widest = Math.max(widest, stage.getBoundingClientRect().width);
-        }
+        /* Every slide in the stage at once, its lines one under another, and
+           measured once (1 Nov 2026, the bug scan): the stage is as wide as
+           its widest line, which is the widest slide. Measured one slide at a
+           time it was a forced layout per event. */
+        stageSlide.innerHTML = (upcoming.length ? upcoming : [null]).map(slideMarkup).join("");
+        stageSlide.querySelectorAll(".header-events-title, .header-events-when").forEach(el => { el.style.overflow = "visible"; });
+        const widest = stage.getBoundingClientRect().width;
         stage.remove();
         widget.style.setProperty("--header-events-fit", Math.ceil(widest) + 1 + "px");
     }

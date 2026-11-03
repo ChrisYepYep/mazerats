@@ -26,18 +26,53 @@
              the last minute): its gate found the site shut or the settings
              unreadable, with the old "enter" note still kept, and going
              back would go round and round.
-         Anything unreadable stays here, which is where it always stayed. -->
+         Anything unreadable stays here, which is where it always stayed.
+
+         A FIRST VISIT ASKS FROM HERE TOO (2 Nov 2026, the owner's). With no
+         note at all, the site's state was only learned by js/welcome.js,
+         after every script and the settings had loaded (4.1s on Fast 3G),
+         and only then did it go on to /home. Now the same request js/api.js
+         makes (the same ten-second bucket, so the edge's copy is shared)
+         starts here, before anything is drawn, and a real "enter" goes on at
+         once, under the same exceptions as above. Its answer is kept the way
+         api.js keeps a real read (the landing state, and the palette as
+         applyTheme notes it), so the next page reads the same. Anything
+         else (Coming Soon, Maintenance, a failed or stored answer, a state
+         this does not know) does nothing here, and welcome.js goes on
+         exactly as before, with its own read. A browser that has a note,
+         but not "enter", has seen the site shut and is also left to it. -->
     <script>
     (function () {
         try {
             if (/(?:^|&)landing(?:=|&|$)/.test(location.search.slice(1))) return;
-            if (localStorage.getItem("mazerats_landing_state") !== "enter") return;
+            var note = localStorage.getItem("mazerats_landing_state");
+            if (note !== "enter" && note !== null) return;
             var b = JSON.parse(localStorage.getItem("mazerats_blocked") || "null");
             if (b && typeof b === "object" && (!b.until || Date.parse(b.until) > Date.now())) return;
             if (Date.now() - (Number(sessionStorage.getItem("mazerats_bounced")) || 0) < 60000) return;
             // The hash goes too (30 Oct 2026, the bug scan): /#privacy and the
             // spotlight's /#event-<id> links mean the same on /home.
-            location.replace("/home" + location.hash);
+            if (note === "enter") { location.replace("/home" + location.hash); return; }
+            if (typeof fetch !== "function" || typeof AbortController !== "function") return;
+            var ctl = new AbortController();
+            var timer = setTimeout(function () { ctl.abort(); }, 10000);
+            fetch("/.netlify/functions/settings?fresh=" + Math.floor(Date.now() / 10000), { signal: ctl.signal })
+                .then(function (res) {
+                    // The offline archive's stored copy (sw.js) is not an answer for a browser that has never seen the site open.
+                    if (!res.ok || res.headers.get("X-MR-Stored")) return null;
+                    return res.json();
+                })
+                .then(function (s) {
+                    clearTimeout(timer);
+                    if (!s || typeof s.landingState !== "string" || !s.landingState) return;
+                    // What js/api.js keeps from a real read (rememberLandingState, applyTheme).
+                    localStorage.setItem("mazerats_landing_state", s.landingState);
+                    if (s.theme) localStorage.setItem("mazerats_theme", /^[a-z]+$/.test(String(s.theme)) ? s.theme : "classic");
+                    if (s.landingState !== "enter") return;
+                    if (window.MazeErrors && typeof MazeErrors.leaving === "function") MazeErrors.leaving("/home");
+                    location.replace("/home" + location.hash);
+                })
+                .catch(function () { clearTimeout(timer); /* stay: welcome.js reads for itself */ });
         } catch (e) { /* stay */ }
     })();
     </script>
@@ -45,9 +80,8 @@
          note on these two lines in home.html's <head> (28 Sept 2026). -->
     <meta name="mazerats:build" content="dev">
     <script src="/js/error-report.js?v=4"></script>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@700;800;900&family=Roboto:wght@400;500;700&family=Pixelify+Sans:wght@400;700&family=Silkscreen:wght@400;700&display=swap" rel="stylesheet">
+    <!-- Fonts: self-hosted, declared in css/style.css (2 Nov 2026); why
+         they are not preloaded is in home.html. -->
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="theme-color" content="#120c07">
     <!-- Its own title and description, not the archive's.
@@ -101,7 +135,7 @@
 
          Wrapped in try/catch: localStorage throws outright in some privacy modes,
          and a colour scheme is not worth a blank page. -->
-    <link rel="stylesheet" href="css/style.css?v=3">
+    <link rel="stylesheet" href="css/style.css?v=5">
     <link id="theme-css" rel="stylesheet">
     <script>
     /* THE FIRST PAINT'S PALETTE. The site's own (mazerats_theme), unless a
@@ -256,7 +290,7 @@
 
             <!-- aria-label (1 Oct 2026): the two spans sit with no space
                  between them, so a screen reader said one word, "MAZERATS". -->
-            <h1 class="hero-title welcome-title" aria-label="Maze Rats"><span id="welcome-maze">MAZE<img class="hand-rat" src="assets/img/rat_handstand.png" alt="" aria-hidden="true"></span><span>RATS</span></h1>
+            <h1 class="hero-title welcome-title" aria-label="Maze Rats"><span id="welcome-maze">MAZE<img class="hand-rat" src="assets/img/rat_handstand-2x.png" srcset="assets/img/rat_handstand-2x.png 2x, assets/img/rat_handstand.png 3x" alt="" aria-hidden="true"></span><span>RATS</span></h1>
             <!-- No href by default and starts disabled — js/welcome.js is the
                  only thing that ever turns this into a working link, and only
                  once it's actually confirmed the site is open. Shipping this
@@ -423,17 +457,19 @@
         </div>
     </div>
 
-    <script src="js/api.js?v=3"></script>
+    <script src="js/api.js?v=4"></script>
     <script src="js/event-status.js?v=2"></script>
-    <script src="js/privacy-content.js?v=3"></script>
+    <script src="js/privacy-content.js?v=4"></script>
     <script src="js/palette-wear.js?v=2"></script>
     <script src="js/skin-wear.js?v=1"></script>
-    <script src="js/site.js?v=2"></script>
+    <script src="js/site.js?v=3"></script>
     <!-- Before welcome.js, which draws the event window's formatted details
          with it (it can fetch it on demand, but this saves the redraw). -->
-    <script src="js/guide-text.js?v=2"></script>
-    <script src="js/welcome.js?v=3"></script>
-    <script src="js/custom-scrollbar.js?v=3"></script>
+    <script src="js/guide-text.js?v=3"></script>
+    <script src="js/welcome.js?v=4"></script>
+    <script src="js/custom-scrollbar.js?v=4"></script>
     <script src="js/track.js?v=2"></script>
+    <!-- The offline archive (2 Nov 2026): registers nothing here; tells a stored copy to forget itself when this browser is banned or the site is shut. -->
+    <script src="js/offline.js?v=1"></script>
 </body>
 </html>

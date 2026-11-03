@@ -77,7 +77,7 @@
     };
     const call = (url, method, body) => Api._write(url, method, token(), body);
 
-    /* A 401: the twelve-hour session ran out while the panel was open.
+    /* A 401: the 48-hour session ran out while the panel was open.
 
        This used to replace the list with a "Sign in again" button that
        reloaded the page — which threw away the guide being written, the

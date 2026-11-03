@@ -17,6 +17,8 @@
                           code in it hands back a token naming that Habbo
    POST ?action=continue  {run}: a game left part-way, picked up again —
                           ONCE (see CONTINUING)
+   POST ?action=renew     {run}: a game still open, its token's three hours
+                          nearly up, given three more (see RENEWING)
    POST ?action=played    the same for a game that is not for the board
                           (signed out, no nickname, no rows): kept for the
                           Warren's figures only — see THE GAME LOG
@@ -230,6 +232,41 @@ async function continueRun(db, event, player) {
         return json(503, { error: "That game can't be picked up just now." });
     }
     return json(200, { token: resignRun(c) });
+}
+
+/* RENEWING (2 Nov 2026, the bug scan; the owner's yes). A game left paused
+   in a tab that stayed open (a laptop shut, a phone asleep) for more than
+   its token's three hours was lost on its return: "started too long ago",
+   although closing the tab and pressing Continue would have given it a
+   fresh three hours. Now the page asks for that quietly, a little before
+   the token runs out or when a deal says it has, and plays on.
+
+   The same game (rid, start time) with a fresh three hours, as CONTINUING
+   gives, and on the same terms: not an old page's token, not a game
+   finished, not in maintenance, and only while the game is under
+   RESUME_WINDOW_MS old. It is NOT a continue: no pura_continues row, and
+   `resumed` stays as it was, so a renewed game can still be continued
+   once and a continued one renewed. Nothing a token proves changes: the
+   seed is the run id's, the stamps are the run id's, and the clock check
+   still counts from the first start. So no token, renewed or continued,
+   ever verifies past start + RESUME_WINDOW_MS + RUN_LIFE_S, the bound
+   Continue already set. */
+async function renewRun(db, event, player) {
+    let body;
+    try { body = JSON.parse(event.body || "{}"); } catch { return json(400, { error: "Body is not JSON" }); }
+    // Another account than the one signed in: null, as at every save.
+    const c = readRun(String(body.run || ""), player, { ignoreExpiration: true });
+    if (!c) return json(200, { token: null, reason: "unknown" });
+    if (c.legacy || Date.now() - c.t > RESUME_WINDOW_MS) return json(200, { token: null, reason: "too-old" });
+    if (!(await isOpen(db).catch(() => false))) return json(200, { token: null, reason: "maintenance" });
+    try {
+        if (await db.collection(RUN_TOKENS).findOne({ _id: c.rid })) return json(200, { token: null, reason: "finished" });
+        if (await db.collection(GAMES).findOne({ _id: c.rid, final: true }, { projection: { _id: 1 } })) return json(200, { token: null, reason: "finished" });
+    } catch (e) {
+        console.error("pura-scores: could not renew a game", e);
+        return json(503, { error: "That game can't be renewed just now." });
+    }
+    return json(200, { token: resignRun(c, true) });
 }
 
 // One token, one entry: the unique _id is the lock (see ff-scores.js).
@@ -742,6 +779,14 @@ exports.handler = async (event) => {
         const refused = await writeRefusal(db, event, player ? player.id : null, { game: true });
         if (refused) return refused;
         return continueRun(db, event, player);
+    }
+
+    // A game still open, its token's three hours nearly up: see RENEWING.
+    if ((event.queryStringParameters || {}).action === "renew") {
+        if (!sameOrigin(event)) return json(403, { error: "Forbidden" });
+        const refused = await writeRefusal(db, event, player ? player.id : null, { game: true });
+        if (refused) return refused;
+        return renewRun(db, event, player);
     }
 
     /* THE START: a token and its seed, and the pura_starts row THE GAME LOG

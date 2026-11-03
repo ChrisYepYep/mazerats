@@ -259,6 +259,16 @@ async function read(event) {
         return json(200, { group: full(doc, now) });
     }
 
+    /* ?badge=1 (2 Nov 2026): the Warren's nav badge, the number of open
+       groups seen in the last 24 hours, and nothing else. It used to ask
+       for the list itself at limit=500, eight database reads and up to
+       500 groups sent, once a minute, to count them in the browser. One
+       indexed count now. → { recentOpen, now } */
+    if (q.badge === "1") {
+        const recentOpen = await col.countDocuments({ status: "open", lastSeen: { $gte: new Date(now - 24 * 3600000) } });
+        return json(200, { recentOpen, now: new Date(now).toISOString() });
+    }
+
     const status = ["open", "resolved", "ignored", "all"].includes(q.status) ? q.status : "open";
     const filter = status === "all" ? {} : { status };
     if (q.kind && E.KINDS.includes(q.kind)) filter.kind = q.kind;

@@ -17,7 +17,9 @@
                              again in `wait` ms (never seen in a person's
                              game, whose pieces take far longer)
      { refused }             this run can have no more pieces: run out
-                             ("stale-run") or an old page's token ("old-run")
+                             ("stale-run"), an old page's token ("old-run"),
+                             or every piece a game may have dealt ("full",
+                             with the stamp)
      400                     the placements are not a game the rules allow
 
    Nothing is read or written here but the request: no database, so a
@@ -65,9 +67,14 @@ exports.handler = async (event) => {
     const checked = checkLog(claims, log, body.stamp);
     if (checked.error) return json(400, { error: checked.error });
 
-    const upTo = checked.result.over ? log.length : log.length + WINDOW;
+    const upTo = checked.result.over ? log.length : Math.min(log.length + WINDOW, MAX_PIECES);
     const from = Math.min(Math.max(0, Number.isInteger(body.from) ? body.from : 0), upTo);
-    return json(200, { kinds: dealOf(claims, upTo).slice(from), from, stamp: stampFor(claims.rid, log) });
+    const stamp = stampFor(claims.rid, log);
+    /* Every piece a game may have is dealt (_pura-run.js, THE LONGEST
+       GAME; 2 Nov 2026): said once, so the page stops asking, and with
+       the stamp, so the finish is checked from here. */
+    if (!checked.result.over && upTo === MAX_PIECES && from >= upTo) return json(200, { refused: "full", stamp });
+    return json(200, { kinds: dealOf(claims, upTo).slice(from), from, stamp });
 };
 
 exports.handler = require("./_errors").withErrorReporting("pura-deal", exports.handler);

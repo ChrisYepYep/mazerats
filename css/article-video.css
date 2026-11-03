@@ -1,0 +1,230 @@
+/* ===========================================================
+   Maze Rats: a video in an article (2 Nov 2026, the owner's).
+   Loaded by js/article-video.js into the page it draws in, so it is
+   fetched only by an article that has a video, and by the Warren.
+
+   Every colour is a palette variable (or plain black), so the palettes,
+   dark mode, Frost's light mode and the skins dress it with nothing of
+   their own: the still sits on the plate a picture in the text sits on
+   (.art-figure in css/style.css), the play button is the gallery's round
+   arrow (.gallery-nav) grown, and the length is the gallery's pill.
+   =========================================================== */
+
+.art-text .art-video {
+    margin: 1em 0;
+    padding: 6px;
+    border: 1px solid var(--chrome-border);
+    border-radius: 8px;
+    box-shadow:
+        inset 0 1px 0 var(--chrome-highlight),
+        inset 1px 0 0 var(--chrome-highlight),
+        inset -1px 0 0 rgba(0, 0, 0, 0.45),
+        inset 0 -1px 0 rgba(0, 0, 0, 0.45),
+        2px 2px 0 rgba(0, 0, 0, 0.45);
+    background: rgba(0, 0, 0, 0.28);
+}
+
+/* The video's own shape (--vid-r, its width over its height, from the
+   block's w and h), never taller than 30vh (420px at most): the article's
+   text scrolls in a box about a third of the window tall, and a video
+   should fit in it whole, so a phone's upright video is narrowed rather
+   than run past the box. */
+.vid-frame {
+    --vid-r: 1.7778;
+    position: relative;
+    width: 100%;
+    max-width: calc(min(420px, 30vh) * var(--vid-r));
+    aspect-ratio: var(--vid-r);
+    margin: 0 auto;
+    border-radius: 2px;
+    overflow: hidden;
+    background: #000;
+}
+.vid-el {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    background: #000;
+}
+.vid-el:focus-visible { outline: 2px solid var(--amber-bright); outline-offset: -2px; }
+
+/* The play button: a round dark button with a light rim and a pixel
+   triangle, over the middle of the still. */
+.vid-play {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: 58px;
+    height: 58px;
+    margin: -29px 0 0 -29px;
+    padding: 0;
+    border-radius: 50%;
+    border: 2px solid var(--amber);
+    background: rgba(0, 0, 0, 0.72);
+    box-shadow: 0 2px 0 rgba(0, 0, 0, 0.45);
+    color: var(--amber-bright);
+    cursor: var(--cursor-pointer, pointer);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.15s, border-color 0.15s, transform 0.15s;
+}
+/* The whole still answers the click too (the button's own box stays the
+   one a keyboard lands on). */
+.vid-play::before {
+    content: "";
+    position: absolute;
+    inset: -999px;
+}
+.vid-frame:hover .vid-play { background: rgba(0, 0, 0, 0.82); border-color: var(--amber-bright); transform: scale(1.06); }
+.vid-play:focus-visible { outline: 2px solid var(--amber-bright); outline-offset: 3px; }
+/* A triangle in hard steps, as the site's pixel arrows are drawn. */
+.vid-play-icon {
+    position: relative;
+    left: 2px;
+    width: 15px;
+    height: 20px;
+    background: currentColor;
+    clip-path: polygon(0 0, 3px 0, 3px 2px, 6px 2px, 6px 4px, 9px 4px, 9px 6px, 12px 6px, 12px 8px, 15px 8px, 15px 12px, 12px 12px, 12px 14px, 9px 14px, 9px 16px, 6px 16px, 6px 18px, 3px 18px, 3px 20px, 0 20px);
+}
+.vid-len {
+    position: absolute;
+    right: 8px;
+    bottom: 8px;
+    padding: 3px 8px;
+    border: 1px solid var(--amber);
+    border-radius: 12px;
+    background: rgba(0, 0, 0, 0.65);
+    color: var(--amber-bright);
+    font-family: 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace;
+    font-size: 0.5625rem;
+    line-height: 1;
+    letter-spacing: 0.4px;
+    pointer-events: none;
+}
+.vid-len[hidden],
+.vid-frame.is-started .vid-play,
+.vid-frame.is-started .vid-len { display: none; }
+.vid-error {
+    position: absolute;
+    left: 10px;
+    right: 10px;
+    bottom: 10px;
+    margin: 0;
+    padding: 8px 10px;
+    border: 1px dashed var(--border);
+    border-radius: 6px;
+    background: rgba(0, 0, 0, 0.75);
+    color: var(--parchment);
+    font-size: 0.86em;
+    text-align: center;
+}
+.vid-error[hidden] { display: none; }
+
+/* Frost's daytime light mode (html[data-light], css/theme-frostlight.css)
+   turns the site's dark-on-the-picture pills light. tools/themes.js builds
+   that layer from style.css alone, so this file says it for itself, in the
+   values the layer gives .art-figure, .gallery-nav and .gallery-counter. */
+html[data-light] .art-text .art-video {
+    box-shadow:
+        inset 0 1px 0 #d9e5f0,
+        inset 1px 0 0 #d9e5f0,
+        inset -1px 0 0 rgba(23, 53, 79, 0.225),
+        inset 0 -1px 0 rgba(23, 53, 79, 0.225),
+        2px 2px 0 rgba(23, 53, 79, 0.225);
+    background: rgba(243, 248, 252, 0.28);
+}
+html[data-light] .vid-play {
+    background: rgba(243, 248, 252, 0.78);
+    border-color: #456480;
+    box-shadow: 0 2px 0 rgba(23, 53, 79, 0.225);
+    color: #1b2a41;
+}
+html[data-light] .vid-frame:hover .vid-play { background: rgba(243, 248, 252, 0.92); border-color: #1b2a41; }
+html[data-light] .vid-play:focus-visible,
+html[data-light] .vid-el:focus-visible { outline-color: #1b2a41; }
+html[data-light] .vid-len {
+    background: rgba(221, 230, 238, 0.82);
+    border-color: #456480;
+    color: #1e3558;
+}
+
+@media (max-width: 640px) {
+    .vid-play { width: 50px; height: 50px; margin: -25px 0 0 -25px; }
+}
+@media (prefers-reduced-motion: reduce) {
+    .vid-play { transition: none; }
+    .vid-frame:hover .vid-play { transform: none; }
+}
+
+/* ------------------------------------------------------------ the Warren's upload box
+   Its Warren dress (.wr-dialog) comes from css/warren.css; these are its
+   own parts, in the workshop's colours. */
+.vid-up-overlay .vid-up { width: min(560px, calc(100vw - 32px)); max-width: none; }
+.vid-up-file {
+    display: flex;
+    gap: 10px;
+    align-items: baseline;
+    margin: 0 0 12px;
+    font-family: var(--wr-font);
+    font-size: 13px;
+    color: var(--wr-text);
+}
+.vid-up-name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+.vid-up-size { flex: none; color: var(--wr-dim); }
+.vid-up-stage[hidden] { display: none; }
+.vid-up-bar {
+    position: relative;
+    height: 14px;
+    border: 1px solid var(--wr-line-2);
+    border-radius: 7px;
+    background: var(--wr-panel-2);
+    overflow: hidden;
+}
+.vid-up-fill {
+    display: block;
+    width: 0;
+    height: 100%;
+    background: var(--wr-gold);
+    transition: width 0.2s linear;
+}
+.vid-up-pct {
+    display: flex;
+    justify-content: space-between;
+    margin: 6px 0 0;
+    font-family: var(--wr-font);
+    font-size: 12.5px;
+    font-variant-numeric: tabular-nums;
+    color: var(--wr-text);
+}
+.vid-up-of { color: var(--wr-dim); }
+.vid-up-preview {
+    border: 1px solid var(--wr-line-2);
+    border-radius: var(--wr-radius);
+    background: #000;
+    overflow: hidden;
+}
+.vid-up-preview video { display: block; width: 100%; max-height: 300px; object-fit: contain; background: #000; }
+.vid-up-slider {
+    display: block;
+    margin: 10px 0 0;
+    font-family: var(--wr-font);
+    font-size: 12.5px;
+    color: var(--wr-text-2);
+}
+.vid-up-slider output { color: var(--wr-text); font-variant-numeric: tabular-nums; }
+.vid-up-slider input { display: block; width: 100%; margin: 6px 0 0; accent-color: var(--wr-gold); }
+.vid-up-msg {
+    margin: 12px 0 0;
+    font-family: var(--wr-font);
+    font-size: 13px;
+    line-height: 1.45;
+    color: var(--wr-text-2);
+}
+.vid-up-msg.is-error { color: var(--wr-red); }
+.vid-up-actions { flex-wrap: wrap; justify-content: flex-start; gap: 8px; margin-top: 14px; }
+.vid-up-actions:empty { display: none; }
+@media (prefers-reduced-motion: reduce) {
+    .vid-up-fill { transition: none; }
+}

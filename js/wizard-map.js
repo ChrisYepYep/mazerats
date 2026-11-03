@@ -759,7 +759,12 @@ window.WizardMap = function WizardMap(options) {
        the CDN only fetches from here. A copy the CDN comes back narrower
        than asked is the whole original, since it never enlarges, and that
        picture is done. A copy that fails to load falls back to the original. */
-    const LAYER_WIDTHS = [256, 384, 512, 768, 1024];
+    /* 1280 and 1536 added 2 Nov 2026: on a phone's opening view the castle
+       is drawn about 1,230 device pixels across even at 2x density (1,300
+       to 1,350 on the larger phones), just past 1024, and fell to the
+       4.1MB original where a 1280 copy is 2.4MB. Its original is 1,708
+       wide, so above 1536 it is the original that comes, as before. */
+    const LAYER_WIDTHS = [256, 384, 512, 768, 1024, 1280, 1536];
     const layerRes = new Map();         // <img> -> { layer, asked, full, latest }
     let layerResTimer = 0;
     let layersSizedFor = 0;             // the scale x density they were last sized for
@@ -769,10 +774,19 @@ window.WizardMap = function WizardMap(options) {
             && !src.startsWith("/.netlify/images");
     }
 
+    /* The screen's pixel density, counted no higher than 3 (2 Nov 2026).
+       A cap of 2 halved a 3x phone's opening view (8.8MB to 4.6MB) but the
+       castle and trees came out visibly softer side by side, and the owner
+       approved the saving only if it changed nothing a visitor sees. So 3,
+       which is every phone as before; 2 is the switch if softer is ever
+       acceptable. */
+    const MAX_DENSITY = 3;
+
     // The scale the pictures should be sized for: wherever the view is going
     // if it is on its way somewhere, so a glide in to 8x asks once, for 8x.
     function layerScale() {
-        return fit * Math.max(zoom, wantZoom) * Math.max(1, window.devicePixelRatio || 1);
+        const density = Math.min(MAX_DENSITY, Math.max(1, window.devicePixelRatio || 1));
+        return fit * Math.max(zoom, wantZoom) * density;
     }
 
     function layerWanted(layer) {

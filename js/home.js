@@ -33,6 +33,8 @@ document.addEventListener("DOMContentLoaded", () => {
     const subNavEl = document.getElementById("sub-nav");
     const subNavBtns = document.querySelectorAll("#sub-nav .chrome-nav-btn");
     const eventsArchiveNote = document.getElementById("events-archive-note");
+    // "Sorted by …" on the line over the list (see updateSortChip).
+    const sortChip = document.getElementById("sort-chip");
     const featuredMazesBtn = document.getElementById("featured-mazes-btn");
     const whatsNewBtn = document.getElementById("whats-new-btn");
     const timelineBtn = document.getElementById("timeline-btn");
@@ -97,6 +99,24 @@ document.addEventListener("DOMContentLoaded", () => {
     const modalEl = modalOverlay.querySelector(".modal");
     const modalLink = document.getElementById("modal-link");
     const modalVisitWrap = document.getElementById("modal-visit-wrap");
+    // An event's "Read the article" buttons, beside Visit Room (2 Nov 2026).
+    const modalArticleLinks = document.getElementById("modal-article-links");
+    function drawModalArticleLinks(n, hasRoomLink) {
+        const list = n && n.isEvent && window.Articles && Articles.loaded() ? Articles.forEvent(n.id) : [];
+        modalArticleLinks.innerHTML = list.map(a => `<a class="btn" href="${escapeHtml(window.RecordAddress.of("article", a))}" data-article-link="${escapeHtml(a.id)}"${list.length > 1 ? ` aria-label="Read the article: ${escapeHtml(a.title || "")}"` : ""}>${list.length > 1 ? `Read: ${escapeHtml(a.title || "")}` : "Read the article"}</a>`).join("");
+        modalVisitWrap.style.display = hasRoomLink || list.length ? "" : "none";
+    }
+    // The articles can land after an event's window opened from its address: its buttons then.
+    if (window.Articles) Articles.onLoad(() => {
+        if (modalItem && modalOverlay.classList.contains("open")) drawModalArticleLinks(modalItem, modalLink.style.display !== "none");
+    });
+    modalArticleLinks.addEventListener("click", e => {
+        const a = e.target.closest("[data-article-link]");
+        if (!a || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || !window.Articles) return;
+        e.preventDefault();
+        closeModal({ fromHistory: true, keepFocus: true });
+        Articles.open(a.dataset.articleLink);
+    });
     const modalClose = document.getElementById("modal-close");
 
     const modalViewport = document.getElementById("modal-viewport");
@@ -189,6 +209,36 @@ document.addEventListener("DOMContentLoaded", () => {
        leaves it; the tab already showing, pressed again, the window's
        title and the menu's Home row come back to it. */
     let showOpening = true;
+    /* THE THREE VIEWS' OWN ADDRESSES (2 Nov 2026, the owner's): /news (What's
+       New), /timeline and /furni open the archive on that view, and opening
+       one by a click puts its address in the bar (see syncViewAddress).
+       Read here, before the first render, as ?q= is below. */
+    const VIEW_PATHS = { news: "/news", timeline: "/timeline", furni: "/furni" };
+    const VIEW_TITLES = { news: "What's New", timeline: "Timeline", furni: "Furni" };
+    // syncViewAddress's state, up here because a render can run before it.
+    let viewAddressLive = false;   // its part of the page has run
+    let viewBackPending = false;   // our own step back off a view, in flight
+    let viewFromHistory = false;   // a render that Back or Forward asked for
+    // Whether the opening view was showing when a view was pushed, so Back
+    // off it puts the opening view back rather than the list under it.
+    let viewOverOpening = false;
+    let lastShowOpening = true;
+    // The view an address names: null for the archive's own (/home),
+    // undefined for any other (a maze's, a guide's...).
+    function viewKeyOfPath(pathname) {
+        const p = String(pathname || "").replace(/\/+$/, "") || "/";
+        if (p === "/home") return null;
+        return Object.keys(VIEW_PATHS).find(k => VIEW_PATHS[k] === p);
+    }
+    {
+        const atLoad = viewKeyOfPath(location.pathname);
+        if (atLoad) {
+            showOpening = false;
+            showWhatsNew = atLoad === "news";
+            showTimeline = atLoad === "timeline";
+            showFurni = atLoad === "furni";
+        }
+    }
     // The furni browser's piece opened in place, by key (see placeFurniExpand).
     let furniExpanded = null;
     /* A search carried in the address (?q=), so a filtered list is a link
@@ -1451,6 +1501,42 @@ document.addEventListener("DOMContentLoaded", () => {
                 sortSelect.value = want;
             }
         }
+        updateSortChip(isEvents);
+    }
+
+    /* "SORTED BY …" ON THE LINE OVER THE LIST (2 Nov 2026, the owner's). The
+       order was only ever said by the Sort menu, which sits in the search row
+       and is greyed out in the views that keep an order of their own, so a
+       list could be in an order nothing on screen named. The chip names it
+       in every list; where Sort is greyed out, its title (and the menu's)
+       says why. Only the order sortItems really applies is named: Upcoming's
+       date-asc is the soonest event first, not the oldest. */
+    function sortChipState(isEvents) {
+        if (showWhatsNew) return { text: "Newest first", why: "What's New always lists the newest change first" };
+        if (showTimeline) return { text: "Newest first", why: "The Timeline always runs from the newest to the oldest" };
+        if (furniFilter) return { text: "Most pictures first", why: "The rooms this furni is in, the most pictures of it first" };
+        if (showFurni) return { text: "Most mazes first", why: "Furni are listed by how many mazes they are in" };
+        const upcoming = isEvents && resolvedEventsSub() === "upcoming";
+        const words = {
+            name: "Sorted by name",
+            owner: isEvents ? "Sorted by host" : "Sorted by owner",
+            "date-desc": upcoming ? "Furthest first" : "Newest first",
+            "date-asc": upcoming ? "Soonest first" : "Oldest first",
+            "difficulty-asc": "Easiest first",
+            "difficulty-desc": "Hardest first"
+        };
+        return { text: words[sortBy] || "", why: "" };
+    }
+    function updateSortChip(isEvents) {
+        if (!sortChip) return;
+        const { text, why } = sortChipState(isEvents);
+        // Not over Featured's two random picks, nor on the opening view.
+        sortChip.hidden = !text || showFeatured || showOpening;
+        sortChip.textContent = text;
+        if (why) sortChip.title = why + ".";
+        else sortChip.removeAttribute("title");
+        if (sortSelect.disabled && why) sortSelect.title = "Sort is off here. " + why + ".";
+        else sortSelect.removeAttribute("title");
     }
 
     // Shared by the main grid and the featured-frame's own list (see
@@ -1519,7 +1605,7 @@ document.addEventListener("DOMContentLoaded", () => {
        warmed because the maze's had been, and a render's focus restore
        could land on the wrong one of the pair. */
     function recordKey(n) {
-        return (n && n.isGuide ? "guide:" : n && n.isEvent ? "event:" : "maze:") + String((n && n.id) || "");
+        return (n && n.isGuide ? "guide:" : n && n.isArticle ? "article:" : n && n.isEvent ? "event:" : "maze:") + String((n && n.id) || "");
     }
 
     function warmGallery(n) {
@@ -1546,8 +1632,9 @@ document.addEventListener("DOMContentLoaded", () => {
         });
     }
 
-    function wireRowActivation(container, items) {
-        container.querySelectorAll(".chrome-list-row").forEach((row, i) => {
+    // `selector` (2 Nov 2026): the rows that are these items, when others share the list (an article's).
+    function wireRowActivation(container, items, selector) {
+        container.querySelectorAll(selector || ".chrome-list-row").forEach((row, i) => {
             row.addEventListener("click", () => openModal(items[i]));
             row.addEventListener("keydown", e => {
                 if (e.key !== "Enter" && e.key !== " ") return;
@@ -2820,6 +2907,45 @@ document.addEventListener("DOMContentLoaded", () => {
     // nobody asked for must, so a reader part-way down keeps their place.
     if (window.Guides) Guides.onLoad(() => { if (showWhatsNew) renderInPlace(); });
 
+    /* ARTICLES (2 Nov 2026, the owner's), in the log as entries of their own
+       kind with their own label, "Article": each published article once, on
+       its What's New day, with its What's New title, line and picture,
+       which the Warren sets on the article itself (its `wn`; each empty
+       field falls back to the article's own: the day it went public, its
+       title, its summary, its thumbnail). Hidden there, it is not drawn.
+       Pressed, it opens the article. */
+    // An article's text with its format off, worked out once per copy of it (the menu's count asks often).
+    const articleWordsKept = new WeakMap();
+    function articleWords(a) {
+        if (!articleWordsKept.has(a)) articleWordsKept.set(a, typeof ArticleText !== "undefined" ? ArticleText.plain(a.body || "") : "");
+        return articleWordsKept.get(a);
+    }
+    function articleLogItems() {
+        const list = window.Articles && Articles.loaded() ? Articles.list() : [];
+        return list.filter(a => a && a.publishedAt && !(a.wn && a.wn.hidden === true)).map(a => {
+            const wn = a.wn && typeof a.wn === "object" ? a.wn : {};
+            const day = typeof wn.day === "string" && /^\d{4}-\d{2}-\d{2}$/.test(wn.day) ? wn.day : String(a.publishedAt);
+            const text = typeof wn.text === "string" && wn.text.trim() ? wn.text : (typeof GuideText !== "undefined" ? GuideText.plain(a.summary || "") : String(a.summary || ""));
+            const n = {
+                isArticle: true,
+                id: a.id,
+                name: typeof wn.title === "string" && wn.title.trim() ? wn.title : a.title,
+                thumb: (typeof wn.image === "string" && wn.image) || Articles.thumbOf(a),
+                noteText: text,
+                author: a.author || "",
+                activityAt: day,
+                activity: "article",
+                ...postBadge(wn),
+                // Its words as they read, its text's included, so a search finds what it says.
+                _haystack: [a.title, wn.title, text, a.author, "article", articleWords(a)].join(" ").toLowerCase()
+            };
+            return { n, at: day, own: "" };
+        });
+    }
+    // The articles arrive on their own request too: the log, the opening
+    // view (its search) and the side menu's count redraw in place.
+    if (window.Articles) Articles.onLoad(() => { if (showWhatsNew || showOpening) renderInPlace(); });
+
     // The Guides row's second line in the side menu.
     function guidesState() {
         const n = window.Guides && Guides.loaded() ? Guides.list().length : 0;
@@ -2974,6 +3100,8 @@ document.addEventListener("DOMContentLoaded", () => {
         const shown = auto.filter(x => !(x.n.override && x.n.override.hidden));
         return shown.concat(...shown.filter(x => !x.n.isGuide).map(earlierEntries))
             .concat(whatsNewPosts())
+            // Articles (2 Nov 2026): their own What's New fields, set on the article.
+            .concat(articleLogItems())
             .filter(x => x.at)
             /* Most recent activity first — added or edited, whichever came
                last — and among everything sharing the backfill date with
@@ -3166,7 +3294,8 @@ document.addEventListener("DOMContentLoaded", () => {
 
     /* The word at the head of each entry. News and Note are the Warren's own
        (WHAT'S NEW, BY HAND). */
-    const LOG_VERBS = { added: "Added", updated: "Updated", news: "News", note: "Note" };
+    // And Article (2 Nov 2026): an article's entry, in a rose of its own.
+    const LOG_VERBS = { added: "Added", updated: "Updated", news: "News", note: "Note", article: "Article" };
     /* A post's own label (27 Oct 2026, the owner's; badge in
        netlify/functions/whats-new.js): another of these words and its
        colour, or words typed in the Warren (badgeText) in the kind's. Only
@@ -3188,6 +3317,8 @@ document.addEventListener("DOMContentLoaded", () => {
     function logThumbHtml(n) {
         const attrs = 'alt="" loading="lazy" decoding="async"';
         if (n.isGuide) return `<img class="updatelog-thumb" src="${escapeHtml(guideLogThumb(n.thumb))}" ${attrs}>`;
+        // An article's thumbnail is drawn for it, a banner as often as a room: whole, as a news picture is.
+        if (n.isArticle) return `<img class="updatelog-thumb is-smooth" src="${escapeHtml(imgCdn(n.thumb, 102, null, 75))}" ${attrs}>`;
         if (n.isPost) {
             const t = String(n.thumb);
             // Our own file, already the box's shape at four times its size.
@@ -3318,7 +3449,7 @@ document.addEventListener("DOMContentLoaded", () => {
                         <ul class="updatelog-entries">
                             ${group.entries.map(({ n, i }) => `
                                 <li>
-                                    <${n.isPost && !n.link ? "div" : 'button type="button"'} class="updatelog-entry${n.isPost && !n.link ? " is-static" : ""}" data-log-index="${i}" data-record-id="${escapeHtml(n.id || "")}" data-focus-key="${escapeHtml(n.isPost ? "post:" + n.postId : n.isNote ? "note:" + n.postId : n.logKey || recordKey(n))}">
+                                    <${n.isPost && !n.link ? "div" : 'button type="button"'} class="updatelog-entry${n.isPost && !n.link ? " is-static" : ""}" data-log-index="${i}" data-record-id="${escapeHtml(n.id || "")}" data-focus-key="${escapeHtml(n.isPost ? "post:" + n.postId : n.isNote ? "note:" + n.postId : n.isArticle ? "article:" + n.id : n.logKey || recordKey(n))}">
                                         <span class="updatelog-verb is-${logBadgeClass(n)}${n.badgeText ? " is-custom" : ""}">${n.badgeText ? escapeHtml(n.badgeText) : LOG_VERBS[logBadgeClass(n)] || "Added"}</span>
                                         ${n.thumb
                                             /* A guide's picture is pixel art, so it is never put
@@ -3333,7 +3464,7 @@ document.addEventListener("DOMContentLoaded", () => {
                                             : `<span class="updatelog-thumb is-blank" aria-hidden="true"></span>`}
                                         <span class="updatelog-what">
                                             <span class="updatelog-name">${escapeHtml(n.name || "")}</span>
-                                            <span class="updatelog-meta">${escapeHtml(n.isPost ? "Site news" : n.isGuide
+                                            <span class="updatelog-meta">${escapeHtml(n.isPost ? "Site news" : n.isArticle ? "Article" + (n.author ? ` · by ${n.author}` : "") : n.isGuide
                                                 ? "Guide" + (n.category ? ` · ${n.category}` : "")
                                                 : (n.isEvent ? "Event" : isHallway(n) ? "Hallway" : "Maze")
                                                     + (n.owner ? ` · ${n.owner}` : "")
@@ -3392,6 +3523,7 @@ document.addEventListener("DOMContentLoaded", () => {
                     else window.open(n.link, "_blank", "noopener");
                 }
                 else if (n && n.isGuide) { if (window.Guides) Guides.open(n.id); }
+                else if (n && n.isArticle) { if (window.Articles) Articles.open(n.id); }
                 else if (n) openModal(n);
             });
         });
@@ -3704,6 +3836,21 @@ document.addEventListener("DOMContentLoaded", () => {
         return !isNaN(opened) && addedAt - opened > 30 * 86400000;
     }
 
+    /* The published articles the search matches (2 Nov 2026), newest first,
+       as the search reads any record: their words (the text's too) and their
+       author as "by:". Hidden from What's New or not: it is still an article. */
+    function openingArticleHits() {
+        const list = window.Articles && Articles.loaded() ? Articles.list() : [];
+        return list.map(a => ({
+            isArticle: true, id: a.id, name: a.title || "", owner: a.author || "",
+            thumb: Articles.thumbOf(a),
+            sub: [a.author ? `by ${a.author}` : "", (() => { const d = new Date(a.publishedAt); return isNaN(d) ? "" : d.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }); })()]
+                .filter(Boolean).join(" · "),
+            summary: typeof GuideText !== "undefined" ? GuideText.plain(a.summary || "") : String(a.summary || ""),
+            _haystack: [a.title, a.summary, a.author, "article", articleWords(a)].join(" ").toLowerCase()
+        })).filter(matchesQuery);
+    }
+
     function renderOpening() {
         // Its own picks; nothing from a list left behind is reachable from here.
         currentItems = [];
@@ -3716,16 +3863,45 @@ document.addEventListener("DOMContentLoaded", () => {
             const events = sortItems(normalizeAll(kindItems("events"), true).filter(matchesQuery));
             const rows = rowsHtml(mazes.concat(events), false);
             currentItems = rows.items;
-            if (!rows.items.length) {
+            // Articles too (2 Nov 2026, the owner's), first, as rows of their own.
+            const arts = openingArticleHits();
+            if (!rows.items.length && !arts.length) {
                 grid.innerHTML = "";
                 emptyEl.textContent = "Nothing in the archive matches that. Try a builder's name, a tag or a piece of furni.";
                 emptyEl.style.display = "block";
                 return;
             }
             const m = rows.items.filter(n => !n.isEvent).length, e = rows.items.length - m;
-            const said = [m ? `${m} ${m === 1 ? "maze" : "mazes"}` : "", e ? `${e} ${e === 1 ? "event" : "events"}` : ""].filter(Boolean).join(" and ");
-            grid.innerHTML = `<p class="opening-found">${escapeHtml(said)} found</p>${rows.html}`;
-            wireRowActivation(grid, currentItems);
+            const parts = [arts.length ? `${arts.length} ${arts.length === 1 ? "article" : "articles"}` : "",
+                m ? `${m} ${m === 1 ? "maze" : "mazes"}` : "", e ? `${e} ${e === 1 ? "event" : "events"}` : ""].filter(Boolean);
+            const said = parts.length > 1 ? parts.slice(0, -1).join(", ") + " and " + parts[parts.length - 1] : parts[0];
+            // In the archive's own row, so they read as more of what was found.
+            grid.innerHTML = `<p class="opening-found">${escapeHtml(said)} found</p>${arts.map(n => `
+                <div class="chrome-list-row featured art-row" data-article-hit="${escapeHtml(n.id)}" data-focus-key="${escapeHtml("article:" + n.id)}" tabindex="0" role="button" aria-label="Read ${escapeHtml(n.name || "the article")}" data-track="opening" data-track-label="article">
+                    <div class="row-thumb">
+                        ${n.thumb ? `<div class="row-thumb-crop"><img class="row-thumb-img" src="${rowThumbUrl(n.thumb)}" alt="" loading="lazy"></div>` : ""}
+                    </div>
+                    <div class="row-info">
+                        <h3>${escapeHtml(n.name)}</h3>
+                        <p class="row-creator">${escapeHtml(n.sub)}</p>
+                        ${n.summary ? `<p class="row-desc">${escapeHtml(n.summary)}</p>` : ""}
+                    </div>
+                    <div class="row-side">
+                        <span class="row-pills"><span class="status-badge art-badge">Article</span></span>
+                        <span class="chrome-go">Go<span class="chrome-go-arrow" aria-hidden="true"></span></span>
+                    </div>
+                </div>`).join("")}${rows.html}`;
+            grid.querySelectorAll("[data-article-hit]").forEach(row => {
+                const go = () => { if (window.Articles) Articles.open(row.dataset.articleHit); };
+                row.addEventListener("click", go);
+                row.addEventListener("keydown", e => {
+                    if (e.key !== "Enter" && e.key !== " ") return;
+                    e.preventDefault();
+                    go();
+                });
+            });
+            // The archive's rows only: an article's is wired above.
+            wireRowActivation(grid, currentItems, ".chrome-list-row:not(.art-row)");
             wireThumbFadeIn(grid);
             return;
         }
@@ -4224,6 +4400,8 @@ document.addEventListener("DOMContentLoaded", () => {
            card), so no way into one has to remember to say so. */
         if (showOpening && (showFeatured || showWhatsNew || showTimeline || showFurni || furniFilter)) showOpening = false;
         updateChrome();
+        // The view's own address first, so a search is written onto it.
+        syncViewAddress();
         syncSearchToUrl();
 
         if (!dataLoaded) {
@@ -9041,6 +9219,19 @@ document.addEventListener("DOMContentLoaded", () => {
             modalArticleBody.querySelectorAll("h3, h4, h5, h6").forEach(h => {
                 h.setAttribute("aria-level", String(Math.min(6, Number(h.tagName.slice(1)) + 1)));
             });
+            /* The article's pictures, named (2 Nov 2026, the pre-deploy
+               sweep). Habbo's own alt is often missing, empty or the file's
+               name ("lpromo_spiderec100_aug26"), which a screen reader reads
+               out letter by letter. Words of their own are kept; otherwise
+               the first picture (the banner) is the article's title and the
+               rest are pictures from it, as the gallery names its rooms. */
+            const articleName = (article.title || n.name || "").trim();
+            modalArticleBody.querySelectorAll("img").forEach((img, i) => {
+                const own = (img.getAttribute("alt") || "").trim();
+                if (own && /\s/.test(own) && !/[_]|\.(png|jpe?g|gif|webp)\b/i.test(own)) return;
+                img.alt = !articleName ? "A picture from the Habbo article"
+                    : i === 0 ? articleName : `A picture from ${articleName}`;
+            });
             /* The whole line goes when there is nowhere for it to point,
                rather than falling back to "#".
 
@@ -9110,7 +9301,12 @@ document.addEventListener("DOMContentLoaded", () => {
         // done it. Hiding the button alone leaves an empty <p> in the body's
         // column, which reads as a band of dead space under the builder card
         // on every event — none of which have a room to visit.
-        modalVisitWrap.style.display = habboLink ? "" : "none";
+        /* "Read the article" (2 Nov 2026, the owner's): an event links back
+           to each published article written about it (its eventId), beside
+           the room button, in the same paragraph. Pressed, the room window
+           shuts without stepping back and the article opens over its entry,
+           as a guide named in a description does. */
+        drawModalArticleLinks(n, !!habboLink);
 
         // The entrance/finish images (if set) always bookend the gallery,
         // ahead of and after the room-by-room shots — they're stored
@@ -9570,7 +9766,8 @@ document.addEventListener("DOMContentLoaded", () => {
                 // entry is the visitor's way in, never ours.
                 const inherited = !!(history.state && typeof history.state === "object" && MODAL_STATE in history.state);
                 if (here !== target || location.hash || inherited) history.replaceState(unmarkedState(), "", target);
-            } else if (fromAddress === "guides" && history.state && history.state.guides) {
+            // The Articles window hands its entry over the same way (2 Nov 2026; js/articles.js).
+            } else if (fromAddress === "guides" && history.state && (history.state.guides || history.state.articles)) {
                 history.replaceState(modalMark(), "", target);
             } else if (location.pathname === url) {
                 // Already at this address: Forward back onto an entry we
@@ -9602,6 +9799,92 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     }
 
+    /* ---------- /news, /timeline and /furni (2 Nov 2026, the owner's) ----------
+
+       What's New, the Timeline and Furni are views over the list rather than
+       windows, but each now has an address, as a maze does: opening one
+       from the page PUSHES it (/home becomes /news), switching between them
+       REPLACES it, and leaving one steps BACK off the entry it pushed, so
+       Back closes a view and Forward reopens it, and closing one always
+       lands on /home. A view the page loaded on (a pasted /timeline) is the
+       visitor's way in, never stepped back off: leaving it rewrites its
+       address to /home, as a maze opened from a link does. Only /home and
+       the three are ever written: on any other address (a maze's window, a
+       guide's, Alt Codes) the window that owns it keeps it, and this waits
+       until it is back. Called from renderView, so every way into or out of
+       a view (a button, the menu, a filter chip, the opening view's links)
+       is covered by the one render they all end in. */
+    const VIEW_STATE = "mazeratsView";
+    const ownsViewEntry = () => !!(history.state && history.state[VIEW_STATE] === PAGE_TOKEN);
+    function currentViewKey() {
+        if (showWhatsNew) return "news";
+        if (showTimeline) return "timeline";
+        if (showFurni || furniFilter) return "furni";
+        return null;
+    }
+    function syncViewAddress(opts) {
+        const key = currentViewKey();
+        // The title and canonical name the view while it shows.
+        if (window.PageMeta) {
+            if (key) window.PageMeta.set("view", `${VIEW_TITLES[key]} | Maze Rats`, "https://mazerats.net" + VIEW_PATHS[key]);
+            else window.PageMeta.restore("view");
+        }
+        const wasOpening = lastShowOpening;
+        lastShowOpening = showOpening;
+        // Not before this part of the page has run (a render during load).
+        if (!viewAddressLive || viewFromHistory || pendingBack || viewBackPending) return;
+        const here = viewKeyOfPath(location.pathname);
+        if (here === undefined || LEGACY_HASH.test(location.hash)) return;
+        if (key === here) return;
+        const search = location.search;
+        try {
+            if (key && here === null) {
+                viewOverOpening = wasOpening;
+                history.pushState({ [VIEW_STATE]: PAGE_TOKEN }, "", VIEW_PATHS[key] + search);
+            } else if (key) {
+                history.replaceState(history.state, "", VIEW_PATHS[key] + search);
+            } else if (ownsViewEntry() && !(opts && opts.replace)) {
+                viewBackPending = true;
+                history.back();
+            } else {
+                const s = history.state;
+                const rest = s && typeof s === "object" && VIEW_STATE in s ? Object.assign({}, s) : s;
+                if (rest && typeof rest === "object") delete rest[VIEW_STATE];
+                history.replaceState(rest && typeof rest === "object" && !Object.keys(rest).length ? null : rest, "", "/home" + search);
+            }
+        } catch (e) { /* a sandboxed frame can refuse history writes; the view still works */ }
+    }
+    viewAddressLive = true;
+    /* Back and Forward between /home and a view's address. Registered before
+       the maze window's own listener, so a step back that window took to
+       close itself (pendingBack) is still marked as its own here, and left
+       to it. */
+    window.addEventListener("popstate", () => {
+        if (pendingBack) return;
+        if (viewBackPending) {
+            viewBackPending = false;
+            // The entry under the view carries the search it had then.
+            syncedSearch = null;
+            syncSearchToUrl();
+            return;
+        }
+        const key = viewKeyOfPath(location.pathname);
+        if (key === undefined || key === currentViewKey()) return;
+        const backToOpening = key === null && viewOverOpening;
+        showFeatured = false;
+        showWhatsNew = key === "news";
+        showTimeline = key === "timeline";
+        showFurni = key === "furni";
+        furniFilter = null;
+        if (backToOpening) showOpening = true;
+        searchInput.value = "";
+        query = "";
+        viewFromHistory = true;
+        try { render(); } finally { viewFromHistory = false; }
+        const results = document.querySelector(".home-results");
+        if (results) results.scrollTop = 0;
+    });
+
     window.addEventListener("popstate", () => {
         if (pendingBack) {
             const reopened = pendingPush && modalOverlay.classList.contains("open") && !modalOverlay.classList.contains("closing");
@@ -9624,6 +9907,10 @@ document.addEventListener("DOMContentLoaded", () => {
                 try { history.replaceState(unmarkedState(), "", archiveAddress()); } catch (e) { /* fine */ }
             }
             pendingBack = false;
+            /* And it names the view that was showing then (2 Nov 2026): a
+               filter chip leaves the Timeline as it closes the window, so a
+               step back onto /timeline is put right, in place. */
+            syncViewAddress({ replace: true });
             /* The entry stepped back onto is the one from BEFORE the window
                opened, so it carries whatever search was in the address then.
                A filter chip closes the window and sets a new search in the
@@ -9739,14 +10026,40 @@ document.addEventListener("DOMContentLoaded", () => {
             if (results) results.scrollTop = 0;
         });
     };
+    /* The search row's keyboard ring, for the keyboard only (2 Nov 2026):
+       see .is-pointer-focus in style.css. Marked on the press, so it is in
+       place before the focus that follows it; gone with the focus. */
+    [searchInput, sortSelect, openingInput].forEach(field => {
+        if (!field) return;
+        field.addEventListener("pointerdown", () => field.classList.add("is-pointer-focus"));
+        field.addEventListener("blur", () => field.classList.remove("is-pointer-focus"));
+    });
     wireGo(document.getElementById("opening-go"), openingInput);
     // The archive's own box has the same Go (30 Oct 2026, the owner's).
     wireGo(document.getElementById("room-go"), searchInput);
-    // A maze at random, from every maze in the archive (not the Hallway).
+    /* A maze at random, from every maze in the archive (not the Hallway).
+
+       LEANING TO THE ONES NOT WALKED YET (2 Nov 2026, the owner's). A maze
+       the player has not marked Completed weighs SURPRISE_UNWALKED (4), one
+       they have weighs SURPRISE_WALKED (1): each unwalked maze is four times
+       as likely as each walked one, and a walked maze can still come up.
+       With nothing ticked (or everything) every maze is equally likely, as
+       it always was. */
+    const SURPRISE_UNWALKED = 4;
+    const SURPRISE_WALKED = 1;
+    function surprisePick(pool) {
+        const weights = pool.map(n => (isWalked(n.id) ? SURPRISE_WALKED : SURPRISE_UNWALKED));
+        let r = Math.random() * weights.reduce((a, b) => a + b, 0);
+        for (let i = 0; i < pool.length; i++) {
+            r -= weights[i];
+            if (r < 0) return pool[i];
+        }
+        return pool[pool.length - 1];
+    }
     if (openingDice) openingDice.addEventListener("click", () => {
         if (!dataLoaded) return;
         const pool = normalizeAll(kindItems("mazes"), false).filter(n => !isHallway(n));
-        if (pool.length) openModal(pool[Math.floor(Math.random() * pool.length)]);
+        if (pool.length) openModal(surprisePick(pool));
     });
 
     sortSelect.addEventListener("change", e => {
@@ -11400,7 +11713,7 @@ document.addEventListener("DOMContentLoaded", () => {
             puraLoading = loadPuraScript("js/pura-engine.js?v=15")
                 // The soundtrack is a nicety: a failed load plays on in silence.
                 .then(() => loadPuraScript("js/pura-music.js?v=6").catch(() => {}))
-                .then(() => loadPuraScript("js/pura-panic.js?v=49"))
+                .then(() => loadPuraScript("js/pura-panic.js?v=50"))
                 // A failed load forgets itself, so the next press asks again.
                 .catch(err => { puraLoading = null; throw err; });
         }
@@ -11522,12 +11835,12 @@ document.addEventListener("DOMContentLoaded", () => {
        and keeps the answer in the same sessionStorage flag js/skin-wear.js
        keeps for its preview — { tail, at }, the token's last 12 characters
        — so either one's check serves the other. Good for an admin session's
-       12 hours; a refusal clears it. Nothing is asked without a token. */
+       48 hours; a refusal clears it. Nothing is asked without a token. */
     const ADMIN_VERIFIED_KEY = "mazerats_skin_preview_verified";
-    const ADMIN_SESSION_MS = 12 * 60 * 60 * 1000;
+    const ADMIN_SESSION_MS = 48 * 60 * 60 * 1000;
     /* ASKED AGAIN AFTER TEN MINUTES (27 Oct 2026, the overnight scan). The
        flag's `at` is when it was checked, not when the session began, so
-       trusted for 12 hours from there it could outlive the token by most
+       trusted for 48 hours from there it could outlive the token by most
        of a day, and a shared computer showed the hidden row long after.
        Past ten minutes it still counts (an admin's menu does not blink),
        but the server is asked again behind it, and a refusal clears it. */
@@ -11563,7 +11876,7 @@ document.addEventListener("DOMContentLoaded", () => {
                     else sessionStorage.removeItem(ADMIN_VERIFIED_KEY);
                 } catch (e) { /* private mode: asked again next time */ }
                 return ok;
-            // A blip: the flag as it stands (good for its 12 hours), asked again next time.
+            // A blip: the flag as it stands (good for its 48 hours), asked again next time.
             }, () => { adminCheck = null; return adminFlagAge() < ADMIN_SESSION_MS; });
         }
         return adminCheck;
@@ -11620,6 +11933,12 @@ document.addEventListener("DOMContentLoaded", () => {
         if ((m = /^\/guides(?:\/([^/]+))?$/.exec(path)) && window.Guides) {
             if (m[1] && decode(m[1]) === null) return false;
             Guides.open(m[1] ? decode(m[1]) : (u.searchParams.get("g") || null));
+            return true;
+        }
+        // An article, or the Articles list (2 Nov 2026).
+        if ((m = /^\/(?:article\/([^/]+)|articles)$/.exec(path)) && window.Articles) {
+            if (m[1] && decode(m[1]) === null) return false;
+            Articles.open(m[1] ? decode(m[1]) : null);
             return true;
         }
         if (path === "/glyphs" && window.Glyphs) { Glyphs.open(); return true; }
@@ -12007,6 +12326,9 @@ document.addEventListener("DOMContentLoaded", () => {
                 menuLayout = (s && s.menuLayout && typeof s.menuLayout === "object") ? s.menuLayout : null;
                 // A row the Warren keeps to admins: find out now whether this browser's token is good.
                 if (menuLayout && Array.isArray(menuLayout.admins) && menuLayout.admins.length) adminVerified();
+                /* And the rows for admins until placed (ADMINS_FIRST, 2 Nov 2026):
+                   asked whenever this browser holds a Warren token at all. */
+                else if (adminToken()) adminVerified();
                 /* The opening view's game tiles read the two states above
                    (30 Oct 2026, the bug scan): drawn before a slow answer
                    landed, Pura Panic said "Maintenance" until some other
@@ -12054,12 +12376,22 @@ document.addEventListener("DOMContentLoaded", () => {
         "Home": "home", "Mazes": "mazes", "Events": "events", "Timeline": "timeline", "Furni": "furni",
         "What's New": "whats-new", "Guides": "guides", "Missing Pieces": "missing-pieces",
         "Guess the Maze": "guess", "Odd One Out": "odd", "Fallin' Furni": "fallin-furni", "Pura Panic": "pura",
-        "Scout's Trail": "scout", "Leaderboards": "leaderboards", "Your Profile": "profile", "Alt Codes": "alt-codes"
+        "Scout's Trail": "scout", "Leaderboards": "leaderboards", "Your Profile": "profile", "Alt Codes": "alt-codes",
+        "Articles": "articles"
     };
     const MENU_FOLD_NAMES = { archive: "Archive", games: "Games" };
+    /* ROWS FOR ADMINS UNTIL THE WARREN SAYS OTHERWISE (2 Nov 2026, the
+       owner's: the Articles row is "ADMIN-ONLY for now"). A row named here
+       shows only to a checked admin while the saved layout does not place it
+       anywhere, as if it were in `admins`; the Warren's menu card shows it
+       as "Admins only" (js/admin-menu.js), and once a layout saved there
+       places it, that layout decides, Shown included. */
+    const ADMINS_FIRST = ["articles"];
     function applyMenuLayout(entries) {
         const layout = menuLayout;
-        if (!layout || !Array.isArray(layout.top)) return entries;
+        if (!layout || !Array.isArray(layout.top)) {
+            return entries.filter(e => !(ADMINS_FIRST.includes(MENU_IDS[e.name]) && !adminVerifiedNow()));
+        }
         // The menu as written, as units (a row and any sections under it), each with where it is written.
         const units = [];
         let home = "loose";
@@ -12076,7 +12408,7 @@ document.addEventListener("DOMContentLoaded", () => {
         const folds = layout.folds || {};
         const placed = new Set(layout.top.concat(folds.archive || [], folds.games || []));
         const hidden = new Set(Array.isArray(layout.hidden) ? layout.hidden : []);
-        const admins = new Set(Array.isArray(layout.admins) ? layout.admins : []);
+        const admins = new Set((Array.isArray(layout.admins) ? layout.admins : []).concat(ADMINS_FIRST.filter(id => !placed.has(id))));
         const shows = u => !u.id || (!hidden.has(u.id) && (!admins.has(u.id) || adminVerifiedNow()));
         const unplaced = where => units.filter(u => u.home === where && (!u.id || !placed.has(u.id)));
         const flat = list => [].concat(...list.filter(shows).map(u => u.unit));
@@ -12201,6 +12533,19 @@ document.addEventListener("DOMContentLoaded", () => {
                 badge: "",
                 on: false,
                 run: () => { if (window.Guides) Guides.open(); }
+            },
+            {
+                /* Every article, newest first, in its window (2 Nov 2026,
+                   js/articles.js). For admins only until the Warren places
+                   it (ADMINS_FIRST above). */
+                name: "Articles",
+                state: menuFigure(() => {
+                    const n = window.Articles && Articles.loaded() ? Articles.list().length : 0;
+                    return n ? `${n} ${n === 1 ? "article" : "articles"} from the archive` : "News from the archive";
+                }, "News from the archive"),
+                badge: "",
+                on: false,
+                run: () => { if (window.Articles) Articles.open(); }
             },
             {
                 name: "Missing Pieces",
@@ -12665,6 +13010,17 @@ document.addEventListener("DOMContentLoaded", () => {
             const from = time(ev.spotlightFrom), until = time(ev.spotlightUntil);
             return (from === null || from <= now) && (until === null || now < until);
         };
+        /* ARTICLES ON THE SPOTLIGHT (2 Nov 2026, the owner's): a published
+           article ticked for it in the Warren, with the same fields and the
+           same rule as an event's. Each stands in as an event-shaped slide:
+           its id marked "article:" so it can never be taken for an event's,
+           its thumbnail (or first gallery picture) as the picture, and the
+           article itself kept for the slide's address. An article has no
+           place in the Controls' spotlight order, so it follows the ordered
+           events, by its start. */
+        const articleSpots = () => (window.Articles && Articles.loaded() ? Articles.list() : [])
+            .filter(a => a && a.spotlight === true)
+            .map(a => Object.assign({}, a, { id: "article:" + a.id, thumb: Articles.thumbOf(a), _article: a, spotlightOrder: undefined }));
         const isOpen = () => drawer.classList.contains("is-open");
         const slides = () => [...card.querySelectorAll(".welcome-promo-slide")];
         const shownFocus = node => {
@@ -12696,7 +13052,8 @@ document.addEventListener("DOMContentLoaded", () => {
         function slideOf(ev) {
             const a = document.createElement("a");
             a.className = "welcome-promo-slide";
-            a.href = window.RecordAddress.of("event", ev);
+            // An article's slide goes to the article (2 Nov 2026; see articleSpots).
+            a.href = ev._article ? window.RecordAddress.of("article", ev._article) : window.RecordAddress.of("event", ev);
             a.dataset.id = ev.id;
             const caption = (typeof ev.spotlightCaption === "string" && ev.spotlightCaption.trim()) || DEFAULT_CAPTION;
             a.setAttribute("aria-label", `${ev.title || "Event"}: ${caption.replace(RAISED, "$1")}`);
@@ -12803,7 +13160,7 @@ document.addEventListener("DOMContentLoaded", () => {
             }
             const list = await events;
             const now = Date.now();
-            const on = (Array.isArray(list) ? list : [])
+            const on = (Array.isArray(list) ? list : []).concat(articleSpots())
                 .filter(ev => live(ev, now))
                 // The Warren's order first (27 Oct 2026), as on the landing page.
                 .sort((a, b) => (place(a) - place(b))
@@ -12891,6 +13248,8 @@ document.addEventListener("DOMContentLoaded", () => {
 
         draw();
         setInterval(draw, RECHECK_MS);
+        // The articles come on their own request (js/articles.js): drawn in when they land.
+        if (window.Articles) Articles.onLoad(() => draw());
 
         /* FROM THE SERVER AGAIN, EVERY THREE MINUTES (30 Oct 2026, the bug
            scan), as the landing page does (refreshSpotlightEvents in
@@ -13537,6 +13896,13 @@ document.addEventListener("DOMContentLoaded", () => {
         try { dest = new URL(a.href, location.href); } catch (err) { return; }
         if (dest.origin !== location.origin) return;
         const p = window.RecordAddress.parse(dest.pathname);
+        /* An article's address (2 Nov 2026): its window, here (a spotlight
+           slide, a news post's link, an article named in a description). */
+        if (p && p.kind === "article" && window.Articles) {
+            e.preventDefault();
+            Articles.open(p.key);
+            return;
+        }
         if (!p || (p.kind !== "maze" && p.kind !== "event") || !dataLoaded) return;
         const match = findRecord(p.kind, p.key);
         if (!match) return;
@@ -13583,7 +13949,9 @@ document.addEventListener("DOMContentLoaded", () => {
             if (!match) return false;
             openRecord(kind, match, opts && opts.fromGuides ? { fromAddress: "guides" } : {});
             return true;
-        }
+        },
+        // The record itself, once the archive is here (2 Nov 2026: an article's event button).
+        find: (kind, key) => (dataLoaded && findRecord(kind, key)) || null
     };
 
     render();
@@ -13644,12 +14012,15 @@ document.addEventListener("DOMContentLoaded", () => {
        front of the visitor, everything is fetched behind the loader and the
        whole archive appears at once.
 
-       The bar tracks real work — two API calls, then one step per thumbnail —
-       so it moves when something has actually happened. */
+       The bar tracks real work, so it moves when something has actually
+       happened. It is drawn by a small script in home.html (1 Nov 2026),
+       which has been counting the page's own scripts since before this one
+       loaded; from here this only tells it how each later stage is going:
+       the archive's bytes, the events, the drawing, the first thumbnails.
+       See window.MazeLoadBar there for the shares and the easing. */
     const loaderEl = document.getElementById("site-loader");
-    const loaderFill = document.getElementById("site-loader-fill");
-    const loaderLabel = document.getElementById("site-loader-label");
-    const LOADER_BLOCK = 8;   // px per drawn block, matching the CSS gradient
+    const loadBar = window.MazeLoadBar || { begin() {}, step() {}, slow() {}, finish() {} };
+    loadBar.step("boot", 1);
 
     /* A stalled THUMBNAIL must never hold the page hostage. Whatever has
        arrived by then is shown regardless.
@@ -13670,39 +14041,20 @@ document.addEventListener("DOMContentLoaded", () => {
     const LOADER_MAX_WAIT = 8000;
     const LOADER_SLOW_AFTER = 10000;
 
-    /* Weighted rather than one step per task, because the tasks are nothing
-       like equal: the maze list is a single 2.4MB response that accounts for
-       roughly half the wait, while a thumbnail is under a kilobyte. Counting
-       them evenly parked the bar at 4% for the first two thirds of the load
-       and then threw it to 100%. These weights are measured shares of the
-       real thing, so the bar moves roughly in step with the waiting. */
-    const LOAD_WEIGHT_ROOMS = 45;
-    const LOAD_WEIGHT_EVENTS = 5;
-    const LOAD_WEIGHT_THUMBS = 50;
-
-    let loadDone = 0;
-    const loadTotal = 100;
-
-    // Set once the load has gone on long enough to be worth remarking on, so
-    // drawLoader keeps saying so on every subsequent repaint.
-    let loaderSlow = false;
-
-    function drawLoader() {
-        if (!loaderEl) return;
-        const pct = loadTotal ? Math.min(1, loadDone / loadTotal) : 1;
-        const track = loaderFill.parentElement.clientWidth;
-        // Snapped down to whole blocks so none is ever drawn half-width.
-        loaderFill.style.width = (Math.floor((pct * track) / LOADER_BLOCK) * LOADER_BLOCK) + "px";
-        loaderLabel.textContent = loaderSlow
-            ? "STILL LOADING " + Math.round(pct * 100) + "%"
-            : "LOADING " + Math.round(pct * 100) + "%";
-    }
+    /* How big the archive's answer is, as unpacked, so its bytes can be
+       counted against something: there is no length to read (it arrives
+       compressed and in pieces), so it is whatever this browser saw last
+       time, or about what it was when this was written (808KB, 1 Nov 2026). */
+    const ROOMS_BYTES_KEY = "mazerats_rooms_bytes";
+    let roomsBytesWas = 0;
+    try { roomsBytesWas = Number(localStorage.getItem(ROOMS_BYTES_KEY)) || 0; } catch (e) { /* private mode */ }
+    const roomsBytesExpected = roomsBytesWas > 1000 ? roomsBytesWas : 830000;
+    let roomsBytesGot = 0;
 
     function hideLoader() {
         if (!loaderEl || loaderEl.dataset.done) return;
         loaderEl.dataset.done = "1";
-        loadDone = loadTotal;
-        drawLoader();
+        loadBar.finish();
         loaderEl.classList.add("is-done");
         setTimeout(() => loaderEl.remove(), 300);
         // The empty state means something different the moment this goes —
@@ -13722,15 +14074,16 @@ document.addEventListener("DOMContentLoaded", () => {
        too: a broken image is one fewer thing to wait for, not a reason to sit
        on the loading screen. */
     function preloadThumbs(urls) {
-        const each = urls.length ? LOAD_WEIGHT_THUMBS / urls.length : 0;
+        let landed = 0;
+        loadBar.begin("thumbs");
+        if (!urls.length) loadBar.step("thumbs", 1);
         return Promise.all(urls.map(url => new Promise(resolve => {
             const img = new Image();
             let settled = false;
             const done = () => {
                 if (settled) return;
                 settled = true;
-                loadDone += each;
-                drawLoader();
+                loadBar.step("thumbs", ++landed / urls.length);
                 resolve();
             };
             img.onload = done;
@@ -13742,21 +14095,34 @@ document.addEventListener("DOMContentLoaded", () => {
         })));
     }
 
-    drawLoader();
-
     /* No blanket cap from here — see LOADER_MAX_WAIT. The bar stays up for as
        long as the archive is genuinely still being fetched, and the cap is
        armed below once that has finished, to cover the thumbnails it was
        written for. */
-    const slowTimer = setTimeout(() => {
-        loaderSlow = true;
-        drawLoader();
-    }, LOADER_SLOW_AFTER);
+    const slowTimer = setTimeout(() => loadBar.slow(), LOADER_SLOW_AFTER);
 
-    // Counted separately rather than through Promise.all, so the bar moves
-    // when the first of the two lands instead of waiting for both.
-    const roomsReq = Api.getRooms().then(r => { loadDone += LOAD_WEIGHT_ROOMS; drawLoader(); return r; });
-    const eventsReq = Api.getEvents().then(e => { loadDone += LOAD_WEIGHT_EVENTS; drawLoader(); return e; });
+    /* Counted separately rather than through Promise.all, so the bar moves
+       when the first of the two lands instead of waiting for both. The
+       archive in two stages: waiting for the server to answer at all (a
+       cold function can take seconds), then its bytes as they arrive. */
+    loadBar.begin("wait");
+    Api.roomsProgress = n => {
+        loadBar.step("wait", 1);
+        roomsBytesGot = n;
+        // Never quite full on the count alone: the last of it is the unpacking.
+        loadBar.step("rooms", Math.min(0.95, n / roomsBytesExpected));
+    };
+    const roomsReq = Api.getRooms().then(r => {
+        Api.roomsProgress = null;
+        loadBar.step("wait", 1);
+        loadBar.step("rooms", 1);
+        if (roomsBytesGot > 1000) {
+            try { localStorage.setItem(ROOMS_BYTES_KEY, String(roomsBytesGot)); } catch (e) { /* private mode */ }
+        }
+        return r;
+    });
+    loadBar.begin("events");
+    const eventsReq = Api.getEvents().then(e => { loadBar.step("events", 1); return e; });
 
     /* Says out loud that the archive on screen is the bundled stand-in
        rather than the real thing.
@@ -13870,6 +14236,32 @@ document.addEventListener("DOMContentLoaded", () => {
        loading="lazy" on the rows already arranges. LOADER_MAX_WAIT still
        caps the wait whatever happens. */
     const LOADER_PRELOAD_ROWS = 12;
+    const LOADER_PICTURE_WAIT = 3000;
+
+    /* And whatever pictures the first screen is actually showing (1 Nov
+       2026, the scan). On the opening view the list is empty, so the loader
+       waited for nothing and went about two seconds before the spotlight's
+       picture arrived on a slow phone. Read off the page as drawn: pictures
+       and background pictures in the archive that start within the first
+       screen, not yet in. */
+    function firstScreenPictures() {
+        const root = document.querySelector(".archive-stack") || document.body;
+        const reach = (window.innerHeight || 800) * 1.1;
+        const urls = [];
+        root.querySelectorAll("img, [style*='background-image']").forEach(el => {
+            if (urls.length >= 16) return;
+            const r = el.getBoundingClientRect();
+            if (!r.width || !r.height || r.top > reach || r.bottom < 0) return;
+            if (el.tagName === "IMG") {
+                const src = el.currentSrc || el.getAttribute("src");
+                if (src && !el.complete) urls.push(src);
+                return;
+            }
+            const m = /url\(["']?([^"')]+)["']?\)/.exec(el.style.backgroundImage || "");
+            if (m) urls.push(m[1]);
+        });
+        return urls;
+    }
 
     Promise.all([roomsReq, eventsReq]).then(async ([rooms, events]) => {
         // Made safe before anything reads them — see sanitizeRecords.
@@ -13890,7 +14282,7 @@ document.addEventListener("DOMContentLoaded", () => {
         setTimeout(hideLoader, LOADER_MAX_WAIT);
 
         showDegradedNotice();
-        drawLoader();
+        loadBar.begin("draw");
 
         dataLoaded = true;
         lastStatusSignature = eventStatusSignature();
@@ -13905,6 +14297,8 @@ document.addEventListener("DOMContentLoaded", () => {
            mazes at all — "0 of 0 completed" — and nothing drew it again. */
         try { refreshProgressIfOpen(); } catch (e) { console.error("Your Profile failed to redraw", e); }
         try { openFromAddress("load"); } catch (e) { console.error("Could not open the linked record", e); }
+        // An article opened from its address before the events were in: its event button now (2 Nov 2026).
+        try { if (window.Articles) Articles.refresh(); } catch (e) { console.error("The open article failed to redraw", e); }
         // Which records are marked as dead ends. Small and edge-cached, and
         // nothing waits on it: a maze's window re-draws its strip when it
         // lands (see loadDeadEnds).
@@ -13918,12 +14312,21 @@ document.addEventListener("DOMContentLoaded", () => {
             ...(showFeatured ? featuredListItems : []),
             ...currentItems.slice(0, LOADER_PRELOAD_ROWS)
         ];
+        let onScreen = [];
+        try { onScreen = firstScreenPictures(); } catch (e) { /* the rows' own list still stands */ }
         const thumbs = [...new Set(firstScreen
             .map(n => n && n.thumb)
             .filter(Boolean)
-            .map(rowThumbUrl))];
+            .map(rowThumbUrl)
+            .concat(onScreen))];
+        loadBar.step("draw", 1);
 
-        await preloadThumbs(thumbs);
+        /* Pictures get three seconds of the visitor's time at most (1 Nov
+           2026): the archive is drawn and usable by now, and on a slow phone
+           the opening view's pictures were holding it behind the loader for
+           another three or four. Whatever is still on its way fades in on
+           the page itself. */
+        await Promise.race([preloadThumbs(thumbs), new Promise(r => setTimeout(r, LOADER_PICTURE_WAIT))]);
         hideLoader();
     }).catch(e => {
         // Api's own reads fall back rather than reject, so reaching this is

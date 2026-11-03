@@ -3,7 +3,7 @@
    netlify/functions/ (see js/api.js) — no local-only staging anymore.
    Write requests are gated by a session token from logging in with a
    username/password (see netlify/functions/auth.js and _auth.js); sessions
-   expire automatically after 12 hours. Image uploads (thumbnails,
+   expire automatically after 48 hours. Image uploads (thumbnails,
    room-by-room gallery shots) go through netlify/functions/upload.js into
    Netlify Blobs — see js/api.js's uploadImage/deleteImage. */
 document.addEventListener("DOMContentLoaded", () => {
@@ -630,10 +630,48 @@ document.addEventListener("DOMContentLoaded", () => {
        as it is, with no retired addresses known, which is how the page
        behaved before: the save still checks. */
     const retiredAddresses = { rooms: [], events: [] };
+    /* &lite=1 on the mazes (2 Nov 2026, the owner's "load times are
+       typically quite slow"): the furni detections are about 96% of the
+       archive's full read, ~3.7MB of a ~3.8MB answer, and nothing on the
+       Warren uses them but one maze's editor. A server that knows lite=1
+       sends each maze's furni as its pictures alone, every one marked
+       { lite: true } (enough for the scan counts), and the editor reads the
+       maze whole when it is opened (readFullRoom). A server that does not
+       know it answers in full, as before, and nothing is read twice. */
     const RETIRED_URLS = {
-        rooms: "/.netlify/functions/rooms?full=1&retired=1",
+        rooms: "/.netlify/functions/rooms?full=1&retired=1&lite=1",
         events: "/.netlify/functions/events?full=1&retired=1"
     };
+    const isLiteFurni = v => !!v && typeof v === "object" && v.lite === true;
+    function isLiteRoom(room) {
+        return !!(room && room.furni && typeof room.furni === "object" && Object.values(room.furni).some(isLiteFurni));
+    }
+    /* A maze read lite, read whole before its editor opens. Resolves true
+       when the editor may open: whole already, or now. The Edit button says
+       "Opening…" meanwhile. A server that answers the whole list rather
+       than one maze (one from before ?id=) puts every maze back whole. */
+    async function readFullRoom(id, btn) {
+        if (!isLiteRoom(workingRooms.find(r => r.id === id))) return true;
+        const used = adminToken;   // see lockOutFor
+        const label = btn ? btn.textContent : "";
+        if (btn) { btn.disabled = true; btn.textContent = "Opening…"; }
+        try {
+            const data = await Api._write("/.netlify/functions/rooms?full=1&id=" + encodeURIComponent(id), "GET", used);
+            const whole = Array.isArray(data) ? data : [data];
+            if (!whole.some(r => r && r.id === id)) throw new Error("That maze couldn't be read just now. Reload the page and try again.");
+            whole.forEach(record => {
+                const at = record ? workingRooms.findIndex(r => r.id === record.id) : -1;
+                if (at !== -1 && isLiteRoom(workingRooms[at])) workingRooms[at] = record;
+            });
+            return adminToken === used;
+        } catch (err) {
+            if (err && err.status === 401) { lockOutFor(used); return false; }
+            await sayProblem((err && err.message) || "That maze couldn't be read just now. Try again.");
+            return false;
+        } finally {
+            if (btn) { btn.disabled = false; btn.textContent = label; }
+        }
+    }
     async function readFullWithRetired(key) {
         const data = await Api._write(RETIRED_URLS[key], "GET", adminToken);
         if (Array.isArray(data)) return data;
@@ -677,7 +715,7 @@ document.addEventListener("DOMContentLoaded", () => {
             lastSignedInAs = result.username;
             writeToken(adminToken);
             /* Emptied the moment it has done its job. It used to keep the
-               password, so the next "Session expired" box — twelve hours
+               password, so the next "Session expired" box — two days
                later, on a screen that may have been left unattended — opened
                already filled in, one press of Unlock from signed in. The
                reset empties the field, and js/password-field.js's reset
@@ -897,6 +935,8 @@ document.addEventListener("DOMContentLoaded", () => {
        the browser's confirm(), for its deletes. Read-only; neither lets the
        panel change anything here. */
     window.AdminRole = () => currentUserRole;
+    // And their name (2 Nov 2026): a new article's preview byline (js/admin-articles.js).
+    window.AdminUsername = () => currentUsername;
     window.AdminConfirm = (message, opts) => showConfirmDialog(message, opts);
     /* And the rest of the page's own boxes (30 Sept 2026), so the panels in
        files of their own (guides, Missing Pieces, Recolour, the Wizard) stop
@@ -1290,6 +1330,7 @@ document.addEventListener("DOMContentLoaded", () => {
         "daily-share": "Shared a daily result",
         "menu": "Used the menu",
         "guide-open": "Opened a guide",
+        "article-open": "Opened an article",
         "boards-open": "Opened the Leaderboards",
         "console-open": "Opened the Console",
         "profile-open": "Opened a profile",
@@ -1493,6 +1534,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 actCard("Most opened events", actBars(actLabels(v, "event-open"), "No events opened yet.")) +
                 actCard("Most opened furni", actBars(actLabels(v, "furni-open"), "No furni opened yet.")) +
                 actCard("Guides", actBars(actLabels(v, "guide-open"), "No guides opened yet.")) +
+                actCard("Articles", actBars(actLabels(v, "article-open"), "No articles opened yet.")) +
                 actCard("Leaderboards opened at", actBars(actLabels(v, "boards-open", LABEL_NAMES["boards-open"]), "Not opened yet.")) +
                 actCard("Console pages", actBars(actLabels(v, "console-open"), "The Console hasn't been opened yet.")) +
                 actCard("Profiles", actBars(actLabels(v, "profile-open", LABEL_NAMES["profile-open"]), "No profiles opened yet.")) +
@@ -2375,6 +2417,10 @@ document.addEventListener("DOMContentLoaded", () => {
     function applyRoleVisibility() {
         const owner = canScanFurni();
         document.body.classList.toggle("is-viewer", !canWrite());
+        /* The two launch dates, read-only to a view-only account (2 Nov 2026,
+           the bug scan): their Save and Clear were greyed, but the boxes
+           took typing, and the date picker opened. */
+        [launchAtInput, ffLaunchAtInput].forEach(input => { if (input) input.readOnly = !canWrite(); });
         // Lifts the blanket greying back off the atlas panel alone. See
         // canWrite above for why the exception lives in a class rather than
         // in the rule.
@@ -2386,10 +2432,8 @@ document.addEventListener("DOMContentLoaded", () => {
            — and the log, every admin's addresses in it, stayed in the page. */
         if (!canReadActivity()) clearActivity();
         if (furniSidebar) furniSidebar.hidden = !owner;
-        if (furniCatalogueCard) {
-            furniCatalogueCard.hidden = !owner;
-            if (owner) showFurniCatalogueInfo();
-        }
+        // Its line is read when the Controls are first opened (PANEL_LOADS).
+        if (furniCatalogueCard) furniCatalogueCard.hidden = !owner;
         /* The Players tab (js/admin-players.js, 29 Sept 2026) draws its
            write buttons and the owner's Forget from the role, so it is
            told when that is known or has changed; it empties anything an
@@ -2403,9 +2447,9 @@ document.addEventListener("DOMContentLoaded", () => {
         if (owner) updateFurniLocality();
         // Only an owner has anything to poll for, and furni-scan-status
         // would just be an authenticated request answering "nothing" every
-        // 2.5s for everyone else.
-        if (owner) startFurniPolling();
-        else stopFurniPolling();
+        // 2.5s for everyone else. An owner's polling starts with the
+        // Controls, where its card is (PANEL_LOADS, 2 Nov 2026).
+        if (!owner) stopFurniPolling();
         /* An Albus account opens on the one panel it came here to use.
            Landing on Mazes — a list it can read and not touch — would say
            the account was mostly broken rather than mostly elsewhere.
@@ -2506,8 +2550,22 @@ document.addEventListener("DOMContentLoaded", () => {
            loads: the messages, bans and settings have nothing to do with
            whether the maze list came back. */
         clearLoadBanner();
+        /* Only what the opening section needs (2 Nov 2026, the owner's "load
+           times are typically quite slow"). Signing in used to read every
+           section's data at once, ~25 requests, the second half of them
+           queued behind the archive. Each section's own reads now go when
+           it is first opened (loadForPanel, below); the badges read
+           themselves (their own files); the settings are read alongside the
+           archive rather than after it, as they set the switches and the
+           theme. */
+        lazyLoaded.clear();
+        if (Date.now() - settingsTriedAt >= SWITCH_REREAD_MS) loadLandingState();
+        const opensOn = currentUserRole === "wizard" ? "wizard" : (rememberedPanel() || shownPanel);
+        if (opensOn) loadForPanel(opensOn);
         let archiveLoaded = false;
         const used = adminToken;   // see lockOutFor
+        let archiveSettle;
+        archiveReady = new Promise(resolve => { archiveSettle = resolve; });
         try {
             // With the deleted records' addresses — see readFullWithRetired.
             const [rooms, events] = await Promise.all([
@@ -2518,7 +2576,9 @@ document.addEventListener("DOMContentLoaded", () => {
             workingEvents = events;
             archiveLoaded = true;
             archiveLoadedOk = true;
+            archiveSettle(true);
         } catch (err) {
+            archiveSettle(false);
             if (err && err.status === 401) { lockOutFor(used); return; }
             workingRooms = [];
             workingEvents = [];
@@ -2543,16 +2603,58 @@ document.addEventListener("DOMContentLoaded", () => {
                     "Couldn't load the " + COLLECTIONS[key].plural.toLowerCase() + ". Reload the page to try again.");
             });
         }
+        // Shows the opening section, whose reads loadForPanel has already set off.
         applyRoleVisibility();
-        startWizardPanel();
-        loadActivity();
-        loadAdmins();
-        // Signed in onto Controls, applyRoleVisibility has just set this off (rereadSwitches): once is enough.
-        if (Date.now() - settingsTriedAt >= SWITCH_REREAD_MS) loadLandingState();
-        loadContributors();
-        loadContactMessages();
+    }
+
+    /* Each section's reads, made the first time it is shown after a sign-in
+       (2 Nov 2026). Cleared by enterAdmin, so signing in again, as somebody
+       else or after the session ran out, reads afresh as it always did.
+       Sections not here read for themselves: the archive (enterAdmin), the
+       panels in files of their own (they watch their `hidden`), and the
+       ones showPanel re-reads on every showing (Bans, the Console's
+       contributors, the run logs). */
+    const lazyLoaded = new Set();
+    /* The archive as read at sign-in, for Missing Pieces' first opening
+       (js/admin-dead-ends.js), which read all of it a second time. Waits for
+       the read under way; null when it failed or nobody is signed in, and
+       the panel reads its own. Copies of the lists, not the lists. */
+    let archiveReady = null;
+    window.AdminArchiveCopy = () => (archiveReady || Promise.resolve(false)).then(ok =>
+        ok && archiveLoadedOk && adminToken ? { rooms: workingRooms.slice(), events: workingEvents.slice() } : null);
+    const PANEL_LOADS = {
+        wizard: () => openWizardPanel(),
+        guides: () => openFilesPanel("guides"),
+        whatsnew: () => openFilesPanel("whatsnew"),
+        notifications: () => openFilesPanel("notifications"),
+        activity: () => loadActivity(),
+        admins: () => loadAdmins(),
+        daily: () => loadDaily(),
+        // Each message row's Ban/Unban asks the ban list, and so does a
+        // Missing Pieces lead's (js/admin-dead-ends.js, via bans-changed).
+        messages: () => { loadContactMessages(); bansOnce(); },
+        deadends: () => bansOnce(),
+        /* The catalogue line and the scan's progress are both cards in the
+           Controls. The scan status used to be polled from sign-in for two
+           minutes, every 2.5 seconds, whichever section was open. */
+        control: () => {
+            // The palette card's second row (read on sign-in until now).
+            loadSavedPalettes();
+            if (!canScanFurni()) return;
+            showFurniCatalogueInfo();
+            if (!furniPollTimer) startFurniPolling();
+        }
+    };
+    function bansOnce() {
+        if (lazyLoaded.has("bans-data")) return;
+        lazyLoaded.add("bans-data");
         loadBans();
-        loadDaily();
+    }
+    function loadForPanel(name) {
+        if (!adminToken || lazyLoaded.has(name)) return;
+        lazyLoaded.add(name);
+        if (name === "bans") lazyLoaded.add("bans-data");
+        if (PANEL_LOADS[name]) PANEL_LOADS[name]();
     }
 
     /* ---------- the atlas panel ----------
@@ -2572,6 +2674,98 @@ document.addEventListener("DOMContentLoaded", () => {
        call swaps in this context and reloads, rather than building a second
        map engine with a second set of listeners (which is what it did, and
        every drag and keypress then ran twice). */
+    /* Scripts and stylesheets fetched when a section first needs them (2 Nov
+       2026). The atlas (map engine, editor, GIF maker: ~105KB compressed,
+       with css/wizard.css another 27KB) and the Recolour editor (~43KB)
+       were parsed on every visit to the Warren, though most visits open
+       neither. In the order given, each after the last has run, as the
+       <script> tags they replace were. One promise per file, so a second
+       opening while they arrive waits for the same ones; a failure is
+       forgotten, so the next opening tries again. */
+    const lazyFiles = new Map();
+    function loadFile(src) {
+        if (!lazyFiles.has(src)) {
+            const done = new Promise((resolve, reject) => {
+                const css = /\.css(\?|$)/.test(src);
+                const el = document.createElement(css ? "link" : "script");
+                if (css) {
+                    el.rel = "stylesheet";
+                    el.href = src;
+                } else {
+                    el.src = src;
+                    el.async = false;
+                }
+                el.onload = resolve;
+                el.onerror = () => {
+                    el.remove();
+                    lazyFiles.delete(src);
+                    reject(new Error("Couldn't load " + src.replace(/\?.*$/, "") + ". Check the connection and open the section again."));
+                };
+                /* A stylesheet goes before css/warren.css, where its <link>
+                   was: the workshop's rules must still win a tie with it. */
+                const before = css && document.querySelector('link[href^="css/warren.css"]');
+                if (before) before.parentNode.insertBefore(el, before);
+                else document.head.appendChild(el);
+            });
+            lazyFiles.set(src, done);
+        }
+        return lazyFiles.get(src);
+    }
+    function loadFiles(list) {
+        return list.reduce((p, src) => p.then(() => loadFile(src)), Promise.resolve());
+    }
+    // Keep the ?v= numbers in step with the files, as the <script> tags were.
+    const WIZARD_FILES = ["css/wizard.css?v=2", "js/wizard-map.js?v=2", "js/admin-wizard.js?v=2", "js/gif-encode.js?v=3", "js/wizard-gif.js?v=2"];
+    /* css/wizard.css first: the editor catalogues every colour in the
+       stylesheets it finds, and the atlas's were always among them. */
+    const RECOLOUR_FILES = ["css/wizard.css?v=2", "js/recolour.js?v=2", "js/admin-recolour.js?v=3"];
+
+    /* Sections that live in files of their own and mount themselves when
+       they find their panel showing: fetched on first opening, and they
+       take it from there. guide-text.js stays a <script>: the maze list and
+       the formatting bar use it too. */
+    const PANEL_FILES = {
+        guides: ["js/guides-starter.js?v=2", "js/admin-guides.js?v=3"],
+        // The Articles section's editor and its text format first (2 Nov 2026), which the log reads.
+        whatsnew: ["js/article-text.js?v=2", "js/admin-articles.js?v=2", "js/admin-whats-new.js?v=3"],
+        notifications: ["js/admin-notifications.js?v=1"]
+    };
+    function openFilesPanel(name) {
+        const host = document.querySelector(`.admin-panel[data-panel="${name}"]`);
+        const note = document.createElement("p");
+        note.className = "admin-empty wr-lazy-note";
+        note.textContent = "Loading…";
+        if (host) host.appendChild(note);
+        loadFiles(PANEL_FILES[name]).then(() => note.remove(), err => {
+            lazyLoaded.delete(name);   // tried again on the next opening
+            note.textContent = err.message;
+            note.setAttribute("role", "alert");
+        });
+    }
+
+    let wizardStarted = false;
+    async function openWizardPanel() {
+        const host = document.querySelector('.admin-panel[data-panel="wizard"]');
+        const note = host && !wizardStarted ? document.createElement("p") : null;
+        if (note) {
+            note.className = "admin-empty wr-lazy-note";
+            note.textContent = "Loading the atlas…";
+            host.appendChild(note);
+        }
+        try {
+            await loadFiles(WIZARD_FILES);
+        } catch (err) {
+            lazyLoaded.delete("wizard");   // tried again on the next opening
+            if (note) { note.textContent = err.message; note.setAttribute("role", "alert"); }
+            return;
+        }
+        if (note) note.remove();
+        if (!adminToken) return;
+        startWizardPanel();
+        wizardStarted = true;
+        if (shownPanel === "wizard") AdminWizard.onShown();
+    }
+
     function startWizardPanel() {
         if (typeof AdminWizard === "undefined") return;
         AdminWizard.init({
@@ -5432,6 +5626,27 @@ document.addEventListener("DOMContentLoaded", () => {
         return entries;
     }
 
+    /* A row's picture is asked for as it nears the section's scroller (2 Nov
+       2026). loading="lazy" goes by the window, and on a slow connection the
+       browser reads that as "anything within a few thousand pixels": about
+       thirty pictures under the fold of a list nobody had scrolled yet,
+       competing with the section's own reads. One watcher per list, let go
+       of whenever the list is drawn again. */
+    const thumbWatchers = {};
+    function watchThumb(key, img) {
+        if (typeof IntersectionObserver !== "function") { img.src = img.dataset.src; return; }
+        if (!thumbWatchers[key]) {
+            const stage = COLLECTIONS[key].listEl.closest(".admin-stage");
+            const scrolls = stage && /(auto|scroll)/.test(getComputedStyle(stage).overflowY);
+            thumbWatchers[key] = new IntersectionObserver(seen => seen.forEach(e => {
+                if (!e.isIntersecting) return;
+                thumbWatchers[key].unobserve(e.target);
+                e.target.src = e.target.dataset.src;
+            }), { root: scrolls ? stage : null, rootMargin: "300px 0px" });
+        }
+        thumbWatchers[key].observe(img);
+    }
+
     function renderList(key) {
         const cfg = COLLECTIONS[key];
         // Controls' spotlight order is drawn from the same list (27 Oct 2026).
@@ -5439,6 +5654,7 @@ document.addEventListener("DOMContentLoaded", () => {
         const entries = key === "rooms" ? visibleRoomEntries()
             : key === "events" ? visibleEventEntries()
             : cfg.getAll().map((item, index) => ({ item, index }));
+        if (thumbWatchers[key]) { thumbWatchers[key].disconnect(); thumbWatchers[key] = null; }
         cfg.listEl.innerHTML = "";
 
         if (!entries.length) {
@@ -5472,7 +5688,7 @@ document.addEventListener("DOMContentLoaded", () => {
             row.className = "chrome-list-row admin-row";
             row.innerHTML = `
                 <div class="row-thumb">
-                    ${thumbSrc ? `<div class="row-thumb-crop"><img class="row-thumb-img" src="${imgCdn(thumbSrc, 160, 160, 65)}" alt="" loading="lazy"></div>` : ""}
+                    ${thumbSrc ? `<div class="row-thumb-crop"><img class="row-thumb-img" data-src="${imgCdn(thumbSrc, 160, 160, 65)}" alt=""></div>` : ""}
                 </div>
                 <div class="row-info">
                     ${ecTitleHtml(item, title)}
@@ -5494,7 +5710,7 @@ document.addEventListener("DOMContentLoaded", () => {
             // the list otherwise re-orders) would otherwise keep pointing
             // at whatever now sits at that same index instead of the item
             // actually being edited.
-            row.querySelector(".admin-edit-btn").addEventListener("click", () => requestOpenForm(key, item.id));
+            row.querySelector(".admin-edit-btn").addEventListener("click", e => requestOpenForm(key, item.id, e.currentTarget));
             row.querySelector(".admin-delete-btn").addEventListener("click", () => deleteItem(key, item.id));
             const scanBtn = row.querySelector(".admin-scan-btn");
             if (scanBtn) scanBtn.addEventListener("click", () => scanOneItem(key, item.id));
@@ -5526,11 +5742,9 @@ document.addEventListener("DOMContentLoaded", () => {
                 }
             });
             const rowImg = row.querySelector(".row-thumb-img");
-            if (rowImg) {
-                if (rowImg.complete) rowImg.classList.add("is-loaded");
-                else rowImg.addEventListener("load", () => rowImg.classList.add("is-loaded"), { once: true });
-            }
+            if (rowImg) rowImg.addEventListener("load", () => rowImg.classList.add("is-loaded"), { once: true });
             cfg.listEl.appendChild(row);
+            if (rowImg) watchThumb(key, rowImg);
         });
     }
 
@@ -5944,13 +6158,16 @@ document.addEventListener("DOMContentLoaded", () => {
        while half-way through this one threw the unsaved work away without
        a word. Cancel already asked first (requestCloseForm); this asks the
        same question on the way in. */
-    async function requestOpenForm(key, editId) {
+    async function requestOpenForm(key, editId, editBtn) {
         if (refuseWhileSaving(key)) return;
         if (isFormDirty(key)) {
             const ok = await showConfirmDialog("Discard your unsaved changes to the entry you have open? Anything you have added or edited since opening it will be lost.");
             if (!ok) return;
             if (refuseWhileSaving(key)) return;
         }
+        // A maze read without its furni is read whole first (see readFullRoom).
+        if (key === "rooms" && editId != null && !(await readFullRoom(editId, editBtn))) return;
+        if (refuseWhileSaving(key)) return;
         // Whatever the form being replaced uploaded and never saved.
         discardFormUploads(key);
         openForm(key, editId);
@@ -6764,7 +6981,10 @@ document.addEventListener("DOMContentLoaded", () => {
         const c = String(v || "").replace(/\s+/g, " ").trim();
         return { whole: c.length, visible: c.replace(/\^/g, "").length };
     }
-    function spotlightFieldsHtml(item, splitIso) {
+    /* `what` (2 Nov 2026): "article" for the Articles editor (js/admin-articles.js,
+       through window.AdminSpotlight below), which has the same fields. */
+    function spotlightFieldsHtml(item, splitIso, what) {
+        const thing = what === "article" ? "article" : "event";
         const from = splitIso(item.spotlightFrom), until = splitIso(item.spotlightUntil);
         const stored = spotlightHex(item.spotlightColour) || "";
         const colour = stored || SPOTLIGHT_DEFAULT_COLOUR;
@@ -6774,8 +6994,8 @@ document.addEventListener("DOMContentLoaded", () => {
         return `
             <div class="admin-spotlight">
                 <h4 class="admin-subheading">Landing page spotlight</h4>
-                <label class="admin-check"><input type="checkbox" name="spotlight" value="1" ${item.spotlight ? "checked" : ""}> Show this event in the spotlight on the landing page</label>
-                <p class="admin-hint">Its thumbnail goes under the Enter button, with the caption below across its foot, and opens the event when pressed. Several spotlighted events at once take turns.</p>
+                <label class="admin-check"><input type="checkbox" name="spotlight" value="1" ${item.spotlight ? "checked" : ""}> Show this ${thing} in the spotlight on the landing page</label>
+                <p class="admin-hint">Its thumbnail goes under the Enter button, with the caption below across its foot, and opens the ${thing} when pressed. Several spotlighted ${thing}s at once take turns${thing === "article" ? ", after the events in the order set in Controls" : ""}.</p>
                 ${fieldRow("Spotlight from (UTC, optional)", `<input type="date" name="spotlightFromDate" value="${from.date}">`)}
                 ${fieldRow("Spotlight from time (UTC, 24-hour)", `<input type="time" name="spotlightFromTime" value="${from.time}">`)}
                 ${fieldRow("Spotlight until (UTC, optional)", `<input type="date" name="spotlightUntilDate" value="${until.date}">`)}
@@ -6885,6 +7105,45 @@ document.addEventListener("DOMContentLoaded", () => {
             else box.setSelectionRange(next.length, next.length);
         });
     }
+
+    /* The spotlight fields for the Articles editor (2 Nov 2026, js/admin-articles.js):
+       the same markup, wiring and checks the event form uses, so the two
+       cannot drift apart. read() gives { fields } as events.js takes them, or
+       { error } worded as the event form words it. */
+    window.AdminSpotlight = {
+        html(item, what) {
+            const split = iso => {
+                const m = /^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2})/.exec(iso || "");
+                return m ? { date: m[1], time: m[2] } : { date: "", time: "" };
+            };
+            return spotlightFieldsHtml(item || {}, split, what);
+        },
+        wire(formEl) { wireSpotlightColour(formEl); },
+        read(formEl) {
+            const v = n => {
+                const el = formEl.querySelector(`[name="${n}"]`);
+                return !el ? "" : el.type === "checkbox" ? (el.checked ? "1" : "") : String(el.value || "");
+            };
+            const d = {};
+            ["spotlight", "spotlightFromDate", "spotlightFromTime", "spotlightUntilDate", "spotlightUntilTime", "spotlightCaption",
+                "spotlightColour", "spotlightCaptionAt", "spotlightCaptionAtHome"].forEach(n => { d[n] = v(n); });
+            const error = spotlightFault(d) ||
+                (spotlightHex(d.spotlightColour) === null ? "The caption colour needs to be a hex code like #ebe8ff, or left blank." : "");
+            const pairIso = (date, time) => date.trim() && time.trim() ? `${date.trim()}T${time.trim()}:00Z` : "";
+            return {
+                error,
+                fields: {
+                    spotlight: d.spotlight === "1",
+                    spotlightFrom: pairIso(d.spotlightFromDate, d.spotlightFromTime),
+                    spotlightUntil: pairIso(d.spotlightUntilDate, d.spotlightUntilTime),
+                    spotlightCaption: d.spotlightCaption.trim(),
+                    spotlightColour: spotlightHex(d.spotlightColour) || "",
+                    spotlightCaptionAt: d.spotlightCaptionAt === "top" ? "top" : "bottom",
+                    spotlightCaptionAtHome: d.spotlightCaptionAtHome === "top" ? "top" : "bottom"
+                }
+            };
+        }
+    };
 
     /* ---------- the spotlight's order (27 Oct 2026, the owner's) ----------
 
@@ -8526,33 +8785,64 @@ document.addEventListener("DOMContentLoaded", () => {
        said, where Api's own reads give up and fall back. Aborted, it falls
        back to getSiteSettings below like any other failure. */
     const FRESH_SETTINGS_TIMEOUT_MS = 8000;
-    async function freshSiteSettings() {
+    /* One read for every card that wants the settings (2 Nov 2026). This
+       page asked three times on sign-in: here, and js/admin-skin.js and
+       js/admin-menu.js with raw fetches of their own, all at once. Now a
+       read still on its way is shared, and the two cards (window.
+       AdminFreshSettings) also take one finished up to maxAgeMs ago: they
+       read once, when the Controls are first opened, so half a minute old
+       is still far fresher than the page-load read they used to keep.
+       Resolves to the answer's text, parsed by each caller, so no caller
+       can change another's copy; rejects on a failed or refused read. */
+    /* A read still out is shared only if it set off in the last two
+       seconds (plus maxAgeMs): one sent before a switch was thrown must not
+       answer for after it. */
+    let settingsRead = null;
+    let settingsReadAt = 0;      // when it settled; 0 while it is out
+    let settingsReadSent = 0;
+    function sharedSettingsText(maxAgeMs) {
+        const age = maxAgeMs || 0;
+        if (settingsRead && (settingsReadAt
+            ? Date.now() - settingsReadAt <= age
+            : Date.now() - settingsReadSent <= age + 2000)) return settingsRead;
         const controller = typeof AbortController === "function" ? new AbortController() : null;
         const timer = controller ? setTimeout(() => controller.abort(), FRESH_SETTINGS_TIMEOUT_MS) : null;
+        settingsReadAt = 0;
+        settingsReadSent = Date.now();
+        const read = settingsRead = fetch(`/.netlify/functions/settings?fresh=${Date.now()}`,
+            controller ? { cache: "no-store", signal: controller.signal } : { cache: "no-store" })
+            .then(res => {
+                if (!res.ok) throw new Error("settings " + res.status);
+                return res.text();
+            })
+            .finally(() => {
+                if (timer) clearTimeout(timer);
+                if (settingsRead === read) settingsReadAt = Date.now();
+            });
+        // A failure is not kept for anybody to share.
+        read.catch(() => { if (settingsRead === read) settingsRead = null; });
+        return read;
+    }
+    window.AdminFreshSettings = maxAgeMs => sharedSettingsText(maxAgeMs).then(text => JSON.parse(text));
+    async function freshSiteSettings() {
         try {
-            const res = await fetch(`/.netlify/functions/settings?fresh=${Date.now()}`,
-                controller ? { cache: "no-store", signal: controller.signal } : { cache: "no-store" });
-            if (res.ok) {
-                const body = await res.json();
-                if (body && typeof body.landingState === "string" && body.landingState) {
-                    // What getSiteSettings would have done with a real answer.
-                    if (typeof Api.rememberLandingState === "function") Api.rememberLandingState(body.landingState);
-                    /* Only when it is a different theme (1 Oct 2026, final
-                       scan). This read now also runs on opening Control
-                       (relightSwitches), and applyTheme sets data-theme
-                       even to the value it already has — which the Recolour
-                       editor's observer (watchTheme) takes as a theme
-                       change: a full stylesheet rescan and a redraw of the
-                       editor under whoever was working in it, every time
-                       the pointer crossed the Control tab. */
-                    const shown = document.documentElement.getAttribute("data-theme") || "classic";
-                    if (body.theme && body.theme !== shown && typeof Api.applyTheme === "function") Api.applyTheme(body.theme);
-                    return body;
-                }
+            const body = JSON.parse(await sharedSettingsText(0));
+            if (body && typeof body.landingState === "string" && body.landingState) {
+                // What getSiteSettings would have done with a real answer.
+                if (typeof Api.rememberLandingState === "function") Api.rememberLandingState(body.landingState);
+                /* Only when it is a different theme (1 Oct 2026, final
+                   scan). This read now also runs on opening Control
+                   (relightSwitches), and applyTheme sets data-theme
+                   even to the value it already has — which the Recolour
+                   editor's observer (watchTheme) takes as a theme
+                   change: a full stylesheet rescan and a redraw of the
+                   editor under whoever was working in it, every time
+                   the pointer crossed the Control tab. */
+                const shown = document.documentElement.getAttribute("data-theme") || "classic";
+                if (body.theme && body.theme !== shown && typeof Api.applyTheme === "function") Api.applyTheme(body.theme);
+                return body;
             }
-        } catch (e) { /* falls back below */ } finally {
-            if (timer) clearTimeout(timer);
-        }
+        } catch (e) { /* falls back below */ }
         return Api.getSiteSettings();
     }
 
@@ -8620,7 +8910,7 @@ document.addEventListener("DOMContentLoaded", () => {
             siteTheme = offeredTheme(theme);
             sitePalette = livePalette || null;
             lightPaletteCard();
-            loadSavedPalettes();
+            // The saved palettes' row is read with the Controls (PANEL_LOADS, 2 Nov 2026).
         } catch (e) {
             // best-effort — the toggles just won't show anything highlighted.
             // The launch fields are empty, not loaded, so they stay unsavable.
@@ -8750,7 +9040,8 @@ document.addEventListener("DOMContentLoaded", () => {
        switch leaves Maint. Signed-in admins stay, and are not counted. */
     const PRESENCE_MS = 5000;
     const landingPresence = document.getElementById("landing-presence");
-    let presence = { kickAt: 0, count: null, done: false, timer: 0, ticker: 0 };
+    const landingPresenceSaid = document.getElementById("landing-presence-said");
+    let presence ={ kickAt: 0, count: null, done: false, timer: 0, ticker: 0 };
     /* The server's clock, not this computer's (31 Oct 2026, the bug scan): a
        computer a minute out showed the countdown a minute out. presence.js
        answers its own time, and the difference is kept here, from the middle
@@ -8763,6 +9054,7 @@ document.addEventListener("DOMContentLoaded", () => {
             clearInterval(presence.timer); clearInterval(presence.ticker);
             presence = { kickAt: 0, count: null, done: false, timer: 0, ticker: 0 };
             landingPresence.style.display = "none";
+            if (landingPresenceSaid) landingPresenceSaid.textContent = "";
             return;
         }
         if (presence.timer || presence.done) return;
@@ -8827,6 +9119,14 @@ document.addEventListener("DOMContentLoaded", () => {
         }
         landingPresence.textContent = text;
         landingPresence.style.display = "block";
+        /* Read out only when something but the seconds has changed (2 Nov
+           2026, the bug scan): the line above was a live region rewritten
+           every second, so a screen reader read the countdown out without
+           a break. The minutes are said in the first sentence. */
+        const said = left > 0
+            ? "Moving open tabs to the landing page in about " + Math.max(1, Math.ceil(left / 60000)) + (left > 60000 ? " minutes" : " minute") + ", " + tabs + "."
+            : text;
+        if (landingPresenceSaid && landingPresenceSaid.textContent !== said) landingPresenceSaid.textContent = said;
     }
 
     async function setLandingState(state, clickedBtn) {
@@ -9324,7 +9624,11 @@ document.addEventListener("DOMContentLoaded", () => {
             // On a page reload there is no run to match against, so only a
             // record that is actually still going is worth picking up; a
             // finished or failed one is last time's news and stays quiet.
-            if (!furniRunId && p && !p.running) {
+            /* Nor is no record at all (2 Nov 2026): the cold-start grace
+               below is for a run this page has just started. Looking for
+               one already going, an empty answer polled on for two minutes,
+               48 requests, and then said no scan had reported in. */
+            if (!furniRunId && (!p || !p.running)) {
                 stopFurniPolling();
                 furniProgress.hidden = true;
                 return;
@@ -9680,6 +9984,39 @@ document.addEventListener("DOMContentLoaded", () => {
        their buttons, which pushed a section further along (Bans, say) back
        off the edge it had just been brought to. Not once you take the
        strip in hand — a press, wheel or touch on it ends the watch. */
+    /* The strip under 860px has no scrollbar (2 Nov 2026, the bug scan: a
+       window that width showed the native bar, arrows and all, under the
+       sections). Instead it fades at whichever end has more (css/warren.css,
+       .wr-more-left/.wr-more-right, set here), and a mouse wheel turned over
+       it moves it sideways, which a strip without a bar would otherwise
+       need Shift to do. At either end the wheel is the page's again. */
+    function railEdges() {
+        if (!adminNavEl) return;
+        const max = adminNavEl.scrollWidth - adminNavEl.clientWidth;
+        adminNavEl.classList.toggle("wr-more-left", max > 1 && adminNavEl.scrollLeft > 1);
+        adminNavEl.classList.toggle("wr-more-right", max > 1 && adminNavEl.scrollLeft < max - 1);
+    }
+    if (adminNavEl) {
+        adminNavEl.addEventListener("scroll", railEdges, { passive: true });
+        window.addEventListener("resize", railEdges);
+        if (typeof ResizeObserver === "function") new ResizeObserver(railEdges).observe(adminNavEl);
+        // A count arriving, or a section shown or hidden, changes its length.
+        if (typeof MutationObserver === "function") {
+            new MutationObserver(railEdges).observe(adminNavEl, { subtree: true, childList: true, characterData: true, attributes: true, attributeFilter: ["hidden"] });
+        }
+        adminNavEl.addEventListener("wheel", e => {
+            if (!e.deltaY || e.ctrlKey || Math.abs(e.deltaX) >= Math.abs(e.deltaY)) return;
+            const max = adminNavEl.scrollWidth - adminNavEl.clientWidth;
+            if (max <= 1 || getComputedStyle(adminNavEl).flexDirection !== "row") return;
+            const step = e.deltaMode === 1 ? e.deltaY * 40 : e.deltaMode === 2 ? e.deltaY * adminNavEl.clientWidth : e.deltaY;
+            const to = Math.max(0, Math.min(max, adminNavEl.scrollLeft + step));
+            if (Math.abs(to - adminNavEl.scrollLeft) < 1) return;
+            e.preventDefault();
+            adminNavEl.scrollLeft = to;
+        }, { passive: false });
+        railEdges();
+    }
+
     let railReveal = null;
     function revealRailButton(btn) {
         const narrow = () => window.matchMedia && window.matchMedia("(max-width: 860px)").matches;
@@ -9748,7 +10085,9 @@ document.addEventListener("DOMContentLoaded", () => {
            measures zero — so the atlas panel's first view is only
            correct once it is actually on screen. Every other panel here is
            a list and does not care. */
-        if (name === "wizard" && typeof AdminWizard !== "undefined") AdminWizard.onShown();
+        if (name === "wizard" && typeof AdminWizard !== "undefined" && wizardStarted) AdminWizard.onShown();
+        // This section's own reads, the first time it is shown (see PANEL_LOADS).
+        loadForPanel(name);
         /* The Controls, shown: what opening the old Control tab did — the
            switches re-read (rate-limited inside) and both launch-date
            warnings worked out again against the clock. */
@@ -9781,9 +10120,13 @@ document.addEventListener("DOMContentLoaded", () => {
            more: the editor SCANS THE STYLESHEET, and doing that before the
            panel's own rules are in the document would build a catalogue
            missing the colours this very panel paints with. */
-        if (name === "recolour" && !recolourMounted && typeof AdminRecolour !== "undefined") {
+        /* Its scripts are fetched first, on this first opening (2 Nov 2026,
+           see loadFiles). */
+        if (name === "recolour" && !recolourMounted) {
             recolourMounted = true;
-            AdminRecolour.mount(
+            const editorEl = document.getElementById("recolour-editor");
+            if (editorEl && typeof AdminRecolour === "undefined") editorEl.innerHTML = '<p class="admin-empty">Loading the palette editor…</p>';
+            loadFiles(RECOLOUR_FILES).then(() => AdminRecolour.mount(
                 document.getElementById("recolour-editor"),
                 // A function, not the value — the same handover the atlas
                 // gets (see startWizardPanel). The editor is mounted once and
@@ -9794,7 +10137,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 // And the same way back to the sign-in box on a 401, rather
                 // than a bare "Unauthorized" in the editor's status line.
                 lockOut
-            ).catch(e => {
+            )).catch(e => {
                 recolourMounted = false;
                 document.getElementById("recolour-editor").innerHTML =
                     '<p class="admin-empty">The palette editor could not start: ' + escapeHtml(e.message) + '</p>';

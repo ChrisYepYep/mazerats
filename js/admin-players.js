@@ -2236,7 +2236,7 @@
         badge();
     }
 
-    /* A lock-out (the twelve-hour session ran out): the list stays under
+    /* A lock-out (the 48-hour session ran out): the list stays under
        the sign-in box, as every panel's does, but anything the owner looked
        up to forget is cleared, as it was in the Admins tab. */
     function clearPrivate() {

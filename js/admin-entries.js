@@ -324,10 +324,13 @@
                     <option value="none"${eventFilter === "none" ? " selected" : ""}>No event</option>
                     ${eventOptions(eventFilter, seen)}
                 </select>
-            </div>`;
+            </div>
+            ${eventFilter && window.PrizeWheel ? `<button type="button" class="ctl-btn ee-wheel-here" data-wheel title="Draw a winner from this event's approved entrants">Prize wheel for this event</button>` : ""}`;
     }
 
     filtersEl.addEventListener("click", e => {
+        // Straight to the wheel from an event's entries (2 Nov 2026).
+        if (e.target.closest("[data-wheel]")) { openWheel(eventFilter); return; }
         const b = e.target.closest("[data-status]");
         if (!b || b.dataset.status === status) return;
         status = b.dataset.status;
@@ -655,6 +658,189 @@
     }
     if (namesBtn) namesBtn.addEventListener("click", namesFile);
 
+    /* The Prize Wheel (1 Nov 2026; js/prize-wheel.js): an event's approved
+       entrants, one slice each, for drawing its winners on camera. It opens
+       on the event the filter shows, or else the one taking entries now, or
+       else the latest; its drawer can switch to any other. Names are taken
+       once each, compared ignoring case, as namesFile does, so a correction
+       is not a second chance.
+
+       2 Nov 2026: the entrants come in ONE read (?names=1, grouped by the
+       function, past winners flagged `won`), not thirty a page; Mark as
+       Winner marks every approved entry the entrant has for the event, not
+       only the newest, which had left the other one on the next wheel; and
+       every draw goes in the event's draw log (event_entry_draws), saved,
+       voided or neither. */
+    const wheelBtn = panel.querySelector("#entries-wheel-btn");
+    const ENTRIES_FN = "/.netlify/functions/event-entries";
+    const wheelQs = o => Object.keys(o).map(k => `${k}=${encodeURIComponent(o[k])}`).join("&");
+    let wheelLapsed = false;        // a wheel call came back 401 while it was open
+    /* The wheel's calls. A 401 is NOT a lock-out while the wheel is up (it
+       would close it on camera with the draw unsaved): the wheel says the
+       session has ended and keeps the draw, and the lock-out comes when it
+       is closed (onClose below). */
+    async function wheelCall(method, query, body) {
+        try {
+            return await Api._write(`${ENTRIES_FN}?${wheelQs(query)}`, method, token(), body);
+        } catch (err) {
+            if (err && err.status === 401) wheelLapsed = true;
+            throw err;
+        }
+    }
+    // The event's entrants, and its prize line (2 Nov 2026), in one read.
+    async function approvedFor(eventId) {
+        const mine = sessionNo;
+        const data = await wheelCall("GET", { names: 1, event: eventId });
+        if (mine !== sessionNo) throw new Error("signed out");
+        return {
+            entrants: Array.isArray(data && data.entrants) ? data.entrants : [],
+            prize: data && typeof data.prize === "string" ? data.prize : ""
+        };
+    }
+    function wheelTitle(id) {
+        return id === "none" ? "No event" : eventTitle(id, id);
+    }
+
+    /* ---- a draw in an article (2 Nov 2026, the owner's) ----
+       What an article keeps of a draw is WheelDraw.snapshot's (js/wheel-
+       draw.js): the draw read whole (the log's list leaves its replay out),
+       and for a draw from before the wheel kept one, rebuilt around the
+       event's entrants today. Shared with the article editor's Wheel draw
+       button (js/article-wheel.js) through window.AdminEntries. */
+    const ARTICLES_FN = "/.netlify/functions/articles";
+    async function drawSnapshot(eventId, drawId, title) {
+        const ev = eventId || "none";
+        const data = await Api._write(`${ENTRIES_FN}?${wheelQs({ action: "draw", id: drawId })}`, "GET", token());
+        const row = data && data.draw;
+        if (!row || row.status !== "saved") throw new Error("that draw isn't saved as the winner");
+        const now = row.replay ? [] : (await approvedFor(ev)).entrants.map(x => x.name);
+        if (!events.length) await loadEvents().catch(() => {});
+        const snap = window.WheelDraw.snapshot(row, title || wheelTitle(ev), now);
+        if (!snap) throw new Error("that draw can't be replayed");
+        return snap;
+    }
+    // The saved winners in an event's draw log, newest first.
+    async function savedDraws(eventId) {
+        const data = await Api._write(`${ENTRIES_FN}?${wheelQs({ action: "draws", event: eventId || "none" })}`, "GET", token());
+        return (Array.isArray(data && data.draws) ? data.draws : []).filter(d => d && d.status === "saved");
+    }
+    // The article line for a draw: the block's own name, from the draw's id.
+    const drawRef = id => "wheel-" + String(id).toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 12);
+    // An article holding this draw already: { id, title } or null.
+    function articleHolding(list, drawId) {
+        const line = new RegExp(`^\\s*\\{\\{wheel\\b[^\\n]*[ \\t]draw=${String(drawId).replace(/[^A-Za-z0-9_-]/g, "")}(?=[ \\t}])`, "m");
+        return (Array.isArray(list) ? list : []).find(a => a && typeof a.body === "string" && line.test(a.body)) || null;
+    }
+    const drawArticles = {
+        async find(row) {
+            const data = await Api._write(`${ARTICLES_FN}?full=1`, "GET", token());
+            const list = Array.isArray(data) ? data : (data && data.records) || [];
+            return articleHolding(list, row.id);
+        },
+        /* A DRAFT: titled for the event, linked to it (when it is in the
+           archive), the replay block in a starter text that never names
+           the winner (the author may), and the snapshot as its data. */
+        async make(row, title) {
+            const ev = row.eventId === null || row.eventId === undefined ? "none" : row.eventId;
+            const name = title || wheelTitle(ev);
+            const snap = await drawSnapshot(ev, row.id, name);
+            const ref = drawRef(row.id);
+            const what = ev === "none" ? "the prize draw" : name;
+            const prize = snap.prize ? ` The prize: ${snap.prize}.` : "";
+            const body = [
+                `The wheel has been spun and ${what} has a winner! Press **Watch the draw** to see the wheel spin again and find out who won.${prize}`,
+                "",
+                `{{wheel ref=${ref} draw=${row.id}}}`,
+                "",
+                "Congratulations to the winner, and thank you to everyone who took part."
+            ].join("\n");
+            const known = ev !== "none" && events.some(e => e.id === ev);
+            const made = await Api._write(ARTICLES_FN, "POST", token(), {
+                title: `${ev === "none" ? "Prize draw" : name}: the winner is…`.slice(0, 120),
+                summary: `Watch the draw for ${what} and see who won.`.slice(0, 300),
+                status: "draft",
+                eventId: known ? ev : "",
+                body,
+                embedData: { [ref]: snap },
+                gallery: [],
+                wn: {},
+                slug: "",
+                _slugAuto: true
+            });
+            if (!made || !made.id) throw new Error("the server didn't say what it made");
+            return made;
+        },
+        // The draft in What's New's article editor (js/admin-articles.js).
+        async open(article) {
+            const nav = document.querySelector('#admin-nav .chrome-nav-btn[data-panel="whatsnew"]');
+            if (nav) nav.click();
+            // Its scripts load on the panel's first opening (admin.js's PANEL_FILES).
+            for (let i = 0; i < 100 && !(window.AdminArticles && window.AdminArticles.open); i++) await new Promise(r => setTimeout(r, 100));
+            const ok = window.AdminArticles && window.AdminArticles.open ? await window.AdminArticles.open(article.id) : false;
+            if (!ok && typeof window.AdminAlert === "function") {
+                window.AdminAlert("The article is saved as a draft, but its editor couldn't be opened here. Find it under What's New, Articles.", "Article Saved");
+            }
+        }
+    };
+    async function openWheel(pick) {
+        if (!token() || !window.PrizeWheel || wheelBtn.disabled) return;
+        wheelBtn.disabled = true;
+        const label = wheelBtn.textContent;
+        wheelBtn.textContent = "Gathering…";
+        const mine = sessionNo;
+        try {
+            if (!events.length) await loadEvents();
+            const id = (typeof pick === "string" && pick) || eventFilter || (open && open.id) || (events[0] && events[0].id) || "none";
+            wheelLapsed = false;
+            const first = await approvedFor(id);
+            if (mine !== sessionNo) return;
+            const writer = canWrite();
+            window.PrizeWheel.open({
+                title: wheelTitle(id),
+                eventId: id,
+                entrants: first.entrants,
+                prize: first.prize,
+                events: [{ id: "none", title: "No event", date: "" }].concat(events.map(e => ({ id: e.id, title: e.title, date: e.date }))),
+                loadEvent: async ev => Object.assign({ title: wheelTitle(ev) }, await approvedFor(ev)),
+                // The prize line under the event's name; view-only accounts read it.
+                savePrize: writer ? async (ev, text) => (await wheelCall("PUT", { action: "prize", event: ev }, { text })).prize : null,
+                loadDraws: async ev => {
+                    const data = await wheelCall("GET", { action: "draws", event: ev });
+                    return Array.isArray(data && data.draws) ? data.draws : [];
+                },
+                // A view-only account draws for practice: nothing is logged or saved.
+                logDraw: writer ? async d => (await wheelCall("PUT", { action: "draw", id: d.id }, {
+                    eventId: d.eventId, name: d.name, entryIds: d.entryIds, onWheel: d.onWheel,
+                    leftOutWinners: d.leftOutWinners, drawnAt: d.drawnAt, prize: d.prize || "",
+                    // The wheel as it spun, for an article's replay (2 Nov 2026).
+                    ...(d.replay ? { replay: d.replay } : {})
+                })).draw : null,
+                // Put in an article, on a saved winner's row (2 Nov 2026).
+                article: writer && window.WheelDraw ? drawArticles : null,
+                voidDraw: writer ? async (d, reason) => (await wheelCall("PUT", { action: "void-draw", id: d.id }, { reason })).draw : null,
+                markWinner: writer ? async d => {
+                    const at = sessionNo;
+                    const out = await wheelCall("PUT", { action: "winner", draw: d.id }, { eventId: d.eventId, entryIds: d.entryIds });
+                    if (at === sessionNo) load({ auto: true });
+                    return out && out.draw;
+                } : null,
+                onClose: () => {
+                    // The session that ran out mid-draw signs out now the wheel is down.
+                    if (wheelLapsed && mine === sessionNo) { wheelLapsed = false; sessionGone({ status: 401 }); }
+                }
+            });
+        } catch (err) {
+            // A log out meanwhile (approvedFor's "signed out") is not news
+            // for whoever signs in next.
+            if (mine !== sessionNo) return;
+            if (!sessionGone(err)) flash(`Couldn't open the wheel: ${(err && err.message) || "something went wrong"}`, true);
+        } finally {
+            wheelBtn.disabled = false;
+            wheelBtn.textContent = label;
+        }
+    }
+    if (wheelBtn) wheelBtn.addEventListener("click", () => openWheel());
+
     // ------------------------------------------------------------ timers
 
     // Re-read every minute while the panel and the browser tab are showing.
@@ -664,6 +850,11 @@
         if (!panelTimer) {
             panelTimer = setInterval(() => {
                 if (panel.hidden || document.hidden || !token() || busy) return;
+                /* Not under the Prize Wheel (1 Nov 2026, the bug scan): the
+                   list is out of sight, and a session that ran out mid-draw
+                   answered this read 401, whose lock-out closed the wheel on
+                   camera with the winner unsaved. Mark as Winner re-reads. */
+                if (window.PrizeWheel && window.PrizeWheel.isOpen()) return;
                 load({ auto: true });
             }, REFRESH_MS);
         }
@@ -743,8 +934,26 @@
        open put the sign-in box up where nobody could see or reach it. */
     function closeViewer() {
         if (viewer && viewer.overlay.classList.contains("open")) { viewer.from = null; viewer.hide(); }
+        // The Prize Wheel too (1 Nov 2026): it covers the whole page.
+        if (window.PrizeWheel) window.PrizeWheel.close();
     }
-    window.AdminEntries = { reset, closeViewer };
+    /* And for the article editor's Wheel draw button (2 Nov 2026,
+       js/article-wheel.js): the events, an event's saved winners, a draw's
+       snapshot, and whether an article holds a draw already. */
+    window.AdminEntries = {
+        reset, closeViewer,
+        draws: {
+            async events() {
+                if (!events.length) await loadEvents();
+                return [{ id: "none", title: "No event", date: "" }].concat(events.map(e => ({ id: e.id, title: e.title, date: e.date })));
+            },
+            saved: savedDraws,
+            snapshot: drawSnapshot,
+            ref: drawRef,
+            holding: articleHolding,
+            title: id => wheelTitle(id || "none")
+        }
+    };
 
     onShownChange();
 })();

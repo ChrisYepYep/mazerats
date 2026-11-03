@@ -438,11 +438,9 @@
             .catch(function () { decideUnreadable(); });
     })();
     </script>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <!-- Fonts: self-hosted, declared in css/style.css (2 Nov 2026); see home.html. -->
     <link rel="preconnect" href="https://www.habbo.com">
     <link rel="preconnect" href="https://api.furniindex.com">
-    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@700;800;900&family=Roboto:wght@400;500;700&family=Pixelify+Sans:wght@400;700&family=Silkscreen:wght@400;700&display=swap" rel="stylesheet">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="theme-color" content="#120c07">
     <title>Fallin' Furni | Maze Rats</title>
@@ -524,7 +522,7 @@
 
          Wrapped in try/catch: localStorage throws outright in some privacy modes,
          and a colour scheme is not worth a blank page. -->
-    <link rel="stylesheet" href="css/style.css?v=3">
+    <link rel="stylesheet" href="css/style.css?v=5">
     <link rel="stylesheet" href="css/maintenance-warn.css?v=1">
     <link id="theme-css" rel="stylesheet">
     <script>
@@ -1623,23 +1621,23 @@
     <!-- The shared chrome's own dependencies, in home.html's order: site.js
          reads EventStatus for the header's ticker and Api for everything, and
          the console reads PrivacyContent for its privacy page. -->
-    <script src="js/api.js?v=3"></script>
+    <script src="js/api.js?v=4"></script>
     <script src="js/event-status.js?v=2"></script>
-    <script src="js/privacy-content.js?v=3"></script>
+    <script src="js/privacy-content.js?v=4"></script>
     <script src="js/palette-wear.js?v=2"></script>
     <script src="js/skin-wear.js?v=1"></script>
-    <script src="js/site.js?v=2"></script>
+    <script src="js/site.js?v=3"></script>
     <!-- Dropdowns open the site's own list, not the browser's. After site.js,
          whose EscapeLayers it registers with. -->
-    <script src="js/select-list.js?v=2"></script>
+    <script src="js/select-list.js?v=3"></script>
     <!-- Before console.js and the console's pages, which ask it who is
          signed in while they set themselves up (see home.html). -->
     <script src="js/account.js?v=3"></script>
     <!-- What a record can be missing; console-info.js draws its form and
          list from it and does nothing at all without it. -->
     <script src="js/dead-ends.js?v=2"></script>
-    <script src="js/custom-scrollbar.js?v=3"></script>
-    <script src="js/console.js?v=10"></script>
+    <script src="js/custom-scrollbar.js?v=4"></script>
+    <script src="js/console.js?v=12"></script>
     <!-- The console's Add Maze Info, Missing Pieces and Profile pages, as on
          home.html. After console.js, whose window.MazeConsole they use. -->
     <script src="js/console-info.js?v=3"></script>
@@ -1669,6 +1667,6 @@
     <script src="js/ff-audio.js"></script>
     <script src="js/fallinfurni.js"></script>
     <!-- The two-minute warning before Maintenance moves this page to the landing page (30 Oct 2026). -->
-    <script src="js/maintenance-warn.js?v=2"></script>
+    <script src="js/maintenance-warn.js?v=3"></script>
 </body>
 </html>

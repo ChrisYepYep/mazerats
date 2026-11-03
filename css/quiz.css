@@ -1001,3 +1001,7 @@ input, button { font-family: inherit; }
 @media (prefers-reduced-motion: reduce) {
     * { transition: none !important; }
 }
+
+/* Netlify's "Powered by Netlify" pill, which its servers add to every page on the free
+   plan: hidden at the owner's request (3 Nov 2026). Its frame id is Netlify's and could change. */
+#nl-badge-frame { display: none !important; }

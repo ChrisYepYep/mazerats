@@ -51,6 +51,39 @@
    PUT  ?action=open  { mode: auto|none|event|closed, eventId }   canWrite
    DELETE ?id=                                    canWrite — the picture too.
 
+   ------------------------------------------- THE PRIZE WHEEL (2 Nov 2026)
+
+   GET  ?names=1&event=<id>|none                  Any Warren account.
+        { entrants: [{ name, entryIds, won }], truncated, prize }: the
+        event's approved and winning entries in ONE projected read, grouped
+        by name (ignoring case), oldest first. `won` is true for an entrant
+        with any winning entry for the event, so the wheel can leave them
+        out. It replaced thirty-a-page reads of eight queries each. `prize`
+        is the event's prize line ("" for none), read alongside.
+   GET  ?action=draws&event=<id>|none             Any Warren account.
+        { draws }: the event's draw log, newest first, DRAW_LIST at most,
+        each without its `replay` (below), which only one draw is read with:
+   GET  ?action=draw&id=<drawId>                  Any Warren account.
+        { draw }: one draw, whole (2 Nov 2026: for an article's replay).
+   PUT  ?action=draw&id=<drawId>  { eventId, name, entryIds, onWheel,
+        leftOutWinners, drawnAt, prize, replay }  canWrite: one draw, logged
+        once (the id is the wheel's own, so a retry is the same row).
+        `replay` (2 Nov 2026, optional) is the wheel as it spun, kept so an
+        article can replay the draw (js/article-wheel.js): { names, the
+        display names in wheel order, one per slice; colours, each slice's
+        place in the wheel's palette; win, the winning slice, whose name is
+        the draw's; from, where, turns, decel, the spin's numbers, `where`
+        inside the winning slice }. Checked strictly (cleanReplay); one that
+        fails is left off, and the draw is logged without it.
+   PUT  ?action=prize&event=<id>|none  { text }   canWrite: the prize line
+        the wheel shows under the event's name (PRIZE_MAX, one line; empty
+        takes it away). One row per event in event_entry_prizes.
+   PUT  ?action=void-draw&id=<drawId>  { reason: respin|absent }  canWrite
+   PUT  ?action=winner&draw=<drawId>  { eventId, entryIds }       canWrite
+        Marks EVERY approved entry the entrant has for the event a winner
+        (by id, and by name for the ones the wheel didn't list), and the
+        draw saved.
+
    Every write passes canWrite, which is where the admin action log is
    written (see _audit.js); the id rides in the query string so the log
    says which entry. */
@@ -78,6 +111,11 @@ const oneLine = (s) => s.replace(/[\u0000-\u001f\u007f]/g, " ").replace(/\s+/g, 
 const COLLECTION = "event_entries";
 const CONFIG = "event_entries_config";
 const QUOTAS = "event_entry_quotas";
+// The Prize Wheel's draw log (2 Nov 2026): every draw, saved or not.
+const DRAWS = "event_entry_draws";
+// ...and each event's prize line (2 Nov 2026, the owner's), _id the event id or "none".
+const PRIZES = "event_entry_prizes";
+const PRIZE_MAX = 80;
 // The private folder image.js guards — keep the two in step.
 const KEY_PREFIX = "entries/";
 
@@ -90,6 +128,22 @@ const BODY_MAX_CHARS = Math.floor(5.75 * 1024 * 1024);
 const PAGE_SIZE = 30;
 
 const STATUSES = ["new", "reviewed", "winner", "rejected"];
+
+/* The wheel's limits (2 Nov 2026). An entrant has two entries an event at
+   most (EVENT_ENTRIES), so ten ids is room to spare; the names read stops
+   at NAMES_MAX rows and says so. */
+const NAMES_MAX = 5000;
+const DRAW_LIST = 200;
+const DRAWS_PER_EVENT = 2000;
+const ENTRY_IDS_MAX = 10;
+const DRAW_REASONS = ["respin", "absent"];
+/* A draw's replay (2 Nov 2026): no more slices than this (js/wheel-draw.js's
+   SNAP_MAX; past it the names are too small to draw anyway), five colours
+   (its JEWELS), and the spin's numbers within the ranges the wheel picks. */
+const REPLAY_MAX = 400;
+const REPLAY_COLOURS = 5;
+const DRAW_ID = /^[A-Za-z0-9-]{8,64}$/;
+const ENTRY_ID = /^[A-Za-z0-9_-]{1,64}$/;
 
 /* Throttles. An entry is one picture, so the caps are tighter than a lead's:
    a few in ten minutes (a wrong picture sent, then the right one), a day's
@@ -162,6 +216,9 @@ async function buildIndexes(db) {
     await ensureIndex(col, { eventId: 1, createdAt: -1 });
     await ensureIndex(col, { net: 1, createdAt: -1 });
     await ensureIndex(col, { "from.id": 1, createdAt: -1 });
+    // The wheel's draw log (2 Nov 2026).
+    await attempt("draw id", () => ensureUniqueIndex(db.collection(DRAWS), "id"));
+    await ensureIndex(db.collection(DRAWS), { eventId: 1, drawnAt: -1 });
     // The byte-quota day counters sweep themselves after two days.
     await attempt("quota TTL", () => db.collection(QUOTAS).createIndex({ at: 1 }, { expireAfterSeconds: 2 * 24 * 60 * 60 }));
     // One entry per (sender, clientRef); partial, as the leads' is.
@@ -624,6 +681,229 @@ async function handleReview(event, db, id) {
     return json(200, { id, ...set });
 }
 
+// ------------------------------------------------ THE PRIZE WHEEL (2 Nov 2026)
+
+function bodyOf(event) {
+    try {
+        const b = JSON.parse(event.body || "{}");
+        return b && typeof b === "object" && !Array.isArray(b) ? b : null;
+    } catch (e) {
+        return null;
+    }
+}
+// An event as the wheel names it: an id, or "none" for entries filed under
+// no event (stored as null). undefined when it is neither.
+function wheelEvent(v) {
+    const s = text(v).trim();
+    if (!s || s.length > 200) return undefined;
+    return s === "none" ? null : s;
+}
+// A list of entry ids, each once; null when it isn't one.
+function entryIdList(v) {
+    if (!Array.isArray(v) || v.length > ENTRY_IDS_MAX) return null;
+    const out = [];
+    for (const x of v) {
+        if (typeof x !== "string" || !ENTRY_ID.test(x)) return null;
+        if (!out.includes(x)) out.push(x);
+    }
+    return out;
+}
+
+/* The wheel's entrants in one read (2 Nov 2026, the security scan): it used
+   to page through the list thirty at a time, each page eight queries. Only
+   the fields the wheel shows. Grouped by name, ignoring case, as the
+   Warren's Usernames (.txt) is, so a correction is not a second slice; a
+   name with ANY winning entry for the event is `won`, which is what keeps a
+   past winner off the wheel even where an older entry of theirs is still
+   only approved (marked before this file marked them all). */
+async function handleNames(event, db, q) {
+    if (!(await hasAccount(event))) return UNAUTHORIZED;
+    const eventId = wheelEvent(q.event);
+    if (eventId === undefined) return json(400, { error: "Which event?" });
+    const [rows, prize] = await Promise.all([
+        db.collection(COLLECTION).find(
+            { eventId, status: { $in: ["reviewed", "winner"] } },
+            { projection: { _id: 0, id: 1, habboName: 1, status: 1 } }
+        ).sort({ createdAt: 1 }).limit(NAMES_MAX).toArray(),
+        db.collection(PRIZES).findOne({ _id: eventId === null ? "none" : eventId }, { projection: { _id: 0, text: 1 } })
+    ]);
+    const byName = new Map();
+    rows.forEach(x => {
+        const name = oneLine(text(x.habboName));
+        if (!name) return;
+        const key = name.toLowerCase();
+        if (!byName.has(key)) byName.set(key, { name, entryIds: [], won: false });
+        const who = byName.get(key);
+        if (typeof x.id === "string") who.entryIds.push(x.id);
+        if (x.status === "winner") who.won = true;
+    });
+    return json(200, {
+        entrants: Array.from(byName.values()),
+        truncated: rows.length >= NAMES_MAX,
+        prize: prize && typeof prize.text === "string" ? prize.text : ""
+    });
+}
+
+/* The prize line (2 Nov 2026, the owner's): what the draw is for, shown on
+   the wheel under the event's name. One line, PRIZE_MAX at most; empty
+   takes it away. Kept per event, so it is the same on every device and
+   comes back when the event is picked again. */
+async function handlePrize(event, db, q) {
+    const eventId = wheelEvent(q.event);
+    if (eventId === undefined) return json(400, { error: "Which event?" });
+    const body = bodyOf(event);
+    if (!body || typeof body.text !== "string") return json(400, { error: "Invalid request body" });
+    const prize = oneLine(body.text);
+    if (prize.length > PRIZE_MAX) return json(400, { error: `Keep the prize to ${PRIZE_MAX} characters.` });
+    const col = db.collection(PRIZES);
+    const _id = eventId === null ? "none" : eventId;
+    if (!prize) await col.deleteOne({ _id });
+    else await col.updateOne({ _id }, { $set: { text: prize, setBy: usernameFromToken(event), setAt: new Date() } }, { upsert: true });
+    return json(200, { prize });
+}
+
+/* A draw's replay, checked (2 Nov 2026; see the header): the object to
+   keep, or null for one that isn't exactly the wheel that drew `name` with
+   `onWheel` slices. Nothing in it but display names and numbers. */
+const TAU = Math.PI * 2;
+function cleanReplay(v, name, onWheel) {
+    if (!v || typeof v !== "object" || Array.isArray(v)) return null;
+    const { names, colours, win, from, where, turns, decel } = v;
+    if (!Array.isArray(names) || names.length < 1 || names.length > REPLAY_MAX || names.length !== onWheel) return null;
+    const n = names.length;
+    const clean = [];
+    for (const x of names) {
+        if (typeof x !== "string") return null;
+        const s = oneLine(x);
+        if (!s || s.length > HABBO_NAME_MAX) return null;
+        clean.push(s);
+    }
+    if (!Array.isArray(colours) || colours.length !== n || colours.some(c => !Number.isInteger(c) || c < 0 || c >= REPLAY_COLOURS)) return null;
+    if (!Number.isInteger(win) || win < 0 || win >= n || clean[win] !== name) return null;
+    const num = x => typeof x === "number" && Number.isFinite(x);
+    if (!num(from) || Math.abs(from) > TAU) return null;
+    // Inside the winning slice: the wheel never stops on a divider.
+    if (!num(where) || where <= win * TAU / n || where >= (win + 1) * TAU / n) return null;
+    if (!Number.isInteger(turns) || turns < 6 || turns > 8) return null;
+    if (!num(decel) || decel < 8.6 || decel > 10.2) return null;
+    return { names: clean, colours: colours.slice(), win, from, where, turns, decel };
+}
+
+async function handleDrawList(event, db, q) {
+    if (!(await hasAccount(event))) return UNAUTHORIZED;
+    const eventId = wheelEvent(q.event);
+    if (eventId === undefined) return json(400, { error: "Which event?" });
+    // Without the replays: up to 400 names each, read one at a time (handleDrawOne).
+    const draws = await db.collection(DRAWS).find({ eventId }, { projection: { _id: 0, replay: 0 } })
+        .sort({ drawnAt: -1 }).limit(DRAW_LIST).toArray();
+    return json(200, { draws });
+}
+
+// One draw, its replay included (2 Nov 2026: for an article).
+async function handleDrawOne(event, db, q) {
+    if (!(await hasAccount(event))) return UNAUTHORIZED;
+    const id = text(q.id);
+    if (!DRAW_ID.test(id)) return json(400, { error: "Which draw?" });
+    const draw = await db.collection(DRAWS).findOne({ id }, { projection: { _id: 0 } });
+    if (!draw) return json(404, { error: "That draw isn't in the log." });
+    return json(200, { draw });
+}
+
+/* One draw into the log, the moment the wheel lands. The id is made by the
+   wheel, so a retry (a lost answer, or a draw kept in the tab over an
+   expired session and logged after signing in again) is the same row, not a
+   second one. Who drew it is the session's account, never the body's; when,
+   the wheel's own time if it is a believable one (up to a day old). */
+async function handleDrawLog(event, db, q) {
+    const id = text(q.id);
+    if (!DRAW_ID.test(id)) return json(400, { error: "Which draw?" });
+    const body = bodyOf(event);
+    if (!body) return json(400, { error: "Invalid request body" });
+    const eventId = wheelEvent(body.eventId);
+    if (eventId === undefined) return json(400, { error: "Which event?" });
+    const name = oneLine(text(body.name));
+    if (!name || name.length > HABBO_NAME_MAX) return json(400, { error: "Which name was drawn?" });
+    const entryIds = entryIdList(body.entryIds === undefined ? [] : body.entryIds);
+    if (!entryIds) return json(400, { error: "Invalid entry ids" });
+    const onWheel = body.onWheel;
+    if (typeof onWheel !== "number" || !Number.isInteger(onWheel) || onWheel < 1 || onWheel > 100000) return json(400, { error: "How many were on the wheel?" });
+    // The prize line it was drawn for, as the wheel showed it (2 Nov 2026).
+    const prize = oneLine(text(body.prize));
+    if (prize.length > PRIZE_MAX) return json(400, { error: "Invalid prize" });
+    const now = Date.now();
+    const said = Date.parse(text(body.drawnAt));
+    const drawnAt = new Date(Number.isFinite(said) && said <= now + 5 * 60 * 1000 && said >= now - DAY_MS ? said : now);
+    const draws = db.collection(DRAWS);
+    const prior = await draws.findOne({ id }, { projection: { _id: 0 } });
+    if (prior) return json(200, { draw: prior });
+    if (await draws.countDocuments({ eventId }) >= DRAWS_PER_EVENT) return json(429, { error: "That event's draw log is full." });
+    // The wheel as it spun (2 Nov 2026): kept when it checks out, else the draw alone.
+    const replay = cleanReplay(body.replay, name, onWheel);
+    await draws.updateOne({ id }, { $setOnInsert: {
+        eventId, name, entryIds, byHand: !entryIds.length, onWheel,
+        leftOutWinners: body.leftOutWinners === true, prize,
+        ...(replay ? { replay } : {}),
+        status: "drawn", drawnBy: usernameFromToken(event), drawnAt, loggedAt: new Date(now)
+    } }, { upsert: true });
+    return json(201, { draw: await draws.findOne({ id }, { projection: { _id: 0 } }) });
+}
+
+/* A draw set aside: spun again, or the winner wasn't in the room. A saved
+   draw stays saved (409); voiding twice is the same answer. */
+async function handleDrawVoid(event, db, q) {
+    const id = text(q.id);
+    if (!DRAW_ID.test(id)) return json(400, { error: "Which draw?" });
+    const body = bodyOf(event);
+    if (!body) return json(400, { error: "Invalid request body" });
+    const reason = text(body.reason);
+    if (!DRAW_REASONS.includes(reason)) return json(400, { error: "reason must be respin or absent" });
+    const draws = db.collection(DRAWS);
+    const res = await draws.updateOne({ id, status: "drawn" },
+        { $set: { status: "void", reason, voidedBy: usernameFromToken(event), voidedAt: new Date() } });
+    const row = await draws.findOne({ id }, { projection: { _id: 0 } });
+    if (!row) return json(404, { error: "That draw isn't in the log." });
+    if (!res.matchedCount && row.status !== "void") return json(409, { error: "That draw is saved as the winner, so it stays.", draw: row });
+    return json(200, { draw: row });
+}
+
+/* Mark as Winner. EVERY approved entry the entrant has for the event, not
+   just the newest (2 Nov 2026, the bug scan): marking one left the other,
+   an entry and its correction, approved, and so on the next wheel. The ids
+   the wheel sent must all be this event's and approved (or already
+   winners); the rest of that name's approved entries for the event go with
+   them. The draw, when named, is marked saved. */
+async function handleWinner(event, db, q) {
+    const body = bodyOf(event);
+    if (!body) return json(400, { error: "Invalid request body" });
+    const eventId = wheelEvent(body.eventId);
+    if (eventId === undefined) return json(400, { error: "Which event?" });
+    const ids = entryIdList(body.entryIds);
+    if (!ids || !ids.length) return json(400, { error: "Which entries?" });
+    const drawId = text(q.draw);
+    if (drawId && !DRAW_ID.test(drawId)) return json(400, { error: "Which draw?" });
+    const entries = db.collection(COLLECTION);
+    const named = await entries.find({ id: { $in: ids }, eventId },
+        { projection: { _id: 0, id: 1, habboName: 1, nameKey: 1, status: 1 } }).toArray();
+    if (named.length !== ids.length) return json(404, { error: "Those entries aren't all in this event any more. Refresh the wheel." });
+    if (named.some(x => x.status !== "reviewed" && x.status !== "winner")) {
+        return json(409, { error: "One of those entries is no longer approved. Refresh the wheel." });
+    }
+    const keys = Array.from(new Set(named.map(x => oneLine(text(x.nameKey || x.habboName)).toLowerCase()).filter(Boolean)));
+    const who = usernameFromToken(event);
+    const now = new Date();
+    const res = await entries.updateMany(
+        { eventId, status: "reviewed", $or: [{ id: { $in: ids } }, { nameKey: { $in: keys } }] },
+        { $set: { status: "winner", reviewedBy: who, reviewedAt: now } }
+    );
+    let draw = null;
+    if (drawId) {
+        const draws = db.collection(DRAWS);
+        await draws.updateOne({ id: drawId, status: "drawn" }, { $set: { status: "saved", savedBy: who, savedAt: now } });
+        draw = await draws.findOne({ id: drawId }, { projection: { _id: 0 } });
+    }
+    return json(200, { marked: res.modifiedCount || 0, draw });
+}
+
 // --------------------------------------------------------------- handler
 
 exports.handler = async (event) => {
@@ -639,6 +919,12 @@ exports.handler = async (event) => {
     const q = event.queryStringParameters || {};
 
     try {
+        // The wheel's reads are one query each (2 Nov 2026); the list's
+        // own read, every minute, does the sweep.
+        if (event.httpMethod === "GET" && q.names === "1") return await handleNames(event, db, q);
+        if (event.httpMethod === "GET" && q.action === "draws") return await handleDrawList(event, db, q);
+        if (event.httpMethod === "GET" && q.action === "draw") return await handleDrawOne(event, db, q);
+
         if (event.httpMethod === "POST" || event.httpMethod === "GET") await forgetOldSenders(db);
 
         if (event.httpMethod === "POST") return await handlePost(event, db);
@@ -663,6 +949,11 @@ exports.handler = async (event) => {
 
         if (event.httpMethod === "PUT") {
             if (q.action === "open") return await handleOpen(event, db);
+            if (q.action === "draw") return await handleDrawLog(event, db, q);
+            if (q.action === "void-draw") return await handleDrawVoid(event, db, q);
+            if (q.action === "winner") return await handleWinner(event, db, q);
+            if (q.action === "prize") return await handlePrize(event, db, q);
+            if (q.action) return json(400, { error: "Unknown action" });
             const id = text(q.id);
             if (!id) return json(400, { error: "Missing entry id" });
             return await handleReview(event, db, id);

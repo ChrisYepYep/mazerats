@@ -9,7 +9,7 @@
    completely inert until js/site.js puts that attribute on <html>. The
    classic palette is not defined here and is not affected by anything in it.
 
-   1183 rules, 1899 declarations, hues 18 (surfaces) / 38 (accents).
+   1202 rules, 1932 declarations, hues 18 (surfaces) / 38 (accents).
 */
 :root[data-theme="pumpkin"] {
     --bg-black: #0a0401;
@@ -562,6 +562,11 @@ html[data-theme="pumpkin"]:not([data-theme]) .chrome-nav-top .chrome-nav-btn:not
     filter: sepia(0.25) saturate(0.5) brightness(0.95) contrast(1.05);
 }
 
+html[data-theme="pumpkin"]:not([data-theme]):not([data-dark]) .chrome-nav-top .chrome-nav-btn:not(.active) {
+    color: #0a0604;
+    text-shadow: 1px 1px 0 rgba(255, 255, 255, 0.3);
+}
+
 [data-theme="pumpkin"] .chrome-nav-btn-mazes.active .chrome-nav-icon {
     content: url('../assets/img/pumpkin/mazes_icon_active.png?v=73828f32');
 }
@@ -714,6 +719,10 @@ html[data-theme="pumpkin"]:not([data-theme]) .chrome-nav-top .chrome-nav-btn:not
     color: #e8563f;
 }
 
+[data-theme="pumpkin"] .status-live::after {
+    box-shadow: 0 0 0 2px rgba(232, 86, 63, 0.5);
+}
+
 [data-theme="pumpkin"] .tag {
     border: 1.5px solid var(--chrome-highlight);
     color: var(--parchment-dim);
@@ -760,6 +769,12 @@ html[data-theme="pumpkin"]:not([data-theme]) .chrome-nav-top .chrome-nav-btn:not
 
 [data-theme="pumpkin"] .clear-filter-btn:focus-visible {
     outline: 2px solid var(--amber-bright);
+}
+
+[data-theme="pumpkin"] .sort-chip {
+    border: 1px solid color-mix(in srgb, var(--parchment-dim) 35%, transparent);
+    background: rgba(0, 0, 0, 0.18);
+    color: var(--parchment-dim);
 }
 
 [data-theme="pumpkin"] .featured-refresh-btn:hover,
@@ -1988,6 +2003,25 @@ html[data-theme="pumpkin"]:not([data-theme]) .room-links-refs-text a:focus-visib
     border-color: #eeeeee;
 }
 
+[data-theme="pumpkin"] .console-unread-badge {
+    background: #eeeeee;
+    color: #2b2b2b;
+}
+
+[data-theme="pumpkin"] .console-notices-head {
+    color: #eeeeee;
+}
+
+[data-theme="pumpkin"] .console-notices-markall {
+    border: 0;
+    background: none;
+    color: inherit;
+}
+
+[data-theme="pumpkin"] .console-notices-markall:focus-visible {
+    outline: 1px dotted #eeeeee;
+}
+
 [data-theme="pumpkin"] .console-notices-item:focus-visible {
     outline: 1px dotted #eeeeee;
 }
@@ -2695,6 +2729,18 @@ html[data-theme="pumpkin"]:not([data-theme]) .modal-article-source a:hover {
     outline: 2px solid var(--amber-bright);
 }
 
+[data-theme="pumpkin"] #search-wrap #room-search:focus-visible,
+[data-theme="pumpkin"] #search-wrap #room-sort:focus-visible,
+[data-theme="pumpkin"] #opening-search-input:focus-visible {
+    outline: 2px solid #1d100a;
+}
+
+[data-theme="pumpkin"] #search-wrap #room-search.is-pointer-focus,
+[data-theme="pumpkin"] #search-wrap #room-sort.is-pointer-focus,
+[data-theme="pumpkin"] #opening-search-input.is-pointer-focus {
+    outline: none;
+}
+
 [data-theme="pumpkin"] .skip-link:focus-visible {
     outline: 2px solid var(--amber-bright);
 }
@@ -3399,6 +3445,14 @@ html[data-theme="pumpkin"]:not([data-theme]) .modal-article-source a:hover {
 
 [data-theme="pumpkin"] .guess-board-span {
     color: var(--unknown-text);
+}
+
+html[data-theme="pumpkin"]:not([data-theme]) .guess-board-span {
+    color: var(--parchment-dim);
+}
+
+html[data-theme="pumpkin"]:not([data-theme]) .guess-board-rank {
+    color: var(--amber-text);
 }
 
 [data-theme="pumpkin"] .guess-board-cell {
@@ -5649,8 +5703,8 @@ html[data-theme="pumpkin"]:not([data-theme]) .modal-article-source a:hover {
 
 [data-theme="pumpkin"] .opening-head-title {
     border: 0;
-    background: color-mix(in srgb, var(--opening-cream) 30%, transparent);
-    color: var(--opening-cream);
+    background: color-mix(in srgb, var(--opening-cream) 20%, transparent);
+    color: color-mix(in srgb, var(--opening-cream), #fff 50%);
     text-shadow: 1px 1px 0 #000;
 }
 
@@ -5844,6 +5898,51 @@ html[data-theme="pumpkin"][data-dark] .chrome-light {
 
 html[data-theme="pumpkin"][data-light] .chrome-light {
     filter: drop-shadow(0 0 3px var(--neon-soft));
+}
+
+[data-theme="pumpkin"] .art-list {
+    color: var(--parchment);
+}
+
+[data-theme="pumpkin"] .status-badge.art-badge {
+    color: #ecc7d6;
+    border-color: #a8708a;
+}
+
+[data-theme="pumpkin"] .art-text .art-figure {
+    border: 1px solid var(--chrome-border);
+    box-shadow: inset 0 1px 0 var(--chrome-highlight),
+        inset 1px 0 0 var(--chrome-highlight),
+        inset -1px 0 0 rgba(0, 0, 0, 0.45),
+        inset 0 -1px 0 rgba(0, 0, 0, 0.45),
+        2px 2px 0 rgba(0, 0, 0, 0.45);
+    background: rgba(0, 0, 0, 0.28);
+}
+
+[data-theme="pumpkin"] .art-caption {
+    color: var(--parchment-dim);
+}
+
+[data-theme="pumpkin"] .art-text .art-quote {
+    color: var(--parchment);
+}
+
+[data-theme="pumpkin"] .art-embed-wait,
+[data-theme="pumpkin"] .art-embed-missing {
+    border: 1px dashed var(--border);
+    background: rgba(0, 0, 0, 0.18);
+    color: var(--parchment-dim);
+}
+
+[data-theme="pumpkin"] .updatelog-verb.is-article {
+    color: #ecc7d6;
+    border-color: #a8708a;
+    background: rgba(168, 112, 138, 0.2);
+}
+
+[data-theme="pumpkin"] .wn-verb.is-article {
+    color: #ecc7d6;
+    border-color: #a8708a;
 }
 
 /* ------------------------------------------- COLOUR THAT IS INFORMATION

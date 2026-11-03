@@ -22,8 +22,9 @@
          it exactly as /wizard does. Without it the editor drew the map in a
          fallback serif — legible, but not the map, and the whole point of
          the editor sharing the page's engine is that what you arrange is
-         what you get. -->
-    <link href="https://fonts.googleapis.com/css2?family=Caveat:wght@500;700&family=Montserrat:wght@700;800;900&family=Roboto:wght@400;500;700&family=Pixelify+Sans:wght@400;700&family=Silkscreen:wght@400;700&display=swap" rel="stylesheet">
+         what you get. Caveat alone now: the site's other fonts are its own
+         files (2 Nov 2026; see home.html). -->
+    <link href="https://fonts.googleapis.com/css2?family=Caveat:wght@500;700&display=swap" rel="stylesheet">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="theme-color" content="#120c07">
     <meta name="robots" content="noindex, nofollow">
@@ -58,16 +59,19 @@
 
          Wrapped in try/catch: localStorage throws outright in some privacy modes,
          and a colour scheme is not worth a blank page. -->
-    <link rel="stylesheet" href="css/style.css?v=3">
+    <link rel="stylesheet" href="css/style.css?v=5">
     <link id="theme-css" rel="stylesheet">
     <script>(function(){try{var t=localStorage.getItem("mazerats_theme");if(!t||t==="classic"||!/^[a-z]+$/.test(t))return;document.documentElement.setAttribute("data-theme",t);document.getElementById("theme-css").href="css/theme-"+t+".css";}catch(e){}})();</script>
-    <!-- The atlas panel's map, and the editor around it. Shared with
-         wizard.html rather than duplicated, so the editor's parchment and
-         the page's parchment are the same parchment. -->
-    <link rel="stylesheet" href="css/wizard.css?v=2">
+    <!-- The atlas panel's map, and the editor around it: css/wizard.css,
+         shared with wizard.html rather than duplicated, so the editor's
+         parchment and the page's parchment are the same parchment. Fetched
+         by js/admin.js when the atlas (or Recolour) is first opened, just
+         before css/warren.css (2 Nov 2026, see loadFiles there). -->
     <!-- The Warren's workshop dress (25 Oct 2026). data-recolour-skip: it is
          not the site's colours, so the Recolour editor does not catalogue it. -->
-    <link rel="stylesheet" href="css/warren.css?v=1" data-recolour-skip>
+    <link rel="stylesheet" href="css/warren.css?v=3" data-recolour-skip>
+    <link rel="stylesheet" href="css/prize-wheel.css?v=5" data-recolour-skip>
+    <link rel="stylesheet" href="css/admin-speed.css?v=1" data-recolour-skip>
     <!-- No Umami here. The admin page is not traffic worth counting, and the
          session token lives in this page's storage, where a third-party
          script would be able to read it. js/track.js skips this page too. -->
@@ -270,7 +274,11 @@
                                 <p class="ctl-status" id="landing-state-warning" style="display:none;"></p>
                                 <!-- While Maintenance moves open pages to the landing page (30 Oct
                                      2026): the countdown and how many are left. See watchPresence. -->
-                                <p class="ctl-status ctl-presence" id="landing-presence" style="display:none;" aria-live="polite"></p>
+                                <p class="ctl-status ctl-presence" id="landing-presence" style="display:none;"></p>
+                                <!-- What a screen reader hears of the line above (2 Nov 2026, the bug
+                                     scan): only a change in the open tabs or the countdown's stage,
+                                     not the seconds it rewrites every second (js/admin.js, sayPresence). -->
+                                <p class="visually-hidden" id="landing-presence-said" aria-live="polite"></p>
                                 <!-- What the landing page's button says while
                                      the site is in Maint. (4 Oct 2026). Saved
                                      on its own, whatever the switch is on, so
@@ -630,6 +638,21 @@
                                 </div>
                                 <p class="ctl-status" id="furni-catalogue-status" aria-live="polite"></p>
                             </div>
+
+                            <!-- SPEED (2 Nov 2026): how fast the live site loads on a typical
+                                 phone, measured by Google's PageSpeed Insights every Monday
+                                 and on Measure now. Built by js/admin-speed.js from
+                                 netlify/functions/speed-checks.js. -->
+                            <div class="ctl-card ctl-card-wide" id="speed-card"
+                                 title="How fast mazerats.net and /home load on a typical phone, measured by Google.">
+                                <span class="ctl-label">Speed on a phone</span>
+                                <div class="spd-body" id="speed-body"></div>
+                                <div class="ctl-row">
+                                    <button type="button" class="ctl-btn" id="speed-measure">Measure now</button>
+                                </div>
+                                <p class="ctl-status" id="speed-status" aria-live="polite" hidden></p>
+                                <p class="admin-hint" id="speed-next"></p>
+                            </div>
                         </div>
 
                         </div>
@@ -775,13 +798,31 @@
                                 <header class="admin-panel-head">
                                     <div>
                                         <h3 class="admin-panel-title">What's New</h3>
-                                        <p class="admin-hint">The log on the homepage, as visitors see it. Mazes, events and guides appear on their own when they're added or edited; Amend changes how one appears (its date, Added or Updated, the line under it). Hide takes any single entry off the homepage, news and notes included, without deleting it. Add news, or a note about a maze or event, with the buttons on the right.</p>
+                                        <p class="admin-hint">The log on the homepage, as visitors see it. Mazes, events and guides appear on their own when they're added or edited; Amend changes how one appears (its date, Added or Updated, the line under it). Hide takes any single entry off the homepage, news and notes included, without deleting it. Add news, or a note about a maze or event, with the buttons on the right. Articles have a section of their own, below.</p>
                                     </div>
                                     <div class="wn-add">
                                         <button class="admin-action-pill admin-pill-solid admin-add-btn" id="wn-add-news" type="button">+ News post</button>
                                         <button class="admin-action-pill admin-add-btn" id="wn-add-note" type="button">+ Note</button>
                                     </div>
                                 </header>
+                                <!-- ARTICLES (2 Nov 2026, the owner's): written here, read in a
+                                     window of their own on the homepage (/article/<slug>), each
+                                     with its own entry on What's New once published. The editor
+                                     and list are js/admin-articles.js; stored by
+                                     netlify/functions/articles.js. -->
+                                <section class="art-admin" id="art-admin" aria-labelledby="art-admin-title">
+                                    <div class="art-admin-head">
+                                        <div>
+                                            <h4 class="admin-subheading" id="art-admin-title">Articles</h4>
+                                            <p class="admin-hint">An article opens like a maze does: its pictures at the top, your text under them, at mazerats.net/article/&hellip; Published, it has its own entry on What's New (edit that entry inside the article); a draft is only seen here.</p>
+                                        </div>
+                                        <button class="admin-action-pill admin-pill-solid admin-add-btn" id="art-add" type="button">+ New Article</button>
+                                    </div>
+                                    <form class="admin-form art-form" id="art-form" novalidate></form>
+                                    <div class="art-preview" id="art-preview" hidden></div>
+                                    <div class="chrome-list art-admin-list" id="art-list"></div>
+                                </section>
+                                <h4 class="admin-subheading wn-log-title">The log</h4>
                                 <div class="wn-tools">
                                     <input type="search" class="ctl-input" id="wn-search" placeholder="Find an entry" aria-label="Find an entry">
                                     <label class="wn-check"><input type="checkbox" id="wn-show-hidden"> Show hidden entries</label>
@@ -1381,7 +1422,7 @@
                                 <header class="admin-panel-head">
                                     <div>
                                         <h3 class="admin-panel-title">Admins</h3>
-                                        <p class="admin-hint">Sessions expire automatically after 12 hours.</p>
+                                        <p class="admin-hint">Sessions expire automatically after 48 hours.</p>
                                     </div>
                                     <button class="admin-action-pill admin-pill-solid admin-add-btn" id="admins-add-btn" type="button">+ Add an Admin</button>
                                 </header>
@@ -1464,6 +1505,7 @@
                                     </div>
                                     <div class="admin-activity-controls">
                                         <span class="admin-hint se-updated" id="entries-updated"></span>
+                                        <button class="admin-action-pill" id="entries-wheel-btn" type="button" title="Put an event's approved entrants on a prize wheel to draw its winners">Prize wheel</button>
                                         <button class="admin-action-pill" id="entries-names-btn" type="button" title="Save every username the filters show, one to a line, and copy them">Usernames (.txt)</button>
                                         <button class="admin-action-pill" id="entries-refresh-btn" type="button">Refresh</button>
                                     </div>
@@ -1528,39 +1570,37 @@
 
     <script src="js/rooms-data.js?v=2"></script>
     <script src="js/events-data.js?v=2"></script>
-    <script src="js/api.js?v=3"></script>
+    <script src="js/api.js?v=4"></script>
     <script src="js/event-status.js?v=2"></script>
-    <script src="js/site.js?v=2"></script>
-    <!-- Both before admin.js, which calls into them once a session is
-         unlocked: the map engine, then the atlas panel built on it. -->
-    <script src="js/wizard-map.js?v=2"></script>
-    <script src="js/admin-wizard.js?v=2"></script>
-    <!-- The GIF maker, and the GIF encoder underneath it. Only the admin
-         page has any use for either, so neither is on the public map. -->
-    <script src="js/gif-encode.js?v=3"></script>
-    <script src="js/wizard-gif.js?v=2"></script>
-    <script src="js/recolour.js?v=2"></script>
-    <script src="js/admin-recolour.js?v=2"></script>
-    <script src="js/admin-address.js?v=2"></script>
-    <script src="js/admin.js?v=3"></script>
+    <script src="js/site.js?v=3"></script>
+    <!-- The atlas (js/wizard-map.js, js/admin-wizard.js, and the GIF maker
+         js/gif-encode.js + js/wizard-gif.js) and the Recolour editor
+         (js/recolour.js, js/admin-recolour.js) are fetched by admin.js when
+         their section is first opened (2 Nov 2026, WIZARD_FILES and
+         RECOLOUR_FILES there): most visits open neither. -->
+    <script src="js/admin-address.js?v=3"></script>
+    <script src="js/admin.js?v=4"></script>
     <script src="js/dead-ends.js?v=2"></script>
-    <script src="js/admin-dead-ends.js?v=2"></script>
-    <!-- The Guides panel: the text format, the starter guide, the editor. -->
-    <script src="js/guide-text.js?v=2"></script>
-    <script src="js/guides-starter.js?v=2"></script>
-    <script src="js/admin-guides.js?v=2"></script>
-    <script src="js/admin-whats-new.js?v=1"></script>
-    <script src="js/admin-errors.js?v=1"></script>
-    <script src="js/admin-players.js?v=2"></script>
-    <script src="js/admin-entries.js?v=1"></script>
-    <script src="js/admin-notifications.js?v=1"></script>
+    <script src="js/admin-dead-ends.js?v=3"></script>
+    <!-- The Guides panel's text format (the maze list and the formatting bar
+         use it too). The starter guide and the editor (js/guides-starter.js,
+         js/admin-guides.js), What's New (js/admin-whats-new.js) and
+         Notifications (js/admin-notifications.js) are fetched by admin.js
+         when their section is first opened (2 Nov 2026, PANEL_FILES). -->
+    <script src="js/guide-text.js?v=3"></script>
+    <script src="js/admin-errors.js?v=2"></script>
+    <script src="js/admin-players.js?v=3"></script>
+    <script src="js/wheel-draw.js?v=1"></script><!-- the wheel's drawing, spin and sound, shared with an article's replay (js/article-wheel.js) -->
+    <script src="js/prize-wheel.js?v=5"></script><!-- the Prize Wheel, opened from Event Entries -->
+    <script src="js/admin-entries.js?v=5"></script>
     <script src="js/password-field.js?v=3"></script>
     <script src="js/glyph-palette.js?v=3"></script>
-    <script src="js/custom-scrollbar.js?v=3"></script>
+    <script src="js/custom-scrollbar.js?v=4"></script>
     <script src="js/letter-jump.js?v=2"></script>
-    <script src="js/admin-skin.js?v=6"></script><!-- SKINS: the seasonal skins card's script (see SKINS:start) -->
-    <script src="js/admin-menu.js?v=3"></script><!-- the homepage menu card (#menu-layout-card) -->
+    <script src="js/admin-skin.js?v=7"></script><!-- SKINS: the seasonal skins card's script (see SKINS:start) -->
+    <script src="js/admin-menu.js?v=4"></script><!-- the homepage menu card (#menu-layout-card) -->
     <script src="js/admin-ctl-folds.js?v=1"></script><!-- the Controls' large cards, folded (css/warren.css) -->
+    <script src="js/admin-speed.js?v=1"></script><!-- the Speed card (#speed-card) -->
     <!-- The workshop shell's top-bar title and status line (css/warren.css). -->
     <script src="js/warren-shell.js?v=2"></script>
 </body>

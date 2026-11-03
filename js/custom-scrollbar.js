@@ -195,7 +195,18 @@ document.addEventListener("DOMContentLoaded", () => {
         // different maze) without any of the pages that use these elements
         // needing to call back into this file.
         new ResizeObserver(refresh).observe(el);
-        new MutationObserver(refresh).observe(el, { childList: true, subtree: true, characterData: true, attributes: true, attributeFilter: ["style", "class"] });
+        /* Once a frame at most for a run of mutations (1 Nov 2026, the bug
+           scan): refresh() reads layout, and a list drawn in several steps
+           (the archive while the page loads, the maze window opening) paid a
+           forced layout for each. Before that frame's paint, so the bar is
+           never seen a frame behind. A drag, the arrows and scrolling still
+           refresh at once. */
+        let refreshFrame = 0;
+        const refreshSoon = () => {
+            if (refreshFrame) return;
+            refreshFrame = requestAnimationFrame(() => { refreshFrame = 0; refresh(); });
+        };
+        new MutationObserver(refreshSoon).observe(el, { childList: true, subtree: true, characterData: true, attributes: true, attributeFilter: ["style", "class"] });
 
         /* Pointer events, not mouse events (30 Sept 2026), so the thumb, the
            track and the arrows work with a finger or a pen as well as a

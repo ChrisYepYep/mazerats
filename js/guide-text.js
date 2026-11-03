@@ -21,6 +21,7 @@
                              maze:tutorial-maze a maze in the archive
                              event:some-event   an event in the archive
                              guide:some-guide   another guide
+                             article:an-article an article (2 Nov 2026)
                              console:entry      the console's Event
                                                 Submission form
 
@@ -164,7 +165,8 @@
         if (toConsole && Object.prototype.hasOwnProperty.call(CONSOLE_PAGES, toConsole[1])) {
             return `<a class="guide-link" href="${CONSOLE_PAGES[toConsole[1]]}" data-console-page="${toConsole[1]}">${words}</a>`;
         }
-        const internal = /^(maze|event|guide):(.+)$/.exec(a);
+        // article: too (2 Nov 2026): an article's window, js/articles.js.
+        const internal = /^(maze|event|guide|article):(.+)$/.exec(a);
         if (internal && ID.test(internal[2])) {
             const [, kind, id] = internal;
             // Real addresses, so opening one in a new tab or copying it works
@@ -338,7 +340,8 @@
         if (DIVIDER.test(l)) return "";
         const h = HEADING.exec(l);
         if (h) return headingText(h[2]);
-        return l.replace(/^\s*(?:[-*]\s+|\d+[.)]\s+|>\s?)/, "");
+        // ">> " is an article's quote (2 Nov 2026): both marks go.
+        return l.replace(/^\s*(?:[-*]\s+|\d+[.)]\s+|>{1,2}\s?)/, "");
     }
     function plain(text) {
         return replaceLinks(String(text || "").replace(/\r\n?/g, "\n"), (m, words) => words)
@@ -454,7 +457,9 @@
 
     // What starts a line and must stay outside any inline marks: a list
     // item's marker, a tip's "> ", a heading's "## " or "### ".
-    const LEAD = /^\s*(?:[-*]\s+|\d+[.)]\s+|>\s?|#{2,3}\s+)?/;
+    // And an article's quote, ">> " (2 Nov 2026, js/article-text.js): bold
+    // on a quoted line went inside its second ">" and broke the quote.
+    const LEAD = /^\s*(?:[-*]\s+|\d+[.)]\s+|>{1,2}\s?|#{2,3}\s+)?/;
 
     /* Underline and strikethrough: a two-character mark on each side, and
        unlike the stars no mark is ever part of another, so the test is only
@@ -523,7 +528,7 @@
         const sel = text.slice(a, b);
         const out = sel.split("\n").map(l => replaceLinks(l, (m, words) => words)
             .replace(/^\s*-{3,}\s*$/, "")
-            .replace(/^(\s*)(?:[-*]\s+|\d+[.)]\s+|>\s?|#{2,3}\s+)/, "$1")
+            .replace(/^(\s*)(?:[-*]\s+|\d+[.)]\s+|>{1,2}\s?|#{2,3}\s+)/, "$1")
             .replace(UNDER, "$1$2").replace(STRIKE, "$1$2")
             .replace(BOLD, "$1").replace(ITALIC, "$1$2").replace(BOLD, "$1")
             .replace(/\*\*|__|~~/g, "")).join("\n");
@@ -544,7 +549,7 @@
         }
         // An address selected: it becomes the link, and its words are the
         // part left to type.
-        if (/^(?:https:\/\/\S+|(?:maze|event|guide):[a-z0-9][a-z0-9-]*|console:[a-z]+)$/.test(sel)) {
+        if (/^(?:https:\/\/\S+|(?:maze|event|guide|article):[a-z0-9][a-z0-9-]*|console:[a-z]+)$/.test(sel)) {
             const ins = `[${words}](${sel})`;
             return { text: text.slice(0, s) + ins + text.slice(e), start: s + 1, end: s + 1 + words.length };
         }
@@ -667,7 +672,10 @@
         return localDay(guide.updatedAt) > localDay(guide.publishedAt);
     }
 
-    const GuideText = { render, plain, format, esc, thumbOf, thumbSrc, wasUpdated };
+    /* inline (2 Nov 2026): one line's emphasis and links on their own, for
+       an article picture's caption (js/article-text.js), which is a line of
+       text inside a <figcaption> rather than a paragraph of its own. */
+    const GuideText = { render, plain, format, esc, inline, thumbOf, thumbSrc, wasUpdated };
     if (typeof module !== "undefined" && module.exports) module.exports = GuideText;
     else root.GuideText = GuideText;
 })(typeof window !== "undefined" ? window : this);

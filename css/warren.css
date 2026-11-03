@@ -525,6 +525,75 @@ body.wr-on > .site-footer { display: none !important; }
 :is(#wr-app .wr-ui, #login-modal, .modal-overlay.wr-dialog) :is(.admin-action-pill, .ctl-btn, .btn, .btn-enter-mini):disabled,
 :is(#wr-app .wr-ui, #login-modal, .modal-overlay.wr-dialog) :is(.admin-action-pill, .ctl-btn, .btn, .btn-enter-mini)[aria-disabled="true"] { opacity: 0.45; cursor: default; }
 
+/* The last of the old brown 9px pixel buttons (2 Nov 2026, the owner's): the
+   small pills in a maze or event form (the formatting bar's B I U S, a
+   gallery picture's arrows and Run-Through, Remove …) and the atlas's TOOL
+   choice and zoom buttons. style.css's "one style" list names them beside
+   the ones above, so they kept its raised brown gradient and Volter at
+   0.5625rem in the dark workshop. The same button as the rest here; "on" in
+   gold, a delete in red, as above. A little smaller than a record's
+   actions, as they sit in rows of a dozen. */
+#wr-app .wr-ui :is(.admin-pill-btn, .admin-wiz-zoom-btn, .admin-wiz-modes button) {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 5px;
+    width: auto;
+    height: auto;
+    min-height: 28px;
+    padding: 4px 10px;
+    border: 1px solid var(--wr-line-2);
+    border-image: none;
+    border-radius: var(--wr-radius);
+    background: var(--wr-raised);
+    background-image: none;
+    color: var(--wr-text);
+    font: 600 12px/1.2 var(--wr-font);
+    letter-spacing: 0;
+    text-transform: none;
+    text-shadow: none;
+    box-shadow: none;
+    image-rendering: auto;
+    cursor: pointer;
+}
+#wr-app .wr-ui :is(.admin-pill-btn, .admin-wiz-zoom-btn, .admin-wiz-modes button):not(.admin-pill-danger):is(:hover:not([disabled]), :focus-visible) {
+    background: var(--wr-raised-2);
+    border-color: #444a55;
+    color: var(--wr-text);
+}
+#wr-app .wr-ui :is(.admin-pill-btn.active, .admin-wiz-modes button.active, .admin-wiz-modes button[aria-pressed="true"]) {
+    background: var(--wr-gold);
+    border-color: var(--wr-gold);
+    color: var(--wr-gold-ink);
+}
+#wr-app .wr-ui :is(.admin-pill-btn.active, .admin-wiz-modes button.active, .admin-wiz-modes button[aria-pressed="true"]):is(:hover:not([disabled]), :focus-visible) { background: #ffd95f; border-color: #ffd95f; color: var(--wr-gold-ink); }
+#wr-app .wr-ui .admin-pill-btn.admin-pill-danger { color: var(--wr-red); border-color: rgba(255, 106, 95, 0.45); }
+#wr-app .wr-ui .admin-pill-btn.admin-pill-danger:hover:not([disabled]) { background: #b8473c; border-color: #b8473c; color: #fff; }
+#wr-app .wr-ui :is(.admin-pill-btn, .admin-wiz-zoom-btn, .admin-wiz-modes button)[disabled] { opacity: 0.45; cursor: default; }
+/* The formatting bar: square for the four letters, and the rule between the
+   groups in the workshop's line. The letters keep their own bold, italic,
+   underline and strike, so each says what it does. */
+#wr-app .wr-ui .admin-fmt-bar { gap: 4px; }
+#wr-app .wr-ui button.admin-fmt-btn { min-width: 28px; padding: 4px 8px; }
+#wr-app .wr-ui .admin-fmt-btn :is(strong, em, u, s) { font: inherit; }
+#wr-app .wr-ui .admin-fmt-btn strong { font-weight: 800; }
+#wr-app .wr-ui .admin-fmt-btn em { font-style: italic; }
+#wr-app .wr-ui .admin-fmt-gap { height: 18px; background: var(--wr-line-2); box-shadow: none; }
+/* The atlas's TOOL choice as the workshop's segmented track (.ctl-seg). */
+#wr-app .wr-ui .admin-wiz-modes {
+    display: inline-flex;
+    gap: 3px;
+    padding: 3px;
+    border: 1px solid var(--wr-line);
+    border-radius: 9px;
+    background: var(--wr-bg);
+    overflow: visible;
+}
+#wr-app .wr-ui .admin-wiz-modes button { min-height: 26px; padding: 3px 11px; border-color: transparent; background: transparent; color: var(--wr-text-2); }
+#wr-app .wr-ui .admin-wiz-modes button:hover:not([disabled]):not(.active):not([aria-pressed="true"]) { background: var(--wr-raised); border-color: transparent; }
+/* The zoom buttons stay square, their + and − as large as they were. */
+#wr-app .wr-ui button.admin-wiz-zoom-btn { width: 30px; height: 30px; padding: 0; font-size: 16px; font-weight: 500; line-height: 1; }
+
 /* A segmented choice — the landing switch, the palettes, a game's state: one
    track, the current answer filled in gold. */
 :is(#wr-app .wr-ui, #login-modal, .modal-overlay.wr-dialog) .ctl-seg {
@@ -585,6 +654,25 @@ body.wr-on > .site-footer { display: none !important; }
     appearance: none;
     background: var(--wr-bg) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='M3 4.5l3 3 3-3' fill='none' stroke='%23b4b0a6' stroke-width='1.6' stroke-linecap='round'/%3E%3C/svg%3E") right 9px center / 12px no-repeat;
 }
+/* The archive's search box and Sort menu, the height of the Warren's other
+   fields (.ctl-input) (1 Nov 2026, the bug scan). style.css fixed both at
+   about 24px for the archive's 9px pixel face on 30 Oct; with the padding
+   and 13px face above, each Sort menu (Mazes, Events, Errors, Players,
+   Entries, the ranges) showed only the top half of its words. Nor held to
+   the archive's 168px, sized for its own pixel face: in this face "Sort
+   by: Event Start Date (Newest)" and Entries' "Automatic (the event running
+   now)" were cut off mid-word. */
+:is(#wr-app .wr-ui, #login-modal, .modal-overlay.wr-dialog) :is(.search-box input, .sort-box select) { height: 30px; padding-top: 0; padding-bottom: 0; }
+:is(#wr-app .wr-ui, #login-modal, .modal-overlay.wr-dialog) .sort-box { min-width: 0; max-width: 100%; }
+:is(#wr-app .wr-ui, #login-modal, .modal-overlay.wr-dialog) .sort-box select { max-width: 100%; }
+/* Every open list in the workshop's colours (1 Nov 2026, the bug scan).
+   The options had three dresses: most inherited the field's light text on
+   no background of their own, so how they read was down to the browser's
+   own list; the Sort menus' came from style.css's archive (brown on
+   parchment, gold when chosen); the ranges' brown on pale grey. */
+:is(#wr-app .wr-ui, #login-modal, .modal-overlay.wr-dialog) select :is(option, optgroup) { background: var(--wr-panel-2); color: var(--wr-text); }
+:is(#wr-app .wr-ui, #login-modal, .modal-overlay.wr-dialog) select option:checked { background: var(--wr-gold); color: var(--wr-gold-ink); }
+:is(#wr-app .wr-ui, #login-modal, .modal-overlay.wr-dialog) select option:disabled { color: var(--wr-dim); }
 :is(#wr-app .wr-ui, #login-modal, .modal-overlay.wr-dialog) input:focus, :is(#wr-app .wr-ui, #login-modal, .modal-overlay.wr-dialog) select:focus, :is(#wr-app .wr-ui, #login-modal, .modal-overlay.wr-dialog) textarea:focus {
     outline: none;
     border-color: var(--wr-blue);
@@ -635,7 +723,10 @@ body.wr-on > .site-footer { display: none !important; }
    Silkscreen; what is left in them is content — descriptions and the glyph
    buttons, which are the glyphs.) */
 :is(#wr-app .wr-ui, #login-modal, .modal-overlay.wr-dialog) :is(.act-tile-value, .act-tile strong, .admin-stats strong) { font-family: var(--wr-font); font-weight: 650; letter-spacing: -0.2px; }
-#wr-app .wr-ui :is([data-panel="activity"], [data-panel="errors"]) strong { font-family: var(--wr-font); font-weight: 650; }
+/* .wr-ui and [data-panel] are the same element, the panel (2 Nov 2026): with
+   a space between them, as this was, it matched nothing, and the Errors
+   summary's figures stayed in Volter. */
+#wr-app .wr-ui:is([data-panel="activity"], [data-panel="errors"]) strong { font-family: var(--wr-font); font-weight: 650; }
 #wr-app .wr-ui th {
     font: 700 10.5px/1.3 var(--wr-font);
     letter-spacing: 0.6px;
@@ -986,6 +1077,31 @@ body.wr-on > .site-footer { display: none !important; }
     #wr-app .wr-ui .sk-kept { grid-column: 1; }
 }
 
+/* ---- SMALL TEXT TO 4.5:1 (2 Nov 2026, the bug scan). Each measured where
+   it sits: Missing Pieces' "Rejected" mark was the site's --danger, 3.19:1;
+   the Fallin' Furni and Pura Panic tables' headings, the dim grey on their
+   raised header row, 4.24:1 (now 5.2:1); Notifications' "characters left",
+   the dim grey at 85% opacity, 3.96:1 (now 5.0:1). */
+#wr-app .wr-ui .de-chip.de-status-rejected { color: var(--wr-red); border-color: var(--wr-red); }
+#wr-app .wr-ui:is([data-panel="ffdata"], [data-panel="puradata"]) th { color: #9a978f; }
+#wr-app .wr-ui .nt-left { opacity: 1; }
+/* Recolour keeps the site's dress on purpose, so only the ink moves: under
+   Frost's light mode its menus and boxes were #1b2a41 on #5f91bd, 4.31:1;
+   a shade darker of the same blue-black is 5.1:1. */
+html[data-light] #wr-app .admin-panel[data-panel="recolour"] :is(.rc-preset, .rc-nameinput, .rc-search, .rc-filters select) { color: #101c2e; }
+
+/* ---- WHAT A VIEW-ONLY ACCOUNT CANNOT CHANGE (2 Nov 2026, the bug scan),
+   greyed as style.css's is-viewer list greys the rest (pointer-events off;
+   js/admin.js drops a keyboard press on anything this greys): the Guides
+   panel's offer to add and publish the starter guide; and the two launch
+   dates, which js/admin.js now makes read-only. */
+body.is-viewer #wr-app .wr-ui .guides-starter [data-starter] {
+    opacity: 0.4;
+    cursor: not-allowed;
+    pointer-events: none;
+}
+body.is-viewer #wr-app .wr-ui :is(#launch-at-input, #ff-launch-at-input) { opacity: 0.6; cursor: not-allowed; }
+
 /* The Recolour section keeps the site's dress for its preview (see the top
    of this file), framed so it reads as a window into the site. */
 #wr-app .wr-stage > .admin-panel[data-panel="recolour"] {
@@ -1153,6 +1269,31 @@ body.wr-on #login-modal .admin-form-actions .btn { width: 100%; min-height: 36px
         border-bottom: 1px solid var(--wr-line);
     }
     #wr-app .wr-rail-group { display: none; }
+    /* No scrollbar under the strip (2 Nov 2026, the bug scan): at 768 to
+       860 a window showed the native one, arrows and all. A fade at each end
+       that has more says it scrolls instead, and js/admin.js (railEdges)
+       says which ends those are and turns a mouse wheel over it sideways.
+       The fades are the strip's own ::before and ::after as flex items held
+       at its edges by sticky, laid over the buttons by their negative
+       margins (the strip's 2px gap included), so they never move a button. */
+    #wr-app .wr-rail { scrollbar-width: none; overscroll-behavior-x: contain; }
+    #wr-app .wr-rail::-webkit-scrollbar { display: none; }
+    #wr-app .wr-rail::before,
+    #wr-app .wr-rail::after {
+        content: "";
+        position: sticky;
+        z-index: 1;
+        flex: 0 0 48px;
+        align-self: stretch;
+        margin: -8px 0;
+        pointer-events: none;
+        opacity: 0;
+        transition: opacity 0.15s;
+    }
+    #wr-app .wr-rail::before { left: 0; margin-right: -50px; background: linear-gradient(to right, var(--wr-panel) 20%, transparent); }
+    #wr-app .wr-rail::after { right: 0; margin-left: -50px; background: linear-gradient(to left, var(--wr-panel) 20%, transparent); }
+    #wr-app .wr-rail.wr-more-left::before,
+    #wr-app .wr-rail.wr-more-right::after { opacity: 1; }
     #wr-app .wr-rail .chrome-nav-btn { width: auto; flex: none; }
     #wr-app .wr-rail .chrome-nav-btn.active::before { content: none; }
     #wr-app .wr-stage { overflow: visible; padding: 16px 14px 90px; }
@@ -1205,4 +1346,59 @@ body.wr-on #login-modal .admin-form-actions .btn { width: 100%; min-height: 36px
    are. */
 @media (max-width: 360px) {
     #wr-app .wr-brand-text { display: none; }
+}
+
+/* ---- ARTICLES, in the What's New panel (2 Nov 2026; js/admin-articles.js) ----
+   A section of its own above the log: its title and hint with New Article
+   at their right, the editor, its preview (a frame showing the site's own
+   window, see preview() there) and the list. */
+#wr-app .wr-ui .art-admin {
+    margin: 0 0 22px;
+    padding: 0 0 20px;
+    border-bottom: 1px solid var(--wr-line);
+}
+#wr-app .wr-ui .art-admin-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 10px 16px;
+    margin: 0 0 12px;
+}
+#wr-app .wr-ui .art-admin-head .admin-subheading { margin: 0 0 4px; }
+#wr-app .wr-ui .art-admin-head .admin-hint { margin: 0; max-width: 70ch; }
+#wr-app .wr-ui .art-admin-head .admin-add-btn { flex: 0 0 auto; }
+#wr-app .wr-ui .art-admin-list { margin-top: 12px; }
+#wr-app .wr-ui .art-admin-list:empty { display: none; }
+#wr-app .wr-ui .art-admin-row.is-draft h3 { color: var(--wr-dim); }
+#wr-app .wr-ui .art-admin-row .status-badge { margin-right: 4px; vertical-align: 1px; }
+#wr-app .wr-ui .wn-log-title { margin: 0 0 10px; }
+/* The editor's own rows across the whole form: the subheadings, the wide boxes. */
+#wr-app .admin-stage .art-form > .art-wide { grid-column: 1 / -1; }
+#wr-app .wr-ui .art-form > .admin-subheading { margin: 10px 0 0; padding-top: 14px; border-top: 1px solid var(--wr-line); }
+#wr-app .wr-ui .art-form .admin-form-title + .admin-field { margin-top: 0; }
+#wr-app .wr-ui .art-body-field textarea { min-height: 320px; font: 14px/1.6 ui-monospace, Consolas, monospace; }
+#wr-app .wr-ui .art-body-field [data-body-count].is-over { color: var(--danger, #e06c6c); }
+/* The live preview of the text: the room window's own description styles
+   (.room-desc-full), held to a readable height. */
+#wr-app .wr-ui .art-live .admin-fmt-preview { max-height: 460px; overflow-y: auto; }
+#wr-app .wr-ui .art-live .art-figure-img { max-height: 280px; width: auto; }
+/* The gallery: the maze editor's rows, each picture as its square. */
+#wr-app .wr-ui .art-gallery-list { display: grid; gap: 8px; }
+#wr-app .wr-ui .art-gallery-thumb { width: 64px; height: 48px; background-size: cover; }
+#wr-app .wr-ui .art-gallery-row .admin-gallery-label { flex: 1 1 auto; min-width: 0; }
+#wr-app .wr-ui .art-gallery-add { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 10px; }
+/* The article as the site draws it, at the window's own width. */
+#wr-app .wr-ui .art-preview { margin: 16px 0 0; }
+#wr-app .wr-ui .art-preview-bar { padding: 0 0 8px; }
+#wr-app .wr-ui .art-preview-frame {
+    display: block;
+    width: 100%;
+    height: 480px;
+    border: 1px solid var(--wr-line-2);
+    border-radius: 8px;
+    background: #0d0a06;
+}
+@media (max-width: 640px) {
+    #wr-app .wr-ui .art-admin-head { flex-direction: column; }
+    #wr-app .wr-ui .art-body-field textarea { min-height: 240px; }
 }

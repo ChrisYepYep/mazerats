@@ -54,7 +54,9 @@ function slugify(text) {
 // are part of the site's content like the archive's, so the same scope.
 // "news/" holds What's New posts' pictures (js/admin-whats-new.js; 4 Oct 2026),
 // site content like the rest.
-const FOLDER_SCOPES = { rooms: "site", wizard: "wizard", guides: "site", news: "site" };
+// "articles/" holds the Articles' pictures, gallery, thumbnail and the ones
+// set in the text (js/admin-articles.js; 2 Nov 2026), site content too.
+const FOLDER_SCOPES = { rooms: "site", wizard: "wizard", guides: "site", news: "site", articles: "site" };
 const DEFAULT_FOLDER = "rooms";
 
 function folderOfKey(key) {
@@ -93,7 +95,11 @@ function folderOfKey(key) {
                      Maze's rounds[].image;
      dead_end_leads  `promoted`, the copies an accepted lead made;
      wizard          a layer's or room's image and thumb, a room's
-                     labelImage, the map's background, detail and footprint.
+                     labelImage, the map's background, detail and footprint;
+     articles        thumb, gallery[].image, wn.image, and the body's
+                     ![caption](address) lines (2 Nov 2026), and any key an
+                     {{embed}} line names bare, a video's and its poster's
+                     (embedPattern).
    A field added to any of these later has to be added here too. */
 const IMAGE_URL_PREFIX = "/.netlify/functions/image?key=";
 
@@ -106,7 +112,11 @@ const PICTURE_FIELDS = (() => {
         dead_end_leads: ["promoted"],
         wizard: ["image", "thumb", "labelImage", "background", "backgroundDetail", "footprint"],
         // A What's New news post's picture (whats-new.js; 4 Oct 2026).
-        whats_new: ["image"]
+        whats_new: ["image"],
+        /* An article's (articles.js; 2 Nov 2026): its thumbnail, gallery and
+           What's New picture, and the pictures written into its text as
+           ![caption](address) lines, which the regex finds inside the body. */
+        articles: ["thumb", "gallery.image", "wn.image", "body"]
     };
 })();
 
@@ -114,7 +124,18 @@ const escapeRegex = (s) => String(s).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 function referencePattern(key) {
     const forms = [key, encodeURIComponent(key)].map(escapeRegex);
-    return new RegExp(`${escapeRegex(IMAGE_URL_PREFIX)}(?:${forms.join("|")})(?:[&#]|$)`);
+    /* ")" ends one too (2 Nov 2026): an article's text holds its pictures
+       as ![caption](address), so the address stops at the bracket. No key
+       can hold one (see _keys.js), so it never cuts a longer key short. */
+    return new RegExp(`${escapeRegex(IMAGE_URL_PREFIX)}(?:${forms.join("|")})(?:[&#)]|$)`);
+}
+
+/* A key named bare in an article's {{embed}} line (2 Nov 2026): a video's
+   `key=videos/...` and its `poster=articles/...` picture, which the text
+   holds without the image address in front, so referencePattern never
+   finds them. Whole values only: a space or the line's "}}" ends one. */
+function embedPattern(key) {
+    return new RegExp(`(?:^|[ \\t])[a-z][a-z0-9]{0,23}=${escapeRegex(key)}(?=[ \\t}]|$)`, "m");
 }
 
 async function isInUse(db, key) {
@@ -129,7 +150,9 @@ async function isInUse(db, key) {
         hit("daily_deals", { day: { $in: [day(0), day(1)] }, ...anyOf(["rounds.image", "rounds.tiles.image"]) }),
         hit("dead_end_leads", anyOf(PICTURE_FIELDS.dead_end_leads)),
         hit("wizard", anyOf(PICTURE_FIELDS.wizard)),
-        hit("whats_new", anyOf(PICTURE_FIELDS.whats_new))
+        hit("whats_new", anyOf(PICTURE_FIELDS.whats_new)),
+        hit("articles", anyOf(PICTURE_FIELDS.articles)),
+        hit("articles", { body: embedPattern(key) })
     ]);
     return found.some(Boolean);
 }
@@ -238,6 +261,16 @@ async function handle(event) {
         // path, so "wizard/../rooms/<maze>/<file>.png" was a wizard-scope
         // delete of an archive picture. See _keys.js.
         if (!isSafeKey(key)) return json(400, { error: "Invalid key" });
+        /* An article's video (2 Nov 2026): kept in pieces in a store of its
+           own, so handed to upload-video.js, which checks it is not in use
+           just as below. Here so the editors' one clean-up call reaches
+           videos too. Site scope, as the articles' pictures. */
+        if (folderOfKey(key) === "videos") {
+            if (!(await canWrite(event, "site"))) return await refuseWrite(event);
+            const V = require("./_videos");
+            if (!V.isVideoKey(key)) return json(400, { error: "Invalid key" });
+            return await require("./upload-video").deleteVideo(V.videoStore(), key);
+        }
         // The folder the key names decides who may delete it, exactly as it
         // decided who could write it. A key naming no known folder — or no
         // folder at all — is refused rather than swept up by a default,
@@ -270,3 +303,5 @@ async function handle(event) {
    withErrorReporting in _errors.js. Last, so it wraps the handler as finally
    defined above; what the handler answers is unchanged. */
 exports.handler = require("./_errors").withErrorReporting("upload", exports.handler);
+// For upload-video.js and video-sweep.js (2 Nov 2026): a video is in use exactly as a picture is.
+exports.isInUse = isInUse;

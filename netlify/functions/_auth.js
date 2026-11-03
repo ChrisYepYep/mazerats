@@ -28,7 +28,7 @@ const { SECURITY_HEADERS } = require("./_headers");
    accepting "no aud" for a while would also accept the OAuth state token,
    which has none either, and the cost of being strict is only that anyone
    signed in to the admin at deploy time signs in again — sessions last
-   twelve hours regardless. */
+   48 hours regardless. */
 const ADMIN_AUDIENCE = "mazerats-admin";
 
 /* `version` is the account's stored tokenVersion (see tokenIsCurrent below),
@@ -38,15 +38,20 @@ const ADMIN_AUDIENCE = "mazerats-admin";
 function signAdminToken(username, version) {
     const payload = { sub: username };
     if (version !== undefined && version !== null) payload.tv = String(version);
+    /* 48 hours, not 12 (2 Nov 2026, the owner's call): a working day plus
+       the next one without signing in again mid-task. A password change
+       still ends every session at once (tokenIsCurrent below), and roles
+       and deleted accounts are looked up on every write, so the longer life
+       only lengthens how long a lost token can READ the admin views. */
     return jwt.sign(payload, process.env.SESSION_SECRET, {
-        expiresIn: "12h", audience: ADMIN_AUDIENCE, algorithm: "HS256"
+        expiresIn: "48h", audience: ADMIN_AUDIENCE, algorithm: "HS256"
     });
 }
 
 /* ---- A SESSION ENDS WHEN THE PASSWORD DOES.
 
    A JWT cannot be taken back, so without this a password reset changed
-   nothing for twelve hours: whoever had the old token — the very person the
+   nothing for 48 hours: whoever had the old token — the very person the
    reset was meant to shut out — kept every power it carried. The same went
    for an account deleted and then created again under the same name, whose
    new row answered for the old row's tokens.
@@ -69,7 +74,7 @@ function tokenIsCurrent(admin, payload) {
 
 /* A valid, unexpired admin token — which is NOT the same as a live account.
    This is answered from the token alone, so an account deleted mid-session
-   still passes here until its token expires (up to 12 hours). Everything
+   still passes here until its token expires (up to 48 hours). Everything
    that changes something goes through canWrite, which does look the account
    up; reads that hand out anything personal (messages, IPs, the admin list)
    use hasAccount below instead. The remaining isAuthorized-only reads are
@@ -173,7 +178,7 @@ const WRITE_SCOPES = {
 /* Unlike isAuthorized, these can't be answered from the token alone: the
    JWT carries only the username, and roles can change after it was issued
    (an account demoted mid-session would otherwise keep its old powers for
-   up to 12 hours). One indexed lookup per call, on actions that are rare
+   up to 48 hours). One indexed lookup per call, on actions that are rare
    and slow anyway.
 
    Memoized on the request object, because a single request can now ask more
@@ -273,7 +278,7 @@ async function isOwnerWrite(event) {
 
 /* isAuthorized plus "and the account still exists". One lookup (memoized
    with everything else in roleOf), for the reads where a deleted account
-   still being able to look for twelve hours actually matters. */
+   still being able to look for two days actually matters. */
 async function hasAccount(event) {
     return (await roleOf(event)) !== null;
 }

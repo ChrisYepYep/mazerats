@@ -43,7 +43,9 @@ const LABELLED = [
     // What was pressed on the archive's opening view (30 Oct 2026).
     "opening",
     // Dark mode switched "on" or "off" (30 Oct 2026).
-    "dark"
+    "dark",
+    // Which article was opened, or "list" (2 Nov 2026).
+    "article-open"
 ];
 
 // A flag per visit: did anything of this name happen in it?

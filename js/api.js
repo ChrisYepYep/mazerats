@@ -33,7 +33,7 @@ const Api = {
        be far rarer now that the durable cache is actually in use (see
        CDN_CACHE in netlify/functions/_cache.js), so the long leash should be
        reached less often as well as mattering less when it is. */
-    async _getWithFallback(url, label, fallbackFn, headers) {
+    async _getWithFallback(url, label, fallbackFn, headers, onProgress) {
         const attempts = [10000, 15000];
         for (let i = 0; i < attempts.length; i++) {
             const controller = new AbortController();
@@ -41,7 +41,7 @@ const Api = {
             try {
                 const res = await fetch(url, headers ? { signal: controller.signal, headers } : { signal: controller.signal });
                 if (!res.ok) throw new Error(`${label} fetch failed: ${res.status}`);
-                const data = await res.json();
+                const data = onProgress ? await this._readJson(res, onProgress) : await res.json();
                 this._degraded.delete(label);
                 return data;
             } catch (e) {
@@ -54,6 +54,32 @@ const Api = {
                 clearTimeout(timeout);
             }
         }
+    },
+
+    /* res.json(), but saying how far it has got (1 Nov 2026): the homepage's
+       loading bar follows the archive's bytes as they arrive rather than
+       standing still until the whole answer is in. onProgress(bytes) is
+       called once the headers are in (with 0) and after each piece, counting
+       the bytes as unpacked (what the browser hands over), not as sent.
+       Anything that cannot stream is simply read whole. */
+    async _readJson(res, onProgress) {
+        const say = n => { try { onProgress(n); } catch (e) { /* a bar is never worth the data */ } };
+        say(0);
+        if (!res.body || typeof res.body.getReader !== "function" || typeof TextDecoder !== "function") {
+            return res.json();
+        }
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let text = "", got = 0;
+        for (;;) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            got += value.byteLength;
+            text += decoder.decode(value, { stream: true });
+            say(got);
+        }
+        text += decoder.decode();
+        return JSON.parse(text);
     },
 
     /* Turns the packed wire format back into the records the rest of the
@@ -130,11 +156,16 @@ const Api = {
     // The UTC day the memoised rooms request was made on. See roomsForToday.
     roomsDay: "",
 
+    /* Set by the homepage's loading bar (js/home.js) before it asks, and read
+       as each piece arrives, so it hears however the request was started. */
+    roomsProgress: null,
+
     async getRooms() {
         return this._once("rooms", () => {
             this.roomsDay = new Date().toISOString().slice(0, 10);
             return this._getWithFallback("/.netlify/functions/rooms", "room data",
-                () => typeof DEFAULT_ROOMS !== "undefined" ? DEFAULT_ROOMS : []).then(d => this._unpack(d));
+                () => typeof DEFAULT_ROOMS !== "undefined" ? DEFAULT_ROOMS : [], undefined,
+                n => { if (this.roomsProgress) this.roomsProgress(n); }).then(d => this._unpack(d));
         });
     },
 

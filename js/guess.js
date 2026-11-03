@@ -551,6 +551,14 @@
         return stats;
     }
 
+    /* The account's figures from a player-data answer, over the device's
+       for any field the answer lacks. Not `recentFrom` (2 Nov 2026): that
+       is where the DEVICE's own list of days starts (Daily.noteRecent), and
+       carried over it would blank the account's earlier days on the strip. */
+    function fromAccount(remoteStats) {
+        return { ...localStats, recentFrom: "", ...remoteStats };
+    }
+
     function yesterdayOf(iso) {
         const d = new Date(iso + "T00:00:00Z");
         d.setUTCDate(d.getUTCDate() - 1);
@@ -622,6 +630,8 @@
             s.points += scored;
             s.bestDay = Math.max(s.bestDay, scored);
             s.lastDay = state.day;
+            // And the day's square on the streak strip (2 Nov 2026).
+            if (Daily.noteRecent) Daily.noteRecent(s, state.day, solved, ROUNDS);
         };
         count(localStats);
         saveStats();
@@ -979,6 +989,10 @@
             state.done = true;
             bankDay();
             Daily.track("finish", "guess");
+            /* The day's square is stamped onto the streak strip when the
+               results come up (goTo; 2 Nov 2026). Not a practice run,
+               which is no day played. */
+            if (!state.practice && strip()) streakStrip.arm(state.day);
         }
         saveState();
         const pressedAt = optionsRound(state.round).findIndex(n => n === name);
@@ -1223,6 +1237,7 @@
         if (next === "results") {
             submitIfOwed();
             loadBoards();
+            if (streakStrip && el.overlay.classList.contains("open")) streakStrip.play();
         }
         if (next === "round") {
             startClock();
@@ -1494,8 +1509,8 @@
             <p class="daily-bonus" id="guess-bonus"${bonus ? "" : " hidden"}>${escapeHtml(bonus)}</p>
             <p class="guess-score">${solved} of ${ROUNDS} rooms found</p>
             <p class="guess-grid" aria-label="Result grid">${state.results.map(squareFor).join("")}</p>
+            <div id="guess-streak-slot"></div>
             <dl class="guess-stats">
-                <div><dt>Streak</dt><dd>${stats.streak}</dd></div>
                 <div><dt>Best day</dt><dd>${stats.bestDay}</dd></div>
                 <div><dt>Days played</dt><dd>${stats.days}</dd></div>
                 <div><dt>All-time</dt><dd>${stats.points}</dd></div>
@@ -1512,6 +1527,14 @@
             <div id="guess-boards-slot"></div>`;
         const slot = document.getElementById("guess-boards-slot");
         if (slot) slot.replaceWith(boardsElement());
+        /* The streak strip, in place of the Streak figure (2 Nov 2026; see
+           THE STREAK STRIP in js/daily.js): one long-lived element, like the
+           boards, so a redraw does not cut its stamp short. */
+        const streakSlot = document.getElementById("guess-streak-slot");
+        if (streakSlot && strip()) {
+            streakSlot.replaceWith(streakStrip.el);
+            streakStrip.draw(stats, state.day);
+        }
 
         /* The day's five mazes, named and linked, used to be listed here.
 
@@ -1539,6 +1562,15 @@
        the server keeps the time. In memory only: every open brings it back
        with the deal. As `served` in js/oddoneout.js. */
     let served = null;
+
+    /* The results card's streak strip (Daily.streakStrip), made on first
+       use. None from a daily.js older than it, which a tab left open across
+       a deploy can hold while fetching this file new. */
+    let streakStrip = null;
+    function strip() {
+        if (!streakStrip && Daily.streakStrip) streakStrip = Daily.streakStrip("guess");
+        return streakStrip;
+    }
 
     /* PRACTICE (30 Sept 2026), as in js/oddoneout.js: `practiceUntil` is
        the launch cut while the last deal said the day is still in practice
@@ -1769,7 +1801,7 @@
            only (accountStats), never saved over this device's own record. */
         const remote = await Account.fetchState();
         if (remote && remote.stats) {
-            accountStats = { ...localStats, ...remote.stats };
+            accountStats = fromAccount(remote.stats);
             renderSummary();
         }
         loadBoards(true);
@@ -2291,7 +2323,7 @@
             const remote = await Account.fetchState();
             if (remote) {
                 adoptAccountDay(remote.guess);
-                if (remote.stats) accountStats = { ...localStats, ...remote.stats };
+                if (remote.stats) accountStats = fromAccount(remote.stats);
                 // "reset": the mirror held a day the server no longer has —
                 // see applyRecorded — so the reset's ticket is spent here.
                 if (applyRecorded() === "reset") await Daily.claimReset("guess");
@@ -2405,7 +2437,7 @@
                         if (localStats.lastDay !== state.day && !state.practice) countDay();
                         if (window.Account && Account.current) {
                             const remote = await Account.fetchState();
-                            if (remote && remote.stats) accountStats = { ...localStats, ...remote.stats };
+                            if (remote && remote.stats) accountStats = fromAccount(remote.stats);
                         }
                         shownStats();
                     }

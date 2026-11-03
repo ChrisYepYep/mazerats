@@ -9,7 +9,7 @@
    completely inert until js/site.js puts that attribute on <html>. The
    classic palette is not defined here and is not affected by anything in it.
 
-   1183 rules, 1899 declarations, hues 208 (surfaces) / 216 (accents).
+   1202 rules, 1932 declarations, hues 208 (surfaces) / 216 (accents).
 */
 :root[data-light] {
     --bg-black: #5f91bd;
@@ -562,6 +562,11 @@ html[data-light]:not([data-light]) .chrome-nav-top .chrome-nav-btn:not(.active):
     filter: sepia(0.25) saturate(0.5) brightness(0.95) contrast(1.05);
 }
 
+html[data-light]:not([data-light]):not([data-dark]) .chrome-nav-top .chrome-nav-btn:not(.active) {
+    color: #0f1d33;
+    text-shadow: 1px 1px 0 rgba(255, 255, 255, 0.3);
+}
+
 html[data-light] .chrome-nav-btn-mazes.active .chrome-nav-icon {
     content: url('../assets/img/frostlight/mazes_icon_active.png?v=3330215d');
 }
@@ -714,6 +719,10 @@ html[data-light] .status-live {
     color: #e8563f;
 }
 
+html[data-light] .status-live::after {
+    box-shadow: 0 0 0 2px rgba(232, 86, 63, 0.5);
+}
+
 html[data-light] .tag {
     border: 1.5px solid #2f4d68;
     color: #1e2f49;
@@ -760,6 +769,12 @@ html[data-light] .clear-filter-btn:focus-visible {
 
 html[data-light] .clear-filter-btn:focus-visible {
     outline: 2px solid #3f6e97;
+}
+
+html[data-light] .sort-chip {
+    border: 1px solid color-mix(in srgb, #5e7386 35%, transparent);
+    background: rgba(243, 248, 252, 0.18);
+    color: #1e2f49;
 }
 
 html[data-light] .featured-refresh-btn:hover,
@@ -1988,6 +2003,25 @@ html[data-light] .console-notices-item.is-picked {
     border-color: #eeeeee;
 }
 
+html[data-light] .console-unread-badge {
+    background: #eeeeee;
+    color: #2b2b2b;
+}
+
+html[data-light] .console-notices-head {
+    color: #eeeeee;
+}
+
+html[data-light] .console-notices-markall {
+    border: 0;
+    background: none;
+    color: inherit;
+}
+
+html[data-light] .console-notices-markall:focus-visible {
+    outline: 1px dotted #eeeeee;
+}
+
 html[data-light] .console-notices-item:focus-visible {
     outline: 1px dotted #eeeeee;
 }
@@ -2695,6 +2729,18 @@ html[data-light] #room-sort:focus-visible {
     outline: 2px solid #3f6e97;
 }
 
+html[data-light] #search-wrap #room-search:focus-visible,
+html[data-light] #search-wrap #room-sort:focus-visible,
+html[data-light] #opening-search-input:focus-visible {
+    outline: 2px solid #25425b;
+}
+
+html[data-light] #search-wrap #room-search.is-pointer-focus,
+html[data-light] #search-wrap #room-sort.is-pointer-focus,
+html[data-light] #opening-search-input.is-pointer-focus {
+    outline: none;
+}
+
 html[data-light] .skip-link:focus-visible {
     outline: 2px solid #3f6e97;
 }
@@ -3399,6 +3445,14 @@ html[data-light] .guess-board-range:focus-visible {
 
 html[data-light] .guess-board-span {
     color: #263c5c;
+}
+
+html[data-light]:not([data-light]) .guess-board-span {
+    color: #1e2f49;
+}
+
+html[data-light]:not([data-light]) .guess-board-rank {
+    color: #233856;
 }
 
 html[data-light] .guess-board-cell {
@@ -5649,8 +5703,8 @@ html[data-light] .opening-spot .spotlight-frame {
 
 html[data-light] .opening-head-title {
     border: 0;
-    background: color-mix(in srgb, var(--opening-cream) 30%, transparent);
-    color: var(--opening-cream);
+    background: color-mix(in srgb, var(--opening-cream) 20%, transparent);
+    color: color-mix(in srgb, var(--opening-cream), #142034 50%);
     text-shadow: 1px 1px 0 #ffffff;
 }
 
@@ -5844,6 +5898,51 @@ html[data-light][data-dark] .chrome-light {
 
 html[data-light][data-light] .chrome-light {
     filter: drop-shadow(0 0 3px var(--neon-soft));
+}
+
+html[data-light] .art-list {
+    color: #1b2a41;
+}
+
+html[data-light] .status-badge.art-badge {
+    color: #ecc7d6;
+    border-color: #a8708a;
+}
+
+html[data-light] .art-text .art-figure {
+    border: 1px solid var(--chrome-border);
+    box-shadow: inset 0 1px 0 #d9e5f0,
+        inset 1px 0 0 #d9e5f0,
+        inset -1px 0 0 rgba(23, 53, 79, 0.225),
+        inset 0 -1px 0 rgba(23, 53, 79, 0.225),
+        2px 2px 0 rgba(23, 53, 79, 0.225);
+    background: rgba(243, 248, 252, 0.28);
+}
+
+html[data-light] .art-caption {
+    color: #1e2f49;
+}
+
+html[data-light] .art-text .art-quote {
+    color: #1b2a41;
+}
+
+html[data-light] .art-embed-wait,
+html[data-light] .art-embed-missing {
+    border: 1px dashed var(--border);
+    background: rgba(243, 248, 252, 0.18);
+    color: #1e2f49;
+}
+
+html[data-light] .updatelog-verb.is-article {
+    color: #ecc7d6;
+    border-color: #a8708a;
+    background: rgba(168, 112, 138, 0.2);
+}
+
+html[data-light] .wn-verb.is-article {
+    color: #ecc7d6;
+    border-color: #a8708a;
 }
 
 /* ------------------------------------------- COLOUR THAT IS INFORMATION
@@ -6296,6 +6395,87 @@ html[data-light] .guess-pip.is-won.g4 {
 }
 html[data-light] .guess-pip.is-lost {
     color: #e8c0b4;
+}
+/* The console's dropdowns' own options (1 Nov 2026, the bug scan): their
+   dark grey is a fill, so it turned to ice, while the console's type stays
+   white for its dark screen. Wherever the browser draws the list itself
+   (type-ahead on a closed select, or anywhere js/select-list.js does not
+   open its own) the options read white on ice. The console's grey again. */
+html[data-light] .console-select option,
+html[data-light] .console-select optgroup {
+    background: #2b2b2b;
+}
+/* A maze marked Completed, and To Do's "clearing" state (1 Nov 2026, the
+   bug scan): their green button is a gradient whose lower stop is dark
+   enough to count as black, so it alone turned to ice, and the pale green
+   word faded out down the button. Both stops kept, as on brown. */
+html[data-light] .modal-meta-actions .walked-toggle.is-walked,
+html[data-light] .saved-toggle.is-clearing,
+html[data-light] .modal-meta-actions .saved-toggle.is-clearing {
+    background: linear-gradient(#3d4b32, #2f3a26);
+}
+/* What's New's ADDED and NOTE labels (1 Nov 2026, the bug scan): their
+   pale inks are tinted, so nothing turned them, and they sat pale on the
+   pale row (about 1.3:1). A deep green and a deep slate, over the same
+   washes, as UPDATED's navy is. */
+html[data-light] .updatelog-verb.is-added {
+    color: #234a17;
+}
+html[data-light] .updatelog-verb.is-note {
+    color: #2c4560;
+}
+/* And an article's rose label (2 Nov 2026), in the log, the window's meta
+   row and a search result: a deep plum, as the others are deepened. */
+html[data-light] .updatelog-verb.is-article,
+html[data-light] .status-badge.art-badge {
+    color: #5a2440;
+}
+/* The small type on the header's and the footer's blue (2 Nov 2026, the
+   owner's): the tagline, the Upcoming Events label, title and time, and the
+   Fellow Fansites links measured 3.7 to 4.4:1 there. The same two navies,
+   a step deeper, 4.6:1 or more on the lightest blue behind them. Later the
+   same day (the pre-deploy sweep) the wordmark beside the tagline (4.3:1),
+   the footer's own line (4.0:1) and its Privacy Policy link (3.5:1) too. */
+html[data-light] .site-header .brand-text,
+html[data-light] .site-footer,
+html[data-light] .site-footer p,
+html[data-light] .footer-dot,
+html[data-light] .brand-tagline,
+html[data-light] .header-events-label,
+html[data-light] .header-events-when,
+html[data-light] .fellow-fansites-links,
+html[data-light] .fellow-fansites-dot {
+    color: #142136;
+}
+html[data-light] .header-events-title,
+html[data-light] .fellow-fansites-title,
+html[data-light] .fellow-fansites-links a,
+html[data-light] .site-footer a {
+    color: #14243c;
+}
+/* LIVE, and the greens of Open and Upcoming, on the pills' near-white
+   (2 Nov 2026, the owner's): 3.3:1 as they were. The same red and green,
+   deeper, 5.3:1 and over. */
+html[data-light] .status-live {
+    color: #b8321c;
+}
+html[data-light] .status-open,
+html[data-light] .status-upcoming {
+    color: #3f6a26;
+}
+/* A maze's tags (2 Nov 2026, the pre-deploy sweep): the paragraph navy on
+   their mid blue pill, 4.1 to 4.3:1. The deeper navy above, 4.9:1. Not the
+   difficulty tags, which keep their own colours on the dark ground above. */
+html[data-light] .tag:not([class*="difficulty-"]) {
+    color: #142136;
+}
+/* The Sorcerer's Atlas's zoom label (2 Nov 2026, the pre-deploy sweep):
+   css/wizard.css is not built from, so its var(--parchment-dim) kept the
+   light mode's root value, a pale ice meant for surfaces, on the pale
+   button blue (1.8:1). The deep navy --parchment-dim type is given
+   everywhere else here (a paragraph's), 5.6:1. */
+html[data-light] .wiz-zoom-label {
+    color: #1e2f49;
 }
 /* The Christmas skin outlines the footer in navy so it reads over its drift;
    on a light page that outline is a smudge round dark type. */
