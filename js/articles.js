@@ -39,6 +39,7 @@
     const listEl = document.getElementById("article-list");
     const reader = document.getElementById("article-reader");
     const frame = document.getElementById("article-frame");
+    const topEl = document.getElementById("article-top");
     const img = document.getElementById("article-img");
     const prevBtn = document.getElementById("article-prev");
     const nextBtn = document.getElementById("article-next");
@@ -183,6 +184,7 @@
        the foot of the picture, and a strip of every picture under the text. */
     function showPic(i) {
         if (!pics.length) return;
+        hideDraw();
         picAt = (i + pics.length) % pics.length;
         const p = pics[picAt];
         const a = byKey(view.id);
@@ -201,16 +203,59 @@
         });
     }
 
+    /* THE DRAW AT THE TOP (3 Nov 2026, the owner's): "having the wheel in
+       the article, the wheel displays at the top where images usually
+       are." The article's first {{wheel}} block is taken out of the text
+       and drawn in the picture's place instead (#article-top), and the
+       thumbnail isn't shown there. A gallery still has its strip under the
+       text, led by a tile for the draw: a picture pressed there takes the
+       top, the tile brings the draw back. The draw is built afresh each
+       time it is shown, so one being left mid-spin stops (and goes quiet)
+       as soon as it leaves the page; see the isConnected checks in
+       js/article-wheel.js. */
+    let drawHtml = "";
+    let drawCtx = null;
+    function showDraw() {
+        if (!drawHtml) return;
+        frame.hidden = true;
+        topEl.innerHTML = drawHtml;
+        topEl.hidden = false;
+        if (window.ArticleEmbeds) window.ArticleEmbeds.hydrate(topEl, drawCtx);
+        strip.querySelectorAll("img").forEach(t => { t.classList.remove("active"); t.removeAttribute("aria-current"); });
+        const tile = strip.querySelector("[data-pic='draw']");
+        if (tile) { tile.classList.add("active"); tile.setAttribute("aria-current", "true"); }
+    }
+    function hideDraw() {
+        if (topEl) { topEl.replaceChildren(); topEl.hidden = true; }
+        frame.hidden = !pics.length;
+        const tile = strip.querySelector("[data-pic='draw']");
+        if (tile) { tile.classList.remove("active"); tile.removeAttribute("aria-current"); }
+    }
+
     function drawReader(a) {
         titleEl.textContent = a.title || "Article";
-        pics = picturesOf(a);
+        /* The pictures in the text as uploaded, as a guide's are (js/guides.js):
+           they are mostly pixel-art screenshots, shown at their own size. */
+        textEl.innerHTML = ArticleText.render(a.body, { level: 3, pictureAlt: `A picture from ${a.title}` }) ||
+            `<p>${esc(GuideText.plain(a.summary || ""))}</p>`;
+        const wheel = topEl ? textEl.querySelector("figure.art-embed[data-embed='wheel']") : null;
+        drawHtml = wheel ? wheel.outerHTML : "";
+        drawCtx = { article: a, embedData: a.embedData };
+        if (wheel) wheel.remove();
+        // With the draw at the top, only a gallery's pictures, never the thumbnail.
+        pics = drawHtml ? picturesOf({ gallery: a.gallery }) : picturesOf(a);
         picAt = 0;
-        reader.classList.toggle("has-gallery", pics.length > 1);
-        frame.hidden = !pics.length;
+        const stripped = pics.length > 1 || (!!drawHtml && pics.length > 0);
+        reader.classList.toggle("has-gallery", stripped);
+        hideDraw();
         if (!pics.length) { img.src = BLANK; img.style.display = "none"; }
-        strip.innerHTML = pics.length > 1 ? pics.map((p, n) => `<img src="${esc(imgCdn(p.image, 104, 104, 70))}" alt="${esc(p.caption || `Picture ${n + 1}`)}" tabindex="0" role="button" data-pic="${n}" loading="lazy" decoding="async">`).join("") : "";
-        strip.style.display = pics.length > 1 ? "" : "none";
-        if (pics.length) showPic(0);
+        strip.innerHTML = stripped
+            ? (drawHtml ? `<span class="art-strip-draw" tabindex="0" role="button" data-pic="draw" aria-label="The prize draw" title="The prize draw"></span>` : "") +
+              pics.map((p, n) => `<img src="${esc(imgCdn(p.image, 104, 104, 70))}" alt="${esc(p.caption || `Picture ${n + 1}`)}" tabindex="0" role="button" data-pic="${n}" loading="lazy" decoding="async">`).join("")
+            : "";
+        strip.style.display = stripped ? "" : "none";
+        if (drawHtml) showDraw();
+        else if (pics.length) showPic(0);
         byline.textContent = bylineOf(a);
         /* The meta row, as the room window's status line: what it is, and how
            long it takes to read (the words, at about 200 a minute). */
@@ -223,11 +268,7 @@
             `<button type="button" class="btn art-copy" data-act="copy">Copy link</button>`
         ].join("");
         crumbs.hidden = !listPlace;
-        /* The pictures in the text as uploaded, as a guide's are (js/guides.js):
-           they are mostly pixel-art screenshots, shown at their own size. */
-        textEl.innerHTML = ArticleText.render(a.body, { level: 3, pictureAlt: `A picture from ${a.title}` }) ||
-            `<p>${esc(GuideText.plain(a.summary || ""))}</p>`;
-        if (window.ArticleEmbeds) window.ArticleEmbeds.hydrate(textEl, { article: a, embedData: a.embedData });
+        if (window.ArticleEmbeds) window.ArticleEmbeds.hydrate(textEl, drawCtx);
         descBox.scrollTop = 0;
         say("");
     }
@@ -261,6 +302,7 @@
         listEl.hidden = reading;
         if (reading) drawReader(a);
         else {
+            if (topEl) { topEl.replaceChildren(); topEl.hidden = true; }
             titleEl.textContent = view.id ? "Article" : "Articles";
             listEl.innerHTML = note || listHtml();
         }
@@ -374,6 +416,8 @@
         listPlace = null;
         // Anything an embed is playing stops with the window (a video, a wheel's spin).
         textEl.querySelectorAll("video, audio").forEach(m => { try { m.pause(); } catch (e) { /* fine */ } });
+        // The draw at the top, taken out of the page: a spin stops with it.
+        if (topEl && !topEl.hidden) { topEl.replaceChildren(); topEl.hidden = true; }
         let deferred = false;
         if (!o.fromHistory) {
             if (pendingBack) {
@@ -477,7 +521,7 @@
             return;
         }
         const pic = t.closest("[data-pic]");
-        if (pic) { showPic(Number(pic.dataset.pic)); return; }
+        if (pic) { pickPic(pic); return; }
         const act = t.closest("[data-act]");
         if (!act) return;
         const what = act.dataset.act;
@@ -509,8 +553,13 @@
         const pic = e.target.closest && e.target.closest("[data-pic]");
         if (!pic) return;
         e.preventDefault();
-        showPic(Number(pic.dataset.pic));
+        pickPic(pic);
     });
+    // A strip tile: a picture, or the draw's own tile.
+    function pickPic(tile) {
+        if (tile.dataset.pic === "draw") { if (topEl.hidden) showDraw(); }
+        else showPic(Number(tile.dataset.pic));
+    }
     prevBtn.addEventListener("click", () => showPic(picAt - 1));
     nextBtn.addEventListener("click", () => showPic(picAt + 1));
     // Left and right page the pictures while the picture area has focus, as the maze window's do.

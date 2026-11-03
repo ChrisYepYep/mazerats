@@ -36,7 +36,7 @@
 
     // Kept in step with the files, as a <script> tag's ?v= would be.
     const DRAW_SRC = "/js/wheel-draw.js?v=1";
-    const CSS_SRC = "/css/article-wheel.css?v=1";
+    const CSS_SRC = "/css/article-wheel.css?v=2";
     const MUTE_KEY = "mazerats_replay_muted";
     const SVG_NS = "http://www.w3.org/2000/svg";
     const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];

@@ -7312,7 +7312,11 @@ body[data-page="admin"] .admin-contributor-count {
 }
 
 /* js/custom-scrollbar.js still tags its wrapper --desc; the framing
-   lives on .room-desc-panel above, so nothing is drawn on it here. */
+   lives on .room-desc-panel above, so nothing is drawn on it here.
+   The wrapper is a flex row, so the box in it took its content's width:
+   short lines (an article's, 3 Nov 2026) left the text a narrow column
+   with the bar in the middle of the panel. It takes the row instead. */
+.custom-scrollbar-wrap--desc > .room-desc-box { flex: 1 1 auto; min-width: 0; }
 
 .modal-body .room-desc-full {
     color: var(--parchment-dim);
@@ -22998,7 +23002,41 @@ html[data-light] .chrome-light { filter: drop-shadow(0 0 3px var(--neon-soft)); 
 .modal.art-window .art-reader[hidden] { display: none; }
 .art-cards .guides-card-title { overflow-wrap: anywhere; }
 /* No picture at all: the body meets the titlebar, with no empty image band. */
-.art-reader:has(> .modal-thumb-frame[hidden]) .modal-body { margin-top: -20px; }
+.art-reader:has(> .modal-thumb-frame[hidden]):not(:has(> .art-top:not([hidden]))) .modal-body { margin-top: -20px; }
+/* The prize draw in the picture's place (THE DRAW AT THE TOP in
+   js/articles.js): its plate is css/article-wheel.css's. */
+.art-top { flex: none; }
+.art-top[hidden] { display: none; }
+/* The draw doesn't shrink as a picture does, and stands taller (376px on
+   the wide layout, 529 stacked on a phone), so the card's cap at the window
+   (see "Fitting the card to the window") comes off sooner and the overlay
+   scrolls the whole card: below 830px of window on the wide layout, where
+   the text would have had under 100px, and always on the narrow one, where
+   it had two lines. */
+@media (max-height: 829px), (max-width: 640px) {
+    .modal.art-window:has(.art-top:not([hidden])) { max-height: none; }
+}
+/* The draw's tile at the head of the strip: a still wheel, the picture
+   tiles' size and treatment. */
+.art-strip-draw {
+    flex-shrink: 0;
+    width: 52px;
+    height: 52px;
+    transform: scale(1.12);
+    border-radius: 8px;
+    border: 1px solid transparent;
+    background:
+        radial-gradient(circle, #e3c48f 0 3px, #7a5a34 3px 4px, transparent 4.5px),
+        radial-gradient(circle, transparent 0 16px, #e3c48f 16.5px 18px, #0b0704 18.5px),
+        conic-gradient(#b8392f 0 60deg, #e3c48f 0 120deg, #2f6b8f 0 180deg, #6b8f2f 0 240deg, #8f2f6b 0 300deg, #d98b2b 0),
+        #0b0704;
+    cursor: var(--cursor-pointer);
+    opacity: 0.6;
+    transition: opacity 0.15s, border-color 0.15s;
+}
+.art-strip-draw:hover { opacity: 0.9; }
+.art-strip-draw.active { opacity: 1; border-color: var(--amber); }
+.art-strip-draw:focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }
 .art-reader .modal-thumb-frame[hidden] { display: none; }
 /* The place and the caption pills, by class: the room window places its own by id. */
 .art-reader .modal-thumb-frame .art-position { top: 4px; right: 4px; }

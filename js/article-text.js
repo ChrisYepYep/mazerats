@@ -318,7 +318,7 @@
         SCRIPTS: {
             video: "js/article-video.js?v=1",
             // A prize-wheel draw's replay (it loads js/wheel-draw.js and its stylesheet itself).
-            wheel: "js/article-wheel.js?v=1"
+            wheel: "js/article-wheel.js?v=2"
         },
         register(type, def) {
             if (typeof type !== "string" || !/^[a-z][a-z0-9-]{0,23}$/.test(type)) return;

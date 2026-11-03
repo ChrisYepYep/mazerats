@@ -840,8 +840,17 @@
         const root = document.documentElement;
         const theme = root.getAttribute("data-theme");
         const v = (sel) => { const l = document.querySelector(sel); return l ? l.getAttribute("href") || "" : ""; };
-        const pics = a.gallery.filter(g => g.image).length ? a.gallery.filter(g => g.image) : (a.thumb ? [{ image: a.thumb, caption: "" }] : []);
-        const p0 = pics[0];
+        /* The first prize draw goes at the top in the picture's place, with no
+           thumbnail there, as on the site (THE DRAW AT THE TOP in js/articles.js). */
+        const body = document.createElement("div");
+        body.innerHTML = ArticleText.render(a.body, { level: 3, pictureAlt: "A picture in this article" });
+        const wheel = body.querySelector("figure.art-embed[data-embed='wheel']");
+        const topHtml = wheel ? wheel.outerHTML : "";
+        if (wheel) wheel.remove();
+        const gallery = a.gallery.filter(g => g.image);
+        const pics = gallery.length || topHtml ? gallery : (a.thumb ? [{ image: a.thumb, caption: "" }] : []);
+        const p0 = topHtml ? null : pics[0];
+        const stripped = pics.length > 1 || (!!topHtml && pics.length > 0);
         const ev = events.find(e => e.id === a.eventId);
         const words = ArticleText.plain(a.body).split(/\s+/).filter(Boolean).length;
         const author = stored ? stored.author || "" : (typeof window.AdminUsername === "function" ? window.AdminUsername() : "");
@@ -859,19 +868,20 @@
                 <div class="chrome-titlebar"><h2>${esc(a.title || "Untitled article")}</h2><span class="chrome-close" aria-hidden="true"><img src="assets/img/modal_topclose_x.png" alt=""></span></div>
                 <div class="chrome-frame">
                     <div class="modal-thumb modal-thumb-full is-event art-reader${pics.length > 1 ? " has-gallery" : ""}">
-                        <div class="modal-thumb-frame"${pics.length ? "" : " hidden"}>
+                        <div class="modal-thumb-frame"${p0 ? "" : " hidden"}>
                             ${p0 ? `<div class="gallery-viewport"><img class="modal-gallery-img" src="${esc(p0.image)}" alt="" style="display:block"></div>
                             ${pics.length > 1 ? `<span class="gallery-nav gallery-prev">&#10094;</span><span class="gallery-nav gallery-next">&#10095;</span><span class="gallery-counter gallery-position art-position">1 of ${pics.length}</span>` : ""}
                             ${p0.caption ? `<span class="gallery-counter art-caption-pill">${esc(p0.caption)}</span>` : ""}` : ""}
                         </div>
+                        <div class="art-top"${topHtml ? "" : " hidden"}>${topHtml}</div>
                         <div class="modal-body">
                             <div class="modal-top-row"><p class="room-creator art-byline">${esc(byline)}</p></div>
                             <p class="modal-visit-link art-actions">${ev ? `<span class="btn">See the event</span>` : ""}<span class="btn art-copy">Copy link</span></p>
                             <div class="modal-meta">
                                 <div class="modal-meta-items art-meta"><span class="status-badge art-badge">Article</span>${words ? `<span>${Math.max(1, Math.round(words / 200))} min read</span>` : ""}${pics.length > 1 ? `<span>${pics.length} pictures</span>` : ""}</div>
                                 <div class="room-desc-panel">
-                                    <div class="room-desc-box"><div class="room-desc-full art-text">${ArticleText.render(a.body, { level: 3, pictureAlt: "A picture in this article" })}</div></div>
-                                    ${pics.length > 1 ? `<div class="gallery-strip">${pics.map((g, i) => `<img src="${esc(g.image)}" alt=""${i === 0 ? ' class="active"' : ""}>`).join("")}</div>` : ""}
+                                    <div class="room-desc-box"><div class="room-desc-full art-text">${body.innerHTML}</div></div>
+                                    ${stripped ? `<div class="gallery-strip">${topHtml ? '<span class="art-strip-draw active"></span>' : ""}${pics.map((g, i) => `<img src="${esc(g.image)}" alt=""${i === 0 && !topHtml ? ' class="active"' : ""}>`).join("")}</div>` : ""}
                                 </div>
                             </div>
                         </div>
@@ -894,7 +904,10 @@
         frame.addEventListener("load", () => {
             const d = frame.contentDocument;
             if (!d) return;
-            if (window.ArticleEmbeds) window.ArticleEmbeds.hydrate(d.querySelector(".art-text"), { article: a, embedData: a.embedData, preview: true });
+            if (window.ArticleEmbeds) {
+                window.ArticleEmbeds.hydrate(d.querySelector(".art-text"), { article: a, embedData: a.embedData, preview: true });
+                window.ArticleEmbeds.hydrate(d.querySelector(".art-top"), { article: a, embedData: a.embedData, preview: true });
+            }
             // Its pictures and fonts load after: fitted again as they do.
             d.querySelectorAll("img").forEach(i => i.addEventListener("load", fit));
             if (d.fonts && d.fonts.ready) d.fonts.ready.then(fit);

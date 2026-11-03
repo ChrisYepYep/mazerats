@@ -29,6 +29,23 @@
 /* Frost's light mode (css/theme-frostlight.css, from tools/themes.js) dresses
    the pictures' plate and captions its own way; this sheet isn't one
    themes.js reads, so the same here by hand. */
+/* At the top of the article, in the picture's place (THE DRAW AT THE TOP
+   in js/articles.js): the window's width, as a picture is there. */
+.art-top .art-embed.awh-host {
+    margin: 0;
+    padding: 6px;
+    border: 1px solid var(--chrome-border);
+    border-radius: 8px;
+    box-shadow:
+        inset 0 1px 0 var(--chrome-highlight),
+        inset 1px 0 0 var(--chrome-highlight),
+        inset -1px 0 0 rgba(0, 0, 0, 0.45),
+        inset 0 -1px 0 rgba(0, 0, 0, 0.45),
+        2px 2px 0 rgba(0, 0, 0, 0.45);
+    background: rgba(0, 0, 0, 0.28);
+    line-height: 1.4;
+}
+html[data-light] .art-top .art-embed.awh-host,
 html[data-light] .art-text .art-embed.awh-host {
     box-shadow:
         inset 0 1px 0 #d9e5f0,
