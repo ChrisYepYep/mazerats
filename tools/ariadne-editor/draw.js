@@ -186,18 +186,39 @@
     };
     // the dark of a dark passage, opened round its lights (as js/rat-race.js's drawDark, over the whole view)
     let darkCv = null;
+    /* (3 Nov 2026, "the level editor ... is really laggy") the game keeps its dark pictures with the act they were
+       made for, and the editor builds a new act at every change, a dragged crate included: each frame of a drag
+       worked out the whole passage's dark again (about 0.25 s). The dark is made from the act's own walls, its dark
+       layer and settings.darkPaint only, so while those stay as they were, the act it was first made for is kept
+       and handed on, and the game's own keeping does the rest. When they do change (a brush stroke, a step at a
+       time), the dark shown stays as it was until they have been still for a moment, and is then made once. */
+    let darkFor = null, darkAct = null, darkKey = "", darkNext = null, darkT = 0, darkTimer = 0, darkId = null;
+    const DARK_WAIT = 250;
+    function darkActOf(a) {
+        if (S.id !== darkId) { darkId = S.id; darkAct = null; darkNext = null; darkFor = null; }   // another passage: its own dark at once
+        if (a !== darkFor) {
+            darkFor = a;
+            const key = [a.w, a.h, a.tiles.map(r => r.join("")).join("/"), a.darkRows ? a.darkRows.join("/") : "", JSON.stringify((a.settings && a.settings.darkPaint) || {})].join("|");
+            if (key === darkKey && darkAct) darkNext = null;
+            else if (darkNext && key === darkNext.key) darkNext.a = a;
+            else { darkNext = { a, key }; darkT = performance.now(); }
+        }
+        if (darkNext && (!darkAct || performance.now() - darkT >= DARK_WAIT)) { darkAct = darkNext.a; darkKey = darkNext.key; darkNext = null; }
+        else if (darkNext) { clearTimeout(darkTimer); darkTimer = setTimeout(AE.redraw, DARK_WAIT - (performance.now() - darkT) + 10); }
+        return darkAct;
+    }
     function drawDarkness(g, vis) {
         const TH = D().theme(S.zone), SD = S.spec.settings.dark;
         const on = SD && (SD.on === true || SD.on === false) ? SD.on : Boolean(TH.dark);
         // (17 Oct 2026) or only its dark areas, where it has them
         const zones = on ? [] : S.spec.objects.filter(o => o.type === "darkzone").map(o => ({ x: o.x, y: o.y, w: Math.max(16, o.w || 160), h: Math.max(16, o.h || 112), fade: o.fade >= 0 ? o.fade : 32, depth: o.depth >= 0 ? o.depth : 3, rgb: hexRgb(o.color || "#030207"), a: o.alpha >= 0 && o.alpha <= 1 ? o.alpha : 0.965, fill: `rgba(${hexRgb(o.color || "#030207").join(",")},${o.alpha >= 0 && o.alpha <= 1 ? o.alpha : 0.965})`, clear: `rgba(${hexRgb(o.color || "#030207").join(",")},0)` }));
-        const paint = on ? null : D().darkPaintArt(S.act);
+        const DA = darkActOf(S.act), paint = on ? null : D().darkPaintArt(DA);
         if (!on && !zones.length && !paint) return;
         const W = Math.ceil(vis.w), H = Math.ceil(vis.h);
         if (!darkCv || darkCv.width !== W || darkCv.height !== H) { darkCv = document.createElement("canvas"); darkCv.width = W; darkCv.height = H; }
         const x = darkCv.getContext("2d");
         x.globalCompositeOperation = "source-over"; x.clearRect(0, 0, W, H);
-        if (zones.length || paint) { for (const z of zones) D().darkZoneFill(x, z, vis.x, vis.y, S.act); if (paint) x.drawImage(paint.c, paint.x - vis.x, paint.y - vis.y); }
+        if (zones.length || paint) { for (const z of zones) D().darkZoneFill(x, z, vis.x, vis.y, DA); if (paint) x.drawImage(paint.c, paint.x - vis.x, paint.y - vis.y); }
         else { x.fillStyle = SD && typeof SD.alpha === "number" ? `rgba(${hexRgb(SD.color || "#030207").join(",")},${SD.alpha})` : TH.darkFill || "rgba(3,2,7,0.965)"; x.fillRect(0, 0, W, H); }
         x.globalCompositeOperation = "destination-out";
         const hole = (wx, wy, r, k) => { const K = k === undefined ? 1 : k, sx = wx - vis.x, sy = wy - vis.y; if (sx < -r || sy < -r || sx > W + r || sy > H + r || !(r > 0) || !(K > 0)) return; const gr = x.createRadialGradient(sx, sy, r * 0.3, sx, sy, r); gr.addColorStop(0, `rgba(0,0,0,${K})`); gr.addColorStop(0.6, `rgba(0,0,0,${0.9 * K})`); gr.addColorStop(1, "rgba(0,0,0,0)"); x.fillStyle = gr; x.fillRect(sx - r, sy - r, r * 2, r * 2); };

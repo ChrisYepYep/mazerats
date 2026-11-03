@@ -39,7 +39,7 @@
                 x.restore();
             }
         }
-        R.dirtyT = new Set(); R.dirtyB = new Set();
+        R.dirtyT = new Set(); R.dirtyB = new Set(); R.patchT = new Map(); R.patchB = new Map();
         for (let cy = 0; cy * RH < a.h; cy++) for (let cx = 0; cx * RW < a.w; cx++) { R.dirtyT.add(cx + "," + cy); R.dirtyB.add(cx + "," + cy); }
         R.backdropDirty = true;
         R.drawn = snapshot();
@@ -62,8 +62,20 @@
         if (!R.layers || !S.act) return;
         const a = S.act, old = R.drawn, now = snapshot();
         if (what && what.all || !old || old.w !== now.w || old.h !== now.h) { setup(); return; }
-        const markT = (tx, ty, m) => { for (let y = ty - m; y <= ty + m; y++) for (let x = tx - m; x <= tx + m; x++) if (x >= 0 && y >= 0 && x < a.w && y < a.h) R.dirtyT.add(Math.floor(x / RW) + "," + Math.floor(y / RH)); };
-        const markB = (tx, ty, m) => { for (let y = ty - m; y <= ty + m; y++) for (let x = tx - m; x <= tx + m; x++) if (x >= 0 && y >= 0 && x < a.w && y < a.h) R.dirtyB.add(Math.floor(x / RW) + "," + Math.floor(y / RH)); };
+        /* (3 Nov 2026) a brush stroke redrew a whole room at each step, about 30 frames a second in the Mine: a room
+           now remembers which of its tiles a change touched (patch), and only those are drawn again. A room marked
+           with no patch (its tone changed, or nothing drawn yet) is drawn whole. */
+        const mark = (set, patch, tx, ty, m) => {
+            for (let y = ty - m; y <= ty + m; y++) for (let x = tx - m; x <= tx + m; x++) {
+                if (x < 0 || y < 0 || x >= a.w || y >= a.h) continue;
+                const k = Math.floor(x / RW) + "," + Math.floor(y / RH);
+                if (!set.has(k)) { set.add(k); patch.set(k, { x0: x, y0: y, x1: x + 1, y1: y + 1 }); continue; }
+                const p = patch.get(k);
+                if (p) { p.x0 = Math.min(p.x0, x); p.y0 = Math.min(p.y0, y); p.x1 = Math.max(p.x1, x + 1); p.y1 = Math.max(p.y1, y + 1); }
+            }
+        };
+        const markT = (tx, ty, m) => mark(R.dirtyT, R.patchT, tx, ty, m);
+        const markB = (tx, ty, m) => mark(R.dirtyB, R.patchB, tx, ty, m);
         for (let y = 0; y < a.h; y++) {
             if (old.tiles[y] !== now.tiles[y]) for (let x = 0; x < a.w; x++) if (old.tiles[y][x] !== now.tiles[y][x]) markT(x, y, 2);
             if (old.back[y] !== now.back[y]) for (let x = 0; x < a.w; x++) if (old.back[y][x] !== now.back[y][x]) markB(x, y, 2);
@@ -75,8 +87,8 @@
         const was = new Set(old.runs), is = new Set(now.runs);
         for (const r of [...old.runs.filter(k => !is.has(k)), ...now.runs.filter(k => !was.has(k))]) { const [x0, x1, ty] = r.split(",").map(Number); for (let x = x0; x <= x1; x++) markT(x, ty, 1); }
         const t0 = JSON.parse(old.tones), t1 = JSON.parse(now.tones), same = k => JSON.stringify(t0[k] || null) === JSON.stringify(t1[k] || null);
-        if (!same("walls")) for (let cy = 0; cy * RH < a.h; cy++) for (let cx = 0; cx * RW < a.w; cx++) R.dirtyT.add(cx + "," + cy);
-        if (!same("back")) for (let cy = 0; cy * RH < a.h; cy++) for (let cx = 0; cx * RW < a.w; cx++) R.dirtyB.add(cx + "," + cy);
+        if (!same("walls")) { R.patchT.clear(); for (let cy = 0; cy * RH < a.h; cy++) for (let cx = 0; cx * RW < a.w; cx++) R.dirtyT.add(cx + "," + cy); }
+        if (!same("back")) { R.patchB.clear(); for (let cy = 0; cy * RH < a.h; cy++) for (let cx = 0; cx * RW < a.w; cx++) R.dirtyB.add(cx + "," + cy); }
         if (!same("env") || skyChanged || old.frame !== now.frame) R.backdropDirty = true;
         R.drawn = now;
         R.total = Math.max(R.dirtyT.size, 1);
@@ -98,10 +110,11 @@
     const chunkCv = blank(RW * TS, RH * TS);
     function drawChunk(key, which) {
         const [cx, cy] = key.split(",").map(Number), a = S.act;
-        const X0 = cx * RW, Y0 = cy * RH, X1 = Math.min(a.w, X0 + RW), Y1 = Math.min(a.h, Y0 + RH);
+        const RX = cx * RW, RY = cy * RH, patch = (which === "t" ? R.patchT : R.patchB).get(key);
+        const X0 = patch ? patch.x0 : RX, Y0 = patch ? patch.y0 : RY, X1 = patch ? patch.x1 : Math.min(a.w, RX + RW), Y1 = patch ? patch.y1 : Math.min(a.h, RY + RH);
         const c = chunkCv, x = c.getContext("2d");
         x.setTransform(1, 0, 0, 1, 0, 0); x.clearRect(0, 0, c.width, c.height);
-        x.translate(-X0 * TS, -Y0 * TS);
+        x.translate(-RX * TS, -RY * TS);
         if (which === "t") D().drawTerrain(x, a, { x0: X0, y0: Y0, x1: X1, y1: Y1 });
         else {
             // the walls behind, as walls of their own (nothing hidden in them)
@@ -114,7 +127,8 @@
         D().applyTone(c, which === "t" ? toneOf("walls") : toneOf("back"));
         const L = which === "t" ? R.layers.terrain : R.layers.backwalls, lx = L.getContext("2d");
         lx.clearRect(X0 * TS, Y0 * TS, (X1 - X0) * TS, (Y1 - Y0) * TS);
-        lx.drawImage(c, 0, 0, (X1 - X0) * TS, (Y1 - Y0) * TS, X0 * TS, Y0 * TS, (X1 - X0) * TS, (Y1 - Y0) * TS);
+        lx.drawImage(c, (X0 - RX) * TS, (Y0 - RY) * TS, (X1 - X0) * TS, (Y1 - Y0) * TS, X0 * TS, Y0 * TS, (X1 - X0) * TS, (Y1 - Y0) * TS);
+        (which === "t" ? R.patchT : R.patchB).delete(key);
     }
     // Some of the waiting rooms, nearest the middle of the view first, for as long as a frame allows.
     function work(budget) {
