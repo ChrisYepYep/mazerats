@@ -172,7 +172,7 @@ exports.handler = async (event) => {
         /* Only the tagged lookup failure is an outage to retry; anything
            else is a fault, and answering it as "unavailable" hid it. */
         if (isAuthUnavailable(e)) return AUTH_UNAVAILABLE;
-        return json(500, { error: "The upload could not be completed." });
+        return json(500, { error: "The upload couldn't be completed." });
     }
 };
 

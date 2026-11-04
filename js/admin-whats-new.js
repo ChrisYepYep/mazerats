@@ -66,11 +66,22 @@
     let discord = new Map();    // key -> when it was last posted to Discord
     let posting = null;         // the key on its way to Discord now
     let openOverride = null;    // the target whose override editor is open
+    let overrideDraft = null;   // what is typed in it, kept across redraws
+    let overrideOpened = "";    // those fields as it was opened, for "unsaved changes?"
+    let overrideBase = null;    // the updatedAt it was opened on; a save over a newer one is refused
     let editing = null;         // the post in the form ({} for a new one)
+    let editingBase = null;     // the updatedAt it was opened on, as overrideBase
     let opened = "";            // editing as it was opened, for "unsaved changes?"
     const uploaded = new Set(); // news/ picture keys uploaded during this edit
     let busy = false;
     let logReady = false;       // the log has been read (2 Nov 2026): the articles' changes redraw it only then
+    let lastRead = 0;           // when the log's own rows were last read
+    const refreshedIds = new Set(); // mazes and events only a Refresh has seen (see archiveFrom)
+
+    const refreshBtn = panel.querySelector("#wn-refresh");
+    const updatedEl = panel.querySelector("#wn-updated");
+    // Opening the tab re-reads at most this often; Refresh always does.
+    const RE_READ_MS = 60 * 1000;
 
     const esc = s => String(s == null ? "" : s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
     const token = () => {
@@ -90,7 +101,7 @@
     const today = () => new Date().toISOString().slice(0, 10);
     function dayLabel(day) {
         const d = new Date(day + "T12:00:00Z");
-        return isNaN(d) ? day : d.toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "long", year: "numeric", timeZone: "UTC" });
+        return isNaN(d) ? day : d.toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });
     }
 
     // ------------------------------------------------------------ the log
@@ -172,6 +183,13 @@
     const keyOfEntry = e => (e.post ? `post:${e.post.id}` : e.article ? `article:${e.article.id}` : e.target);
 
     function render() {
+        /* The open Amend box is read first and drawn back as typed, with the
+           caret where it was: a search keystroke, a re-read or another row's
+           button redraws the list, and that used to throw the typing away. */
+        captureOverride();
+        const active = document.activeElement;
+        const focusKey = active && listEl.contains(active) && active.dataset ? active.dataset.ov : "";
+        const caret = focusKey && typeof active.selectionStart === "number" ? [active.selectionStart, active.selectionEnd] : null;
         const q = (searchEl.value || "").trim().toLowerCase();
         const showHidden = hiddenEl.checked;
         const list = entries().filter(e => (showHidden || !e.hidden)
@@ -189,6 +207,13 @@
         listEl.innerHTML = days.map(g => `
             <h4 class="wn-day">${esc(dayLabel(g.day))}</h4>
             ${g.items.map(rowHtml).join("")}`).join("");
+        if (focusKey) {
+            const box = listEl.querySelector(`.wn-override [data-ov="${focusKey}"]`);
+            if (box) {
+                box.focus({ preventScroll: true });
+                if (caret) try { box.setSelectionRange(caret[0], caret[1]); } catch (e) { /* no caret in a date or a list */ }
+            }
+        }
     }
 
     /* This entry's post, if it has gone (30 Oct 2026). The row is per record,
@@ -241,7 +266,7 @@
 
     // The editor for one automatic entry's override, under its row.
     function overrideHtml(e) {
-        const o = e.o || {};
+        const o = overrideDraft || e.o || {};
         return `
             <div class="wn-override" data-for="${esc(e.target)}">
                 <label class="admin-field"><span>Date (empty: automatic, ${esc(e.autoDay)})</span>
@@ -270,52 +295,127 @@
     /* `shared` (2 Nov 2026): the first opening takes the mazes and events
        js/admin.js read at sign-in (window.AdminArchiveCopy) rather than the
        whole archive again, ~3.7MB of it; nothing here reads their furni.
-       Try again reads them afresh. */
-    async function load(shared) {
+       Try again and Refresh read them afresh.
+       `quiet`: the list stays up while it reads, and a read that fails leaves
+       it there and says so beside Refresh. */
+    async function load(shared, quiet) {
         const gen = ++loadGen;
-        listEl.innerHTML = '<p class="admin-empty">Loading…</p>';
+        if (quiet !== true) listEl.innerHTML = '<p class="admin-empty">Loading…</p>';
         let copy = null;
         try { if (shared === true && typeof window.AdminArchiveCopy === "function") copy = await window.AdminArchiveCopy(); } catch (e) { /* read below */ }
         if (gen !== loadGen) return;
+        // Asked afresh only when there is no copy to take: a re-read on opening the tab never fetches the archive.
+        const keep = quiet === true && shared === true;
         try {
             const [r, ev, g, wn] = await Promise.all([
-                copy ? copy.rooms : Api.getRoomsFull(token()),
-                copy ? copy.events : Api.getEventsFull(token()),
-                call("/.netlify/functions/guides?full=1", "GET").catch(() => []),
+                copy ? copy.rooms : keep ? rooms : Api.getRoomsFull(token()),
+                copy ? copy.events : keep ? events : Api.getEventsFull(token()),
+                call("/.netlify/functions/guides?full=1", "GET").catch(() => guides),
                 call(`${URL_}?full=1`, "GET")
             ]);
             if (gen !== loadGen) return;
-            rooms = Array.isArray(r) ? r : [];
-            events = Array.isArray(ev) ? ev : [];
+            if (copy) {
+                rooms = archiveFrom(Array.isArray(r) ? r : [], rooms);
+                events = archiveFrom(Array.isArray(ev) ? ev : [], events);
+            } else if (!keep) {
+                rooms = Array.isArray(r) ? r : [];
+                events = Array.isArray(ev) ? ev : [];
+                noteRefreshed();
+            }
             guides = Array.isArray(g) ? g : (g && Array.isArray(g.records) ? g.records : []);
-            posts = Array.isArray(wn && wn.posts) ? wn.posts : [];
-            overrides = new Map((Array.isArray(wn && wn.overrides) ? wn.overrides : []).map(o => [o.target, o]));
-            discord = new Map((Array.isArray(wn && wn.discord) ? wn.discord : []).map(d => [d.key, d]));
+            takeLog(wn);
             logReady = true;
+            lastRead = Date.now();
+            if (updatedEl) updatedEl.textContent = `Read ${new Date(lastRead).toLocaleTimeString("en-GB", { timeZone: "UTC", hour: "2-digit", minute: "2-digit", hour12: false })} UTC`;
             render();
+            return !copy && !keep ? events : null;
         } catch (err) {
             if (gen !== loadGen) return;
             // Loaded again when next shown, after signing back in (5 Oct
             // 2026, the bug scan — it stayed on this line for good).
             if (sessionGone(err)) { mounted = false; listEl.innerHTML = '<p class="admin-empty">Sign in again to see What\'s New.</p>'; return; }
-            listEl.innerHTML = `<p class="admin-empty">Could not load What's New: ${esc(err.message)} <button type="button" class="ctl-btn" data-wn-retry>Try again</button></p>`;
+            if (quiet === true && logReady) {
+                if (updatedEl) updatedEl.textContent = "Couldn't read it just now. This is the last copy.";
+                return;
+            }
+            listEl.innerHTML = `<p class="admin-empty">Couldn't load What's New: ${esc(err.message)} <button type="button" class="ctl-btn" data-wn-retry>Try again</button></p>`;
             const retry = listEl.querySelector("[data-wn-retry]");
-            if (retry) retry.addEventListener("click", load);
+            if (retry) retry.addEventListener("click", () => load());
+        }
+    }
+    function takeLog(wn) {
+        posts = Array.isArray(wn && wn.posts) ? wn.posts : [];
+        overrides = new Map((Array.isArray(wn && wn.overrides) ? wn.overrides : []).map(o => [o.target, o]));
+        discord = new Map((Array.isArray(wn && wn.discord) ? wn.discord : []).map(d => [d.key, d]));
+    }
+    /* admin.js's copy is this Warren's own saves on top of what it read at
+       sign-in, which is what makes a re-read free. A Refresh sees further: a
+       maze another admin has added since is in no such copy, so the ones only
+       a Refresh found are kept beside it, and of two copies of one record the
+       later is drawn. Anything deleted here is in neither. */
+    function archiveFrom(copy, had) {
+        const was = new Map(had.map(x => [x.id, x]));
+        const stamp = x => String((x && x.updatedAt) || "");
+        const out = copy.map(x => {
+            const other = was.get(x.id);
+            return other && stamp(other) > stamp(x) ? other : x;
+        });
+        const have = new Set(out.map(x => x.id));
+        had.forEach(x => { if (refreshedIds.has(x.id) && !have.has(x.id)) out.push(x); });
+        return out;
+    }
+    function noteRefreshed() {
+        refreshedIds.clear();
+        const known = window.AdminArchiveCopy ? window.AdminArchiveCopy() : null;
+        Promise.resolve(known).then(c => {
+            if (!c) return;
+            const inCopy = new Set([...c.rooms, ...c.events].map(x => x.id));
+            [...rooms, ...events].forEach(x => { if (!inCopy.has(x.id)) refreshedIds.add(x.id); });
+        }).catch(() => { /* none kept: the next re-read draws admin.js's copy */ });
+    }
+
+    // Everything the panel shows, afresh: the Refresh button.
+    async function refreshAll() {
+        if (!refreshBtn || refreshBtn.disabled) return;
+        const text = refreshBtn.textContent;
+        refreshBtn.disabled = true;
+        refreshBtn.textContent = "Reading…";
+        try {
+            const evs = await load(false, true);
+            if (window.AdminArticles) await window.AdminArticles.refresh(evs);
+        } finally {
+            refreshBtn.disabled = false;
+            refreshBtn.textContent = text;
         }
     }
 
     // ------------------------------------------------------------ overrides
 
-    async function saveOverride(target, fields) {
+    /* A save over a newer copy is refused (netlify/functions/whats-new.js):
+       the row then shows theirs, and what was typed stays in its box. `base`
+       moves on to theirs, so pressing Save again is a knowing choice. */
+    async function saveOverride(target, fields, base) {
         // Said, not silently ignored (4 Oct 2026, the bug scan).
         if (busy) { await tell("Still saving the last change. Try again in a moment."); return false; }
         busy = true;
         try {
-            const res = await call(URL_, "PUT", { override: { target, ...fields } });
+            const res = await call(URL_, "PUT", { override: { target, ...fields, _baseUpdatedAt: base === undefined ? null : base } });
             if (res && res.override) overrides.set(target, res.override);
             else overrides.delete(target);
             return true;
         } catch (err) {
+            if (err && err.status === 409 && err.data && err.data.conflict) {
+                const now = err.data.current || null;
+                if (now) overrides.set(target, now); else overrides.delete(target);
+                if (openOverride === target) {
+                    overrideBase = now ? now.updatedAt || null : null;
+                    await tell("Someone else changed this entry since you opened it, so yours was not saved. What you typed is still in the box: press Save again to put yours over theirs, or Cancel to keep theirs.");
+                } else {
+                    await tell("Someone else changed this entry since this page read it, so nothing was changed. The row shows theirs now.");
+                    render();
+                }
+                return false;
+            }
             if (!sessionGone(err)) await tell(err.message || "That couldn't be saved.");
             return false;
         } finally {
@@ -331,6 +431,33 @@
             text: val("text").value.trim(),
             hidden: val("hidden").checked
         };
+    }
+    // The open box as typed, into overrideDraft. A box filtered out by a search keeps what it had.
+    function captureOverride() {
+        if (!openOverride) return;
+        const box = listEl.querySelector(`.wn-override[data-for="${CSS.escape(openOverride)}"]`);
+        if (!box) return;
+        const val = k => box.querySelector(`[data-ov="${k}"]`);
+        overrideDraft = { day: val("day").value || "", activity: val("activity").value || "", text: val("text").value, hidden: val("hidden").checked };
+    }
+    const ovFields = o => JSON.stringify({ day: (o && o.day) || "", activity: (o && o.activity) || "", text: ((o && o.text) || "").trim(), hidden: !!(o && o.hidden) });
+    function overrideDirty() {
+        if (!openOverride) return false;
+        captureOverride();
+        return !!overrideDraft && ovFields(overrideDraft) !== overrideOpened;
+    }
+    function openOverrideBox(target) {
+        const o = overrides.get(target) || null;
+        openOverride = target;
+        overrideDraft = null;
+        overrideOpened = ovFields(o);
+        overrideBase = o ? o.updatedAt || null : null;
+    }
+    function closeOverrideBox() {
+        openOverride = null;
+        overrideDraft = null;
+        overrideOpened = "";
+        overrideBase = null;
     }
 
     // ------------------------------------------------------------ discord
@@ -384,21 +511,32 @@
        bug scan): opening another post, starting a new one, or Cancel used to
        drop it — and delete any picture uploaded for it — without a word.
        True when there is nothing to lose, or the admin says to lose it. */
+    function postDirty() {
+        if (!editing) return false;
+        readForm();
+        return JSON.stringify(editing) !== opened;
+    }
     async function mayDiscard() {
-        if (!editing || !window.AdminWhatsNew.isDirty()) return true;
-        const ask = window.AdminConfirm || (m => Promise.resolve(window.confirm(m)));
-        return !!(await ask("Discard the post you are writing? What you have typed will be lost."));
+        if (!postDirty()) return true;
+        return !!(await ask("Discard your unsaved changes to this post? Anything you have added or edited since opening it will be lost.", { danger: true }));
+    }
+    // And the Amend box's, the same question.
+    async function mayCloseOverride() {
+        if (!overrideDirty()) return true;
+        return !!(await ask("Discard your unsaved changes to this entry? Anything you have added or edited since opening it will be lost.", { danger: true }));
     }
 
     async function openPost(p, kind) {
         if (!(await mayDiscard())) return;
+        if (!(await mayCloseOverride())) return;
         if (editing) closePost();
         editing = p ? { ...p } : { kind: kind === "note" ? "note" : "news", day: today(), title: "", text: "", image: "", link: "", target: "" };
+        editingBase = p ? p.updatedAt || null : null;
         // A post from before labels had none: the same as the kind's own, so opening one isn't a change.
         editing.badge = editing.badge || "";
         editing.badgeText = editing.badgeText || "";
         opened = JSON.stringify(editing);
-        if (openOverride) { openOverride = null; render(); }
+        if (openOverride) { closeOverrideBox(); render(); }
         renderForm();
         formEl.classList.add("is-open");
         formEl.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -500,9 +638,11 @@
         const p = editing;
         const body = { kind: p.kind, day: p.day, text: p.text || "", title: p.title || "", image: p.image || "", link: (p.link || "").trim(), target: p.target || "", hidden: p.hidden === true,
             badge: p.badge || "", badgeText: p.badge === "custom" ? (p.badgeText || "").trim() : "" };
-        if (p.id) body.id = p.id;
+        if (p.id) { body.id = p.id; body._baseUpdatedAt = editingBase; }
         busy = true;
         formError("");
+        const saveBtn = formEl.querySelector('[data-wn="save-post"]');
+        if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = "Saving…"; }
         try {
             const before = p.id ? posts.find(x => x.id === p.id) : null;
             const saved = await call(URL_, p.id ? "PUT" : "POST", body);
@@ -513,7 +653,20 @@
             if (old && old !== keyOf(saved.image)) forget([old]);
             render();
         } catch (err) {
-            if (!sessionGone(err)) formError(err.message || "That couldn't be saved.");
+            // The form stays open with everything typed in it, whatever went wrong.
+            if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = "Save"; }
+            if (err && err.status === 409 && err.data && err.data.current) {
+                posts = posts.filter(x => x.id !== err.data.current.id).concat(err.data.current);
+                editingBase = err.data.current.updatedAt || null;
+                render();
+                formError("Someone else saved this post since you opened it, so yours was not saved. What you typed is still here: press Save again to put yours over theirs, or Cancel to keep theirs.");
+            } else if (err && err.status === 404 && p.id) {
+                posts = posts.filter(x => x.id !== p.id);
+                render();
+                formError("This post was deleted after you opened it, so it can't be saved. What you typed is still here: copy what you need, then Cancel.");
+            } else if (!sessionGone(err)) {
+                formError(err.message || "That couldn't be saved.");
+            }
         } finally {
             busy = false;
         }
@@ -535,7 +688,10 @@
         const key = row ? (row.dataset.key || row.dataset.for) : "";
 
         if (act === "amend") {
-            openOverride = openOverride === key ? null : key;
+            if (!(await mayCloseOverride())) return;
+            const opening = openOverride !== key;
+            closeOverrideBox();
+            if (opening) openOverrideBox(key);
             render();
             return;
         }
@@ -566,15 +722,19 @@
             const box = openOverride === key ? listEl.querySelector(`.wn-override[data-for="${CSS.escape(key)}"]`) : null;
             const fields = box ? overrideFields(box) : { day: o.day || "", activity: o.activity || "", text: o.text || "", hidden: !!o.hidden };
             fields.hidden = !o.hidden;
-            const ok = await saveOverride(key, fields);
-            if (ok) render();
+            const ok = await saveOverride(key, fields, box ? overrideBase : (o.updatedAt || null));
+            if (ok) {
+                // Its box, if open, now holds what was just saved.
+                if (box) { overrideDraft = null; openOverrideBox(key); listEl.querySelectorAll(`.wn-override[data-for="${CSS.escape(key)}"]`).forEach(b => b.remove()); }
+                render();
+            }
             return;
         }
         if (act === "save-override" || act === "reset-override") {
             const box = btn.closest("[data-for]");
             const fields = act === "reset-override" ? { day: "", activity: "", text: "", hidden: false } : overrideFields(box);
-            const ok = await saveOverride(key, fields);
-            if (ok) { openOverride = null; render(); }
+            const ok = await saveOverride(key, fields, overrideBase);
+            if (ok) { closeOverrideBox(); render(); }
             return;
         }
         if (act === "toggle-post") {
@@ -583,11 +743,24 @@
             if (!p || busy) return;
             busy = true;
             try {
-                const saved = await call(URL_, "PUT", { ...p, hidden: !p.hidden });
+                const saved = await call(URL_, "PUT", { ...p, hidden: !p.hidden, _baseUpdatedAt: p.updatedAt || null });
                 posts = posts.filter(x => x.id !== saved.id).concat(saved);
+                // This post open in the form: its copy takes the new stamp and tick, and stays unchanged if it was.
+                if (editing && editing.id === saved.id) {
+                    const clean = !postDirty();
+                    editing.hidden = saved.hidden;
+                    editing.updatedAt = saved.updatedAt;
+                    editingBase = saved.updatedAt || null;
+                    if (clean) opened = JSON.stringify(editing);
+                    else { const was = JSON.parse(opened); was.hidden = saved.hidden; was.updatedAt = saved.updatedAt; opened = JSON.stringify(was); }
+                }
                 render();
             } catch (err) {
-                if (!sessionGone(err)) await tell(err.message || "That couldn't be saved.");
+                if (err && err.status === 409 && err.data && err.data.current) {
+                    posts = posts.filter(x => x.id !== err.data.current.id).concat(err.data.current);
+                    render();
+                    await tell("Someone else changed this post since this page read it, so nothing was changed. The row shows theirs now.");
+                } else if (!sessionGone(err)) await tell(err.message || "That couldn't be saved.");
             } finally {
                 busy = false;
             }
@@ -637,13 +810,31 @@
     panel.querySelector("#wn-add-note").addEventListener("click", () => openPost(null, "note"));
     searchEl.addEventListener("input", render);
     hiddenEl.addEventListener("change", render);
+    if (refreshBtn) refreshBtn.addEventListener("click", refreshAll);
 
     // ------------------------------------------------------------ mount
 
+    /* Read on the first opening, and re-read on each opening after: a maze
+       added since has to be on the log, with its Discord button. What it costs
+       is small and capped: the mazes and events come from admin.js's copy, for
+       nothing, and the log's own rows and the guides are read at most once a
+       minute. No timer: a Warren left open reads nothing until it is looked at. */
     function maybeMount() {
-        if (mounted || panel.hidden || !token()) return;
-        mounted = true;
-        load(true);
+        if (panel.hidden || !token()) return;
+        if (!mounted) {
+            mounted = true;
+            load(true);
+            return;
+        }
+        if (!logReady) return;
+        if (Date.now() - lastRead >= RE_READ_MS) { load(true, true); return; }
+        const shared = typeof window.AdminArchiveCopy === "function" ? window.AdminArchiveCopy() : null;
+        Promise.resolve(shared).then(c => {
+            if (!c || panel.hidden) return;
+            rooms = archiveFrom(c.rooms, rooms);
+            events = archiveFrom(c.events, events);
+            render();
+        }).catch(() => { /* the list stays as it is */ });
     }
     new MutationObserver(maybeMount).observe(panel, { attributes: true, attributeFilter: ["hidden"] });
     maybeMount();
@@ -656,12 +847,11 @@
     window.AdminWhatsNew = {
         isDirty() {
             if (articlesEd() && articlesEd().isDirty()) return true;
-            if (!editing) return false;
-            readForm();
-            return JSON.stringify(editing) !== opened;
+            return postDirty() || overrideDirty();
         },
         close() {
             if (editing) closePost();
+            if (openOverride) { closeOverrideBox(); if (logReady) render(); }
             if (articlesEd()) articlesEd().close();
         },
         reset() {
@@ -671,9 +861,12 @@
             // one's token (as js/admin-guides.js leaves them).
             uploaded.clear();
             closePost();
-            openOverride = null;
+            closeOverrideBox();
             rooms = []; events = []; guides = []; posts = []; overrides = new Map(); discord = new Map(); posting = null;
             logReady = false;
+            lastRead = 0;
+            refreshedIds.clear();
+            if (updatedEl) updatedEl.textContent = "";
             listEl.innerHTML = "";
             mounted = false;
             maybeMount();

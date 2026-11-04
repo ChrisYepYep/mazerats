@@ -96,10 +96,12 @@ exports.handler = async (event) => {
         if (!ok) return refuse(404, "Not found");
     }
 
-    const store = imagesStore();
+    /* Opening the store is inside the try as well (4 Nov 2026, the bug scan):
+       one that cannot be opened is the same "try again" as one that cannot be
+       read, and it was a bare 502. */
     let result;
     try {
-        result = await store.getWithMetadata(key, { type: "arrayBuffer" });
+        result = await imagesStore().getWithMetadata(key, { type: "arrayBuffer" });
     } catch (e) {
         console.error("image: read failed for", key, e.message);
         return refuse(503, "Image unavailable");

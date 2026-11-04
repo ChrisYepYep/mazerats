@@ -587,7 +587,7 @@ document.addEventListener("DOMContentLoaded", () => {
             // wording), given here rather than by changing the thanks page's
             // default, which other forms fall back on. Not if the visitor
             // has gone elsewhere meanwhile.
-            if (MazeConsole.stillSending("message")) MazeConsole.showThanks("Response received. Thank you for contacting MazeRats.");
+            if (MazeConsole.stillSending("message")) MazeConsole.showThanks("Response received. Thank you for contacting Maze Rats.");
         } catch (e) {
             MazeConsole.failedSending("message");
             // A blocked sender (403 { banned }) gets the site's own "Can't
@@ -702,7 +702,7 @@ document.addEventListener("DOMContentLoaded", () => {
         // puts back the plain "Sending...".
         sendingSay(text) {
             const el = pages.sending && pages.sending.querySelector(".console-sending-message");
-            if (el) el.textContent = text || "Sending...";
+            if (el) el.textContent = text || "Sending…";
         },
         // Whether this page's send is the one still on screen — false once the
         // visitor has left it (another tab, the console shut).
@@ -963,7 +963,7 @@ document.addEventListener("DOMContentLoaded", () => {
             if (entryClosed) { entrySay(ENTRY_CLOSED, true); return; }
             const habboName = entryUsername.value.trim();
             if (!habboName) {
-                entrySay("What's your Habbo Origins username?", true);
+                entrySay("What's your Habbo name?", true);
                 entryUsername.focus();
                 return;
             }
@@ -1133,7 +1133,7 @@ document.addEventListener("DOMContentLoaded", () => {
         if (failed) {
             contributorsListEl.innerHTML = `
                 <p class="console-blurb">The list couldn't be reached just now.</p>
-                <button type="button" class="console-btn" data-contributors-retry>Retry</button>`;
+                <button type="button" class="console-btn" data-contributors-retry>Try again</button>`;
             return;
         }
         dataLoaded = true;
@@ -1156,7 +1156,7 @@ document.addEventListener("DOMContentLoaded", () => {
     if (contributorsListEl) {
         contributorsListEl.addEventListener("click", e => {
             if (!e.target.closest("[data-contributors-retry]")) return;
-            contributorsListEl.innerHTML = '<p class="console-blurb">Loading...</p>';
+            contributorsListEl.innerHTML = '<p class="console-blurb">Loading…</p>';
             loadContributors();
         });
     }
@@ -1188,6 +1188,7 @@ if (typeof renderPrivacySections === "function") {
     // tab, at once if the last answer is over 15 seconds old (see LIVE below).
     const NOTICE_POLL_MS = 60 * 1000;
     const NOTICE_RECHECK_MS = 15 * 1000;
+    const NOTICE_RECHECK_OUT_MS = 10 * 60 * 1000;
     const ICON = "assets/img/console-icon.png";
     const ICON_ALERT = "assets/img/console-icon-alert.gif";
     const noticeTextEl = document.getElementById("console-notice-text");
@@ -1371,6 +1372,9 @@ if (typeof renderPrivacySections === "function") {
        new answer is on its way (the bug scan, 5 Oct 2026). */
     let noticeCheckedAt = 0;
     let checkGen = 0;
+    // Who the queue is for: undefined until Account's first answer, null for
+    // somebody signed out (see the Account.onChange near the end).
+    let noticedFor;
     function checkNotices() {
         // A page without the notice pages (fallinfurni.html) has nowhere to show one.
         if (!pages.notice || !noticeBackBtn) return Promise.resolve();
@@ -1382,7 +1386,10 @@ if (typeof renderPrivacySections === "function") {
            error, though the next check a minute later was fine. js/error-
            report.js files background polls only after a run of failures. */
         const leash = typeof AbortSignal !== "undefined" && AbortSignal.timeout ? AbortSignal.timeout(10000) : undefined;
-        return fetch(NOTICE_URL, { credentials: "same-origin", headers: { Accept: "application/json", "X-Background": "1" }, cache: "no-store", signal: leash })
+        /* Known to be signed out: the copy kept at the edge, which is the
+           same for everybody signed out and costs no function run. */
+        const url = noticedFor === null ? NOTICE_URL + "?public=1" : NOTICE_URL;
+        return fetch(url, { credentials: "same-origin", headers: { Accept: "application/json", "X-Background": "1" }, cache: "no-store", signal: leash })
             .then(res => (res.ok ? res.json() : null))
             .then(data => {
                 if (mine !== checkGen || !data || !Array.isArray(data.notices)) return;
@@ -1454,7 +1461,7 @@ if (typeof renderPrivacySections === "function") {
     const noticesListEl = document.getElementById("console-notices-list");
     const fmtNoticeDay = iso => {
         const t = Date.parse(iso);
-        return Number.isFinite(t) ? new Date(t).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }) : "";
+        return Number.isFinite(t) ? new Date(t).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" }) : "";
     };
     const NO_NOTICES = `<p class="console-blurb console-notices-empty">No notifications yet.</p>`;
     let historyGen = 0;
@@ -1542,7 +1549,7 @@ if (typeof renderPrivacySections === "function") {
         pickNotice(null);
         if (!noticesListEl) return;
         const mine = ++historyGen;
-        noticesListEl.innerHTML = `<p class="console-blurb">Loading...</p>`;
+        noticesListEl.innerHTML = `<p class="console-blurb">Loading…</p>`;
         // With a time limit (5 Oct 2026, the bug scan): one that never
         // answered left "Loading..." up until the page was left.
         const limit = typeof AbortSignal !== "undefined" && AbortSignal.timeout ? AbortSignal.timeout(15000) : undefined;
@@ -1668,13 +1675,16 @@ if (typeof renderPrivacySections === "function") {
        with the last player's own notices in it (and a list read still on
        its way is dropped, historyGen). The first answer only asks if the
        load-time check has not already. */
-    let noticedFor;   // undefined until Account's first answer
     const whoNow = () => (window.Account && Account.current && Account.current.id != null ? String(Account.current.id) : null);
     /* Not while the tab is hidden (1 Nov 2026, the bug scan): a page opened
        in a background tab asked anyway. The visibilitychange below asks the
-       moment it is shown, since nothing has been asked yet. */
-    setTimeout(() => { if (!noticeCheckedAt && !document.hidden) checkNotices(); }, 1500);
-    if (window.Account && typeof Account.onChange === "function") {
+       moment it is shown, since nothing has been asked yet.
+       Account's first answer asks as soon as it comes, and it says who is
+       asking, so this only steps in when it is late: 1.5s without an Account
+       to wait for, 6s with one (4 Nov 2026, the bug scan). `me` allows ten. */
+    const accountAnswers = window.Account && typeof Account.onChange === "function";
+    setTimeout(() => { if (!noticeCheckedAt && !document.hidden) checkNotices(); }, accountAnswers ? 6000 : 1500);
+    if (accountAnswers) {
         Account.onChange(() => {
             const id = whoNow();
             if (id === noticedFor) return;
@@ -1701,15 +1711,21 @@ if (typeof renderPrivacySections === "function") {
        the tab is in view, so a notification sent from the Warren turns up
        within a minute without a reload. Nothing is asked while the tab is
        hidden; coming back to it asks at once, if the last answer is more
-       than NOTICE_RECHECK_MS old. */
+       than NOTICE_RECHECK_MS old.
+
+       A signed-in player only (4 Nov 2026, the bug scan). Somebody signed out
+       is sent notices for everyone alone, on load, and on coming back to the
+       tab after NOTICE_RECHECK_OUT_MS; about 51 polls an hour per open tab
+       was a lot to spend on those. Signing in asks at once and starts this. */
     // A short tick rather than one of NOTICE_POLL_MS: the checks made on
     // load and on signing in set the clock, and a tick a whole interval
     // long fell just short of it each time and waited a second interval.
     setInterval(() => {
-        if (document.visibilityState === "visible" && Date.now() - noticeCheckedAt >= NOTICE_POLL_MS) checkNotices();
+        if (noticedFor !== null && document.visibilityState === "visible" && Date.now() - noticeCheckedAt >= NOTICE_POLL_MS) checkNotices();
     }, 10 * 1000);
     document.addEventListener("visibilitychange", () => {
-        if (document.visibilityState === "visible" && Date.now() - noticeCheckedAt > NOTICE_RECHECK_MS) checkNotices();
+        const gap = noticedFor === null ? NOTICE_RECHECK_OUT_MS : NOTICE_RECHECK_MS;
+        if (document.visibilityState === "visible" && (!noticeCheckedAt || Date.now() - noticeCheckedAt > gap)) checkNotices();
     });
 
     // A page loaded straight at #privacy — see the note by the hashchange

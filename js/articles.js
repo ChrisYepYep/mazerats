@@ -135,7 +135,7 @@
 
     function longDate(iso) {
         const d = new Date(iso);
-        return isNaN(d) ? "" : d.toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" });
+        return isNaN(d) ? "" : d.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });
     }
     /* Two dates (3 Nov 2026, the owner's), the second on the meta line.
        UPDATED: the day the reader's part last changed after it went public
@@ -174,6 +174,22 @@
         return window.ArchiveRecords.find("event", a.eventId);
     };
     const say = text => { if (status) status.textContent = text || ""; };
+    /* The title bar's face draws dashes, curly quotes and bullets as pictures
+       (PICTURE_GLYPHS in js/site.js), so a writer's punctuation is put in the
+       plain marks there, as the console does (js/console-profile.js). */
+    const barTitle = s => String(s == null ? "" : s)
+        .replace(/[‘’]/g, "'").replace(/[“”]/g, '"')
+        .replace(/[–—•]/g, "-").replace(/…/g, "...");
+    // A failed copy shows the link to copy by hand, as Guides does.
+    function showCopyNote(link) {
+        let note = reader.querySelector(".art-copied");
+        if (!note) {
+            note = document.createElement("p");
+            note.className = "guides-copied art-copied";
+            actions.parentElement.after(note);
+        }
+        note.textContent = link;
+    }
 
     // ------------------------------------------------------------ drawing
 
@@ -181,7 +197,7 @@
         if (!loaded) {
             return failed
                 ? `<p class="guides-note">The articles couldn't be loaded just now. <button type="button" class="guides-textbtn" data-act="retry">Try again</button></p>`
-                : `<p class="guides-note">Loading the articles…</p>`;
+                : `<p class="guides-note is-loading">Loading the articles…</p>`;
         }
         if (!articles.length) return `<p class="guides-note">There are no articles yet. Check back soon.</p>`;
         return `
@@ -287,7 +303,7 @@
     }
 
     function drawReader(a) {
-        titleEl.textContent = a.title || "Article";
+        titleEl.textContent = barTitle(a.title) || "Article";
         /* The pictures in the text as uploaded, as a guide's are (js/guides.js):
            they are mostly pixel-art screenshots, shown at their own size. */
         textEl.innerHTML = ArticleText.render(a.body, { level: 3, pictureAlt: `A picture from ${a.title}` }) ||
@@ -303,6 +319,8 @@
             textEl.innerHTML = `<p>${esc(GuideText.plain(a.summary || ""))}</p>`;
         }
         drawn = a;
+        const oldNote = reader.querySelector(".art-copied");
+        if (oldNote) oldNote.remove();
         // With the draw at the top, only a gallery's pictures, never the thumbnail.
         pics = drawHtml ? picturesOf({ gallery: a.gallery }) : picturesOf(a);
         picAt = 0;
@@ -352,9 +370,9 @@
         /* Where a maze's tag chips are, and in their look (3 Nov 2026, the
            owner's): the writer on the left, these on the right. */
         const actionsHtml = [
-            // Its name in the chip's accessible name and tooltip.
-            ev ? `<a class="tag tag-filter" href="${esc(window.RecordAddress.of("event", ev))}" data-act="event" title="${esc(ev.title || "")}" aria-label="See the event: ${esc(ev.title || "")}">See the event</a>` : "",
-            `<button type="button" class="tag tag-filter art-copy" data-act="copy">Copy link</button>`
+            // The event's name in its accessible name and tooltip.
+            ev ? `<a class="modal-share-btn" href="${esc(window.RecordAddress.of("event", ev))}" data-act="event" title="${esc(ev.title || "")}" aria-label="Linked event: ${esc(ev.title || "")}"><span class="modal-share-label">Linked event</span></a>` : "",
+            `<button type="button" class="modal-share-btn" data-act="copy" aria-label="Copy a link to ${esc(a.title || "this article")}"><span class="modal-share-label">Share</span></button>`
         ].join("");
         // Written only when they change, so a chip keeps its focus and its "Copied".
         if (metaHtml !== drawnParts.meta) { meta.innerHTML = metaHtml; drawnParts.meta = metaHtml; }
@@ -376,10 +394,10 @@
             if (retriedFor !== view.id) {
                 // Maybe the edge's older list (one published a moment ago): once past it.
                 retriedFor = view.id;
-                note = `<p class="guides-note">Loading the article…</p>`;
+                note = `<p class="guides-note is-loading">Loading the article…</p>`;
                 load(true);
             } else if (asking) {
-                note = `<p class="guides-note">Loading the article…</p>`;
+                note = `<p class="guides-note is-loading">Loading the article…</p>`;
             } else if (failed) {
                 note = `<p class="guides-note">Couldn't load that article. <button type="button" class="guides-textbtn" data-act="retry-article">Try again</button></p>`;
             } else {
@@ -388,7 +406,7 @@
         } else if (view.id && !loaded) {
             note = failed
                 ? `<p class="guides-note">Couldn't load that article. <button type="button" class="guides-textbtn" data-act="retry-article">Try again</button></p>`
-                : `<p class="guides-note">Loading the article…</p>`;
+                : `<p class="guides-note is-loading">Loading the article…</p>`;
         }
         const reading = !!a;
         win.classList.toggle("is-reading", reading);
@@ -620,7 +638,11 @@
             if (!plain) return;
             e.preventDefault();
             const id = guide.dataset.guideGuide;
-            close({ keepFocus: true });
+            /* Without stepping back, as the room window does for a guide: a
+               Back in flight landed after the guide's push and took the
+               guide away with it. This entry stays under the guide, so
+               closing the guide comes back to the article. */
+            close({ fromHistory: true, keepFocus: true });
             window.Guides.open(id);
             return;
         }
@@ -638,8 +660,14 @@
             const link = location.origin + addressFor(view.id);
             const done = ok => {
                 say(ok ? "Link copied." : link);
-                act.textContent = ok ? "Copied" : "Copy link";
-                setTimeout(() => { if (act.isConnected) act.textContent = "Copy link"; }, 1600);
+                if (!ok) showCopyNote(link);
+                // The button itself answers, as a maze's Share does (js/home.js).
+                const label = act.querySelector(".modal-share-label");
+                if (!label) return;
+                label.textContent = ok ? "Copied" : "Copy this";
+                act.classList.add("is-done");
+                clearTimeout(act._shareTimer);
+                act._shareTimer = setTimeout(() => { label.textContent = "Share"; act.classList.remove("is-done"); }, 2200);
             };
             if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(link).then(() => done(true), () => done(false));
             else done(false);
@@ -663,6 +691,10 @@
     function pickPic(tile) {
         if (tile.dataset.pic === "draw") { if (topEl.hidden) showDraw(); }
         else showPic(Number(tile.dataset.pic));
+        /* On a phone the window scrolls and the strip is far under the
+           picture: bring the top back into view, or the press seems to do
+           nothing. Where the picture is already showing, nothing moves. */
+        (topEl.hidden ? frame : topEl).scrollIntoView({ block: "nearest" });
     }
     prevBtn.addEventListener("click", () => showPic(picAt - 1));
     nextBtn.addEventListener("click", () => showPic(picAt + 1));
@@ -676,7 +708,11 @@
     img.addEventListener("load", () => { img.style.display = "block"; });
 
     if (closeBtn) closeBtn.addEventListener("click", () => close());
-    overlay.addEventListener("click", e => { if (e.target === overlay) close(); });
+    /* Only a press that began on the backdrop: selecting text and letting go
+       past the window is reported as a click on the overlay. */
+    let pressedOn = null;
+    overlay.addEventListener("pointerdown", e => { pressedOn = e.target; });
+    overlay.addEventListener("click", e => { if (e.target === overlay && pressedOn === overlay) close(); });
     if (window.EscapeLayers) {
         window.EscapeLayers.register({
             elements: () => isOpen() ? [overlay] : [],

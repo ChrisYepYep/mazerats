@@ -16,19 +16,13 @@
          Warren's own failures are reported too; they are the site's. -->
     <meta name="mazerats:build" content="dev">
     <script src="/js/error-report.js?v=4"></script>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <!-- Caveat is here for the atlas panel, which letters room names in
-         it exactly as /wizard does. Without it the editor drew the map in a
-         fallback serif — legible, but not the map, and the whole point of
-         the editor sharing the page's engine is that what you arrange is
-         what you get. Caveat alone now: the site's other fonts are its own
-         files (2 Nov 2026; see home.html). -->
-    <link href="https://fonts.googleapis.com/css2?family=Caveat:wght@500;700&display=swap" rel="stylesheet">
+    <!-- Caveat, the atlas's handwriting, is asked for from Google only when
+         the atlas panel is first opened (openWizardPanel in js/admin.js), not
+         on every visit to the Warren. -->
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="theme-color" content="#120c07">
     <meta name="robots" content="noindex, nofollow">
-    <title>Admin | Maze Rats</title>
+    <title>The Warren | Maze Rats</title>
     <!-- Bitmap copies of the MZ mark below, for the browsers that take no SVG
          favicon (Safari, until recently) and for a phone's home screen, which
          asks for a 180px picture of its own and showed a blank tile without
@@ -59,7 +53,7 @@
 
          Wrapped in try/catch: localStorage throws outright in some privacy modes,
          and a colour scheme is not worth a blank page. -->
-    <link rel="stylesheet" href="css/style.css?v=7">
+    <link rel="stylesheet" href="css/style.css?v=11">
     <link id="theme-css" rel="stylesheet">
     <script>(function(){try{var t=localStorage.getItem("mazerats_theme");if(!t||t==="classic"||!/^[a-z]+$/.test(t))return;document.documentElement.setAttribute("data-theme",t);document.getElementById("theme-css").href="css/theme-"+t+".css";}catch(e){}})();</script>
     <!-- The atlas panel's map, and the editor around it: css/wizard.css,
@@ -669,14 +663,14 @@
                                 </header>
                                 <div class="archive-controls">
                                     <div class="search-box">
-                                        <input type="text" id="rooms-search" placeholder="Search by name, builder, or tag..." aria-label="Search mazes by name, builder, or tag">
+                                        <input type="text" id="rooms-search" placeholder="Search by name, builder, or tag…" aria-label="Search mazes by name, builder, or tag">
                                     </div>
                                     <div class="sort-box">
                                         <select id="rooms-sort" aria-label="Sort mazes">
-                                            <option value="name">Sort by: Maze Name</option>
-                                            <option value="date">Sort by: Opening Date</option>
-                                            <option value="difficulty-asc">Sort by: Difficulty (Easy-Hard)</option>
-                                            <option value="difficulty-desc">Sort by: Difficulty (Hard-Easy)</option>
+                                            <option value="name">Sort by: Maze name</option>
+                                            <option value="date">Sort by: Opening date</option>
+                                            <option value="difficulty-asc">Sort by: Difficulty (easy to hard)</option>
+                                            <option value="difficulty-desc">Sort by: Difficulty (hard to easy)</option>
                                         </select>
                                     </div>
                                 </div>
@@ -696,9 +690,9 @@
                                 <div class="archive-controls">
                                     <div class="sort-box">
                                         <select id="events-sort" aria-label="Sort events">
-                                            <option value="date-desc">Sort by: Event Start Date (Newest First)</option>
-                                            <option value="date-asc">Sort by: Event Start Date (Oldest First)</option>
-                                            <option value="name">Sort by: Event Name</option>
+                                            <option value="date-desc">Sort by: Event start date (newest first)</option>
+                                            <option value="date-asc">Sort by: Event start date (oldest first)</option>
+                                            <option value="name">Sort by: Event name</option>
                                         </select>
                                     </div>
                                 </div>
@@ -734,6 +728,10 @@
                                     <div>
                                         <h3 class="admin-panel-title">Messages</h3>
                                         <p class="admin-hint">Submitted from the homepage console's Contact Us page. "Ban IP" blocks that address (or its whole home network) &mdash; from everything but reading, or from the whole site, for a set time or for good &mdash; see the Bans tab.</p>
+                                    </div>
+                                    <div class="admin-activity-controls">
+                                        <span class="admin-hint se-updated" id="contact-messages-updated" role="status"></span>
+                                        <button class="admin-action-pill" id="contact-messages-refresh" type="button">Refresh</button>
                                     </div>
                                 </header>
                                 <div class="chrome-list admin-list-fill" id="contact-messages-list"></div>
@@ -801,6 +799,8 @@
                                         <p class="admin-hint">The log on the homepage, as visitors see it. Mazes, events and guides appear on their own when they're added or edited; Amend changes how one appears (its date, Added or Updated, the line under it). Hide takes any single entry off the homepage, news and notes included, without deleting it. Add news, or a note about a maze or event, with the buttons on the right. Articles have a section of their own, below.</p>
                                     </div>
                                     <div class="wn-add">
+                                        <span class="admin-hint se-updated" id="wn-updated" role="status"></span>
+                                        <button class="admin-action-pill" id="wn-refresh" type="button">Refresh</button>
                                         <button class="admin-action-pill admin-pill-solid admin-add-btn" id="wn-add-news" type="button">+ News post</button>
                                         <button class="admin-action-pill admin-add-btn" id="wn-add-note" type="button">+ Note</button>
                                     </div>
@@ -954,7 +954,7 @@
 
                                         <div class="admin-wiz-group admin-wiz-group-save">
                                             <span class="admin-wiz-dirty" id="wiz-admin-dirty" hidden></span>
-                                            <button type="button" class="admin-action-pill admin-pill-solid" id="wiz-admin-save-positions" disabled title="Write every move you have made back to the map">Save Positions</button>
+                                            <button type="button" class="admin-action-pill admin-pill-solid" id="wiz-admin-save-positions" disabled title="Write every move you have made back to the map">Save positions</button>
                                         </div>
                                     </div>
 
@@ -1014,7 +1014,7 @@
                                     </header>
                                     <div class="archive-controls">
                                         <div class="search-box">
-                                            <input type="text" id="wiz-rooms-search" placeholder="Search by name, note, or floor..." aria-label="Search rooms on the atlas">
+                                            <input type="text" id="wiz-rooms-search" placeholder="Search by name, note, or floor…" aria-label="Search rooms on the atlas">
                                         </div>
                                     </div>
                                     <!-- Each row opens its own form inside itself — see
@@ -1129,7 +1129,7 @@
                                         <p class="admin-hint">Guess the Maze and Odd One Out. Pick a player to see where they stand and, where it is warranted, give them a day back &mdash; one game at a time.</p>
                                     </div>
                                     <div class="admin-panel-actions">
-                                        <input type="search" id="daily-search" class="admin-input" placeholder="Find a player..." aria-label="Find a player">
+                                        <input type="search" id="daily-search" class="admin-input" placeholder="Find a player…" aria-label="Find a player">
                                     </div>
                                 </header>
                                 <div class="admin-daily">
@@ -1590,7 +1590,7 @@
          until you're actually signed in. -->
     <div class="modal-overlay open wr-ui" id="login-modal">
         <div class="modal" role="dialog" aria-modal="true" aria-labelledby="login-modal-title">
-            <div class="chrome-titlebar"><h2 id="login-modal-title">Admin Login</h2></div>
+            <div class="chrome-titlebar"><h2 id="login-modal-title">Admin login</h2></div>
             <div class="chrome-frame">
                 <div class="modal-body">
                     <p class="room-desc-full">Changes made here are live immediately for every visitor, so this checks a username and password first.</p>
@@ -1617,16 +1617,16 @@
     <script src="js/events-data.js?v=2"></script>
     <script src="js/api.js?v=5"></script>
     <script src="js/event-status.js?v=2"></script>
-    <script src="js/site.js?v=3"></script>
+    <script src="js/site.js?v=4"></script>
     <!-- The atlas (js/wizard-map.js, js/admin-wizard.js, and the GIF maker
          js/gif-encode.js + js/wizard-gif.js) and the Recolour editor
          (js/recolour.js, js/admin-recolour.js) are fetched by admin.js when
          their section is first opened (2 Nov 2026, WIZARD_FILES and
          RECOLOUR_FILES there): most visits open neither. -->
     <script src="js/admin-address.js?v=3"></script>
-    <script src="js/admin.js?v=6"></script>
-    <script src="js/dead-ends.js?v=2"></script>
-    <script src="js/admin-dead-ends.js?v=3"></script>
+    <script src="js/admin.js?v=8"></script>
+    <script src="js/dead-ends.js?v=3"></script>
+    <script src="js/admin-dead-ends.js?v=4"></script>
     <!-- The Guides panel's text format (the maze list and the formatting bar
          use it too). The starter guide and the editor (js/guides-starter.js,
          js/admin-guides.js), What's New (js/admin-whats-new.js) and
@@ -1634,19 +1634,19 @@
          when their section is first opened (2 Nov 2026, PANEL_FILES). -->
     <script src="js/guide-text.js?v=3"></script>
     <script src="js/admin-errors.js?v=2"></script>
-    <script src="js/admin-players.js?v=3"></script>
+    <script src="js/admin-players.js?v=4"></script>
     <script src="js/wheel-draw.js?v=1"></script><!-- the wheel's drawing, spin and sound, shared with an article's replay (js/article-wheel.js) -->
     <script src="js/prize-wheel.js?v=6"></script><!-- the Prize Wheel, opened from Event Entries -->
-    <script src="js/admin-entries.js?v=6"></script>
-    <script src="js/admin-pura-flags.js?v=2"></script><!-- Pura Panic's "Scores to look at" (netlify/functions/pura-flags.js) -->
+    <script src="js/admin-entries.js?v=7"></script>
+    <script src="js/admin-pura-flags.js?v=3"></script><!-- Pura Panic's "Scores to look at" (netlify/functions/pura-flags.js) -->
     <script src="js/password-field.js?v=3"></script>
     <script src="js/glyph-palette.js?v=3"></script>
     <script src="js/custom-scrollbar.js?v=4"></script>
     <script src="js/letter-jump.js?v=2"></script>
-    <script src="js/admin-skin.js?v=7"></script><!-- SKINS: the seasonal skins card's script (see SKINS:start) -->
-    <script src="js/admin-menu.js?v=4"></script><!-- the homepage menu card (#menu-layout-card) -->
+    <script src="js/admin-skin.js?v=9"></script><!-- SKINS: the seasonal skins card's script (see SKINS:start) -->
+    <script src="js/admin-menu.js?v=5"></script><!-- the homepage menu card (#menu-layout-card) -->
     <script src="js/admin-ctl-folds.js?v=1"></script><!-- the Controls' large cards, folded (css/warren.css) -->
-    <script src="js/admin-speed.js?v=1"></script><!-- the Speed card (#speed-card) -->
+    <script src="js/admin-speed.js?v=2"></script><!-- the Speed card (#speed-card) -->
     <!-- The workshop shell's top-bar title and status line (css/warren.css). -->
     <script src="js/warren-shell.js?v=2"></script>
 </body>

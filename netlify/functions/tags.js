@@ -44,7 +44,7 @@ exports.handler = async (event) => {
             return json(200, all.map(t => t.label));
         } catch (e) {
             console.error("tags: read failed", e);
-            return json(503, { error: "The tag list could not be read just now." });
+            return json(503, { error: "The tag list couldn't be read just now." });
         }
     }
 
@@ -60,7 +60,7 @@ exports.handler = async (event) => {
         /* Only the tagged lookup failure is an outage to retry; anything
            else is a fault, and answering it as "unavailable" hid it. */
         if (isAuthUnavailable(e)) return AUTH_UNAVAILABLE;
-        return json(500, { error: "The tag could not be saved." });
+        return json(500, { error: "The tag couldn't be saved." });
     }
 };
 

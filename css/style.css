@@ -144,6 +144,104 @@
     font-display: swap;
 }
 
+/* ---- VOLTER AT WINDOWS 125% AND 150% (4 Nov 2026) ----
+
+   Volter is hinted, and the hints are good at some pixel sizes and wrong at
+   others: at 11 pixels the dot of an i lands on its stem ("Orlglns"), at 14
+   an S turns into a 3 and at 14 and 15 a bold c closes into an o ("Arohive").
+   The browser rounds the size to a whole number of device pixels to choose
+   the hints, so 9px comes out at 11 on a 125% screen and 14 on a 150% one,
+   the two worst it could pick. size-adjust nudges the size over the rounding
+   line, to 12 and 13, which read right. Only on these two scales; every other
+   scale never sees these faces. Keep these above the middot faces below, or
+   they would take the middot back. The numbers: at 125% 9px must clear 11.5,
+   and 3% does while its width stays small enough for the menu's "Guess the
+   Maze" and its Daily tag to keep one line (at 4.7% they wrapped); at 150%
+   nothing may round up to 14. */
+@media (min-resolution: 1.2dppx) and (max-resolution: 1.3dppx) {
+    @font-face {
+        font-family: 'Volter Goldfish';
+        src: url('../assets/fonts/VolterGoldfish.woff2') format('woff2');
+        font-weight: normal;
+        font-style: normal;
+        font-display: swap;
+        size-adjust: 103%;
+    }
+    @font-face {
+        font-family: 'Volter Goldfish';
+        src: url('../assets/fonts/VolterGoldfishBold.woff2') format('woff2');
+        font-weight: bold;
+        font-style: normal;
+        font-display: swap;
+        size-adjust: 103%;
+    }
+    @font-face {
+        font-family: 'Volter Goldfish Bold';
+        src: url('../assets/fonts/VolterGoldfishBold.woff2') format('woff2');
+        font-weight: normal;
+        font-style: normal;
+        font-display: swap;
+        size-adjust: 103%;
+    }
+}
+@media (min-resolution: 1.45dppx) and (max-resolution: 1.55dppx) {
+    @font-face {
+        font-family: 'Volter Goldfish';
+        src: url('../assets/fonts/VolterGoldfish.woff2') format('woff2');
+        font-weight: normal;
+        font-style: normal;
+        font-display: swap;
+        size-adjust: 98%;
+    }
+    @font-face {
+        font-family: 'Volter Goldfish';
+        src: url('../assets/fonts/VolterGoldfishBold.woff2') format('woff2');
+        font-weight: bold;
+        font-style: normal;
+        font-display: swap;
+        size-adjust: 98%;
+    }
+    @font-face {
+        font-family: 'Volter Goldfish Bold';
+        src: url('../assets/fonts/VolterGoldfishBold.woff2') format('woff2');
+        font-weight: normal;
+        font-style: normal;
+        font-display: swap;
+        size-adjust: 98%;
+    }
+}
+/* The same file, never adjusted, for a canvas that sets Volter on its own
+   whole pixels: a canvas picture doesn't scale with the screen, so the Mazer
+   Card has to come out the same on every one. */
+@font-face {
+    font-family: 'Volter Canvas';
+    src: url('../assets/fonts/VolterGoldfish.woff2') format('woff2');
+    font-weight: normal;
+    font-style: normal;
+    font-display: swap;
+}
+@font-face {
+    font-family: 'Volter Canvas';
+    src: url('../assets/fonts/VolterGoldfishBold.woff2') format('woff2');
+    font-weight: bold;
+    font-style: normal;
+    font-display: swap;
+}
+@font-face {
+    font-family: 'Volter Canvas';
+    src: local('Verdana'), local('Roboto'), local('Arial'), local('Helvetica'), local('DejaVu Sans');
+    font-weight: normal;
+    font-style: normal;
+    unicode-range: U+00B7;
+}
+@font-face {
+    font-family: 'Volter Canvas';
+    src: local('Verdana Bold'), local('Verdana-Bold'), local('Roboto Bold'), local('Arial Bold'), local('Arial-BoldMT'), local('Helvetica Bold'), local('DejaVu Sans Bold');
+    font-weight: bold;
+    font-style: normal;
+    unicode-range: U+00B7;
+}
+
 /* ---- THE MIDDOT, FOR EVERY LINE SET IN VOLTER (27 Oct 2026) ----
 
    VolterGoldfish.ttf maps U+00B7 to an EMPTY glyph, so every "·" in Volter
@@ -465,6 +563,11 @@ html.has-open-dialog body { overflow: hidden; }
    the fallback everywhere; anything with a differently-coloured surrounding
    (the white admin inputs) overrides the track/thumb colours locally. */
 html {
+    /* No grey flash on a tap, on anything: it inherits. */
+    -webkit-tap-highlight-color: transparent;
+    /* An iPhone turned on its side enlarges text by its own guess otherwise. */
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
     scroll-behavior: smooth;
     scrollbar-width: thin;
     scrollbar-color: var(--wood-dark) var(--frame-bg);
@@ -626,7 +729,8 @@ html::-webkit-scrollbar-button { display: none; width: 0; height: 0; background:
     position: absolute;
     top: 1px;
     bottom: 1px;
-    right: 0;
+    /* A pixel over the edge: its own black side would double the frame's. */
+    right: -1px;
     margin-top: 0;
 }
 
@@ -1075,6 +1179,7 @@ p { color: var(--parchment-dim); }
     background: linear-gradient(180deg, rgba(18, 12, 7, 0.97), rgba(18, 12, 7, 0.9));
     border-bottom: 2px solid var(--chrome-border);
     box-shadow: 0 4px 0 -2px var(--chrome-fill);
+    -webkit-backdrop-filter: blur(4px);
     backdrop-filter: blur(4px);
     transition: background 0.2s, border-color 0.2s;
 }
@@ -1308,6 +1413,7 @@ main { display: block; flex: 1 0 auto; }
     background: linear-gradient(0deg, rgba(18, 12, 7, 0.97), rgba(18, 12, 7, 0.9));
     border-top: 2px solid var(--chrome-border);
     box-shadow: 0 -4px 0 -2px var(--chrome-fill);
+    -webkit-backdrop-filter: blur(4px);
     backdrop-filter: blur(4px);
     color: var(--parchment-dim);
     font-family: 'Roboto', sans-serif;
@@ -1711,10 +1817,11 @@ body[data-page="home"] .hero { padding-top: 18px; }
     visibility: visible;
     transition: opacity 0.6s ease-out, visibility 0s;
 }
-.welcome-promo-slide:focus-visible { outline: none; }
-.welcome-promo:has(.welcome-promo-slide:focus-visible) {
+/* On the slide itself and inside it: the opening view's .opening-spot and the
+   drawer's card clip whatever sits outside the frame. */
+.welcome-promo-slide:focus-visible {
     outline: 2px solid var(--amber-bright);
-    outline-offset: 2px;
+    outline-offset: -2px;
 }
 /* Which turn it is, when there is more than one: small dots at the top
    right, over the picture, out of the caption's way. */
@@ -2116,8 +2223,16 @@ body[data-page="home"] .hero { padding-top: 18px; }
    landscape screen it takes its size from the height instead, with the
    page's padding and the gap under it trimmed, so the button is on the
    first screen with room to spare. */
+/* ROOM FOR THE HANDSTANDING RAT (4 Nov 2026). He stands on the MAZE span and
+   rises 0.917 of the title's size above it, so on a screen too short to
+   centre the stack clear of the header, his legs went behind it. Under 860px
+   tall (the height the spotlight comes into the flow, see .welcome-countdown)
+   the page's top padding is never less than his height plus 8px. */
+@media (max-height: 859px) {
+    .welcome-screen { padding-top: max(60px, calc(clamp(3.4rem, 14vw, 7.5rem) * 0.917 + 8px)); padding-bottom: 40px; }
+}
 @media (orientation: landscape) and (max-height: 500px) {
-    .welcome-screen { padding-top: 18px; padding-bottom: 28px; }
+    .welcome-screen { padding-top: calc(clamp(2.4rem, 15vh, 7.5rem) * 0.917 + 8px); padding-bottom: 28px; }
     .welcome-title {
         font-size: clamp(2.4rem, 15vh, 7.5rem);
         margin-bottom: 16px;
@@ -2199,6 +2314,11 @@ body[data-page="home"] .hero { padding-top: 18px; }
     pointer-events: none;
     z-index: 2;
 }
+/* On a phone on its side the title goes by the height (above), so he must
+   too. By the width he stood taller than RATS and hid its R. */
+@media (orientation: landscape) and (max-height: 500px) {
+    .btn-sit-rat { --title: clamp(2.4rem, 15vh, 7.5rem); }
+}
 
 .btn-enter span {
     font-family: 'Silkscreen', monospace;
@@ -2247,7 +2367,7 @@ body[data-page="home"] .hero { padding-top: 18px; }
 }
 .btn.btn-solid:hover { background: var(--amber-bright); }
 
-/* Buttons that live inside a light chrome window (e.g. "Visit Room") need the
+/* Buttons that live inside a light chrome window need the
    dark-bordered bevel look rather than the amber-on-dark hero treatment. */
 .chrome-body .btn,
 .modal-body .btn {
@@ -2278,6 +2398,9 @@ body[data-page="home"] .hero { padding-top: 18px; }
     margin: 0 auto;
     border-style: solid;
     border-width: 14px;
+    /* Seen only if the frame art fails; left alone it is the text colour, a
+       pale ring round the window. */
+    border-color: var(--chrome-fill);
     border-image-source: url('../assets/img/window_frame.png');
     border-image-slice: 14 fill;
     border-image-width: 14px;
@@ -2714,7 +2837,7 @@ body[data-page="home"] .hero { padding-top: 18px; }
     color: #f5ecd8;
     font-family: 'Silkscreen', monospace;
     font-weight: 700;
-    font-size: 0.55rem;
+    font-size: 0.5625rem;
     letter-spacing: 0.75px;
     text-align: center;
     text-shadow: 1px 1px 0 rgba(0, 0, 0, 0.55);
@@ -2734,6 +2857,11 @@ body[data-page="home"] .hero { padding-top: 18px; }
     border-image-slice: 10 fill;
     border-image-width: 10px;
     border-image-repeat: stretch;
+    /* The sprite's own flat fill behind the sprite, clear of its rounded
+       corners. At 125% and 150% the sprite's nine pieces only half cover the
+       device pixel where they meet, and what is behind them showed through
+       as hairlines across the tab. At 100% and 200% it is never seen. */
+    background: linear-gradient(#a87a4b, #a87a4b) center / calc(100% - 6px) calc(100% - 6px) no-repeat border-box;
     /* Muted brown: desaturated and darkened well away from the sprite's
        original gold. */
     filter: sepia(0.25) saturate(0.5) brightness(0.66) contrast(1.05);
@@ -2790,6 +2918,7 @@ body[data-page="home"] .hero { padding-top: 18px; }
 
 .chrome-nav-btn.active::before {
     border-image-source: url('../assets/img/btn_active.png');
+    background: linear-gradient(#cc9966, #cc9966) center / calc(100% - 6px) calc(100% - 6px) no-repeat border-box;
     /* Solved for #d6bb96 specifically — saturate/brightness/hue-rotate
        tuned via canvas sampling until the flat "fill" pixel landed within
        2 units of the target on every channel, rather than eyeballed. */
@@ -3322,6 +3451,10 @@ html:not([data-theme]):not([data-dark]) .chrome-nav-top .chrome-nav-btn:not(.act
     min-height: 0;
     overflow-y: auto;
     padding-right: 8px;
+    /* Scrolled to the end, the list's last line stops clear of the sleeping
+       rat, who lies across this corner: he covered "Show all 472", a date, a
+       tag. His height over the frame's foot, less the 4px the list keeps. */
+    padding-bottom: 42px;
 }
 
 /* No .home-results-specific ::-webkit-scrollbar* rules here — this used to
@@ -3670,14 +3803,15 @@ body[data-page="admin"] .admin-contributor-count {
    positioned over .row-thumb's corner — .modal-meta's own usage already
    overrides back to inline (see .modal-meta .status-badge). */
 .status-badge {
-    font-size: 0.6rem;
+    font-size: 0.5625rem;
     letter-spacing: 0.5px;
     text-transform: uppercase;
-    /* The left side carries the trailing letter-spacing too (see .tag). */
-    padding: 3px 8px 3px 8.5px;
+    /* The left side carries the trailing letter-spacing too (see .tag); the
+       top more than the foot for the reason .tag's has. */
+    padding: 4px 8px 2px 8.5px;
     border-radius: 12px;
-    font-family: 'Roboto', sans-serif;
-    font-weight: 700;
+    font-family: 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace;
+    font-weight: 400;
     background: rgba(20, 13, 6, 0.85);
     border: 1px solid currentColor;
 }
@@ -3801,7 +3935,10 @@ body[data-page="admin"] .admin-contributor-count {
 }
 
 .tag {
-    font-size: 0.56rem;
+    /* Named, not inherited: it took Roboto inside a maze's window. */
+    font-family: 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace;
+    font-weight: 400;
+    font-size: 0.5625rem;
     letter-spacing: 0.4px;
     text-transform: uppercase;
     /* Asymmetric — measured (via Range.getBoundingClientRect on the text
@@ -3830,6 +3967,14 @@ body[data-page="admin"] .admin-contributor-count {
        clipping/wrapping the text inside the pill's own border. */
     white-space: nowrap;
     flex-shrink: 0;
+}
+/* Unless the label alone is wider than the row: then it breaks inside the
+   pill rather than running out of the window. */
+.chrome-list-row .row-tags .tag,
+.room-tags .tag {
+    max-width: 100%;
+    white-space: normal;
+    overflow-wrap: anywhere;
 }
 
 /* Difficulty pill — same shape as a regular .tag, just colour-coded easiest
@@ -3914,6 +4059,8 @@ body[data-page="admin"] .admin-contributor-count {
     border-image-slice: 10 fill;
     border-image-width: 10px;
     border-image-repeat: stretch;
+    /* The sprite's fill behind its seams, as on .chrome-nav-btn::before. */
+    background: linear-gradient(#cc9966, #cc9966) center / calc(100% - 6px) calc(100% - 6px) no-repeat border-box;
     filter: saturate(0.54) brightness(1.18) hue-rotate(4deg);
 }
 
@@ -3929,10 +4076,18 @@ body[data-page="admin"] .admin-contributor-count {
    nothing but .featured-frame's own border past them now, a second border
    right on top of it just doubled the line up rather than reading as one
    continuous edge. */
-.featured-frame .chrome-frame {
+/* ONE LINE ROUND THE LIST, NOT TWO (4 Nov 2026, the owner's). .featured-frame
+   already draws the edge, so this frame leaves it the left, the right and the
+   foot. By id, because every palette's sheet restates .chrome-frame's whole
+   border later in the cascade, which put these back: two or three black
+   pixels beside each other, the "2px lines" of the Christmas skin. */
+#browse-window .featured-frame .chrome-frame {
     margin: 0;
+    border-left-width: 0;
     border-right-width: 0;
     border-bottom-width: 0;
+    border-bottom-left-radius: 7px;
+    border-bottom-right-radius: 7px;
 }
 
 /* ---- THE EVENTS TAB TAKES THE FEATURED CONTROLS AWAY, NOT THE FRAME.
@@ -4811,7 +4966,6 @@ body[data-page="admin"] .admin-contributor-count {
     gap: 18px;
 }
 
-.modal:has(.room-desc-box) .modal-body > .modal-visit-link { margin: 0; }
 .modal:has(.room-desc-box) .modal-body > .modal-meta { margin-top: 0; }
 
 /* The image panel gives ground FIRST, and the description only takes what
@@ -5473,7 +5627,7 @@ body[data-page="admin"] .admin-contributor-count {
 }
 
 .photo-frame-close:focus-visible {
-    outline: 1px solid var(--amber-bright);
+    outline: 2px solid var(--amber-bright);
     outline-offset: 1px;
 }
 
@@ -5909,7 +6063,7 @@ body[data-page="admin"] .admin-contributor-count {
 }
 
 .furni-card-close:focus-visible {
-    outline: 1px solid var(--amber);
+    outline: 2px solid var(--amber-bright);
     outline-offset: 1px;
 }
 
@@ -6163,28 +6317,39 @@ body[data-page="admin"] .admin-contributor-count {
     to { opacity: 1; transform: scale(1); }
 }
 
+/* The site's pixel X and arrows, at exactly twice their 14x13, in a 40x40
+   reach with nothing drawn behind them. font-size 0 for the characters in
+   the markup: they were what differed between Windows, Macs and phones. */
+.lightbox-close,
+.lightbox-overlay .gallery-nav {
+    width: 40px;
+    height: 40px;
+    padding: 0;
+    border: 0;
+    border-radius: 4px;
+    background-color: transparent;
+    background-position: center;
+    background-repeat: no-repeat;
+    background-size: 28px 26px;
+    image-rendering: pixelated;
+    font-size: 0;
+}
 .lightbox-close {
     position: absolute;
     top: 20px;
     right: 24px;
-    width: 40px;
-    height: 40px;
-    border-radius: 50%;
-    background: rgba(0, 0, 0, 0.6);
-    border: 1px solid var(--border);
-    color: var(--parchment);
-    font-size: 1.2rem;
+    background-image: url('../assets/img/modal_topclose_x.png');
     cursor: var(--cursor-pointer);
-    display: flex;
-    align-items: center;
-    justify-content: center;
     z-index: 2;
 }
-
-.lightbox-overlay .gallery-nav {
-    width: 46px;
-    height: 46px;
-    font-size: 1rem;
+.lightbox-overlay .gallery-prev,
+.lightbox-overlay .lightbox-prev { background-image: url('../assets/img/modal_arrow_prev.png'); }
+.lightbox-overlay .gallery-next,
+.lightbox-overlay .lightbox-next { background-image: url('../assets/img/modal_arrow_next.png'); }
+.lightbox-close:hover,
+.lightbox-overlay .gallery-nav:hover {
+    background-color: rgba(255, 255, 255, 0.1);
+    border-color: transparent;
 }
 
 .lightbox-prev { left: 24px; }
@@ -6208,7 +6373,7 @@ body[data-page="admin"] .admin-contributor-count {
     width: 27px;
     height: 27px;
     border-radius: 50%;
-    background: rgba(0,0,0,0.55);
+    background-color: rgba(0,0,0,0.55);
     border: 1px solid var(--border);
     color: var(--parchment);
     font-size: 0.64rem;
@@ -6219,7 +6384,29 @@ body[data-page="admin"] .admin-contributor-count {
     z-index: 2;
 }
 
-.gallery-nav:hover { background: rgba(0,0,0,0.8); border-color: var(--amber); }
+.gallery-nav:hover { background-color: rgba(0,0,0,0.8); border-color: var(--amber); }
+/* The window's own arrows, in pixels rather than a character that differs by
+   system: a stepped arrow built of whole pixels off one, in the button's text
+   colour, so each palette's --parchment or navy still applies. The lightbox's
+   are its pictures instead. */
+.gallery-nav { font-size: 0; }
+.gallery-nav::before {
+    content: "";
+    width: 1px;
+    height: 1px;
+    background: currentColor;
+}
+.gallery-prev::before {
+    margin-right: 4px;
+    box-shadow: 1px 0, 1px -1px, 2px -1px, 2px -2px, 3px -2px, 3px -3px, 4px -3px,
+        1px 1px, 2px 1px, 2px 2px, 3px 2px, 3px 3px, 4px 3px;
+}
+.gallery-next::before {
+    margin-left: 4px;
+    box-shadow: -1px 0, -1px -1px, -2px -1px, -2px -2px, -3px -2px, -3px -3px, -4px -3px,
+        -1px 1px, -2px 1px, -2px 2px, -3px 2px, -3px 3px, -4px 3px;
+}
+.lightbox-overlay .gallery-nav::before { content: none; }
 .gallery-prev { left: 6.5px; }
 .gallery-next { right: 6.5px; }
 
@@ -7551,7 +7738,6 @@ html:not([data-theme]) .room-links-refs-text a:focus-visible {
     text-shadow: 0 0 8px rgba(255, 248, 236, 0.75);
 }
 
-.modal-visit-link { margin-top: 18px; }
 
 /* ---------- admin page ---------- */
 
@@ -9133,6 +9319,7 @@ body[data-page="admin"] .search-box input {
     box-sizing: border-box;
     border-style: solid;
     border-width: 14px;
+    border-color: transparent; /* no pale ring, should the art fail */
     border-image-source: url('../assets/img/console/cnsl-frame-border.png');
     border-image-slice: 14;
     border-image-width: 14px;
@@ -9317,12 +9504,39 @@ body[data-page="admin"] .search-box input {
     border: 1px solid #000;
     /* A few px tighter than the 15px it was (6 Oct 2026, the owner's). */
     border-radius: var(--scr-radius);
-    background-image: url('../assets/img/console/cnsl-bg-tile.png');
-    background-repeat: repeat;
+    /* Under the tile, what it averages out to, should it fail: the text is
+       near-white, and on the yellow behind the screen it could not be read.
+       In from the edge, or its colour would tint the rounded corners' pixels. */
+    background-image: url('../assets/img/console/cnsl-bg-tile.png'), linear-gradient(#525252, #525252);
+    background-size: auto, calc(100% - 8px) calc(100% - 8px);
+    background-position: 0 0, center;
+    background-repeat: repeat, no-repeat;
     image-rendering: pixelated;
     overflow: hidden;
     font-family: 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace;
     color: #eeeeee;
+}
+/* The scanline tile is 1px lines. Stretched 1.25 or 1.5 times with no
+   smoothing, the lines land unevenly and slip along a diagonal across the
+   screen. At those two scales the same two greys are drawn as a gradient, one
+   line to one device pixel, so they are even, as they are at 100%. A gradient
+   and not the tile at 0.8 size: the browser rounds a tile's size, and it slips
+   again every few hundred rows. The colour changes a fraction of a device
+   pixel off the line, because a window can sit on a half pixel, and a change
+   exactly where a pixel is sampled is what draws the diagonal. */
+@media (min-resolution: 1.2dppx) and (max-resolution: 1.3dppx) {
+    .console-screen,
+    .console-contact-actions.console-notices-actions,
+    .select-list.is-console,
+    .profile-online-mark::after,
+    .profile-search-results { background-image: repeating-linear-gradient(#424242 0 0.1px, #636363 0.1px 0.9px, #424242 0.9px 1.6px) !important; }
+}
+@media (min-resolution: 1.45dppx) and (max-resolution: 1.55dppx) {
+    .console-screen,
+    .console-contact-actions.console-notices-actions,
+    .select-list.is-console,
+    .profile-online-mark::after,
+    .profile-search-results { background-image: repeating-linear-gradient(#424242 0 calc(1px / 6), #636363 calc(1px / 6) calc(5px / 6), #424242 calc(5px / 6) calc(4px / 3)) !important; }
 }
 
 /* THE SCREEN'S RIM, round the outside of its black border: a solid 2px
@@ -9642,7 +9856,7 @@ body[data-page="admin"] .search-box input {
 .console-sending-message {
     margin: 0;
     font-weight: 700;
-    font-size: 0.55rem;
+    font-size: 0.5625rem;
     line-height: 1.4;
     color: #eeeeee;
     text-align: center;
@@ -9657,7 +9871,7 @@ body[data-page="admin"] .search-box input {
 .console-thanks-message {
     margin: 16px 0 0;
     font-weight: 700;
-    font-size: 0.55rem;
+    font-size: 0.5625rem;
     line-height: 1.4;
     color: #eeeeee;
     text-align: center;
@@ -9824,12 +10038,12 @@ body[data-page="admin"] .search-box input {
     cursor: var(--cursor-pointer);
 }
 .console-notices-markall:hover { text-decoration-style: dotted; }
-.console-notices-markall:focus-visible { outline: 1px dotted #eeeeee; outline-offset: 2px; }
+.console-notices-markall:focus-visible { outline: 2px solid var(--amber-bright); outline-offset: 2px; }
 .console-notices-new {
     font-family: 'Volter Goldfish Bold', 'Volter Goldfish', 'Pixelify Sans', monospace;
 }
 .console-notices-item.is-unread .console-notices-day { opacity: 1; }
-.console-notices-item:focus-visible { outline: 1px dotted #eeeeee; outline-offset: 1px; }
+.console-notices-item:focus-visible { outline: 2px solid var(--amber-bright); outline-offset: 1px; }
 .console-notices-day,
 .console-notices-text { display: block; }
 .console-notices-day {
@@ -10380,6 +10594,12 @@ body[data-page="admin"] .search-box input {
 
 /* ---------- responsive ---------- */
 
+/* A phone's ticker has a row of its own under the brand, which it takes when
+   js/site.js shows it, moving the whole page down. Kept for it from the first
+   paint. (Wider, it may sit beside the brand and needs no room held.) */
+@media (max-width: 440px) {
+    .header-events-group:not(:has(> .header-events[style*="block"])) { flex: 0 0 100%; min-height: 31px; }
+}
 @media (max-width: 640px) {
     /* .site-header never had its own narrow-viewport handling — brand-text
        ("MAZE RATS") has no white-space:nowrap, so once the brand-group's
@@ -10856,7 +11076,7 @@ body[data-page="admin"] .container {
 }
 
 /* These are <h3>s, so they arrive carrying the base heading rule's weight of
-   800 — see the note on .legal-doc h1 for why that is the one thing a pixel
+   800 — see the note on .legal-section h2 for why that is the one thing a pixel
    face must not be asked for. Volter Goldfish registers 400 and 700 and
    nothing above it, so 800 was being drawn as a smeared 700 on all nine
    panel titles. */
@@ -11380,7 +11600,8 @@ body[data-page="admin"] .site-footer p {
     margin: 0 0 2px;
     font-family: 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace;
     font-weight: 700;
-    font-size: 0.8rem;
+    /* Volter is crisp at 9px and whole multiples only. */
+    font-size: 1.125rem;
     line-height: 1.35;
     color: var(--amber-bright);
 }
@@ -12001,6 +12222,9 @@ body[data-page="admin"] #activity-sessions {
     text-align: left;
     color: var(--parchment);
     cursor: var(--cursor-pointer);
+    /* A long name with no spaces breaks rather than leaving its card. */
+    min-width: 0;
+    overflow-wrap: anywhere;
 }
 
 .timeline-open:hover,
@@ -12164,31 +12388,19 @@ body[data-page="admin"] #activity-sessions {
    the skip link — the ring would be drawn around the whole page. */
 .legal-page:focus { outline: none; }
 
-.legal-eyebrow {
-    margin: 0 0 10px;
-    font-family: 'Silkscreen', monospace;
-    font-size: 0.6rem;
-    letter-spacing: 0.18em;
-    text-transform: uppercase;
-    color: var(--amber-text);
-}
+/* The site's window, the one a maze opens in, sized to the policy's measure
+   rather than the archive's 538px: body is a column flexbox, so main shrinks
+   to what's in it and auto here is that width. Both classes, because the
+   narrow-layout block restates .chrome-window's width further down. On a phone
+   main is as wide as the screen allows and this fills it. Nothing inside
+   scrolls: the window is as tall as the policy and the page does the scrolling. */
+.chrome-window.legal-window { width: auto; }
 
-/* The weight is restated, and it is not a detail.
-
-   The base h1-h4 rule sets 800, which is right for Montserrat and wrong for
-   anything else. Silkscreen ships two weights, 400 and 700, so asking it for
-   800 does not select a heavier file — there isn't one — it makes the
-   browser synthesise the extra weight by smearing the 700 face sideways. On
-   a pixel font that is not bolder, it is blurred: the whole point of the
-   typeface is that every stem is a whole number of pixels wide.
-
-   Every rule below that swaps in Silkscreen says the weight too, for the
-   same reason. */
+/* A standalone page's heading, the same on /privacy, the 404 and Fallin'
+   Furni's page: the base rule's Montserrat at 30px, at every width. */
 .legal-doc h1 {
     margin: 0 0 18px;
-    font-family: 'Silkscreen', monospace;
-    font-weight: 700;
-    font-size: clamp(1.4rem, 4vw, 2rem);
+    font-size: 1.875rem;
     line-height: 1.2;
     color: var(--parchment);
     text-wrap: balance;
@@ -12214,6 +12426,17 @@ body[data-page="admin"] #activity-sessions {
 .legal-body { gap: 30px; }
 .legal-doc { gap: 0; }
 
+/* The weight is restated, and it is not a detail.
+
+   The base h1-h4 rule sets 800, which is right for Montserrat and wrong for
+   anything else. Silkscreen ships two weights, 400 and 700, so asking it for
+   800 does not select a heavier file — there isn't one — it makes the
+   browser synthesise the extra weight by smearing the 700 face sideways. On
+   a pixel font that is not bolder, it is blurred: the whole point of the
+   typeface is that every stem is a whole number of pixels wide.
+
+   Every rule below that swaps in Silkscreen says the weight too, for the
+   same reason. */
 .legal-section h2 {
     margin: 0 0 9px;
     font-family: 'Silkscreen', monospace;
@@ -12293,24 +12516,19 @@ body[data-page="admin"] #activity-sessions {
 .console-privacy-out a:hover,
 .console-privacy-out a:focus-visible { color: var(--parchment); text-decoration: underline; }
 
-/* The policy sits on its own ground rather than on the site's maze texture.
-
-   Every other page puts its reading matter inside a window; this one was
-   setting several hundred words of small type straight onto the isometric
-   pattern, which shows through between the lines and is the last thing a
-   long document needs. Quiet panel, no bevel — it is a sheet of paper, not
-   another Habbo window. */
+/* The policy sits in the site's window rather than on the maze texture, which
+   would show through between the lines. Its ground is .modal-body's dark band,
+   not the bare panel: the amber headings and links are 3.9:1 on --frame-bg
+   and 6.3:1 on this, and this is a lot of small type to read. */
 .legal-doc {
     padding: 30px 32px 26px;
-    background: var(--bg-panel);
-    border: 1px solid var(--border);
-    border-radius: 10px;
-    box-shadow: var(--shadow);
+    background: #31281d;
 }
 
 @media (max-width: 700px) {
-    .legal-page { padding: 30px 16px 56px; }
-    .legal-doc { padding: 22px 18px 20px; }
+    /* The window's own frame takes 13px a side: the page gives some of it back. */
+    .legal-page { padding: 30px 8px 56px; }
+    .legal-doc { padding: 22px 16px 20px; }
     .legal-body { gap: 24px; }
 }
 
@@ -12328,7 +12546,7 @@ body[data-page="admin"] #activity-sessions {
     padding: 34px 22px;
     text-align: center;
     font-family: 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace;
-    font-size: 0.6875rem;
+    font-size: 0.5625rem;
     line-height: 1.7;
     color: var(--parchment-dim);
 }
@@ -12476,6 +12694,18 @@ body[data-page="admin"] #activity-sessions {
 
    :focus-visible rather than :focus throughout, so a mouse click never draws
    a ring — the same distinction the existing rules make. */
+/* A window, or a heading, that the code focuses as it opens is not a control:
+   no ring on it, on a shared link's first paint or after a key. Everything a
+   key can land on gets the amber ring; what has its own rule above or below
+   outranks this, as does the dark ring on cream. A pointer's press into a
+   field draws none (.is-pointer-focus, js/site.js). */
+:where([role="dialog"], [role="alertdialog"], [tabindex="-1"]):focus { outline: none; }
+:where(a[href], button, summary, [role="button"], [role="link"], [role="tab"], [role="menuitem"], [role="switch"], [role="checkbox"], [role="radio"], [tabindex="0"], select, textarea, input):focus-visible {
+    outline: 2px solid var(--amber-bright);
+    outline-offset: 2px;
+}
+:where(select, textarea, input).is-pointer-focus:focus-visible { outline: none; }
+
 .chrome-list-row:focus-visible,
 .chrome-nav-btn:focus-visible,
 .chrome-frame-minimize-toggle:focus-visible,
@@ -12556,13 +12786,12 @@ body[data-page="admin"] #activity-sessions {
 }
 
 .archive-stat-n {
-    font-family: 'Silkscreen', monospace;
-    font-size: 1.15rem;
+    /* The furni strip's figures (.furni-stat-n), value for value. */
+    font-family: 'Montserrat', sans-serif;
+    font-weight: 800;
+    font-size: 1.2rem;
     line-height: 1.1;
-    /* On the frame since 5 Oct 2026 (the panel went; see .chrome-list:has(>
-       .timeline)), where --amber-bright is 3.9:1 and these are not big
-       enough to pass at that; --parchment is 5.6:1. */
-    color: var(--parchment);
+    color: var(--amber-bright);
     /* The four figures line up under one another at a glance. */
     font-variant-numeric: tabular-nums;
 }
@@ -12595,6 +12824,7 @@ body[data-page="admin"] #activity-sessions {
     font-family: 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace;
     font-size: 0.5625rem;
     line-height: 1.6;
+    overflow-wrap: anywhere;
 }
 
 .archive-fact > span {
@@ -12819,29 +13049,9 @@ body[data-page="admin"] #activity-sessions {
     .furni-head-complete-link { transition: none; }
 }
 
-/* "Show all 225" / "Show fewer" under a shortened list: a small card in the
-   tiles' own look, so it reads as part of the list it opens. */
-.furni-band-more {
-    display: inline-block;
-    margin: 8px 0 0;
-    padding: 4px 10px;
-    background: rgba(0, 0, 0, 0.25);
-    border: 1px solid var(--chrome-border);
-    border-radius: 6px;
-    box-shadow: 2px 2px 0 rgba(0, 0, 0, 0.4);
-    color: var(--parchment);
-    font-family: 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace;
-    font-size: 0.5625rem;
-    font-weight: 400;
-    cursor: var(--cursor-pointer);
-    transition: transform 0.15s;
-}
-.furni-band-more:hover,
-.furni-band-more:focus-visible { transform: translateY(-2px); }
-.furni-band-more:focus-visible { outline: 2px solid var(--amber-bright); outline-offset: 1px; }
-@media (prefers-reduced-motion: reduce) {
-    .furni-band-more { transition: none; }
-}
+/* "Show all 225" / "Show fewer" under a shortened list: the site's small
+   button (.view-switch-btn), lighting up as the others do. */
+.furni-band-more { margin: 8px 0 0; }
 
 /* auto-fill rather than a fixed column count: the archive panel is a fixed
    ~450px column on a desktop but runs to the screen edges on a phone, and
@@ -13049,11 +13259,18 @@ body[data-page="admin"] #activity-sessions {
 
 .side-drawer .side-menu {
     visibility: hidden;
-    transition: visibility 0s linear 0.34s;
+    /* Hidden still takes up room: with its folds open the panel reached past
+       the footer, and shut it held the page 188px longer than its content.
+       So it also folds to nothing once it has slid home. */
+    max-height: 0;
+    overflow: hidden;
+    transition: visibility 0s linear 0.34s, max-height 0s linear 0.34s;
 }
 
 .side-drawer.is-open .side-menu {
     visibility: visible;
+    max-height: 4000px;
+    overflow: visible;
     transition-delay: 0s;
 }
 
@@ -13312,7 +13529,8 @@ body[data-page="admin"] #activity-sessions {
     /* 6px, not more: "GUESS THE MAZE" and its DAILY tag need the width. */
     padding-left: 6px;
 }
-.side-menu-fold.is-open .side-menu-fold-inner { padding-top: 4px; }
+/* Its own inner only: a closed fold inside an open one has to shut to nothing. */
+.side-menu-fold.is-open > .side-menu-fold-inner { padding-top: 4px; }
 /* After a fold: the next group button sits a little apart from it, and a
    loose row (Alt Codes, at the foot) gets the hashed rule and the space
    every row has above it. */
@@ -13536,6 +13754,25 @@ body[data-page="admin"] #activity-sessions {
 }
 .side-menu-branch-toggle:focus-visible { outline: 2px solid #6b4b18; outline-offset: -1px; }
 .side-menu-branch-toggle[aria-expanded="true"] .side-menu-group-arrow { transform: rotate(90deg); }
+/* A section's fold clips what leaves it, so its rows' rules stopped 6px short
+   of the card on each side. Out over the card's padding, the rows staying
+   where they were, and the rules reach the edge as the top-level ones do. */
+.side-menu > .side-menu-fold > .side-menu-fold-inner {
+    margin: 0 -6px;
+    padding-left: 12px;
+    padding-right: 6px;
+}
+.side-menu > .side-menu-fold > .side-menu-fold-inner > .side-menu-item + .side-menu-item::before,
+.side-menu > .side-menu-fold > .side-menu-fold-inner > .side-menu-item + .side-menu-branch::before,
+.side-menu > .side-menu-fold > .side-menu-fold-inner > .side-menu-branch + .side-menu-branch::before,
+.side-menu > .side-menu-fold > .side-menu-fold-inner > .side-menu-branch + .side-menu-item::before {
+    left: -12px;
+}
+/* And the whole width: a button in a plain block is as wide as its words, so
+   each row's rule (and highlight) ended where its own text did. */
+.side-menu > .side-menu-fold > .side-menu-fold-inner > .side-menu-item {
+    width: 100%;
+}
 .side-menu-subfold .side-menu-fold-inner {
     margin-left: 9px;
     padding-left: 4px;
@@ -13862,10 +14099,6 @@ body[data-page="admin"] #activity-sessions {
 .spotlight-frame:hover,
 .spotlight-frame:has(.welcome-promo-slide:focus-visible) {
     border-color: var(--amber);
-}
-.spotlight-frame:has(.welcome-promo-slide:focus-visible) {
-    outline: 2px solid var(--amber-bright);
-    outline-offset: 2px;
 }
 /* At this width a one-line caption ends in "…" before it has said
    anything, so here it may take two. */
@@ -15109,6 +15342,15 @@ body[data-page="admin"] #activity-sessions {
 
 .guess-board-games span { color: var(--unknown-text); }
 
+/* The one column a row's grid or pill and its rounds right share. */
+.guess-board-extras {
+    display: inline-flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 5px;
+    white-space: nowrap;
+}
+
 .guess-board {
     display: flex;
     flex-direction: column;
@@ -15191,8 +15433,12 @@ body[data-page="admin"] #activity-sessions {
 }
 /* The time a day took, small, beside its total: only on a single day's
    board (scoreCell in js/daily.js, timeOf in js/leaderboards.js). The
-   games themselves never show a clock. */
+   games themselves never show a clock. A column of its own width, so the
+   totals line up down the board whatever the time beside them. */
 .guess-board-time {
+    display: inline-block;
+    min-width: 34px;
+    text-align: right;
     margin-left: 4px;
     font-family: 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace;
     font-size: 0.5625rem;
@@ -15329,7 +15575,6 @@ html:not([data-theme]) .guess-board-rank { color: var(--amber-text); }
     /* The grid is the first thing to go when the row runs out of room —
        the score is the point of a leaderboard, the grid is the garnish. */
     .guess-board-grid { display: none; }
-    .guess-board-row { grid-template-columns: 16px 27px 1fr auto; }
 }
 
 /* The Leaderboards window (js/leaderboards.js) always draws the fifth
@@ -16308,6 +16553,20 @@ ol.fmt-ol-wide.fmt-ol-wide { padding-left: 3.4em; }
 }
 .glyphs-intro p { margin: 0; }
 
+/* The box a refused copy leaves the character in (copyByHand in js/glyphs.js). */
+.glyphs-copy-field {
+    width: 3em;
+    margin-left: 4px;
+    padding: 2px 4px;
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    background: var(--bg-black);
+    color: var(--parchment);
+    font-family: 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace;
+    font-size: 1rem;
+    text-align: center;
+}
+
 .glyphs-intro kbd {
     padding: 0 4px;
     border: 1px solid var(--chrome-border);
@@ -16687,6 +16946,14 @@ ol.fmt-ol-wide.fmt-ol-wide { padding-left: 3.4em; }
     border-radius: 2px;
 }
 .profile-search-input:focus { outline: none; background: rgba(238, 238, 238, 0.1); }
+/* Fields whose press shows only a border or fill: a key still gets the ring. */
+.profile-search-input:focus-visible:not(.is-pointer-focus),
+.search-box input:focus-visible:not(.is-pointer-focus),
+.opening-search input:focus-visible:not(.is-pointer-focus),
+.sort-box select:focus-visible:not(.is-pointer-focus) {
+    outline: 2px solid var(--amber-bright);
+    outline-offset: 2px;
+}
 
 /* The tab that drops down under the field: the screen's own scanline
    tile, inside the white hairline the console's controls wear. */
@@ -16847,9 +17114,9 @@ ol.fmt-ol-wide.fmt-ol-wide { padding-left: 3.4em; }
 .progress-signin:hover,
 .profile-link:hover { background: rgba(238, 238, 238, 0.15); }
 
-/* Keyboard focus on the screen: a dotted ring in its own colour. */
+/* Keyboard focus on the screen: the site's ring. */
 #progress-overlay :is(button, summary, input):focus-visible {
-    outline: 1px dotted var(--pc-text);
+    outline: 2px solid var(--amber-bright);
     outline-offset: 2px;
 }
 
@@ -17386,7 +17653,6 @@ button.progress-badge.is-locked[aria-pressed="true"] { opacity: 0.85; }
 /* The window's filters: the same chips, pressable. A pointer and a lift on
    hover are the whole difference, so a tag still looks like a tag. */
 button.tag.tag-filter {
-    font-family: inherit;
     cursor: var(--cursor-pointer);
     transition: border-color 0.15s, color 0.15s;
 }
@@ -18449,6 +18715,9 @@ textarea.ctl-input.de-note {
     color: var(--parchment-dim);
 }
 .furni-head-complete-names { color: var(--parchment); }
+/* A comma stays with its name, never at the start of the next line. */
+.furni-head-complete-one { white-space: nowrap; }
+.furni-head-complete-one .furni-head-complete-link { white-space: normal; }
 
 /* Three figures across, separated by rules rather than boxed — the same
    treatment the Timeline's own stats block uses, so the two read as the
@@ -18661,7 +18930,7 @@ textarea.ctl-input.de-note {
     padding: 20px;
     text-align: center;
     font-family: 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace;
-    font-size: 0.6875rem;
+    font-size: 0.5625rem;
     line-height: 1.7;
     color: var(--parchment-dim);
     /* It fades in rather than appearing, so the 150ms threshold does not
@@ -18866,15 +19135,6 @@ textarea.ctl-input.de-note {
    numbers on it. See .guess-summary and the rules under it.
 
    What follows is only what that shared card does not already say. */
-
-/* The verdict rides on .guess-score, which is sized for the score it
-   usually carries. This is a sentence rather than a number, so it is the
-   paper colour and a size down. */
-.daily-verdict {
-    font-size: 0.86rem;
-    letter-spacing: 0.2px;
-    color: var(--parchment);
-}
 
 /* .daily-answers-name and .daily-answers-points styled the answers list that
    used to close Odd One Out's results card. That list is gone — see
@@ -19285,6 +19545,14 @@ textarea.ctl-input.de-note {
 
 .lost-page:focus { outline: none; }
 
+/* In the site's window, as /privacy is; both classes for the same reason. */
+.chrome-window.lost-window { width: 100%; }
+/* The same ground as .legal-doc, and for the same reason. */
+.lost-sheet {
+    padding: 30px 24px 26px;
+    background: #31281d;
+}
+
 /* Big, and the only decorative thing here. Set in the display face rather
    than the pixel one for the same reason the game splashes are: Volter
    Goldfish is drawn for 9px and nothing else. Barely-there amber, because
@@ -19308,7 +19576,8 @@ textarea.ctl-input.de-note {
 
 .lost-title {
     margin: 6px 0 0;
-    font-size: clamp(1.3rem, 5vw, 1.9rem);
+    font-size: 1.875rem;    /* the standalone pages' heading: see .legal-doc h1 */
+    line-height: 1.2;
     text-wrap: balance;
 }
 
@@ -21732,6 +22001,17 @@ body[data-page="admin"] .ctl-seg .btn-enter-mini {
         height: min(300px, 55dvh);
     }
 
+    /* The overlay scrolls the whole card here (see just above), so the text
+       needn't scroll inside it as well: an event's article was a 110px slit
+       inside a window that scrolled too. The whole description lies open. */
+    .modal-thumb-full.is-event .room-desc-box,
+    #event-modal .room-desc-box,
+    .modal:has(.room-desc-box) .room-desc-box,
+    .room-desc-box:has(.modal-article:not([hidden])) {
+        max-height: none;
+        overflow-y: visible;
+    }
+
     /* The daily games' decks, from the screen down: its height, less the
        overlay's padding top and bottom, less the 45px of titlebar, frame
        borders and window border the deck sits inside (measured), less 5px
@@ -21747,6 +22027,12 @@ body[data-page="admin"] .ctl-seg .btn-enter-mini {
     }
     .guess-sheet-tab { display: none; }
     .guess-sheet-inner { padding: 12px 14px calc(12px + var(--tucked) * var(--tuck)); }
+
+    /* The splashes' rules at the width there is, so they take fewer lines and
+       the Start button is whole on the first view. From the top if they ever
+       still overflow: centred, the overflow above could not be scrolled to. */
+    .guess-splash { justify-content: flex-start; }
+    .guess-rules { max-width: none; margin: 8px 0 10px; gap: 5px; }
 
     /* Guess the Maze: the picture BESIDE the names at every landscape
        width, restating the desktop rules that the max-width: 760px block
@@ -21848,6 +22134,13 @@ body[data-page="admin"] .ctl-seg .btn-enter-mini {
     padding: 6px 22px;
     justify-content: center;
 }
+
+/* A label stays on one line and its button widens to it: "Sign in with
+   Discord" (158px) beside "Not now" at .signout-actions' 108px was 4px over
+   the window's 272px, so it broke in two. The smaller floor lets the pair
+   fit; a pair too wide for a very narrow phone stacks. */
+.notice-actions { flex-wrap: wrap; }
+.notice-actions .guess-btn { white-space: nowrap; min-width: 96px; }
 
 /* The banned screen that stood here (.ban-screen, .ban-body, .ban-foot,
    .ban-text, body.is-banned) was never drawn by any script: a banned
@@ -22210,7 +22503,7 @@ body.is-viewer #bans-add { display: none !important; }
     border: 1px solid #000;
 }
 .mazer-swatch:hover span,
-.mazer-swatch:focus-visible span { outline: 1px solid var(--parchment); outline-offset: 1px; }
+.mazer-swatch:focus-visible span { outline: 2px solid var(--amber-bright); outline-offset: 1px; }
 .mazer-swatch:focus { outline: none; }
 
 /* Kept in the layout while the card prints, so the window never grows. */
@@ -22270,7 +22563,7 @@ body.is-viewer #bans-add { display: none !important; }
 }
 .mazer-motto-box:checked::after { visibility: visible; }
 .mazer-motto-box:focus { outline: none; }
-.mazer-motto-box:focus-visible { outline: 1px solid var(--parchment); outline-offset: 1px; }
+.mazer-motto-box:focus-visible { outline: 2px solid var(--amber-bright); outline-offset: 1px; }
 
 /* A reach for the motto tick on a touch screen (10 Oct 2026). The label is
    what is pressed — it is a <label>, so its words tick the box as well —
@@ -22471,7 +22764,7 @@ body.is-viewer #bans-add { display: none !important; }
     cursor: var(--cursor-pointer);
 }
 .chrome-title-home:hover { text-decoration: underline dotted; text-underline-offset: 2px; }
-.chrome-title-home:focus-visible { outline: 1px solid currentColor; outline-offset: 2px; }
+.chrome-title-home:focus-visible { outline: 2px solid var(--amber-bright); outline-offset: 2px; }
 
 /* The frame's own search: a drawer the frame's full width, touching its top
    (30 Oct 2026, the owner's, from mock-up A), in what the Mazes and Events
@@ -22689,6 +22982,30 @@ body.is-viewer #bans-add { display: none !important; }
 .opening-now-row .opening-name { color: var(--opening-ink); }
 .opening-now-row .opening-sub,
 .opening-now-row .chrome-go { color: color-mix(in srgb, var(--opening-ink) 75%, var(--opening-cream)); }
+
+/* EVERY color-mix ABOVE, ON A BROWSER WITHOUT IT (Chrome and Edge before 111,
+   so the last on Windows 7 and 8, and iOS before 16.2). A flat colour declared
+   just before one is no help: a value holding var() always parses, is thrown
+   out only when it is worked out, and leaves the property with nothing, so
+   the On now rows lost their cream under near-black text. !important because
+   the generated palettes restate these rules from later files. */
+@supports not (color: color-mix(in srgb, red, blue)) {
+    .row-date { color: var(--parchment) !important; }
+    .sort-chip { border-color: rgba(255, 255, 255, 0.2) !important; }
+    .guess-sheet { background: var(--frame-bg) !important; }
+    .room-links-refs-text a:not(:hover),
+    .modal-article-body h5,
+    .modal-article-body h6,
+    .modal-article-body a:not(:hover) { color: var(--amber-bright) !important; }
+    .modal-article-kicker,
+    .modal-article-origin a:not(:hover),
+    .modal-article-source a:not(:hover) { color: var(--amber-text) !important; }
+    .de-chip.se-status-resolved { color: var(--ok, #7fb069) !important; }
+    .opening-head-title { background: rgba(255, 255, 255, 0.12) !important; color: var(--opening-cream) !important; }
+    .opening-now-row { background: var(--opening-cream) !important; }
+    .opening-now-row .opening-sub,
+    .opening-now-row .chrome-go { color: var(--opening-ink) !important; }
+}
 .opening-now-thumb {
     flex: 0 0 44px;
     height: 44px;
@@ -22765,6 +23082,7 @@ body.is-viewer #bans-add { display: none !important; }
     position: absolute;
     inset: 0;
     background: rgba(10, 4, 16, 0.35);
+    -webkit-backdrop-filter: blur(3px) saturate(0.7);
     backdrop-filter: blur(3px) saturate(0.7);
 }
 .opening-game-art.is-guess span {
@@ -22964,7 +23282,7 @@ body.is-viewer #bans-add { display: none !important; }
     image-rendering: pixelated;
     cursor: var(--cursor-pointer);
 }
-.chrome-light:focus-visible { outline: 1px solid currentColor; outline-offset: -3px; }
+.chrome-light:focus-visible { outline: 2px solid var(--amber-bright); outline-offset: 0; }
 /* On (dark mode, or light mode under Frost), the bulb is the one lit thing
    in the bar. */
 html[data-dark] .chrome-light { filter: drop-shadow(0 0 3px var(--neon-soft)) brightness(1.15); }
@@ -23066,26 +23384,24 @@ html[data-light] .chrome-light { filter: drop-shadow(0 0 3px var(--neon-soft)); 
 .art-byline { overflow-wrap: anywhere; }
 .art-writer:not(:has(.builder-avatar)) { left: 0; padding-left: 0; }
 .art-writer .builder-name { display: block; }
-/* "See the event" is a link (so it opens in a new tab on a middle click):
-   button.tag.tag-filter's look, by hand. */
-.art-actions a.tag.tag-filter,
+/* An article's "Linked event" is a link, so it opens in a new tab on a middle
+   click, in the Share button's look. */
+a.modal-share-btn { text-decoration: none; }
+/* An event's "Read the article" is a link too: button.tag.tag-filter's look, by hand. */
 .room-tags a.tag.tag-filter { text-decoration: none; cursor: var(--cursor-pointer); transition: border-color 0.15s, color 0.15s; }
-.art-actions a.tag.tag-filter:hover,
-.art-actions a.tag.tag-filter:focus-visible,
 .room-tags a.tag.tag-filter:hover,
 .room-tags a.tag.tag-filter:focus-visible { border-color: var(--amber); color: var(--parchment); }
-.art-actions a.tag.tag-filter:focus-visible,
 .room-tags a.tag.tag-filter:focus-visible { outline: 2px solid var(--amber-bright); outline-offset: 2px; }
 /* An event's "Read the article" chip (3 Nov 2026): kept within the chips' column. */
 .room-tags a.tag-article { max-width: 100%; }
 /* "Article" in the meta row and on a search result, in the log's rose for an article. */
 .status-badge.art-badge { color: #ecc7d6; border-color: #a8708a; }
+/* While a window's list is on its way: about the height it arrives at, so a
+   centred window doesn't jump up the page when it does. */
+.guides-note.is-loading { min-height: 180px; }
+.art-copied { overflow-wrap: anywhere; }
 .art-crumbs { margin: 0; font-size: 0.78rem; }
 .art-crumbs[hidden] { display: none; }
-/* "Read the article" beside Visit Room in the event window. */
-.modal-article-links { display: inline-flex; flex-wrap: wrap; gap: 8px; vertical-align: top; }
-.modal-article-links:empty { display: none; }
-#modal-link[style*="inline-block"] + .modal-article-links { margin-left: 8px; }
 
 /* The text: the room window's formatted description (.room-desc-full),
    with the article's own blocks. A picture fills its own frame (below). */

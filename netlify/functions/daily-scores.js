@@ -594,7 +594,7 @@ async function combinedBoards(db, event, params) {
         }, { cdn: BOARD_CDN_CACHE }), false);
     } catch (e) {
         console.error("daily-scores: combined board read failed", e);
-        return json(500, { error: "Could not read the scores" });
+        return json(500, { error: "Couldn't read the scores" });
     }
 }
 
@@ -623,7 +623,7 @@ exports.handler = async (event) => {
         if (odd) return odd;
         const game = String(params.game || "");
 
-        /* ---------- the day across all three games ----------
+        /* ---------- the day across both games ----------
 
            A separate board, asked for by name, rather than a fourth span on
            an existing one: it answers a different question. The per-game
@@ -641,7 +641,7 @@ exports.handler = async (event) => {
            Everything is summed per player across whichever games they
            played, so a player who plays one game is not penalised into
            invisibility — they simply have one game's worth of points
-           against someone else's three. `games` says how many of the three
+           against someone else's two. `games` says how many of the two
            each row's points came from, so the board can be honest about
            that rather than leaving it to be guessed. */
         // Never anybody's own fresh read: one game's day is filed, not all.
@@ -708,7 +708,7 @@ exports.handler = async (event) => {
             ])));
         } catch (e) {
             console.error("daily-scores: board read failed", e);
-            return json(500, { error: "Could not read the scores" });
+            return json(500, { error: "Couldn't read the scores" });
         }
 
         /* Edge-cached for fifteen seconds — see BOARD_CDN_CACHE in
@@ -802,7 +802,7 @@ exports.handler = async (event) => {
                 deal = await deals.dealFor(db, ensureUniqueIndex, game, day);
             } catch (e) {
                 console.error("daily-scores: could not read the day's deal", e);
-                return privateJson(503, { error: "The day could not be read just now" });
+                return privateJson(503, { error: "The day couldn't be read just now" });
             }
             const dealt = deal.rounds[round];
             const tile = body.tile;
@@ -827,7 +827,7 @@ exports.handler = async (event) => {
                 outcome = await speed.recordOddPick(db, ensureUniqueIndex, day, player.id, round, tile, dealt, arrived);
             } catch (e) {
                 console.error("daily-scores: could not record a pick", e);
-                return privateJson(503, { error: "The pick could not be recorded just now" });
+                return privateJson(503, { error: "The pick couldn't be recorded just now" });
             }
             if (outcome.error === "too-fast") return privateJson(429, { reason: "too-fast", retryInMs: outcome.retryInMs });
             if (outcome.error === "bad-move") return privateJson(400, { error: "Bad move" });
@@ -915,7 +915,7 @@ exports.handler = async (event) => {
                 filed = null;
             }
         } catch (e) {
-            return json(500, { error: "Could not check the day" });
+            return json(500, { error: "Couldn't check the day" });
         }
         if (filed) return privateJson(200, alreadyReply(filed));
 
@@ -981,7 +981,7 @@ exports.handler = async (event) => {
             if (!practiceRun && !practice.now && clock && await speed.replayedOn(db, game, day, player.id)) clock = null;
         } catch (e) {
             console.error("daily-scores: could not check the day", e);
-            return json(500, { error: "Could not check the day" });
+            return json(500, { error: "Couldn't check the day" });
         }
 
         /* The speed bonus, from the start and the marks on file — see
@@ -1036,7 +1036,7 @@ exports.handler = async (event) => {
                 const first = await col.findOne({ game, day, playerId: player.id }).catch(() => null);
                 return privateJson(200, first ? alreadyReply(first) : { recorded: false, reason: "already" });
             }
-            return json(500, { error: "Could not record the score" });
+            return json(500, { error: "Couldn't record the score" });
         }
 
         return privateJson(200, { recorded: true, points: scored.points, bonus, solved: scored.solved, ...(practised ? { practised: true } : {}) });
@@ -1078,7 +1078,7 @@ async function dealReply(db, event, game, params) {
         deal = await deals.dealFor(db, ensureUniqueIndex, game, day);
     } catch (e) {
         console.error("daily-scores: could not deal the day", e);
-        return privateJson(503, { error: "The day could not be dealt just now" });
+        return privateJson(503, { error: "The day couldn't be dealt just now" });
     }
     // Not a session ended everywhere (4 Oct 2026, the bug scan): see livePlayerFrom.
     const player = await livePlayerFrom(db, event);

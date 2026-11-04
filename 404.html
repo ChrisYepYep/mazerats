@@ -50,7 +50,7 @@
 
          Wrapped in try/catch: localStorage throws outright in some privacy modes,
          and a colour scheme is not worth a blank page. -->
-    <link rel="stylesheet" href="/css/style.css?v=7">
+    <link rel="stylesheet" href="/css/style.css?v=11">
     <link id="theme-css" rel="stylesheet">
     <script>
     /* THE FIRST PAINT'S PALETTE. The site's own (mazerats_theme), unless a
@@ -120,7 +120,7 @@
          link carries a private token there. The search (?q=) is kept on
          purpose: the privacy policy says searches are recorded, and why.
          js/track.js, the site's own record, honours both signals too. -->
-    <script>(function(){try{if(navigator.globalPrivacyControl===true)return;var s=document.createElement("script");s.defer=true;s.src="https://cloud.umami.is/script.js";s.setAttribute("data-website-id","8dee5429-29ff-4efb-bec1-c124c8d6fb18");s.setAttribute("data-do-not-track","true");s.setAttribute("data-exclude-hash","true");s.setAttribute("data-domains","mazerats.net");document.head.appendChild(s);}catch(e){}})();</script>
+    <script>(function(){try{if(navigator.globalPrivacyControl===true||localStorage.getItem("mazerats_admin_token"))return;var s=document.createElement("script");s.defer=true;s.src="https://cloud.umami.is/script.js";s.setAttribute("data-website-id","8dee5429-29ff-4efb-bec1-c124c8d6fb18");s.setAttribute("data-do-not-track","true");s.setAttribute("data-exclude-hash","true");s.setAttribute("data-domains","mazerats.net");document.head.appendChild(s);}catch(e){}})();</script>
     <!-- Dark mode (30 Oct 2026): a visitor's own switch, the bulb in the
          archive window's grab bar, worn over whatever palette or skin is
          showing. Under Frost, the Christmas palette, which is already dark,
@@ -162,6 +162,15 @@
          and then does the one useful thing a 404 can do: offer the ways
          back in. -->
     <main class="lost-page" id="lost-main" tabindex="-1">
+        <!-- The site's window, as /privacy has. There is no archive behind it to
+             go back to, so the X is a plain link there, and works with no script. -->
+        <div class="chrome-window lost-window">
+        <div class="chrome-titlebar">
+            <h2 aria-hidden="true">Lost in the maze</h2>
+            <a class="chrome-close" href="/home" aria-label="Close and go to the archive"><img src="/assets/img/modal_topclose_x.png" alt="" aria-hidden="true"></a>
+        </div>
+        <div class="chrome-frame">
+        <div class="lost-sheet">
         <p class="lost-code" aria-hidden="true">404</p>
         <h1 class="lost-title">You have taken a wrong turn</h1>
         <p class="lost-lede">There is no page at that address. It may have been renamed, it may never
@@ -184,11 +193,14 @@
 
         <p class="lost-foot">If you followed a link from somewhere on this site, it is a fault worth
             knowing about, so let us know on the <a href="https://discord.gg/Fw4daP4KBg" target="_blank" rel="noopener">Maze Rats Discord</a>.</p>
+        </div>
+        </div>
+        </div>
     </main>
 
     <footer class="site-footer">
-        <p>Origins Maze Rats is independent and not affiliated with, sponsored, supported, or endorsed by Sulake Oy or its affiliates. Any Habbo trademarks or intellectual property used here are done so in accordance with the Habbo Fan Site Policy.</p>
-        <p>&copy; 2026 Origins Maze Rats. All rights reserved.</p>
+        <p>Maze Rats is independent and not affiliated with, sponsored, supported, or endorsed by Sulake Oy or its affiliates. Any Habbo trademarks or intellectual property used here are done so in accordance with the Habbo Fan Site Policy.</p>
+        <p>&copy; 2026 Maze Rats. All rights reserved.</p>
     </footer>
 
     <script src="/js/api.js?v=5"></script>
@@ -197,7 +209,7 @@
          footer, exactly as it does on every other page. -->
     <script src="/js/palette-wear.js?v=2"></script>
     <script src="/js/skin-wear.js?v=1"></script>
-    <script src="/js/site.js?v=3"></script>
+    <script src="/js/site.js?v=4"></script>
     <script src="/js/track.js?v=2"></script>
 </body>
 </html>

@@ -828,7 +828,7 @@
         renderForget();
         if (exportBtn) exportBtn.disabled = !players.length;
         if (loadError) {
-            listEl.innerHTML = `<p class="admin-empty admin-form-error" role="alert">Could not load the players: ${escapeHtml(loadError)} <button type="button" class="ctl-btn" data-pl="retry">Retry</button></p>`;
+            listEl.innerHTML = `<p class="admin-empty admin-form-error" role="alert">Couldn't load the players: ${escapeHtml(loadError)} <button type="button" class="ctl-btn" data-pl="retry">Try again</button></p>`;
             pagerEl.innerHTML = "";
             return;
         }
@@ -1440,7 +1440,8 @@
         const ref = refOf(p);
         const b = (bansList || []).find(x => x.id === id);
         if (!b) return;
-        banEdits.set(ref, { id, state: Kit.fresh({ level: b.level || "soft", length: Kit.endedAt(b, Date.now()) ? "24h" : "keep", reason: b.reason || "" }) });
+        const state = Kit.fresh({ level: b.level || "soft", length: Kit.endedAt(b, Date.now()) ? "24h" : "keep", reason: b.reason || "" });
+        banEdits.set(ref, { id, state, opened: JSON.stringify(state) });
         modMsgs.delete(ref);
         render();
     }
@@ -1494,7 +1495,7 @@
                     <p class="admin-hint">${p.username ? "@" + escapeHtml(p.username) : escapeHtml(dash(p.name))}</p>
                 </div>
             </div>
-            ${failed ? `<p class="admin-empty admin-form-error">Could not load the rest: ${escapeHtml(failed)} <button type="button" class="ctl-btn" data-a="retry-detail">Retry</button></p>` : ""}
+            ${failed ? `<p class="admin-empty admin-form-error">Couldn't load the rest: ${escapeHtml(failed)} <button type="button" class="ctl-btn" data-a="retry-detail">Try again</button></p>` : ""}
             <div class="pl-detail-grid">
                 <div>
                     ${factsHtml(p)}
@@ -2262,7 +2263,27 @@
         if (!panel.hidden && token()) { load(); loadBans(); }
     }
 
-    window.AdminPlayers = { reset, clearPrivate, roleChanged, bansChanged };
+    /* A nickname, a Habbo name or a ban typed and not saved, for js/admin.js's
+       log out and leave-page questions. The drafts keep them across redraws,
+       so a row needn't be open to have one. */
+    function isDirty() {
+        const rowOf = ref => players.find(x => refOf(x) === ref) || null;
+        for (const [ref, typed] of nickDrafts) {
+            const row = rowOf(ref);
+            if (String(typed).trim() !== String((row && row.nick) || "").trim()) return true;
+        }
+        for (const [ref, d] of habboDrafts) {
+            const row = rowOf(ref);
+            const link = (details.get(ref) && details.get(ref).habbo) || (row && row.habbo) || null;
+            if (String(d.name || "").trim() !== String((link && link.name) || "").trim()) return true;
+        }
+        const untouched = JSON.stringify(Kit.fresh());
+        for (const state of banDrafts.values()) if (JSON.stringify(state) !== untouched) return true;
+        for (const edit of banEdits.values()) if (JSON.stringify(edit.state) !== edit.opened) return true;
+        return false;
+    }
+
+    window.AdminPlayers = { reset, clearPrivate, roleChanged, bansChanged, isDirty };
     // For tools/ and the console: the pure parts, testable without a server.
     window.AdminPlayers._test = { csvText, csvCell, forgetLabel, countsHtml, forgetConfirmHtml, lookPreviewHtml, rowHtml, activityHtml, historyHtml, chipsHtml, reviewHtml, flagText, setBadge, moderationHtml };
 

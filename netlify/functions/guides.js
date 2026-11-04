@@ -205,7 +205,7 @@ exports.handler = async (event) => {
                 .toArray();
         } catch (e) {
             console.error("guides: read failed", e);
-            return json(503, { error: "The guides could not be read just now." });
+            return json(503, { error: "The guides couldn't be read just now." });
         }
         // The public copy leaves out who wrote what, the save counter, and
         // what a taken-down guide used to say: none of it is anybody's

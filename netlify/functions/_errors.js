@@ -937,11 +937,27 @@ async function recordReports(db, reports, meta = {}) {
    failure that waits a third of a second longer is the right trade for one
    we know about.
 
+   A COLD INSTANCE NEEDS LONGER (3 Nov 2026). Most of a report's time on a new
+   instance is opening the database, and that alone takes longer than the
+   400ms this used to allow, so a failure on a cold instance, which is the
+   likeliest kind, left no report: the 3 Nov room-figure 502 reached the Warren
+   only because the browser told it, with no word from the function about why.
+   So up to REPORT_WAIT_MS now, but never into the last half second the
+   platform allows (reportWait), where the wait itself would turn a tidy JSON
+   error into the platform's bare timeout.
+
    Not recorded: under `netlify dev` (NETLIFY_DEV), because local dev talks to
    the PRODUCTION database and a developer's broken work-in-progress is not a
    production error; and from the command-line tools (the same test _db.js
    makes), whose handlers are called by tests on purpose. */
-const REPORT_WAIT_MS = 400;
+const REPORT_WAIT_MS = 1500;
+const REPORT_WAIT_FLOOR_MS = 100;
+function reportWait(context) {
+    const left = context && typeof context.getRemainingTimeInMillis === "function"
+        ? context.getRemainingTimeInMillis() - 500
+        : REPORT_WAIT_MS;
+    return Math.max(REPORT_WAIT_FLOOR_MS, Math.min(REPORT_WAIT_MS, left));
+}
 const FROM_TOOL = Boolean(require.main && /[\\/]tools[\\/][^\\/]+$/.test(require.main.filename || ""));
 
 function recordingOff() {
@@ -952,7 +968,11 @@ function errorFieldOf(res) {
     try {
         if (!res || res.isBase64Encoded || typeof res.body !== "string" || res.body.length > 65536) return "";
         const parsed = JSON.parse(res.body);
-        return parsed && typeof parsed.error === "string" ? parsed.error : "";
+        if (!parsed || typeof parsed.error !== "string") return "";
+        // A `cause` beside the error says what the visitor's sentence doesn't.
+        return typeof parsed.cause === "string" && parsed.cause
+            ? `${parsed.error} (${parsed.cause})`
+            : parsed.error;
     } catch (e) {
         return "";
     }
@@ -1043,14 +1063,14 @@ function withErrorReporting(name, handler) {
         } catch (error) {
             if (!recordingOff()) {
                 await settle(reportFunctionFailure(name, event, context,
-                    { status: 500, ms: Date.now() - started, error }), REPORT_WAIT_MS);
+                    { status: 500, ms: Date.now() - started, error }), reportWait(context));
             }
             throw error;
         }
         try {
             if (res && typeof res.statusCode === "number" && res.statusCode >= 500 && !recordingOff()) {
                 await settle(reportFunctionFailure(name, event, context,
-                    { status: res.statusCode, ms: Date.now() - started, message: errorFieldOf(res) }), REPORT_WAIT_MS);
+                    { status: res.statusCode, ms: Date.now() - started, message: errorFieldOf(res) }), reportWait(context));
             }
         } catch (e) { /* never let the report change the answer */ }
         return res;

@@ -79,7 +79,7 @@ exports.handler = async (event) => {
         db = await getDb();
     } catch (e) {
         console.error("admin-activity: database connection failed", e);
-        return json(500, { error: "Database connection failed" });
+        return json(503, { error: "Database connection failed" });
     }
 
     const asked = ((event.queryStringParameters || {}).range || "7d");
@@ -128,7 +128,7 @@ exports.handler = async (event) => {
         ]);
     } catch (e) {
         console.error("admin-activity: read failed", e);
-        return json(500, { error: "Could not read the activity log" });
+        return json(503, { error: "Couldn't read the activity log" });
     }
     const truncated = rows.length === MAX_EVENTS || failedCount > failedRows.length;
     const summary = (failedBy && failedBy[0]) || {};
@@ -189,7 +189,7 @@ exports.handler = async (event) => {
         visitors = await visitorStats(db, SITE_EVENTS, since, SITE_KEEP_DAYS);
     } catch (e) {
         console.error("admin-activity: could not read the visitor log", e);
-        visitors = { keepDays: SITE_KEEP_DAYS, error: "The visitor figures could not be read just now." };
+        visitors = { keepDays: SITE_KEEP_DAYS, error: "The visitor figures couldn't be read just now." };
     }
 
     return json(200, {

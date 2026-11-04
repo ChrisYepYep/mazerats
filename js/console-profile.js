@@ -61,7 +61,8 @@ document.addEventListener("DOMContentLoaded", () => {
         if (!ym) return "";
         const d = new Date(`${ym}-01T00:00:00Z`);
         if (isNaN(d)) return "";
-        return d.toLocaleDateString("en-GB", { month: "long", year: "numeric", timeZone: "UTC" });
+        // Short, as the Profiles window says it.
+        return d.toLocaleDateString("en-GB", { month: "short", year: "numeric", timeZone: "UTC" });
     }
 
     // One "label ...... value" line, the shape the contributors list uses.
@@ -329,7 +330,7 @@ document.addEventListener("DOMContentLoaded", () => {
         }
         nick.busy = true;
         nick.draft = typed;
-        setNickMsg(remove ? "Removing..." : "Saving...", "");
+        setNickMsg(remove ? "Removing…" : "Saving…", "");
         drawNick();
         try {
             await Account.setNickname(remove ? null : typed);
@@ -435,7 +436,7 @@ document.addEventListener("DOMContentLoaded", () => {
         const hadFocus = !!(document.activeElement && host.contains(document.activeElement));
         pref.busy = true;
         pref.where = where;
-        pref.msg = "Saving...";
+        pref.msg = "Saving…";
         pref.tone = "";
         sayNick(pref.msg);
         render();
@@ -589,7 +590,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
         if (!d) {
             return `${who}${rule}
-                <p class="console-blurb">${failed ? "Your profile could not be read just now. Try again in a moment." : "Loading..."}</p>
+                <p class="console-blurb">${failed ? "Your profile couldn't be read just now. Try again in a moment." : "Loading…"}</p>
                 ${rule}${view}`;
         }
 
@@ -907,7 +908,7 @@ document.addEventListener("DOMContentLoaded", () => {
     async function show() {
         showing = true;
         if (window.Account) {
-            host.innerHTML = '<p class="console-blurb">Loading...</p>';
+            host.innerHTML = '<p class="console-blurb">Loading…</p>';
             await Account.ready();
         }
         /* load() before render() (30 Sept 2026). load() clears `failed`

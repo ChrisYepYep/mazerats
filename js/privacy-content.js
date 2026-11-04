@@ -108,9 +108,10 @@ const PRIVACY_SECTIONS = [
             "Signed in, a record carries your Discord ID and the name you go by here. Signed out, it carries your proved Habbo or your Guest Rat number.",
             "No IP address is kept. The records are only seen by the admins and are deleted after 180 days.",
             "The leaderboard keeps each player's best game until they delete their account or ask us to remove it.",
+            "If the admins take a score off the leaderboard for looking wrong, they keep a copy of it, with the name on it, so it can be put back. That copy has no end date. Only the admins see it, and it goes if you delete your account or ask us to remove it.",
             "Signed out, you can play as your Habbo. We check with Habbo Origins that it exists, and you prove it's yours with a short code in your motto. We only keep a scrambled copy of the code, and delete it within the hour. Or you can play as a numbered Guest Rat.",
             "Your browser keeps a token so you can play as that Habbo or Guest Rat again. \"Not you?\" on the first screen makes it forget them.",
-            "To stop a score counting twice, we keep a short note for each game sent (for four hours) and each game continued (for just over a day)."
+            "To stop a score counting twice, we keep a short note for each game sent (for four hours) and each game continued (for just over a day). For just over a day we also keep a scrambled code for the name each game was saved under, so it can't be saved under another."
         ]
     },
     /* contact.js, dead-end-leads.js, event-entries.js. */
@@ -149,9 +150,10 @@ const PRIVACY_SECTIONS = [
             "Your colour scheme and a copy of the site's colours, whether the site was last seen open, seasonal decoration settings, and how far your clock is from ours (so the daily games agree on the day).",
             "Mazes you've completed or saved (only on your device unless you sign in), and which notifications you've seen.",
             "Daily game progress, marked with a scrambled stand-in for your account, never your Discord ID.",
-            "Fallin' Furni: your room, your avatar, any Habbo name you typed, and your window and sound settings.",
-            "Pura Panic: your lights and music settings, your proved Habbo or Guest Rat and its token, a game you left part-way (for up to a day) and a finished game waiting to be saved after you were signed out (for up to three hours).",
+            "Fallin' Furni: your room, your avatar, any Habbo name you typed and that Habbo's look, your window and sound settings, and a finished round waiting to be saved while you sign in (until that's done or you close the tab).",
+            "Pura Panic: your lights and music settings, your proved Habbo or Guest Rat and its token, a game you left part-way (for up to a day, or until you sign out) and a finished game waiting to be saved after you were signed out (for up to three hours).",
             "The Halloween bat game's best score, which never leaves your device. In December, signed in, a copy of which advent doors you've opened, so the button can show when one is waiting.",
+            "An offline copy: once you've used the archive, your browser keeps its pages, scripts, stylesheets, the public maze and event lists, and the pictures you've seen, so it still opens with no connection. Nothing about your account goes in it.",
             "If a site-wide block applies to you, when it ends and why.",
             "Cookies: one for ten minutes while you approve Discord sign-in, then a session cookie for 30 days that the page's scripts can't read. Admins also have a session token and their own panel settings.",
             "None of it follows you to other websites, and clearing your browser data removes all of it."
@@ -195,7 +197,7 @@ const PRIVACY_SECTIONS = [
         heading: "Who runs this site.",
         points: [
             "Maze Rats is run by ChrisYepYep, who is responsible for everything in this policy.",
-            "Last updated: 3 November 2026."
+            "Last updated: 4 November 2026."
         ]
     }
 ];

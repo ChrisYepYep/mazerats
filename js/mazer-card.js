@@ -23,8 +23,8 @@
     const PAD = 12;
     const BAND = 18;
     const LINE = 11;
-    const FONT = '9px "Volter Goldfish"';
-    const BOLD = 'bold 9px "Volter Goldfish"';
+    const FONT = '9px "Volter Canvas"';
+    const BOLD = 'bold 9px "Volter Canvas"';
 
     const THEMES = {
         classic: {
@@ -581,7 +581,7 @@
                                 </div>
                             </div>
                             <div class="confirm-actions mazer-actions" data-ready="0">
-                                <button type="button" class="guess-btn guess-btn--lead" data-mazer="copy">Copy Image</button>
+                                <button type="button" class="guess-btn guess-btn--lead" data-mazer="copy">Copy image</button>
                                 <button type="button" class="guess-btn" data-mazer="save">Save</button>
                                 <button type="button" class="guess-btn" data-mazer="again">Another colour</button>
                             </div>

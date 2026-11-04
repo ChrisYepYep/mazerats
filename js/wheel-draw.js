@@ -432,10 +432,15 @@
                 try { this.muted = localStorage.getItem(muteKey) === "1"; } catch (e) { /* default on */ }
             },
             wake() {
-                if (this.ctx) { if (this.ctx.state === "suspended") this.ctx.resume(); return; }
+                // Anything but running: an iPhone's call or Siri leaves it "interrupted", not "suspended".
+                if (this.ctx) { if (this.ctx.state !== "running" && this.ctx.state !== "closed") this.ctx.resume().catch(() => {}); return; }
                 const AC = window.AudioContext || window.webkitAudioContext;
                 if (!AC) return;
                 this.ctx = new AC();
+                // An interruption over while a draw is spinning: no press is coming to wake it.
+                document.addEventListener("visibilitychange", () => {
+                    if (!document.hidden && this.ctx.state === "interrupted") this.ctx.resume().catch(() => {});
+                });
                 const comp = this.ctx.createDynamicsCompressor();
                 comp.threshold.value = -14; comp.ratio.value = 4;
                 this.out = this.ctx.createGain();

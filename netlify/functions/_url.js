@@ -98,7 +98,7 @@ function checkChoice(body, field, allowed) {
 }
 
 /* The whole check for a room or event body on its way to the database: the
-   fixed-list fields named in `choices`, the habboLink, and every picture.
+   fixed-list fields named in `choices`, and every picture.
    Returns the message for a 400, or null when the body is fit to store — in
    which case its image references have been cleaned in place. Refuses bad
    choices and links outright rather than blanking them, so a real mistake
@@ -109,10 +109,8 @@ function checkRecord(body, choices) {
         const problem = checkChoice(body, field, choices[field]);
         if (problem) return problem;
     }
-    const link = body.habboLink;
-    if (link !== undefined && link !== null && link !== "" && !httpUrlOrEmpty(link)) {
-        return "The Habbo link must be an http(s) address.";
-    }
+    // The old room link is gone from the site; an old tab's copy isn't stored.
+    delete body.habboLink;
     // A record's tags are chips from tags.js's vocabulary, which strips
     // these same characters from a new label; a hand-made body gets no more.
     if (Array.isArray(body.tags)) {

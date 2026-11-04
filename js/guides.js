@@ -148,17 +148,12 @@
 
     // ------------------------------------------------------------ helpers
 
-    /* In the READER'S own time zone (30 Sept 2026). It was UTC, but whether
-       a guide says "Updated" or "Added" is decided by the reader's day
-       (GuideText.wasUpdated), as What's New groups its log — so an edit
-       late one evening west of UTC could read "Updated 1 October" while
-       What's New filed it under 30 September, or be called "Updated" with
-       the same date it was added on. The date printed is now the same day
-       the decision and What's New use. */
+    /* The UTC day (4 Nov 2026), the same one GuideText.wasUpdated decides
+       "Updated" or "Added" by and What's New groups its log by. */
     function longDate(iso) {
         const d = new Date(iso);
         if (isNaN(d)) return "";
-        return d.toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" });
+        return d.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });
     }
 
     function categories() {
@@ -182,7 +177,7 @@
         if (!loaded) {
             return failed
                 ? `<p class="guides-note">The guides couldn't be loaded just now. <button type="button" class="guides-textbtn" data-act="retry">Try again</button></p>`
-                : `<p class="guides-note">Loading the guides…</p>`;
+                : `<p class="guides-note is-loading">Loading the guides…</p>`;
         }
         if (!guides.length) return `<p class="guides-note">There are no guides yet. Check back soon.</p>`;
 
@@ -244,7 +239,7 @@
         return `
             <nav class="guides-crumbs">
                 <button type="button" class="guides-textbtn" data-act="list">&lsaquo; All guides</button>
-                <button type="button" class="guides-textbtn" data-act="copy">Copy link</button>
+                <button type="button" class="modal-share-btn" data-act="copy" aria-label="Copy a link to ${esc(g.title)}"><span class="modal-share-label">Share</span></button>
             </nav>
             <header class="guide-head${thumb ? " has-thumb" : ""}">
                 <div class="guide-head-text">
@@ -294,11 +289,11 @@
                 // (a guide published a moment ago, or the /warren View link):
                 // ask once more past the cache before saying it isn't there.
                 retriedFor = view.id;
-                body.innerHTML = `<p class="guides-note">Loading the guide…</p>`;
+                body.innerHTML = `<p class="guides-note is-loading">Loading the guide…</p>`;
                 load(true);
             } else if (asking) {
                 // That second ask, sent again from "Try again", still going.
-                body.innerHTML = `<p class="guides-note">Loading the guide…</p>`;
+                body.innerHTML = `<p class="guides-note is-loading">Loading the guide…</p>`;
             } else if (failed) {
                 /* The second ask never got an answer (30 Sept 2026). That
                    says nothing about whether the guide exists, so it is the
@@ -695,7 +690,18 @@
             const note = body.querySelector(".guides-copied");
             // The share address, so a pasted link unfurls as this guide.
             const link = location.origin + addressFor(view.id);
-            const done = ok => { if (note) note.textContent = ok ? "Link copied." : link; };
+            /* The button itself answers, as a maze's Share does (js/home.js);
+               the note below reads it out, and shows the address only when
+               the copy failed. */
+            const label = act.querySelector(".modal-share-label");
+            const done = ok => {
+                if (note) { note.textContent = ok ? "Link copied" : link; note.classList.toggle("visually-hidden", ok); }
+                if (!label) return;
+                label.textContent = ok ? "Copied" : "Copy this";
+                act.classList.add("is-done");
+                clearTimeout(act._shareTimer);
+                act._shareTimer = setTimeout(() => { label.textContent = "Share"; act.classList.remove("is-done"); }, 2200);
+            };
             if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(link).then(() => done(true), () => done(false));
             else done(false);
         }
@@ -722,7 +728,11 @@
     });
 
     if (closeBtn) closeBtn.addEventListener("click", () => close());
-    overlay.addEventListener("click", e => { if (e.target === overlay) close(); });
+    /* Only a press that began on the backdrop: selecting text and letting go
+       past the window is reported as a click on the overlay. */
+    let pressedOn = null;
+    overlay.addEventListener("pointerdown", e => { pressedOn = e.target; });
+    overlay.addEventListener("click", e => { if (e.target === overlay && pressedOn === overlay) close(); });
     if (window.EscapeLayers) {
         window.EscapeLayers.register({
             elements: () => isOpen() ? [overlay] : [],

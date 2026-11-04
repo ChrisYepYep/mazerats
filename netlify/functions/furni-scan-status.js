@@ -50,7 +50,7 @@ exports.handler = async (event) => {
     } catch (err) {
         // The reason to the log; a driver error is nobody else's business.
         console.error("furni-scan-status: read failed", err);
-        return json(500, { error: "Could not read the scan progress" });
+        return json(500, { error: "Couldn't read the scan progress" });
     }
 };
 

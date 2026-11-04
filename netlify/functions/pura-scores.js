@@ -1,8 +1,6 @@
 /* /.netlify/functions/pura-scores — the Pura Panic leaderboard.
 
    GET                    the top 25, and the caller's own best if signed in
-   GET ?name=X&hotel=COM  whether a Habbo name belongs to a signed-up player
-                          ({ taken }), for the signed-out name prompt
    GET ?guest=X&hotel=COM the board, with a signed-out Habbo's own row
    GET ?rat=N             the board, with Guest Rat N's own row
    POST ?action=start     a signed run token naming the game, and its first
@@ -109,7 +107,7 @@ const { SECURITY_HEADERS } = require("./_headers");
 const { writeRefusal, withoutBanned, accountBans, netHashFor } = require("./_bans");
 const { habboHeads } = require("./_publicid");
 // The run token, the clock's slack, the floor and the replay's checks (31 Oct 2026: shared with pura-deal.js).
-const { RUN_LIFE_S, RUN_TOLERANCE_MS, PIECE_MIN_MS, MAX_PIECES, MAX_BODY, signRun, resignRun, readRun, checkLog } = require("./_pura-run");
+const { RUN_LIFE_S, RUN_TOLERANCE_MS, PIECE_MIN_MS, MAX_PIECES, MAX_BODY, signRun, resignRun, readRun, runIsPlayers, checkLog } = require("./_pura-run");
 
 const COLLECTION = "pura_scores";
 const RUN_TOKENS = "pura_run_tokens";
@@ -211,7 +209,7 @@ async function continueRun(db, event, player) {
     try { body = JSON.parse(event.body || "{}"); } catch { return json(400, { error: "Body is not JSON" }); }
     const c = readRun(String(body.run || ""), null, { ignoreExpiration: true });
     if (!c) return json(200, { token: null, reason: "unknown" });
-    if (c.sub && (!player || String(c.sub) !== String(player.id))) return json(200, { token: null, reason: "someone-else" });
+    if (c.sub && (!player || !runIsPlayers(c, player))) return json(200, { token: null, reason: "someone-else" });
     if (c.resumed) return json(200, { token: null, reason: "already-continued" });
     // An old page's token, with the seed in it (_pura-run.js, OLD TOKENS): never given a new life.
     if (c.legacy || Date.now() - c.t > RESUME_WINDOW_MS) return json(200, { token: null, reason: "too-old" });
@@ -334,7 +332,7 @@ function sameOrigin(event) {
 
 async function claimHabbo(db, body) {
     const habbo = habboName(body.habbo);
-    if (!habbo) return json(400, { error: "That isn't a Habbo username." });
+    if (!habbo) return json(400, { error: "That isn't a Habbo name." });
     const hotel = hotelOf(body.hotel);
     if (await nameTaken(db, habbo, hotel)) return json(200, { refused: "name-taken" });
     let found = null;
@@ -451,6 +449,43 @@ async function ratForRun(db, rid, event) {
         if (!(e && e.code === 11000)) throw e;
         const won = await col.findOne({ _id: rid });
         return won && Number.isInteger(won.n) ? won.n : null;
+    }
+}
+
+/* ONE GAME, ONE NAME, ONCE (4 Nov 2026, the bug scan; the owner's yes). Only
+   a finished game spent its token, and a save on the way was never asked
+   about it, so one good game could go on being filed under every Guest Rat
+   or Habbo token a script held, finished or not: a board filled from a
+   single game, and two rows with one run id, which the Warren's flags
+   cannot tell apart. Now a game is filed under whoever it was first filed
+   under (RUN_FILED, kept as long as a token of the game can verify), and
+   a game that has spent its token is never filed again. The player's id is
+   not kept, only a keyed hash of it: the row has to say "the same name",
+   and nothing else. A game sent under the same name again (the page's
+   saves, a retry, a continue) goes through as ever. */
+const RUN_FILED = "pura_run_filed";
+const filedKey = (id) => crypto.createHmac("sha256", process.env.SESSION_SECRET || "").update("mazerats-pura-filed:" + String(id)).digest("base64url");
+let filedIndexed = false;
+
+// Already filed under somebody else. Read before the game log is touched.
+async function filedElsewhere(db, rid, id) {
+    const row = await db.collection(RUN_FILED).findOne({ _id: rid });
+    return Boolean(row && row.who !== filedKey(id));
+}
+
+// This game for this name: true if it is theirs, first filing or not.
+async function fileRun(db, rid, id) {
+    const col = db.collection(RUN_FILED);
+    if (!filedIndexed) {
+        filedIndexed = true;
+        await col.createIndex({ at: 1 }, { expireAfterSeconds: RESUME_WINDOW_MS / 1000 + RUN_LIFE_S + 3600 }).catch(() => { filedIndexed = false; });
+    }
+    try {
+        await col.insertOne({ _id: rid, who: filedKey(id), at: new Date() });
+        return true;
+    } catch (e) {
+        if (!(e && e.code === 11000)) throw e;
+        return !(await filedElsewhere(db, rid, id));
     }
 }
 
@@ -708,13 +743,6 @@ exports.handler = async (event) => {
     // Let, not const: a guest's game sent while signed in is filed as nobody's account (ONE RUN, ONE PLAYER).
     let player = playerFrom(event);
 
-    if (event.httpMethod === "GET" && (event.queryStringParameters || {}).name !== undefined) {
-        const q = event.queryStringParameters;
-        const habbo = habboName(q.name);
-        if (!habbo) return json(400, { error: "That isn't a Habbo name." });
-        return json(200, { taken: await nameTaken(db, habbo, q.hotel) });
-    }
-
     if (event.httpMethod === "GET") {
         try {
             await ensureIndex(scores, { score: -1, pieces: 1, at: 1 });
@@ -751,7 +779,7 @@ exports.handler = async (event) => {
             return json(200, out);
         } catch (e) {
             console.error("pura-scores: could not read the board", e);
-            return json(503, { error: "The leaderboard could not be read just now." });
+            return json(503, { error: "The leaderboard couldn't be read just now." });
         }
     }
 
@@ -791,16 +819,15 @@ exports.handler = async (event) => {
         return renewRun(db, event, player);
     }
 
-    /* THE START: a token and its seed, and the pura_starts row THE GAME LOG
-       counts (the comment said "nothing written" until 26 Oct 2026; it has
-       written that row since 6 Oct). Answered signed out too — the seed is
-       what the game is dealt from either way — but not while the game is in
-       maintenance: then the page deals its own seed and says scores are not
-       being kept. */
+    /* THE START: a token and the first pieces (never the seed, _pura-run.js),
+       and the pura_starts row THE GAME LOG counts. Answered signed out too,
+       since the game is dealt the same either way, but not while the game is
+       in maintenance: then the page deals from a seed of its own and says
+       scores are not being kept. */
     if ((event.queryStringParameters || {}).action === "start") {
         let open;
         try { open = await isOpen(db); }
-        catch (e) { return json(503, { error: "The leaderboard could not be reached just now." }); }
+        catch (e) { return json(503, { error: "The leaderboard couldn't be reached just now." }); }
         if (!open) return json(200, { token: null, reason: "maintenance" });
         /* Banned, no game (10 Oct 2026, the bug scan; the owner's yes). A
            banned network or account was handed a run token and logged a
@@ -834,6 +861,10 @@ exports.handler = async (event) => {
         if (!body || typeof body !== "object") return json(400, { error: "Body is not JSON" });
         const checked = checkGame(body, player);
         if (checked.refuse) return checked.refuse;
+        // Filed and spent (ONE GAME, ONE NAME, ONCE): its row is the game as it was filed, not to be replaced by a shorter telling.
+        try {
+            if (await db.collection(RUN_TOKENS).findOne({ _id: checked.claims.rid }, { projection: { _id: 1 } })) return json(200, { logged: false });
+        } catch (e) { return json(200, { logged: false }); }
         const g = player ? null : await guestOf(db, body);
         await logGame(db, checked.claims, player, checked.result, checked.ms, body, g && !g.refuse ? g : null);
         return json(200, { logged: true });
@@ -897,6 +928,19 @@ exports.handler = async (event) => {
         return json(200, { recorded: false, reason: guest.refuse });
     }
     if (!player && !guest) return json(200, { recorded: false, reason: "signed-out" });
+    /* Spent, or somebody else's already (ONE GAME, ONE NAME, ONCE): answered
+       before the log, whose row is the game as it was really filed. A Guest
+       Rat with no number yet is asked below, once it has one. */
+    try {
+        if (await db.collection(RUN_TOKENS).findOne({ _id: claims.rid }, { projection: { _id: 1 } })) {
+            return json(200, { recorded: false, reason: "already-submitted" });
+        }
+        const named = player ? player.id : guest.kind === "habbo" ? guest.id : guest.n ? ratId(guest.n) : null;
+        if (named && await filedElsewhere(db, claims.rid, named)) return json(200, { recorded: false, reason: "filed-elsewhere" });
+    } catch (e) {
+        console.error("pura-scores: could not read how a game was filed", e);
+        return json(503, { error: "The leaderboard couldn't be updated just now." });
+    }
     await logGame(db, claims, player, result, ms, body, guest);
     // The page says what it scored; a page and a server that disagree is a bug worth hearing about.
     if (body.score !== undefined && Number(body.score) !== result.score) {
@@ -914,7 +958,19 @@ exports.handler = async (event) => {
         }
     } catch (e) { console.error("pura-scores: could not read the Warren's removals", e); }
 
-    let who = player || (guest.kind === "habbo" ? { id: guest.id } : guest.n ? { id: ratId(guest.n) } : { id: "guestrat:new" });
+    // A Guest Rat's first score: their number, now (see GUESTS).
+    let newRat = null;
+    if (guest && guest.kind === "rat" && !guest.n) {
+        let n = null;
+        try { n = await ratForRun(db, claims.rid, event); } catch (e) { console.error("pura-scores: could not number a Guest Rat", e); }
+        if (n === "busy") return json(429, { error: "Too many new Guest Rats from here just now. Try again later." });
+        const token = n ? signRat(n) : null;
+        if (!n || !token) return json(503, { error: "The leaderboard couldn't be updated just now." });
+        guest.n = n;
+        newRat = { n, token };
+        try { await db.collection(GAMES).updateOne({ _id: claims.rid }, { $set: { rat: n } }); } catch (e) { /* the log only */ }
+    }
+    const who = player || (guest.kind === "habbo" ? { id: guest.id } : { id: ratId(guest.n) });
     /* Only a finished game spends the token, so only a finished game hands
        it back when the write fails (10 Oct 2026): a checkpoint failing used
        to delete the lock its own game's finish had taken, letting the
@@ -926,10 +982,11 @@ exports.handler = async (event) => {
     };
     try {
         await ensureUniqueIndex(scores, "playerId");
+        if (!(await fileRun(db, claims.rid, who.id))) return json(200, { recorded: false, reason: "filed-elsewhere" });
         if (spends && !(await spendRun(db, claims, who))) return json(200, { recorded: false, reason: "already-submitted" });
     } catch (e) {
         console.error("pura-scores: could not spend a run token", e);
-        return json(503, { error: "The leaderboard could not be updated just now." });
+        return json(503, { error: "The leaderboard couldn't be updated just now." });
     }
 
     // A Habbo's row from before the key changed (guestId), moved over.
@@ -937,26 +994,6 @@ exports.handler = async (event) => {
         try {
             await scores.updateOne({ playerId: legacyGuestId(guest.name, guest.hotel), name: sameName(guest.name) }, { $set: { playerId: guest.id } });
         } catch (e) { /* 11000: the new key has a row already; the old one stays put */ }
-    }
-
-    // A Guest Rat's first score: their number, now (see GUESTS).
-    let newRat = null;
-    if (guest && guest.kind === "rat" && !guest.n) {
-        let n = null;
-        try { n = await ratForRun(db, claims.rid, event); } catch (e) { console.error("pura-scores: could not number a Guest Rat", e); }
-        if (n === "busy") {
-            await unspend();
-            return json(429, { error: "Too many new Guest Rats from here just now. Try again later." });
-        }
-        const token = n ? signRat(n) : null;
-        if (!n || !token) {
-            await unspend();
-            return json(503, { error: "The leaderboard could not be updated just now." });
-        }
-        guest.n = n;
-        newRat = { n, token };
-        who = { id: ratId(n) };
-        try { await db.collection(GAMES).updateOne({ _id: claims.rid }, { $set: { rat: n } }); } catch (e) { /* the log only */ }
     }
 
     const row = {
@@ -993,7 +1030,7 @@ exports.handler = async (event) => {
         console.error("pura-scores: could not record a game", e);
         // Nothing recorded, so the token is handed back for the page's retry.
         await unspend();
-        return json(503, { error: "The leaderboard could not be updated just now." });
+        return json(503, { error: "The leaderboard couldn't be updated just now." });
     }
     /* Removed while this save was on its way (3 Nov 2026, the bug scan):
        the check above can pass just before the Warren writes its removal,

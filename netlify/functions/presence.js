@@ -24,7 +24,7 @@
    `count` is browser tabs, not people: a visitor with the archive open in
    three tabs is three, which is what the Warren's line says (31 Oct 2026). */
 const { getDb } = require("./_db");
-const { isAuthorized, UNAUTHORIZED, AUTH_UNAVAILABLE, isAuthUnavailable } = require("./_auth");
+const { hasLiveSession, UNAUTHORIZED, AUTH_UNAVAILABLE, isAuthUnavailable } = require("./_auth");
 const { SECURITY_HEADERS } = require("./_headers");
 const { maintenanceKickAt: kickAtOf } = require("./_maintenance");
 
@@ -86,7 +86,14 @@ async function ensureTtl(col) {
 exports.handler = async (event) => {
     const method = event.httpMethod;
     if (method !== "GET" && method !== "POST") return json(405, { error: "Method not allowed" });
-    if (method === "GET" && !isAuthorized(event)) return UNAUTHORIZED;
+    if (method === "GET") {
+        try {
+            if (!(await hasLiveSession(event))) return UNAUTHORIZED;
+        } catch (e) {
+            // 503 to try again, never the 401 that signs the admin page out.
+            return AUTH_UNAVAILABLE;
+        }
+    }
 
     let db;
     try {
@@ -139,7 +146,7 @@ exports.handler = async (event) => {
     } catch (e) {
         console.error("presence: failed", e);
         if (isAuthUnavailable(e)) return AUTH_UNAVAILABLE;
-        return json(503, { error: "Presence could not be read just now." });
+        return json(503, { error: "Presence couldn't be read just now." });
     }
 };
 

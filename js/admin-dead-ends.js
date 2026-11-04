@@ -190,7 +190,7 @@
                 }
                 return;
             }
-            leadsEl.innerHTML = `<p class="admin-empty">Could not load the missing pieces: ${escapeHtml(err.message)}</p>`;
+            leadsEl.innerHTML = `<p class="admin-empty">Couldn't load the missing pieces: ${escapeHtml(err.message)}</p>`;
         }
     }
 
@@ -211,7 +211,7 @@
             renderLeads();
         } catch (err) {
             if (seq !== leadsSeq || gen !== loadGen) return;
-            if (!sessionGone(err)) tell(`Could not load the leads: ${err.message}`);
+            if (!sessionGone(err)) tell(`Couldn't load the leads: ${err.message}`);
         }
     }
 
@@ -604,7 +604,7 @@
         try {
             await Promise.all([reloadLeads(), reloadFlags()]);
         } catch (err) {
-            if (!sessionGone(err)) flash(`Saved. The list could not be refreshed (${err.message}) — press Refresh to see it.`);
+            if (!sessionGone(err)) flash(`Saved. The list couldn't be refreshed (${err.message}) — press Refresh to see it.`);
         }
     }
 
@@ -613,7 +613,7 @@
         try {
             out = await call(LEADS_URL, "PATCH", { id: lead.id, ...body });
         } catch (err) {
-            if (!sessionGone(err)) await tell(`Could not save that: ${err.message}`);
+            if (!sessionGone(err)) await tell(`Couldn't save that: ${err.message}`);
             return false;
         }
         // Saved. Nothing from here on can make it not have been.
@@ -664,14 +664,20 @@
         review(lead, { status: "rejected", note: note.trim() });
     }
 
+    // A second press while the first is out would only be told it has gone, though it worked.
+    const deletesOut = new Set();
     async function remove(lead) {
+        if (deletesOut.has(lead.id)) return;
         if (!await ask("Delete this lead and any screenshots with it? This cannot be undone.", { danger: true })) return;
         let out;
+        deletesOut.add(lead.id);
         try {
             out = await call(`${LEADS_URL}?id=${encodeURIComponent(lead.id)}`, "DELETE");
         } catch (err) {
-            if (!sessionGone(err)) await tell(`Could not delete it: ${err.message}`);
+            if (!sessionGone(err)) await tell(`Couldn't delete it: ${err.message}`);
             return;
+        } finally {
+            deletesOut.delete(lead.id);
         }
         /* The copies an accept made (30 Sept 2026), which nothing used to
            delete. Background clean-up, as the maze form's is: upload.js
@@ -921,7 +927,7 @@
                         await reloadFlags(err.message);
                     } catch (e2) {
                         if (!sessionGone(e2)) {
-                            status.textContent = `${err.message} (It could not be reloaded: ${e2.message} — press Refresh.)`;
+                            status.textContent = `${err.message} (It couldn't be reloaded: ${e2.message} — press Refresh.)`;
                             status.classList.add("is-bad");
                         }
                     }
@@ -949,7 +955,7 @@
                 await reloadFlags();
             } catch (err) {
                 if (!sessionGone(err)) {
-                    status.textContent = `Saved. The list could not be refreshed (${err.message}) — press Refresh to see it.`;
+                    status.textContent = `Saved. The list couldn't be refreshed (${err.message}) — press Refresh to see it.`;
                     status.classList.remove("is-bad");
                 }
             }
@@ -968,7 +974,7 @@
     }
     async function mayDropEditor() {
         if (!isEditorDirty()) return true;
-        return ask("Discard your unsaved changes to this record's missing pieces? What you have ticked and written since opening it will be lost.");
+        return ask("Discard your unsaved changes to this record's missing pieces? Anything you have added or edited since opening it will be lost.", { danger: true });
     }
     window.addEventListener("beforeunload", e => {
         if (!isEditorDirty()) return;
@@ -981,7 +987,7 @@
         try {
             await call(`${FLAGS_URL}?type=${rec.type}&id=${encodeURIComponent(rec.id)}`, "DELETE");
         } catch (err) {
-            if (!sessionGone(err)) await tell(`Could not clear it: ${err.message}`);
+            if (!sessionGone(err)) await tell(`Couldn't clear it: ${err.message}`);
             return;
         }
         await refreshAfterWrite();

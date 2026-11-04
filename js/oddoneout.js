@@ -154,8 +154,14 @@
        brings a tab that is only watching up to date. `posted` is kept if
        either copy has it. A signed-in player's picks are the server's to
        settle anyway (the first recorded pick per round wins); this keeps
-       the page's copy from contradicting them. */
-    function saveState() {
+       the page's copy from contradicting them.
+
+       `fromServer` is a day just laid over with the server's record (see
+       refreshDay), which is written whatever is stored. A stored copy further
+       on than the server is the day an administrator's reset took away, and
+       taking that back here put it over the blank day on every read: every
+       pick was refused until midnight, reload or not. */
+    function saveState(fromServer) {
         /* The rounds handed out so far go with the day (`dealt`), because a
            deal reply no longer carries them all — see ONE ROUND AT A TIME
            in js/daily.js — so a reload mid-day plays on from these (30 Sept
@@ -168,7 +174,7 @@
         // Never a practice run's copy over the real day that replaced it
         // (see PRACTICE in refreshDay), and never another account's copy,
         // however far on it is (10 Oct 2026).
-        if (stored && state && ours(stored) && stored.day === state.day && progressOf(stored) > progressOf(state) &&
+        if (!fromServer && stored && state && ours(stored) && stored.day === state.day && progressOf(stored) > progressOf(state) &&
                 !(stored.practice && !state.practice)) {
             if (deal && deal.day === stored.day) window.Daily.mergeRounds(deal.rounds, stored.dealt);
             state = Object.assign(stored, { posted: Boolean(stored.posted || state.posted) });
@@ -373,8 +379,13 @@
             ? { tile: body.tile, right: body.right }
             : { tile: tileIndex, right: body.right };
         // The next round's four pictures come with this verdict, and only
-        // now (ONE ROUND AT A TIME in js/daily.js).
-        window.Daily.takeRound(dealt(), body.next);
+        // now (ONE ROUND AT A TIME in js/daily.js). Its clock is running from
+        // here, so they are asked for at once rather than when the sheet is
+        // drawn and laid out; this page can't start them any sooner without
+        // handing out a round before its clock.
+        if (window.Daily.takeRound(dealt(), body.next) && Array.isArray(body.next.tiles)) {
+            body.next.tiles.forEach(t => { new Image().src = t.image; });
+        }
         /* The day's first verdict, given after the launch cut, on a day the
            deal marked practice (dealt at 07:59, played from 08:00): the day
            is the real one, and is carded, shared and banked as it (1 Oct
@@ -442,10 +453,11 @@
     /* The day this round belongs to has closed under it (see choose). Its
        picks stay in storage only until today's deal replaces them, which
        is the button's job: refreshDay asks for the old day, is refused, and
-       deals today. */
+       deals today. (It used to add that the picks were kept on this device,
+       which that button then undid.) */
     function dayEnded(index) {
         noteWithActions(index,
-            "This day's rounds closed at five past midnight (UTC), so that pick can't count. Your picks so far are kept on this device.",
+            "This day's rounds closed at five past midnight (UTC), so that pick can't count.",
             [["Play today's rounds", () => {
                 refreshDay().then(() => { showSplash = true; render(); settleFocus(); });
             }]]);
@@ -488,7 +500,7 @@
            sheets are the elements themselves (see deckSheets). */
         const inner = live.inner || live.querySelector(".guess-sheet-inner");
         if (!inner) return;
-        const target = inner.querySelector(finished() ? ".daily-verdict" : ".daily-ask");
+        const target = inner.querySelector(finished() ? ".guess-score" : ".daily-ask");
         if (target) {
             target.tabIndex = -1;
             target.focus({ preventScroll: true });
@@ -688,6 +700,15 @@
         el.introInner.innerHTML = splashHtml();
         wireSplash();
 
+        /* A finished day reopens on the splash, as Guess the Maze's does, and
+           its button goes on to the results. Filing what is owed does not
+           wait for that press. */
+        if (finished() && showSplash) {
+            view = "intro";
+            layout();
+            if (!state.posted && signedIn()) wireResults();
+            return;
+        }
         if (finished()) {
             view = "results";
             el.resultsInner.innerHTML = resultsHtml();
@@ -862,7 +883,7 @@
                 </ol>
 
                 <button type="button" class="guess-btn guess-btn--lead" id="odd-start">
-                    ${started ? "Back to the rooms" : "Show me the first four"} &rsaquo;
+                    ${state.done ? "See today's results" : started ? "Back to the rounds" : "Show me the first four"} &rsaquo;
                 </button>
                 <p class="guess-splash-foot">${practiceEnded && !started
                     ? escapeHtml("The site's open, so your practice run is put away. These five count.")
@@ -872,7 +893,7 @@
     function roundHtml(round) {
         const tiles = round.tiles.map((tile, i) => `
             <button type="button" class="odd-tile" data-tile="${i}" aria-label="Picture ${i + 1}">
-                <img src="${escapeHtml(tile.image)}" alt="" loading="lazy">
+                <img src="${escapeHtml(tile.image)}" alt="">
             </button>`).join("");
 
         return `
@@ -933,15 +954,18 @@
                 ? `The real rounds start at ${new Date(cut).toISOString().slice(11, 16)} UTC today.`
                 : "The real rounds are open. Close this and reopen it to play them.";
         }
-        return "Five more rounds tomorrow.";
+        /* Counted to the midnight after the day played, as Guess the Maze's
+           countdown is. "Five more rounds tomorrow." stayed up after midnight,
+           when they were already there. */
+        const left = Date.parse(day() + "T00:00:00Z") + 86400000 - window.Daily.now();
+        if (left <= 0) return "Five new rounds are ready. Close this and reopen it to play.";
+        return `Five new rounds in ${Math.floor(left / 3600000)}h ${Math.floor((left % 3600000) / 60000)}m.`;
     }
 
-    /* A practice card left open across the cut rewrites its own line at
-       08:00 (1 Oct 2026), as Guess the Maze's countdown does: it went on
-       saying "start at 08:00 UTC today" after they had. Checked every 30s
-       on the server's clock, like Guess's, rather than one long timeout a
-       sleeping laptop would overshoot; it writes only once, on crossing,
-       so "Copied" under the button is not clobbered every tick. Cleared
+    /* The card's line kept true while it is left open (a practice card since
+       1 Oct 2026, a day's since 4 Nov), checked every 30s on the server's
+       clock, like Guess's countdown, rather than one long timeout a sleeping
+       laptop would overshoot. It writes only when the words change. Cleared
        when the card is redrawn, the deal is rebuilt or the window closes. */
     let footTimer = null;
     function stopFootTimer() {
@@ -950,39 +974,36 @@
     }
     function watchFoot() {
         stopFootTimer();
-        const before = footText();
-        if (!/^The real rounds start at/.test(before)) return;
+        let shown = footText();
         footTimer = setInterval(() => {
             const foot = document.getElementById("odd-foot");
             if (!foot) return stopFootTimer();
             const now = footText();
-            if (now === before) return;
+            if (now === shown) return;
             foot.textContent = now;
+            shown = now;
             // The bonus line too (2 Oct 2026): it went on saying "nothing
             // counts until … 08:00 UTC" after 08:00.
             drawBonus();
-            stopFootTimer();
         }, 30000);
     }
 
     function resultsHtml() {
-        const rounds = dealt();
-        const right = state.picks.filter(p => p.right).length;
+        const right =state.picks.filter(p => p.right).length;
         const bonus = bonusText();
 
         return `
             <div class="guess-summary daily-summary">
-                <p class="guess-score daily-verdict" role="status" aria-live="polite">${verdictFor(right)}</p>
                 <p class="guess-points"><strong>${score()}</strong><span>points</span></p>
                 <p class="daily-bonus" id="odd-bonus"${bonus ? "" : " hidden"}>${escapeHtml(bonus)}</p>
-                <p class="guess-next-up">${right} of ${rounds.length} spotted</p>
+                <p class="guess-score" role="status" aria-live="polite">${verdictFor(right)}</p>
                 <p class="guess-grid" aria-label="Result grid">${shareGrid()}</p>
                 <div id="odd-streak-slot"></div>
                 <dl class="guess-stats" id="odd-stats">${statsHtml()}</dl>
                 <div class="guess-summary-actions">
                     <button type="button" class="guess-btn" id="odd-share">Copy result</button>
                 </div>
-                <p class="daily-note" id="odd-foot">${escapeHtml(footText())}</p>
+                <p class="guess-next-up" id="odd-foot">${escapeHtml(footText())}</p>
 
                 <div class="guess-boards" id="odd-boards"></div>
             </div>`;
@@ -1035,18 +1056,19 @@
 
        What somebody wants at the end of a run is to be told how it went, in
        the tone of a friend watching over their shoulder: short, and about
-       the run rather than about the game. */
+       the run rather than about the game. After the count, on the line where
+       Guess the Maze has "3 of 5 rooms found". */
     /* Out of the rounds actually dealt, not a fixed five (30 Sept 2026): a
        day the server dealt short of five would otherwise be told "4 of 5"
        for four out of four, and never "All five". ROUNDS only stands in
        before a deal has arrived. */
-    const NUMBER_WORDS = ["none", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten"];
     function verdictFor(right) {
         const of = dealt().length || ROUNDS;
-        if (right === of) return `All ${NUMBER_WORDS[of] || of}. Nothing got past you.`;
-        if (right === 0) return "Not a single one. Brutal.";
-        if (right === of - 1) return "One slipped through.";
-        return right + " of " + of + ". Those builders know what they are doing.";
+        const count = `${right} of ${of} spotted.`;
+        if (right === of) return `${count} Nothing got past you.`;
+        if (right === 0) return `${count} Brutal.`;
+        if (right === of - 1) return `${count} One slipped through.`;
+        return `${count} Those builders know what they are doing.`;
     }
 
     const shareGrid = () => state.picks.map(p => (p.right ? "🟩" : "🟥")).join("");
@@ -1174,20 +1196,21 @@
         const share = document.getElementById("odd-share");
         if (share) {
             share.addEventListener("click", async () => {
-                const foot = document.getElementById("odd-foot");
                 const text = shareText();
                 window.Daily.track("share", "odd");
+                // On the button, for a moment, as Guess the Maze's copyResult.
                 try {
                     await navigator.clipboard.writeText(text);
-                    if (foot) foot.textContent = "Copied. Paste it wherever you like.";
+                    share.textContent = "Copied";
                 } catch (e) {
                     /* Refused: the same selectable box Guess the Maze
                        offers, so the result can still be copied by hand
                        rather than only being told it could not be (30 Sept
                        2026; see Daily.shareFallback). */
                     window.Daily.shareFallback(share, text);
-                    if (foot) foot.textContent = "Your browser would not copy it. Select the text above and copy it yourself.";
+                    share.textContent = "Copy this";
                 }
+                setTimeout(() => { share.textContent = "Copy result"; }, 2200);
             });
         }
     }
@@ -1276,7 +1299,7 @@
             }
             if (remote) takeAccountStats(await remote);
             await refreshDay();
-            showSplash = state.picks.length === 0 && !state.done;
+            showSplash = state.picks.length === 0 || state.done;
             Daily.waiting(el.deck, false);
             /* Straight onto the right sheet — the splash, the round in hand, or
                the results — with the rest already stacked around it. Only the
@@ -1397,13 +1420,12 @@
 
            A day not yet filed takes the server's record WHEREVER IT
            DIFFERS, shorter included. Every pick a day keeps was recorded
-           before it was kept (see choose), so a server with
-           fewer has lost some: an administrator's reset while the window
-           was open, or a pick taken while the session had lapsed, before
-           that was caught. Keeping the longer local copy is what used to
-           loop: every pick after it was refused as out of order, the 409
-           read the day again, the day again kept the local copy, and so on
-           for as long as the window stayed open. Taken from the server, the
+           before it was kept (see choose), so a server with fewer has lost
+           some: an administrator's reset while the window was open, or
+           played on from another browser since. The local copy must not win,
+           or every pick after it is refused as out of order, the 409 reads
+           the day again, and the local copy comes back; so this is saved
+           over it (saveState's `fromServer`). Taken from the server, the
            player picks up at the first round it does not have.
 
            An EMPTY record for a day with picks in hand is a day given back —
@@ -1427,11 +1449,14 @@
                    and shown as theirs. Guess the Maze's applyRecorded
                    always takes it. */
                 (accountDay ? !samePicks(recorded, state.picks) : recorded.length >= state.picks.length)) {
+            // Taken back from further on, so whatever was filed went with the
+            // reset, and this day has to be sent again when it is finished.
+            if (accountDay && recorded.length < state.picks.length) state.posted = false;
             state.picks = recorded.map(p => ({ tile: p.tile, right: Boolean(p.right) }));
             state.done = state.picks.length >= deal.rounds.length;
         }
         if (reply.filed) state.posted = true;
-        saveState();
+        saveState(Boolean(accountDay));
 
         /* A day that became finished just now — finished on another device
            and brought here by the server's record — is banked here too.
@@ -1498,7 +1523,10 @@
         (el.window || el.overlay).appendChild(el.live);
 
         el.close.addEventListener("click", close);
-        el.overlay.addEventListener("click", e => { if (e.target === el.overlay) close(); });
+        // Only a press that began on the backdrop: a text selection let go past the window is a click here too.
+        let pressedOn = null;
+        el.overlay.addEventListener("pointerdown", e => { pressedOn = e.target; });
+        el.overlay.addEventListener("click", e => { if (e.target === el.overlay && pressedOn === el.overlay) close(); });
         /* Escape through the shared top-most-layer rule (EscapeLayers in
            js/site.js; 10 Oct 2026), as Pura Panic's window has it. A
            listener of this file's own on the document closed the game

@@ -100,6 +100,8 @@
     let rows = {};          // per skin: { on, onAt: "MM-DDTHH:mm", offAt, theme: "default" | null | <palette>, kept: [windows a row cannot show] }
     let clock = "local";    // the zone the rows switch in
     let saved = "";         // the rows as last loaded or saved, to tell a change
+    let siteAt = "";        // skinScheduleAt, as the settings last said it
+    let rowsAt = "";        // the stamp the rows were made from, sent back on Save as skinScheduleBase
     let modeError = "";     // why the switch's last save failed, said under it
 
     const token = () => (typeof window.AdminToken === "function" ? window.AdminToken() : "") || get("mazerats_admin_token");
@@ -414,6 +416,37 @@
     // ---------------- reading and saving ----------------
     function take(s) {
         site = { skin: s.skin || "auto", skinSchedule: Array.isArray(s.skinSchedule) ? s.skinSchedule : [], halloweenGoo: s.halloweenGoo !== false };
+        siteAt = typeof s.skinScheduleAt === "string" ? s.skinScheduleAt : "";
+    }
+    /* The rows, from the dates as saved. rowsAt moves only here: pressing the
+       switch above also answers with the settings, and that must not count as
+       having seen somebody else's new dates. */
+    function rowsFromSite() {
+        rows = rowsFrom(site.skinSchedule);
+        rowsAt = siteAt;
+        saved = snapshot();
+    }
+
+    /* SOMEONE ELSE SAVED FIRST: the dates hold the 1 December switch-on, and
+       settings.js refused to save over a copy this page has not seen (409,
+       with the dates now stored). Asked as the menu card asks: Yes takes
+       theirs and drops these; No keeps every date as typed and takes their
+       stamp, so pressing Save again puts these live over theirs, knowingly. */
+    async function conflict(data) {
+        site.skinSchedule = Array.isArray(data.skinSchedule) ? data.skinSchedule : [];
+        siteAt = typeof data.skinScheduleAt === "string" ? data.skinScheduleAt : "";
+        paintNow();
+        const yes = window.AdminConfirm
+            ? await window.AdminConfirm("Someone else (or you, in another tab) has saved the skin dates since you opened this page, so yours were not saved.<br><br>Load their dates instead? Your changes here would be lost. Say No to keep yours on screen.", { danger: true })
+            : false;
+        if (yes) {
+            rowsFromSite();
+            paintCal(); paintSave();
+            say("Their dates are loaded. This is what is saved now.");
+        } else {
+            rowsAt = siteAt;
+            say("Not saved: someone else changed the dates first. Press Save again to put yours live over theirs, or Discard to take theirs.", true);
+        }
     }
 
     async function load() {
@@ -421,7 +454,8 @@
             /* The Warren's one settings read (2 Nov 2026, window.AdminFreshSettings
                in js/admin.js), or a read of its own on a page without it. */
             let s;
-            if (typeof window.AdminFreshSettings === "function") s = await window.AdminFreshSettings(30000);
+            // (0: its save refuses a stale stamp, so a half-minute-old copy could refuse a good save.)
+            if (typeof window.AdminFreshSettings === "function") s = await window.AdminFreshSettings(0);
             else {
                 const res = await fetch("/.netlify/functions/settings?fresh=" + Date.now(), { cache: "no-store" });
                 // A database blip answers 503 with an error body: read as settings, that was "no schedule",
@@ -430,8 +464,7 @@
                 s = await res.json();
             }
             take(s);
-            rows = rowsFrom(site.skinSchedule);
-            saved = snapshot();
+            rowsFromSite();
             loaded = true;
         } catch (e) {
             say("Couldn't read the settings. Reload to try again.", true);
@@ -462,6 +495,10 @@
                 if (typeof window.AdminLockOut === "function") window.AdminLockOut();
                 return false;
             }
+            if (e && e.status === 409 && e.data && e.data.conflict) {
+                await conflict(e.data);
+                return false;
+            }
             fail((e && e.message) || "Couldn't save. Try again.");
             return false;
         } finally {
@@ -477,8 +514,7 @@
         isDirty: () => changed(),
         reset() {
             if (!loaded) return;
-            rows = rowsFrom(site.skinSchedule);
-            saved = snapshot();
+            rowsFromSite();
             say("");
             paintCal(); paintSave();
         }
@@ -518,15 +554,13 @@
             }
             const bad = SKINS.filter((s) => rows[s.name].on && rows[s.name].onAt === rows[s.name].offAt);
             if (bad.length) { say(bad[0].label + " comes on and goes off at the same moment. To keep it on all year, choose it under What visitors see instead.", true); return; }
-            if (await save({ skinSchedule: scheduleFrom() }, "Dates saved.", say)) {
-                rows = rowsFrom(site.skinSchedule);
-                saved = snapshot();
+            if (await save({ skinSchedule: scheduleFrom(), skinScheduleBase: rowsAt }, "Dates saved.", say)) {
+                rowsFromSite();
                 paintCal(); paintSave();
             }
         });
         $("skin-cal-discard").addEventListener("click", () => {
-            rows = rowsFrom(site.skinSchedule);
-            saved = snapshot();
+            rowsFromSite();
             say("");
             paintCal(); paintSave();
         });

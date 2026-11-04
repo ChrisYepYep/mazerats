@@ -122,7 +122,7 @@ window.AdminWizard = (function () {
             fresh = await ctx.api.getWizardMapFresh(ctx.token());
         } catch (err) {
             if (err.status === 401) return ctx.lockOut();
-            say("Could not load the map — " + (err.message || "try again."), "bad");
+            say("Couldn't load the map — " + (err.message || "try again."), "bad");
             return;
         }
         data = fresh;
@@ -258,7 +258,7 @@ window.AdminWizard = (function () {
             say(`Saved ${items.length === 1 ? "one change" : items.length + " changes"}.`, "good");
         } catch (err) {
             if (err.status === 401) return ctx.lockOut();
-            say("Could not save — " + (err.message || "try again."), "bad");
+            say("Couldn't save — " + (err.message || "try again."), "bad");
             els.savePositions.disabled = false;
         }
     }
@@ -289,7 +289,7 @@ window.AdminWizard = (function () {
             return { ok: true };
         } catch (err) {
             if (err.status === 401) { ctx.lockOut(); return { ok: false, err }; }
-            say("Could not save — " + (err.message || "try again."), "bad");
+            say("Couldn't save — " + (err.message || "try again."), "bad");
             return { ok: false, err };
         }
     }
@@ -1143,7 +1143,7 @@ window.AdminWizard = (function () {
             say(`Trail laid from ${from.name} to ${to.name}.`, "good");
         } catch (err) {
             if (err.status === 401) return ctx.lockOut();
-            say("Could not lay that trail — " + (err.message || "try again."), "bad");
+            say("Couldn't lay that trail — " + (err.message || "try again."), "bad");
         }
     }
 
@@ -1724,7 +1724,7 @@ window.AdminWizard = (function () {
                 say("Picture replaced.", "good");
             } catch (err) {
                 if (err.status === 401) return ctx.lockOut();
-                say("Could not replace it — " + (err.message || "try again."), "bad");
+                say("Couldn't replace it — " + (err.message || "try again."), "bad");
             }
             return;
         }
@@ -2072,7 +2072,7 @@ window.AdminWizard = (function () {
             await ctx.api.deleteWizardItem(ctx.token(), kind, id);
         } catch (err) {
             if (err.status === 401) return ctx.lockOut();
-            return say("Could not delete — " + (err.message || "try again."), "bad");
+            return say("Couldn't delete — " + (err.message || "try again."), "bad");
         }
 
         /* Taken out of what is already loaded, rather than reloading the map.
@@ -2244,7 +2244,7 @@ window.AdminWizard = (function () {
                submitRoomForm does. */
             if (uploaded && err.status >= 400 && err.status < 500 && err.status !== 401) dropUpload(uploaded.url);
             if (err.status === 401) return ctx.lockOut();
-            say("Could not add that picture — " + (err.message || "try again."), "bad");
+            say("Couldn't add that picture — " + (err.message || "try again."), "bad");
         }
     }
 
@@ -2905,7 +2905,7 @@ window.AdminWizard = (function () {
                     await ctx.api.deleteWizardItem(ctx.token(), "reveal", secret.id);
                 } catch (err) {
                     if (err.status === 401) return ctx.lockOut();
-                    return say("Could not delete — " + (err.message || "try again."), "bad");
+                    return say("Couldn't delete — " + (err.message || "try again."), "bad");
                 }
                 openSecretId = null;
                 say("Deleted.", "good");
@@ -3004,7 +3004,7 @@ window.AdminWizard = (function () {
             await ctx.api.updateWizardItem(ctx.token(), "reveal", secret);
         } catch (err) {
             if (err.status === 401) { ctx.lockOut(); return false; }
-            say("Could not save — " + (err.message || "try again."), "bad");
+            say("Couldn't save — " + (err.message || "try again."), "bad");
             return false;
         }
         return true;
@@ -3038,7 +3038,7 @@ window.AdminWizard = (function () {
             });
         } catch (err) {
             if (err.status === 401) return ctx.lockOut();
-            return say("Could not add it — " + (err.message || "try again."), "bad");
+            return say("Couldn't add it — " + (err.message || "try again."), "bad");
         }
         /* The new one opens in place of the one that was open — unless that
            one has typing in it that hasn't been saved (26 Oct 2026). Opening
@@ -3217,7 +3217,7 @@ window.AdminWizard = (function () {
             submitBtn.disabled = false;
             submitBtn.textContent = "Save";
             if (err.status === 401) return ctx.lockOut();
-            errorEl.textContent = err.message || "Could not save that room.";
+            errorEl.textContent = err.message || "Couldn't save that room.";
             errorEl.style.display = "block";
         }
     }
@@ -3242,7 +3242,7 @@ window.AdminWizard = (function () {
             say("Room added in the middle of the view. Name it below, then drag it into place.", "good");
         } catch (err) {
             if (err.status === 401) return ctx.lockOut();
-            say("Could not add a room — " + (err.message || "try again."), "bad");
+            say("Couldn't add a room — " + (err.message || "try again."), "bad");
         }
     }
 
@@ -3400,7 +3400,7 @@ window.AdminWizard = (function () {
         } catch (err) {
             if (!sent || (err.status >= 400 && err.status < 500 && err.status !== 401)) fresh.forEach(dropUpload);
             if (err.status === 401) return ctx.lockOut();
-            say("Could not save the map — " + (err.message || "try again."), "bad");
+            say("Couldn't save the map — " + (err.message || "try again."), "bad");
         } finally {
             submitBtn.disabled = false;
             submitBtn.textContent = "Save map settings";

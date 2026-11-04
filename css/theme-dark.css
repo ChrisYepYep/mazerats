@@ -9,7 +9,7 @@
    completely inert until js/site.js puts that attribute on <html>. The
    classic palette is not defined here and is not affected by anything in it.
 
-   1215 rules, 1950 declarations, hues 222 (surfaces) / 36 (accents).
+   1233 rules, 1971 declarations, hues 222 (surfaces) / 36 (accents).
 */
 :root[data-dark] {
     --bg-black: #050607;
@@ -25,7 +25,7 @@
     --unknown-text: #aaa399;
     --amber-text: #998971;
     --border: rgba(161, 137, 101, 0.35);
-    --chrome-fill: #101216;
+    --chrome-fill: #131313;
     --chrome-highlight: #20242e;
     --chrome-row: #0d0e12;
     --chrome-row-featured: #16191f;
@@ -322,10 +322,6 @@ html[data-dark] .welcome-promo {
 }
 
 html[data-dark] .welcome-promo-slide:focus-visible {
-    outline: none;
-}
-
-html[data-dark] .welcome-promo:has(.welcome-promo-slide:focus-visible) {
     outline: 2px solid var(--amber-bright);
 }
 
@@ -446,6 +442,7 @@ html[data-dark] .modal-body .btn:hover {
 }
 
 html[data-dark] .chrome-window {
+    border-color: var(--chrome-fill);
     border-image-source: url('../assets/img/dark/window_frame.png?v=f0cd4f81');
     box-shadow: 0 16px 44px rgba(0, 0, 0, 0.6);
 }
@@ -524,6 +521,7 @@ html[data-dark] .chrome-nav-btn {
 
 html[data-dark] .chrome-nav-btn::before {
     border-image-source: url('../assets/img/dark/btn_inactive.png?v=d1b5b559');
+    background: linear-gradient(#5f5b56, #5f5b56) center / calc(100% - 6px) calc(100% - 6px) no-repeat border-box;
     filter: sepia(0.25) saturate(0.5) brightness(0.66) contrast(1.05);
 }
 
@@ -551,6 +549,7 @@ html[data-dark] .chrome-nav-top .chrome-nav-btn.active::before {
 
 html[data-dark] .chrome-nav-btn.active::before {
     border-image-source: url('../assets/img/dark/btn_active.png?v=826ab35a');
+    background: linear-gradient(#23252a, #23252a) center / calc(100% - 6px) calc(100% - 6px) no-repeat border-box;
     filter: saturate(0.54) brightness(1.18) hue-rotate(4deg);
 }
 
@@ -732,6 +731,7 @@ html[data-dark] .tag {
 html[data-dark] #search-wrap::before,
 html[data-dark] #browse-window.is-opening .opening-search-bar::before {
     border-image-source: url('../assets/img/dark/btn_active.png?v=826ab35a');
+    background: linear-gradient(#23252a, #23252a) center / calc(100% - 6px) calc(100% - 6px) no-repeat border-box;
     filter: saturate(0.54) brightness(1.18) hue-rotate(4deg);
 }
 
@@ -966,7 +966,7 @@ html[data-dark] .photo-frame-close {
 }
 
 html[data-dark] .photo-frame-close:focus-visible {
-    outline: 1px solid var(--amber-bright);
+    outline: 2px solid var(--amber-bright);
 }
 
 html[data-dark] .photo-frame-photo-box::after {
@@ -1028,7 +1028,7 @@ html[data-dark] .furni-card-close {
 }
 
 html[data-dark] .furni-card-close:focus-visible {
-    outline: 1px solid var(--amber);
+    outline: 2px solid var(--amber-bright);
 }
 
 html[data-dark] .furni-card-name {
@@ -1095,21 +1095,55 @@ html[data-dark] .lightbox-img {
     box-shadow: 0 20px 60px rgba(0, 0, 0, 0.8);
 }
 
+html[data-dark] .lightbox-close,
+html[data-dark] .lightbox-overlay .gallery-nav {
+    border: 0;
+    background-color: transparent;
+}
+
 html[data-dark] .lightbox-close {
-    background: rgba(0, 0, 0, 0.6);
-    border: 1px solid var(--border);
-    color: var(--parchment);
+    background-image: url('../assets/img/dark/modal_topclose_x.png?v=bb30839d');
+}
+
+html[data-dark] .lightbox-overlay .gallery-prev,
+html[data-dark] .lightbox-overlay .lightbox-prev {
+    background-image: url('../assets/img/dark/modal_arrow_prev.png?v=9f15db13');
+}
+
+html[data-dark] .lightbox-overlay .gallery-next,
+html[data-dark] .lightbox-overlay .lightbox-next {
+    background-image: url('../assets/img/dark/modal_arrow_next.png?v=74a63396');
+}
+
+html[data-dark] .lightbox-close:hover,
+html[data-dark] .lightbox-overlay .gallery-nav:hover {
+    background-color: rgba(210, 205, 198, 0.1);
+    border-color: transparent;
 }
 
 html[data-dark] .gallery-nav {
-    background: rgba(0,0,0,0.55);
+    background-color: rgba(0,0,0,0.55);
     border: 1px solid var(--border);
     color: var(--parchment);
 }
 
 html[data-dark] .gallery-nav:hover {
-    background: rgba(0,0,0,0.8);
+    background-color: rgba(0,0,0,0.8);
     border-color: var(--amber);
+}
+
+html[data-dark] .gallery-nav::before {
+    background: currentColor;
+}
+
+html[data-dark] .gallery-prev::before {
+    box-shadow: 1px 0, 1px -1px, 2px -1px, 2px -2px, 3px -2px, 3px -3px, 4px -3px,
+        1px 1px, 2px 1px, 2px 2px, 3px 2px, 3px 3px, 4px 3px;
+}
+
+html[data-dark] .gallery-next::before {
+    box-shadow: -1px 0, -1px -1px, -2px -1px, -2px -2px, -3px -2px, -3px -3px, -4px -3px,
+        -1px 1px, -2px 1px, -2px 2px, -3px 2px, -3px 3px, -4px 3px;
 }
 
 html[data-dark] .gallery-counter {
@@ -1866,6 +1900,7 @@ html[data-dark] .console-frame {
 }
 
 html[data-dark] .console-border {
+    border-color: transparent;
     border-image-source: url('../assets/img/dark/console/cnsl-frame-border.png?v=b50a6fd9');
 }
 
@@ -1882,7 +1917,7 @@ html[data-dark] .console-title {
 html[data-dark] .console-close-btn {
     border: none;
     background-color: transparent;
-    background-image: url('../assets/img/dark/console/cnsl-top-x-close.png?v=44ef8068');
+    background-image: url('../assets/img/dark/console/cnsl-top-x-close.png?v=3ac1ddd0');
 }
 
 html[data-dark] #console-frame:focus {
@@ -1891,8 +1926,28 @@ html[data-dark] #console-frame:focus {
 
 html[data-dark] .console-screen {
     border: 1px solid #000;
-    background-image: url('../assets/img/console/cnsl-bg-tile.png');
+    background-image: url('../assets/img/console/cnsl-bg-tile.png'), linear-gradient(#525252, #525252);
     color: #e4e2dd;
+}
+
+@media (min-resolution: 1.2dppx) and (max-resolution: 1.3dppx) {
+    html[data-dark] .console-screen,
+    html[data-dark] .console-contact-actions.console-notices-actions,
+    html[data-dark] .select-list.is-console,
+    html[data-dark] .profile-online-mark::after,
+    html[data-dark] .profile-search-results {
+        background-image: repeating-linear-gradient(#424242 0 0.1px, #636363 0.1px 0.9px, #424242 0.9px 1.6px) !important;
+    }
+}
+
+@media (min-resolution: 1.45dppx) and (max-resolution: 1.55dppx) {
+    html[data-dark] .console-screen,
+    html[data-dark] .console-contact-actions.console-notices-actions,
+    html[data-dark] .select-list.is-console,
+    html[data-dark] .profile-online-mark::after,
+    html[data-dark] .profile-search-results {
+        background-image: repeating-linear-gradient(#424242 0 calc(1px / 6), #636363 calc(1px / 6) calc(5px / 6), #424242 calc(5px / 6) calc(4px / 3)) !important;
+    }
 }
 
 html[data-dark] .console-frame::before {
@@ -2023,11 +2078,11 @@ html[data-dark] .console-notices-markall {
 }
 
 html[data-dark] .console-notices-markall:focus-visible {
-    outline: 1px dotted #e4e2dd;
+    outline: 2px solid var(--amber-bright);
 }
 
 html[data-dark] .console-notices-item:focus-visible {
-    outline: 1px dotted #e4e2dd;
+    outline: 2px solid var(--amber-bright);
 }
 
 html[data-dark] .console-notices-day {
@@ -2645,10 +2700,6 @@ html[data-dark] .legal-page:focus {
     outline: none;
 }
 
-html[data-dark] .legal-eyebrow {
-    color: var(--amber-text);
-}
-
 html[data-dark] .legal-doc h1 {
     color: var(--parchment);
 }
@@ -2701,9 +2752,7 @@ html[data-dark] .console-privacy-out a:focus-visible {
 }
 
 html[data-dark] .legal-doc {
-    background: var(--bg-panel);
-    border: 1px solid var(--border);
-    box-shadow: var(--shadow);
+    background: #121417;
 }
 
 html[data-dark] .archive-empty {
@@ -2733,6 +2782,35 @@ html[data-dark] .gallery-photos::before {
     background: linear-gradient(to right, rgba(25, 27, 32, 0), #191b20);
 }
 
+html[data-dark] :where([role="dialog"],
+html[data-dark] [role="alertdialog"],
+html[data-dark] [tabindex="-1"]):focus {
+    outline: none;
+}
+
+html[data-dark] :where(a[href],
+html[data-dark] button,
+html[data-dark] summary,
+html[data-dark] [role="button"],
+html[data-dark] [role="link"],
+html[data-dark] [role="tab"],
+html[data-dark] [role="menuitem"],
+html[data-dark] [role="switch"],
+html[data-dark] [role="checkbox"],
+html[data-dark] [role="radio"],
+html[data-dark] [tabindex="0"],
+html[data-dark] select,
+html[data-dark] textarea,
+html[data-dark] input):focus-visible {
+    outline: 2px solid var(--amber-bright);
+}
+
+html[data-dark] :where(select,
+html[data-dark] textarea,
+html[data-dark] input).is-pointer-focus:focus-visible {
+    outline: none;
+}
+
 html[data-dark] .chrome-list-row:focus-visible,
 html[data-dark] .chrome-nav-btn:focus-visible,
 html[data-dark] .chrome-frame-minimize-toggle:focus-visible,
@@ -2759,7 +2837,7 @@ html[data-dark] .skip-link:focus-visible {
 }
 
 html[data-dark] .archive-stat-n {
-    color: var(--parchment);
+    color: var(--amber-bright);
 }
 
 html[data-dark] .archive-stat-l {
@@ -2858,17 +2936,6 @@ html[data-dark] .furni-head-complete-link:focus-visible {
 }
 
 html[data-dark] .furni-head-complete-link:focus-visible {
-    outline: 2px solid var(--amber-bright);
-}
-
-html[data-dark] .furni-band-more {
-    background: rgba(0, 0, 0, 0.25);
-    border: 1px solid var(--chrome-border);
-    box-shadow: 2px 2px 0 rgba(0, 0, 0, 0.4);
-    color: var(--parchment);
-}
-
-html[data-dark] .furni-band-more:focus-visible {
     outline: 2px solid var(--amber-bright);
 }
 
@@ -3063,10 +3130,6 @@ html[data-dark] .spotlight-frame::after {
 html[data-dark] .spotlight-frame:hover,
 html[data-dark] .spotlight-frame:has(.welcome-promo-slide:focus-visible) {
     border-color: var(--amber);
-}
-
-html[data-dark] .spotlight-frame:has(.welcome-promo-slide:focus-visible) {
-    outline: 2px solid var(--amber-bright);
 }
 
 @media (max-width: 900px) {
@@ -3872,6 +3935,12 @@ html[data-dark] .glyphs-intro {
     color: var(--parchment);
 }
 
+html[data-dark] .glyphs-copy-field {
+    border: 1px solid var(--border);
+    background: var(--bg-black);
+    color: var(--parchment);
+}
+
 html[data-dark] .glyphs-intro kbd {
     border: 1px solid var(--chrome-border);
     background: linear-gradient(#16181d, #101216);
@@ -3976,6 +4045,13 @@ html[data-dark] .profile-search-input:focus {
     background: rgba(203, 197, 188, 0.1);
 }
 
+html[data-dark] .profile-search-input:focus-visible:not(.is-pointer-focus),
+html[data-dark] .search-box input:focus-visible:not(.is-pointer-focus),
+html[data-dark] .opening-search input:focus-visible:not(.is-pointer-focus),
+html[data-dark] .sort-box select:focus-visible:not(.is-pointer-focus) {
+    outline: 2px solid var(--amber-bright);
+}
+
 html[data-dark] .profile-search-results {
     background: url('../assets/img/console/cnsl-bg-tile.png') repeat;
     border: 1px solid var(--pc-text);
@@ -4050,7 +4126,7 @@ html[data-dark] .profile-link:hover {
 html[data-dark] #progress-overlay :is(button,
 html[data-dark] summary,
 html[data-dark] input):focus-visible {
-    outline: 1px dotted var(--pc-text);
+    outline: 2px solid var(--amber-bright);
 }
 
 html[data-dark] .profile-avatar.is-blank {
@@ -4706,10 +4782,6 @@ html[data-dark] .daily-note {
     color: var(--parchment-dim);
 }
 
-html[data-dark] .daily-verdict {
-    color: var(--parchment);
-}
-
 html[data-dark] .odd-tile {
     border: 2px solid var(--chrome-border);
     background: var(--bg-black);
@@ -4828,6 +4900,10 @@ html[data-dark] .ff-run-tag.ff-abandoned {
 
 html[data-dark] .lost-page:focus {
     outline: none;
+}
+
+html[data-dark] .lost-sheet {
+    background: #121417;
 }
 
 html[data-dark] .lost-code {
@@ -5631,7 +5707,7 @@ html[data-dark] .mazer-swatch span {
 
 html[data-dark] .mazer-swatch:hover span,
 html[data-dark] .mazer-swatch:focus-visible span {
-    outline: 1px solid var(--parchment);
+    outline: 2px solid var(--amber-bright);
 }
 
 html[data-dark] .mazer-swatch:focus {
@@ -5652,7 +5728,7 @@ html[data-dark] .mazer-motto-box:focus {
 }
 
 html[data-dark] .mazer-motto-box:focus-visible {
-    outline: 1px solid var(--parchment);
+    outline: 2px solid var(--amber-bright);
 }
 
 @media (pointer: coarse) {
@@ -5693,7 +5769,7 @@ html[data-dark] .chrome-title-home {
 }
 
 html[data-dark] .chrome-title-home:focus-visible {
-    outline: 1px solid currentColor;
+    outline: 2px solid var(--amber-bright);
 }
 
 html[data-dark] .opening-search-go {
@@ -5806,6 +5882,67 @@ html[data-dark] .opening-now-row .chrome-go {
     color: color-mix(in srgb, var(--opening-ink) 75%, var(--opening-cream));
 }
 
+@supports not (color: color-mix(in srgb, red, blue)) {
+    html[data-dark] .row-date {
+        color: var(--parchment) !important;
+    }
+}
+
+@supports not (color: color-mix(in srgb, red, blue)) {
+    html[data-dark] .sort-chip {
+        border-color: rgba(210, 205, 198, 0.2) !important;
+    }
+}
+
+@supports not (color: color-mix(in srgb, red, blue)) {
+    html[data-dark] .guess-sheet {
+        background: var(--frame-bg) !important;
+    }
+}
+
+@supports not (color: color-mix(in srgb, red, blue)) {
+    html[data-dark] .room-links-refs-text a:not(:hover),
+    html[data-dark] .modal-article-body h5,
+    html[data-dark] .modal-article-body h6,
+    html[data-dark] .modal-article-body a:not(:hover) {
+        color: var(--amber-bright) !important;
+    }
+}
+
+@supports not (color: color-mix(in srgb, red, blue)) {
+    html[data-dark] .modal-article-kicker,
+    html[data-dark] .modal-article-origin a:not(:hover),
+    html[data-dark] .modal-article-source a:not(:hover) {
+        color: var(--amber-text) !important;
+    }
+}
+
+@supports not (color: color-mix(in srgb, red, blue)) {
+    html[data-dark] .de-chip.se-status-resolved {
+        color: var(--ok, #7fb069) !important;
+    }
+}
+
+@supports not (color: color-mix(in srgb, red, blue)) {
+    html[data-dark] .opening-head-title {
+        background: rgba(210, 205, 198, 0.12) !important;
+        color: var(--opening-cream) !important;
+    }
+}
+
+@supports not (color: color-mix(in srgb, red, blue)) {
+    html[data-dark] .opening-now-row {
+        background: var(--opening-cream) !important;
+    }
+}
+
+@supports not (color: color-mix(in srgb, red, blue)) {
+    html[data-dark] .opening-now-row .opening-sub,
+    html[data-dark] .opening-now-row .chrome-go {
+        color: var(--opening-ink) !important;
+    }
+}
+
 html[data-dark] .opening-now-thumb {
     background: rgba(0, 0, 0, 0.3) center / cover;
     box-shadow: 0 0 0 1px #000;
@@ -5916,7 +6053,7 @@ html[data-dark] .chrome-light {
 }
 
 html[data-dark] .chrome-light:focus-visible {
-    outline: 1px solid currentColor;
+    outline: 2px solid var(--amber-bright);
 }
 
 html[data-dark][data-dark] .chrome-light {
@@ -5947,13 +6084,13 @@ html[data-dark] .art-strip-draw:focus-visible {
     outline: 2px solid var(--amber);
 }
 
-html[data-dark] .art-actions a.tag.tag-filter:hover,
-html[data-dark] .art-actions a.tag.tag-filter:focus-visible {
+html[data-dark] .room-tags a.tag.tag-filter:hover,
+html[data-dark] .room-tags a.tag.tag-filter:focus-visible {
     border-color: var(--amber);
     color: var(--parchment);
 }
 
-html[data-dark] .art-actions a.tag.tag-filter:focus-visible {
+html[data-dark] .room-tags a.tag.tag-filter:focus-visible {
     outline: 2px solid var(--amber-bright);
 }
 

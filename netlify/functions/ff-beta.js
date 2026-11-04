@@ -63,14 +63,14 @@ async function handler(event) {
         ]);
     } catch (e) {
         console.error("ff-beta: read failed", e);
-        return json(503, { error: "That could not be checked just now" });
+        return json(503, { error: "That couldn't be checked just now" });
     }
     if (sessionRevoked(player, row)) return json(401, { error: "Not signed in" });
     // Only asked for a tester: nobody else's answer can change (see above).
     let tester = Boolean(row && row.ffBeta === true);
     if (tester) {
         const refusal = await writeRefusal(db, event, String(player.id), { game: true });
-        if (refusal && refusal.statusCode === 503) return json(503, { error: "That could not be checked just now" });
+        if (refusal && refusal.statusCode === 503) return json(503, { error: "That couldn't be checked just now" });
         if (refusal) tester = false;
     }
     return json(200, {

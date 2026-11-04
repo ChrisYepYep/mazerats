@@ -212,7 +212,7 @@ const THEMES = {
                sat: 1.70, satMax: 0.78, fadeSat: 0.70, fadeSatMax: 0.46,
                gamma: 1.15, bone: 0.25, lift: 0.08, keep: 0.92, chromeSat: 0.62,
                loudHue: 192, loudSat: 0.42, loudLight: 1.18, activeBright: 1.08,
-               glintHue: 186, glintSat: 0.55, glintFrom: 0.10,
+               glintHue: 186, glintSat: 0.55, glintFrom: 0.10, frameRim: 0.45,
                neon: [150, 222, 255], label: 'Frost' },
     /* DARK MODE (30 Oct 2026, the owner's: "a nice sleek dark vibe, with
        some subtle glows ... readable but without it being a blinding
@@ -247,6 +247,7 @@ const THEMES = {
 
 
 let THEME = 'purple';
+let FRAME_RIM = 1;
 let SURFACE_HUE, ACCENT_HUE, SAT, SAT_MAX, FADE_SAT, FADE_SAT_MAX, LIGHT_GAMMA, NEON, BONE, LIFT, KEEP, CHROME_SAT;
 // Dark mode's three (see its row): a lightness ceiling, near-whites brought
 // down to it, and output scoped as a layer over any palette.
@@ -267,6 +268,7 @@ function useTheme(name) {
     LOUD_LIGHT = c.loudLight === undefined ? 1 : c.loudLight;
     ACTIVE_BRIGHT = c.activeBright === undefined ? 0.50 : c.activeBright;
     GLINT_HUE = c.glintHue; GLINT_SAT = c.glintSat === undefined ? 0.18 : c.glintSat;
+    FRAME_RIM = c.frameRim === undefined ? 1 : c.frameRim;
     GLINT_FROM = c.glintFrom === undefined ? 0.60 : c.glintFrom;
     CEIL = c.ceil || 0; DIM_WHITE = !!c.dimWhite; LAYER = !!c.layer;
     INVERT = !!c.invert; LAYER_ATTR = c.layerAttr || "data-dark";
@@ -885,6 +887,15 @@ function lightExtras() {
 [data-theme="${THEME}"] .guess-pip.is-lost {
     color: #e8c0b4;
 }
+/* A wrong name in Guess the Maze (4 Nov 2026, the bug scan): its red edge and
+   cross went navy with everything else, so it only read as faded. A warning
+   stays red, as --danger does. */
+[data-theme="${THEME}"] .guess-option.is-wrong {
+    border-color: var(--danger);
+}
+[data-theme="${THEME}"] .guess-option.is-wrong .guess-option-mark {
+    color: var(--danger);
+}
 /* The console's dropdowns' own options (1 Nov 2026, the bug scan): their
    dark grey is a fill, so it turned to ice, while the console's type stays
    white for its dark screen. Wherever the browser draws the list itself
@@ -993,10 +1004,9 @@ function lightExtras() {
 [data-theme="${THEME}"] #gallery-next {
     color: #0f1a2b;
 }
-/* The privacy page's eyebrow, headings and links, and the 404 page's
+/* The privacy page's headings and links, and the 404 page's
    Discord link: the accent navy on the page's mid blue, 4.0 to 4.4:1. The
    footer's navy, 4.7:1 and over; a hovered link keeps its own colour. */
-[data-theme="${THEME}"] .legal-eyebrow,
 [data-theme="${THEME}"] .legal-section h2,
 [data-theme="${THEME}"] .legal-section a:not(:hover):not(:focus-visible),
 [data-theme="${THEME}"] .lost-foot a:not(:hover):not(:focus-visible) {
@@ -1436,10 +1446,22 @@ function recolourAssets() {
             if (furniture && !grip) {
                 px = calmChrome(px);
                 if (glintFile) px = glint(px);
+                // The frame's own lit rim (#60462b): a glint the palette asks to be quieter reads as a thick line.
+                if (FRAME_RIM < 1 && /window_frame/.test(rel) && out[i] === 0x60 && out[i + 1] === 0x46 && out[i + 2] === 0x2b) {
+                    const base = calmChrome(toPurple(0x39, 0x25, 0x0f));
+                    px = mixRgb(base, px, FRAME_RIM);
+                }
             }
-            // Not the close boxes (the X and the bulb): small lit marks, not
-            // fills, and sunk with the rest they all but vanished.
-            if (LAYER && !INVERT && !/topclose/.test(rel)) px = sinkArt(px);
+            // Not the close boxes (the X and the bulb) or the viewer's arrows:
+            // small lit marks, not fills, and sunk with the rest they all but
+            // vanished.
+            if (LAYER && !INVERT && !/topclose|modal_arrow/.test(rel)) px = sinkArt(px);
+            // The console's close and minimise boxes: the sprite's mark and
+            // outline (#996600) take the bar's title colour. Recoloured with
+            // the fill they came out two near-identical shades, with no X.
+            if (LAYER && /cnsl-top-(x-close|minimise)/.test(rel) && out[i] === 153 && out[i + 1] === 102 && out[i + 2] === 0) {
+                px = INVERT ? [0x19, 0x32, 0x57] : [0xc0, 0xb5, 0xa5];
+            }
             out[i] = px[0]; out[i + 1] = px[1]; out[i + 2] = px[2];
             changed++;
         }
@@ -1727,7 +1749,16 @@ function buildCss(recoloured) {
    ${ruleCount} rules, ${declCount} declarations, hues ${SURFACE_HUE} (surfaces) / ${ACCENT_HUE} (accents).
 */
 `;
-    const body = header + parts.join("\n\n") + "\n" + keptBlock(kept) + corrections() + (LAYER ? darkCorrections() : "");
+    let body = header + parts.join("\n\n") + "\n" + keptBlock(kept) + corrections() + (LAYER ? darkCorrections() : "");
+    /* THE BAR AND THE FRAME ARE ONE COLOUR (4 Nov 2026, the owner's: frames not
+       lining up, "2px thick lines around the edges"). In classic --chrome-fill IS
+       window_frame.png's fill, so a titlebar and the panels filled with it melt
+       into the frame. Calmed for the art but not for the variable, they came out
+       two colours, and every one of those fills showed its own edges against
+       the frame. So the variable takes the art's own colour. */
+    const framePx = decodePng(fs.readFileSync(path.join(ROOT, "assets/img", THEME, "window_frame.png")));
+    const frameFill = (() => { const n = {}; for (let i = 0; i < framePx.data.length; i += 4) { if (framePx.data[i + 3]) { const k = "#" + hex2(framePx.data[i]) + hex2(framePx.data[i + 1]) + hex2(framePx.data[i + 2]); n[k] = (n[k] || 0) + 1; } } return Object.keys(n).sort((a, b) => n[b] - n[a])[0]; })();
+    body = body.replace(/--chrome-fill: #[0-9a-f]{6}/i, "--chrome-fill: " + frameFill);
     fs.writeFileSync(path.join(ROOT, "css/theme-" + THEME + ".css"), LAYER ? layerScope(body) : body, "utf8");
     return { ruleCount, declCount };
 }

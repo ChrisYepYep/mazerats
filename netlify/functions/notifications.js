@@ -47,6 +47,7 @@ const { livePlayerFrom } = require("./_player");
 const { isAuthorized, canWrite, refuseWrite, usernameFromToken, sessionOf, roleOf, forbidden, WRITE_SCOPES, UNAUTHORIZED, AUTH_UNAVAILABLE, isAuthUnavailable } = require("./_auth");
 const { record } = require("./_audit");
 const { SECURITY_HEADERS } = require("./_headers");
+const { cachedJson } = require("./_cache");
 
 const COLLECTION = "notifications";
 const TEXT_MAX = 300;
@@ -147,8 +148,17 @@ async function notifyPlayers(db, ids, text, extra = {}) {
 
 /* ---- a visitor's own ---- */
 
+/* ?public=1 (4 Nov 2026, the bug scan): what somebody signed out is sent, the
+   same for all of them, so kept at the edge for a minute. No cookie is read, so
+   no session can reach this copy. A signed-out visitor's console asks here
+   rather than below, which used to be a function run and a database write on
+   every page and, while the tab stayed open, about every minute. Withdrawn or
+   ended, a notice can go on showing to them for up to the stale window. */
+const PUBLIC_CDN_CACHE = "public, durable, s-maxage=60, stale-while-revalidate=300";
+
 async function mine(event, db) {
-    const player = await livePlayerFrom(db, event);
+    const isPublic = (event.queryStringParameters || {}).public === "1";
+    const player = isPublic ? null : await livePlayerFrom(db, event);
     const col = db.collection(COLLECTION);
     const since = broadcastSince();
     const now = new Date().toISOString();
@@ -184,7 +194,7 @@ async function mine(event, db) {
         : { withdrawn: { $ne: true }, ...forAll };
     const deletedIds = row && Array.isArray(row.noticesDeleted) ? row.noticesDeleted.filter(n => typeof n === "string") : [];
     const seenIds = row && Array.isArray(row.noticesSeen) ? row.noticesSeen.filter(n => typeof n === "string") : [];
-    const wantAll = (event.queryStringParameters || {}).all === "1";
+    const wantAll = !isPublic && (event.queryStringParameters || {}).all === "1";
     /* The queue of unread ones leaves the read ones out in the query as well
        (10 Oct 2026), for the same reason: fifty read notices no longer hide
        an older unread one. The ?all=1 list wants the read ones too. */
@@ -224,10 +234,14 @@ async function mine(event, db) {
        the console counts them into the Notifications button's unread badge
        without asking for the whole list. Ids, not a count, so a signed-out
        browser can leave out the ones it has read itself. */
-    return json(200, {
+    const answer = isPublic ? (data) => cachedJson(event, data, { cdn: PUBLIC_CDN_CACHE, vary: "public" }) : (data) => json(200, data);
+    return answer({
         signedIn: !!player, acct,
         notices: rows.filter(r => !seen.has(r.nid) && !r.quiet),
-        quietUnread: rows.filter(r => !seen.has(r.nid) && r.quiet).map(r => r.nid)
+        /* Only those the Notifications page lists (?all=1, the newest
+           HISTORY_MAX): an older one counted on the badge with nothing there
+           to read or clear it by. */
+        quietUnread: kept.slice(0, HISTORY_MAX).filter(r => !seen.has(r.nid) && r.quiet).map(r => r.nid)
     });
 }
 

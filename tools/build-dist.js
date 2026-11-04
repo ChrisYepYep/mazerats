@@ -131,4 +131,27 @@ if (problems.length) {
     console.error("build-dist:\n  " + problems.join("\n  "));
     process.exit(1);
 }
+/* The Content-Security-Policy (4 Nov 2026; see netlify/functions/_csp.js), which
+   names every inline script in the pages as they will ship, so it can only be
+   written now. What a hash cannot cover fails the build instead of shipping a
+   button that does nothing: a handler in the markup, or a javascript: address,
+   in a page or in markup a script builds. */
+const pageNames = fs.readdirSync(OUT).filter(n => /\.html$/i.test(n));
+const pages = pageNames.map(n => fs.readFileSync(path.join(OUT, n), "utf8"));
+const JS_URL = /\b(?:href|src|action|formaction)\s*=\s*\\?["']?\s*javascript:/i;
+pages.forEach((html, i) => {
+    // Without the raw elements and comments, whose text is not markup.
+    const markup = html.replace(/<!--[\s\S]*?-->|<(script|style|textarea|title)\b[^>]*>[\s\S]*?<\/\1\s*>/gi, "");
+    if (/<[a-z][^<>]*?\son[a-z]{3,}\s*=/i.test(markup) || JS_URL.test(markup)) problems.push(`${pageNames[i]} has a handler in its markup (on...=) or a javascript: address, which the Content-Security-Policy would block`);
+});
+for (const name of fs.readdirSync(path.join(OUT, "js")).filter(n => /\.js$/i.test(n))) {
+    const js = fs.readFileSync(path.join(OUT, "js", name), "utf8");
+    if (/<[a-z][^<>\n]*?\son[a-z]{3,}=["'\\$]/i.test(js) || JS_URL.test(js)) problems.push(`js/${name} builds a handler in markup (on...=) or a javascript: address, which the Content-Security-Policy would block`);
+}
+if (problems.length) {
+    console.error("build-dist:\n  " + problems.join("\n  "));
+    process.exit(1);
+}
+const { policyFor } = require(path.join(ROOT, "netlify", "functions", "_csp.js"));
+fs.writeFileSync(path.join(OUT, "_headers"), "/*\n  Content-Security-Policy: " + policyFor(pages) + "\n");
 console.log(`build-dist: ${files} files copied to dist/`);

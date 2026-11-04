@@ -207,6 +207,9 @@
         return img;
     }
 
+    const stillQuery = window.matchMedia ? window.matchMedia("(prefers-reduced-motion: reduce)") : null;
+    const stillPlease = () => Boolean(stillQuery && stillQuery.matches);
+
     const ready = (img) => !!(img && img.complete && img.naturalWidth);
     const rand = (a, b) => a + Math.random() * (b - a);
     const pick = (list) => list[Math.floor(Math.random() * list.length)];
@@ -383,7 +386,8 @@
        cannot put the cycle out of step with itself. */
     function cycle(now) {
         if (!startedAt) startedAt = now;
-        const elapsed = now - startedAt;
+        // Reduced motion: one hotel, held. See draw.
+        const elapsed = stillPlease() ? 0 : now - startedAt;
         const n = Math.max(1, VIEWS.length);
         const i = Math.floor(elapsed / HOLD_MS) % n;
         const into = elapsed % HOLD_MS;
@@ -444,6 +448,16 @@
 
         if (!lanes.length) reset();
         ensureTrail();
+
+        /* REDUCED MOTION (4 Nov 2026): the opening screenful stands where it
+           was seeded, with no trail and nothing coming in behind it. Asked
+           every frame, as the setting can change while the title is up. */
+        if (stillPlease()) {
+            lastAt = 0;
+            trailCtx.clearRect(0, 0, Iso.WIDTH, Iso.HEIGHT);
+            for (const lane of lanes) if (lane.item) stamp(ctx, lane.item);
+            return;
+        }
 
         const dt = lastAt ? Math.min(120, now - lastAt) : 0;
         lastAt = now;

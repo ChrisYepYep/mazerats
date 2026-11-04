@@ -66,8 +66,9 @@
         return String(v);
     }
     const mb = b => typeof b === "number" ? (b >= 1e6 ? (b / 1e6).toFixed(1) + " MB" : Math.max(1, Math.round(b / 1e3)) + " KB") : "?";
-    const when = iso => new Date(iso).toLocaleString("en-GB", { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
-    const day = iso => new Date(iso).toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "short" });
+    // UTC with the label, as the Warren's other panels say a time.
+    const when = iso => new Date(iso).toLocaleString("en-GB", { timeZone: "UTC", weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", hour12: false }) + " UTC";
+    const day = iso => new Date(iso).toLocaleDateString("en-GB", { timeZone: "UTC", weekday: "long", day: "numeric", month: "short" });
     function el(tag, cls, text) {
         const e = document.createElement(tag);
         if (cls) e.className = cls;
@@ -200,7 +201,7 @@
         data.pages.forEach(p => wrap.appendChild(pageBlock(p, data.now)));
         body.appendChild(wrap);
         const next = $("speed-next");
-        if (next) next.textContent = "Measured by Google on an emulated mid-range phone over slow 4G. Next weekly check: " + day(data.nextWeekly) + ", " + new Date(data.nextWeekly).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" }) + ". Hover a number for what it means. One run can be a few tenths off the last, so watch the trend.";
+        if (next) next.textContent = "Measured by Google on an emulated mid-range phone over slow 4G. Next weekly check: " + day(data.nextWeekly) + ", " + new Date(data.nextWeekly).toLocaleTimeString("en-GB", { timeZone: "UTC", hour: "2-digit", minute: "2-digit", hour12: false }) + " UTC. Hover a number for what it means. One run can be a few tenths off the last, so watch the trend.";
         const btn = $("speed-measure");
         if (btn) {
             const may = canWrite();
@@ -226,7 +227,12 @@
         try {
             const res = await fetch(URL_ + "?fresh=" + Date.now(), { cache: "no-store", headers: { "x-admin-token": t } });
             const j = await res.json().catch(() => null);
-            if (res.status === 401) { say("Your session has expired. Sign in again to see the speed checks.", true); return; }
+            if (res.status === 401) {
+                // The sign-in box comes up, as every other panel's does; the card reads again when it is next shown.
+                say("Your session has expired. Sign in again to see the speed checks.", true);
+                if (typeof window.AdminLockOut === "function") window.AdminLockOut();
+                return;
+            }
             if (!res.ok || !j || !Array.isArray(j.pages)) throw new Error((j && j.error) || "speed-checks " + res.status);
             const had = data && data.request;
             data = j;
@@ -300,7 +306,12 @@
         const panel = card.closest(".admin-panel");
         if (!panel || !panel.hidden) load();
         else {
-            const seen = new MutationObserver(() => { if (!panel.hidden) { seen.disconnect(); load(); } });
+            // Kept on until it has the numbers: signing back in shows the panel again.
+            const seen = new MutationObserver(() => {
+                if (panel.hidden) return;
+                if (data) seen.disconnect();
+                else load();
+            });
             seen.observe(panel, { attributes: true, attributeFilter: ["hidden"] });
         }
     });

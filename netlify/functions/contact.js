@@ -292,7 +292,7 @@ exports.handler = async (event) => {
                 }
             } catch (e) {
                 console.error("contact: could not check the sender", e);
-                return json(503, { error: "Your message could not be saved just now. Please try again in a minute." });
+                return json(503, { error: "Your message couldn't be saved just now. Please try again in a minute." });
             }
         }
 
@@ -330,7 +330,7 @@ exports.handler = async (event) => {
             }
         } catch (e) {
             console.error("contact: could not save a message", e);
-            return json(503, { error: "Your message could not be saved just now. Please try again in a minute." });
+            return json(503, { error: "Your message couldn't be saved just now. Please try again in a minute." });
         }
         if (await claimNotifySlot(db, "contact", EMAILS_PER_HOUR)) {
             await sendNotificationEmail({ username, discord: entry.discord, message, verified: Boolean(player), sender: from });

@@ -83,19 +83,25 @@ function categoryName(key) {
         .map(w => w[0].toUpperCase() + w.slice(1)).join(" ");
 }
 
-/* "{{ 1787726457000 | date: 'mediumDate' }}" as the app would show it,
-   "Aug 26, 2026" — the form every article already stored has. UTC, so the
-   day does not depend on where the function happens to run. Text that is
-   not the template is left as it was. */
+/* "{{ 1787726457000 | date: 'mediumDate' }}" in the site's own form,
+   "26 Aug 2026". UTC, so the day does not depend on where the function
+   happens to run. "Aug 26, 2026", Habbo's US form that every article already
+   stored has, is turned round too (cleanArticle runs on each public read, so
+   old copies change without a re-save). Other text is left as it was. */
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 function articleDate(text) {
+    const us = /^\s*([A-Z][a-z]{2})[a-z]*\.?\s+(\d{1,2}),\s*(\d{4})\s*$/.exec(text || "");
+    if (us && MONTHS.includes(us[1])) return `${Number(us[2])} ${us[1]} ${us[3]}`;
     const m = /\{\{\s*(\d{10,14})\s*\|\s*date\b[^}]*\}\}/.exec(text || "");
     if (!m) return text || "";
     const d = new Date(Number(m[1]));
-    return isNaN(d) ? "" : `${MONTHS[d.getUTCMonth()]} ${d.getUTCDate()}, ${d.getUTCFullYear()}`;
+    return isNaN(d) ? "" : `${d.getUTCDate()} ${MONTHS[d.getUTCMonth()]} ${d.getUTCFullYear()}`;
 }
 
-const FETCH_TIMEOUT_MS = 12000;
+/* Well inside a ten-second function limit (4 Nov 2026; it was twelve, which
+   never fired on such a limit, so a slow Habbo meant the platform's bare error
+   and not "Habbo took too long to answer"). */
+const FETCH_TIMEOUT_MS = 8000;
 
 /* Redirects are followed by hand, and only so far.
 
@@ -533,7 +539,7 @@ exports.handler = async (event) => {
                 ? e.userMessage
                 : e.name === "AbortError"
                     ? "Habbo took too long to answer."
-                    : "Could not reach Habbo to read that article."
+                    : "Couldn't reach Habbo to read that article."
         });
     } finally {
         clearTimeout(timer);
@@ -595,7 +601,7 @@ function cleanArticle(article) {
     return {
         url,
         title: str(article.title),
-        date: str(article.date),
+        date: articleDate(str(article.date)),
         category: str(article.category),
         summary: str(article.summary),
         image: safeUrl(typeof article.image === "string" ? article.image : "", base),

@@ -1070,7 +1070,7 @@ window.AdminRecolour = (function () {
     async function duplicate() {
         const o = state.origin;
         const suggest = o && o.kind === "saved" ? (state.name.trim() || "Palette") + " copy" : state.name.trim();
-        const name = await askText("Name for the new palette", { title: "Save As New", label: "Name", value: suggest, maxlength: 60 });
+        const name = await askText("Name for the new palette", { title: "Save as new", label: "Name", value: suggest, maxlength: 60 });
         if (!name || !name.trim()) return;
         return create(name.trim(), "Saved a new palette,");
     }
@@ -1370,7 +1370,7 @@ window.AdminRecolour = (function () {
            answer adopted ITS palette's name and id over the colours just
            loaded, so the next Save put one palette's colours on another. */
         if (writing) { say("Wait for the save to finish, then load it.", "bad"); render(); return; }
-        if (state.dirty && !await ask("You have unsaved changes to " + esc(describe()) + ". Load another anyway? Your changes will be lost.", { danger: true })) { render(); return; }
+        if (state.dirty && !await ask("Discard your unsaved changes to " + esc(describe()) + " and load another? Anything you have added or edited since opening it will be lost.", { danger: true })) { render(); return; }
         const seq = ++state.loading;
         const cut = String(value || "").indexOf(":");
         const kind = cut > 0 ? value.slice(0, cut) : "";
@@ -1405,7 +1405,7 @@ window.AdminRecolour = (function () {
             let got;
             try { got = await themePalette(t.id); }
             catch (e) {
-                if (seq === state.loading) { render(); say("Could not read the " + t.label + " theme: " + e.message, "bad"); }
+                if (seq === state.loading) { render(); say("Couldn't read the " + t.label + " theme: " + e.message, "bad"); }
                 return;
             }
             if (seq !== state.loading) return;       // something else was picked meanwhile
@@ -1433,8 +1433,8 @@ window.AdminRecolour = (function () {
     function savedOn(iso) {
         const d = new Date(iso);
         if (isNaN(d)) return "";
-        const opts = { day: "numeric", month: "short" };
-        if (d.getFullYear() !== new Date().getFullYear()) opts.year = "numeric";
+        const opts = { day: "numeric", month: "short", timeZone: "UTC" };
+        if (d.getUTCFullYear() !== new Date().getUTCFullYear()) opts.year = "numeric";
         return d.toLocaleDateString("en-GB", opts);
     }
 
@@ -1610,7 +1610,7 @@ window.AdminRecolour = (function () {
             // (see netlify.toml), and there is no reason to spend a hop.
             window.open("/home?palette=preview#palette-preview=" + handoff, "_blank", "noopener");
             say("Opened the site with this palette on. It lasts for that tab only.", "good");
-        } catch (e) { say("Could not start a preview — private mode?", "bad"); }
+        } catch (e) { say("Couldn't start a preview — private mode?", "bad"); }
     }
 
     function exportJson() {
@@ -1780,7 +1780,7 @@ window.AdminRecolour = (function () {
         }
         try { await refresh(); } catch (e) {
             if (e.status === 401) failed(e);
-            else say("Could not load saved palettes: " + e.message, "bad");
+            else say("Couldn't load saved palettes: " + e.message, "bad");
         }
         render();
         return state.catalogue;

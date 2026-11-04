@@ -275,6 +275,20 @@ const MODES = ["auto", "none", "event", "closed"];
 const CLOSED = "Entries are closed just now.";
 // An entry the database or the picture store could not take (see the POST).
 const UNSAVED = "Your entry couldn't be saved just now. Try again in a minute.";
+// Past this a send has either stored its picture or stopped: a function's limit.
+const UPLOAD_GRACE_MS = 30 * 1000;
+
+/* True or false, or null when the store cannot say. A row from before entries
+   had pictures, or with no key, is not a dead picture. */
+async function pictureIsThere(row) {
+    if (!row.image || !row.image.key) return true;
+    try {
+        return Boolean(await imagesStore().getMetadata(row.image.key));
+    } catch (e) {
+        console.error("event-entries: picture store failed", e && e.message);
+        return null;
+    }
+}
 
 async function readConfig(db) {
     const row = await db.collection(CONFIG).findOne({ _id: "open" });
@@ -292,12 +306,12 @@ function spanOf(ev) {
     return { start, end };
 }
 
-const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
-// "19:05 UTC on 3 October", the site's UTC wording.
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+// "19:05 UTC on 3 Oct 2026", the site's UTC wording.
 function utcWhen(ms) {
     const d = new Date(ms);
     const hm = `${String(d.getUTCHours()).padStart(2, "0")}:${String(d.getUTCMinutes()).padStart(2, "0")}`;
-    return `${hm} UTC on ${d.getUTCDate()} ${MONTHS[d.getUTCMonth()]}`;
+    return `${hm} UTC on ${d.getUTCDate()} ${MONTHS[d.getUTCMonth()]} ${d.getUTCFullYear()}`;
 }
 
 /* The event an entry made now belongs to: { id, title } or null.
@@ -426,12 +440,12 @@ async function handlePost(event, db) {
        invented name on the list. Control characters and every run of
        whitespace (line and paragraph separators included) become a space. */
     const habboName = oneLine(text(body.habboName));
-    if (!habboName) return json(400, { error: "What's your Habbo Origins username?" });
+    if (!habboName) return json(400, { error: "What's your Habbo name?" });
     if (habboName.length > HABBO_NAME_MAX) {
         return json(400, { error: `Username is too long. Please keep it to ${HABBO_NAME_MAX} characters or fewer.` });
     }
     if (!HABBO_NAME_OK.test(habboName)) {
-        return json(400, { error: "That doesn't look like a Habbo username: no spaces, and only letters, numbers and marks like - = ? ! @ : . , in it. Check how yours is spelt." });
+        return json(400, { error: "That doesn't look like a Habbo name: no spaces, and only letters, numbers and marks like - = ? ! @ : . , in it. Check how yours is spelt." });
     }
 
     // `*`, not `+`: an empty file's data: URL has nothing after the comma,
@@ -459,7 +473,7 @@ async function handlePost(event, db) {
     const sender = player ? `p:${player.id}` : (ip ? `ip:${ip}` : null);
     const dedupe = Boolean(clientRef && sender);
     // `correction` too (2 Oct 2026): a retried correction was answered as a first entry.
-    const earlier = () => entries.findOne({ sender, clientRef }, { projection: { _id: 0, id: 1, status: 1, eventId: 1, eventTitle: 1, correction: 1 } });
+    const earlier = () => entries.findOne({ sender, clientRef }, { projection: { _id: 0, id: 1, status: 1, eventId: 1, eventTitle: 1, correction: 1, image: 1, createdAt: 1 } });
     const answer = (row, code) => json(code, {
         id: row.id, status: row.status,
         event: row.eventId ? { id: row.eventId, title: row.eventTitle || row.eventId } : null,
@@ -469,7 +483,19 @@ async function handlePost(event, db) {
     });
     if (dedupe) {
         const prior = await earlier();
-        if (prior) return answer(prior, 200);
+        /* A row whose send never got as far as its picture (4 Nov 2026, the
+           bug scan): a database blip between the insert and the store left it
+           behind if the take-back failed as well, and Send again was told
+           "Entry Submitted" on a row with a dead picture, using one of their
+           two places. It is taken away and this send goes on as the first.
+           UPLOAD_GRACE_MS, because the first send may still be uploading. */
+        if (prior) {
+            const kept = await pictureIsThere(prior);
+            if (kept === null) return json(503, { error: UNSAVED });
+            if (kept || prior.status !== "new") return answer(prior, 200);
+            if (Date.now() - new Date(prior.createdAt).getTime() < UPLOAD_GRACE_MS) return json(503, { error: UNSAVED });
+            await entries.deleteOne({ id: prior.id, status: "new" });
+        }
     }
 
     /* Counted by account for a signed-in entrant, and by network for a
@@ -549,17 +575,26 @@ async function handlePost(event, db) {
         return answer(prior, 200);
     }
     const takeBack = () => entries.deleteOne({ id: entry.id });
-    if (await countMine(WINDOW_MS) > WINDOW_LIMIT) { await takeBack(); return json(429, { error: TOO_MANY }); }
-    if (await countMine(DAY_MS) > DAY_LIMIT) { await takeBack(); return json(429, { error: TOO_MANY_TODAY }); }
-    if (await countNet(WINDOW_MS) > NET_WINDOW_LIMIT) { await takeBack(); return json(429, { error: NET_TOO_MANY }); }
-    if (await countNet(DAY_MS) > NET_DAY_LIMIT) { await takeBack(); return json(429, { error: NET_TOO_MANY_TODAY }); }
-    if (await countAll() > GLOBAL_PER_HOUR) { await takeBack(); return json(429, { error: BUSY }); }
-    if (await countForEvent() > EVENT_ENTRIES) { await takeBack(); return json(429, { error: EVENT_FULL, eventFull: true }); }
-    const quotaKey = player ? `p:${player.id}` : net;
-    const refundBytes = await withinByteQuota(db, quotaKey, buffer.length);
-    if (!refundBytes) {
-        await takeBack();
-        return json(429, { error: TOO_MANY_TODAY });
+    /* A failure in any of these (4 Nov 2026, the bug scan) left the row behind
+       with no picture: it is taken back on the way out, as a refusal is. If the
+       take-back fails too, the next send of this clientRef finds it above. */
+    let refundBytes;
+    try {
+        if (await countMine(WINDOW_MS) > WINDOW_LIMIT) { await takeBack(); return json(429, { error: TOO_MANY }); }
+        if (await countMine(DAY_MS) > DAY_LIMIT) { await takeBack(); return json(429, { error: TOO_MANY_TODAY }); }
+        if (await countNet(WINDOW_MS) > NET_WINDOW_LIMIT) { await takeBack(); return json(429, { error: NET_TOO_MANY }); }
+        if (await countNet(DAY_MS) > NET_DAY_LIMIT) { await takeBack(); return json(429, { error: NET_TOO_MANY_TODAY }); }
+        if (await countAll() > GLOBAL_PER_HOUR) { await takeBack(); return json(429, { error: BUSY }); }
+        if (await countForEvent() > EVENT_ENTRIES) { await takeBack(); return json(429, { error: EVENT_FULL, eventFull: true }); }
+        const quotaKey = player ? `p:${player.id}` : net;
+        refundBytes = await withinByteQuota(db, quotaKey, buffer.length);
+        if (!refundBytes) {
+            await takeBack();
+            return json(429, { error: TOO_MANY_TODAY });
+        }
+    } catch (e) {
+        await takeBack().catch(() => {});
+        throw e;
     }
     try {
         await imagesStore().set(key, buffer, { metadata: { contentType: kind.mime } });

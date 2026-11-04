@@ -1981,7 +1981,7 @@ document.addEventListener("DOMContentLoaded", () => {
     function failedToLoad() {
         stage.classList.add("is-ready");
         statusEl.hidden = false;
-        statusEl.textContent = "The map could not be loaded. Try again in a moment.";
+        statusEl.textContent = "The map couldn't be loaded. Try again in a moment.";
     }
 
     async function load() {

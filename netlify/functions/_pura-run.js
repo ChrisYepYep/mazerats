@@ -47,6 +47,7 @@
 const crypto = require("crypto");
 const jwt = require("jsonwebtoken");
 const Engine = require("../../js/pura-engine.js");
+const { publicIdOf } = require("./_publicid");
 
 const RUN_AUDIENCE = "mazerats-purarun";
 const RUN_LIFE_S = 3 * 60 * 60;
@@ -90,12 +91,23 @@ function seedOf(rid) {
 // The first n pieces of a run, never more than a game may place (dealt past it, they could not be saved).
 const dealOf = (claims, n) => Engine.kinds(claims.seed, Math.max(0, Math.min(n, MAX_PIECES)));
 
+/* Whose run a token says it is: the account's public id, not its Discord id.
+   The token sits in the browser for up to a day (a game left part-way, a game
+   waiting to be saved) and a JWT's payload is plain to read, so the Discord id
+   was there for the next person at a shared computer. A token signed before
+   this names the Discord id itself, and still counts for its own life. */
+const subOf = id => publicIdOf(id);
+const runIsPlayers = (c, player) => {
+    const sub = String(c.sub);
+    return sub === subOf(player.id) || sub === String(player.id);
+};
+
 /* A new run's token, and its first WINDOW pieces. The token names the run,
    its start and (signed in) the account: no seed. */
 function signRun(player, now) {
     if (!process.env.SESSION_SECRET) return null;
     const claims = { rid: crypto.randomBytes(12).toString("hex"), t: now };
-    if (player) claims.sub = player.id;
+    if (player) claims.sub = subOf(player.id);
     const token = jwt.sign(claims, secret(), { audience: RUN_AUDIENCE, expiresIn: RUN_LIFE_S, algorithm: "HS256" });
     return { token, rid: claims.rid, deal: Engine.kinds(seedOf(claims.rid), WINDOW) };
 }
@@ -106,7 +118,8 @@ function signRun(player, now) {
 function resignRun(c, renewing) {
     const claims = { rid: c.rid, t: c.t, resumed: renewing ? Boolean(c.resumed) : true };
     if (!claims.resumed) delete claims.resumed;
-    if (c.sub) claims.sub = c.sub;
+    // A snowflake is an old token's Discord id: its new life names the public id.
+    if (c.sub) claims.sub = /^\d{5,}$/.test(String(c.sub)) ? subOf(c.sub) : c.sub;
     return jwt.sign(claims, secret(), { audience: RUN_AUDIENCE, expiresIn: RUN_LIFE_S, algorithm: "HS256" });
 }
 
@@ -121,7 +134,7 @@ function readRun(token, player, opts) {
         if (!c || typeof c.rid !== "string" || !/^[0-9a-f]{24}$/.test(c.rid)) return null;
         if (!Number.isFinite(c.t)) return null;
         if (c.seed !== undefined && !Number.isInteger(c.seed)) return null;
-        if (c.sub && player && String(c.sub) !== String(player.id)) return null;
+        if (c.sub && player && !runIsPlayers(c, player)) return null;
         c.legacy = c.seed !== undefined;
         if (!c.legacy) c.seed = seedOf(c.rid);
         return c;
@@ -163,5 +176,5 @@ function checkLog(claims, log, stamp) {
 
 module.exports = {
     RUN_AUDIENCE, RUN_LIFE_S, RUN_TOLERANCE_MS, PIECE_MIN_MS, MAX_PIECES, MAX_BODY, WINDOW,
-    seedOf, dealOf, signRun, resignRun, readRun, stampFor, stamped, checkLog
+    seedOf, dealOf, signRun, resignRun, readRun, runIsPlayers, stampFor, stamped, checkLog
 };

@@ -8,6 +8,9 @@ const { describe: describeChanges, changedFields, keepPastDay, canon } = require
 const { checkRecord } = require("./_url");
 const { cleanArticle } = require("./article");
 const { assignSlugs, settleSlug, idFor, recheckSlug, loadRetired, retireAddresses, PROJECTION: SLUG_FIELDS } = require("./_slugs");
+const { archiveMemo, mayHaveWritten, copies } = require("./_archive-memo");
+
+const archive = archiveMemo("events", "event");
 
 const json = (statusCode, data) => ({
     statusCode,
@@ -137,19 +140,28 @@ async function handle(event) {
         // ?full=1 refused before the read, not after it (2 Oct 2026) — see
         // the same step in rooms.js.
         if ((event.queryStringParameters || {}).full === "1" && !(await hasAccount(event))) return UNAUTHORIZED;
-        let all;
+        /* ?full=1 from the database, and the public form from the kept copy,
+           given shallow copies to change (4 Nov 2026) — see rooms.js and
+           _archive-memo.js. */
+        let all, retired;
         try {
-            all = await events.find({}, { projection: { _id: 0 } }).toArray();
+            if ((event.queryStringParameters || {}).full === "1") {
+                all = await events.find({}, { projection: { _id: 0 } }).toArray();
+                retired = await loadRetired(db, "event").catch(e => {
+                    console.error("events: retired addresses unreadable", e);
+                    return [];
+                });
+            } else {
+                const kept = await archive.read(db);
+                all = copies(kept.docs);
+                retired = kept.retired;
+            }
         } catch (e) {
             console.error("events: read failed", e);
-            return json(503, { error: "The archive could not be read just now." });
+            return json(503, { error: "The archive couldn't be read just now." });
         }
         // Every event's address — see the same step in rooms.js, retired
         // addresses and all.
-        const retired = await loadRetired(db, "event").catch(e => {
-            console.error("events: retired addresses unreadable", e);
-            return [];
-        });
         const slugs = assignSlugs(all, "event", retired);
         all.forEach(r => { r.slug = slugs.get(r.id) || r.id; });
         /* An article stored before article.js knew to drop comments
@@ -451,12 +463,15 @@ async function handle(event) {
 
         // A save that changes nothing does not move updatedAt or the change
         // list — see the same block in rooms.js.
-        const moved = changedFields(previous, update);
+        // The save's article has been through cleanArticle; so must the stored one, or a date written the old way reads as a change.
+        const cleanedBefore = previous.article && typeof previous.article.body === "string" && previous.article.body
+            ? { ...previous, article: cleanArticle(previous.article) } : previous;
+        const moved = changedFields(cleanedBefore, update);
         if (moved && moved.length === 0) {
             delete update.updatedAt;
             delete update.changes;
         } else {
-            const changed = describeChanges(previous, update);
+            const changed = describeChanges(cleanedBefore, update);
             if (changed) update.changes = changed;
             // The day it replaces, kept as its own What's New entry.
             keepPastDay(previous, update);
@@ -510,12 +525,16 @@ async function handle(event) {
    cannot read, or with Lambda's own error JSON and its stack trace. Caught
    once here, so every route answers with something the form can show. */
 exports.handler = async (event) => {
+    let res;
     try {
-        return await handle(event);
+        res = await handle(event);
     } catch (e) {
         console.error("events: request failed", e);
-        return json(503, { error: "The archive couldn't be saved just now. Try again in a minute." });
+        res = json(503, { error: "The archive couldn't be saved just now. Try again in a minute." });
     }
+    // Every write comes through here — see the same step in rooms.js.
+    if (mayHaveWritten(event, res)) await getDb().then(db => archive.wrote(db)).catch(e => console.error("events: could not stamp the archive", e));
+    return res;
 };
 
 /* Failures reported to /warren's Errors tab (28 Sept 2026): see

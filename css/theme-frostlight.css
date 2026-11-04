@@ -9,7 +9,7 @@
    completely inert until js/site.js puts that attribute on <html>. The
    classic palette is not defined here and is not affected by anything in it.
 
-   1210 rules, 1942 declarations, hues 208 (surfaces) / 216 (accents).
+   1228 rules, 1963 declarations, hues 208 (surfaces) / 216 (accents).
 */
 :root[data-light] {
     --bg-black: #5f91bd;
@@ -322,10 +322,6 @@ html[data-light] .welcome-promo {
 }
 
 html[data-light] .welcome-promo-slide:focus-visible {
-    outline: none;
-}
-
-html[data-light] .welcome-promo:has(.welcome-promo-slide:focus-visible) {
     outline: 2px solid #3f6e97;
 }
 
@@ -446,6 +442,7 @@ html[data-light] .modal-body .btn:hover {
 }
 
 html[data-light] .chrome-window {
+    border-color: #25415a;
     border-image-source: url('../assets/img/frostlight/window_frame.png?v=f98590de');
     box-shadow: 0 16px 44px rgba(23, 53, 79, 0.3);
 }
@@ -524,6 +521,7 @@ html[data-light] .chrome-nav-btn {
 
 html[data-light] .chrome-nav-btn::before {
     border-image-source: url('../assets/img/frostlight/btn_inactive.png?v=9980f11c');
+    background: linear-gradient(#c7d8e8, #c7d8e8) center / calc(100% - 6px) calc(100% - 6px) no-repeat border-box;
     filter: sepia(0.25) saturate(0.5) brightness(0.66) contrast(1.05);
 }
 
@@ -551,6 +549,7 @@ html[data-light] .chrome-nav-top .chrome-nav-btn.active::before {
 
 html[data-light] .chrome-nav-btn.active::before {
     border-image-source: url('../assets/img/frostlight/btn_active.png?v=6f1dd52b');
+    background: linear-gradient(#d1e0ec, #d1e0ec) center / calc(100% - 6px) calc(100% - 6px) no-repeat border-box;
     filter: saturate(0.54) brightness(1.18) hue-rotate(4deg);
 }
 
@@ -732,6 +731,7 @@ html[data-light] .tag {
 html[data-light] #search-wrap::before,
 html[data-light] #browse-window.is-opening .opening-search-bar::before {
     border-image-source: url('../assets/img/frostlight/btn_active.png?v=6f1dd52b');
+    background: linear-gradient(#d1e0ec, #d1e0ec) center / calc(100% - 6px) calc(100% - 6px) no-repeat border-box;
     filter: saturate(0.54) brightness(1.18) hue-rotate(4deg);
 }
 
@@ -966,7 +966,7 @@ html[data-light] .photo-frame-close {
 }
 
 html[data-light] .photo-frame-close:focus-visible {
-    outline: 1px solid #3f6e97;
+    outline: 2px solid #3f6e97;
 }
 
 html[data-light] .photo-frame-photo-box::after {
@@ -1028,7 +1028,7 @@ html[data-light] .furni-card-close {
 }
 
 html[data-light] .furni-card-close:focus-visible {
-    outline: 1px solid #456480;
+    outline: 2px solid #3f6e97;
 }
 
 html[data-light] .furni-card-name {
@@ -1095,21 +1095,55 @@ html[data-light] .lightbox-img {
     box-shadow: 0 20px 60px rgba(23, 53, 79, 0.4);
 }
 
+html[data-light] .lightbox-close,
+html[data-light] .lightbox-overlay .gallery-nav {
+    border: 0;
+    background-color: transparent;
+}
+
 html[data-light] .lightbox-close {
-    background: rgba(221, 230, 238, 0.6);
-    border: 1px solid var(--border);
-    color: #1b2a41;
+    background-image: url('../assets/img/frostlight/modal_topclose_x.png?v=1c079802');
+}
+
+html[data-light] .lightbox-overlay .gallery-prev,
+html[data-light] .lightbox-overlay .lightbox-prev {
+    background-image: url('../assets/img/frostlight/modal_arrow_prev.png?v=9f04e31b');
+}
+
+html[data-light] .lightbox-overlay .gallery-next,
+html[data-light] .lightbox-overlay .lightbox-next {
+    background-image: url('../assets/img/frostlight/modal_arrow_next.png?v=3b412ade');
+}
+
+html[data-light] .lightbox-close:hover,
+html[data-light] .lightbox-overlay .gallery-nav:hover {
+    background-color: rgba(255, 255, 255, 0.1);
+    border-color: transparent;
 }
 
 html[data-light] .gallery-nav {
-    background: rgba(243, 248, 252, 0.55);
+    background-color: rgba(243, 248, 252, 0.55);
     border: 1px solid var(--border);
     color: #1b2a41;
 }
 
 html[data-light] .gallery-nav:hover {
-    background: rgba(221, 230, 238, 0.8);
+    background-color: rgba(221, 230, 238, 0.8);
     border-color: #456480;
+}
+
+html[data-light] .gallery-nav::before {
+    background: currentColor;
+}
+
+html[data-light] .gallery-prev::before {
+    box-shadow: 1px 0, 1px -1px, 2px -1px, 2px -2px, 3px -2px, 3px -3px, 4px -3px,
+        1px 1px, 2px 1px, 2px 2px, 3px 2px, 3px 3px, 4px 3px;
+}
+
+html[data-light] .gallery-next::before {
+    box-shadow: -1px 0, -1px -1px, -2px -1px, -2px -2px, -3px -2px, -3px -3px, -4px -3px,
+        -1px 1px, -2px 1px, -2px 2px, -3px 2px, -3px 3px, -4px 3px;
 }
 
 html[data-light] .gallery-counter {
@@ -1862,6 +1896,7 @@ html[data-light] .console-frame {
 }
 
 html[data-light] .console-border {
+    border-color: transparent;
     border-image-source: url('../assets/img/frostlight/console/cnsl-frame-border.png?v=099e5c5a');
 }
 
@@ -1878,7 +1913,7 @@ html[data-light] .console-title {
 html[data-light] .console-close-btn {
     border: none;
     background-color: transparent;
-    background-image: url('../assets/img/frostlight/console/cnsl-top-x-close.png?v=f5e16bbe');
+    background-image: url('../assets/img/frostlight/console/cnsl-top-x-close.png?v=5a5397d9');
 }
 
 html[data-light] #console-frame:focus {
@@ -1887,8 +1922,28 @@ html[data-light] #console-frame:focus {
 
 html[data-light] .console-screen {
     border: 1px solid #000;
-    background-image: url('../assets/img/console/cnsl-bg-tile.png');
+    background-image: url('../assets/img/console/cnsl-bg-tile.png'), linear-gradient(#525252, #525252);
     color: #eeeeee;
+}
+
+@media (min-resolution: 1.2dppx) and (max-resolution: 1.3dppx) {
+    html[data-light] .console-screen,
+    html[data-light] .console-contact-actions.console-notices-actions,
+    html[data-light] .select-list.is-console,
+    html[data-light] .profile-online-mark::after,
+    html[data-light] .profile-search-results {
+        background-image: repeating-linear-gradient(#424242 0 0.1px, #636363 0.1px 0.9px, #424242 0.9px 1.6px) !important;
+    }
+}
+
+@media (min-resolution: 1.45dppx) and (max-resolution: 1.55dppx) {
+    html[data-light] .console-screen,
+    html[data-light] .console-contact-actions.console-notices-actions,
+    html[data-light] .select-list.is-console,
+    html[data-light] .profile-online-mark::after,
+    html[data-light] .profile-search-results {
+        background-image: repeating-linear-gradient(#424242 0 calc(1px / 6), #636363 calc(1px / 6) calc(5px / 6), #424242 calc(5px / 6) calc(4px / 3)) !important;
+    }
 }
 
 html[data-light] .console-frame::before {
@@ -2019,11 +2074,11 @@ html[data-light] .console-notices-markall {
 }
 
 html[data-light] .console-notices-markall:focus-visible {
-    outline: 1px dotted #eeeeee;
+    outline: 2px solid #3f6e97;
 }
 
 html[data-light] .console-notices-item:focus-visible {
-    outline: 1px dotted #eeeeee;
+    outline: 2px solid #3f6e97;
 }
 
 html[data-light] .console-notices-day {
@@ -2632,10 +2687,6 @@ html[data-light] .legal-page:focus {
     outline: none;
 }
 
-html[data-light] .legal-eyebrow {
-    color: #233856;
-}
-
 html[data-light] .legal-doc h1 {
     color: #1b2a41;
 }
@@ -2688,9 +2739,7 @@ html[data-light] .console-privacy-out a:focus-visible {
 }
 
 html[data-light] .legal-doc {
-    background: #6c9ac3;
-    border: 1px solid var(--border);
-    box-shadow: var(--shadow);
+    background: #8aafcf;
 }
 
 html[data-light] .archive-empty {
@@ -2720,6 +2769,35 @@ html[data-light] .gallery-photos::before {
     background: linear-gradient(to right, rgba(160, 190, 216, 0), #a0bed8);
 }
 
+html[data-light] :where([role="dialog"],
+html[data-light] [role="alertdialog"],
+html[data-light] [tabindex="-1"]):focus {
+    outline: none;
+}
+
+html[data-light] :where(a[href],
+html[data-light] button,
+html[data-light] summary,
+html[data-light] [role="button"],
+html[data-light] [role="link"],
+html[data-light] [role="tab"],
+html[data-light] [role="menuitem"],
+html[data-light] [role="switch"],
+html[data-light] [role="checkbox"],
+html[data-light] [role="radio"],
+html[data-light] [tabindex="0"],
+html[data-light] select,
+html[data-light] textarea,
+html[data-light] input):focus-visible {
+    outline: 2px solid #3f6e97;
+}
+
+html[data-light] :where(select,
+html[data-light] textarea,
+html[data-light] input).is-pointer-focus:focus-visible {
+    outline: none;
+}
+
 html[data-light] .chrome-list-row:focus-visible,
 html[data-light] .chrome-nav-btn:focus-visible,
 html[data-light] .chrome-frame-minimize-toggle:focus-visible,
@@ -2746,7 +2824,7 @@ html[data-light] .skip-link:focus-visible {
 }
 
 html[data-light] .archive-stat-n {
-    color: #1b2a41;
+    color: #1e3558;
 }
 
 html[data-light] .archive-stat-l {
@@ -2845,17 +2923,6 @@ html[data-light] .furni-head-complete-link:focus-visible {
 }
 
 html[data-light] .furni-head-complete-link:focus-visible {
-    outline: 2px solid #3f6e97;
-}
-
-html[data-light] .furni-band-more {
-    background: rgba(243, 248, 252, 0.25);
-    border: 1px solid var(--chrome-border);
-    box-shadow: 2px 2px 0 rgba(23, 53, 79, 0.2);
-    color: #1b2a41;
-}
-
-html[data-light] .furni-band-more:focus-visible {
     outline: 2px solid #3f6e97;
 }
 
@@ -3050,10 +3117,6 @@ html[data-light] .spotlight-frame::after {
 html[data-light] .spotlight-frame:hover,
 html[data-light] .spotlight-frame:has(.welcome-promo-slide:focus-visible) {
     border-color: #456480;
-}
-
-html[data-light] .spotlight-frame:has(.welcome-promo-slide:focus-visible) {
-    outline: 2px solid #3f6e97;
 }
 
 @media (max-width: 900px) {
@@ -3859,6 +3922,12 @@ html[data-light] .glyphs-intro {
     color: #1b2a41;
 }
 
+html[data-light] .glyphs-copy-field {
+    border: 1px solid var(--border);
+    background: #5f91bd;
+    color: #1b2a41;
+}
+
 html[data-light] .glyphs-intro kbd {
     border: 1px solid var(--chrome-border);
     background: linear-gradient(#97b7d4, #84abcd);
@@ -3957,6 +4026,13 @@ html[data-light] .profile-search-input:focus {
     background: rgba(238, 238, 238, 0.1);
 }
 
+html[data-light] .profile-search-input:focus-visible:not(.is-pointer-focus),
+html[data-light] .search-box input:focus-visible:not(.is-pointer-focus),
+html[data-light] .opening-search input:focus-visible:not(.is-pointer-focus),
+html[data-light] .sort-box select:focus-visible:not(.is-pointer-focus) {
+    outline: 2px solid #3f6e97;
+}
+
 html[data-light] .profile-search-results {
     background: url('../assets/img/console/cnsl-bg-tile.png') repeat;
     border: 1px solid var(--pc-text);
@@ -4031,7 +4107,7 @@ html[data-light] .profile-link:hover {
 html[data-light] #progress-overlay :is(button,
 html[data-light] summary,
 html[data-light] input):focus-visible {
-    outline: 1px dotted var(--pc-text);
+    outline: 2px solid #3f6e97;
 }
 
 html[data-light] .profile-avatar.is-blank {
@@ -4683,10 +4759,6 @@ html[data-light] .daily-note {
     color: #1e2f49;
 }
 
-html[data-light] .daily-verdict {
-    color: #1b2a41;
-}
-
 html[data-light] .odd-tile {
     border: 2px solid var(--chrome-border);
     background: #5f91bd;
@@ -4805,6 +4877,10 @@ html[data-light] .ff-run-tag.ff-abandoned {
 
 html[data-light] .lost-page:focus {
     outline: none;
+}
+
+html[data-light] .lost-sheet {
+    background: #8aafcf;
 }
 
 html[data-light] .lost-code {
@@ -5608,7 +5684,7 @@ html[data-light] .mazer-swatch span {
 
 html[data-light] .mazer-swatch:hover span,
 html[data-light] .mazer-swatch:focus-visible span {
-    outline: 1px solid #517b9f;
+    outline: 2px solid #3f6e97;
 }
 
 html[data-light] .mazer-swatch:focus {
@@ -5629,7 +5705,7 @@ html[data-light] .mazer-motto-box:focus {
 }
 
 html[data-light] .mazer-motto-box:focus-visible {
-    outline: 1px solid #517b9f;
+    outline: 2px solid #3f6e97;
 }
 
 @media (pointer: coarse) {
@@ -5670,7 +5746,7 @@ html[data-light] .chrome-title-home {
 }
 
 html[data-light] .chrome-title-home:focus-visible {
-    outline: 1px solid currentColor;
+    outline: 2px solid #3f6e97;
 }
 
 html[data-light] .opening-search-go {
@@ -5783,6 +5859,67 @@ html[data-light] .opening-now-row .chrome-go {
     color: color-mix(in srgb, var(--opening-ink) 75%, var(--opening-cream));
 }
 
+@supports not (color: color-mix(in srgb, red, blue)) {
+    html[data-light] .row-date {
+        color: #1b2a41 !important;
+    }
+}
+
+@supports not (color: color-mix(in srgb, red, blue)) {
+    html[data-light] .sort-chip {
+        border-color: rgba(255, 255, 255, 0.2) !important;
+    }
+}
+
+@supports not (color: color-mix(in srgb, red, blue)) {
+    html[data-light] .guess-sheet {
+        background: #b5cce1 !important;
+    }
+}
+
+@supports not (color: color-mix(in srgb, red, blue)) {
+    html[data-light] .room-links-refs-text a:not(:hover),
+    html[data-light] .modal-article-body h5,
+    html[data-light] .modal-article-body h6,
+    html[data-light] .modal-article-body a:not(:hover) {
+        color: #1e3558 !important;
+    }
+}
+
+@supports not (color: color-mix(in srgb, red, blue)) {
+    html[data-light] .modal-article-kicker,
+    html[data-light] .modal-article-origin a:not(:hover),
+    html[data-light] .modal-article-source a:not(:hover) {
+        color: #233856 !important;
+    }
+}
+
+@supports not (color: color-mix(in srgb, red, blue)) {
+    html[data-light] .de-chip.se-status-resolved {
+        color: var(--ok, #7fb069) !important;
+    }
+}
+
+@supports not (color: color-mix(in srgb, red, blue)) {
+    html[data-light] .opening-head-title {
+        background: rgba(255, 255, 255, 0.12) !important;
+        color: var(--opening-cream) !important;
+    }
+}
+
+@supports not (color: color-mix(in srgb, red, blue)) {
+    html[data-light] .opening-now-row {
+        background: var(--opening-cream) !important;
+    }
+}
+
+@supports not (color: color-mix(in srgb, red, blue)) {
+    html[data-light] .opening-now-row .opening-sub,
+    html[data-light] .opening-now-row .chrome-go {
+        color: var(--opening-ink) !important;
+    }
+}
+
 html[data-light] .opening-now-thumb {
     background: rgba(243, 248, 252, 0.3) center / cover;
     box-shadow: 0 0 0 1px #000;
@@ -5893,7 +6030,7 @@ html[data-light] .chrome-light {
 }
 
 html[data-light] .chrome-light:focus-visible {
-    outline: 1px solid currentColor;
+    outline: 2px solid #3f6e97;
 }
 
 html[data-light][data-dark] .chrome-light {
@@ -5924,13 +6061,13 @@ html[data-light] .art-strip-draw:focus-visible {
     outline: 2px solid #456480;
 }
 
-html[data-light] .art-actions a.tag.tag-filter:hover,
-html[data-light] .art-actions a.tag.tag-filter:focus-visible {
+html[data-light] .room-tags a.tag.tag-filter:hover,
+html[data-light] .room-tags a.tag.tag-filter:focus-visible {
     border-color: #456480;
     color: #1b2a41;
 }
 
-html[data-light] .art-actions a.tag.tag-filter:focus-visible {
+html[data-light] .room-tags a.tag.tag-filter:focus-visible {
     outline: 2px solid #3f6e97;
 }
 
@@ -6435,6 +6572,15 @@ html[data-light] .guess-pip.is-won.g4 {
 html[data-light] .guess-pip.is-lost {
     color: #e8c0b4;
 }
+/* A wrong name in Guess the Maze (4 Nov 2026, the bug scan): its red edge and
+   cross went navy with everything else, so it only read as faded. A warning
+   stays red, as --danger does. */
+html[data-light] .guess-option.is-wrong {
+    border-color: var(--danger);
+}
+html[data-light] .guess-option.is-wrong .guess-option-mark {
+    color: var(--danger);
+}
 /* The console's dropdowns' own options (1 Nov 2026, the bug scan): their
    dark grey is a fill, so it turned to ice, while the console's type stays
    white for its dark screen. Wherever the browser draws the list itself
@@ -6543,10 +6689,9 @@ html[data-light] #gallery-prev,
 html[data-light] #gallery-next {
     color: #0f1a2b;
 }
-/* The privacy page's eyebrow, headings and links, and the 404 page's
+/* The privacy page's headings and links, and the 404 page's
    Discord link: the accent navy on the page's mid blue, 4.0 to 4.4:1. The
    footer's navy, 4.7:1 and over; a hovered link keeps its own colour. */
-html[data-light] .legal-eyebrow,
 html[data-light] .legal-section h2,
 html[data-light] .legal-section a:not(:hover):not(:focus-visible),
 html[data-light] .lost-foot a:not(:hover):not(:focus-visible) {

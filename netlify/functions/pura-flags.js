@@ -235,13 +235,13 @@ async function report(db, event) {
         ]);
     } catch (e) {
         console.error("pura-flags: could not read the board", e);
-        return json(503, { error: "The Pura Panic scores could not be read just now." });
+        return json(503, { error: "The Pura Panic scores couldn't be read just now." });
     }
     let judged;
     try { judged = await judgeAll(db, rows); }
     catch (e) {
         console.error("pura-flags: could not judge the board", e);
-        return json(503, { error: "The Pura Panic scores could not be read just now." });
+        return json(503, { error: "The Pura Panic scores couldn't be read just now." });
     }
     const decided = new Map(decisions.map(d => [d._id, d]));
     const flagged = judged.filter(j => j.reasons.length);

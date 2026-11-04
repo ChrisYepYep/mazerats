@@ -564,7 +564,7 @@ exports.handler = async (event) => {
            anything left to catch. */
         if (isAuthUnavailable(e)) return AUTH_UNAVAILABLE;
         console.error("wizard: request failed", e);
-        return json(500, { error: "The atlas could not be reached just now" });
+        return json(500, { error: "The atlas couldn't be reached just now" });
     }
 };
 

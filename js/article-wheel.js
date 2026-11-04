@@ -36,7 +36,7 @@
 
     // Kept in step with the files, as a <script> tag's ?v= would be.
     const DRAW_SRC = "/js/wheel-draw.js?v=1";
-    const CSS_SRC = "/css/article-wheel.css?v=3";
+    const CSS_SRC = "/css/article-wheel.css?v=4";
     const MUTE_KEY = "mazerats_replay_muted";
     const SVG_NS = "http://www.w3.org/2000/svg";
     const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
@@ -548,7 +548,7 @@
             overlay.innerHTML = `
                 <div class="modal confirm-modal awh-pick" role="dialog" aria-modal="true" aria-labelledby="awh-pick-title">
                     <div class="chrome-titlebar">
-                        <h2 id="awh-pick-title">Put In a Wheel Draw</h2>
+                        <h2 id="awh-pick-title">Put in a wheel draw</h2>
                         <button type="button" class="chrome-close" aria-label="Cancel">&times;</button>
                     </div>
                     <div class="modal-body">

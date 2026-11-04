@@ -27,6 +27,16 @@
     } catch (e) { /* unreadable: nothing to act on */ }
 })();
 
+// A browser counts a text box clicked into as :focus-visible, so a press would
+// draw the keyboard's amber ring on it. Marked on the press, until it blurs
+// (.is-pointer-focus in css/style.css).
+document.addEventListener("pointerdown", e => {
+    const field = e.target && e.target.closest && e.target.closest("input, textarea, select");
+    if (!field) return;
+    field.classList.add("is-pointer-focus");
+    field.addEventListener("blur", () => field.classList.remove("is-pointer-focus"), { once: true });
+}, true);
+
 // Alphabetical sorting starts at the first real letter or number in a name,
 // ignoring anything before it. Maze names can open with one of Volter
 // Goldfish's picture glyphs (a star, a skull — see the palette on the admin
@@ -709,6 +719,33 @@ const PageMeta = (() => {
     };
 })();
 window.PageMeta = PageMeta;
+
+/* THE BROWSER BAR (4 Nov 2026, the bug scan). <meta name="theme-color"> is a
+   fixed dark brown in the page's head, which is Classic's page colour; under
+   any other palette, skin or the dark layer a phone's bar stayed that brown.
+   It follows the page's own background instead, read off the page so there is
+   no second list of colours to keep up. Asked again whenever the palette can
+   have changed: an attribute on <html> (data-theme, data-dark, data-light), a
+   stylesheet arriving, or anything put in <head> (a palette being worn). A
+   page with no background of its own keeps what its head says. */
+(function () {
+    const meta = document.querySelector('meta[name="theme-color"]');
+    if (!meta || typeof MutationObserver !== "function") return;
+    function follow() {
+        const body = document.body;
+        if (!body) return;
+        const colour = getComputedStyle(body).backgroundColor;
+        if (colour && colour !== "transparent" && !/,\s*0\)$/.test(colour) && meta.getAttribute("content") !== colour) {
+            meta.setAttribute("content", colour);
+        }
+    }
+    const root = document.documentElement;
+    new MutationObserver(follow).observe(root, { attributes: true, attributeFilter: ["data-theme", "data-dark", "data-light"] });
+    new MutationObserver(follow).observe(document.head, { childList: true });
+    document.addEventListener("load", e => { if (e.target && e.target.tagName === "LINK") follow(); }, true);
+    follow();
+    window.addEventListener("load", follow);
+})();
 
 /* A fragment-only link on a page with <base href="/"> (home.html) resolves
    to "/#x" — the landing page — rather than to "#x" on this one. home.html

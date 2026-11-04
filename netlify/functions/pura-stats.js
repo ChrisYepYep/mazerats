@@ -89,7 +89,7 @@ async function report(db, event) {
         ]);
     } catch (e) {
         console.error("pura-stats: could not read the game log", e);
-        return json(503, { error: "The Pura Panic figures could not be read just now." });
+        return json(503, { error: "The Pura Panic figures couldn't be read just now." });
     }
 
     /* The top ten as stored, each marked as the public board treats it

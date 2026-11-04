@@ -135,6 +135,71 @@
     const DEFAULT_FIGURE = "hd-180-1.ch-210-66.lg-270-82.sh-290-80.hr-100-61";
     const STORE_KEY = "mazerats_ff_room_v2";
 
+    /* THE STAND-INS (4 Nov 2026, the owner's: three male, three female). Habbo
+       Origins goes offline for maintenance breaks, and a player whose look
+       can't be found picks one of these. They are ordinary figures, so with
+       Habbo's imaging service up (it is a different host from Origins) they
+       are drawn as any other. Our own copies of the same pictures, made by
+       tools/ff-standins-build.js with the same six in the same order, cover
+       the service being down as well. */
+    const STAND_INS = [
+        { id: "m1", label: "Blue jumper", figure: "hd-180-1.hr-100-61.ch-210-82.lg-270-64.sh-290-80" },
+        { id: "m2", label: "Grey hoodie", figure: "hd-180-2.hr-115-64.ch-255-64.lg-275-62.sh-300-62" },
+        { id: "m3", label: "Red T-shirt", figure: "hd-180-3.hr-145-42.ch-215-73.lg-280-82.sh-290-62" },
+        { id: "f1", label: "Pink hoodie", figure: "hd-600-2.hr-890-34.ch-660-71.lg-700-92.sh-730-71" },
+        { id: "f2", label: "Red top", figure: "hd-600-1.hr-515-45.ch-665-73.lg-710-82.sh-725-92" },
+        { id: "f3", label: "Green top", figure: "hd-600-3.hr-515-61.ch-630-85.lg-715-64.sh-725-62" }
+    ];
+    const STAND_IN_CELL = { s: { w: 33, h: 56 }, l: { w: 128, h: 220 } };
+    const standInUrl = (id, size) => `/assets/img/standins/${id}-${size}.png`;
+    const isStandIn = (figure) => STAND_INS.some(s => s.figure === figure);
+    const standInSheets = new Map();
+
+    /* One picture from a stand-in's sheet, in the shape a real sprite has. A
+       row per action (std, sit, four walking frames), a column per direction.
+       Null until the sheet has arrived, as a real sprite is not ready yet. */
+    function standInSprite(dir, action, frame) {
+        // Whoever is being worn, or the first of them for a look we can't draw.
+        const who = STAND_INS.find(s => s.figure === state.figure) || STAND_INS[0];
+        const size = avatarSizing().size;
+        const key = who.id + "-" + size;
+        let sheet = standInSheets.get(key);
+        if (!sheet) {
+            sheet = { img: new Image(), ready: false, cells: new Map() };
+            sheet.img.onload = () => { sheet.ready = true; dirty = true; };
+            sheet.img.src = standInUrl(who.id, size);
+            standInSheets.set(key, sheet);
+        }
+        if (!sheet.ready) return null;
+        const row = action === "sit" ? 1 : action === "wlk" ? 2 + (frame | 0) % WALK_FRAMES : 0;
+        const col = ((dir | 0) % 8 + 8) % 8;
+        const cellKey = row + ":" + col;
+        let cell = sheet.cells.get(cellKey);
+        if (!cell) {
+            const { w, h } = STAND_IN_CELL[size];
+            const cv = document.createElement("canvas");
+            cv.width = w;
+            cv.height = h;
+            cv.getContext("2d").drawImage(sheet.img, col * w, row * h, w, h, 0, 0, w, h);
+            // The draw reads the size as it does from an image.
+            cv.naturalWidth = w;
+            cv.naturalHeight = h;
+            cell = { img: cv, ready: true, standIn: true };
+            sheet.cells.set(cellKey, cell);
+        }
+        return cell;
+    }
+
+    /* WHAT IS DRAWN FOR THE PLAYER. `real` is the sprite Habbo's imaging
+       service gave for the figure being worn, ready or not. A picture that
+       failed, or a service that has stopped answering, leaves a stand-in in
+       the room rather than nobody; FIGURE_ART_LINE says so. */
+    function fallbackFigure(real, dir, action, frame) {
+        if (real && real.ready) return real;
+        if (!real || real.failed || figureArtDown) return standInSprite(dir, action, frame);
+        return null;
+    }
+
     /* The three Origins hotels, as room-figure.js's ORIGINS_HOSTS knows them.
        Anything else - an old stored entry, a hand-edited one - is COM. */
     const HOTELS = ["COM", "ES", "BR"];
@@ -299,12 +364,44 @@
         if (!entry) {
             entry = { img: new Image(), ready: false };
             entry.img.crossOrigin = "anonymous";
-            entry.img.onload = () => { entry.ready = true; dirty = true; };
-            entry.img.onerror = () => { entry.failed = true; };
+            entry.img.onload = () => { entry.ready = true; dirty = true; figureArtHeard(); };
+            entry.img.onerror = () => { entry.failed = true; figureArtHeard(); };
             entry.img.src = url;
             sprites.set(url, entry);
         }
         return entry;
+    }
+
+    /* HABBO'S IMAGING SERVICE DOWN (4 Nov 2026): the room was empty of the
+       player and nothing said why. Up when a handful of the figure's pictures
+       have failed and not one has come; gone with the first that does. Said
+       on the title now (see status), and over the room as each round starts,
+       by when a service that only hangs counts too (figureArtCheck). */
+    const FIGURE_ART_LINE = "Habbo's avatar pictures aren't loading just now, so you're wearing a stand-in.";
+    const FIGURE_ART_FAILS = 8;
+    let figureArtDown = false;
+
+    function figureArtHeard() {
+        let ready = 0, failed = 0;
+        for (const e of sprites.values()) { if (e.ready) ready++; else if (e.failed) failed++; }
+        // Gone only with the first picture that comes, not with a retry's first failure.
+        const down = !ready && (figureArtDown || failed >= FIGURE_ART_FAILS);
+        if (down === figureArtDown) return;
+        figureArtDown = down;
+        status(down ? FIGURE_ART_LINE : "", down ? "error" : "");
+    }
+
+    function figureArtCheck() {
+        for (const e of sprites.values()) if (e.ready) return;
+        figureArtDown = true;
+        if (!Editor) tell(FIGURE_ART_LINE, "bad");
+    }
+
+    // A new room asks again for what failed: the service may be back.
+    function figureArtRetry() {
+        let any = false;
+        for (const [url, e] of sprites) if (e.failed) { sprites.delete(url); any = true; }
+        if (any) preload(state.figure);
     }
 
     function preload(figure) {
@@ -1314,14 +1411,16 @@
                 let sprite = avatarSprite(state.figure, at.dir, at.action, at.frame,
                     game ? carrying(now) : 0);
                 if (!sprite.ready) sprite = avatarSprite(state.figure, at.dir, at.action, at.frame);
-                if (!sprite.ready) return;
+                sprite = fallbackFigure(sprite, at.dir, at.action, at.frame);
+                if (!sprite) return;
                 const img = sprite.img;
                 const sz = avatarSizing();
                 const w = Math.round(img.naturalWidth * sz.scale);
                 const h = Math.round(img.naturalHeight * sz.scale);
                 const dx = Math.round(at.sx - w / 2), dy = Math.round(at.sy - h + sz.footPad);
                 ctx2.drawImage(img, dx, dy, w, h);
-                drawEyeAccessory(ctx2, state.figure, at.dir, dx, dy, w / FIGURE_W);
+                // A stand-in drawn for somebody else's look doesn't wear their glasses.
+                if (!sprite.standIn) drawEyeAccessory(ctx2, state.figure, at.dir, dx, dy, w / FIGURE_W);
             }
         });
 
@@ -1646,7 +1745,7 @@
         if (!run) { note.textContent = ""; return; }
         note.textContent = run.lives <= 1
             ? "Restarting on your last life ends the run."
-            : `Restart costs a life - ${run.lives - 1} left after it.`;
+            : `Restart costs a life: ${run.lives - 1} left after it.`;
     }
 
     // Lose this round for a life and play the same level again.
@@ -1671,11 +1770,14 @@
         const now = gameNow();
         const theRun = run;
         if (!submit) runSubmitted = true;
+        // The round in hand is worth what the board was just sent, so the
+        // panel's table has it too: read before stop() ends it.
+        const levels = runLevels(theRun, "abandoned");
         reportRun(theRun, "abandoned", { endedAt: now });
         if (submit) {
             if (game) game.stop();
             hideSay();
-            showRunEnd(theRun, false, true);
+            showRunEnd(theRun, false, true, levels);
             game = null; run = null;
             renderHud(now);
             dirty = true;
@@ -1696,9 +1798,13 @@
        kept till the panel's button, so over the last round's "run over"
        panel Escape did nothing either. A settled run has nothing left to
        throw away (it was sent when it settled), so Escape closes. */
+    /* AND AT NO OTHER MOMENT OF A LIVE RUN (4 Nov 2026). "Loading room" and the
+       three-two-one had nothing to pause, so Escape fell through to the window
+       and shut it: a run at level 40 gone to one key, under a tip saying Escape
+       pauses. A key held down did the same, a beat later, from a running round.
+       While a run can still go on, Escape never leaves it. */
     function holdsEscape() {
-        const box = document.getElementById("ff-round");
-        return Boolean(run && !run.settled() && !Editor && box && !box.hidden);
+        return Boolean(run && !run.settled() && !Editor);
     }
 
     function wirePause() {
@@ -1811,7 +1917,7 @@
            (26 Oct 2026). On window, so it comes after everything above. */
         window.addEventListener("keydown", (ev) => {
             if (ev.key !== "Escape" || ev.defaultPrevented || behindGame) return;
-            // Not over a round's result in a run (see holdsEscape): nothing at all.
+            // Not in a run that can still go on (see holdsEscape): nothing at all.
             if (holdsEscape()) { ev.preventDefault(); return; }
             const W = hostWindow();
             if (W && W.escape) { ev.preventDefault(); W.escape(); }
@@ -2271,6 +2377,9 @@
         if (behindGame && game && game.state === Game.RUNNING) { setPaused(true); return; }
         // And under one of the site's own windows (see covered).
         if (!paused && !Editor && game && game.state === Game.RUNNING && covered()) { setPaused(true); return; }
+        // Behind another game the title's furni stops falling: nobody can see it,
+        // and it was the one thing here still drawing at full rate (4 Nov 2026).
+        if (behindGame && !game && !Editor) return;
 
         const now = gameNow();
         // The board's crawl wants every frame, and it has nothing to draw on
@@ -2594,8 +2703,9 @@
         if (hudEls.lives && lives !== hudLast.lives) {
             hudEls.lives.hidden = lives < 0;
             hudEls.lives.textContent = lives < 0 ? ""
-                : lives <= 5 ? "♥".repeat(lives)
-                    : "♥×" + lives;
+                // U+FE0E: iOS would otherwise draw the red emoji heart.
+                : lives <= 5 ? "♥︎".repeat(lives)
+                    : "♥︎×" + lives;
             hudEls.lives.classList.toggle("is-last", lives === 1);
             hudLast.lives = lives;
         }
@@ -2613,7 +2723,7 @@
            event that scores. */
         const score = run ? run.score() : game.score;
         if (score !== hudLast.score) {
-            hudEls.score.textContent = score.toLocaleString();
+            hudEls.score.textContent = score.toLocaleString("en-GB");
             hudEls.score.parentNode.classList.toggle("is-under", score < 0);
             hudLast.score = score;
         }
@@ -2627,7 +2737,7 @@
             hudLast.deltaTimer = setTimeout(() => { hudEls.delta.textContent = ""; }, 1600);
         }
 
-        const msg = game.state === Game.WON ? "Every seat, in order - round complete." : game.message;
+        const msg = game.state === Game.WON ? "Every seat, in order. Round complete." : game.message;
         if (msg !== hudLast.msg) { hudEls.msg.textContent = msg; hudLast.msg = msg; }
     }
 
@@ -2688,7 +2798,7 @@
            with the button still offering to cancel. Which is what made a
            working picker feel broken. */
         syncPickers();
-        status(`The player starts at ${t.x}, ${t.y} - press Save to keep it.`, "good");
+        status(`The player starts at ${t.x}, ${t.y}. Press Save to keep it.`, "good");
         dirty = true;
     }
 
@@ -2708,7 +2818,7 @@
         fn(L);
         Editor.save();
         syncPickers();
-        status(`${said} - press Save to keep it.`, "good");
+        status(`${said}. Press Save to keep it.`, "good");
         dirty = true;
     }
 
@@ -2775,7 +2885,7 @@
         if (!Editor || !Editor.state.level) return;
         Editor.state.level.music = v || "";
         Editor.save();
-        status("Soundtrack set - press Save to keep it.", "good");
+        status("Soundtrack set. Press Save to keep it.", "good");
         // Listening already: switch to the new choice.
         if (musicPreview) previewMusic(true);
     }
@@ -2839,7 +2949,7 @@
         Editor.save();
         showStart(Editor.state.level);
         syncPickers();
-        status("Facing set - press Save to keep it.", "good");
+        status("Facing set. Press Save to keep it.", "good");
         dirty = true;
     }
 
@@ -2933,7 +3043,7 @@
                     return;
                 }
                 if (!Editor.pickUpAt(t.x, t.y)) { status("Nothing there to move.", "bad"); return; }
-                status("Carrying it - click to put it down.", "good");
+                status("Carrying it. Click to put it down.", "good");
                 setHint(Editor.state.mode, "Click a tile to put it down. Shift-click turns it, Esc drops it.");
                 renderEditorPanel();
                 dirty = true;
@@ -2965,7 +3075,7 @@
                 status("Moved.", "good");
                 setHint(Editor.state.mode);
             } else {
-                status("That does not fit there - try another tile.", "bad");
+                status("That does not fit there. Try another tile.", "bad");
             }
             renderEditorPanel();
             return;
@@ -3066,7 +3176,7 @@
         const f = Editor.state.selected;
         if (!f) return "Nothing selected.";
         if (v.x < 0 || v.y < 0 || v.x + f.w > Iso.COLS || v.y + f.h > Iso.ROWS) {
-            return `Outside the room - X 0 to ${Iso.COLS - f.w}, Y 0 to ${Iso.ROWS - f.h}.`;
+            return `Outside the room: X 0 to ${Iso.COLS - f.w}, Y 0 to ${Iso.ROWS - f.h}.`;
         }
         if (v.z < 0 || v.z > Levels.MAX_HEIGHT) return `Height is 0 to ${Levels.MAX_HEIGHT}.`;
         return "Something is already there at that height.";
@@ -3160,8 +3270,8 @@
         const last = (drops - 1) * gap + L.rules.dropSpeedMs / 1000;
         const tooFast = gap < 0.15 && drops > 1;
         el.textContent = tooFast
-            ? `${drops} pieces, one every ${gap.toFixed(2)}s - they will all land at once.`
-            : `${drops} pieces, one every ${gap.toFixed(2)}s - the last lands after ${last.toFixed(1)}s of ${L.rules.seconds}s.`;
+            ? `${drops} pieces, one every ${gap.toFixed(2)}s. They will all land at once.`
+            : `${drops} pieces, one every ${gap.toFixed(2)}s. The last lands after ${last.toFixed(1)}s of ${L.rules.seconds}s.`;
         el.classList.toggle("is-warn", tooFast || last > L.rules.seconds);
         if (!tooFast && last > L.rules.seconds) {
             el.textContent += " The clock runs out before it lands.";
@@ -3302,7 +3412,7 @@
                 body: JSON.stringify({ lobbyFurni: splashFurni })
             });
             const data = await res.json().catch(() => ({}));
-            if (!res.ok) { status(data.error || "Could not save the splash furni.", "bad"); return; }
+            if (!res.ok) { status(data.error || "Couldn't save the splash furni.", "bad"); return; }
             // The page is holding one shared copy of the settings and this
             // just changed them, so drop it — otherwise the next read on
             // this page hands back the splash list as it was before the
@@ -3312,7 +3422,7 @@
             if (typeof Api !== "undefined") Api.forgetSiteSettings();
             status("Splash furni saved.", "good");
         } catch (e) {
-            status(`Could not save the splash furni: ${e.message}`, "bad");
+            status(`Couldn't save the splash furni: ${e.message}`, "bad");
         }
         renderSplash();
     }
@@ -3324,7 +3434,7 @@
         if (!listEl || !countEl) return;
 
         const max = (Lobby && Lobby.MAX_FURNI) || 10;
-        countEl.textContent = `${splashFurni.length} of ${max} - ${splashFurni.length ? "" : "the game's own default is falling."}`.trim();
+        countEl.textContent = `${splashFurni.length} of ${max}` + (splashFurni.length ? "" : ": the game's own default is falling.");
 
         listEl.innerHTML = "";
         for (const className of splashFurni) {
@@ -3390,7 +3500,7 @@
                 body: JSON.stringify({ ffTips: list })
             });
             const data = await res.json().catch(() => ({}));
-            if (!res.ok) { status(data.error || "Could not save the tips.", "bad"); return; }
+            if (!res.ok) { status(data.error || "Couldn't save the tips.", "bad"); return; }
             // As saveSplash: the page's shared copy of the settings is stale now.
             if (typeof Api !== "undefined") Api.forgetSiteSettings();
             tipsCustom = Array.isArray(data.ffTips);
@@ -3398,7 +3508,7 @@
             if (done) done();
             status(list === null ? "Tips back to the game's own." : "Tips saved.", "good");
         } catch (e) {
-            status(`Could not save the tips: ${e.message}`, "bad");
+            status(`Couldn't save the tips: ${e.message}`, "bad");
         } finally {
             tipsBusy = false;
             renderTips();
@@ -3424,7 +3534,7 @@
         }
         if (!tipsList) { countEl.textContent = "Reading the tips…"; return; }
 
-        countEl.textContent = `${tipsList.length} of ${TIP_MAX}` + (tipsCustom ? "" : " - the game's own list, until you change it.");
+        countEl.textContent = `${tipsList.length} of ${TIP_MAX}` + (tipsCustom ? "" : ": the game's own list, until you change it.");
         listEl.innerHTML = "";
         tipsList.forEach((t, n) => {
             const row = document.createElement("div");
@@ -3488,8 +3598,8 @@
         if (held) {
             const row = (Editor.search(held, 1) || [])[0];
             heldEl.textContent = `Holding ${row ? row.name : held}` +
-                (heldRots > 1 ? ` - facing ${Editor.brush.rotation + 1}/${heldRots}` : " - does not turn") +
-                " - click a tile to put it down.";
+                (heldRots > 1 ? `, facing ${Editor.brush.rotation + 1}/${heldRots}` : ", does not turn") +
+                ". Click a tile to put it down.";
             document.getElementById("ff-brush-rotate").disabled = heldRots < 2;
             const heldState = stateLabel(held, Editor.brush.state);
             const heldStateBtn = document.getElementById("ff-brush-state");
@@ -3498,10 +3608,10 @@
         }
 
         document.getElementById("ff-sel").textContent = sel
-            ? `${sel.name} - ${sel.w}x${sel.h} at ${sel.x},${sel.y}` +
-            (sel.lift ? ` - height ${fmtHeight(sel.lift)}` : "") +
-            (rots > 1 ? ` - rotation ${sel.rotation + 1}/${rots}` : " - does not turn") +
-            (stateLabel(sel.className, sel.state) ? ` - ${describeState(sel)}` : "")
+            ? `${sel.name}: ${sel.w}x${sel.h} at ${sel.x},${sel.y}` +
+            (sel.lift ? `, height ${fmtHeight(sel.lift)}` : "") +
+            (rots > 1 ? `, rotation ${sel.rotation + 1}/${rots}` : ", does not turn") +
+            (stateLabel(sel.className, sel.state) ? `, ${describeState(sel)}` : "")
             : "Nothing selected.";
         if (!sel) { moving = false; closePrecise(); }   // nothing to move
         const moveBtn = document.getElementById("ff-move");
@@ -3667,7 +3777,7 @@
             const changed = await Editor.reorderServer(list);
             follow(changed);
             await refreshLevelList();
-            status(changed.length ? `New order saved - ${changed.length} level${changed.length === 1 ? "" : "s"} renumbered.` : "Order unchanged.", "good");
+            status(changed.length ? `New order saved: ${changed.length} level${changed.length === 1 ? "" : "s"} renumbered.` : "Order unchanged.", "good");
         } catch (e) {
             /* PARTLY SAVED (30 Oct 2026): ff-levels.js answers 503 with
                `partial` when only some of the writes landed. The old copy is
@@ -3678,7 +3788,7 @@
                 await refreshLevelList().catch(() => {});
                 status(e.message || "The new order was only partly saved.", "bad");
             } else {
-                status(`${e.message || "Could not save the new order."} The list is back as it was.`, "bad");
+                status(`${e.message || "Couldn't save the new order."} The list is back as it was.`, "bad");
             }
         }
         reorderBusy = false;
@@ -3802,8 +3912,8 @@
                apart rather than both reading "not signed in". */
             const stale = Boolean(Editor.authToken());
             sel.innerHTML = `<option value="">${stale
-                ? "Session expired - no levels listed"
-                : "Not signed in - no levels listed"}</option>`;
+                ? "Session expired: no levels listed"
+                : "Not signed in: no levels listed"}</option>`;
             if (signin) {
                 signin.hidden = false;
                 signin.querySelector(".ff-signin-why").textContent = stale
@@ -3829,7 +3939,7 @@
             // Escaped: a zone name is typed into the builder and stored, so
             // it is the one string in this list that a person chose.
             row.innerHTML = `<span>${escapeText(z.name || "Zone")}</span>` +
-                `<small>${z.area.w}×${z.area.h} - ${drops} drop${drops === 1 ? "" : "s"}</small>`;
+                `<small>${z.area.w}×${z.area.h}, ${drops} drop${drops === 1 ? "" : "s"}</small>`;
             row.addEventListener("click", () => Editor.selectZone(z.id));
             const x = document.createElement("button");
             x.type = "button"; x.textContent = "×"; x.title = "Delete zone";
@@ -3838,7 +3948,7 @@
             list.appendChild(row);
         }
         if (!(L.zones || []).length) {
-            list.innerHTML = '<p class="ff-hint">No zones yet - drag across the room to draw one.</p>';
+            list.innerHTML = '<p class="ff-hint">No zones yet. Drag across the room to draw one.</p>';
         }
 
         const detail = document.getElementById("ff-zone-detail");
@@ -3847,7 +3957,7 @@
 
         document.getElementById("ff-zone-area").textContent =
             `${current.area.w}×${current.area.h} tiles at ${current.area.x},${current.area.y}` +
-            " - drag on the room to redraw";
+            ". Drag on the room to redraw";
         const nameEl = document.getElementById("ff-zone-name");
         if (document.activeElement !== nameEl) nameEl.value = current.name || "";
 
@@ -3934,7 +4044,7 @@
                innerHTML below. A name with a tag in it would otherwise be
                markup on the one screen strangers are shown. */
             role: `Signed in as ${escapeText(verdict.username || "an admin")}${verdict.role ? ` (${escapeText(verdict.role)})` : ""}, which cannot edit levels.`,
-            error: "The server could not confirm who you are."
+            error: "The server couldn't confirm who you are."
         }[verdict.why] || "You cannot open the level editor.";
 
         main.innerHTML = "";
@@ -4003,7 +4113,7 @@
         const $ = (id) => document.getElementById(id);
         const css = document.createElement("link");
         css.rel = "stylesheet";
-        css.href = "css/ff-editor.css?v=1";
+        css.href = "css/ff-editor.css?v=2";
         document.head.appendChild(css);
 
         shell = document.createElement("div");
@@ -4209,7 +4319,7 @@
             if (splashFurni.includes(splashPick)) { status("That is already on the splash screen.", "bad"); return; }
             if (splashFurni.length >= max) { status(`Ten is the limit.`, "bad"); return; }
             if (!splashDrawable(splashPick)) {
-                status("The title screen has no artwork for that one - it would not appear.", "bad");
+                status("The title screen has no artwork for that one, so it would not appear.", "bad");
                 return;
             }
             splashFurni.push(splashPick);
@@ -4248,7 +4358,7 @@
         // Zones: the area is its own thing, its contents are another.
         document.getElementById("ff-zone-add").addEventListener("click", () => {
             Editor.addZone();
-            status("Zone added - drag on the room to shape it.", "good");
+            status("Zone added. Drag on the room to shape it.", "good");
         });
         document.getElementById("ff-zone-delete").addEventListener("click", () => {
             const z = Editor.zone();
@@ -4269,7 +4379,7 @@
             if (!Editor.playable(cls)) {
                 status(Editor.spriteUrl(cls, 0, 0)
                     ? "Nothing records that furni's size, so the room cannot place it."
-                    : `No game art for ${cls} - a round would leave it out.`, "bad");
+                    : `No game art for ${cls}. A round would leave it out.`, "bad");
                 return;
             }
             Editor.addItem(cls,
@@ -4317,9 +4427,9 @@
                     : publish === false ? "Unpublishing…" : "Saving…", "busy");
                 const saved = await Editor.saveServer(publish);
                 const live = saved.published === true;
-                sayWithArt(publish === true ? `Published “${saved.name}” - it is in the run.`
-                    : publish === false ? `Unpublished “${saved.name}” - players no longer get it.`
-                        : `Saved “${saved.name}” - ${live ? "published, so players get this version." : "still a draft."}`);
+                sayWithArt(publish === true ? `Published “${saved.name}”. It is in the run.`
+                    : publish === false ? `Unpublished “${saved.name}”. Players no longer get it.`
+                        : `Saved “${saved.name}”: ${live ? "published, so players get this version." : "still a draft."}`);
                 syncPublishButtons();
                 await refreshLevelList();
                 document.getElementById("ff-level-list").value = saved.id;
@@ -4330,8 +4440,8 @@
                    act on. The one cause worth naming is the common one: the
                    admin session has lapsed, and signing in again fixes it. */
                 const why = /unauthor/i.test(e.message || "")
-                    ? "Not signed in as admin - sign in on the admin page, then Save again."
-                    : (e.message || "Could not reach the server.");
+                    ? "Not signed in as admin. Sign in on the admin page, then Save again."
+                    : (e.message || "Couldn't reach the server.");
                 status(`${why} Your work is safe in this browser meanwhile.`, "bad");
             }
         }
@@ -4354,25 +4464,25 @@
                 : "A copy of this draft is in the console.";
             const ok = window.confirm(
                 `“${L.name || L.id}” has been changed on the server since this draft was opened. ${kept}\n\n` +
-                "OK: keep the server's newer rules and put this draft's room on top of them - " +
-                "name, layout, floor, walls, start, decor and drop zones - then save.\n" +
+                "OK: keep the server's newer rules, put this draft's room on top of them " +
+                "(name, layout, floor, walls, start, decor and drop zones), then save.\n" +
                 "Cancel: save nothing and keep the draft here as it is.");
             if (!ok) {
-                status(`Not saved - the server's copy is newer. ${kept}`, "bad");
+                status(`Not saved: the server's copy is newer. ${kept}`, "bad");
                 return;
             }
             try {
                 status("Merging onto the server's copy…", "busy");
                 const saved = await Editor.mergeOntoServer(publish);
                 syncEditor();
-                status(`Saved “${saved.name}” - this draft's room on the server's newer rules` +
+                status(`Saved “${saved.name}”: this draft's room on the server's newer rules` +
                     `${saved.published === true ? ", published." : ", still a draft."}`, "good");
                 syncPublishButtons();
                 await refreshLevelList();
                 document.getElementById("ff-level-list").value = saved.id;
             } catch (e) {
                 Editor.save();
-                status(`${e.message || "Could not merge with the server's copy."} ${kept}`, "bad");
+                status(`${e.message || "Couldn't merge with the server's copy."} ${kept}`, "bad");
             }
         }
         document.getElementById("ff-save").addEventListener("click", () => toServer());
@@ -4391,7 +4501,7 @@
         document.getElementById("ff-level-new").addEventListener("click", () => {
             Editor.setLevel({ name: "New level", order: (Editor.state.level.order || 0) + 1 });
             setMode("room");
-            status("New level - name it, then Save.", "good");
+            status("New level. Name it, then Save.", "good");
         });
 
         // Choosing from the list IS loading it; a separate Load button was a
@@ -4402,7 +4512,7 @@
             // The unsaved draft's line goes with the draft.
             for (const o of [...ev.target.options]) if (!o.value) o.remove();
             try { await Editor.loadServer(id); sayWithArt("Loaded."); }
-            catch (e) { status(e.message || "Could not load.", "bad"); }
+            catch (e) { status(e.message || "Couldn't load.", "bad"); }
         });
 
         /* SCRAP THE WORK, not the level.
@@ -4433,14 +4543,14 @@
                 await Editor.loadServer(L.id);
                 sayWithArt("Back to the last saved version.");
             } catch (e) {
-                status(e.message || "Could not reload the saved version.", "bad");
+                status(e.message || "Couldn't reload the saved version.", "bad");
             }
         });
 
         document.getElementById("ff-level-delete").addEventListener("click", async () => {
             const L = Editor.state.level;
             if (!L.id) {
-                status("This level was never saved - use Discard changes to scrap it.", "bad");
+                status("This level was never saved. Use Discard changes to scrap it.", "bad");
                 return;
             }
             if (!confirm(`Delete “${L.name || L.id}” from the site for good? This cannot be undone.`)) return;
@@ -4451,13 +4561,13 @@
                 setMode("room");
                 await refreshLevelList();
                 status("Level deleted.", "good");
-            } catch (e) { status(e.message || "Could not delete.", "bad"); }
+            } catch (e) { status(e.message || "Couldn't delete.", "bad"); }
         });
         document.getElementById("ff-export").addEventListener("click", async () => {
             try {
                 await navigator.clipboard.writeText(JSON.stringify(Editor.save(), null, 2));
                 status("Level JSON copied.", "good");
-            } catch { status("Could not reach the clipboard.", "bad"); }
+            } catch { status("Couldn't reach the clipboard.", "bad"); }
         });
 
         status("Loading the furni catalogue…", "busy");
@@ -4466,9 +4576,9 @@
             syncEditor();
             setMode("room");
             // The furni the picker offers: since 26 Oct 2026 the client's art alone, not the catalogue's count.
-            sayWithArt(`Editor ready - ${counts.placeable} furni with artwork.`);
+            sayWithArt(`Editor ready: ${counts.placeable} furni with artwork.`);
             refreshLevelList();
-        }).catch(() => status("Could not load the furni catalogue.", "bad"));
+        }).catch(() => status("Couldn't load the furni catalogue.", "bad"));
     }
 
     /* ---- dragging out a zone
@@ -4499,7 +4609,7 @@
         if (dragArea.w === 1 && dragArea.h === 1) { dragFrom = null; dragArea = null; return; }
         const z = Editor && Editor.zone();
         if (z) { Editor.setZoneArea(z.id, dragArea); status("Zone reshaped.", "good"); }
-        else if (Editor) { Editor.addZone(dragArea); status("Zone drawn - now add what falls into it.", "good"); }
+        else if (Editor) { Editor.addZone(dragArea); status("Zone drawn. Now add what falls into it.", "good"); }
         dragFrom = null; dragArea = null;
         dirty = true;
     }
@@ -4566,9 +4676,9 @@
             const m = window.RoomLayouts.get(state.model);
             const shaped = m.mask.some(r => r.includes("x"));
             note.textContent = m.painted
-                ? `${m.cols}×${m.rows}, ${m.tiles} walkable tiles. A public room - its floor and walls are painted, so there is nothing to pick.`
+                ? `${m.cols}×${m.rows}, ${m.tiles} walkable tiles. A public room: its floor and walls are painted, so there is nothing to pick.`
                 : `${m.cols}×${m.rows}, ${m.tiles} tiles` +
-                  (shaped ? " - not a rectangle, so some of the grid is outside the room." : "");
+                  (shaped ? ", not a rectangle, so some of the grid is outside the room." : "");
 
             /* A PAINTED ROOM HAS NOTHING TO CHOOSE. The Library's floor and
                walls are one bitmap somebody drew in 2005; offering a wallpaper
@@ -4728,8 +4838,8 @@
                 const f = frontOf(p);
                 const usable = Iso.has(f.x, f.y) && !blocked.has(Iso.key(f.x, f.y));
                 say = `On ${p.x}, ${p.y}` + (usable
-                    ? ` - players stand on ${f.x}, ${f.y} (green), kept clear of falling furni.`
-                    : ` - the tile in front (${f.x}, ${f.y}) is not free floor, so players will use whichever side is nearest. Pick another tile.`);
+                    ? `: players stand on ${f.x}, ${f.y} (green), kept clear of falling furni.`
+                    : `: the tile in front (${f.x}, ${f.y}) is not free floor, so players will use whichever side is nearest. Pick another tile.`);
                 warn = !usable;
             }
             q("at").textContent = say;
@@ -4792,6 +4902,11 @@
                 floorPattern: state.floorPattern, floorColour: state.floorColour,
                 wallPattern: state.wallPattern, wallColour: state.wallColour,
                 name: state.name,
+                /* And the look that name was last seen in (4 Nov 2026), so a
+                   returning player wears their own habbo from the first frame
+                   and through a lookup that fails: Habbo Origins does go
+                   offline for its maintenance breaks. */
+                figure: state.name ? state.figure : null,
                 hotel: state.hotel,
                 /* And the hotel that name was FOUND on (30 Sept 2026): the
                    picker can move on and its lookup fail, and the name kept
@@ -4809,6 +4924,8 @@
             for (const k of ["floorPattern", "floorColour", "wallPattern", "wallColour", "name"]) {
                 if (v[k] !== undefined && v[k] !== null) state[k] = v[k];
             }
+            // It goes into an address: nothing but the shape a figure has.
+            if (state.name && typeof v.figure === "string" && /^[a-z0-9.-]{1,255}$/i.test(v.figure)) state.figure = v.figure;
             // An entry from before the picker has no hotel: it was COM.
             state.hotel = hotelCode(v.hotel);
             state.nameHotel = v.nameHotel ? hotelCode(v.nameHotel) : state.hotel;
@@ -4836,15 +4953,17 @@
     function sayWithArt(text) {
         const gone = Editor && Editor.missingArt ? Editor.missingArt() : [];
         if (!gone.length) { status(text, "good"); return; }
-        status(`${text} No game art for ${gone.join(", ")} - left out of the round, so replace ${gone.length > 1 ? "them" : "it"}.`, "bad");
+        status(`${text} No game art for ${gone.join(", ")}: left out of the round, so replace ${gone.length > 1 ? "them" : "it"}.`, "bad");
     }
 
     function status(text, kind) {
         if (statusEl) {
-            const show = Editor || kind === "error";
+            const show = Editor || kind === "error" || kind === "note";
             const cls = kind === "error" ? "bad" : kind;
-            statusEl.textContent = show ? (text || "") : "";
-            statusEl.className = "ff-status" + (show && cls ? " is-" + cls : "");
+            // Under anything else, a player still needs telling they won't be seen.
+            const art = !show && figureArtDown;
+            statusEl.textContent = art ? FIGURE_ART_LINE : show ? (text || "") : "";
+            statusEl.className = "ff-status" + (art ? " is-bad" : show && cls ? " is-" + cls : "");
         }
         if (Editor) return;
         const title = document.getElementById("ff-title");
@@ -4938,13 +5057,73 @@
     let pendingLookup = null;
     const lookupKey = (name, hotel) => hotelCode(hotel) + ":" + String(name || "").trim().toLowerCase();
 
+    /* The same look again, which for a returning player is the usual answer
+       (see persist), keeps the pictures it already has. */
     function wear(figure, who, hotel) {
+        const changed = figure !== state.figure;
         state.figure = figure;
         state.name = who;
         state.nameHotel = hotelCode(hotel);
-        sprites.clear();
-        preload(figure);
+        if (changed) {
+            sprites.clear();
+            preload(figure);
+        }
         dirty = true;
+    }
+
+    /* THE ONE WAY TO SAY A LOOKUP FAILED (4 Nov 2026), on the title and over
+       the room alike. Says what the player will be: their own remembered look,
+       the stand-in they chose, or that they have a choice to make. */
+    function lookupFailedLine() {
+        // A choice to make comes first: Play waits on it.
+        if (state.figure === DEFAULT_FIGURE) return "Habbo is having a break, so we can't find your look. Pick a stand-in:";
+        // Habbo's pictures gone as well: that is the part they will see.
+        if (figureArtDown) return FIGURE_ART_LINE;
+        if (isStandIn(state.figure)) return "Habbo is having a break, so you're wearing a stand-in.";
+        return "Habbo is having a break, so you're wearing your look from last time.";
+    }
+
+    /* THE ROW OF STAND-INS on the title, for a lookup that failed with no look
+       of the player's own to fall back on. Built the first time it is needed,
+       so nobody pays for the six small sheets until then. Pictures from our
+       own copies, so the row works with Habbo's imaging service down too. */
+    let standInRow = null;
+
+    function syncStandInRow(show) {
+        const box = document.getElementById("ff-standins");
+        if (!box) return;
+        box.hidden = !show;
+        if (!show) return;
+        if (!standInRow) {
+            standInRow = STAND_INS.map(s => {
+                const b = document.createElement("button");
+                b.type = "button";
+                b.className = "ff-standin";
+                b.title = s.label;
+                b.setAttribute("aria-label", "Stand-in: " + s.label);
+                const pic = document.createElement("span");
+                pic.className = "ff-standin-pic";
+                pic.style.backgroundImage = `url("${standInUrl(s.id, "s")}")`;
+                b.appendChild(pic);
+                b.addEventListener("click", () => chooseStandIn(s));
+                box.appendChild(b);
+                return { b, s };
+            });
+        }
+        for (const { b, s } of standInRow) {
+            b.setAttribute("aria-pressed", s.figure === state.figure ? "true" : "false");
+        }
+    }
+
+    /* A stand-in goes on as any look does. The name stays what it was: nobody
+       has confirmed the one in the box, so a player with no remembered name
+       plays as a guest, as they would for any lookup that failed. The next
+       lookup Habbo answers puts their own look back. */
+    function chooseStandIn(s) {
+        wear(s.figure, state.name, state.nameHotel);
+        persist();
+        syncStandInRow(true);
+        status(lookupFailedLine(), "note");
     }
 
     /* AN EMPTY BOX IS NOBODY (30 Sept 2026). The box starts filled with the
@@ -4956,6 +5135,7 @@
         ++lookupSeq;
         pendingLookup = null;
         lastFound = null;
+        syncStandInRow(false);
         if (state.name || state.figure !== DEFAULT_FIGURE) {
             wear(DEFAULT_FIGURE, "", state.hotel);
             persist();
@@ -5017,10 +5197,18 @@
                     wear(DEFAULT_FIGURE, "", hotel);
                     persist();
                 }
-                status(data.error || (missing ? `No habbo by that name on Origins ${hotel} - you'll play as a guest.`
-                    : "Could not reach the Habbo lookup just now - try Play again."), "error");
-                return missing ? "missing" : "failed";
+                /* A failure's own words only: a 502's `error` is the server's
+                   sentence for the same thing, and this is the one wording. */
+                if (missing) {
+                    syncStandInRow(false);
+                    status(data.error || `No Habbo by that name on Origins ${hotel}. You'll play as a guest.`, "error");
+                    return "missing";
+                }
+                syncStandInRow(needsStandIn());
+                status(lookupFailedLine(), "note");
+                return "failed";
             }
+            syncStandInRow(false);
             wear(data.figureString, data.name || clean, hotel);
             lastFound = key;
             // The hotel named only when it is not the usual one.
@@ -5030,9 +5218,15 @@
         } catch {
             clearTimeout(leash);
             if (mine !== lookupSeq) return "stale";
-            status("Could not reach the Habbo lookup just now - try Play again.", "error");
+            syncStandInRow(needsStandIn());
+            status(lookupFailedLine(), "note");
             return "failed";
         }
+    }
+
+    // Nobody's own look to wear: the row is up, to choose or to change a choice.
+    function needsStandIn() {
+        return state.figure === DEFAULT_FIGURE || isStandIn(state.figure);
     }
 
     // Where on the canvas, in its own pixels, the pointer is.
@@ -5352,7 +5546,8 @@
         { text: "One wrong seat resets your streak.", who: "all" },
         { text: "Clear 10 levels to earn a life back.", who: "all" },
         { text: "Sign in with Discord to put your runs on the leaderboard.", who: "signedout" },
-        { text: "Double-click a power-up to walk over and grab it.", who: "all" },
+        { text: "Double-click a power-up to walk over and grab it.", who: "mouse" },
+        { text: "Double-tap a power-up to walk over and grab it.", who: "touch" },
         { text: "Each power-up can be used once a round.", who: "all" },
         { text: "Press F to enlarge the game, M to switch the music on or off.", who: "window" },
         { text: "Press M to switch the music on or off.", who: "page" },
@@ -5601,12 +5796,15 @@
         published = null;
         furniLoaded = null;
         titleState("unreachable", "Couldn't load the furni.");
-        status("Couldn't load the furni - check your connection and press Retry.", "error");
+        status("Couldn't load the furni. Check your connection and press Try again.", "error");
     }
 
+    let carryAsked = false;
     async function prepare() {
         renderWho();
         if (window.Account) window.Account.ready().then(renderWho);
+        // Once, however many times prepare() runs (Retry calls it again).
+        if (!carryAsked) { carryAsked = true; carryRunOn().catch(() => {}); }
         /* And on every later answer (28 Sept 2026): a nickname set from the
            console, or a sign-in or out, changes what this line says. Once,
            however many times prepare() runs (Retry calls it again). */
@@ -5628,7 +5826,7 @@
         if (published === null) {
             Boot.end();
             titleState("unreachable", "Couldn't reach the levels.");
-            status("Couldn't reach the levels - check your connection and press Retry.", "error");
+            status("Couldn't reach the levels. Check your connection and press Try again.", "error");
             return;
         }
         if (!published.length) {
@@ -5687,7 +5885,7 @@
                name a nickless player's is never shown by. So: the nickname,
                or what it takes to get one. */
             if (me.nick) {
-                el.append(`On the board as ${me.nick} - `);
+                el.append(`On the board as ${me.nick}. `);
             } else if (!me.nickLocked && acct.canNick && acct.canNick() && acct.editNickname) {
                 // Not over a nickname the admins have locked (29 Sept 2026):
                 // the Profile would only say it is locked, as the
@@ -5699,9 +5897,9 @@
                 nickBtn.textContent = "Set a nickname";
                 nickBtn.addEventListener("click", () => acct.editNickname());
                 el.appendChild(nickBtn);
-                el.append(" to appear on the leaderboard - ");
+                el.append(" to appear on the leaderboard. ");
             } else {
-                el.append("Set a nickname to appear on the leaderboard - ");
+                el.append("Set a nickname to appear on the leaderboard. ");
             }
             const out = document.createElement("button");
             out.type = "button";
@@ -5755,8 +5953,8 @@
                    the clock still breaks a tie. */
                 const points = Number(row.points) || 0;
                 li.innerHTML = `<span>${escapeText(row.name)}</span>` +
-                    `<em><b>${points.toLocaleString()} pts</b> - ` +
-                    `${row.levels} ${row.levels === 1 ? "level" : "levels"} - ${asClock(row.ms)}</em>`;
+                    `<em><b>${points.toLocaleString("en-GB")} pts</b> · ` +
+                    `${row.levels} ${row.levels === 1 ? "level" : "levels"} · ${asClock(row.ms)}</em>`;
                 list.appendChild(li);
             }
             box.hidden = !(data.top || []).length;
@@ -5814,8 +6012,8 @@
             const li = document.createElement("li");
             const points = Number(row.points) || 0;
             li.innerHTML = `<span>${escapeText(row.name)}</span>` +
-                `<em><b>${points.toLocaleString()} pts</b> - ` +
-                `${row.levels} ${row.levels === 1 ? "level" : "levels"} - ${asClock(row.ms)}</em>`;
+                `<em><b>${points.toLocaleString("en-GB")} pts</b> · ` +
+                `${row.levels} ${row.levels === 1 ? "level" : "levels"} · ${asClock(row.ms)}</em>`;
             list.appendChild(li);
         }
         box.hidden = false;
@@ -5963,12 +6161,62 @@
             btn.type = "button";
             btn.className = "ff-linkish";
             btn.textContent = "Sign in with Discord";
-            btn.addEventListener("click", () => window.Account && window.Account.signIn());
+            btn.addEventListener("click", signInKeepingRun);
             el.appendChild(btn);
             el.append(" " + text);
         } else {
             el.textContent = text;
         }
+    }
+
+    /* THE RUN GOES THROUGH SIGNING IN WITH THE PLAYER (4 Nov 2026). "Sign in to
+       put this run on the leaderboard" left the page and lost the run. Nothing
+       about it has to be lost: a signed-out run's token is bound to nobody and
+       is not spent by the "signed-out" answer, and its log went in as it ended
+       (ff-scores.js checks both, as for any run). So the score waits in this
+       tab while Discord is asked, and goes when the game's page is back; from
+       the homepage's window that means back at /fallinfurni, which opens it. */
+    const CARRY_KEY = "mazerats_ff_carry";
+    const CARRY_MS = 2.5 * 60 * 60 * 1000;      // inside the token's three hours
+    let runToCarry = null;
+
+    function signInKeepingRun() {
+        if (!window.Account) return;
+        if (runToCarry) {
+            try { sessionStorage.setItem(CARRY_KEY, JSON.stringify(runToCarry)); } catch (e) { /* private mode: lost, as it was */ }
+        }
+        window.Account.signIn(hostWindow() ? "/fallinfurni" : undefined);
+    }
+
+    async function carryRunOn() {
+        let held = null;
+        try { held = JSON.parse(sessionStorage.getItem(CARRY_KEY) || "null"); } catch (e) { /* unreadable: no run */ }
+        if (!held || !window.Account) return;
+        await window.Account.ready();
+        // Came back without signing in: it waits, for a sign-in later in this tab.
+        if (!window.Account.current && Date.now() - held.at < CARRY_MS) return;
+        try { sessionStorage.removeItem(CARRY_KEY); } catch (e) { /* it would only be refused as spent */ }
+        if (!window.Account.current) return;
+        const pts = Number(held.points || 0).toLocaleString("en-GB");
+        let line = "That run couldn't be entered on the leaderboard.";
+        try {
+            const res = await fetch("/.netlify/functions/ff-scores", {
+                method: "POST", credentials: "same-origin",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(held.body)
+            });
+            const data = await res.json().catch(() => ({}));
+            if (res.status === 400 && data.error) line = `The leaderboard refused that run: ${data.error}.`;
+            else if (data.hidden === "no-nick" && (data.recorded || data.tournamentRecorded || data.reason === "not-your-best")) line = `${pts} points. Set a nickname to appear on the leaderboard.`;
+            else if (data.recorded) line = `Your run is on the board: ${pts} points.`;
+            else if (data.reason === "not-your-best" && data.tournamentRecorded) line = `${pts} points: a new best this week.`;
+            else if (data.reason === "not-your-best" && data.best) line = `${pts} points. Your best, ${Number(data.best.points || 0).toLocaleString("en-GB")}, still stands.`;
+            if (data.recorded || data.tournamentRecorded) refreshBoard();
+        } catch (e) {
+            line = "Couldn't reach the leaderboard. That run wasn't saved.";
+        }
+        const el = document.getElementById("ff-title-carried");
+        if (el) { el.textContent = line; el.hidden = false; }
     }
 
     /* ------------------------------------------------------- THE RUN LOG
@@ -6385,33 +6633,37 @@
                without data.best's name, which the server leaves out. */
             if (data.hidden === "no-nick" && (data.recorded || data.tournamentRecorded || data.reason === "not-your-best")) {
                 const line = data.recorded
-                    ? `${points.toLocaleString()} points, ${levelsCleared} cleared in ${asClock(ms)}. Set a nickname to appear on the leaderboard.`
-                    : `${points.toLocaleString()} points. Set a nickname to appear on the leaderboard.`;
+                    ? `${points.toLocaleString("en-GB")} points, ${levelsCleared} cleared in ${asClock(ms)}. Set a nickname to appear on the leaderboard.`
+                    : `${points.toLocaleString("en-GB")} points. Set a nickname to appear on the leaderboard.`;
                 status("Set a nickname to appear on the leaderboard.", "busy");
                 boardSays(line, false);
             } else if (data.recorded) {
-                const line = `On the board: ${points.toLocaleString()} points, ${levelsCleared} cleared in ${asClock(ms)}.`;
+                const line = `On the board: ${points.toLocaleString("en-GB")} points, ${levelsCleared} cleared in ${asClock(ms)}.`;
                 status(line, "good");
                 boardSays(line, false);
                 refreshBoard();
             } else if (data.reason === "signed-out") {
                 status("Sign in with Discord to save runs to the leaderboard.", "bad");
-                boardSays(`to put this run - ${points.toLocaleString()} points - on the leaderboard.`, true);
+                // Without a token there is nothing the board could take later.
+                runToCarry = token ? { body: { ...pending.body, run: token }, points, at: Date.now() } : null;
+                boardSays(token
+                    ? `to put this run, ${points.toLocaleString("en-GB")} points, on the leaderboard.`
+                    : "to put your next run on the leaderboard.", true);
             } else if (data.reason === "not-your-best" && data.tournamentRecorded) {
                 /* Short of the all-time best, but the week's board took it
                    (30 Sept 2026; tournamentRecorded in ff-scores.js). That
                    is a run on a board, so it is said as one and the board
                    redrawn — not "your best still stands". */
-                const line = `${points.toLocaleString()} points - a new best this week. Your all-time best, ${Number((data.best && data.best.points) || 0).toLocaleString()}, still stands.`;
-                status(`New best this week: ${points.toLocaleString()} points.`, "good");
+                const line = `${points.toLocaleString("en-GB")} points: a new best this week. Your all-time best, ${Number((data.best && data.best.points) || 0).toLocaleString("en-GB")}, still stands.`;
+                status(`New best this week: ${points.toLocaleString("en-GB")} points.`, "good");
                 boardSays(line, false);
                 refreshBoard();
             } else if (data.reason === "not-your-best" && data.best) {
-                boardSays(`${points.toLocaleString()} points. Your best, ${Number(data.best.points || 0).toLocaleString()}, still stands.`, false);
+                boardSays(`${points.toLocaleString("en-GB")} points. Your best, ${Number(data.best.points || 0).toLocaleString("en-GB")}, still stands.`, false);
                 /* A run that did not beat your own said NOTHING, which reads
                    exactly like a leaderboard that failed to save. Say what is
                    still standing instead. */
-                status(`Not your best - ${Number(data.best.points || 0).toLocaleString()} points still stands.`, "busy");
+                status(`Not your best: ${Number(data.best.points || 0).toLocaleString("en-GB")} points still stands.`, "busy");
             } else if (data.reason === "closed") {
                 /* An admin testing the game while it is shut. The server keeps
                    those runs off the public board; this just says so plainly.
@@ -6450,7 +6702,7 @@
                 status(line, "bad");
                 boardSays(line, false);
             } else if (!res.ok) {
-                const line = "The leaderboard could not save this run just now - it was not recorded.";
+                const line = "The leaderboard couldn't save this run just now, so it wasn't recorded.";
                 status(line, "bad");
                 boardSays(line, false);
             }
@@ -6460,7 +6712,7 @@
                exactly what a leaderboard that silently lost your run looks
                like. One plain sentence instead. */
             if (runToken !== tokenFor) return;
-            const line = "Couldn't reach the leaderboard - this run was not saved.";
+            const line = "Couldn't reach the leaderboard. This run wasn't saved.";
             status(line, "bad");
             boardSays(line, false);
         }
@@ -6508,12 +6760,12 @@
         if (game.penalty) rows.push(["Penalties", `+${game.penalty}s`]);
         // What the clock itself was worth — shown on its own line so a fast
         // round can be seen to have paid for being fast.
-        if (game.speed) rows.push(["Speed bonus", `+${game.speed.toLocaleString()}`]);
+        if (game.speed) rows.push(["Speed bonus", `+${game.speed.toLocaleString("en-GB")}`]);
         /* Points, and the streak that earned them. The streak is shown even
            when it is short, because the number a player wants after a bad
            round is the one that tells them what went wrong — "best run: 3"
            after eleven seats says it plainly. */
-        rows.push(["Points", (run ? run.score() : game.score).toLocaleString()]);
+        rows.push(["Points", (run ? run.score() : game.score).toLocaleString("en-GB")]);
         if (game.best > 1) rows.push(["Best streak", `${game.best} in a row`]);
         if (run) rows.push(["Levels cleared", String(run.cleared())]);
         /* LIVES, on a losing round, because the count shown here is the one
@@ -6527,9 +6779,9 @@
         const earnsLife = Boolean(run && won && run.cleared() % Game.LIFE_EVERY === 0);
         if (run) {
             rows.push(["Lives", won
-                ? earnsLife ? `${run.lives + 1} - one more for ${Game.LIFE_EVERY} cleared` : String(run.lives)
+                ? earnsLife ? `${run.lives + 1}: one more for ${Game.LIFE_EVERY} cleared` : String(run.lives)
                 : run.lives > 1
-                    ? `${run.lives} - this costs one`
+                    ? `${run.lives}: this costs one`
                     : "your last one"]);
         }
 
@@ -6578,7 +6830,10 @@
        this screen is answering, and an empty row for a level never reached
        would answer it worse than no row at all. */
     // `quit`: ended from the pause menu's Submit & Quit, which says so.
-    function showRunEnd(theRun, cleared, quit) {
+    /* `levels`, there, is the list the board was sent (runLevels), the round
+       walked out of included. From results alone the HUD said 22, the Total 0
+       and the table was empty, while the board got the 22. */
+    function showRunEnd(theRun, cleared, quit, levels) {
         const box = document.getElementById("ff-runend");
         if (!box || !theRun) return;
         if (quit) Sound.music("ambient");
@@ -6588,7 +6843,7 @@
         // last round ends, before this panel exists. Blank until then, and
         // never the last run's: startRound clears it. See boardLine.
         renderBoardLine();
-        const rows = theRun.results || [];
+        const rows = levels || theRun.results || [];
 
         document.getElementById("ff-runend-title").textContent =
             cleared ? "Run complete" : "Run over";
@@ -6603,12 +6858,12 @@
         const whyLost = (w) => (w === "poi" ? "the wrong chair entirely"
             : w === "restart" ? "restarted" : "out of time");
         document.getElementById("ff-runend-why").textContent = quit
-            ? `Quit on ${(theRun.level() || {}).name || "this level"} - ${won} ${won === 1 ? "level" : "levels"} cleared.`
+            ? `Quit on ${(theRun.level() || {}).name || "this level"}: ${won} ${won === 1 ? "level" : "levels"} cleared.`
             : cleared
             ? `All ${won} ${won === 1 ? "level" : "levels"} cleared` +
               (spent ? `, and ${spent === 1 ? "a life" : spent + " lives"} spent getting there.` : ".")
             : last
-                ? `${last.name} - ${whyLost(last.why)}, and no lives left.`
+                ? `${last.name}: ${whyLost(last.why)}, and no lives left.`
                 : "";
         if (quit) document.getElementById("ff-runend-title").textContent = "Run ended";
 
@@ -6640,7 +6895,7 @@
                 r.streak > 1 ? String(r.streak) : "-",
                 // Struck through rather than blank: a player should see what
                 // the attempt was worth AND that it was not kept.
-                r.retried ? "-" : r.points.toLocaleString()
+                r.retried ? "-" : r.points.toLocaleString("en-GB")
             ];
             cells.forEach((text, i) => {
                 const cell = document.createElement(i === 0 ? "th" : "td");
@@ -6664,10 +6919,10 @@
             if (bonus) {
                 document.getElementById("ff-runend-bonus-label").textContent =
                     `${theRun.lives} ${theRun.lives === 1 ? "life" : "lives"} left`;
-                document.getElementById("ff-runend-bonus").textContent = "+" + bonus.toLocaleString();
+                document.getElementById("ff-runend-bonus").textContent = "+" + bonus.toLocaleString("en-GB");
             }
         }
-        document.getElementById("ff-runend-points").textContent = (points + bonus).toLocaleString();
+        document.getElementById("ff-runend-points").textContent = (points + bonus).toLocaleString("en-GB");
 
         box.hidden = false;
         // Onto its primary button, for the same reason as showRoundEnd - and
@@ -6715,7 +6970,7 @@
 
         if (!run) {
             // The builder testing one level, or a player replaying it.
-            startRound().catch(e => status(`Could not start the round: ${e.message}`, "error"));
+            startRound().catch(e => status(`Couldn't start the round: ${e.message}`, "error"));
             return;
         }
 
@@ -6741,9 +6996,9 @@
                which a "-1" does not say - and for a screen reader, which the
                callout (a picture of a heart) is hidden from. */
             if (what === "retry") {
-                tell(`A life gone - ${run.lives} left. ${run.level().name} again.`, "bad");
+                tell(`A life gone: ${run.lives} left. ${run.level().name} again.`, "bad");
             } else if (earned) {
-                tell(`${run.progressLabel()} - an extra life for ${Game.LIFE_EVERY} cleared.`, "good");
+                tell(`${run.progressLabel()}: an extra life for ${Game.LIFE_EVERY} cleared.`, "good");
             } else {
                 status(run.progressLabel(), "good");
             }
@@ -6917,6 +7172,7 @@
         hiddenAt = frozen() ? performance.now() : 0;
         lastPaint = 0;
         dirty = true;
+        figureArtCheck();
         releaseQueuedTap();
     }
 
@@ -6959,7 +7215,7 @@
         n.textContent = "";
         const heart = document.createElement("span");
         heart.className = "ff-countin-heart";
-        heart.textContent = "♥";
+        heart.textContent = "♥︎";
         n.append(heart, callout.kind === "lost" ? "-1" : "+1");
         n.classList.add(callout.kind === "lost" ? "is-life-lost" : "is-life-won");
     }
@@ -7128,6 +7384,7 @@
         // Position AND facing: see showStart.
         showStart(level);
         Object.assign(state, Levels.toRoomOpts(level));
+        figureArtRetry();
         applyLayout(state.model);
         labelRoom(Iso.layout, level && level.name);
         syncPickers();
@@ -7183,7 +7440,7 @@
                 if (count) count.hidden = true;
                 lastPaint = 0;
                 dirty = true;
-                tell("The room did not finish loading - playing anyway.", "bad");
+                tell("The room did not finish loading. Playing anyway.", "bad");
                 releaseQueuedTap();
             });
         }
@@ -7228,7 +7485,7 @@
             if (published && published.length) furniLoaded = loadLevelFurni(published);
         }
         if (!published || !published.length) {
-            status("Couldn't reach the levels - check your connection and press Retry.", "error");
+            status("Couldn't reach the levels. Check your connection and press Try again.", "error");
             return;
         }
         status("", "");
@@ -7243,7 +7500,7 @@
             b.addEventListener("click", () => {
                 if (playLocked()) return;
                 closeSelector();
-                startRound({ from: i }).catch(e => status(`Could not start the round: ${e.message}`, "error"));
+                startRound({ from: i }).catch(e => status(`Couldn't start the round: ${e.message}`, "error"));
             });
             li.appendChild(b);
             list.appendChild(li);
@@ -7275,7 +7532,7 @@
                reading a property that no longer existed, so Play threw inside
                an async handler and looked simply dead. */
             if (!Levels.totalDrops(level)) {
-                status("Nothing falls yet - draw a drop zone and add some furni to it.", "bad");
+                status("Nothing falls yet. Draw a drop zone and add some furni to it.", "bad");
                 setMode("zones");
                 return;
             }
@@ -7289,7 +7546,7 @@
             const miscast = Levels.miscastItems(level, metaFor);
             if (miscast.length) {
                 const n = miscast.reduce((sum, m) => sum + m.item.count, 0);
-                status(`Round started - but ${n} falling ${n === 1 ? "piece has" : "pieces have"} a seat role and cannot be sat on. ${n === 1 ? "It" : "They"} will behave as obstacles.`, "bad");
+                status(`Round started, but ${n} falling ${n === 1 ? "piece has" : "pieces have"} a seat role and cannot be sat on. ${n === 1 ? "It" : "They"} will behave as obstacles.`, "bad");
             } else {
                 status("Round started.", "good");
             }
@@ -7316,7 +7573,7 @@
             return;
         }
         if (published === null) {
-            status("Couldn't reach the levels - check your connection and press Retry.", "error");
+            status("Couldn't reach the levels. Check your connection and press Try again.", "error");
             showTitle();
             return;
         }
@@ -7545,7 +7802,7 @@
             for (const m of window.RoomLayouts.MODELS) {
                 const opt = document.createElement("option");
                 opt.value = m.id;
-                opt.textContent = `${m.name} - ${m.cols}×${m.rows}`;
+                opt.textContent = `${m.name}: ${m.cols}×${m.rows}`;
                 layoutSel.appendChild(opt);
             }
             layoutSel.value = state.model;
@@ -7608,10 +7865,10 @@
             const note = document.getElementById("ff-walk-note");
             try {
                 await navigator.clipboard.writeText(text);
-                status(`Copied - ${layout.tiles} tiles. Paste it into js/room-masks.js.`, "good");
+                status(`Copied: ${layout.tiles} tiles. Paste it into js/room-masks.js.`, "good");
             } catch {
                 // A clipboard a browser will not give up is not a dead end.
-                if (note) note.textContent = "Could not reach the clipboard - it is in the console instead.";
+                if (note) note.textContent = "Couldn't reach the clipboard. It is in the console instead.";
                 status("Copy blocked; written to the console.", "bad");
             }
             console.log("RoomMasks entry for " + layout.id + ":\n" + text);
@@ -7635,7 +7892,7 @@
             const cut = tiles.filter(t => !seen.has(Iso.key(t.x, t.y)));
             note.textContent = cut.length
                 ? `${cut.length} of ${tiles.length} tiles cannot be reached from the start ` +
-                  `(${from.x},${from.y}) - e.g. ${cut.slice(0, 4).map(t => t.x + "," + t.y).join("  ")}`
+                  `(${from.x},${from.y}): e.g. ${cut.slice(0, 4).map(t => t.x + "," + t.y).join("  ")}`
                 : `All ${tiles.length} tiles reachable from the start (${from.x},${from.y}).`;
             status(cut.length ? "Some tiles are cut off." : "Every tile is reachable.",
                 cut.length ? "bad" : "good");
@@ -7700,14 +7957,17 @@
                     if (!behindGame) { nameInput.focus(); nameInput.select(); }
                     return;
                 }
-                await startRound();
-                if (found === "failed" && run) {
-                    tell(state.name
-                        ? `Could not reach the name lookup - playing as ${state.name}.`
-                        : "Could not reach the name lookup - playing as the default habbo.", "bad");
+                /* Unless they have no look yet (4 Nov 2026): the title stays up
+                   with the stand-ins, and choosing one then Play goes on. */
+                if (found === "failed" && state.figure === DEFAULT_FIGURE) {
+                    const first = document.querySelector("#ff-standins .ff-standin");
+                    if (first && !behindGame) first.focus();
+                    return;
                 }
+                await startRound();
+                if (found === "failed" && run) tell(lookupFailedLine(), "bad");
             } catch (e) {
-                status(`Could not start the round: ${e.message}`, "error");
+                status(`Couldn't start the round: ${e.message}`, "error");
             } finally {
                 /* Only back on over a title that can be played (30 Sept
                    2026): titleState holds Play down while the levels or furni
@@ -7734,7 +7994,7 @@
         document.getElementById("ff-start").addEventListener("click", () => {
             if (musicPreview) previewMusic(false);
             startRound().then(() => { if (game) playTestMusic(true); })
-                .catch((e) => status(`Could not start the round: ${e.message}`, "error"));
+                .catch((e) => status(`Couldn't start the round: ${e.message}`, "error"));
         });
         document.getElementById("ff-stop").addEventListener("click", stopRound);
 
@@ -7745,7 +8005,7 @@
             hideRunEnd();
             // A practice run plays again from the level it was started at.
             startRound(practiceFrom !== null ? { from: practiceFrom } : undefined)
-                .catch(e => status(`Could not start the round: ${e.message}`, "error"));
+                .catch(e => status(`Couldn't start the round: ${e.message}`, "error"));
         });
         document.getElementById("ff-round-quit").addEventListener("click", () => {
             // Abandoning a run still records how far it got — including the
@@ -8033,9 +8293,16 @@
 
     // init is async now (it may have to ask the server who you are), so its
     // failures would otherwise vanish into an unhandled rejection.
-    const start = () => init().catch((e) => {
-        console.error("Fallin' Furni failed to start:", e);
-    });
+    // Said on the loading screen, as for a file that never came (fallinfurni.html's head).
+    const start = () => {
+        if (window.__ffBroken) return;
+        init().catch((e) => {
+            console.error("Fallin' Furni failed to start:", e);
+            if (window.__ffLoadFailed) window.__ffLoadFailed();
+        });
+    };
+    // This file ran to its end; the same script asks.
+    window.__ffGameJs = true;
 
     if (document.readyState === "loading") {
         document.addEventListener("DOMContentLoaded", start);

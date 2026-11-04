@@ -234,7 +234,7 @@
             listEl.innerHTML = "";
             const p = document.createElement("p");
             p.className = "admin-empty";
-            p.textContent = `Could not load the entries: ${(err && err.message) || "something went wrong"}`;
+            p.textContent = `Couldn't load the entries: ${(err && err.message) || "something went wrong"}`;
             listEl.appendChild(p);
         }
     }
@@ -559,7 +559,7 @@
     async function editNote(entry) {
         if (busy || !canWrite()) return;
         const note = await askText(`A note on ${escapeHtml(entry.habboName || "this entry")}'s entry, for the admins only.`,
-            { title: "Entry Note", label: "Note", maxlength: 500, value: entry.note || "" });
+            { title: "Entry note", label: "Note", maxlength: 500, value: entry.note || "" });
         if (note === null) return;
         const mine = sessionNo;
         busy = true;
@@ -854,6 +854,10 @@
                    answered this read 401, whose lock-out closed the wheel on
                    camera with the winner unsaved. Mark as Winner re-reads. */
                 if (window.PrizeWheel && window.PrizeWheel.isOpen()) return;
+                /* Not with a box or a list in hand: the redraw replaces them,
+                   which shut a dropdown you had open. Refresh still reads. */
+                const hand = document.activeElement;
+                if (hand && panel.contains(hand) && hand.matches("select, input, textarea")) return;
                 load({ auto: true });
             }, REFRESH_MS);
         }

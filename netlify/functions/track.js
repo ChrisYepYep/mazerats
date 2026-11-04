@@ -156,24 +156,30 @@ function limiterKey(event) {
 }
 
 // True when this batch is over the cap and should be dropped.
+/* ONE COUNTER A WINDOW (4 Nov 2026, the bug scan: telemetry was the busiest
+   writer, at six operations a batch). Each address used to get a row a batch,
+   counted before and after, which was three operations of the six. Now one
+   atomic bump of one document per address per ten-minute window, so a parallel
+   burst still cannot all fit under together. A sender this warm instance
+   already knows is over costs nothing at all until its window ends (the map
+   is capped, so a flood from many addresses can't grow it). */
+const overUntil = new Map();
+const OVER_MAX = 5000;
 async function overLimit(db, event) {
     const k = limiterKey(event);
     if (!k) return false;
-    const col = db.collection(LIMITS);
-    const recent = () => col.countDocuments({ k, at: { $gte: new Date(Date.now() - LIMIT_WINDOW_MS) } },
-        { limit: LIMIT_BATCHES + 1 });
-    /* Counted BEFORE the insert as well (2 Oct 2026). Every batch used to
-       insert its row first, so an address already far over the line still
-       wrote one row a request for as long as it kept sending — a flood from
-       one address was a flood of writes into this collection. Once it is
-       over, a batch now costs one indexed count and writes nothing. The
-       insert-then-count below is unchanged, so a parallel burst still
-       cannot all fit under together; what changes is that an address's
-       allowance comes back ten minutes after its last ACCEPTED batch rather
-       than its last attempt, which is the same sixty a window. */
-    if (await recent() >= LIMIT_BATCHES) return true;
-    await col.insertOne({ k, at: new Date() });
-    return (await recent()) > LIMIT_BATCHES;
+    const now = Date.now();
+    const known = overUntil.get(k);
+    if (known !== undefined) {
+        if (now < known) return true;
+        overUntil.delete(k);
+    }
+    const start = Math.floor(now / LIMIT_WINDOW_MS) * LIMIT_WINDOW_MS;
+    const doc = await bump(db, `addr:${k}:${start}`, 1, { at: new Date(start + LIMIT_WINDOW_MS) });
+    if (!doc || doc.n <= LIMIT_BATCHES) return false;
+    if (overUntil.size >= OVER_MAX) overUntil.clear();
+    overUntil.set(k, start + LIMIT_WINDOW_MS);
+    return true;
 }
 
 /* One counter document per minute, bumped by the rows each batch brings
@@ -213,11 +219,24 @@ async function overGlobal(db, rows) {
     if (Boolean(doc) && doc.n > GLOBAL_ROWS_PER_MIN) return true;
     /* The day's counter, the same way. Bumped only by batches the minute
        let through, so a burst refused above does not also eat into the day.
-       `dayAt`, not `at` — see DAY_COUNTER_KEEP_S. */
+       `dayAt`, not `at` — see DAY_COUNTER_KEEP_S.
+
+       At most once a minute per warm instance (4 Nov 2026), with everything
+       let through since: this is a ceiling on a bad day, not a figure anybody
+       reads, and rows counted on an instance that is then reaped are few
+       against 150,000. The minute's cap above still applies to every batch. */
+    dayPending += rows;
+    if (Date.now() - dayBumpedAt < DAY_BUMP_MS) return dayOver;
+    const owed = dayPending;
     const day = new Date(Math.floor(Date.now() / 86400000) * 86400000);
-    const daily = await bump(db, `global-day:${day.toISOString().slice(0, 10)}`, rows, { dayAt: day });
-    return Boolean(daily) && daily.n > GLOBAL_ROWS_PER_DAY;
+    const daily = await bump(db, `global-day:${day.toISOString().slice(0, 10)}`, owed, { dayAt: day });
+    dayPending -= owed;
+    dayBumpedAt = Date.now();
+    dayOver = Boolean(daily) && daily.n > GLOBAL_ROWS_PER_DAY;
+    return dayOver;
 }
+const DAY_BUMP_MS = 60 * 1000;
+let dayPending = 0, dayBumpedAt = 0, dayOver = false;
 const KEEP_DAYS = 60;              // matches the retention the policy states
 const MAX_EVENTS_PER_BATCH = 20;
 const MAX_NAME = 40;
@@ -238,7 +257,6 @@ async function ensureIndexes(db) {
     // The limiter's rows live only as long as the window they are counted in.
     const limits = db.collection(LIMITS);
     await limits.createIndex({ at: 1 }, { expireAfterSeconds: LIMIT_WINDOW_MS / 1000 }).catch(() => {});
-    await limits.createIndex({ k: 1, at: 1 }).catch(() => {});
     await limits.createIndex({ dayAt: 1 }, { expireAfterSeconds: DAY_COUNTER_KEEP_S }).catch(() => {});
     ensured = true;
 }

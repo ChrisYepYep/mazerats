@@ -76,7 +76,7 @@
 # [dev] keeps `netlify dev` serving the checkout as before, so local work
 # needs no build step and sees edits at once.
 [build]
-  command = "rm -rf tools/ariadne-editor assets/ariadne-levels js/rat-race-epic.js && npm install && node tools/check-daily-parity.js && node tools/check-changes.js && node tools/check-share-headers.js && node tools/check-article.js && node tools/themes.js && node tools/build-minify.js && rm -f dungeon.html js/dungeon.js && node tools/build-dist.js"
+  command = "rm -rf tools/ariadne-editor assets/ariadne-levels js/rat-race-epic.js && npm install && node tools/check-daily-parity.js && node tools/check-changes.js && node tools/check-share-headers.js && node tools/check-article.js && node tools/themes.js && node tools/build-minify.js && node tools/build-helper-urls.js && rm -f dungeon.html js/dungeon.js && node tools/build-dist.js"
   publish = "dist"
 
 [dev]
@@ -813,13 +813,10 @@
     # rather than as *.habbo.com, which would hand over every subdomain
     # Habbo has now or adds later for the sake of the one being used.
     #
-    # 'unsafe-inline' is in script-src because the Coming Soon/Maintenance
-    # gate has to run inline in <head>, ahead of every other resource, to
-    # keep a gated page from painting (see home.html) — and in style-src
-    # because the site sets inline styles all over the place while it
-    # animates. Both are honest about what this policy is worth: it cannot
-    # stop injected inline script, but it does stop script being pulled in
-    # from anywhere that isn't on this list.
+    # 'unsafe-inline' is in style-src because the site sets inline styles all
+    # over the place while it animates. It left script-src on 4 Nov 2026: the
+    # inline scripts the pages need (the Coming Soon/Maintenance gate has to run
+    # in <head>, ahead of every other resource) are named by hash instead.
     #
     # connect-src names gateway.umami.is specifically: the analytics script
     # is SERVED from cloud.umami.is but POSTs its events to gateway.umami.is,
@@ -829,8 +826,7 @@
     # origins.habbo.com is the Origins hotel's own host, and a third habbo
     # entry for the reason images.habbo.com is a second: a CSP host matches
     # exactly, so neither of the other two covers it, and pictures served
-    # from it were blocked. Mirrored in netlify/functions/share.js, which
-    # tools/check-share-headers.js holds to this line.
+    # from it were blocked.
     #
     # api.furniindex.com for the same exact-match reason (30 Sept 2026): the
     # furni catalogue hands back icon addresses on that host, so every icon
@@ -848,7 +844,10 @@
     # for the views that wouldn't match pixel for pixel), and the rest — furni
     # it doesn't hold, door0, poster_1000… — is this site's own copy under
     # assets/img/furni-legacy/ (netlify/functions/_furni-mirror.js), so 'self'.
-    Content-Security-Policy = "default-src 'self'; script-src 'self' 'unsafe-inline' https://cloud.umami.is; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob: https://www.habbo.com https://images.habbo.com https://origins.habbo.com https://api.furniindex.com https://cdn.discordapp.com; connect-src 'self' https://cloud.umami.is https://gateway.umami.is; frame-ancestors 'self'; base-uri 'self'; form-action 'self'; object-src 'none'"
+    # THE POLICY ITSELF LIVES IN netlify/functions/_csp.js (4 Nov 2026), and
+    # tools/build-dist.js writes it to dist/_headers. It names each page's inline
+    # scripts by hash, and those exist only once build-minify has run. It must not
+    # be set here as well: netlify.toml would win over _headers.
 
 # How long a returning visitor's browser may keep the pixel art, the fonts
 # and the sprite sheets without asking again. The HTML and the data

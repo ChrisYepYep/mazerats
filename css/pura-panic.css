@@ -343,6 +343,27 @@ html[data-game-front="scout"] #rr-overlay { z-index: 92; }
 .pura-who-name { flex: 1 1 auto; min-width: 0; padding: 0 6px; user-select: text; -webkit-user-select: text; }
 .pura-who-status { min-height: 1.4em; max-width: 250px; }
 .pura-who-hotel { flex: 0 0 52px; width: 52px; }
+/* ON A TOUCH SCREEN style.css types every field at 16px and scales it by
+   0.5625, so Safari never zooms in: sized here as usual, the two came out at
+   97 x 11 and 29 x 11, the hotel reading "CO". Each is given its size divided
+   by the scale, as style.css does for the console's own fields, and a scaled
+   box's spare width and height are handed back with negative margins. */
+@media (pointer: coarse) {
+    .pura-who-row { align-items: flex-start; }
+    .pura-who-row .console-input { height: calc(20px / 0.5625); margin-bottom: calc(20px - 20px / 0.5625); }
+    .pura-who-row .pura-who-name {
+        flex: 0 0 calc((100% - 58px) / 0.5625);
+        width: calc((100% - 58px) / 0.5625);
+        margin-right: calc((100% - 58px) - (100% - 58px) / 0.5625);
+        padding: 0 calc(6px / 0.5625);
+    }
+    .pura-who-row .pura-who-hotel {
+        flex: 0 0 calc(52px / 0.5625);
+        width: calc(52px / 0.5625);
+        margin-right: calc(52px - 52px / 0.5625);
+        padding: 0 calc(4px / 0.5625);
+    }
+}
 /* "Play as a Guest": a text button, under the username field. */
 .pura-text-btn {
     margin: 2px 0 0;
@@ -354,7 +375,7 @@ html[data-game-front="scout"] #rr-overlay { z-index: 92; }
     text-decoration: underline;
     cursor: var(--cursor-pointer, pointer);
 }
-.pura-text-btn:focus-visible { outline: 1px dotted #eeeeee; }
+.pura-text-btn:focus-visible { outline: 2px solid var(--amber-bright); }
 /* The motto code, big enough to read off and type in. */
 .pura-code { font-size: 1.125rem; letter-spacing: 1px; margin: 4px 0 !important; user-select: all; -webkit-user-select: all; }
 

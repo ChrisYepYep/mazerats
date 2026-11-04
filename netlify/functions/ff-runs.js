@@ -629,7 +629,7 @@ async function report(db, event) {
             .toArray();
     } catch (e) {
         console.error("ff-runs: could not read the runs", e);
-        return json(503, { error: "The run log could not be read just now." });
+        return json(503, { error: "The run log couldn't be read just now." });
     }
 
     /* ---- the headline */

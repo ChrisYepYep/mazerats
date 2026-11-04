@@ -12,6 +12,9 @@ const { checkRecord } = require("./_url");
 const { cleanArticle } = require("./article");
 const { assignSlugs, settleSlug, idFor, recheckSlug, loadRetired, retireAddresses, PROJECTION: SLUG_FIELDS } = require("./_slugs");
 const { applyFurniPatch, validEntry: validFurniEntry } = require("./_furni-merge");
+const { archiveMemo, mayHaveWritten, copies } = require("./_archive-memo");
+
+const archive = archiveMemo("rooms", "maze");
 
 const json = (statusCode, data) => ({
     statusCode,
@@ -162,12 +165,15 @@ function fieldsToSet(before, update, furni) {
        (status "collab") being unticked is a real change, and is written. */
     if (set.collab === false && before && before.collab == null && before.status !== "collab") delete set.collab;
     const judged = furni ? { ...set, furni } : set;
-    const moved = changedFields(before, judged);
+    // The save's article has been through cleanArticle; so must the stored one, or a date written the old way reads as a change.
+    const cleanedBefore = before && before.article && typeof before.article.body === "string" && before.article.body
+        ? { ...before, article: cleanArticle(before.article) } : before;
+    const moved = changedFields(cleanedBefore, judged);
     if (moved && moved.length === 0) {
         delete set.updatedAt;
         delete set.changes;
     } else {
-        const changed = describeChanges(before, judged);
+        const changed = describeChanges(cleanedBefore, judged);
         if (changed) set.changes = changed;
         // The day it replaces, kept as its own What's New entry (see _changes.js).
         keepPastDay(before, set);
@@ -315,26 +321,64 @@ async function handle(event) {
            account costs nothing but the token check. The same check below
            stays where the reasoning for it is written; roleOf memoises it. */
         if ((event.queryStringParameters || {}).full === "1" && !(await hasAccount(event))) return UNAUTHORIZED;
-        let all;
+        const asked = event.queryStringParameters || {};
+        /* ONE MAZE, ONE MAZE'S READ (4 Nov 2026, the bug scan): the Warren's
+           editor opening a maze read every maze whole to find it. Its address
+           still has to be worked out over all of them, but only their address
+           fields are needed for that. */
+        if (asked.full === "1" && typeof asked.id === "string" && asked.id) {
+            let one, book, gone;
+            try {
+                [one, book, gone] = await Promise.all([
+                    rooms.findOne({ id: asked.id }, { projection: { _id: 0 } }),
+                    rooms.find({}, { projection: SLUG_FIELDS }).toArray(),
+                    loadRetired(db, "maze").catch(e => {
+                        console.error("rooms: retired addresses unreadable", e);
+                        return [];
+                    })
+                ]);
+            } catch (e) {
+                console.error("rooms: read failed", e);
+                return json(503, { error: "The archive couldn't be read just now." });
+            }
+            if (!one) return json(404, { error: "Room not found" });
+            one.slug = assignSlugs(book, "maze", gone).get(one.id) || one.id;
+            /* cache: false like every ?full=1 answer: no-store, and no ETag,
+               so nothing is kept or revalidated across sign-ins. */
+            return cachedJson(event, one, { cache: false });
+        }
+        /* What is read, and from where. ?full=1 is the records the editors
+           work from, so it is always read from the database. The public form
+           and the Warren's short list (&lite=1, which never draws a furni, and
+           opens a maze through ?id= above before editing it) come through the
+           kept copy (_archive-memo.js), and are given shallow copies, because
+           what follows writes `slug` onto each and takes fields off it. */
+        let all, retired;
         try {
-            all = await rooms.find({}, { projection: { _id: 0 } }).toArray();
+            if (asked.full === "1" && asked.lite !== "1") {
+                all = await rooms.find({}, { projection: { _id: 0 } }).toArray();
+                /* Around the deleted mazes' addresses too, as share.js and the
+                   sitemap work them out (see _slugs.js). None when they cannot
+                   be read: every maze has its address stored, and a stored
+                   address does not depend on them. */
+                retired = await loadRetired(db, "maze").catch(e => {
+                    console.error("rooms: retired addresses unreadable", e);
+                    return [];
+                });
+            } else {
+                const kept = await archive.read(db);
+                all = copies(kept.docs);
+                retired = kept.retired;
+            }
         } catch (e) {
             console.error("rooms: read failed", e);
-            return json(503, { error: "The archive could not be read just now." });
+            return json(503, { error: "The archive couldn't be read just now." });
         }
         /* Every maze's address, worked out here so the page and the share
            function can never disagree about it (see _slugs.js). Written
            over the stored slug: a maze saved before addresses existed has
            none stored, and one whose stored slug clashes gets the one the
            share function will actually answer to. */
-        /* Around the deleted mazes' addresses too, as share.js and the
-           sitemap work them out (see _slugs.js). None when they cannot be
-           read: every maze has its address stored, and a stored address
-           does not depend on them. */
-        const retired = await loadRetired(db, "maze").catch(e => {
-            console.error("rooms: retired addresses unreadable", e);
-            return [];
-        });
         const slugs = assignSlugs(all, "maze", retired);
         all.forEach(r => { r.slug = slugs.get(r.id) || r.id; });
         // ?full=1 is the admin page's route: the records exactly as stored,
@@ -358,15 +402,9 @@ async function handle(event) {
             // is not a reviewer any more. One indexed lookup, on an admin-only
             // route the public payload below never takes.
             if (!(await hasAccount(event))) return UNAUTHORIZED;
-            /* ?full=1&id=<id> (2 Nov 2026): one maze, exactly as stored, for
-               the Warren's editor opening a maze it read with &lite=1 below
-               (readFullRoom in js/admin.js). 404 for a maze that is not here.
-               cache: false like every ?full=1 answer: no-store, and no ETag,
-               so nothing is kept or revalidated across sign-ins. */
-            if (typeof params.id === "string" && params.id) {
-                const one = all.find(r => r.id === params.id);
-                return one ? cachedJson(event, one, { cache: false }) : json(404, { error: "Room not found" });
-            }
+            /* ?full=1&id=<id> (2 Nov 2026), above: one maze, exactly as
+               stored, for the Warren's editor opening a maze it read with
+               &lite=1 below (readFullRoom in js/admin.js). */
             /* &lite=1 (2 Nov 2026, the owner's "load times are typically quite
                slow" on the Warren): each maze's furni as the pictures it was
                scanned from, each { lite: true }, without the detections. They
@@ -464,7 +502,7 @@ async function handle(event) {
        come back the next time somebody pastes a name with a stray space on
        the end. Only the fields where leading or trailing space is always an
        accident — the description and details are prose and are left alone. */
-    ["name", "creator", "hotel", "habboLink"].forEach(field => {
+    ["name", "creator", "hotel"].forEach(field => {
         if (typeof body[field] === "string") body[field] = body[field].trim();
     });
 
@@ -766,12 +804,19 @@ async function handle(event) {
    cannot read, or with Lambda's own error JSON and its stack trace. Caught
    once here, so every route answers with something the form can show. */
 exports.handler = async (event) => {
+    let res;
     try {
-        return await handle(event);
+        res = await handle(event);
     } catch (e) {
         console.error("rooms: request failed", e);
-        return json(503, { error: "The archive couldn't be saved just now. Try again in a minute." });
+        res = json(503, { error: "The archive couldn't be saved just now. Try again in a minute." });
     }
+    /* Every write comes through here, so none can forget to say so: see
+       _archive-memo.js. Before the answer goes back, so the save's own reload
+       cannot read the copy from before it. A database that can't be reached
+       is no reason to fail what has already been answered. */
+    if (mayHaveWritten(event, res)) await getDb().then(db => archive.wrote(db)).catch(e => console.error("rooms: could not stamp the archive", e));
+    return res;
 };
 
 /* Failures reported to /warren's Errors tab (28 Sept 2026): see

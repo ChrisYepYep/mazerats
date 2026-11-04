@@ -147,7 +147,7 @@ exports.handler = async (event) => {
            session out. */
         if (isAuthUnavailable(e)) return AUTH_UNAVAILABLE;
         console.error("daily-games: request failed", e);
-        return json(500, { error: "The daily games could not be reached just now" });
+        return json(500, { error: "The daily games couldn't be reached just now" });
     }
 };
 
@@ -314,7 +314,7 @@ async function route(event, db, scores, resets) {
                 return;
             }
             // Somebody who plays more than one of them: their days and
-            // points are the total across all three, and the most recent
+            // points are the total across them, and the most recent
             // day is whichever game they played last.
             seen.days += row.days;
             seen.points += row.points;
@@ -399,7 +399,7 @@ async function route(event, db, scores, resets) {
                 games: perGame.map(({ rows, ...rest }) => rest),
                 /* The recent list is Guess the Maze's, because it is the one
                    with a solved-out-of-five to show and the longest history.
-                   A merged list of three games' days would need a column to
+                   A merged list of both games' days would need a column to
                    say which game each row was, which is a report rather than
                    the thing this panel is for. */
                 recent: (perGame.find(g => g.key === "guess") || { rows: [] }).rows

@@ -25,8 +25,8 @@ document.addEventListener("DOMContentLoaded", () => {
        one. Held as a table rather than as two lookups so the pairs sit
        beside each other and cannot drift apart. */
     const sortLabelOptions = [
-        { opt: sortSelect.querySelector('option[value="name"]'), maze: "Sort by: Maze Name", event: "Sort by: Event Name" },
-        { opt: sortSelect.querySelector('option[value="owner"]'), maze: "Sort by: Maze Owner", event: "Sort by: Event Host" }
+        { opt: sortSelect.querySelector('option[value="name"]'), maze: "Sort by: Maze name", event: "Sort by: Event name" },
+        { opt: sortSelect.querySelector('option[value="owner"]'), maze: "Sort by: Maze owner", event: "Sort by: Event host" }
     ].filter(o => o.opt);
     const emptyEl = document.getElementById("featured-empty");
     const topNavBtns = document.querySelectorAll("#top-nav .chrome-nav-btn");
@@ -97,24 +97,17 @@ document.addEventListener("DOMContentLoaded", () => {
     const modalArticleLink = document.getElementById("modal-article-link");
     // The window itself, inside the overlay — what .is-ec is set on.
     const modalEl = modalOverlay.querySelector(".modal");
-    const modalLink = document.getElementById("modal-link");
-    const modalVisitWrap = document.getElementById("modal-visit-wrap");
-    // An event's "Read the article" buttons, beside Visit Room (2 Nov 2026).
-    const modalArticleLinks = document.getElementById("modal-article-links");
-    /* As a chip among the event's own, in the article's look (3 Nov 2026,
-       the owner's: the big button beside Visit Room was "awful"): the same
-       .tag.tag-filter the article's "See the event" is, at the right of the
+    /* An event's "Read the article": a chip among the event's own, in the
+       article's look (3 Nov 2026, the owner's): the same .tag.tag-filter as the article list's chips, at the right of the
        builder's row. Its title in the tooltip and accessible name. */
-    function drawModalArticleLinks(n, hasRoomLink) {
+    function drawModalArticleLinks(n) {
         const list = n && n.isEvent && window.Articles && Articles.loaded() ? Articles.forEvent(n.id) : [];
-        modalArticleLinks.innerHTML = "";
         modalTags.querySelectorAll("[data-article-link]").forEach(x => x.remove());
         modalTags.insertAdjacentHTML("beforeend", list.map(a => `<a class="tag tag-filter tag-article" href="${escapeHtml(window.RecordAddress.of("article", a))}" data-article-link="${escapeHtml(a.id)}" title="${escapeHtml(a.title || "")}" aria-label="Read the article: ${escapeHtml(a.title || "")}">${list.length > 1 ? `Read: ${escapeHtml(a.title || "")}` : "Read the article"}</a>`).join(""));
-        modalVisitWrap.style.display = hasRoomLink ? "" : "none";
     }
     // The articles can land after an event's window opened from its address: its buttons then.
     if (window.Articles) Articles.onLoad(() => {
-        if (modalItem && modalOverlay.classList.contains("open")) drawModalArticleLinks(modalItem, modalLink.style.display !== "none");
+        if (modalItem && modalOverlay.classList.contains("open")) drawModalArticleLinks(modalItem);
     });
     modalTags.addEventListener("click", e => {
         const a = e.target.closest("[data-article-link]");
@@ -224,6 +217,7 @@ document.addEventListener("DOMContentLoaded", () => {
     // syncViewAddress's state, up here because a render can run before it.
     let viewAddressLive = false;   // its part of the page has run
     let viewBackPending = false;   // our own step back off a view, in flight
+    let viewStepReopened = false;  // that step has just put a waiting window's entry on top
     let viewFromHistory = false;   // a render that Back or Forward asked for
     // Whether the opening view was showing when a view was pushed, so Back
     // off it puts the opening view back rather than the list under it.
@@ -415,7 +409,7 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     const RECORD_TEXT_FIELDS = ["id", "slug", "name", "title", "creator", "host", "added", "date", "endDate",
-        "createdAt", "updatedAt", "description", "details", "difficulty", "status", "thumb", "linksReferences", "habboLink"];
+        "createdAt", "updatedAt", "description", "details", "difficulty", "status", "thumb", "linksReferences"];
     const RECORD_LIST_FIELDS = ["gallery", "relatedImages"];
 
     /* The raw records, made safe in place as they arrive (see the note
@@ -498,7 +492,6 @@ document.addEventListener("DOMContentLoaded", () => {
                 details: asText(item.details),
                 linksReferences: asText(item.linksReferences),
                 tags: asTags(item.tags),
-                habboLink: item.habboLink,
                 gallery: Array.isArray(item.gallery) ? gallery : undefined,
                 entrance,
                 finish,
@@ -542,7 +535,6 @@ document.addEventListener("DOMContentLoaded", () => {
             details: asText(item.details),
             linksReferences: asText(item.linksReferences),
             tags: asTags(item.tags),
-            habboLink: item.habboLink,
             gallery: Array.isArray(item.gallery) ? gallery : undefined,
             entrance,
             finish,
@@ -2759,7 +2751,7 @@ document.addEventListener("DOMContentLoaded", () => {
     function rowThumbAlt(n) {
         const name = (n.name || "").trim();
         const kind = n.isEvent ? "event" : "maze room";
-        if (!name) return `A ${kind} from the Origins Maze Rats archive`;
+        if (!name) return `A ${kind} from the Maze Rats archive`;
         /* `owner`, not `creator`. These rows are handed the normalised shape
            built by normalize(), which keeps the builder under `owner` and
            spends `creator` on the way in — reading the wrong one here would
@@ -2886,11 +2878,9 @@ document.addEventListener("DOMContentLoaded", () => {
                anything but a string (a number, a Date-shaped object) threw
                on .slice here, and this runs inside the side menu's badge
                count — so one odd guide took the whole menu down with it.
-               And the day compared is the READER'S, as the log groups by
-               (see localDayKey): comparing UTC days called an edit made
-               late in the evening, local time, an "update" to a guide
-               published that same local day, and the log then filed it
-               under a day it did not group by. */
+               And the day compared is the one the log groups by (see
+               localDayKey), so an edit is never filed under a day it was
+               not grouped by. */
             const published = String(g.publishedAt);
             const edited = g.updatedAt ? String(g.updatedAt) : "";
             // The Guides window's rule too (GuideText.wasUpdated), so the
@@ -3145,8 +3135,8 @@ document.addEventListener("DOMContentLoaded", () => {
        from pastChanges (kept by keepPastDay in netlify/functions/_changes.js
        from that date on — a day before then is not known, so not drawn).
        The Warren's override is the latest entry's; these keep their own day,
-       label and line. Two kept days that fall on one of the reader's days
-       share an entry, as the log groups by the reader's day (localDayKey). */
+       label and line. Two kept days that fall on one day share an entry,
+       as the log groups by day (localDayKey). */
     function earlierEntries(x) {
         const n = x.n;
         if (n.activity !== "updated" || !n.archivedAt) return [];
@@ -3216,11 +3206,10 @@ document.addEventListener("DOMContentLoaded", () => {
     const WHATS_NEW_RECENT_DAYS = 14;
 
     function whatsNewRecentCount() {
-        // The reader's day on both sides, as the log itself groups (see
-        // localDayKey) — the cutoff was a UTC day compared against UTC
-        // slices, so the badge and the log disagreed about the edge.
+        // The same UTC day on both sides, as the log itself groups (see
+        // localDayKey), so the badge and the log agree about the edge.
         const now = new Date();
-        const back = new Date(now.getFullYear(), now.getMonth(), now.getDate() - WHATS_NEW_RECENT_DAYS, 12);
+        const back = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - WHATS_NEW_RECENT_DAYS, 12));
         const cutoff = localDayKey(back.toISOString());
         return whatsNewItems().filter(n => localDayKey(n.activityAt) >= cutoff).length;
     }
@@ -3231,18 +3220,16 @@ document.addEventListener("DOMContentLoaded", () => {
        has it changed since — which is not worth a line of every row in the
        ordinary listings, where it would just be a third date competing with
        the maze's own opening. */
-    /* Printed on the reader's own day, the one the log is grouped by (see
-       localDayKey) — formatMazeDate is UTC, so late-evening work west of
-       Greenwich was filed under one day and dated the next (30 Sept 2026).
-       A bare YYYY-MM-DD stays the calendar day it names. */
+    /* Printed on the UTC day the log is grouped by (see localDayKey), as
+       every date on the site is. A bare YYYY-MM-DD stays the calendar day
+       it names. */
     function whatsNewDate(value) {
         // A month with no day is formatMazeDate's to say ("May 2024").
         if (/^\d{4}-\d{2}$/.test(String(value || ""))) return formatMazeDate(value);
         const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(localDayKey(value));
         if (!m) return formatMazeDate(value);
-        // Local noon, as logDayLabel does, so no offset tips it over.
-        return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]), 12)
-            .toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
+        return new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]), 12))
+            .toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });
     }
 
     function whatsNewDatesHtml(n) {
@@ -3379,7 +3366,11 @@ document.addEventListener("DOMContentLoaded", () => {
        00:30 BST was filed under yesterday and headed "Yesterday" while it
        was, to them, today. Every other timezone was out by more. What a
        reader means by "today" is their own, so both the grouping key and
-       the labels are now local; the formatting stays en-GB.
+       the labels were made local; the formatting stays en-GB.
+
+       UTC again (4 Nov 2026, the owner's): a list card used the reader's
+       zone and its article UTC, so near midnight they named different days.
+       Every date on the site is now the one UTC day.
 
        A bare date with no time (the fallback for records older than the
        createdAt stamp — see whatsNewItems) is a calendar day already, not
@@ -3391,27 +3382,24 @@ document.addEventListener("DOMContentLoaded", () => {
         const d = new Date(s);
         if (isNaN(d)) return s.slice(0, 10);
         const pad = x => String(x).padStart(2, "0");
-        return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+        return `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}`;
     }
 
     function logDayLabel(day) {
         const now = new Date();
         const today = localDayKey(now.toISOString());
-        // Yesterday by the calendar rather than by 24 hours back, which is a
-        // different day on the two nights a year the clocks change.
-        const y = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1, 12);
+        const y = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - 1, 12));
         const yesterday = localDayKey(y.toISOString());
         if (day === today) return "Today";
         if (day === yesterday) return "Yesterday";
         const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(day);
         if (!m) return day;
-        // Local noon, so no offset can tip it into a neighbouring day.
-        const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]), 12);
+        const d = new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]), 12));
         // The year only where it is not this one — on a log that mostly
         // covers recent weeks, repeating it on every heading is noise.
         const sameYear = day.slice(0, 4) === today.slice(0, 4);
         return d.toLocaleDateString("en-GB", {
-            weekday: "short", day: "numeric", month: "long",
+            weekday: "short", day: "numeric", month: "short", timeZone: "UTC",
             ...(sameYear ? {} : { year: "numeric" })
         });
     }
@@ -3827,7 +3815,7 @@ document.addEventListener("DOMContentLoaded", () => {
         const at = new Date(n.activityAt);
         const day = logDayLabel(localDayKey(n.activityAt));
         const added = "Added " + (/^(Today|Yesterday)$/.test(day) ? day.toLowerCase()
-            : isNaN(at) ? day : at.toLocaleDateString("en-GB", { day: "numeric", month: "short" }));
+            : isNaN(at) ? day : at.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" }));
         if (n.isGuide) return ["Guide", added];
         if (n.isEvent) {
             const start = n.dateValue ? formatUtcParts(n.dateValue) : null;
@@ -3862,7 +3850,7 @@ document.addEventListener("DOMContentLoaded", () => {
         return list.map(a => ({
             isArticle: true, id: a.id, name: a.title || "", owner: a.author || "",
             thumb: Articles.thumbOf(a),
-            sub: [a.author ? `by ${a.author}` : "", (() => { const d = new Date(a.publishedAt); return isNaN(d) ? "" : d.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }); })()]
+            sub: [a.author ? `by ${a.author}` : "", (() => { const d = new Date(a.publishedAt); return isNaN(d) ? "" : d.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" }); })()]
                 .filter(Boolean).join(" · "),
             summary: typeof GuideText !== "undefined" ? GuideText.plain(a.summary || "") : String(a.summary || ""),
             _haystack: [a.title, a.summary, a.author, "article", articleWords(a)].join(" ").toLowerCase()
@@ -3954,8 +3942,13 @@ document.addEventListener("DOMContentLoaded", () => {
         try { ff = ffClosedState; pura = puraState; } catch (e) { /* not declared yet: worded as open */ }
 
         // EXPLORE: the counts behind each way in.
-        const count = v => sourceItems(v).length;
-        const builders = new Set(ROOMS.flatMap(r => String((r && r.creator) || "").split(/\s*(?:,|&|\band\b)\s*/i)).map(s => s.trim().toLowerCase()).filter(Boolean)).size;
+        // A hallway is browsed with the mazes but never counted as one (isHallway).
+        const count = v => sourceItems(v).filter(r => !isHallway(r)).length;
+        const mazeCount = ROOMS.filter(r => !isHallway(r)).length;
+        /* Api's stand-in for an archive it couldn't reach is one sample maze:
+           "1 mazes, 1 builders" is not a figure, so no figures at all. */
+        const archiveDown = !!(Api._degraded && (Api._degraded.has("room data") || Api._degraded.has("event data")));
+        const builders = new Set(ROOMS.filter(r => !isHallway(r)).flatMap(r => String((r && r.creator) || "").split(/\s*(?:,|&|\band\b)\s*/i)).map(s => s.trim().toLowerCase()).filter(Boolean)).size;
         const firstYear = ROOMS.map(r => String((r && r.added) || "").slice(0, 4)).filter(y => /^\d{4}$/.test(y)).sort()[0];
         const missing = (() => { try { return deadEndFigures(); } catch (e) { return null; } })();
 
@@ -4052,12 +4045,12 @@ document.addEventListener("DOMContentLoaded", () => {
                 </section>` : ""}
                 <section class="opening-section">
                     ${openingHead("Explore the archive")}
-                    <p class="opening-stats"><b>${ROOMS.length}</b> mazes <span class="row-date-dot" aria-hidden="true">•</span> <b>${EVENTS.length}</b> events <span class="row-date-dot" aria-hidden="true">•</span> <b>${builders}</b> builders${firstYear ? ` <span class="row-date-dot" aria-hidden="true">•</span> since ${escapeHtml(firstYear)}` : ""}</p>
+                    ${archiveDown ? "" : `<p class="opening-stats"><b>${mazeCount}</b> ${mazeCount === 1 ? "maze" : "mazes"} <span class="row-date-dot" aria-hidden="true">•</span> <b>${EVENTS.length}</b> ${EVENTS.length === 1 ? "event" : "events"} <span class="row-date-dot" aria-hidden="true">•</span> <b>${builders}</b> ${builders === 1 ? "builder" : "builders"}${firstYear ? ` <span class="row-date-dot" aria-hidden="true">•</span> since ${escapeHtml(firstYear)}` : ""}</p>`}
                     <div class="opening-explore">
-                        <button type="button" data-go="open" data-track="opening" data-track-label="open"><span class="opening-x-n">${count("open")}</span>Open mazes</button>
-                        <button type="button" data-go="archived" data-track="opening" data-track-label="archived"><span class="opening-x-n">${count("archived")}</span>Archived</button>
-                        <button type="button" data-go="collab" data-track="opening" data-track-label="collab"><span class="opening-x-n">${count("collab")}</span>Collabs</button>
-                        <button type="button" data-go="events" data-track="opening" data-track-label="events"><span class="opening-x-n">${EVENTS.length}</span>Events</button>
+                        <button type="button" data-go="open" data-track="opening" data-track-label="open"><span class="opening-x-n">${archiveDown ? "" : count("open")}</span>Open mazes</button>
+                        <button type="button" data-go="archived" data-track="opening" data-track-label="archived"><span class="opening-x-n">${archiveDown ? "" : count("archived")}</span>Archived</button>
+                        <button type="button" data-go="collab" data-track="opening" data-track-label="collab"><span class="opening-x-n">${archiveDown ? "" : count("collab")}</span>Collabs</button>
+                        <button type="button" data-go="events" data-track="opening" data-track-label="events"><span class="opening-x-n">${archiveDown ? "" : EVENTS.length}</span>Events</button>
                         <button type="button" data-go="timeline" data-track="opening" data-track-label="timeline"><span class="opening-x-ico is-timeline" aria-hidden="true">${OPENING_ICON.calendar}</span>Timeline</button>
                         <button type="button" data-go="furni" data-track="opening" data-track-label="furni"><span class="opening-x-ico is-furni" aria-hidden="true">${OPENING_ICON.chair}</span>Furni</button>
                     </div>
@@ -4435,12 +4428,9 @@ document.addEventListener("DOMContentLoaded", () => {
                _getWithFallback in js/api.js), so a slow connection can spend
                the best part of twenty seconds looking at an archive that
                appears to be empty. Say which it is instead. */
-            // Three dots rather than an ellipsis character, matching the
-            // search box's own placeholder — this text can land in Volter
-            // Goldfish, which is particular about punctuation.
             emptyEl.textContent = loadFailed
                 ? "Couldn't load the archive. Try refreshing the page."
-                : "Still loading the archive...";
+                : "Still loading the archive…";
             emptyEl.style.display = loaderGone ? "block" : "none";
             return;
         }
@@ -6602,7 +6592,7 @@ document.addEventListener("DOMContentLoaded", () => {
         // Each name in a shared credit ("A, B") is a person of their own,
         // not one more person called "A, B".
         const builders = new Set();
-        ROOMS.forEach(r => creatorNames(r.creator).forEach(name => builders.add(name.toLowerCase())));
+        ROOMS.filter(r => !isHallway(r)).forEach(r => creatorNames(r.creator).forEach(name => builders.add(name.toLowerCase())));
         const hosts = new Set();
         EVENTS.forEach(e => creatorNames(e.host).forEach(name => hosts.add(name.toLowerCase())));
 
@@ -6790,7 +6780,7 @@ document.addEventListener("DOMContentLoaded", () => {
     function furniMoreHtml(openKey, total, shown) {
         const open = furniOpen.has(openKey);
         if (!open && total <= shown) return "";
-        return `<button type="button" class="furni-band-more" data-open-key="${escapeHtml(openKey)}" data-focus-key="${escapeHtml("furni-more:" + openKey)}" aria-expanded="${open}">${open ? "Show fewer" : `Show all ${total}`}</button>`;
+        return `<button type="button" class="view-switch-btn furni-band-more" data-open-key="${escapeHtml(openKey)}" data-focus-key="${escapeHtml("furni-more:" + openKey)}" aria-expanded="${open}">${open ? "Show fewer" : `Show all ${total}`}</button>`;
     }
 
     /* A band's tiles. `cap` shortens it to its first few, with a button for
@@ -6860,7 +6850,7 @@ document.addEventListener("DOMContentLoaded", () => {
                     }).join("")}
                 </div>
                 ${groups.length > FURNI_SIG_MAZES
-                    ? `<button type="button" class="furni-band-more" data-open-key="sig" data-focus-key="furni-more:sig" aria-expanded="${furniOpen.has("sig")}">${furniOpen.has("sig") ? "Show fewer mazes" : `Show all ${groups.length} mazes`}</button>`
+                    ? `<button type="button" class="view-switch-btn furni-band-more" data-open-key="sig" data-focus-key="furni-more:sig" aria-expanded="${furniOpen.has("sig")}">${furniOpen.has("sig") ? "Show fewer mazes" : `Show all ${groups.length} mazes`}</button>`
                     : ""}
             </section>`;
     }
@@ -6985,7 +6975,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
         const stat = (n, label) =>
             `<div class="furni-stat">
-                <span class="furni-stat-n">${escapeHtml(String(n))}</span>
+                <span class="furni-stat-n">${escapeHtml(Number(n).toLocaleString("en-GB"))}</span>
                 <span class="furni-stat-l">${escapeHtml(label)}</span>
             </div>`;
 
@@ -7000,8 +6990,8 @@ document.addEventListener("DOMContentLoaded", () => {
         // Each name opens its maze (wired below, with the tiles).
         const completeHtml = complete.length
             ? `<p class="furni-head-complete">Not all mazes' furni listings are fully complete. Currently these mazes have 100% furni listings:
-                <span class="furni-head-complete-names">${complete.map(r =>
-                    `<button type="button" class="furni-head-complete-link" data-room-id="${escapeHtml(r.id)}" data-focus-key="${escapeHtml("furni-complete:" + r.id)}">${escapeHtml(String(r.name).trim())}</button>`).join(", ")}</span></p>`
+                <span class="furni-head-complete-names">${complete.map((r, i) =>
+                    `<span class="furni-head-complete-one"><button type="button" class="furni-head-complete-link" data-room-id="${escapeHtml(r.id)}" data-focus-key="${escapeHtml("furni-complete:" + r.id)}">${escapeHtml(String(r.name).trim())}</button>${i < complete.length - 1 ? "," : ""}</span>`).join(" ")}</span></p>`
             : "";
 
         const head = `
@@ -7136,7 +7126,7 @@ document.addEventListener("DOMContentLoaded", () => {
                         <span class="furni-expand-maze-n">${m.images.length} ${m.images.length === 1 ? "room" : "rooms"}</span>
                     </button>`).join("")}
             </div>
-            <button type="button" class="furni-band-more furni-expand-rooms" data-focus-key="furni-expand:rooms">See every room</button>`;
+            <button type="button" class="view-switch-btn furni-band-more furni-expand-rooms" data-focus-key="furni-expand:rooms">See every room</button>`;
         last.after(panel);
         tile.classList.add("is-open");
         tile.setAttribute("aria-expanded", "true");
@@ -7273,7 +7263,7 @@ document.addEventListener("DOMContentLoaded", () => {
         const s = archiveStats();
         const tile = (n, label) =>
             `<div class="archive-stat">
-                <span class="archive-stat-n">${escapeHtml(String(n))}</span>
+                <span class="archive-stat-n">${escapeHtml(Number(n).toLocaleString("en-GB"))}</span>
                 <span class="archive-stat-l">${escapeHtml(label)}</span>
             </div>`;
 
@@ -8651,10 +8641,7 @@ document.addEventListener("DOMContentLoaded", () => {
         if (hours < 24) return hours + (hours === 1 ? " hour ago" : " hours ago");
         const days = Math.floor(hours / 24);
         if (days < 30) return days + (days === 1 ? " day ago" : " days ago");
-        // The visitor's own calendar day, not UTC's (5 Oct 2026, the bug
-        // scan: seen just after midnight read as the day before).
-        const pad = n => String(n).padStart(2, "0");
-        return formatMazeDate(`${then.getFullYear()}-${pad(then.getMonth() + 1)}-${pad(then.getDate())}`) || "a while ago";
+        return formatMazeDate(then.toISOString()) || "a while ago";
     }
 
     // mirrored flips the card: avatar on the right, text to its left. Used
@@ -8918,7 +8905,7 @@ document.addEventListener("DOMContentLoaded", () => {
             try {
                 await navigator.clipboard.writeText(url);
                 if (stale()) return;
-                say("Link copied", "Link copied");
+                say("Copied", "Link copied");
             } catch (e) {
                 if (stale()) return;
                 /* No clipboard (an old browser, or permission refused).
@@ -9306,25 +9293,11 @@ document.addEventListener("DOMContentLoaded", () => {
         modalEcBadge.hidden = !ecSeason;
         modalEcLabel.hidden = !ecSeason;
         modalEl.classList.toggle("is-ec", !!ecSeason);
-        // Through safeHttpUrl, so a stored link that is not http(s) is shown
-        // as no link rather than as a button that runs something.
-        const habboLink = safeHttpUrl(n.habboLink);
-        if (habboLink) {
-            modalLink.href = habboLink;
-            modalLink.style.display = "inline-block";
-        } else {
-            modalLink.style.display = "none";
-        }
-        // The paragraph around it as well, the way js/welcome.js has always
-        // done it. Hiding the button alone leaves an empty <p> in the body's
-        // column, which reads as a band of dead space under the builder card
-        // on every event — none of which have a room to visit.
         /* "Read the article" (2 Nov 2026, the owner's): an event links back
-           to each published article written about it (its eventId), beside
-           the room button, in the same paragraph. Pressed, the room window
+           to each published article written about it (its eventId). Pressed, the room window
            shuts without stepping back and the article opens over its entry,
            as a guide named in a description does. */
-        drawModalArticleLinks(n, !!habboLink);
+        drawModalArticleLinks(n);
 
         // The entrance/finish images (if set) always bookend the gallery,
         // ahead of and after the room-by-room shots — they're stored
@@ -9506,6 +9479,16 @@ document.addEventListener("DOMContentLoaded", () => {
 
         const wasOpen = modalOverlay.classList.contains("open");
         modalOverlay.classList.add("open");
+        /* A fresh open starts at the top. The reset above can't do it while
+           the overlay is display:none (nothing to scroll yet), and the browser
+           then gives back the place the last window was left at: on a short
+           phone the next maze opened with its title bar and close box out of
+           view. */
+        if (!wasOpen) {
+            modalOverlay.scrollTop = 0;
+            const openedDesc = document.getElementById("room-desc-box");
+            if (openedDesc) openedDesc.scrollTop = 0;
+        }
         /* The thumbnail strip was centred on the active room by
            showGalleryImage above — while the overlay was still display:none
            on a fresh open, where every rect measures 0 and the scroll went
@@ -9770,7 +9753,7 @@ document.addEventListener("DOMContentLoaded", () => {
         if (!url) return;
         // " | Maze Rats" (31 Oct 2026): the site's titles carry no em dash.
         if (window.PageMeta) window.PageMeta.set("modal", `${n.name || "Maze Rats"} | Maze Rats`, "https://mazerats.net" + url);
-        if (pendingBack) { pendingPush = url; return; }
+        if (pendingBack || viewBackPending) { pendingPush = url; return; }
         const here = location.pathname + location.search;
         const target = url;
         if (fromAddress === "load" || fromAddress === "hashchange") archiveSearch = location.search;
@@ -9884,11 +9867,32 @@ document.addEventListener("DOMContentLoaded", () => {
             // The entry under the view carries the search it had then.
             syncedSearch = null;
             syncSearchToUrl();
+            /* A window opened while the step back was in flight (a link
+               followed from a view you pressed): it has been waiting in
+               pendingPush, and goes on top now. Pushed before the step
+               landed, the step took its entry away and shut it. */
+            if (pendingPush) {
+                if (modalOverlay.classList.contains("open") && !modalOverlay.classList.contains("closing")) {
+                    history.pushState(modalMark(), "", pendingPush);
+                    viewStepReopened = true;
+                }
+                pendingPush = null;
+            }
             return;
         }
         const key = viewKeyOfPath(location.pathname);
-        if (key === undefined || key === currentViewKey()) return;
-        const backToOpening = key === null && viewOverOpening;
+        if (key === undefined) return;
+        const sameView = key === currentViewKey();
+        /* Onto another /home with another search in its address (a hash link
+           stacks one): the address is what the list then follows, or the
+           filter stays on with no ?q= to say so. */
+        if (sameView) {
+            if (key !== null) return;
+            let asked = "";
+            try { asked = (new URLSearchParams(location.search).get("q") || "").slice(0, 200); } catch (e) { asked = ""; }
+            if (asked.trim() === query.trim()) return;
+        }
+        const backToOpening = !sameView && key === null && viewOverOpening;
         showFeatured = false;
         showWhatsNew = key === "news";
         showTimeline = key === "timeline";
@@ -9913,6 +9917,8 @@ document.addEventListener("DOMContentLoaded", () => {
     });
 
     window.addEventListener("popstate", () => {
+        // Just put on top by the view's step back, above: nothing to read here.
+        if (viewStepReopened) { viewStepReopened = false; return; }
         if (pendingBack) {
             const reopened = pendingPush && modalOverlay.classList.contains("open") && !modalOverlay.classList.contains("closing");
             /* Landed on ANOTHER of our modal entries — possible when an old
@@ -10476,7 +10482,7 @@ document.addEventListener("DOMContentLoaded", () => {
             // A lapsed session: `me` is asked again, and the page signs out.
             if (e && e.status === 401 && window.Account && typeof Account.refresh === "function") Account.refresh();
             await favAsk({
-                title: "Not Saved",
+                title: "Not saved",
                 html: `<p>${e && e.status === 401
                     ? "You've been signed out. Sign in again to pick a favourite."
                     : "Your favourite couldn't be saved just now. Try again in a moment."}</p>`
@@ -10494,7 +10500,7 @@ document.addEventListener("DOMContentLoaded", () => {
         // And the Profiles window reads it again (refreshProgressIfOpen when it lands).
         loadOwnProfile(true);
         if (id && p && p.favourite !== id) {
-            await favAsk({ title: "Not Saved", html: "<p>That maze isn't on your completed list yet, so it wasn't saved.</p>" });
+            await favAsk({ title: "Not saved", html: "<p>That maze isn't on your completed list yet, so it wasn't saved.</p>" });
         }
     }
 
@@ -10506,7 +10512,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
         if (!Account.current) {
             const v = await favAsk({
-                title: "Favourite Maze",
+                title: "Favourite maze",
                 html: `<p class="notice-head">Sign in with Discord to pick a favourite maze.</p><p>It's shown at the top of your profile.</p>`,
                 actions: [
                     { label: "Sign in with Discord", value: "signin", lead: true },
@@ -10525,16 +10531,16 @@ document.addEventListener("DOMContentLoaded", () => {
             // The profile's copy, so another favourite is known before asking.
             if (!ownData()) await loadOwnProfile();
             if (!ownData()) {
-                await favAsk({ title: "Not Saved", html: "<p>Your profile couldn't be read just now. Try again in a moment.</p>" });
+                await favAsk({ title: "Not saved", html: "<p>Your profile couldn't be read just now. Try again in a moment.</p>" });
                 return;
             }
 
             if (!isWalked(id)) {
                 const v = await favAsk({
-                    title: "Complete It First",
+                    title: "Complete it first",
                     html: `<p class="notice-head">Only mazes you've completed can be your favourite.</p><p>Mark <strong>${nameOf(id)}</strong> as Completed?</p>`,
                     actions: [
-                        { label: "Mark Completed", value: "yes", lead: true },
+                        { label: "Mark completed", value: "yes", lead: true },
                         { label: "Not now", value: null }
                     ]
                 });
@@ -10545,7 +10551,7 @@ document.addEventListener("DOMContentLoaded", () => {
             const other = currentFavourite();
             if (other && other !== id) {
                 const v = await favAsk({
-                    title: "Change Favourite?",
+                    title: "Change favourite?",
                     html: `<p>You've already picked <strong>${nameOf(other)}</strong> as your favourite! Want to change it?</p>`,
                     actions: [
                         { label: "Yes", value: "yes", lead: true },
@@ -10781,7 +10787,7 @@ document.addEventListener("DOMContentLoaded", () => {
             closed: f.closedDone.length,
             badges: badges.map(b => b.name),
             games: { guess: game(g.guess), odd: game(g.odd) },
-            printed: new Date().toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })
+            printed: new Date().toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" })
         };
     }
 
@@ -10828,7 +10834,7 @@ document.addEventListener("DOMContentLoaded", () => {
         if (other && !other.data) {
             return {
                 face: `<span class="profile-avatar is-blank" aria-hidden="true"></span>`,
-                who: `<p class="progress-note profile-wait">${!other.failed ? "Loading..."
+                who: `<p class="progress-note profile-wait">${!other.failed ? "Loading…"
                     : other.habbo ? "That Habbo can't be shown just now. Try again in a moment."
                     : "That profile can't be shown. It may be hidden, or the player may have left."}</p>`,
                 body: ""
@@ -10891,7 +10897,7 @@ document.addEventListener("DOMContentLoaded", () => {
             if (d && d.hidden) noteLines.push(`<span class="profile-hidden-note">Hidden: only you can see this.</span>`);
             if (d && !habbo && !d.habboLinked) noteLines.push("Link your Habbo through OriginsBot to show your avatar and motto here.");
             // A guessed Habbo (NOT VERIFIED below; 10 Oct 2026): where to verify it.
-            if (d && habbo && d.habboUnverified) noteLines.push(`This Habbo was matched to your nickname. Verify it's yours in <button type="button" class="progress-signin" data-profile-act="edit">Edit Profile</button>.`);
+            if (d && habbo && d.habboUnverified) noteLines.push(`This Habbo was matched to your nickname. Verify it's yours in <button type="button" class="progress-signin" data-profile-act="edit">Edit profile</button>.`);
             // Kept off for a filter word (MOTTOS in netlify/functions/profiles.js; 5 Oct 2026).
             if (d && d.mottoHidden) noteLines.push("Your Habbo motto isn't shown: it has a word in it the site doesn't allow. An admin will take a look.");
         }
@@ -10937,7 +10943,7 @@ document.addEventListener("DOMContentLoaded", () => {
         } else if (self && me && done) {
             favourite = `<section class="progress-block">
                 <h4 class="progress-head-sm">Favourite maze</h4>
-                <p class="progress-note">None chosen yet. Pick one from your completed mazes in <button type="button" class="progress-signin" data-profile-act="edit">Edit Profile</button>.</p>
+                <p class="progress-note">None chosen yet. Pick one from your completed mazes in <button type="button" class="progress-signin" data-profile-act="edit">Edit profile</button>.</p>
             </section>`;
         }
 
@@ -11619,7 +11625,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
         async function run(q) {
             const mine = ++seq;
-            say("Searching...");
+            say("Searching…");
             try {
                 const body = await readProfile(`q=${encodeURIComponent(q)}`);
                 if (mine !== seq) return;
@@ -11653,7 +11659,7 @@ document.addEventListener("DOMContentLoaded", () => {
                the bug scan): Enter in the quarter-second before the new ask
                used to open the top match for what WAS typed. */
             seq++;
-            say("Searching...");
+            say("Searching…");
             timer = setTimeout(() => run(q), 250);
         });
 
@@ -11707,6 +11713,13 @@ document.addEventListener("DOMContentLoaded", () => {
         let pid = null;
         try { pid = new URLSearchParams(location.search).get("p"); } catch (e) { /* none */ }
         try { history.replaceState(history.state, "", "/home"); } catch (e) { /* a sandboxed frame */ }
+        /* The tab's title and the canonical go back to the archive's with the
+           address: nobody else holds them on this page, so nothing would put
+           them back when the window closes. */
+        if (window.PageMeta) {
+            window.PageMeta.set("profile-address", null, null);
+            window.PageMeta.restore("profile-address");
+        }
         openProgress(pid && /^[A-Za-z0-9_-]{16}$/.test(pid) ? pid : null);
         /* Focused again once the page is shown (27 Oct 2026, the overnight
            scan). The gate in home.html's <head> keeps <html> hidden while it
@@ -11748,7 +11761,7 @@ document.addEventListener("DOMContentLoaded", () => {
             puraLoading = loadPuraScript("js/pura-engine.js?v=15")
                 // The soundtrack is a nicety: a failed load plays on in silence.
                 .then(() => loadPuraScript("js/pura-music.js?v=6").catch(() => {}))
-                .then(() => loadPuraScript("js/pura-panic.js?v=50"))
+                .then(() => loadPuraScript("js/pura-panic.js?v=54"))
                 // A failed load forgets itself, so the next press asks again.
                 .catch(err => { puraLoading = null; throw err; });
         }
@@ -11827,7 +11840,7 @@ document.addEventListener("DOMContentLoaded", () => {
         if (!(window.FFWindow && window.FFWindow.isOpen)) countOpen("ff-open", how || "other");
         if (window.FFWindow) { window.FFWindow.open(); return; }
         if (!ffLoading) {
-            ffLoading = loadPuraScript("js/ff-window.js?v=3")
+            ffLoading = loadPuraScript("js/ff-window.js?v=4")
                 .catch(err => { ffLoading = null; throw err; });
         }
         ffLoading.then(() => { if (window.FFWindow) window.FFWindow.open(); })
@@ -12519,7 +12532,10 @@ document.addEventListener("DOMContentLoaded", () => {
                 name: "Mazes",
                 branch: "mazes",
                 // Short, so it stays on one line beside the arrow.
-                state: dataLoaded ? `${ROOMS.length} ${ROOMS.length === 1 ? "maze" : "mazes"} in all` : "Every maze there is",
+                state: (() => {
+                    const n = ROOMS.filter(r => !isHallway(r)).length;
+                    return dataLoaded && !(Api._degraded && Api._degraded.has("room data")) ? `${n} ${n === 1 ? "maze" : "mazes"} in all` : "Every maze there is";
+                })(),
                 badge: "",
                 on: !overlay && topView === "mazes",
                 run: () => showArchiveView("mazes")
@@ -12537,14 +12553,14 @@ document.addEventListener("DOMContentLoaded", () => {
             /* THE TIMELINE AND FURNI (30 Oct 2026, the owner's): the archive
                window's two other ways of looking across it, under the tabs
                they sit beside. Pressed, each shows its view as its own button
-               does; one already showing is left as it is rather than shut
-               again, as a menu choice is a choice, not a toggle. */
+               does, and a second press closes it, as What's New's row does
+               (4 Nov 2026, the owner's). */
             {
                 name: "Timeline",
                 state: "The archive, year by year",
                 badge: "",
                 on: showTimeline,
-                run: () => { if (!showTimeline && timelineBtn) timelineBtn.click(); }
+                run: () => { if (timelineBtn) timelineBtn.click(); }
             },
             {
                 name: "Furni",
@@ -12552,7 +12568,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 badge: "",
                 on: showFurni || !!furniFilter,
                 // In a furni's mazes, the button steps back to the furni list.
-                run: () => { if (!(showFurni && !furniFilter) && furniBtn) furniBtn.click(); }
+                run: () => { if (furniBtn) furniBtn.click(); }
             },
             {
                 name: "What's New",
@@ -13084,6 +13100,7 @@ document.addEventListener("DOMContentLoaded", () => {
             });
             return a;
         }
+        let firstSlide = true;
         function slideOf(ev) {
             const a = document.createElement("a");
             a.className = "welcome-promo-slide";
@@ -13103,6 +13120,8 @@ document.addEventListener("DOMContentLoaded", () => {
                 broken.add(ev.id);
                 draw();
             }, { once: true });
+            // The first sets the page's paint, so it isn't left until last.
+            if (firstSlide) { firstSlide = false; img.setAttribute("fetchpriority", "high"); }
             img.src = imgCdn(thumb(ev), 640, null, 80);
             const cta = document.createElement("span");
             // Over the top of the picture, if the Warren says so (4 Oct 2026):
@@ -13792,13 +13811,23 @@ document.addEventListener("DOMContentLoaded", () => {
        events list being down meant a deleted maze's address was never
        called missing, and never put back to /home. */
     function liveListFor(kind) {
-        const d = Api._degraded;
-        return !(d && d.has(kind === "event" ? "event data" : "room data"));
+        const label = kind === "event" ? "event data" : "room data";
+        const d = Api._degraded, s = Api._stored;
+        return !(d && d.has(label)) && !(s && s.has(label));
+    }
+
+    /* Offline, from the saved copy (4 Nov 2026, the bug scan): a maze added
+       since the visitor's last visit is simply not in it. That proves nothing,
+       so the address stays for "Try again" to open, and the note says why. */
+    function savedListFor(kind) {
+        const s = Api._stored;
+        return !!(s && s.has(kind === "event" ? "event data" : "room data"));
     }
 
     function tellAddressMissing(kind) {
         const liveArchive = liveListFor(kind);
-        if (!SERVED_AS_MISSING && !liveArchive) return;
+        const saved = !SERVED_AS_MISSING && savedListFor(kind);
+        if (!SERVED_AS_MISSING && !liveArchive && !saved) return;
         const what = kind === "event" ? "event" : "maze";
 
         const show = () => {
@@ -13818,7 +13847,9 @@ document.addEventListener("DOMContentLoaded", () => {
                some screen readers and silently skipped by others. */
             const text = note.querySelector(".missing-note-text");
             setTimeout(() => {
-                text.textContent = `That ${what} isn't in the archive. It may have been renamed or removed.`;
+                text.textContent = saved
+                    ? `That ${what} isn't in your saved copy of the archive. This link will open it once you're back online.`
+                    : `That ${what} isn't in the archive. It may have been renamed or removed.`;
             }, 60);
 
             let timer = null;
@@ -13897,6 +13928,8 @@ document.addEventListener("DOMContentLoaded", () => {
                 // And says so, rather than leaving the visitor to wonder
                 // why their link showed the front page.
                 tellAddressMissing(asked.kind);
+            } else if (how === "load" && !asked.legacy && savedListFor(asked.kind)) {
+                tellAddressMissing(asked.kind);
             }
             return;
         }
@@ -13935,6 +13968,12 @@ document.addEventListener("DOMContentLoaded", () => {
            slide, a news post's link, an article named in a description). */
         if (p && p.kind === "article" && window.Articles) {
             e.preventDefault();
+            /* From inside the room window, which sits over the article's: it
+               shuts first, as for its "Read the article" chip, and its entry
+               stays under the article's. */
+            if (modalOverlay.classList.contains("open") && !modalOverlay.classList.contains("closing")) {
+                closeModal({ fromHistory: true, keepFocus: true });
+            }
             Articles.open(p.key);
             return;
         }
@@ -14241,7 +14280,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 '<p class="data-degraded-head">' + head + "</p>" +
                 '<p class="data-degraded-say">' + say + "</p>" +
             "</div>" +
-            '<button type="button" class="btn data-degraded-retry" id="data-degraded-retry">Try again</button>';
+            '<button type="button" class="view-switch-btn data-degraded-retry" id="data-degraded-retry">Try again</button>';
 
         host.parentNode.insertBefore(notice, host);
 

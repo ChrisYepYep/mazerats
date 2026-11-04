@@ -1,5 +1,6 @@
 const { SECURITY_HEADERS } = require("./_headers");
 const { subscriberOf } = require("./_net");
+const { askTwice, causeOf } = require("./_habbo-ask");
 /* One Origins habbo's figure string, for the room game to wear.
 
    WHY THIS IS NOT habbo.js. That function answers the same question for the
@@ -40,6 +41,7 @@ const ORIGINS_HOSTS = {
 const USER_AGENT = "Mozilla/5.0 (compatible; MazeRats/1.0; +https://mazerats.net)";
 
 const FETCH_TIMEOUT_MS = 6000;
+const TOTAL_ASK_MS = 8000;                  // both tries; the page's leash is 12s
 const CACHE_TTL_MS = 60 * 60 * 1000;        // a figure changes rarely
 const MISS_TTL_MS = 5 * 60 * 1000;          // remember "no such habbo" briefly
 const RATE_WINDOW_MS = 60 * 1000;
@@ -110,20 +112,41 @@ function rateLimited(address) {
     return seen.length > RATE_MAX;
 }
 
-async function fetchUser(host, name) {
+async function askHabboOnce(host, name, timeoutMs) {
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
     try {
         const res = await fetch(
             `https://${host}/api/public/users?name=${encodeURIComponent(name)}`,
             { headers: { "User-Agent": USER_AGENT, Accept: "application/json" }, signal: controller.signal }
         );
         if (res.status === 404) return null;
-        if (!res.ok) throw new Error(`${host} returned ${res.status}`);
-        return await res.json();
+        if (!res.ok) {
+            const refused = new Error(`${host} returned ${res.status}`);
+            refused.status = res.status;
+            throw refused;
+        }
+        /* A 200 that names nobody is not the 404 above: habbo.js has the same
+           rule (4 Nov 2026). Remembered as "no such habbo", it put a good
+           kept figure out of use. */
+        const user = await res.json();
+        if (!user || (!user.name && !user.figureString)) throw new Error(`${host} answered 200 with no name`);
+        return user;
     } finally {
         clearTimeout(timer);
     }
+}
+
+/* ONE MORE ASK, ONCE (3 Nov 2026). A single lookup came back 502 to a player
+   on load (the Warren's b87f340a…), and the same name answered perfectly
+   straight after: Habbo, or the road to it, having a moment. Play already
+   offers a retry, but a moment that short should not reach the player. The
+   rules are in _habbo-ask.js now, shared with habbo.js and habbo-outline.js
+   (4 Nov 2026), with the rest during a maintenance break, and so is causeOf:
+   the 3 Nov report could not say whether Habbo had answered 503 or the
+   connection had dropped, because this function threw that away. */
+function fetchUserTwice(host, name) {
+    return askTwice(host, ms => askHabboOnce(host, name, ms), { timeoutMs: FETCH_TIMEOUT_MS, totalMs: TOTAL_ASK_MS });
 }
 
 exports.handler = async (event) => {
@@ -172,31 +195,37 @@ exports.handler = async (event) => {
             : json(404, { error: noSuch });
     }
 
+    let user;
     try {
-        const user = await fetchUser(hotel, name);
-        if (!user || !user.figureString) {
-            remember(key, { at: Date.now(), value: null });
-            return json(404, { error: noSuch });
-        }
-        /* Only what the room needs to draw somebody. A motto with profanity
-           in it goes out blank (31 Oct 2026), as the profiles and the
-           builder cards send it (mottoHit in player-nick.js). Required here,
-           as habbo.js does, so a lookup that never gets this far does not
-           load the nickname rules. */
-        const { mottoHit } = require("./player-nick");
-        const motto = user.motto || "";
-        const value = {
-            name: user.name || name,
-            figureString: user.figureString,
-            motto: mottoHit(motto) ? "" : motto
-        };
-        remember(key, { at: Date.now(), value });
-        return json(200, value);
+        user = await fetchUserTwice(hotel, name);
     } catch (err) {
         // A stale answer beats no answer when Habbo is the thing that is down.
         if (cached && cached.value) return json(200, cached.value);
-        return json(502, { error: "Could not reach Habbo just now." });
+        const cause = causeOf(err);
+        console.warn(`room-figure: ${hotel}: ${cause}`);
+        return json(502, { error: "Couldn't reach Habbo just now.", cause });
     }
+    if (!user || !user.figureString) {
+        remember(key, { at: Date.now(), value: null });
+        return json(404, { error: noSuch });
+    }
+    /* Only what the room needs to draw somebody. A motto with profanity
+       in it goes out blank (31 Oct 2026), as the profiles and the
+       builder cards send it (mottoHit in player-nick.js). Required here,
+       as habbo.js does, so a lookup that never gets this far does not
+       load the nickname rules.
+
+       Outside the try above (3 Nov 2026): a fault in OUR code here used to be
+       told to the player, and the Warren, as Habbo being unreachable. */
+    const { mottoHit } = require("./player-nick");
+    const motto = user.motto || "";
+    const value = {
+        name: user.name || name,
+        figureString: user.figureString,
+        motto: mottoHit(motto) ? "" : motto
+    };
+    remember(key, { at: Date.now(), value });
+    return json(200, value);
 };
 
 /* Failures reported to /warren's Errors tab (28 Sept 2026): see

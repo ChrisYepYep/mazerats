@@ -40,10 +40,20 @@
          else (Coming Soon, Maintenance, a failed or stored answer, a state
          this does not know) does nothing here, and welcome.js goes on
          exactly as before, with its own read. A browser that has a note,
-         but not "enter", has seen the site shut and is also left to it. -->
+         but not "enter", has seen the site shut and is also left to it.
+
+         NOT A SEARCH CRAWLER (4 Nov 2026, the bug scan). This page names
+         itself as canonical, and /home names itself; a crawler that runs
+         scripts was sent on from one to the other, so it was told "/" is a
+         page and then shown a redirect off it. It stays and reads the front
+         door, whose button links on to /home (also in the sitemap). This only
+         decides who is moved on from here, never who may enter: the gate is
+         in home.html, and is the same for everybody. js/welcome.js has the
+         same test for a first visit: keep the two in step. -->
     <script>
     (function () {
         try {
+            if (/(?:google|bing|yandex|duckduck|apple|ads)bot|baiduspider|slurp|crawl|spider|inspectiontool/i.test(navigator.userAgent)) return;
             if (/(?:^|&)landing(?:=|&|$)/.test(location.search.slice(1))) return;
             var note = localStorage.getItem("mazerats_landing_state");
             if (note !== "enter" && note !== null) return;
@@ -135,7 +145,7 @@
 
          Wrapped in try/catch: localStorage throws outright in some privacy modes,
          and a colour scheme is not worth a blank page. -->
-    <link rel="stylesheet" href="css/style.css?v=7">
+    <link rel="stylesheet" href="css/style.css?v=11">
     <link id="theme-css" rel="stylesheet">
     <script>
     /* THE FIRST PAINT'S PALETTE. The site's own (mazerats_theme), unless a
@@ -205,7 +215,7 @@
          link carries a private token there. The search (?q=) is kept on
          purpose: the privacy policy says searches are recorded, and why.
          js/track.js, the site's own record, honours both signals too. -->
-    <script>(function(){try{if(navigator.globalPrivacyControl===true)return;var s=document.createElement("script");s.defer=true;s.src="https://cloud.umami.is/script.js";s.setAttribute("data-website-id","8dee5429-29ff-4efb-bec1-c124c8d6fb18");s.setAttribute("data-do-not-track","true");s.setAttribute("data-exclude-hash","true");s.setAttribute("data-domains","mazerats.net");document.head.appendChild(s);}catch(e){}})();</script>
+    <script>(function(){try{if(navigator.globalPrivacyControl===true||localStorage.getItem("mazerats_admin_token"))return;var s=document.createElement("script");s.defer=true;s.src="https://cloud.umami.is/script.js";s.setAttribute("data-website-id","8dee5429-29ff-4efb-bec1-c124c8d6fb18");s.setAttribute("data-do-not-track","true");s.setAttribute("data-exclude-hash","true");s.setAttribute("data-domains","mazerats.net");document.head.appendChild(s);}catch(e){}})();</script>
     <!-- Dark mode (30 Oct 2026): a visitor's own switch, the bulb in the
          archive window's grab bar, worn over whatever palette or skin is
          showing. Under Frost, the Christmas palette, which is already dark,
@@ -323,8 +333,8 @@
     </main>
 
     <footer class="site-footer">
-        <p>Origins Maze Rats is independent and not affiliated with, sponsored, supported, or endorsed by Sulake Oy or its affiliates. Any Habbo trademarks or intellectual property used here are done so in accordance with the Habbo Fan Site Policy.</p>
-        <p>&copy; 2026 Origins Maze Rats. All rights reserved.</p>
+        <p>Maze Rats is independent and not affiliated with, sponsored, supported, or endorsed by Sulake Oy or its affiliates. Any Habbo trademarks or intellectual property used here are done so in accordance with the Habbo Fan Site Policy.</p>
+        <p>&copy; 2026 Maze Rats. All rights reserved.</p>
     </footer>
 
     <!-- Event detail modal — a simplified version of home.html's full
@@ -382,9 +392,6 @@
                             <p class="ec-modal-label" id="event-modal-ec-label" hidden></p>
                             <img class="ec-modal-badge" id="event-modal-ec-badge" alt="" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" hidden>
                         </div>
-                        <p class="modal-visit-link" id="event-modal-visit-wrap" style="display:none;">
-                            <a class="btn" id="event-modal-link" href="#" target="_blank" rel="noopener">Visit</a>
-                        </p>
                         <!-- ONE panel running to the modal's own edges: meta items on
                              top, description directly below, thumbnail strip inside
                              it — exactly home.html's nesting, and it has to be this
@@ -459,10 +466,10 @@
 
     <script src="js/api.js?v=5"></script>
     <script src="js/event-status.js?v=2"></script>
-    <script src="js/privacy-content.js?v=5"></script>
+    <script src="js/privacy-content.js?v=6"></script>
     <script src="js/palette-wear.js?v=2"></script>
     <script src="js/skin-wear.js?v=1"></script>
-    <script src="js/site.js?v=3"></script>
+    <script src="js/site.js?v=4"></script>
     <!-- Before welcome.js, which draws the event window's formatted details
          with it (it can fetch it on demand, but this saves the redraw). -->
     <script src="js/guide-text.js?v=3"></script>
@@ -470,6 +477,6 @@
     <script src="js/custom-scrollbar.js?v=4"></script>
     <script src="js/track.js?v=2"></script>
     <!-- The offline archive (2 Nov 2026): registers nothing here; tells a stored copy to forget itself when this browser is banned or the site is shut. -->
-    <script src="js/offline.js?v=2"></script>
+    <script src="js/offline.js?v=3"></script>
 </body>
 </html>

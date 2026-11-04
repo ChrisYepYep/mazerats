@@ -68,9 +68,7 @@ window.Daily = (function () {
        are gone from the browser: they existed so the page could deal the
        day, and the page no longer does. Their one copy is on the server —
        netlify/functions/_daily.js and _deal.js — where the featured-day
-       salt (js/featured-days.js) is still applied, now under a secret. What
-       stays is seededRandom above, which Guess the Maze uses to choose
-       where to crop a picture from the seed the deal hands it. */
+       salt (js/featured-days.js) is still applied, now under a secret. */
 
     // Yesterday's key, for deciding whether a streak survived.
     function dayBefore(iso) {
@@ -278,6 +276,9 @@ window.Daily = (function () {
         const o = opts || {};
         const key = game + ":" + day;
         if (startsInFlight.has(key)) await startsInFlight.get(key);
+        // The same for a room's own clock (begin, below).
+        const asked = key + ":" + round;
+        if (startsInFlight.has(asked)) await startsInFlight.get(asked);
         /* A round 0 move whose start this page never saw land
            sends the start again first, and waits for it. The start used to
            be tried once, as the first pictures came up, and a request that
@@ -649,8 +650,9 @@ window.Daily = (function () {
        out every round's pictures before the day has started — that let a
        player study all five and then answer each at the one-second floor
        for nearly the whole speed bonus. A round's pictures now arrive in
-       the reply that ends the round before it (`next` on a move's answer),
-       round 0's in the start's, and a deal reply carries only the rounds
+       the reply that ends the round before it (`next` on a move's answer;
+       on Guess the Maze, which stops on each answer, in the reply to
+       begin() below), round 0's in the start's, and a deal reply carries only the rounds
        the server's record says this player has reached (null for the rest)
        — see ONE ROUND AT A TIME in netlify/functions/_deal.js. Each game
        keeps the rounds it has been handed with its saved day.
@@ -669,6 +671,21 @@ window.Daily = (function () {
             if (body.started) startConfirmed.add(key);
         }
         return openings.get(key) || null;
+    }
+
+    /* A room after the first, asked for as the player goes on to it (Guess
+       the Maze; THE ANSWER SCREEN IS NOT ON THE CLOCK in
+       netlify/functions/_speed.js): the server starts its clock and answers
+       its picture and names as `next`. Safe to send twice, since only the
+       first counts. Kept in flight, so a move waits for it as for the start.
+       Answers { status, body }. */
+    function begin(game, day, round, url) {
+        const key = game + ":" + day + ":" + round;
+        if (startsInFlight.has(key)) return startsInFlight.get(key);
+        const job = post(url || SCORES_URL, { game, day, action: "begin", round });
+        startsInFlight.set(key, job);
+        job.then(() => { if (startsInFlight.get(key) === job) startsInFlight.delete(key); });
+        return job;
     }
 
     /* A round handed out (`next`), put into the game's list of rounds if
@@ -721,8 +738,34 @@ window.Daily = (function () {
        daily-scores.js), so a week or a month shows the total alone. */
     function scoreCell(row) {
         const t = clock(row.ms);
-        return `<span class="guess-board-score">${escapeHtml(row.points)}${t
-            ? ` <span class="guess-board-time" title="Time taken">${t}</span>` : ""}</span>`;
+        // A day's row with no time still keeps the time's room (`ms` is there
+        // and null), so every total on the board ends on the same line.
+        return `<span class="guess-board-score">${escapeHtml(row.points)}${t || row.ms === null
+            ? ` <span class="guess-board-time"${t ? ` title="Time taken"` : ""}>${t}</span>` : ""}</span>`;
+    }
+
+    /* How many rounds a row got right, beside its name, and the line saying
+       what the order is: a 172 under a 118 reads as a mistake otherwise (see
+       RIGHT ANSWERS FIRST in netlify/functions/guess-scores.js). The cell
+       holds the grid or pill the row already had, so it stays one column. */
+    function rightCell(row, also) {
+        const right = Number.isFinite(row.solved)
+            ? `<span class="guess-board-games" title="Rounds right">${row.solved} <span>right</span></span>` : "";
+        return `<span class="guess-board-extras">${also || ""}${right}</span>`;
+    }
+    const orderLine = range => `Most rounds right first, then points${range === "day" ? ", then the faster time" : ""}.`;
+
+    /* What a span of a game's board covers, in the Leaderboards window's words
+       (spanLine in js/leaderboards.js), so a board reads the same on the
+       results card and in the window: "Wednesday 4 November.", "Since Monday
+       2 November.", "Every day since the game began." */
+    function spanLine(range, data) {
+        const on = iso => new Date(iso + "T00:00:00Z")
+            .toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long", timeZone: "UTC" });
+        if (range === "week" && data.weekFrom) return `Since ${on(data.weekFrom)}.`;
+        if (range === "month" && data.monthFrom) return `Since ${on(data.monthFrom)}.`;
+        if (range === "day" && data.date) return `${on(data.date)}.`;
+        return "Every day since the game began.";
     }
 
     const RANGES = [
@@ -731,13 +774,6 @@ window.Daily = (function () {
         { key: "month", label: "This month", empty: "No scores this month yet." },
         { key: "allTime", label: "All time", empty: "No scores recorded yet." }
     ];
-
-    // "en-GB" so a date on a leaderboard row is written the same way as the
-    // date under the game's own title — see longDate in js/oddoneout.js.
-    function niceDate(iso) {
-        const d = new Date(iso + "T00:00:00Z");
-        return d.toLocaleDateString("en-GB", { day: "numeric", month: "long", timeZone: "UTC" });
-    }
 
     /* Someone else's day, as five squares. Safe beside a name because it
        says how each round went and nothing about what was in it. */
@@ -784,10 +820,18 @@ window.Daily = (function () {
        whose rows carry no `solved` (Fallin' Furni's) ties on points alone,
        as it always did.
 
+       AND ON THE TIME, where a row has one (4 Nov 2026, the bug scan): a
+       day's board is ordered by the faster time among players level on
+       points, so numbering them joint first read as if the order meant
+       nothing. Compared in whole seconds, as the board writes it, so two
+       rows showing the same time share a place. Rows with no time (a span's)
+       are level as before.
+
        Published so Guess the Maze numbers its own board the same way. */
     function ranks(list) {
         const out = [];
-        const level = (a, b) => a.points === b.points && (a.solved == null ? null : a.solved) === (b.solved == null ? null : b.solved);
+        const secs = r => (Number.isFinite(r.ms) ? Math.floor(r.ms / 1000) : null);
+        const level = (a, b) => a.points === b.points && (a.solved == null ? null : a.solved) === (b.solved == null ? null : b.solved) && secs(a) === secs(b);
         (list || []).forEach((row, i) => {
             out.push(i > 0 && level(row, list[i - 1]) ? out[i - 1] : i + 1);
         });
@@ -820,7 +864,7 @@ window.Daily = (function () {
                     ? `<img class="guess-board-face" src="${escapeHtml(row.avatar)}" alt="" aria-hidden="true" loading="lazy">`
                     : `<span class="guess-board-face is-blank" aria-hidden="true"></span>`}
                 <span class="guess-board-name">${escapeHtml(row.name || "Someone")}</span>
-                ${row.games ? gamesPill(row.games) : miniGrid(row.grid)}
+                ${rightCell(row, row.games ? gamesPill(row.games) : miniGrid(row.grid))}
                 ${scoreCell(row)}
             </li>`).join("");
     }
@@ -873,7 +917,7 @@ window.Daily = (function () {
                 return;
             }
             if (data === "failed") {
-                panel.innerHTML = `<p class="guess-board-note">The scoreboard could not be reached just now.</p>`;
+                panel.innerHTML = `<p class="guess-board-note">The scoreboard couldn't be reached just now.</p>`;
                 return;
             }
             /* Signed in with no nickname, the line that says which name the
@@ -891,10 +935,6 @@ window.Daily = (function () {
             const spec = RANGES.find(r => r.key === range) || RANGES[0];
             const focused = panel.contains(document.activeElement) ? document.activeElement : null;
             const hadRange = focused && focused.dataset ? focused.dataset.range : null;
-            const span = range === "week" && data.weekFrom ? `Since ${niceDate(data.weekFrom)}`
-                : range === "month" && data.monthFrom ? `Since ${niceDate(data.monthFrom)}`
-                    : range === "day" ? "Your day against everyone else's"
-                        : "Every day the game has run";
             const tabs = RANGES.map(r => `
                 <button type="button" class="guess-board-range${r.key === range ? " is-on" : ""}"
                         data-range="${r.key}" aria-pressed="${r.key === range}">${escapeHtml(r.label)}</button>`).join("");
@@ -903,7 +943,7 @@ window.Daily = (function () {
                 ${invite}
                 <div class="guess-board">
                     <div class="guess-board-ranges" role="group" aria-label="Which span the board covers">${tabs}</div>
-                    <p class="guess-board-span">${escapeHtml(span)}</p>
+                    <p class="guess-board-span">${escapeHtml(spanLine(range, data))} ${orderLine(range)}</p>
                     <ol class="guess-board-list">${rows(data[range], me(), spec.empty)}</ol>
                 </div>`;
 
@@ -1080,7 +1120,14 @@ window.Daily = (function () {
                 `<span class="daily-streak-best">Best <b>${best}</b></span></div>`;
 
             if (list) {
-                const from = s.recentFrom && s.recentFrom > LAUNCH_DAY ? s.recentFrom : LAUNCH_DAY;
+                /* Blank before the player's first day, not missed: a new
+                   player's first card was 30 black squares. The list only
+                   goes back as far as the strip, so a player with more days
+                   on record than it holds (`days`) was here before it, and
+                   the days since launch are theirs to have missed. */
+                const days = list.filter(r => r && r.day).map(r => r.day).sort();
+                const first = Number(s.days) > days.length ? LAUNCH_DAY : (days[0] || t);
+                const from = [LAUNCH_DAY, s.recentFrom || LAUNCH_DAY, first].sort().pop();
                 const monday = shiftDay(t, -((new Date(t + "T00:00:00Z").getUTCDay() + 6) % 7) - 7 * (STRIP_WEEKS - 1));
                 let cells = `<span class="daily-streak-utc" title="Days run midnight to midnight UTC">UTC</span>` +
                     "MTWTFSS".split("").map(c => `<span class="daily-streak-dow">${c}</span>`).join("");
@@ -1153,9 +1200,9 @@ window.Daily = (function () {
 
     return {
         today, now, setServerNow, seededRandom, dayBefore, request,
-        claimReset, deal, move, afterPractice, submit, filed, fileable, start, opening, takeRound, mergeRounds,
+        claimReset, deal, move, afterPractice, submit, filed, fileable, start, opening, begin, takeRound, mergeRounds,
         forgetStarts, track, loadingHtml, waiting,
-        clock, scoreCell, boards, ranks, isMine,
+        clock, scoreCell, rightCell, orderLine, spanLine, boards, ranks, isMine,
         SPEED_BONUS_MAX, bonusLine, practiceLine, bonusRule,
         shareDate, dayTotal, shareScore, shareText, shareFallback,
         streakStrip, noteRecent

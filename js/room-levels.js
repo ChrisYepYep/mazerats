@@ -148,7 +148,7 @@
     const ROLE_LABELS = {
         sequence: "Sequence seat",
         decoy: "Decoy seat",
-        poi: "Poi - instant fail",
+        poi: "Poi: instant fail",
         obstacle: "Obstacle"
     };
 

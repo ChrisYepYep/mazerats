@@ -373,7 +373,7 @@
                     this.penalty += DECOY_PENALTY_S;
                     this.award(DECOY_POINTS);
                     this.streak = 0;
-                    this.message = `A decoy - that one was never in the sequence. ${DECOY_POINTS}`;
+                    this.message = `A decoy: that one was never in the sequence. ${DECOY_POINTS}`;
                     return "decoy";
                 }
 
@@ -399,7 +399,7 @@
                     this.penalty += WRONG_SEAT_PENALTY_S;
                     this.award(WRONG_SEAT_POINTS);
                     this.streak = 0;
-                    this.message = `Out of order - ${WRONG_SEAT_POINTS} and the streak is gone.`;
+                    this.message = `Out of order: ${WRONG_SEAT_POINTS} and the streak is gone.`;
                     return "wrong";
                 }
 

@@ -60,7 +60,7 @@ const MAP_TTL_MS = 2 * 60 * 1000;
 // trying again — far shorter than a good one, but not zero.
 const FAILED_TTL_MS = 60 * 1000;
 // The longest a public request waits for the catalogue before going without.
-const CATALOGUE_WAIT_MS = 6000;
+const CATALOGUE_WAIT_MS = 5000;
 
 async function catalogueIndex() {
     if (cachedIndex && Date.now() - cachedAt < MAP_TTL_MS) return cachedIndex;
@@ -84,9 +84,9 @@ async function catalogueIndex() {
            Blobs store, a wiped one) it would walk FurniIndex for as long as
            it takes — and this is the public /rooms and /events, where the
            archive's front page is the thing waiting. Past the cap the maps
-           come back empty, exactly as for an outright failure below; the
-           walk carries on in the background and stores its result for the
-           next request. */
+           come back empty, exactly as for an outright failure below. Five
+           seconds (it was six), to leave a ten-second function room for the
+           database read before it. */
         let timer;
         const cap = new Promise((_, reject) => {
             timer = setTimeout(() => reject(new Error("catalogue timed out")), CATALOGUE_WAIT_MS);

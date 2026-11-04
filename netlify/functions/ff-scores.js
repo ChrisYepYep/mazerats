@@ -215,7 +215,8 @@ function signRun(player, now) {
     const claims = { rid: crypto.randomBytes(12).toString("hex"), t: now || Date.now() };
     // Bound to the account when there is one, so a token cannot be handed
     // to somebody else's session. A signed-out start stays unbound: signing
-    // in means leaving the page, which ends the run anyway.
+    // in means leaving the page, and a finished run is sent again from the
+    // far side of it (carryRunOn in js/fallinfurni.js).
     if (player) claims.sub = player.id;
     return jwt.sign(claims, process.env.SESSION_SECRET, {
         audience: RUN_AUDIENCE, expiresIn: RUN_LIFE_S, algorithm: "HS256"
@@ -1107,7 +1108,7 @@ exports.handler = async (event) => {
             }
         } catch (e) {
             console.error("ff-scores: could not read the board", e);
-            return json(503, { error: "The leaderboard could not be read just now." });
+            return json(503, { error: "The leaderboard couldn't be read just now." });
         }
 
         /* The tournament board, when there is one running or just finished.
@@ -1173,7 +1174,7 @@ exports.handler = async (event) => {
     if ((event.queryStringParameters || {}).action === "start") {
         let gate;
         try { gate = await readGate(db); }
-        catch (e) { return json(503, { error: "The leaderboard could not be reached just now." }); }
+        catch (e) { return json(503, { error: "The leaderboard couldn't be reached just now." }); }
         if (!gate.open) return json(200, { token: null, reason: "closed" });
         const now = Date.now();
         const token = signRun(player, now);
@@ -1230,7 +1231,7 @@ exports.handler = async (event) => {
     try { gate = await readGate(db); }
     catch (e) {
         console.error("ff-scores: could not read the settings", e);
-        return json(503, { error: "The leaderboard could not be updated just now." });
+        return json(503, { error: "The leaderboard couldn't be updated just now." });
     }
     /* The run token. Missing is the start request having failed, which the
        page treats as "not on the board" without a scene; anything else wrong
@@ -1280,7 +1281,7 @@ exports.handler = async (event) => {
         await ensureUniqueIndex(scores, "playerId");
     } catch (e) {
         console.error("ff-scores: could not read the levels", e);
-        return json(503, { error: "The leaderboard could not be updated just now." });
+        return json(503, { error: "The leaderboard couldn't be updated just now." });
     }
 
     // Now, or as the token found them: a level unpublished mid-run was one.
@@ -1315,7 +1316,7 @@ exports.handler = async (event) => {
     try { logged = await findRunLog(db, claims.rid); }
     catch (e) {
         console.error("ff-scores: could not read the run log", e);
-        return json(503, { error: "The leaderboard could not be updated just now." });
+        return json(503, { error: "The leaderboard couldn't be updated just now." });
     }
     if (!logged) return json(200, { recorded: false, reason: "no-run-log" });
     const disagreement = logDisagrees(logged, checked.rounds, points);
@@ -1353,7 +1354,7 @@ exports.handler = async (event) => {
         }
     } catch (e) {
         console.error("ff-scores: could not spend a run token", e);
-        return json(503, { error: "The leaderboard could not be updated just now." });
+        return json(503, { error: "The leaderboard couldn't be updated just now." });
     }
 
     let better;
@@ -1369,7 +1370,7 @@ exports.handler = async (event) => {
            behaviour, never a second entry. */
         try { await db.collection(RUN_TOKENS).deleteOne({ _id: claims.rid }); }
         catch (e2) { console.error("ff-scores: could not release a run token", e2); }
-        return json(503, { error: "The leaderboard could not be updated just now." });
+        return json(503, { error: "The leaderboard couldn't be updated just now." });
     }
 
     /* And onto the tournament board, judged on its own terms.

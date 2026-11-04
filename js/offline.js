@@ -4,7 +4,9 @@
    This file:
      - registers /sw.js, from the archive (/home) only, once the page has
        finished loading, so it never competes with the page for the network;
-     - on the very first visit, before the worker was looking, hands it the
+     - once the page has finished loading, tells it so, with the scripts and
+       stylesheets it ran on, which it keeps together with the page; and on
+       the very first visit, before the worker was looking, the other
        addresses this page has already loaded, which it stores from the
        browser's own cache without downloading anything;
      - tells it to forget everything when this browser carries a whole-site
@@ -75,15 +77,40 @@
         sw.register("/sw.js", { scope: "/", updateViaCache: "none" }).then(() => sw.ready).then(reg => {
             // Asked again: the gate may have heard a shut answer meanwhile.
             if (state() === "shut") { forget(); return; }
-            if (wasControlled || !reg.active) return;
-            const urls = [location.href];
-            try {
-                performance.getEntriesByType("resource").forEach(e => {
-                    if (e.name && e.name.indexOf(location.origin + "/") === 0) urls.push(e.name);
-                });
-            } catch (e) { /* the next visit stores them as they load */ }
-            reg.active.postMessage({ type: "mr-seen", urls });
+            if (!reg.active) return;
+            // This load came from the copy: it has nothing new to give it.
+            if (offline || navigator.onLine === false) return;
+            reg.active.postMessage(loaded());
+            // A worker taking over from an older one didn't hear that, and clears the old copy.
+            sw.addEventListener("controllerchange", () => {
+                if (state() === "shut") return;
+                sw.ready.then(now => { if (now.active) now.active.postMessage(loaded()); }).catch(() => {});
+            }, { once: true });
         }).catch(() => { /* no offline copy, and nothing else changes */ });
+    }
+
+    /* The page, and the scripts and stylesheets it ran on: the worker keeps
+       these together as one set, and this message is what tells it that the
+       load got to the end (see sw.js). The address it was loaded at, which
+       the page may already have replaced in the bar. The tags as well as the
+       timings, as the browser's timing list stops at 250 entries. */
+    function loaded() {
+        const files = [];
+        document.querySelectorAll('script[src], link[rel="stylesheet"][href]').forEach(el => files.push(el.src || el.href));
+        let page = location.href;
+        const urls = [];
+        try {
+            const nav = performance.getEntriesByType("navigation")[0];
+            if (nav && nav.name) page = nav.name;
+            performance.getEntriesByType("resource").forEach(e => {
+                if (!e.name || e.name.indexOf(location.origin + "/") !== 0) return;
+                if (/^\/(?:js|css)\//.test(new URL(e.name).pathname)) files.push(e.name);
+                // On the first visit the worker wasn't looking: the rest of what the page has loaded too.
+                else if (!wasControlled) urls.push(e.name);
+            });
+        } catch (e) { /* the tags alone, then */ }
+        const stamp = document.querySelector('meta[name="mazerats:build"]');
+        return { type: "mr-loaded", page, build: stamp ? stamp.getAttribute("content") : "", files, urls };
     }
     const start = () => setTimeout(() => whenKnown(register), 0);
     if (document.readyState === "complete") start();
@@ -121,7 +148,7 @@
                         '<p class="data-degraded-head"></p>' +
                         '<p class="data-degraded-say"></p>' +
                     "</div>" +
-                    '<button type="button" class="btn data-degraded-retry">Try again</button>';
+                    '<button type="button" class="view-switch-btn data-degraded-retry">Try again</button>';
                 host.parentNode.insertBefore(notice, host);
                 const retry = notice.querySelector("button");
                 retry.addEventListener("click", () => {
@@ -168,7 +195,7 @@
             : "The games need a connection.";
         const A = window.Account;
         if (A && typeof A.notice === "function") {
-            A.notice({ title: "No Connection", html: `<p class="notice-head">${say}</p><p>The archive is here to look through until you're back online.</p>` });
+            A.notice({ title: "No connection", html: `<p class="notice-head">${say}</p><p>The archive is here to look through until you're back online.</p>` });
         } else {
             window.alert(say);
         }

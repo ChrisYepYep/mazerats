@@ -1,7 +1,7 @@
-/* /.netlify/functions/player-profile — everything the console's Profile page
-   says about the signed-in player, in one read.
+/* figuresFor: everything the console's Profile page says about a player, in
+   one read. Required by profiles.js; the address itself only answers 404.
 
-   GET only, signed in only. Nothing here is stored: every figure is counted
+   Nothing here is stored: every figure is counted
    from rows other functions already keep, for the same reason player-data.js
    derives its stats rather than storing them — a second copy of a total is a
    second answer to argue with.
@@ -22,8 +22,6 @@
    more rounds right, or as many right and more points. They are
    worked out over every player, not only the ten a board shows — being
    27th is still worth knowing when the board stops at 10. */
-const { getDb } = require("./_db");
-const { playerFrom, playerView, sessionRevoked, clearCookie } = require("./_player");
 const { today } = require("./_daily");
 const { SECURITY_HEADERS } = require("./_headers");
 const { totalOf } = require("./_speed");
@@ -380,60 +378,11 @@ async function figuresFor(db, id) {
     };
 }
 
-exports.handler = async (event) => {
-    if (event.httpMethod !== "GET") return json(405, { error: "Method not allowed" });
-    const player = playerFrom(event);
-    if (!player) return json(401, { error: "Not signed in" });
-
-    let db;
-    try {
-        db = await getDb();
-    } catch (e) {
-        return json(503, { error: "Database connection failed" });
-    }
-
-    const id = player.id;
-    try {
-        const { day, profile, games, combined, ff, pura, leads } = await figuresFor(db, id);
-
-        /* A REVOKED SESSION (30 Sept 2026; see SESSION VERSIONS in
-           _player.js) is signed out here as it is on `me`: a forgotten
-           player's old tab asked this and was answered from the cookie as if
-           nothing had happened — their name, their avatar, "Rat since". 401
-           with the cookie cleared; the Profile answers it by asking `me`. */
-        if (sessionRevoked(player, profile)) {
-            const out = json(401, { error: "Not signed in" });
-            out.headers = { ...out.headers, "Set-Cookie": clearCookie() };
-            return out;
-        }
-
-        /* The name as `me` gives it (playerView in _player.js; 28 Sept
-           2026): `name` is still the Discord display name, `displayName` is
-           the nickname when there is one, and that is what the page shows. */
-        const who = playerView(player, profile);
-        return json(200, {
-            day,
-            player: {
-                id, name: who.name, nick: who.nick, displayName: who.displayName, nickAsked: who.nickAsked,
-                // The admins locked it (29 Sept 2026; see player-nick.js).
-                nickLocked: who.nickLocked,
-                avatar: who.avatar, joinedAt: (profile && profile.joinedAt) || null
-            },
-            games,
-            combined,
-            ff,
-            pura,
-            leads
-        });
-    } catch (e) {
-        console.error("player-profile: read failed", e);
-        return json(500, { error: "Could not read your profile" });
-    }
-};
-
-/* Failures reported to /warren's Errors tab (28 Sept 2026): see
-   withErrorReporting in _errors.js. Last, so it wraps the handler as finally
-   defined above; what the handler answers is unchanged. */
-exports.handler = require("./_errors").withErrorReporting("player-profile", exports.handler);
+/* No page asks this address any more: the console's Profile reads profiles.js,
+   which takes figuresFor from here. It answered a signed-in player with their
+   Discord name for nobody's benefit, so now it is only a 404. It keeps a
+   handler because every file in this folder is a URL on Netlify, and one
+   without a handler answers 502 with a stack trace. */
+exports.handler = async () => json(404, { error: "Not found" });
 
 exports.figuresFor = figuresFor;

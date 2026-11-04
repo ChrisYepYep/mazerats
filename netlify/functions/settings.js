@@ -352,6 +352,14 @@ const menuConflict = doc => json(409, {
     menuLayout: menuLayoutOf(doc),
     menuLayoutAt: menuStampOf(doc)
 });
+// And the skins' dates, the same way (see skinScheduleBase in write).
+const skinStampOf = doc => (doc && typeof doc.skinScheduleAt === "string") ? doc.skinScheduleAt : "";
+const skinConflict = doc => json(409, {
+    error: "Someone else has changed the skin dates since this page read them.",
+    conflict: true,
+    skinSchedule: scheduleOf(doc),
+    skinScheduleAt: skinStampOf(doc)
+});
 
 /* THE SETTINGS, KEPT FOR A MOMENT (2 Oct 2026). The gate's poll asks with
    ?fresh=<time bucket> on purpose (js/welcome.js), so anybody can ask with a
@@ -391,6 +399,8 @@ function settingsReply(event, doc) {
         ffLaunchAt: (doc && doc.ffLaunchAt) || "",
         skin: skinOf(doc),
         skinSchedule: scheduleOf(doc),
+        // When the dates were last saved: the Warren's card sends it back as skinScheduleBase.
+        skinScheduleAt: skinStampOf(doc),
         halloweenGoo: gooOf(doc),
         // The homepage menu's order and hidden rows (30 Oct 2026; null is as written).
         menuLayout: menuLayoutOf(doc),
@@ -422,7 +432,7 @@ exports.handler = async (event) => {
             doc = await settings.findOne({ _id: "site" });
         } catch (e) {
             console.error("settings: read failed", e);
-            return json(503, { error: "Settings could not be read just now." });
+            return json(503, { error: "Settings couldn't be read just now." });
         }
         settingsMemo = { at: Date.now(), doc };
         return settingsReply(event, doc);
@@ -449,7 +459,7 @@ exports.handler = async (event) => {
         /* Only the tagged lookup failure is an outage to retry; anything
            else is a fault, and answering it as "unavailable" hid it. */
         if (isAuthUnavailable(e)) return AUTH_UNAVAILABLE;
-        return json(500, { error: "The settings could not be saved." });
+        return json(500, { error: "The settings couldn't be saved." });
     }
 };
 
@@ -573,10 +583,24 @@ async function write(event, settings, db) {
             }
             update.skin = body.skin;
         }
+        /* THE DATES SAVED OVER AN OLDER COPY: this list holds the 1 December
+           switch-on, and the card sends all of it, so a Warren left open could
+           put back dates somebody had since changed. Stamped and refused as
+           the menu is below; a PUT without a base saves as before. */
+        let skinBase;
         if (body.skinSchedule !== undefined) {
             const cleaned = cleanSkinSchedule(body.skinSchedule);
             if (typeof cleaned === "string") return json(400, { error: cleaned });
+            if (body.skinScheduleBase !== undefined) {
+                if (typeof body.skinScheduleBase !== "string" || body.skinScheduleBase.length > 40) {
+                    return json(400, { error: "skinScheduleBase must be the skinScheduleAt the dates were read with" });
+                }
+                const was = await settings.findOne({ _id: "site" }, { projection: { skinSchedule: 1, skinScheduleAt: 1 } });
+                if (skinStampOf(was) !== body.skinScheduleBase) return skinConflict(was);
+                skinBase = { exists: !!was, at: body.skinScheduleBase };
+            }
             update.skinSchedule = cleaned;
+            update.skinScheduleAt = new Date().toISOString();
         }
         if (body.halloweenGoo !== undefined) {
             if (typeof body.halloweenGoo !== "boolean") return json(400, { error: "halloweenGoo must be true or false" });
@@ -632,18 +656,19 @@ async function write(event, settings, db) {
         if (Object.keys(update).length === 0) {
             return json(400, { error: "Nothing to update" });
         }
-        if (menuBase && menuBase.exists) {
+        if ((menuBase && menuBase.exists) || (skinBase && skinBase.exists)) {
             /* Only over the copy it was checked against: a save landing
                between that read and this write is a conflict too. No upsert
                here, since the document is there (an upsert that missed
                would try to make a second "site"). null matches a document
-               saved before menuLayoutAt was kept. */
-            const done = await settings.updateOne(
-                { _id: "site", menuLayoutAt: menuBase.at || null },
-                { $set: update }
-            );
+               saved before the stamp was kept. */
+            const only = { _id: "site" };
+            if (menuBase && menuBase.exists) only.menuLayoutAt = menuBase.at || null;
+            if (skinBase && skinBase.exists) only.skinScheduleAt = skinBase.at || null;
+            const done = await settings.updateOne(only, { $set: update });
             if (done && done.matchedCount === 0) {
-                return menuConflict(await settings.findOne({ _id: "site" }, { projection: { menuLayout: 1, menuLayoutAt: 1 } }));
+                const now = await settings.findOne({ _id: "site" }, { projection: { menuLayout: 1, menuLayoutAt: 1, skinSchedule: 1, skinScheduleAt: 1 } });
+                return skinBase && skinBase.exists ? skinConflict(now) : menuConflict(now);
             }
         } else {
             await settings.updateOne(
@@ -675,6 +700,7 @@ async function write(event, settings, db) {
             // The skin and its dates (25 Oct 2026), for the Warren's skins card.
             skin: skinOf(doc),
             skinSchedule: scheduleOf(doc),
+            skinScheduleAt: skinStampOf(doc),
             halloweenGoo: gooOf(doc),
             menuLayout: menuLayoutOf(doc),
             menuLayoutAt: menuStampOf(doc)

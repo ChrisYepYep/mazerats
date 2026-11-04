@@ -201,7 +201,9 @@
         }
     ];
 
-    const BY_KEY = {};
+    // No prototype: these are looked up with words off the wire, and
+    // "constructor" must find nothing, not Object's.
+    const BY_KEY = Object.create(null);
     PIECES.forEach(p => { BY_KEY[p.key] = p; });
 
     const TYPES = ["maze", "event"];
@@ -270,11 +272,11 @@
         },
         { key: "hotel", for: ["maze", "event", "new"], label: "Add hotel", input: "hotel", pieces: ["hotel"] },
         { key: "difficulty", for: ["maze", "new"], label: "Add difficulty", input: "difficulty", pieces: ["difficulty"] },
-        { key: "story", for: ["maze", "event", "new"], label: "Add the story", input: "textarea", placeholder: "What it's like, how it works...", pieces: ["story"] },
+        { key: "story", for: ["maze", "event", "new"], label: "Add the story", input: "textarea", placeholder: "What it's like, how it works…", pieces: ["story"] },
         { key: "links", for: ["maze", "event", "new"], label: "Add links", input: "text", placeholder: "Videos, posts, articles", pieces: ["links", "article", "roomlink"] },
         { key: "other", for: ["maze", "event", "new"], label: "Something else", input: "textarea", placeholder: "Tell us what you know", pieces: ["other", "status"] }
     ];
-    const LEAD_KIND = {};
+    const LEAD_KIND = Object.create(null);
     LEAD_KINDS.forEach(k => { LEAD_KIND[k.key] = k; });
 
     function leadKindsFor(type) {

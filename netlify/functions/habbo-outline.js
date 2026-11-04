@@ -24,6 +24,9 @@
    anywhere else. The same figure is always the same picture, so the
    answer is kept by the browser for a day and by Netlify's edge for a
    month; Habbo sees one request per figure per month, not one per view.
+   And a further month of serving the old copy while it renews, so a figure
+   whose month ends during one of Habbo's maintenance breaks keeps its outline
+   (4 Nov 2026, the bug scan).
 
    kind=body  the whole figure at Habbo's small size, 33x56, shown at
               exactly that size
@@ -33,6 +36,7 @@
               (OUTLINE_V; see below) when the drawing changes. */
 const { decodePng, encodePng } = require("./_png");
 const { SECURITY_HEADERS } = require("./_headers");
+const { askTwice, causeOf } = require("./_habbo-ask");
 
 // The console screen's text colour (.console-screen in css/style.css), the
 // same in every theme.
@@ -60,12 +64,35 @@ const KINDS = {
 // it answers with an error page instead of the image.
 const USER_AGENT = "Mozilla/5.0 (compatible; MazeRats/1.0; +https://mazerats.net)";
 const FETCH_TIMEOUT_MS = 6000;
+const TOTAL_ASK_MS = 8000;      // both tries; this function asks nothing else
+const IMAGING_HOST = "www.habbo.com";
 
-const fail = (statusCode, error) => ({
+const fail = (statusCode, error, cause) => ({
     statusCode,
     headers: { ...SECURITY_HEADERS, "Content-Type": "application/json", "Cache-Control": "no-store" },
-    body: JSON.stringify({ error })
+    body: JSON.stringify({ error, ...(cause ? { cause } : {}) })
 });
+
+// One try at the picture's bytes; see _habbo-ask.js for what follows a failure.
+async function askImaging(params, timeoutMs) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+        const res = await fetch(`https://${IMAGING_HOST}/habbo-imaging/avatarimage?${params}`, {
+            signal: controller.signal,
+            headers: { "User-Agent": USER_AGENT, Accept: "image/png" }
+        });
+        const type = res.headers.get("content-type") || "";
+        if (!res.ok || !/png/i.test(type)) {
+            const refused = new Error(`habbo-imaging answered ${res.status} (${type || "no type"})`);
+            if (!res.ok) refused.status = res.status;
+            throw refused;
+        }
+        return Buffer.from(await res.arrayBuffer());
+    } finally {
+        clearTimeout(timer);
+    }
+}
 
 // Every pure black pixel in the screen's colour; everything else clear.
 function outline(png) {
@@ -103,23 +130,14 @@ exports.handler = async (event) => {
         // a step, head_direction 3, as the builder cards still draw it).
         figure, direction: "2", head_direction: "2", action: "std", gesture: "sml", ...KINDS[kind]
     });
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
     let png;
     try {
-        const res = await fetch(`https://www.habbo.com/habbo-imaging/avatarimage?${params}`, {
-            signal: controller.signal,
-            headers: { "User-Agent": USER_AGENT, Accept: "image/png" }
-        });
-        const type = res.headers.get("content-type") || "";
-        if (!res.ok || !/png/i.test(type)) throw new Error(`habbo-imaging answered ${res.status} (${type || "no type"})`);
-        png = outline(Buffer.from(await res.arrayBuffer()));
+        png = outline(await askTwice(IMAGING_HOST, ms => askImaging(params, ms), { timeoutMs: FETCH_TIMEOUT_MS, totalMs: TOTAL_ASK_MS }));
     } catch (e) {
         // Habbo having a bad minute: the page falls back to its blank face.
-        console.warn("habbo-outline:", e && e.name === "AbortError" ? "timed out" : e && e.message);
-        return fail(502, "Habbo's avatar could not be fetched just now");
-    } finally {
-        clearTimeout(timer);
+        const cause = causeOf(e);
+        console.warn("habbo-outline:", cause);
+        return fail(502, "Habbo's avatar couldn't be fetched just now", cause);
     }
 
     return {
@@ -128,7 +146,7 @@ exports.handler = async (event) => {
             ...SECURITY_HEADERS,
             "Content-Type": "image/png",
             "Cache-Control": "public, max-age=86400",
-            "Netlify-CDN-Cache-Control": "public, durable, max-age=2592000",
+            "Netlify-CDN-Cache-Control": "public, durable, max-age=2592000, stale-while-revalidate=2592000",
             // Keyed on the two parameters that make the picture, so a
             // cache-busting extra is the edge's copy, not another fetch.
             "Netlify-Vary": "query=figure|kind|v"

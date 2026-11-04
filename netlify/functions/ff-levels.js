@@ -346,7 +346,7 @@ async function handle(event) {
                 .sort({ order: 1 }).toArray();
         } catch (e) {
             console.error("ff-levels: read failed", e);
-            return json(503, { error: "The levels could not be read just now." });
+            return json(503, { error: "The levels couldn't be read just now." });
         }
         /* Cached at the edge like the archive is, and for the same reason:
            this is read on every single load of the game page, it is the
@@ -525,7 +525,7 @@ async function handle(event) {
         }
         if (failed) {
             return json(503, {
-                error: `${failed} level${failed === 1 ? "" : "s"} could not be renumbered just now, so the order is only partly saved. Reload the editor to see it as it stands, then move them again.`,
+                error: `${failed} level${failed === 1 ? "" : "s"} couldn't be renumbered just now, so the order is only partly saved. Reload the editor to see it as it stands, then move them again.`,
                 partial: true,
                 changed
             });

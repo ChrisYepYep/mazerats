@@ -174,8 +174,10 @@ const eq = (a, b) => JSON.stringify(a) === JSON.stringify(b);
     check(sentOdd.every(r => r.tiles.every(t => Object.keys(t).join() === "image")),
         "the Odd One Out deal sent to the page carries more than the pictures");
     check(!/"(odd|home|imposter|homeId|imposterId)"/.test(JSON.stringify(sentOdd)), "the Odd One Out deal sent to the page names an answer");
-    check(sentGuess.every(r => Object.keys(r).sort().join() === "crop,image,options"),
-        "the Guess the Maze deal sent to the page carries more than picture, names and crop");
+    // No crop seed since 4 Nov 2026: the server cuts the view, so the page has
+    // no use for it (THE CROP in deal-image.js).
+    check(sentGuess.every(r => Object.keys(r).sort().join() === "image,options,view"),
+        "the Guess the Maze deal sent to the page carries more than picture, names and view");
 
     /* THE PICTURE ADDRESSES. A stored reference names the maze's folder
        (rooms/<id>/…), so the deal must send deal-image addresses and never
@@ -190,12 +192,30 @@ const eq = (a, b) => JSON.stringify(a) === JSON.stringify(b);
     const addrOk = (game, rounds) => rounds.every((r, i) => (game === "odd" ? r.tiles.map(t => t.image) : [r.image]).every((a, j) => {
         const q = new URLSearchParams(a.split("?")[1]);
         const ref = deals.imageRefAt({ rounds: game === "odd" ? odd : guess }, game, i, j);
+        // A Guess room goes out at its first view, signed for that view.
+        const view = game === "guess" ? 0 : undefined;
         return q.get("g") === game && q.get("d") === DAY && q.get("r") === String(i) && q.get("t") === String(j) &&
-            deals.imageSigMatches(game, DAY, i, j, ref, q.get("s")) &&
-            !deals.imageSigMatches(game, "2026-10-06", i, j, ref, q.get("s"));
+            deals.imageSigMatches(game, DAY, i, j, ref, q.get("s"), view) &&
+            !deals.imageSigMatches(game, "2026-10-06", i, j, ref, q.get("s"), view);
     }));
     check(addrOk("odd", sentOdd), "an Odd One Out picture address is not signed for its own day, round, tile and picture");
     check(addrOk("guess", sentGuess), "a Guess the Maze picture address is not signed for its own day, round and picture");
+
+    /* ONLY THE CROP UNTIL THE ROOM IS OVER (4 Nov 2026; see _deal.js). A room
+       still being guessed is sent its view's address and nothing that opens a
+       wider one, and the whole room's address only once the room is over. */
+    const firstRef = deals.imageRefAt({ rounds: guess }, "guess", 0, 0);
+    const firstSig = new URLSearchParams(sentGuess[0].image.split("?")[1]).get("s");
+    check(!deals.imageSigMatches("guess", DAY, 0, 0, firstRef, firstSig) && !deals.imageSigMatches("guess", DAY, 0, 0, firstRef, firstSig, 1),
+        "a Guess the Maze view's signature also opens the whole room or a wider view");
+    check(sentGuess.every(r => r.view === 0 && /[?&]v=0&/.test(r.image)), "a room handed out does not start at its first view");
+    const staged = m => deals.guessPicture(DAY, 0, firstRef, deals.guessStage(m));
+    check(/[?&]v=0&/.test(staged(null).image) && /[?&]v=1&/.test(staged({ guesses: ["x"], done: false }).image) && /[?&]v=2&/.test(staged({ guesses: ["x", "y"], done: false }).image),
+        "a wrong guess does not widen a room by exactly one view");
+    const over = staged({ guesses: ["x"], done: true });
+    check(!/[?&]v=/.test(over.image) && over.view === deals.WHOLE_ROOM && deals.imageSigMatches("guess", DAY, 0, 0, firstRef, new URLSearchParams(over.image.split("?")[1]).get("s")),
+        "a room over does not hand out the whole room");
+    check(deals.publicRounds("guess", guess, DAY, 2, i => (i === 0 ? deals.WHOLE_ROOM : 0))[1].view === 0, "one room over hands out the next room whole");
     let refused = false;
     try { deals.publicRounds("odd", odd); } catch (e) { refused = true; }
     check(refused, "publicRounds without a day did not refuse — a caller that forgot it would send the raw paths");
@@ -218,7 +238,11 @@ const eq = (a, b) => JSON.stringify(a) === JSON.stringify(b);
     check(deals.reachedOf("odd", row({}), 5, false) === 1, "a started day does not hand out round 0 alone");
     check(deals.reachedOf("odd", row({ r0: { tile: 1 }, r1: { tile: 2 } }), 5, false) === 3, "two picks made should hand out three rounds");
     check(deals.reachedOf("guess", row({ r0: { guesses: ["x"], done: false } }), 5, false) === 1, "a room still being guessed hands out the next");
-    check(deals.reachedOf("guess", row({ r0: { guesses: ["x"], done: true } }), 5, false) === 2, "a room over does not hand out the next");
+    // The next room only once it has been asked for (THE ANSWER SCREEN IS NOT ON THE CLOCK in _speed.js).
+    check(deals.reachedOf("guess", row({ r0: { guesses: ["x"], done: true } }), 5, false) === 1, "a room over hands out the next before it is asked for");
+    check(deals.reachedOf("guess", Object.assign(row({ r0: { guesses: ["x"], done: true } }), { begun: { r1: new Date() } }), 5, false) === 2, "a room asked for is not handed out");
+    check(deals.reachedOf("guess", row({ r0: { guesses: ["x"], done: true }, r1: { guesses: ["y"], done: false } }), 5, false) === 2, "a room with a guess on it is not handed out");
+    check(deals.reachedOf("guess", row({ r0: { done: true, guesses: [] }, r1: { done: true, guesses: [] }, r2: { done: true, guesses: [] }, r3: { done: true, guesses: [] }, r4: { done: true, guesses: [] } }), 5, false) === 5, "a day with every room over does not hand out all of them");
     check(deals.reachedOf("odd", null, 5, true) === 5, "a filed day does not hand out every round");
 
     // The seed.

@@ -74,7 +74,7 @@ document.addEventListener("DOMContentLoaded", () => {
     function renderMissing(opts) {
         const mp = data();
         if (!mp) {
-            missingBody.innerHTML = '<p class="console-blurb">Loading...</p>';
+            missingBody.innerHTML = '<p class="console-blurb">Loading…</p>';
             return;
         }
         if (!mp.loaded()) {
@@ -82,10 +82,10 @@ document.addEventListener("DOMContentLoaded", () => {
             if (flagsFailed && !retry) {
                 missingBody.innerHTML = `
                     <p class="console-blurb">The list couldn't be reached just now.</p>
-                    <button type="button" class="console-btn" data-missing-retry>Retry</button>`;
+                    <button type="button" class="console-btn" data-missing-retry>Try again</button>`;
                 return;
             }
-            missingBody.innerHTML = '<p class="console-blurb">Loading...</p>';
+            missingBody.innerHTML = '<p class="console-blurb">Loading…</p>';
             if (missingAsking) return;
             missingAsking = true;
             mp.ready().then(() => {
@@ -228,9 +228,8 @@ document.addEventListener("DOMContentLoaded", () => {
 
     function identityNote() {
         const p = signedIn();
-        // "Discord name", not "username" (28 Sept 2026): p.name is the
-        // display name, which is often not the username at all.
-        return `Optional, so we can credit you.${p ? ` We've noted your Discord name (${esc(p.name)}) too.` : ""}`;
+        // The nickname, never the Discord name, in the other forms' words (js/console.js).
+        return `Optional, so we can credit you.${p ? ` Sending as ${esc(p.nick || "you")}, signed in with Discord.` : ""}`;
     }
 
     // Only more than one row can lose one: the first is the form.
@@ -254,7 +253,7 @@ document.addEventListener("DOMContentLoaded", () => {
         infoBody.innerHTML = `
             <p class="console-blurb">Know something about a maze or event? Add it here. A person reads every one before anything goes in.</p>
 
-            <label class="console-field-label console-info-label" for="ci-habbo">HABBO ORIGINS USERNAME</label>
+            <label class="console-field-label console-info-label" for="ci-habbo">YOUR HABBO NAME</label>
             <input type="text" class="console-input console-input-line" id="ci-habbo" maxlength="60" autocomplete="nickname">
             <p class="console-note" id="ci-habbo-note">${identityNote()}</p>
 
@@ -519,7 +518,7 @@ document.addEventListener("DOMContentLoaded", () => {
                     // Already landed on an earlier try: reuse it.
                     const had = uploadedKeys.get(f);
                     if (had) { images.push(had); continue; }
-                    Console.sendingSay(`Sending image ${done} of ${fileCount}...`);
+                    Console.sendingSay(`Sending image ${done} of ${fileCount}…`);
                     const dataUrl = await readAsDataUrl(f);
                     // Sized to the picture, as js/api.js sizes the admin's
                     // uploads: a flat 90s cut off a 4MB image on a slow

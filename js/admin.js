@@ -93,6 +93,8 @@ document.addEventListener("DOMContentLoaded", () => {
         const img = e.target;
         if (img && img.tagName === "IMG" && img.dataset && img.dataset.unlisted) { markNoPicture(img); return; }
         if (!img || img.tagName !== "IMG" || !img.dataset || !img.dataset.fallback) return;
+        // "empty" is no address: a Players face, which js/admin-players.js swaps for its empty circle.
+        if (img.dataset.fallback === "empty") return;
         const back = safeUrl(img.dataset.fallback);
         delete img.dataset.fallback;
         if (back && img.src !== back) img.src = back;
@@ -832,6 +834,9 @@ document.addEventListener("DOMContentLoaded", () => {
            must not wipe what the admin is part-way through typing into it. */
         if (!loginModal.classList.contains("open")) loginForm.reset();
         clearSelfPasswordFields();
+        // The Admins form stays as it is under the sign-in box, for signing
+        // back in to; the passwords typed into it do not.
+        adminsFormEl.querySelectorAll('input[type="password"]').forEach(clearPassword);
         sayPassword("", true);
         ffClear();
         puraClear();
@@ -870,6 +875,8 @@ document.addEventListener("DOMContentLoaded", () => {
        signed in over a lock-out. */
     function clearRenderedLists() {
         [adminsListEl, contactMessagesListEl, bansListEl].forEach(el => { if (el) el.innerHTML = ""; });
+        contactMessagesReadAt = 0;
+        if (contactMessagesUpdatedEl) contactMessagesUpdatedEl.textContent = "";
         Object.keys(COLLECTIONS).forEach(key => { const l = COLLECTIONS[key].listEl; if (l) l.innerHTML = ""; });
     }
 
@@ -1089,7 +1096,10 @@ document.addEventListener("DOMContentLoaded", () => {
            way: resetAccountPanels drops both after the loop. */
         const skins = window.AdminSkin && typeof window.AdminSkin.isDirty === "function" ? window.AdminSkin : null;
         const menuCard = window.AdminMenu && typeof window.AdminMenu.isDirty === "function" ? window.AdminMenu : null;
-        const settingsDirty = () => !paletteAsked && (spotOrderChanged() || !!(skins && skins.isDirty()) || !!(menuCard && menuCard.isDirty()));
+        /* And a half-typed ban, or a player's edit not saved: resetAccountPanels empties those too. */
+        const players = window.AdminPlayers && typeof window.AdminPlayers.isDirty === "function" ? window.AdminPlayers : null;
+        const settingsDirty = () => !paletteAsked && (spotOrderChanged() || !!(skins && skins.isDirty()) || !!(menuCard && menuCard.isDirty())
+            || bansDirty() || !!(players && players.isDirty()));
         let loggedOut = false;
         try {
             /* Round again if, once the awaits are back, something is open
@@ -1101,7 +1111,7 @@ document.addEventListener("DOMContentLoaded", () => {
             for (;;) {
                 if (refused()) return;
                 if (dirty() || paletteDirty() || noticeDirty() || wizardDirty() || settingsDirty()) {
-                    const ok = await showConfirmDialog("Log out and discard your unsaved changes? Anything you have added or edited in the open form will be lost.");
+                    const ok = await showConfirmDialog("Log out and discard your unsaved changes? Anything you have added or edited since opening it will be lost.", { danger: true });
                     if (!ok) return;
                     paletteAsked = true;
                     if (refused()) return;
@@ -1346,7 +1356,7 @@ document.addEventListener("DOMContentLoaded", () => {
         "pura-play": "Started a Pura Panic game",
         "pura-continue": "Continued a Pura Panic game",
         "pura-finish": "Finished a Pura Panic game",
-        "pura-submit": "Submit Score (leave prompt)",
+        "pura-submit": "Submit score (leave prompt)",
         "pura-board": "Pura Panic leaderboard",
         "pura-name": "Chose a Pura Panic name",
         "pura-lights": "Pura Panic lights",
@@ -1369,7 +1379,7 @@ document.addEventListener("DOMContentLoaded", () => {
     };
     const LABEL_NAMES = {
         "pura-play": { "signed-in": "Signed in", "habbo": "As their Habbo", "guest-rat": "As a Guest Rat", "unnamed": "Not named" },
-        "pura-name": { "habbo": "Proved their Habbo", "guest-rat": "Play as a Guest" },
+        "pura-name": { "habbo": "Proved their Habbo", "guest-rat": "Play as a guest" },
         "pura-lights": { "off": "Turned the lights off", "on": "Turned them back on" },
         "profile-open": { "self": "Their own", "other": "Somebody else's" },
         "daily-open": { odd: "Odd One Out", guess: "Guess the Maze" },
@@ -1797,9 +1807,8 @@ document.addEventListener("DOMContentLoaded", () => {
     function ffDate(iso) {
         const d = new Date(iso);
         if (isNaN(d)) return "—";
-        return d.toLocaleString(undefined, {
-            day: "numeric", month: "short", hour: "2-digit", minute: "2-digit"
-        });
+        // UTC with the label, as the Warren's other panels say a time.
+        return formatWhen(iso);
     }
 
     /* The game's own words for how a round ended, said in English. An
@@ -1953,7 +1962,7 @@ document.addEventListener("DOMContentLoaded", () => {
             '<td>' + whoCell(p) + '</td>' +
             '<td class="ff-num">' + p.runs + '</td>' +
             '<td class="ff-num">' + p.best + '</td>' +
-            '<td class="ff-num">' + Number(p.bestPoints || 0).toLocaleString() + '</td>' +
+            '<td class="ff-num">' + Number(p.bestPoints || 0).toLocaleString("en-GB") + '</td>' +
             '<td class="ff-num">' + ffClock(p.totalMs) + '</td>' +
             '<td>' + escapeHtml(ffDate(p.first)) + '</td>' +
             '<td>' + escapeHtml(ffDate(p.last)) + '</td>' +
@@ -2039,7 +2048,7 @@ document.addEventListener("DOMContentLoaded", () => {
                     '<td class="ff-num">' + lv.seats + '/' + lv.seatsOf + '</td>' +
                     '<td class="ff-num">' + lv.seconds + 's of ' + lv.allowed + 's</td>' +
                     '<td class="ff-num">' + (lv.penalty ? "+" + lv.penalty + "s" : "—") + '</td>' +
-                    '<td class="ff-num">' + Number(lv.points || 0).toLocaleString() + '</td>' +
+                    '<td class="ff-num">' + Number(lv.points || 0).toLocaleString("en-GB") + '</td>' +
                 '</tr>').join("");
 
             return '<details class="ff-run">' +
@@ -2055,7 +2064,7 @@ document.addEventListener("DOMContentLoaded", () => {
                     '</span>' +
                     '<span class="ff-run-tag ff-' + escapeHtml(r.outcome) + '">' + escapeHtml(ffOutcome(r.outcome)) + '</span>' +
                     '<span class="ff-run-meta">' + r.cleared + ' cleared</span>' +
-                    '<span class="ff-run-meta">' + Number(r.points || 0).toLocaleString() + ' pts</span>' +
+                    '<span class="ff-run-meta">' + Number(r.points || 0).toLocaleString("en-GB") + ' pts</span>' +
                     '<span class="ff-run-meta">' + ffClock(r.ms) + '</span>' +
                     '<span class="ff-run-meta">' + escapeHtml(ffDate(r.at)) + '</span>' +
                 '</summary>' +
@@ -2150,7 +2159,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const puraKeepEl = document.getElementById("pura-keep-days");
     let puraLoaded = false;
     let puraLoadGen = 0;
-    const puraNum = n => Number(n || 0).toLocaleString();
+    const puraNum = n => Number(n || 0).toLocaleString("en-GB");
     const puraBig = (n, words) => '<span class="admin-activity-stat"><strong>' + n + '</strong> ' + words + '</span>';
 
     // Who a row is, in the three kinds pura-stats.js tells apart.
@@ -2725,17 +2734,17 @@ document.addEventListener("DOMContentLoaded", () => {
     const WIZARD_FILES = ["css/wizard.css?v=2", "js/wizard-map.js?v=2", "js/admin-wizard.js?v=2", "js/gif-encode.js?v=3", "js/wizard-gif.js?v=2"];
     /* css/wizard.css first: the editor catalogues every colour in the
        stylesheets it finds, and the atlas's were always among them. */
-    const RECOLOUR_FILES = ["css/wizard.css?v=2", "js/recolour.js?v=2", "js/admin-recolour.js?v=3"];
+    const RECOLOUR_FILES = ["css/wizard.css?v=2", "js/recolour.js?v=2", "js/admin-recolour.js?v=4"];
 
     /* Sections that live in files of their own and mount themselves when
        they find their panel showing: fetched on first opening, and they
        take it from there. guide-text.js stays a <script>: the maze list and
        the formatting bar use it too. */
     const PANEL_FILES = {
-        guides: ["js/guides-starter.js?v=2", "js/admin-guides.js?v=3"],
+        guides: ["js/guides-starter.js?v=2", "js/admin-guides.js?v=4"],
         // The Articles section's editor and its text format first (2 Nov 2026), which the log reads.
-        whatsnew: ["js/article-text.js?v=8", "js/admin-articles.js?v=11", "js/admin-whats-new.js?v=3"],
-        notifications: ["js/admin-notifications.js?v=1"]
+        whatsnew: ["js/article-text.js?v=8", "js/admin-articles.js?v=13", "js/admin-whats-new.js?v=4"],
+        notifications: ["js/admin-notifications.js?v=2"]
     };
     function openFilesPanel(name) {
         const host = document.querySelector(`.admin-panel[data-panel="${name}"]`);
@@ -2751,6 +2760,24 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     let wizardStarted = false;
+    /* The atlas letters room names in Caveat exactly as /wizard does: without
+       it the editor draws the map in a fallback serif, and what you arrange is
+       meant to be what you get. It is Google's, the Warren's only outside
+       request of the kind, so it is asked for here and not on every visit.
+       Waited for, briefly: the map measures its labels once the font is in,
+       and offline it goes on without. */
+    function loadAtlasFont() {
+        if (document.getElementById("atlas-font")) return Promise.resolve();
+        return new Promise(resolve => {
+            const link = document.createElement("link");
+            link.id = "atlas-font";
+            link.rel = "stylesheet";
+            link.href = "https://fonts.googleapis.com/css2?family=Caveat:wght@500;700&display=swap";
+            link.onload = link.onerror = () => resolve();
+            setTimeout(resolve, 3000);
+            document.head.appendChild(link);
+        });
+    }
     async function openWizardPanel() {
         const host = document.querySelector('.admin-panel[data-panel="wizard"]');
         const note = host && !wizardStarted ? document.createElement("p") : null;
@@ -2760,6 +2787,7 @@ document.addEventListener("DOMContentLoaded", () => {
             host.appendChild(note);
         }
         try {
+            await loadAtlasFont();
             await loadFiles(WIZARD_FILES);
         } catch (err) {
             lazyLoaded.delete("wizard");   // tried again on the next opening
@@ -2887,7 +2915,7 @@ document.addEventListener("DOMContentLoaded", () => {
             const smaller = await shrinkForUpload(file);
             if (!smaller) {
                 throw new Error(`That image is ${original}, and the most that can be uploaded is `
-                    + `${readableSize(MAX_UPLOAD_BYTES)}. It could not be scaled down automatically — `
+                    + `${readableSize(MAX_UPLOAD_BYTES)}. It couldn't be scaled down automatically — `
                     + `save it smaller and try again.`);
             }
             toSend = new File([smaller.blob], file.name, { type: smaller.blob.type });
@@ -3595,7 +3623,7 @@ document.addEventListener("DOMContentLoaded", () => {
                                  class is what hides the native control so
                                  the thumbnail itself is the click target. -->
                             <input type="file" class="admin-gallery-thumb-file admin-related-thumb-file" accept="image/png,image/jpeg,image/gif,image/webp">
-                            <span class="admin-gallery-thumb-replace-text">Replace Image</span>
+                            <span class="admin-gallery-thumb-replace-text">Replace image</span>
                         </label>
                         <input type="text" class="admin-gallery-label admin-related-name" value="${escapeHtml(r.name || "")}" placeholder="Image name">
                     </div>
@@ -4515,7 +4543,7 @@ document.addEventListener("DOMContentLoaded", () => {
                     const uploadText = previewEl.querySelector(".admin-gallery-thumb-upload-text");
                     if (uploadText) {
                         uploadText.className = "admin-gallery-thumb-replace-text";
-                        uploadText.textContent = "Replace Image";
+                        uploadText.textContent = "Replace image";
                     }
                 }
                 if (removeBtn) removeBtn.disabled = false;
@@ -4579,7 +4607,7 @@ document.addEventListener("DOMContentLoaded", () => {
             const textEl = previewEl.querySelector(".admin-gallery-thumb-replace-text, .admin-gallery-thumb-upload-text");
             if (textEl) {
                 textEl.className = image ? "admin-gallery-thumb-replace-text" : "admin-gallery-thumb-upload-text";
-                textEl.textContent = image ? "Replace Image" : "Drag or click to upload image";
+                textEl.textContent = image ? "Replace image" : "Drag or click to upload image";
             }
         }
         if (removeBtn) removeBtn.disabled = !image;
@@ -4631,7 +4659,7 @@ document.addEventListener("DOMContentLoaded", () => {
             const items = formEl[`_${kind}OldVersions`] || (formEl[`_${kind}OldVersions`] = []);
             const expanded = !!formEl[`_${kind}OldVersionsExpanded`];
             toggleBtn.classList.toggle("active", expanded);
-            toggleBtn.textContent = items.length ? `Old Versions (${items.length})` : "Old Version";
+            toggleBtn.textContent = items.length ? `Old versions (${items.length})` : "Old version";
 
             if (!expanded) {
                 container.innerHTML = "";
@@ -4918,7 +4946,7 @@ document.addEventListener("DOMContentLoaded", () => {
             overlay.innerHTML = `
                 <div class="modal confirm-modal">
                     <div class="chrome-titlebar">
-                        <h2>Are You Sure?</h2>
+                        <h2>Are you sure?</h2>
                         <button type="button" class="chrome-close" aria-label="No">&times;</button>
                     </div>
                     <div class="modal-body">
@@ -5014,7 +5042,7 @@ document.addEventListener("DOMContentLoaded", () => {
             overlay.innerHTML = `
                 <div class="modal confirm-modal">
                     <div class="chrome-titlebar">
-                        <h2>${escapeHtml(o.title || "Are You Sure?")}</h2>
+                        <h2>${escapeHtml(o.title || "Are you sure?")}</h2>
                         <button type="button" class="chrome-close" aria-label="No">&times;</button>
                     </div>
                     <div class="modal-body">
@@ -5186,7 +5214,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
             listEl.innerHTML = draft.map((g, i) => {
                 const expanded = expandedOldVersions.has(i);
-                const oldVersionsLabel = g.oldVersions.length ? `Old Versions (${g.oldVersions.length})` : "Old Version";
+                const oldVersionsLabel = g.oldVersions.length ? `Old versions (${g.oldVersions.length})` : "Old version";
                 const roomNumber = roomNumbers[i];
                 return `
                     <div class="admin-gallery-row" data-index="${i}">
@@ -5196,7 +5224,7 @@ document.addEventListener("DOMContentLoaded", () => {
                             ${g.image
                                 ? `<label class="admin-gallery-thumb admin-gallery-thumb-filled" style="background-image:url('${imgCdn(g.image, 100, 100, 55)}');">
                                        <input type="file" class="admin-gallery-thumb-file" accept="image/png,image/jpeg,image/gif,image/webp">
-                                       <span class="admin-gallery-thumb-replace-text">Replace Image</span>
+                                       <span class="admin-gallery-thumb-replace-text">Replace image</span>
                                    </label>`
                                 : `<label class="admin-gallery-thumb admin-gallery-thumb-empty">
                                        <input type="file" class="admin-gallery-thumb-file" accept="image/png,image/jpeg,image/gif,image/webp">
@@ -5718,7 +5746,7 @@ document.addEventListener("DOMContentLoaded", () => {
             // at whatever now sits at that same index instead of the item
             // actually being edited.
             row.querySelector(".admin-edit-btn").addEventListener("click", e => requestOpenForm(key, item.id, e.currentTarget));
-            row.querySelector(".admin-delete-btn").addEventListener("click", () => deleteItem(key, item.id));
+            row.querySelector(".admin-delete-btn").addEventListener("click", () => oneDeleteAtATime(key + ":" + item.id, () => deleteItem(key, item.id)));
             const scanBtn = row.querySelector(".admin-scan-btn");
             if (scanBtn) scanBtn.addEventListener("click", () => scanOneItem(key, item.id));
             /* "Furni complete" (2 Oct 2026, the owner's): saved the moment it
@@ -6034,10 +6062,10 @@ document.addEventListener("DOMContentLoaded", () => {
                     '<p class="admin-article-meta">' +
                     escapeHtml([draft.date, draft.category].filter(Boolean).join("  —  ")) +
                     "</p>" +
-                    '<p class="admin-article-meta">Stored, and shown on the event in place of its full details. Press Add Article again to re-read it.</p>');
+                    '<p class="admin-article-meta">Stored, and shown on the event in place of its full details. Press Add article again to re-read it.</p>');
                 return;
             }
-            say("todo", "<p>Press <strong>Add Article</strong> to read this one in. Nothing is stored until you do.</p>");
+            say("todo", "<p>Press <strong>Add article</strong> to read this one in. Nothing is stored until you do.</p>");
         }
 
         button.addEventListener("click", async () => {
@@ -6078,7 +6106,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 if (err.status === 401) { lockOut(); return; }
                 if (formEl._openSession !== session) return;
                 formEl._articleDraft = previous;
-                failed = err.message || "That article could not be read.";
+                failed = err.message || "That article couldn't be read.";
             } finally {
                 // The rest is this opening's own (detached) controls, and
                 // refresh would read the new opening's draft into them.
@@ -6168,7 +6196,7 @@ document.addEventListener("DOMContentLoaded", () => {
     async function requestOpenForm(key, editId, editBtn) {
         if (refuseWhileSaving(key)) return;
         if (isFormDirty(key)) {
-            const ok = await showConfirmDialog("Discard your unsaved changes to the entry you have open? Anything you have added or edited since opening it will be lost.");
+            const ok = await showConfirmDialog("Discard your unsaved changes to the entry you have open? Anything you have added or edited since opening it will be lost.", { danger: true });
             if (!ok) return;
             if (refuseWhileSaving(key)) return;
         }
@@ -6319,9 +6347,9 @@ document.addEventListener("DOMContentLoaded", () => {
                     <span>Article link</span>
                     <div class="admin-article-row">
                         <input type="text" name="articleUrl" class="admin-article-url" placeholder="https://origins.habbo.com/community/article/..." value="${escapeHtml((article && article.url) || "")}">
-                        <button type="button" class="admin-action-pill admin-article-btn">Add Article</button>
+                        <button type="button" class="admin-action-pill admin-article-btn">Add article</button>
                     </div>
-                    <p class="admin-hint">A Habbo Origins article link. Add Article reads it and keeps a copy, which is what the event then shows in place of its full details.</p>
+                    <p class="admin-hint">A Habbo Origins article link. Add article reads it and keeps a copy, which is what the event then shows in place of its full details.</p>
                     <div class="admin-article-status" hidden></div>
                 </div>
               `
@@ -6390,7 +6418,7 @@ document.addEventListener("DOMContentLoaded", () => {
                     <span>Tags</span>
                     <div class="tag-chip-list" id="tag-chip-list"><p class="admin-empty">Loading tags…</p></div>
                     <div class="admin-tag-add">
-                        <input type="text" class="admin-tag-new-input" placeholder="Add a new tag...">
+                        <input type="text" class="admin-tag-new-input" placeholder="Add a new tag…">
                         <button type="button" class="admin-action-pill admin-tag-add-btn">+ Add Tag</button>
                     </div>
                     <p class="admin-tag-status" style="display:none;"></p>
@@ -6409,7 +6437,7 @@ document.addEventListener("DOMContentLoaded", () => {
             const thumbHtml = entry.image
                 ? `<label class="admin-gallery-thumb admin-gallery-thumb-filled" style="background-image:url('${imgCdn(entry.image, 100, 100, 55)}');">
                        <input type="file" class="admin-gallery-thumb-file admin-${kind}-file" accept="image/png,image/jpeg,image/gif,image/webp">
-                       <span class="admin-gallery-thumb-replace-text">Replace Image</span>
+                       <span class="admin-gallery-thumb-replace-text">Replace image</span>
                    </label>`
                 : `<label class="admin-gallery-thumb admin-gallery-thumb-empty">
                        <input type="file" class="admin-gallery-thumb-file admin-${kind}-file" accept="image/png,image/jpeg,image/gif,image/webp">
@@ -6425,7 +6453,7 @@ document.addEventListener("DOMContentLoaded", () => {
                             <input type="text" name="${kind}Label" class="admin-gallery-label" placeholder="Label (e.g. ${kindLabel})" value="${escapeHtml(entry.label || kindLabel)}">
                         </div>
                         <div class="admin-gallery-actions">
-                            <button type="button" class="admin-pill-btn admin-${kind}-oldversions-toggle" title="Add or view older versions of this image">Old Version</button>
+                            <button type="button" class="admin-pill-btn admin-${kind}-oldversions-toggle" title="Add or view older versions of this image">Old version</button>
                             <button type="button" class="admin-pill-btn admin-pill-danger admin-${kind}-remove" title="Remove" ${entry.image ? "" : "disabled"}>Remove</button>
                         </div>
                         <div class="admin-${kind}-oldversions-container"></div>
@@ -6554,7 +6582,6 @@ document.addEventListener("DOMContentLoaded", () => {
             ${formattedFieldRow("Full details (shown in the popup, optional)", "details", item.details, 6, FULL_FORMATTING,
                 "A blank line starts a new paragraph. Links go to https:// addresses, or inside the site as maze:maze-id, event:event-id or guide:guide-id — and console:entry opens the Event Submission form.")}
             ${fieldRow("Links &amp; References (optional, shown directly beneath the description)", `<textarea name="linksReferences" rows="3">${escapeHtml(item.linksReferences || "")}</textarea>`)}
-            ${fieldRow("Habbo link (optional)", `<input type="text" name="habboLink" value="${escapeHtml(item.habboLink || "")}" placeholder="https://...">`)}
             ${entranceSectionHtml}
             ${gallerySectionHtml}
             ${finishSectionHtml}
@@ -6785,7 +6812,7 @@ document.addEventListener("DOMContentLoaded", () => {
             const rescued = !!(id && furniRescue.has(rescueKeyOf(key, id)));
             const ok = await showConfirmDialog(rescued
                 ? "Close this entry? Text you typed since opening it will be lost, but your furni changes are kept: reopen it and they're put back for you to check and save."
-                : "Discard your unsaved changes to this entry? Anything you have added or edited since opening it will be lost.");
+                : "Discard your unsaved changes to this entry? Anything you have added or edited since opening it will be lost.", { danger: true });
             if (!ok) return;
             // The dialog is awaited: a Save pressed behind it is possible.
             if (refuseWhileSaving(key)) return;
@@ -7339,7 +7366,6 @@ document.addEventListener("DOMContentLoaded", () => {
             thumb: data.thumb,
             description: data.description,
             details: data.details,
-            habboLink: data.habboLink
         };
         // A maze's Collab box: its own field, never a status (4 Oct 2026).
         if (key === "rooms") payload.collab = data.collab === "1";
@@ -7716,6 +7742,16 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     }
 
+    /* One delete of a row at a time: a second press while the first was still
+       out asked again, and its Yes ended in "Something Went Wrong" (the row
+       had gone) though the delete had worked. */
+    const deletesOut = new Set();
+    async function oneDeleteAtATime(what, run) {
+        if (deletesOut.has(what)) return;
+        deletesOut.add(what);
+        try { await run(); } finally { deletesOut.delete(what); }
+    }
+
     async function deleteItem(key, id) {
         const cfg = COLLECTIONS[key];
         const items = cfg.getAll();
@@ -7814,7 +7850,7 @@ document.addEventListener("DOMContentLoaded", () => {
                     <p class="row-creator">${ROLE_LABELS[role] || "Admin"} · ${admin.createdAt ? "Added " + escapeHtml(String(admin.createdAt).slice(0, 10)) : ""}</p>
                 </div>
                 <div class="admin-row-actions">
-                    ${(isSelf || canDelete) ? `<button type="button" class="btn ${isSelf ? "admin-self-reset-btn" : "admin-reset-btn"}">Reset Password</button>` : ""}
+                    ${(isSelf || canDelete) ? `<button type="button" class="btn ${isSelf ? "admin-self-reset-btn" : "admin-reset-btn"}">Reset password</button>` : ""}
                     ${canDelete && !isSelf && admin.username !== PERMANENT_OWNER ? `<button type="button" class="btn admin-delete-btn" ${workingAdmins.length <= 1 ? "disabled" : ""}>Delete</button>` : ""}
                 </div>
             `;
@@ -7833,7 +7869,7 @@ document.addEventListener("DOMContentLoaded", () => {
                delete themselves, and were then told "Session expired". The
                server refuses it too (auth.js's DELETE). */
             const deleteBtn = row.querySelector(".admin-delete-btn");
-            if (deleteBtn) deleteBtn.addEventListener("click", () => deleteAdmin(admin.username));
+            if (deleteBtn) deleteBtn.addEventListener("click", () => oneDeleteAtATime("admin:" + admin.username, () => deleteAdmin(admin.username)));
             adminsListEl.appendChild(row);
         });
     }
@@ -7846,7 +7882,7 @@ document.addEventListener("DOMContentLoaded", () => {
         // defeat the point of having the role.
         const roleFieldHtml = fieldRow("Privileges", `
                 <select name="role">
-                    <option value="admin">Standard Admin</option>
+                    <option value="admin">Standard admin</option>
                     <option value="viewer">View Only (read-only)</option>
                     <option value="wizard">Albus (the atlas only)</option>
                     ${currentUserRole === "owner" ? '<option value="owner">Owner (can delete other admins)</option>' : ""}
@@ -7854,7 +7890,7 @@ document.addEventListener("DOMContentLoaded", () => {
               `);
 
         adminsFormEl.innerHTML = `
-            <h3 class="admin-form-title">Add a New Admin</h3>
+            <h3 class="admin-form-title">Add a new admin</h3>
             ${fieldRow("Username", `<input type="text" name="username" required autocomplete="off">`)}
             ${fieldRow("Password (8+ characters)", `<input type="password" name="password" required minlength="8" autocomplete="new-password">`)}
             ${fieldRow("Confirm password", `<input type="password" name="confirm" required minlength="8" autocomplete="new-password">`)}
@@ -7887,7 +7923,7 @@ document.addEventListener("DOMContentLoaded", () => {
            js/password-field.js enhances it like the others. */
         const isSelf = username === currentUsername;
         adminsFormEl.innerHTML = `
-            <h3 class="admin-form-title">Reset Password — ${escapeHtml(username)}</h3>
+            <h3 class="admin-form-title">Reset password:${escapeHtml(username)}</h3>
             ${isSelf ? fieldRow("Your current password", `<input type="password" name="currentPassword" required autocomplete="current-password">`) : ""}
             ${fieldRow("New password (8+ characters)", `<input type="password" name="password" required minlength="8" autocomplete="new-password">`)}
             ${fieldRow("Confirm new password", `<input type="password" name="confirm" required minlength="8" autocomplete="new-password">`)}
@@ -7933,6 +7969,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
         submitBtn.disabled = true;
         submitBtn.textContent = "Saving…";
+        let passwordChangedFor = "";
         try {
             if (adminsFormEl.dataset.mode === "create") {
                 await Api.createAdmin(adminToken, data.username.trim(), data.password, data.role);
@@ -7951,15 +7988,23 @@ document.addEventListener("DOMContentLoaded", () => {
                     adminToken = changed.token;
                     writeToken(adminToken);
                 }
+                passwordChangedFor = adminsFormEl.dataset.username || "";
             }
             closeAdminsForm();
             await loadAdmins();
+            // Said, as the Account menu's own password box says it: the form only closed before.
+            if (passwordChangedFor) {
+                await showInfoDialog(passwordChangedFor === currentUsername
+                    ? "Your password has been changed."
+                    : `The password for <strong>${escapeHtml(passwordChangedFor)}</strong> has been changed. They sign in with the new one from now on.`, "Password Changed");
+            }
         } catch (err) {
             // Save usable again BEFORE the login goes up, as the maze form
             // does: signing back in returns to this same form, and it used
             // to be left disabled on "Saving…" with no way to try again.
             submitBtn.disabled = false;
             submitBtn.textContent = "Save";
+            // lockOut empties this form's password fields itself.
             if (err.status === 401) { lockOut(); return; }
             /* 403 on a reset is the server's own words about the password
                it was given — yours, missing or wrong (auth.js). Said here,
@@ -7968,10 +8013,9 @@ document.addEventListener("DOMContentLoaded", () => {
             // The named input is the field itself (js/password-field.js no
             // longer keeps a hidden partner, 30 Sept 2026).
             const own = adminsFormEl.querySelector('[name="requesterPassword"], [name="currentPassword"]');
-            if (err.status === 403 && adminsFormEl.dataset.mode === "reset" && own) {
-                clearPassword(own);
-                own.focus();
-            }
+            // Emptied on any failure: your own password is not left in the form.
+            if (own) clearPassword(own);
+            if (err.status === 403 && adminsFormEl.dataset.mode === "reset" && own) own.focus();
             // Password attempts are rate-limited (auth.js): 429 is that,
             // said plainly rather than as the server's status line.
             errorEl.textContent = err.status === 429
@@ -8062,7 +8106,7 @@ document.addEventListener("DOMContentLoaded", () => {
             // the panel is shown (see showPanel), and an index taken from
             // the old copy could point at somebody else in the new one.
             row.querySelector(".admin-edit-btn").addEventListener("click", () => requestOpenContributorForm(contributor.id));
-            row.querySelector(".admin-delete-btn").addEventListener("click", () => deleteContributor(contributor.id));
+            row.querySelector(".admin-delete-btn").addEventListener("click", () => oneDeleteAtATime("contributor:" + contributor.id, () => deleteContributor(contributor.id)));
             contributorsListEl.appendChild(row);
         });
     }
@@ -8187,7 +8231,7 @@ document.addEventListener("DOMContentLoaded", () => {
     // Resolves true when the open form may go: nothing changed, or Yes.
     async function mayDropContributorForm() {
         if (!isContributorFormDirty()) return true;
-        return showConfirmDialog("Discard your unsaved changes to this contributor? Anything you have ticked or edited since opening the form will be lost.");
+        return showConfirmDialog("Discard your unsaved changes to this contributor? Anything you have added or edited since opening it will be lost.", { danger: true });
     }
 
     async function requestOpenContributorForm(editId) {
@@ -8337,21 +8381,43 @@ document.addEventListener("DOMContentLoaded", () => {
 
     // ---------- console: contact messages ----------
 
+    /* Read each time the tab is opened, at most once a minute, and by its
+       Refresh: read once per sign-in, a message sent to a Warren left open
+       could be missed. No timer, so nothing is read while nobody is looking. */
+    const contactMessagesUpdatedEl = document.getElementById("contact-messages-updated");
+    const contactMessagesRefreshBtn = document.getElementById("contact-messages-refresh");
+    const MESSAGES_RE_READ_MS = 60 * 1000;
+    let contactMessagesReadAt = 0;
     async function loadContactMessages() {
         const gen = accountGen;
         const used = adminToken;   // see lockOutFor
+        const had = contactMessagesReadAt > 0;
         try {
             const messages = await Api.getContactMessages(used);
             if (!sameAccount(gen)) return;
             workingContactMessages = messages;
             contactMessagesFailed = "";
+            contactMessagesReadAt = Date.now();
+            if (contactMessagesUpdatedEl) contactMessagesUpdatedEl.textContent = `Read ${new Date(contactMessagesReadAt).toLocaleTimeString("en-GB", { timeZone: "UTC", hour: "2-digit", minute: "2-digit", hour12: false })} UTC`;
         } catch (err) {
             if (!sameAccount(gen)) return;
             if (err.status === 401) { lockOutFor(used); return; }
+            // A re-read that fails leaves the messages already here on screen.
+            if (had) {
+                if (contactMessagesUpdatedEl) contactMessagesUpdatedEl.textContent = "Couldn't read them just now. This is the last copy.";
+                return;
+            }
             contactMessagesFailed = err.message || "Couldn't load the messages.";
         }
+        const top = contactMessagesListEl.scrollTop;
         renderContactMessagesList();
+        contactMessagesListEl.scrollTop = top;
     }
+    if (contactMessagesRefreshBtn) contactMessagesRefreshBtn.addEventListener("click", async () => {
+        if (contactMessagesRefreshBtn.disabled) return;
+        contactMessagesRefreshBtn.disabled = true;
+        try { await loadContactMessages(); } finally { contactMessagesRefreshBtn.disabled = false; }
+    });
 
     /* Kept as state rather than written once, because loadBans redraws this
        list too (for the Ban/Unban buttons) and would otherwise paint "No
@@ -8418,7 +8484,7 @@ document.addEventListener("DOMContentLoaded", () => {
             const actions = document.createElement("div");
             actions.className = "admin-row-actions";
             actions.innerHTML = '<button type="button" class="btn admin-delete-btn">Delete</button>';
-            actions.querySelector(".admin-delete-btn").addEventListener("click", () => deleteContactMessage(msg.id));
+            actions.querySelector(".admin-delete-btn").addEventListener("click", () => oneDeleteAtATime("message:" + msg.id, () => deleteContactMessage(msg.id)));
 
             // Ban/unban the address this message came from. Messages
             // predating IP logging (and any submitted while Netlify did not
@@ -9963,7 +10029,9 @@ document.addEventListener("DOMContentLoaded", () => {
         const noticeDirty = !!(window.AdminNotifications && typeof AdminNotifications.isDirty === "function" && AdminNotifications.isDirty());
         // And a moved spotlight order, and the skins' dates, unsaved (30 Oct 2026, the bug scan).
         const settingsDirty = spotOrderChanged() || !!(window.AdminSkin && typeof AdminSkin.isDirty === "function" && AdminSkin.isDirty())
-            || !!(window.AdminMenu && typeof AdminMenu.isDirty === "function" && AdminMenu.isDirty());
+            || !!(window.AdminMenu && typeof AdminMenu.isDirty === "function" && AdminMenu.isDirty())
+            // And a half-typed ban, or a player's edit not saved.
+            || bansDirty() || !!(window.AdminPlayers && typeof AdminPlayers.isDirty === "function" && AdminPlayers.isDirty());
         if (!Object.keys(COLLECTIONS).some(isFormDirty) && !isContributorFormDirty() && !whatsNewDirty && !noticeDirty && !settingsDirty) return;
         e.preventDefault();
         e.returnValue = "";
@@ -10095,6 +10163,8 @@ document.addEventListener("DOMContentLoaded", () => {
         if (name === "wizard" && typeof AdminWizard !== "undefined" && wizardStarted) AdminWizard.onShown();
         // This section's own reads, the first time it is shown (see PANEL_LOADS).
         loadForPanel(name);
+        // And Messages each time after, sparingly (see loadContactMessages).
+        if (name === "messages" && adminToken && contactMessagesReadAt && Date.now() - contactMessagesReadAt >= MESSAGES_RE_READ_MS) loadContactMessages();
         /* The Controls, shown: what opening the old Control tab did — the
            switches re-read (rate-limited inside) and both launch-date
            warnings worked out again against the clock. */
@@ -10418,7 +10488,7 @@ document.addEventListener("DOMContentLoaded", () => {
                         dailyNoteFor = String(playerId);
                     } catch (err) {
                         if (err.status === 401) { lockOut(); return; }
-                        await sayProblem(err.message || "Could not call that off — try again.");
+                        await sayProblem(err.message || "Couldn't call that off — try again.");
                     }
                     // Whoever is picked now, not necessarily this player.
                     loadDaily(dailyPicked || playerId);
@@ -10458,7 +10528,7 @@ document.addEventListener("DOMContentLoaded", () => {
                         dailyNoteFor = String(playerId);
                     } catch (err) {
                         if (err.status === 401) { lockOut(); return; }
-                        await sayProblem(err.message || "Could not reset that — try again.");
+                        await sayProblem(err.message || "Couldn't reset that — try again.");
                     }
                     loadDaily(dailyPicked || playerId);
                 });
@@ -10521,6 +10591,8 @@ document.addEventListener("DOMContentLoaded", () => {
     let bansShow = "active";            // active | ended | all
     let bansKind = "all";               // all | player | address | nethash
     const bansEdits = new Map();        // ban id -> the Change form's state
+    const bansEditsOpened = new Map();  // ban id -> that state as opened, for "unsaved changes?"
+    let bansAddOpened = "";             // the Add a ban form's state as opened, the same
     let bansMsg = null;                 // { text, bad } under the filters
     let bansBusy = false;
     let bansGen = 0;
@@ -10730,6 +10802,7 @@ document.addEventListener("DOMContentLoaded", () => {
             if (act === "lift") liftBan(n);
             else if (act === "change") {
                 bansEdits.set(n.id, banKit().fresh({ level: n.level || "soft", length: banKit().isActive(n, Date.now()) ? "keep" : "24h", reason: n.reason || "" }));
+                bansEditsOpened.set(n.id, JSON.stringify(bansEdits.get(n.id)));
                 renderBansList();
             }
             else if (act === "change-cancel") { bansEdits.delete(n.id); renderBansList(); }
@@ -10867,6 +10940,7 @@ document.addEventListener("DOMContentLoaded", () => {
         const kit = banKit();
         if (!kit || !canWrite()) return;
         bansAdd = Object.assign({ type: "address", ip: "", q: "", pick: null, choice: kit.fresh() }, prefill || {});
+        bansAddOpened = JSON.stringify(bansAdd);
         bansAddFound = null;
         bansAddMsg = null;
         renderBansAdd();
@@ -11067,12 +11141,18 @@ document.addEventListener("DOMContentLoaded", () => {
             await Api.createBan(adminToken, Object.assign({ kind: v6 ? "net" : "ip", value: ip }, kit.postBody(choice)));
         } catch (err) {
             if (err.status === 401) { lockOut(); return false; }
-            await sayProblem(err.message || "Could not ban that address — try again.");
+            await sayProblem(err.message || "Couldn't ban that address — try again.");
             return false;
         }
         // Saved; a list that fails to re-read is not a failed ban.
         try { await bansWritten(); } catch (e) { /* the Bans tab says its own */ }
         return true;
+    }
+
+    // A ban half-typed: asked about on log out and on leaving the page.
+    function bansDirty() {
+        if (bansAdd && JSON.stringify(bansAdd) !== bansAddOpened) return true;
+        return [...bansEdits].some(([id, state]) => JSON.stringify(state) !== bansEditsOpened.get(id));
     }
 
     // A different account signing in on this tab does not inherit these.
@@ -11114,7 +11194,7 @@ document.addEventListener("DOMContentLoaded", () => {
             await bansWritten();
         } catch (err) {
             if (err.status === 401) { lockOut(); return lifted; }
-            await sayProblem(err.message || "Could not unban that address — try again.");
+            await sayProblem(err.message || "Couldn't unban that address — try again.");
         } finally {
             bansBusy = false;
         }

@@ -1177,7 +1177,7 @@
         put("points!", pX, base / K, 18, "#b8a9c9");
         const sBase = Math.round(base - nI.a - (K + 2 * K) - sI.d);
         put("Scoring", inkLeft + Math.round(sI.l), sBase / K, 18, "#b8a9c9");
-        centred("Happy Halloween from Origins Maze Rats!", CARD_H - 12, 9, "#7a6494");
+        centred("Happy Halloween from Maze Rats!", CARD_H - 12, 9, "#7a6494");
         for (const x of [sh, t]) {
             const im = x.getImageData(0, 0, out.width, out.height), d = im.data;
             for (let i = 3; i < d.length; i += 4) d[i] = d[i] >= 128 ? 255 : 0;
@@ -1234,7 +1234,7 @@
                             <div class="hw-share-stage"></div>
                             <button type="button" class="hw-share-signin" data-share="signin" hidden>Sign in to get your name on the card!</button>
                             <div class="confirm-actions hw-share-actions">
-                                <button type="button" class="guess-btn guess-btn--lead" data-share="copy">Copy Image</button>
+                                <button type="button" class="guess-btn guess-btn--lead" data-share="copy">Copy image</button>
                                 <button type="button" class="guess-btn" data-share="save">Save</button>
                             </div>
                         </div>

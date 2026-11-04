@@ -19,7 +19,6 @@
      thumb       path to an image, or "" to use the default maze texture
      description short description shown on the card
      details     longer writeup shown in the modal (optional, falls back to description)
-     habboLink   navigator/room link if still joinable, or "" if unavailable
    =========================================================== */
 
 const DEFAULT_EVENTS = [];

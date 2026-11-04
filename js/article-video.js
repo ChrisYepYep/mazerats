@@ -32,7 +32,7 @@
     "use strict";
     if (!window.ArticleEmbeds) return;
 
-    const CSS = "css/article-video.css?v=1";
+    const CSS = "css/article-video.css?v=2";
     const VIDEO_URL = "/.netlify/functions/video?key=";
     const IMAGE_URL = "/.netlify/functions/image?key=";
     const UPLOAD_URL = "/.netlify/functions/upload-video";
@@ -81,6 +81,46 @@
         }, true);
     }
 
+    /* DOWNLOAD. netlify/functions/video.js sends at most one piece at a time,
+       so it cannot answer the plain request a browser's own Save makes for a
+       video over 2MB (that menu item is taken off the controls, above). This
+       asks for the pieces in turn, as the player does, and saves them joined. */
+    async function saveVideo(key, btn) {
+        if (btn.disabled) return;
+        btn.disabled = true;
+        btn.textContent = "Downloading 0%";
+        const parts = [];
+        let at = 0, total = 0, type = "";
+        try {
+            do {
+                let res = null;
+                for (let tries = 0; tries < 3 && !(res && res.status === 206); tries++) {
+                    if (tries) await new Promise(r => setTimeout(r, tries * 1500));
+                    res = await fetch(VIDEO_URL + key, { headers: { Range: `bytes=${at}-` } }).catch(() => null);
+                }
+                const m = res && res.status === 206 && /^bytes (\d+)-(\d+)\/(\d+)$/.exec(res.headers.get("Content-Range") || "");
+                if (!m || Number(m[1]) !== at) throw new Error("no piece");
+                parts.push(await res.blob());
+                type = res.headers.get("Content-Type") || type;
+                at = Number(m[2]) + 1;
+                total = Number(m[3]);
+                btn.textContent = `Downloading ${Math.floor(at / total * 100)}%`;
+            } while (at < total);
+            const url = URL.createObjectURL(new Blob(parts, { type }));
+            const link = document.createElement("a");
+            link.href = url;
+            link.download = key.split("/").pop().replace(/^\d{13}-/, "");
+            document.body.appendChild(link);
+            link.click();
+            link.remove();
+            setTimeout(() => URL.revokeObjectURL(url), 60000);
+            btn.textContent = "Download";
+        } catch (e) {
+            btn.textContent = "Download failed. Try again";
+        }
+        btn.disabled = false;
+    }
+
     function render(el, data) {
         const a = (data && data.attrs) || {};
         if (!KEY.test(a.key || "")) throw new Error("not a video's address");
@@ -93,14 +133,15 @@
         el.classList.add("art-video");
         el.innerHTML = `
             <div class="vid-frame">
-                <video class="vid-el" preload="none" playsinline webkit-playsinline
+                <video class="vid-el" preload="none" playsinline webkit-playsinline controlslist="nodownload"
                     ${poster ? `poster="${esc(poster)}"` : ""} src="${esc(VIDEO_URL + a.key)}" aria-label="The article's video"></video>
                 <button type="button" class="vid-play" aria-label="Play the video${len ? `, ${esc(spoken(len))} long` : ""}">
                     <span class="vid-play-icon" aria-hidden="true"></span>
                 </button>
                 <span class="vid-len" aria-hidden="true"${len ? "" : " hidden"}>${len ? esc(clock(len)) : ""}</span>
                 <p class="vid-error" role="status" hidden></p>
-            </div>`;
+            </div>
+            <p class="vid-save-row" hidden><button type="button" class="vid-save">Download</button></p>`;
         const frame = el.querySelector(".vid-frame");
         // Its own shape before a byte has loaded, and a tall phone video no taller than the window can show.
         if (w && h) frame.style.setProperty("--vid-r", String(w / h));
@@ -110,8 +151,13 @@
         const lenEl = el.querySelector(".vid-len");
         const errEl = el.querySelector(".vid-error");
 
+        const saveRow = el.querySelector(".vid-save-row");
+        const saveBtn = el.querySelector(".vid-save");
+        saveBtn.addEventListener("click", () => saveVideo(a.key, saveBtn));
+
         function start() {
             frame.classList.add("is-started");
+            saveRow.hidden = false;
             video.controls = true;
             video.tabIndex = 0;
             const p = video.play();
@@ -127,6 +173,17 @@
             frame.classList.add("is-broken");
             errEl.textContent = "This video couldn't be played just now. Try again in a minute.";
             errEl.hidden = false;
+            /* Trying again won't help a video this browser can't decode. A
+               browser gives the same code for that as for a failed fetch, so
+               the server is asked: if it answers, the fault is the format. */
+            const code = video.error ? video.error.code : 0;
+            const noFormat = "This browser can't play this kind of video. You can download it to watch instead.";
+            if (code === 3) errEl.textContent = noFormat;
+            else if (code === 4) {
+                fetch(VIDEO_URL + a.key, { headers: { Range: "bytes=0-1" } })
+                    .then(res => { if (res.status === 206) errEl.textContent = noFormat; })
+                    .catch(() => { /* the fetch failed too: the first words stand */ });
+            }
         });
         /* The keys a player's own would answer, once the video has focus.
            Taken here (and the browser's default stopped) so they are the

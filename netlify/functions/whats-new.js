@@ -39,7 +39,13 @@
    PUT          an edited post                     (body: the post, with id)
                 or an override                     (body: { override: {...} })
    DELETE ?id=  a post, or an override ("o:maze:...")
-   Every write needs a Warren account with the "site" scope (canWrite). */
+   Every write needs a Warren account with the "site" scope (canWrite).
+
+   A PUT may carry the updatedAt it was opened on as _baseUpdatedAt (in the
+   override for an override; null for one that had none yet), as the other
+   editors do: a row that has moved on since is refused with a 409 saying so,
+   with the row as it stands now in `current`. Absent means a caller that does
+   not take part, and it saves as before. */
 const { getDb, ensureUniqueIndex } = require("./_db");
 const { isAuthorized, hasAccount, canWrite, refuseWrite, AUTH_UNAVAILABLE, isAuthUnavailable, UNAUTHORIZED } = require("./_auth");
 const { SECURITY_HEADERS } = require("./_headers");
@@ -56,8 +62,9 @@ const MAX_BODY = 16 * 1024;
 // A post's label: see cleanPost.
 const BADGES = ["added", "updated", "news", "note", "custom"];
 const BADGE_MAX = 14;
+const CONFLICT = "Someone else has changed this since you opened it, so yours was not saved.";
 
-const json = (statusCode, data) => ({
+const json =(statusCode, data) => ({
     statusCode,
     headers: { ...SECURITY_HEADERS, "Cache-Control": "no-store" },
     body: JSON.stringify(data)
@@ -194,7 +201,7 @@ exports.handler = async (event) => {
         } catch (e) {
             if (isAuthUnavailable(e)) return AUTH_UNAVAILABLE;
             console.error("whats-new: read failed", e);
-            return json(503, { error: "What's New could not be read just now." });
+            return json(503, { error: "What's New couldn't be read just now." });
         }
     }
 
@@ -223,12 +230,32 @@ exports.handler = async (event) => {
             const c = cleanOverride(body.override);
             if (c.error) return json(400, { error: c.error });
             const id = "o:" + c.fields.target;
+            const hasBase = Object.prototype.hasOwnProperty.call(body.override, "_baseUpdatedAt");
+            const base = hasBase && typeof body.override._baseUpdatedAt === "string" ? body.override._baseUpdatedAt : null;
+            const refuse = async () => json(409, { error: CONFLICT, conflict: true, current: await col.findOne({ id }, { projection: { _id: 0 } }) });
             if (c.empty) {
-                await col.deleteOne({ id });
+                const gone = await col.deleteOne(hasBase ? { id, updatedAt: base } : { id });
+                // Nothing deleted and nothing there is what was asked for; a row still there has moved on.
+                if (hasBase && gone.deletedCount === 0 && await col.findOne({ id }, { projection: { _id: 1 } })) return await refuse();
                 return json(200, { override: null, target: c.fields.target });
             }
             const row = { id, type: "override", ...c.fields, updatedAt: now };
-            await col.replaceOne({ id }, row, { upsert: true });
+            if (!hasBase) {
+                await col.replaceOne({ id }, row, { upsert: true });
+                return json(200, { override: row });
+            }
+            if (base === null) {
+                // Opened with none: only a new one. The unique index decides a race.
+                try {
+                    await col.insertOne({ ...row });
+                } catch (e) {
+                    if (e && e.code === 11000) return await refuse();
+                    throw e;
+                }
+                return json(200, { override: row });
+            }
+            const done = await col.replaceOne({ id, updatedAt: base }, row);
+            if (done.matchedCount === 0) return await refuse();
             return json(200, { override: row });
         }
 
@@ -244,12 +271,19 @@ exports.handler = async (event) => {
             if (typeof body.id !== "string" || !body.id.startsWith("p-")) return json(400, { error: "Missing post id" });
             const c = cleanPost(body);
             if (c.error) return json(400, { error: c.error });
+            const hasBase = Object.prototype.hasOwnProperty.call(body, "_baseUpdatedAt");
+            const only = { id: body.id, type: "post" };
+            if (hasBase) only.updatedAt = typeof body._baseUpdatedAt === "string" ? body._baseUpdatedAt : null;
             const res = await col.findOneAndUpdate(
-                { id: body.id, type: "post" },
+                only,
                 { $set: { ...c.fields, updatedAt: now } },
                 { returnDocument: "after", projection: { _id: 0 } }
             );
-            if (!res) return json(404, { error: "That post has gone - reload the list." });
+            if (!res) {
+                const current = hasBase ? await col.findOne({ id: body.id, type: "post" }, { projection: { _id: 0 } }) : null;
+                if (current) return json(409, { error: CONFLICT, conflict: true, current });
+                return json(404, { error: "That post has been deleted." });
+            }
             return json(200, res);
         }
 

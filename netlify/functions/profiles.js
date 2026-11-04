@@ -443,12 +443,14 @@ async function profile(db, id, self) {
    the name as one whole entry in the list, ignoring case. Against the Habbo
    name OriginsBot vouched for, never a nickname or Discord name, for the
    reason onContributorsList gives. Any maze or event in the archive counts,
-   closed ones included: it is credit for having built it. Fails closed. */
+   closed ones included: it is credit for having built it. A hallway is not a
+   maze (4 Nov 2026, the owner's; isHallway in _daily.js), so being credited
+   only on one earns nothing. Fails closed. */
 async function archiveCredits(db, habboName) {
     try {
         const match = creatorMatcher(String(habboName).trim());
         const [room, ev] = await Promise.all([
-            db.collection("rooms").findOne({ creator: match }, { projection: { _id: 0, id: 1 } }),
+            db.collection("rooms").findOne({ creator: match, tags: { $not: /^\s*hallway\s*$/i } }, { projection: { _id: 0, id: 1 } }),
             db.collection("events").findOne({ host: match }, { projection: { _id: 0, id: 1 } })
         ]);
         return { mazeOwner: !!room, eventHost: !!ev };
@@ -527,7 +529,7 @@ exports.handler = async (event) => {
         return out ? json(200, out) : NOT_FOUND();
     } catch (e) {
         console.error("profiles: read failed", e);
-        return json(500, { error: "Could not read profiles just now" });
+        return json(500, { error: "Couldn't read profiles just now" });
     }
 };
 

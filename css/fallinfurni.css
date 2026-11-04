@@ -75,12 +75,14 @@
     .ff-head { flex-direction: column; align-items: flex-start; gap: 10px; }
 }
 
+/* A standalone page's heading: the base rule's Montserrat, at the 30px /privacy
+   and the 404 use (.legal-doc h1). The name in the game's own title screen is
+   the logo, and stays pixel. */
 .ff-head h1 {
-    font-family: "Silkscreen", "Pixelify Sans", monospace;
     color: var(--amber-bright);
-    font-size: 24px;
+    font-size: 30px;
+    line-height: 1.2;
     margin: 0 0 6px;
-    letter-spacing: 0.02em;
 }
 
 /* `.ff-head p` used to live here and had to go. Both paragraphs in the header
@@ -277,6 +279,19 @@ body.is-editing .ff-boot { display: none; }
     transition: transform 0.25s ease-out;
 }
 
+/* A game file that did not arrive (the script at the top of fallinfurni.html):
+   the sentence and a Retry where the bar was. */
+.ff-boot.is-failed .ff-boot-bar { display: none; }
+.ff-boot-retry {
+    background: var(--wood-mid);
+    border: 1px solid var(--amber);
+    color: var(--amber-bright);
+    padding: 6px 16px;
+    cursor: var(--cursor-pointer);
+}
+.ff-boot-retry:hover { background: var(--chrome-highlight); }
+
+
 /* ---- EMBEDDED in the homepage's window (25 Oct 2026, js/ff-window.js;
    html.ff-embed is set by the first script in fallinfurni.html's head).
    The stage and nothing else, at the frame's top left, on black: the page
@@ -373,6 +388,7 @@ body.is-editing .ff-title { display: none; }
 }
 
 .ff-title-row input:focus { outline: none; border-color: var(--amber); }
+.ff-title-row input:focus-visible:not(.is-pointer-focus) { outline: 2px solid var(--amber-bright); outline-offset: 2px; }
 
 /* 16px on touch screens (28 Sept 2026): with no size of its own the field
    took the browser default, about 13px, and iOS zooms the whole page in on
@@ -388,7 +404,7 @@ body.is-editing .ff-title { display: none; }
     border: 1px solid var(--amber);
     color: var(--amber-bright);
     padding: 8px 18px;
-    cursor: pointer;
+    cursor: var(--cursor-pointer);
 }
 
 .ff-title-row button:hover:not([disabled]) { background: var(--chrome-highlight); }
@@ -415,17 +431,18 @@ body.is-editing .ff-title { display: none; }
     color: var(--parchment);
     padding: 8px 20px 8px 10px;
     width: 62px;
-    cursor: pointer;
+    cursor: var(--cursor-pointer);
 }
 
 .ff-title-row select:hover { border-color: var(--amber); }
 .ff-title-row select:focus { outline: none; border-color: var(--amber); }
+.ff-title-row select:focus-visible:not(.is-pointer-focus) { outline: 2px solid var(--amber-bright); outline-offset: 2px; }
 .ff-title-row select option { background: var(--wood-dark); color: var(--parchment); }
 
 /* The loading line. Only says anything while there is something to wait for. */
 .ff-title-load {
     color: var(--amber);
-    font-size: 11.5px;
+    font-size: 9px;
     margin: 10px 0 0;
     min-height: 1.2em;
 }
@@ -454,7 +471,7 @@ body.is-editing .ff-title { display: none; }
     border: 1px solid var(--amber);
     color: var(--amber-bright);
     padding: 6px 16px;
-    cursor: pointer;
+    cursor: var(--cursor-pointer);
 }
 
 .ff-title[data-state="unreachable"] .ff-title-retry:hover { background: var(--chrome-highlight); }
@@ -478,7 +495,7 @@ body.is-editing .ff-title { display: none; }
     background: rgba(42, 28, 16, 0.85);
     border: 1px solid var(--border);
     color: var(--parchment-dim);
-    cursor: pointer;
+    cursor: var(--cursor-pointer);
 }
 .ff-title-opts button:hover { background: var(--chrome-highlight); color: var(--amber-bright); }
 .ff-title-opts button[hidden] { display: none; }
@@ -543,7 +560,7 @@ body.is-editing .ff-title { display: none; }
     height: 11px;
     margin: 0;
     background: transparent;
-    cursor: pointer;
+    cursor: var(--cursor-pointer);
 }
 .ff-vol input[type="range"]::-webkit-slider-runnable-track { height: 3px; background: var(--border); }
 .ff-vol input[type="range"]::-moz-range-track { height: 3px; background: var(--border); }
@@ -575,7 +592,7 @@ body.is-editing .ff-title { display: none; }
    where. Never from a press or a drag — the script marks those
    (data-by-pointer, wirePause in js/fallinfurni.js), which is what the
    browser's own :focus-visible did not tell apart. */
-.ff-vol input[type="range"]:focus-visible:not([data-by-pointer]) { outline: 1px solid var(--amber-bright); outline-offset: 2px; }
+.ff-vol input[type="range"]:focus-visible:not([data-by-pointer]) { outline: 2px solid var(--amber-bright); outline-offset: 2px; }
 .ff-vol-n { min-width: 4ch; text-align: right; }
 /* On the pause menu, the pause menu's buttons' wood. */
 .ff-paused-audio .ff-vol { background: var(--wood-mid); }
@@ -637,7 +654,7 @@ body.ff-immersive .ff-vol input[type="range"] {
 
 /* The builder is a tool rather than a room, so there a tile you can click
    says so the way the rest of the page does. */
-body.is-editing #ff-canvas { cursor: pointer; }
+body.is-editing #ff-canvas { cursor: var(--cursor-pointer); }
 
 /* ---- ONE TYPEFACE INSIDE THE WINDOW.
 
@@ -1134,7 +1151,7 @@ body.is-editing #ff-canvas { cursor: pointer; }
     border: 1px solid var(--border);
     border-radius: 8px;
     color: var(--amber-bright);
-    cursor: pointer;
+    cursor: var(--cursor-pointer);
     line-height: 0;
 }
 
@@ -1163,7 +1180,7 @@ body.ff-immersive .ff-pause-btn::before {
 
 .ff-pause-btn[hidden] { display: none; }
 .ff-pause-btn:hover { background: var(--wood-mid); border-color: var(--amber); }
-.ff-pause-btn:focus-visible { outline: 1px solid var(--amber); outline-offset: 1px; }
+.ff-pause-btn:focus-visible { outline: 2px solid var(--amber-bright); outline-offset: 1px; }
 
 /* Two bars, drawn as the left and right edges of an empty box — one element,
    no image, and it stays crisp at the scale the immersive phone layout puts
@@ -1215,7 +1232,7 @@ body.ff-immersive .ff-pause-btn::before {
     padding: 6px 14px;
     font-family: inherit;
     font-size: inherit;
-    cursor: pointer;
+    cursor: var(--cursor-pointer);
 }
 
 .ff-paused button:hover { background: var(--chrome-highlight); color: var(--amber-bright); }
@@ -1329,7 +1346,7 @@ body.is-editing button.ff-edit-only { display: inline-block; }
     font-family: inherit;
     font-size: 11.5px;
     padding: 8px 4px;
-    cursor: pointer;
+    cursor: var(--cursor-pointer);
 }
 
 .ff-modes button:last-child { border-right: none; }
@@ -1365,6 +1382,7 @@ body.is-editing button.ff-edit-only { display: inline-block; }
 }
 
 .ff-select:focus { outline: none; border-color: var(--amber); }
+.ff-select:focus-visible:not(.is-pointer-focus) { outline: 2px solid var(--amber-bright); outline-offset: 2px; }
 .ff-narrow { width: 62px; flex: 0 0 auto; }
 
 .ff-btn-row { display: flex; gap: 6px; align-items: center; margin-bottom: 8px; }
@@ -1381,7 +1399,7 @@ body.is-editing button.ff-edit-only { display: inline-block; }
     border: 1px solid var(--border);
     color: var(--parchment);
     padding: 6px 10px;
-    cursor: pointer;
+    cursor: var(--cursor-pointer);
     white-space: nowrap;
 }
 
@@ -1428,7 +1446,7 @@ body.is-editing button.ff-edit-only { display: inline-block; }
     aspect-ratio: 1;
     border: 2px solid rgba(0, 0, 0, 0.55);
     padding: 0;
-    cursor: pointer;
+    cursor: var(--cursor-pointer);
 }
 
 .ff-swatch:hover { border-color: var(--amber); }
@@ -1443,6 +1461,35 @@ body.is-editing button.ff-edit-only { display: inline-block; }
 .ff-status.is-good { color: var(--ok); }
 .ff-status.is-bad { color: var(--danger); }
 .ff-status.is-busy { color: var(--amber); }
+.ff-status.is-note { color: var(--parchment); }
+
+/* The stand-ins on the title (4 Nov 2026), for when Habbo can't say what the
+   player looks like. Each picture is the standing, facing-right cell of that
+   figure's small sheet, at its own size; see tools/ff-standins-build.js. */
+.ff-standins { display: flex; gap: 4px; justify-content: center; margin: 6px auto 4px; }
+.ff-standins[hidden] { display: none; }
+.ff-standin {
+    width: 42px;
+    height: 64px;
+    padding: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(0, 0, 0, 0.3);
+    border: 1px solid rgba(255, 240, 210, 0.25);
+    border-radius: 4px;
+    cursor: var(--cursor-pointer);
+}
+.ff-standin:hover { border-color: var(--amber); }
+.ff-standin:focus-visible { outline: 2px solid var(--amber); outline-offset: 1px; }
+.ff-standin[aria-pressed="true"] { border-color: var(--amber); box-shadow: 0 0 0 1px var(--amber); }
+.ff-standin-pic {
+    width: 33px;
+    height: 56px;
+    background-repeat: no-repeat;
+    background-position: -66px 0;
+    image-rendering: pixelated;
+}
 
 /* A rules combination that cannot work — everything landing at once, or the
    clock running out before the last piece does. */
@@ -1455,7 +1502,7 @@ body.is-editing button.ff-edit-only { display: inline-block; }
     display: flex;
     align-items: center;
     gap: 5px;
-    cursor: pointer;
+    cursor: var(--cursor-pointer);
     white-space: nowrap;
 }
 
@@ -1563,7 +1610,7 @@ body:not(.is-editing) .ff-guides { display: none; }
     padding: 0;
     height: 24px;
     line-height: 1;
-    cursor: pointer;
+    cursor: var(--cursor-pointer);
 }
 
 .ff-precise-row input {
@@ -1598,7 +1645,7 @@ body:not(.is-editing) .ff-guides { display: none; }
     border: 1px solid var(--border);
     color: var(--parchment);
     padding: 3px 5px;
-    cursor: pointer;
+    cursor: var(--cursor-pointer);
     font-family: inherit;
     font-size: 10.5px;
     text-align: left;
@@ -1662,7 +1709,7 @@ body:not(.is-editing) .ff-guides { display: none; }
     padding: 5px 7px;
     font-size: 11.5px;
     color: var(--parchment);
-    cursor: pointer;
+    cursor: var(--cursor-pointer);
 }
 
 .ff-zone.is-on { border-color: var(--amber-bright); background: var(--wood-mid); }
@@ -1690,7 +1737,7 @@ body:not(.is-editing) .ff-guides { display: none; }
     background: transparent;
     border: none;
     color: var(--danger);
-    cursor: pointer;
+    cursor: var(--cursor-pointer);
     font-size: 14px;
     line-height: 1;
     padding: 0 2px;
@@ -1754,7 +1801,7 @@ main.ff-page { width: 100%; }
     font: inherit;
     color: var(--amber-bright);
     text-decoration: underline;
-    cursor: pointer;
+    cursor: var(--cursor-pointer);
 }
 
 /* 42ch, WHICH IS WHAT THE REST OF THIS PANEL MEASURES. At 34 the row was
@@ -1790,6 +1837,7 @@ main.ff-page { width: 100%; }
    heading: the form, the boards and the sign-in line step aside while it is
    up. Two columns of levels, scrolling like the board does. */
 .ff-title[data-select] .ff-title-form,
+.ff-title[data-select] .ff-standins,
 .ff-title[data-select] .ff-title-sub,
 .ff-title[data-select] .ff-title-who,
 .ff-title[data-select] .ff-board { display: none; }
@@ -1806,7 +1854,7 @@ main.ff-page { width: 100%; }
     margin: 0 0 4px;
 }
 
-.ff-select-note { color: var(--parchment-dim); margin: 0 0 10px; font-size: 12px; }
+.ff-select-note { color: var(--parchment-dim); margin: 0 0 10px; font-size: 9px; }
 
 .ff-select-list {
     list-style: none;
@@ -1832,7 +1880,7 @@ main.ff-page { width: 100%; }
     background: var(--wood-dark);
     border: 1px solid var(--border);
     color: var(--parchment);
-    cursor: pointer;
+    cursor: var(--cursor-pointer);
     font: inherit;
 }
 
@@ -1860,6 +1908,8 @@ main.ff-page { width: 100%; }
 .ff-select-list button:focus-visible,
 .ff-select-back:hover,
 .ff-select-back:focus-visible { border-color: var(--amber); background: var(--wood-mid); outline: none; }
+.ff-select-list button:focus-visible,
+.ff-select-back:focus-visible { outline: 2px solid var(--amber-bright); outline-offset: 1px; }
 
 .ff-select-back { margin-top: 10px; padding: 6px 18px; color: var(--amber-bright); border-color: var(--amber); }
 
@@ -2082,7 +2132,7 @@ main.ff-page { width: 100%; }
     border: 1px solid var(--border);
     color: var(--parchment);
     padding: 8px 16px;
-    cursor: pointer;
+    cursor: var(--cursor-pointer);
 }
 
 .ff-round-buttons button:hover { background: var(--chrome-highlight); color: var(--amber-bright); }
@@ -2387,6 +2437,23 @@ main.ff-page { width: 100%; }
 .ff-beta-note[hidden],
 body:not([data-ff-closed]) .ff-beta-note { display: none; }
 
+/* The code's box, for a finger (offerBetaBox in fallinfurni.html). */
+.ff-beta-form { margin-top: 10px; }
+.ff-beta-form input { width: 130px; }
+.ff-beta-form[hidden],
+body:not([data-ff-closed]) .ff-beta-form { display: none; }
+
+/* How a run carried through signing in went (carryRunOn in js/fallinfurni.js). */
+.ff-title-carried {
+    max-width: 42ch;
+    margin: 8px auto 0;
+    font-family: 'Volter Goldfish Bold', 'Volter Goldfish', 'Pixelify Sans', monospace;
+    font-size: 0.5625rem;
+    font-weight: 400;
+    color: var(--parchment);
+}
+.ff-title-carried[hidden] { display: none; }
+
 /* The title's own face and colour, a size down, so it reads as part of the
    title rather than as a message bolted on. Since 26 Oct 2026 it sits UNDER
    the tagline (the owner's: the title, the tagline, then COMING SOON), and
@@ -2424,10 +2491,12 @@ body[data-ff-closed] .ff-title-sub { margin-bottom: 12px; }
 body[data-ff-closed] .ff-title-form,
 body[data-ff-closed] .ff-title-who,
 body[data-ff-closed] #ff-play-status,
+body[data-ff-closed] .ff-standins,
 body[data-ff-closed] .ff-board,
 html[data-ff-gate="checking"] .ff-title-form,
 html[data-ff-gate="checking"] .ff-title-who,
 html[data-ff-gate="checking"] #ff-play-status,
+html[data-ff-gate="checking"] .ff-standins,
 html[data-ff-gate="checking"] .ff-board { display: none; }
 
 
@@ -2529,26 +2598,20 @@ body.ff-rotate-shut { overflow: hidden; }
    same env() the gate's own padding uses. 44px min-height because this is
    the one control on a screen that exists to be pressed by a thumb.
 
-   The site's own .btn (style.css) since 28 Oct 2026, the owner's: the
-   wooden box with an emoji arrow in it looked unprofessional. Silkscreen in
-   the amber pill, a drawn pixel chevron, as the homepage window's rotate
-   screen has (.ff-phone-rotate-back in css/ff-window.css). */
+   The site's bevel (.view-switch-btn in style.css) since 4 Nov 2026, the
+   owner's; a wooden box with an emoji arrow before 28 Oct. A drawn pixel
+   chevron, as the homepage window's rotate screen has (.ff-phone-rotate-back in css/ff-window.css). */
 .ff-rotate-back {
     position: absolute;
     left: 50%;
     transform: translateX(-50%);
     bottom: max(28px, env(safe-area-inset-bottom));
-    display: inline-flex;
-    align-items: center;
-    gap: 10px;
-    min-height: 44px;
-    padding: 0 24px 0 20px;
-    text-transform: uppercase;
-    white-space: nowrap;
-    font-size: 0.75rem;
+    gap: 8px;
+    padding: 6px 12px 6px 10px;
+    text-decoration: none;
 }
-.ff-rotate-back:hover { transform: translateX(-50%) translateY(-1px); }
-.ff-rotate-back:active { transform: translateX(-50%) translateY(1px); }
+/* A bevel's height to look at, a thumb's to press. */
+.ff-rotate-back::after { content: ""; position: absolute; inset: -9px -4px; }
 .ff-rotate-back svg { display: block; flex: none; }
 
 /* The phone that turns. Two boxes and a transform rather than an SVG or a

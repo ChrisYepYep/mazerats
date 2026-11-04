@@ -449,9 +449,16 @@
             /* The Warren's own Yes/No box (31 Oct 2026, the bug scan), as
                everywhere else since the native ones went on 30 Sept; the
                browser's confirm() only if js/admin.js hasn't given it. */
-            const msg = "Put the homepage menu back as it was built? Every row shown, in its own place, and both folds shut. You can still Discard before saving.";
+            /* A row not yet public keeps who sees it (ADMINS_FIRST): built, it
+               is Admins only, so a Reset and Save would have hidden Articles
+               again once they had gone public. */
+            const kept = ADMINS_FIRST.map(id => [id, seen(id)]);
+            const SEEN_WORDS = { shown: "shown", admins: "Admins only", hidden: "hidden" };
+            const keptWords = kept.map(([id, how]) => `${NAME[id]} stays ${SEEN_WORDS[how]}, as you have it.`).join(" ");
+            const msg = `Put the homepage menu back as it was built? Every other row shown, in its own place, and both folds shut. ${keptWords} You can still Discard before saving.`;
             if (!(await (window.AdminConfirm ? window.AdminConfirm(msg) : Promise.resolve(window.confirm(msg))))) return;
             draft = whole(null);
+            kept.forEach(([id, how]) => setSeen(id, how));
             say("Back as built. Press Save to put it live.");
             paint();
         });

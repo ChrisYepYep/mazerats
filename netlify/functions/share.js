@@ -29,6 +29,8 @@
 const fs = require("fs");
 const path = require("path");
 const { getDb } = require("./_db");
+const { policyFor } = require("./_csp");
+const { KEPT_QUERY, withoutJunk, junkRedirect } = require("./_query");
 // Who may read past the address book with ?fresh (3 Oct 2026; see FRESH_ADDRESSES_MS).
 const { hasAccount } = require("./_auth");
 const { resolveSlug, isRetired, loadRetired, PROJECTION: SLUG_FIELDS } = require("./_slugs");
@@ -98,7 +100,10 @@ function slugFromPath(event) {
     /* A stray % in a pasted link ("/maze/100%-maze") makes decodeURIComponent
        throw, and uncaught that was a bare 502 from the function. A link that
        cannot be decoded names nothing in the archive, so it gets the same
-       not-found page as any other unknown address. */
+       not-found page as any other unknown address. On the live site Netlify
+       answers most such links with its own bare 400 before they get here
+       (measured 4 Nov 2026), so this is for the ones it lets through and for
+       a direct call. */
     try {
         return { slug: decodeURIComponent(m[2]), kind: PATH_KINDS[m[1]] };
     } catch (e) {
@@ -232,9 +237,10 @@ function withTags(html, t) {
 
 /* home.html is served as a file with the headers netlify.toml gives every
    path, but custom headers are not applied to a function's response — so
-   this carries them itself. The policy is the site's own, word for word:
-   the page is the same page and needs exactly what it always has.
-   tools/check-share-headers.js fails the build if the two drift apart. */
+   this carries them itself, and tools/check-share-headers.js fails the build
+   if the two drift apart. The Content-Security-Policy is added in pageResponse:
+   it names the page's inline scripts by hash (see _csp.js), so it is worked out
+   from the very page being served. */
 const PAGE_HEADERS = {
     "Content-Type": "text/html; charset=utf-8",
     "X-Frame-Options": "SAMEORIGIN",
@@ -242,7 +248,6 @@ const PAGE_HEADERS = {
     "Referrer-Policy": "strict-origin-when-cross-origin",
     "Permissions-Policy": "camera=(), microphone=(), geolocation=(), payment=(), usb=()",
     "Strict-Transport-Security": "max-age=63072000; includeSubDomains",
-    "Content-Security-Policy": "default-src 'self'; script-src 'self' 'unsafe-inline' https://cloud.umami.is; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob: https://www.habbo.com https://images.habbo.com https://origins.habbo.com https://api.furniindex.com https://cdn.discordapp.com; connect-src 'self' https://cloud.umami.is https://gateway.umami.is; frame-ancestors 'self'; base-uri 'self'; form-action 'self'; object-src 'none'"
 };
 
 /* ---------- what a record's preview says ---------- */
@@ -642,14 +647,37 @@ function fixedTags(page, origin) {
 
 /* ---------- answering ---------- */
 
-/* WHICH QUERY STRINGS MAKE A DIFFERENT PAGE. By default the edge keys its
-   cache on the whole address, query string and all, so /maze/x?utm_source=…
-   (or any junk a link picked up on its travels) was a fresh copy, fetched
-   from the database, for every variation. Only these change the answer:
-   `fresh` (/warren's View link, which must never be handed a cached copy —
-   see the redirect below; its answers are no-store) and the direct-call test
-   parameters read by requestedSlug. Everything else now shares one copy. */
+/* WHICH QUERY STRINGS MAKE A DIFFERENT PAGE. Only `fresh` (/warren's View
+   link, which must never be handed a cached copy — see the redirect below; its
+   answers are no-store) and the direct-call test parameters read by
+   requestedSlug change the answer.
+
+   Netlify-Vary says so, and on a rewrite Netlify ignores it (measured 4 Nov
+   2026; every address here is a rewrite). So the edge still keys on the whole
+   address: /maze/x?fbclid=… was its own copy, fetched from the database, and
+   ?x=<anything new> a way past the cache each time. See junkFree below, which
+   is what actually closes that; this stays for the day the edge honours it. */
 const VARY = { "Netlify-Vary": "query=fresh|maze|event|guide|article" };
+
+/* A LINK WITH JUNK ON IT GOES TO THE SAME LINK WITHOUT (4 Nov 2026, the bug
+   scan). A tracker's ?fbclid= still opens the page, one redirect later, and
+   shares the one copy at the clean address. No database, and the redirect
+   itself is kept at the edge, so all a made-up parameter can cost is one small
+   function run; _ratelimit.js counts only what is left, the addresses that do
+   reach further.
+
+   KEPT_QUERY in _query.js is every parameter these pages read. A new one read
+   by a page reached through this function has to be added there. */
+function junkFree(event) {
+    if (event.httpMethod !== "GET" && event.httpMethod !== "HEAD") return null;
+    const kept = withoutJunk(event, KEPT_QUERY);
+    if (!kept) return null;
+    let pathname = event.path || "/home";
+    if (event.rawUrl) {
+        try { pathname = new URL(event.rawUrl).pathname; } catch (e) { /* keep event.path */ }
+    }
+    return junkRedirect(pathname + kept.search);
+}
 
 // `extra` is any header this one answer needs on top (the DB-down page's
 // noindex, below).
@@ -665,7 +693,7 @@ async function pageResponse(statusCode, tags, cache, extra) {
     }
     return {
         statusCode,
-        headers: { ...PAGE_HEADERS, ...VARY, "Cache-Control": cache, ...(extra || {}) },
+        headers: { ...PAGE_HEADERS, "Content-Security-Policy": policyFor([html]), ...VARY, "Cache-Control": cache, ...(extra || {}) },
         body: tags ? withTags(html, tags) : html
     };
 }
@@ -734,6 +762,8 @@ async function addressesOf(db, kind, maxAge) {
 }
 
 exports.handler = async (event) => {
+    const clean = junkFree(event);
+    if (clean) return clean;
     const origin = originOf();
     const asked = requestedSlug(event);
     const notFound = {

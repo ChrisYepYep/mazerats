@@ -75,7 +75,7 @@
                would open onto rounds it has no pictures for.
                v=5 (2 Nov 2026): the streak strip, which needs daily.js's
                Daily.streakStrip; both games and daily.js moved together. */
-            src: "js/guess.js?v=5",
+            src: "js/guess.js?v=7",
             open: "openGuessGame",
             overlay: "guess-overlay",
             win: "guess-window",
@@ -86,7 +86,7 @@
             body: "guess-deck"
         },
         odd: {
-            src: "js/oddoneout.js?v=5",
+            src: "js/oddoneout.js?v=6",
             open: "openOddOneOut",
             overlay: "odd-overlay",
             win: "odd-window",
@@ -241,7 +241,7 @@
         const p = document.createElement("p");
         p.className = "daily-loading daily-loading--failed";
         p.setAttribute("role", "alert");
-        p.textContent = "Could not load the game. Check your connection and try again. ";
+        p.textContent = "Couldn't load the game. Check your connection and try again. ";
         const retry = document.createElement("button");
         retry.type = "button";
         retry.className = "guess-btn";

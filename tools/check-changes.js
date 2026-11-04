@@ -40,7 +40,6 @@ const room = () => ({
     tags: ["FURNI MAZE", "ILLUSION"],
     description: "A 100-room maze.",
     details: "Longer prose.",
-    habboLink: "",
     thumb: "assets/rooms/tlm/entrance.png",
     entrance: { image: "a.png", label: "Start", oldVersions: [] },
     finish: { image: "z.png", label: "Complete", oldVersions: [] },
@@ -67,7 +66,7 @@ check("number came back from the form as a string",
     describe({ ...room(), order: 3 }, { ...room(), order: "3" }), []);
 
 check("cleared field: null in the database, empty string from the form",
-    describe({ ...room(), habboLink: null }, { ...room(), habboLink: "" }), []);
+    describe({ ...room(), linksReferences: null }, { ...room(), linksReferences: "" }), []);
 
 check("undefined against missing",
     describe({ ...room(), host: undefined }, { ...room() }), []);
@@ -118,7 +117,7 @@ check("furni bookkeeping alone reports nothing",
     describe(room(), { ...room(), furniRev: 7, furniPatch: { "r1.png": null } }), []);
 
 check("links",
-    describe(room(), { ...room(), habboLink: "https://habbo.com/x" }), ["links"]);
+    describe(room(), { ...room(), linksReferences: "https://habbo.com/x" }), ["links"]);
 
 check("dates",
     describe(room(), { ...room(), added: "2024-06-24" }), ["dates"]);

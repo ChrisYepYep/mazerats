@@ -13,6 +13,7 @@
    is already easy to find. */
 const { getDb } = require("./_db");
 const { headersFor } = require("./_headers");
+const { withoutJunk, junkRedirect } = require("./_query");
 const { assignSlugs, loadRetired, PROJECTION: SLUG_FIELDS } = require("./_slugs");
 
 /* The deleted records' addresses, which the API works addresses out
@@ -70,6 +71,11 @@ function url(loc, when, priority) {
 }
 
 exports.handler = async (event) => {
+    /* The sitemap reads no parameter at all, and on this rewrite the edge keys
+       on the whole address whatever Netlify-Vary says (measured 4 Nov 2026), so
+       /sitemap.xml?x=<anything new> was a read of every room, event and guide.
+       It goes to the one address instead, before any database. */
+    if (withoutJunk(event, new Set())) return junkRedirect("/sitemap.xml");
     const origin = originOf();
 
     // The pages themselves, which exist whether or not the database answers.
@@ -229,12 +235,10 @@ exports.handler = async (event) => {
 
     return {
         statusCode: 200,
-        /* Netlify-Vary (2 Oct 2026): the sitemap reads no parameter at all,
-           and the edge keyed it on the whole query string, so
-           /sitemap.xml?x=<random> skipped the hour's copy every time and
-           cost a read of every room, event and guide. Naming one parameter
-           that nothing sends keys every spelling on that one (empty) value,
-           so all of them share the one cached copy. See `vary` in _cache.js. */
+        /* Netlify-Vary (2 Oct 2026): naming one parameter that nothing sends
+           would key every spelling on one copy, if the edge honoured it on a
+           rewrite, which it does not; see the top of the handler for what does
+           the job. See `vary` in _cache.js. */
         headers: headersFor("application/xml; charset=utf-8", { "Cache-Control": cache, "Netlify-Vary": "query=v" }),
         body: '<?xml version="1.0" encoding="UTF-8"?>\n' +
             '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n' +

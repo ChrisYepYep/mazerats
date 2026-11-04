@@ -59,6 +59,7 @@ require("./_env.js").loadEnv(["MONGODB_URI"]);
 const { getCatalogue } = require("../netlify/functions/furni-catalogue.js");
 const { blobStore } = require("../netlify/functions/_blobs.js");
 const { getDb } = require("../netlify/functions/_db.js");
+const { stampArchive } = require("../netlify/functions/_archive-memo.js");
 const { spriteList, isLegacySpriteKey, scanCatalogue } = require("../netlify/functions/_furni-sprites.js");
 const { pieceKey } = require("../netlify/functions/_furni-merge.js");
 
@@ -529,7 +530,12 @@ function imagesOf(doc) {
                 const revFilter = rev === 0 ? { furniRev: { $in: [0, null] } } : { furniRev: rev };
                 const res = await col.updateOne({ id, ...revFilter },
                     { $set: { furni, furniRev: rev + 1 } });
-                if (res.matchedCount) return;
+                if (res.matchedCount) {
+                    // So the instances' kept copies read it (_archive-memo.js):
+                    // a scan moves no updatedAt.
+                    await stampArchive(db, COLLECTION);
+                    return;
+                }
                 // Somebody else wrote this maze's furni since the read.
                 await sleep(100 * (attempt + 1));
             }

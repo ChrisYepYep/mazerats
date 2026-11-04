@@ -150,9 +150,9 @@ function dealOdd(rooms, day, seedOf) {
    right one and four decoys, all four sharing one tag with the answer
    where the archive allows it (see THE TAGS GAVE THE ANSWER AWAY). Moved from js/guess.js (pickDay and optionsFor), which had to
    deal it in the browser; the page now gets the picture and the five names
-   and nothing that says which name is right. `crop` is the seed the page
-   uses to choose where to cut the picture, handed out rather than derived
-   there so that nothing about a day is computable in the browser. */
+   and nothing that says which name is right. `crop` is the seed deal-image.js
+   chooses where to cut the picture with, kept here with the rest of the deal;
+   the page never sees it, since it no longer does the cutting. */
 function dealGuess(rooms, day, seedOf) {
     const live = (rooms || [])
         .filter(room => room && room.name && room.id && !isHallway(room))
@@ -307,6 +307,18 @@ const DEALERS = { odd: dealOdd, guess: dealGuess };
    picture sizes" to "build an index of the archive"; it does not make the
    game unbeatable, and nothing short of serving altered pictures would.
 
+   ONLY THE CROP UNTIL THE ROOM IS OVER (4 Nov 2026). Guess the Maze used to
+   hand out the whole room and cut the view in the browser, so the network
+   tab had the whole picture from the moment a room began. Now a room's
+   address is for what the player may see at that moment and no more: `v` is
+   the view (0, 1 or 2, deal-image.js cuts it on the server), signed with the
+   rest so a view's address cannot be turned into a wider one or the whole
+   room's. The room's first view goes out with the room, a wider one in the
+   reply to the wrong guess that earned it, and the whole room's address,
+   which has no `v`, only in the reply that ends the room (guessStage,
+   below). Every player of a day gets the same addresses, so the edge answers
+   them; see THE CROP in deal-image.js.
+
    If SESSION_SECRET is missing (a local setup without it) the addresses
    are signed with a fixed development key, and say so once in the log, as
    secretSeed does: the game still works, and what is lost is only what a
@@ -330,19 +342,40 @@ function imageKey() {
    stored image reference can contain (safeImageRef in _url.js refuses
    control characters), so no two different sets of fields can join into
    the same string. 128 bits of the HMAC, base64url so it sits in a query
-   string untouched. */
-function imageSig(game, day, round, tile, image) {
+   string untouched. `view` is a Guess the Maze view's number, and is left
+   out for a whole picture. */
+function imageSig(game, day, round, tile, image, view) {
+    const fields = ["deal-image", game, day, round, tile, image];
+    if (view != null) fields.push("v" + view);
     return crypto.createHmac("sha256", imageKey())
-        .update(["deal-image", game, day, round, tile, image].join("\n"))
+        .update(fields.join("\n"))
         .digest("base64url")
         .slice(0, 22);
 }
 
-function imageAddress(game, day, round, tile, image) {
-    const qs = new URLSearchParams({
-        g: game, d: day, r: String(round), t: String(tile), s: imageSig(game, day, round, tile, image)
-    });
+function imageAddress(game, day, round, tile, image, view) {
+    const qs = new URLSearchParams({ g: game, d: day, r: String(round), t: String(tile) });
+    if (view != null) qs.set("v", String(view));
+    qs.set("s", imageSig(game, day, round, tile, image, view));
     return IMAGE_FUNCTION + "?" + qs.toString();
+}
+
+/* How much of a Guess the Maze room may be seen: 0, 1 or 2 is that view's
+   crop, one wider for each wrong guess, and WHOLE_ROOM is the room uncropped,
+   once it is over. `m` is the room's move as _speed.js keeps it, { guesses,
+   done }, or nothing before a guess. Pure. */
+const CROP_VIEWS = 3;
+const WHOLE_ROOM = CROP_VIEWS;
+function guessStage(m) {
+    if (!m) return 0;
+    if (m.done) return WHOLE_ROOM;
+    return Math.min(Array.isArray(m.guesses) ? m.guesses.length : 0, CROP_VIEWS - 1);
+}
+
+/* A room's picture at a stage, as the page is sent it: its address, and the
+   stage, so the page knows whether it is holding a crop or the room. */
+function guessPicture(day, round, image, stage) {
+    return { image: imageAddress("guess", day, round, 0, image, stage >= WHOLE_ROOM ? null : stage), view: stage };
 }
 
 /* The stored picture reference an address names, or null if the deal has
@@ -361,9 +394,9 @@ function imageRefAt(deal, game, round, tile) {
 
 /* Whether `sig` is the signature for this picture, compared in constant
    time so the comparison cannot be timed a character at a time. */
-function imageSigMatches(game, day, round, tile, image, sig) {
+function imageSigMatches(game, day, round, tile, image, sig, view) {
     if (typeof sig !== "string" || typeof image !== "string") return false;
-    const want = Buffer.from(imageSig(game, day, round, tile, image));
+    const want = Buffer.from(imageSig(game, day, round, tile, image, view));
     const got = Buffer.from(sig);
     return got.length === want.length && crypto.timingSafeEqual(got, want);
 }
@@ -390,6 +423,8 @@ function imageSigMatches(game, day, round, tile, image, sig) {
    the reply that ends round r — round 0 in the reply to the start — and in
    a deal reply only the rounds the server's record says this player has
    reached (reachedOf, below). publicRound is one round, for those replies.
+   Guess the Maze's room r+1 waits for the player to ask for it instead,
+   which starts its clock (THE ANSWER SCREEN IS NOT ON THE CLOCK in _speed.js).
 
    WHAT THIS DID NOT STOP was a player who played the day through signed
    out first (every verdict answered, capped per network) and then again
@@ -402,21 +437,23 @@ function needDay(day) {
     }
 }
 
-function publicRound(game, rounds, i, day) {
+function publicRound(game, rounds, i, day, stage) {
     needDay(day);
     const r = (rounds || [])[i];
     if (!r) return null;
     if (game === "odd") {
         return { tiles: (r.tiles || []).map((t, j) => ({ image: imageAddress("odd", day, i, j, t.image) })) };
     }
-    return { image: imageAddress("guess", day, i, 0, r.image), options: r.options.slice(), crop: r.crop };
+    return Object.assign(guessPicture(day, i, r.image, stage || 0), { options: r.options.slice() });
 }
 
-function publicRounds(game, rounds, day, upTo) {
+/* `stageOf`, for Guess the Maze, says how far each room handed out has got
+   (guessStage); a room with no word on it is at its first view. */
+function publicRounds(game, rounds, day, upTo, stageOf) {
     needDay(day);
     const list = rounds || [];
     const n = upTo == null ? list.length : Math.max(0, Math.min(list.length, upTo));
-    return list.map((r, i) => (i < n ? publicRound(game, list, i, day) : null));
+    return list.map((r, i) => (i < n ? publicRound(game, list, i, day, stageOf ? stageOf(i) : 0) : null));
 }
 
 /* How many rounds a signed-in player's deal reply hands out, from their
@@ -426,7 +463,10 @@ function publicRounds(game, rounds, day, upTo) {
    day, all of them (a day filed from a signed-out claim, while there were
    any — until 10 Oct 2026 — had no row). Pure.
    A round is over when it has a move (Odd One Out, one pick a round) or a
-   finished one (Guess the Maze, up to three guesses). */
+   finished one (Guess the Maze, up to three guesses). Guess the Maze's room
+   after one that is over counts as in hand only once it has been asked for
+   (`begun`; THE ANSWER SCREEN IS NOT ON THE CLOCK in _speed.js), or a deal
+   read from the answer screen would hand it out with no clock running. */
 function reachedOf(game, row, count, filed) {
     if (filed) return count;
     if (!row) return 0;
@@ -437,6 +477,7 @@ function reachedOf(game, row, count, filed) {
         if (!m || (game === "guess" && !m.done)) break;
         over++;
     }
+    if (game === "guess" && over > 0 && over < count && !moves["r" + over] && !(row.begun && row.begun["r" + over])) return over;
     return Math.min(count, over + 1);
 }
 
@@ -549,6 +590,6 @@ async function storedDeal(db, game, day) {
 module.exports = {
     COLLECTION, ROUNDS, ROOM_PROJECTION, MEMO_TTL_MS, IMAGE_FUNCTION,
     secretSeed, dealOdd, dealGuess, publicRounds, publicRound, nextRound, reachedOf, dealFor, storedDeal,
-    imageSig, imageAddress, imageRefAt, imageSigMatches,
+    imageSig, imageAddress, imageRefAt, imageSigMatches, guessStage, guessPicture, CROP_VIEWS, WHOLE_ROOM,
     _forgetMemo: () => memo.clear()      // for the tests only
 };

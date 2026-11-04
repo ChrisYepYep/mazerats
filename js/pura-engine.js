@@ -419,8 +419,9 @@
 
     /* Puts the piece down and clears what it completes.
 
-       Returns { board, cleared: [the upper screen row of each zig-zag
-       cleared, top first], topOut, before }. A piece
+       Returns { board, cleared: [every screen row that goes, the chain's
+       after], first: [the rows this piece filled, top first], topOut,
+       before, stages: [the chain's falls and clears] }. A piece
        that comes to rest with any tile still above the well ends the game —
        it is drawn where it stopped, since that is where it ended. `dress`
        is the page's chance to hang what it draws on each tile. */

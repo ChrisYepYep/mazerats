@@ -117,6 +117,8 @@ const LEADS_SITE_PER_HOUR = 300;
 const UPLOAD_LIMIT = 12;
 const WINDOW_MS = 10 * 60 * 1000;
 const ORPHAN_AGE_MS = 24 * 60 * 60 * 1000;
+// A request that made a claim has stopped by now, whatever the function limit.
+const CLAIM_DEAD_MS = 45 * 1000;
 
 /* BYTES, not just files. The caps above count uploads, and each may be 4MB,
    so twelve every ten minutes was ~7GB a day into the image store from one
@@ -286,6 +288,17 @@ async function sweepOrphans(db, limit = SWEEP_BATCH) {
     const uploads = db.collection("dead_end_uploads");
     const cutoff = new Date(Date.now() - ORPHAN_AGE_MS);
     const stale = await uploads.find({ claimed: false, at: { $lt: cutoff } }, { projection: { key: 1 } }).limit(limit).toArray();
+    /* A claim left marked (see claimable in handleLead) that old: the picture
+       is a lead's, and only the mark comes off, or it is nobody's. */
+    const marked = await uploads.find({ claimed: true, claimedAt: { $lt: cutoff } }, { projection: { key: 1 } }).limit(limit).toArray();
+    const leads = db.collection("dead_end_leads");
+    for (const u of marked) {
+        if (await leads.findOne({ "images.key": u.key }, { projection: { _id: 1 } })) {
+            await uploads.updateOne({ key: u.key }, { $unset: { claimedAt: "", claimRef: "" } });
+        } else {
+            stale.push(u);
+        }
+    }
     if (!stale.length) return;
     const store = imagesStore();
     await Promise.all(stale.map(u => Promise.resolve().then(() => store.delete(u.key)).catch(() => { /* already gone */ })));
@@ -496,7 +509,7 @@ async function handleLead(event, db) {
     if (type === "new") {
         if (!newName) return json(400, { error: "What is the maze called?" });
         if (newName.length > DeadEnds.NEW_NAME_MAX) return json(400, { error: "That name is too long" });
-    } else if (!COLLECTION_OF[type] || !recordId || recordId.length > 200) {
+    } else if (!Object.prototype.hasOwnProperty.call(COLLECTION_OF, type) || !recordId || recordId.length > 200) {
         return json(400, { error: "Which maze or event is this about?" });
     }
     if (habboName.length > HABBO_NAME_MAX) return json(400, { error: "That Habbo name is too long" });
@@ -583,35 +596,56 @@ async function handleLead(event, db) {
        lead as well as per item, because accepting, rejecting and deleting a
        lead act on all of its pictures at once. */
     const images = [];
+    /* A CLAIM THAT NEVER BECAME A LEAD (4 Nov 2026, the bug scan). A database
+       failure after the claims, before the lead landed, left the pictures
+       claimed by nothing: Send again said "image has gone missing", and the
+       sweep, which looks at unclaimed ones, never collected them. So a failure
+       on the way hands them back. And each claim says when and for which send
+       it was made, for when the hand-back fails too: a retry of that same send
+       may take it, once the first has had time to die (this check came after
+       looking for its lead, so that first copy did not land), and the sweep
+       collects one no retry came back for. */
+    const claimable = () => (dedupe
+        ? { $or: [{ claimed: false }, { claimRef: clientRef, claimedAt: { $lt: new Date(Date.now() - CLAIM_DEAD_MS) } }] }
+        : { claimed: false });
+    const CLAIM_MARKS = { claimedAt: "", claimRef: "" };
+    const handBack = () => (images.length
+        ? db.collection("dead_end_uploads").updateMany({ key: { $in: images.map(i => i.key) } }, { $set: { claimed: false }, $unset: CLAIM_MARKS })
+        : Promise.resolve());
     if (imageCount) {
         if (!player) return json(401, { error: "Sign in with Discord to send images." });
         const uploads = db.collection("dead_end_uploads");
-        for (const item of items) {
-            item.images = [];
-            for (const key of item.keys) {
-                const claimed = await uploads.findOneAndUpdate(
-                    { key, playerId: player.id, claimed: false },
-                    { $set: { claimed: true } },
-                    { returnDocument: "after" }
-                );
-                const doc = claimed && (claimed.value !== undefined ? claimed.value : claimed);
-                if (!doc || !doc.key) {
-                    // Hand back anything already claimed for this lead.
-                    await uploads.updateMany({ key: { $in: images.map(i => i.key) } }, { $set: { claimed: false } });
-                    /* A retry racing its own first copy loses the images to
-                       it, and lands here rather than at the check above. If
-                       that first copy has been saved by now, it is the
-                       answer, not an error. */
-                    if (dedupe) {
-                        const prior = await earlier();
-                        if (prior) return json(200, { id: prior.id, status: prior.status, duplicate: true });
+        try {
+            for (const item of items) {
+                item.images = [];
+                for (const key of item.keys) {
+                    const claimed = await uploads.findOneAndUpdate(
+                        { key, playerId: player.id, ...claimable() },
+                        { $set: { claimed: true, claimedAt: new Date(), ...(dedupe ? { claimRef: clientRef } : {}) } },
+                        { returnDocument: "after" }
+                    );
+                    const doc = claimed && (claimed.value !== undefined ? claimed.value : claimed);
+                    if (!doc || !doc.key) {
+                        // Hand back anything already claimed for this lead.
+                        await handBack();
+                        /* A retry racing its own first copy loses the images to
+                           it, and lands here rather than at the check above. If
+                           that first copy has been saved by now, it is the
+                           answer, not an error. */
+                        if (dedupe) {
+                            const prior = await earlier();
+                            if (prior) return json(200, { id: prior.id, status: prior.status, duplicate: true });
+                        }
+                        return json(400, { error: "One of those images has gone missing. Add it again." });
                     }
-                    return json(400, { error: "One of those images has gone missing. Add it again." });
+                    const img = { key: doc.key, contentType: doc.contentType, bytes: doc.bytes };
+                    item.images.push(img);
+                    images.push(img);
                 }
-                const img = { key: doc.key, contentType: doc.contentType, bytes: doc.bytes };
-                item.images.push(img);
-                images.push(img);
             }
+        } catch (e) {
+            await handBack().catch(() => {});
+            throw e;
         }
     }
     items.forEach(item => { if (!item.images) item.images = []; delete item.keys; });
@@ -650,20 +684,24 @@ async function handleLead(event, db) {
            findOne above: the (sender, clientRef) index lets one in. The
            loser gives back any images it claimed and answers with the
            winner, exactly as a later retry would have been answered. */
-        if (!(dedupe && e && e.code === 11000)) throw e;
-        if (images.length) {
-            await db.collection("dead_end_uploads").updateMany({ key: { $in: images.map(i => i.key) } }, { $set: { claimed: false } });
+        if (!(dedupe && e && e.code === 11000)) {
+            // Not saved, so its pictures are the sender's again (see handBack).
+            await handBack().catch(() => {});
+            throw e;
         }
+        await handBack();
         const prior = await earlier();
         if (!prior) throw e;
         return json(200, { id: prior.id, status: prior.status, duplicate: true });
     }
     if (net && await countRecentLeads() > LEAD_LIMIT) {
         await leads.deleteOne({ id: lead.id });
-        if (images.length) {
-            await db.collection("dead_end_uploads").updateMany({ key: { $in: images.map(i => i.key) } }, { $set: { claimed: false } });
-        }
+        await handBack();
         return json(429, { error: TOO_MANY_LEADS });
+    }
+    // A lead's pictures for good; if this is lost the sweep below sees the lead.
+    if (images.length) {
+        await db.collection("dead_end_uploads").updateMany({ key: { $in: images.map(i => i.key) } }, { $unset: CLAIM_MARKS }).catch(() => {});
     }
     if (await claimNotifySlot(db, "dead-end-leads", EMAILS_PER_HOUR)) await notify(lead, recordName);
     return json(201, { id: lead.id, status: "new" });

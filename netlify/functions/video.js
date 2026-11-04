@@ -76,9 +76,11 @@ exports.handler = async (event) => {
     const key = (event.queryStringParameters || {}).key;
     if (!V.isVideoKey(key)) return refuse(400, "Invalid key");
 
-    const store = V.videoStore();
-    let rec;
+    /* Opening the store is inside the try as well (4 Nov 2026, the bug scan):
+       see image.js. */
+    let store, rec;
     try {
+        store = V.videoStore();
         rec = await V.readRecord(store, key);
     } catch (e) {
         console.error("video: read failed for", key, e.message);

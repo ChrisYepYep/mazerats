@@ -1,7 +1,5 @@
-/* Cache headers and compression for the two big public GETs (rooms, events).
-
-   Neither had any caching at all: every visitor's first paint went all the
-   way to Mongo and pulled the whole archive back uncompressed.
+/* Cache headers and compression for the public GETs: rooms and events first,
+   and now every cached read on the site (see cachedJson).
 
    The CDN header and the browser header say different things on purpose.
    The browser is told to revalidate every time, so an admin who has just
@@ -11,6 +9,10 @@
    means visitors essentially always get an edge hit, an edit is public
    within the minute, and a database outage shows the archive rather than an
    error for a whole day after it starts.
+
+   All of that hangs on the 304 below carrying these same headers: see the
+   note there, and it is the first thing to measure if the edge's Cache-Status
+   ever shows a negative ttl again.
 
    No purge-on-write, deliberately: it would need a Netlify API token and a
    fifth dependency, to buy back a staleness window of sixty seconds on a
@@ -145,17 +147,23 @@ function cachedJson(event, data, { cache = true, cdn = CDN_CACHE, vary = null } 
        in case the edge adds its own mark to the tag on the way out.
        Only on a cacheable answer: `cache: false` is how every admin and
        per-caller read comes through here, and those get no tag at all.
-       The 304 is never offered to the edge to keep, as it has no body to
-       serve anybody else. */
+
+       THE 304 CARRIES THE SAME CACHE HEADERS AS THE 200 (4 Nov 2026, the bug
+       scan). The asker is usually not a browser: it is the edge, renewing its
+       stale copy with the ETag it stored. A 304 is what renews that copy, and
+       its freshness comes from the headers ON the 304. This one used to drop
+       Netlify-CDN-Cache-Control, on the theory that it had no body worth
+       keeping, so every renewal left the durable copy expired (measured live:
+       `fwd=stale; fwd-status=304; ttl=-46000` and falling) and every read
+       went on running the function and Mongo.
+
+       Only the headers: Content-Encoding belongs to the stored body, and a
+       caller's own Netlify-Vary goes on after this returns, to both alike. */
     if (cache) {
         const tag = crypto.createHash("sha1").update(body).digest("base64url");
         headers.ETag = `W/"${tag}"`;
         const asked = (event.headers || {})["if-none-match"] || (event.headers || {})["If-None-Match"] || "";
-        if (String(asked).includes(tag)) {
-            const notModified = { ...headers };
-            delete notModified["Netlify-CDN-Cache-Control"];
-            return { statusCode: 304, headers: notModified, body: "" };
-        }
+        if (String(asked).includes(tag)) return { statusCode: 304, headers, body: "" };
     }
 
     if (acceptsGzip(event) && Buffer.byteLength(body) >= MIN_COMPRESS_BYTES) {

@@ -216,7 +216,7 @@
                 }
                 if (!cleared) {
                     notice({
-                        title: "Couldn't Sign Out",
+                        title: "Couldn't sign out",
                         html: `<p class="notice-lines">${everywhere
                             ? "Couldn't sign you out of your other devices. You're still signed in everywhere. Try again in a minute."
                             : "Couldn't sign you out. Check your connection and try again."}</p>`
@@ -228,6 +228,7 @@
             Account.unsure = false;
             signOutGen++;
             rememberWho("");
+            dropKeptPuraGames();
             /* The account's own ticks are taken back off this browser by
                home.js's dropAccountTicks, on the announce below; that is
                what stops the next person to sign in here uploading them. */
@@ -239,7 +240,7 @@
                "Sign in" and the window hands it back there when closed. */
             if (everywhere) {
                 setTimeout(() => notice({
-                    title: "Signed Out Everywhere",
+                    title: "Signed out everywhere",
                     html: `<p class="notice-lines">Signed out on every device: here now, and anywhere else the next time it loads a page.</p>`
                 }), 0);
             }
@@ -348,6 +349,23 @@
        nothing. A failed `me` changes nothing (see refresh). Without
        BroadcastChannel, the WHO_KEY write is the signal itself. */
     const WHO_KEY = "mazerats_account_who";
+    /* Signing out takes this account's Pura Panic games off the browser: one
+       it left part-way, and one waiting to be saved, whose token says it was
+       started signed in. It's the next person's browser now. A guest's game
+       belongs to no account and stays; so does anything when a session merely
+       runs out, which is what those two are kept for. */
+    function dropKeptPuraGames() {
+        const read = key => { try { return JSON.parse(localStorage.getItem(key) || "null"); } catch (e) { return null; } };
+        const signedIn = token => {
+            try { return Boolean(JSON.parse(atob(String(token).split(".")[1].replace(/-/g, "+").replace(/_/g, "/"))).sub); } catch (e) { return false; }
+        };
+        try {
+            const left = read("mazerats_pura_left");
+            if (left && left.account) localStorage.removeItem("mazerats_pura_left");
+            const unsent = read("mazerats_pura_unsent");
+            if (unsent && signedIn(unsent.token)) localStorage.removeItem("mazerats_pura_unsent");
+        } catch (e) { /* blocked storage holds nothing */ }
+    }
     function rememberWho(who) {
         try { localStorage.setItem(WHO_KEY, who); } catch (e) { /* blocked: no broadcast either */ }
     }
@@ -876,7 +894,7 @@
                 <div class="modal confirm-modal signout-window" role="dialog" aria-modal="true"
                      aria-labelledby="signout-title" aria-describedby="signout-message" tabindex="-1">
                     <div class="chrome-titlebar">
-                        <h2 id="signout-title">Sign Out?</h2>
+                        <h2 id="signout-title">Sign out?</h2>
                         <button type="button" class="chrome-close" aria-label="Stay signed in"><img src="/assets/img/modal_topclose_x.png" alt="" aria-hidden="true"></button>
                     </div>
                     <div class="chrome-frame">
@@ -1116,7 +1134,7 @@
             };
         }
         return {
-            title: "Choose a nickname?",
+            title: "Choose a nickname",
             text: `This is how you'll appear on the scoreboards. It's optional. You can skip this and set or change it any time from your Profile in the Console.`
         };
     }
@@ -1195,7 +1213,7 @@
             if (busy) return;
             busy = true;
             saveBtn.disabled = skipBtn.disabled = true;
-            say("One moment...");
+            say("One moment…");
             try { await Account.refuseNickname(); } finally {
                 busy = false;
                 finish();
@@ -1220,7 +1238,7 @@
             }
             busy = true;
             saveBtn.disabled = skipBtn.disabled = true;
-            say("Saving...");
+            say("Saving…");
             try {
                 await Account.setNickname(input.value);
                 finish();
@@ -1390,7 +1408,7 @@
             ? `'<span class="notice-word">${escapeHtml(word)}</span>' tripped a wire that made the rats crazy.`
             : "Your nickname tripped a wire that made the rats crazy.";
         return notice({
-            title: "Nickname Saved",
+            title: "Nickname saved",
             image: "/assets/img/red-button.png",
             private: true,
             // Wide enough that each of the three lines is one line (see
@@ -1501,9 +1519,9 @@
        each for what happened, the time left and the reason — the last two
        only when there is one. */
     const BLOCKED = {
-        play: { title: "Can't Play", head: "You can't play right now." },
-        send: { title: "Can't Send", head: "You can't send this right now." },
-        signin: { title: "Can't Sign In", head: "You can't sign in right now." }
+        play: { title: "Can't play", head: "You can't play right now." },
+        send: { title: "Can't send", head: "You can't send this right now." },
+        signin: { title: "Can't sign in", head: "You can't sign in right now." }
     };
     function showBlocked(what, ban) {
         const b = ban || activeBan() || Account.ban;
@@ -1552,7 +1570,7 @@
        (kind "rename"), and "Not now". */
     function showNickRequired() {
         return notice({
-            title: "Set a New Nickname",
+            title: "Set a new nickname",
             html: `<p class="notice-head">Set a new nickname to play.</p><p>The site's admins asked you to change it.</p>`,
             actions: [
                 { label: "Choose a nickname", value: "choose", lead: true },
@@ -1574,7 +1592,7 @@
        window for each missing step, offering it. */
     function showSignInToPlay() {
         return notice({
-            title: "Sign In to Play",
+            title: "Sign in to play",
             html: `<p class="notice-head">Sign in with Discord to play the daily games.</p><p>Then choose a nickname. It's the name the leaderboards show for you.</p>`,
             actions: [
                 { label: "Sign in with Discord", value: "signin", lead: true },
@@ -1584,7 +1602,7 @@
     }
     function showNickToPlay() {
         return notice({
-            title: "Choose a Nickname",
+            title: "Choose a nickname",
             html: `<p class="notice-head">Choose a nickname to play the daily games.</p><p>It's the name the leaderboards show for you.</p>`,
             actions: [
                 { label: "Choose a nickname", value: "choose", lead: true },
@@ -1822,7 +1840,7 @@
                 <div class="chrome-frame">
                     <div class="modal-body nick-prompt-body">
                         <p class="nick-prompt-text profile-intro-lead"><strong>We added profiles, add yours!</strong></p>
-                        <p class="nick-prompt-text" id="profile-intro-text">Your profile shows the mazes you've completed, the badges you've earned, plus your daily game streaks; other players can view your profile by searching your Habbo username.</p>
+                        <p class="nick-prompt-text" id="profile-intro-text">Your profile shows the mazes you've completed, the badges you've earned, plus your daily game streaks; other players can view your profile by searching your Habbo name.</p>
                         <p class="nick-prompt-text">Head to the console to edit your profile and pick your favourite maze, show off a badge, and share your stats!</p>
                         <div class="confirm-actions signout-actions nick-prompt-actions">
                             <button type="button" class="guess-btn guess-btn--lead" data-intro="edit">Edit my profile</button>

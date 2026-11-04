@@ -78,7 +78,7 @@ const GROUPS = [
     { key: "difficulty", fields: ["difficulty"] },
     { key: "tags",       fields: ["tags"] },
     { key: "dates",      fields: ["added", "date", "endDate"] },
-    { key: "links",      fields: ["habboLink", "linksReferences", "article"] },
+    { key: "links",      fields: ["linksReferences", "article"] },
     { key: "text",       fields: ["name", "title", "description", "details", "creator", "host"] },
 ];
 

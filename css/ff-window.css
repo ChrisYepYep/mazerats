@@ -93,7 +93,8 @@ html[data-game-front="ff"] #ff-overlay { z-index: 92; }
     cursor: var(--cursor-pointer, pointer);
 }
 .ff-console-retry:hover,
-.ff-console-retry:focus-visible { background: #2e2010; outline: none; border-color: #f5c46a; }
+.ff-console-retry:focus-visible { background: #2e2010; border-color: #f5c46a; }
+.ff-console-retry:focus-visible { outline: 2px solid var(--amber-bright, #c7a679); outline-offset: 2px; }
 
 /* (The fullscreen rules that stood here went on 26 Oct 2026: Enlarge
    replaced fullscreen the day it shipped, and nothing puts this screen
@@ -302,17 +303,11 @@ html.ff-phone-open body { overflow: hidden; }
 .ff-phone-rotate-back {
     position: absolute;
     left: 50%;
-    bottom: max(28px, env(safe-area-inset-bottom));
     transform: translateX(-50%);
-    display: inline-flex;
-    align-items: center;
-    gap: 10px;
-    min-height: 44px;
-    padding: 0 24px 0 20px;
-    text-transform: uppercase;
-    white-space: nowrap;
-    font-size: 0.75rem;
+    bottom: max(28px, env(safe-area-inset-bottom));
+    gap: 8px;
+    padding: 6px 12px 6px 10px;
 }
-.ff-phone-rotate-back:hover { transform: translateX(-50%) translateY(-1px); }
-.ff-phone-rotate-back:active { transform: translateX(-50%) translateY(1px); }
+/* A bevel's height to look at, a thumb's to press. */
+.ff-phone-rotate-back::after { content: ""; position: absolute; inset: -9px -4px; }
 .ff-phone-rotate-back svg { display: block; flex: none; }

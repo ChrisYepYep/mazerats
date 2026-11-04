@@ -23,6 +23,10 @@ html[data-skin="xmas"] .xm-piece {
     z-index: 2;
 }
 html[data-skin="xmas"] .xm-lights { z-index: 1; }
+/* On the opening view the sleeping rat stands in front of the raised frame
+   (#browse-window.is-opening in style.css), and his hat goes with him. The
+   piece's own z-index is written on the element, hence !important. */
+html[data-skin="xmas"] #browse-window.is-opening > .xm-hat-sleep { z-index: 7 !important; }
 /* The lights' ambient pool: soft on purpose, and faded in at the top so it
    washes up into the bar rather than starting on a line. */
 html[data-skin="xmas"] .xm-glow {

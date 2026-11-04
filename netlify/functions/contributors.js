@@ -136,7 +136,7 @@ exports.handler = async (event) => {
             console.error("contributors: read failed", e);
             // A token whose account could not be looked up: retry, not 401.
             if (isAuthUnavailable(e)) return AUTH_UNAVAILABLE;
-            return json(503, { error: "The contributors could not be read just now." });
+            return json(503, { error: "The contributors couldn't be read just now." });
         }
     }
 
@@ -153,7 +153,7 @@ exports.handler = async (event) => {
         /* Only the tagged lookup failure is an outage to retry; anything
            else is a fault, and answering it as "unavailable" hid it. */
         if (isAuthUnavailable(e)) return AUTH_UNAVAILABLE;
-        return json(500, { error: "The contributor could not be saved." });
+        return json(500, { error: "The contributor couldn't be saved." });
     }
 };
 

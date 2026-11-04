@@ -12,6 +12,7 @@
 
 .daily-streak {
     --sk-c: var(--amber-bright);
+    --sk-ground: var(--bg-black);
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -19,6 +20,10 @@
     margin: 2px 0 0;
 }
 .daily-streak--odd { --sk-c: var(--ok); }
+/* Frost's light mode turns --bg-black into a mid blue, which is what the days
+   are mixed into, so "missed" read as blue and the shades ran together. Its
+   palest ice instead, so a brighter day is a darker square on the ice. */
+html[data-light] .daily-streak { --sk-ground: #eaf2f8; }
 
 .daily-streak-top {
     position: relative;
@@ -60,13 +65,13 @@
    Monday to Sunday. The corner over the labels says the days are UTC. */
 .daily-streak-cal {
     display: grid;
-    grid-template-columns: 30px repeat(7, 17px);
+    grid-template-columns: 36px repeat(7, 17px);
     gap: 3px;
     align-items: center;
 }
 .daily-streak-dow,
 .daily-streak-utc {
-    font-size: 0.55rem;
+    font-size: 0.625rem;
     color: var(--unknown-text);
     text-align: center;
 }
@@ -77,7 +82,7 @@
     cursor: default;
 }
 .daily-streak-wk {
-    font-size: 0.55rem;
+    font-size: 0.625rem;
     color: var(--unknown-text);
     text-align: right;
     padding-right: 3px;
@@ -91,7 +96,7 @@
     box-sizing: border-box;
     border: 1px solid rgba(0, 0, 0, 0.55);
     border-radius: 2px;
-    background: var(--bg-black);
+    background: var(--sk-ground);
 }
 .daily-streak-c.is-miss { box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.04); }
 .daily-streak-c.is-pre { background: transparent; border-color: transparent; }
@@ -113,7 +118,7 @@
 .daily-streak-c.l5 { --sk-x: 100%; }
 .daily-streak-c.is-on {
     background: var(--sk-c);
-    background: color-mix(in srgb, var(--sk-c) var(--sk-x), var(--bg-black));
+    background: color-mix(in srgb, var(--sk-c) var(--sk-x), var(--sk-ground));
     box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.18);
 }
 /* The day the card is about. */
@@ -155,12 +160,21 @@
     vertical-align: -1px;
     border: 1px solid rgba(0, 0, 0, 0.55);
     border-radius: 1px;
-    background: var(--bg-black);
+    background: var(--sk-ground);
 }
-.daily-streak--guess .daily-streak-key i.l2 { background: color-mix(in srgb, var(--amber-bright) 42%, var(--bg-black)); }
+.daily-streak--guess .daily-streak-key i.l2 { background: color-mix(in srgb, var(--amber-bright) 42%, var(--sk-ground)); }
 .daily-streak--guess .daily-streak-key i.l5 { background: var(--amber-bright); }
-.daily-streak--odd .daily-streak-key i.l2 { background: color-mix(in srgb, var(--ok) 42%, var(--bg-black)); }
+.daily-streak--odd .daily-streak-key i.l2 { background: color-mix(in srgb, var(--ok) 42%, var(--sk-ground)); }
 .daily-streak--odd .daily-streak-key i.l5 { background: var(--ok); }
+
+/* Without color-mix (Chrome and Edge before 111, iOS before 16.2) a value
+   holding var() is thrown out only when it is worked out, so the flat colour
+   declared before it never comes back and the squares go empty. */
+@supports not (color: color-mix(in srgb, red, blue)) {
+    .daily-streak-c.is-on { background: var(--sk-c) !important; }
+    .daily-streak--guess .daily-streak-key i.l2 { background: var(--amber-bright) !important; }
+    .daily-streak--odd .daily-streak-key i.l2 { background: var(--ok) !important; }
+}
 
 /* THE STAMP: the day just finished comes down big and tilted, like a
    rubber stamp, and settles into its square; then the streak ticks up and

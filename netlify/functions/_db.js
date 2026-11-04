@@ -16,13 +16,21 @@ const { MongoClient } = require("mongodb");
 
    The ceiling is low because the work is small. A function invocation
    handles ONE request and almost every request here is a single query, so
-   the pool is idle the moment it has answered. Five leaves room for the
-   handful of handlers that do two or three queries in parallel (the
-   sitemap, daily-scores) without ever being the reason a cluster runs out.
+   the pool is idle the moment it has answered. Three (4 Nov 2026; it was
+   five) still serves the handlers that ask several things in parallel (the
+   sitemap, daily-scores): they queue for a moment on a connection already
+   open, which on a cold instance beats opening five, each with its own TLS
+   and sign-in, at a cluster with a connection cap.
 
    This is the setting that decides whether a launch-day crowd is served or
    turned away, and it had never been set. */
-const MAX_POOL = 5;
+const MAX_POOL = 3;
+
+/* A connection nobody has used for a minute is closed. A warm instance can
+   sit idle for many minutes before Netlify reaps it, and Atlas counts every
+   one of its connections against the cap all that time. A minute keeps them
+   for a burst of traffic, and only a quiet instance pays to reconnect. */
+const MAX_IDLE_MS = 60 * 1000;
 
 /* And how long to wait before admitting the cluster is not answering.
 
@@ -31,8 +39,8 @@ const MAX_POOL = 5;
    at the platform's hand rather than an error this code could return, and
    the caller saw a dead request instead of a handled failure. Five seconds
    is comfortably longer than a healthy connect and comfortably shorter
-   than every client timeout on the front end (js/api.js allows 6s, then
-   12s, before falling back to the bundled archive). */
+   than every client timeout on the front end (js/api.js allows 10s, then
+   15s, before falling back to the bundled archive). */
 const SERVER_SELECTION_MS = 5000;
 
 /* The same idea for the two waits server selection does not cover: opening
@@ -46,8 +54,10 @@ const SERVER_SELECTION_MS = 5000;
    The socket allowance is a little longer than the others because it
    bounds a whole operation, not a handshake, and the heaviest queries a
    function runs (the activity log's aggregation, the leaderboards' group
-   stages) should get to finish on a slow day. Eight seconds still lands
-   inside the ten-second function limit with room to answer.
+   stages) should get to finish on a slow day. Seven seconds (it was eight)
+   lands inside a ten-second function limit even after a cold connect, with
+   room to answer. Waiting for a free connection from the pool is held to
+   the connect's five, as the driver would otherwise wait for ever.
 
    Functions only. The tools/ scripts share this file, run under plain node
    on the owner's PC, and some of them (the furni scan, the level builds)
@@ -58,7 +68,7 @@ const SERVER_SELECTION_MS = 5000;
    whole environment copied across (AWS_LAMBDA_FUNCTION_NAME included), so
    only the entry point says which one this is. */
 const CONNECT_MS = 5000;
-const SOCKET_MS = 8000;
+const SOCKET_MS = 7000;
 const IN_FUNCTION = !(require.main && /[\\/]tools[\\/][^\\/]+$/.test(require.main.filename || ""));
 
 /* The PROMISE is cached, not the client, and that is not a detail.
@@ -84,8 +94,9 @@ async function getDb() {
     if (!clientPromise) {
         const client = new MongoClient(process.env.MONGODB_URI, {
             maxPoolSize: MAX_POOL,
+            maxIdleTimeMS: MAX_IDLE_MS,
             serverSelectionTimeoutMS: SERVER_SELECTION_MS,
-            ...(IN_FUNCTION ? { connectTimeoutMS: CONNECT_MS, socketTimeoutMS: SOCKET_MS } : {})
+            ...(IN_FUNCTION ? { connectTimeoutMS: CONNECT_MS, socketTimeoutMS: SOCKET_MS, waitQueueTimeoutMS: CONNECT_MS } : {})
         });
         clientPromise = client.connect().catch(err => {
             clientPromise = null;      // let the next request try again

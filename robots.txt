@@ -71,6 +71,14 @@ Allow: /.netlify/functions/dead-ends
 # New entries the admins had taken off, in colours the site is not wearing.
 Allow: /.netlify/functions/whats-new
 Allow: /.netlify/functions/palettes
+# The published articles (4 Nov 2026): an /article/<slug> address draws its
+# article from this list, so without it a crawler's render of one was empty.
+# A public GET; the drafts (?full=1) and every write still need a token.
+# Its pictures are already open (image, below). Nothing else a render of the
+# page reads is worth opening: signed-out it gets nothing from discord-auth
+# or notifications that the page's words depend on, and habbo would have a
+# crawler spend calls to Habbo's own servers.
+Allow: /.netlify/functions/articles
 #
 # And the image CDN. Every share preview's picture is a
 # /.netlify/images?url=… address (see netlify/functions/share.js), and so is

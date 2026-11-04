@@ -78,8 +78,8 @@ function tokenIsCurrent(admin, payload) {
    still passes here until its token expires (up to 48 hours). Everything
    that changes something goes through canWrite, which does look the account
    up; reads that hand out anything personal (messages, IPs, the admin list)
-   use hasAccount below instead. The remaining isAuthorized-only reads are
-   archive data a viewer is meant to see anyway. */
+   use hasAccount below instead, and what asks on many requests hasLiveSession.
+   Every other isAuthorized is a first check before one of those. */
 function isAuthorized(event) {
     return Boolean(usernameFromToken(event));
 }
@@ -203,8 +203,10 @@ async function roleOf(event) {
    a copy of it could still write. Log out (auth.js, action "logout") now
    records that one session, by account and the token's issued-at time,
    which are the same for its life (see sessionOf), and a recorded session
-   is signed out everywhere it is checked. Rows go by themselves once the
-   token would have expired anyway (a TTL index on expireAt). */
+   is signed out wherever the account is looked up (lookUpRole below, and so
+   hasAccount, canWrite and roleOf, and hasLiveSession for what asks often).
+   Rows go by themselves once the token would have expired anyway (a TTL index
+   on expireAt). */
 const ENDED_SESSIONS = "admin_ended_sessions";
 const sessionKey = payload => `${payload.sub}:${payload.iat}`;
 async function sessionEnded(db, payload) {
@@ -217,6 +219,32 @@ async function endSession(db, payload) {
     await col.createIndex({ expireAt: 1 }, { expireAfterSeconds: 0 }).catch(() => {});
     const expireAt = new Date(((Number(payload.exp) || 0) * 1000) || Date.now() + 48 * 60 * 60 * 1000);
     await col.updateOne({ _id: sessionKey(payload) }, { $setOnInsert: { at: new Date(), expireAt } }, { upsert: true });
+    liveSessions.clear();
+}
+
+/* hasAccount, for what asks on many requests: the rate limit's exemption, who
+   made a palette, the maintenance count. The signature alone used to answer
+   those, so a logged-out or deleted admin's token kept them until it ran out.
+
+   Remembered for a minute per warm instance, so an admin clicking about costs
+   a lookup a minute rather than two per request, and a session ended on
+   another instance is believed within that minute. A request with no token, or
+   a forged one, stops at the signature and never reaches the database: this
+   costs the public nothing. Throws as lookUpRole does when the database can't
+   be asked. */
+const LIVE_SESSION_MS = 60 * 1000;
+const LIVE_SESSIONS_MAX = 500;
+const liveSessions = new Map();
+async function hasLiveSession(event) {
+    const payload = tokenPayload(event);
+    if (!payload || typeof payload.sub !== "string" || !payload.sub) return false;
+    const key = `${sessionKey(payload)}:${payload.tv === undefined ? "" : payload.tv}`;
+    const known = liveSessions.get(key);
+    if (known && Date.now() - known.at < LIVE_SESSION_MS) return known.live;
+    const live = (await roleOf(event)) !== null;
+    if (liveSessions.size >= LIVE_SESSIONS_MAX) liveSessions.clear();
+    liveSessions.set(key, { live, at: Date.now() });
+    return live;
 }
 
 async function lookUpRole(event) {
@@ -382,5 +410,5 @@ module.exports = {
     ADMIN_AUDIENCE, signAdminToken, tokenPayload, tokenIsCurrent,
     PERMANENT_OWNER, ROLES, resolveRole, roleOf, isOwner, isOwnerWrite, canWrite,
     forbidden, READ_ONLY, OUT_OF_SCOPE, refuseWrite, WRITE_SCOPES,
-    AUTH_UNAVAILABLE, isAuthUnavailable, sessionEnded, endSession
+    AUTH_UNAVAILABLE, isAuthUnavailable, sessionEnded, endSession, hasLiveSession
 };

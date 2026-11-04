@@ -108,17 +108,37 @@
 
     function build() {
         if (root) return;
+        /* NOT SEEN UNTIL ITS SHEET HAS COME (4 Nov 2026). The first opening is
+           the first this file's styles are asked for, and until they landed
+           the frame's insides stood at their browser sizes: a 304 x 154 game,
+           jumping to 720 x 498 when they did. Measured, 0.18 of layout shift
+           on a slow sheet, most of the /fallinfurni figure. Three seconds
+           at most: a window without its dress beats no window. */
+        let reveal = paintChrome;
         if (!document.querySelector('link[data-ff-window]')) {
             const l = document.createElement("link");
             l.rel = "stylesheet";
-            l.href = "css/ff-window.css?v=3";
+            l.href = "css/ff-window.css?v=4";
             l.setAttribute("data-ff-window", "");
-            l.onload = paintChrome;
+            reveal = () => {
+                if (!root || !root.style.visibility) return;
+                root.style.visibility = "";
+                paintChrome();
+                // A hidden window could not take the focus when it was opened.
+                const a = document.activeElement;
+                if (isOpen() && !otherFront() && (!a || a === document.body)) {
+                    (iframe && screen.classList.contains("is-booted") ? iframe : frame).focus({ preventScroll: true });
+                }
+            };
+            l.onload = reveal;
+            l.onerror = reveal;
+            setTimeout(reveal, 3000);
             document.head.appendChild(l);
         }
         root = document.createElement("div");
         root.className = "profile-console ff-console";
         root.id = "ff-overlay";
+        if (reveal !== paintChrome) root.style.visibility = "hidden";
         root.innerHTML = `
             <div class="console-frame profile-console-frame ff-frame" id="ff-console" role="dialog" aria-labelledby="ff-console-title" tabindex="-1">
                 <div class="console-border" aria-hidden="true"></div>
@@ -129,11 +149,11 @@
                 <button type="button" class="console-close-btn" id="ff-console-close" aria-label="Close"></button>
                 <div class="console-screen ff-console-screen">
                     <div class="ff-console-wait" aria-hidden="true">
-                        <p>Loading...</p>
+                        <p>Loading…</p>
                         <div class="ff-console-bar"><i></i></div>
                     </div>
                     <div class="ff-console-wait ff-console-failed" role="alert">
-                        <p>Couldn't load <button type="button" class="ff-console-retry">Retry</button></p>
+                        <p>Couldn't load <button type="button" class="ff-console-retry">Try again</button></p>
                     </div>
                 </div>
             </div>`;
@@ -150,7 +170,7 @@
                         <p class="ff-phone-rotate-say" id="ff-phone-rotate-say">Turn your screen sideways</p>
                         <p class="ff-phone-rotate-sub" id="ff-phone-rotate-sub">Fallin' Furni needs the long edge of your screen.</p>
                     </div>
-                    <button type="button" class="btn ff-phone-rotate-back">${pixelSvg(BACK, 2)}<span>Back to Maze Rats</span></button>
+                    <button type="button" class="view-switch-btn ff-phone-rotate-back">${pixelSvg(BACK, 2)}<span>Back to Maze Rats</span></button>
                 </div>`);
         }
         document.body.appendChild(root);
@@ -335,6 +355,14 @@
         iframe.allow = "fullscreen; autoplay";
         iframe.src = SRC;
         const mine = iframe;
+        /* AND ON A LEASH (4 Nov 2026): a page that hangs fires neither of those,
+           and "Loading..." stayed up for good. Once the game's own loading
+           screen is up, what is taking so long is the game's to say. */
+        setTimeout(() => {
+            if (iframe !== mine || screen.classList.contains("is-booted")) return;
+            dropGame();
+            screen.classList.add("is-failed");
+        }, 30000);
         iframe.addEventListener("load", () => {
             if (iframe !== mine) return;
             let ok = false;

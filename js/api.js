@@ -19,6 +19,11 @@ const Api = {
        the page. */
     _degraded: new Set(),
 
+    /* And the ones that came from the offline archive's saved copy (sw.js
+       marks them): a real list, but only as of the visitor's last visit, so
+       something missing from it proves nothing. */
+    _stored: new Set(),
+
     /* Two attempts before giving up. The first is the ordinary case; the
        second is generous, because by far the likeliest cause is a cold
        function rather than an outage.
@@ -43,6 +48,8 @@ const Api = {
                 if (!res.ok) throw new Error(`${label} fetch failed: ${res.status}`);
                 const data = onProgress ? await this._readJson(res, onProgress) : await res.json();
                 this._degraded.delete(label);
+                if (res.headers.get("X-MR-Stored")) this._stored.add(label);
+                else this._stored.delete(label);
                 return data;
             } catch (e) {
                 if (i === attempts.length - 1) {

@@ -80,7 +80,11 @@ const json = (statusCode, data) => ({
    now arrive when somebody runs the tool and commits, which is the trade
    this is making: a stored answer is one that changes on purpose. */
 async function getFurniMeta({ force = false } = {}) {
-    const store = blobStore("furni");
+    /* A store that cannot be opened (4 Nov 2026, the bug scan) is no blob
+       newer than the snapshot. Thrown, it was a 502 and a Fallin' Furni with
+       no seats, on a floor this comment calls unable to fail. */
+    let store = null;
+    try { store = blobStore("furni"); } catch (e) { console.error("furni-meta: store unavailable", e && e.message); }
 
     if (force) {
         const fresh = await fetchFurnidata();
@@ -95,11 +99,11 @@ async function getFurniMeta({ force = false } = {}) {
         if (!fresh || !fresh.items || !(fresh.count >= floor)) {
             throw new Error(`refreshed furnidata has ${fresh && fresh.count} items, below ${floor}; not stored`);
         }
-        await store.setJSON(CACHE_KEY, fresh).catch(() => { /* served either way */ });
+        if (store) await store.setJSON(CACHE_KEY, fresh).catch(() => { /* served either way */ });
         return fresh;
     }
 
-    const cached = await store.get(CACHE_KEY, { type: "json" }).catch(() => null);
+    const cached = store ? await store.get(CACHE_KEY, { type: "json" }).catch(() => null) : null;
     if (cached && cached.items && cached.fetchedAt > SNAPSHOT.fetchedAt) return cached;
     return SNAPSHOT;
 }
@@ -187,7 +191,7 @@ async function respond(event, params) {
         /* no-store: the helper's hour-long public header went out on this
            502 too, so one bad moment could be cached in a player's browser
            for an hour — and without furnidata the game has no seats. */
-        return { ...json(502, { error: "Could not read furnidata just now." }), headers: { ...SECURITY_HEADERS, "Cache-Control": "no-store" } };
+        return { ...json(502, { error: "Couldn't read furnidata just now." }), headers: { ...SECURITY_HEADERS, "Cache-Control": "no-store" } };
     }
 }
 

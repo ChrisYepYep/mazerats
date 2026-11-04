@@ -48,7 +48,8 @@ const wpFile = `<html><body><article class="news">
 </article></body></html>`;
 const a = extract(wpFile, BASE);
 ok(a && a.title === "A MADE-UP ARTICLE", "title read");
-ok(a && a.date === "Oct 26, 2026", "date filled from the template: " + (a && a.date));
+ok(a && a.date === "26 Oct 2026", "date filled from the template: " + (a && a.date));
+ok(cleanArticle({ url: BASE, date: "Oct 28, 2026" }).date === "28 Oct 2026", "a stored US date is written the site's way");
 ok(a && a.category === "Campaigns & Activities", "category from its key");
 ok(a && a.image === "https://images.habbo.com/web_images/defaults/banner.png", "banner read");
 ok(a && !/wp:|<!--|-->|CDATA|xml-stylesheet/.test(visible(a.body)) && !/&lt;/.test(a.body), "no comment, CDATA or PI left as text");

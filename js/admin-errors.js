@@ -611,7 +611,7 @@
         renderSummary();
         renderUpdated();
         if (loadError) {
-            listEl.innerHTML = `<p class="admin-empty admin-form-error" role="alert">Could not load the errors: ${escapeHtml(loadError)} <button type="button" class="ctl-btn" data-se="retry">Retry</button></p>`;
+            listEl.innerHTML = `<p class="admin-empty admin-form-error" role="alert">Couldn't load the errors: ${escapeHtml(loadError)} <button type="button" class="ctl-btn" data-se="retry">Try again</button></p>`;
             bulkEl.innerHTML = "";
             return;
         }
@@ -794,7 +794,7 @@
 
             <h4 class="admin-subheading se-sub">Occurrences${samples.length ? ` <span class="admin-hint">the last ${samples.length}, newest first</span>` : ""}</h4>
             <div class="se-samples">${failed
-                ? `<p class="admin-empty admin-form-error">Could not load the occurrences: ${escapeHtml(failed)} <button type="button" class="ctl-btn" data-a="retry-detail">Retry</button></p>`
+                ? `<p class="admin-empty admin-form-error">Couldn't load the occurrences: ${escapeHtml(failed)} <button type="button" class="ctl-btn" data-a="retry-detail">Try again</button></p>`
                 : !isFull ? `<p class="admin-empty">Loading…</p>`
                 : samples.length ? samples.map((s, i) => sampleHtml(g, s, i)).join("")
                 : `<p class="admin-empty">No occurrences kept.</p>`}</div>`;
@@ -1174,7 +1174,7 @@
                 loadError = "your session expired. Sign in again, then press Refresh.";
             } else if (auto && groups.length) {
                 // A blip on a background refresh keeps what is on screen.
-                flash(`Could not refresh: ${errText(err)}. Trying again in a minute.`, true);
+                flash(`Couldn't refresh: ${errText(err)}. Trying again in a minute.`, true);
                 return;
             } else {
                 loadError = errText(err);

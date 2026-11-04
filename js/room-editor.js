@@ -798,7 +798,7 @@
         const res = await fetch("/.netlify/functions/ff-levels" + (all ? "?all=1" : ""), {
             headers: all ? authHeaders() : {}
         });
-        if (!res.ok) throw new Error(res.status === 401 ? "Not signed in as an admin." : "Could not read levels.");
+        if (!res.ok) throw new Error(res.status === 401 ? "Not signed in as an admin." : "Couldn't read levels.");
         return (await res.json()).levels || [];
     }
 
@@ -860,9 +860,9 @@
                 throw e;
             }
             if (res.status === 409) {
-                throw new Error(`A level called “${level.name}” already exists - give this one a different name.`);
+                throw new Error(`A level called “${level.name}” already exists. Give this one a different name.`);
             }
-            throw new Error(err.error || "Could not save the level.");
+            throw new Error(err.error || "Couldn't save the level.");
         }
         const saved = await res.json();
         setLevel(saved);
@@ -902,7 +902,7 @@
         if (!draft.id) throw new Error("This level has never been saved, so there is nothing to merge with.");
         const all = await listServer(true);
         const server = all.find(l => l.id === draft.id);
-        if (!server) throw new Error("That level is no longer on the server - Save again to put it back.");
+        if (!server) throw new Error("That level is no longer on the server. Save again to put it back.");
         const merged = { ...server };
         for (const k of DRAFT_FIELDS) {
             if (draft[k] !== undefined) merged[k] = JSON.parse(JSON.stringify(draft[k]));
@@ -926,7 +926,7 @@
         });
         if (!res.ok) {
             const err = await res.json().catch(() => ({}));
-            throw new Error(err.error || "Could not delete the level.");
+            throw new Error(err.error || "Couldn't delete the level.");
         }
         return true;
     }
@@ -943,7 +943,7 @@
             /* A 503 with `partial` (30 Oct 2026): some levels were renumbered
                and some were not, so the caller has to read the list again
                rather than put its old copy back; `changed` says which landed. */
-            const err = new Error(out.error || "Could not save the new order.");
+            const err = new Error(out.error || "Couldn't save the new order.");
             err.partial = out.partial === true;
             err.changed = Array.isArray(out.changed) ? out.changed : [];
             throw err;

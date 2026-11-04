@@ -58,7 +58,7 @@ exports.handler = async (event) => {
     } catch (e) {
         if (isAuthUnavailable(e)) return AUTH_UNAVAILABLE;
         console.error("upload-video: request failed", e);
-        return json(500, { error: "The video upload could not be completed. Try again in a minute." });
+        return json(500, { error: "The video upload couldn't be completed. Try again in a minute." });
     }
 };
 

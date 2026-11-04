@@ -71,9 +71,10 @@
    however fast it was, so guessing quickly is never worth more than
    thinking.
 
-   A round's time is its mark minus the mark before it (round 0: its mark
-   minus the start), counted in whole seconds, rounded down. The bonus is
-   one point for every second left of ROUND_BONUS_SECONDS, plus one:
+   A round's time is its mark minus the moment it began (round 0: the start;
+   Odd One Out: the mark before it; Guess the Maze: see THE ANSWER SCREEN IS
+   NOT ON THE CLOCK below), counted in whole seconds, rounded down. The bonus
+   is one point for every second left of ROUND_BONUS_SECONDS, plus one:
 
      round bonus = max(0, 37 - seconds)       if the round was right
 
@@ -94,16 +95,30 @@
    THE TIME ON THE BOARD
 
    `ms` on a row is still the day's whole time, for the small figure on the
-   Today board and the tie-break between equal totals: the last round's
-   mark minus the start, or — if the last round was never marked — the
-   submission minus the start. `roundSecs` beside it keeps each round's
-   whole seconds (null for a round with no mark), for anything that wants
-   to show them later.
+   Today board and the tie-break between equal totals: every round's time
+   added up (and, if the last round was never marked, up to the submission).
+   `roundSecs` beside it keeps each round's whole seconds (null for a round
+   with no mark), for anything that wants to show them later.
 
-   PAUSES COUNT: the clock is wall time between the marks, so a game left
-   open while the kettle boils is a slow round. There is no honest way for
-   the server to know what the player was doing in between, and a pause
+   PAUSES WITH A ROUND ON SCREEN COUNT: the clock is wall time, so a game
+   left open on a round while the kettle boils is a slow round. There is no
+   honest way for the server to know what the player was doing, and a pause
    button would be a thing to exploit.
+
+   THE ANSWER SCREEN IS NOT ON THE CLOCK (4 Nov 2026, the bug scan). Guess
+   the Maze stops on each room's answer, with its "See it in the archive"
+   link and a "Room N" button, and the next room's clock used to run from the
+   guess that ended the last one, so reading the answer cost points. Now the
+   room is asked for when that button is pressed (action "begin"), the server
+   stamps the moment (`begun`, recordBegin) and only then hands out its
+   picture and names. This gives nothing away: until the stamp is written
+   the page has neither, in any reply, so there is nothing to study on the
+   answer screen, and once it is written the clock is running and first
+   write wins. A guess with no stamp (a page from before this) is timed from
+   the last mark as it always was. What it costs is the fetch-ahead: the
+   picture now downloads on the player's clock, as round 0's always has,
+   because a picture fetched early is a picture that can be looked at early.
+   Odd One Out has no answer screen, so its rounds run on from the mark.
 
    The one number below is the one to tune. */
 const COLLECTION = "daily_starts";
@@ -220,7 +235,13 @@ function clockOf(row) {
         const t = timeOf(raw[k]);
         if (Number.isFinite(t)) marks[k] = t;
     }
-    return { at, marks };
+    const begun = {};
+    const asked = row.begun || {};
+    for (const k of Object.keys(asked)) {
+        const t = timeOf(asked[k]);
+        if (Number.isFinite(t)) begun[k] = t;
+    }
+    return { at, marks, begun };
 }
 
 async function clockFor(db, game, day, playerId) {
@@ -253,10 +274,39 @@ function movesOf(row, rounds) {
     return Array.from({ length: rounds }, (_, i) => moves[markKey(i)] || null);
 }
 
-/* When round `round` began, in ms: the start for round 0, the round
-   before's mark for the rest. NaN if it has not. */
+/* When round `round` began, in ms: the start for round 0; for the rest, when
+   the player asked for it (begun, see recordBegin) or, for a round with no
+   such stamp, the round before's mark. NaN if it has not. */
 function roundBeganAt(row, round) {
-    return round === 0 ? timeOf(row.at) : timeOf(row.marks && row.marks[markKey(round - 1)]);
+    if (round === 0) return timeOf(row.at);
+    const begun = timeOf(row.begun && row.begun[markKey(round)]);
+    return Number.isFinite(begun) ? begun : timeOf(row.marks && row.marks[markKey(round - 1)]);
+}
+
+/* A Guess the Maze room asked for: the moment its clock starts, and the only
+   way its picture and names are handed out (the reply to this, then the deal
+   reply once this is on the row: reachedOf in _deal.js). See THE ANSWER
+   SCREEN IS NOT ON THE CLOCK above.
+
+   First write wins, and only while the room before is over and this one has
+   no guess, so asking again (a retry, a reload, a second tab) never moves a
+   clock that is already running. Answers { begun: true }, or
+   { error: "no-start" | "out-of-order" } for a day the page has wrong: a
+   reset's, or a room asked for out of turn. */
+async function recordBegin(db, day, playerId, round, now) {
+    const col = db.collection(COLLECTION);
+    const key = markKey(round);
+    const before = markKey(round - 1);
+    const res = await col.updateOne(
+        { game: "guess", day, playerId, ["marks." + before]: { $exists: true },
+            ["begun." + key]: { $exists: false }, ["moves." + key]: { $exists: false } },
+        { $set: { ["begun." + key]: new Date(now) } }
+    );
+    if (res && res.matchedCount) return { begun: true };
+    const row = await col.findOne({ game: "guess", day, playerId });
+    if (!row) return { error: "no-start" };
+    if (!(row.marks && row.marks[before])) return { error: "out-of-order" };
+    return { begun: true };
 }
 
 /* The row a move goes on, making an untimed one if a signed-in player's
@@ -447,28 +497,32 @@ async function forgetDay(db, game, day, playerId) {
    clockFor reads it) and which rounds the SERVER scored right. Pure, so
    the whole rule can be tested without a database.
 
-   A round's time is measured from the mark before it, so a round with no
-   mark ends the reading: nothing after it has a start to measure from
-   (and the marks are only ever written in order, so there is nothing
-   after it anyway). A mark stamped before the one it follows (clocks on
-   two servers disagreeing by a moment) reads as zero rather than
-   negative. */
+   A round's time is measured from when it was asked for (`begun`) or, with
+   no such stamp, the mark before it, so a round with no mark ends the
+   reading: nothing after it has a start to measure from (and the marks are
+   only ever written in order, so there is nothing after it anyway). A mark
+   stamped before the one it follows (clocks on two servers disagreeing by a
+   moment) reads as zero rather than negative. The day's `ms` is the rounds'
+   times added up, so time on an answer screen is not in that either. */
 function dayBonus(clock, right, now) {
     const rounds = right.length;
     if (!clock) return { bonus: 0, ms: null, roundSecs: null };
     const roundSecs = new Array(rounds).fill(null);
-    let bonus = 0, prev = clock.at, last = null;
+    const begun = clock.begun || {};
+    let bonus = 0, prev = clock.at, last = null, played = 0;
     for (let i = 0; i < rounds; i++) {
         const t = clock.marks[markKey(i)];
         if (!Number.isFinite(t)) break;
-        const ms = Math.max(0, t - prev);
+        const asked = begun[markKey(i)];
+        const ms = Math.max(0, t - (i > 0 && Number.isFinite(asked) ? Math.max(prev, asked) : prev));
         roundSecs[i] = Math.floor(ms / 1000);
         if (right[i]) bonus += roundBonusFor(ms);
+        played += ms;
         prev = t;
         last = i;
     }
-    const end = last === rounds - 1 ? prev : (now === undefined ? Date.now() : now);
-    return { bonus, ms: Math.max(0, end - clock.at), roundSecs };
+    if (last !== rounds - 1) played += Math.max(0, (now === undefined ? Date.now() : now) - prev);
+    return { bonus, ms: played, roundSecs };
 }
 
 /* The start and move requests' bodies are a game name, a day, a word, a
@@ -625,6 +679,6 @@ async function replayedOn(db, game, day, playerId) {
 module.exports = {
     COLLECTION, ROUND_BONUS_SECONDS, NO_TIME, TOTAL, MAX_START_BODY, MAX_FINISH_BODY, MIN_MOVE_MS,
     totalOf, roundBonusFor, markRound, recordStart, progressFor, clockOf, clockFor, movesOf, lastMarkAt,
-    recordOddPick, recordGuess, forgetDay, dayBonus, normalise, optionFor,
+    recordBegin, recordOddPick, recordGuess, forgetDay, dayBonus, normalise, optionFor,
     beforeCut, isPractice, dropPractice, PRACTISED_COLLECTION, notePractised, practisedOn, REPLAYED, replayedOn
 };

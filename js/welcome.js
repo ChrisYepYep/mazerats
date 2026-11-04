@@ -677,7 +677,10 @@ function showCoolDown(block, returnTo) {
     void timer; void ender;
     overlay.querySelector(".notice-ok").addEventListener("click", close);
     overlay.querySelector(".chrome-close").addEventListener("click", close);
-    overlay.addEventListener("click", e => { if (e.target === overlay) close(); });
+    // Only a press that began on the backdrop: a text selection let go past the window is a click here too.
+    let pressedOn = null;
+    overlay.addEventListener("pointerdown", e => { pressedOn = e.target; });
+    overlay.addEventListener("click", e => { if (e.target === overlay && pressedOn === overlay) close(); });
     if (window.EscapeLayers) EscapeLayers.register({ elements: () => (overlay.isConnected ? [overlay] : []), close });
     overlay.querySelector(".notice-ok").focus({ preventScroll: true });
 }
@@ -1053,6 +1056,8 @@ document.addEventListener("DOMContentLoaded", async () => {
            for a failed read; and not for /?landing, or a visitor home.html
            has just sent back here (see the script at the top of index.html). */
         let stay = fromCache === true;
+        // A search crawler reads the page it was told is canonical (see index.html's <head>).
+        if (/(?:google|bing|yandex|duckduck|apple|ads)bot|baiduspider|slurp|crawl|spider|inspectiontool/i.test(navigator.userAgent)) stay = true;
         try {
             if (/(?:^|&)landing(?:=|&|$)/.test(location.search.slice(1))) stay = true;
             if (Date.now() - (Number(sessionStorage.getItem("mazerats_bounced")) || 0) < 60000) stay = true;
@@ -1179,8 +1184,6 @@ document.addEventListener("DOMContentLoaded", async () => {
     const articleLinkEl = document.getElementById("event-modal-article-link");
     const metaEl = document.getElementById("event-modal-meta");
     const descEl = document.getElementById("event-modal-desc");
-    const visitWrap = document.getElementById("event-modal-visit-wrap");
-    const visitLink = document.getElementById("event-modal-link");
     const stripEl = document.getElementById("event-modal-strip");
     const linksWrap = document.getElementById("event-modal-links-wrap");
     const linksEl = document.getElementById("event-modal-links");
@@ -1307,7 +1310,7 @@ document.addEventListener("DOMContentLoaded", async () => {
         if (hours < 24) return hours + (hours === 1 ? " hour ago" : " hours ago");
         const days = Math.floor(hours / 24);
         if (days < 30) return days + (days === 1 ? " day ago" : " days ago");
-        return then.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
+        return then.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });
     }
 
     function builderCard(profile, mirrored) {
@@ -1551,7 +1554,10 @@ document.addEventListener("DOMContentLoaded", async () => {
         function onKey(e) { if (e.key === "Escape") close(); }
         overlay.querySelector(".notice-ok").addEventListener("click", close);
         overlay.querySelector(".chrome-close").addEventListener("click", close);
-        overlay.addEventListener("click", e => { if (e.target === overlay) close(); });
+        // Only a press that began on the backdrop (see the notice above).
+        let pressedOn = null;
+        overlay.addEventListener("pointerdown", e => { pressedOn = e.target; });
+        overlay.addEventListener("click", e => { if (e.target === overlay && pressedOn === overlay) close(); });
         // Registered once for the page, not once a notice.
         if (window.EscapeLayers) {
             if (!missingEscape) {
@@ -1733,14 +1739,6 @@ document.addEventListener("DOMContentLoaded", async () => {
             linksWrap.style.display = "none";
         }
 
-        const habboLink = safeHttpUrl(event.habboLink);
-        if (habboLink) {
-            visitLink.href = habboLink;
-            visitWrap.style.display = "block";
-        } else {
-            visitWrap.style.display = "none";
-        }
-
         const images = galleryImages(event);
         // .has-gallery goes on the thumb either way — it is what picks the
         // taller frame height for a multi-image event, and leaving it set
@@ -1838,7 +1836,9 @@ document.addEventListener("DOMContentLoaded", async () => {
 
     window.addEventListener("hashchange", () => checkHash(true));
     closeBtn.addEventListener("click", () => closeEventModal());
-    modal.addEventListener("click", e => { if (e.target === modal) closeEventModal(); });
+    let pressedOn = null;   // only a press that began on the backdrop closes it (see the notice above)
+    modal.addEventListener("pointerdown", e => { pressedOn = e.target; });
+    modal.addEventListener("click", e => { if (e.target === modal && pressedOn === modal) closeEventModal(); });
     document.addEventListener("keydown", e => {
         if (e.key === "Escape" && modal.classList.contains("open")) closeEventModal();
     });
@@ -1908,7 +1908,9 @@ document.addEventListener("DOMContentLoaded", () => {
 
     window.addEventListener("hashchange", checkPrivacyHash);
     closeBtn.addEventListener("click", closePrivacyModal);
-    modal.addEventListener("click", e => { if (e.target === modal) closePrivacyModal(); });
+    let pressedOn = null;   // only a press that began on the backdrop closes it (see the notice above)
+    modal.addEventListener("pointerdown", e => { pressedOn = e.target; });
+    modal.addEventListener("click", e => { if (e.target === modal && pressedOn === modal) closePrivacyModal(); });
     document.addEventListener("keydown", e => {
         if (e.key === "Escape" && modal.classList.contains("open")) closePrivacyModal();
     });

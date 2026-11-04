@@ -20,7 +20,6 @@
      thumb       path to a screenshot image, or "" to use the default maze texture
      description short description shown on the card
      details     longer writeup shown in the modal (optional, falls back to description)
-     habboLink   navigator/room link if still visitable, or "" if unavailable
      gallery     optional array of image paths for a full room-by-room walkthrough,
                  shown in the modal as a browsable image viewer instead of a static thumb
 
@@ -103,7 +102,6 @@ const DEFAULT_ROOMS = [
         thumb: pickThumb(LITTLE_MAZE_DIR, [...LITTLE_MAZE_COVER_FILES, ...LITTLE_MAZE_FILES]),
         description: "A 100-room maze built and documented from start to finish, room by room.",
         details: "The Little Maze (TLM), built by ChrisYepYep, is a long-form maze spanning 100 numbered rooms, beginning with [R01] Awakening. This entry preserves a full walkthrough of the maze as a browsable gallery — every room screenshotted in sequence, in-game captions and all.",
-        habboLink: "",
         gallery: [...LITTLE_MAZE_COVER_FILES, ...LITTLE_MAZE_FILES].map(f => LITTLE_MAZE_DIR + f)
     }
 ];

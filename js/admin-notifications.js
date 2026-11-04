@@ -177,7 +177,8 @@
     function reachLine() {
         const who = (WHO.find(w => w[0] === opt.who) || WHO[0])[2];
         const t = opt.later && opt.start ? Date.parse(opt.start) : NaN;
-        const from = Number.isFinite(t) ? `from ${new Date(t).toLocaleString("en-GB", { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}` : "from now";
+        // In your own time, as the box above it is typed; said, so it isn't read as the Warren's usual UTC.
+        const from = Number.isFinite(t) ? `from ${new Date(t).toLocaleString("en-GB", { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })} your time` : "from now";
         const span = opt.days ? `for ${(DAYS.find(d => d[0] === opt.days) || DAYS[5])[1]}` : "until you withdraw it";
         return `${who} it once, ${from} ${span}${opt.quiet ? ", quietly, in their Notifications list" : ""}.`;
     }

@@ -228,7 +228,7 @@ exports.handler = async (event) => {
                 .toArray();
         } catch (e) {
             console.error("articles: read failed", e);
-            return json(503, { error: "The articles could not be read just now." });
+            return json(503, { error: "The articles couldn't be read just now." });
         }
         // Addresses over drafts as well, as share.js and the sitemap work them out (_slugs.js).
         const retired = await loadRetired(db, "article").catch(e => {
@@ -355,8 +355,13 @@ exports.handler = async (event) => {
             // Its first day in public is its byline's date, kept through later unpublishing.
             if (article.status === "published" && !before.publishedAt) update.publishedAt = now;
             // Its "Updated" date (3 Nov 2026): the reader's part changed after it first went public.
-            // (justify: an article saved before it existed reads as false, not as a change.)
-            const readOf = (r, k) => JSON.stringify(k === "justify" ? r[k] === true : r[k] ?? null);
+            // (justify: an article saved before it existed reads as false, not as a change.
+            // embedData: a wheel carries its event's name as it stands today, and the event
+            // being renamed is not the article being updated.)
+            const withoutEventNames = data => (data && typeof data === "object")
+                ? Object.fromEntries(Object.entries(data).map(([ref, v]) => [ref, v && typeof v === "object" && Array.isArray(v.names) ? { ...v, event: "" } : v]))
+                : data;
+            const readOf = (r, k) => JSON.stringify(k === "justify" ? r[k] === true : k === "embedData" ? withoutEventNames(r[k]) ?? null : r[k] ?? null);
             if (before.publishedAt && READ_FIELDS.some(k => readOf(article, k) !== readOf(before, k))) update.editedAt = now;
             const res = await articles.findOneAndUpdate(
                 { id, rev: before.rev === undefined ? { $exists: false } : before.rev },

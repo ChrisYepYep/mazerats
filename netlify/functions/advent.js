@@ -90,7 +90,7 @@ async function handler(event) {
         row = await db.collection("players").findOne({ id: String(player.id) }, { projection: { _id: 0, sv: 1, svStrict: 1 } });
     } catch (e) {
         console.error("advent: could not read the players row", e);
-        return json(503, { error: "Your calendar could not be reached just now" });
+        return json(503, { error: "Your calendar couldn't be reached just now" });
     }
     if (sessionRevoked(player, row)) return json(401, { error: "Not signed in" });
 
@@ -104,7 +104,7 @@ async function handler(event) {
             return json(200, view(year, doc));
         } catch (e) {
             console.error("advent: read failed", e);
-            return json(500, { error: "Could not read your calendar" });
+            return json(500, { error: "Couldn't read your calendar" });
         }
     }
 
@@ -137,7 +137,7 @@ async function handler(event) {
         await ensureUniqueIndex(col, ["playerId", "year"]);
     } catch (e) {
         console.error("advent: unique index unavailable", e);
-        return json(503, { error: "Could not open the door just now" });
+        return json(503, { error: "Couldn't open the door just now" });
     }
     const filter = { playerId: player.id, year, opened: { $ne: day } };
     const update = { $push: { opened: day }, $set: { [`at.${day}`]: new Date(now).toISOString(), updatedAt: new Date(now).toISOString() } };
@@ -150,14 +150,14 @@ async function handler(event) {
         }
     } catch (e) {
         console.error("advent: open failed", e);
-        return json(500, { error: "Could not open the door" });
+        return json(500, { error: "Couldn't open the door" });
     }
     try {
         const doc = await col.findOne({ playerId: player.id, year }, { projection: { _id: 0, opened: 1 } });
         return json(200, view(year, doc));
     } catch (e) {
         console.error("advent: read after opening failed", e);
-        return json(500, { error: "Could not read your calendar" });
+        return json(500, { error: "Couldn't read your calendar" });
     }
 }
 

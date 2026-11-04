@@ -39,6 +39,50 @@
         } catch (e) { /* the ordinary page, then */ }
     })();
     </script>
+    <!-- A GAME FILE THAT DID NOT ARRIVE (4 Nov 2026). Each of them on its own
+         left a different broken game: no furni library and every level empty,
+         "Round complete, 0 of 0"; no room-drop and a bare canvas; no
+         fallinfurni.js and a bar that never finished. Here, in the head, so it
+         is there when the file it is checking is not. Asked of what the files
+         made rather than of the requests, so a file that arrived and would not
+         run counts too. The rest (sound, avatar eyewear, the site's own
+         scripts) leave a playable game behind them and are not on the list.
+         Not for the editor, which has its own way of saying no. Said on the
+         loading screen, the one thing on the page by then (.ff-boot). -->
+    <script>
+    (function () {
+        if (new URLSearchParams(location.search).has("edit")) return;
+        var NEEDED = ["RoomPatterns", "FurniLibrary", "FurniOffsets", "FurniFallback", "RoomLayouts", "RoomMasks",
+            "RoomPublic", "RoomIso", "RoomPath", "RoomLevels", "RoomFurni", "RoomDrop", "RoomGame", "RoomLobby", "__ffGameJs"];
+        function say(failed) {
+            var box = document.getElementById("ff-boot");
+            if (!box) return;
+            box.classList.toggle("is-failed", failed);
+            box.querySelector(".ff-boot-text").textContent = failed ? "Couldn't load the game." : "Loading…";
+            var btn = box.querySelector(".ff-boot-retry");
+            if (btn) btn.remove();
+            if (!failed) return;
+            box.hidden = false;
+            btn = document.createElement("button");
+            btn.type = "button";
+            btn.className = "ff-boot-retry";
+            btn.textContent = "Try again";
+            btn.addEventListener("click", function () { location.reload(); });
+            box.appendChild(btn);
+            btn.focus({ preventScroll: true });
+        }
+        // Also the game's own start, if it throws (see `start` in js/fallinfurni.js).
+        window.__ffLoadFailed = function () { say(true); };
+        document.addEventListener("DOMContentLoaded", function () {
+            var missing = NEEDED.filter(function (name) { return !window[name]; });
+            window.__ffBroken = missing.length > 0;
+            say(window.__ffBroken);
+        });
+        // A file that never finishes holds the page's parsing up for good: said
+        // after 45 seconds, and taken back if it does turn up in the end.
+        setTimeout(function () { if (document.readyState === "loading") say(true); }, 45000);
+    })();
+    </script>
     <!-- THE GAME'S OWN MAINTENANCE SWITCH, and the admin pills.
 
          This is NOT the site gate that used to live here. That one held the
@@ -184,13 +228,40 @@
                     if (typed) betaNote("That couldn't be checked just now. Try again in a moment.");
                 });
         }
+        /* A PHONE HAS NO KEYS TO LISTEN TO (4 Nov 2026), so a finger gets a box
+           for the same code, asked of ff-beta.js the same way. Only a finger:
+           a keyboard's way in stays out of sight. */
+        function offerBetaBox() {
+            var form = document.getElementById("ff-beta-form");
+            var coarse = false;
+            try { coarse = window.matchMedia("(pointer: coarse)").matches; } catch (e) { /* no box, then */ }
+            if (!form || !coarse) return;
+            form.hidden = false;
+            form.addEventListener("submit", function (ev) {
+                ev.preventDefault();
+                var box = document.getElementById("ff-beta-code");
+                if (String(box.value).trim().toLowerCase() !== BETA_CODE) {
+                    betaNote("That isn't the code.");
+                    return;
+                }
+                box.blur();
+                betaNote("");
+                askBeta(true);
+            });
+        }
         function listenForBetaCode() {
             if (betaListening) return;
             betaListening = true;
             var at = 0;
+            offerBetaBox();
             window.addEventListener("keydown", function (ev) {
                 if (!document.body.hasAttribute("data-ff-closed")) return;
                 if (ev.ctrlKey || ev.metaKey || ev.altKey || ev.repeat) return;
+                /* Not while somebody is typing in a box (4 Nov 2026): this
+                   page's console has forms, and every letter of the code was
+                   kept out of them. */
+                var el = ev.target;
+                if (el && el.closest && el.closest('input, textarea, select, [contenteditable]:not([contenteditable="false"])')) return;
                 var k = String(ev.key || "").toLowerCase();
                 if (k.length !== 1) return;
                 if (k === BETA_CODE.charAt(at)) at++;
@@ -389,6 +460,24 @@
             if (decided) return;
             closedByDefault = true;
             decide(unreadableFfState(), false);
+            askAgain(0);
+        }
+
+        /* AND THE QUESTION IS ASKED AGAIN (4 Nov 2026). One failed request
+           left a live game shut until a reload, with nothing on the screen
+           saying a reload would help. 5 seconds, then doubling up to every
+           two minutes, until there is an answer; lateAnswer does the rest.
+           Not from a hidden tab, which only asks at its next turn. */
+        function askAgain(tries) {
+            setTimeout(function () {
+                if (answered) return;
+                if (document.hidden) { askAgain(tries); return; }
+                fetch("/.netlify/functions/settings")
+                    .then(function (res) { return res.ok ? res.json() : null; })
+                    .then(settingsAnswer)
+                    .catch(function () { /* still no answer */ })
+                    .then(function () { if (!answered) askAgain(tries + 1); });
+            }, Math.min(120000, 5000 * Math.pow(2, tries)));
         }
 
         /* The real answer after the leash already closed the game: an open
@@ -403,7 +492,12 @@
                 if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", listenForBetaCode);
                 else listenForBetaCode();
             }
-            if (!closedByDefault || ffState === "maintenance" || ffState === "coming-soon") return;
+            if (!closedByDefault) return;
+            if (ffState === "maintenance" || ffState === "coming-soon") {
+                // Closed after all: in its real wording, not the remembered one.
+                if (document.body && document.body.hasAttribute("data-ff-closed")) closeGame(ffState);
+                return;
+            }
             lateOpen = true;
             function run() {
                 document.body.removeAttribute("data-ff-closed");
@@ -415,11 +509,12 @@
 
         setTimeout(decideUnreadable, 6000);
 
-        settingsRequest
-            .then(function (settings) {
+        var answered = false;
+        function settingsAnswer(settings) {
                 /* No answer, or one without the landing state the settings
                    endpoint always sends, is not an answer: closed. */
                 if (!settings || !settings.landingState) { decideUnreadable(); return null; }
+                answered = true;
                 try { localStorage.setItem(LANDING_STATE_KEY, settings.landingState); } catch (e) { /* private mode */ }
                 // A game that has never set its switch is live, as in ff-scores.js.
                 var ffState = settings.fallinFurniState || "live";
@@ -432,7 +527,10 @@
                 var siteGated = settings.landingState === "coming-soon" ||
                                 settings.landingState === "maintenance";
                 return decide(ffState, siteGated);
-            })
+        }
+
+        settingsRequest
+            .then(settingsAnswer)
             // A network rejection (or a body that is not JSON) takes the same
             // closed path, rather than leaving the way in hidden until the leash.
             .catch(function () { decideUnreadable(); });
@@ -440,7 +538,6 @@
     </script>
     <!-- Fonts: self-hosted, declared in css/style.css (2 Nov 2026); see home.html. -->
     <link rel="preconnect" href="https://www.habbo.com">
-    <link rel="preconnect" href="https://api.furniindex.com">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="theme-color" content="#120c07">
     <title>Fallin' Furni | Maze Rats</title>
@@ -522,7 +619,7 @@
 
          Wrapped in try/catch: localStorage throws outright in some privacy modes,
          and a colour scheme is not worth a blank page. -->
-    <link rel="stylesheet" href="css/style.css?v=7">
+    <link rel="stylesheet" href="css/style.css?v=11">
     <link rel="stylesheet" href="css/maintenance-warn.css?v=1">
     <link id="theme-css" rel="stylesheet">
     <script>
@@ -594,7 +691,7 @@
          page never sends anybody away, so a visit here is always a visit,
          closed game or not. The CSP on /* already allows cloud.umami.is for
          the script and gateway.umami.is for what it sends. -->
-    <script>(function(){try{if(navigator.globalPrivacyControl===true)return;var s=document.createElement("script");s.defer=true;s.src="https://cloud.umami.is/script.js";s.setAttribute("data-website-id","8dee5429-29ff-4efb-bec1-c124c8d6fb18");s.setAttribute("data-do-not-track","true");s.setAttribute("data-exclude-hash","true");s.setAttribute("data-domains","mazerats.net");document.head.appendChild(s);}catch(e){}})();</script>
+    <script>(function(){try{if(navigator.globalPrivacyControl===true||localStorage.getItem("mazerats_admin_token"))return;var s=document.createElement("script");s.defer=true;s.src="https://cloud.umami.is/script.js";s.setAttribute("data-website-id","8dee5429-29ff-4efb-bec1-c124c8d6fb18");s.setAttribute("data-do-not-track","true");s.setAttribute("data-exclude-hash","true");s.setAttribute("data-domains","mazerats.net");document.head.appendChild(s);}catch(e){}})();</script>
     <!-- Dark mode (30 Oct 2026): a visitor's own switch, the bulb in the
          archive window's grab bar, worn over whatever palette or skin is
          showing. Under Frost, the Christmas palette, which is already dark,
@@ -604,10 +701,16 @@
          and last in the head so they follow every other. Set here, before the
          first paint, and again whenever the palette changes under the page.
          And when the switch is pressed in another open tab (31 Oct 2026, the
-         bug scan): the storage event, so every tab follows without a reload. -->
+         bug scan): the storage event, so every tab follows without a reload.
+
+         NO LIGHT MODE ON THE GAME ITSELF (4 Nov 2026; this page's one difference
+         from the same line on the others). The sheet's bare h2, p and a rules
+         set light mode's navy inks over a stage that is dark however the site
+         is lit: the title, the tagline and COMING SOON went navy on near-black.
+         So the game stays in Frost's own colours; only the editor takes it. -->
     <link id="dark-css" rel="stylesheet">
     <link id="light-css" rel="stylesheet">
-    <script>(function(){var d=document.documentElement,dk=document.getElementById("dark-css"),lt=document.getElementById("light-css"),want=false;function sheet(l,h){if(!l.getAttribute("href"))l.href=h;}function apply(){var light=want&&d.getAttribute("data-theme")==="frost",dark=want&&!light;if(dark){sheet(dk,"/css/theme-dark.css");if(!d.hasAttribute("data-dark"))d.setAttribute("data-dark","");}else if(d.hasAttribute("data-dark"))d.removeAttribute("data-dark");if(light){sheet(lt,"/css/theme-frostlight.css");if(!d.hasAttribute("data-light"))d.setAttribute("data-light","");}else if(d.hasAttribute("data-light"))d.removeAttribute("data-light");}window.__mrDarkOn=function(){return want;};window.__mrDarkIsLight=function(){return d.getAttribute("data-theme")==="frost";};window.__mrSetDark=function(v){want=!!v;apply();try{localStorage.setItem("mazerats_dark",want?"1":"0");}catch(e){}};try{want=localStorage.getItem("mazerats_dark")==="1";}catch(e){}apply();try{new MutationObserver(apply).observe(d,{attributes:true,attributeFilter:["data-theme"]});}catch(e){}addEventListener("storage",function(e){if(e.key==="mazerats_dark"||e.key===null){want=e.newValue==="1";apply();}});})();</script>
+    <script>(function(){var d=document.documentElement,dk=document.getElementById("dark-css"),lt=document.getElementById("light-css"),want=false;function sheet(l,h){if(!l.getAttribute("href"))l.href=h;}function apply(){var frost=d.getAttribute("data-theme")==="frost",light=want&&frost&&/[?&]edit/.test(location.search),dark=want&&!frost;if(dark){sheet(dk,"/css/theme-dark.css");if(!d.hasAttribute("data-dark"))d.setAttribute("data-dark","");}else if(d.hasAttribute("data-dark"))d.removeAttribute("data-dark");if(light){sheet(lt,"/css/theme-frostlight.css");if(!d.hasAttribute("data-light"))d.setAttribute("data-light","");}else if(d.hasAttribute("data-light"))d.removeAttribute("data-light");}window.__mrDarkOn=function(){return want;};window.__mrDarkIsLight=function(){return d.getAttribute("data-theme")==="frost";};window.__mrSetDark=function(v){want=!!v;apply();try{localStorage.setItem("mazerats_dark",want?"1":"0");}catch(e){}};try{want=localStorage.getItem("mazerats_dark")==="1";}catch(e){}apply();try{new MutationObserver(apply).observe(d,{attributes:true,attributeFilter:["data-theme"]});}catch(e){}addEventListener("storage",function(e){if(e.key==="mazerats_dark"||e.key===null){want=e.newValue==="1";apply();}});})();</script>
 </head>
 <body data-page="fallinfurni">
 
@@ -703,7 +806,7 @@
                          Boot in js/fallinfurni.js fills the bar from the real
                          work and takes it away when the title is ready. -->
                     <div class="ff-boot" id="ff-boot" role="progressbar" aria-label="Loading Fallin' Furni" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
-                        <p class="ff-boot-text">Loading...</p>
+                        <p class="ff-boot-text">Loading…</p>
                         <div class="ff-boot-bar"><i id="ff-boot-fill"></i></div>
                     </div>
                     <!-- THE BAR'S FIRST STRETCH: the game's own files, counted
@@ -848,7 +951,7 @@
                          on (the love potion's Pod, sat in): the count-in's own
                          heart and "+1". See lifePop. -->
                     <div class="ff-lifepop" id="ff-lifepop" hidden aria-hidden="true">
-                        <span class="ff-countin-n is-life-won"><span class="ff-countin-heart">♥</span>+1</span>
+                        <span class="ff-countin-n is-life-won"><span class="ff-countin-heart">♥︎</span>+1</span>
                     </div>
 
                     <!-- THE PLAYER'S LINE, while a round is on: a life gone
@@ -878,12 +981,24 @@
                             <!-- What the beta code has to say, when it has
                                  something (see BETA in the head script). -->
                             <p class="ff-beta-note" id="ff-beta-note" role="status" hidden></p>
+                            <!-- The same code for a phone, which has no keys for
+                                 it to be typed on (offerBetaBox in the head). -->
+                            <form class="ff-beta-form" id="ff-beta-form" autocomplete="off" hidden>
+                                <div class="ff-title-row">
+                                    <input id="ff-beta-code" type="text" placeholder="Beta code" aria-label="Beta code"
+                                           maxlength="20" autocomplete="off" autocapitalize="off" spellcheck="false">
+                                    <button type="submit">Go</button>
+                                </div>
+                            </form>
+                            <!-- How a run carried through signing in went
+                                 (carryRunOn in js/fallinfurni.js). -->
+                            <p class="ff-title-carried" id="ff-title-carried" role="status" hidden></p>
 
                             <form id="ff-name-form" class="ff-title-form" autocomplete="off">
-                                <label for="ff-name">Your Habbo Origins name</label>
+                                <label for="ff-name">Your Habbo name</label>
                                 <div class="ff-title-row">
                                     <input id="ff-name" type="text" name="habbo"
-                                           placeholder="Username" maxlength="32"
+                                           placeholder="YourName" maxlength="32"
                                            autocomplete="off" spellcheck="false">
                                     <!-- Which Origins hotel the name is on
                                          (30 Sept 2026). Remembered with the
@@ -909,6 +1024,9 @@
                             </div>
 
                             <p id="ff-play-status" class="ff-status"></p>
+                            <!-- Six stand-ins, for a lookup that failed with no
+                                 look to fall back on (syncStandInRow). -->
+                            <div class="ff-standins" id="ff-standins" role="group" aria-label="Choose a stand-in" hidden></div>
 
                             <!-- Discord is what puts a name on the board. The
                                  game is playable signed out; this says so
@@ -940,7 +1058,7 @@
                                  request failed (no connection, a 500), which
                                  is not the same as there being none, and is
                                  the one case a second try can fix. -->
-                            <button type="button" class="ff-title-retry" id="ff-title-retry">Retry</button>
+                            <button type="button" class="ff-title-retry" id="ff-title-retry">Try again</button>
                         </div>
                         <!-- THE TIPS TICKER, above the options (27 Oct 2026):
                              one tip at a time, a new one every six seconds.
@@ -1057,7 +1175,7 @@
                                  and puts what it has banked on the board; Quit
                                  ends it and puts nothing there. -->
                             <div class="ff-paused-more">
-                                <button type="button" id="ff-restart">Restart <span class="ff-paused-cost" id="ff-restart-cost">-1 &#9829;</span></button>
+                                <button type="button" id="ff-restart">Restart <span class="ff-paused-cost" id="ff-restart-cost">-1 &#9829;&#xFE0E;</span></button>
                                 <button type="button" id="ff-submit-quit">Submit &amp; Quit</button>
                                 <button type="button" id="ff-quit">Quit</button>
                             </div>
@@ -1232,7 +1350,7 @@
                              with a decrement and an increment, previewing in
                              the room as you change it. -->
                         <div id="ff-precise-panel" class="ff-precise" hidden>
-                            <h3>Precise Move</h3>
+                            <h3>Precise move</h3>
                             <p class="ff-hint">Edit exact floor position and height.</p>
                             <div class="ff-precise-row">
                                 <label for="ff-precise-x">Floor X</label>
@@ -1484,8 +1602,8 @@
                              soon as anyone types into it. -->
                         <label class="visually-hidden" for="console-contact-message">Your message</label>
                         <textarea class="console-input console-input-message" id="console-contact-message" placeholder="Just leaving some feedback…"></textarea>
-                        <label class="console-field-label" for="console-contact-username">Your Origins username:</label>
-                        <input type="text" class="console-input console-input-username" id="console-contact-username" placeholder="L1C">
+                        <label class="console-field-label" for="console-contact-username">Your Habbo name:</label>
+                        <input type="text" class="console-input console-input-username" id="console-contact-username" placeholder="YourName">
                         <!-- Two states, one of which js/console.js hides.
                              Signed in, there is nothing to type: the name is
                              already known and, unlike a typed one, it is
@@ -1527,7 +1645,7 @@
                     </div>
                     <!-- Between Send and the thanks, as home.html has it. -->
                     <div class="console-page console-page-sending" id="console-page-sending" style="display:none;" role="status" aria-live="polite">
-                        <p class="console-sending-message">Sending...</p>
+                        <p class="console-sending-message">Sending…</p>
                         <span class="daily-bar console-sending-bar" aria-hidden="true"><span></span></span>
                     </div>
                     <div class="console-page console-page-thanks" id="console-page-thanks" style="display:none;">
@@ -1559,7 +1677,7 @@
                          netlify/functions/player-profile.js. It replaced the
                          About page. -->
                     <div class="console-page" id="console-page-profile" style="display:none;">
-                        <h3 class="console-page-title">Edit Profile</h3>
+                        <h3 class="console-page-title">Edit profile</h3>
                         <div class="console-hashline" aria-hidden="true"></div>
                         <div id="console-profile-body"></div>
                     </div>
@@ -1576,8 +1694,8 @@
     </div>
 
     <footer class="site-footer">
-        <p>Origins Maze Rats is independent and not affiliated with, sponsored, supported, or endorsed by Sulake Oy or its affiliates. Any Habbo trademarks or intellectual property used here are done so in accordance with the Habbo Fan Site Policy.</p>
-        <p>&copy; 2026 Origins Maze Rats. All rights reserved.</p>
+        <p>Maze Rats is independent and not affiliated with, sponsored, supported, or endorsed by Sulake Oy or its affiliates. Any Habbo trademarks or intellectual property used here are done so in accordance with the Habbo Fan Site Policy.</p>
+        <p>&copy; 2026 Maze Rats. All rights reserved.</p>
     </footer>
 
     <!-- ROTATE TO PLAY.
@@ -1634,10 +1752,10 @@
              and landing on it directly is the normal way in. A real href
              always has somewhere to go, and it is the same address the
              header's own Home badge uses. -->
-        <!-- The site's own .btn, with a drawn pixel chevron rather than an
-             emoji arrow (28 Oct 2026, the owner's: the arrow looked
-             unprofessional). The homepage's window has the same button. -->
-        <a class="btn ff-rotate-back" href="/home"><svg width="10" height="14" viewBox="0 0 5 7" fill="currentColor" shape-rendering="crispEdges" aria-hidden="true"><path d="M3 0h2v1H3zM2 1h2v1H2zM1 2h2v1H1zM0 3h2v1H0zM1 4h2v1H1zM2 5h2v1H2zM3 6h2v1H3z"/></svg><span>Back to Maze Rats</span></a>
+        <!-- The site's bevel, with a drawn pixel chevron rather than an emoji
+             arrow (the owner's, 28 Oct and 4 Nov 2026). The homepage's window
+             has the same button. -->
+        <a class="view-switch-btn ff-rotate-back" href="/home"><svg width="10" height="14" viewBox="0 0 5 7" fill="currentColor" shape-rendering="crispEdges" aria-hidden="true"><path d="M3 0h2v1H3zM2 1h2v1H2zM1 2h2v1H1zM0 3h2v1H0zM1 4h2v1H1zM2 5h2v1H2zM3 6h2v1H3z"/></svg><span>Back to Maze Rats</span></a>
     </div>
 
     <!-- The shared chrome's own dependencies, in home.html's order: site.js
@@ -1645,19 +1763,19 @@
          the console reads PrivacyContent for its privacy page. -->
     <script src="js/api.js?v=5"></script>
     <script src="js/event-status.js?v=2"></script>
-    <script src="js/privacy-content.js?v=5"></script>
+    <script src="js/privacy-content.js?v=6"></script>
     <script src="js/palette-wear.js?v=2"></script>
     <script src="js/skin-wear.js?v=1"></script>
-    <script src="js/site.js?v=3"></script>
+    <script src="js/site.js?v=4"></script>
     <!-- Dropdowns open the site's own list, not the browser's. After site.js,
          whose EscapeLayers it registers with. -->
     <script src="js/select-list.js?v=3"></script>
     <!-- Before console.js and the console's pages, which ask it who is
          signed in while they set themselves up (see home.html). -->
-    <script src="js/account.js?v=3"></script>
+    <script src="js/account.js?v=4"></script>
     <!-- What a record can be missing; console-info.js draws its form and
          list from it and does nothing at all without it. -->
-    <script src="js/dead-ends.js?v=2"></script>
+    <script src="js/dead-ends.js?v=3"></script>
     <script src="js/custom-scrollbar.js?v=4"></script>
     <script src="js/console.js?v=12"></script>
     <!-- The console's Add Maze Info, Missing Pieces and Profile pages, as on

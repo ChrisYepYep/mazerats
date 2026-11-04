@@ -243,7 +243,7 @@ const NET_HASH_REFRESH_MS = 24 * 60 * 60 * 1000;
 // How long `me` waits for that write — see meReply.
 const NET_HASH_WAIT_MS = 1000;
 // And for an OriginsBot lookup and what it writes — see meReply.
-const ORIGINSBOT_WAIT_MS = 4000;
+const ORIGINSBOT_WAIT_MS = 3000;
 function netHashUpdate(event, row) {
     const netHash = netHashFor(event);
     if (!netHash) return null;

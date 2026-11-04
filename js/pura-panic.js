@@ -257,12 +257,10 @@
         dim.className = "pura-dim";
         dim.hidden = true;
         document.body.insertBefore(dim, root);
-        /* The pill in the title's own colours, read off the page rather than
-           written here, so whichever palette the console is wearing (themes
-           recolour it; see tools/themes.js) the pill wears it too: the
-           title's brown as the fill, the frame's yellow as the letters. */
         try { dark = localStorage.getItem(DARK_KEY) === "1"; } catch (e) { /* private mode */ }
         setDark(dark, true);
+        // The site's own dark mode or palette changing with the window open (paintChrome).
+        try { new MutationObserver(paintChrome).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme", "data-dark", "data-light"] }); } catch (e) { /* old browser: at the next open */ }
         soundIcon();
         wireDrag();
         wireTouch();
@@ -277,6 +275,8 @@
                 if (isOpen() && mode === "idle" && !panel.hidden && panel.querySelector('[data-go="play"]')) showPanel("title");
                 // A game started signed in and finished signed out, waiting (SIGNED OUT SINCE).
                 if (isOpen() && mode === "over" && result && result.state === "signed-out-run" && me()) sendAgain(false);
+                // A nickname chosen from GAME OVER: the game that asked for it goes to the board (WAITING FOR A NICKNAME).
+                else if (isOpen() && (mode === "over" || (mode === "board" && boardFrom === "over")) && result && result.state === "no-nick" && me() && me().nick) sendAgain(false);
                 else sendUnsent();
             });
         }
@@ -389,8 +389,16 @@
        lights. */
     const count = (name, label) => { if (window.Track && typeof Track.event === "function") Track.event(name, label == null ? null : String(label)); };
 
+    /* NOT BEFORE ITS STYLESHEET (4 Nov 2026, the bug scan). The window was
+       built as soon as this file ran, with css/pura-panic.css still on its
+       way, so every visit to /purapanic drew the panel, the score bar and
+       the well unstyled and then jumped them into place. Opening waits for
+       the sheet (a failed one opens all the same, as it always did). */
+    let cssIn = false, openWanted = false;
+
     function open() {
         if (!E) return;
+        if (!cssIn) { openWanted = true; return; }
         const first = !built;
         if (!isOpen()) count("pura-open");
         build();
@@ -442,18 +450,15 @@
        and turns the frame — never the screen — from the console's yellow to
        a deep grey, almost black but plainly not: the frame's art is redrawn
        in that grey (assets/img/console/dark/), the rest is css/pura-panic.css
-       under .is-dark. Remembered on this browser. The pill and the bulb take
-       their colours from the frame and its title as they stand, so they
-       follow both this and the site's themes. */
+       under .is-dark. Remembered on this browser. The bulb takes its colours
+       from the frame and its title as they stand, so it follows both this
+       and the site's themes. */
     const DARK_KEY = "mazerats_pura_dark";
     let dark = false, dim = null;
 
-    /* The pill and the bulb in the frame's colours as they stand now. Read
-       off the page, so asked again whenever they may have changed: the
-       lights, every open, and when css/pura-panic.css arrives — after a
-       reload the window can be built before that stylesheet has loaded, and
-       the pill and bulb kept the yellow of the moment before the dark frame
-       came in (the owner's screenshot, 7 Oct 2026). */
+    /* The bulb in the frame's colours as they stand now. Read off the page,
+       so asked again whenever they may have changed: the lights, every open,
+       and the site's dark mode or palette changing under the window. */
     function paintChrome() {
         if (!root) return;
         const ink = getComputedStyle(root.querySelector("#pura-title")).color;
@@ -514,6 +519,7 @@
     const mayPlayNow = () => gate.live || gate.admin || testLevel() > 0;
 
     function close() {
+        openWanted = false;
         if (!isOpen()) return;
         if (mode === "play") pause();
         releaseAll();
@@ -849,6 +855,7 @@
 
     function showBanner(level) {
         bannerEl.textContent = "LEVEL " + level;
+        bannerEl.style.animationPlayState = "";
         waitShown = false;
         bannerEl.classList.remove("pura-banner--wait");
         bannerEl.hidden = false;
@@ -861,6 +868,8 @@
     function hideBanner() {
         if (!bannerEl) return;
         bannerEl.hidden = true;
+        // A game ended from the pause screen left this paused, and every later banner stuck at its first, unseen frame.
+        bannerEl.style.animationPlayState = "";
         bannerEl.classList.remove("is-on", "pura-banner--wait");
         waitShown = false;
     }
@@ -1135,9 +1144,36 @@
         return mode === "play" || root.contains(document.activeElement);
     }
 
+    /* NOT THE DROP KEY'S LAST PRESS (4 Nov 2026, the bug scan). GAME OVER hands
+       the focus to Play again, and Space on a focused button presses it, so a
+       player leaning on the drop key at the top-out started a new game 200ms
+       later and never saw their score. On that screen Space and Enter now
+       count only after OVER_QUIET_MS with neither touched, and not sooner than
+       that after the screen came up; a key held from the game, its repeats and
+       its release included, is never a press. Anyone who has seen GAME OVER
+       and presses Space restarts at once, as before. */
+    const OVER_QUIET_MS = 400;
+    let overAt = 0, pressKeyAt = 0, pressArmed = null;
+    const stale = new Set();   // keys whose release must not press the button they land on
+    const pressKey = (e) => e.key === "Enter" || KEYMAP[e.key] === "hard";
+
+    // True when this Space or Enter on GAME OVER is left over from the game.
+    function leftOver(e) {
+        if (mode !== "over" || !pressKey(e)) return false;
+        const now = performance.now();
+        if (e.repeat && pressArmed === e.key) return false;
+        const early = e.repeat || stale.has(e.key) || now < Math.max(overAt, pressKeyAt) + OVER_QUIET_MS;
+        pressKeyAt = now;
+        pressArmed = early ? null : e.key;
+        if (early) stale.add(e.key);
+        return early;
+    }
+
     function onKey(e) {
         if (!ours(e) || e.ctrlKey || e.metaKey || e.altKey) return;
         const what = KEYMAP[e.key];
+        if (mode === "play" && what === "hard") { stale.add(e.key); pressKeyAt = performance.now(); }
+        if (leftOver(e)) { e.preventDefault(); e.stopPropagation(); return; }
         if (e.key === "Enter" && mode !== "play") {
             /* The panel's own buttons (10 Oct 2026): the first [data-go]
                anywhere was the maintenance notice's "contact form" link,
@@ -1170,6 +1206,8 @@
 
     function onKeyUp(e) {
         const what = KEYMAP[e.key];
+        if (pressKey(e)) pressKeyAt = performance.now();
+        if (stale.delete(e.key) && mode === "over") { e.preventDefault(); e.stopPropagation(); return; }
         if (what && held[what]) { e.preventDefault(); release(what); }
     }
 
@@ -1358,6 +1396,8 @@
         bx.restore();
     }
 
+    const calm = () => Boolean(window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches);
+
     function draw() {
         if (!bx) return;
         bx.clearRect(0, 0, CW, CH);
@@ -1375,7 +1415,8 @@
             cells = s.board;
             if (s.kind === "flash") {
                 flashRows = s.rows;
-                flashing = Math.floor(t / 90) % 2 === 0;
+                // Under reduced motion the rows turn pale and hold, for the same time, rather than flicker.
+                flashing = !calm() && Math.floor(t / 90) % 2 === 0;
             } else {
                 // Every tile that was left hanging sliding from where it was
                 // to where it came to rest.
@@ -1478,7 +1519,7 @@
         panel.className = "pura-panel" + (which === "board" ? " pura-panel--board" : "");
         let html = "";
         if (which === "loading") html = `<p>Loading…</p>`;
-        else if (which === "failed") html = `<p>The furni could not be loaded.</p><div class="pura-buttons"><button type="button" class="console-btn" data-go="retry">Try again</button></div>`;
+        else if (which === "failed") html = `<p>The furni couldn't be loaded.</p><div class="pura-buttons"><button type="button" class="console-btn" data-go="retry">Try again</button></div>`;
         else if (which === "dealing") html = `<p>Dealing…</p>`;
         else if (which === "title") {
             html = `<p class="pura-big">PURA PANIC</p>
@@ -1498,16 +1539,16 @@
             const was = guest && guest.kind === "habbo" ? guest : claim;
             html = `<p class="pura-big">WHO'S PLAYING?</p>
                 <div class="console-hashline" aria-hidden="true"></div>
-                <p>Enter your Habbo Origins username.</p>
+                <p>Your Habbo name</p>
                 <div class="pura-who-row">
                     <input type="text" id="pura-who-name" class="console-input pura-who-name" maxlength="32"
-                           autocomplete="off" autocapitalize="off" spellcheck="false" aria-label="Your Habbo Origins username"
+                           autocomplete="off" autocapitalize="off" spellcheck="false" aria-label="Your Habbo name"
                            value="${was ? esc(was.name) : ""}">
                     <select id="pura-who-hotel" class="console-input console-select pura-who-hotel" aria-label="Which Origins hotel">
                         ${HOTELS.map(h => `<option value="${h}"${(was ? was.hotel : "COM") === h ? " selected" : ""}>${h}</option>`).join("")}
                     </select>
                 </div>
-                <button type="button" class="pura-text-btn" data-go="asguest">${pendingSubmit ? "Save as a Guest" : "Play as a Guest"}</button>
+                <button type="button" class="pura-text-btn" data-go="asguest">${pendingSubmit ? "Save as a guest" : "Play as a guest"}</button>
                 <p class="pura-who-status" id="pura-who-status" aria-live="polite"></p>
                 <div class="pura-buttons">
                     <button type="button" class="console-btn" data-go="whonext">Next</button>
@@ -1531,11 +1572,11 @@
         } else if (which === "paused") {
             html = leaving ? `<div class="pura-leave" role="alert">
                     <span class="pura-bang" aria-hidden="true">!</span>
-                    <p>Submit your progress to the scoreboard before you leave by pressing Submit Score!</p>
+                    <p>Submit your progress to the scoreboard before you leave by pressing Submit score!</p>
                 </div>
                 <div class="pura-buttons">
-                    <button type="button" class="console-btn" data-go="leavesubmit">Submit Score</button>
-                    <button type="button" class="console-btn" data-go="resume">Keep Playing</button>
+                    <button type="button" class="console-btn" data-go="leavesubmit">Submit score</button>
+                    <button type="button" class="console-btn" data-go="resume">Keep playing</button>
                 </div>` : `
                 <p class="pura-big">PAUSED</p>
                 <div class="pura-buttons">
@@ -1545,30 +1586,31 @@
                 ${musicButton()}`;
         } else if (which === "over" && result && result.state === "signed-out-run") {
             // Started signed in, ended signed out: whose game is it? (SIGNED OUT SINCE)
+            // Already saved to the account on the way, it can only be that account's (pura-scores.js, ONE GAME, ONE NAME, ONCE).
             html = `<p class="pura-big">GAME OVER</p>
                 <div class="console-hashline" aria-hidden="true"></div>
-                <p>${num(g && g.score)} points · ${num(g && g.bands - rowsBase)} ${g && g.bands - rowsBase === 1 ? "row" : "rows"} · level ${g ? g.level : 1}</p>
-                <p class="pura-note">You started this game signed in. Sign in to save it to your account, or save it as a guest.</p>
+                <p>${num(g && g.score)} ${g && g.score === 1 ? "point" : "points"} ·${num(g && g.bands - rowsBase)} ${g && g.bands - rowsBase === 1 ? "row" : "rows"} · level ${g ? g.level : 1}</p>
+                <p class="pura-note">${result.filed ? "You started this game signed in, and it's already on the board under your account. Sign in to save the rest of it." : "You started this game signed in. Sign in to save it to your account, or save it as a guest."}</p>
                 <div class="pura-buttons">
                     <button type="button" class="console-btn" data-go="runsignin">Sign in</button>
-                    <button type="button" class="console-btn" data-go="runguest">Save as a Guest</button>
+                    ${result.filed ? "" : `<button type="button" class="console-btn" data-go="runguest">Save as a guest</button>`}
                 </div>
                 <button type="button" class="pura-text-btn" data-go="rundrop">Don't save it</button>`;
         } else if (which === "over" && fromLeave && (!result || result.state === "recorded" || result.state === "kept")) {
             // Ended from the leave prompt's Submit Score (LEAVING).
             html = `<p class="pura-big">${!result ? "SUBMITTING…" : result.state === "recorded" ? "You joined the leaderboard!" : "You're on the leaderboard!"}</p>
                 <div class="console-hashline" aria-hidden="true"></div>
-                <p>${num(g && g.score)} points · ${num(g && g.bands - rowsBase)} ${g && g.bands - rowsBase === 1 ? "row" : "rows"} · level ${g ? g.level : 1}</p>
+                <p>${num(g && g.score)} ${g && g.score === 1 ? "point" : "points"} ·${num(g && g.bands - rowsBase)} ${g && g.bands - rowsBase === 1 ? "row" : "rows"} · level ${g ? g.level : 1}</p>
                 ${result ? `<div class="pura-note" id="pura-note">${overNote()}</div>` : ""}
                 <div class="pura-buttons">
-                    <button type="button" class="console-btn" data-go="play">Play Again</button>
+                    <button type="button" class="console-btn" data-go="play">Play again</button>
                     <button type="button" class="console-btn" data-go="board">Leaderboard</button>
                 </div>
                 ${musicButton()}`;
         } else if (which === "over") {
             html = `<p class="pura-big">GAME OVER</p>
                 <div class="console-hashline" aria-hidden="true"></div>
-                <p>${num(g && g.score)} points · ${num(g && g.bands - rowsBase)} ${g && g.bands - rowsBase === 1 ? "row" : "rows"} · level ${g ? g.level : 1}</p>
+                <p>${num(g && g.score)} ${g && g.score === 1 ? "point" : "points"} ·${num(g && g.bands - rowsBase)} ${g && g.bands - rowsBase === 1 ? "row" : "rows"} · level ${g ? g.level : 1}</p>
                 ${dealEnd === "full" && g ? `<p>That's all ${num(g.log.length)} pieces a game can have. What a game!</p>` : ""}
                 <div class="pura-note" id="pura-note">${overNote()}</div>
                 <div class="pura-buttons">
@@ -1788,11 +1830,9 @@
         else if (go === "signin" && window.Account) Account.signIn(pendingSubmit && unsentGame() ? "/purapanic" : undefined);
         else if (go === "nick" && window.Account) Account.editNickname();
         else if (go === "music") toggleMusic();
-        // Submit Score: the game ends here and goes to the board; they stay.
         else if (go === "continue") continueGame();
+        // Submit Score: the game ends here and goes to the board; they stay.
         else if (go === "leavesubmit") { count("pura-submit"); fromLeave = true; mode = "play"; endEarly(); }
-        // The Console's Contact Us form, which opens over this window.
-        else if (go === "contact" && window.MazeConsole) MazeConsole.open("message");
     }
 
     /* THE GAME LOG (pura-scores.js): a finished game that is not for the
@@ -1804,12 +1844,12 @@
        meanwhile) is the guest's who played it, and goes as theirs with
        `asGuest`: the server files a run that names no account on no account
        (31 Oct 2026, pura-scores.js ONE RUN, ONE PLAYER). */
-    const guestRun = () => Boolean(me() && run && run.token && !runSub(run.token));
+    const guestRun = (r = run) => Boolean(me() && r && r.token && !runSub(r.token));
 
-    function gameFacts() {
+    function gameFacts(r = run) {
         const out = { touch: touchy(), dark, muted: Boolean(music() && music().muted) };
-        if (guestRun() && guest) out.asGuest = true;
-        if ((!me() || guestRun()) && guest) {
+        if (guestRun(r) && guest) out.asGuest = true;
+        if ((!me() || guestRun(r)) && guest) {
             if (guest.kind === "habbo") out.habboToken = guest.token;
             else if (rat && rat.token) out.rat = rat.token;
             else out.guest = true;
@@ -1817,10 +1857,9 @@
         return out;
     }
 
-    function logPlayed() {
-        if (!run || !run.token || !g || !g.log.length) return;
-        const r = run;
-        const facts = { log: g.log, ms: Math.round(gameMs), stamp: run.stamp || null, ...gameFacts() };
+    function logPlayed(r, game, ms) {
+        if (!r || !r.token || !game || !game.log.length) return;
+        const facts = { log: game.log, ms, stamp: r.stamp || null, ...gameFacts(r) };
         // Renewed first if it is due (RENEWING).
         fresh(r).then(() => {
             const body = JSON.stringify({ run: r.token, ...facts });
@@ -1974,8 +2013,8 @@
         if (!input || choosing) return;
         const name = input.value.trim();
         const hotel = hotelEl && HOTELS.includes(hotelEl.value) ? hotelEl.value : "COM";
-        if (!name) { whoSay("Enter your Habbo Origins username."); input.focus(); return; }
-        if (!HABBO_NAME.test(name)) { whoSay("That isn't a Habbo username."); input.focus(); return; }
+        if (!name) { whoSay("Enter your Habbo name."); input.focus(); return; }
+        if (!HABBO_NAME.test(name)) { whoSay("That isn't a Habbo name."); input.focus(); return; }
         // Already proved on this browser: straight in.
         if (guest && guest.kind === "habbo" && guest.name.toLowerCase() === name.toLowerCase() && guest.hotel === hotel) { play(); return; }
         // The code already given for this Habbo, while it lasts.
@@ -2104,7 +2143,7 @@
            the server gave each its own — one player, two Guest Rats on the
            board. Who is playing is read when the save goes, not now. */
         const send = () => fresh(r).then(() => {
-            const body = JSON.stringify({ run: r.token, ...facts, ...gameFacts() });
+            const body = JSON.stringify({ run: r.token, ...facts, ...gameFacts(r) });
             return fetch(API, {
                 method: "POST",
                 credentials: "same-origin",
@@ -2191,7 +2230,7 @@
         const k = leftGame();
         if (!k) return "";
         return `<div class="pura-continue">
-                <p>You left a game at <strong>level ${esc(k.level)}</strong> with <strong>${num(k.score)}</strong> points.</p>
+                <p>You left a game at <strong>level ${esc(k.level)}</strong> with <strong>${num(k.score)}</strong> ${Number(k.score) === 1 ? "point" : "points"}.</p>
                 <button type="button" class="console-btn" data-go="continue">Continue</button>
                 <p class="pura-beta-note">You can pick it up once.</p>
             </div>`;
@@ -2391,17 +2430,28 @@
     async function gameOver() {
         if (!testLevel() && g) count("pura-finish", g.level);
         mode = "over";
+        overAt = performance.now();
+        pressArmed = null;
         forgetGame();
         releaseAll();
         banner = null; hideBanner();
         if (music()) music().gameOver();
         result = null;
+        // Over, however it ended: no piece or landing ghost left hanging behind the screens that follow.
+        if (g) g.piece = null;
         hud();
         nx.clearRect(0, 0, nextCv.width, nextCv.height);
         showPanel("over");
-        result = await submit();
+        /* This game's, held on to: Play again can start the next while a save
+           of this one is still out, and that answer is not the new game's. */
+        const game = g, r = run, ms = Math.round(gameMs);
+        const answer = await submit();
         // Whose it is to be asked: kept on this browser meanwhile, so nothing is lost (SIGNED OUT SINCE).
-        if (result.state === "signed-out-run") keepUnsent();
+        if (answer.state === "signed-out-run") keepUnsent(r, game, ms);
+        // Waiting for a nickname: kept too, whichever way they go to choose one (WAITING FOR A NICKNAME).
+        else if (answer.state === "no-nick" && game && game.score) keepUnsent(r, game, ms, true);
+        if (g !== game) return;
+        result = answer;
         if (mode === "over" && (fromLeave || result.state === "signed-out-run")) { showPanel("over"); return; }
         if (mode === "over") {
             const note = panel.querySelector("#pura-note");
@@ -2422,7 +2472,15 @@
        not at all. Signing in is a page load, so the game is kept on this
        browser while it is asked about, and sent from there on the way back
        (sendUnsent) — and offered again if the window is shut meanwhile.
-       Kept as long as its run token is good. */
+       Kept as long as its run token is good.
+
+       WAITING FOR A NICKNAME (4 Nov 2026, the bug scan; the owner's yes).
+       "Choose a nickname to save your scores" under GAME OVER saved only the
+       scores after it. The game's token names their account and the server
+       replays it like any other, so nothing is doubtful about it: it is kept
+       the same way, and sent the moment the nickname is in, or the next time
+       the window opens with one. It waits for that account alone: signed out
+       or still unnamed, it is not offered to anybody. */
     const UNSENT_KEY = "mazerats_pura_unsent";
     const UNSENT_FOR = 3 * 60 * 60 * 1000;
     let pendingSubmit = false;   // naming a guest on the way to saving a game as them
@@ -2434,9 +2492,9 @@
         return claims && claims.sub ? String(claims.sub) : null;
     }
 
-    function keepUnsent() {
-        if (!run || !run.token || !g || !g.log.length) return;
-        keep(UNSENT_KEY, { token: run.token, deck: g.deck || null, stamp: run.stamp || null, log: g.log, ms: Math.round(gameMs), at: Date.now() });
+    function keepUnsent(r, game, ms, forNick) {
+        if (!r || !r.token || !game || !game.log.length) return;
+        keep(UNSENT_KEY, { token: r.token, deck: game.deck || null, stamp: r.stamp || null, log: game.log, ms, at: Date.now(), ...(forNick ? { forNick: true } : {}) });
     }
 
     /* Its pieces (DEALT), or the seed of one kept by the page before them:
@@ -2462,10 +2520,13 @@
            one's GAME OVER, and the server then refused it as stale. Left
            kept for its own account, for as long as it is kept. */
         const sub = runSub(u.token);
-        if (sub && me() && sub !== String(me().id)) return;
+        // The account's public id, or its Discord id on a token from before that.
+        if (sub && me() && sub !== String(me().publicId) && sub !== String(me().id)) return;
+        if (u.forNick && !(me() && me().nick)) return;
         const back = replayed(kindsOf(u.deck) || u.seed, u.log);
         if (!back) { keep(UNSENT_KEY, null); return; }
         g = back;
+        g.piece = null;
         resetDealer();
         run = { token: u.token, stamp: typeof u.stamp === "string" ? u.stamp : null, resumed: true };
         rowsBase = 0;
@@ -2482,18 +2543,22 @@
 
     // Sent again: to the account now signed in, or (asGuest) as the guest.
     async function sendAgain(asGuest) {
-        if (sendingAgain || mode !== "over") return;
+        // The leaderboard can be up over GAME OVER when a nickname comes in (WAITING FOR A NICKNAME).
+        if (sendingAgain || (mode !== "over" && mode !== "board")) return;
         sendingAgain = true;
+        const game = g;
         result = null;
-        showPanel("over");
+        if (mode === "over") showPanel("over");
         let r;
         try { r = await submit({ asGuest }); } finally { sendingAgain = false; }
-        result = r;
         // Answered, it is put away, as a finished game's one sending is; still nobody's, it is kept.
         /* Not answered at all is kept too (27 Oct 2026, the night scan): the
            board unreachable on the way back from signing in dropped the game
            it had been kept for. Sent again the next time the window opens. */
-        if (r.state !== "signed-out-run" && r.state !== "offline") keep(UNSENT_KEY, null);
+        if (r.state !== "signed-out-run" && r.state !== "offline" && r.state !== "no-nick") keep(UNSENT_KEY, null);
+        // Play again pressed meanwhile: the answer is the last game's, not this one's.
+        if (g !== game) return;
+        result = r;
         if (mode === "over") showPanel("over");
     }
 
@@ -2506,24 +2571,28 @@
        now playing on this browser all the same (SIGNED OUT SINCE). */
     async function submit(opts) {
         const asGuest = Boolean(opts && opts.asGuest);
+        /* The game that ended, read before the wait below: Play again can
+           start another during it, and that one was sent in this one's place,
+           spending its token, while this one was never sent (4 Nov 2026). */
+        const r = run, game = g, ms = Math.round(gameMs);
         if (saving) await saving.catch(() => {});
-        if (run && run.reason === "test") return { state: "test" };
-        if (!run || !run.token) return { state: run && (run.reason === "hidden" || run.reason === "maintenance") ? "maintenance" : "offline" };
+        if (r && r.reason === "test") return { state: "test" };
+        if (!r || !r.token) return { state: r && (r.reason === "hidden" || r.reason === "maintenance") ? "maintenance" : "offline" };
         // Begun signed out: the guest's, signed in since or not (guestRun).
-        const p = guestRun() ? null : me();
+        const p = guestRun(r) ? null : me();
         // Started signed in and signed out since: the player is asked whose it is first.
-        if (!p && !asGuest && g.score && runSub(run.token)) return { state: "signed-out-run" };
-        if (!p && !guest) { logPlayed(); return { state: "signed-out" }; }
-        if (p && !p.nick) { logPlayed(); return { state: "no-nick" }; }
-        if (!g.score) { logPlayed(); return { state: "no-score" }; }
+        if (!p && !asGuest && game.score && runSub(r.token)) return { state: "signed-out-run" };
+        if (!p && !guest) { logPlayed(r, game, ms); return { state: "signed-out" }; }
+        if (p && !p.nick) { logPlayed(r, game, ms); return { state: "no-nick" }; }
+        if (!game.score) { logPlayed(r, game, ms); return { state: "no-score" }; }
         try {
             // Left paused past its token's three hours: renewed first (RENEWING).
-            await fresh(run);
+            await fresh(r);
             const res = await fetch(API, {
                 method: "POST",
                 credentials: "same-origin",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ run: run.token, log: g.log, ms: Math.round(gameMs), score: g.score, stamp: run.stamp || null, ...gameFacts(), ...(asGuest ? { asGuest: true } : {}) })
+                body: JSON.stringify({ run: r.token, log: game.log, ms, score: game.score, stamp: r.stamp || null, ...gameFacts(r), ...(asGuest ? { asGuest: true } : {}) })
             });
             const body = await res.json().catch(() => ({}));
             // A Guest Rat's first score brings their number (pura-scores.js, GUESTS).
@@ -2539,6 +2608,8 @@
             if (body.reason === "no-score") return { state: "no-score" };
             if (body.reason === "signed-out") return { state: "signed-out" };
             if (body.reason === "signed-out-run") return { state: "signed-out-run" };
+            // Filed under another name already: the account's, if it started as theirs and they are signed out.
+            if (body.reason === "filed-elsewhere") return !p && runSub(r.token) ? { state: "signed-out-run", filed: true } : { state: "already-submitted" };
             if (body.reason === "no-pieces") return { state: "no-score" };
             if (["maintenance", "stale-run", "already-submitted", "no-run-token"].includes(body.reason)) return { state: body.reason };
             if (body.reason === "name-taken") {
@@ -2590,12 +2661,17 @@
 
     // The stylesheet comes with the game, not with the homepage.
     (function css() {
-        if (document.querySelector('link[data-pura]')) return;
+        if (document.querySelector('link[data-pura]')) { cssIn = true; return; }
         const l = document.createElement("link");
         l.rel = "stylesheet";
-        l.href = "css/pura-panic.css?v=31";
+        l.href = "css/pura-panic.css?v=33";
         l.dataset.pura = "1";
-        l.addEventListener("load", () => paintChrome());
+        // In, or never coming: the window that was waiting opens now (NOT BEFORE ITS STYLESHEET).
+        const arrived = () => { cssIn = true; if (openWanted) { openWanted = false; open(); } };
+        l.addEventListener("load", arrived);
+        l.addEventListener("error", arrived);
+        // A stylesheet that only stalls fires neither.
+        setTimeout(arrived, 3000);
         document.head.appendChild(l);
     })();
 

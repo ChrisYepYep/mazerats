@@ -154,7 +154,11 @@
        js/daily.js only arrives with a game. */
     function timeOf(row) {
         const g = GAMES.find(x => x.key === game);
-        if (!g || g.ff || range !== "day" || !Number.isFinite(row.ms) || row.ms < 0) return "";
+        if (!g || g.ff || range !== "day") return "";
+        // A day's row with no time still keeps the time's room, so every
+        // total on the board ends on the same line.
+        if (row.ms === null) return ` <span class="guess-board-time"></span>`;
+        if (!Number.isFinite(row.ms) || row.ms < 0) return "";
         let t;
         if (window.Daily && Daily.clock) t = Daily.clock(row.ms);
         else {
@@ -196,7 +200,7 @@
     function boardHtml(g) {
         const data = cache[g.key];
         if (!data || typeof data.then === "function") return `<p class="guess-board-note">Fetching the scores…</p>`;
-        if (data === "failed") return `<p class="guess-board-note">This board could not be reached just now. Try again in a moment.</p>`;
+        if (data === "failed") return `<p class="guess-board-note">This board couldn't be reached just now. Try again in a moment.</p>`;
 
         const who = me();
         let list, isMe, extra, empty;
@@ -231,9 +235,13 @@
             // always on this page, hence the copy).
             isMe = row => !!(who && row && row.id &&
                 ((who.publicId && row.id === who.publicId) || row.id === who.id));
-            extra = g.key === "all" ? (row => gamesPill(row.games))
-                : range === "day" ? (() => "<span></span>")
+            // With the rounds right, which decide the order: a 172 under a
+            // 118 reads as a mistake otherwise.
+            const pill = g.key === "all" ? (row => gamesPill(row.games))
+                : range === "day" ? (() => "")
                     : (row => daysPill(row.days));
+            extra = row => `<span class="guess-board-extras">${pill(row)}${Number.isFinite(row.solved)
+                ? `<span class="guess-board-games" title="Rounds right">${row.solved} <span>right</span></span>` : ""}</span>`;
             empty = (RANGES.find(r => r.key === range) || RANGES[0]).empty;
         }
 
@@ -264,7 +272,7 @@
             ? `<button type="button" class="guess-btn boards-play" data-boards-play>Play ${esc(g.label)}</button>` : "";
 
         return `
-            <p class="guess-board-span">${esc(spanLine(g, data))}</p>
+            <p class="guess-board-span">${esc(spanLine(g, data))}${g.ff || g.pura ? "" : ` Most rounds right first, then points${range === "day" && g.key !== "all" ? ", then the faster time" : ""}.`}</p>
             <ol class="guess-board-list">${rowsHtml(list, isMe, empty, extra)}</ol>
             ${foot}
             ${play}`;

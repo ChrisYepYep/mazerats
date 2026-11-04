@@ -65,7 +65,7 @@ const DAY_MS = 24 * 60 * 60 * 1000;
    overall cap stops a slow day adding up to a function timeout; what it
    cuts short is simply asked next time. */
 const PAGE_TIMEOUT_MS = 5000;
-const REFRESH_BUDGET_MS = 8000;
+const REFRESH_BUDGET_MS = 7000;
 // Requests in flight at once. They answer in about 0.4s each.
 const FETCH_CONCURRENCY = 4;
 /* The rolling re-check's share of a refresh, at most — new and newly
@@ -324,11 +324,17 @@ function openStore() {
    failure through — and with the seed shipping alongside, there is always
    a copy. */
 /* `wait: false` (5 Oct 2026, the bug scan) is for the public /rooms and
-   /events (_furni-payload.js): a stale copy goes back at once, with the
-   refresh left running behind it. Waiting for it there meant up to eight
-   seconds of refresh against a six-second cap, and the cap won — the maps
-   came back empty although a day-old copy was right there. */
-let refreshing = null;
+   /events (_furni-payload.js): a stale copy goes back at once. Waiting for a
+   refresh there meant up to eight seconds against a six-second cap, and the
+   cap won — the maps came back empty although a day-old copy was right there.
+
+   It starts no refresh of its own (4 Nov 2026, the bug scan). It used to leave
+   one running behind the answer, but a function is frozen the moment it
+   answers: the refresh stopped mid-request, its timers ran out on the next
+   thaw and it counted as FurniIndex failing. The asks that wait for their
+   answer (this function's own GET, from the Warren's card and the room editor,
+   and Refresh now) do the refreshing, and a copy a little older is still right
+   to within a release or two. */
 async function getCatalogue({ force = false, wait = true } = {}) {
     const store = openStore();
     let state = store ? await store.get(CACHE_KEY, { type: "json" }).catch(() => null) : null;
@@ -342,14 +348,7 @@ async function getCatalogue({ force = false, wait = true } = {}) {
     if (!force && !state && IN_FUNCTION && Date.now() - lastFailureAt < RETRY_AFTER_FAILURE_MS) {
         throw new Error("FurniIndex failed moments ago; not asking again yet");
     }
-    if (!force && !wait && state) {
-        if (!refreshing) {
-            refreshing = refreshAndStore(store, state, false)
-                .catch(() => { /* logged inside; the stale copy stands */ })
-                .finally(() => { refreshing = null; });
-        }
-        return itemsOf(state);
-    }
+    if (!force && !wait && state) return itemsOf(state);
     return refreshAndStore(store, state, force);
 }
 
@@ -549,7 +548,7 @@ exports.handler = async (event) => {
     } catch (err) {
         // The detailed reason stays in the function log, not a public response.
         console.error("furni-catalogue:", err.message);
-        return json(502, { error: "The furni catalogue could not be reached just now." });
+        return json(502, { error: "The furni catalogue couldn't be reached just now." });
     }
 };
 

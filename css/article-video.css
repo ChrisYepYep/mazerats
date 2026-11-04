@@ -25,20 +25,23 @@
 }
 
 /* The video's own shape (--vid-r, its width over its height, from the
-   block's w and h), never taller than 30vh (420px at most): the article's
-   text scrolls in a box about a third of the window tall, and a video
-   should fit in it whole, so a phone's upright video is narrowed rather
-   than run past the box. */
+   block's w and h), never taller than 45vh (420px at most), which fits the
+   text box on a laptop, so a phone's upright video is narrowed rather than
+   run past it. On a screen too short for that (a landscape phone) the window
+   itself scrolls, so the video only has to fit the screen. */
 .vid-frame {
     --vid-r: 1.7778;
     position: relative;
     width: 100%;
-    max-width: calc(min(420px, 30vh) * var(--vid-r));
+    max-width: calc(min(420px, 45vh) * var(--vid-r));
     aspect-ratio: var(--vid-r);
     margin: 0 auto;
     border-radius: 2px;
     overflow: hidden;
     background: #000;
+}
+@media (max-height: 500px) {
+    .vid-frame { max-width: calc(85vh * var(--vid-r)); }
 }
 .vid-el {
     display: block;
@@ -121,6 +124,22 @@
     text-align: center;
 }
 .vid-error[hidden] { display: none; }
+/* Under the video once it has been started (js/article-video.js, DOWNLOAD). */
+.vid-save-row { margin: 6px 0 0; line-height: 1; }
+.vid-save-row[hidden] { display: none; }
+.vid-save {
+    padding: 2px 4px;
+    border: 0;
+    background: none;
+    color: var(--parchment-dim);
+    font: inherit;
+    font-size: 0.78rem;
+    text-decoration: underline;
+    cursor: var(--cursor-pointer, pointer);
+}
+.vid-save:hover { color: var(--parchment); }
+.vid-save:focus-visible { outline: 2px solid var(--amber-bright); outline-offset: 1px; }
+.vid-save:disabled { text-decoration: none; cursor: default; }
 
 /* Frost's daytime light mode (html[data-light], css/theme-frostlight.css)
    turns the site's dark-on-the-picture pills light. tools/themes.js builds

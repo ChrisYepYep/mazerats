@@ -815,7 +815,7 @@ window.WizardGif = (function () {
                 result.hidden = false;
                 status.textContent = `${frameCount()} frames, made.${plan().note}`;
             } catch (err) {
-                status.textContent = "Could not make it — " + (err.message || "try again.");
+                status.textContent = "Couldn't make it — " + (err.message || "try again.");
             }
             make.disabled = false;
         });

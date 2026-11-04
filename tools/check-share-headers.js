@@ -31,9 +31,28 @@ block[1].split("\n").forEach(line => {
     const m = /^\s*([A-Za-z-]+)\s*=\s*"([^"]*)"\s*$/.exec(line);
     if (m) site[m[1]] = m[2];
 });
-if (!site["Content-Security-Policy"]) {
-    console.error("check-share-headers: no Content-Security-Policy found in netlify.toml's \"/*\" headers; the parse is out of date.");
+/* The Content-Security-Policy is not among them (4 Nov 2026): it names inline
+   scripts by hash, so it is worked out from the built pages (netlify/functions/
+   _csp.js). One set here as well would win over dist/_headers on Netlify, and
+   the site would be back on whatever it said. */
+if (/^\s*Content-Security-Policy\s*=/m.test(toml)) {
+    console.error("check-share-headers: netlify.toml sets a Content-Security-Policy, which would override the one tools/build-dist.js writes to dist/_headers. It belongs in netlify/functions/_csp.js.");
     process.exit(1);
+}
+if (!site["X-Content-Type-Options"]) {
+    console.error("check-share-headers: no X-Content-Type-Options found in netlify.toml's \"/*\" headers; the parse is out of date.");
+    process.exit(1);
+}
+{
+    const { policyFor, inlineScripts } = require(path.join(root, "netlify", "functions", "_csp.js"));
+    // One real script among what must not count: a comment, a src, data.
+    const want = "'sha256-" + require("crypto").createHash("sha256").update("\nalert(1);\n").digest("base64") + "'";
+    const page = '<!-- <script>no</script> --><script src="/a.js"></script><script type="application/ld+json">{}</script><script>\r\nalert(1);\r\n</script>';
+    const scriptSrc = /script-src ([^;]*)/.exec(policyFor([page]))[1];
+    if (inlineScripts(page).length !== 1 || !scriptSrc.includes(want) || /unsafe-inline|unsafe-eval/.test(scriptSrc)) {
+        console.error(`check-share-headers: netlify/functions/_csp.js no longer reads a page's inline scripts properly: ${scriptSrc}`);
+        process.exit(1);
+    }
 }
 
 const problems = [];

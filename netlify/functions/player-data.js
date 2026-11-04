@@ -371,7 +371,7 @@ exports.handler = async (event) => {
         await ensureIndexes(col);
     } catch (e) {
         console.error("player-data: unique index unavailable", e);
-        if (event.httpMethod !== "GET") return json(503, { error: "Could not save your progress just now" });
+        if (event.httpMethod !== "GET") return json(503, { error: "Couldn't save your progress just now" });
     }
 
     /* A banned player's progress is not written (29 Sept 2026; see _bans.js):
@@ -417,7 +417,7 @@ exports.handler = async (event) => {
             });
         } catch (e) {
             console.error("player-data: read failed", e);
-            return json(500, { error: "Could not read your saved progress" });
+            return json(500, { error: "Couldn't read your saved progress" });
         }
     }
 
@@ -603,7 +603,7 @@ exports.handler = async (event) => {
             });
         } catch (e) {
             console.error("player-data: save failed", e);
-            return json(500, { error: "Could not save your progress" });
+            return json(500, { error: "Couldn't save your progress" });
         }
     }
 
@@ -628,7 +628,7 @@ exports.handler = async (event) => {
             return json(200, { removed: id, from: field });
         } catch (e) {
             console.error("player-data: remove failed", e);
-            return json(500, { error: "Could not remove it" });
+            return json(500, { error: "Couldn't remove it" });
         }
     }
 

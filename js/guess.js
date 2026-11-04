@@ -1,14 +1,17 @@
 /* Guess the Maze — five rooms a day, cut out of the archive itself.
 
-   A crop of a real room from a real maze, and four guesses at which maze it
-   is. Every wrong one widens the view a little, so the picture argues its
+   A crop of a real room from a real maze, and three guesses at which of five
+   mazes it is. Every wrong one widens the view a little, so the picture argues its
    way from "an abstract patch of pixels" to "oh, THAT one" rather than
    simply being right or wrong at first sight. Five of those makes a sitting
    — one was over before it had started.
 
    Nothing here is authored. The archive already holds five hundred-odd room
    screenshots across thirty-odd mazes; the whole game is choosing five of
-   them well and deciding where to cut.
+   them well and deciding where to cut. Both happen on the server now, and
+   this page is only ever sent what the player may see: the crop until the
+   room is over, then the room (THE CROP in netlify/functions/deal-image.js,
+   which has the choosing of where to cut too; 4 Nov 2026).
 
    It lives in a window on the homepage rather than on a page of its own,
    opened by the tab on the right-hand edge of the archive. A daily game
@@ -33,33 +36,6 @@
    The mechanic is borrowed from the archive window's own results frame (see
    .featured-frame in css/style.css), which slides down inside a clipped box
    until only a sliver shows. Same idea, seven of them, in a stack.
-
-   ----------------------------------------------------------------------
-   Choosing where to cut
-
-   Habbo room screenshots are a small isometric room floating on a large
-   black background, so a crop taken at random is very often a square of
-   nothing. The obvious guard — "the crop must contain at least N colours" —
-   is too weak in both directions: black plus three pixels of anti-aliasing
-   passes it, and a big flat single-colour floor tile passes it too while
-   being completely unguessable.
-
-   So a candidate is scored on three things instead, and the best of forty is
-   taken rather than the first that qualifies:
-
-     1. How much of it is NOT background. The background colour is learned
-        from the image's own corners rather than assumed to be black, so a
-        room shot on a lighter ground is judged on its own terms. This is the
-        signal that actually kills empty crops.
-     2. How many distinct colours it holds, quantised so near-identical
-        shades do not each count.
-     3. How much the brightness varies across it — a busy patch of wall and
-        a flat one can hold the same colours and be worth very different
-        amounts to guess from.
-
-   The first is a floor (below 85% solid, the crop scores nothing at all);
-   the other two are weighted, not gated, so a crop that is a little plain
-   but very busy can still win, and vice versa.
    ---------------------------------------------------------------------- */
 (function () {
     "use strict";
@@ -121,14 +97,6 @@
        totals nobody can now match a day against. */
     const STATS_KEY = "mazerats_guess_stats_v4";
 
-    /* Each wrong guess widens the view around the same centre, so the reveal
-       reads as stepping back from one spot rather than as being shown a
-       different picture each time. Three steps rather than four, and spread
-       wider to cover the same ground: the last is still about half the
-       image, which is usually enough to place a room without simply giving
-       it away. */
-    const REVEAL = [0.16, 0.28, 0.44];
-
     /* What a room is worth, by the view you named it on. Steeply weighted
        toward the first: the whole game is whether you can place a room from
        a scrap of it, so recognising it from the tightest crop should be
@@ -159,14 +127,16 @@
     let el = {};          // the window's shared elements, filled by mount()
     let sheets = [];      // the deck, in order: intro, 5 rooms, results
     /* The day's deal as the server handed it: { day, rounds }, each round
-       { image, options, crop } — the picture, the five names offered, and
-       the seed for where to cut. Nothing in it says which name is right;
-       a round's answer arrives in the verdict that ends it and is kept in
-       state.results[i].answer. null until it has arrived. */
+       { image, view, options } — the picture as far as the player has got
+       (`view`: 0, 1 or 2 is that view's crop, TRIES the whole room; see ONLY
+       THE CROP in netlify/functions/_deal.js) and the five names offered.
+       Nothing in it says which name is right; a round's answer arrives in
+       the verdict that ends it and is kept in state.results[i].answer. null
+       until it has arrived. */
     let deal = null;
     let state = null;     // this day's play
     let stats = null;     // the running record across days, as SHOWN — see shownStats
-    let rounds = [];      // { image, cx, cy, img } per round, once ready
+    let rounds = [];      // { image, whole, img } per round: the picture last loaded
     let preparing = {};   // round index -> true while its picture is loading
     let unloadable = {};  // round index -> true once its picture has failed for good; see prepareRound
     let dealGen = 0;      // bumped whenever the deal is thrown away; see forgetDeal
@@ -179,7 +149,7 @@
        explanation is a worse first second than one click. */
     let view = "intro";   // "intro" | "round" | "results"
 
-    // ---------- the day, and a stable random for the crop ----------
+    // ---------- the day ----------
 
     /* The same five rooms for everyone, everywhere — dealt by the server
        now (see the header of netlify/functions/_deal.js for why the page
@@ -189,19 +159,6 @@
        agrees with everybody else about which day it is. */
     function today() {
         return window.Daily && Daily.today ? Daily.today() : new Date().toISOString().slice(0, 10);
-    }
-
-    // mulberry32 — small, fast, and good enough that consecutive days do not
-    // visibly rhyme. The point is reproducibility, not cryptography. Only
-    // the crop draws from it now, from the seed each round is dealt with.
-    function seededRandom(seed) {
-        let a = seed >>> 0;
-        return function () {
-            a |= 0; a = (a + 0x6D2B79F5) | 0;
-            let t = Math.imul(a ^ (a >>> 15), 1 | a);
-            t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-            return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-        };
     }
 
     // ---------- the day's five rooms ----------
@@ -226,112 +183,20 @@
     function loadImage(src) {
         return new Promise((resolve, reject) => {
             const img = new Image();
-            // Same origin, so the canvas is never tainted and getImageData
-            // works — which the whole scoring pass below depends on. The
-            // deal's picture is a deal-image address
-            // (netlify/functions/deal-image.js), on this origin.
+            // A deal-image address (netlify/functions/deal-image.js), on this
+            // origin.
             img.onload = () => resolve(img);
             img.onerror = () => reject(new Error("image failed"));
             img.src = src;
         });
     }
 
-    /* The colour the picture sits on, learned rather than assumed. Sampled
-       from all four corners and taken as the most common of them, so a room
-       shot against something other than black is still judged correctly. */
-    function backgroundOf(data, w, h) {
-        const at = (x, y) => {
-            const i = (y * w + x) * 4;
-            return [data[i], data[i + 1], data[i + 2]];
-        };
-        const corners = [at(2, 2), at(w - 3, 2), at(2, h - 3), at(w - 3, h - 3)];
-        const tally = new Map();
-        corners.forEach(c => {
-            const k = c.join(",");
-            tally.set(k, (tally.get(k) || 0) + 1);
-        });
-        let best = corners[0], bestN = 0;
-        tally.forEach((n, k) => {
-            if (n > bestN) { bestN = n; best = k.split(",").map(Number); }
-        });
-        return best;
-    }
-
-    // Generous, because Habbo's backgrounds are flat but its PNG edges are
-    // not: a pixel within this distance of the ground colour is ground.
-    const BG_TOLERANCE = 26;
-
-    function scoreCrop(data, w, bg, x0, y0, size) {
-        const step = Math.max(1, Math.floor(size / 40));   // ~1600 samples at any size
-        let samples = 0, solid = 0, sum = 0;
-        const colours = new Set();
-        const lums = [];
-
-        for (let y = y0; y < y0 + size; y += step) {
-            for (let x = x0; x < x0 + size; x += step) {
-                const i = (y * w + x) * 4;
-                const r = data[i], g = data[i + 1], b = data[i + 2];
-                samples++;
-                if (Math.abs(r - bg[0]) + Math.abs(g - bg[1]) + Math.abs(b - bg[2]) > BG_TOLERANCE) solid++;
-                // Quantised, so two shades a hair apart are not counted as
-                // two different colours.
-                colours.add(((r >> 3) << 10) | ((g >> 3) << 5) | (b >> 3));
-                const l = 0.299 * r + 0.587 * g + 0.114 * b;
-                lums.push(l);
-                sum += l;
-            }
-        }
-        if (!samples) return 0;
-
-        const solidFrac = solid / samples;
-        // Below this the crop is mostly empty ground, and no amount of colour
-        // elsewhere in it should rescue it.
-        if (solidFrac < 0.85) return 0;
-        if (colours.size < 12) return 0;
-
-        const mean = sum / lums.length;
-        let dev = 0;
-        for (const l of lums) dev += Math.abs(l - mean);
-        const variance = (dev / lums.length) / 128;   // 0..~1
-
-        /* Weighted rather than gated. Fullness is a floor the crop has
-           already cleared, so it counts least; how much is GOING ON in it is
-           what makes a picture worth guessing from. */
-        return solidFrac * 0.3
-            + Math.min(1, colours.size / 90) * 0.35
-            + Math.min(1, variance) * 0.35;
-    }
-
-    /* Where to cut. Returns the centre of the best-scoring square found, in
-       pixels, or null if the picture has nothing worth cropping — a room
-       shot that is almost all background, which does happen. */
-    function findCropCentre(img, rand) {
-        const w = img.naturalWidth, h = img.naturalHeight;
-        const probe = document.createElement("canvas");
-        probe.width = w; probe.height = h;
-        const ctx = probe.getContext("2d", { willReadFrequently: true });
-        ctx.drawImage(img, 0, 0);
-        const { data } = ctx.getImageData(0, 0, w, h);
-        const bg = backgroundOf(data, w, h);
-
-        // Scored at the size the round OPENS at — the tightest crop is the
-        // one that has to be interesting, since it is what most players are
-        // looking at when they make their first guess.
-        const size = Math.round(Math.min(w, h) * REVEAL[0]);
-        if (size < 24) return null;
-
-        let best = null, bestScore = 0;
-        for (let i = 0; i < 40; i++) {
-            const x0 = Math.floor(rand() * (w - size));
-            const y0 = Math.floor(rand() * (h - size));
-            const s = scoreCrop(data, w, bg, x0, y0, size);
-            if (s > bestScore) { bestScore = s; best = { x: x0 + size / 2, y: y0 + size / 2 }; }
-        }
-        return best;
-    }
-
     // ---------- drawing ----------
 
+    /* What is on the canvas is what the server sent, whichever it is: a view
+       fills the frame, cut already, and the whole room is letterboxed. A round
+       that has just moved on keeps the last picture up, under the loading bar,
+       until the next has arrived (prepareRound). */
     function draw(i) {
         const sheet = roundSheet(i);
         const data = rounds[i];
@@ -341,11 +206,6 @@
 
         const img = data.img;
         const result = state.results[i];
-        const guessCount = result ? result.guesses.length : 0;
-        const solvedOrSpent = result && result.done;
-
-        const step = Math.min(guessCount, REVEAL.length - 1);
-        const frac = solvedOrSpent ? 1 : REVEAL[step];
 
         const w = img.naturalWidth, h = img.naturalHeight;
         const canvas = sheet.refs.canvas;
@@ -354,7 +214,11 @@
         out.imageSmoothingEnabled = false;   // pixel art: never blur it
         out.clearRect(0, 0, side, side);
 
-        if (solvedOrSpent) {
+        // The whole room held for a day just given back, whose first view is
+        // on its way: nothing, rather than the answer.
+        if (data.whole && !(result && result.done)) return;
+
+        if (data.whole) {
             // The whole picture once the round is over, letterboxed rather
             // than cropped: the answer should be the room as it really is.
             // (As deal-image serves it: a 16:10 frame of the screenshot, so
@@ -365,14 +229,7 @@
             out.drawImage(img, (side - dw) / 2, (side - dh) / 2, dw, dh);
             return;
         }
-
-        const size = Math.round(Math.min(w, h) * frac);
-        // Clamped so an expanding crop near an edge slides inward instead of
-        // running off and drawing blank canvas.
-        const half = size / 2;
-        const cx = Math.max(half, Math.min(w - half, data.cx));
-        const cy = Math.max(half, Math.min(h - half, data.cy));
-        out.drawImage(img, cx - half, cy - half, size, size, 0, 0, side, side);
+        out.drawImage(img, 0, 0, w, h, 0, 0, side, side);
     }
 
     /* The frame of a room whose picture would not load (see prepareRound):
@@ -452,8 +309,14 @@
        it is the same day and further on it is adopted rather than
        overwritten; the `storage` listener in mount() keeps a tab that is
        only watching up to date too. A signed-in player's guesses are the
-       server's to settle anyway (the first recorded move per round wins). */
-    function saveState() {
+       server's to settle anyway (the first recorded move per round wins).
+
+       `fromServer` is a day just laid over with the server's record
+       (recordSettled), which is written whatever is stored. A stored copy
+       further on than the server is the day an administrator's reset took
+       away, and taking that back here put it over the blank day on every
+       read: every guess was refused until midnight, reload or not. */
+    function saveState(fromServer) {
         // Whose it is (WHOSE DAY IT IS): stamped once, by the account that
         // began it, and never moved to whoever is signed in later.
         if (state && !state.who) state.who = whoNow();
@@ -461,7 +324,7 @@
         // Never a practice run's copy over the real day that replaced it
         // (see PRACTICE in refreshDay), and never another account's copy,
         // however far on it is (10 Oct 2026).
-        if (stored && state && ours(stored) && stored.day === state.day && progressOf(stored) > progressOf(state) &&
+        if (!fromServer && stored && state && ours(stored) && stored.day === state.day && progressOf(stored) > progressOf(state) &&
                 !(stored.practice && !state.practice)) {
             state = Object.assign(stored, { posted: Boolean(stored.posted || state.posted) });
             return;
@@ -649,10 +512,11 @@
 
     // ---------- preparing a round ----------
 
-    /* Fetches and scores one room's picture. Safe to call for a round that
-       is already ready or already loading, which is what lets the next
-       round be started quietly in the background (see below) without any
-       coordination at the call sites. */
+    /* Fetches one room's picture as the deal now has it: the room's first
+       view, a wider one after a wrong guess, the whole room once it is over.
+       Safe to call for a round that is already ready or already loading,
+       which is what lets the next round be started quietly in the background
+       (see below) without any coordination at the call sites. */
     /* A PICTURE THAT WILL NOT LOAD no longer stops the day.
 
        The deal is stored for the day (netlify/functions/_deal.js), so a
@@ -671,9 +535,11 @@
        than one that cannot. A picture that arrives later (a retry that
        works) is drawn as normal. */
     const PICTURE_RETRY_MS = [2000, 6000];
+    // Whether the picture the deal now names is the one in hand.
+    const pictureReady = i => Boolean(rounds[i] && picks()[i] && rounds[i].image === picks()[i].image);
     async function prepareRound(i, attempt) {
         if (i == null || i < 0 || i >= ROUNDS) return;
-        if (rounds[i] || preparing[i]) return;
+        if (pictureReady(i) || preparing[i]) return;
         const pick = picks()[i];
         /* Not handed out yet (ONE ROUND AT A TIME in js/daily.js): asked
            for only once the room is the one on screen, never from the
@@ -690,14 +556,9 @@
         const gen = dealGen;
 
         /* The deal-image address as it is, not wrapped in imgCdn (28 Sept
-           2026). deal-image serves every Guess picture through the image CDN
-           at one fixed 704x440 JPEG, so no picture's size or shape says which
-           maze it is (ONE SIZE PER GAME in deal-image.js). This used to ask
-           for it again at w=900 with the aspect kept, which was the leak
-           when the picture came as uploaded; on the fixed picture it could
-           only re-encode it a second time, since the CDN never enlarges. The
-           crop below reads naturalWidth/naturalHeight, so it takes the
-           fixed size as it comes. */
+           2026). deal-image serves every Guess picture at one fixed size, so
+           no picture's size or shape says which maze it is (ONE SIZE PER GAME
+           in deal-image.js), and another pass could only re-encode it. */
         let img = null;
         try {
             img = await loadImage(pick.image);
@@ -723,17 +584,7 @@
            away. Filing it would put yesterday's room into today's round. */
         if (gen !== dealGen) return;
 
-        /* Where to cut, from the seed the round was dealt with — the same
-           for every player, and handed out by the server rather than
-           derived here, so nothing about a day can be worked out in the
-           page before it is dealt. */
-        const centre = findCropCentre(img, seededRandom(pick.crop >>> 0));
-        rounds[i] = {
-            image: pick.image,
-            img,
-            cx: centre ? centre.x : img.naturalWidth / 2,
-            cy: centre ? centre.y : img.naturalHeight / 2
-        };
+        rounds[i] = { image: pick.image, whole: pick.view >= TRIES, img };
         preparing[i] = false;
         setBusy(i, false);
         if (unloadable[i]) {
@@ -744,9 +595,15 @@
         }
         renderRound(i);
 
-        /* The next room's picture, fetched while this one is being played.
-           A sheet rising to reveal a blank square it then fills in a second
-           later undoes most of what the animation is for. */
+        // The room moved on while that was loading (another tab's guess, read
+        // back from the server): its picture now, not the one just drawn.
+        if (!pictureReady(i)) { prepareRound(i); return; }
+
+        /* The next room's picture, if this device already holds that room (a
+           day given back, say). It usually does not: a room is only handed
+           out as it is gone on to, so its picture arrives under the sheet's
+           loading bar (THE ANSWER SCREEN IS NOT ON THE CLOCK in
+           netlify/functions/_speed.js). */
         if (i + 1 < ROUNDS) prepareRound(i + 1);
     }
 
@@ -778,16 +635,21 @@
         if (!deal) return;
         let kept = null;
         try { kept = JSON.parse(localStorage.getItem(DEALT_KEY) || "null"); } catch (e) { kept = null; }
-        if (kept && ours(kept) && kept.day === deal.day) Daily.mergeRounds(deal.rounds, kept.rounds);
+        if (kept && ours(kept) && kept.day === deal.day) Daily.mergeRounds(deal.rounds, unplayed(kept.rounds));
     }
+    /* A held room only at its first view. The server's reply says how far each
+       room it hands out has got, so a held room is one it did not hand out:
+       one not yet reached, where a wider view or the whole room would be a
+       day given back showing its answer (or a copy from before views). */
+    const unplayed = list => (Array.isArray(list) ? list.map(r => (r && r.view === 0 ? r : null)) : list);
 
     /* A room whose picture and names this page does not have: room 1
-       before the start's reply has brought it, or a later one whose `next`
-       was lost (a reply that fell over, a reload with nothing kept). Room 1
-       is asked for through Daily.opening. A later one is in a deal asked
-       for again, since the server's record says it has been reached. (The
-       two signed-out ways — recording a day begun signed out, or sending
-       the last guess again unrecorded — went on 10 Oct 2026.) */
+       before the start's reply has brought it, or a later one being gone on
+       to. Room 1 is asked for through Daily.opening. A later one is asked
+       for by Daily.begin, which starts its clock (THE ANSWER SCREEN IS NOT
+       ON THE CLOCK in netlify/functions/_speed.js). (The two signed-out ways
+       — recording a day begun signed out, or sending the last guess again
+       unrecorded — went on 10 Oct 2026.) */
     let fetchingRound = -1;
     async function fetchRound(i) {
         if (fetchingRound === i || !deal || !state) return;
@@ -796,11 +658,14 @@
         const forDay = state.day;
         const list = picks();
         setBusy(i, true);
+        let reply = null;
         if (i === 0) {
             Daily.takeRound(list, await Daily.opening("guess", forDay, BOARDS_URL));
         } else {
-            const reply = await Daily.deal("guess", forDay, BOARDS_URL);
-            if (reply && reply.day === forDay) Daily.mergeRounds(list, reply.rounds);
+            // A page left open across a deploy: the old daily.js has no begin.
+            if (!Daily.begin) { location.reload(); return; }
+            reply = await Daily.begin("guess", forDay, i, BOARDS_URL);
+            if (reply.status === 200 && reply.body) Daily.takeRound(list, reply.body.next);
         }
         fetchingRound = -1;
         if (gen !== dealGen || !state || state.day !== forDay || picks() !== list) return;
@@ -812,8 +677,30 @@
             return;
         }
         const sheet = roundSheet(i);
+        // Refused for the same reasons a guess is, and answered the same way
+        // (see submitGuess). Not while the room has been left, as a guess
+        // never is.
+        if (reply && sheet && state.round === i) {
+            const body = reply.body || {};
+            if (reply.status === 401 || (reply.status === 403 && body.signInToPlay)) {
+                signInLapsed(sheet);
+                return;
+            }
+            if (reply.status === 409) {
+                await refreshDay();
+                renderAll();
+                if (practiceEnded) { prepareRound(state.round); goTo("intro"); return; }
+                // Moved to another room. Still this one and still refused,
+                // it is not asked for again by itself: "Try again" below.
+                if (state.round !== i) { prepareRound(state.round); return; }
+            }
+            if (reply.status === 400) {
+                dayClosed(sheet, "so this room can't be played.");
+                return;
+            }
+        }
         if (sheet && state.round === i) {
-            statusWithAction(sheet, "This room could not be dealt just now.", "Try again", () => {
+            statusWithAction(sheet, "This room couldn't be dealt just now.", "Try again", () => {
                 sheet.refs.status.hidden = true;
                 fetchRound(i);
             });
@@ -828,7 +715,9 @@
         const sheet = roundSheet(i);
         if (!sheet) return;
         const status = sheet.refs.status;
-        status.textContent = "This room's picture wouldn't load. You can still name it from the five below. ";
+        status.textContent = state.results[i].done
+            ? "The whole room wouldn't load. "
+            : "This room's picture wouldn't load. You can still name it from the five below. ";
         const retry = document.createElement("button");
         retry.type = "button";
         retry.className = "guess-btn";
@@ -881,7 +770,7 @@
         // seen yet is not a guess about the room. Unless the picture has
         // failed for good (unloadable — see prepareRound), when the names
         // are all there is, and refusing them was what stopped the day.
-        if (!result || result.done || guessing || !picks()[index] || !(rounds[index] || unloadable[index])) return;
+        if (!result || result.done || guessing || !picks()[index] || !(pictureReady(index) || unloadable[index])) return;
         const forDay = state.day;
 
         guessing = true;
@@ -932,15 +821,9 @@
                to "try it again" below, which could never work: a guess made
                at 00:06 on a room begun at 23:58 asked to be retried for as
                long as the window was open. Now it says the day is over and
-               offers today's rooms; the guesses made stay on this device. */
+               offers today's rooms. */
             if (reply.status === 400 && (/not open/i.test(String(body.error || "")) || !dayStillOpen(forDay))) {
-                if (sheet) statusWithAction(sheet,
-                    "This day's rooms closed at five past midnight (UTC), so that guess can't count. Your guesses so far are kept on this device.",
-                    "Play today's rooms", async () => {
-                        forgetDeal();
-                        await start();
-                        if (state) goTo("intro");
-                    });
+                if (sheet) dayClosed(sheet, "so that guess can't count.");
                 return;
             }
             if (sheet) {
@@ -976,15 +859,21 @@
         result.done = Boolean(body.done);
         result.won = Boolean(body.won);
         if (body.answer) result.answer = body.answer;
-        /* The next room comes with the answer that ends this one, and only
-           then (ONE ROUND AT A TIME in js/daily.js); its picture is fetched
-           while this room's reveal is up, as it always was. */
-        if (Daily.takeRound(picks(), body.next)) {
+        /* The picture this guess has earned: the wider view, or the whole
+           room now it is over, and the only way either reaches this page
+           (ONLY THE CROP in netlify/functions/_deal.js). Fetched below, once
+           the answer is on screen. */
+        const held = picks()[index];
+        if (held && typeof body.image === "string") {
+            held.image = body.image;
+            held.view = body.view;
             keepDealt();
-            prepareRound(index + 1);
         }
+        /* The next room is not in this answer: it comes when "Room N" is
+           pressed, which is when its clock starts (fetchRound, and THE ANSWER
+           SCREEN IS NOT ON THE CLOCK in netlify/functions/_speed.js). */
 
-        practiceEnded = false;         // said once, on the fresh day's splash
+        practiceEnded = false;        // said once, on the fresh day's splash
         if (result.done && state.round === ROUNDS - 1) {
             state.done = true;
             bankDay();
@@ -998,6 +887,7 @@
         const pressedAt = optionsRound(state.round).findIndex(n => n === name);
         renderAll();
         settleFocus(state.round, result, name, pressedAt);
+        prepareRound(index);
     }
 
     const anyGuesses = () => Boolean(state && state.results.some(r => r.guesses.length));
@@ -1028,6 +918,17 @@
             status.appendChild(btn);
         });
         status.hidden = false;
+    }
+
+    /* The day has closed under the room on screen. It used to add that the
+       guesses so far were kept on this device, which the button then undid. */
+    function dayClosed(sheet, why) {
+        statusWithAction(sheet, `This day's rooms closed at five past midnight (UTC), ${why}`,
+            "Play today's rooms", async () => {
+                forgetDeal();
+                await start();
+                if (state) goTo("intro");
+            });
     }
 
     // ("Carry on unlisted" sat beside "Sign in again" until there was no
@@ -1087,6 +988,10 @@
         if (state.round >= ROUNDS - 1) return;
         state.round += 1;
         saveState();
+        // A room this device already holds (another tab was handed it, or a
+        // day given back) still starts its clock now. The server keeps the
+        // first of these, so it is no later than it would have been.
+        if (picks()[state.round] && signedIn() && Daily.begin) Daily.begin("guess", state.day, state.round, BOARDS_URL);
         prepareRound(state.round);
         goTo("round");
     }
@@ -1317,14 +1222,14 @@
            underneath, so saying it here too would be the same news twice. */
         refs.flag.textContent = roundOver
             ? "The whole room"
-            : `View ${Math.min(result.guesses.length + 1, REVEAL.length)} of ${REVEAL.length}`;
+            : `View ${Math.min(result.guesses.length + 1, TRIES)} of ${TRIES}`;
 
         refs.pips.innerHTML = pipsHtml(i);
 
         draw(i);
         // Pressing a name hides the status line (wireRound); a room still
         // without its picture keeps saying so, and keeps its retry.
-        if (unloadable[i] && !rounds[i] && !roundOver && refs.status.hidden) pictureUnavailable(i);
+        if (unloadable[i] && !pictureReady(i) && refs.status.hidden) pictureUnavailable(i);
 
         /* The five names stay up after the round ends, wearing the answer —
            see renderOptions. There is no longer a separate list of guesses
@@ -1645,14 +1550,19 @@
 
        For state.day, the day that was played, rather than today(). */
     let boardsQueued = false;
+    /* Set on every open, so a results card reopened reads the board again as
+       Odd One Out's does; the board in hand stays up until the new one is in. */
+    let boardsStale = false;
     async function loadBoards(force) {
         if (boardsState === "loading") {
             if (force) boardsQueued = true;
             return;
         }
-        if (boards && !force) return;
+        if (boards && !force && !boardsStale) return;
+        boardsStale = false;
+        const quiet = Boolean(boards && !force);
         boardsState = "loading";
-        renderBoards();
+        if (!quiet) renderBoards();
         const base = `${BOARDS_URL}?day=${encodeURIComponent(state.day)}`;
         /* Through Daily.request, which gives up after ten seconds: a bare
            fetch the network swallowed left "Fetching the scores…" up for
@@ -1669,7 +1579,7 @@
             boards = body;
             boardsState = "ready";
         } else {
-            boardsState = "failed";
+            boardsState = quiet ? "ready" : "failed";
         }
         renderBoards();
         if (boardsQueued) {
@@ -1868,7 +1778,7 @@
                     ? `<img class="guess-board-face" src="${escapeHtml(row.avatar)}" alt="" aria-hidden="true" loading="lazy">`
                     : `<span class="guess-board-face is-blank" aria-hidden="true"></span>`}
                 <span class="guess-board-name">${escapeHtml(row.name || "Someone")}</span>
-                ${miniGrid(row.grid)}
+                ${window.Daily && Daily.rightCell ? Daily.rightCell(row, miniGrid(row.grid)) : miniGrid(row.grid)}
                 ${scoreCell(row)}
             </li>`).join("");
     }
@@ -1931,7 +1841,7 @@
             return;
         }
         if (boardsState === "failed") {
-            host.innerHTML = `<p class="guess-board-note">The scoreboard could not be reached just now.</p>`;
+            host.innerHTML = `<p class="guess-board-note">The scoreboard couldn't be reached just now.</p>`;
             return;
         }
 
@@ -1957,20 +1867,16 @@
                     data-range="${r.key}" aria-pressed="${r.key === boardRange}">${escapeHtml(r.label)}</button>`).join("");
 
         // What the span actually covers, since "this week" is a Monday, not
-        // a rolling seven days, and that is worth being plain about.
-        const span = boardRange === "week" && boards.weekFrom
-            ? `Since ${niceDate(boards.weekFrom)}`
-            : boardRange === "month" && boards.monthFrom
-                ? `Since ${niceDate(boards.monthFrom)}`
-                : boardRange === "day"
-                    ? "Your five against everyone else's"
-                    : "Every day the game has run";
+        // a rolling seven days, and that is worth being plain about. In the
+        // Leaderboards window's words (Daily.spanLine). None from a daily.js
+        // older than it, which a tab left open across a deploy can hold.
+        const span = window.Daily && Daily.spanLine ? Daily.spanLine(boardRange, boards) : "";
 
         host.innerHTML = `
             ${invite}
             <div class="guess-board">
                 <div class="guess-board-ranges" role="group" aria-label="Which span the board covers">${tabs}</div>
-                <p class="guess-board-span">${escapeHtml(span)}</p>
+                <p class="guess-board-span">${escapeHtml(span)}${window.Daily && Daily.orderLine ? " " + Daily.orderLine(boardRange) : ""}</p>
                 <ol class="guess-board-list">${boardRows(list, me, range.empty)}</ol>
             </div>`;
 
@@ -1987,11 +1893,6 @@
                 if (again) again.focus({ preventScroll: true });
             });
         });
-    }
-
-    function niceDate(iso) {
-        return new Date(iso + "T00:00:00Z")
-            .toLocaleDateString("en-GB", { day: "numeric", month: "long", timeZone: "UTC" });
     }
 
     let countdownTimer = null;
@@ -2152,7 +2053,7 @@
         /* The rooms already handed out for this day — in memory, and kept
            on this device for this account — laid into the slots the reply
            left empty (ONE ROUND AT A TIME in js/daily.js). */
-        if (previous && previous.day === reply.day) Daily.mergeRounds(deal.rounds, previous.rounds);
+        if (previous && previous.day === reply.day) Daily.mergeRounds(deal.rounds, unplayed(previous.rounds));
         mergeKeptDealt();
         keepDealt();
         // A day already filed brings its own figures, bonus included, so a
@@ -2195,7 +2096,7 @@
         recordedFiled = Boolean(reply.filed);
         if (applyRecorded() === "reset") await Daily.claimReset("guess");
         if (reply.filed) state.posted = true;
-        saveState();
+        saveState(recordSettled());
         return true;
     }
 
@@ -2209,12 +2110,12 @@
 
        A day not yet filed takes the server's record WHEREVER IT DIFFERS,
        shorter included: every guess a day keeps was recorded before it was
-       kept (see submitGuess), so a server with
-       fewer has lost some — an administrator's reset while the window was
-       open, or a guess taken while the session had lapsed, before that was
-       caught. Keeping the longer local copy is what used to loop: every
-       guess after it was refused as out of order, the 409 read the day
-       again, the day again kept the local copy, and so on. And an EMPTY
+       kept (see submitGuess), so a server with fewer has lost some: an
+       administrator's reset while the window was open, or played on from
+       another browser since. The local copy must not win, or every guess
+       after it is refused as out of order, the 409 reads the day again, and
+       the local copy comes back; so the caller saves this over it
+       (saveState's `fromServer`). And an EMPTY
        record for such a day is a day given back (the reset clears
        daily_starts), so the day here is cleared too, and the caller claims
        the reset's ticket so the next open does not wipe the replay; this
@@ -2224,9 +2125,11 @@
        (This read `mode === "account"` until every day was one; 10 Oct
        2026.) */
     let recordedFiled = false;
+    // Whether the server's record of an unfiled day is the last word on it.
+    const recordSettled = () => !recordedFiled && Array.isArray(recorded);
     function applyRecorded() {
         if (!state) return;
-        const accountDay = !recordedFiled && Array.isArray(recorded);
+        const accountDay = recordSettled();
         if (accountDay && !recorded.length) {
             if (!anyGuesses()) return;
             state = blankDay(state.day);
@@ -2237,6 +2140,9 @@
         const total = rec.reduce((n, r) => n + r.guesses.length, 0) +
             (rec.length === ROUNDS && rec[ROUNDS - 1].done ? 1 : 0);
         if (!accountDay && total < progressOf(state)) return;
+        // Taken back from further on, so whatever was filed went with the
+        // reset, and this day has to be sent again when it is finished.
+        if (accountDay && total < progressOf(state)) state.posted = false;
         state.results = Array.from({ length: ROUNDS }, (_, i) => (rec[i]
             ? {
                 guesses: rec[i].guesses.map(g => ({ name: g.name, correct: Boolean(g.correct) })),
@@ -2327,7 +2233,7 @@
                 // "reset": the mirror held a day the server no longer has —
                 // see applyRecorded — so the reset's ticket is spent here.
                 if (applyRecorded() === "reset") await Daily.claimReset("guess");
-                saveState();
+                saveState(recordSettled());
             }
         }
 
@@ -2396,6 +2302,7 @@
         // Guides do (PageMeta in js/site.js; 30 Sept 2026).
         if (window.PageMeta) window.PageMeta.set("guess", "Guess the Maze | Maze Rats", "https://mazerats.net/guess");
         view = "intro";
+        boardsStale = true;
         el.window.focus();
         // Counted once per open (Daily.track; 30 Sept 2026).
         Daily.track("open", "guess");
@@ -2466,19 +2373,17 @@
        way to today's rooms short of a refresh nobody would think to do.
 
        The day turns over here, on open, when the day in memory is not
-       today's AND it is finished or untouched. A day part-way through is
-       left alone: somebody on room three at midnight finishes the five
-       they started rather than having them swapped mid-sitting, and the
-       result goes to the server under the day it was dealt for. Inside the
-       five-minute grace (dayIsOpen in netlify/functions/_daily.js) that is
-       recorded; after it, it is kept on this device only — which is the
-       honest outcome for a game begun yesterday, and far better than a
-       mixed day filed against the wrong date. The open after that one ends
-       starts today. */
+       today's AND it is finished, untouched, or past taking any more guesses.
+       A day part-way through is left alone only inside the five-minute grace
+       (dayIsOpen in netlify/functions/_daily.js): somebody on room three at
+       midnight finishes the five they started rather than having them
+       swapped mid-sitting. After it the server would refuse every guess, so
+       a day left mid-way overnight moves on, as a reload or Odd One Out's
+       open already did. */
     function dayHasTurned() {
         if (!started || !state || state.day === today()) return false;
         const played = state.results.some(r => r.guesses.length);
-        return state.done || !played;
+        return state.done || !played || !dayStillOpen(state.day);
     }
 
     /* Throws away everything dealt for the day in memory, so start() deals
@@ -2544,7 +2449,7 @@
         // daily_starts), so the copy of it held here goes too.
         recorded = null;
         state = blankDay(deal ? deal.day : today());
-        saveState();
+        saveState(true);
         // The board in hand was read before the day was given back, with the
         // player's old row on it; the replay should fetch its own.
         boards = null;
@@ -2674,7 +2579,10 @@
         addBonusRule();
 
         el.close.addEventListener("click", close);
-        el.overlay.addEventListener("click", e => { if (e.target === el.overlay) close(); });
+        // Only a press that began on the backdrop: a text selection let go past the window is a click here too.
+        let pressedOn = null;
+        el.overlay.addEventListener("pointerdown", e => { pressedOn = e.target; });
+        el.overlay.addEventListener("click", e => { if (e.target === el.overlay && pressedOn === el.overlay) close(); });
 
         el.play.addEventListener("click", async () => {
             // The archive was unreachable last time; this press is the retry.
@@ -2725,6 +2633,16 @@
             if (started) {
                 renderAll();
                 if (!state.done) prepareRound(state.round);
+                /* The other tab's guesses earned pictures this tab has not
+                   got; the addresses are the server's to give (ONLY THE CROP
+                   in netlify/functions/_deal.js). */
+                if (state.results.some((r, i) => picks()[i] && r.guesses.length && picks()[i].view < (r.done ? TRIES : r.guesses.length))) {
+                    refreshDay().then(ok => {
+                        if (!ok) return;
+                        renderAll();
+                        prepareRound(state.round);
+                    });
+                }
             }
         });
 

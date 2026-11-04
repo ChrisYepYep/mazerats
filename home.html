@@ -173,10 +173,15 @@
            address after # out of it — a palette preview link carries a
            private token there. The search (?q=) is kept on purpose: the
            privacy policy says searches are recorded, and why. js/track.js,
-           the site's own record, honours both signals too. */
+           the site's own record, honours both signals too.
+
+           Never in a browser holding an admin's token (4 Nov 2026): that sits
+           in localStorage where any script on this origin can read it, and this
+           is the one script the site doesn't host and can't pin. Every page that
+           loads Umami has the same check. */
         function loadUmami() {
             try {
-                if (navigator.globalPrivacyControl === true) return;
+                if (navigator.globalPrivacyControl === true || localStorage.getItem("mazerats_admin_token")) return;
                 var s = document.createElement("script");
                 s.defer = true;
                 s.src = "https://cloud.umami.is/script.js";
@@ -690,7 +695,7 @@
 
          Wrapped in try/catch: localStorage throws outright in some privacy modes,
          and a colour scheme is not worth a blank page. -->
-    <link rel="stylesheet" href="css/style.css?v=7">
+    <link rel="stylesheet" href="css/style.css?v=11">
     <link rel="stylesheet" href="css/streak.css?v=1">
     <link rel="stylesheet" href="css/maintenance-warn.css?v=1">
     <link id="theme-css" rel="stylesheet">
@@ -964,7 +969,7 @@
 
                              The modal's own Actions tab keeps the arrow at
                              every width: it is a disclosure, not a menu. -->
-                        <span class="side-spine-arrow" aria-hidden="true">&#9654;</span>
+                        <span class="side-spine-arrow" aria-hidden="true">&#9654;&#xFE0E;</span>
                         <span class="side-spine-burger" aria-hidden="true"></span>
                     </button>
                 </div>
@@ -984,7 +989,7 @@
                             aria-expanded="false" aria-controls="spotlight-card"
                             aria-label="Spotlight: the event in the spotlight">
                         <span class="side-spine-label" aria-hidden="true">Spotlight</span>
-                        <span class="side-spine-arrow" aria-hidden="true">&#9654;</span>
+                        <span class="side-spine-arrow" aria-hidden="true">&#9654;&#xFE0E;</span>
                         <!-- Phones only, in place of the word: see
                              .side-spine-star in css/style.css. -->
                         <span class="side-spine-star" aria-hidden="true"></span>
@@ -1045,8 +1050,8 @@
                              Hidden visually, not from the accessibility tree. -->
                         <label class="visually-hidden" for="room-sort">Sort the archive</label>
                         <select id="room-sort">
-                            <option value="name">Sort by: Maze Name</option>
-                            <option value="owner">Sort by: Maze Owner</option>
+                            <option value="name">Sort by: Maze name</option>
+                            <option value="owner">Sort by: Maze owner</option>
                             <option value="date-desc">Sort by: Newest</option>
                             <option value="date-asc">Sort by: Oldest</option>
                             <!-- "Easiest first" rather than "Difficulty
@@ -1087,7 +1092,7 @@
                     </div>
                 </div>
                 <div class="featured-frame" id="featured-frame">
-                    <button type="button" class="chrome-nav-btn chrome-nav-btn-recommended" id="featured-mazes-btn"><span class="chrome-nav-btn-arrow" aria-hidden="true">&#9654;</span><span class="chrome-nav-btn-label">Featured Mazes</span></button>
+                    <button type="button" class="chrome-nav-btn chrome-nav-btn-recommended" id="featured-mazes-btn"><span class="chrome-nav-btn-arrow" aria-hidden="true">&#9654;&#xFE0E;</span><span class="chrome-nav-btn-label">Featured Mazes</span></button>
                     <div class="featured-frame-body" id="featured-frame-body">
                         <!-- One line over the picks (4 Oct 2026): what they are
                              on the left, and Refresh on the right, level with it. -->
@@ -1315,7 +1320,7 @@
                         <h3 class="console-page-title">Event Submission</h3>
                         <div class="console-hashline" aria-hidden="true"></div>
                         <p class="console-blurb console-entry-event" id="console-entry-event" hidden></p>
-                        <label class="console-field-label console-info-label" for="console-entry-username">HABBO ORIGINS USERNAME</label>
+                        <label class="console-field-label console-info-label" for="console-entry-username">YOUR HABBO NAME</label>
                         <input type="text" class="console-input console-input-line" id="console-entry-username" maxlength="60" autocomplete="nickname" required>
                         <label class="console-field-label console-info-label" for="console-entry-image">YOUR ENTRY</label>
                         <input type="file" class="console-input console-file" id="console-entry-image" accept="image/png,image/jpeg,.png,.jpg,.jpeg" required>
@@ -1340,8 +1345,8 @@
                              soon as anyone types into it. -->
                         <label class="visually-hidden" for="console-contact-message">Your message</label>
                         <textarea class="console-input console-input-message" id="console-contact-message" maxlength="2000" placeholder="Just leaving some feedback…"></textarea>
-                        <label class="console-field-label" for="console-contact-username">Your Origins username:</label>
-                        <input type="text" class="console-input console-input-username" id="console-contact-username" placeholder="L1C" maxlength="60">
+                        <label class="console-field-label" for="console-contact-username">Your Habbo name:</label>
+                        <input type="text" class="console-input console-input-username" id="console-contact-username" placeholder="YourName" maxlength="60">
                         <!-- Two states, one of which js/console.js hides.
                              Signed in, there is nothing to type: the name is
                              already known and, unlike a typed one, it is
@@ -1402,7 +1407,7 @@
                          owner's): every console form goes through it
                          (MazeConsole.startSending in js/console.js). -->
                     <div class="console-page console-page-sending" id="console-page-sending" style="display:none;" role="status" aria-live="polite">
-                        <p class="console-sending-message">Sending...</p>
+                        <p class="console-sending-message">Sending…</p>
                         <span class="daily-bar console-sending-bar" aria-hidden="true"><span></span></span>
                     </div>
                     <div class="console-page console-page-thanks" id="console-page-thanks" style="display:none;">
@@ -1445,7 +1450,7 @@
                         <div class="console-hashline" aria-hidden="true"></div>
                         <div class="console-choice">
                             <button type="button" class="console-btn console-choice-btn" id="console-choice-notices">Notifications</button>
-                            <button type="button" class="console-btn console-choice-btn" id="console-choice-edit">Edit Profile</button>
+                            <button type="button" class="console-btn console-choice-btn" id="console-choice-edit">Edit profile</button>
                         </div>
                     </div>
                     <!-- Every notification this visitor has been sent, newest first
@@ -1460,7 +1465,7 @@
                         </div>
                     </div>
                     <div class="console-page" id="console-page-profile" style="display:none;">
-                        <h3 class="console-page-title">Edit Profile</h3>
+                        <h3 class="console-page-title">Edit profile</h3>
                         <div class="console-hashline" aria-hidden="true"></div>
                         <div id="console-profile-body"></div>
                         <div class="console-contact-actions">
@@ -1480,8 +1485,8 @@
     </div>
 
     <footer class="site-footer">
-        <p>Origins Maze Rats is independent and not affiliated with, sponsored, supported, or endorsed by Sulake Oy or its affiliates. Any Habbo trademarks or intellectual property used here are done so in accordance with the Habbo Fan Site Policy.</p>
-        <p>&copy; 2026 Origins Maze Rats. All rights reserved.</p>
+        <p>Maze Rats is independent and not affiliated with, sponsored, supported, or endorsed by Sulake Oy or its affiliates. Any Habbo trademarks or intellectual property used here are done so in accordance with the Habbo Fan Site Policy.</p>
+        <p>&copy; 2026 Maze Rats. All rights reserved.</p>
     </footer>
 
     <!-- Guess the Maze. Same .modal-overlay/.modal window every other panel
@@ -1723,7 +1728,7 @@
                             <!-- Only while somebody else's profile is showing: back to your own. -->
                             <button type="button" class="console-btn profile-back" id="profile-back" hidden>My profile</button>
                             <!-- Only on your own, signed in: the console's Edit Profile. -->
-                            <button type="button" class="console-btn profile-back" id="profile-edit" data-profile-act="edit" hidden>Edit Profile</button>
+                            <button type="button" class="console-btn profile-back" id="profile-edit" data-profile-act="edit" hidden>Edit profile</button>
                             <!-- And under it, a Mazer Card of your own (js/mazer-card.js). -->
                             <button type="button" class="console-btn profile-back" id="profile-mazer" data-profile-act="mazer" hidden>Print Mazer Card</button>
                         </div>
@@ -1875,7 +1880,7 @@
                         aria-expanded="false" aria-controls="modal-actions-panel"
                         aria-label="Actions for this room">
                     <span class="side-spine-label" aria-hidden="true">Actions</span>
-                    <span class="side-spine-arrow" aria-hidden="true">&#9654;</span>
+                    <span class="side-spine-arrow" aria-hidden="true">&#9654;&#xFE0E;</span>
                 </button>
             </div>
             <!-- INCOMPLETE: a second tab under Actions, only on a record an
@@ -1890,7 +1895,7 @@
                         aria-expanded="false" aria-controls="modal-incomplete-panel"
                         aria-label="What this record is missing">
                     <span class="side-spine-label" aria-hidden="true">Incomplete</span>
-                    <span class="side-spine-arrow" aria-hidden="true">&#9654;</span>
+                    <span class="side-spine-arrow" aria-hidden="true">&#9654;&#xFE0E;</span>
                 </button>
             </div>
             <!-- Spoken, never seen: what the Share button has just done
@@ -1981,17 +1986,6 @@
                                     <p class="ec-modal-label" id="modal-ec-label" hidden></p>
                                     <img class="ec-modal-badge" id="modal-ec-badge" alt="" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" hidden>
                                 </div>
-                                <!-- Hidden as a whole when there is no room to visit, not just
-                                     the button inside it — index.html's copy has always done
-                                     that. Left in place it is an empty paragraph holding a slot
-                                     in .modal-body's column, which is a gap under the builder
-                                     card on every event. -->
-                                <p class="modal-visit-link" id="modal-visit-wrap">
-                                <a class="btn" id="modal-link" href="#" target="_blank" rel="noopener">Visit Room</a>
-                                <!-- An event's "Read the article" (2 Nov 2026): one per published
-                                     article about it, filled by js/home.js. -->
-                                <span class="modal-article-links" id="modal-article-links"></span>
-                                </p>
                                 <!-- One panel running to the modal's own edges: the meta items on
                                      top, then the description (and the thumbnail strip inside it)
                                      directly below. #modal-meta-items rather than #modal-meta is
@@ -2046,10 +2040,10 @@
     <script src="js/events-data.js?v=2"></script>
     <script src="js/api.js?v=5"></script>
     <script src="js/event-status.js?v=2"></script>
-    <script src="js/privacy-content.js?v=5"></script>
+    <script src="js/privacy-content.js?v=6"></script>
     <script src="js/palette-wear.js?v=2"></script>
     <script src="js/skin-wear.js?v=1"></script>
-    <script src="js/site.js?v=3"></script>
+    <script src="js/site.js?v=4"></script>
     <!-- Dropdowns open the site's own list, not the browser's. After site.js,
          whose EscapeLayers it registers with. -->
     <script src="js/select-list.js?v=3"></script>
@@ -2060,15 +2054,15 @@
          run time enough: the object simply did not exist yet and every one
          of those checks silently did nothing. A shared service belongs with
          site.js, not among the things that consume it. -->
-    <script src="js/account.js?v=3"></script>
+    <script src="js/account.js?v=4"></script>
     <!-- What a record can be missing — shared with /warren and the
          Dead Ends functions, so it loads before home.js asks it. -->
-    <script src="js/dead-ends.js?v=2"></script>
+    <script src="js/dead-ends.js?v=3"></script>
     <!-- The site's one formatting language, before home.js: it draws maze
          and event descriptions with it from the first render (30 Sept 2026),
          and guides.js below renders the Guides window with it too. -->
     <script src="js/guide-text.js?v=3"></script>
-    <script src="js/home.js?v=9"></script>
+    <script src="js/home.js?v=11"></script>
     <script src="js/custom-scrollbar.js?v=4"></script>
     <script src="js/letter-jump.js?v=2"></script>
     <script src="js/console.js?v=12"></script>
@@ -2078,11 +2072,11 @@
     <script src="js/console-profile.js?v=2"></script>
     <script src="js/mazer-card.js?v=2"></script>
     <!-- The Guides window. guide-text.js is loaded above, before home.js. -->
-    <script src="js/guides.js?v=3"></script>
+    <script src="js/guides.js?v=4"></script>
     <!-- The Articles window (2 Nov 2026): article-text.js reads an article's
          text (the guides' format and its own blocks), articles.js is the window. -->
     <script src="js/article-text.js?v=8"></script>
-    <script src="js/articles.js?v=7"></script>
+    <script src="js/articles.js?v=9"></script>
     <!-- The Alt Codes window. Needs nothing but site.js's EscapeLayers. -->
     <script src="js/glyphs.js?v=3"></script>
     <!-- The seats that fall when Fallin' Furni is pressed while Coming Soon. -->
@@ -2104,8 +2098,8 @@
          asserted by tools/check-daily-parity.js so a page cannot quietly
          load one without the other. -->
     <script src="js/featured-days.js?v=2"></script>
-    <script src="js/daily.js?v=6"></script>
-    <script src="js/daily-loader.js?v=4"></script>
+    <script src="js/daily.js?v=7"></script>
+    <script src="js/daily-loader.js?v=6"></script>
     <!-- After daily.js: the window draws its rows with Daily.ranks and the
          same row markup the games' own boards use. -->
     <script src="js/leaderboards.js?v=3"></script>
@@ -2113,6 +2107,6 @@
     <!-- The two-minute warning before Maintenance moves an open page to the landing page (30 Oct 2026). -->
     <script src="js/maintenance-warn.js?v=3"></script>
     <!-- The offline archive (2 Nov 2026): registers /sw.js and says when the page is offline. Last, after every opener it guards. -->
-    <script src="js/offline.js?v=2"></script>
+    <script src="js/offline.js?v=3"></script>
 </body>
 </html>

@@ -96,42 +96,70 @@
             Api.deleteImage(token(), k).catch(() => { /* kept, or gone: leave it */ });
         });
     }
+    // The UTC day, as the article's own Published and Updated are (js/articles.js).
     function when(iso) {
         const d = new Date(iso);
-        return isNaN(d) ? "" : d.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
+        return isNaN(d) ? "" : d.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });
     }
     const notify = () => listeners.forEach(fn => { try { fn(); } catch (e) { /* the log's problem, not this one's */ } });
 
     // ------------------------------------------------------------ loading
 
     let loadGen = 0;
-    async function load() {
+    let lastRead = 0;
+    /* `quiet`: a re-read, on opening the tab or by the panel's Refresh. The
+       list stays up while it reads and if it fails. `freshEvents`: the events
+       the Refresh has just read, rather than admin.js's copy. */
+    async function load(quiet, freshEvents) {
         const gen = ++loadGen;
-        listEl.innerHTML = '<p class="admin-empty">Loading the articles…</p>';
+        if (quiet !== true) listEl.innerHTML = '<p class="admin-empty">Loading the articles…</p>';
         try {
             const [data, evs] = await Promise.all([
                 call(`${URL_}?full=1&retired=1`, "GET"),
-                loadEvents()
+                loadEvents(freshEvents)
             ]);
             if (gen !== loadGen) return;
             articles = Array.isArray(data) ? data : (Array.isArray(data && data.records) ? data.records : []);
             retiredAddresses = Array.isArray(data && data.retired) ? data.retired : [];
-            events = evs;
+            takeEvents(evs);
+            lastRead = Date.now();
             renderList();
             notify();
         } catch (err) {
             if (gen !== loadGen) return;
             if (sessionGone(err)) { mounted = false; listEl.innerHTML = '<p class="admin-empty">Sign in again to see the articles.</p>'; return; }
-            listEl.innerHTML = `<p class="admin-empty">Could not load the articles: ${esc(err.message)} <button type="button" class="ctl-btn" data-art-retry>Try again</button></p>`;
+            if (quiet === true && lastRead) return;
+            listEl.innerHTML = `<p class="admin-empty">Couldn't load the articles: ${esc(err.message)} <button type="button" class="ctl-btn" data-art-retry>Try again</button></p>`;
         }
     }
-    // The events, for the "about this event" picker: the copy admin.js read at sign-in, else a read of our own.
-    async function loadEvents() {
-        let list = null;
-        try { if (typeof window.AdminArchiveCopy === "function") { const c = await window.AdminArchiveCopy(); list = c && c.events; } } catch (e) { /* read below */ }
+    /* The events, for the "about this event" picker: those a Refresh has just
+       read, else the copy admin.js keeps (this Warren's own saves included),
+       else a read of our own. An event a Refresh found that the copy has not
+       is kept. */
+    async function loadEvents(freshEvents) {
+        let list = Array.isArray(freshEvents) ? freshEvents : null;
+        if (!list) {
+            try { if (typeof window.AdminArchiveCopy === "function") { const c = await window.AdminArchiveCopy(); list = c && c.events; } } catch (e) { /* read below */ }
+            if (Array.isArray(list)) {
+                const have = new Set(list.map(e => e && e.id));
+                list = list.concat(refreshedEvents.filter(e => !have.has(e.id)));
+            }
+        } else {
+            let known = null;
+            try { if (typeof window.AdminArchiveCopy === "function") { const c = await window.AdminArchiveCopy(); known = c && c.events; } } catch (e) { /* none kept */ }
+            const have = new Set((known || []).map(e => e && e.id));
+            refreshedEvents = known ? list.filter(e => e && !have.has(e.id)) : [];
+        }
         if (!Array.isArray(list)) list = await Api.getEventsFull(token()).catch(() => []);
         return (Array.isArray(list) ? list : []).filter(e => e && e.id)
             .sort((a, b) => String(b.date || "").localeCompare(String(a.date || "")) || String(a.title || "").localeCompare(String(b.title || "")));
+    }
+    let refreshedEvents = [];
+    // Into the picker too if the editor is open, in place: what is chosen and typed stays.
+    function takeEvents(list) {
+        events = list;
+        const sel = formEl.querySelector('[data-a="eventId"]');
+        if (sel && editing) sel.innerHTML = eventOptions(editing.eventId);
     }
     const eventTitle = id => { const e = events.find(x => x.id === id); return e ? e.title || e.id : id; };
 
@@ -160,7 +188,7 @@
                 </div>
                 <div class="admin-row-actions">
                     <button type="button" class="btn admin-edit-btn" data-art-act="edit" aria-label="Edit ${esc(a.title || "the article")}">Edit</button>
-                    ${pub ? `<a class="btn admin-edit-btn" href="${esc(`/article/${encodeURIComponent(a.slug || a.id)}?fresh=1`)}" target="_blank" rel="noopener" aria-label="View ${esc(a.title || "the article")} on the site (opens a new tab)">View</a>` : ""}
+                    ${pub ? `<a class="btn" href="${esc(`/article/${encodeURIComponent(a.slug || a.id)}?fresh=1`)}" target="_blank" rel="noopener" aria-label="View ${esc(a.title || "the article")} on the site (opens a new tab)">View</a>` : ""}
                     <button type="button" class="btn admin-delete-btn" data-art-act="delete" aria-label="Delete ${esc(a.title || "the article")}">Delete</button>
                 </div>
             </div>`;
@@ -177,8 +205,12 @@
         else if (btn.dataset.artAct === "delete") removeArticle(a);
     });
 
+    // A second press while the first is out would only be told it has gone, though it worked.
+    const deletesOut = new Set();
     async function removeArticle(a) {
+        if (deletesOut.has(a.id)) return;
         if (!await ask(`Delete the article "${esc(a.title)}"? It comes off the site and What's New at once, its address stays reserved so old links say it's gone, and its uploaded pictures are deleted. This can't be undone.`, { danger: true })) return;
+        deletesOut.add(a.id);
         try {
             await call(`${URL_}?id=${encodeURIComponent(a.id)}`, "DELETE");
             const doomed = keysIn(a);
@@ -190,6 +222,8 @@
             await load();
         } catch (err) {
             if (!sessionGone(err)) await tell(err.message || "That couldn't be deleted.");
+        } finally {
+            deletesOut.delete(a.id);
         }
     }
 
@@ -233,7 +267,7 @@
 
     async function openEditor(a) {
         if (saving) return;
-        if (editing && dirty() && !await ask("You have unsaved changes to this article. Discard them?", { danger: true })) return;
+        if (editing && dirty() && !await ask("Discard your unsaved changes to this article? Anything you have added or edited since opening it will be lost.", { danger: true })) return;
         if (saving) return;
         if (editing) discardUploads();
         newSession();
@@ -616,8 +650,10 @@
 
     /* An upload to its slot: "thumb", "wn", "gallery" (added at the end),
        or "body" (put in at the caret). Found again by the edit it began in. */
-    async function uploadInto(which, file) {
+    async function uploadInto(which, file, batch) {
         if (!editing) return;
+        // The rest of a batch whose edit has ended: they must not land in the next article opened.
+        if (batch !== undefined && batch !== session) return;
         const status = () => formEl.querySelector(`[data-pic-status="${which}"]`);
         if (saving) { const s = status(); if (s) s.textContent = "Saving - pick it again once the save is done."; return; }
         const mine = session;
@@ -751,8 +787,9 @@
             t.value = "";
             // A batch into the gallery, one after another, in name order as the maze editor does.
             if (which === "gallery") {
+                const batch = session;
                 files.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: "base" }))
-                    .reduce((p, f) => p.then(() => uploadInto("gallery", f)), Promise.resolve());
+                    .reduce((p, f) => p.then(() => uploadInto("gallery", f, batch)), Promise.resolve());
             } else uploadInto(which, files[0]);
         }
     });
@@ -820,7 +857,8 @@
         // One picture for the thumbnail and What's New; the gallery and the text take them all, in name order.
         const batch = spot.which === "thumb" || spot.which === "wn" ? files.slice(0, 1) : files;
         if (spot.which === "body") spot.el.focus({ preventScroll: true });
-        batch.reduce((p, f) => p.then(() => uploadInto(spot.which, f)), Promise.resolve())
+        const edit = session;
+        batch.reduce((p, f) => p.then(() => uploadInto(spot.which, f, edit)), Promise.resolve())
             .then(() => {
                 const now = formEl.querySelector(`[data-pic-status="${spot.which}"]`);
                 if (now && files.length < all.length) now.textContent += (now.textContent ? " " : "") + `${all.length - files.length} file${all.length - files.length === 1 ? " wasn't a picture" : "s weren't pictures"}, so left out.`;
@@ -859,7 +897,7 @@
         if (t.closest("[data-preview]")) { readInto(); preview(); return; }
         if (t.closest(".admin-cancel-btn")) {
             if (saving) return;
-            if (dirty() && !await ask("Discard your changes to this article?", { danger: true })) return;
+            if (dirty() && !await ask("Discard your unsaved changes to this article? Anything you have added or edited since opening it will be lost.", { danger: true })) return;
             if (saving || !editing) return;
             closeEditor();
         }
@@ -918,7 +956,7 @@
                 await load();
                 return;
             }
-            showError(err.message || "Could not save the article.");
+            showError(err.message || "Couldn't save the article.");
         } finally {
             saving = false;
         }
@@ -991,7 +1029,7 @@
                         <div class="modal-body">
                             <div class="modal-top-row">
                                 <div class="builder-list art-byline">${author ? `<div class="builder-card art-writer"><div class="builder-text"><p class="builder-name">Article written by ${esc(author)}</p></div></div>` : ""}</div>
-                                <div class="room-tags art-actions">${ev ? `<span class="tag tag-filter">See the event</span>` : ""}<span class="tag tag-filter art-copy">Copy link</span></div>
+                                <div class="room-tags art-actions">${ev ? `<span class="modal-share-btn"><span class="modal-share-label">Linked event</span></span>` : ""}<span class="modal-share-btn"><span class="modal-share-label">Share</span></span></div>
                             </div>
                             <div class="modal-meta">
                                 <div class="modal-meta-items art-meta"><span class="status-badge art-badge">Article</span><span>Published: ${esc(shortDay(day, true, "UTC"))}</span>${evDays ? `<span>Event: ${esc(evDays)}</span>` : ""}${words ? `<span>Reading time: ${Math.max(1, Math.round(words / 200))} min</span>` : ""}${pics.length > 1 ? `<span>${pics.length} pictures</span>` : ""}</div>
@@ -1060,8 +1098,17 @@
 
     // ------------------------------------------------------------ mount
 
+    /* And re-read on each opening after, as the log below it is, at most once
+       a minute (js/admin-whats-new.js): the picker's events come from admin.js's
+       copy, for nothing, so an event added since is there to choose. */
+    const RE_READ_MS = 60 * 1000;
     function maybeMount() {
-        if (mounted || panel.hidden || !token()) return;
+        if (panel.hidden || !token()) return;
+        if (mounted) {
+            if (Date.now() - lastRead >= RE_READ_MS) { if (lastRead) load(true); }
+            else loadEvents().then(takeEvents).catch(() => { /* the picker stays as it is */ });
+            return;
+        }
         mounted = true;
         // Every embed's script, for its button on the bar (THE EMBED CONTRACT).
         if (window.ArticleEmbeds) window.ArticleEmbeds.loadAll().then(() => { if (editing) redraw(); });
@@ -1076,6 +1123,8 @@
         list: () => articles.slice(),
         loaded: () => mounted && articles !== null,
         onChange(fn) { if (typeof fn === "function") listeners.push(fn); },
+        // The panel's Refresh (js/admin-whats-new.js), with the events it has just read.
+        refresh(freshEvents) { return mounted ? load(true, freshEvents) : Promise.resolve(); },
         edit(id) {
             const a = articles.find(x => x.id === id);
             if (a) openEditor(a);
@@ -1131,6 +1180,8 @@
             if (editing) closeEditor(true);
             articles = [];
             retiredAddresses = [];
+            lastRead = 0;
+            refreshedEvents = [];
             listEl.innerHTML = "";
             mounted = false;
             notify();

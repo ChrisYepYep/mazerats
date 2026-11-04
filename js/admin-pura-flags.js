@@ -64,8 +64,8 @@
     function ask(html, opts) {
         return typeof window.AdminConfirm === "function" ? window.AdminConfirm(html, opts) : Promise.resolve(false);
     }
-    const num = n => Number(n || 0).toLocaleString();
-    // As the tab's other tables write a length (admin.js ffClock) and a date (ffDate).
+    const num = n => Number(n || 0).toLocaleString("en-GB");
+    // As the tab's other tables write a length (admin.js ffClock) and a date (ffDate, UTC with the label).
     function clock(ms) {
         if (ms === null || ms === undefined || !Number.isFinite(Number(ms))) return "—";
         const total = Math.max(0, Math.round(Number(ms) / 1000));
@@ -76,7 +76,7 @@
     function date(iso) {
         const d = new Date(iso);
         if (!iso || isNaN(d)) return "—";
-        return d.toLocaleString(undefined, { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+        return d.toLocaleString("en-GB", { timeZone: "UTC", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", hour12: false }).replace(",", "") + " UTC";
     }
     function say(text, bad) {
         if (!statusEl) return;

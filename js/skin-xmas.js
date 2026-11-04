@@ -973,16 +973,16 @@
     }
 
     function hats(win) {
-        const put = (rat, opts, fx, fy) => {
+        const put = (rat, opts, fx, fy, cls) => {
             if (!rat || !rat.offsetWidth) return;
             const hat = santaHat(opts);
             const x = rat.offsetLeft + rat.offsetWidth * fx - hat.brimLeft;
             const y = rat.offsetTop - (lifted.get(rat) ? lifted.get(rat).by : 0) + rat.offsetHeight * fy - hat.brimY;
-            piece(win, hat, "xm-hat", { left: Math.round(x), top: Math.round(y), zIndex: 4 });
+            piece(win, hat, "xm-hat" + (cls ? " " + cls : ""), { left: Math.round(x), top: Math.round(y), zIndex: 4 });
         };
         // Brim centred between the ears, tip flopped back off the head.
         put(win.querySelector(":scope > .window-peek-rat"), { brim: 22, height: 17, lean: 15, tilt: 0, seed: 11, furLeft: 2 }, 0.545, 0.185);
-        put(win.querySelector(":scope > .window-sleep-rat"), { brim: 18, height: 14, lean: 12, tilt: 2, seed: 29 }, 0.64, 0.42);
+        put(win.querySelector(":scope > .window-sleep-rat"), { brim: 18, height: 14, lean: 12, tilt: 2, seed: 29 }, 0.64, 0.42, "xm-hat-sleep");
     }
 
     function decorateHeader() {
@@ -1317,10 +1317,10 @@
        floor, sunk in a little rise of the snow, with its shadow cast across
        the snow to the right.
 
-       Everything is drawn at the TILE'S scale, on the tile's own pixel grid
-       (the page shows the 200px tile at 220px, smoothed), into one picture
-       that is then shown exactly as the maze is: enlarged a tenth and
-       smoothed. Then nothing here is sharper or blurrier than the maze.
+       The snow and the shadows are drawn at the TILE'S scale, on the tile's own
+       pixel grid (the page shows the 200px tile at 220px, smoothed), into one
+       picture that is then shown exactly as the maze is: enlarged a tenth and
+       smoothed. The trees go on top with pixels of their own (see conifer).
 
        IN the maze, not on it: every pixel knows how near the viewer it is,
        as the ground row it stands on (a wall's pixels stand where that wall
@@ -1329,6 +1329,7 @@
        trunk covers its base, and a drift banks against the wall behind it. */
     const TILE_PX = 220, TILE_SRC = 200, K_TILE = TILE_PX / TILE_SRC;
     const TREE_ROOM = 6;          // the least clear floor round a tree's foot (in half-steps along a diagonal, tile pixels)
+    const WALL_CLEAR = 14;        // page pixels up from a tree's foot to clear the tops of the walls beside it
     // How much of the day's light each keeps, before the page's own shade: snow on the ground, snow on a tree, needles, bark.
     const NIGHT = { g: 0.66, s: 0.88, f: 0.8, t: 0.8, o: 1 };
     // What each colour of the original tile is.
@@ -1369,135 +1370,172 @@
         return R[Math.max(0, Math.min(R.length - 1, Math.round(p)))];
     }
 
-    /* A CONIFER, never the same one twice (seeded): a fir (tall, narrow), a
-       spruce (broad), or a sapling (small: always, when small is set).
+    /* A CONIFER (redrawn 4 Nov 2026, the owner's: the first ones were "distorted"
+       and needed to sit in the maze properly). Two things caused it. Each was
+       drawn on the tile's own pixel grid, dithered and flecked with grain, and
+       the whole picture then enlarged by a tenth and smoothed, which turned
+       the fine pattern into mush. And each crown was wider than the trench it
+       stood in, so the walls in front sliced pieces out of it.
 
-       Built as a real tree is: a trunk, and up it whorls of branches, each
-       whorl turned from the last, every branch drooping out from the trunk
-       and lifting a little at its tip, and along each branch a run of
-       needle sprays, flat ovals widest near the trunk. Seen as the maze is
-       seen (heights straight up the screen, the ground at half its depth),
-       each spray is drawn as a little lit volume: its light from the maze's
-       own side, darker the nearer the trunk and the more sprays hang over
-       it, with a grain in the needles. Snow lies on every spray with open
-       sky above it, heaped as a flattened cushion, deeper out at the tips
-       where the branches spread. Nearer sprays hide farther ones. Outlined
-       in near-black, as every edge in the maze is.
+       So a tree now has pixels of its own, shown whole and never resampled
+       (see drawTree), in flat shaded steps with no dither. Its boughs all hang
+       above the height of the walls round it, so a crown passes over them
+       and only the trunk, down in the trench, can go behind one, as it would.
 
-       Returns its pixels (g), how far each pixel stands in front of the
-       trunk (zs, in ground rows, for the maze's depth test), its foot
-       (fx, fy) and its spread (R). */
-    function conifer(seed, small) {
+       Built as a real one is: up a trunk, tiers of drooping boughs, each bough
+       a run of needle strokes with a shelf of snow along its top, painted from
+       the back and bottom of the tree to its front and top, as the maze's
+       raised view sees them. Light from the maze's own side, the left.
+
+       `scale` keeps its size in page pixels on any screen. Returns its pixels,
+       which part of the tree each one is (for the night's grading), its foot
+       (fx, fy), spread (R), height, and the row the walls' tops reach (crownY). */
+    const TREE_NEEDLES = [[10, 26, 28], [15, 40, 37], [22, 58, 47], [33, 78, 57], [50, 102, 70], [78, 130, 88]];
+    const TREE_SNOW = [[92, 124, 178], [140, 172, 222], [190, 214, 244], [230, 240, 252], [255, 255, 255]];
+    const TREE_BARK = [[30, 20, 17], [52, 35, 26], [78, 54, 38], [104, 74, 50]];
+    const TREE_OUTLINE = [5, 11, 15];
+    const step = (R, v) => R[Math.max(0, Math.min(R.length - 1, Math.round(v * (R.length - 1))))];
+
+    function conifer(seed, small, scale) {
         const rnd = prng(seed);
-        const kind = small ? 0.84 + rnd() * 0.16 : rnd();
+        const kind = small ? 0.84 + rnd() * 0.16 : rnd() * 0.84;
         const fir = kind < 0.45, sapling = kind >= 0.84;
-        const Ht = Math.round(fir ? 52 + rnd() * 14 : sapling ? 28 + rnd() * 8 : 42 + rnd() * 12);
-        const Rmax = Ht * (fir ? 0.3 : sapling ? 0.36 : 0.4) * (0.92 + rnd() * 0.16);
-        const low = Ht * (sapling ? 0.1 : 0.12);
-        const snowy = 0.85 + rnd() * 0.35;
-        const L = (() => { const v = [-0.62, 0.62, 0.48], n = Math.hypot(...v); return v.map((c) => c / n); })();
+        const Ht = Math.round((fir ? 92 + rnd() * 22 : sapling ? 48 + rnd() * 12 : 78 + rnd() * 18) * scale);
+        const Rmax = Ht * (fir ? 0.25 : sapling ? 0.33 : 0.33) * (0.94 + rnd() * 0.12);
+        // Clear of the walls either side: their tops stand about this high.
+        const low = Math.round(WALL_CLEAR * scale + Rmax * 0.5);
 
-        const sprays = [];
-        const nW = Math.max(4, Math.round((Ht * 0.94 - low) / (fir ? 3.6 : 4.2)));
-        for (let w = 0; w < nW; w++) {
-            const f = w / (nW - 1);
-            const y = low + (Ht * 0.93 - low) * Math.pow(f, 0.95) + (rnd() - 0.5) * 1.1;
-            const R = Rmax * Math.pow(1 - f, fir ? 0.95 : 0.85) * (0.86 + rnd() * 0.26) + 1.4;
-            const nb = Math.max(5, Math.round(5 + R * 0.45));
+        const P = 3, W = Math.ceil(Rmax * 2.5) + P * 2, H = Ht + Math.ceil(Rmax * 0.3) + P * 2 + 3;
+        const ox = Math.round(W / 2), oy = P + Ht + 1;       // where the trunk meets the ground
+        const rgb = new Uint8Array(W * H * 3), part = new Uint8Array(W * H);          // 0 nothing, then PARTS
+        const PART = { f: 1, s: 2, t: 3, o: 4 };
+        const set = (x, y, c, k) => {
+            x = Math.round(x); y = Math.round(y);
+            if (x < 0 || y < 0 || x >= W || y >= H) return;
+            const i = y * W + x;
+            rgb[i * 3] = c[0]; rgb[i * 3 + 1] = c[1]; rgb[i * 3 + 2] = c[2]; part[i] = PART[k];
+        };
+
+        // The trunk, a lit cylinder, on up into the crown.
+        const rt = Math.max(1.1, Ht * 0.02);
+        for (let y = oy - Math.round(Ht * 0.7); y <= oy; y++) for (let x = Math.floor(ox - rt); x <= ox + rt; x++) {
+            const nx = (x + 0.5 - ox) / rt;
+            if (Math.abs(nx) <= 1.05) set(x, y, step(TREE_BARK, 0.62 - nx * 0.55), "t");
+        }
+
+        // The crown's heart: deep shade, so a gap between boughs shows the inside of the tree, never through it.
+        for (let y = oy - Math.round(Ht * 0.95); y <= oy - low + 2; y++) {
+            const h = oy - y, rc = Rmax * 0.48 * Math.min(1, (Ht - h) / Math.max(1, Ht - low)) + 0.8;
+            for (let x = Math.floor(ox - rc); x <= ox + rc; x++) set(x, y, TREE_NEEDLES[0], "f");
+        }
+
+        // The tiers, bottom to top, narrowing; each bough with its place in the raised view.
+        const boughs = [];
+        const gap = (fir ? 7.5 : 8.5) * Math.max(0.8, scale);
+        const nT = Math.max(4, Math.round((Ht * 0.96 - low) / gap));
+        const radiusAt = (f) => Rmax * Math.pow(1 - f, fir ? 0.92 : 0.82) + 3 * scale;
+        for (let w = 0; w < nT; w++) {
+            const f = w / nT;
+            const y = low + (Ht * 0.97 - low) * f + (rnd() - 0.5) * 1.2;
+            const R = radiusAt(f) * (0.92 + rnd() * 0.16);
+            const n = Math.max(5, Math.round(5 + R * 0.34));
             const rot = rnd() * 6.283;
-            for (let b = 0; b < nb; b++) {
-                const phi = rot + b * 6.283 / nb + (rnd() - 0.5) * 0.55;
-                const len = R * (0.8 + rnd() * 0.3);
-                const droop = (0.22 + rnd() * 0.14) * (1 - f * 0.45);
-                const steps = Math.max(2, Math.round(len / 2));
-                for (let s = 1; s <= steps; s++) {
-                    const t = s / steps, r = len * (0.15 + 0.85 * t);
-                    const a = (1.5 + 1.5 * (1 - t) + R * 0.05) * (0.85 + rnd() * 0.3) * (sapling ? 0.85 : 1);
-                    sprays.push({ x: Math.cos(phi) * r, z: Math.sin(phi) * r, y: y - droop * len * t * t + 0.09 * len * Math.pow(t, 4), a, b: a * 0.5, t, f });
+            const above = radiusAt(Math.min(0.999, (w + 1) / nT));
+            for (let b = 0; b < n; b++) {
+                const phi = rot + b * 6.283 / n + (rnd() - 0.5) * 0.4;
+                // The skirt's front boughs are shorter, so the hem rounds off under the tree rather than ending in spikes.
+                const len = R * (0.86 + rnd() * 0.22) * (1 - Math.max(0, Math.sin(phi)) * 0.42 * Math.max(0, 1 - f * 3));
+                boughs.push({
+                    phi, y, len, f, above,
+                    // Foreshortened, one facing us would hang down as a long spike if it drooped as much.
+                    droop: len * (0.34 + rnd() * 0.14) * (1 - f * 0.35) * (1 - Math.max(0, Math.sin(phi)) * 0.62),
+                    thick: 1.3 + (R / Rmax) * 1.9,
+                    snow: 0.9 + rnd() * 0.5,
+                    tone: (rnd() - 0.5) * 0.14,
+                    d: Math.sin(phi) * len * 0.87 + y * 0.5
+                });
+            }
+        }
+        boughs.sort((a, b) => a.d - b.d);
+
+        const needles = (p) => {
+            const cosp = Math.cos(p.phi), sinp = Math.sin(p.phi);
+            const steps = Math.max(3, Math.round(p.len * 1.3));
+            for (let s = 0; s <= steps; s++) {
+                const t = s / steps, r = p.len * t;
+                const cx = ox + cosp * r, cy = oy - (p.y - p.droop * t * t) + sinp * r * 0.5;
+                // Lit on the side towards the light and towards us, deep near the trunk.
+                const light = 0.42 - cosp * 0.2 + sinp * 0.12 + (t - 0.5) * 0.34 + p.tone;
+                // Full to the end, then rounded off, so a bough stops in a spray and not a point.
+                const span = (1.2 + (1 - t) * 1.2) * p.thick * 0.72 * (t > 0.86 ? Math.sqrt(Math.max(0.25, 1 - (t - 0.86) / 0.14)) : 1);
+                // Sprays of needles off both sides of the bough, longest mid-way, swept out towards its tip.
+                for (const side of [-1, 1]) {
+                    const lenN = span * (0.75 + rnd() * 0.5);
+                    const sweep = cosp * 0.8;
+                    const tone = light + (side > 0 ? -0.1 : 0.04) + (rnd() - 0.5) * 0.2;
+                    const c = step(TREE_NEEDLES, tone);
+                    for (let q = 0; q <= lenN; q += 0.6) set(cx + sweep * q, cy + side * q * 0.9 + q * 0.3, c, "f");
                 }
+                set(cx, cy, step(TREE_NEEDLES, light - 0.1), "f");
             }
-        }
-        // The leader: the last hand's breadth of the top.
-        for (let i = 0; i < 4; i++) sprays.push({ x: 0, z: 0, y: Ht - 0.5 - i * 1.5, a: 0.9 + i * 0.45, b: 1.1, t: 1, f: 1 });
-
-        // Open sky over each spray: how much of the sprays above overhang it.
-        for (const p of sprays) {
-            let cover = 0;
-            for (const q of sprays) {
-                if (q === p || q.y < p.y + p.b * 0.6) continue;
-                const d = Math.hypot(q.x - p.x, q.z - p.z), reach = (p.a + q.a) * 0.62;
-                if (d < reach) cover += (1 - d / reach) * Math.min(1, (q.y - p.y) / 6 + 0.4);
-            }
-            p.cover = cover;
-        }
-        // The snow: a cushion on each spray the sky can reach.
-        const caps = [];
-        for (const p of sprays) {
-            const open = Math.max(0, 1 - p.cover * 0.9);
-            if (open < 0.22) continue;
-            const k = snowy * open * (0.55 + 0.45 * p.t);
-            if (k < 0.26) continue;
-            // Wide enough that the cushions along a branch run together into a shelf.
-            caps.push({ x: p.x * 1.04, z: p.z * 1.04, y: p.y + p.b * 0.5, a: p.a * (0.8 + 0.34 * k), b: p.b * (0.5 + 0.45 * k), snow: true, open });
-        }
-
-        const P = 3, W = Math.ceil(Rmax * 2.4) + P * 2, H = Math.ceil(Ht + Rmax * 0.6) + P * 2 + 4;
-        const ox = W / 2, oy = P + Ht + 1;                  // where the trunk meets the ground
-        const col = new Array(W * H).fill(null), zb = new Float32Array(W * H).fill(-1e9);
-        const put = (x, y, c, z) => { if (x < 0 || y < 0 || x >= W || y >= H) return; const i = y * W + x; if (z >= zb[i]) { zb[i] = z; col[i] = c; } };
-
-        // The trunk, a lit cylinder, up into the crown.
-        const rt = 0.9 + Ht * 0.022;
-        for (let y = Math.floor(oy - Ht * 0.45); y <= oy; y++) for (let x = Math.floor(ox - rt - 1); x <= ox + rt + 1; x++) {
-            const nx = (x + 0.5 - ox) / rt; if (Math.abs(nx) > 1) continue;
-            const nz = Math.sqrt(1 - nx * nx), lit = nx * L[0] + nz * L[2];
-            put(x, y, ramp(BARK_RAMP, 0.35 + lit * 0.55, x, y).concat([255, "t"]), nz * rt);
-        }
-        // The crown's heart: deep shade round the trunk, so a gap between sprays shows the inside of the tree, never through it.
-        for (let y = Math.floor(oy - Ht * 0.92); y <= oy - low; y++) {
-            const h = oy - y, rc = Rmax * 0.42 * Math.min(1, (Ht - h) / (Ht - low)) + 0.6;
-            for (let x = Math.floor(ox - rc); x <= ox + rc; x++) {
-                const nx = (x + 0.5 - ox) / rc; if (Math.abs(nx) > 1) continue;
-                put(x, y, ramp(NEEDLE_RAMP, 0.08 + (1 - nx) * 0.06, x, y).concat([255, "f"]), -rc);
-            }
-        }
-        // Sprays and snow, each a lit oval volume, with a ragged needle edge (snow keeps a soft one).
-        const splat = (p) => {
-            const ry = Math.sqrt(p.b * p.b + p.a * p.a * 0.25);
-            const cx = ox + p.x, cy = oy - p.y + p.z * 0.5;
-            for (let y = Math.floor(cy - ry - 1); y <= cy + ry + 1; y++) for (let x = Math.floor(cx - p.a - 1); x <= cx + p.a + 1; x++) {
-                const nx = (x + 0.5 - cx) / p.a, ny = (y + 0.5 - cy) / ry;
-                const grain = lattice(x + Math.round(cx * 7), y, seed) - 0.5;
-                const q = 1 - nx * nx - ny * ny - (p.snow ? 0.06 * grain : 0.32 * grain);
-                if (q <= 0) continue;
-                const nz = Math.sqrt(Math.max(0, 1 - nx * nx - ny * ny));
-                const lit = nx * L[0] - ny * L[1] + nz * L[2];
-                const z = p.z + nz * p.a;
-                if (p.snow) {
-                    const v = 0.42 + lit * 0.5 + (p.open - 0.6) * 0.25 + (ny < -0.2 ? 0.08 : 0);
-                    put(x, y, ramp(SNOW_RAMP, v, x, y).concat([255, "s"]), z + 0.6);
-                } else {
-                    // Darker inside the crown and under the sprays above; a grain of light and dark through the needles.
-                    const inner = 1 - Math.min(1, Math.hypot(p.x, p.z) / (Rmax * 0.9));
-                    const v = 0.5 + lit * 0.42 - inner * 0.3 - Math.min(0.35, p.cover * 0.12) + grain * 0.28;
-                    put(x, y, ramp(NEEDLE_RAMP, v, x, y).concat([255, "f"]), z);
+        };
+        const shelf = (p) => {
+            const cosp = Math.cos(p.phi), sinp = Math.sin(p.phi);
+            if (p.f < 0.12 && sinp > 0.3 && Math.abs(cosp) < 0.6) return;
+            const steps = Math.max(3, Math.round(p.len * 1.1));
+            // Nearer the trunk the tier above shelters it; the snow lies where the bough reaches into the open.
+            const open0 = Math.max(0.12 + Math.max(0, sinp) * 0.52, (p.above * 0.6) / Math.max(1, p.len));
+            for (let s = 0; s <= steps; s++) {
+                const t = s / steps;
+                if (t < open0) continue;
+                const fade = Math.min(1, (t - open0) * 4) * (t > 0.82 ? Math.sqrt(Math.max(0.3, 1 - (t - 0.82) / 0.18)) : 1);
+                const noise = 0.75 + 0.45 * lattice(s, Math.round(p.phi * 40), seed);
+                const ra = (0.6 + p.thick * 0.5) * p.snow * fade * noise;
+                if (ra < 0.55) continue;
+                const r = p.len * t;
+                const cx = ox + cosp * r, cy = oy - (p.y - p.droop * t * t) + sinp * r * 0.5 - p.thick * 0.55;
+                const rb = ra * 0.72;
+                for (let y = Math.floor(cy - rb - 1); y <= cy + rb + 1; y++) for (let x = Math.floor(cx - ra - 1); x <= cx + ra + 1; x++) {
+                    const nx = (x - cx) / ra, ny = (y - cy) / rb, q = 1 - nx * nx - ny * ny;
+                    if (q <= 0) continue;
+                    set(x, y, step(TREE_SNOW, 0.62 - nx * 0.34 - ny * 0.42 + Math.sqrt(q) * 0.14), "s");
                 }
             }
         };
-        // Farthest first is not needed (the depth test sorts it), but sprays before their snow is.
-        sprays.forEach(splat); caps.forEach(splat);
+        for (const p of boughs) { needles(p); shelf(p); }
+
+        /* The crown's top: it narrows on from the last tier into a soft round head
+           with a little snow draped over it, not a spike or a post. */
+        const topY = oy - Ht;
+        const headH = 10 * scale, headW = 4.4 * scale;
+        const edgeL = [], edgeR = [];
+        for (let y = 0; y <= headH; y++) {
+            const k = (y + 1) / (headH + 1);
+            // Round at the very top, then running straight on down into the crown.
+            const half = headW * Math.min(1, 0.42 + Math.sqrt(k) * 0.72) * k + 1 * scale * Math.sqrt(k);
+            const wob = (lattice(y, 3, seed) - 0.5) * 0.9, wob2 = (lattice(y, 7, seed) - 0.5) * 0.9;
+            edgeL[y] = -half + wob; edgeR[y] = half + wob2;
+            for (let x = edgeL[y]; x <= edgeR[y]; x += 0.5) set(ox + x, topY + y, step(TREE_NEEDLES, 0.36 - (x / headW) * 0.26 + (lattice(Math.round(x * 2), y, seed) - 0.5) * 0.24), "f");
+        }
+        const drape = 4.4 * scale;
+        for (let y = 0; y <= drape; y++) {
+            const depth = drape - y;
+            for (let x = Math.floor(edgeL[y]); x <= edgeR[y]; x++) {
+                // The snow's lower edge is uneven, and thinner on the shaded side.
+                const reach = drape * (0.7 + lattice(x, 11, seed) * 0.5) * (x > 0 ? 0.8 : 1);
+                if (y <= reach) set(ox + x, topY + y, step(TREE_SNOW, 0.72 - (x / headW) * 0.32 - (y / drape) * 0.22 + depth * 0), "s");
+            }
+        }
 
         // Outlined in near-black, as every edge of the maze is.
-        const g = Grid(W, H), zs = new Float32Array(W * H);
-        for (let i = 0; i < W * H; i++) if (col[i]) { g.set(i % W, (i / W) | 0, col[i]); zs[i] = zb[i] * 0.5; }
-        const OUT = [4, 10, 14, 255, "o"];
+        const edge = new Uint8Array(W * H);
         for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
-            if (col[y * W + x]) continue;
-            let near = -1e9;
-            for (const [a, b] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { const j = (y + b) * W + (x + a); if (x + a >= 0 && x + a < W && y + b >= 0 && y + b < H && col[j]) near = Math.max(near, zb[j]); }
-            if (near > -1e9) { g.set(x, y, OUT); zs[y * W + x] = near * 0.5; }
+            if (part[y * W + x]) continue;
+            if ((x > 0 && part[y * W + x - 1]) || (x < W - 1 && part[y * W + x + 1]) || (y > 0 && part[(y - 1) * W + x]) || (y < H - 1 && part[(y + 1) * W + x])) edge[y * W + x] = 1;
         }
-        return { g, zs, fx: Math.round(ox), fy: oy, R: Rmax, height: Ht, kind: fir ? "fir" : sapling ? "sapling" : "spruce" };
+        for (let i = 0; i < W * H; i++) if (edge[i]) { rgb[i * 3] = TREE_OUTLINE[0]; rgb[i * 3 + 1] = TREE_OUTLINE[1]; rgb[i * 3 + 2] = TREE_OUTLINE[2]; part[i] = PART.o; }
+
+        return { w: W, h: H, rgb, part, fx: ox, fy: oy, R: Rmax, height: Ht, crownY: oy - Math.round(WALL_CLEAR * scale), kind: fir ? "fir" : sapling ? "sapling" : "spruce" };
     }
 
     let bgTrees = null;
@@ -1604,7 +1642,7 @@
         }
 
         function draw() {
-            const W = innerWidth, H = innerHeight, dpr = Math.min(2, window.devicePixelRatio || 1);
+            const W = innerWidth, H = innerHeight, dpr = window.devicePixelRatio || 1;
             // The picture, in tile pixels: one per pixel of the tile as the page lays it, from the window's corner.
             const SW = Math.ceil(W / K_TILE) + 2, SH = Math.ceil(H / K_TILE) + 2;
             const out = new ImageData(SW, SH), zb = new Float32Array(SW * SH).fill(-1e9);
@@ -1642,20 +1680,29 @@
             // ---- where the trees stand (chosen first: the snow rises round their feet) ----
             const boxes = furniture();
             const want = Math.max(5, Math.min(22, Math.round(W * H / 90000)));
+            /* A tree's own pixels: one art pixel a whole number of device pixels, on
+               the device's grid, so the browser never resamples it. */
+            const art = Math.max(1, Math.round(dpr)), toDev = K_TILE * dpr;
+            const scale = dpr / art;
+            const pool = { big: [], small: [] };
+            for (let i = 0; i < 16; i++) pool.big.push(conifer(hash("tree:" + i), false, scale));
+            for (let i = 0; i < 6; i++) pool.small.push(conifer(hash("sap:" + i), true, scale));
             const trees = [];
             for (let tries = 0; tries < want * 30 && trees.length < want; tries++) {
                 const spot = footing(20 / K_TILE + rnd() * (SW - 40 / K_TILE), 90 / K_TILE + rnd() * (SH - 100 / K_TILE), TREE_ROOM, 12);
                 if (!spot) continue;
                 const [su, sv] = spot, X = su * K_TILE, Y = sv * K_TILE;
                 if (trees.some((p) => Math.hypot(p.u - su, (p.v - sv) * 1.6) < 92)) continue;
-                if (!clearOf(boxes, X - 26, Y - 80, X + 26, Y + 8)) continue;
-                trees.push({ u: su, v: sv, seed: hash("tree:" + su + "," + sv) });
+                const sp = pool.big[Math.floor(rnd() * pool.big.length)];
+                const halfW = sp.w * art / dpr / 2, tall = sp.h * art / dpr;
+                if (!clearOf(boxes, X - halfW, Y - tall, X + halfW, Y + 8)) continue;
+                trees.push({ u: su, v: sv, sp });
                 if (rnd() < 0.3) {
-                    const side = rnd() < 0.5 ? -1 : 1, near = footing(su + side * (15 + rnd() * 8), sv + 5 + rnd() * 5, 4, 6);
-                    if (near && Math.hypot(near[0] - su, near[1] - sv) > 11) trees.push({ u: near[0], v: near[1], seed: hash("sap:" + near[0] + "," + near[1]), small: true });
+                    const side = rnd() < 0.5 ? -1 : 1, near = footing(su + side * (20 + rnd() * 10), sv + 6 + rnd() * 6, 4, 6);
+                    const sa = pool.small[Math.floor(rnd() * pool.small.length)];
+                    if (near && Math.hypot(near[0] - su, near[1] - sv) > 14) trees.push({ u: near[0], v: near[1], sp: sa, small: true });
                 }
             }
-            trees.forEach((t) => { t.sp = conifer(t.seed, t.small); });
             // The little rise of snow round each trunk, as extra depth on the floor's blanket.
             const rise = (u, v) => {
                 let r = 0;
@@ -1826,14 +1873,9 @@
                     }
                     out.data[d] *= k; out.data[d + 1] *= k; out.data[d + 2] *= k * 0.96 + 0.04;
                 }
-                const ou = t.u - sp.fx, ov = t.v - sp.fy;
-                for (let y = 0; y < sp.g.h; y++) for (let x = 0; x < sp.g.w; x++) {
-                    const c = sp.g.get(x, y); if (!c) continue;
-                    if (!paint(ou + x, ov + y, c, t.v + sp.zs[y * sp.g.w + x], c[4])) st.hidden++;
-                }
             }
 
-            // Shown as the maze is shown: enlarged a tenth, smoothed.
+            // Shown as the maze is shown: enlarged a tenth, smoothed. Only the snow and the shadows are in this layer.
             const src = document.createElement("canvas"); src.width = SW; src.height = SH;
             src.getContext("2d").putImageData(out, 0, 0);
             cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr);
@@ -1841,6 +1883,36 @@
             const ctx = cv.getContext("2d");
             ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = "low";
             ctx.drawImage(src, 0, 0, SW * K_TILE * dpr, SH * K_TILE * dpr);
+
+            /* The trees, whole and unresampled: each art pixel a square of device
+               pixels. What stands in front of it in the maze keeps its pixels. */
+            const PARTS = [null, "f", "s", "t", "o"];
+            const drawTree = (t, st) => {
+                const sp = t.sp, w = sp.w * art, h = sp.h * art;
+                const X = Math.round(t.u * toDev) - sp.fx * art, Y = Math.round(t.v * toDev) - sp.fy * art;
+                const img = ctx.createImageData(w, h), d = img.data;
+                for (let y = 0; y < sp.h; y++) for (let x = 0; x < sp.w; x++) {
+                    const i = y * sp.w + x, k = PARTS[sp.part[i]];
+                    if (!k) continue;
+                    const u = Math.floor((X + (x + 0.5) * art) / toDev), v = Math.floor((Y + (y + 0.5) * art) / toDev);
+                    // Only the trunk is low enough for a wall to hide; the crown stands above their tops.
+                    if (y > sp.crownY && u >= 0 && v >= 0 && t.v < ground(u, v) - 0.5) { st.hidden++; continue; }
+                    const row = Math.max(0, Math.min(SH - 1, v));
+                    const f = day ? 1 : (NIGHT[k] || 0.8) * night[row];
+                    const r = lift((sp.rgb[i * 3] + (hue[0] - sp.rgb[i * 3]) * 0.08) * f);
+                    const g = lift((sp.rgb[i * 3 + 1] + (hue[1] - sp.rgb[i * 3 + 1]) * 0.08) * f);
+                    const b = lift((sp.rgb[i * 3 + 2] + (hue[2] - sp.rgb[i * 3 + 2]) * 0.08) * f);
+                    for (let ay = 0; ay < art; ay++) for (let ax = 0; ax < art; ax++) {
+                        const p = ((y * art + ay) * w + x * art + ax) * 4;
+                        d[p] = r; d[p + 1] = g; d[p + 2] = b; d[p + 3] = 255;
+                    }
+                }
+                const hold = document.createElement("canvas"); hold.width = w; hold.height = h;
+                hold.getContext("2d").putImageData(img, 0, 0);
+                ctx.imageSmoothingEnabled = false;
+                ctx.drawImage(hold, X, Y);
+            };
+            trees.forEach((t, i) => drawTree(t, stats[i]));
             bgTrees.stats = stats;
         }
         bgTrees = { stats: [] };

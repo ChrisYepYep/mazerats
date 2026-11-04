@@ -12,6 +12,9 @@
    POST {day, action: "move", round, guess}
                                   one guess, judged against the stored deal
                                   now, recorded and COUNTED
+   POST {day, action: "begin", round}
+                                  the next room asked for: starts its clock
+                                  and hands out its picture and names
    POST {day}                     records the signed-in player's finished
                                   day, scored from the guesses recorded
 
@@ -380,7 +383,7 @@ exports.handler = async (event) => {
             }, { cdn: BOARD_CDN_CACHE }), fresh);
         } catch (e) {
             console.error("guess-scores: board read failed", e);
-            return json(500, { error: "Could not read the scoreboard" });
+            return json(500, { error: "Couldn't read the scoreboard" });
         }
     }
 
@@ -456,7 +459,7 @@ exports.handler = async (event) => {
                 deal = await deals.dealFor(db, ensureUniqueIndex, "guess", day);
             } catch (e) {
                 console.error("guess-scores: could not read the day's deal", e);
-                return privateJson(503, { error: "The day could not be read just now" });
+                return privateJson(503, { error: "The day couldn't be read just now" });
             }
             const dealt = deal.rounds[round];
             const guess = typeof body.guess === "string" ? body.guess : "";
@@ -478,7 +481,7 @@ exports.handler = async (event) => {
                 outcome = await speed.recordGuess(db, ensureUniqueIndex, day, player.id, round, offered, dealt, TRIES, arrived);
             } catch (e) {
                 console.error("guess-scores: could not record a guess", e);
-                return privateJson(503, { error: "The guess could not be recorded just now" });
+                return privateJson(503, { error: "The guess couldn't be recorded just now" });
             }
             if (outcome.error === "too-fast") return privateJson(429, { reason: "too-fast", retryInMs: outcome.retryInMs });
             if (outcome.error === "bad-move") return privateJson(400, { error: "Bad move" });
@@ -491,12 +494,44 @@ exports.handler = async (event) => {
                 done: outcome.done,
                 won: outcome.won,
                 answer: outcome.done ? answerOf(dealt) : null,
-                next: outcome.done ? deals.nextRound("guess", deal.rounds, round, day) : null,
+                // The view the wrong guess earned, or the whole room now it
+                // is over, and neither before (ONLY THE CROP in _deal.js).
+                ...deals.guessPicture(day, round, dealt.image, deals.guessStage(outcome)),
+                // No `next` here: the next room comes when it is asked for,
+                // below, which is when its clock starts.
                 // Practice time, so a day dealt before the cut and played
                 // after it is not carded as practice — see the same reply
                 // in daily-scores.js (1 Oct 2026).
                 ...(practice.now ? { practiceUntil: practice.cut.at } : {})
             });
+        }
+
+        /* ---------- the next room asked for ----------
+
+           Sent when "Room N" is pressed on the last room's answer. Starts
+           that room's clock and hands out its picture and names, together
+           and not before (THE ANSWER SCREEN IS NOT ON THE CLOCK in
+           _speed.js). Room 1 comes with the start, below. */
+        if (body.action === "begin") {
+            if (String(event.body || "").length > speed.MAX_START_BODY) return privateJson(413, { error: "Too large" });
+            const round = speed.markRound(body.round, ROUNDS);
+            if (!round) return privateJson(400, { error: "Bad round" });
+            try {
+                if (practice.cut && !practice.now) {
+                    const row = await speed.progressFor(db, "guess", day, player.id);
+                    if (pastPractice(practice, row)) {
+                        await speed.dropPractice(db, "guess", day, player.id, row);
+                        return privateJson(409, { reason: "practice-over" });
+                    }
+                }
+                const outcome = await speed.recordBegin(db, day, player.id, round, arrived);
+                if (outcome.error) return privateJson(409, { reason: outcome.error });
+                const deal = await deals.dealFor(db, ensureUniqueIndex, "guess", day);
+                return privateJson(200, { begun: true, next: deals.nextRound("guess", deal.rounds, round - 1, day) });
+            } catch (e) {
+                console.error("guess-scores: could not begin a room", e);
+                return privateJson(503, { error: "The room couldn't be dealt just now" });
+            }
         }
 
         // "mark" — sent by a page from before guesses were judged one at a
@@ -560,7 +595,7 @@ exports.handler = async (event) => {
                 filed = null;
             }
         } catch (e) {
-            return json(500, { error: "Could not check the day" });
+            return json(500, { error: "Couldn't check the day" });
         }
         if (filed) return privateJson(200, alreadyReply(filed));
 
@@ -607,7 +642,7 @@ exports.handler = async (event) => {
             if (!practiceRun && !practice.now && clock && await speed.replayedOn(db, "guess", day, player.id)) clock = null;
         } catch (e) {
             console.error("guess-scores: could not check the day", e);
-            return json(500, { error: "Could not check the day" });
+            return json(500, { error: "Couldn't check the day" });
         }
         const { points, solved, grid } = scored;
 
@@ -651,7 +686,7 @@ exports.handler = async (event) => {
                 const first = await col.findOne({ day, playerId: player.id }).catch(() => null);
                 return privateJson(200, first ? alreadyReply(first) : { recorded: false, reason: "already" });
             }
-            return json(500, { error: "Could not record the score" });
+            return json(500, { error: "Couldn't record the score" });
         }
 
         return privateJson(200, { recorded: true, points, bonus, solved, ...(practised ? { practised: true } : {}) });
@@ -682,15 +717,16 @@ async function dealReply(db, event, params) {
         deal = await deals.dealFor(db, ensureUniqueIndex, "guess", day);
     } catch (e) {
         console.error("guess-scores: could not deal the day", e);
-        return privateJson(503, { error: "The day could not be dealt just now" });
+        return privateJson(503, { error: "The day couldn't be dealt just now" });
     }
     // Not a session ended everywhere (4 Oct 2026, the bug scan): see livePlayerFrom.
     const player = await livePlayerFrom(db, event);
     const practice = await practiceOf(db, day, Date.now());
     let progress = null, filed = false, score = null, practiceOver = false;
     // Only the rooms this player has reached, and none signed out or
-    // before the start — ONE ROUND AT A TIME in _deal.js.
-    let reached = 0;
+    // before the start — ONE ROUND AT A TIME in _deal.js. And each only as
+    // far as this player has got in it — ONLY THE CROP there.
+    let reached = 0, stageOf = null;
     if (player) {
         try {
             let row = await speed.progressFor(db, "guess", day, player.id);
@@ -706,6 +742,8 @@ async function dealReply(db, event, params) {
             // card on a reload — see filedScore in daily-scores.js.
             score = filedScore(onFile);
             reached = deals.reachedOf("guess", row, deal.rounds.length, filed);
+            const moves = speed.movesOf(row, deal.rounds.length);
+            stageOf = i => (filed ? deals.WHOLE_ROOM : deals.guessStage(moves[i]));
         } catch (e) {
             progress = null;
         }
@@ -713,7 +751,7 @@ async function dealReply(db, event, params) {
     return privateJson(200, {
         day, today: todayIso(), now: Date.now(),
         // Picture addresses, never the stored references — see _deal.js.
-        rounds: deals.publicRounds("guess", deal.rounds, day, reached),
+        rounds: deals.publicRounds("guess", deal.rounds, day, reached, stageOf),
         progress, filed, score,
         // Practice time, and a practice run set aside — see dealReply in
         // daily-scores.js.

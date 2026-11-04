@@ -58,6 +58,7 @@ const crypto = require("crypto");
 const { getDb } = require("./_db");
 const { clientNet } = require("./_net");
 const { SECURITY_HEADERS } = require("./_headers");
+const { KEPT_QUERY } = require("./_query");
 
 const COLLECTION = "rate_limits";
 
@@ -97,6 +98,32 @@ const MEDIA = new Set([
    nor is anything carrying a Warren token, and a counter that cannot be
    reached still lets everything through. */
 const EXEMPT = new Set(["settings", "share", "sitemap"]);
+
+/* ...while they answer from the edge's one copy (4 Nov 2026, the bug scan). A
+   share page's or the sitemap's plain address is, so a crowd behind one address
+   is never refused. With a query string it may not be: the edge keys each new
+   spelling as its own copy, so those are counted, as `read`. A parameter nobody
+   reads costs no database (junkFree in share.js) and is left to be redirected
+   without a write here either; ones that are read, such as ?q=<anything>, are
+   what could otherwise be a way past the cache with no limit. */
+function exempt(name, event) {
+    if (!EXEMPT.has(name)) return false;
+    if (name !== "share") return true;      // the sitemap reads none: always the redirect
+    const asked = Object.keys((event && event.queryStringParameters) || {});
+    return !asked.length || asked.some(k => !KEPT_QUERY.has(k));
+}
+
+/* `me` for somebody with no player cookie (4 Nov 2026, the bug scan): every
+   signed-out visitor sends one on every page, so counting them in the database
+   was a write per page to learn that nobody is signed in. Counted in memory as
+   pictures are (see below). A signed-in `me`, and every other sign-in request,
+   is counted as before. */
+function signedOutMe(name, event) {
+    if (name !== "discord-auth") return false;
+    if (((event && event.queryStringParameters) || {}).action !== "me") return false;
+    const h = (event && event.headers) || {};
+    return !/(?:^|;\s*)mr_player=/.test(String(h.cookie || h.Cookie || ""));
+}
 
 /* discord-auth's callback, found as discord-auth's actionFrom finds it: an
    explicit ?action, else the /auth/discord/callback path (a rewrite). */
@@ -168,9 +195,11 @@ const caught = new Map();
 const localCounts = new Map();
 const CAUGHT_MAX = 5000;
 
-function isAdmin(event) {
+/* A live session, not just a good signature. No token asks nothing of the
+   database; a database that can't be asked counts the admin as anyone else. */
+async function isAdmin(event) {
     try {
-        return require("./_auth").isAuthorized(event);
+        return await require("./_auth").hasLiveSession(event);
     } catch (e) {
         return false;
     }
@@ -236,13 +265,13 @@ async function count(db, id, minute) {
 async function checkRateLimit(name, event) {
     try {
         if (off()) return null;
-        if (EXEMPT.has(name)) return null;
+        if (exempt(name, event)) return null;
         if (name === "discord-auth" && isSigninCallback(event)) return null;
         const method = String((event && event.httpMethod) || "GET").toUpperCase();
         if (method === "OPTIONS") return null;
         const key = keyOf(event);
         if (!key) return null;
-        if (isAdmin(event)) return null;
+        if (await isAdmin(event)) return null;
 
         const budget = budgetOf(name, event);
         const now = Date.now();
@@ -264,14 +293,14 @@ async function checkRateLimit(name, event) {
            In memory the count is this instance's share of the network's
            minute, which is enough to stop one script hammering one instance
            and costs nothing; a picture refusal is not tallied for the tab. */
-        if (budget === "media") {
+        if (budget === "media" || signedOutMe(name, event)) {
             const n = (localCounts.get(id) || 0) + 1;
             if (localCounts.size >= CAUGHT_MAX) {
                 for (const k of localCounts.keys()) if (!k.endsWith(`:${minute}`)) localCounts.delete(k);
                 if (localCounts.size >= CAUGHT_MAX) localCounts.clear();
             }
             localCounts.set(id, n);
-            return n <= LIMITS.media ? null : refusal(budget, retryInMs);
+            return n <= LIMITS[budget] ? null : refusal(budget, retryInMs);
         }
 
         const verdict = await settle((async () => {

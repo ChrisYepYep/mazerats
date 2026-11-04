@@ -10,8 +10,9 @@
    the live hotel, and it can change without notice, so this fails soft
    everywhere: any problem returns "no profile" and the maze modal falls
    back to the plain creator line it always showed. */
-const { getDb, ensureIndex } = require("./_db");
+const { getDb } = require("./_db");
 const { SECURITY_HEADERS } = require("./_headers");
+const { askTwice, causeOf } = require("./_habbo-ask");
 
 /* A profile is the same answer for every visitor, and the modal asks for
    one per builder every time a maze is opened — so a found profile, and a
@@ -53,6 +54,50 @@ const DEFAULT_HOST = ORIGINS_HOSTS.COM;
 const USER_AGENT = "Mozilla/5.0 (compatible; MazeRats/1.0; +https://mazerats.net)";
 
 const FETCH_TIMEOUT_MS = 6000;
+// Both tries, leaving a ten-second function room for the database around them.
+const TOTAL_ASK_MS = 7000;
+
+/* ONE ROW A NAME (4 Nov 2026, the bug scan). The upserts below can race, and
+   on a plain index two of them each insert a row; then which one a read found
+   was luck, and an old head could stay on show for good, the write only ever
+   updating the other. So the key is unique. It replaces the plain index this
+   collection had: that one is dropped, any duplicates are thinned to their
+   newest row, and it is asked again. One attempt per warm instance, and never
+   fatal: a lookup works without it, and a race now refused is only a copy not
+   remembered, which every write here already shrugs off. */
+let keyEnsured = false;
+async function ensureCacheKey(cache) {
+    if (keyEnsured) return;
+    keyEnsured = true;
+    try {
+        for (let attempt = 0; attempt < 3; attempt++) {
+            try {
+                await cache.createIndex({ key: 1 }, { unique: true });
+                return;
+            } catch (e) {
+                if (attempt === 2) throw e;
+                // 85, 86: the same key under other options, the old plain index.
+                if (e && (e.code === 85 || e.code === 86)) await cache.dropIndex("key_1");
+                else if (e && e.code === 11000) await thinDuplicates(cache);
+                else throw e;
+            }
+        }
+    } catch (e) {
+        console.warn("habbo.js: could not make the cache key unique -", e && e.message);
+    }
+}
+
+async function thinDuplicates(cache) {
+    const doubled = await cache.aggregate([
+        { $group: { _id: "$key", n: { $sum: 1 } } },
+        { $match: { n: { $gt: 1 } } }
+    ]).toArray();
+    for (const { _id: key } of doubled) {
+        const rows = await cache.find({ key }, { projection: { _id: 1, fetchedAt: 1 } }).toArray();
+        rows.sort((a, b) => String(b.fetchedAt || "").localeCompare(String(a.fetchedAt || "")));
+        await cache.deleteMany({ _id: { $in: rows.slice(1).map(r => r._id) } });
+    }
+}
 
 // Long enough that a popular maze does not hammer Origins on every view,
 // short enough that "online" and the avatar stay roughly current. Anything
@@ -149,9 +194,16 @@ function rememberNotCredited(lower) {
     }
 }
 
-async function fetchOriginsProfile(host, name) {
+/* Through _habbo-ask.js: one more try after a moment's failure, and a host in
+   a maintenance break left alone for a while. Throws when Habbo could not say;
+   every caller has its own answer to that, and the copy it holds comes first. */
+function fetchOriginsProfile(host, name) {
+    return askTwice(host, ms => askOriginsOnce(host, name, ms), { timeoutMs: FETCH_TIMEOUT_MS, totalMs: TOTAL_ASK_MS });
+}
+
+async function askOriginsOnce(host, name, timeoutMs) {
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
     try {
         const res = await fetch(
             `https://${host}/api/public/users?name=${encodeURIComponent(name)}`,
@@ -168,11 +220,17 @@ async function fetchOriginsProfile(host, name) {
         // hiccup into a 500 from this function.
         const contentType = res.headers.get("content-type") || "";
         if (!res.ok || !contentType.includes("json")) {
-            throw new Error(`${host} returned ${res.status} (${contentType || "no content-type"})`);
+            const refused = new Error(`${host} returned ${res.status} (${contentType || "no content-type"})`);
+            if (!res.ok) refused.status = res.status;
+            throw refused;
         }
 
+        /* A 200 with no name in it is not "no such user": that is the 404
+           above. It is Habbo saying something this code doesn't know (4 Nov
+           2026, the bug scan), and answered as found: false it was written
+           over the stored profile, wiping the copy kept for a bad day. */
         const user = await res.json();
-        if (!user || !user.name) return { found: false };
+        if (!user || !user.name) throw new Error(`${host} answered 200 with no name`);
 
         return {
             found: true,
@@ -217,8 +275,8 @@ exports.handler = async (event) => {
     const cache = db.collection("habbo_cache");
     /* The key every lookup below is made on had no index, so each one —
        the cache-first read included — scanned the whole collection
-       (2 Oct 2026). Memoised and never fatal (ensureIndex in _db.js). */
-    await ensureIndex(cache, { key: 1 });
+       (2 Oct 2026). Memoised and never fatal (ensureCacheKey above). */
+    await ensureCacheKey(cache);
     const isFresh = (c) => c && (Date.now() - new Date(c.fetchedAt).getTime()) < CACHE_TTL_MS;
     const cachedAnswer = (c) => c.found
         ? json(200, { ...c.profile, cachedAt: c.fetchedAt, stale: false })
@@ -273,8 +331,11 @@ exports.handler = async (event) => {
         if (cached && cached.found) {
             return json(200, { ...cached.profile, cachedAt: cached.fetchedAt, stale: true });
         }
-        console.warn("habbo.js: lookup failed for", name, "on", host, "-", e.message);
-        return json(503, { error: "Origins profile lookup is unavailable right now" });
+        // Origins said it had nobody by this name, last time it could say.
+        if (cached) return json(404, { error: "No Origins profile for that name" });
+        const cause = causeOf(e);
+        console.warn("habbo.js: lookup failed for", name, "on", host, "-", cause);
+        return json(503, { error: "Origins profile lookup is unavailable right now", cause });
     }
 
     const fetchedAt = new Date().toISOString();
@@ -311,7 +372,7 @@ async function originsProfileFor(db, hotelCode, name) {
     let cached = null;
     try {
         const cache = db.collection("habbo_cache");
-        await ensureIndex(cache, { key: 1 });
+        await ensureCacheKey(cache);
         cached = await cache.findOne({ key }, { projection: { _id: 0 } });
         if (cached && Date.now() - new Date(cached.fetchedAt).getTime() < CACHE_TTL_MS) {
             return cached.found ? cached.profile : null;
@@ -400,7 +461,7 @@ async function lookupOriginsName(db, hotelCode, name) {
     let cached = null;
     try {
         const cache = db.collection("habbo_cache");
-        await ensureIndex(cache, { key: 1 });
+        await ensureCacheKey(cache);
         cached = await cache.findOne({ key }, { projection: { _id: 0 } });
         if (cached && Date.now() - new Date(cached.fetchedAt).getTime() < CACHE_TTL_MS) {
             return cached.found && cached.profile ? { found: true, profile: cached.profile } : { found: false };

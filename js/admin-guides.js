@@ -135,9 +135,10 @@
         });
     }
 
+    // The UTC day, as the Warren's other panels say a date.
     function when(iso) {
         const d = new Date(iso);
-        return isNaN(d) ? "" : d.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
+        return isNaN(d) ? "" : d.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });
     }
 
     // "1 section", not "1 sections" (1 Oct 2026).
@@ -181,7 +182,7 @@
                 if (b) b.addEventListener("click", load);
                 return;
             }
-            listEl.innerHTML = `<p class="admin-empty">Could not load the guides: ${esc(err.message)}</p>`;
+            listEl.innerHTML = `<p class="admin-empty">Couldn't load the guides: ${esc(err.message)}</p>`;
         }
     }
 
@@ -220,7 +221,7 @@
         } catch (err) {
             if (sessionGone(err)) return;
             starterEl.querySelectorAll("button").forEach(x => { x.disabled = false; });
-            tell(`Could not add the starter guide: ${err.message}`);
+            tell(`Couldn't add the starter guide: ${err.message}`);
         }
     });
 
@@ -241,7 +242,7 @@
                     <p class="row-creator">/guides/${esc(g.slug || g.id)}</p>
                 </div>
                 <div class="admin-row-actions">
-                    <button type="button" class="btn" data-g-edit>Edit</button>
+                    <button type="button" class="btn admin-edit-btn" data-g-edit>Edit</button>
                     ${g.status === "published" ? `<a class="btn" href="/guides/${esc(encodeURIComponent(g.slug || g.id))}?fresh=1" target="_blank" rel="noopener">View</a>` : ""}
                     <button type="button" class="btn admin-delete-btn" data-g-delete>Delete</button>
                 </div>
@@ -257,8 +258,12 @@
         else if (e.target.closest("[data-g-delete]")) removeGuide(g);
     });
 
+    // A second press while the first is out would only be told it has gone, though it worked.
+    const deletesOut = new Set();
     async function removeGuide(g) {
+        if (deletesOut.has(g.id)) return;
         if (!await ask(`Delete the guide "${esc(g.title)}"? It comes off the site at once, and its uploaded pictures are deleted. This can't be undone.`, { danger: true })) return;
+        deletesOut.add(g.id);
         try {
             await call(`${URL_}?id=${encodeURIComponent(g.id)}`, "DELETE");
             /* The server deletes only the record; its pictures are cleared
@@ -280,7 +285,9 @@
             forget(doomed);
             await load();
         } catch (err) {
-            if (!sessionGone(err)) tell(`Could not delete it: ${err.message}`);
+            if (!sessionGone(err)) tell(`Couldn't delete it: ${err.message}`);
+        } finally {
+            deletesOut.delete(g.id);
         }
     }
 
@@ -324,7 +331,7 @@
 
     async function openEditor(g) {
         if (saving) return;
-        if (editing && dirty() && !await ask("You have unsaved changes to this guide. Discard them?", { danger: true })) return;
+        if (editing && dirty() && !await ask("Discard your unsaved changes to this guide? Anything you have added or edited since opening it will be lost.", { danger: true })) return;
         // The box waits; a save begun meanwhile (it can't be clicked, but
         // Enter in a field could have queued one) keeps the form.
         if (saving) return;
@@ -669,7 +676,7 @@
             preview();
         } else if (t.closest(".admin-cancel-btn")) {
             if (saving) return;
-            if (dirty() && !await ask("Discard your changes to this guide?", { danger: true })) return;
+            if (dirty() && !await ask("Discard your unsaved changes to this guide? Anything you have added or edited since opening it will be lost.", { danger: true })) return;
             if (saving || !editing) return;
             closeEditor();
         }
@@ -756,7 +763,7 @@
                 await load();
                 return;
             }
-            showError(err.message || "Could not save the guide.");
+            showError(err.message || "Couldn't save the guide.");
         } finally {
             saving = false;
         }

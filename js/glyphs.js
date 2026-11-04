@@ -96,12 +96,10 @@
             title: "Copy only",
             note: "No Alt code for these.",
             items: [
-                0x0131, 0x0152, 0x0153, 0x0178, 0x0192, 0x02C6, 0x02C7, 0x02D6,
-                0x02D8, 0x02D9, 0x02DA, 0x02DB, 0x02DD, 0x03C0, 0x1030, 0x2013,
-                0x2014, 0x2018, 0x2019, 0x201A, 0x201C, 0x201D, 0x201E, 0x2020,
-                0x2021, 0x2022, 0x2026, 0x2039, 0x203A, 0x20AC, 0x2122, 0x2126,
-                0x2202, 0x2206, 0x220F, 0x2211, 0x2215, 0x221A, 0x221E, 0x222B,
-                0x2248, 0x2260, 0x2264, 0x2265, 0x25CA, 0xF000, 0xF001, 0xF002
+                0x0131, 0x02C7, 0x02D6, 0x02D8, 0x02D9, 0x02DA, 0x02DB, 0x02DD,
+                0x03C0, 0x1030, 0x2126, 0x2202, 0x2206, 0x220F, 0x2211, 0x2215,
+                0x221A, 0x221E, 0x222B, 0x2248, 0x2260, 0x2264, 0x2265, 0x25CA,
+                0xF000, 0xF001, 0xF002
             ]
         }
     ];
@@ -143,11 +141,18 @@
         if (built) return;
         built = true;
 
+        // Alt and the number pad are Windows with a keyboard; a phone or a
+        // Mac was told to hold a key it hasn't got.
+        const altWorks = /Win/.test(navigator.platform || "") && !(window.matchMedia && matchMedia("(pointer: coarse)").matches);
+        const touch = Boolean(window.matchMedia && matchMedia("(pointer: coarse)").matches);
+
         body.innerHTML = `
             <div class="glyphs-intro">
                 <p>These symbols only draw as pictures in Volter Goldfish, the font Habbo uses. Anywhere else they
                     show up as ordinary letters, so they're really only useful in Habbo Origins, like in room names.</p>
-                <p>Click one to copy it, or hold <kbd>Alt</kbd> and type its code on the number pad.</p>
+                <p>${altWorks
+                    ? "Click one to copy it, or hold <kbd>Alt</kbd> and type its code on the number pad."
+                    : `${touch ? "Tap" : "Click"} one to copy it. The Alt codes are for Windows, with a number pad.`}</p>
             </div>
             ${GROUPS.map((g, i) => `
                 <section class="glyphs-group" aria-labelledby="glyphs-group-${i}">
@@ -238,7 +243,8 @@
     function copied(btn, ok) {
         const status = document.getElementById("glyphs-status");
         if (!ok) {
-            if (status) status.textContent = "Couldn't copy. Select the character and press Ctrl+C.";
+            if (status) status.textContent = "Couldn't copy. Select the character in the box and copy it yourself.";
+            copyByHand(btn);
             return;
         }
         const code = btn.querySelector(".glyphs-alt");
@@ -259,6 +265,34 @@
         }
     }
 
+    /* A copy the browser refused: the character in a box under its group,
+       selected, to copy by hand. The one box, moved to wherever it is needed,
+       and said only to a screen reader until now, so a failed press looked
+       like nothing had happened. A tile's own character can't be selected:
+       it is a button. */
+    function copyByHand(btn) {
+        let box = document.getElementById("glyphs-copy-box");
+        if (!box) {
+            box = document.createElement("p");
+            box.id = "glyphs-copy-box";
+            box.className = "glyphs-note";
+            box.textContent = "Your browser wouldn't copy that. Select it here and copy it yourself: ";
+            const field = document.createElement("input");
+            field.type = "text";
+            field.readOnly = true;
+            field.className = "glyphs-copy-field";
+            field.setAttribute("aria-label", "The character, to copy");
+            box.appendChild(field);
+        }
+        const group = btn.closest(".glyphs-group");
+        if (group) group.appendChild(box);
+        const field = box.querySelector("input");
+        field.value = btn.dataset.ch;
+        field.focus({ preventScroll: true });
+        field.select();
+        box.scrollIntoView({ block: "nearest" });
+    }
+
     /* The clipboard API first; the old textarea route where there is none
        (an http:// preview, an older browser), which needs the selection to
        be somewhere, and so briefly takes focus. It goes back to the tile. */
@@ -277,6 +311,8 @@
             ta.remove();
             btn.focus({ preventScroll: true });
             copied(btn, ok);
+            const box = document.getElementById("glyphs-copy-box");
+            if (ok && box) box.remove();
         };
         if (navigator.clipboard && navigator.clipboard.writeText) {
             navigator.clipboard.writeText(ch).then(() => copied(btn, true), fallback);
@@ -399,7 +435,11 @@
     });
 
     if (closeBtn) closeBtn.addEventListener("click", () => close());
-    overlay.addEventListener("click", e => { if (e.target === overlay) close(); });
+    /* Only a press that began on the backdrop: selecting text and letting go
+       past the window is reported as a click on the overlay. */
+    let pressedOn = null;
+    overlay.addEventListener("pointerdown", e => { pressedOn = e.target; });
+    overlay.addEventListener("click", e => { if (e.target === overlay && pressedOn === overlay) close(); });
     if (window.EscapeLayers) {
         window.EscapeLayers.register({
             elements: () => isOpen() ? [overlay] : [],

@@ -35,7 +35,7 @@
    with it — so a preset cannot carry `}` out of its declaration and start
    writing rules of its own. */
 const { getDb, ensureUniqueIndex } = require("./_db");
-const { isAuthorized, canWrite, refuseWrite, usernameFromToken, UNAUTHORIZED, AUTH_UNAVAILABLE, isAuthUnavailable } = require("./_auth");
+const { isAuthorized, hasLiveSession, canWrite, refuseWrite, usernameFromToken, UNAUTHORIZED, AUTH_UNAVAILABLE, isAuthUnavailable } = require("./_auth");
 const { SECURITY_HEADERS } = require("./_headers");
 const { cachedJson } = require("./_cache");
 
@@ -188,7 +188,7 @@ exports.handler = async (event) => {
                 return res;
             }
             const all = await col.find({}, { projection: { _id: 0 } }).sort({ at: 1 }).toArray();
-            const signedIn = isAuthorized(event);
+            const signedIn = await hasLiveSession(event);
             /* no-store (10 Oct 2026): this answer differs by token — `by`
                goes only to a signed-in editor — and said nothing about
                caching, so nothing stopped a cache in between keeping an
@@ -198,7 +198,7 @@ exports.handler = async (event) => {
             return res;
         } catch (e) {
             console.error("palettes: read failed", e);
-            return json(503, { error: "Palettes could not be read just now." });
+            return json(503, { error: "Palettes couldn't be read just now." });
         }
     }
 
@@ -226,7 +226,7 @@ exports.handler = async (event) => {
         /* Only the tagged lookup failure is an outage to retry; anything
            else is a fault, and answering it as "unavailable" hid it. */
         if (isAuthUnavailable(e)) return AUTH_UNAVAILABLE;
-        return json(500, { error: "The palette could not be saved." });
+        return json(500, { error: "The palette couldn't be saved." });
     }
 };
 

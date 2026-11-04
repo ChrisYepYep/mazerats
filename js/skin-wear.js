@@ -83,6 +83,14 @@
 (function () {
     "use strict";
 
+    /* Blocked storage (a browser set to refuse site data) throws on merely
+       reading window.localStorage, before get() and put() below can catch it.
+       These names stand in for the globals through this whole file; null is
+       a store get() and put() already treat as empty. */
+    const openStore = (name) => { try { return window[name]; } catch (e) { return null; } };
+    const localStorage = openStore("localStorage");
+    const sessionStorage = openStore("sessionStorage");
+
     const PREVIEW_KEY = "mazerats_skin_preview";            // "xmas", in localStorage
     const DATE_KEY = "mazerats_skin_preview_date";          // "12-12", in localStorage
     const CACHE_KEY = "mazerats_skin_cache";                // the last { skin, skinSchedule, theme, halloweenGoo } served
