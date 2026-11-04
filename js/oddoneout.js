@@ -85,6 +85,7 @@
     let stats = null;
     let el = {};
     let showSplash = true;
+    let leftSplash = false;        // pressed on from the splash during this open
     let swappedNote = null;        // said on the next round written: yesterday's swapped for today's (choose)
     let submitting = false;        // a finished day on its way to the server
     let picking = false;           // a pick on its way to be judged
@@ -994,16 +995,18 @@
 
         return `
             <div class="guess-summary daily-summary">
-                <p class="guess-points"><strong>${score()}</strong><span>points</span></p>
-                <p class="daily-bonus" id="odd-bonus"${bonus ? "" : " hidden"}>${escapeHtml(bonus)}</p>
-                <p class="guess-score" role="status" aria-live="polite">${verdictFor(right)}</p>
-                <p class="guess-grid" aria-label="Result grid">${shareGrid()}</p>
-                <div id="odd-streak-slot"></div>
-                <dl class="guess-stats" id="odd-stats">${statsHtml()}</dl>
-                <div class="guess-summary-actions">
-                    <button type="button" class="guess-btn" id="odd-share">Copy result</button>
+                <div class="guess-summary-card">
+                    <p class="guess-points"><strong>${score()}</strong><span>points</span></p>
+                    <p class="daily-bonus" id="odd-bonus"${bonus ? "" : " hidden"}>${escapeHtml(bonus)}</p>
+                    <p class="guess-score" role="status" aria-live="polite">${verdictFor(right)}</p>
+                    <p class="guess-grid" aria-label="Result grid">${shareGrid()}</p>
+                    <div id="odd-streak-slot"></div>
+                    <dl class="guess-stats" id="odd-stats">${statsHtml()}</dl>
+                    <div class="guess-summary-actions">
+                        <button type="button" class="guess-btn" id="odd-share">Copy result</button>
+                    </div>
+                    <p class="guess-next-up" id="odd-foot">${escapeHtml(footText())}</p>
                 </div>
-                <p class="guess-next-up" id="odd-foot">${escapeHtml(footText())}</p>
 
                 <div class="guess-boards" id="odd-boards"></div>
             </div>`;
@@ -1106,6 +1109,7 @@
                 await refreshDay();
             }
             showSplash = false;
+            leftSplash = true;
             render();
             settleFocus();
         });
@@ -1269,6 +1273,10 @@
            js/daily.js; 4 Oct 2026, the owner's), where a "Dealing…" line was.
            Down again once the day is drawn, or if anything below throws. */
         if (!deal || deal.day !== day()) Daily.waiting(el.deck, true, "Dealing today's rounds");
+        /* A finished day reopens on its splash at once, rather than on the
+           results it was closed on until the server has answered. */
+        else if (!retrying && state && finished()) { showSplash = true; settled(render); }
+        if (!retrying) leftSplash = false;
         try {
             // Who is signed in decides whose day and record are shown, so it
             // is known before anything is dealt. A failure reads as signed out.
@@ -1299,7 +1307,11 @@
             }
             if (remote) takeAccountStats(await remote);
             await refreshDay();
-            showSplash = state.picks.length === 0 || state.done;
+            /* Not over a press made while the server was answering: "See
+               today's results" on the splash standing there was undone a
+               second later (4 Nov 2026, as js/guess.js). Unless what came back
+               left nothing to go on to (a day given back). */
+            if (!leftSplash || !state.picks.length) showSplash = state.picks.length === 0 || state.done;
             Daily.waiting(el.deck, false);
             /* Straight onto the right sheet — the splash, the round in hand, or
                the results — with the rest already stacked around it. Only the

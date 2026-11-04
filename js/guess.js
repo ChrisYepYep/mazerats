@@ -1410,20 +1410,22 @@
            underneath count in; the line under it is the speed bonus and the
            total the boards show (see Daily.bonusLine in js/daily.js). */
         el.summary.innerHTML = `
-            <p class="guess-points"><strong>${scored}</strong><span>points</span></p>
-            <p class="daily-bonus" id="guess-bonus"${bonus ? "" : " hidden"}>${escapeHtml(bonus)}</p>
-            <p class="guess-score">${solved} of ${ROUNDS} rooms found</p>
-            <p class="guess-grid" aria-label="Result grid">${state.results.map(squareFor).join("")}</p>
-            <div id="guess-streak-slot"></div>
-            <dl class="guess-stats">
-                <div><dt>Best day</dt><dd>${stats.bestDay}</dd></div>
-                <div><dt>Days played</dt><dd>${stats.days}</dd></div>
-                <div><dt>All-time</dt><dd>${stats.points}</dd></div>
-            </dl>
-            <div class="guess-summary-actions">
-                <button type="button" class="guess-btn" id="guess-share">Copy result</button>
+            <div class="guess-summary-card">
+                <p class="guess-points"><strong>${scored}</strong><span>points</span></p>
+                <p class="daily-bonus" id="guess-bonus"${bonus ? "" : " hidden"}>${escapeHtml(bonus)}</p>
+                <p class="guess-score">${solved} of ${ROUNDS} rooms found</p>
+                <p class="guess-grid" aria-label="Result grid">${state.results.map(squareFor).join("")}</p>
+                <div id="guess-streak-slot"></div>
+                <dl class="guess-stats">
+                    <div><dt>Best day</dt><dd>${stats.bestDay}</dd></div>
+                    <div><dt>Days played</dt><dd>${stats.days}</dd></div>
+                    <div><dt>All-time</dt><dd>${stats.points}</dd></div>
+                </dl>
+                <div class="guess-summary-actions">
+                    <button type="button" class="guess-btn" id="guess-share">Copy result</button>
+                </div>
+                <p class="guess-next-up" id="guess-next-up"></p>
             </div>
-            <p class="guess-next-up" id="guess-next-up"></p>
 
             <!-- Filled in by renderBoards once the scores come back, so the
                  results are readable the instant the day ends rather than
@@ -1698,7 +1700,10 @@
             if (await refreshDay()) {
                 renderAll();
                 prepareRound(state.round);
-                goTo(state.done ? "results" : "intro");
+                /* Off the results only if the day is no longer finished. This
+                   said results whenever it was, so a player reading the splash
+                   was thrown onto the results (4 Nov 2026). */
+                if (view === "results" && !state.done) goTo("intro");
             }
             return;
         }
@@ -2259,6 +2264,8 @@
     // Set once open() has waited for the first "who am I", so it only ever
     // waits the once.
     let waitedForAccount = false;
+    // An open still waiting on the server; see the note in open().
+    let opening = false;
 
     function open() {
         /* Locked out of the games — a ban, or a nickname the admins asked
@@ -2288,6 +2295,10 @@
             if (atOwnAddress()) history.replaceState({}, "", "/home");
             return;
         }
+        /* Already open and playing: asked again (a Back onto /guess, a second
+           way in), nothing should move. This used to put the player back on
+           the splash from wherever they were. */
+        if (el.overlay.classList.contains("open") && (opening || (started && state))) return;
         if (!el.overlay.classList.contains("open")) {
             const active = document.activeElement;
             opener = active && active !== document.body && !el.overlay.contains(active) ? active : null;
@@ -2313,6 +2324,17 @@
         // Only while there is nothing to show: reopened on a day already
         // dealt, the sheets stand while the server is asked again below.
         if (!started || !state || starting || dayHasTurned()) Daily.waiting(el.deck, true, "Dealing today's rooms");
+        /* REOPENED, THE SPLASH IS UP AT ONCE (4 Nov 2026). The sheets stood
+           where they were left until the server answered, so a window closed
+           on the results opened on the results and then slid away to the
+           splash a moment later. */
+        else {
+            el.deck.classList.add("is-settling");
+            renderAll();
+            void el.deck.offsetHeight;
+            el.deck.classList.remove("is-settling");
+        }
+        opening = true;
         let reopened = false;
         claimAdminReset()
             .then(() => { if (dayHasTurned()) forgetDeal(); reopened = started; })
@@ -2356,9 +2378,15 @@
             // on no view at all.
             .catch(() => {})
             .then(() => {
+                opening = false;
                 Daily.waiting(el.deck, false);
                 if (!state) return;
-                goTo("intro");
+                /* Not over a move the player has made while the server was
+                   answering: pressing "See today's results" on the splash
+                   standing there was undone a second later, back to the
+                   splash (4 Nov 2026). Unless what came back took those
+                   results away (a day given back). */
+                if (view === "intro" || (view === "results" && !state.done)) goTo("intro");
                 // A finished day not yet on the board (signed in since, or
                 // the first POST failed); see submitIfOwed.
                 submitIfOwed();

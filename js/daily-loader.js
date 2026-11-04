@@ -75,7 +75,7 @@
                would open onto rounds it has no pictures for.
                v=5 (2 Nov 2026): the streak strip, which needs daily.js's
                Daily.streakStrip; both games and daily.js moved together. */
-            src: "js/guess.js?v=7",
+            src: "js/guess.js?v=8",
             open: "openGuessGame",
             overlay: "guess-overlay",
             win: "guess-window",
@@ -86,7 +86,7 @@
             body: "guess-deck"
         },
         odd: {
-            src: "js/oddoneout.js?v=6",
+            src: "js/oddoneout.js?v=7",
             open: "openOddOneOut",
             overlay: "odd-overlay",
             win: "odd-window",
