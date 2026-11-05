@@ -412,6 +412,13 @@
   to = "/.netlify/functions/share"
   status = 200
 
+# The Hallway (6 Nov 2026): the homepage, which opens it itself at /hallway
+# (js/hallway.js), so the archive can slide away from around it.
+[[redirects]]
+  from = "/hallway"
+  to = "/home.html"
+  status = 200
+
 # Scout's Trail (15 Oct 2026; Ariadne's Thread from 13 Oct, Rat Race before
 # that), the same: a window on the homepage that opens itself at /scout
 # (js/home.js), through the share function for its card.
@@ -1006,6 +1013,25 @@
 #
 # The proper fix is hashed filenames, which needs a build step this site
 # deliberately does not have.
+# The Hallway's published copy (tools/hallway-editor/publish.js). Its tiles are
+# named by their contents, so they never change and may be kept; everything
+# else is asked after each time, so a new publish shows at once.
+[[headers]]
+  for = "/assets/hallway/tiles/*"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
+
+[[headers]]
+  for = "/assets/hallway/app/*"
+  [headers.values]
+    Cache-Control = "public, max-age=0, must-revalidate"
+    X-Robots-Tag = "noindex"
+
+[[headers]]
+  for = "/assets/hallway/*.json"
+  [headers.values]
+    Cache-Control = "public, max-age=0, must-revalidate"
+
 [[headers]]
   for = "/css/*"
   [headers.values]

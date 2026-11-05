@@ -167,6 +167,9 @@ document.addEventListener("DOMContentLoaded", () => {
     const ratCardEl = document.getElementById("rat-state-card");
     const ratBtns = document.querySelectorAll(".rat-state-btn");
     const ratStatus = document.getElementById("rat-state-status");
+    const hallwayCardEl = document.getElementById("hallway-state-card");
+    const hallwayBtns = document.querySelectorAll(".hallway-state-btn");
+    const hallwayStatus = document.getElementById("hallway-state-status");
     // Fallin' Furni's own live/maintenance switch, in the game's rail group.
     const ffToggleEl = document.getElementById("ff-state-toggle");
     const ffToggleBtns = document.querySelectorAll(".ff-state-btn");
@@ -820,6 +823,7 @@ document.addEventListener("DOMContentLoaded", () => {
         if (ffToggleEl) ffToggleEl.style.display = "none";
         if (puraCardEl) puraCardEl.style.display = "none";
         if (ratCardEl) ratCardEl.style.display = "none";
+        if (hallwayCardEl) hallwayCardEl.style.display = "none";
         if (themeToggleEl) themeToggleEl.style.display = "none";
         if (spotOrderEl) spotOrderEl.style.display = "none";
         /* Passwords out of every field, and the run log out of its tables
@@ -1171,6 +1175,7 @@ document.addEventListener("DOMContentLoaded", () => {
         if (ffToggleEl) ffToggleEl.style.display = "none";
         if (puraCardEl) puraCardEl.style.display = "none";
         if (ratCardEl) ratCardEl.style.display = "none";
+        if (hallwayCardEl) hallwayCardEl.style.display = "none";
         if (themeToggleEl) themeToggleEl.style.display = "none";
         if (spotOrderEl) spotOrderEl.style.display = "none";
         spotOrderDraft = null;
@@ -1361,6 +1366,7 @@ document.addEventListener("DOMContentLoaded", () => {
         "pura-name": "Chose a Pura Panic name",
         "pura-lights": "Pura Panic lights",
         "bat-start": "Found the bat game",
+        "hallway-open": "Opened the Hallway",
         "bat-end": "Ended a bat game",
         "bat-share": "Copied or saved the bat game's card",
         // The game windows opening (26 Oct 2026; js/home.js countOpen, js/rat-race.js).
@@ -2540,6 +2546,7 @@ document.addEventListener("DOMContentLoaded", () => {
         if (ffToggleEl) ffToggleEl.style.display = "block";
         if (puraCardEl) puraCardEl.style.display = "flex";
         if (ratCardEl) ratCardEl.style.display = "flex";
+        if (hallwayCardEl) hallwayCardEl.style.display = "flex";
         if (themeToggleEl) themeToggleEl.style.display = "flex";
         if (spotOrderEl) spotOrderEl.style.display = "flex";
         /* The glyph palette used to be shown here, when it was a docked
@@ -8930,7 +8937,7 @@ document.addEventListener("DOMContentLoaded", () => {
         settingsTriedAt = Date.now();
         try {
             // One read, every switch: they all live in the same settings document.
-            const { landingState, fallinFurniState, fallinFurniBeta, puraPanicState, ratRaceState, maintenanceNote, theme, palette: livePalette, launchAt, ffLaunchAt, fromCache } = await freshSiteSettings();
+            const { landingState, fallinFurniState, fallinFurniBeta, puraPanicState, ratRaceState, hallwayState, maintenanceNote, theme, palette: livePalette, launchAt, ffLaunchAt, fromCache } = await freshSiteSettings();
             /* The stand-in getSiteSettings answers with during an outage
                (fromCache, see js/api.js) has a GUESSED landing state and no
                Fallin' Furni state or palette at all. Lighting buttons from it
@@ -8969,6 +8976,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 currentFfState = ff;
                 lightPura(puraPanicState);
                 lightRat(ratRaceState);
+                lightHallway(hallwayState);
                 lightMaintenanceNote(maintenanceNote);
             }
             sayLandingMismatch();
@@ -9029,6 +9037,7 @@ document.addEventListener("DOMContentLoaded", () => {
             currentFfState = ff;
             lightPura(s.puraPanicState);
             lightRat(s.ratRaceState);
+            lightHallway(s.hallwayState);
             if (launchFieldsLoaded) currentFfLaunchAt = s.ffLaunchAt || "";
             sayFfMismatch();
             lightMaintenanceNote(s.maintenanceNote);
@@ -9575,6 +9584,36 @@ document.addEventListener("DOMContentLoaded", () => {
         const s = state === "live" || state === "hidden" ? state : "maintenance";
         ratBtns.forEach(b => b.classList.toggle("active", b.dataset.ratState === s));
     }
+
+    /* ---- The Hallway: hidden, coming soon, maintenance or live (6 Nov 2026).
+       Hidden until he says otherwise; going live asks once. */
+    function lightHallway(state) {
+        const s = ["coming-soon", "maintenance", "live"].includes(state) ? state : "hidden";
+        hallwayBtns.forEach(b => b.classList.toggle("active", b.dataset.hallwayState === s));
+    }
+    hallwayBtns.forEach(btn => {
+        btn.addEventListener("click", async () => {
+            const state = btn.dataset.hallwayState;
+            if (btn.classList.contains("active")) return;
+            if (state === "live" && !(await showConfirmDialog("Open the Hallway to everyone?"))) return;
+            hallwayBtns.forEach(b => b.disabled = true);
+            if (hallwayStatus) hallwayStatus.style.display = "none";
+            switchSaves++;
+            try {
+                await Api.updateSiteSettings(adminToken, { hallwayState: state });
+                lightHallway(state);
+            } catch (err) {
+                if (err.status === 401) { lockOut(); return; }
+                if (hallwayStatus) {
+                    hallwayStatus.textContent = err.message || "Couldn't update the Hallway.";
+                    hallwayStatus.style.display = "block";
+                }
+                if (answerless(err)) relightSwitches();
+            } finally {
+                hallwayBtns.forEach(b => b.disabled = false);
+            }
+        });
+    });
 
     ratBtns.forEach(btn => {
         btn.addEventListener("click", async () => {

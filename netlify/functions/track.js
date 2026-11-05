@@ -127,6 +127,7 @@ const EVENT_NAMES = new Set([
        the score itself), and its share card copied or saved. Never one per hit — a
        game is dozens of them, and the batch cap would drop the lot. */
     "bat-start", "bat-end", "bat-share",
+    "hallway-open",
     /* The Christmas skin's advent calendar (26 Oct 2026, js/skin-xmas-advent.js):
        the Advent button pressed (labelled "signed-in", or "signed-out" for a
        visitor who was asked to sign in instead), and a door opened, labelled

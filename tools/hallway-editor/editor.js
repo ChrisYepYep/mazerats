@@ -581,7 +581,26 @@ function restore(text) { stopWalkForChange(); closePicker(); carry = null; const
 function undo() { if (!undoStack.length) return; redoStack.push(JSON.stringify(map)); restore(undoStack.pop()); }
 function redo() { if (!redoStack.length) return; undoStack.push(JSON.stringify(map)); restore(redoStack.pop()); }
 function syncButtons() { $("undo").disabled = !undoStack.length; $("redo").disabled = !redoStack.length; $("save").disabled = !dirty; $("save").classList.toggle("attention", dirty); }
+/* Publish: sends the saved map to the site's own folder, drawn and ready. Nobody sees it until the site is deployed. */
+async function publish() {
+    const b = $("publish"); if (b.disabled) return;
+    b.disabled = true;
+    try {
+        if (dirty) await save();
+        const r = await fetch("/api/publish", { method: "POST" }); if (!r.ok) throw new Error((await r.json()).error || "Couldn't start");
+        for (;;) {
+            await new Promise(f => setTimeout(f, 800));
+            const o = await (await fetch("/api/publish")).json();
+            if (o.running) { b.textContent = o.of ? `Publishing ${o.at} of ${o.of}` : "Publishing"; continue; }
+            if (o.error) throw new Error(o.error);
+            flash("Published. It goes live on the site the next time you deploy.");
+            break;
+        }
+    } catch (e) { flash("Couldn't publish: " + e.message); }
+    b.disabled = false; b.textContent = "Publish";
+}
 async function save() {
+    if (window.HALLWAY_PLAY) return;
     putBack();
     setStatus("Saving...");
     const r = await fetch("/api/map", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(map) });
@@ -931,6 +950,7 @@ function drawRect() {
 
 /* ---------- tools ---------- */
 function setTool(t) {
+    if (window.HALLWAY_PLAY && t !== "walk" && tool === "walk") return;      // on the site you only ever walk; you leave by the entrance or the Leave button
     if (t === "walk" && tool === "walk") return;
     doorCarry = null;
     if (drag) { if (["rubout", "halfwall", "edgebrush", "edge", "move"].includes(drag.kind) && lastClient) canvas.dispatchEvent(new PointerEvent("pointerup", { clientX: lastClient[0], clientY: lastClient[1], bubbles: true, pointerId: 1 })); drag = null; }
@@ -2218,7 +2238,7 @@ const STEP_OF = d => DIRS[d];
 const liftDoors = new Map();                     // a lift -> { p: how open, to: where it's going, shutAt }
 const liftOpen = q => { const s = liftDoors.get(q); return !!s && s.to === 1; };
 const LIFT_FRAMES = 6, liftImgs = new Map();
-function liftImg(way, f) { const k = way + "|" + f; let i = liftImgs.get(k); if (!i) { i = new Image(); i.onload = () => paint(); i.src = "/api/lift?" + new URLSearchParams({ way, slide: f / (LIFT_FRAMES - 1) }); liftImgs.set(k, i); } return i; }
+function liftImg(way, f) { const k = way + "|" + f; let i = liftImgs.get(k); if (!i) { i = new Image(); i.onload = () => paint(); i.src = window.HALLWAY_PLAY ? window.hallwayLiftSrc(way, f) : "/api/lift?" + new URLSearchParams({ way, slide: f / (LIFT_FRAMES - 1) }); liftImgs.set(k, i); } return i; }
 function setDoors(q, open, shutIn) {
     const s = liftDoors.get(q) || { p: 0, to: 0 };
     if (s.to !== (open ? 1 : 0) && window.LiftSounds) LiftSounds.doors();
@@ -2311,6 +2331,7 @@ async function rideTo(from, to) {
 function leaveHallway() {
     if (!walker || walker.busy) return; walker.busy = true;
     const me = walker; $("fadeOut").style.opacity = 1;
+    if (window.HALLWAY_PLAY) { window.hallwayTell("leave"); return; }
     setTimeout(() => { $("fadeOut").style.opacity = 0; if (walker !== me) return; setTool("select"); flash("You left the hallway. On the site, this is where you'd go back to the archive."); }, 800);
 }
 /* Is this pixel really part of the sprite? */
@@ -2767,6 +2788,7 @@ function buildUI() {
     for (const [k, v] of Object.entries(LIGHTS)) { const o = document.createElement("option"); o.value = k; o.textContent = v; $("light").appendChild(o); }
     for (const [k, v] of Object.entries(WAYS)) { const o = document.createElement("option"); o.value = k; o.textContent = v; $("way").appendChild(o); }
     $("undo").addEventListener("click", undo); $("redo").addEventListener("click", redo); $("save").addEventListener("click", save);
+    if ($("publish")) $("publish").addEventListener("click", publish);
     $("revert").addEventListener("click", async () => {
         snapshot();
         stopWalkForChange(); closePicker();
@@ -2868,7 +2890,7 @@ function buildUI() {
     const [m, n] = await Promise.all([fetch("/api/map").then(r => r.json()), fetch("/api/names").then(r => r.json())]);
     map = m; migrateHeights(map); names = n.names || []; fontW = n.font || {}; difficulty = n.difficulty || {};
     /* unsaved work comes back on its own: a prompt here could block the page from loading */
-    const draft = localStorage.getItem("hallway-draft");
+    const draft = window.HALLWAY_PLAY ? null : localStorage.getItem("hallway-draft");
     if (draft) { try { const d = JSON.parse(draft); if (d && d.levels) { map = d; migrateHeights(map); dirty = true; $("dirty").hidden = false; $("revert").hidden = false; } } catch (e) { localStorage.removeItem("hallway-draft"); } }
     map.stairs = map.stairs || [];
     level = map.levels.find(l => l.k === 0) || map.levels[0];
@@ -2881,5 +2903,6 @@ function buildUI() {
     if (names.length) for (const l of map.levels) for (const d of (l.doors || [])) if (!d.name && !d.spare) d.spare = true;
     if (pinned) { if (dirty) { try { localStorage.setItem("hallway-draft", JSON.stringify(map)); } catch (e) { /* the file on disk stands */ } } else { await save(); flash(`${pinned} mazes are now locked to their doors.`); } }
     buildLevels(); showMapInfo(); runChecks(); syncButtons(); setTool("select"); select(null); setZoom(zoom); resize(); requestArt(true);
+    if (window.HALLWAY_PLAY) setTool("walk");
     window.__hallway = { stairWallAt, hangWallAt, furniTile, landingOf, placeable, stairWallsOf, setCut, seeThroughDown, get seeCut() { return seeCut; }, edgesNear, railsNear, cam, paint, liftAt, useLift, rideTo, showLiftPanel, liftOpen, setDoors, entranceAt, entranceTiles, useUnder, retaining, doorSpotAt, fitDoor, doorEdge: doorEdge, isNone, wallState, setBrush, flightOf, heightEdgeAt, edgeRun, canStep, isHalf, wallHolds, tileIn, nodeZ, heightAt, stepLift, wallSpot, tidyHeights, get rubbed() { return rubbed; }, sortByDifficulty, doorSpots, wallStretch, pickColour, select, get map() { return map; }, moodNow, get timeMode() { return timeMode; }, sitOn, getDrink, propUnder, avCanvas, get live() { return live; }, stairLevels, nodeZ, wallAt, pickIn, walkGraph, graphFrom, liftTile, doorNames, setDoorMaze, signBox, signHandles, handleAt, setZoom, showTab, get zoom() { return zoom; }, get level() { return level; }, camTick, camTarget, followNow, floorUnder, get hover() { return hover; }, pick, select, deleteSelected, get selected() { return selected; }, get tiles() { return tiles; }, get inflight() { return inflight; }, get version() { return version; }, paint, get map() { return map; }, get cam() { return cam; }, get walker() { return walker; }, toScreen, P, setTool, act, walkTo, stepWalk, setLevel: id => { level = byId(id); buildLevels(); paint(); } };
 })();

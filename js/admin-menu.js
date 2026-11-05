@@ -31,7 +31,7 @@
     const ROWS = [
         ["home", "Home", "archive"], ["mazes", "Mazes (with its sections)", "archive"], ["events", "Events (with its sections)", "archive"],
         ["timeline", "Timeline", "archive"], ["furni", "Furni", "archive"], ["whats-new", "What's New", "archive"],
-        ["guides", "Guides", "archive"], ["articles", "Articles", "archive"], ["missing-pieces", "Missing Pieces", "archive"],
+        ["guides", "Guides", "archive"], ["articles", "Articles", "archive"], ["hallway", "The Hallway", "archive"], ["missing-pieces", "Missing Pieces", "archive"],
         ["guess", "Guess the Maze", "games"], ["odd", "Odd One Out", "games"], ["fallin-furni", "Fallin' Furni", "games"],
         ["pura", "Pura Panic", "games"], ["scout", "Scout's Trail", "games"], ["leaderboards", "Leaderboards", "games"],
         ["profile", "Your Profile", "loose"], ["alt-codes", "Alt Codes (never on a phone)", "loose"]
@@ -41,7 +41,7 @@
        2026, the owner's: the Articles row, "ADMIN-ONLY for now"), as the
        homepage reads them (ADMINS_FIRST in js/home.js). A layout from before
        the row existed does not place it, so it reads here as Admins only. */
-    const ADMINS_FIRST = ["articles"];
+    const ADMINS_FIRST = ["articles", "hallway"];
     const isFold = id => Object.prototype.hasOwnProperty.call(FOLDS, id);
 
     const $ = id => document.getElementById(id);

@@ -412,6 +412,21 @@
                                 </div>
                                 <p class="ctl-status" id="rat-state-status" style="display:none;"></p>
                             </div>
+                            <!-- The Hallway (6 Nov 2026). An admin signed in here can walk it in every state; see js/hallway.js. -->
+                            <div class="ctl-card" id="hallway-state-card" style="display:none;"
+                                 title="Hidden: not in the menu, and its address goes to the archive. Coming soon and Maintenance: the menu row and address show a screen saying so. Live: open to everyone. Admins can walk it in every state. Who sees its menu row is set in the Menu card below.">
+                                <span class="ctl-label">The Hallway</span>
+                                <div class="ctl-row">
+                                    <a class="ctl-btn" href="/hallway" target="_blank" rel="noopener">Walk</a>
+                                    <div class="ctl-seg">
+                                        <button type="button" class="btn-enter-mini hallway-state-btn" data-hallway-state="hidden">Hidden</button>
+                                        <button type="button" class="btn-enter-mini hallway-state-btn" data-hallway-state="coming-soon">Soon</button>
+                                        <button type="button" class="btn-enter-mini hallway-state-btn" data-hallway-state="maintenance">Maint.</button>
+                                        <button type="button" class="btn-enter-mini hallway-state-btn" data-hallway-state="live">Live</button>
+                                    </div>
+                                </div>
+                                <p class="ctl-status" id="hallway-state-status" style="display:none;"></p>
+                            </div>
 
 
                             <!-- RETIRED (30 Oct 2026, the owner's: "that will never be needed

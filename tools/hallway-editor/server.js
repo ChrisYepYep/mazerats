@@ -38,6 +38,7 @@ const BACK_ART = path.join(__dirname, "art", "lamps", "globe-wall-light-back.png
 const SCONCE_ART = path.join(__dirname, "art", "lamps", "wall-light.png");
 const artStamp = () => { let t = 0; for (const f of [LAMP_ART, WALL_ART, BACK_ART, SCONCE_ART]) { try { t += fs.statSync(f).mtimeMs; } catch (e) { /* not there */ } } return t; };
 let artAt = artStamp();
+let publishing = { running: false, at: 0, of: 0, error: null };
 for (const f of [LAMP_ART, WALL_ART, BACK_ART, SCONCE_ART]) fs.watchFile(f, { interval: 400 }, () => {
     artAt = artStamp();
     /* and the ghost that follows the mouse when placing one */
@@ -140,6 +141,18 @@ http.createServer(async (req, res) => {
             return json(res, 200, { v, report, tile: TILE });
         }
         if (url.pathname === "/api/art") return json(res, 200, { at: artAt });
+        /* Publish: its own process, since it draws the whole map four times over */
+        if (url.pathname === "/api/publish") {
+            if (req.method === "GET") return json(res, 200, publishing);
+            if (publishing.running) return json(res, 409, { error: "Already publishing." });
+            publishing = { running: true, at: 0, of: 0, error: null };
+            const child = require("child_process").fork(path.join(__dirname, "publish.js"), [], { silent: true });
+            let errors = "";
+            child.stdout.on("data", d => { const m = /progress (\d+) of (\d+)/.exec(String(d)); if (m) { publishing.at = +m[1]; publishing.of = +m[2]; } });
+            child.stderr.on("data", d => { errors += d; });
+            child.on("exit", code => { publishing = { running: false, at: 0, of: 0, error: code ? (errors.trim().split("\n").pop() || "It stopped.") : null }; });
+            return json(res, 200, publishing);
+        }
         if (url.pathname === "/api/lift") {
             /* one lift on a see-through picture, doors part way open, to animate over the map */
             const slide = Math.max(0, Math.min(1, Number(url.searchParams.get("slide")) || 0)), bw = 180, bh = 200, ax = 40, ay = 160, b = new W.Buf(bw, bh);

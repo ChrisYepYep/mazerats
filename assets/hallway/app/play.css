@@ -1,0 +1,31 @@
+/* The Hallway for walking: the editor's page with only the view left, and its few controls. */
+html, body { background: #000; overflow: hidden; }
+#app { display: block; height: 100vh; }
+#top, #left, #right, #bottom, #status, #walkBar, .toolopts, #heightBar { display: none !important; }
+#app > *:not(#stage) { display: none !important; }
+#stage { position: absolute; inset: 0; background: #000; }
+#view { outline: none; }
+#playBar {
+    position: fixed;
+    left: 8px;
+    bottom: 8px;
+    z-index: 30;
+    display: flex;
+    gap: 4px;
+}
+#playBar button {
+    min-width: 26px;
+    height: 24px;
+    padding: 0 8px;
+    color: #e8dcc4;
+    background: rgba(21, 17, 12, .86);
+    border: 1px solid #6b5a42;
+    font: 11px/1 system-ui, sans-serif;
+    cursor: pointer;
+}
+#playBar button:hover { background: #2c2318; color: #fff; }
+#playBar button:focus-visible { outline: 2px solid #f4c77b; outline-offset: 1px; }
+#playBar button.is-on { color: #f4c77b; border-color: #d9a85a; }
+
+/* Bigger to press on a phone */
+@media (pointer: coarse) { #playBar button { min-width: 38px; height: 34px; font-size: 13px; } }

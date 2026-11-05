@@ -11956,6 +11956,8 @@ document.addEventListener("DOMContentLoaded", () => {
                 }
             });
     }
+    /* The Hallway's address (6 Nov 2026): the checks are its own, so an admin always gets in. */
+    window.hallwayAdminCheck = () => adminVerified();
     // (15 Oct 2026: Scout's Trail, at /scout; /ariadne and /ratrace are sent there by netlify.toml)
     if (SCOUT_PATH.test(location.pathname) || (location.hostname === "localhost" && /[?&](scout|ariadne|ratrace)\b/.test(location.search))) {
         openRatRaceIfShown();
@@ -12359,6 +12361,8 @@ document.addEventListener("DOMContentLoaded", () => {
        ratRaceState, so for those visitors the hidden game's row came back
        into every menu, saying "Maintenance". Shut stays shut. */
     let ratState = "hidden";
+    /* The Hallway's switch (js/hallway.js has the rest). Hidden until the settings say otherwise, so nobody sees a row flash up. */
+    let hallwayState = "hidden";
     // The Warren's order and hidden rows for this menu (applyMenuLayout); null is the menu as written.
     let menuLayout = null;
 
@@ -12371,6 +12375,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 if (s && !s.fromCache) ratState = (s.ratRaceState === "live" || s.ratRaceState === "hidden") ? s.ratRaceState : "maintenance";
                 // Hidden: a browser holding a Warren token finds out now whether it is still good (see adminVerified).
                 if (ratState === "hidden") adminVerified();
+                if (s && !s.fromCache && ["coming-soon", "maintenance", "live"].includes(s.hallwayState)) hallwayState = s.hallwayState;
                 menuLayout = (s && s.menuLayout && typeof s.menuLayout === "object") ? s.menuLayout : null;
                 // A row the Warren keeps to admins: find out now whether this browser's token is good.
                 if (menuLayout && Array.isArray(menuLayout.admins) && menuLayout.admins.length) adminVerified();
@@ -12425,7 +12430,7 @@ document.addEventListener("DOMContentLoaded", () => {
         "What's New": "whats-new", "Guides": "guides", "Missing Pieces": "missing-pieces",
         "Guess the Maze": "guess", "Odd One Out": "odd", "Fallin' Furni": "fallin-furni", "Pura Panic": "pura",
         "Scout's Trail": "scout", "Leaderboards": "leaderboards", "Your Profile": "profile", "Alt Codes": "alt-codes",
-        "Articles": "articles"
+        "Articles": "articles", "The Hallway": "hallway"
     };
     const MENU_FOLD_NAMES = { archive: "Archive", games: "Games" };
     /* ROWS FOR ADMINS UNTIL THE WARREN SAYS OTHERWISE (2 Nov 2026, the
@@ -12434,7 +12439,7 @@ document.addEventListener("DOMContentLoaded", () => {
        anywhere, as if it were in `admins`; the Warren's menu card shows it
        as "Admins only" (js/admin-menu.js), and once a layout saved there
        places it, that layout decides, Shown included. */
-    const ADMINS_FIRST = ["articles"];
+    const ADMINS_FIRST = ["articles", "hallway"];
     function applyMenuLayout(entries) {
         const layout = menuLayout;
         if (!layout || !Array.isArray(layout.top)) {
@@ -12597,6 +12602,15 @@ document.addEventListener("DOMContentLoaded", () => {
                 badge: "",
                 on: false,
                 run: () => { if (window.Articles) Articles.open(); }
+            },
+            {
+                /* Walk the archive (6 Nov 2026, js/hallway.js). For admins only until the Warren places it
+                   (ADMINS_FIRST above); and while its switch is on Hidden, for admins whatever the layout says. */
+                name: "The Hallway",
+                state: hallwayState === "live" ? "Walk the archive" : hallwayState === "coming-soon" ? "Coming soon" : hallwayState === "maintenance" ? "Maintenance" : "Hidden (admins only)",
+                badge: "",
+                on: false,
+                run: () => { if (window.Hallway) Hallway.open(); }
             },
             {
                 name: "Missing Pieces",
@@ -12771,7 +12785,8 @@ document.addEventListener("DOMContentLoaded", () => {
             /* Rat Race while the Warren has it Hidden: only an admin's menu carries it — one the
                server has vouched for this session (26 Oct 2026, the bug scan; see adminVerified),
                not just a token left in the browser, which on a shared computer showed the row to all. */
-            .filter(e => !(e.name === "Scout's Trail" && ratState === "hidden" && !adminVerifiedNow()));
+            .filter(e => !(e.name === "Scout's Trail" && ratState === "hidden" && !adminVerifiedNow()))
+            .filter(e => !(e.name === "The Hallway" && hallwayState === "hidden" && !adminVerifiedNow()));
         /* The sheet is a reference table of several hundred characters
            beside the key combinations that type them, and a key combination
            is a thing a phone does not have. Offering it there is a tab that

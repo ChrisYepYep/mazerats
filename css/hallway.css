@@ -1,0 +1,136 @@
+/* The Hallway on the homepage (6 Nov 2026; js/hallway.js has the why).
+   The archive slides away from around it: the content up out of the page, the
+   fellow fansites down, and the footer settles at the foot of the screen.
+   Transforms only, so nothing is laid out again, and every skin's page keeps
+   its own look as it goes. */
+body > main,
+body > .fellow-fansites,
+body > .site-footer {
+    transition: transform 0.9s cubic-bezier(0.2, 0.7, 0.3, 1);
+}
+html.hallway-open body > main {
+    transform: translateY(calc(-100% - 120px));
+    transition-timing-function: cubic-bezier(0.6, 0, 0.8, 0.3);
+    pointer-events: none;
+}
+html.hallway-open body > .fellow-fansites {
+    transform: translateY(calc(100vh + 100%));
+    transition-timing-function: cubic-bezier(0.6, 0, 0.8, 0.3);
+    pointer-events: none;
+}
+html.hallway-open body > .site-footer {
+    transform: translateY(var(--hallway-footer-y, 0px));
+    position: relative;
+    z-index: 6;
+}
+html.hallway-open body { overflow: hidden; }
+/* Arriving straight at /hallway there is nothing to watch slide away. */
+html.hallway-instant body > main,
+html.hallway-instant body > .fellow-fansites,
+html.hallway-instant body > .site-footer { transition: none; }
+
+#hallway-stage {
+    position: fixed;
+    left: 0;
+    right: 0;
+    top: var(--hallway-top, 0px);
+    bottom: var(--hallway-bottom, 0px);
+    z-index: 5;
+    opacity: 0;
+    transition: opacity 0.45s ease 0.45s;
+    overflow: hidden;
+}
+html.hallway-instant #hallway-stage { transition: none; }
+#hallway-stage.is-in { opacity: 1; }
+#hallway-stage.is-leaving { opacity: 0; transition: opacity 0.35s ease; }
+#hallway-stage iframe {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    border: 0;
+    display: block;
+    background: #000;
+    opacity: 0;
+    transition: opacity 0.4s ease;
+}
+#hallway-stage iframe.is-ready { opacity: 1; }
+
+/* Loading, or the screen for a state that isn't open yet: the site's own lettering on the dark */
+.hallway-note {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    width: min(360px, calc(100% - 32px));
+    box-sizing: border-box;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 14px;
+    padding: 22px 24px;
+    background: rgba(21, 17, 12, .92);
+    border: 1px solid #6b5a42;
+    text-align: center;
+    color: #e8dcc4;
+    font-family: "Volter", "Goldfish", sans-serif;
+    font-size: 0.75rem;
+    line-height: 1.5;
+}
+.hallway-note strong { font-size: 1rem; font-weight: 400; color: #f4c77b; }
+.hallway-bar { width: 200px; height: 8px; border: 1px solid #6b5a42; background: #15110c; }
+.hallway-bar i { display: block; height: 100%; width: 0; background: #d9a85a; transition: width 0.2s linear; }
+.hallway-close {
+    margin-top: 6px;
+    padding: 7px 14px;
+    color: #15110c;
+    background: #d9a85a;
+    border: 0;
+    font: inherit;
+    cursor: pointer;
+}
+.hallway-close:hover { background: #f4c77b; }
+.hallway-close:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+
+/* What an admin is told when walking it before it's live */
+.hallway-pill {
+    position: absolute;
+    top: 8px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 2;
+    padding: 3px 9px;
+    color: #15110c;
+    background: #f4c77b;
+    font-family: "Volter", "Goldfish", sans-serif;
+    font-size: 0.625rem;
+    pointer-events: none;
+}
+@media (prefers-reduced-motion: reduce) {
+    body > main, body > .fellow-fansites, body > .site-footer, #hallway-stage, #hallway-stage iframe { transition-duration: 0.01s; transition-delay: 0s; }
+}
+
+/* On a phone it has the whole screen below the top bar, as Fallin' Furni's window does; and it's for walking sideways */
+.hallway-turn { display: none; }
+@media (max-width: 760px) {
+    html.hallway-open body > .site-footer { transform: translateY(calc(100vh + 100%)); }
+    #hallway-stage { bottom: 0; }
+}
+@media (max-width: 760px) and (orientation: portrait) {
+    .hallway-turn {
+        display: block;
+        position: absolute;
+        left: 50%;
+        top: 8px;
+        transform: translateX(-50%);
+        z-index: 3;
+        padding: 4px 10px;
+        white-space: nowrap;
+        color: #15110c;
+        background: #d9a85a;
+        font-family: "Volter", "Goldfish", sans-serif;
+        font-size: 0.625rem;
+        pointer-events: none;
+    }
+    .hallway-pill { top: 34px; }
+}

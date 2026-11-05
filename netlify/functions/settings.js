@@ -94,6 +94,13 @@ const VALID_RAT_STATES = ["maintenance", "live", "hidden"];
 const DEFAULT_RAT_STATE = "maintenance";
 const ratState = (doc) => (doc && VALID_RAT_STATES.includes(doc.ratRaceState)) ? doc.ratRaceState : DEFAULT_RAT_STATE;
 
+/* THE HALLWAY (6 Nov 2026, the owner's): hidden, coming soon, maintenance or
+   live. Hidden until he says otherwise. Whatever the state, an admin signed
+   in to the Warren can walk it (js/hallway.js). */
+const VALID_HALLWAY_STATES = ["hidden", "coming-soon", "maintenance", "live"];
+const DEFAULT_HALLWAY_STATE = "hidden";
+const hallwayState = (doc) => (doc && VALID_HALLWAY_STATES.includes(doc.hallwayState)) ? doc.hallwayState : DEFAULT_HALLWAY_STATE;
+
 /* WHICH PALETTE THE SITE WEARS.
 
    "classic" is the brown the archive has always been, and is what everyone
@@ -389,6 +396,7 @@ function settingsReply(event, doc) {
         fallinFurniBeta: ffBetaOf(doc),
         puraPanicState: puraState(doc),
         ratRaceState: ratState(doc),
+        hallwayState: hallwayState(doc),
         maintenanceNote: (doc && doc.maintenanceNote) || DEFAULT_MAINTENANCE_NOTE,
         // When an open archive page is moved to the landing page (30 Oct
         // 2026): see js/maintenance-warn.js. "" outside Maintenance.
@@ -520,6 +528,12 @@ async function write(event, settings, db) {
                 return json(400, { error: "ratRaceState must be one of: " + VALID_RAT_STATES.join(", ") });
             }
             update.ratRaceState = body.ratRaceState;
+        }
+        if (body.hallwayState !== undefined) {
+            if (!VALID_HALLWAY_STATES.includes(body.hallwayState)) {
+                return json(400, { error: "hallwayState must be one of: " + VALID_HALLWAY_STATES.join(", ") });
+            }
+            update.hallwayState = body.hallwayState;
         }
         if (body.maintenanceNote !== undefined) {
             if (!VALID_MAINTENANCE_NOTES.includes(body.maintenanceNote)) {
@@ -686,6 +700,7 @@ async function write(event, settings, db) {
             fallinFurniBeta: ffBetaOf(doc),
             puraPanicState: puraState(doc),
             ratRaceState: ratState(doc),
+        hallwayState: hallwayState(doc),
             maintenanceNote: (doc && doc.maintenanceNote) || DEFAULT_MAINTENANCE_NOTE,
             maintenanceKickAt: maintenanceKickAt(doc),
             theme: (doc && doc.theme) || DEFAULT_THEME,
