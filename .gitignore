@@ -17,3 +17,7 @@ tools/ariadne-editor/trailer/
 
 # What Netlify publishes, built by tools/build-dist.js at deploy time; never committed
 dist/
+
+# The hallway editor: its save history and working previews
+tools/hallway-editor/.history/
+tools/hallway-editor/previews/
