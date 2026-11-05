@@ -926,7 +926,7 @@
        rows never reads as one stamp repeated. */
     function decorateRows() {
         document.querySelectorAll(".chrome-list-row").forEach((row) => {
-            if (hosts.has(row) || !row.offsetWidth) return;
+            if (hosts.has(row) || !row.offsetWidth || row.closest(".opening-featured")) return;
             const key = "row:" + (row.textContent || "").replace(/\s+/g, " ").slice(0, 60);
             host(row, (el, w) => {
                 const r = prng(hash(key));
@@ -967,6 +967,56 @@
                     if (left) { p.style.left = "0"; p.style.borderBottomLeftRadius = rr; }
                     else { p.style.right = "0"; p.style.borderBottomRightRadius = rr; }
                     // The row's host record owns the pile too, so a redraw clears it.
+                }
+            });
+        });
+    }
+
+    /* THE OPENING VIEW'S TILES (5 Nov 2026, the owner's: "more subtle here").
+       Its spotlight, cards, game tiles, On now rows, Explore buttons and
+       Featured rows, in lighter snow than the archive's rows: a dusting most
+       of the time, a thin drift on some, bare patches, and only now and then
+       a short icicle, since these tiles stand in a tight grid with pictures
+       on them. Still each its own look, from a key of its own text. The
+       tiles clip their own children, so css/skin-xmas.css opens them up. */
+    const OPENING_TILES = ".opening-card, .opening-game, .opening-now-row, .opening-explore button, .opening-featured .chrome-list-row";
+    function decorateOpening() {
+        const spot = document.querySelector(".opening-spot");
+        // A fixed key: the spotlight's text changes with its slide, and its snow shouldn't.
+        if (spot && spot.offsetWidth && !hosts.has(spot)) host(spot, (el, w) => {
+            capBox(el, w, {
+                depth: 2.2, key: "opening-spot", sparkles: true, maxMul: 2.2,
+                bare: [{ at: w * 0.3, w: 40 }, { at: w * 0.78, w: 26 }],
+                drifts: [{ at: w * 0.92, w: 30, h: 2.4 }]
+            });
+        });
+        document.querySelectorAll(OPENING_TILES).forEach((tile) => {
+            if (hosts.has(tile) || !tile.offsetWidth) return;
+            const key = "opening:" + (tile.textContent || "").replace(/\s+/g, " ").slice(0, 60);
+            host(tile, (el, w) => {
+                const r = prng(hash(key));
+                const look = r();
+                const dusting = look < 0.55, drifted = look >= 0.8;
+                const depth = dusting ? 1.3 + r() * 0.8 : 2.1 + r() * 1.1;
+                const drifts = [];
+                let tilt = (r() - 0.5) * 0.6;
+                if (drifted) {
+                    const end = r() < 0.5 ? 0.14 : 0.86;
+                    tilt = end < 0.5 ? -0.8 : 0.8;
+                    drifts.push({ at: w * end, w: 12 + r() * 18, h: depth * (0.8 + r() * 0.5) });
+                }
+                const bare = [];
+                if (r() < 0.6) for (let i = 0, m = 1 + Math.floor(r() * 2); i < m; i++) bare.push({ at: w * (0.15 + r() * 0.7), w: 10 + r() * 34 });
+                capBox(el, w, { depth, tilt, bare, drifts, key, maxMul: 2.2, sparkles: r() < 0.2 });
+                // Never on the small buttons, where the icicles' rim read as a white underline.
+                if (r() > 0.75 && !el.matches(".opening-explore button, .opening-now-row")) icicleBox(el, w, { maxLen: 2 + r() * 2.5, gap: 3 + r() * 3.5, key, thinRim: true, side: r() < 0.5 ? -1 : 1 });
+                // A little snow banked in one corner of some cards' pictures.
+                const pic = el.querySelector(".opening-card-pic");
+                if (pic && r() < 0.35) {
+                    ensurePositioned(pic);
+                    const s = hash(key), left = s % 2 === 1;
+                    const p = piece(pic, paneSnow(18 + (s % 13), 6 + (s % 4), s, left ? "bl" : "br"), "xm-pane", { bottom: 0, zIndex: 2 });
+                    if (left) p.style.left = "0"; else p.style.right = "0";
                 }
             });
         });
@@ -1935,6 +1985,7 @@
         decorateHeader();
         decorateWindows();
         decorateRows();
+        decorateOpening();
         decorateMisc();
     }
 
@@ -2038,7 +2089,7 @@
         /* And a light look every two seconds for windows and rows that came
            since: a window can finish opening (the game's does) after the last
            change to the page that would have prompted one. */
-        timers.push(setInterval(() => { if (on && !document.hidden) { decorateWindows(); decorateRows(); capIcons(); standIns.forEach((v) => v.sync()); } }, 2000));
+        timers.push(setInterval(() => { if (on && !document.hidden) { decorateWindows(); decorateRows(); decorateOpening(); capIcons(); standIns.forEach((v) => v.sync()); } }, 2000));
     }
 
     function stop() {

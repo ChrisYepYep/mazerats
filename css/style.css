@@ -3728,6 +3728,21 @@ body[data-page="admin"] .admin-contributor-count {
 #featured-frame-list .chrome-list-row .ec-title .ec-title-name,
 .opening-featured .chrome-list-row .ec-title .ec-title-name { color: #fff8ec; }
 
+/* THE EC NAME PLATE AND BOW KEEP THEIR OWN COLOURS UNDER EVERY SKIN (the
+   owner's, 28 Oct and 5 Nov 2026). A skin wears a palette (Halloween witch,
+   Christmas frost), and each palette's sheet swaps in recoloured copies of the
+   plate, its ink and the event window's jade bow, so this was fixed for
+   Halloween alone and came back on Christmas. It is here rather than in a
+   skin's sheet so that a new skin can't miss it. data-skin is said twice to
+   outrank the palette sheets and light and dark mode (html[data-light]
+   .ec-title-s1), whichever of them loaded last. */
+html[data-skin][data-skin] .modal.is-ec::before { background-image: url('../assets/img/ec/jade-bow.png'); }
+html[data-skin][data-skin] .ec-title-s1 { border-image-source: url('../assets/img/ec/ec-name-player-s1.png'); }
+html[data-skin][data-skin] .ec-title-s2 { border-image-source: url('../assets/img/ec/ec-name-player-s2.png'); }
+html[data-skin][data-skin] .chrome-list-row .ec-title .ec-title-name,
+html[data-skin][data-skin] #featured-frame-list .chrome-list-row .ec-title .ec-title-name,
+html[data-skin][data-skin] .opening-featured .chrome-list-row .ec-title .ec-title-name { color: #fff8ec; }
+
 .chrome-list-row .row-desc {
     font-family: 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace;
     font-weight: 400;
@@ -13883,6 +13898,15 @@ body[data-page="admin"] #activity-sessions {
     gap: 5px;
 }
 
+/* The card is never shorter than its tab (5 Nov 2026, the owner's): an event's
+   holds only Share, and the tab, sized by its word, hung below it. The card
+   takes the height of whichever is taller, with a short list centred in it;
+   the tab stays its own height, so a maze's longer card is as it was. */
+.modal-actions-panel {
+    align-self: stretch;
+    justify-content: center;
+}
+
 /* Save and Completed arrive wrapped in a span so the titlebar can keep them
    together as a pair. On the card there is no pair — there are three rows —
    so the wrapper stops being a box and lets its two through. */
@@ -19045,6 +19069,14 @@ textarea.ctl-input.de-note {
     from { transform: translateX(-44px); }
     to { transform: translateX(148px); }
 }
+/* Guess the Maze's bar fills rather than slides (Daily.progress in js/daily.js):
+   --fill, 0 to 1, of the track inside its 2px of air at each end. */
+.daily-bar.is-progress > span {
+    width: calc((100% - 4px) * var(--fill, 0));
+    animation: none;
+    transform: none;
+    transition: width 0.12s linear;
+}
 /* The room's picture on its way (a slow image, a retry): the same bar over
    the dimmed frame. Its own class (setBusy in js/guess.js), not .is-busy,
    which a guess on its way to the server also sets: the bar flashed on
@@ -19060,25 +19092,21 @@ textarea.ctl-input.de-note {
     box-sizing: border-box;
     border: 1px solid var(--parchment);
     border-radius: 2px;
-    /* The slider in currentColor, as .daily-bar's (31 Oct 2026): dark mode's
+    /* The fill in currentColor, as .daily-bar's (31 Oct 2026): dark mode's
        copy of the gradient was graphite. And as longhands, because every
        palette's copy of a "background" shorthand reset the size below, so
-       the bar was filled solid and never slid. */
+       the bar was filled solid. --fill is set on the sheet (pictureBar in
+       js/guess.js; 5 Nov 2026, it used to slide). */
     color: var(--parchment);
     background-image: linear-gradient(currentColor, currentColor);
     background-repeat: no-repeat;
-    background-size: 30px 6px;
+    background-size: calc(var(--fill, 0) * 100%) 6px;
     background-origin: content-box;
+    background-clip: content-box;
     padding: 2px;
-    animation: daily-bar-frame 1.2s steps(40) infinite;
-}
-@keyframes daily-bar-frame {
-    from { background-position: -34px 0; }
-    to { background-position: 124px 0; }
 }
 @media (prefers-reduced-motion: reduce) {
-    .daily-bar > span,
-    .guess-sheet.is-fetching .guess-picture::after { animation-duration: 3s; }
+    .daily-bar > span { animation-duration: 3s; }
 }
 
 /* The window holds a frame, and the frame holds the deck — the same deck of
@@ -23393,13 +23421,42 @@ html[data-light] .chrome-light { filter: drop-shadow(0 0 3px var(--neon-soft)); 
 .art-top { flex: none; }
 .art-top[hidden] { display: none; }
 /* The draw doesn't shrink as a picture does, and stands taller (376px on
-   the wide layout, 529 stacked on a phone), so the card's cap at the window
-   (see "Fitting the card to the window") comes off sooner and the overlay
-   scrolls the whole card: below 830px of window on the wide layout, where
-   the text would have had under 100px, and always on the narrow one, where
-   it had two lines. */
-@media (max-height: 829px), (max-width: 640px) {
+   the wide layout, 529 stacked on a phone). On the narrow layout, where the
+   text would have two lines, the card's cap at the window (see "Fitting the
+   card to the window") comes off and the overlay scrolls the whole card, as
+   it does for the other windows there. */
+@media (max-width: 640px) {
     .modal.art-window:has(.art-top:not([hidden])) { max-height: none; }
+}
+/* Short windows on the wide layout (5 Nov 2026, the owner's): the card used
+   to lose its cap here too, and ran past the bottom of the screen and over
+   the footer, with its only scrollbar out on the overlay. Now it stays
+   within the window at any height, titlebar and close in view, and below
+   830px, where the text's own box would be a letterbox under the picture or
+   the draw (about the window less 614px), the whole reader scrolls instead:
+   picture, byline and text, on the site's bar (CustomScrollbar in
+   js/articles.js). Everything in the reader keeps its height, so the text
+   box has nothing to scroll and its own bar goes. The list view scrolls in
+   .art-list inside the same cap. */
+.modal.art-window .chrome-frame > .custom-scrollbar-wrap { flex: 1 1 auto; min-height: 0; }
+.art-window .custom-scrollbar-wrap > .art-reader { flex: 1 1 auto; min-width: 0; min-height: 0; }
+/* Taken out of the row rather than left hidden: above 830px the bar has
+   nothing to do and would hold 15px of the window's width. */
+.art-window .chrome-frame > .custom-scrollbar-wrap > .custom-scrollbar { display: none; }
+@media (max-height: 829px) and (min-width: 641px) {
+    .modal.art-window {
+        max-height: calc(100vh - 2 * var(--overlay-pad));
+        max-height: calc(100dvh - 2 * var(--overlay-pad));
+    }
+    .art-window .custom-scrollbar-wrap > .art-reader {
+        overflow-x: hidden;
+        overflow-y: auto;
+        overscroll-behavior: contain;
+    }
+    .modal.art-window .art-reader.modal-thumb-full > * { flex: none; }
+    .art-window .art-reader .art-desc-box { max-height: none; overflow-y: visible; padding-right: 0; }
+    .art-window .art-reader .custom-scrollbar-wrap--desc > .custom-scrollbar { display: none; }
+    .art-window .chrome-frame > .custom-scrollbar-wrap > .custom-scrollbar:not(.is-unscrollable) { display: flex; }
 }
 /* The draw's tile at the head of the strip: a still wheel, the picture
    tiles' size and treatment. */

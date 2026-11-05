@@ -23,6 +23,17 @@ html[data-skin="xmas"] .xm-piece {
     z-index: 2;
 }
 html[data-skin="xmas"] .xm-lights { z-index: 1; }
+
+/* THE OPENING VIEW'S TILES carry snow on their top edges (decorateOpening in
+   js/skin-xmas.js), and clip their children, which would cut it off. So they
+   are opened up and what they were clipping keeps the corners by itself: a
+   card's and a game's picture, and the spotlight's frame. */
+html[data-skin="xmas"] .opening-card,
+html[data-skin="xmas"] .opening-game,
+html[data-skin="xmas"] .opening-spot { overflow: visible; }
+html[data-skin="xmas"] .opening-card-pic,
+html[data-skin="xmas"] .opening-game-art { border-radius: 7px 7px 0 0; }
+html[data-skin="xmas"] .opening-spot .spotlight-frame { border-radius: 7px; }
 /* On the opening view the sleeping rat stands in front of the raised frame
    (#browse-window.is-opening in style.css), and his hat goes with him. The
    piece's own z-index is written on the element, hence !important. */

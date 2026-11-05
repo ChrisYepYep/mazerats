@@ -180,7 +180,28 @@
 
     // ---------- reading the picture ----------
 
-    function loadImage(src) {
+    /* Read through fetch first, to count the bytes for the loading bar (the
+       answer is 0 to 1 in onShare). A deal image is cached as immutable, so
+       the Image below is then served from the cache rather than fetched again.
+       Anything that goes wrong here is left for the Image to find out: it
+       has always been what decides whether a picture loaded. */
+    async function readWithProgress(src, onShare) {
+        try {
+            const res = await fetch(src, { credentials: "same-origin" });
+            const total = Number(res.headers.get("content-length"));
+            if (!res.ok || !res.body || !total) return;
+            const reader = res.body.getReader();
+            let got = 0;
+            for (;;) {
+                const { done, value } = await reader.read();
+                if (done) return;
+                got += value.length;
+                onShare(Math.min(1, got / total));
+            }
+        } catch (e) { /* the Image's to report */ }
+    }
+    async function loadImage(src, onShare) {
+        if (onShare) await readWithProgress(src, onShare);
         return new Promise((resolve, reject) => {
             const img = new Image();
             // A deal-image address (netlify/functions/deal-image.js), on this
@@ -560,8 +581,9 @@
            no picture's size or shape says which maze it is (ONE SIZE PER GAME
            in deal-image.js), and another pass could only re-encode it. */
         let img = null;
+        pictureBar(i, PICTURE_BAR_FROM, 0.9);
         try {
-            img = await loadImage(pick.image);
+            img = await loadImage(pick.image, share => pictureBar(i, PICTURE_BAR_FROM + (1 - PICTURE_BAR_FROM) * share, 1));
         } catch (e) {
             if (gen !== dealGen) return;
             preparing[i] = false;
@@ -571,9 +593,11 @@
                 return;
             }
             setBusy(i, false);
+            clearPictureBar(i);
             unloadable[i] = true;
             pictureUnavailable(i);
             renderRound(i);
+            releaseHold(i);
             // The next room is not held up by this one's picture.
             if (i + 1 < ROUNDS) prepareRound(i + 1);
             return;
@@ -587,6 +611,7 @@
         rounds[i] = { image: pick.image, whole: pick.view >= TRIES, img };
         preparing[i] = false;
         setBusy(i, false);
+        clearPictureBar(i);
         if (unloadable[i]) {
             // A retry that worked: the unavailable notice goes with it.
             unloadable[i] = false;
@@ -598,6 +623,7 @@
         // The room moved on while that was loading (another tab's guess, read
         // back from the server): its picture now, not the one just drawn.
         if (!pictureReady(i)) { prepareRound(i); return; }
+        releaseHold(i);
 
         /* The next room's picture, if this device already holds that room (a
            day given back, say). It usually does not: a room is only handed
@@ -613,6 +639,49 @@
         sheet.el.classList.toggle("is-busy", on);
         // The loading bar is for the picture only, not a guess on its way.
         sheet.el.classList.toggle("is-fetching", on);
+    }
+
+    /* THE LOADING BAR FILLS, AND THE GAME ARRIVES WHOLE (5 Nov 2026, the
+       owner's). Pressing Play used to put up the room's names at once with a
+       bar over an empty frame. The picture can't come any sooner: it is only
+       handed out by the press itself, or a player could study the room for
+       free before the clock starts (ONE ROUND AT A TIME in js/daily.js). So
+       the room waits behind the deck's bar until its picture is in hand, then
+       appears complete. A later room is moved on to from the answer screen,
+       with the last picture still up, so it keeps the bar over its frame.
+
+       The bar's first stretch is the server answering, which can only be
+       estimated; PICTURE_BAR_FROM onwards is the picture's real bytes. */
+    const PICTURE_BAR_FROM = 0.35;
+    const HOLD_LIMIT_MS = 15000;     // a stalled picture hands over to the sheet's own bar and retry
+    let holding = -1;                // the round the deck is waiting for, or -1
+    let holdTimer = 0;
+    function pictureBar(i, value, creepTo) {
+        const sheet = roundSheet(i);
+        if (sheet && Daily.fill) Daily.fill(sheet.el, value, creepTo);
+        if (holding === i && Daily.progress) Daily.progress(el.deck, value, creepTo);
+    }
+    function clearPictureBar(i) {
+        const sheet = roundSheet(i);
+        if (sheet && Daily.fill) Daily.fill(sheet.el, null);
+    }
+    function holdForPicture(i) {
+        if (pictureReady(i) || unloadable[i]) return;
+        holding = i;
+        Daily.waiting(el.deck, true, "Loading the room");
+        pictureBar(i, 0.03, PICTURE_BAR_FROM);
+        clearTimeout(holdTimer);
+        holdTimer = setTimeout(() => releaseHold(i), HOLD_LIMIT_MS);
+    }
+    async function releaseHold(i) {
+        if (holding !== i) return;
+        holding = -1;
+        clearTimeout(holdTimer);
+        await (Daily.finishWaiting ? Daily.finishWaiting(el.deck) : Daily.waiting(el.deck, false));
+        // The sheet could not take the focus while it was hidden (goTo).
+        const live = view === "round" && el.overlay.classList.contains("open") ? sheets[liveIndex()] : null;
+        const inner = live && live.el.querySelector(".guess-sheet-inner");
+        if (inner) inner.focus({ preventScroll: true });
     }
 
     /* The rooms handed out so far, kept beside the day under a key of their
@@ -658,6 +727,7 @@
         const forDay = state.day;
         const list = picks();
         setBusy(i, true);
+        pictureBar(i, 0.03, PICTURE_BAR_FROM);
         let reply = null;
         if (i === 0) {
             Daily.takeRound(list, await Daily.opening("guess", forDay, BOARDS_URL));
@@ -676,6 +746,9 @@
             prepareRound(i);
             return;
         }
+        // Refused or failed: what the sheet has to say is the next thing to see.
+        clearPictureBar(i);
+        releaseHold(i);
         const sheet = roundSheet(i);
         // Refused for the same reasons a guess is, and answered the same way
         // (see submitGuess). Not while the room has been left, as a guess
@@ -1135,6 +1208,7 @@
        is rendered, and whatever wants the caret gets it. */
     function goTo(next) {
         view = next;
+        if (next !== "round" && holding !== -1) releaseHold(holding);
         renderAll();
         // Fetched on arrival rather than on open: most sittings never reach
         // this sheet, and a board nobody is looking at is a request nobody
@@ -2323,7 +2397,11 @@
            happened. */
         // Only while there is nothing to show: reopened on a day already
         // dealt, the sheets stand while the server is asked again below.
-        if (!started || !state || starting || dayHasTurned()) Daily.waiting(el.deck, true, "Dealing today's rooms");
+        if (!started || !state || starting || dayHasTurned()) {
+            Daily.waiting(el.deck, true, "Dealing today's rooms");
+            // On from where the game file's download left it (js/daily-loader.js).
+            if (Daily.progress) Daily.progress(el.deck, 0.4, 0.92);
+        }
         /* REOPENED, THE SPLASH IS UP AT ONCE (4 Nov 2026). The sheets stood
            where they were left until the server answered, so a window closed
            on the results opened on the results and then slid away to the
@@ -2377,9 +2455,9 @@
             // A throw above must not skip the splash: the window would open
             // on no view at all.
             .catch(() => {})
+            .then(() => Daily.finishWaiting ? Daily.finishWaiting(el.deck) : Daily.waiting(el.deck, false))
             .then(() => {
                 opening = false;
-                Daily.waiting(el.deck, false);
                 if (!state) return;
                 /* Not over a move the player has made while the server was
                    answering: pressing "See today's results" on the splash
@@ -2635,6 +2713,7 @@
                 el.play.disabled = false;
                 if (!state || unavailable) return;
             }
+            holdForPicture(state.round);
             prepareRound(state.round);
             goTo("round");
         });

@@ -348,6 +348,7 @@
         textEl.classList.toggle("is-justified", a.justify === true);
         ArticleText.fitPictures(textEl);
         descBox.scrollTop = 0;
+        reader.scrollTop = 0;
         say("");
     }
 
@@ -411,6 +412,10 @@
         const reading = !!a;
         win.classList.toggle("is-reading", reading);
         reader.hidden = !reading;
+        /* The bar's wrapper hid itself with the reader, and a watcher on a
+           reader with no box never fires to bring it back. */
+        const barWrap = reader.closest(".custom-scrollbar-wrap");
+        if (barWrap) barWrap.style.display = reading ? "" : "none";
         listEl.hidden = reading;
         if (reading) drawReader(a);
         else {
@@ -721,6 +726,13 @@
     }
 
     // ------------------------------------------------------------ start
+
+    /* The site's bar on the whole reader, for a short window (css/style.css,
+       "Short windows on the wide layout"). custom-scrollbar.js is ready at
+       DOMContentLoaded, which may be still to come when a link opens here. */
+    const attachReaderBar = () => { if (window.CustomScrollbar) window.CustomScrollbar.attach(reader); };
+    if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", attachReaderBar);
+    else attachReaderBar();
 
     let freshAsked = false;
     try { freshAsked = new URLSearchParams(location.search).has("fresh"); } catch (e) { /* no fresh copy */ }

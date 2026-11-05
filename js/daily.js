@@ -1004,6 +1004,47 @@ window.Daily = (function () {
         if (!on) { if (had) had.remove(); return; }
         if (!had) deck.insertAdjacentHTML("beforeend", loadingHtml(label));
     }
+    /* A BAR THAT FILLS (5 Nov 2026, the owner's; Guess the Maze): --fill on
+       the element, 0 to 1, which CSS turns into the bar's width. `value` is
+       what is known so far, and never goes back. `creepTo`, for a wait that
+       can't be measured (a file downloading, the server dealing), keeps it
+       edging towards that mark more and more slowly, so it never stands still
+       and never claims to have finished. null clears it. */
+    const fills = new WeakMap();
+    function fill(el, value, creepTo) {
+        if (!el) return;
+        let f = fills.get(el);
+        if (f) { clearInterval(f.timer); f.timer = 0; }
+        if (value === null) {
+            fills.delete(el);
+            el.style.removeProperty("--fill");
+            return;
+        }
+        if (!f) { f = { v: 0, timer: 0 }; fills.set(el, f); }
+        f.v = Math.max(f.v, Math.min(1, value));
+        const paint = () => el.style.setProperty("--fill", f.v.toFixed(3));
+        paint();
+        if (creepTo == null || creepTo <= f.v) return;
+        f.timer = setInterval(() => {
+            f.v += (creepTo - f.v) * 0.05;
+            paint();
+            if (!el.isConnected || creepTo - f.v < 0.002) { clearInterval(f.timer); f.timer = 0; }
+        }, 100);
+    }
+    // The bar waiting() put up, filling rather than sliding from now on.
+    function progress(deck, value, creepTo) {
+        const bar = deck && deck.querySelector(":scope > .daily-wait .daily-bar");
+        if (!bar) return;
+        bar.classList.add("is-progress");
+        fill(bar, value, creepTo);
+    }
+    // Takes a filling bar down full, rather than from wherever it had reached.
+    function finishWaiting(deck) {
+        const bar = deck && deck.querySelector(":scope > .daily-wait .daily-bar.is-progress");
+        if (!bar) { waiting(deck, false); return Promise.resolve(); }
+        fill(bar, 1);
+        return new Promise(resolve => setTimeout(() => { waiting(deck, false); resolve(); }, 170));
+    }
 
     /* A board's Habbo head that cannot be drawn (Habbo's imaging down; see
        habbo-outline.js) becomes the blank disc rather than a broken picture.
@@ -1201,7 +1242,7 @@ window.Daily = (function () {
     return {
         today, now, setServerNow, seededRandom, dayBefore, request,
         claimReset, deal, move, afterPractice, submit, filed, fileable, start, opening, begin, takeRound, mergeRounds,
-        forgetStarts, track, loadingHtml, waiting,
+        forgetStarts, track, loadingHtml, waiting, fill, progress, finishWaiting,
         clock, scoreCell, rightCell, orderLine, spanLine, boards, ranks, isMine,
         SPEED_BONUS_MAX, bonusLine, practiceLine, bonusRule,
         shareDate, dayTotal, shareScore, shareText, shareFallback,

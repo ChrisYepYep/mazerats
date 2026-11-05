@@ -75,7 +75,7 @@
                would open onto rounds it has no pictures for.
                v=5 (2 Nov 2026): the streak strip, which needs daily.js's
                Daily.streakStrip; both games and daily.js moved together. */
-            src: "js/guess.js?v=8",
+            src: "js/guess.js?v=9",
             open: "openGuessGame",
             overlay: "guess-overlay",
             win: "guess-window",
@@ -213,6 +213,8 @@
         const body = document.getElementById(GAMES[name].body);
         if (!body || body.querySelector(".daily-loading")) return;
         if (window.Daily && typeof Daily.waiting === "function") Daily.waiting(body, true, "Loading the game");
+        // Guess the Maze's bar fills (Daily.progress), starting with this download.
+        if (name === "guess" && window.Daily && Daily.progress) Daily.progress(body, 0.05, 0.4);
     }
 
     function clearFailed(name) {
