@@ -112,7 +112,7 @@ html.hallway-instant #hallway-stage { transition: none; }
 
 /* On a phone it has the whole screen below the top bar, as Fallin' Furni's window does; and it's for walking sideways */
 .hallway-turn { display: none; }
-@media (max-width: 760px) {
+@media (max-width: 760px), (max-height: 500px) {
     html.hallway-open body > .site-footer { transform: translateY(calc(100vh + 100%)); }
     #hallway-stage { bottom: 0; }
 }

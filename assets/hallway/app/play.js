@@ -5,7 +5,12 @@
     "use strict";
     window.HALLWAY_PLAY = true;
     const realFetch = window.fetch.bind(window);
-    const manifest = realFetch("../manifest.json", { cache: "no-cache" }).then(r => r.json());
+    const FN = "/.netlify/functions/hallway";
+    let online = false;
+    const manifest = Promise.all([
+        realFetch("../manifest.json", { cache: "no-cache" }).then(r => r.json()),
+        realFetch(FN + "?what=live").then(r => r.ok ? r.json() : null).catch(() => null)
+    ]).then(([here, there]) => { online = !!(there && there.online && there.publishedAt > (here.publishedAt || "")); if (online) window.hallwayOnlineLift = there.lift || {}; return online ? there : here; });
     const json = o => new Response(JSON.stringify(o), { status: 200, headers: { "Content-Type": "application/json" } });
     /* A square with nothing on it: one black pixel, so the page doesn't keep asking */
     let blank = null;
@@ -14,19 +19,19 @@
         const u = typeof url === "string" ? url : url.url;
         if (!u.startsWith("/api/")) return realFetch(url, opts);
         const m = await manifest, q = new URL(u, location.href), p = q.pathname;
-        if (p === "/api/map") return realFetch("../map.json", { cache: "no-cache" });
+        if (p === "/api/map") return online ? realFetch(FN + "?what=map") : realFetch("../map.json", { cache: "no-cache" });
         if (p === "/api/names") return json({ names: [], font: {}, difficulty: {} });
         if (p === "/api/art") return json({ at: 0 });
         if (p === "/api/version") return json({ v: m.version, report: {}, tile: m.tile });
         if (p === "/api/tile") {
             /* The editor's own light, when no time of day is asked for, is daylight here */
             const name = m.tiles[(q.searchParams.get("m") || "day") + "|" + q.searchParams.get("tx") + "," + q.searchParams.get("ty")];
-            if (name) return realFetch("../tiles/" + name, opts);
+            if (name) return realFetch(online ? FN + "?tile=" + name : "../tiles/" + name, opts);
             return new Response(await blankTile(), { status: 200, headers: { "Content-Type": "image/png" } });
         }
         return new Response("", { status: 404 });
     };
-    window.hallwayLiftSrc = (way, f) => "../lift/" + encodeURIComponent(way).replace(/%/g, "_") + "-" + f + ".png";
+    window.hallwayLiftSrc = (way, f) => { const file = encodeURIComponent(way).replace(/%/g, "_") + "-" + f + ".png"; return online && window.hallwayOnlineLift[file] ? FN + "?tile=" + window.hallwayOnlineLift[file] : "../lift/" + file; };
     window.hallwayTell = what => { try { if (parent !== window) parent.postMessage({ hallway: what }, location.origin); } catch (e) { /* on its own, there's nobody to tell */ } };
 
     /* Its music is on unless it's been turned off; the first click brings it in, as browsers require */

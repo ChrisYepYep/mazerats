@@ -593,7 +593,7 @@ async function publish() {
             const o = await (await fetch("/api/publish")).json();
             if (o.running) { b.textContent = o.of ? `Publishing ${o.at} of ${o.of}` : "Publishing"; continue; }
             if (o.error) throw new Error(o.error);
-            flash("Published. It goes live on the site the next time you deploy.");
+            flash(window.HALLWAY_EDIT ? "Published. It's live on the site now." : "Published. It goes live on the site the next time you deploy.");
             break;
         }
     } catch (e) { flash("Couldn't publish: " + e.message); }
@@ -629,6 +629,7 @@ function liveSrc() {
 async function liveFetch() {
     if (!live || live.busy || live.ending) return;
     const src = liveSrc(); if (src === live.key) return;
+    if (window.hallwayApiImage) { live.key = src; const im = new Image(); im.onload = () => { if (live && live.key === src) { live.img = im; paint(); } }; window.hallwayApiImage(im, src); return; }
     live.busy = true; live.key = src; const mine = live;
     try {
         const r = await fetch(src), a = r.headers.get("X-Anchor").split(",").map(Number), img = await createImageBitmap(await r.blob());
@@ -2238,7 +2239,7 @@ const STEP_OF = d => DIRS[d];
 const liftDoors = new Map();                     // a lift -> { p: how open, to: where it's going, shutAt }
 const liftOpen = q => { const s = liftDoors.get(q); return !!s && s.to === 1; };
 const LIFT_FRAMES = 6, liftImgs = new Map();
-function liftImg(way, f) { const k = way + "|" + f; let i = liftImgs.get(k); if (!i) { i = new Image(); i.onload = () => paint(); i.src = window.HALLWAY_PLAY ? window.hallwayLiftSrc(way, f) : "/api/lift?" + new URLSearchParams({ way, slide: f / (LIFT_FRAMES - 1) }); liftImgs.set(k, i); } return i; }
+function liftImg(way, f) { const k = way + "|" + f; let i = liftImgs.get(k); if (!i) { i = new Image(); i.onload = () => paint(); { const u = "/api/lift?" + new URLSearchParams({ way, slide: f / (LIFT_FRAMES - 1) }); if (window.HALLWAY_PLAY) i.src = window.hallwayLiftSrc(way, f); else if (window.hallwayApiImage) window.hallwayApiImage(i, u); else i.src = u; } liftImgs.set(k, i); } return i; }
 function setDoors(q, open, shutIn) {
     const s = liftDoors.get(q) || { p: 0, to: 0 };
     if (s.to !== (open ? 1 : 0) && window.LiftSounds) LiftSounds.doors();
@@ -2595,7 +2596,7 @@ function cutInFront(c, x0, y0) {
 function drawWalker() {
     const now = performance.now(); if (walker.drink && now > walker.drink.until) walker.drink = null;
     const dr = walker.drink, sipping = dr && (now - dr.from) % SIP_EVERY > SIP_EVERY - SIP_MS && !walker.walking, hand = dr ? (sipping ? "-drk" : "-crr") : "";
-    const n = walker.walking ? `s-${walker.dir}-wlk${dr ? "-crr" : ""}-${Math.floor(walker.frame) % 4}` : walker.seat ? `s-${walker.dir}-sit${hand}-0` : `s-${walker.dir}-std${hand}-0`;
+    const n = walker.walking ? `s-${walker.dir}-wlk${dr ? "-crr" : ""}-${((Math.floor(walker.frame) % 4) + 4) % 4}` : walker.seat ? `s-${walker.dir}-sit${hand}-0` : `s-${walker.dir}-std${hand}-0`;
     const img = avatarImg(n);
     if (!img.complete || !img.naturalWidth) return;
     const p = P(walker.x + .5, walker.y + .5, walker.z), feetX = Math.round(p[0]), feetY = Math.round(p[1]), x0 = feetX - 16, y0 = feetY - 50;

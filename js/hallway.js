@@ -31,7 +31,7 @@
     };
     const LABELS = { hidden: "Hidden", "coming-soon": "Coming soon", maintenance: "Maintenance" };
     const root = document.documentElement;
-    let stage = null, frame = null, opened = false, pushed = false, headWatch = null, closing = 0;
+    let stage = null, frame = null, opened = false, opening = false, pushed = false, headWatch = null, closing = 0;
 
     const settings = () => (typeof Api !== "undefined" && Api.getSiteSettings) ? Api.getSiteSettings().catch(() => null) : Promise.resolve(null);
     const isAdmin = () => window.hallwayAdminCheck ? Promise.resolve(window.hallwayAdminCheck()).catch(() => false) : Promise.resolve(false);
@@ -46,7 +46,7 @@
         /* Measured with its own transform taken out, so this doesn't chase itself */
         const was = getComputedStyle(foot).transform, m = was && was !== "none" ? new DOMMatrixReadOnly(was).m42 : 0, r = foot.getBoundingClientRect(), naturalTop = r.top - m, h = Math.round(r.height);
         root.style.setProperty("--hallway-footer-y", Math.round(innerHeight - h - naturalTop) + "px");
-        root.style.setProperty("--hallway-bottom", (innerWidth <= 760 ? 0 : h) + "px");
+        root.style.setProperty("--hallway-bottom", (innerWidth <= 760 || innerHeight <= 500 ? 0 : h) + "px");
     }
 
     function note(title, words, button) {
@@ -89,8 +89,10 @@
 
     /* open: from the menu tab. arrived: already at /hallway, nothing to slide. */
     async function open(arrived) {
-        if (opened) return;
+        if (opened || opening) return;
+        opening = true;
         const s = await settings(), state = stateOf(s), admin = state === "live" ? false : await isAdmin();
+        opening = false;
         if (state === "hidden" && !admin) {
             if (PATH.test(location.pathname)) { try { history.replaceState(history.state, "", "/home" + location.search + location.hash); } catch (e) { /* stays */ } }
             return;

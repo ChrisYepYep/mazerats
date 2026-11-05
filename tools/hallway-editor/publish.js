@@ -16,7 +16,7 @@ const W = require("./render/hw3.js"), { encodePng } = require("../png-encode.js"
 const HERE = __dirname, SITE = path.join(HERE, "..", ".."), OUT = path.join(SITE, "assets", "hallway");
 const MOODS = ["day", "dusk", "night", "dawn"], TILE = 512;
 /* what the page needs of the editor: its code, its look and its art, and not the tools that made them */
-const APP = ["editor.js", "editor.css", "hallway-audio.js", "lift-sounds.js", "furni-parts.js", "wall-items.js", "colour-picker.js", "play.js", "play.css", "render/edge-items.js"];
+const APP = ["editor.js", "editor.css", "hallway-audio.js", "lift-sounds.js", "furni-parts.js", "wall-items.js", "colour-picker.js", "play.js", "play.css", "edit.js", "render/edge-items.js"];
 
 function copyDir(from, to) {
     fs.mkdirSync(to, { recursive: true });
@@ -85,6 +85,15 @@ function finish(text, tiles) {
         .replace(/<script src="editor\.js"><\/script>/, `<script src="editor.js?v=${version}"></script>`);
     if (!/play\.js/.test(html) || !/play\.css/.test(html)) throw new Error("Couldn't make play.html: index.html has changed");
     fs.writeFileSync(path.join(OUT, "app", "play.html"), html);
+    /* And the editor for the Warren: the same page, with the renderer running in the browser */
+    require("./make-renderer.js").make(path.join(OUT, "app", "renderer-worker.js"));
+    let edit = fs.readFileSync(path.join(HERE, "index.html"), "utf8");
+    edit = edit.replace("<!-- The Hallway editor. Local only: served by tools/hallway-editor/server.js, never published. -->", "<!-- The Hallway editor, for the Warren. Made by tools/hallway-editor/publish.js from the local editor's page: don't edit it here. -->")
+        .replace(/<link rel="stylesheet" href="editor\.css">/, `<link rel="stylesheet" href="editor.css?v=${version}">`)
+        .replace(/<script src="hallway-audio\.js"><\/script>/, `<script src="edit.js?v=${version}"></script>\n<script src="hallway-audio.js"></script>`)
+        .replace(/<script src="editor\.js"><\/script>/, `<script src="editor.js?v=${version}"></script>`);
+    if (!/edit\.js/.test(edit)) throw new Error("Couldn't make edit.html: index.html has changed");
+    fs.writeFileSync(path.join(OUT, "app", "edit.html"), edit);
     fs.writeFileSync(path.join(OUT, "map.json"), text);
     fs.writeFileSync(path.join(OUT, "manifest.json"), JSON.stringify({ version, tile: TILE, moods: MOODS, publishedAt: new Date().toISOString(), tiles }));
     return version;
