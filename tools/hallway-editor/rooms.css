@@ -6,35 +6,56 @@
 .room-label .room-owner { color: #ab8b64; }
 .room-label.is-tight { left: 12px; top: 44px; transform: none; }
 
-.rb-back { position: absolute; inset: 0; z-index: 28; display: flex; align-items: center; justify-content: center; padding: 16px; background: rgba(0, 0, 0, .62); }
-.rb-book { display: grid; grid-template-columns: 1fr 1fr; width: min(1040px, 100%); height: min(640px, 100%); padding: 16px; background: #2e180c; border: 2px solid #17090a; outline: 1px solid #b08434; outline-offset: -8px; box-shadow: 0 10px 40px #000; }
-.rb-book.single { grid-template-columns: 1fr; }
-.rb-page { position: relative; display: flex; flex-direction: column; gap: 10px; min-height: 0; padding: 18px 22px; overflow: auto; color: #34200f; background: #e2d0a8; font: 13px/1.5 Georgia, "Times New Roman", serif; }
-.rb-page:first-child { box-shadow: inset -14px 0 14px -10px rgba(70, 40, 20, .45); border-right: 2px solid #3a2212; }
-.rb-page:last-child:not(:first-child) { box-shadow: inset 14px 0 14px -10px rgba(70, 40, 20, .45); }
-.rb-page h2 { margin: 0; color: #7a1c16; font: 700 20px/1.2 Georgia, "Times New Roman", serif; }
-.rb-by { margin: 0; }
-.rb-page dl { display: grid; grid-template-columns: max-content 1fr; gap: 2px 14px; margin: 0; padding: 8px 0; border-block: 1px solid #ac946c; }
+/* ---------- the site's own furniture, as css/style.css has it: its window, its title bar, its buttons ---------- */
+@font-face { font-family: 'Volter Goldfish Bold'; src: url('art/rooms/VolterGoldfishBold.woff2') format('woff2'); font-weight: 400; font-display: swap; }
+.mr-overlay { position: fixed; inset: 0; z-index: 40; display: flex; padding: 24px; overflow: auto; background: rgba(6, 4, 2, .82); }
+.mr-overlay[hidden] { display: none; }
+.mr-window { box-sizing: border-box; flex: none; width: fit-content; min-width: 240px; margin: auto; border-style: solid; border-width: 14px; border-color: #39250f; border-image: url('art/rooms/window_frame.png') 14 fill / 14px stretch; border-radius: 14px; box-shadow: 0 22px 55px rgba(0, 0, 0, .85); }
+.mr-titlebar { --pad: 40px; --rows: 15px; --bleed: 10px; --drop: 2px; --line: calc(var(--rows) / 2 + var(--drop) - var(--bleed)); position: relative; display: flex; align-items: flex-start; justify-content: center; gap: 10px; box-sizing: border-box; min-height: 16px; padding: 0 var(--pad); background: #39250f; }
+.mr-titlebar::before, .mr-titlebar::after { content: ""; flex: 1 1 0; min-width: 0; height: var(--rows); margin-top: calc(var(--drop) - var(--bleed)); background: url('art/rooms/title_pattern.png'); image-rendering: pixelated; filter: brightness(1.2); }
+.mr-titlebar::before { margin-left: calc(-1 * (var(--pad) + var(--bleed))); border-top-left-radius: 8px; }
+.mr-titlebar::after { margin-right: calc(-1 * (var(--pad) + var(--bleed))); border-top-right-radius: 8px; }
+.mr-titlebar h2 { flex: none; max-width: 100%; min-width: 0; margin: calc(5px + var(--drop) - var(--bleed)) 0 0; overflow: hidden; color: #f5ecd8; font: 400 9px/var(--rows) 'Volter Goldfish Bold', 'Volter Goldfish', monospace; letter-spacing: .5px; text-align: center; text-overflow: ellipsis; text-shadow: 1px 1px 0 rgba(0, 0, 0, .65); white-space: nowrap; }
+.mr-close { position: absolute; right: 10px; top: calc(var(--line) - 1px); z-index: 1; display: flex; padding: 6px; background: none; border: 0; transform: translateY(-50%); cursor: url('art/rooms/pointer.png') 2 0, pointer; }
+.mr-close img { width: 14px; height: auto; image-rendering: pixelated; }
+.mr-frame { margin: 0 -1px -1px; overflow: hidden; color: #d8cbb2; background: #554736; border: 1px solid #000; border-radius: 8px; box-shadow: inset 0 1px 0 #60462b, inset 1px 0 0 #60462b; font: 400 9px/14px 'Volter Goldfish', monospace; }
+.mr-btn { display: inline-flex; align-items: center; justify-content: center; gap: 5px; box-sizing: border-box; padding: 4px 10px; color: #d8cbb2; background: linear-gradient(#3b3022, #2f2618); border: 1px solid #000; border-radius: 4px; box-shadow: inset 0 1px 0 #60462b, 0 1px 0 rgba(0, 0, 0, .35); font: 400 9px/1.6 'Volter Goldfish', monospace; letter-spacing: .02em; cursor: url('art/rooms/pointer.png') 2 0, pointer; transition: background-color .12s ease-out, color .12s ease-out, border-color .12s ease-out; }
+.mr-btn:hover, .mr-btn:focus-visible { color: #fff8ec; background: linear-gradient(#4a3c29, #3a2f1f); border-color: #ab8b64; }
+.mr-btn:focus-visible { outline: 2px solid #ab8b64; outline-offset: 2px; }
+.mr-btn:disabled { opacity: .5; cursor: default; }
+
+/* A picture in its window: nothing round it but the frame, its pixels kept hard */
+.rb-picture .mr-frame { line-height: 0; }
+.rb-picture img { display: block; max-width: none; image-rendering: pixelated; }
+
+/* ---------- the book: laid out at the font's own 9px, and doubled whole where there's room ---------- */
+.rb-back { position: absolute; inset: 0; z-index: 34; display: flex; padding: 16px; overflow: auto; background: rgba(6, 4, 2, .82); }
+.rb-book { position: relative; display: grid; grid-template-columns: 1fr 1fr; flex: none; box-sizing: border-box; width: 420px; height: 270px; margin: auto; padding: 9px; background: #2e180c; border: 1px solid #26140a; box-shadow: inset 0 0 0 2px #462410; }
+.rb-book::before { content: ""; position: absolute; inset: 4px; border: 1px solid #b08434; pointer-events: none; }
+.rb-book::after { content: ""; position: absolute; top: 8px; bottom: 8px; left: 50%; width: 2px; margin-left: -1px; background: #3a2212; pointer-events: none; }
+.rb-page { position: relative; display: flex; flex-direction: column; box-sizing: border-box; min-width: 0; min-height: 0; padding: 10px 11px 4px 13px; overflow: hidden; color: #341e10; background: #e2d0a8; border: 2px solid #ac946c; font: 400 9px/11px 'Volter Goldfish', monospace; }
+.rb-page:first-child { border-right: 0; background: linear-gradient(to left, #b9a27c 0, #d4c096 5px, #dfcca3 10px, #e2d0a8 13px); }
+.rb-page:nth-child(2) { padding-left: 14px; padding-right: 13px; border-left: 0; background: linear-gradient(to right, #b9a27c 0, #d4c096 5px, #dfcca3 10px, #e2d0a8 13px); }
+.rb-body { flex: 1 1 0; min-height: 0; overflow: hidden; }
+.rb-page h2 { margin: 0 0 3px; overflow: hidden; color: #7a1c16; font: 400 9px/12px 'Volter Goldfish Bold', 'Volter Goldfish', monospace; text-overflow: ellipsis; white-space: nowrap; }
+.rb-by { margin: 0 0 3px; }
+.rb-page dl { display: grid; grid-template-columns: 56px 1fr; gap: 0; margin: 0 0 5px; padding: 3px 0 4px; border-block: 1px solid #ac946c; }
 .rb-page dt { color: #705032; }
-.rb-page dd { margin: 0; }
-.rb-text { margin: 0; white-space: pre-line; }
-.rb-pic { flex: 1 1 0; display: flex; flex-direction: column; min-height: 0; margin: 0; cursor: zoom-in; }
-.rb-pic img { flex: 1 1 0; display: block; width: 100%; min-height: 0; object-fit: cover; background: #000; border: 1px solid #b08434; outline: 2px solid #3c2412; }
-.rb-pic.big { cursor: default; }
-.rb-pic.big img { object-fit: contain; }
-.rb-pic figcaption { margin-top: 5px; color: #705032; font-size: 12px; line-height: 1.2; }
-.rb-grid { flex: 1 1 0; display: grid; grid-template-columns: 1fr 1fr; grid-auto-rows: minmax(0, 1fr); gap: 12px; min-height: 0; }
-.rb-album { font-size: 16px !important; }
-.rb-foot { display: flex; align-items: center; justify-content: space-between; color: #705032; }
-.rb-turn { padding: 3px 8px; color: #34200f; background: none; border: 1px solid #ac946c; font: 12px Georgia, serif; cursor: pointer; }
-.rb-turn:disabled { opacity: .35; cursor: default; }
-.rb-turn:not(:disabled):hover { background: #d3bd8c; }
-.rb-close { position: absolute; top: 10px; right: 10px; padding: 5px 12px; color: #f0dfb4; background: #2e180c; border: 1px solid #b08434; font: 12px system-ui, sans-serif; cursor: pointer; }
-.rb-close:hover { background: #452612; }
-.rb-zoom { position: absolute; inset: 0; z-index: 2; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 20px; background: rgba(0, 0, 0, .9); cursor: zoom-out; }
-.rb-zoom img { max-width: 100%; max-height: calc(100% - 30px); object-fit: contain; }
-.rb-zoom p { margin: 8px 0 0; color: #e8dcc4; font: 13px Georgia, serif; }
-@media (max-width: 700px) { .rb-book { grid-template-columns: 1fr; height: 100%; overflow: auto; } .rb-page { overflow: visible; } }
+.rb-page dd { margin: 0; overflow-wrap: anywhere; }
+.rb-text { margin: 0; white-space: pre-line; overflow-wrap: anywhere; }
+.rb-pic { margin: 0; cursor: url('art/rooms/pointer.png') 2 0, pointer; }
+.rb-pic img { display: block; box-sizing: border-box; width: 100%; object-fit: cover; background: #000; border: 1px solid #b08434; outline: 1px solid #3c2412; }
+.rb-pic figcaption { margin-top: 2px; overflow: hidden; color: #705032; text-overflow: ellipsis; white-space: nowrap; }
+.rb-grid { display: grid; grid-template-columns: 78px 78px; column-gap: 10px; row-gap: 5px; margin-top: 3px; }
+.rb-grid-right { margin-top: 15px; }
+.rb-grid .rb-pic img { height: 54px; }
+.rb-two { display: flex; flex-direction: column; gap: 6px; }
+.rb-two .rb-pic img { height: 92px; }
+.rb-foot { flex: none; display: flex; align-items: center; justify-content: space-between; height: 14px; color: #705032; }
+.rb-turn { padding: 0; color: #705032; background: none; border: 0; font: inherit; cursor: url('art/rooms/pointer.png') 2 0, pointer; }
+.rb-turn[hidden] { display: none; }
+.rb-turn:hover { color: #7a1c16; }
+.rb-close { position: absolute; top: 44px; right: 12px; z-index: 1; }
 
 /* the editor */
 .re-host { position: fixed; inset: 0; z-index: 90; display: grid; grid-template: 48px 1fr / 190px 1fr 260px; color: #e8e4dc; background: #101114; font: 13px system-ui, sans-serif; }

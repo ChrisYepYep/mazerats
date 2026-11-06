@@ -6,62 +6,34 @@ html, body { background: #000; overflow: hidden; }
 #stage { position: absolute; inset: 0; background: #000; }
 #view { outline: none; }
 @font-face { font-family: 'Volter Goldfish'; src: url('/assets/fonts/VolterGoldfish.woff2') format('woff2'); font-weight: normal; font-display: swap; }
-/* Under the site's top bar, in its colours and with its buttons */
-#playBar {
-    position: fixed;
-    top: 0;
-    left: 0;
-    right: 0;
-    z-index: 30;
-    display: flex;
-    gap: 6px;
-    align-items: center;
-    justify-content: flex-start;
-    padding: 5px 10px;
-    background: #39250f;
-    border-bottom: 1px solid rgba(201, 151, 79, .35);
-}
-#playBar button {
-    min-width: 26px;
-    height: 24px;
-    padding: 0 11px;
-    color: #c1b7a7;
-    background: rgba(0, 0, 0, .22);
-    border: 1.5px solid #60462b;
-    border-radius: 12px;
-    font: 700 11px/1 'Volter Goldfish', sans-serif;
-    letter-spacing: .5px;
-    cursor: pointer;
-}
-#playBar button:hover { color: #d8cbb2; border-color: #c7a679; }
-#playBar button:focus-visible { outline: 2px solid #c7a679; outline-offset: 1px; }
-#playBar button.is-on { color: #c7a679; border-color: #c7a679; }
-#playList {
-    position: fixed;
-    top: 34px;
-    left: 10px;
-    z-index: 31;
-    display: flex;
-    flex-direction: column;
-    min-width: 190px;
-    background: #39250f;
-    border: 1px solid rgba(201, 151, 79, .35);
-}
-#playList[hidden] { display: none; }
-#playList button { padding: 7px 12px; color: #c1b7a7; background: none; border: 0; text-align: left; font: 11px/1.2 'Volter Goldfish', sans-serif; cursor: pointer; }
-#playList button:hover { color: #d8cbb2; background: rgba(0, 0, 0, .25); }
-#playList button[aria-checked="true"] { color: #c7a679; }
-#playList button[aria-checked="true"]::before { content: "> "; }
-#playPicker { position: fixed; inset: 0; z-index: 32; display: flex; align-items: center; justify-content: center; padding: 16px; background: rgba(10, 7, 4, .55); color: #c1b7a7; font: 12px/1.4 'Volter Goldfish', sans-serif; }
-#playPicker form { display: flex; flex-direction: column; gap: 8px; width: min(380px, 100%); padding: 16px 18px; background: #39250f; border: 1px solid rgba(201, 151, 79, .35); }
-#playPicker label { color: #c7a679; }
-#playPicker .row { display: flex; gap: 6px; }
-#playPicker input, #playPicker select { min-width: 0; height: 28px; padding: 0 8px; color: #d8cbb2; background: #120c07; border: 1px solid rgba(201, 151, 79, .35); font: inherit; }
+/* The controls: nothing but the site's buttons, floating on the hallway */
+#playBar { position: fixed; top: 10px; left: 10px; z-index: 30; display: flex; flex-wrap: wrap; gap: 5px; align-items: center; pointer-events: none; }
+#playBar button { pointer-events: auto; }
+#playBar button.is-on { border-color: #ab8b64; color: #ab8b64; }
+/* A drop-down from one of them */
+.play-menu { position: fixed; z-index: 31; display: flex; flex-direction: column; min-width: 150px; padding: 3px; background: #39250f; border: 1px solid #000; border-radius: 4px; box-shadow: inset 0 1px 0 #60462b, 0 6px 18px rgba(0, 0, 0, .6); }
+.play-menu[hidden] { display: none; }
+.play-menu button { padding: 4px 8px; color: #d8cbb2; background: none; border: 0; border-radius: 2px; text-align: left; font: 400 9px/14px 'Volter Goldfish', monospace; cursor: url('art/rooms/pointer.png') 2 0, pointer; }
+.play-menu button:hover, .play-menu button:focus-visible { color: #fff8ec; background: #4a3c29; outline: none; }
+.play-menu button[aria-checked="true"] { color: #fff8ec; background: #2f2618; }
+/* Who you are, in one of the site's windows */
+#playPicker { z-index: 36; }
+#playPicker .mr-window { width: min(340px, 100%); }
+#playPicker form { display: flex; flex-direction: column; gap: 8px; padding: 12px 14px 14px; }
+#playPicker .row { display: flex; gap: 5px; }
+#playPicker input, #playPicker select { box-sizing: border-box; min-width: 0; height: 24px; padding: 0 6px; color: #d8cbb2; background: #2f2618; border: 1px solid #000; border-radius: 4px; box-shadow: inset 0 1px 2px rgba(0, 0, 0, .5); font: 400 9px/14px 'Volter Goldfish', monospace; }
 #playPicker input { flex: 1; }
-#playPicker button[type=submit] { height: 28px; padding: 0 12px; color: #120c07; background: #c7a679; border: 0; font: inherit; cursor: pointer; }
-#playPicker button[type=submit]:disabled { opacity: .6; }
-#playPicker .say { min-height: 1.4em; margin: 0; }
-#playPicker .guest { align-self: flex-start; padding: 0; color: #c1b7a7; background: none; border: 0; text-decoration: underline; font: inherit; cursor: pointer; }
+#playPicker input::placeholder { color: #8f8069; }
+#playPicker input:focus, #playPicker select:focus { border-color: #ab8b64; outline: none; }
+#playPicker .say { min-height: 14px; margin: 0; }
+#playPicker .guest { align-self: flex-start; }
+/* The lift's question and the little notices, the same */
+#liftPanel { gap: 7px; padding: 10px 12px 12px; background: #39250f; border: 14px solid #39250f; border-image: url('art/rooms/window_frame.png') 14 fill / 14px stretch; border-radius: 14px; box-shadow: 0 22px 55px rgba(0, 0, 0, .85); color: #d8cbb2; font: 400 9px/14px 'Volter Goldfish', monospace; }
+#liftPanel strong { color: #f5ecd8; font: 400 9px/14px 'Volter Goldfish Bold', 'Volter Goldfish', monospace; text-shadow: 1px 1px 0 rgba(0, 0, 0, .65); }
+#liftPanel button, #liftList button { padding: 4px 10px; color: #d8cbb2; background: linear-gradient(#3b3022, #2f2618); border: 1px solid #000; border-radius: 4px; box-shadow: inset 0 1px 0 #60462b, 0 1px 0 rgba(0, 0, 0, .35); font: 400 9px/1.6 'Volter Goldfish', monospace; cursor: url('art/rooms/pointer.png') 2 0, pointer; }
+#liftPanel button:hover, #liftList button:hover, #liftList button:focus { color: #fff8ec; background: linear-gradient(#4a3c29, #3a2f1f); border-color: #ab8b64; }
+#liftList p { color: #d8cbb2; }
+.toast { color: #d8cbb2; background: #39250f; border: 1px solid #000; border-radius: 4px; box-shadow: inset 0 1px 0 #60462b; font: 400 9px/14px 'Volter Goldfish', monospace; }
 
-/* Bigger to press on a phone */
-@media (pointer: coarse) { #playBar button { min-width: 38px; height: 34px; font-size: 13px; } }
+/* Bigger to press on a phone: by padding, since this lettering has the one size */
+@media (pointer: coarse) { #playBar button { padding: 9px 12px; } }

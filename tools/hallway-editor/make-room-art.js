@@ -35,6 +35,9 @@ function furni(cls, dir, o) {
 }
 fs.mkdirSync(OUT, { recursive: true });
 fs.copyFileSync(ROOT + "assets/fonts/VolterGoldfish.woff2", path.join(OUT, "VolterGoldfish.woff2"));
+fs.copyFileSync(ROOT + "assets/fonts/VolterGoldfishBold.woff2", path.join(OUT, "VolterGoldfishBold.woff2"));
+/* the site's windows are made of these */
+for (const f of ["window_frame.png", "title_pattern.png", "modal_topclose_x.png", "pointer.png"]) fs.copyFileSync(ROOT + "assets/img/" + f, path.join(OUT, f));
 const index = { sprites: {}, shelf: {}, books: [] };
 const sprite = (name, f, fx, fy) => { save(name, f.im); index.sprites[name] = { w: f.im.w, h: f.im.h, ax: f.ax, ay: f.ay, fx, fy }; };
 

@@ -77,7 +77,7 @@
     }
 
     /* ---------- what's where ---------- */
-    const FURNI = { globe: "globe", chair4: "chair4", chair6: "chair6", stool: "stool", crate: "crate", barrel: "barrel", cupboard: "cupboard", candelabra: "candelabra" };
+    const FURNI = { table: "table", globe: "globe", chair4: "chair4", chair6: "chair6", stool: "stool", crate: "crate", barrel: "barrel", cupboard: "cupboard", candelabra: "candelabra" };
     const isWall = it => it.k === "frame" || it.k === "window" || it.k === "painting" || it.k === "sconce";
     const isRug = it => it.k === "rug" || it.k === "rugRound";
     const Parts = () => window.FurniParts;
@@ -278,7 +278,7 @@
             if (it.k === "rugRound") { const s = scr(r, it.x + .5, it.y + .5), a = (X - s[0]) / 53, b = (Y - s[1]) / 27; return a * a + b * b <= 1; }
             if (it.k === "rug") { const t = tileAt(r, X, Y); return t[0] >= it.x && t[1] >= it.y && t[0] < it.x + it.w && t[1] < it.y + it.h; }
             const f = footprint(it); if (!f) return false;
-            const up = it.k === "hall" ? (HALL_UP[it.p] || 30) : it.k === "shelf" ? 58 : it.k === "lamp" ? 40 : it.k === "album" || it.k === "ledger" ? 16 : 28, base = it.z || 0;
+            const up = it.k === "hall" ? (HALL_UP[it.p] || 30) : it.k === "shelf" ? 58 : it.k === "lamp" ? 40 : it.k === "album" || it.k === "ledger" || it.k === "table" ? 16 : 28, base = it.z || 0;
             for (let z = 0; z <= up; z += 2) { const t = tileAt(r, X, Y + base + z); if (inFoot(f, t[0], t[1])) return true; }
             return false;
         };
@@ -326,38 +326,75 @@
     const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text !== undefined) e.textContent = text; return e; };
     const PER_SPREAD = 8;
     function clean(t) { return String(t || "").replace(/\*\*/g, "").replace(/<[^>]*>/g, ""); }
+    const fontsReady = () => document.fonts ? Promise.all(["9px 'Volter Goldfish'", "9px 'Volter Goldfish Bold'"].map(f => document.fonts.load(f))).catch(() => { }) : Promise.resolve();
+    /* A picture, in one of the site's windows, at half its size with every pixel kept hard */
+    function pictureWindow(host, p, title, onClose) {
+        const back = el("div", "mr-overlay rb-picture"), win = el("div", "mr-window"), bar = el("div", "mr-titlebar"), x = el("button", "mr-close"), frame = el("div", "mr-frame"), i = el("img"), close = document.createElement("img");
+        back.setAttribute("role", "dialog"); back.setAttribute("aria-label", p.label || title); back.hidden = true;
+        bar.appendChild(el("h2", "", p.label || title)); x.type = "button"; x.setAttribute("aria-label", "Close"); close.src = "art/rooms/modal_topclose_x.png"; close.alt = ""; x.appendChild(close); bar.appendChild(x);
+        i.alt = p.label || ""; frame.appendChild(i); win.append(bar, frame); back.appendChild(win); host.appendChild(back);
+        const shut = () => { back.remove(); document.removeEventListener("keydown", key, true); if (onClose) onClose(); };
+        const key = e => { e.stopImmediatePropagation(); if (e.key === "Escape") shut(); };
+        document.addEventListener("keydown", key, true);
+        x.addEventListener("click", shut); back.addEventListener("click", e => { if (e.target === back) shut(); });
+        i.onload = () => { i.width = Math.max(1, Math.floor(i.naturalWidth / 2)); i.height = Math.max(1, Math.floor(i.naturalHeight / 2)); back.hidden = false; };
+        i.onerror = shut; i.src = p.url;
+        return shut;
+    }
+    /* The book, as the client's own books are: drawn at the font's native size and doubled whole where it fits, so its lettering and its lines all stay on the pixel */
     function openBook(host, facts, what, onClose) {
+        if (what.kind === "picture") return pictureWindow(host, what.pic, facts.name, onClose);
         const back = el("div", "rb-back"), book = el("div", "rb-book"), left = el("div", "rb-page"), right = el("div", "rb-page"); back.setAttribute("role", "dialog"); back.setAttribute("aria-label", what.kind === "ledger" ? "The ledger" : "An album");
-        book.append(left, right); back.appendChild(book); const close = el("button", "rb-close", "Close"); close.type = "button"; back.appendChild(close); host.appendChild(back);
-        const shut = () => { back.remove(); document.removeEventListener("keydown", key); if (onClose) onClose(); };
+        book.append(left, right); back.appendChild(book); const close = el("button", "mr-btn rb-close", "Close"); close.type = "button"; back.appendChild(close); host.appendChild(back);
+        const fit = () => { book.style.zoom = host.clientWidth >= 860 && host.clientHeight >= 580 ? 2 : 1; }; fit(); addEventListener("resize", fit);
+        let shutPic = null;
+        const shut = () => { if (shutPic) shutPic(); back.remove(); removeEventListener("resize", fit); document.removeEventListener("keydown", key); if (onClose) onClose(); };
         close.addEventListener("click", shut); back.addEventListener("click", e => { if (e.target === back) shut(); });
         const key = e => { if (e.key === "Escape") shut(); if (e.key === "ArrowRight") turn(1); if (e.key === "ArrowLeft") turn(-1); }; document.addEventListener("keydown", key);
-        let page = 0, turn = () => { };
-        const figure = (p, big) => { const f = el("figure", "rb-pic" + (big ? " big" : "")), i = el("img"); i.src = p.url; i.alt = p.label || ""; i.loading = "lazy"; f.appendChild(i); if (p.label) f.appendChild(el("figcaption", "", p.label)); f.addEventListener("click", () => zoomPic(p)); return f; };
-        const zoomPic = p => { const z = el("div", "rb-zoom"), i = el("img"); i.src = p.url; i.alt = p.label || ""; z.appendChild(i); if (p.label) z.appendChild(el("p", "", p.label)); z.addEventListener("click", () => z.remove()); back.appendChild(z); };
-        if (what.kind === "picture") { left.remove(); right.remove(); book.classList.add("single"); const p = el("div", "rb-page"); p.appendChild(figure(what.pic, true)); book.appendChild(p); return shut; }
-        if (what.kind === "ledger") {
-            const m = facts.m, rows = [["Status", m.status], ["Difficulty", String(m.difficulty || "").replace(/-/g, " ")], ["Hotel", m.hotel], ["Archived", m.added], ["Pictures", (m.gallery || []).length], ["Type", (m.tags || []).map(t => String(t).toLowerCase()).join(", ")]];
-            left.appendChild(el("h2", "", facts.name)); left.appendChild(el("p", "rb-by", "Built by " + (m.creator || "unknown")));
-            const dl = el("dl"); for (const [k, v] of rows) if (v !== undefined && v !== "" && v !== null) { dl.appendChild(el("dt", "", k)); dl.appendChild(el("dd", "", String(v))); } left.appendChild(dl);
-            const d = clean(m.details || m.description); if (d) left.appendChild(el("p", "rb-text", d));
-            if (m.details && m.description && !clean(m.details).startsWith(clean(m.description).slice(0, 30))) left.insertBefore(el("p", "rb-text rb-lead", clean(m.description)), left.lastChild);
-            if (m.entrance && m.entrance.image) right.appendChild(figure({ url: picUrl(m.entrance.image), label: "The entrance" }));
-            if (m.finish && m.finish.image) right.appendChild(figure({ url: picUrl(m.finish.image), label: "The finish" }));
-            if (!right.children.length && facts.pictures[0]) right.appendChild(figure(facts.pictures[0]));
-            return shut;
-        }
-        const pics = what.album.pics, pages = Math.max(1, Math.ceil(pics.length / PER_SPREAD));
-        const foot = (cell, n, prev) => { const b = el("div", "rb-foot"); const g = el("button", "rb-turn", prev ? "< previous" : "next >"); g.type = "button"; g.disabled = prev ? page === 0 : page === pages - 1; g.addEventListener("click", () => turn(prev ? -1 : 1)); b.append(prev ? g : el("span", "", String(n)), prev ? el("span", "", String(n)) : g); cell.appendChild(b); };
-        const show = () => {
-            left.textContent = ""; right.textContent = ""; const s = pics.slice(page * PER_SPREAD, (page + 1) * PER_SPREAD);
-            const first = what.album.from + page * PER_SPREAD + 1, last = what.album.from + page * PER_SPREAD + s.length;
-            left.appendChild(el("h2", "rb-album", `Pictures ${first} to ${last}`));
-            const a = el("div", "rb-grid"), c = el("div", "rb-grid"); s.slice(0, 4).forEach(p => a.appendChild(figure(p))); s.slice(4).forEach(p => c.appendChild(figure(p))); left.appendChild(a); right.appendChild(c);
-            foot(left, page * 2 + 1, true); foot(right, page * 2 + 2, false);
+        const figure = p => { const f = el("figure", "rb-pic"), i = el("img"); i.src = p.url; i.alt = p.label || ""; i.loading = "lazy"; f.appendChild(i); if (p.label) f.appendChild(el("figcaption", "", p.label)); f.addEventListener("click", () => { shutPic = pictureWindow(back, p, facts.name, () => { shutPic = null; }); }); return f; };
+        /* the pages: each a function that fills one */
+        let pages = [], page = 0;
+        const body = host_ => { const b = el("div", "rb-body"); host_.appendChild(b); return b; };
+        const paint = () => {
+            for (const [cell, n] of [[left, page], [right, page + 1]]) {
+                cell.textContent = ""; const b = body(cell); if (pages[n]) pages[n](b);
+                const foot = el("div", "rb-foot"), turner = (label, dir, on) => { const g = el("button", "rb-turn", label); g.type = "button"; g.hidden = !on; g.addEventListener("click", () => turn(dir)); return g; };
+                if (n === page) foot.append(el("span", "", pages.length > 2 && pages[n] ? String(n + 1) : ""), turner("< previous page", -2, page > 0));
+                else foot.append(turner("next page >", 2, page + 2 < pages.length), el("span", "", pages.length > 2 && pages[n] ? String(n + 1) : ""));
+                cell.appendChild(foot);
+            }
         };
-        turn = d => { const n = page + d; if (n >= 0 && n < pages) { page = n; show(); } };
-        show();
+        const turn = d => { const n = page + d; if (n >= 0 && n < pages.length) { page = n; paint(); } };
+        if (what.kind === "album") {
+            const pics = what.album.pics;
+            for (let i = 0; i < pics.length; i += PER_SPREAD) {
+                const s = pics.slice(i, i + PER_SPREAD), first = what.album.from + i + 1, last = what.album.from + i + s.length;
+                pages.push(b => { b.appendChild(el("h2", "", "Pictures " + first + " to " + last)); const g = el("div", "rb-grid"); s.slice(0, 4).forEach(p => g.appendChild(figure(p))); b.appendChild(g); });
+                pages.push(b => { const g = el("div", "rb-grid rb-grid-right"); s.slice(4).forEach(p => g.appendChild(figure(p))); b.appendChild(g); });
+            }
+            paint(); return shut;
+        }
+        /* The ledger: its facts, its write-up, and the entrance and finish opposite. Whatever doesn't fit carries on over the page, measured, so none of it is ever cut off */
+        const m = facts.m, rows = [["Status", m.status], ["Difficulty", String(m.difficulty || "").replace(/-/g, " ")], ["Hotel", m.hotel], ["Archived", m.added], ["Pictures", (m.gallery || []).length], ["Type", (m.tags || []).map(t => String(t).toLowerCase()).join(", ")]];
+        const head = b => { b.appendChild(el("h2", "", facts.name)); b.appendChild(el("p", "rb-by", "Built by " + (m.creator || "unknown"))); const dl = el("dl"); for (const [k, v] of rows) if (v !== undefined && v !== "" && v !== null) { dl.appendChild(el("dt", "", k)); dl.appendChild(el("dd", "", String(v))); } b.appendChild(dl); };
+        const lead = clean(m.description), more = clean(m.details), text = more && lead && !more.startsWith(lead.slice(0, 30)) ? lead + "\n\n" + more : (more || lead);
+        const pics = []; if (m.entrance && m.entrance.image) pics.push({ url: picUrl(m.entrance.image), label: "The entrance" }); if (m.finish && m.finish.image) pics.push({ url: picUrl(m.finish.image), label: "The finish" }); if (!pics.length && facts.pictures[0]) pics.push(facts.pictures[0]);
+        const picsPage = b => { const w = el("div", "rb-two"); pics.forEach(p => w.appendChild(figure(p))); b.appendChild(w); };
+        /* how many of these words fit on a page, by trying them */
+        const words = text.split(/(\s+)/), pageOf = (from, withHead) => {
+            left.textContent = ""; const b = body(left); if (withHead) head(b); const p = el("p", "rb-text"); b.appendChild(p);
+            const fits = n => { p.textContent = words.slice(from, n).join("").trimStart(); return b.scrollHeight <= b.clientHeight; };
+            let lo = from, hi = words.length; if (fits(hi)) return hi;
+            while (hi - lo > 1) { const mid = (lo + hi) >> 1; if (fits(mid)) lo = mid; else hi = mid; }
+            return lo;
+        };
+        fontsReady().then(() => {
+            if (!back.isConnected) return;
+            const chunks = []; let at = 0, first = true;
+            do { const to = pageOf(at, first); const t = words.slice(at, to).join("").trim(), f = first; chunks.push(b => { if (f) head(b); if (t) { const p = el("p", "rb-text"); p.textContent = t; b.appendChild(p); } }); if (to <= at && !first) break; at = to; first = false; } while (at < words.length);
+            pages = [chunks[0]]; if (pics.length) pages.push(picsPage); for (const c of chunks.slice(1)) pages.push(c);
+            paint();
+        });
         return shut;
     }
 

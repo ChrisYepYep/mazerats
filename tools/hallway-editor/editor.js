@@ -2107,11 +2107,11 @@ function stairLevels() {
         for (const t of entranceTiles(e)) for (let d = 1; d <= 2; d++) { list.push(e.axis === "x" ? [t, e.line - d] : [e.line - d, t]); if (d === 1) joins.push(e.axis === "x" ? [t, e.line - 1, t, e.line] : [e.line - 1, t, e.line, t]); }
         addRoom(S, low, list, joins);
     }
-    /* behind every maze's door: two tiles wide, two deep, the first of its room's floor. No slots: the floor behind a wall isn't taken */
+    /* behind every maze's door: two tiles wide, deep enough for the wall beside it to hide you, the first of its room's floor. No slots: the floor behind a wall isn't taken */
     for (const low of map.levels) (low.doors || []).forEach((d, i) => {
         if (d.spare) return;
         const fr = doorFront(d), S = { id: "DR" + low.id + "-" + i, name: "Door", k: low.k, tiles: new Map(), stair: { low, up: null, door: d } }, z = tileZ(low, fr[0][0], fr[0][1]);
-        for (const t of fr) for (let k = 1; k <= 2; k++) S.tiles.set(d.axis === "x" ? t[0] + "," + (d.line - k) : (d.line - k) + "," + t[1], z);
+        for (const t of fr) for (let k = 1; k <= DOOR_DEEP; k++) S.tiles.set(d.axis === "x" ? t[0] + "," + (d.line - k) : (d.line - k) + "," + t[1], z);
         for (const t of fr) { if (d.axis === "x") link(S, t[0], d.line - 1, low, t[0], t[1]); else link(S, d.line - 1, t[1], low, t[0], t[1]); }
         S.nearestFirst = [...S.tiles.entries()].map(([k, zz]) => { const [x, y] = k.split(",").map(Number); return { x, y, z: zz }; }).sort((p, q) => (q.x + q.y) - (p.x + p.y));
         out.push(S); byName.set(S.id, S);
@@ -2269,15 +2269,15 @@ setInterval(() => {
     for (const [d, st] of doorStates) {
         const here = walker && walker.l.stair && walker.l.stair.door === d;
         if (st.to === 1 && st.shutAt && performance.now() > st.shutAt && !here) setDoor(d, false);
-        const was = st.p; st.p = Math.max(0, Math.min(1, st.p + (st.to ? 1 : -1) * .05)); if (st.p !== was) moving = true;
-        if (!st.to && !st.p) doorStates.delete(d);
+        if (st.autoIn && doorEase(st.p) >= .86) { st.autoIn = false; walkIntoDoor(d); }
     }
     if (moving) paint();
     if (tool !== "walk" || !walker) return;
+    if (walker.leavingDoor && !walker.walking) walker.leavingDoor = false;
     if (walker.l.stair && walker.l.stair.door && !walker.walking && !walker.busy) {
-        const d = walker.l.stair.door, deep = d.axis === "x" ? walker.y === d.line - 2 : walker.x === d.line - 2;
+        const d = walker.l.stair.door, deep = d.axis === "x" ? walker.y === d.line - DOOR_DEEP : walker.x === d.line - DOOR_DEEP;
         if (deep) { enterDoor(walker.l.stair.low, d); return; }
-        const t = d.axis === "x" ? [walker.x, d.line - 2] : [d.line - 2, walker.y], p = graphFrom(walker.l, walker.x, walker.y, [walker.l, t[0], t[1]]); if (p) followRoute(p, null, null);
+        const t = d.axis === "x" ? [walker.x, d.line - DOOR_DEEP] : [d.line - DOOR_DEEP, walker.y], p = graphFrom(walker.l, walker.x, walker.y, [walker.l, t[0], t[1]]); if (p) followRoute(p, null, null);
         return;
     }
     const room = walker.l.stair;
@@ -2298,12 +2298,26 @@ function drawLifts(ox, oy) {
    Double-click: you walk up to it. Double-click again: it opens inwards, and through it is the first of its room's floor, walked onto like a lift's.
    Past those tiles you're in the room, floating in the dark; the arrow on its floor brings you back out here. */
 const doorStates = new Map(); let roomSession = null;
+const DOOR_DEEP = 3, DOOR_OPEN_MS = 1150, DOOR_SHUT_MS = 950, DOOR_FRAMES = 60;
 const doorIsOpen = d => { const s = doorStates.get(d); return !!s && s.to === 1; };
 const doorFront = d => d.axis === "x" ? [[d.at, d.line], [d.at + 1, d.line]] : [[d.line, d.at - 1], [d.line, d.at - 2]];
+/* It's a heavy door. The latch lets go first, it starts slowly, swings, and eases to rest */
+const doorEase = t => { if (t <= .1) return 0; const s = Math.pow((t - .1) / .9, 1.25); return s * s * (3 - 2 * s); };
+let doorRaf = 0, doorLast = 0;
+function doorRun(now) {
+    doorRaf = 0; const dt = Math.max(0, Math.min(250, now - doorLast)); doorLast = now; let moving = false;   // a frame's time can be from just before it was asked for
+    for (const [d, st] of doorStates) {
+        st.p = Math.max(0, Math.min(1, st.p + (st.to ? dt / DOOR_OPEN_MS : -dt / DOOR_SHUT_MS))); if (st.p !== st.to) moving = true;
+        if (!st.to && !st.p) { doorStates.delete(d); doorFrames.delete(d); }
+    }
+    paint(); if (moving) doorRaf = requestAnimationFrame(doorRun);
+}
 function setDoor(d, open, ms) {
     const s = doorStates.get(d) || { p: 0, to: 0 };
-    if (s.to !== (open ? 1 : 0) && window.LiftSounds) LiftSounds.doors();
-    s.to = open ? 1 : 0; s.shutAt = ms ? performance.now() + ms : 0; doorStates.set(d, s); paint();
+    if (s.to !== (open ? 1 : 0) && window.LiftSounds) { if (open) LiftSounds.doorOpen(); else LiftSounds.doorShut(); }
+    s.to = open ? 1 : 0; s.shutAt = ms ? performance.now() + ms : 0; if (!open) s.autoIn = false; doorStates.set(d, s);
+    if (!doorRaf) { doorLast = performance.now(); doorRaf = requestAnimationFrame(doorRun); }
+    paint();
 }
 const doorZ = (l, d) => { const f = doorFront(d)[0]; return tileZ(l, f[0], f[1]); };
 function doorPoint(l, d) { return d.axis === "x" ? P(d.at, d.line, doorZ(l, d)) : P(d.line, d.at, doorZ(l, d)); }
@@ -2318,45 +2332,87 @@ function doorAtPx(px, py) {
     }
     return null;
 }
+function walkIntoDoor(d) {
+    if (!walker || walker.walking || walker.busy || !doorIsOpen(d)) return false;
+    const l = map.levels.find(q => (q.doors || []).includes(d)), s = walkerStart(); if (s.l !== l || !doorFront(d).some(t => t[0] === s.x && t[1] === s.y)) return false;
+    const t = d.axis === "x" ? [s.x, d.line - DOOR_DEEP] : [d.line - DOOR_DEEP, s.y], p = graphFrom(l, s.x, s.y, [stairLevels().list.find(q => q.stair.door === d), t[0], t[1]]); if (!p) return false;
+    followRoute(p, null, null); return true;
+}
 function useDoor(l, d) {
     const s = walkerStart(), fr = doorFront(d), there = !walker.walking && s.l === l && fr.some(t => t[0] === s.x && t[1] === s.y);
     if (!there) { const r = routeToOneOf(l, fr, s.l, s.x, s.y); if (r) followRoute(r.path, s.here, () => { walker.dir = d.axis === "x" ? 0 : 6; paint(); }); else setStatus("No way to that door"); return; }
     walker.dir = d.axis === "x" ? 0 : 6;
-    if (doorIsOpen(d)) { const t = d.axis === "x" ? [s.x, d.line - 2] : [d.line - 2, s.y], p = graphFrom(l, s.x, s.y, [stairLevels().list.find(q => q.stair.door === d), t[0], t[1]]); if (p) followRoute(p, null, null); return; }
-    setDoor(d, true, 15000);
+    if (doorIsOpen(d)) { walkIntoDoor(d); return; }
+    setDoor(d, true, 15000); doorStates.get(d).autoIn = true;
     if (window.RoomView) { RoomView.load(); RoomView.mazes(); }
 }
-/* What's in the doorway at this much open: the leaf swung in on its hinge, the first of the room's floor, and the dark */
-const doorwayCache = new Map();
-function doorwayPicture(d, floor, frame) {
-    const key = d.axis + floor + frame; let c = doorwayCache.get(key); if (c) return c;
-    c = document.createElement("canvas"); c.width = 32; c.height = 84; const g = c.getContext("2d"), im = g.createImageData(32, 84), BASE = d.axis === "x" ? 66 : 82, p = frame / 5, leafW = Math.round(29 - 22 * p);
-    const pal = { d1: [69, 14, 0], d2: [90, 26, 6], d3: [113, 47, 22], d5: [146, 80, 48] };
-    for (let u = 0; u < 32; u++) for (let h = 0; h < 62; h++) {
-        const col = (() => {
-            const v = u; /* along the door from its hinge */
-            if (v < 3) return v === 0 ? pal.d1 : pal.d2;
-            if (v < 3 + leafW) { const w = h - (v - 3) * p * .9, top = 62 - (v - 3) * p * 1.1; if (w < (v - 3) * p * .1 || h > top) return [8, 6, 10]; return v === 3 + leafW - 1 ? pal.d5 : (v & 1 ? pal.d3 : pal.d2); }
-            const b = -h / 16, a = v / 16 - h / 16;
-            if (h === 0) return [180, 122, 34];
-            if (h < 40 && window.RoomView) { const f = RoomView.floorPixel(floor, a + 1, b + 1); const k = .8 - h / 90; return [f[0] * k, f[1] * k, f[2] * k]; }
-            return [8, 6, 10];
-        })();
-        const U = d.axis === "x" ? u : 31 - u, Y = d.axis === "x" ? BASE + Math.floor(U / 2) - h : BASE - Math.floor(U / 2) - h, q = (Y * 32 + U) * 4;
-        if (Y >= 0 && Y < 84) { im.data[q] = col[0]; im.data[q + 1] = col[1]; im.data[q + 2] = col[2]; im.data[q + 3] = 255; }
+/* ---------- the door swinging ----------
+   The leaf is the door you were just looking at: its pixels are read out of the map's own picture, at the time of day on show, name sign's glow and all, so the
+   first frame is the closed door exactly and nothing jumps. It's hinged where the panel starts, on the far side of the opening, and turns inward about that
+   line, drawn pixel by pixel on its true slant. A wall holds it in the opening: past the far jamb it's behind the wall, and under the lintel it's behind that.
+   Turned right round it stands square to the wall, its face to you, and the floor of the room is laid out in front of it, falling away into the dark.
+   u: px across the door from the hinge's side. h: px up from the wall's foot at that column. */
+const DOOR_HINGE = 2, DOOR_LEAF = 30, DOOR_LEAF_H = 60, DOOR_OPENING = 62;
+const doorFrames = new Map(), doorClosed = new Map();
+const doorBase = d => d.axis === "x" ? 66 : 82;
+const doorPx = (d, u, h) => { const U = d.axis === "x" ? u : 31 - u, B = doorBase(d); return [U, d.axis === "x" ? B + Math.floor(U / 2) - h : B - Math.floor(U / 2) - h]; };
+/* what's on the map in that spot, at 1:1, at this time of day */
+function doorClosedData(d, l, mood) {
+    const key = mood + "|" + version; let m = doorClosed.get(d); if (!m) doorClosed.set(d, m = new Map()); if (m.has(key)) return m.get(key);
+    const a = doorPoint(l, d), X = a[0], Y = a[1] - doorBase(d), c = document.createElement("canvas"); c.width = 32; c.height = 84; const g = c.getContext("2d", { willReadFrequently: true });
+    for (let ty = Math.floor(Y / TILE); ty <= Math.floor((Y + 83) / TILE); ty++) for (let tx = Math.floor(X / TILE); tx <= Math.floor((X + 31) / TILE); tx++) {
+        const t = mood === "map" ? tiles.get(tx + "," + ty) : moodTile(mood, tx, ty); if (!t) return null;
+        g.drawImage(t.img, tx * TILE - X, ty * TILE - Y);
     }
-    g.putImageData(im, 0, 0); doorwayCache.set(key, c); return c;
+    const data = g.getImageData(0, 0, 32, 84).data; m.set(key, data); return data;
+}
+/* how much of the hallway's light there is to come in, at each time of day */
+const DOOR_LIGHT = { day: 1, dusk: .68, dawn: .7, night: .3, map: .8 };
+const DOOR_BAYER = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5];
+function doorFrame(d, l, floor, mood, frame) {
+    let m = doorFrames.get(d); if (!m) doorFrames.set(d, m = new Map());
+    const key = mood + "|" + floor + "|" + frame + "|" + version; if (m.has(key)) return m.get(key);
+    const closed = doorClosedData(d, l, mood); if (!closed) return null;
+    const c = document.createElement("canvas"); c.width = 32; c.height = 84; const g = c.getContext("2d"), im = g.createImageData(32, 84);
+    const th = frame / DOOR_FRAMES * Math.PI / 2, cos = Math.cos(th), sin = Math.sin(th), reach = DOOR_LEAF * (cos + sin), T = MOOD_TINT[mood] || [0, 0, 0, 0];
+    for (let u = DOOR_HINGE; u < 32; u++) for (let hh = 0; hh < DOOR_OPENING - 2; hh++) {
+        const q0 = doorPx(d, u, hh), q = (q0[1] * 32 + q0[0]) * 4; if (q0[1] < 0 || q0[1] >= 84) continue;
+        const n = u - DOOR_HINGE, du = n + .5, t = du / reach, fall = DOOR_LEAF / reach * (cos - sin), up = hh - Math.floor(n / 2) + Math.floor(n * fall / 2 + 1e-6);   // whole pixels, stepped as the wall's own line is, so a shut door is exactly itself
+        let r, gg, b;
+        if (t < 1 && up >= 0 && up < DOOR_LEAF_H) {
+            /* the leaf: its own pixel, turned away from the hallway's light and into the dark */
+            const su = DOOR_HINGE + Math.min(DOOR_LEAF - 1, Math.floor(t * DOOR_LEAF)), sq = doorPx(d, su, up), p = (sq[1] * 32 + sq[0]) * 4;
+            const light = 1 - sin * (.3 + .2 * t);
+            r = closed[p] * light; gg = closed[p + 1] * light; b = closed[p + 2] * light;
+        } else {
+            /* the threshold, then the room's floor going away from the light */
+            if (hh === 0) { const s = (1 - sin * .1) * (DOOR_LIGHT[mood] || .8); r = 150 * s; gg = 100 * s; b = 34 * s; }
+            else {
+                const k = hh / 16, f = window.RoomView ? RoomView.floorPixel(floor, du / 16 - k + 1, 1 - k) : [40, 34, 30];
+                /* what light gets in from the hallway, stepped with the hallway's own dither, and the leaf's shadow where it meets the floor */
+                const reachLight = Math.max(0, 1 - k / 2.9), level = Math.floor(reachLight * reachLight * 7 + DOOR_BAYER[(q0[0] & 3) + (q0[1] & 3) * 4] / 16) / 7;
+                const shade = level * (up > -3 && t < 1 ? .6 : 1) * (DOOR_LIGHT[mood] || .8);
+                r = 8 + (f[0] - 8) * shade; gg = 6 + (f[1] - 6) * shade; b = 10 + (f[2] - 10) * shade;
+                if (T[3] > 0) { const q = T[3] * .35; r += (T[0] - r) * q; gg += (T[1] - gg) * q; b += (T[2] - b) * q; }
+            }
+        }
+        im.data[q] = r; im.data[q + 1] = gg; im.data[q + 2] = b; im.data[q + 3] = 255;
+    }
+    g.putImageData(im, 0, 0); m.set(key, c); return c;
 }
 let roomFloors = null;
 function doorFloorKind(d) {
-    if (window.RoomView && !roomFloors) { roomFloors = new Map(); RoomView.load().then(() => RoomView.mazes()).then(list => { for (const m of list) { const r = RoomView.roomFor(map, m); roomFloors.set(String(m.name).trim(), r.room.floor); } doorwayCache.clear(); paint(); }); }
+    if (window.RoomView && !roomFloors) { roomFloors = new Map(); RoomView.load().then(() => RoomView.mazes()).then(list => { for (const m of list) { const r = RoomView.roomFor(map, m); roomFloors.set(String(m.name).trim(), r.room.floor); } doorFrames.clear(); paint(); }); }
     return (roomFloors && roomFloors.get(String(d.name || "").trim())) || "slate";
 }
 function drawDoorways(ox, oy) {
     for (const [d, st] of doorStates) {
+        const frame = Math.round(doorEase(st.p) * DOOR_FRAMES); if (!frame) continue;
         const l = map.levels.find(q => (q.doors || []).includes(d)); if (!l) continue;
-        const a = doorPoint(l, d), c = doorwayPicture(d, doorFloorKind(d), Math.round(st.p * 5)), BASE = d.axis === "x" ? 66 : 82;
-        ctx.imageSmoothingEnabled = false; ctx.drawImage(c, ox + a[0] * zoom, oy + (a[1] - BASE) * zoom, 32 * zoom, 84 * zoom);
+        const a = doorPoint(l, d), floor = doorFloorKind(d), m = moodNow(), X = ox + a[0] * zoom, Y = oy + (a[1] - doorBase(d)) * zoom, S = 32 * zoom, H = 84 * zoom;
+        ctx.imageSmoothingEnabled = false;
+        const one = doorFrame(d, l, floor, m ? m.a : "map", frame); if (one) ctx.drawImage(one, X, Y, S, H);
+        if (m && m.f > 0) { const two = doorFrame(d, l, floor, m.b, frame); if (two) { ctx.globalAlpha = m.f; ctx.drawImage(two, X, Y, S, H); ctx.globalAlpha = 1; } }
     }
 }
 async function enterDoor(low, d) {
@@ -2373,7 +2429,10 @@ async function enterDoor(low, d) {
         wheel: delta => setZoom(zoom + (delta < 0 ? 1 : -1)),
         onLeave: () => {
             const fade = dissolve(roomSession.canvas); roomSession.close(); roomSession = null;
-            backOut(); setDoor(d, false); level = low; buildLevels();
+            const S = stairLevels().list.find(q => q.stair.door === d), col = d.axis === "x" ? me.x : me.y, out = doorFront(d).find(q => d.axis === "x" ? q[0] === col : q[1] === col) || doorFront(d)[0], sx = d.axis === "x" ? col : d.line - DOOR_DEEP, sy = d.axis === "x" ? d.line - DOOR_DEEP : col;
+            me.l = S; me.st = S.stair; me.x = sx; me.y = sy; me.z = nodeZ(S, sx, sy); me.dir = d.axis === "x" ? 4 : 2; me.busy = false; level = low; buildLevels();
+            const path = graphFrom(S, sx, sy, [low, out[0], out[1]]);
+            if (path) { me.leavingDoor = true; setDoor(d, true, 0); followRoute(path, null, () => { me.leavingDoor = false; setDoor(d, false); }); } else { backOut(); setDoor(d, false); }
             const a = P(me.x + .5, me.y + .5, me.z); cam.x = a[0]; cam.y = a[1] - 40; clampCam(); paint(); fade();
         }
     });
@@ -2699,7 +2758,7 @@ function cutInFront(c, x0, y0) {
             if (!hasFloor(up, X, Y + 1)) cutPoly(c, [P(X, Y + 1, zu), P(X + 1, Y + 1, zu), P(X + 1, Y + 1, zu - 13), P(X, Y + 1, zu - 13)]);
         }
     }
-    if (inDoor) { const a = doorPoint(l, inDoor), f = inDoor.axis === "x" ? 1 : -1; c.globalCompositeOperation = "destination-in"; c.beginPath(); c.moveTo(a[0], a[1] + 2); c.lineTo(a[0] + 32, a[1] + f * 16 + 2); c.lineTo(a[0] + 32, a[1] + f * 16 - 62); c.lineTo(a[0], a[1] - 62); c.closePath(); c.fill(); }
+    if (inDoor && inDoor.line - ((inDoor.axis === "x" ? ay : ax) + .5) > .05) { const a = doorPoint(l, inDoor), f = inDoor.axis === "x" ? 1 : -1; c.globalCompositeOperation = "destination-in"; c.beginPath(); c.moveTo(a[0], a[1] + 2); c.lineTo(a[0] + 32, a[1] + f * 16 + 2); c.lineTo(a[0] + 32, a[1] + f * 16 - 62); c.lineTo(a[0], a[1] - 62); c.closePath(); c.fill(); }
     c.restore();
     /* hard edges, as everything else here has */
     const d = c.getImageData(0, 0, 33, 56); for (let i = 3; i < d.data.length; i += 4) d.data[i] = d.data[i] > 127 ? 255 : 0; c.putImageData(d, 0, 0);
@@ -2863,7 +2922,7 @@ function buildMusic() {
     $("musicVol").addEventListener("input", e => { A.setVolume(e.target.value / 100); localStorage.setItem("hallway-volume", e.target.value); });
     /* browsers only allow sound after a click; if it was on last time, the first click brings it back */
     if (musicOn()) {
-        const first = e => { const own = e.type === "keydown" ? (e.key || "").toLowerCase() === "m" : e.target && e.target.closest && e.target.closest("#playBar, #playList, #musicBtn, #musicPlay, #musicNext, #musicList"); if (own) { localStorage.setItem("hallway-music", "0"); return; } if (musicOn() && !A.playing) setMusic(true); };
+        const first = e => { const own = e.type === "keydown" ? (e.key || "").toLowerCase() === "m" : e.target && e.target.closest && e.target.closest("#playBar, .play-menu, #playPicker, #musicBtn, #musicPlay, #musicNext, #musicList"); if (own) { localStorage.setItem("hallway-music", "0"); return; } if (musicOn() && !A.playing) setMusic(true); };
         document.addEventListener("pointerdown", first, { once: true, capture: true });
         document.addEventListener("keydown", first, { once: true, capture: true });
     }

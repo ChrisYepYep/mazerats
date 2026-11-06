@@ -35,12 +35,12 @@
     window.hallwayTell = what => { try { if (parent !== window) parent.postMessage(typeof what === "string" ? { hallway: what } : { hallway: "progress", ...what }, location.origin); } catch (e) { /* on its own, there's nobody to tell */ } };
 
     /* Its music is on unless it's been turned off; the first click brings it in, as browsers require */
-    try { if (localStorage.getItem("hallway-music") === null) localStorage.setItem("hallway-music", "1"); localStorage.setItem("hallway-time", "cycle"); } catch (e) { /* private mode */ }
+    try { if (localStorage.getItem("hallway-music") === null) localStorage.setItem("hallway-music", "1"); if (localStorage.getItem("hallway-time") === null) localStorage.setItem("hallway-time", "cycle"); } catch (e) { /* private mode */ }
 
     /* ---------- whose Habbo walks ----------
        A signed-in player whose Habbo is linked walks as it. Anyone else types their Origins name and picks the hotel, as Fallin' Furni asks, or walks as a guest.
        The art comes through the site's function: the page needs to read its pixels, and Habbo's imaging service doesn't allow that from here. */
-    const GUEST = "hd-180-1.ch-210-66.lg-270-82.sh-290-80.hr-100-61", KEY = "hallway-avatar", HOTELS = ["COM", "ES", "BR"];
+    const GUEST = "hr-145-1061.hd-180-1014.ch-220-1204.lg-280-1200.sh-300-1314", KEY = "hallway-avatar", HOTELS = ["COM", "ES", "BR"];
     let figure = GUEST;
     const remembered = () => { try { return JSON.parse(localStorage.getItem(KEY) || "null"); } catch (e) { return null; } };
     window.hallwayAvatarSrc = n => {
@@ -63,22 +63,25 @@
     }
     function picker(onDone) {
         if (document.getElementById("playPicker")) return;
-        const back = document.createElement("div"); back.id = "playPicker"; back.setAttribute("role", "dialog"); back.setAttribute("aria-label", "Choose your Habbo");
+        const back = document.createElement("div"); back.id = "playPicker"; back.className = "mr-overlay"; back.setAttribute("role", "dialog"); back.setAttribute("aria-label", "Choose your Habbo");
+        const win = document.createElement("div"); win.className = "mr-window"; const tbar = document.createElement("div"); tbar.className = "mr-titlebar"; const h2 = document.createElement("h2"); h2.textContent = "Choose your Habbo";
+        const x = document.createElement("button"); x.type = "button"; x.className = "mr-close"; x.setAttribute("aria-label", "Close"); const xi = document.createElement("img"); xi.src = "art/rooms/modal_topclose_x.png"; xi.alt = ""; x.appendChild(xi); tbar.append(h2, x);
+        const frame = document.createElement("div"); frame.className = "mr-frame";
         const form = document.createElement("form"); form.autocomplete = "off";
-        const label = document.createElement("label"); label.textContent = "Your Habbo name"; label.htmlFor = "playName";
         const row = document.createElement("div"); row.className = "row";
-        const input = document.createElement("input"); input.id = "playName"; input.type = "text"; input.maxLength = 32; input.placeholder = "YourName"; input.spellcheck = false;
+        const input = document.createElement("input"); input.id = "playName"; input.type = "text"; input.maxLength = 32; input.placeholder = "Habbo Origins Username"; input.setAttribute("aria-label", "Habbo Origins Username"); input.spellcheck = false;
         const sel = document.createElement("select"); sel.setAttribute("aria-label", "Origins hotel"); sel.title = "Origins hotel"; for (const h of HOTELS) { const o = document.createElement("option"); o.value = o.textContent = h; sel.appendChild(o); }
-        const go = document.createElement("button"); go.type = "submit"; go.textContent = "Walk in";
+        const go = document.createElement("button"); go.type = "submit"; go.className = "mr-btn"; go.textContent = "Go";
         row.append(input, sel, go);
         const say = document.createElement("p"); say.className = "say"; say.setAttribute("role", "status");
-        const guest = document.createElement("button"); guest.type = "button"; guest.className = "guest"; guest.textContent = "Walk in as a guest";
+        const guest = document.createElement("button"); guest.type = "button"; guest.className = "mr-btn guest"; guest.textContent = "Walk in as a guest";
         const was = remembered(); if (was) { input.value = was.name || ""; if (HOTELS.includes(was.hotel)) sel.value = was.hotel; }
-        form.append(label, row, say, guest); back.appendChild(form); document.body.appendChild(back); input.focus();
+        form.append(row, say, guest); frame.appendChild(form); win.append(tbar, frame); back.appendChild(win); document.body.appendChild(back); input.focus();
         const done = () => { back.remove(); if (onDone) onDone(); };
+        x.addEventListener("click", done); back.addEventListener("click", e => { if (e.target === back) done(); });
         guest.addEventListener("click", () => { try { localStorage.setItem(KEY, JSON.stringify({ guest: true })); } catch (e) { /* private mode */ } wear(GUEST); done(); });
         form.addEventListener("submit", async ev => {
-            ev.preventDefault(); const name = input.value.trim(); if (!name) { say.textContent = "Type your Habbo name, or walk in as a guest."; return; }
+            ev.preventDefault(); const name = input.value.trim(); if (!name) { say.textContent = "Type your Habbo Origins username, or walk in as a guest."; return; }
             go.disabled = true; say.textContent = "Looking up...";
             try { const f = await lookUp(name, sel.value); try { localStorage.setItem(KEY, JSON.stringify(f)); } catch (e) { /* private mode */ } wear(f.figure); done(); }
             catch (e) { say.textContent = e.message; go.disabled = false; }
@@ -90,10 +93,10 @@
         picker();
     }
 
-    /* ---------- the controls, in the site's own style, under its top bar ---------- */
+    /* ---------- the controls: the site's own buttons, floating on the hallway ---------- */
     function controls() {
         const bar = document.createElement("div"); bar.id = "playBar";
-        const add = (label, title, fn) => { const b = document.createElement("button"); b.type = "button"; b.textContent = label; b.title = title; b.setAttribute("aria-label", title); b.addEventListener("click", fn); bar.appendChild(b); return b; };
+        const add = (label, title, fn) => { const b = document.createElement("button"); b.type = "button"; b.className = "mr-btn"; b.textContent = label; b.title = title; b.setAttribute("aria-label", title); b.addEventListener("click", fn); bar.appendChild(b); return b; };
         const click = id => { const e = document.getElementById(id); if (e) e.click(); };
         add("Leave", "Back to the archive", () => window.hallwayTell("leave"));
         add("-", "Zoom out", () => click("zoomOut"));
@@ -102,18 +105,28 @@
         /* What you asked for counts, not whether it's started yet: a browser only lets it start on your first click */
         const wanted = () => { try { return localStorage.getItem("hallway-music") === "1"; } catch (e) { return false; } };
         const mute = add("Mute", "Music off or on (M)", () => { const a = A(); if (wanted() && !(a && a.playing)) { try { localStorage.setItem("hallway-music", "0"); } catch (e) { /* private mode */ } paint(); return; } click("musicBtn"); paint(); });
-        const listB = add("Playlist", "Choose a track", e => { e.stopPropagation(); menu.hidden = !menu.hidden; listB.setAttribute("aria-expanded", String(!menu.hidden)); fill(); });
-        listB.setAttribute("aria-haspopup", "true"); listB.setAttribute("aria-expanded", "false");
-        add("Avatar", "Choose your Habbo", () => picker());
-        const menu = document.createElement("div"); menu.id = "playList"; menu.hidden = true; menu.setAttribute("role", "menu");
-        const fill = () => {
-            menu.textContent = ""; const a = A(); if (!a) return;
-            a.tracks.forEach((t, i) => { const b = document.createElement("button"); b.type = "button"; b.setAttribute("role", "menuitemradio"); b.setAttribute("aria-checked", String(a.playing && a.current === i)); b.textContent = t.name; b.addEventListener("click", () => { const rows = document.querySelectorAll("#musicList .layer-row"); if (rows[i]) rows[i].click(); menu.hidden = true; listB.setAttribute("aria-expanded", "false"); }); menu.appendChild(b); });
+        /* a button with a drop-down under it */
+        const menus = [];
+        const dropdown = (label, title, fill) => {
+            const menu = document.createElement("div"); menu.className = "play-menu"; menu.hidden = true; menu.setAttribute("role", "menu"); menus.push(menu);
+            const btn = add(label, title, e => { e.stopPropagation(); const show = menu.hidden; shutMenus(); if (!show) return; fill(menu, () => { shutMenus(); }); const r = btn.getBoundingClientRect(); menu.style.left = r.left + "px"; menu.style.top = (r.bottom + 4) + "px"; menu.hidden = false; btn.setAttribute("aria-expanded", "true"); });
+            btn.setAttribute("aria-haspopup", "true"); btn.setAttribute("aria-expanded", "false"); menu.btn = btn; document.body.appendChild(menu); return btn;
         };
-        document.addEventListener("click", e => { if (!menu.hidden && !menu.contains(e.target)) { menu.hidden = true; listB.setAttribute("aria-expanded", "false"); } });
+        const shutMenus = () => { for (const m of menus) { m.hidden = true; m.btn.setAttribute("aria-expanded", "false"); } };
+        const row = (menu, name, on, fn) => { const b = document.createElement("button"); b.type = "button"; b.setAttribute("role", "menuitemradio"); b.setAttribute("aria-checked", String(on)); b.textContent = name; b.addEventListener("click", fn); menu.appendChild(b); };
+        dropdown("Playlist", "Choose a track", (menu, done) => {
+            menu.textContent = ""; const a = A(); if (!a) return;
+            a.tracks.forEach((t, i) => row(menu, t.name, a.playing && a.current === i, () => { const rows = document.querySelectorAll("#musicList .layer-row"); if (rows[i]) rows[i].click(); done(); }));
+        });
+        dropdown("Time of day", "Choose the time of day", (menu, done) => {
+            menu.textContent = ""; const sel = document.getElementById("timeMode"); if (!sel) return;
+            for (const [value, name] of [["cycle", "Day and night cycle"], ["day", "Day"], ["dusk", "Evening"], ["night", "Night"], ["dawn", "Dawn"]]) row(menu, name, sel.value === value, () => { sel.value = value; sel.dispatchEvent(new Event("change")); done(); });
+        });
+        add("Avatar", "Choose your Habbo", () => picker());
+        document.addEventListener("click", e => { if (!menus.some(m => m.contains(e.target))) shutMenus(); });
         const paint = () => { const on = wanted(); mute.textContent = on ? "Mute" : "Unmute"; mute.classList.toggle("is-on", !on); };
         setInterval(paint, 500); paint();
-        document.body.append(bar, menu);
+        document.body.append(bar);
     }
     /* Ready once there's something to see, or after a few seconds whatever happens */
     function whenDrawn() {

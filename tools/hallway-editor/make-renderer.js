@@ -22,6 +22,8 @@ function listArt(dir, base = "") {
 }
 function make(outFile) {
     const art = listArt(path.join(HERE, "art"));
+    /* The browser asks for every one of these by address, and one it can't get stops the whole editor: netlify dev won't serve a # in a name */
+    const awkward = art.filter(f => !/^[\w ./()-]+$/.test(f)); if (awkward.length) throw new Error("Art with a name a web server may not serve: " + awkward.join(", "));
     let js = `/* Made by tools/hallway-editor/make-renderer.js. Don't edit it here. */\n"use strict";\nconst ART_FILES = ${JSON.stringify(art)};\n`;
     js += fs.readFileSync(path.join(HERE, "renderer-shims.js"), "utf8") + "\n";
     for (const [name, file] of MODULES) {

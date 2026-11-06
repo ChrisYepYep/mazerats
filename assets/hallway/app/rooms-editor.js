@@ -13,7 +13,7 @@
     const hall = (p, extra) => ({ k: "hall", p, ...(extra || {}) });
     const GROUPS = [
         ["The archive", [
-            ["Ledger on a table", { k: "ledger" }, R_ + "ledger.png"], ["Album on a table", { k: "album" }, R_ + "book-oxblood.png"], ["Bookcase", { k: "shelf", axis: "y", n: 4 }, R_ + "shelf20.png"],
+            ["Oak table", { k: "table" }, R_ + "table.png"], ["Ledger on a table", { k: "ledger" }, R_ + "ledger.png"], ["Album on a table", { k: "album" }, R_ + "book-oxblood.png"], ["Bookcase", { k: "shelf", axis: "y", n: 4 }, R_ + "shelf20.png"],
             ["Lamp", { k: "lamp" }, R_ + "lamp.png"], ["Globe", { k: "globe" }, R_ + "globe.png"], ["Oak chair", { k: "chair4" }, R_ + "chair4.png"], ["Stool", { k: "stool" }, R_ + "stool.png"], ["Crate", { k: "crate" }, R_ + "crate.png"],
             ["Barrel", { k: "barrel" }, R_ + "barrel.png"], ["Cupboard", { k: "cupboard" }, R_ + "cupboard.png"], ["Candelabra", { k: "candelabra" }, R_ + "candelabra.png"],
             ["Red rug", { k: "rug", w: 4, h: 3 }, T_ + "rug.png"], ["Round rug", { k: "rugRound" }, R_ + "rug-round.png"]
@@ -29,7 +29,7 @@
             ...(window.WALL_ITEMS || []).map(i => [i.name, { k: "painting", id: i.id, up: 62 }, "art/wall/" + i.x.layers[0].f])
         ]]
     ];
-    const Z_STEP = 2, Z_MAX = 120;
+    const Z_MAX = 120;
     let host = null;
     function open(api) {
         if (host) return;
@@ -38,7 +38,7 @@
         const bar = el("div", "re-bar"), left = el("div", "re-left"), right = el("div", "re-right"), stage = el("div", "re-stage"), c = el("canvas"), tip = el("div", "re-tip"); stage.append(c, tip);
         host.append(bar, left, stage, right);
         let size = SIZES()[0], n = 0, tool = null, sel = null, zoom = 2, preview = null, mazes = [], undo = [], redo = [], tab = "layout";
-        let mouse = null, placeZ = 0, placeTurn = 0, carry = null, drag = null, ctrlY = null, ctrlSpare = 0, lockTile = null;
+        let mouse = null, placeZ = 0, placeTurn = 0, carry = null, drag = null, ctrlY = null, ctrlSpare = 0, lockTile = null, lifting = false, heightBox = null;
 
         const own = () => { const m = api.map(); if (!m.rooms) m.rooms = {}; if (!m.rooms.layouts) m.rooms.layouts = JSON.parse(JSON.stringify(window.RoomStarter.layouts)); if (!m.rooms.assign) m.rooms.assign = {}; return m.rooms; };
         const layout = () => V.layouts(api.map())[size][n];
@@ -47,6 +47,7 @@
         const before = () => { undo.push(JSON.stringify(api.map().rooms || null)); if (undo.length > 60) undo.shift(); redo = []; if (api.snapshot) api.snapshot(); };
         /* the same item, in the map's own copy, after own() has cloned the starter */
         const editing = fn => { const L0 = layout(), idx = sel ? L0.items.indexOf(sel) : -1; before(); own(); const L = layout(); if (idx >= 0) sel = L.items[idx]; fn(L); commit(); };
+        const editingNoCommit = () => { const L0 = layout(), idx = sel ? L0.items.indexOf(sel) : -1; before(); own(); if (idx >= 0) sel = layout().items[idx]; };
         const restore = t => { const m = api.map(); if (t === "null") delete m.rooms; else m.rooms = JSON.parse(t); sel = null; carry = null; drag = null; api.changed(); sync(); };
         const say = t => { tip.textContent = t || ""; tip.hidden = !t; };
 
@@ -83,7 +84,7 @@
             }
         }
         search.addEventListener("input", () => { buildPalette(); sync(); });
-        const help = el("p", "re-help", "Click to place, or drag out sofas, planters, bookcases and rugs. Shift or R turns. Hold Ctrl and move the mouse for height. Alt-click carries, Ctrl-click deletes, arrows nudge."); left.appendChild(help);
+        const help = el("p", "re-help", "Click to place, or drag out sofas, planters, bookcases and rugs. Shift or R turns. Hold Ctrl and move the mouse up or down to raise or lower what's selected, held or being placed. Alt-click carries, Ctrl-click deletes, arrows nudge."); left.appendChild(help);
         const issues = el("div", "re-issues"); left.appendChild(issues);
 
         /* ---------- turning ---------- */
@@ -148,13 +149,21 @@
             if (tab === "mazes") return mazesPanel();
             if (!sel) { right.appendChild(el("p", "re-help", tool ? "Placing: " + nameOf(tool) + "." : "Nothing selected. Click anything in the room.")); return; }
             right.appendChild(el("h3", "", nameOf(sel)));
-            const num = (label, key, min, max, step, fallback) => { const row = el("label", "re-lab"), i = el("input"); i.type = "number"; i.min = min; i.max = max; i.step = step || 1; i.value = sel[key] === undefined ? fallback : sel[key]; i.addEventListener("change", () => { const v = Math.max(min, Math.min(max, Number(i.value) || 0)); editing(() => { if (key === "z" && !v) delete sel.z; else sel[key] = v; }); panel(); }); row.append(el("span", "", label), i); right.appendChild(row); };
+            const num = (label, key, min, max, step, fallback) => {
+                const row = el("label", "re-lab"), i = el("input"); i.type = "text"; i.inputMode = "numeric"; i.autocomplete = "off"; i.value = sel[key] === undefined ? fallback : sel[key]; let begun = false;
+                const apply = () => { if (i.value.trim() === "" || !Number.isFinite(Number(i.value))) return; const v = Math.max(min, Math.min(max, Math.round(Number(i.value)))); if (!begun) { begun = true; editingNoCommit(); } if (key === "z" && !v) delete sel.z; else sel[key] = v; api.changed(); paintSoon(); };
+                i.addEventListener("input", apply);
+                i.addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); i.blur(); } if (e.key === "ArrowUp" || e.key === "ArrowDown") { e.preventDefault(); i.value = Math.max(min, Math.min(max, (Number(i.value) || 0) + (e.key === "ArrowUp" ? 1 : -1) * (e.shiftKey ? 10 : step || 1))); apply(); } });
+                i.addEventListener("blur", () => { begun = false; i.value = sel && sel[key] !== undefined ? sel[key] : fallback === undefined ? "" : fallback; checks(); });
+                row.append(el("span", "", label), i); right.appendChild(row); if (key === "z") heightBox = i;
+            };
+            heightBox = null;
             if (sel.k === "shelf") num("Length", "n", 2, 16);
             if (sel.k === "hall" && P.ROWS[sel.p]) num("Length", "len", P.ROWS[sel.p].min, 16, 1, P.lengthOf({ k: sel.p, len: sel.len }));
             if (sel.k === "rug") { num("Across", "w", 1, 16); num("Down", "h", 1, 16); }
-            if (sel.k === "frame") { num("Width", "w", 16, 72, 2); num("Height", "h", 12, 56, 2); num("Height on the wall", "up", 6, 90, 2); num("Which picture (0 entrance, 1 finish, then the gallery)", "slot", 0, 40); }
-            if (sel.k === "painting" || sel.k === "sconce") num("Height on the wall", "up", 16, 96, 2);
-            if (!V.isWall(sel) && !V.isRug(sel)) num("Height off the floor", "z", 0, Z_MAX, Z_STEP, 0);
+            if (sel.k === "frame") { num("Width", "w", 16, 72, 2); num("Height", "h", 12, 56, 2); num("Height on the wall", "up", 6, 90, 1); num("Which picture (0 entrance, 1 finish, then the gallery)", "slot", 0, 40); }
+            if (sel.k === "painting" || sel.k === "sconce") num("Height on the wall", "up", 16, 96, 1);
+            if (!V.isWall(sel) && !V.isRug(sel)) num("Height off the floor", "z", 0, Z_MAX, 1, 0);
             const row = el("div", "re-actions"), t = el("button", "btn", "Turn"), del = el("button", "btn", "Remove"); t.type = del.type = "button"; t.addEventListener("click", () => turnThing(sel)); del.addEventListener("click", removeSel); row.append(t, del); right.appendChild(row);
         }
         const removeSel = () => { if (!sel) return; editing(L => { L.items.splice(L.items.indexOf(sel), 1); }); sel = null; panel(); };
@@ -214,19 +223,24 @@
 
         /* ---------- Ctrl and the mouse: how high. The piece stays on its tile while you do ---------- */
         function ctrlMove(e) {
-            if (!e.ctrlKey && !e.metaKey) { ctrlY = null; ctrlSpare = 0; lockTile = null; return false; }
-            const dragged = drag && drag.kind === "move" ? drag.it : null, held = carry ? carry.item : null, it = dragged || held;
-            if (!it && !(tool && !drag && !V.isWall(tool))) return false;
+            if (!e.ctrlKey && !e.metaKey) { endLift(); ctrlY = null; ctrlSpare = 0; lockTile = null; return false; }
+            const dragged = drag && drag.kind === "move" ? drag.it : null, held = carry ? carry.item : null, placing = tool && !drag && !V.isWall(tool), selected = !dragged && !held && !placing && !drag && sel && !V.isRug(sel) ? sel : null;
+            if (!dragged && !held && !placing && !selected) return false;
             if (ctrlY === null) { ctrlY = e.clientY; lockTile = mouse ? V.tileAt(roomNow(), mouse[0], mouse[1]) : null; return true; }
-            ctrlSpare += ctrlY - e.clientY; ctrlY = e.clientY;
-            const steps = Math.trunc(ctrlSpare / 3); if (!steps) return true;
-            ctrlSpare -= steps * 3;
-            if (it && V.isWall(it)) { if (it.k !== "window") { it.up = clampUp(it, (it.up || 0) + steps * Z_STEP); say("Height on the wall: " + it.up); } }
-            else if (it) { if (V.isRug(it)) return true; const v = Math.max(0, Math.min(Z_MAX, (it.z || 0) + steps * Z_STEP)); if (v) it.z = v; else delete it.z; say("Height: " + v); }
-            else { placeZ = Math.max(0, Math.min(Z_MAX, placeZ + steps * Z_STEP)); say("Height: " + placeZ); }
+            /* the piece follows the mouse: a pixel of the room for each pixel moved on the screen */
+            ctrlSpare += (ctrlY - e.clientY) / zoom; ctrlY = e.clientY;
+            const steps = Math.trunc(ctrlSpare); if (!steps) return true;
+            ctrlSpare -= steps;
+            if (selected && !lifting) { lifting = true; editingNoCommit(); }
+            const it = dragged || held || (selected ? sel : null);
+            if (it && V.isWall(it)) { if (it.k !== "window") { it.up = clampUp(it, (it.up || 0) + steps); say("Height on the wall: " + it.up); showHeight(it.up); } }
+            else if (it) { if (V.isRug(it)) return true; const v = Math.max(0, Math.min(Z_MAX, (it.z || 0) + steps)); if (v) it.z = v; else delete it.z; say("Height: " + v); showHeight(v); }
+            else { placeZ = Math.max(0, Math.min(Z_MAX, placeZ + steps)); say("Height: " + placeZ); }
             if (dragged) drag.moved = true;
             return true;
         }
+        const showHeight = v => { if (heightBox && document.activeElement !== heightBox) heightBox.value = v; };
+        const endLift = () => { if (!lifting) return; lifting = false; say(""); commit(); panel(); };
 
         /* ---------- the mouse ---------- */
         c.addEventListener("contextmenu", e => e.preventDefault());
@@ -282,15 +296,18 @@
         c.addEventListener("pointerleave", () => { if (!drag && !carry) { mouse = null; paintSoon(); } });
 
         /* ---------- keys. This window has them all: the hallway's editor underneath mustn't act on them ---------- */
+        /* (the boxes in the panels get theirs: nothing here but keeping them from the hallway's editor) */
         function turnHeld() {
             if (carry) { if (V.isWall(carry.item)) return true; const q = turned(carry.item); if (!q) say("This one looks the same from every side."); else carry.item = q; paintSoon(); return true; }
             if (tool && !drag) { const t = turnCount(tool); if (t < 2) say("This one looks the same from every side."); else placeTurn = (placeTurn + 1) % t; paintSoon(); return true; }
             return false;
         }
+        /* a box needs its own keys, so they can't be stopped on their way down to it: they're stopped on their way back up, before the hallway's editor hears them */
+        const keepFromEditor = e => { const t = e.target; const stop = ev => { ev.stopPropagation(); t.removeEventListener(ev.type, stop); }; t.addEventListener(e.type, stop); };
         const keys = e => {
             if (!host) return; const typing = e.target && /INPUT|SELECT|TEXTAREA/.test(e.target.tagName);
+            if (typing) { keepFromEditor(e); return; }
             e.stopPropagation();
-            if (typing) return;
             const k = e.key, ctl = e.ctrlKey || e.metaKey;
             if (ctl && (k === "z" || k === "Z")) { e.preventDefault(); if (e.shiftKey) doRedo(); else doUndo(); return; }
             if (ctl && (k === "y" || k === "Y")) { e.preventDefault(); doRedo(); return; }
@@ -302,7 +319,7 @@
             }
             if (k === "Escape") { if (carry) { carry = null; lockTile = null; say(""); paintSoon(); } else if (tool) pick(null); else if (sel) { sel = null; panel(); paintSoon(); } else close(); }
         };
-        const keysUp = e => { e.stopPropagation(); if (e.key === "Control" || e.key === "Meta") { ctrlY = null; ctrlSpare = 0; lockTile = null; } };
+        const keysUp = e => { if (e.target && /INPUT|SELECT|TEXTAREA/.test(e.target.tagName)) keepFromEditor(e); else e.stopPropagation(); if (e.key === "Control" || e.key === "Meta") { endLift(); ctrlY = null; ctrlSpare = 0; lockTile = null; if (!carry && !tool) say(""); paintSoon(); } };
         addEventListener("keydown", keys, true); addEventListener("keyup", keysUp, true); addEventListener("resize", paintSoon);
 
         function sync() {

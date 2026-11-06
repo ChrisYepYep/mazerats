@@ -78,7 +78,7 @@
         const input = ctx.createGain(); input.gain.value = 1;
         const tape = ctx.createDelay(.05); tape.delayTime.value = .014;
         for (const [hz, depth] of [[.27, .0011], [.071, .0026], [5.3, .000035]]) { const l = ctx.createOscillator(), d = ctx.createGain(); l.frequency.value = hz; d.gain.value = depth; l.connect(d); d.connect(tape.delayTime); l.start(); }
-        const drive = ctx.createWaveShaper(), curve = new Float32Array(1024); for (let i = 0; i < 1024; i++) { const x = i / 511.5 - 1; curve[i] = Math.tanh(x * 1.7) / Math.tanh(1.7); } drive.curve = curve; drive.oversample = "2x";
+        const drive = ctx.createWaveShaper(), curve = new Float32Array(1024); for (let i = 0; i < 1024; i++) { const x = i / 511.5 - 1; curve[i] = Math.tanh(x * 1.7) / Math.tanh(1.7); } drive.curve = curve; drive.oversample = "none";
         const low = ctx.createBiquadFilter(); low.type = "highpass"; low.frequency.value = 38;
         const warm = ctx.createBiquadFilter(); warm.type = "lowshelf"; warm.frequency.value = 220; warm.gain.value = 2.5;
         const top = ctx.createBiquadFilter(); top.type = "lowpass"; top.frequency.value = 4300; top.Q.value = .5;
@@ -87,7 +87,7 @@
         input.connect(tape); tape.connect(drive); drive.connect(low); low.connect(warm); warm.connect(top); top.connect(comp); comp.connect(master); master.connect(ctx.destination);
         /* a small dark room rather than a long hall: lofi is close */
         const verb = ctx.createConvolver();
-        const len = Math.floor(ctx.sampleRate * 2.4), ir = ctx.createBuffer(2, len, ctx.sampleRate), r = rng(4242);
+        const len = Math.floor(ctx.sampleRate * 1.8), ir = ctx.createBuffer(2, len, ctx.sampleRate), r = rng(4242);
         for (let c = 0; c < 2; c++) { const d = ir.getChannelData(c); let lp = 0; for (let i = 0; i < len; i++) { const t = i / len; lp += (r() * 2 - 1 - lp) * (.3 - .22 * t); d[i] = lp * Math.pow(1 - t, 2.6); } }
         verb.buffer = ir;
         const wet = ctx.createGain(); wet.gain.value = .42; verb.connect(wet); wet.connect(input);
@@ -474,7 +474,7 @@
         setVolume(v) { api.volume = v; if (eng && playing) { const t = eng.ctx.currentTime; eng.master.gain.cancelScheduledValues(t); eng.master.gain.setTargetAtTime(v * .62, t, .1); } },
         start(i) {
             const AC = window.AudioContext || window.webkitAudioContext; if (!AC) return;
-            if (!eng) eng = build(new AC());
+            if (!eng) eng = build(new AC({ latencyHint: "playback" }));   // music: a longer buffer, so a busy page never starves it (the editor drawing the map on every core did)
             if (eng.ctx.state === "suspended") eng.ctx.resume();
             const t = eng.ctx.currentTime;
             for (const b of eng.active) if (b.stopAt !== null && b.stopAt > t) { for (const g of [b.g.gain, b.wetG.gain]) { g.cancelScheduledValues(t); g.setValueAtTime(g.value, t); g.linearRampToValueAtTime(0, t + .25); } b.stopAt = t + .25; }

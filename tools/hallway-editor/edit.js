@@ -12,7 +12,7 @@
     if (!token()) { location.replace("/warren"); return; }
 
     /* ---------- the renderers ---------- */
-    const POOL = Math.max(2, Math.min(6, (navigator.hardwareConcurrency || 4) - 1)), workers = [], waiting = new Map();
+    const POOL = Math.max(1, Math.min(6, (navigator.hardwareConcurrency || 4) - 2)), workers = [], waiting = new Map();
     let nextId = 1, names = [], font = {}, difficulty = {}, started = null;
     const ask = (w, job) => new Promise((res, rej) => {
         const id = nextId++; waiting.set(id, { res, rej, w }); w.busy++; w.postMessage({ ...job, id });
