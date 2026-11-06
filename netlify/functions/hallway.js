@@ -7,6 +7,8 @@
      GET  ?tile=<hash>   one picture. Named by its contents, so it can be kept for good
      GET  ?what=draft    the saved draft (admin)
      GET  ?what=known    which pictures are here already, so only new ones get sent (admin)
+     GET  ?av=<figure>&d&a&h&f   one frame of a Habbo's small figure from Habbo's imaging, for the page to wear: it has to read
+                         the pixels, and the imaging service doesn't allow that from a browser. Only figure strings, only that host.
      POST action: draft    { map }             save, for admins only (admin)
      POST action: tile     { hash, png }       one picture, base64 (admin)
      POST action: publish  { map, manifest }   what goes live, once every picture it names has arrived (admin)
@@ -19,11 +21,26 @@ const { SECURITY_HEADERS } = require("./_headers");
 
 const STORE = "hallway", MAX_MAP = 4 * 1024 * 1024, MAX_TILE = 3 * 1024 * 1024, HASH = /^[a-f0-9]{20}$/;
 const reply = (statusCode, body, extra) => ({ statusCode, headers: { ...SECURITY_HEADERS, "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store", ...(extra || {}) }, body: typeof body === "string" ? body : JSON.stringify(body) });
+const FIGURE = /^[a-z]{2}-\d+(-\d+)*(\.[a-z]{2}-\d+(-\d+)*)*$/;
+const WATER = 1;      // the clear glass, as tools/hallway-editor/fetch-avatar.js
+async function avatarFrame(q) {
+    const figure = String(q.av || ""), d = String(q.d), a = String(q.a), f = String(q.f || "0"), h = String(q.h || "");
+    if (figure.length > 240 || !FIGURE.test(figure) || !/^[0-7]$/.test(d) || !/^(std|wlk|sit)$/.test(a) || !/^[0-3]$/.test(f) || !/^(|crr|drk)$/.test(h)) return reply(400, { error: "Bad figure" });
+    const action = a === "wlk" ? "wlk" : a === "sit" ? "sit" : "std", item = h ? "," + h + "=" + WATER : "";
+    const url = "https://www.habbo.com/habbo-imaging/avatarimage?" + new URLSearchParams({ figure, size: "s", direction: d, head_direction: d, action: action + item, frame: f, gesture: "sml" });
+    const ctl = new AbortController(), t = setTimeout(() => ctl.abort(), 7000);
+    try {
+        const r = await fetch(url, { signal: ctl.signal }); if (!r.ok) return reply(502, { error: "Habbo isn't answering" });
+        const b = Buffer.from(await r.arrayBuffer()); if (b.length < 8 || b.length > 200000 || b.readUInt32BE(0) !== 0x89504e47) return reply(502, { error: "Habbo isn't answering" });
+        return { statusCode: 200, isBase64Encoded: true, headers: { ...SECURITY_HEADERS, "Content-Type": "image/png", "Cache-Control": "public, max-age=604800", "Netlify-Vary": "query" }, body: b.toString("base64") };
+    } catch (e) { return reply(502, { error: "Habbo isn't answering" }); } finally { clearTimeout(t); }
+}
 const looksLikeMap = m => m && typeof m === "object" && Array.isArray(m.levels) && m.levels.length > 0 && m.levels.length < 40;
 
 exports.handler = async (event) => {
     const store = blobStore(STORE), q = event.queryStringParameters || {};
     if (event.httpMethod === "GET") {
+        if (q.av !== undefined) return avatarFrame(q);
         if (q.tile !== undefined) {
             if (!HASH.test(q.tile)) return reply(400, { error: "Bad picture name" });
             const data = await store.get("tile/" + q.tile, { type: "arrayBuffer" });

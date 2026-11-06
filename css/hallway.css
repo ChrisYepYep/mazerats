@@ -92,10 +92,17 @@ html.hallway-instant #hallway-stage { transition: none; }
 .hallway-close:hover { background: #f4c77b; }
 .hallway-close:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
 
+/* The loading bar, as Fallin' Furni's. It fills rather than slides: it's counting things in */
+.hallway-loader { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; background: rgba(10, 7, 4, .45); }
+.hallway-loader-box { min-width: 210px; padding: 14px 18px 16px; border: 1px solid var(--border); background: var(--chrome-fill); text-align: center; }
+.hallway-loader-text { margin: 0 0 10px; letter-spacing: .06em; color: var(--amber-bright); }
+.hallway-loader-bar { height: 10px; border: 1px solid var(--border); background: var(--bg-black); overflow: hidden; }
+.hallway-loader-bar i { display: block; height: 100%; width: 0; background: var(--amber); transition: width 120ms linear; }
+
 /* What an admin is told when walking it before it's live */
 .hallway-pill {
     position: absolute;
-    top: 8px;
+    top: 42px;
     left: 50%;
     transform: translateX(-50%);
     z-index: 2;

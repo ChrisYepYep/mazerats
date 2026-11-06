@@ -153,6 +153,10 @@ http.createServer(async (req, res) => {
             child.on("exit", code => { publishing = { running: false, at: 0, of: 0, error: code ? (errors.trim().split("\n").pop() || "It stopped.") : null }; });
             return json(res, 200, publishing);
         }
+        if (url.pathname === "/api/archive") {
+            /* the rooms' mazes, read from the live archive; nothing is ever written there */
+            return https.get("https://mazerats.net/.netlify/functions/rooms", { timeout: 15000 }, up => { const a = []; up.on("data", d => a.push(d)); up.on("end", () => { res.writeHead(up.statusCode, { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-cache" }); res.end(Buffer.concat(a)); }); }).on("error", e => json(res, 502, { error: String(e.message) }));
+        }
         if (url.pathname === "/api/lift") {
             /* one lift on a see-through picture, doors part way open, to animate over the map */
             const slide = Math.max(0, Math.min(1, Number(url.searchParams.get("slide")) || 0)), bw = 180, bh = 200, ax = 40, ay = 160, b = new W.Buf(bw, bh);

@@ -5,27 +5,63 @@ html, body { background: #000; overflow: hidden; }
 #app > *:not(#stage) { display: none !important; }
 #stage { position: absolute; inset: 0; background: #000; }
 #view { outline: none; }
+@font-face { font-family: 'Volter Goldfish'; src: url('/assets/fonts/VolterGoldfish.woff2') format('woff2'); font-weight: normal; font-display: swap; }
+/* Under the site's top bar, in its colours and with its buttons */
 #playBar {
     position: fixed;
-    left: 8px;
-    bottom: 8px;
+    top: 0;
+    left: 0;
+    right: 0;
     z-index: 30;
     display: flex;
-    gap: 4px;
+    gap: 6px;
+    align-items: center;
+    justify-content: flex-start;
+    padding: 5px 10px;
+    background: #39250f;
+    border-bottom: 1px solid rgba(201, 151, 79, .35);
 }
 #playBar button {
     min-width: 26px;
     height: 24px;
-    padding: 0 8px;
-    color: #e8dcc4;
-    background: rgba(21, 17, 12, .86);
-    border: 1px solid #6b5a42;
-    font: 11px/1 system-ui, sans-serif;
+    padding: 0 11px;
+    color: #c1b7a7;
+    background: rgba(0, 0, 0, .22);
+    border: 1.5px solid #60462b;
+    border-radius: 12px;
+    font: 700 11px/1 'Volter Goldfish', sans-serif;
+    letter-spacing: .5px;
     cursor: pointer;
 }
-#playBar button:hover { background: #2c2318; color: #fff; }
-#playBar button:focus-visible { outline: 2px solid #f4c77b; outline-offset: 1px; }
-#playBar button.is-on { color: #f4c77b; border-color: #d9a85a; }
+#playBar button:hover { color: #d8cbb2; border-color: #c7a679; }
+#playBar button:focus-visible { outline: 2px solid #c7a679; outline-offset: 1px; }
+#playBar button.is-on { color: #c7a679; border-color: #c7a679; }
+#playList {
+    position: fixed;
+    top: 34px;
+    left: 10px;
+    z-index: 31;
+    display: flex;
+    flex-direction: column;
+    min-width: 190px;
+    background: #39250f;
+    border: 1px solid rgba(201, 151, 79, .35);
+}
+#playList[hidden] { display: none; }
+#playList button { padding: 7px 12px; color: #c1b7a7; background: none; border: 0; text-align: left; font: 11px/1.2 'Volter Goldfish', sans-serif; cursor: pointer; }
+#playList button:hover { color: #d8cbb2; background: rgba(0, 0, 0, .25); }
+#playList button[aria-checked="true"] { color: #c7a679; }
+#playList button[aria-checked="true"]::before { content: "> "; }
+#playPicker { position: fixed; inset: 0; z-index: 32; display: flex; align-items: center; justify-content: center; padding: 16px; background: rgba(10, 7, 4, .55); color: #c1b7a7; font: 12px/1.4 'Volter Goldfish', sans-serif; }
+#playPicker form { display: flex; flex-direction: column; gap: 8px; width: min(380px, 100%); padding: 16px 18px; background: #39250f; border: 1px solid rgba(201, 151, 79, .35); }
+#playPicker label { color: #c7a679; }
+#playPicker .row { display: flex; gap: 6px; }
+#playPicker input, #playPicker select { min-width: 0; height: 28px; padding: 0 8px; color: #d8cbb2; background: #120c07; border: 1px solid rgba(201, 151, 79, .35); font: inherit; }
+#playPicker input { flex: 1; }
+#playPicker button[type=submit] { height: 28px; padding: 0 12px; color: #120c07; background: #c7a679; border: 0; font: inherit; cursor: pointer; }
+#playPicker button[type=submit]:disabled { opacity: .6; }
+#playPicker .say { min-height: 1.4em; margin: 0; }
+#playPicker .guest { align-self: flex-start; padding: 0; color: #c1b7a7; background: none; border: 0; text-decoration: underline; font: inherit; cursor: pointer; }
 
 /* Bigger to press on a phone */
 @media (pointer: coarse) { #playBar button { min-width: 38px; height: 34px; font-size: 13px; } }

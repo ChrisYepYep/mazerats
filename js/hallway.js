@@ -72,11 +72,14 @@
     }
 
     function startWalk(state) {
-        const load = note("Loading...", "");
-        const bar = document.createElement("div"); bar.className = "hallway-bar"; const fill = document.createElement("i"); bar.appendChild(fill); load.appendChild(bar);
-        stage.appendChild(load);
-        /* Moving on its own until the page says it's ready, so a slow line doesn't look stuck */
-        let shown = 0; const creep = setInterval(() => { shown += (90 - shown) * .08; fill.style.width = shown + "%"; }, 120);
+        /* Fallin' Furni's loader: a box, its words, a bar that fills */
+        const load = document.createElement("div"); load.className = "hallway-loader";
+        const box = document.createElement("div"); box.className = "hallway-loader-box";
+        const words = document.createElement("p"); words.className = "hallway-loader-text"; words.textContent = "Loading the hallway";
+        const bar = document.createElement("div"); bar.className = "hallway-loader-bar"; const fill = document.createElement("i"); bar.appendChild(fill);
+        box.append(words, bar); load.appendChild(box); stage.appendChild(load);
+        /* It fills as the page says things have arrived, and still creeps on a slow line rather than looking stuck */
+        let shown = 0; const creep = setInterval(() => { const aim = Math.max(frame && frame._told ? frame._told * 100 : 0, 24); shown += (aim - shown) * .12; fill.style.width = shown + "%"; }, 120);
         if (state !== "live") { const pill = document.createElement("div"); pill.className = "hallway-pill"; pill.textContent = `${LABELS[state] || state}: only admins can walk it`; stage.appendChild(pill); }
         frame = document.createElement("iframe");
         frame.title = "The Hallway"; frame.src = PLAY; frame.allow = "autoplay; fullscreen";
@@ -130,6 +133,7 @@
     /* What the page in the frame says. Only ours. */
     addEventListener("message", e => {
         if (e.origin !== location.origin || !frame || e.source !== frame.contentWindow || !e.data) return;
+        if (e.data.hallway === "progress") frame._told = Math.max(frame._told || 0, Number(e.data.progress) || 0);
         if (e.data.hallway === "ready" && frame._ready) frame._ready();
         if (e.data.hallway === "leave") close();
     });

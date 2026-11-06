@@ -1,0 +1,75 @@
+/* The maze rooms: the room itself, the book that opens from it, and the rooms' editor. */
+@font-face { font-family: 'Volter Goldfish'; src: url('art/rooms/VolterGoldfish.woff2') format('woff2'); font-weight: 400; font-display: swap; }
+.room-view { position: absolute; inset: 0; z-index: 22; display: block; }
+/* The maze and its owner, in the dark to the left of the room */
+.room-label { position: absolute; z-index: 23; max-width: 200px; transform: translate(-100%, -50%); color: #d8cbb2; font: 400 .5625rem/1.5 'Volter Goldfish', sans-serif; text-align: left; pointer-events: none; }
+.room-label .room-owner { color: #ab8b64; }
+.room-label.is-tight { left: 12px; top: 44px; transform: none; }
+
+.rb-back { position: absolute; inset: 0; z-index: 28; display: flex; align-items: center; justify-content: center; padding: 16px; background: rgba(0, 0, 0, .62); }
+.rb-book { display: grid; grid-template-columns: 1fr 1fr; width: min(1040px, 100%); height: min(640px, 100%); padding: 16px; background: #2e180c; border: 2px solid #17090a; outline: 1px solid #b08434; outline-offset: -8px; box-shadow: 0 10px 40px #000; }
+.rb-book.single { grid-template-columns: 1fr; }
+.rb-page { position: relative; display: flex; flex-direction: column; gap: 10px; min-height: 0; padding: 18px 22px; overflow: auto; color: #34200f; background: #e2d0a8; font: 13px/1.5 Georgia, "Times New Roman", serif; }
+.rb-page:first-child { box-shadow: inset -14px 0 14px -10px rgba(70, 40, 20, .45); border-right: 2px solid #3a2212; }
+.rb-page:last-child:not(:first-child) { box-shadow: inset 14px 0 14px -10px rgba(70, 40, 20, .45); }
+.rb-page h2 { margin: 0; color: #7a1c16; font: 700 20px/1.2 Georgia, "Times New Roman", serif; }
+.rb-by { margin: 0; }
+.rb-page dl { display: grid; grid-template-columns: max-content 1fr; gap: 2px 14px; margin: 0; padding: 8px 0; border-block: 1px solid #ac946c; }
+.rb-page dt { color: #705032; }
+.rb-page dd { margin: 0; }
+.rb-text { margin: 0; white-space: pre-line; }
+.rb-pic { flex: 1 1 0; display: flex; flex-direction: column; min-height: 0; margin: 0; cursor: zoom-in; }
+.rb-pic img { flex: 1 1 0; display: block; width: 100%; min-height: 0; object-fit: cover; background: #000; border: 1px solid #b08434; outline: 2px solid #3c2412; }
+.rb-pic.big { cursor: default; }
+.rb-pic.big img { object-fit: contain; }
+.rb-pic figcaption { margin-top: 5px; color: #705032; font-size: 12px; line-height: 1.2; }
+.rb-grid { flex: 1 1 0; display: grid; grid-template-columns: 1fr 1fr; grid-auto-rows: minmax(0, 1fr); gap: 12px; min-height: 0; }
+.rb-album { font-size: 16px !important; }
+.rb-foot { display: flex; align-items: center; justify-content: space-between; color: #705032; }
+.rb-turn { padding: 3px 8px; color: #34200f; background: none; border: 1px solid #ac946c; font: 12px Georgia, serif; cursor: pointer; }
+.rb-turn:disabled { opacity: .35; cursor: default; }
+.rb-turn:not(:disabled):hover { background: #d3bd8c; }
+.rb-close { position: absolute; top: 10px; right: 10px; padding: 5px 12px; color: #f0dfb4; background: #2e180c; border: 1px solid #b08434; font: 12px system-ui, sans-serif; cursor: pointer; }
+.rb-close:hover { background: #452612; }
+.rb-zoom { position: absolute; inset: 0; z-index: 2; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 20px; background: rgba(0, 0, 0, .9); cursor: zoom-out; }
+.rb-zoom img { max-width: 100%; max-height: calc(100% - 30px); object-fit: contain; }
+.rb-zoom p { margin: 8px 0 0; color: #e8dcc4; font: 13px Georgia, serif; }
+@media (max-width: 700px) { .rb-book { grid-template-columns: 1fr; height: 100%; overflow: auto; } .rb-page { overflow: visible; } }
+
+/* the editor */
+.re-host { position: fixed; inset: 0; z-index: 90; display: grid; grid-template: 48px 1fr / 190px 1fr 260px; color: #e8e4dc; background: #101114; font: 13px system-ui, sans-serif; }
+.re-bar { grid-column: 1 / -1; display: flex; align-items: center; gap: 10px; padding: 0 12px; background: #1a1c21; border-bottom: 1px solid #2c2f36; }
+.re-spacer { flex: 1; }
+.re-lab { display: flex; align-items: center; gap: 6px; color: #a9abb3; }
+.re-lab input, .re-lab select, .re-bar select, .re-maze select { color: #e8e4dc; background: #24262c; border: 1px solid #3a3d45; }
+.re-nums { display: flex; gap: 2px; }
+.re-num { width: 26px; height: 26px; color: inherit; background: #24262c; border: 1px solid #3a3d45; cursor: pointer; }
+.re-num[aria-pressed="true"], .re-tool[aria-pressed="true"], .re-bar .btn[aria-pressed="true"] { color: #1a1205; background: #f2be70; border-color: #f2be70; }
+.re-left, .re-right { min-height: 0; padding: 10px; overflow: auto; background: #16181c; }
+.re-left { border-right: 1px solid #2c2f36; }
+.re-right { border-left: 1px solid #2c2f36; }
+.re-right h3 { margin: 0 0 8px; font-size: 14px; }
+.re-right .re-lab { justify-content: space-between; margin-bottom: 8px; }
+.re-right input { width: 64px; }
+.re-tools { display: flex; flex-direction: column; gap: 3px; }
+.re-tool { padding: 6px 8px; color: inherit; text-align: left; background: #24262c; border: 1px solid #33363d; cursor: pointer; }
+.re-tool:hover { background: #2e3138; }
+.re-help { margin: 10px 0; color: #a9abb3; line-height: 1.4; }
+.re-issues p { margin: 4px 0; color: #ffb37a; }
+.re-stage { position: relative; min-width: 0; min-height: 0; overflow: hidden; }
+.re-stage canvas { position: absolute; inset: 0; display: block; }
+.re-mazes { display: flex; flex-direction: column; gap: 6px; margin-top: 10px; }
+.re-maze { display: grid; grid-template-columns: 1fr auto auto; align-items: center; gap: 4px; }
+.re-maze span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* the palette, as the hallway editor's */
+.re-host { grid-template-columns: 230px 1fr 260px; }
+.re-search { width: 100%; box-sizing: border-box; height: 28px; margin-bottom: 8px; padding: 0 8px; color: #e8e4dc; background: #24262c; border: 1px solid #3a3d45; }
+.re-tools h4 { margin: 10px 0 4px; color: #a9abb3; font-size: 11px; font-weight: 700; letter-spacing: .4px; text-transform: uppercase; }
+.re-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; }
+.re-grid .re-tool { display: flex; flex-direction: column; align-items: center; gap: 3px; min-width: 0; padding: 4px 2px; font-size: 10px; line-height: 1.15; text-align: center; }
+.re-grid .re-tool img { width: 44px; height: 40px; object-fit: contain; image-rendering: pixelated; }
+.re-tool.wide { width: 100%; }
+.re-actions { display: flex; gap: 6px; margin-top: 10px; }
+.re-tip { position: absolute; left: 50%; top: 10px; transform: translateX(-50%); padding: 4px 10px; color: #1a1205; background: #f2be70; font-size: 12px; pointer-events: none; }
+.re-tip[hidden] { display: none; }

@@ -745,7 +745,7 @@ async function newVersion() {
         /* while a sign's being dragged, the art leaves it out */
         const liveNow = live && !live.ending ? live.hit.o : null, keep = liveNow && liveNow.sign;
         if (liveNow) liveNow.sign = { ...keep, hide: true };
-        const text = JSON.stringify({ map, liftOpen: isOn("liftOpen"), cut: seeCut !== null ? { level: level.id, z: levelZ(level) + seeCut } : undefined });
+        const text = JSON.stringify({ map: { ...map, rooms: undefined }, liftOpen: isOn("liftOpen"), cut: seeCut !== null ? { level: level.id, z: levelZ(level) + seeCut } : undefined });
         if (liveNow) liveNow.sign = keep;
         const r = await fetch("/api/version", { method: "POST", headers: { "Content-Type": "application/json" }, body: text });
         if (!r.ok) throw new Error("version " + r.status);
@@ -884,6 +884,7 @@ function paint() {
     }
     drawLiveSign();
     drawLifts(ox, oy);
+    drawDoorways(ox, oy);
     drawRubbed();
     if (tool !== "walk" && map && level) { overlay(); drawHeightPreview(); drawStepGhost(); drawEdgeGhost(); }
     drawSelector();
@@ -958,7 +959,7 @@ function setTool(t) {
     putBack();
     if (t !== tool) placeRot = 0;
     tool = t; hover = null; drag = null; heightHold = null;
-    if ($("liftPanel")) hideLiftPanel(); liftDoors.clear();
+    if ($("liftPanel")) hideLiftPanel(); liftDoors.clear(); doorStates.clear(); if (roomSession) { roomSession.close(); roomSession = null; }
     if ($("heightBar")) $("heightBar").hidden = !brushTool(t);
     if (brushTool(t)) setBrush(brushes[t]);
     if (t !== "walk") walker = null; else startWalk();
@@ -2010,7 +2011,8 @@ canvas.addEventListener("dblclick", e => {
     if (walker && walker.busy) return;
     const [px, py] = toPx(e.clientX, e.clientY), u = useUnder(px, py);
     if (u && u.p.k === "water") { getDrink(u); return; }
-    const q = liftAt(px, py); if (q) useLift(q);
+    const q = liftAt(px, py); if (q) { useLift(q); return; }
+    const dd = doorAtPx(px, py); if (dd) useDoor(dd.l, dd.d);
 });
 canvas.addEventListener("pointermove", e => {
     const kind = wallHeightKind(tool);
@@ -2049,7 +2051,7 @@ function solid(l) {
 let stairMemo = null;
 const nodeZ = (l, x, y) => l.tiles ? l.tiles.get(x + "," + y) : tileZ(l, x, y) + stepLift(l, x, y);
 function stairLevels() {
-    const memoKey = JSON.stringify([map.stairs, map.lifts, map.entrance]);
+    const memoKey = JSON.stringify([map.stairs, map.lifts, map.entrance, map.levels.map(l => (l.doors || []).map(d => [d.axis, d.at, d.line, !!d.spare]))]);
     if (stairMemo && stairMemo.cs === cellSets && stairMemo.stairs === map.stairs && stairMemo.json === memoKey) return stairMemo;
     const out = [], links = new Map(), slots = new Map(), byName = new Map();
     const link = (a, ax, ay, c, cx, cy) => {
@@ -2105,6 +2107,15 @@ function stairLevels() {
         for (const t of entranceTiles(e)) for (let d = 1; d <= 2; d++) { list.push(e.axis === "x" ? [t, e.line - d] : [e.line - d, t]); if (d === 1) joins.push(e.axis === "x" ? [t, e.line - 1, t, e.line] : [e.line - 1, t, e.line, t]); }
         addRoom(S, low, list, joins);
     }
+    /* behind every maze's door: two tiles wide, two deep, the first of its room's floor. No slots: the floor behind a wall isn't taken */
+    for (const low of map.levels) (low.doors || []).forEach((d, i) => {
+        if (d.spare) return;
+        const fr = doorFront(d), S = { id: "DR" + low.id + "-" + i, name: "Door", k: low.k, tiles: new Map(), stair: { low, up: null, door: d } }, z = tileZ(low, fr[0][0], fr[0][1]);
+        for (const t of fr) for (let k = 1; k <= 2; k++) S.tiles.set(d.axis === "x" ? t[0] + "," + (d.line - k) : (d.line - k) + "," + t[1], z);
+        for (const t of fr) { if (d.axis === "x") link(S, t[0], d.line - 1, low, t[0], t[1]); else link(S, d.line - 1, t[1], low, t[0], t[1]); }
+        S.nearestFirst = [...S.tiles.entries()].map(([k, zz]) => { const [x, y] = k.split(",").map(Number); return { x, y, z: zz }; }).sort((p, q) => (q.x + q.y) - (p.x + p.y));
+        out.push(S); byName.set(S.id, S);
+    });
     stairMemo = { cs: cellSets, stairs: map.stairs, json: memoKey, list: out, links, slots, byName };
     return stairMemo;
 }
@@ -2129,7 +2140,7 @@ function walkGraph(startKey) {
             if (dx && dy && !stands(l, x + dx, y) && !stands(l, x, y + dy)) continue;
             out.push({ l, x: nx, y: ny, dx, dy });
         }
-        for (const n of (M.links.get(nodeKey(l, x, y)) || [])) if (stands(n.l, n.x, n.y) && !(n.l.stair && n.l.stair.lift && !liftOpen(n.l.stair.lift))) out.push(n);
+        for (const n of (M.links.get(nodeKey(l, x, y)) || [])) if (stands(n.l, n.x, n.y) && !(n.l.stair && n.l.stair.lift && !liftOpen(n.l.stair.lift)) && !(n.l.stair && n.l.stair.door && !doorIsOpen(n.l.stair.door))) out.push(n);
         return out;
     };
 }
@@ -2223,7 +2234,8 @@ function floorUnder(px, py) {
 }
 function stairUnder(M, l, px, py) {
     for (const S of M.list) {
-        if (S.stair.low !== l || (S.stair.lift && !liftOpen(S.stair.lift))) continue;
+        if (S.stair.low !== l || (S.stair.lift && !liftOpen(S.stair.lift)) || (S.stair.door && !doorIsOpen(S.stair.door))) continue;
+        if (S.stair.door && !inDoorway(l, S.stair.door, px, py)) continue;
         for (const t of S.nearestFirst) { const [fx, fy] = pxToTile(px, py, t.z); if (Math.floor(fx) === t.x && Math.floor(fy) === t.y) return [S, t.x, t.y]; }
     }
     return null;
@@ -2254,8 +2266,20 @@ setInterval(() => {
         const was = s.p; s.p = Math.max(0, Math.min(1, s.p + (s.to ? 1 : -1) * .04)); if (s.p !== was) moving = true;
         if (!s.to && !s.p) liftDoors.delete(q);
     }
+    for (const [d, st] of doorStates) {
+        const here = walker && walker.l.stair && walker.l.stair.door === d;
+        if (st.to === 1 && st.shutAt && performance.now() > st.shutAt && !here) setDoor(d, false);
+        const was = st.p; st.p = Math.max(0, Math.min(1, st.p + (st.to ? 1 : -1) * .05)); if (st.p !== was) moving = true;
+        if (!st.to && !st.p) doorStates.delete(d);
+    }
     if (moving) paint();
     if (tool !== "walk" || !walker) return;
+    if (walker.l.stair && walker.l.stair.door && !walker.walking && !walker.busy) {
+        const d = walker.l.stair.door, deep = d.axis === "x" ? walker.y === d.line - 2 : walker.x === d.line - 2;
+        if (deep) { enterDoor(walker.l.stair.low, d); return; }
+        const t = d.axis === "x" ? [walker.x, d.line - 2] : [d.line - 2, walker.y], p = graphFrom(walker.l, walker.x, walker.y, [walker.l, t[0], t[1]]); if (p) followRoute(p, null, null);
+        return;
+    }
     const room = walker.l.stair;
     if (!walker.busy && !$("liftPanel").hidden && (walker.walking || !room || !room.lift)) { hideLiftPanel(); walker.asked = false; }
     if (!room || (!room.lift && !room.entrance)) { walker.arriving = false; walker.asked = false; walker.leaving = false; return; }
@@ -2269,6 +2293,91 @@ function drawLifts(ox, oy) {
         const a = P(q.x, q.y, tileZ(l, q.x, q.y));
         ctx.imageSmoothingEnabled = false; ctx.drawImage(img, ox + (a[0] - 40) * zoom, oy + (a[1] - 160) * zoom, img.naturalWidth * zoom, img.naturalHeight * zoom);
     }
+}
+/* ---------- the maze doors ----------
+   Double-click: you walk up to it. Double-click again: it opens inwards, and through it is the first of its room's floor, walked onto like a lift's.
+   Past those tiles you're in the room, floating in the dark; the arrow on its floor brings you back out here. */
+const doorStates = new Map(); let roomSession = null;
+const doorIsOpen = d => { const s = doorStates.get(d); return !!s && s.to === 1; };
+const doorFront = d => d.axis === "x" ? [[d.at, d.line], [d.at + 1, d.line]] : [[d.line, d.at - 1], [d.line, d.at - 2]];
+function setDoor(d, open, ms) {
+    const s = doorStates.get(d) || { p: 0, to: 0 };
+    if (s.to !== (open ? 1 : 0) && window.LiftSounds) LiftSounds.doors();
+    s.to = open ? 1 : 0; s.shutAt = ms ? performance.now() + ms : 0; doorStates.set(d, s); paint();
+}
+const doorZ = (l, d) => { const f = doorFront(d)[0]; return tileZ(l, f[0], f[1]); };
+function doorPoint(l, d) { return d.axis === "x" ? P(d.at, d.line, doorZ(l, d)) : P(d.line, d.at, doorZ(l, d)); }
+function inDoorway(l, d, px, py) {
+    const a = doorPoint(l, d), u = px - a[0], h = d.axis === "x" ? a[1] + Math.floor(u / 2) - py : a[1] - Math.floor(u / 2) - py;
+    return u >= 0 && u < 32 && h >= -2 && h < 62;
+}
+function doorAtPx(px, py) {
+    for (const l of [...map.levels].sort((a, c) => c.k - a.k)) {
+        for (const d of (l.doors || [])) if (!d.spare && inDoorway(l, d, px, py)) return { l, d };
+        const [fx, fy] = tileIn(l, px, py); if (hasFloor(l, Math.floor(fx), Math.floor(fy))) return null;
+    }
+    return null;
+}
+function useDoor(l, d) {
+    const s = walkerStart(), fr = doorFront(d), there = !walker.walking && s.l === l && fr.some(t => t[0] === s.x && t[1] === s.y);
+    if (!there) { const r = routeToOneOf(l, fr, s.l, s.x, s.y); if (r) followRoute(r.path, s.here, () => { walker.dir = d.axis === "x" ? 0 : 6; paint(); }); else setStatus("No way to that door"); return; }
+    walker.dir = d.axis === "x" ? 0 : 6;
+    if (doorIsOpen(d)) { const t = d.axis === "x" ? [s.x, d.line - 2] : [d.line - 2, s.y], p = graphFrom(l, s.x, s.y, [stairLevels().list.find(q => q.stair.door === d), t[0], t[1]]); if (p) followRoute(p, null, null); return; }
+    setDoor(d, true, 15000);
+    if (window.RoomView) { RoomView.load(); RoomView.mazes(); }
+}
+/* What's in the doorway at this much open: the leaf swung in on its hinge, the first of the room's floor, and the dark */
+const doorwayCache = new Map();
+function doorwayPicture(d, floor, frame) {
+    const key = d.axis + floor + frame; let c = doorwayCache.get(key); if (c) return c;
+    c = document.createElement("canvas"); c.width = 32; c.height = 84; const g = c.getContext("2d"), im = g.createImageData(32, 84), BASE = d.axis === "x" ? 66 : 82, p = frame / 5, leafW = Math.round(29 - 22 * p);
+    const pal = { d1: [69, 14, 0], d2: [90, 26, 6], d3: [113, 47, 22], d5: [146, 80, 48] };
+    for (let u = 0; u < 32; u++) for (let h = 0; h < 62; h++) {
+        const col = (() => {
+            const v = u; /* along the door from its hinge */
+            if (v < 3) return v === 0 ? pal.d1 : pal.d2;
+            if (v < 3 + leafW) { const w = h - (v - 3) * p * .9, top = 62 - (v - 3) * p * 1.1; if (w < (v - 3) * p * .1 || h > top) return [8, 6, 10]; return v === 3 + leafW - 1 ? pal.d5 : (v & 1 ? pal.d3 : pal.d2); }
+            const b = -h / 16, a = v / 16 - h / 16;
+            if (h === 0) return [180, 122, 34];
+            if (h < 40 && window.RoomView) { const f = RoomView.floorPixel(floor, a + 1, b + 1); const k = .8 - h / 90; return [f[0] * k, f[1] * k, f[2] * k]; }
+            return [8, 6, 10];
+        })();
+        const U = d.axis === "x" ? u : 31 - u, Y = d.axis === "x" ? BASE + Math.floor(U / 2) - h : BASE - Math.floor(U / 2) - h, q = (Y * 32 + U) * 4;
+        if (Y >= 0 && Y < 84) { im.data[q] = col[0]; im.data[q + 1] = col[1]; im.data[q + 2] = col[2]; im.data[q + 3] = 255; }
+    }
+    g.putImageData(im, 0, 0); doorwayCache.set(key, c); return c;
+}
+let roomFloors = null;
+function doorFloorKind(d) {
+    if (window.RoomView && !roomFloors) { roomFloors = new Map(); RoomView.load().then(() => RoomView.mazes()).then(list => { for (const m of list) { const r = RoomView.roomFor(map, m); roomFloors.set(String(m.name).trim(), r.room.floor); } doorwayCache.clear(); paint(); }); }
+    return (roomFloors && roomFloors.get(String(d.name || "").trim())) || "slate";
+}
+function drawDoorways(ox, oy) {
+    for (const [d, st] of doorStates) {
+        const l = map.levels.find(q => (q.doors || []).includes(d)); if (!l) continue;
+        const a = doorPoint(l, d), c = doorwayPicture(d, doorFloorKind(d), Math.round(st.p * 5)), BASE = d.axis === "x" ? 66 : 82;
+        ctx.imageSmoothingEnabled = false; ctx.drawImage(c, ox + a[0] * zoom, oy + (a[1] - BASE) * zoom, 32 * zoom, 84 * zoom);
+    }
+}
+async function enterDoor(low, d) {
+    const me = walker; if (!me || me.busy || !window.RoomView) return; me.busy = true; me.pts = []; me.walking = false;
+    await RoomView.load(); const list = await RoomView.mazes(), maze = list.find(m => String(m.name).trim() === String(d.name || "").trim());
+    if (walker !== me) return;
+    const backOut = () => { const f = doorFront(d), t = f.find(q => d.axis === "x" ? q[0] === me.x : q[1] === me.y) || f[0]; me.l = low; me.x = t[0]; me.y = t[1]; me.z = tileZ(low, t[0], t[1]); me.dir = d.axis === "x" ? 4 : 2; me.busy = false; };
+    if (!maze) { flash("This door's maze isn't in the archive."); backOut(); setDoor(d, false); paint(); return; }
+    const { room, facts } = RoomView.roomFor(map, maze), stage = $("stage");
+    const dissolve = from => { const shot = document.createElement("canvas"); shot.width = from.width; shot.height = from.height; shot.getContext("2d").drawImage(from, 0, 0); shot.style.cssText = "position:absolute;left:0;top:0;z-index:24;pointer-events:none;transition:opacity .7s ease;opacity:1;width:" + from.clientWidth + "px;height:" + from.clientHeight + "px"; stage.appendChild(shot); return () => { shot.getBoundingClientRect(); shot.style.opacity = 0; setTimeout(() => shot.remove(), 750); }; };
+    const go = dissolve(canvas);
+    roomSession = RoomView.enter(stage, {
+        room, facts, edge: d.axis === "x" ? "y" : "x", zoom: () => zoom,
+        wheel: delta => setZoom(zoom + (delta < 0 ? 1 : -1)),
+        onLeave: () => {
+            const fade = dissolve(roomSession.canvas); roomSession.close(); roomSession = null;
+            backOut(); setDoor(d, false); level = low; buildLevels();
+            const a = P(me.x + .5, me.y + .5, me.z); cam.x = a[0]; cam.y = a[1] - 40; clampCam(); paint(); fade();
+        }
+    });
+    go();
 }
 function liftAt(px, py) {
     for (const l of [...map.levels].sort((a, c) => c.k - a.k)) {
@@ -2473,10 +2582,11 @@ function stepWalk(now) {
 }
 function avatarImg(n) {
     let i = avatarImgs[n];
-    if (!i) { i = avatarImgs[n] = new Image(); i.src = "art/av/" + n + ".png"; i.onload = () => paint(); }
+    if (!i) { i = avatarImgs[n] = new Image(); i.src = window.hallwayAvatarSrc ? window.hallwayAvatarSrc(n) : "art/av/" + n + ".png"; i.onload = () => paint(); }
     return i;
 }
-function preloadAvatar() { for (let d = 0; d < 8; d++) { for (const a of ["std", "std-crr", "std-drk", "sit", "sit-crr", "sit-drk"]) avatarImg(`s-${d}-${a}-0`); for (let f = 0; f < 4; f++) { avatarImg(`s-${d}-wlk-${f}`); avatarImg(`s-${d}-wlk-crr-${f}`); } } }
+window.hallwayAvatarChanged = () => { for (const k in avatarImgs) delete avatarImgs[k]; preloadAvatar(); paint(); };
+function preloadAvatar() { if (window.HALLWAY_PLAY) { for (let d = 0; d < 8; d++) { avatarImg(`s-${d}-std-0`); avatarImg(`s-${d}-sit-0`); for (let f = 0; f < 4; f++) avatarImg(`s-${d}-wlk-${f}`); } return; } for (let d = 0; d < 8; d++) { for (const a of ["std", "std-crr", "std-drk", "sit", "sit-crr", "sit-drk"]) avatarImg(`s-${d}-${a}-0`); for (let f = 0; f < 4; f++) { avatarImg(`s-${d}-wlk-${f}`); avatarImg(`s-${d}-wlk-crr-${f}`); } } }
 
 /* ---------- what stands in front of the Habbo ----------
    The art is one picture, so what's nearer than the Habbo is cut out of the Habbo's own shape, and
@@ -2563,7 +2673,7 @@ function cutInFront(c, x0, y0) {
     /* walls on this floor that stand nearer than the Habbo */
     const below = map.levels.find(q => q.k === l.k - 1);
     const open = (X, Y, axis) => !hasFloor(l, X, Y) && wallStands(l, X, Y, axis);
-    const inOpening = (X, Y, axis) => (axis === "x" && map.lifts.some(q => q.level === l.id && q.y === Y && X >= q.x && X < q.x + 3)) || (map.entrance && map.entrance.level === l.id && map.entrance.axis === axis && map.entrance.line === (axis === "x" ? Y : X) && entranceTiles(map.entrance).includes(axis === "x" ? X : Y)) || map.stairs.some(s => s.low === l.id && (thruLeft(s) ? axis === "y" && s.x === X && Y >= s.a && Y < s.b : axis === "x" && s.y === Y && X >= s.a && X < s.b));
+    const inDoor = walker.l.stair && walker.l.stair.door, inOpening = (X, Y, axis) => (inDoor && inDoor.axis === axis && inDoor.line === (axis === "x" ? Y : X) && doorFront(inDoor).some(t => axis === "x" ? t[0] === X : t[1] === Y)) || (axis === "x" && map.lifts.some(q => q.level === l.id && q.y === Y && X >= q.x && X < q.x + 3)) || (map.entrance && map.entrance.level === l.id && map.entrance.axis === axis && map.entrance.line === (axis === "x" ? Y : X) && entranceTiles(map.entrance).includes(axis === "x" ? X : Y)) || map.stairs.some(s => s.low === l.id && (thruLeft(s) ? axis === "y" && s.x === X && Y >= s.a && Y < s.b : axis === "x" && s.y === Y && X >= s.a && X < s.b));
     const R = 14, tx = Math.floor(ax), ty = Math.floor(ay);
     for (let X = tx - R; X <= tx + R; X++) for (let Y = ty - R; Y <= ty + R; Y++) {
         if (!hasFloor(l, X, Y)) continue;
@@ -2589,6 +2699,7 @@ function cutInFront(c, x0, y0) {
             if (!hasFloor(up, X, Y + 1)) cutPoly(c, [P(X, Y + 1, zu), P(X + 1, Y + 1, zu), P(X + 1, Y + 1, zu - 13), P(X, Y + 1, zu - 13)]);
         }
     }
+    if (inDoor) { const a = doorPoint(l, inDoor), f = inDoor.axis === "x" ? 1 : -1; c.globalCompositeOperation = "destination-in"; c.beginPath(); c.moveTo(a[0], a[1] + 2); c.lineTo(a[0] + 32, a[1] + f * 16 + 2); c.lineTo(a[0] + 32, a[1] + f * 16 - 62); c.lineTo(a[0], a[1] - 62); c.closePath(); c.fill(); }
     c.restore();
     /* hard edges, as everything else here has */
     const d = c.getImageData(0, 0, 33, 56); for (let i = 3; i < d.data.length; i += 4) d.data[i] = d.data[i] > 127 ? 255 : 0; c.putImageData(d, 0, 0);
@@ -2752,7 +2863,7 @@ function buildMusic() {
     $("musicVol").addEventListener("input", e => { A.setVolume(e.target.value / 100); localStorage.setItem("hallway-volume", e.target.value); });
     /* browsers only allow sound after a click; if it was on last time, the first click brings it back */
     if (musicOn()) {
-        const first = e => { const own = e.type === "keydown" ? (e.key || "").toLowerCase() === "m" : e.target && e.target.closest && e.target.closest("#musicBtn, #musicPlay, #musicNext, #musicList"); if (own) { localStorage.setItem("hallway-music", "0"); return; } if (musicOn() && !A.playing) setMusic(true); };
+        const first = e => { const own = e.type === "keydown" ? (e.key || "").toLowerCase() === "m" : e.target && e.target.closest && e.target.closest("#playBar, #playList, #musicBtn, #musicPlay, #musicNext, #musicList"); if (own) { localStorage.setItem("hallway-music", "0"); return; } if (musicOn() && !A.playing) setMusic(true); };
         document.addEventListener("pointerdown", first, { once: true, capture: true });
         document.addEventListener("keydown", first, { once: true, capture: true });
     }
@@ -2785,6 +2896,7 @@ function buildUI() {
     buildLibrary(); $("search").addEventListener("input", buildLibrary);
     buildMusic();
     $("walkBtn").addEventListener("click", () => setTool(tool === "walk" ? "select" : "walk"));
+    if ($("roomsBtn")) $("roomsBtn").addEventListener("click", () => window.RoomsEditor.open({ map: () => map, snapshot, changed: () => { roomFloors = null; doorwayCache.clear(); changed(); } }));
     document.querySelectorAll(".tab").forEach(t => t.addEventListener("click", () => showTab(t.dataset.tab)));
     for (const [k, v] of Object.entries(LIGHTS)) { const o = document.createElement("option"); o.value = k; o.textContent = v; $("light").appendChild(o); }
     for (const [k, v] of Object.entries(WAYS)) { const o = document.createElement("option"); o.value = k; o.textContent = v; $("way").appendChild(o); }
@@ -2905,5 +3017,5 @@ function buildUI() {
     if (pinned) { if (dirty) { try { localStorage.setItem("hallway-draft", JSON.stringify(map)); } catch (e) { /* the file on disk stands */ } } else { await save(); flash(`${pinned} mazes are now locked to their doors.`); } }
     buildLevels(); showMapInfo(); runChecks(); syncButtons(); setTool("select"); select(null); setZoom(zoom); resize(); requestArt(true);
     if (window.HALLWAY_PLAY) setTool("walk");
-    window.__hallway = { stairWallAt, hangWallAt, furniTile, landingOf, placeable, stairWallsOf, setCut, seeThroughDown, get seeCut() { return seeCut; }, edgesNear, railsNear, cam, paint, liftAt, useLift, rideTo, showLiftPanel, liftOpen, setDoors, entranceAt, entranceTiles, useUnder, retaining, doorSpotAt, fitDoor, doorEdge: doorEdge, isNone, wallState, setBrush, flightOf, heightEdgeAt, edgeRun, canStep, isHalf, wallHolds, tileIn, nodeZ, heightAt, stepLift, wallSpot, tidyHeights, get rubbed() { return rubbed; }, sortByDifficulty, doorSpots, wallStretch, pickColour, select, get map() { return map; }, moodNow, get timeMode() { return timeMode; }, sitOn, getDrink, propUnder, avCanvas, get live() { return live; }, stairLevels, nodeZ, wallAt, pickIn, walkGraph, graphFrom, liftTile, doorNames, setDoorMaze, signBox, signHandles, handleAt, setZoom, showTab, get zoom() { return zoom; }, get level() { return level; }, camTick, camTarget, followNow, floorUnder, get hover() { return hover; }, pick, select, deleteSelected, get selected() { return selected; }, get tiles() { return tiles; }, get inflight() { return inflight; }, get version() { return version; }, paint, get map() { return map; }, get cam() { return cam; }, get walker() { return walker; }, toScreen, P, setTool, act, walkTo, stepWalk, setLevel: id => { level = byId(id); buildLevels(); paint(); } };
+    window.__hallway = { doorAtPx, useDoor, doorStates, doorIsOpen, doorFront, enterDoor, get roomSession() { return roomSession; }, get walker() { return walker; }, stairWallAt, hangWallAt, furniTile, landingOf, placeable, stairWallsOf, setCut, seeThroughDown, get seeCut() { return seeCut; }, edgesNear, railsNear, cam, paint, liftAt, useLift, rideTo, showLiftPanel, liftOpen, setDoors, entranceAt, entranceTiles, useUnder, retaining, doorSpotAt, fitDoor, doorEdge: doorEdge, isNone, wallState, setBrush, flightOf, heightEdgeAt, edgeRun, canStep, isHalf, wallHolds, tileIn, nodeZ, heightAt, stepLift, wallSpot, tidyHeights, get rubbed() { return rubbed; }, sortByDifficulty, doorSpots, wallStretch, pickColour, select, get map() { return map; }, moodNow, get timeMode() { return timeMode; }, sitOn, getDrink, propUnder, avCanvas, get live() { return live; }, stairLevels, nodeZ, wallAt, pickIn, walkGraph, graphFrom, liftTile, doorNames, setDoorMaze, signBox, signHandles, handleAt, setZoom, showTab, get zoom() { return zoom; }, get level() { return level; }, camTick, camTarget, followNow, floorUnder, get hover() { return hover; }, pick, select, deleteSelected, get selected() { return selected; }, get tiles() { return tiles; }, get inflight() { return inflight; }, get version() { return version; }, paint, get map() { return map; }, get cam() { return cam; }, get walker() { return walker; }, toScreen, P, setTool, act, walkTo, stepWalk, setLevel: id => { level = byId(id); buildLevels(); paint(); } };
 })();

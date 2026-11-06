@@ -32,12 +32,65 @@
         return new Response("", { status: 404 });
     };
     window.hallwayLiftSrc = (way, f) => { const file = encodeURIComponent(way).replace(/%/g, "_") + "-" + f + ".png"; return online && window.hallwayOnlineLift[file] ? FN + "?tile=" + window.hallwayOnlineLift[file] : "../lift/" + file; };
-    window.hallwayTell = what => { try { if (parent !== window) parent.postMessage({ hallway: what }, location.origin); } catch (e) { /* on its own, there's nobody to tell */ } };
+    window.hallwayTell = what => { try { if (parent !== window) parent.postMessage(typeof what === "string" ? { hallway: what } : { hallway: "progress", ...what }, location.origin); } catch (e) { /* on its own, there's nobody to tell */ } };
 
     /* Its music is on unless it's been turned off; the first click brings it in, as browsers require */
     try { if (localStorage.getItem("hallway-music") === null) localStorage.setItem("hallway-music", "1"); localStorage.setItem("hallway-time", "cycle"); } catch (e) { /* private mode */ }
 
-    /* A few controls of its own, since the editor's are gone */
+    /* ---------- whose Habbo walks ----------
+       A signed-in player whose Habbo is linked walks as it. Anyone else types their Origins name and picks the hotel, as Fallin' Furni asks, or walks as a guest.
+       The art comes through the site's function: the page needs to read its pixels, and Habbo's imaging service doesn't allow that from here. */
+    const GUEST = "hd-180-1.ch-210-66.lg-270-82.sh-290-80.hr-100-61", KEY = "hallway-avatar", HOTELS = ["COM", "ES", "BR"];
+    let figure = GUEST;
+    const remembered = () => { try { return JSON.parse(localStorage.getItem(KEY) || "null"); } catch (e) { return null; } };
+    window.hallwayAvatarSrc = n => {
+        const m = /^s-(\d)-(std|wlk|sit)(-crr|-drk)?-(\d)$/.exec(n); if (!m) return "art/av/" + n + ".png";
+        return FN + "?" + new URLSearchParams({ av: figure, d: m[1], a: m[2], h: (m[3] || "").slice(1), f: m[4] }).toString();
+    };
+    function wear(f) { if (f === figure) return; figure = f; if (window.hallwayAvatarChanged) window.hallwayAvatarChanged(); }
+    async function lookUp(name, hotel) {
+        const r = await realFetch("/.netlify/functions/room-figure?name=" + encodeURIComponent(name) + "&hotel=" + encodeURIComponent(hotel)), d = await r.json().catch(() => ({}));
+        if (r.ok && d.figureString) return { name: d.name || name, hotel, figure: d.figureString };
+        if (r.status === 404 || r.status === 400 || r.ok) throw new Error("No Origins Habbo by that name on " + hotel + ".");
+        throw new Error("Habbo isn't answering just now. Try again in a moment.");
+    }
+    async function signedInHabbo() {
+        try {
+            const r = await realFetch("/.netlify/functions/profiles?me=1", { credentials: "same-origin", headers: { Accept: "application/json" } }); if (!r.ok) return null;
+            const d = await r.json(); if (!d || !d.habbo || d.habboUnverified || !d.habbo.name) return null;
+            return await lookUp(d.habbo.name, d.habbo.hotel || "COM");
+        } catch (e) { return null; }
+    }
+    function picker(onDone) {
+        if (document.getElementById("playPicker")) return;
+        const back = document.createElement("div"); back.id = "playPicker"; back.setAttribute("role", "dialog"); back.setAttribute("aria-label", "Choose your Habbo");
+        const form = document.createElement("form"); form.autocomplete = "off";
+        const label = document.createElement("label"); label.textContent = "Your Habbo name"; label.htmlFor = "playName";
+        const row = document.createElement("div"); row.className = "row";
+        const input = document.createElement("input"); input.id = "playName"; input.type = "text"; input.maxLength = 32; input.placeholder = "YourName"; input.spellcheck = false;
+        const sel = document.createElement("select"); sel.setAttribute("aria-label", "Origins hotel"); sel.title = "Origins hotel"; for (const h of HOTELS) { const o = document.createElement("option"); o.value = o.textContent = h; sel.appendChild(o); }
+        const go = document.createElement("button"); go.type = "submit"; go.textContent = "Walk in";
+        row.append(input, sel, go);
+        const say = document.createElement("p"); say.className = "say"; say.setAttribute("role", "status");
+        const guest = document.createElement("button"); guest.type = "button"; guest.className = "guest"; guest.textContent = "Walk in as a guest";
+        const was = remembered(); if (was) { input.value = was.name || ""; if (HOTELS.includes(was.hotel)) sel.value = was.hotel; }
+        form.append(label, row, say, guest); back.appendChild(form); document.body.appendChild(back); input.focus();
+        const done = () => { back.remove(); if (onDone) onDone(); };
+        guest.addEventListener("click", () => { try { localStorage.setItem(KEY, JSON.stringify({ guest: true })); } catch (e) { /* private mode */ } wear(GUEST); done(); });
+        form.addEventListener("submit", async ev => {
+            ev.preventDefault(); const name = input.value.trim(); if (!name) { say.textContent = "Type your Habbo name, or walk in as a guest."; return; }
+            go.disabled = true; say.textContent = "Looking up...";
+            try { const f = await lookUp(name, sel.value); try { localStorage.setItem(KEY, JSON.stringify(f)); } catch (e) { /* private mode */ } wear(f.figure); done(); }
+            catch (e) { say.textContent = e.message; go.disabled = false; }
+        });
+    }
+    async function chooseAvatar() {
+        const mine = await signedInHabbo(); if (mine) { wear(mine.figure); return; }
+        const was = remembered(); if (was && was.figure) { wear(was.figure); return; } if (was && was.guest) return;
+        picker();
+    }
+
+    /* ---------- the controls, in the site's own style, under its top bar ---------- */
     function controls() {
         const bar = document.createElement("div"); bar.id = "playBar";
         const add = (label, title, fn) => { const b = document.createElement("button"); b.type = "button"; b.textContent = label; b.title = title; b.setAttribute("aria-label", title); b.addEventListener("click", fn); bar.appendChild(b); return b; };
@@ -45,20 +98,33 @@
         add("Leave", "Back to the archive", () => window.hallwayTell("leave"));
         add("-", "Zoom out", () => click("zoomOut"));
         add("+", "Zoom in", () => click("zoomIn"));
-        const music = add("Music", "Music on or off (M)", () => { click("musicBtn"); paintMusic(); });
-        const paintMusic = () => { const on = document.getElementById("musicBtn"); music.classList.toggle("is-on", !!on && on.getAttribute("aria-pressed") === "true"); };
-        setInterval(paintMusic, 800);
-        document.body.appendChild(bar);
+        const A = () => window.HallwayAudio;
+        /* What you asked for counts, not whether it's started yet: a browser only lets it start on your first click */
+        const wanted = () => { try { return localStorage.getItem("hallway-music") === "1"; } catch (e) { return false; } };
+        const mute = add("Mute", "Music off or on (M)", () => { const a = A(); if (wanted() && !(a && a.playing)) { try { localStorage.setItem("hallway-music", "0"); } catch (e) { /* private mode */ } paint(); return; } click("musicBtn"); paint(); });
+        const listB = add("Playlist", "Choose a track", e => { e.stopPropagation(); menu.hidden = !menu.hidden; listB.setAttribute("aria-expanded", String(!menu.hidden)); fill(); });
+        listB.setAttribute("aria-haspopup", "true"); listB.setAttribute("aria-expanded", "false");
+        add("Avatar", "Choose your Habbo", () => picker());
+        const menu = document.createElement("div"); menu.id = "playList"; menu.hidden = true; menu.setAttribute("role", "menu");
+        const fill = () => {
+            menu.textContent = ""; const a = A(); if (!a) return;
+            a.tracks.forEach((t, i) => { const b = document.createElement("button"); b.type = "button"; b.setAttribute("role", "menuitemradio"); b.setAttribute("aria-checked", String(a.playing && a.current === i)); b.textContent = t.name; b.addEventListener("click", () => { const rows = document.querySelectorAll("#musicList .layer-row"); if (rows[i]) rows[i].click(); menu.hidden = true; listB.setAttribute("aria-expanded", "false"); }); menu.appendChild(b); });
+        };
+        document.addEventListener("click", e => { if (!menu.hidden && !menu.contains(e.target)) { menu.hidden = true; listB.setAttribute("aria-expanded", "false"); } });
+        const paint = () => { const on = wanted(); mute.textContent = on ? "Mute" : "Unmute"; mute.classList.toggle("is-on", !on); };
+        setInterval(paint, 500); paint();
+        document.body.append(bar, menu);
     }
     /* Ready once there's something to see, or after a few seconds whatever happens */
     function whenDrawn() {
-        const started = performance.now(), v = document.getElementById("view");
+        const started = performance.now(), v = document.getElementById("view"), told = () => { const n = performance.getEntriesByType("resource").length; window.hallwayTell({ progress: Math.min(.95, n / 42) }); };
         const look = () => {
+            told();
             let seen = false;
             try { if (v && v.width > 2) { const d = v.getContext("2d").getImageData(v.width >> 1, v.height >> 1, 1, 1).data; seen = d[0] + d[1] + d[2] > 0 && !(d[0] === 11 && d[1] === 12 && d[2] === 15); } } catch (e) { seen = true; }
             if (seen || performance.now() - started > 8000) window.hallwayTell("ready"); else setTimeout(look, 120);
         };
         look();
     }
-    addEventListener("DOMContentLoaded", () => { controls(); whenDrawn(); });
+    addEventListener("DOMContentLoaded", () => { controls(); whenDrawn(); chooseAvatar(); });
 })();

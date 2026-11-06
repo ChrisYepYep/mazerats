@@ -411,6 +411,7 @@ async function profile(db, id, self) {
         ...(self && !h && guess ? { habboGuess: { name: guess.name, hotel: guess.hotel, asked: guess.state === "declined" } } : {}),
         habbo: origins ? {
             name: origins.name,
+            hotel: String((h && h.hotel) || "COM").toUpperCase(),
             motto: motto.motto,
             avatar: origins.avatar || null,
             /* Not for a guess (10 Oct 2026, the owner's): whether a Habbo
