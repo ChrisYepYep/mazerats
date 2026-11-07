@@ -32,5 +32,7 @@ const call = async (method, body, headers = {}) => { const r = await handler({ h
     /* two tabs at once: neither loses its scrap */
     const [a, b] = await Promise.all([call("POST", { scraps: ["left"] }), call("POST", { scraps: ["right"] })]); r = await call("GET"); assert.ok(r.body.scraps.includes("left") && r.body.scraps.includes("right"), "racing saves both land");
     r = await call("POST", { lost: { day: "2026-11-08", streak: 4, shelf: [], points: 900, best: 600, missed: 1 } }); r = await call("POST", { lost: { day: "2026-11-08", streak: 4, shelf: [], points: 300, best: 100, missed: 0 } }); assert.equal(r.body.lost.points, 900, "points never go down"); assert.equal(r.body.lost.best, 600); assert.equal(r.body.lost.missed, 1);
+    r = await call("POST", { lost: { day: "2026-11-09", streak: 2, shelf: [] } }); assert.equal(r.body.lost.streak, 4, "brought back never goes down");
+    r = await call("POST", { lost: { day: "2099-01-01", streak: 9, shelf: [] } }); assert.notEqual(r.body.lost.day, "2099-01-01", "a date in the future is refused");
     console.log("hallway-progress: all good", "(index ensured " + indexed + " times)");
 })().catch(e => { console.error(e); process.exit(1); });

@@ -7,7 +7,7 @@
     function merge(a, b) {
         const out = { scraps: union(a.scraps, b.scraps), key: !!(a.key || b.key), lost: { ...a.lost }, hunts: { ...a.hunts } };
         const al = a.lost || {}, bl = b.lost || {};
-        out.lost = (bl.day || "") >= (al.day || "") ? { day: bl.day || "", streak: bl.streak || 0, shelf: union(al.shelf, bl.shelf) } : { day: al.day || "", streak: al.streak || 0, shelf: union(al.shelf, bl.shelf) };
+        out.lost = { day: (bl.day || "") >= (al.day || "") ? bl.day || "" : al.day || "", streak: Math.max(al.streak || 0, bl.streak || 0), shelf: union(al.shelf, bl.shelf) };
         /* Lost Property's totals only go up */
         for (const k of ["points", "best", "missed"]) out.lost[k] = Math.max(al[k] || 0, bl[k] || 0);
         for (const [id, h] of Object.entries(b.hunts || {})) { const o = out.hunts[id] || { found: [], done: false }; out.hunts[id] = { found: union(o.found, h.found), done: !!(o.done || h.done), ...(o.place || h.place ? { place: o.place || h.place } : {}) }; }

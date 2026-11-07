@@ -729,7 +729,7 @@ const MOODS_ALL = ["day", "dusk", "night", "dawn"];
 function preloadMap() {
     if (!map || !map.rect || !version || document.hidden) return; const m = moodNow(); if (!m) return;
     if (!window.HALLWAY_PLAY && (drag || performance.now() - lastChangeAt < 4000)) return;      // while you're placing things, what's on screen comes first
-    const r = map.rect, order = []; for (const q of [m.a, m.b]) if (!order.includes(q)) order.push(q);
+    const r = camRect() || map.rect, order = []; for (const q of [m.a, m.b]) if (!order.includes(q)) order.push(q);
     if (timeMode === "cycle") { const at = CYCLE.findIndex(c => c[1] === m.b), after = at >= 0 ? CYCLE.slice(at + 1).map(c => c[1]) : []; for (const q of after) if (!order.includes(q)) order.push(q); }
     const small = window.matchMedia && matchMedia("(pointer: coarse)").matches; if (!small && window.HALLWAY_PLAY) for (const q of MOODS_ALL) if (!order.includes(q)) order.push(q);
     const cells = []; for (let ty = Math.floor(r.y / TILE); ty <= Math.floor((r.y + r.h) / TILE); ty++) for (let tx = Math.floor(r.x / TILE); tx <= Math.floor((r.x + r.w) / TILE); tx++) cells.push([tx, ty, Math.hypot((tx + .5) * TILE - cam.x, (ty + .5) * TILE - cam.y)]);
@@ -1012,7 +1012,7 @@ window.HallwayLive = {
     onClick(f) { liveClicks.add(f); return () => liveClicks.delete(f); },
     walkTo(l, x, y, then) { if (!walker || walker.busy) return false; const s = walkerStart(), path = graphFrom(s.l, s.x, s.y, [l, x, y]); if (!path) return false; followRoute(path, s.here, then || null); return true; },
     get graphLevels() { return stairLevels().list; },
-    get busy() { return !!roomSession || !$("liftPanel").hidden || !!(walker && (walker.walking || walker.busy)) || !!document.querySelector(".hw-sheet:not([hidden]), #picker:not([hidden])"); }
+    get busy() { return !!roomSession || !$("liftPanel").hidden || !!(walker && (walker.walking || walker.busy)) || !!document.querySelector(".hw-sheet:not([hidden]), #picker:not([hidden]), #playPicker:not([hidden]), .hw-clue:not([hidden])"); }
 };
 function overlay() {
     const z = levelZ(level);
@@ -2316,9 +2316,19 @@ canvas.addEventListener("pointermove", e => {
 canvas.addEventListener("contextmenu", e => e.preventDefault());
 canvas.addEventListener("pointercancel", () => { if (drag && drag.kind === "rubout") { const d = drag; drag = null; endRub(d); } if (drag && drag.kind === "halfwall") { const d = drag; drag = null; endHalfBrush(d); } });
 canvas.addEventListener("wheel", e => { e.preventDefault(); if (seeCut !== null) { const all = allHeights(level), i = all.indexOf(seeCut), n = Math.max(0, Math.min(all.length - 1, i + (e.deltaY > 0 ? 1 : -1))); setCut(all[n]); return; } setZoom(zoom + (e.deltaY < 0 ? 1 : -1), e.clientX, e.clientY); }, { passive: false });
+/* How far the camera may go: the map's rect, grown to every floor's tiles with room for a Habbo's head over them. The rect was only ever set once, and floors have grown past it since (8 Nov 2026) */
+let camRectFor = null, camRectV = null;
+function camRect() {
+    if (!map || !map.rect) return null;
+    const sig = map.levels.map(l => (l.cells || []).length + ":" + l.k).join(",");
+    if (camRectFor === map && camRectV && camRectV.sig === sig) return camRectV.r;
+    let x0 = map.rect.x, y0 = map.rect.y, x1 = map.rect.x + map.rect.w, y1 = map.rect.y + map.rect.h;
+    for (const l of map.levels) { if (!l.cells || !l.cells.length) continue; const z = levelZ(l); for (const c of l.cells) { const i = c.indexOf(","), cx = +c.slice(0, i), cy = +c.slice(i + 1), x = (cx - cy) * 32, y = (cx + cy) * 16 - z; x0 = Math.min(x0, x - 48); x1 = Math.max(x1, x + 48); y0 = Math.min(y0, y - 110); y1 = Math.max(y1, y + 56); } }
+    camRectFor = map; camRectV = { sig, r: { x: x0, y: y0, w: x1 - x0, h: y1 - y0 } }; return camRectV.r;
+}
 function clampCam() {
     if (tool !== "walk" || !map.rect) return;
-    const r = map.rect, hw = canvas.width / zoom / 2, hh = canvas.height / zoom / 2;
+    const r = camRect(), hw = canvas.width / zoom / 2, hh = canvas.height / zoom / 2;
     cam.x = r.w <= hw * 2 ? r.x + r.w / 2 : Math.max(r.x + hw, Math.min(r.x + r.w - hw, cam.x));
     cam.y = r.h <= hh * 2 ? r.y + r.h / 2 : Math.max(r.y + hh, Math.min(r.y + r.h - hh, cam.y));
 }
@@ -3037,6 +3047,8 @@ function cutInFront(c, x0, y0) {
                 c.fillRect(m[0] - 2, m[1] - 37, 5, 39); cutPoly(c, [[m[0] - 11, m[1] - 35], [m[0] + 11, m[1] - 35], [m[0] + 8, m[1] - 50], [m[0] - 8, m[1] - 50]]);
                 continue;
             }
+            /* at Christmas the statue is the giant tree, drawn over the sofas round it: what's behind it is cut by the tree's own shape */
+            if (p.k === "statue" && window.hallwayXmas && floorPiece("bigtree")) { const fp = floorPiece("bigtree"), im = pieceImg(fp.f), a = P(p.x + 1, p.y + 1, tileZ(lv, p.x, p.y)); if ((lv !== l || ax + ay < p.x + p.y + 2.6) && im.complete && im.naturalWidth && Math.abs(a[0] - (x0 + 16)) < fp.w && a[1] - fp.oy < y0 + 120 && a[1] + fp.h > y0) cutSprite(c, im, Math.round(a[0]) - fp.ox, Math.round(a[1]) - fp.oy, false); continue; }
             if (p.k === "rarecase" || p.k === "trophy" || XMAS_PROP(p.k)) { const fp = floorPiece(p.k), im = pieceImg(fp.f), a = P(p.x + (p.k === "trophy" ? 0 : .25), p.y + (p.k === "trophy" ? 0 : .25), tileZ(lv, p.x, p.y)), run = Parts.tiles(p), last = run[run.length - 1], flipIt = (p.k === "trophy" && !((p.rot || 0) & 1)) || (p.k === "rarecase" && ((p.rot || 0) & 1)); if ((lv !== l || inFrontOfYou(last[0], last[1], ax, ay)) && nearby(a) && im.complete && im.naturalWidth) { if (flipIt) { c.save(); c.translate(a[0], 0); c.scale(-1, 1); c.drawImage(im, -fp.ox, a[1] - fp.oy); c.restore(); } else c.drawImage(im, a[0] - fp.ox, a[1] - fp.oy); } continue; }
             if (p.k.startsWith("mark_")) continue;
             if (p.k === "rope") { const art = ropeArt(lv, p); for (const [X, Y, , t] of art.list) { const q = art.row[t]; if ((lv !== l || inFrontOfYou(q[0], q[1], ax, ay)) && nearby([X, Y])) c.fillRect(X, Y, 1, 1); } continue; }

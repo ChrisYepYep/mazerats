@@ -140,7 +140,7 @@
         return true;
     }
     function scareStop() { const was = B_.t0; B_.t0 = 0; B_.dust = null; LIVE.forceMood(null); const cv = document.querySelector("#liveCanvasShake"); if (cv) cv.removeAttribute("id"); if (B_.shook) { B_.shook.style.transform = ""; B_.shook = null; } clearTimeout(resumeEerie); if (B_.scoreOut && B_.scoreOn) { const A = ac(); B_.scoreOut.gain.setTargetAtTime(0, A.currentTime, .4); } B_.scoreOn = false; const w = LIVE.walker; if (w && B_.froze) { w.busy = false; } B_.froze = false; return !!was; }
-    LIVE.add({ active: () => !!B_.t0 && !!LIVE.walker && !(window.HallwayScreensaver && HallwayScreensaver.on),
+    LIVE.add({ active: () => !!B_.t0 && performance.now() - B_.t0 < 30000 && !!LIVE.walker && !(window.HallwayScreensaver && HallwayScreensaver.on),
         under(c, ox, oy, now) { const T = (now - B_.t0) / 1000; c.save(); const m = moodAt(T); if (m) LIVE.forceMood(m); drawDust(c, ox, oy, now, false); c.restore();
             /* the Habbo stops dead when the door goes */
             const w = LIVE.walker; if (T > 4.1 && T < 7.5 && !B_.froze && w) { B_.froze = true; w.pts = (w.pts || []).slice(0, 1); w.then = null; w.busy = true; } if (T >= 7.5 && B_.froze && w && w.busy) { w.busy = false; }

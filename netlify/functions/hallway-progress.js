@@ -65,7 +65,9 @@ const view = (doc) => {
 function cleanBody(body) {
     const out = { scraps: ids(body.scraps), key: body.key === true, lost: null, hunts: {} };
     const l = body.lost;
-    if (l && typeof l === "object" && DAY.test(l.day || "") && Number.isInteger(l.streak) && l.streak >= 0 && l.streak < 100000) out.lost = { day: l.day, streak: l.streak, shelf: ids(l.shelf), points: num(l.points), best: num(l.best), missed: num(l.missed) };
+    /* a day after tomorrow is a wrong clock, not a day: it would hold the count still for good (8 Nov 2026) */
+    const latest = new Date(Date.now() + 36 * 3600e3).toISOString().slice(0, 10);
+    if (l && typeof l === "object" && DAY.test(l.day || "") && l.day <= latest && Number.isInteger(l.streak) && l.streak >= 0 && l.streak < 100000) out.lost = { day: l.day, streak: l.streak, shelf: ids(l.shelf), points: num(l.points), best: num(l.best), missed: num(l.missed) };
     if (body.hunts && typeof body.hunts === "object" && !Array.isArray(body.hunts)) {
         for (const [id, h] of Object.entries(body.hunts).slice(0, 50)) {
             if (!ID.test(id) || id.includes(".") || !h || typeof h !== "object") continue;
@@ -84,8 +86,9 @@ function mergeInto(doc, clean) {
         lost: was.lost,
         hunts: { ...was.hunts }
     };
+    /* "Brought back" is a running total: whichever device or day says more is right, so an old tab or a guest's browser signing in can't take it down (8 Nov 2026) */
     if (clean.lost && clean.lost.day >= was.lost.day) {
-        next.lost = { day: clean.lost.day, streak: clean.lost.streak, shelf: [...new Set([...was.lost.shelf, ...clean.lost.shelf])].slice(0, MAX_LIST) };
+        next.lost = { day: clean.lost.day, streak: Math.max(clean.lost.streak, was.lost.streak), shelf: [...new Set([...was.lost.shelf, ...clean.lost.shelf])].slice(0, MAX_LIST) };
     } else if (clean.lost) {
         next.lost = { ...was.lost, shelf: [...new Set([...was.lost.shelf, ...clean.lost.shelf])].slice(0, MAX_LIST) };
     }

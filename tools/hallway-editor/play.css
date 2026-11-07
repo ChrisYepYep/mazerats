@@ -175,3 +175,7 @@ body.hw-screensaver .hw-lost-hud, body.hw-screensaver .hw-lost-flash { visibilit
     .hw-lp-stats { grid-template-columns: repeat(2, 1fr); }
     .hw-lost-hud { top: auto; bottom: 10px; right: 10px; }
 }
+/* the hunt's clue card goes with the rest while the screensaver runs */
+body.hw-screensaver .hw-clue { visibility: hidden; }
+/* a long column of answers on a short screen scrolls rather than running off the bottom */
+.hw-replies.hw-replies-under { max-height: 46vh; overflow-y: auto; }
