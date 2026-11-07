@@ -288,7 +288,8 @@ function cleanLaunchAt(value) {
 const MENU_FOLDS = ["archive", "games"];
 const MENU_ROWS = {
     // "articles" (2 Nov 2026): the Articles list, for admins until a layout places it (ADMINS_FIRST in js/home.js).
-    archive: ["home", "mazes", "events", "timeline", "furni", "whats-new", "guides", "articles", "missing-pieces"],
+    // "hallway" (7 Nov 2026): the same, the admin-only row for The Hallway; js/admin-menu.js offers it, so it must pass here.
+    archive: ["home", "mazes", "events", "timeline", "furni", "whats-new", "guides", "articles", "hallway", "missing-pieces"],
     games: ["guess", "odd", "fallin-furni", "pura", "scout", "leaderboards"],
     loose: ["profile", "alt-codes"]
 };
