@@ -1951,8 +1951,9 @@ function framed(alcove, arch, dx, dy, flip) {
     for (let j = 0; j < arch.h; j++) for (let i = 0; i < arch.w; i++) { const q = (j * arch.w + i) * 4; if (arch.rgba[q + 3] < 128) continue; const X = flip ? alcove.w - 1 - (dx + i) : dx + i, Y = dy + j; if (X < 0 || Y < 0 || X >= o.w || Y >= o.h) continue; arch.rgba.copy(o.rgba, (Y * o.w + X) * 4, q, q + 4); }
     return o;
 }
-let portalMemo = null;
-const portalArt = () => portalMemo || (portalMemo = (() => {
+const portalMemo = new Map();
+/* phase: how many tiles along the wall's 8-tile repeat the entrance stands, so the wallpaper beside the arch still runs true */
+const portalArt = (phase = 0) => portalMemo.get(phase) || (portalMemo.set(phase, (() => {
     const REG_HALL = require("../art/regs.json").hall, reg = n => REG_HALL[n] || [0, 0], eY = piece("entry_upper_right"), eX = piece("entry_upper_left"), m = piece("entry_upper_right_mask"), m2 = piece("entry_upper_left_mask"), rE = reg("entry_upper_right"), rM = reg("entry_upper_right_mask"), rE2 = reg("entry_upper_left"), rM2 = reg("entry_upper_left_mask");
     const mY = framed(eY, m, rE[0] - rM[0], rE[1] - rM[1], false), mX = framed(eX, m2, rE2[0] - rM2[0], rE2[1] - rM2[1], false);
     /* The doorway surround, whole and at its real height, standing on the floor: the arch and the jamb that the client draws in the alcove piece, whose
@@ -1960,7 +1961,9 @@ const portalArt = () => portalMemo || (portalMemo = (() => {
        lo and hi are the surround's outer columns; the stub columns are the jamb that comes from the alcove piece. */
     const surround = (frame, raw, wall, lo, hi, stub) => {
         const o = { w: frame.w, h: frame.h + WALL_ADD, rgba: Buffer.alloc(frame.w * (frame.h + WALL_ADD) * 4) };
-        const copyWall = (r, x) => { if (x < wall.w && r < wall.h) wall.rgba.copy(o.rgba, (r * o.w + x) * 4, (r * wall.w + x) * 4, (r * wall.w + x + 1) * 4); };
+        const shift = wall === SEAMX ? phase * 16 : -phase * 16, base = wall === SEAMX ? 0 : 10, sx = x => x < base || x >= base + 128 ? x : base + (((x - base + shift) % 128) + 128) % 128;
+        /* the piece is drawn on the wall's slant: a column further along is half as far up or down */
+        const copyWall = (r, x) => { const X = sx(x), R = r + (wall === SEAMX ? (X - x) / 2 : -(X - x) / 2); if (X < wall.w && R >= 0 && R < wall.h) wall.rgba.copy(o.rgba, (r * o.w + x) * 4, (R * wall.w + X) * 4, (R * wall.w + X + 1) * 4); };
         for (let x = 0; x < o.w; x++) {
             if (x < lo || x > hi) { for (let r = 0; r < o.h; r++) copyWall(r, x); continue; }
             const src = stub(x) ? raw : frame; let top = -1;
@@ -1975,9 +1978,9 @@ const portalArt = () => portalMemo || (portalMemo = (() => {
         return o;
     };
     return { y: { alcove: tallPiece(eY, false), arch: surround(mY, eY, SEAMY, 28, 120, x => x >= 104) }, x: { alcove: tallPiece(eX, true), arch: surround(mX, eX, SEAMX, 17, 110, x => x <= 36) } };
-})());
+})()), portalMemo.get(phase));
 function drawPortal(w, axis, line, at, part) {
-    const b = w.b, T = w.wallTop, art = portalArt()[axis][part];
+    const b = w.b, T = w.wallTop, art = portalArt(((at % 8) + 8) % 8)[axis][part];
     const p = axis === "x" ? w.S(at, line) : w.S(line, at), x0 = axis === "x" ? p[0] : p[0] - 138;
     /* the wall carries straight on either side, so its pieces' end posts aren't wanted */
     const i0 = axis === "x" ? 0 : 10, i1 = axis === "x" ? 128 : 138;

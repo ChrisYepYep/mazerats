@@ -361,13 +361,32 @@ function doorSpotAt(px, py, l) {
     }
     return null;
 }
-/* The entrance takes 8 tiles of wall. Slide it along to fit round the mouse, if it can. */
+/* What stops the entrance standing on these 8 tiles: null if nothing does, or which tile and why, in words. */
+function entranceBlock(l, axis, line, a) {
+    const was = map.entrance; map.entrance = null;
+    try {
+        for (let i = 0; i < 8; i++) {
+            const t = a + i, on = q => q.axis === axis && q.line === line, floorHere = axis === "x" ? hasFloor(l, t, line) : hasFloor(l, line, t);
+            if (!floorHere) return { tile: t, why: "the floor stops here" };
+            if ((l.doors || []).some(d => on(d) && (axis === "x" ? d.at < t + 1 && d.at + 2 > t : d.at - 2 < t + 1 && d.at > t))) return { tile: t, why: "there's a door in the way" };
+            /* wall lights and pictures only clash with the arch itself, not the plain wall at each end */
+            if (i > 0 && i < 7 && [...(l.lamps || []), ...(l.wallItems || [])].some(q => { const p = axis === "x" ? q.at : q.at - 1; return on(q) && p >= t - .5 && p < t + 1.5; })) return { tile: t, why: "there's a wall light or picture in the way" };
+            if (wallTaken({ axis, at: axis === "x" ? t : t + 1, line }, l)) return { tile: t, why: "there's a lift or stairs in the way" };
+            const state = wallState(l, axis, line, t); if (state !== "full") return { tile: t, why: state === "none" ? "the wall's been taken away here" : "the wall's cut to half height here" };
+            const e = doorEdge(l, axis, line, t);
+            if (!e || e.kind !== "wall") return { tile: t, why: "there's no full wall here" };
+            if (e.z !== 0) return { tile: t, why: "this bit of floor is raised or lowered, and the entrance needs level 0" };
+        }
+        return null;
+    } finally { map.entrance = was; }
+}
+/* The entrance takes 8 tiles of wall. It goes as close to centred on the mouse as it can, on any tile.
+   Returns the tile, or null. lastEntranceBlock says what stopped it going right under the mouse, if anything did. */
+let lastEntranceBlock = null;
 function entranceAt(l, w) {
-    const t = wallTile(w), ok = a => { for (let i = 0; i < 8; i++) { const tt = a + i, e = doorEdge(l, w.axis, w.line, tt); if (!e || e.kind !== "wall" || e.z !== 0 || wallHolds(l, w.axis, w.line, tt)) return false; } return true; };
-    /* it lines up with the wall's own repeat, every 8 tiles, so the wallpaper runs true through it */
-    const near = Math.round((t - 3.5) / 8) * 8;
-    for (let d = 0; d <= 2; d++) for (const a of [near + d * 8, near - d * 8]) if (ok(a)) return a;
-    return null;
+    const mid = wallTile(w) - 3; let first = null;
+    for (let d = 0; d <= 7; d++) for (const a of d ? [mid - d, mid + d] : [mid]) { const b = entranceBlock(l, w.axis, w.line, a); if (!b) { lastEntranceBlock = first; return a; } if (!first) first = { ...b, l, axis: w.axis, line: w.line, a: mid }; }
+    lastEntranceBlock = first; return null;
 }
 const entranceTiles = e => [e.at + 3, e.at + 4, e.at + 5];     // the arch's opening, along the wall
 /* the two tiles of a door must be at one height and the same sort of edge: slide it along to fit, if a tile will do it */
@@ -1168,7 +1187,14 @@ function ropeArt(l, p) {
     if (!art) { art = RopeBarrier.pixels({ x: p.x, y: p.y, len: row.length, rot: p.rot, noCard: p.noCard }, (fx, fy) => P(fx, fy, tileZ(l, Math.floor(fx), Math.floor(fy)))); art.row = row; if (ropeCache.size > 200) ropeCache.clear(); ropeCache.set(key, art); }
     return art;
 }
+/* where the entrance was refused: the 8 tiles it wanted, and the tile that stopped it */
+function drawEntranceBlock() {
+    const b = lastEntranceBlock; if (!b || b.l !== level || (tool !== "entrance" && !(drag && selected && selected.type === "entrance"))) return;
+    const ox = Math.round(canvas.width / 2 - cam.x * zoom), oy = Math.round(canvas.height / 2 - cam.y * zoom), z = levelZ(level), seg = (t0, t1, col, w) => { const pa = b.axis === "x" ? P(t0, b.line, z) : P(b.line, t0, z), pb = b.axis === "x" ? P(t1, b.line, z) : P(b.line, t1, z); ctx.strokeStyle = col; ctx.lineWidth = w; ctx.beginPath(); ctx.moveTo(ox + pa[0] * zoom, oy + pa[1] * zoom); ctx.lineTo(ox + pb[0] * zoom, oy + pb[1] * zoom); ctx.stroke(); };
+    ctx.save(); seg(b.a, b.a + 8, "rgba(255,255,255,.6)", 2); seg(b.tile, b.tile + 1, "#ff3b30", 5); ctx.restore();
+}
 function drawGhost() {
+    drawEntranceBlock();
     drawSconceGhost(); drawWallItemGhost();
     const g = ghostPiece(); if (!g || !REGS) return;
     const z = levelZ(level), ox = Math.round(canvas.width / 2 - cam.x * zoom), oy = Math.round(canvas.height / 2 - cam.y * zoom);
@@ -1236,7 +1262,7 @@ function act(px, py) {
     }
     if (tool === "entrance") {
         if (!w || w.drop) return;
-        const at = entranceAt(level, w); if (at === null) { flash("The entrance needs 8 tiles of clear wall, with no door or light on it."); return; }
+        const at = entranceAt(level, w); if (at === null) { flash("The entrance won't fit here: " + lastEntranceBlock.why + ". It's marked in red."); paint(); return; }
         place(() => { map.entrance = { level: level.id, axis: w.axis, line: w.line, at }; });
         return;
     }
@@ -1799,8 +1825,25 @@ function moveSelected(d, px, py) {
             if (d.moved) { requestArt(); paint(); }
             return;
         }
+        if (s.type === "entrance") {
+            /* over any wall you can see, top floor first; a floor or wall in the way stops the search, as with doors */
+            let fit = null, said = null;
+            for (const lv of [...map.levels].sort((a, c) => c.k - a.k)) {
+                const w2 = wallAt(px, py, lv);
+                if (w2 && !w2.drop) { const at = entranceAt(lv, w2); if (at !== null) fit = { lv, w: w2, at }; else said = lastEntranceBlock; break; }
+                const f = tileIn(lv, px, py); if (hasFloor(lv, Math.floor(f[0]), Math.floor(f[1]))) break;
+            }
+            if (fit) {
+                if (lastEntranceBlock) flash("It can't go any closer: " + lastEntranceBlock.why + ". It's marked in red.");
+                else if (/^(It can't go any closer|The entrance won't fit)/.test($("toast").textContent)) $("toast").classList.remove("show"); /* it's under the mouse now, so the complaint is over */
+                if (fit.lv !== l) { o.level = fit.lv.id; s.l = fit.lv; level = fit.lv; buildLevels(); flash("Moved to " + fit.lv.name); }
+                o.axis = fit.w.axis; o.line = fit.w.line; o.at = fit.at;
+                const now = JSON.stringify(o); if (now !== before && !d.moved) { d.moved = true; undoStack.push(d.before); if (undoStack.length > 80) undoStack.shift(); redoStack.length = 0; syncButtons(); }
+                if (d.moved) requestArt();
+            } else if (said) { lastEntranceBlock = said; flash("The entrance won't fit here: " + said.why + ". It's marked in red."); }
+            paint(); return;
+        }
         const w = s.type === "lamp" || s.type === "wallitem" ? hangWallAt(px, py, l) : wallAt(px, py, l); if (!w || (w.drop && !(s.type === "lamp" && lampFits(l, w)))) return;
-        if (s.type === "entrance") { const was = map.entrance; map.entrance = null; const at = entranceAt(l, w); map.entrance = was; if (at !== null) { o.axis = w.axis; o.line = w.line; o.at = at; } }
         if (s.type === "lamp" && isHalf(l, w.axis, w.line, wallTile(w))) return;
         if (s.type === "lamp") { o.axis = w.axis; o.line = w.line; o.at = w.at + .5; if (ctrlNow) { const zw = wallZ(l, o), b = o.axis === "x" ? P(o.at, o.line, zw) : P(o.line, o.at, zw); const h = snapWall(b[1] - py, "lamp"); if (h === 106) delete o.h; else o.h = h; } if (w.drop) o.h = Math.min(o.h === undefined ? 106 : o.h, retaining(l, w.axis, w.line, wallTile(w)).H - 8); }
         else if (s.type === "lift") { if (w.axis === "x") { const x = Math.floor(w.at / 2) * 2; if (liftFits(l, x, w.line, o)) { o.x = x; o.y = w.line; } } }
