@@ -49,18 +49,50 @@
         root.style.setProperty("--hallway-bottom", (innerWidth <= 760 || innerHeight <= 500 ? 0 : h) + "px");
     }
 
-    function note(title, words, button) {
-        const n = document.createElement("div"); n.className = "hallway-note";
-        const t = document.createElement("strong"); t.textContent = title; n.appendChild(t);
-        if (words) { const p = document.createElement("p"); p.textContent = words; n.appendChild(p); }
-        if (button) { const b = document.createElement("button"); b.type = "button"; b.className = "hallway-close"; b.textContent = "Back to the archive"; b.addEventListener("click", () => close()); n.appendChild(b); }
+    /* The site's own window (the same classes as every other, so it wears every palette, dark mode and skin) */
+    function note(title, words) {
+        const n = document.createElement("div"); n.className = "modal hallway-note"; n.setAttribute("role", "status");
+        const bar = document.createElement("div"); bar.className = "chrome-titlebar";
+        const h = document.createElement("h2"); h.textContent = title;
+        const x = document.createElement("button"); x.type = "button"; x.className = "chrome-close"; x.setAttribute("aria-label", "Close"); x.addEventListener("click", () => close());
+        const xi = document.createElement("img"); xi.src = "/assets/img/modal_topclose_x.png"; xi.alt = ""; xi.setAttribute("aria-hidden", "true"); x.appendChild(xi);
+        bar.append(h, x);
+        const frame = document.createElement("div"); frame.className = "chrome-frame";
+        const body = document.createElement("div"); body.className = "hallway-note-body";
+        const p = document.createElement("p"); p.textContent = words; body.appendChild(p);
+        const b = document.createElement("button"); b.type = "button"; b.className = "guess-btn guess-btn--lead"; b.textContent = "Back to the archive"; b.addEventListener("click", () => close()); body.appendChild(b);
+        frame.appendChild(body); n.append(bar, frame);
         return n;
     }
+
+    /* Behind a closed screen: the hallway as it's published now, whichever copy the walk would use, drawn from the same
+       pictures at 3x on whole pixels and centred on the statue. So it can't go out of date, and it follows the statue if that moves. */
+    const FN = "/.netlify/functions/hallway", PIC_W = 900, PIC_H = 520, TILE = 512, STOREY = 163;
+    async function closedPicture(into) {
+        const read = url => fetch(url, { cache: "no-cache" }).then(r => r.ok ? r.json() : null).catch(() => null);
+        const [here, there] = await Promise.all([read("/assets/hallway/manifest.json"), read(FN + "?what=live")]);
+        const online = !!(there && there.online), man = online ? there : here; if (!man || !man.tiles) return;
+        const map = await read(online ? FN + "?what=map&v=" + encodeURIComponent(man.version || "") : "/assets/hallway/map.json"); if (!map || !Array.isArray(map.levels)) return;
+        let at = null;
+        for (const l of map.levels) for (const p of l.props || []) if (p.k === "statue") at = { x: p.x + 1, y: p.y + 1, z: l.k * STOREY + 45 };      // on 2 x 2 tiles, about 110px tall: its middle, not its feet
+        if (!at && map.entrance) { const e = map.entrance, l = map.levels.find(q => q.id === e.level); at = { x: e.axis === "x" ? e.at + 4 : e.line, y: e.axis === "x" ? e.line : e.at + 4, z: ((l && l.k) || 0) * STOREY + 45 }; }
+        if (!at) return;
+        const x0 = Math.round((at.x - at.y) * 16 - PIC_W / 2), y0 = Math.round((at.x + at.y) * 8 - at.z - PIC_H / 2);
+        const c = document.createElement("canvas"); c.className = "hallway-closed-picture"; c.width = PIC_W; c.height = PIC_H; c.setAttribute("aria-hidden", "true");
+        const g = c.getContext("2d"), jobs = [];
+        for (let ty = Math.floor(y0 / TILE); ty <= Math.floor((y0 + PIC_H) / TILE); ty++) for (let tx = Math.floor(x0 / TILE); tx <= Math.floor((x0 + PIC_W) / TILE); tx++) {
+            const name = man.tiles["day|" + tx + "," + ty]; if (!name) continue;
+            jobs.push(new Promise(done => { const i = new Image(); i.onload = () => { g.drawImage(i, tx * TILE - x0, ty * TILE - y0); done(); }; i.onerror = done; i.src = online ? FN + "?tile=" + name : "/assets/hallway/tiles/" + name; }));
+        }
+        await Promise.all(jobs);
+        into.prepend(c); void c.offsetWidth; c.classList.add("is-in");
+    }
+    function closedScreen(title, words) { stage.classList.add("is-closed"); stage.appendChild(note(title, words)); closedPicture(stage).catch(() => { /* the plain dark is fine */ }); }
 
     function build(instant) {
         clearTimeout(closing);
         if (!stage) { stage = document.createElement("div"); stage.id = "hallway-stage"; document.body.appendChild(stage); }
-        stage.textContent = ""; stage.classList.remove("is-leaving", "is-in");
+        stage.textContent = ""; stage.classList.remove("is-leaving", "is-in", "is-closed");
         root.classList.toggle("hallway-instant", !!instant);
         place();
         root.classList.add("hallway-open");
@@ -90,7 +122,7 @@
         stage.appendChild(frame);
         const turn = document.createElement("div"); turn.className = "hallway-turn"; turn.textContent = "Turn your phone sideways for more room"; stage.appendChild(turn);
         /* Never stuck: too long without "ready", or the page saying it couldn't start, gets a note with a way back */
-        const trouble = () => { clearInterval(creep); clearTimeout(frame._late); if (!frame || frame.classList.contains("is-ready")) return; load.remove(); frame.remove(); stage.appendChild(note("The hallway wouldn't open", "Something didn't load. Try again in a little while.", true)); };
+        const trouble = () => { clearInterval(creep); clearTimeout(frame._late); if (!frame || frame.classList.contains("is-ready")) return; load.remove(); frame.remove(); closedScreen("The hallway wouldn't open", "Something didn't load. Try again in a little while."); };
         frame._late = setTimeout(trouble, 30000); frame._trouble = trouble;
         frame._ready = () => { clearInterval(creep); clearTimeout(frame._late); fill.style.width = "100%"; frame.classList.add("is-ready"); setTimeout(() => load.remove(), 450); try { frame.focus(); frame.contentWindow.focus(); } catch (e) { /* as above */ } };
     }
@@ -110,7 +142,7 @@
         else if (history.state && history.state.hallway) pushed = true;      // come back to by Forward: the entry behind it is still the archive
         build(!!arrived);
         if (state === "live" || admin) startWalk(state);
-        else { const [t, w] = NOTES[state]; stage.appendChild(note(t, w, true)); }
+        else { const [t, w] = NOTES[state]; closedScreen(t, w); }
         if (window.Track && Track.event) Track.event("hallway-open", state);
     }
 

@@ -59,41 +59,47 @@ html.hallway-instant #hallway-stage { transition: none; }
 }
 #hallway-stage iframe.is-ready { opacity: 1; }
 
-/* Loading, or the screen for a state that isn't open yet: the site's own lettering on the dark */
-.hallway-note {
+/* A state that isn't open yet: the hallway itself behind the site's own window, faded, at 3x on whole pixels
+   and centred on the statue (closedPicture in js/hallway.js draws it from the published pictures, 900 x 520). */
+#hallway-stage.is-closed { background: var(--bg-black); }
+.hallway-closed-picture {
     position: absolute;
     left: 50%;
     top: 50%;
+    width: 2700px;
+    height: 1560px;
     transform: translate(-50%, -50%);
-    width: min(360px, calc(100% - 32px));
-    box-sizing: border-box;
+    image-rendering: pixelated;
+    opacity: 0;
+    transition: opacity 0.5s ease;
+    pointer-events: none;
+}
+.hallway-closed-picture.is-in { opacity: .38; }
+/* Low on the screen, so the statue stands clear above it */
+.modal.hallway-note {
+    position: absolute;
+    left: 50%;
+    top: auto;
+    bottom: clamp(14px, 7%, 56px);
+    transform: translateX(-50%);
+    width: min(400px, calc(100% - 28px));
+    max-width: none;
+    margin: 0;
+    animation: none;
+}
+.hallway-note-body {
     display: flex;
     flex-direction: column;
     align-items: center;
     gap: 14px;
-    padding: 22px 24px;
-    background: rgba(21, 17, 12, .92);
-    border: 1px solid #6b5a42;
+    padding: 16px 18px 18px;
     text-align: center;
-    color: #e8dcc4;
-    font-family: "Volter", "Goldfish", sans-serif;
-    font-size: 0.75rem;
-    line-height: 1.5;
+    color: var(--parchment);
+    font-family: 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace;
+    font-size: 0.5625rem;
+    line-height: 1.6;
 }
-.hallway-note strong { font-size: 1rem; font-weight: 400; color: #f4c77b; }
-.hallway-bar { width: 200px; height: 8px; border: 1px solid #6b5a42; background: #15110c; }
-.hallway-bar i { display: block; height: 100%; width: 0; background: #d9a85a; transition: width 0.2s linear; }
-.hallway-close {
-    margin-top: 6px;
-    padding: 7px 14px;
-    color: #15110c;
-    background: #d9a85a;
-    border: 0;
-    font: inherit;
-    cursor: pointer;
-}
-.hallway-close:hover { background: #f4c77b; }
-.hallway-close:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+.hallway-note-body p { margin: 0; font: inherit; }
 
 /* The loading bar, as Fallin' Furni's. It fills rather than slides: it's counting things in */
 .hallway-loader { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; background: rgba(10, 7, 4, .45); }

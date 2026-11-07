@@ -158,6 +158,16 @@
             for (const [value, name] of [["cycle", "Day and night cycle"], ["day", "Day"], ["dusk", "Evening"], ["night", "Night"], ["dawn", "Dawn"]]) row(menu, name, sel.value === value, () => { sel.value = value; sel.dispatchEvent(new Event("change")); done(); });
         });
         add("Avatar", "Choose your Habbo", () => picker());
+        /* The editor's own Camera follows setting, whose button is hidden on this page. The editor doesn't take C here, so this does. */
+        const follow = () => document.getElementById("follow"), following = () => { const e = follow(); return !!e && e.classList.contains("on"); };
+        const camera = add("Camera follows", "Camera follows you, or stays put (C)", () => { click("follow"); paintCamera(); });
+        const paintCamera = () => { const on = following(); camera.textContent = on ? "Camera follows" : "Camera free"; camera.setAttribute("aria-pressed", String(on)); };
+        document.addEventListener("keydown", e => {
+            if (e.repeat || e.ctrlKey || e.metaKey || e.altKey || e.key.toLowerCase() !== "c") return;
+            const at = e.target; if (at && at.closest && at.closest("input, textarea, select, [contenteditable]")) return;
+            click("follow"); paintCamera();
+        });
+        setInterval(paintCamera, 500); paintCamera();
         document.addEventListener("click", e => { if (!menus.some(m => m.contains(e.target))) shutMenus(); });
         let shownOn = null; const paint = () => { const on = wanted(); if (on === shownOn) return; shownOn = on; mute.textContent = on ? "Mute" : "Unmute"; mute.classList.toggle("is-on", !on); };
         setInterval(paint, 500); paint();
