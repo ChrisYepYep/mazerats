@@ -31,6 +31,8 @@ html.hallway-instant body > .site-footer { transition: none !important; }
 
 /* The seasons' layers sit higher than the hallway: they stay out of the walk */
 html.hallway-open .hw-bats, html.hallway-open .xm-snowfall { display: none; }
+/* nor does the snow bank up along the bottom: in the Hallway it only falls past the windows (8 Nov 2026) */
+html.hallway-open .xm-drift, html.hallway-open .site-footer .xm-piece { display: none; }
 
 #hallway-stage {
     position: fixed;
