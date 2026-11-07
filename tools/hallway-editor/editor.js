@@ -931,13 +931,42 @@ function paint() {
     drawLiveSign();
     drawLifts(ox, oy);
     drawDoorways(ox, oy);
+    drawLive("under", ox, oy);
     drawRubbed();
     if (tool !== "walk" && map && level) { overlay(); drawHeightPreview(); drawStepGhost(); drawEdgeGhost(); }
     drawSelector();
     drawGhost();
     drawRect();
     if (walker) drawWalker();
+    drawLive("over", ox, oy);
 }
+/* ---------- things that move over the tiles (the rat, dust, the Basement) ----------
+   paint() only runs when something asks, so anything animated registers here: { active(), under(ctx, ox, oy, now), over(ctx, ox, oy, now) }, either draw optional.
+   under: after the tiles and doors, before the map's edge and the avatar. over: on top of everything. While any is active the map repaints each frame; a hidden tab doesn't run them. */
+const liveLayers = new Set(); let liveFrame = 0;
+const liveOn = () => { for (const l of liveLayers) if (!l.active || l.active()) return true; return false; };
+function liveTick() { liveFrame = 0; if (document.hidden || !map || !liveOn()) return; paint(); liveFrame = requestAnimationFrame(liveTick); }
+function wakeLive() { if (!liveFrame && !document.hidden && liveOn()) liveFrame = requestAnimationFrame(liveTick); }
+function drawLive(which, ox, oy) {
+    if (!liveLayers.size) return; const now = performance.now();
+    for (const l of liveLayers) { if (!l[which] || (l.active && !l.active())) continue; ctx.save(); try { l[which](ctx, ox, oy, now); } catch (err) { console.error(err); liveLayers.delete(l); } ctx.restore(); }
+}
+document.addEventListener("visibilitychange", wakeLive);
+/* the floor you're really on: stairs belong to neither end until you step off them, so they keep the last floor; a lift or door counts as the floor it's on */
+let floorIn = null; const floorWatchers = new Set();
+function noteFloor() {
+    const st = walker && walker.l.stair, f = !walker ? null : !st ? walker.l : (st.lift || st.door || st.entrance) ? st.low || floorIn : floorIn;
+    if (f === floorIn) return; const was = floorIn; floorIn = f; for (const w of floorWatchers) { try { w(f, was); } catch (err) { console.error(err); } }
+}
+/* how long since anyone did anything */
+let lastActive = performance.now(); const markActive = () => { lastActive = performance.now(); };
+for (const ev of ["pointerdown", "keydown", "wheel", "touchstart"]) document.addEventListener(ev, markActive, { capture: true, passive: true });
+window.HallwayLive = {
+    add(l) { liveLayers.add(l); wakeLive(); return () => liveLayers.delete(l); }, wake: wakeLive,
+    onFloor(f) { floorWatchers.add(f); return () => floorWatchers.delete(f); }, get floor() { return floorIn; },
+    get idleFor() { return performance.now() - lastActive; }, get walker() { return walker; }, get map() { return map; },
+    mapPoint: (x, y, z) => P(x, y, z), get zoom() { return zoom; }
+};
 function overlay() {
     const z = levelZ(level);
     if (tool === "halfwall" || tool === "nowall") for (const [list, col] of [[level.halfTiles, "#4fd1ff"], [level.noWalls, "#ff6a5f"]]) for (const k of (list || [])) {
@@ -2401,6 +2430,7 @@ setInterval(() => {
         if (st.autoIn && doorEase(st.p) >= .86) { st.autoIn = false; walkIntoDoor(d); }
     }
     if (moving) paint();
+    noteFloor(); if (walker && walker.walking) markActive();
     if (tool !== "walk" || !walker) return;
     if (walker.leavingDoor && !walker.walking) walker.leavingDoor = false;
     if (walker.l.stair && walker.l.stair.door && !walker.walking && !walker.busy) {
@@ -2462,7 +2492,9 @@ function doorAtPx(px, py) {
     return null;
 }
 /* A door leads somewhere if it has a maze the archive has. The rest stay shut unless you've said they open, and then they only open: there's nothing to walk into */
-const doorLinked = d => !d.spare && !!d.name && (!roomFloors || !roomFloors.size || roomFloors.has(FurniParts.mazeName(d.name)));
+const doorTargets = {}; window.hallwayDoorTargets = doorTargets;
+const doorTarget = d => { const go = d.to && doorTargets[d.to.kind]; return go ? go(d.to, d) : null; };
+const doorLinked = d => d.to ? !!doorTarget(d) : !d.spare && !!d.name && (!roomFloors || !roomFloors.size || roomFloors.has(FurniParts.mazeName(d.name)));
 function walkIntoDoor(d) {
     if (!walker || walker.walking || walker.busy || !doorIsOpen(d)) return false;
     const l = map.levels.find(q => (q.doors || []).includes(d)), s = walkerStart(); if (s.l !== l || !doorFront(d).some(t => t[0] === s.x && t[1] === s.y)) return false;
@@ -2537,6 +2569,7 @@ let roomFloors = null;
 function doorFloorKind(d) {
     if (window.RoomView && !roomFloors) { roomFloors = new Map(); RoomView.load().then(() => RoomView.mazes()).then(list => { for (const m of list) { const r = RoomView.roomFor(map, m); roomFloors.set(FurniParts.mazeName(m.name), r.room.floor); } doorFrames.clear(); paint(); }); }
     if (!doorLinked(d)) return null;
+    if (d.to) { const t = doorTarget(d); return (t && t.room.floor) || "slate"; }
     return (roomFloors && roomFloors.get(FurniParts.mazeName(d.name))) || "slate";
 }
 function drawDoorways(ox, oy) {
@@ -2552,11 +2585,11 @@ function drawDoorways(ox, oy) {
 async function enterDoor(low, d) {
     const me = walker; if (!me || me.busy || !window.RoomView) return; me.busy = true; me.pts = []; me.walking = false;
     let list = []; try { await RoomView.load(); list = await RoomView.mazes(); } catch (e) { list = []; }
-    const maze = list.find(m => FurniParts.mazeName(m.name) === FurniParts.mazeName(d.name));
+    const maze = d.to ? null : list.find(m => FurniParts.mazeName(m.name) === FurniParts.mazeName(d.name)), target = d.to ? doorTarget(d) : null;
     if (walker !== me) return;
     const backOut = () => { const f = doorFront(d), free = q => !(low.props || []).some(p => Parts.tiles(p).some(t => t[0] === q[0] && t[1] === q[1])), t = f.find(q => free(q) && (d.axis === "x" ? q[0] === me.x : q[1] === me.y)) || f.find(free) || f[0]; me.l = low; me.x = t[0]; me.y = t[1]; me.z = tileZ(low, t[0], t[1]); me.st = null; me.dir = d.axis === "x" ? 4 : 2; me.busy = false; };
-    if (!maze) { flash("This door's maze isn't in the archive."); backOut(); setDoor(d, false); paint(); return; }
-    const { room, facts } = RoomView.roomFor(map, maze), stage = $("stage");
+    if (!maze && !target) { flash(d.to ? "This door doesn't lead anywhere just now." : "This door's maze isn't in the archive."); backOut(); setDoor(d, false); paint(); return; }
+    const { room, facts } = target || RoomView.roomFor(map, maze), stage = $("stage");
     const dissolve = from => { const shot = document.createElement("canvas"); shot.width = from.width; shot.height = from.height; shot.getContext("2d").drawImage(from, 0, 0); shot.style.cssText = "position:absolute;left:0;top:0;z-index:24;pointer-events:none;transition:opacity .7s ease;opacity:1;width:" + from.clientWidth + "px;height:" + from.clientHeight + "px"; stage.appendChild(shot); return () => { shot.getBoundingClientRect(); shot.style.opacity = 0; setTimeout(() => shot.remove(), 750); }; };
     const go = dissolve(canvas);
     roomSession = RoomView.enter(stage, {

@@ -129,6 +129,8 @@ const PLACES = [
     { label: "player_state", collection: "player_state", filter: id => ({ playerId: id }) },
     // advent.js: the advent calendar's doors they opened, and when (26 Oct 2026).
     { label: "advent_doors", collection: "advent_doors", filter: id => ({ playerId: id }) },
+    // hallway-progress.js: scraps, the key, Lost Property and hunts in the Hallway (7 Nov 2026).
+    { label: "hallway_progress", collection: "hallway_progress", filter: id => ({ playerId: id }) },
     // guess-scores.js: a scored day each, with name and avatar — the board.
     { label: "guess_scores", collection: "guess_scores", filter: id => ({ playerId: id }) },
     // daily-scores.js: Odd One Out (and the retired Ratrospect and One Wall
