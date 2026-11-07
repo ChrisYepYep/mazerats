@@ -1206,7 +1206,7 @@ function build(cfg) {
     const bw = view[2] - view[0], bh = view[3] - view[1];
     const out = new Buf(bw, bh, "000000"), layer = new Buf(bw, bh, "07060a");
     /* a tint or see-through pixel of a new piece: remembered with what's under it now, and worked out after the colouring, on whatever colour the wall ends up. If something's gone over it by then, it's dropped */
-    const pieceTint = (X, Y, c, A) => { if (X < 0 || Y < 0 || X >= bw || Y >= bh) return; const p = (Y * bw + X) * 4; w.tints.push([X, Y, c, A, (layer.d[p] << 16) | (layer.d[p + 1] << 8) | layer.d[p + 2]]); };
+    const pieceTint = (X, Y, c, A) => { if (X < 0 || Y < 0 || X >= bw || Y >= bh || furniX[Y * bw + X] !== NO_FURNI) return; const p = (Y * bw + X) * 4; w.tints.push([X, Y, c, A, (layer.d[p] << 16) | (layer.d[p + 1] << 8) | layer.d[p + 2]]); };
     const furniX = new Int16Array(bw * bh), furniY = new Int16Array(bw * bh), furniC = new Int32Array(bw * bh), furniRun = new Uint8Array(bw * bh), NO_FURNI = -32768;
     const wallOwner = new Uint16Array(bw * bh), stairPx = new Uint8Array(bw * bh), railUnder = new Map();
     const mask = new Uint8Array(bw * bh), zb = new Int16Array(bw * bh), fc = new Int32Array(bw * bh), done = new Uint8Array(bw * bh);
@@ -1254,7 +1254,7 @@ function build(cfg) {
         const backWall = (X, Y, z) => { const Q = tileOf.get(X + "," + Y); return !!Q && (z === undefined || Q.z === z) && Q.y0 === Y && !has.has(X + "," + (Y - 1)) && !holes.has(X + "," + (Y - 1)) && !Q.noBack && (Q.notch || !airBelow(X, Y - 1) || doorEdge("x", X, Y) || shown("x", Y, X)); };
         const sideWall = (X, Y, z) => { const Q = tileOf.get(X + "," + Y); return !!Q && (z === undefined || Q.z === z) && Q.x0 === X && !has.has((X - 1) + "," + Y) && !holes.has((X - 1) + "," + Y) && (Q.notch || !airBelow(X - 1, Y) || doorEdge("y", X, Y) || shown("y", X, Y)); };
         layer.d.fill(0); for (let i = 0; i < layer.d.length; i += 4) { layer.d[i] = VOID[0]; layer.d[i + 1] = VOID[1]; layer.d[i + 2] = VOID[2]; layer.d[i + 3] = 255; }
-        mask.fill(0); w.keep.fill(0); w.glowing.fill(0); w.footShadows = []; w.tints = []; w.sunWins = [];
+        mask.fill(0); w.keep.fill(0); w.glowing.fill(0); w.footShadows = []; w.tints = []; w.sunWins = []; w.afterAll = [];
         w.lamps = [];
         wallOwner.fill(0);
         const signs = [], pushSign = signs.push.bind(signs); let signPatch = null;
@@ -1613,7 +1613,7 @@ function build(cfg) {
                         for (let u = 0; u < wide; u++) { for (let v = 0; v < H2; v++) { const sxm = a0 - wide + u, sy = Y0 - Math.floor(u / 2) + v, X = flip ? 2 * a0 - sxm - 1 : sxm, sxv = Math.max(0, Math.min(view.w - 1, Math.round(u + offx))), syv = Math.max(0, Math.min(view.h - 1, Math.round(sy - Y0 + offy))), q = (syv * view.w + sxv) * 4; let c = [view.rgba[q], view.rgba[q + 1], view.rgba[q + 2]]; c = c.map((n, k) => n * .88 + [200, 225, 240][k] * .12); const slant = u - (H2 - v) * .34; for (const [o, sw] of [[.2, 7], [.34, 3], [.72, 5]]) { const x0 = wide * o; if (slant >= x0 && slant < x0 + sw) { c = c.map(n => n * .8 + 255 * .2); break; } } c = c.map(n => Math.round(Math.min(255, n))); layer.set(X, sy, c); if (X >= 0 && sy >= 0 && X < bw && sy < bh) { const n = ((c[0] << 16) | (c[1] << 8) | c[2]) + 1; w.keep[sy * bw + X] = n; w.glowing[sy * bw + X] = n; } } }
                         const fr = HallWindow.art(wide, b0, top0); for (let j = 0; j < fr.h; j++) for (let i = 0; i < fr.w; i++) { const q = (j * fr.w + i) * 4; if (fr.rgba[q + 3] < 128) continue; const sx = a0 - fr.ox + i, X = flip ? 2 * a0 - sx - 1 : sx, Y = a1 - fr.oy + j, c = [fr.rgba[q], fr.rgba[q + 1], fr.rgba[q + 2]]; layer.set(X, Y, c); if (X >= 0 && Y >= 0 && X < bw && Y < bh) { w.keep[Y * bw + X] = ((c[0] << 16) | (c[1] << 8) | c[2]) + 1; if (w.glowing[Y * bw + X]) w.glowing[Y * bw + X] = 0; } }
                         if (Mname === "day") w.sunWins.push({ a0, a1, W: wide, b: b0, top: top0, flip, z: zw, line: it.line, start }); };
-                    const behind0 = it.axis === "x" ? zAt(Math.floor(it.at), P.y0 - 1) : zAt(P.x0 - 1, Math.floor(it.at - 1)), onDrop0 = behind0 !== null && behind0 > P.z; if (onDrop0) continue; if (it.axis === "x" ? inReach(it.at, P.y0, 340) : inReach(P.x0, it.at, 340)) (P.raised ? w.sprites : (lv.later = lv.later || [])).push({ afterFloors: true, furni: true, depth: (it.axis === "x" ? it.at + P.y0 : P.x0 + it.at) + .35, tx: it.axis === "x" ? Math.floor(it.at) : P.x0, ty: it.axis === "x" ? P.y0 : Math.floor(it.at), ftx: it.axis === "x" ? Math.floor(it.at) : P.x0, fty: it.axis === "x" ? P.y0 : Math.floor(it.at), draw: one }); continue; }
+                    const behind0 = it.axis === "x" ? zAt(Math.floor(it.at), P.y0 - 1) : zAt(P.x0 - 1, Math.floor(it.at - 1)), onDrop0 = behind0 !== null && behind0 > P.z; if (onDrop0) continue; if (it.axis === "x" ? inReach(it.at, P.y0, 340) : inReach(P.x0, it.at, 340)) w.afterAll.push({ zHere: P.z, depth: (it.axis === "x" ? it.at + P.y0 : P.x0 + it.at) + .35, tx: it.axis === "x" ? Math.floor(it.at) : P.x0, ty: it.axis === "x" ? P.y0 : Math.floor(it.at), draw: one }); continue; }
                 if (!(it.axis === "x" ? inReach(it.at, P.y0, 340) : inReach(P.x0, it.at, 340))) continue;
                 const behind = it.axis === "x" ? zAt(Math.floor(it.at), P.y0 - 1) : zAt(P.x0 - 1, Math.floor(it.at - 1)), onDrop = behind !== null && behind > P.z;
                 if (onDrop && cut !== null && behind > cut) continue;
@@ -1634,7 +1634,7 @@ function build(cfg) {
                     }
                     if (litNow) { const g = def.lit.at, flip = it.axis === "x", gu = flip ? -(g[0] - g[1]) : g[0] - g[1], gv = (g[0] + g[1]) / 2 - g[2]; w.lamps.push({ x: Math.round(base0[0] + gu), y: Math.round(base0[1] + gv), tx: it.axis === "x" ? it.at : P.x0, ty: it.axis === "x" ? P.y0 : it.at, i: w.lamps.length, colour: def.lit.colour, axisY: it.axis !== "x", lz: zHere, sign: true }); }
                 };
-                if (onDrop || def.tell) (P.raised ? w.sprites : (lv.later = lv.later || [])).push({ afterFloors: !!def.tell, furni: !!def.tell, depth: (it.axis === "x" ? it.at + P.y0 : P.x0 + it.at) + .35, tx: it.axis === "x" ? Math.floor(it.at) : P.x0, ty: it.axis === "x" ? P.y0 : Math.floor(it.at), draw: one }); else one();
+                if (def.tell) w.afterAll.push({ zHere: P.z, depth: (it.axis === "x" ? it.at + P.y0 : P.x0 + it.at) + .35, tx: it.axis === "x" ? Math.floor(it.at) : P.x0, ty: it.axis === "x" ? P.y0 : Math.floor(it.at), draw: one }); else if (onDrop) (P.raised ? w.sprites : (lv.later = lv.later || [])).push({ depth: (it.axis === "x" ? it.at + P.y0 : P.x0 + it.at) + .35, tx: it.axis === "x" ? Math.floor(it.at) : P.x0, ty: it.axis === "x" ? P.y0 : Math.floor(it.at), draw: one }); else one();
             }
             for (const [axis, at2, lc, style, lampHigh] of (P.l || [])) {
                 if (!(axis === "x" ? inReach(at2, P.y0, 340) : inReach(P.x0, at2, 340))) continue;
@@ -1784,6 +1784,12 @@ function build(cfg) {
             later.length = 0;
         }
         w.z = lowest; later.forEach(drawSprite);
+        w.afterAll.sort((a, c) => a.depth - c.depth).forEach(s => {
+            const own = Object.prototype.hasOwnProperty.call(layer, "set"), was = layer.set, mine = new Set();
+            layer.set = function (x, y, c) { if (x >= 0 && y >= 0 && x < bw && y < bh) { const i = y * bw + x; if ((furniX[i] !== NO_FURNI && !mine.has(i)) || (mask[i] === 1 && zb[i] > s.zHere)) return; mine.add(i); was.call(layer, x, y, c); furniX[i] = s.tx; furniY[i] = s.ty; furniRun[i] = 0; const p = i * 4; furniC[i] = (layer.d[p] << 16) | (layer.d[p + 1] << 8) | layer.d[p + 2]; } };
+            w.z = s.zHere; s.draw();
+            if (own) layer.set = was; else delete layer.set;
+        }); w.z = lowest;
         /* A wall with a floor above it, whose edge lies right along the wall's top, goes straight up under that floor with no cap of its own, however low its own floor is:
            from the bottom of the upper floor's edge down to where the plain wallpaper starts, the wallpaper's own repeat, taken from further down the same column. */
         /* what has been painted over since is not furniture or a lamp any more, or it would keep old wall from being tidied below */
