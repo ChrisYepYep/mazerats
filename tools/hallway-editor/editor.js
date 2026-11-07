@@ -2653,6 +2653,7 @@ function useLift(q) {
     if (path) followRoute(path, s.here, null); else noWay("There's no way to that lift.");
 }
 function showLiftPanel(here) {
+    if (window.HallwayLiftPanel) { HallwayLiftPanel.show(here, { ride: q => rideTo(here, q), doors: open => setDoors(here, open, open ? 5000 : 0) }); $("liftPanel").hidden = false; return; }
     const box = $("liftList"); box.textContent = "";
     const others = map.lifts.filter(q => q !== here && byId(q.level)).sort((a, c) => byId(a.level).k - byId(c.level).k || a.x - c.x);
     if (!others.length) { const p = document.createElement("p"); p.textContent = "This is the only lift."; box.appendChild(p); }
@@ -2663,11 +2664,12 @@ function showLiftPanel(here) {
     }
     $("liftPanel").hidden = false;
 }
-const hideLiftPanel = () => { $("liftPanel").hidden = true; };
+const hideLiftPanel = () => { $("liftPanel").hidden = true; if (window.HallwayLiftPanel) HallwayLiftPanel.hide(); };
 const wait = ms => new Promise(r => setTimeout(r, ms));
 async function rideTo(from, to) {
     const me = walker; if (!me || me.busy) return;
-    hideLiftPanel(); me.busy = true; me.pts = []; me.walking = false; me.then = null;
+    if (!window.HallwayLiftPanel) hideLiftPanel();      // the new panel stays up through the ride, its display counting the floors
+    me.busy = true; me.pts = []; me.walking = false; me.then = null;
     const alive = () => walker === me, startLevel = level;
     setDoors(from, false); await wait(1250);
     if (!alive()) return;
@@ -2689,10 +2691,10 @@ async function rideTo(from, to) {
         if (ready) break; paint(); await wait(80);
     }
     /* stopped part way: no sounds, no picture left behind, back on the floor you were editing */
-    if (!alive()) { shot.remove(); level = startLevel; buildLevels(); paint(); return; }
+    if (!alive()) { hideLiftPanel(); shot.remove(); level = startLevel; buildLevels(); paint(); return; }
     shot.getBoundingClientRect(); shot.style.opacity = 0;
     if (window.LiftSounds) LiftSounds.arrive();
-    await wait(1150); shot.remove();
+    await wait(1150); shot.remove(); hideLiftPanel();
     if (!alive()) return;
     setDoors(to, true, 5000); await wait(1100);
     if (!alive()) return;
@@ -3043,6 +3045,7 @@ function setZoom(z, sx, sy) {
     paint(); followNow();
 }
 function showMapInfo() {
+    const so = $("scareOdds"); if (so && document.activeElement !== so) so.value = map.scareOdds === undefined ? 25 : map.scareOdds;
     const r = map.rect, pw = 1440 / 2, ph = 774 / 2;
     $("mapInfo").textContent = `${(r.w / pw).toFixed(1)} pages wide, ${(r.h / ph).toFixed(1)} tall, at 2x.`;
 }
@@ -3211,6 +3214,7 @@ function buildUI() {
     $("heightSlider").addEventListener("input", e => setBrush(+e.target.value));
     $("heightLevel").addEventListener("click", () => setBrush(0));
     $("liftStay").addEventListener("click", hideLiftPanel);
+    $("scareOdds").addEventListener("change", e => { const v = Math.max(0, Math.min(500, Math.round(+e.target.value || 0))); snapshot(); map.scareOdds = v; changed(); });
     setBrush(heightBrush);
     $("way").addEventListener("change", e => { snapshot(); level.way = e.target.value; buildLevels(); changed(); });
     $("lname").addEventListener("change", e => { snapshot(); level.name = e.target.value.trim() || level.name; buildLevels(); changed(); });

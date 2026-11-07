@@ -16,7 +16,7 @@ const W = require("./render/hw3.js"), { encodePng } = require("../png-encode.js"
 const HERE = __dirname, SITE = path.join(HERE, "..", ".."), OUT = path.join(SITE, "assets", "hallway");
 const MOODS = ["day", "dusk", "night", "dawn"], TILE = 512;
 /* what the page needs of the editor: its code, its look and its art, and not the tools that made them */
-const APP = ["editor.js", "editor.css", "hallway-audio.js", "progress.js", "lift-sounds.js", "furni-parts.js", "wall-items.js", "colour-picker.js", "play.js", "play.css", "live-moving.js", "edit.js", "render/edge-items.js", "render/rope-barrier.js", "rooms.css", "room-starter.js", "room-view.js", "rooms-editor.js"];
+const APP = ["editor.js", "editor.css", "hallway-audio.js", "progress.js", "lift-sounds.js", "furni-parts.js", "wall-items.js", "colour-picker.js", "play.js", "play.css", "live-moving.js", "live-basement.js", "edit.js", "render/edge-items.js", "render/rope-barrier.js", "rooms.css", "room-starter.js", "room-view.js", "rooms-editor.js"];
 
 function copyDir(from, to) {
     fs.mkdirSync(to, { recursive: true });
@@ -37,13 +37,14 @@ function main() {
     /* New things go in beside the old, and swap in at the end: a publish that fails part way leaves the last good one whole */
     const LIFT_NEW = path.join(OUT, "lift.new"), APP_NEW = path.join(OUT, "app.new");
     fs.rmSync(LIFT_NEW, { recursive: true, force: true }); fs.rmSync(APP_NEW, { recursive: true, force: true }); fs.mkdirSync(LIFT_NEW, { recursive: true });
-    const tiles = {}, used = new Set(), total = MOODS.length;
+    const tiles = {}, used = new Set(), total = MOODS.length + 1, onlyBasement = require("./furni-parts.js").basementTiles(load());
     let done = 0;
-    for (const light of MOODS) {
+    for (const light of [...MOODS, "failing"]) {
         const world = W.build({ map: load(), names, light }), b = world.b, o = world.at(0, 0, 0);
         /* A square of the editor's picture is tile-sized in map pixels, counted from the map's origin, which the whole picture has moved */
         const tx0 = Math.floor(-o[0] / TILE), ty0 = Math.floor(-o[1] / TILE), tx1 = Math.ceil((b.w - o[0]) / TILE), ty1 = Math.ceil((b.h - o[1]) / TILE);
         for (let ty = ty0; ty <= ty1; ty++) for (let tx = tx0; tx <= tx1; tx++) {
+            if (light === "failing" && !onlyBasement.has(tx + "," + ty)) continue;
             const v = b.crop(o[0] + tx * TILE, o[1] + ty * TILE, TILE, TILE); if (isBlank(v.d)) continue;
             const px = Buffer.from(v.d); for (let i = 0; i < px.length; i += 4) { if (px[i] === 7 && px[i + 1] === 6 && px[i + 2] === 10) px[i] = px[i + 1] = px[i + 2] = 0; px[i + 3] = 255; }
             const png = encodePng(TILE, TILE, px), hash = crypto.createHash("sha1").update(png).digest("hex").slice(0, 20), name = hash + ".png", file = path.join(OUT, "tiles", name);

@@ -122,7 +122,8 @@
             const text = savedText, map = JSON.parse(text), base = await sha(baseText !== null ? baseText : text);      // one map all the way through, whatever's saved meanwhile
             const ways = [...new Set(map.levels.map(l => l.colour ? "hex:" + l.colour : l.way))];
             const known = new Set(((await (await realFetch(`${FN}?what=known`, admin())).json()).known) || []);
-            publishing.of = MOODS.length + ways.length + 1;
+            publishing.of = MOODS.length + ways.length + 2;
+            const onlyBasement = window.FurniParts.basementTiles(map), DRAW = [...MOODS, "failing"];
             const tiles = {}, lift = {};
             const send = async (blob) => {
                 const buf = await blob.arrayBuffer(), hash = await sha(buf);
@@ -136,10 +137,10 @@
             };
             /* One time of day per thread at once: it's a lot of drawing */
             let i = 0;
-            await Promise.all(workers.filter(w => !w.dead).slice(0, Math.min(MOODS.length, AT_ONCE)).map(async w => {
-                while (i < MOODS.length) {
-                    const light = MOODS[i++], a = await ask(w, { type: "mood", text, light, names });
-                    for (const t of a.tiles) tiles[light + "|" + t.tx + "," + t.ty] = await send(await pngOf(512, 512, t.d));
+            await Promise.all(workers.filter(w => !w.dead).slice(0, Math.min(DRAW.length, AT_ONCE)).map(async w => {
+                while (i < DRAW.length) {
+                    const light = DRAW[i++], a = await ask(w, { type: "mood", text, light, names });
+                    for (const t of a.tiles) if (light !== "failing" || onlyBasement.has(t.tx + "," + t.ty)) tiles[light + "|" + t.tx + "," + t.ty] = await send(await pngOf(512, 512, t.d));
                     publishing.at++;
                 }
             }));

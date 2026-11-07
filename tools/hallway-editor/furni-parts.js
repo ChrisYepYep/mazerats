@@ -65,5 +65,7 @@
     /* A maze's name for its door: the archive's with its glyphs and decoration off ("*ÕMaze EmpireÕ*" is Maze Empire's door), as render/hw.js's clean() has it */
     const mazeName = n => String(n || "").replace(/[^\x20-\x7e]/g, "").replace(/\*/g, "").replace(/\[|\]/g, "").trim().replace(/\s+/g, " ");
     const api = { ROWS, parts, tiles, turns, rotOf, lengthOf, mazeName };
+    /* the squares of the picture a floor below ground can be seen in, so the failing lights only draw those */
+    api.basementTiles = (map, size = 512) => { const out = new Set(); for (const l of map.levels) { if (l.k >= 0) continue; const z = l.k * 163; for (const c of l.cells || []) { const [cx, cy] = c.split(",").map(Number), x = (cx - cy) * 32, y = (cx + cy) * 16 - z; for (let ty = Math.floor((y - 200) / size); ty <= Math.floor((y + 40) / size); ty++) for (let tx = Math.floor((x - 40) / size); tx <= Math.floor((x + 40) / size); tx++) out.add(tx + "," + ty); } } return out; };
     if (typeof module !== "undefined" && module.exports) module.exports = api; else root.FurniParts = api;
 })(typeof window !== "undefined" ? window : globalThis);
