@@ -19,6 +19,17 @@
     const ask = (w, job) => new Promise((res, rej) => {
         const id = nextId++; waiting.set(id, { res, rej, w }); w.busy++; w.postMessage({ ...job, id });
     });
+    /* one drawing thread: it reports its jobs back, and if it dies, its jobs fail rather than wait for ever */
+    let startBase = null;
+    function makeWorker() {
+        const w = new Worker("renderer-worker.js"); w.busy = 0; w.maps = new Set();
+        w.onmessage = e => { const m = e.data, q = waiting.get(m.id); if (!q) return; waiting.delete(m.id); w.busy--; if (m.error) q.rej(new Error(m.error)); else q.res(m); };
+        w.onerror = e => { console.error("renderer", e.message); w.dead = true; for (const [id, q] of waiting) if (q.w === w) { waiting.delete(id); q.rej(new Error("A drawing thread stopped: " + (e.message || "no reason given"))); } };
+        return w;
+    }
+    /* a fresh one in place of one that's died, already told where its art is */
+    function freshWorker() { const w = makeWorker(); workers.push(w); if (startBase) ask(w, { type: "start", base: startBase, names }).catch(() => { w.dead = true; }); return w; }
+    const retire = w => { try { w.terminate(); } catch (e) { /* gone */ } w.dead = true; const i = workers.indexOf(w); if (i >= 0) workers.splice(i, 1); };
     function startWorkers() {
         if (started) return started;
         started = (async () => {
@@ -27,12 +38,9 @@
                 const clean = window.FurniParts.mazeName; names = rooms.filter(q => q && q.name).map(q => clean(q.name)).sort((a, c) => a.replace(/[^A-Za-z0-9]/g, "").toLowerCase().localeCompare(c.replace(/[^A-Za-z0-9]/g, "").toLowerCase()));
                 for (const q of rooms) if (q && q.name && q.difficulty) difficulty[clean(q.name)] = String(q.difficulty).toLowerCase().replace(/\s+/g, "-");
             } catch (e) { names = []; namesFailed = true; }
-            const base = new URL(".", location.href).href;
+            const base = new URL(".", location.href).href; startBase = base;
             for (let i = 0; i < POOL; i++) {
-                const w = new Worker("renderer-worker.js"); w.busy = 0; w.maps = new Set();
-                w.onmessage = e => { const m = e.data, q = waiting.get(m.id); if (!q) return; waiting.delete(m.id); w.busy--; if (m.error) q.rej(new Error(m.error)); else q.res(m); };
-                /* a renderer that dies takes its jobs with it, rather than leaving them waiting for ever */
-                w.onerror = e => { console.error("renderer", e.message); w.dead = true; for (const [id, q] of waiting) if (q.w === w) { waiting.delete(id); q.rej(new Error("A drawing thread stopped: " + (e.message || "no reason given"))); } };
+                const w = makeWorker();
                 workers.push(w);
             }
             const answers = await Promise.all(workers.map(w => ask(w, { type: "start", base, names })));
@@ -41,7 +49,7 @@
         started.catch(() => { for (const w of workers.splice(0)) { try { w.terminate(); } catch (e) { /* gone */ } } started = null; });      // the next try starts clean
         return started;
     }
-    const idle = () => { const alive = workers.filter(w => !w.dead); if (!alive.length) throw new Error("No drawing threads left. Reload to try again."); return alive.reduce((a, w) => (w.busy < a.busy ? w : a), alive[0]); };
+    const idle = () => { for (const w of workers.filter(q => q.dead)) retire(w); while (workers.length < POOL && startBase) freshWorker(); const alive = workers.filter(w => !w.dead); if (!alive.length) throw new Error("No drawing threads left. Reload to try again."); return alive.reduce((a, w) => (w.busy < a.busy ? w : a), alive[0]); };
     const pngOf = (w, h, d) => { const c = new OffscreenCanvas(w, h); c.getContext("2d").putImageData(new ImageData(new Uint8ClampedArray(d.buffer, d.byteOffset, d.length), w, h), 0, 0); return c.convertToBlob({ type: "image/png" }); };
 
     /* ---------- what the editor asks its server ---------- */
@@ -125,6 +133,7 @@
             const hasXmas = map.levels.some(l => (l.props || []).some(p => /^(xmas|gift\d|snowman)/.test(p.k)) || (l.wallItems || []).some(q => /^i_(garland|window|bunting|festoon|wreath|stockings|holly|canes)/.test(q.k)));
             const onlyBasement = window.FurniParts.basementTiles(map), DRAW = [...MOODS, "failing", ...(hasXmas ? MOODS.map(m => m + "+x") : [])];
             publishing.of = DRAW.length + ways.length + 1;
+            while (workers.length < POOL) freshWorker();
             const tiles = {}, lift = {};
             const send = async (blob) => {
                 const buf = await blob.arrayBuffer(), hash = await sha(buf);
@@ -136,15 +145,16 @@
                 }
                 return hash;
             };
-            /* One time of day per thread at once: it's a lot of drawing */
-            let i = 0;
-            await Promise.all(workers.filter(w => !w.dead).slice(0, Math.min(DRAW.length, AT_ONCE)).map(async w => {
-                while (i < DRAW.length) {
-                    const light = DRAW[i++], a = await ask(w, { type: "mood", text, light, names });
-                    for (const t of a.tiles) if (light !== "failing" || onlyBasement.has(t.tx + "," + t.ty)) tiles[light + "|" + t.tx + "," + t.ty] = await send(await pngOf(512, 512, t.d));
-                    publishing.at++;
-                }
-            }));
+            /* A whole time of day is a lot of memory: each is drawn in a thread of its own that's thrown away after, two at once, and one at a time if that's still too much */
+            const oneMood = async light => { const w = freshWorker(); try { return await ask(w, { type: "mood", text, light, names }); } finally { retire(w); } };
+            const MAIN = DRAW.filter(m => MOODS.includes(m)), EXTRA = DRAW.filter(m => !MOODS.includes(m));
+            let i = 0, alone = false;
+            const runMoods = async () => { while (i < MAIN.length) { const light = MAIN[i++]; let a; try { a = await oneMood(light); } catch (e) { if (!/memory|allocation|Array buffer|stopped/i.test(String(e && e.message))) throw e; alone = true; await new Promise(r => setTimeout(r, 1500)); a = await oneMood(light); } for (const t of a.tiles) tiles[light + "|" + t.tx + "," + t.ty] = await send(await pngOf(512, 512, t.d)); publishing.at++; } };
+            await Promise.all(Array.from({ length: Math.min(2, AT_ONCE, MAIN.length) }, (_, n) => n === 0 ? runMoods() : new Promise(r => setTimeout(r, 400)).then(() => alone ? null : runMoods())));
+            /* the failing lights and Christmas: only the squares they can change, each drawn on its own, so the memory stays small */
+            { const w = freshWorker(), v = "publish-" + Date.now(), solid = d => { const o = new Uint8Array(d.length); o.set(d); for (let k = 0; k < o.length; k += 4) { if (o[k] === 7 && o[k + 1] === 6 && o[k + 2] === 10) o[k] = o[k + 1] = o[k + 2] = 0; o[k + 3] = 255; } return o; };
+              try { await ask(w, { type: "map", v, text }); const xmasTiles = window.FurniParts.xmasTiles(map);
+                for (const light of EXTRA) { const want = light === "failing" ? onlyBasement : xmasTiles; for (const key of want) { const [tx, ty] = key.split(",").map(Number); const a = await ask(w, { type: "tile", v, x: tx * 512, y: ty * 512, w: 512, h: 512, light, names }); if (a.needMap) { await ask(w, { type: "map", v, text }); continue; } const plain = tiles[light.replace("+x", "").replace("failing", "night") + "|" + key]; if (!plain && light !== "failing") continue; tiles[light + "|" + key] = await send(await pngOf(512, 512, solid(a.d))); } publishing.at++; } } finally { retire(w); } }
             for (const k of Object.keys(tiles)) { if (k.includes("+x|") && tiles[k] === tiles[k.replace("+x", "")]) delete tiles[k]; }
             for (const way of ways) {
                 for (let f = 0; f < 6; f++) { const a = await ask(idle(), { type: "lift", way, slide: f / 5 }); lift[encodeURIComponent(way).replace(/%/g, "_") + "-" + f + ".png"] = await send(await pngOf(a.w, a.h, a.d)); }

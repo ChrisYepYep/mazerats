@@ -66,6 +66,9 @@
     const mazeName = n => String(n || "").replace(/[^\x20-\x7e]/g, "").replace(/\*/g, "").replace(/\[|\]/g, "").trim().replace(/\s+/g, " ");
     const api = { ROWS, parts, tiles, turns, rotOf, lengthOf, mazeName };
     /* the squares of the picture a floor below ground can be seen in, so the failing lights only draw those */
+    api.xmasTiles = (map, size = 512) => { const out = new Set(), add = (x, y, l, r, u, d) => { for (let ty = Math.floor((y - u) / size); ty <= Math.floor((y + d) / size); ty++) for (let tx = Math.floor((x - l) / size); tx <= Math.floor((x + r) / size); tx++) out.add(tx + "," + ty); }, S = (x, y, z) => [(x - y) * 16, (x + y) * 8 - z];
+        for (const l of map.levels) { const z = l.k * 163; for (const p of l.props || []) if (/^(xmas|gift\d|snowman)/.test(p.k)) { const q = S(p.x + .5, p.y + .5, z); add(q[0], q[1], 110, 110, 160, 70); } for (const q of l.wallItems || []) if (/^i_(garland|window|bunting|festoon|wreath|stockings|holly|canes)/.test(q.k)) { const a = q.axis === "y" ? S(q.line, q.at, z) : S(q.at, q.line, z); add(a[0], a[1], 120, 120, 200, 60); } }
+        return out; };
     api.basementTiles = (map, size = 512) => { const out = new Set(); for (const l of map.levels) { if (l.k >= 0) continue; const z = l.k * 163; for (const c of l.cells || []) { const [cx, cy] = c.split(",").map(Number), x = (cx - cy) * 32, y = (cx + cy) * 16 - z; for (let ty = Math.floor((y - 200) / size); ty <= Math.floor((y + 40) / size); ty++) for (let tx = Math.floor((x - 40) / size); tx <= Math.floor((x + 40) / size); tx++) out.add(tx + "," + ty); } } return out; };
     if (typeof module !== "undefined" && module.exports) module.exports = api; else root.FurniParts = api;
 })(typeof window !== "undefined" ? window : globalThis);
