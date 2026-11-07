@@ -122,8 +122,9 @@
             const text = savedText, map = JSON.parse(text), base = await sha(baseText !== null ? baseText : text);      // one map all the way through, whatever's saved meanwhile
             const ways = [...new Set(map.levels.map(l => l.colour ? "hex:" + l.colour : l.way))];
             const known = new Set(((await (await realFetch(`${FN}?what=known`, admin())).json()).known) || []);
-            publishing.of = MOODS.length + ways.length + 2;
-            const onlyBasement = window.FurniParts.basementTiles(map), DRAW = [...MOODS, "failing"];
+            const hasXmas = map.levels.some(l => (l.props || []).some(p => p.k === "xmastree" || /^gift\d$/.test(p.k)) || (l.wallItems || []).some(q => q.k === "i_garland" || q.k === "i_window"));
+            const onlyBasement = window.FurniParts.basementTiles(map), DRAW = [...MOODS, "failing", ...(hasXmas ? MOODS.map(m => m + "+x") : [])];
+            publishing.of = DRAW.length + ways.length + 1;
             const tiles = {}, lift = {};
             const send = async (blob) => {
                 const buf = await blob.arrayBuffer(), hash = await sha(buf);
@@ -144,6 +145,7 @@
                     publishing.at++;
                 }
             }));
+            for (const k of Object.keys(tiles)) { if (k.includes("+x|") && tiles[k] === tiles[k.replace("+x", "")]) delete tiles[k]; }
             for (const way of ways) {
                 for (let f = 0; f < 6; f++) { const a = await ask(idle(), { type: "lift", way, slide: f / 5 }); lift[encodeURIComponent(way).replace(/%/g, "_") + "-" + f + ".png"] = await send(await pngOf(a.w, a.h, a.d)); }
                 publishing.at++;

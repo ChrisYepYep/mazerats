@@ -16,7 +16,7 @@ const W = require("./render/hw3.js"), { encodePng } = require("../png-encode.js"
 const HERE = __dirname, SITE = path.join(HERE, "..", ".."), OUT = path.join(SITE, "assets", "hallway");
 const MOODS = ["day", "dusk", "night", "dawn"], TILE = 512;
 /* what the page needs of the editor: its code, its look and its art, and not the tools that made them */
-const APP = ["editor.js", "editor.css", "hallway-audio.js", "progress.js", "lift-sounds.js", "furni-parts.js", "wall-items.js", "colour-picker.js", "play.js", "play.css", "live-moving.js", "live-basement.js", "live-lost.js", "live-hunts.js", "hunts-editor.js", "edit.js", "render/edge-items.js", "render/rope-barrier.js", "rooms.css", "room-starter.js", "room-view.js", "rooms-editor.js"];
+const APP = ["editor.js", "editor.css", "hallway-audio.js", "progress.js", "lift-sounds.js", "furni-parts.js", "wall-items.js", "colour-picker.js", "play.js", "play.css", "live-moving.js", "live-basement.js", "live-lost.js", "live-hunts.js", "live-xmas.js", "live-xmas-early.js", "hunts-editor.js", "edit.js", "render/edge-items.js", "render/rope-barrier.js", "rooms.css", "room-starter.js", "room-view.js", "rooms-editor.js"];
 
 function copyDir(from, to) {
     fs.mkdirSync(to, { recursive: true });
@@ -39,7 +39,8 @@ function main() {
     fs.rmSync(LIFT_NEW, { recursive: true, force: true }); fs.rmSync(APP_NEW, { recursive: true, force: true }); fs.mkdirSync(LIFT_NEW, { recursive: true });
     const tiles = {}, used = new Set(), total = MOODS.length + 1, onlyBasement = require("./furni-parts.js").basementTiles(load());
     let done = 0;
-    for (const light of [...MOODS, "failing"]) {
+    const hasXmas = load().levels.some(l => (l.props || []).some(p => p.k === "xmastree" || /^gift\d$/.test(p.k)) || (l.wallItems || []).some(q => q.k === "i_garland" || q.k === "i_window"));
+    for (const light of [...MOODS, "failing", ...(hasXmas ? MOODS.map(m => m + "+x") : [])]) {
         const world = W.build({ map: load(), names, light }), b = world.b, o = world.at(0, 0, 0);
         /* A square of the editor's picture is tile-sized in map pixels, counted from the map's origin, which the whole picture has moved */
         const tx0 = Math.floor(-o[0] / TILE), ty0 = Math.floor(-o[1] / TILE), tx1 = Math.ceil((b.w - o[0]) / TILE), ty1 = Math.ceil((b.h - o[1]) / TILE);
@@ -53,6 +54,8 @@ function main() {
         }
         done++; console.log(`progress ${done} of ${total + 1}`);
     }
+    /* Christmas keeps only what it changes; the page falls back on the plain square */
+    for (const k of Object.keys(tiles)) { if (!k.includes("+x|")) continue; if (tiles[k] === tiles[k.replace("+x", "")]) delete tiles[k]; }
     /* The lift's doors, in each floor's colours */
     const ways = new Set(map.levels.map(l => l.colour ? "hex:" + l.colour : l.way));
     for (const way of ways) for (let f = 0; f < 6; f++) {

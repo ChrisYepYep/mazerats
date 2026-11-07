@@ -30,7 +30,7 @@
     ROWS.trophy = { def: 3, min: 3, max: 3, flip: false, part: () => [] };
     const SINGLES = {
         plant: ["hw_plant_a_0_0_0"], statue: ["hw_statue_a_0_0_0"], fountain: ["hw_fountain_a_0_0_0"],
-        rarecase: [], mark_scuff: [], mark_tile: [], shelf: ["hw_shelf_a_0_4_0"], cabinet: ["hw_closet1_a_0_2_0"], water: ["hw_watermatic_a_0_4_0"],
+        rarecase: [], xmastree: [], gift1: [], gift2: [], gift3: [], gift4: [], mark_scuff: [], mark_tile: [], shelf: ["hw_shelf_a_0_4_0"], cabinet: ["hw_closet1_a_0_2_0"], water: ["hw_watermatic_a_0_4_0"],
         pillar: ["pillar1_a_0_0_0"], pillartall: ["pillar1_a_0_0_0"], smtable: ["hw_smtble_a_0_0_0"], ballpost: ["pillar0_a_0_0_0"]
     };
     const FLIPPED = { cabinet: true };

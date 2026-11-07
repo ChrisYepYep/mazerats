@@ -30,7 +30,7 @@
         if (p === "/api/version") return json({ v: m.version, report: {}, tile: m.tile });
         if (p === "/api/tile") {
             /* The editor's own light, when no time of day is asked for, is daylight here */
-            const key = (q.searchParams.get("m") || "day") + "|" + q.searchParams.get("tx") + "," + q.searchParams.get("ty"), name = m.tiles[key];
+            const plainKey = String(q.searchParams.get("m") || "day").replace("+x", "") + "|" + q.searchParams.get("tx") + "," + q.searchParams.get("ty"), wantKey = (q.searchParams.get("m") || "day") + "|" + q.searchParams.get("tx") + "," + q.searchParams.get("ty"), key = m.tiles[wantKey] ? wantKey : plainKey, name = m.tiles[key];
             if (name) {
                 const r = await realFetch(online ? FN + "?tile=" + name : "../tiles/" + name, opts); if (r.status !== 404) return r;
                 /* A publish has replaced it while this page was open. The newest list says what's there now. */
