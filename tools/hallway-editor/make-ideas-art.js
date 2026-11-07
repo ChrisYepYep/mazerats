@@ -93,6 +93,11 @@ write("i_key.png", (() => { const k = A5.key(); return k; })());
   const dir = path.join(__dirname, "art", "ideas", "lost"); fs.mkdirSync(dir, { recursive: true }); const items = small.filter(s => s[3] <= 18 && s[4] <= 18 && !/CF_1_|CF_5_/.test(s[0])); for (const s of items) fs.copyFileSync(R + "assets/furni/" + s[2], path.join(dir, s[2]));
   fs.writeFileSync(path.join(__dirname, "art", "ideas", "lost.json"), JSON.stringify(items.map(s => ({ k: s[0], name: s[1], f: s[2], w: s[3], h: s[4] })))); console.log("lost things", items.length); }
 
+/* ---- 18, 20: a scrap of paper, and the notice board ---- */
+{ const s = A4.scrap(), dir = path.join(__dirname, "art", "ideas"); fs.mkdirSync(dir, { recursive: true }); fs.writeFileSync(path.join(dir, "scrap.png"), encodePng(s.w, s.h, Buffer.from(s.rgba)));
+  add("board", "Notice board", "hotel", (c, a) => { const W = 40, Hh = 30, z0 = 56; const P2 = (u, z) => [a[0] - u, a[1] + Math.floor(u / 2) - z]; for (let u = -1; u <= W + 1; u++) for (let z = z0 - 1; z <= z0 + Hh + 1; z++) { const q = P2(u, z), edge = u < 0 || u > W || z < z0 || z > z0 + Hh, fr = u < 2 || u > W - 2 || z < z0 + 2 || z > z0 + Hh - 2, n = (u * 7 + z * 13) % 5, cc = edge ? [18, 7, 4] : fr ? [147, 112, 90] : n === 0 ? [150, 106, 66] : n === 2 ? [176, 132, 88] : [164, 120, 76], i = (q[1] * c.w + q[0]) * 4; c.d[i] = cc[0]; c.d[i + 1] = cc[1]; c.d[i + 2] = cc[2]; c.d[i + 3] = 255; }
+      for (const [u0, z0b, w, h, col] of [[5, 68, 11, 13, [244, 238, 220]], [19, 72, 14, 10, [226, 218, 196]], [9, 60, 13, 7, [240, 226, 170]]]) for (let u = u0; u < u0 + w; u++) for (let z = z0b; z < z0b + h; z++) { const q = P2(u, z), i = (q[1] * c.w + q[0]) * 4, line = (z - z0b) % 3 === 1 && u > u0 + 1 && u < u0 + w - 2; c.d[i] = line ? 150 : col[0]; c.d[i + 1] = line ? 140 : col[1]; c.d[i + 2] = line ? 126 : col[2]; } }); }
+
 /* ---- 53: the hole on the skirting, and the rat, frames in a row with what each needs to stand on its feet. The page reads these, nothing is baked ---- */
 add("rathole", "Rat hole", "tell", (c, a) => L.put(c, A5.hole("x"), a[0], a[1]), { locked: true, drop: 12 });
 { const r = require("./ideas/old-items2.js").bakeRat(), dirs = ["x", "y", "nx", "ny"], sheet = {}, parts = []; let W = 0, Hh = 0;

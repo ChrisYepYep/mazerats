@@ -684,6 +684,8 @@ let timeMode = localStorage.getItem("hallway-time") || "cycle";
 const cycleStart = performance.now();
 const moodTiles = new Map(), moodInflight = new Map();
 let moodForced = null;
+/* the Hallway's own time, whatever the Time list says: night-only things go by this */
+function realNight() { const t = ((performance.now() - cycleStart) % CYCLE_MS) / 1000; for (let i = 0; i < CYCLE.length - 1; i++) { const [t0, m0] = CYCLE[i], [t1, m1] = CYCLE[i + 1]; if (t >= t0 && t < t1) { const f = (t - t0) / (t1 - t0); return (f < .5 ? m0 : m1) === "night"; } } return false; }
 function moodNow() {
     if (moodForced) return moodForced;
     if (timeMode === "map") return null;
@@ -949,7 +951,7 @@ function paint() {
    paint() only runs when something asks, so anything animated registers here: { active(), under(ctx, ox, oy, now), over(ctx, ox, oy, now) }, either draw optional.
    under: after the tiles and doors, before the map's edge and the avatar. over: on top of everything. While any is active the map repaints each frame; a hidden tab doesn't run them. */
 const liveLayers = new Set(), liveClicks = new Set(); let liveFrame = 0;
-const liveOn = () => { for (const l of liveLayers) if (!l.active || l.active()) return true; return false; };
+const liveOn = () => { for (const l of liveLayers) if (!l.still && (!l.active || l.active())) return true; return false; };
 function liveTick() { liveFrame = 0; if (document.hidden || !map || !liveOn()) return; paint(); liveFrame = requestAnimationFrame(liveTick); }
 function wakeLive() { if (!liveFrame && !document.hidden && liveOn()) liveFrame = requestAnimationFrame(liveTick); }
 function drawLive(which, ox, oy) {
@@ -967,7 +969,7 @@ function noteFloor() {
 let lastActive = performance.now(); const markActive = () => { lastActive = performance.now(); };
 for (const ev of ["pointerdown", "keydown", "wheel", "touchstart"]) document.addEventListener(ev, markActive, { capture: true, passive: true });
 window.HallwayLive = {
-    add(l) { liveLayers.add(l); wakeLive(); return () => liveLayers.delete(l); }, wake: wakeLive,
+    add(l) { liveLayers.add(l); wakeLive(); return () => liveLayers.delete(l); }, wake() { wakeLive(); if (map) paint(); },
     onFloor(f) { floorWatchers.add(f); return () => floorWatchers.delete(f); }, get floor() { return floorIn; },
     get idleFor() { return performance.now() - lastActive; }, get walker() { return walker; }, get map() { return map; },
     mapPoint: (x, y, z) => P(x, y, z), get zoom() { return zoom; }, markActive,
@@ -977,6 +979,8 @@ window.HallwayLive = {
     nodeZ: (l, x, y) => nodeZ(l, x, y), mood: () => moodNow(), forceMood(m) { moodForced = m; }, loadMood: (m, x, y) => { const tx = Math.floor(x / TILE), ty = Math.floor(y / TILE); moodTile(m, tx, ty); },
     view() { const hw = canvas.width / zoom / 2, hh = canvas.height / zoom / 2; return { x0: cam.x - hw, x1: cam.x + hw, y0: cam.y - hh, y1: cam.y + hh, w: canvas.width, h: canvas.height }; },
     camera(x, y) { cam.x = x; cam.y = y; clampCam(); }, get cam() { return { x: cam.x, y: cam.y }; }, holdCamera(on) { camHeld = on; if (!on) followNow(); }, setZoom: z => setZoom(z, canvas.width / 2, canvas.height / 2),
+    realNight: () => realNight(), enterRoom(target, axis) { if (!walker || roomSession) return false; const me = walker; me.busy = true; me.pts = []; me.walking = false; roomSession = RoomView.enter($("stage"), { room: target.room, facts: target.facts, edge: axis === "x" ? "y" : "x", zoom: () => zoom, wheel: d => setZoom(zoom + (d < 0 ? 1 : -1)), onLeave: () => { roomSession.close(); roomSession = null; me.busy = false; paint(); } }); return true; },
+    editorApi: () => ({ snapshot, changed, setTool, paint, pickOnce(f) { pickNext = f; flash("Click the spot on the map. Esc cancels."); }, get level() { return level; } }),
     onClick(f) { liveClicks.add(f); return () => liveClicks.delete(f); },
     walkTo(l, x, y, then) { if (!walker || walker.busy) return false; const s = walkerStart(), path = graphFrom(s.l, s.x, s.y, [l, x, y]); if (!path) return false; followRoute(path, s.here, then || null); return true; },
     get graphLevels() { return stairLevels().list; },
@@ -1125,6 +1129,7 @@ function turnHeld() {
     paint();
 }
 function snapWallItem(q) { const dfn = WALL_ITEMS.find(w => w.id === q.k); if (dfn && dfn.snapAt !== undefined) q.at = Math.round(q.at - dfn.snapAt) + dfn.snapAt; }
+let pickNext = null; document.addEventListener("keydown", e => { if (pickNext && e.key === "Escape") { pickNext = null; flash("Cancelled."); } }, true);
 function pickUp(hit) {
     snapshot();
     const list = hit.type === "prop" ? hit.l.props : hit.l.teles;
@@ -1659,8 +1664,8 @@ function select(hit) {
         doorFloorKind(hit.o);
         { const d = hit.o, field = (label, ctl) => { const f = document.createElement("label"); f.className = "field"; const n = document.createElement("span"); n.className = "f-label"; n.textContent = label; const c = document.createElement("span"); c.className = "f-ctl"; c.appendChild(ctl); f.append(n, c); box.appendChild(f); }, opts = (s, list, now) => { for (const [v, t] of list) { const o = document.createElement("option"); o.value = v; o.textContent = t; if (v === now) o.selected = true; s.appendChild(o); } };
           const kind = document.createElement("select"); opts(kind, [["", "A door"], ["book", "A bookcase door"]], d.kind || ""); kind.addEventListener("change", () => { snapshot(); if (kind.value === "book") { d.kind = "book"; setDoorSpare(d, true); if (!d.to) d.to = { kind: "room", size: "4x8", n: 0 }; } else delete d.kind; changed(); select(hit); buildLevels(); }); field("What it looks like", kind);
-          const here = d.to && d.to.kind === "room" ? d.to.size + "|" + d.to.n : "", to = document.createElement("select"), rooms = []; for (const n of [0, 1, 2]) rooms.push(["6x14|" + n, "Staff corridor " + (n + 1)]); for (const n of [0, 1, 2]) rooms.push(["4x8|" + n, "Passage " + (n + 1)]); opts(to, [["", d.kind === "book" ? "Nowhere" : "Its maze"], ...rooms], here);
-          to.addEventListener("change", () => { snapshot(); if (to.value) { const [size, n] = to.value.split("|"); d.to = { kind: "room", size, n: +n }; setDoorSpare(d, true); } else delete d.to; changed(); select(hit); buildLevels(); }); field("Leads to", to);
+          const here = d.to && d.to.kind === "lounge" ? "lounge" : d.to && d.to.kind === "room" ? d.to.size + "|" + d.to.n : "", to = document.createElement("select"), rooms = []; for (const n of [0, 1, 2]) rooms.push(["6x14|" + n, "Staff corridor " + (n + 1)]); for (const n of [0, 1, 2]) rooms.push(["4x8|" + n, "Passage " + (n + 1)]); rooms.push(["lounge", "Finders' Lounge (finishers only)"]); opts(to, [["", d.kind === "book" ? "Nowhere" : "Its maze"], ...rooms], here);
+          to.addEventListener("change", () => { snapshot(); if (to.value === "lounge") { d.to = { kind: "lounge" }; setDoorSpare(d, true); } else if (to.value) { const [size, n] = to.value.split("|"); d.to = { kind: "room", size, n: +n }; setDoorSpare(d, true); } else delete d.to; changed(); select(hit); buildLevels(); }); field("Leads to", to);
           if (d.kind === "book") { const sp = document.createElement("input"); sp.type = "range"; sp.min = "25"; sp.max = "300"; sp.step = "5"; sp.value = String(Math.round((d.speed || 1) * 100)); const shown = () => { sp.title = sp.value + "% of its normal speed"; }; shown(); sp.addEventListener("pointerdown", () => snapshot()); sp.addEventListener("input", () => { d.speed = +sp.value / 100; shown(); }); sp.addEventListener("change", () => { changed(); setDoor(d, true, 3000); }); field("How fast it opens", sp); }
         }
         if (!doorLinked(hit.o)) {
@@ -1704,6 +1709,9 @@ function select(hit) {
         say((long ? `${Parts.lengthOf(hit.o)} tiles long. ` : "") + "Drag it to move it, or use the arrow keys to nudge it." + (hit.type === "tele" || Parts.turns(hit.o.k) > 1 ? " R turns it." : ""));
         if (hit.type === "tele" || Parts.turns(hit.o.k) > 1) btn("Rotate", rotateSelected);
         if (long) { btn("Shorter", () => resizeSelected(-1)); btn("Longer", () => resizeSelected(1)); }
+        if (hit.type === "wallitem" && String(hit.o.k).startsWith("i_peel")) { const q = hit.o, f = document.createElement("label"); f.className = "field"; const n = document.createElement("span"); n.className = "f-label"; n.textContent = "Behind it"; const sel = document.createElement("select"); sel.className = "f-ctl"; for (const [v, t] of [["", "Nothing"], ["note", "A note"], ["6x14|0", "A door: staff corridor 1"], ["6x14|1", "A door: staff corridor 2"], ["6x14|2", "A door: staff corridor 3"], ["4x8|0", "A door: passage 1"], ["4x8|1", "A door: passage 2"], ["4x8|2", "A door: passage 3"]]) { const o = document.createElement("option"); o.value = v; o.textContent = t; sel.appendChild(o); } sel.value = !q.behind ? "" : q.behind.kind === "note" ? "note" : q.behind.size + "|" + q.behind.n; sel.addEventListener("change", () => { snapshot(); if (!sel.value) delete q.behind; else if (sel.value === "note") q.behind = { kind: "note", text: (q.behind && q.behind.text) || "" }; else { const [size, m] = sel.value.split("|"); q.behind = { kind: "door", size, n: +m }; } changed(); select(hit); }); f.append(n, sel); box.appendChild(f);
+          if (q.behind && q.behind.kind === "note") { const ta = document.createElement("textarea"); ta.rows = 3; ta.value = q.behind.text || ""; ta.setAttribute("aria-label", "What the note says"); ta.style.width = "100%"; ta.addEventListener("change", () => { snapshot(); q.behind.text = ta.value; changed(); }); box.appendChild(ta); } }
+        if (hit.type === "prop" && hit.o.k === "rope") { const f = document.createElement("label"); f.className = "field"; const n = document.createElement("span"); n.className = "f-label"; n.textContent = "Comes off at night"; const c = document.createElement("span"); c.className = "f-ctl"; const t = document.createElement("input"); t.type = "checkbox"; t.checked = !!hit.o.night; t.addEventListener("change", () => { snapshot(); if (t.checked) hit.o.night = true; else delete hit.o.night; changed(); }); c.appendChild(t); f.append(n, c); box.appendChild(f); }
         if (hit.type === "prop" && hit.o.k === "rope") {
             if (Parts.lengthOf(hit.o) < RopeBarrier.MIN_FOR_CARD) say("At 2 tiles there's no room for its card. Make it longer to have one.");
             else {
@@ -1736,7 +1744,7 @@ function select(hit) {
 }
 function showTab(name) {
     document.querySelectorAll(".tab").forEach(t => { const on = t.dataset.tab === name; t.classList.toggle("active", on); t.setAttribute("aria-selected", String(on)); });
-    for (const n of ["inspect", "floors", "map", "music", "problems"]) $("tab-" + n).hidden = n !== name;
+    for (const n of ["inspect", "floors", "map", "music", "hunts", "problems"]) $("tab-" + n).hidden = n !== name;
 }
 /* which maze every door has: chosen ones first, the rest A to Z through what's left, as the drawing does */
 function doorNames() {
@@ -2069,6 +2077,7 @@ const fingerUp = e => {
 };
 canvas.addEventListener("pointerup", fingerUp, true); canvas.addEventListener("pointercancel", fingerUp, true);
 canvas.addEventListener("pointerdown", e => {
+    if (pickNext) { const [px, py] = toPx(e.clientX, e.clientY), u = floorUnder(px, py), f = pickNext; pickNext = null; e.stopImmediatePropagation(); f(u ? { level: u[0].stair ? u[0].stair.low.id : u[0].id, px, py, x: u[1], y: u[2] } : { level: level.id, px, py }); return; }
     canvas.focus(); canvas.setPointerCapture(e.pointerId);
     const [px, py] = toPx(e.clientX, e.clientY);
     if (isEdgeTool(tool) && !spaceHeld && e.button !== 1 && (e.button === 0 || edgeUnder(px, py))) { drag = { kind: "edgebrush", remove: e.button === 2 || e.ctrlKey || e.metaKey, laid: [], gone: [] }; edgeBrush(drag, px, py); return; }
@@ -2244,7 +2253,7 @@ function clampCam() {
 const nodeKey = (l, x, y) => l.id + "|" + x + "|" + y;
 function solid(l) {
     const s = new Set();
-    for (const p of (l.props || [])) { if (p.k.startsWith("mark_")) continue; for (const t of Parts.tiles(p)) s.add(t[0] + "," + t[1]); }   // scuffs and a lifted tile are only marks on the floor
+    for (const p of (l.props || [])) { if (p.k.startsWith("mark_") || (p.k === "rope" && p.night && realNight())) continue; for (const t of Parts.tiles(p)) s.add(t[0] + "," + t[1]); }   // scuffs and a lifted tile are only marks on the floor
     for (const t of (l.teles || [])) s.add(t.x + "," + t.y);
     return s;
 }
@@ -3365,7 +3374,7 @@ const hallwayStart = (async function start() {
     if (pinned) { if (dirty) { rememberDraft(); } else { await save(); flash(`${pinned} mazes are now locked to their doors.`); } }
     buildLevels(); showMapInfo(); runChecks(); syncButtons(); setTool("select"); select(null); setZoom(zoom); resize(); requestArt(true);
     if (window.HALLWAY_PLAY) setTool("walk");
-    window.__hallway = { doorAtPx, useDoor, doorStates, doorIsOpen, doorFront, enterDoor, get roomSession() { return roomSession; }, get walker() { return walker; }, stairWallAt, hangWallAt, furniTile, landingOf, placeable, stairWallsOf, setCut, seeThroughDown, get seeCut() { return seeCut; }, edgesNear, railsNear, cam, paint, liftAt, useLift, rideTo, showLiftPanel, liftOpen, setDoors, entranceAt, entranceTiles, useUnder, retaining, doorSpotAt, fitDoor, doorEdge: doorEdge, isNone, wallState, setBrush, flightOf, heightEdgeAt, edgeRun, canStep, isHalf, wallHolds, tileIn, nodeZ, heightAt, stepLift, wallSpot, tidyHeights, get rubbed() { return rubbed; }, sortByDifficulty, doorSpots, wallStretch, pickColour, select, get map() { return map; }, moodNow, get timeMode() { return timeMode; }, sitOn, getDrink, propUnder, avCanvas, get live() { return live; }, stairLevels, nodeZ, wallAt, pickIn, walkGraph, graphFrom, liftTile, doorNames, setDoorMaze, signBox, signHandles, handleAt, setZoom, showTab, get zoom() { return zoom; }, get level() { return level; }, camTick, camTarget, followNow, floorUnder, get hover() { return hover; }, pick, select, deleteSelected, get selected() { return selected; }, get tiles() { return tiles; }, get inflight() { return inflight; }, get version() { return version; }, paint, get map() { return map; }, get cam() { return cam; }, get walker() { return walker; }, toScreen, P, setTool, act, walkTo, stepWalk, setLevel: id => { level = byId(id); buildLevels(); paint(); } };
+    window.__hallway = { setDoor, doorAtPx, useDoor, doorStates, doorIsOpen, doorFront, enterDoor, get roomSession() { return roomSession; }, get walker() { return walker; }, stairWallAt, hangWallAt, furniTile, landingOf, placeable, stairWallsOf, setCut, seeThroughDown, get seeCut() { return seeCut; }, edgesNear, railsNear, cam, paint, liftAt, useLift, rideTo, showLiftPanel, liftOpen, setDoors, entranceAt, entranceTiles, useUnder, retaining, doorSpotAt, fitDoor, doorEdge: doorEdge, isNone, wallState, setBrush, flightOf, heightEdgeAt, edgeRun, canStep, isHalf, wallHolds, tileIn, nodeZ, heightAt, stepLift, wallSpot, tidyHeights, get rubbed() { return rubbed; }, sortByDifficulty, doorSpots, wallStretch, pickColour, select, get map() { return map; }, moodNow, get timeMode() { return timeMode; }, sitOn, getDrink, propUnder, avCanvas, get live() { return live; }, stairLevels, nodeZ, wallAt, pickIn, walkGraph, graphFrom, liftTile, doorNames, setDoorMaze, signBox, signHandles, handleAt, setZoom, showTab, get zoom() { return zoom; }, get level() { return level; }, camTick, camTarget, followNow, floorUnder, get hover() { return hover; }, pick, select, deleteSelected, get selected() { return selected; }, get tiles() { return tiles; }, get inflight() { return inflight; }, get version() { return version; }, paint, get map() { return map; }, get cam() { return cam; }, get walker() { return walker; }, toScreen, P, setTool, act, walkTo, stepWalk, setLevel: id => { level = byId(id); buildLevels(); paint(); } };
 })();
 /* A page that couldn't start says so, here and to the site around it, rather than sitting there black */
 hallwayStart.catch(e => {

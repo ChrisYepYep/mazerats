@@ -55,7 +55,7 @@
         const say = t => { tip.textContent = t || ""; tip.hidden = !t; };
 
         /* ---------- top bar ---------- */
-        const sizeSel = el("select"); SIZES().forEach(s => { const o = el("option", "", s === "6x14" ? "Staff corridor (6 x 14)" : s === "4x8" ? "Passage (4 x 8)" : s.replace("x", " x ")); o.value = s; sizeSel.appendChild(o); });
+        const sizeSel = el("select"); SIZES().forEach(s => { const o = el("option", "", s === "6x14" ? "Staff corridor (6 x 14)" : s === "4x8" ? "Passage (4 x 8)" : s === "8x6" ? "Finders' Lounge (8 x 6)" : s.replace("x", " x ")); o.value = s; sizeSel.appendChild(o); });
         const nums = el("div", "re-nums"), floorSel = el("select"); [["slate", "Grey squares"], ["wood", "Wood"]].forEach(([v, t]) => { const o = el("option", "", t); o.value = v; floorSel.appendChild(o); });
         const seeSel = el("select"), tabLayout = el("button", "btn", "Layouts"), tabMazes = el("button", "btn", "Which maze has which"), done = el("button", "btn primary", "Done"), undoB = el("button", "btn", "Undo");
         [tabLayout, tabMazes, done, undoB].forEach(b => { b.type = "button"; });

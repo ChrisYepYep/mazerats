@@ -53,3 +53,18 @@ body.hw-screensaver #playBar, body.hw-screensaver .play-menu { opacity: 0; point
 #liftPlate button { position: absolute; padding: 0; background: none !important; border: 0; box-shadow: none; cursor: pointer; }
 #liftPlate button:focus-visible { outline: 2px solid #ffd060; outline-offset: 1px; }
 @media (max-height: 620px) { #liftPlate { width: 170px; height: 360px; } }
+
+/* the Hallway's own windows */
+.hw-sheet { z-index: 40; }
+.hw-sheet-body { color: #f5ecd8; font: 400 9px/14px 'Volter Goldfish', monospace; min-width: 220px; max-width: 320px; padding: 10px 12px; }
+.hw-sheet-body h4 { font: 400 9px/14px 'Volter Goldfish Bold', 'Volter Goldfish', monospace; margin: 0 0 6px; color: #f2be70; }
+.hw-sheet-body h5 { font: 400 9px/14px 'Volter Goldfish Bold', 'Volter Goldfish', monospace; margin: 10px 0 4px; }
+.hw-sheet-body p { margin: 0 0 6px; }
+.hw-ledger .today { display: flex; gap: 8px; align-items: center; }
+.hw-ledger .shelf { display: flex; flex-wrap: wrap; gap: 6px; align-items: flex-end; min-height: 22px; }
+.hw-ledger img { image-rendering: pixelated; }
+.hunts .h { display: flex; justify-content: space-between; gap: 18px; width: 100%; padding: 5px 6px; color: inherit; font: inherit; background: none; border: 0; border-bottom: 1px solid rgba(0, 0, 0, .3); cursor: pointer; }
+.hunts .h:hover { background: rgba(255, 255, 255, .06); }
+.hw-clue { position: absolute; left: 14px; top: 62px; z-index: 28; }
+.hw-clue .hint { color: #f2be70; }
+.hw-clue small { opacity: .8; }

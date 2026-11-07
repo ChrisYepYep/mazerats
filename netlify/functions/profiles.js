@@ -353,9 +353,10 @@ async function shownMotto(db, row, motto) {
 
 /* ---- one profile ---- */
 async function profile(db, id, self) {
-    const [figures, state] = await Promise.all([
+    const [figures, state, hallwayRow] = await Promise.all([
         figuresFor(db, id),
-        db.collection("player_state").findOne({ playerId: id }, { projection: { _id: 0, walked: 1, profile: 1 } })
+        db.collection("player_state").findOne({ playerId: id }, { projection: { _id: 0, walked: 1, profile: 1 } }),
+        db.collection("hallway_progress").findOne({ playerId: id }, { projection: { _id: 0, key: 1 } }).catch(() => null)
     ]);
     const row = figures.profile;
     if (!row) return null;
@@ -405,6 +406,7 @@ async function profile(db, id, self) {
         habboLinked: !!h,
         // A guessed Habbo, not yet shown to be theirs (see above).
         habboUnverified: !h && !!guess,
+        hallwayKey: !!(hallwayRow && hallwayRow.key === true),
         /* Their own: the guess and where it stands, for Edit Profile's
            "Is this your Habbo?" (js/console-profile.js). "declined" is
            told to them as "new" was not — they are only offered to verify. */

@@ -133,6 +133,7 @@
     const hallImg = n => { let i = hallImgs.get(n); if (!i) { i = new Image(); i.onload = () => RoomView.onArt && RoomView.onArt(); i.src = n; hallImgs.set(n, i); } return i; };
     const TALL_BY = 64;
     function drawHall(ctx, r, it) {
+        if (it.p === "trophy") { const fp = window.FLOOR_PIECES && window.FLOOR_PIECES.trophy, i = hallImg("art/wall/i_trophy.png"), m = scr(r, it.x + .25, it.y + .25); if (fp && i.complete && i.naturalWidth) ctx.drawImage(i, m[0] - fp.ox, m[1] - fp.oy); return; }
         if (it.p === "lamp") { const m = scr(r, it.x + .5, it.y + .5), i = hallImg("art/lamp-" + (it.style || "hotel") + ".png"); if (i.complete && i.naturalWidth) ctx.drawImage(i, m[0] - 40, m[1] - 96); return; }
         const regs = RoomView.regs; if (!regs) return;
         const list = Parts().parts(hallPiece(it)).sort((a, b) => (a.x + a.y) - (b.x + b.y));

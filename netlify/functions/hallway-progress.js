@@ -91,6 +91,7 @@ function mergeInto(doc, clean) {
     for (const [id, h] of Object.entries(clean.hunts)) {
         const old = was.hunts[id] || { found: [], done: false };
         next.hunts[id] = { found: [...new Set([...(old.found || []), ...h.found])].slice(0, MAX_LIST), done: old.done === true || h.done };
+        if (old.place) next.hunts[id].place = old.place;
     }
     return next;
 }
@@ -153,6 +154,8 @@ async function handler(event) {
         for (let tries = 0; tries < 4; tries++) {
             const doc = await col.findOne({ playerId: player.id }, { projection: { _id: 0 } });
             const next = mergeInto(doc, clean);
+            /* your place in a hunt is decided here, the moment you first finish it */
+            for (const [id, h] of Object.entries(clean.hunts)) { const was = doc && doc.hunts && doc.hunts[id]; if (h.done && !(was && was.done)) next.hunts[id].place = (await col.countDocuments({ ["hunts." + id + ".done"]: true })) + 1; }
             const rev = (doc && doc.rev) || 0;
             const set = { ...next, rev: rev + 1, updatedAt: new Date().toISOString() };
             try {

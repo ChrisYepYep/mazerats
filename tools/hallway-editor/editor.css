@@ -214,3 +214,6 @@ input[type="text"], input[type="search"], input:not([type]) { cursor: text !impo
 #liftPlate button { position: absolute; padding: 0; background: none !important; border: 0; box-shadow: none; cursor: pointer; }
 #liftPlate button:focus-visible { outline: 2px solid #ffd060; outline-offset: 1px; }
 @media (max-height: 620px) { #liftPlate { width: 170px; height: 360px; } }
+
+#huntsBox textarea, #huntsBox input[type=text] { width: 100%; box-sizing: border-box; }
+#huntsBox .hunt { border-top: 1px solid rgba(255, 255, 255, .12); padding-top: 8px; margin-top: 8px; }

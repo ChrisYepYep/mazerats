@@ -8,7 +8,7 @@
         const out = { scraps: union(a.scraps, b.scraps), key: !!(a.key || b.key), lost: { ...a.lost }, hunts: { ...a.hunts } };
         const al = a.lost || {}, bl = b.lost || {};
         out.lost = (bl.day || "") >= (al.day || "") ? { day: bl.day || "", streak: bl.streak || 0, shelf: union(al.shelf, bl.shelf) } : { day: al.day || "", streak: al.streak || 0, shelf: union(al.shelf, bl.shelf) };
-        for (const [id, h] of Object.entries(b.hunts || {})) { const o = out.hunts[id] || { found: [], done: false }; out.hunts[id] = { found: union(o.found, h.found), done: !!(o.done || h.done) }; }
+        for (const [id, h] of Object.entries(b.hunts || {})) { const o = out.hunts[id] || { found: [], done: false }; out.hunts[id] = { found: union(o.found, h.found), done: !!(o.done || h.done), ...(o.place || h.place ? { place: o.place || h.place } : {}) }; }
         return out;
     }
     const readLocal = () => { try { const v = JSON.parse(localStorage.getItem(KEY)); return v && typeof v === "object" ? merge(blank(), v) : blank(); } catch (e) { return blank(); } };

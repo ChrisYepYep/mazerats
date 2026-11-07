@@ -10168,6 +10168,8 @@ document.addEventListener("DOMContentLoaded", () => {
 
        Cleared: <difficulty> went the same day, for Expert. */
     const BADGES = [
+        /* the Hallway's treasure hunts (7 Nov 2026, the owner's): finish any one and the Caretaker's key is yours */
+        { key: "hallway-key", name: "The Caretaker's Key", means: "Finished a treasure hunt in the Hallway.", how: "Finish a treasure hunt in the Hallway.", test: (f, d) => !!(d && d.hallwayKey) },
         ...MILESTONES.map(m => ({
             key: m.key, name: m.name,
             means: m.at === 1 ? "Completed a first maze." : `Completed ${m.at} mazes.`,

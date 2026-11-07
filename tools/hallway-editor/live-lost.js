@@ -33,7 +33,7 @@
         LIVE.as({ x: t.spot.x, y: t.spot.y, z: q.z, l: t.spot.l, dir: 2, frame: 0, st: null }, () => { LIVE.cutInFront(g, x0, y0); LIVE.tint(g); });
         c.translate(ox, oy); c.scale(LIVE.zoom, LIVE.zoom); c.imageSmoothingEnabled = false; c.drawImage(cv, x0, y0);
     }
-    LIVE.add({ under: (c, ox, oy) => drawThing(c, ox, oy, false), over: (c, ox, oy) => drawThing(c, ox, oy, true), active: () => false });
+    LIVE.add({ under: (c, ox, oy) => drawThing(c, ox, oy, false), over: (c, ox, oy) => drawThing(c, ox, oy, true), still: true });
     /* drawn with the map's own paints, so it never needs a frame loop of its own */
     function pick() { const t = showing(); if (!t) return; setCarry(t.thing); if (window.Track && Track.event) Track.event("hallway_lost_found"); }
     LIVE.onClick((px, py) => {

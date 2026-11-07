@@ -42,6 +42,7 @@
         { floor: "slate", walls: "staff", items: [st("pipes", 0, 0), st("ventx", 2, 0), st("cabinet", 0, 9), st("grate", 3, 3), st("light_caged", 0, 2), st("light_caged", 0, 7), st("light_work", 4, 9)] },
         { floor: "slate", walls: "staff", items: [st("duct", 0, 0), st("vent", 0, 4), st("fan", 0, 8), st("grate", 2, 8), st("light_pendant", 2, 3), st("light_bulkhead", 0, 11)] }
     ];
+    S["8x6"] = [{ floor: "wood", walls: "", items: [lamp(0, 5), thing("globe", 6, 0)] }, { floor: "wood", walls: "", items: [lamp(7, 0)] }, { floor: "slate", walls: "", items: [lamp(0, 5)] }];
     S["4x8"] = [
         { floor: "slate", walls: "", items: [st("light_caged", 0, 3)] },
         { floor: "slate", walls: "", items: [thing("crate", 0, 0), st("light_caged", 0, 4)] },

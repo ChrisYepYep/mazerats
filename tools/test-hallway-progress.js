@@ -3,6 +3,7 @@
 const Module = require("module"), path = require("path"), assert = require("assert");
 const docs = new Map(); let refuse = null, me = { id: "p1" }, indexed = 0;
 const col = {
+    async countDocuments(q) { const k = Object.keys(q)[0].split(".")[1]; let n = 0; for (const d of docs.values()) if (d.hunts && d.hunts[k] && d.hunts[k].done) n++; return n; },
     async findOne(q) { const d = docs.get(q.playerId); return d ? JSON.parse(JSON.stringify(d)) : null; },
     async updateOne(f, u, o) { const d = docs.get(f.playerId); const noRev = f.rev && f.rev.$exists === false; if (d && noRev) { const e = new Error("dup"); e.code = 11000; throw e; } if (d && d.rev !== f.rev) return { matchedCount: 0 }; if (!d && !(o && o.upsert)) return { matchedCount: 0 }; docs.set(f.playerId, { playerId: f.playerId, ...(d || {}), ...u.$set }); return d ? { matchedCount: 1 } : { upsertedCount: 1 }; }
 };

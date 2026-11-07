@@ -1164,7 +1164,7 @@ function fromMap(map, names) {
         }
         for (const q of (l.lamps || [])) { const P = onWall(q.axis, q.at, q.line); if (P) P.l.push([q.axis, q.at, q.colour, q.style, q.h]); else report.lost.push("lamp " + q.axis + q.at + " on " + l.id); }
         for (const q of (l.wallItems || [])) { const P = onWall(q.axis, q.at, q.line); if (P) P.wi.push(q); else report.lost.push((q.k || "wall item") + " " + q.axis + q.at + " on " + l.id); }
-        for (const p of (l.props || [])) { const run = Parts.tiles(p), end = run[run.length - 1], P = onLanding(p.x, p.y) || (Parts.ROWS[p.k] && at(end[0], end[1])) || at(p.x, p.y); if (!P) report.lost.push(p.k + " at " + p.x + "," + p.y + " on " + l.id); const P2 = P || real2[0]; if (!P2) continue; const c = new Set(l.cells), against = !c.has(Math.floor(p.x / 2) + "," + Math.floor((p.y - 2) / 2)) || !c.has(Math.floor((p.x - 2) / 2) + "," + Math.floor(p.y / 2)); P2.props.push([p.k, p.x, p.y, !against, p.len, p.rot, p.style, p.colour, p.lights, p.lightUp, p.noCard]); }
+        for (const p of (l.props || [])) { const run = Parts.tiles(p), end = run[run.length - 1], P = onLanding(p.x, p.y) || (Parts.ROWS[p.k] && at(end[0], end[1])) || at(p.x, p.y); if (!P) report.lost.push(p.k + " at " + p.x + "," + p.y + " on " + l.id); const P2 = P || real2[0]; if (!P2) continue; const c = new Set(l.cells), against = !c.has(Math.floor(p.x / 2) + "," + Math.floor((p.y - 2) / 2)) || !c.has(Math.floor((p.x - 2) / 2) + "," + Math.floor(p.y / 2)); P2.props.push([p.k, p.x, p.y, !against, p.len, p.rot, p.style, p.colour, p.lights, p.lightUp, p.noCard, !!p.night]); }
 
     }
     for (const q of (map.lifts || (map.lift ? [map.lift] : []))) {
@@ -1514,7 +1514,7 @@ function build(cfg) {
                 }
                 else if (k === "rope") {
                     /* each tile of it takes its own place in the queue, so what stands nearer on another tile still covers it */
-                    const row = Parts.parts({ k, x, y, len: p[4], rot: p[5] }), art = RopeBarrier.pixels({ x, y, len: row.length, rot: p[5], noCard: p[10] }, (fx, fy) => { w.partAt({ x: Math.floor(fx), y: Math.floor(fy) }); return w.S(fx, fy); });
+                    const row = Parts.parts({ k, x, y, len: p[4], rot: p[5] }), art = RopeBarrier.pixels({ x, y, len: row.length, rot: p[5], noCard: p[10], part: p[11] ? "poles" : undefined }, (fx, fy) => { w.partAt({ x: Math.floor(fx), y: Math.floor(fy) }); return w.S(fx, fy); });
                     row.forEach((q, t) => {
                         if (!w.partAt(q)) return;
                         const foot = art.feet.find(f => f[2] === t), z = w.z, mine = art.list.filter(a => a[3] === t);
