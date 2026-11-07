@@ -20,6 +20,12 @@ function thumb(name, k, len) {
     }
     finish(b, "thumbs/" + name + ".png");
 }
+/* the rope barrier is drawn by code too */
+{
+    const b = blank(96, 96), S = (x, y) => [Math.round((x - y) * 16) + 24, Math.round((x + y) * 8) + 58];
+    for (const [X, Y, c] of require("./render/rope-barrier.js").pixels({ x: 0, y: 0, len: 3 }, S).list) b.set(X, Y, c);
+    finish(b, "thumbs/rope.png");
+}
 thumb("sofa", "sofa", 3);
 thumb("table", "table", 3);
 thumb("planter", "ero", 3);

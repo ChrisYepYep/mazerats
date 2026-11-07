@@ -24,6 +24,8 @@
     };
     /* the same planter in other materials: see make-planters.js */
     for (const v of ["stone", "walnut", "evergreen", "flower"]) ROWS["ero_" + v] = { def: 2, min: 2, flip: false, part: (i, n) => ["hwv_" + v + (i === 0 ? 1 : i === n - 1 ? 5 : 2 + (i - 1) % 3) + "_a_0_0_0"] };
+    /* drawn by render/rope-barrier.js, not from the client's sprites */
+    ROWS.rope = { def: 3, min: 2, flip: false, part: () => [] };
     const SINGLES = {
         plant: ["hw_plant_a_0_0_0"], statue: ["hw_statue_a_0_0_0"], fountain: ["hw_fountain_a_0_0_0"],
         shelf: ["hw_shelf_a_0_4_0"], cabinet: ["hw_closet1_a_0_2_0"], water: ["hw_watermatic_a_0_4_0"],

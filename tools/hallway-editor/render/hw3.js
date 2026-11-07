@@ -5,6 +5,7 @@ const Parts = require("../furni-parts.js");
 const H = require("./hw.js");
 const FloorLamps = require("./floor-lamps.js");
 const EdgeItems = require("./edge-items.js");
+const RopeBarrier = require("./rope-barrier.js");
 const WALL_ITEM = new Map(require("../wall-items.js").map(i => [i.id, i]));
 const wallArtCache = new Map(), wallArt = f => { if (!wallArtCache.has(f)) wallArtCache.set(f, H_readPng(require("path").join(__dirname, "../art/wall", f))); return wallArtCache.get(f); };
 const H_readPng = require("path").resolve(__dirname, "../../png-decode.js") && require("../../png-decode.js").readPng;
@@ -1134,7 +1135,7 @@ function fromMap(map, names) {
         }
         for (const q of (l.lamps || [])) { const P = onWall(q.axis, q.at, q.line); if (P) P.l.push([q.axis, q.at, q.colour, q.style, q.h]); else report.lost.push("lamp " + q.axis + q.at + " on " + l.id); }
         for (const q of (l.wallItems || [])) { const P = onWall(q.axis, q.at, q.line); if (P) P.wi.push(q); else report.lost.push((q.k || "wall item") + " " + q.axis + q.at + " on " + l.id); }
-        for (const p of (l.props || [])) { const run = Parts.tiles(p), end = run[run.length - 1], P = onLanding(p.x, p.y) || (Parts.ROWS[p.k] && at(end[0], end[1])) || at(p.x, p.y); if (!P) report.lost.push(p.k + " at " + p.x + "," + p.y + " on " + l.id); const P2 = P || real2[0]; if (!P2) continue; const c = new Set(l.cells), against = !c.has(Math.floor(p.x / 2) + "," + Math.floor((p.y - 2) / 2)) || !c.has(Math.floor((p.x - 2) / 2) + "," + Math.floor(p.y / 2)); P2.props.push([p.k, p.x, p.y, !against, p.len, p.rot, p.style, p.colour, p.lights, p.lightUp]); }
+        for (const p of (l.props || [])) { const run = Parts.tiles(p), end = run[run.length - 1], P = onLanding(p.x, p.y) || (Parts.ROWS[p.k] && at(end[0], end[1])) || at(p.x, p.y); if (!P) report.lost.push(p.k + " at " + p.x + "," + p.y + " on " + l.id); const P2 = P || real2[0]; if (!P2) continue; const c = new Set(l.cells), against = !c.has(Math.floor(p.x / 2) + "," + Math.floor((p.y - 2) / 2)) || !c.has(Math.floor((p.x - 2) / 2) + "," + Math.floor(p.y / 2)); P2.props.push([p.k, p.x, p.y, !against, p.len, p.rot, p.style, p.colour, p.lights, p.lightUp, p.noCard]); }
 
     }
     for (const q of (map.lifts || (map.lift ? [map.lift] : []))) {
@@ -1469,6 +1470,18 @@ function build(cfg) {
                 w.sprites = landingOf ? landingQueue : (lv.later = lv.later || []);      // one queue for every part of a floor, or a raised part's things paint over what stands on the part next to it      // all in one queue, or what stands against a wall gets painted over by what is behind it
                 const from = w.sprites.length; let partsNow = null;
                 if (k === "lamp") floorLamp(w, x, y, p[6], p[7]);
+                else if (k === "rope") {
+                    /* each tile of it takes its own place in the queue, so what stands nearer on another tile still covers it */
+                    const row = Parts.parts({ k, x, y, len: p[4], rot: p[5] }), art = RopeBarrier.pixels({ x, y, len: row.length, rot: p[5], noCard: p[10] }, (fx, fy) => { w.partAt({ x: Math.floor(fx), y: Math.floor(fy) }); return w.S(fx, fy); });
+                    row.forEach((q, t) => {
+                        if (!w.partAt(q)) return;
+                        const foot = art.feet.find(f => f[2] === t), z = w.z, mine = art.list.filter(a => a[3] === t);
+                        w.sprites.push({ depth: q.x + q.y + .5, ftx: q.x, fty: q.y, draw: () => {
+                            if (foot && w.footShadows) w.footShadows.push([foot[0], foot[1], z]);
+                            for (const [X, Y, c] of mine) { layer.set(X, Y, c); if (w.keep && X >= 0 && Y >= 0 && X < bw && Y < bh) w.keep[Y * bw + X] = ((c[0] << 16) | (c[1] << 8) | c[2]) + 1; }
+                        } });
+                    });
+                }
                 else for (const q of partsNow = Parts.parts({ k, x, y, len: p[4], rot: p[5] })) w.partAt(q) && H.furni(w, q.names, q.x, q.y, { flip: q.flip, dz: k === "statue" || k === "fountain" ? 1.5 : 0, stretch: k === "pillartall" ? tallBy(q.x, q.y, w.z) : 0, keepColour: k === "pillar" || k === "pillartall" || k === "ero" || k.startsWith("ero_") || k === "smtable" || k === "ballpost" || k === "shelf" || k === "sofa" || k === "table" || k === "chair", tint: k === "ballpost" || ((k === "pillar" || k === "pillartall") && (wayOf(cfg.single || lv.way) || {}).planks) ? floorTint(cfg.single || lv.way) : (k === "sofa" || k === "chair") && (lv.k !== 0 || (lv.src && lv.src.colour)) ? cushionTint(cfg.single || lv.way) : null });
                 if ((k === "pillar" || k === "pillartall") && p[8]) for (const f of p[8]) pillarLight(w, x, y, f, p[7], p[9]);
                 w.z = P.z;
