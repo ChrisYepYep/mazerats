@@ -39,7 +39,7 @@ function main() {
     fs.rmSync(LIFT_NEW, { recursive: true, force: true }); fs.rmSync(APP_NEW, { recursive: true, force: true }); fs.mkdirSync(LIFT_NEW, { recursive: true });
     const tiles = {}, used = new Set(), total = MOODS.length + 1, onlyBasement = require("./furni-parts.js").basementTiles(load());
     let done = 0;
-    const hasXmas = load().levels.some(l => (l.props || []).some(p => p.k === "xmastree" || /^gift\d$/.test(p.k)) || (l.wallItems || []).some(q => q.k === "i_garland" || q.k === "i_window"));
+    const hasXmas = load().levels.some(l => (l.props || []).some(p => /^(xmas|gift\d|snowman)/.test(p.k)) || (l.wallItems || []).some(q => /^i_(garland|window|bunting|festoon|wreath|stockings|holly|canes)/.test(q.k)));
     for (const light of [...MOODS, "failing", ...(hasXmas ? MOODS.map(m => m + "+x") : [])]) {
         const world = W.build({ map: load(), names, light }), b = world.b, o = world.at(0, 0, 0);
         /* A square of the editor's picture is tile-sized in map pixels, counted from the map's origin, which the whole picture has moved */

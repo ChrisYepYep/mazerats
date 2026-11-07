@@ -1164,7 +1164,7 @@ function fromMap(map, names) {
         }
         for (const q of (l.lamps || [])) { const P = onWall(q.axis, q.at, q.line); if (P) P.l.push([q.axis, q.at, q.colour, q.style, q.h]); else report.lost.push("lamp " + q.axis + q.at + " on " + l.id); }
         for (const q of (l.wallItems || [])) { const P = onWall(q.axis, q.at, q.line); if (P) P.wi.push(q); else report.lost.push((q.k || "wall item") + " " + q.axis + q.at + " on " + l.id); }
-        for (const p of (l.props || [])) { const run = Parts.tiles(p), end = run[run.length - 1], P = onLanding(p.x, p.y) || (Parts.ROWS[p.k] && at(end[0], end[1])) || at(p.x, p.y); if (!P) report.lost.push(p.k + " at " + p.x + "," + p.y + " on " + l.id); const P2 = P || real2[0]; if (!P2) continue; const c = new Set(l.cells), against = !c.has(Math.floor(p.x / 2) + "," + Math.floor((p.y - 2) / 2)) || !c.has(Math.floor((p.x - 2) / 2) + "," + Math.floor(p.y / 2)); P2.props.push([p.k, p.x, p.y, !against, p.len, p.rot, p.style, p.colour, p.lights, p.lightUp, p.noCard, !!p.night]); }
+        for (const p of (l.props || [])) { const run = Parts.tiles(p), end = run[run.length - 1], P = onLanding(p.x, p.y) || (Parts.ROWS[p.k] && at(end[0], end[1])) || at(p.x, p.y); if (!P) report.lost.push(p.k + " at " + p.x + "," + p.y + " on " + l.id); const P2 = P || real2[0]; if (!P2) continue; const c = new Set(l.cells), against = !c.has(Math.floor(p.x / 2) + "," + Math.floor((p.y - 2) / 2)) || !c.has(Math.floor((p.x - 2) / 2) + "," + Math.floor(p.y / 2)); P2.props.push([p.k, p.x, p.y, !against, p.len, p.rot, p.style, p.colour, p.lights, p.lightUp, p.noCard, !!p.night, p.rare]); }
 
     }
     for (const q of (map.lifts || (map.lift ? [map.lift] : []))) {
@@ -1226,7 +1226,7 @@ function build(cfg) {
         for (let dy = 0; dy < 16; dy++) { const half = dy < 8 ? dy * 2 + 2 : (15 - dy) * 2 + 2; for (let dx = -half; dx <= half; dx++) { const c = smp(dx, dy); if (c) { const sx = a[0] + dx, sy = a[1] + dy; if (sx >= 0 && sy >= 0 && sx < bw && sy < bh) { layer.set(sx, sy, c); mask[sy * bw + sx] = 1; zb[sy * bw + sx] = w.z; fc[sy * bw + sx] = (c[0] << 16) | (c[1] << 8) | c[2]; } } } }
     };
     const inView = P => { const x0 = (P.x0 - P.y1) * 16 + gx - 200, x1 = (P.x1 - P.y0) * 16 + gx + 200, y0 = (P.x0 + P.y0) * 8 + gy - P.z - 200, y1 = (P.x1 + P.y1) * 8 + gy - P.z + 200; return !(x1 < 0 || x0 > bw || y1 < 0 || y0 > bh); };
-    const xmasOn = !cfg.light || /\+x$/.test(cfg.light), way = cfg.way, Mname = String(cfg.light || "").replace("+x", "") || (cfg.map && cfg.map.light) || "sconces", M = LIGHTS[Mname] || LIGHTS.sconces, XMAS_K = new Set(["xmastree", "gift1", "gift2", "gift3", "gift4"]);
+    const xmasOn = /\+x$/.test(cfg.light || ""), way = cfg.way, Mname = String(cfg.light || "").replace("+x", "") || (cfg.map && cfg.map.light) || "sconces", M = LIGHTS[Mname] || LIGHTS.sconces, XMAS_K = new Set(["xmastree", "xmaslantern", "xmassmalltree", "xmasdrinks", "xmasduck", "snowman", "gift1", "gift2", "gift3", "gift4"]);
     w.lightsOff = !!M.off;
     let avL = [1, 1, 1];
 
@@ -1510,8 +1510,8 @@ function build(cfg) {
                 }
                 else if (FLOOR_PIECES[k]) {
                     if (k === "xmastree" && xmasOn) w.treeGlows.push(w.S(x + .25, y + .25));
-                    if (!(XMAS_K.has(k) && !xmasOn) && w.partAt({ x, y })) { const fp = FLOOR_PIECES[k], flat = k.startsWith("mark_"), base = w.S(x + (flat ? .5 : .25), y + (flat ? .5 : .25)), im = wallArt(fp.f), z = w.z, X0 = Math.round(base[0]) - fp.ox, Y0 = Math.round(base[1]) - fp.oy;
-                        w.sprites.push({ depth: x + y + (flat ? -.6 : .5), ftx: x, fty: y, draw: () => { for (let j = 0; j < im.h; j++) for (let i = 0; i < im.w; i++) { const q = (j * im.w + i) * 4, A = im.rgba[q + 3]; if (!A) continue; const X = X0 + i, Y = Y0 + j, c = [im.rgba[q], im.rgba[q + 1], im.rgba[q + 2]]; if (A < 255) { pieceTint(X, Y, c, A); continue; } layer.set(X, Y, c); if (X >= 0 && Y >= 0 && X < bw && Y < bh) w.keep[Y * bw + X] = ((c[0] << 16) | (c[1] << 8) | c[2]) + 1; } } }); }
+                    if (!(XMAS_K.has(k) && !xmasOn) && w.partAt({ x, y })) { const fp = FLOOR_PIECES[k], flat = k.startsWith("mark_"), base = w.S(x + (flat ? .5 : .25), y + (flat ? .5 : .25)), im = wallArt(k === "rarecase" && p[12] && fp.opts && fp.opts[p[12]] ? fp.opts[p[12]].f : fp.f), z = w.z, X0 = Math.round(base[0]) - fp.ox, Y0 = Math.round(base[1]) - fp.oy;
+                        w.sprites.push({ depth: x + y + (flat ? -.6 : .5), ftx: x, fty: y, draw: () => { for (let j = 0; j < im.h; j++) for (let i = 0; i < im.w; i++) { const q = (j * im.w + i) * 4, A = im.rgba[q + 3]; if (!A) continue; const X = X0 + i, Y = Y0 + j, c = [im.rgba[q], im.rgba[q + 1], im.rgba[q + 2]]; if (A < 255) { pieceTint(X, Y, c, A); continue; } layer.set(X, Y, c); if (X >= 0 && Y >= 0 && X < bw && Y < bh) { const v = ((c[0] << 16) | (c[1] << 8) | c[2]) + 1; w.keep[Y * bw + X] = v; if (k === "rarecase" && c[0] === 186 && c[1] === 206 && c[2] === 220) w.glowing[Y * bw + X] = v; } } } }); }
                 }
                 else if (k === "rope") {
                     /* each tile of it takes its own place in the queue, so what stands nearer on another tile still covers it */
@@ -1611,7 +1611,7 @@ function build(cfg) {
             }
             for (const it of (P.wi || [])) {
                 const def = WALL_ITEM.get(it.k); if (!def) continue;
-                if (it.k === "i_garland" && !xmasOn) continue;
+                if (def.xmas && !xmasOn) continue;
                 if (it.k === "i_window") { const zw = P.z, wide = it.w || 52, b0 = it.b || 0, top0 = it.top || 78, flip = it.axis === "x", one = () => { const zs = w.z; w.z = zw; const start = it.at - wide / 32, s0 = flip ? w.S(start, it.line) : w.S(it.line, start); w.z = zs; const a0 = Math.round(s0[0]), a1 = Math.round(s0[1]) - 6, view = wallArt("i_view_" + (xmasOn && cfg.light ? "snow_" : "") + (Mname === "day" ? "day" : Mname === "night" || Mname === "failing" ? "night" : Mname === "dawn" ? "dawn" : "dusk") + ".png"), place = HallWindow.PLACES[it.view] || HallWindow.PLACES.lawn, H2 = top0 - b0, offx = place[0] - wide / 2, offy = place[1] - H2 / 2, Y0 = a1 + wide / 2 - top0;
                         /* looking out: the picture stays upright, only its outline follows the wall */
                         for (let u = 0; u < wide; u++) { for (let v = 0; v < H2; v++) { const sxm = a0 - wide + u, sy = Y0 - Math.floor(u / 2) + v, X = flip ? 2 * a0 - sxm - 1 : sxm, sxv = Math.max(0, Math.min(view.w - 1, Math.round(u + offx))), syv = Math.max(0, Math.min(view.h - 1, Math.round(sy - Y0 + offy))), q = (syv * view.w + sxv) * 4; let c = [view.rgba[q], view.rgba[q + 1], view.rgba[q + 2]]; c = c.map((n, k) => n * .88 + [200, 225, 240][k] * .12); const slant = u - (H2 - v) * .34; for (const [o, sw] of [[.2, 7], [.34, 3], [.72, 5]]) { const x0 = wide * o; if (slant >= x0 && slant < x0 + sw) { c = c.map(n => n * .8 + 255 * .2); break; } } c = c.map(n => Math.round(Math.min(255, n))); layer.set(X, sy, c); if (X >= 0 && sy >= 0 && X < bw && sy < bh) { const n = ((c[0] << 16) | (c[1] << 8) | c[2]) + 1; w.keep[sy * bw + X] = n; w.glowing[sy * bw + X] = n; } } }
@@ -1789,12 +1789,14 @@ function build(cfg) {
             later.length = 0;
         }
         w.z = lowest; later.forEach(drawSprite);
-        w.afterAll.sort((a, c) => a.depth - c.depth).forEach(s => {
+        const paintedAfter = new Set(); w.afterAll.sort((a, c) => a.depth - c.depth).forEach(s => {
             const own = Object.prototype.hasOwnProperty.call(layer, "set"), was = layer.set, mine = new Set();
-            layer.set = function (x, y, c) { if (x >= 0 && y >= 0 && x < bw && y < bh) { const i = y * bw + x; if ((furniX[i] !== NO_FURNI && !mine.has(i)) || (mask[i] === 1 && zb[i] > s.zHere)) return; mine.add(i); was.call(layer, x, y, c); furniX[i] = s.tx; furniY[i] = s.ty; furniRun[i] = 0; const p = i * 4; furniC[i] = (layer.d[p] << 16) | (layer.d[p + 1] << 8) | layer.d[p + 2]; } };
+            layer.set = function (x, y, c) { if (x >= 0 && y >= 0 && x < bw && y < bh) { const i = y * bw + x; if ((furniX[i] !== NO_FURNI && !mine.has(i)) || (mask[i] === 1 && zb[i] > s.zHere)) return; mine.add(i); paintedAfter.add(i); was.call(layer, x, y, c); furniX[i] = s.tx; furniY[i] = s.ty; furniRun[i] = 0; const p = i * 4; furniC[i] = (layer.d[p] << 16) | (layer.d[p + 1] << 8) | layer.d[p + 2]; } };
             w.z = s.zHere; s.draw();
             if (own) layer.set = was; else delete layer.set;
-        }); w.z = lowest;
+        });
+        /* a wall light stays in front of a window or poster hung where it is */
+        for (const i of paintedAfter) { const c = lampPx.get(i); if (c === undefined) continue; const q = i * 4; layer.d[q] = c >> 16; layer.d[q + 1] = (c >> 8) & 255; layer.d[q + 2] = c & 255; } w.z = lowest;
         /* A wall with a floor above it, whose edge lies right along the wall's top, goes straight up under that floor with no cap of its own, however low its own floor is:
            from the bottom of the upper floor's edge down to where the plain wallpaper starts, the wallpaper's own repeat, taken from further down the same column. */
         /* what has been painted over since is not furniture or a lamp any more, or it would keep old wall from being tidied below */
@@ -1937,7 +1939,7 @@ function build(cfg) {
             if (c && l.colour) { const q = hex(l.colour.replace(/^#/, "")), top = Math.max(q[0], q[1], q[2], 1), power = Math.max(...c); c = q.map(v => v / top * power * (l.sign ? .42 : 1)); }
             return c && !l.dead ? { ...l, c } : null; }).filter(Boolean);
         const lightAt = (x, y, isFloor, zv) => {
-            const L = [M.amb[0], M.amb[1], M.amb[2]];
+            const L = [M.amb[0], M.amb[1], M.amb[2]], top = [0, 0, 0], rest = [0, 0, 0];
             for (const l of lamps) {
                 const dxs = x - l.x; if (dxs > 340 || dxs < -340) continue;
                 let d;
@@ -1950,8 +1952,9 @@ function build(cfg) {
                     const dh = y - l.y - dxs / 2 * (l.axisY ? -1 : l.free ? 0 : 1);
                     d = Math.sqrt(dxs * dxs + dh * dh * 1.2) / M.px;
                 }
-                if (d < 1) { const f = (1 - d) * (1 - d) * M.p; L[0] += f * l.c[0]; L[1] += f * l.c[1]; L[2] += f * l.c[2]; }
+                if (d < 1) { const f = (1 - d) * (1 - d) * M.p; for (let k = 0; k < 3; k++) { const v = f * l.c[k]; if (v > top[k]) { rest[k] += top[k]; top[k] = v; } else rest[k] += v; } }
             }
+            for (let k = 0; k < 3; k++) L[k] += top[k] + rest[k] * .28;
             return L;
         };
         const furniLight = new Map();
@@ -1973,7 +1976,7 @@ function build(cfg) {
             layer.d[p] = Math.min(255, layer.d[p] * k0); layer.d[p + 1] = Math.min(255, layer.d[p + 1] * k1); layer.d[p + 2] = Math.min(255, layer.d[p + 2] * k2);
         }
         /* the tree's always lit, and lights the room round it */
-        for (const g of w.treeGlows) { const X0 = Math.round(g[0]), Y0 = Math.round(g[1]) - 6, gl = (cx, cy, R, sy, a) => { for (let y = Math.max(0, Math.floor(cy - R * sy)); y < Math.min(bh, cy + R * sy); y++) for (let x = Math.max(0, Math.floor(cx - R)); x < Math.min(bw, cx + R); x++) { const d = Math.hypot(x - cx, (y - cy) / sy) / R; if (d >= 1) continue; const i = (y * bw + x) * 4, k = a * (1 - d); if (layer.d[i] === 7 && layer.d[i + 1] === 6 && layer.d[i + 2] === 10) continue; layer.d[i] = Math.min(255, layer.d[i] + 255 * k); layer.d[i + 1] = Math.min(255, layer.d[i + 1] + 190 * k); layer.d[i + 2] = Math.min(255, layer.d[i + 2] + 96 * k); } }; gl(X0, Y0, 96, .55, .34); gl(X0, Y0 - 62, 84, 1, .2); }
+        for (const g of w.treeGlows) { const X0 = Math.round(g[0]), Y0 = Math.round(g[1]) - 6, gl = (cx, cy, R, sy, a) => { for (let y = Math.max(0, Math.floor(cy - R * sy)); y < Math.min(bh, cy + R * sy); y++) for (let x = Math.max(0, Math.floor(cx - R)); x < Math.min(bw, cx + R); x++) { const d = Math.hypot(x - cx, (y - cy) / sy) / R; if (d >= 1) continue; const i = (y * bw + x) * 4, k = a * (1 - d); if (layer.d[i] === 7 && layer.d[i + 1] === 6 && layer.d[i + 2] === 10) continue; layer.d[i] = Math.min(255, layer.d[i] + 255 * k); layer.d[i + 1] = Math.min(255, layer.d[i + 1] + 190 * k); layer.d[i + 2] = Math.min(255, layer.d[i + 2] + 96 * k); } }; gl(X0, Y0, 60, .55, .3); gl(X0, Y0 - 34, 48, 1, .16); }
         if (w.sunWins.length) { const HT = { sofa: 14, chair: 14, table: 14, smtable: 14, ero: 20, ero_stone: 20, ero_walnut: 20, ero_evergreen: 20, ero_flower: 20, cabinet: 40, shelf: 40, plant: 26, statue: 60, fountain: 20, rarecase: 40, water: 30 }, heights = new Map(); for (const P of lv.patches) for (const p of (P.props || [])) { const ht = HT[p[0]]; if (ht) for (const t of Parts.tiles({ k: p[0], x: p[1], y: p[2], len: p[4], rot: p[5] })) heights.set(t[0] + "," + t[1], ht); }
             for (const s of w.sunWins) { const Sn = HallWindow.SUN, toTile = (mx, my) => s.flip ? [s.start + my / 16, s.line + mx / 16] : [s.line + mx / 16, s.start + my / 16], blocked = (mx, my, mz) => { const t = mx / Sn[0]; for (let k = .02; k < 1; k += .03) { const px = mx - k * mx, py = my - k * t * Sn[1], pz = mz - k * t * Sn[2], q = toTile(px, py), ht = heights.get(Math.floor(q[0]) + "," + Math.floor(q[1])); if (ht && pz < ht && pz >= 0) return true; } return false; };
                 const far = (s.top + 4) / -Sn[2], side = far * Sn[1]; for (let y = Math.floor(Math.max(0, s.a1 - s.top - s.W)); y < Math.min(bh, s.a1 + (far + s.W + side) / 2 + 8); y++) for (let x = Math.floor(Math.max(0, s.flip ? s.a0 - far : s.a0 - s.W - side - 8)); x < Math.min(bw, s.flip ? s.a0 + s.W + side + 8 : s.a0 + far); x++) { const i0 = y * bw + x, sx = (s.flip ? s.a0 - x : x - s.a0), sy = y - s.a1, isF = mask[i0] === 1 && zb[i0] === s.z, isFur = furniX[i0] !== NO_FURNI && zb[i0] === s.z; let al = 0;

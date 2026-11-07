@@ -191,7 +191,7 @@ http.createServer(async (req, res) => {
         if (url.pathname === "/api/tile") {
             const v = url.searchParams.get("v"), tx = Number(url.searchParams.get("tx")), ty = Number(url.searchParams.get("ty"));
             if (!versions.has(v) || !Number.isInteger(tx) || !Number.isInteger(ty)) { res.writeHead(404); return res.end("No such tile"); }
-            const askedFor = url.searchParams.get("m") || "", light = W.LIGHTS[askedFor.replace("+x", "")] ? askedFor : undefined;
+            const askedFor = url.searchParams.get("m") || "", light = askedFor === "+x" || W.LIGHTS[askedFor.replace("+x", "")] ? askedFor : undefined;
             return draw(res, `${v}|${tx}|${ty}|${light || ""}`, { x: tx * TILE, y: ty * TILE, w: TILE, h: TILE, light }, v);
         }
         if (url.pathname === "/api/whole") {

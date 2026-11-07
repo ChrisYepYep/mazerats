@@ -88,7 +88,7 @@ select { height: 30px; padding: 0 6px; background: var(--raised); border: 1px so
 .hint.dim { color: var(--dim); }
 
 /* THE RIGHT PANEL */
-.tabs { display: flex; gap: 2px; padding: 8px 8px 0; border-bottom: 1px solid var(--line); flex: none; }
+.tabs { display: flex; flex-wrap: wrap; gap: 2px; padding: 8px 8px 0; border-bottom: 1px solid var(--line); flex: none; }
 .tab { flex: 1; height: 32px; padding: 0 2px; background: none; border: 0; border-bottom: 2px solid transparent; color: var(--dim); font-weight: 600; white-space: nowrap; }
 .tab:hover { color: var(--text); }
 .tab.active { color: var(--text); border-bottom-color: var(--gold); }
@@ -229,3 +229,11 @@ input[type="text"], input[type="search"], input:not([type]) { cursor: text !impo
 .hunts .h { display: flex; justify-content: space-between; gap: 18px; width: 100%; padding: 5px 6px; color: inherit; font: inherit; background: none; border: 0; border-bottom: 1px solid rgba(0, 0, 0, .3); cursor: pointer; }
 .hw-clue { position: absolute; left: 14px; top: 62px; z-index: 28; }
 .hw-clue .hint { color: #f2be70; }
+
+/* the game's speech bubbles */
+.hw-bubbles { position: absolute; z-index: 27; display: flex; flex-direction: column; align-items: center; gap: 3px; transform: translate(-50%, -100%); pointer-events: none; width: 300px; }
+.hw-bubble { position: relative; max-width: 290px; padding: 3px 8px; color: #000; background: #fff; border: 1px solid #000; border-radius: 7px; box-shadow: 0 1px 0 rgba(0, 0, 0, .5); font: 400 9px/13px 'Volter Goldfish', monospace; }
+.hw-bubble b { font-family: 'Volter Goldfish Bold', 'Volter Goldfish', monospace; font-weight: 400; }
+.hw-bubble:last-child::after { content: ""; position: absolute; left: 50%; bottom: -5px; width: 7px; height: 7px; margin-left: -4px; background: #fff; border-right: 1px solid #000; border-bottom: 1px solid #000; transform: rotate(45deg); }
+.hw-replies { position: absolute; left: 50%; bottom: 18px; z-index: 29; display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; max-width: 92%; transform: translateX(-50%); }
+@media (max-width: 700px), (pointer: coarse) { .hw-replies .mr-btn { min-height: 40px; } }

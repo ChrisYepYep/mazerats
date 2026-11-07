@@ -18,7 +18,7 @@ const lift = (hex, k) => col(hex).map(v => Math.min(255, Math.round(v * k)));
 /* ---- 17: the desk ---- */
 function desk() {
     const W = 96, HT = 96, D = 40, cy1 = W - 16, ps = [];
-    ps.push(box(-D - 2, 0, -2, W, -2, 0, { top: col("555"), x: col("2a2a2a"), y: col("2a2a2a"), edge: null, noLine: true, tex(f, p) { return f === "top" ? slateAt(p[0], p[1]) : null; } }));
+    ps.push(box(-D - 2, 0, -2, W, -.05, 0, { top: col("555"), x: col("555"), y: col("555"), edge: null, noLine: true, tex(f, p) { return f === "top" ? slateAt(p[0], p[1]) : null; } }));
     const upper = (f) => f === "x" ? "45342d" : "5a4438";
     const wallTex = (f, p) => { if (f === "x") return dado(p[1], p[2]) || upper(f); if (f === "y") { const d = dado(p[0], p[2]); return d ? lift(d, 1.28) : upper(f); } return null; };
     ps.push(box(-D - 3, -D, -6, W + 4, 0, HT + D + 8, { top: col("7f5947"), x: col("452313"), y: col("593422"), edge: col("120704"), tex: wallTex }));
@@ -357,11 +357,11 @@ function hotelItems() {
       return s0; };
     out.photo = photo("uk", 6, 170); out.photo_es = photo("es", 6, 170); out.photo_br = photo("br", 6, 170);
     /* a fire exit: a dark grey steel door as wide as the sign over it, a black outline round it and its little window, a push bar */
-    { const Hh = 76, W = 36, GR = { top: col("6a6e72"), y: col("3c3f43"), x: col("4a4d51"), edge: col(K) }, wy0 = W / 2 - 6, wy1 = W / 2 + 6;
-      const door = (f, p) => { if (f !== "x") return null; const y = Math.floor(p[1]), z = Math.floor(p[2]); if (y >= wy0 && y < wy1 && z >= 46 && z < 64) { if (y === wy0 || y === wy1 - 1 || z === 46 || z === 63) return K; if (y === wy0 + 1 || z === 62) return "1c2024"; if (mod(y + z, 5) === 0) return "6e8c98"; return mod(y - z + 60, 14) < 3 ? "c8e0ea" : "8fb0bc"; } if (z < 6) return mod(y, 8) === 0 ? "2a2c30" : "606468"; if (z === 6) return K; return null; };
+    { const Hh = 66, W = 32, GR = { top: col("6a6e72"), y: col("3c3f43"), x: col("4a4d51"), edge: col(K) }, wy0 = W / 2 - 6, wy1 = W / 2 + 6;
+      const door = (f, p) => { if (f !== "x") return null; const y = Math.floor(p[1]), z = Math.floor(p[2]); if (y >= wy0 && y < wy1 && z >= 38 && z < 54) { if (y === wy0 || y === wy1 - 1 || z === 38 || z === 53) return K; if (y === wy0 + 1 || z === 52) return "1c2024"; if (mod(y + z, 5) === 0) return "6e8c98"; return mod(y - z + 60, 14) < 3 ? "c8e0ea" : "8fb0bc"; } if (z < 6) return mod(y, 8) === 0 ? "2a2c30" : "606468"; if (z === 6) return K; return null; };
       const ps = [box(0, 1.5, 3, W - 3, 0, Hh - 3, { ...GR, tex: door }), box(0, 3.5, 0, 3, 0, Hh, OAK), box(0, 3.5, W - 3, W, 0, Hh, OAK), box(0, 4.5, -1, W + 1, Hh - 3, Hh + 1, OAK)];
-      ps.push(box(3, 5, 6, W - 6, 31, 33.4, M("dfe3e7", "aab2ba", "6a727a", K)), box(1.5, 3.2, 6, 8.4, 29, 35, M("8d959d", "565c62", "3c4248", K)), box(1.5, 3.2, W - 8.4, W - 6, 29, 35, M("8d959d", "565c62", "3c4248", K)));
-      for (const z of [12, 62]) ps.push(box(1.5, 2.6, 3, 4.6, z, z + 5, M("aab2ba", "7a838c", "4c545c", K)));
+      ps.push(box(3, 5, 6, W - 6, 27, 29.4, M("dfe3e7", "aab2ba", "6a727a", K)), box(1.5, 3.2, 6, 8.4, 25, 31, M("8d959d", "565c62", "3c4248", K)), box(1.5, 3.2, W - 8.4, W - 6, 25, 31, M("8d959d", "565c62", "3c4248", K)));
+      for (const z of [10, 52]) ps.push(box(1.5, 2.6, 3, 4.6, z, z + 5, M("aab2ba", "7a838c", "4c545c", K)));
       out.fireExit = render(ps, { depthEdge: true }); out.fireSign = fireSign(W / 2, Hh + 6); }
     /* the stuffed rat's case: a shallow case with a baize back, the rat on a plinth with a bronze plate, glass over it all */
     { const W = 40, Hh = 30, z0 = 64, D = 9, F = { top: col("93705a"), y: col("765444"), x: col("5f3f2e"), edge: col(K) }, r0 = require("./old-items2.js").bakeRat().y[0], r = { ...r0, rgba: new Uint8ClampedArray(r0.rgba) };

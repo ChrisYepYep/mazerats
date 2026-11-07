@@ -122,7 +122,7 @@
             const text = savedText, map = JSON.parse(text), base = await sha(baseText !== null ? baseText : text);      // one map all the way through, whatever's saved meanwhile
             const ways = [...new Set(map.levels.map(l => l.colour ? "hex:" + l.colour : l.way))];
             const known = new Set(((await (await realFetch(`${FN}?what=known`, admin())).json()).known) || []);
-            const hasXmas = map.levels.some(l => (l.props || []).some(p => p.k === "xmastree" || /^gift\d$/.test(p.k)) || (l.wallItems || []).some(q => q.k === "i_garland" || q.k === "i_window"));
+            const hasXmas = map.levels.some(l => (l.props || []).some(p => /^(xmas|gift\d|snowman)/.test(p.k)) || (l.wallItems || []).some(q => /^i_(garland|window|bunting|festoon|wreath|stockings|holly|canes)/.test(q.k)));
             const onlyBasement = window.FurniParts.basementTiles(map), DRAW = [...MOODS, "failing", ...(hasXmas ? MOODS.map(m => m + "+x") : [])];
             publishing.of = DRAW.length + ways.length + 1;
             const tiles = {}, lift = {};

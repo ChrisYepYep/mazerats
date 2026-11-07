@@ -21,7 +21,7 @@ let dirty = false, savedAt = 0;
 const undoStack = [], redoStack = [];
 let hover = null, drag = null, spaceHeld = false;
 /* Wall lights and wall items hang at a set height, in steps of 4; hold Ctrl and move the mouse up or down to change it */
-const wallH = { lamp: 106, item: 100 }, WALL_STEP = 4, WALL_RANGE = { lamp: [44, 136], item: [28, 136] };
+const wallH = { lamp: 106, item: 100 }, WALL_STEP = 4, WALL_RANGE = { lamp: [44, 136], item: [20, 146] };
 const wallHeightKind = t => t === "sconce" || t === "globelight" ? "lamp" : isWallItemTool(t) ? "item" : null;
 let wallCtrlLast = null, wallCtrlSpare = 0, ctrlNow = false;
 const snapWall = (h, kind) => Math.max(WALL_RANGE[kind][0], Math.min(WALL_RANGE[kind][1], Math.round(h / WALL_STEP) * WALL_STEP));
@@ -55,11 +55,13 @@ const WALL_ITEMS = window.WALL_ITEMS || [], WALL_GROUPS = [["painting", "Hallway
 const TOOLS = [
     ["Floors", [["floor", "Paint floor", T_ + "floor.png"], ["erase", "Remove floor", ICON.erase], ["rug", "Rug", T_ + "rug.png"], ["medal", "Carpet crest", T_ + "crest.png"], ["height", "Floor height", ICON.raise], ["steps", "Small steps", T_ + "stair.png"]]],
     ["On walls", [["door", "Door", T_ + "door.png"], ["halfwall", "Half wall", ICON.halfwall], ["nowall", "No wall", ICON.nowall], ["addwall", "Show wall", ICON.addwall], ["sconce", "Wall light", T_ + "sconce.png"], ["globelight", "Globe wall light", "art/sconce-globe-y.png"], ["entrance", "Entrance", H_ + "entry_upper_right_mask.png"], ["lift", "Lift", T_ + "lift.png"], ["stair", "Stairs: straight", T_ + "stair.png"], ["turn", "Stairs: turning", T_ + "turn.png"], ["side", "Stairs: left wall", T_ + "side.png"], ["sideturn", "Stairs: left wall, turning", T_ + "sideturn.png"]]],
-    ["Furniture", [["sofa", "Sofa", T_ + "sofa.png"], ["chair", "Chair", H_ + "hw_chair_a_0_2_0.png"], ["table", "Table", T_ + "table.png"], ["smtable", "Small round table", H_ + "hw_smtble_a_0_0_0.png"], ["ballpost", "Ball post", H_ + "pillar0_a_0_0_0.png"], ["rope", "Rope barrier", T_ + "rope.png"], ["lamp", "Floor lamp", T_ + "lamp.png"], ["plant", "Plant", H_ + "hw_plant_a_0_0_0.png"], ["ero", "Planter", T_ + "planter.png"], ...PLANTERS.map(([k, name]) => [k, name, T_ + "planter-" + k.slice(4) + ".png"]), ["pillar", "Pillar", H_ + "pillar1_a_0_0_0.png"], ["pillartall", "Tall pillar", T_ + "pillartall.png"], ["statue", "Statue", H_ + "hw_statue_a_0_0_0.png"], ["fountain", "Fountain", H_ + "hw_fountain_a_0_0_0.png"], ["shelf", "Bookcase", H_ + "hw_shelf_a_0_4_0.png"], ["cabinet", "Cabinet", H_ + "hw_closet1_a_0_2_0.png"], ["water", "Water cooler", H_ + "hw_watermatic_a_0_4_0.png"], ["rarecase", "Rare in a glass case", "art/wall/i_rarecase.png"], ["xmastree", "Christmas tree (Christmas only)", "art/wall/i_xmastree.png"], ["gift1", "Gift (Christmas only)", "art/wall/i_gift1.png"], ["gift2", "Gift, blue (Christmas only)", "art/wall/i_gift2.png"], ["gift3", "Gift, green (Christmas only)", "art/wall/i_gift3.png"], ["gift4", "Gift, gold (Christmas only)", "art/wall/i_gift4.png"], ["trophy", "Old trophy cabinet", "art/wall/i_trophy.png"], ["mark_scuff", "Floor scuffs", "art/wall/i_mark_scuff.png"], ["mark_tile", "Lifted floor tile", "art/wall/i_mark_tile.png"]]],
+    ["Furniture", [["sofa", "Sofa", T_ + "sofa.png"], ["chair", "Chair", H_ + "hw_chair_a_0_2_0.png"], ["table", "Table", T_ + "table.png"], ["smtable", "Small round table", H_ + "hw_smtble_a_0_0_0.png"], ["ballpost", "Ball post", H_ + "pillar0_a_0_0_0.png"], ["rope", "Rope barrier", T_ + "rope.png"], ["lamp", "Floor lamp", T_ + "lamp.png"], ["plant", "Plant", H_ + "hw_plant_a_0_0_0.png"], ["ero", "Planter", T_ + "planter.png"], ...PLANTERS.map(([k, name]) => [k, name, T_ + "planter-" + k.slice(4) + ".png"]), ["pillar", "Pillar", H_ + "pillar1_a_0_0_0.png"], ["pillartall", "Tall pillar", T_ + "pillartall.png"], ["statue", "Statue", H_ + "hw_statue_a_0_0_0.png"], ["fountain", "Fountain", H_ + "hw_fountain_a_0_0_0.png"], ["shelf", "Bookcase", H_ + "hw_shelf_a_0_4_0.png"], ["cabinet", "Cabinet", H_ + "hw_closet1_a_0_2_0.png"], ["water", "Water cooler", H_ + "hw_watermatic_a_0_4_0.png"], ["rarecase", "Rare in a glass case", "art/wall/i_rarecase.png"], ["trophy", "Old trophy cabinet", "art/wall/i_trophy.png"], ["mark_scuff", "Floor scuffs", "art/wall/i_mark_scuff.png"], ["mark_tile", "Lifted floor tile", "art/wall/i_mark_tile.png"]]],
     ...WALL_GROUPS.map(([kind, title]) => [title, WALL_ITEMS.filter(i => i.kind === kind).map(i => ["wi:" + i.id, i.name, "art/wall/" + i.y.layers[0].f])]),
+    ["Christmas", [["xmastree", "Christmas tree", "art/wall/i_xmastree.png"], ["xmassmalltree", "Small tree", "art/wall/i_xmassmalltree.png"], ["snowman", "Snowman", "art/wall/i_snowman.png"], ["xmaslantern", "Lantern", "art/wall/i_xmaslantern.png"], ["xmasdrinks", "Christmas drinks", "art/wall/i_xmasdrinks.png"], ["xmasduck", "Christmas duck", "art/wall/i_xmasduck.png"], ["gift1", "Gift", "art/wall/i_gift1.png"], ["gift2", "Gift, blue", "art/wall/i_gift2.png"], ["gift3", "Gift, green", "art/wall/i_gift3.png"], ["gift4", "Gift, gold", "art/wall/i_gift4.png"], ...WALL_ITEMS.filter(i => i.kind === "xmas").map(i => ["wi:" + i.id, i.name, "art/wall/" + i.y.layers[0].f])]],
     ["Railings", EDGE_STYLES.map(([k, name]) => ["edge:" + k, name, "art/edge-" + k + ".png"])],
     ["Tidy", [["del", "Delete things", ICON.del], ["edges", "Map edges", ICON.edges]]]
 ];
+const XMAS_PROP = k => k === "xmastree" || k === "xmassmalltree" || k === "snowman" || k === "xmaslantern" || k === "xmasdrinks" || k === "xmasduck" || /^gift\d$/.test(k);
 const wallItemOf = id => WALL_ITEMS.find(i => i.id === id) || null;
 const isWallItemTool = t => !!t && t.startsWith("wi:");
 const isEdgeTool = t => !!t && t.startsWith("edge:");
@@ -584,6 +586,8 @@ function wallSpot(w, l, px, py) {
     const a = w.axis === "x" ? P(at, w.line, wallZ(l, q)) : P(w.line, at, wallZ(l, q));
     return { at: Math.round(at * 16) / 16, h: Math.max(20, Math.min(WALL - 10, Math.round(a[1] - py))) };
 }
+/* the picture's own rectangle on the map, wherever its origin is */
+function wallItemRect(l, q) { const c = wallItemCentre(l, q); if (q.k === "i_window") { const b = windowBox(q); return { x0: c[0] - b.w / 2, y0: c[1] - b.h / 2, w: b.w, h: b.h }; } const def = wallItemOf(q.k), box = def && (q.axis === "x" ? def.x : def.y); if (!box) return null; const L = box.layers[0]; return { x0: c[0] + L.x, y0: c[1] + L.y, w: box.w, h: box.h }; }
 const wallItemCentre = (l, q) => { const a = q.axis === "x" ? P(q.at, q.line, wallZ(l, q)) : P(q.line, q.at, wallZ(l, q)); const def = wallItemOf(q.k); return [Math.round(a[0]), Math.round(a[1] - (q.k === "i_window" ? ((q.top === undefined ? 128 : q.top) + (q.b || 0)) / 2 : (def && def.locked) || q.h === undefined ? (def && def.h) || 100 : q.h))]; };
 const windowBox = q => ({ w: (q.w || 32) + 12, h: (q.top || 128) - (q.b || 0) + Math.round((q.w || 32) / 2) + 10 });
 function windowHandles(l, q) { const c = wallItemCentre(l, q), W = q.w || 32, Hh = (q.top || 128) - (q.b || 0), s = q.axis === "x" ? 1 : -1; return { r: [c[0] + W / 2 + 4, c[1] + s * (W / 4)], l: [c[0] - W / 2 - 4, c[1] - s * (W / 4)], t: [c[0], c[1] - Hh / 2 - 4], b: [c[0], c[1] + Hh / 2 + 4] }; }
@@ -593,7 +597,7 @@ function windowHandleAt(l, q, px, py) { const r = Math.max(5, 7 / zoom), h = win
 function snapshot() { undoStack.push(JSON.stringify(map)); if (undoStack.length > 80) undoStack.shift(); redoStack.length = 0; }
 function changed() {
     $("revert").hidden = false;
-    dirty = true; $("dirty").hidden = false; cellSets = new Map();
+    dirty = true; $("dirty").hidden = false; cellSets = new Map(); lastChangeAt = performance.now();
     rememberDraft();
     runChecks(); requestArt(); paint(); syncButtons();
 }
@@ -718,6 +722,7 @@ function moodTile(mood, tx, ty) {
 const MOODS_ALL = ["day", "dusk", "night", "dawn"];
 function preloadMap() {
     if (!map || !map.rect || !version || document.hidden) return; const m = moodNow(); if (!m) return;
+    if (!window.HALLWAY_PLAY && (drag || performance.now() - lastChangeAt < 4000)) return;      // while you're placing things, what's on screen comes first
     const r = map.rect, order = []; for (const q of [m.a, m.b]) if (!order.includes(q)) order.push(q);
     if (timeMode === "cycle") { const at = CYCLE.findIndex(c => c[1] === m.b), after = at >= 0 ? CYCLE.slice(at + 1).map(c => c[1]) : []; for (const q of after) if (!order.includes(q)) order.push(q); }
     const small = window.matchMedia && matchMedia("(pointer: coarse)").matches; if (!small && window.HALLWAY_PLAY) for (const q of MOODS_ALL) if (!order.includes(q)) order.push(q);
@@ -847,7 +852,7 @@ async function loadTile(n) {
     const v = version, ctl = new AbortController();
     inflight.set(n.k, ctl);
     try {
-        const r = await fetch(`/api/tile?v=${v}&tx=${n.tx}&ty=${n.ty}`, { signal: ctl.signal });
+        const r = await fetch(`/api/tile?v=${v}&tx=${n.tx}&ty=${n.ty}${window.hallwayXmas ? "&m=%2Bx" : ""}`, { signal: ctl.signal });
         /* the server's been restarted and has forgotten this version of the map: tell it again, once, and carry on */
         if (r.status === 404) { if (window.HALLWAY_PLAY) { tileFailed(n.k); return; } if (v === version) { version = null; setTimeout(newVersion, 400); } return; }
         if (!r.ok) throw new Error("tile " + r.status);
@@ -1069,6 +1074,7 @@ function setTool(t) {
     if ($("liftPanel")) hideLiftPanel(); liftDoors.clear(); doorStates.clear(); if (roomSession) { roomSession.close(); roomSession = null; }
     if ($("heightBar")) $("heightBar").hidden = !brushTool(t);
     if (brushTool(t)) setBrush(brushes[t]);
+    if (isWallItemTool(t)) { const d0 = wallItemOf(t.slice(3)); wallH.item = (d0 && d0.h) || 100; }
     if (t !== "walk") walker = null; else startWalk();
     document.querySelectorAll("[data-tool]").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.tool === t)));
     $("toolName").textContent = TOOL_NAMES[t] || "";
@@ -1083,7 +1089,7 @@ function snapRect(a, b) {
     if (tool === "rug") return { x0: Math.floor(x0), x1: Math.floor(x1) + 1, y0: Math.floor(y0), y1: Math.floor(y1) + 1 };
     return { x0: Math.floor(x0 / 2) * 2, x1: (Math.floor(x1 / 2) + 1) * 2, y0: Math.floor(y0 / 2) * 2, y1: (Math.floor(y1 / 2) + 1) * 2 };
 }
-const FURNI = ["xmastree", "gift1", "gift2", "gift3", "gift4", "sofa", "chair", "table", "smtable", "ballpost", "rope", "lamp", "plant", "ero", "ero_stone", "ero_walnut", "ero_evergreen", "ero_flower", "pillar", "pillartall", "statue", "fountain", "shelf", "cabinet", "water", "rarecase", "trophy", "mark_scuff", "mark_tile"];
+const FURNI = ["xmastree", "xmassmalltree", "snowman", "xmaslantern", "xmasdrinks", "xmasduck", "gift1", "gift2", "gift3", "gift4", "sofa", "chair", "table", "smtable", "ballpost", "rope", "lamp", "plant", "ero", "ero_stone", "ero_walnut", "ero_evergreen", "ero_flower", "pillar", "pillartall", "statue", "fountain", "shelf", "cabinet", "water", "rarecase", "trophy", "mark_scuff", "mark_tile"];
 const Parts = window.FurniParts;
 let placeRot = 0;                // which way round the next piece goes, set with R
 const fits = (l, p) => (Parts.ROWS[p.k] ? Parts.tiles(p) : [[p.x, p.y]]).every(t => placeable(l, t[0], t[1]));
@@ -1141,7 +1147,8 @@ function turnHeld() {
     }
     paint();
 }
-function snapWallItem(q) { const dfn = WALL_ITEMS.find(w => w.id === q.k); if (dfn && dfn.snapAt !== undefined) q.at = Math.round(q.at - dfn.snapAt) + dfn.snapAt; }
+/* a desk sits on whole tiles; anything else standing on the floor keeps to the half-pixels where its foot follows the floor's own steps */
+function snapWallItem(q) { const dfn = WALL_ITEMS.find(w => w.id === q.k); if (!dfn) return; if (dfn.snapAt !== undefined) { q.at = Math.round(q.at - dfn.snapAt) + dfn.snapAt; return; } if (dfn.locked && q.axis) { let n = Math.round(q.at * 16); if (q.axis === "y" ? n % 2 === 0 : n % 2 !== 0) n++; q.at = n / 16; } }
 let pickNext = null; document.addEventListener("keydown", e => { if (pickNext && e.key === "Escape") { pickNext = null; flash("Cancelled."); } }, true);
 function pickUp(hit) {
     snapshot();
@@ -1234,10 +1241,13 @@ function drawSconceGhost() {
     ctx.restore();
 }
 let hoverPx = null;
+function drawWallArt(l, q, alpha) { const def = wallItemOf(q.k), box = def && (q.axis === "x" ? def.x : def.y); if (!box || q.k === "i_window") return; const c = wallItemCentre(l, q), ox = Math.round(canvas.width / 2 - cam.x * zoom), oy = Math.round(canvas.height / 2 - cam.y * zoom); ctx.save(); ctx.imageSmoothingEnabled = false; ctx.globalAlpha = alpha; for (const L of box.layers) { const img = spriteImg("art/wall/" + L.f); if (!img.complete || !img.naturalWidth) continue; const w = img.naturalWidth * zoom, h = img.naturalHeight * zoom, X = ox + (c[0] + L.x) * zoom, Y = oy + (c[1] + L.y) * zoom; ctx.save(); if (L.flip) { ctx.translate(X + w, Y); ctx.scale(-1, 1); ctx.drawImage(img, 0, 0, w, h); } else ctx.drawImage(img, X, Y, w, h); ctx.restore(); } ctx.restore(); }
+const pendingArt = []; let pendingVersion = null, lastChangeAt = 0;
+setInterval(() => { if (!pendingArt.length) return; const now = performance.now(); if (now - pendingArt[0].at > 25000 || (now - pendingArt[pendingArt.length - 1].at > 400 && version !== pendingVersion && !inflight.size && !moodInflight.size)) { pendingArt.length = 0; paint(); } }, 150);
 function drawWallItemGhost() {
     if (!isWallItemTool(tool) || !hover || !hover.wall || !hoverPx) return;
     const def = wallItemOf(tool.slice(3)), box = def && (hover.wall.axis === "x" ? def.x : def.y); if (!box) return;
-    const ox = Math.round(canvas.width / 2 - cam.x * zoom), oy = Math.round(canvas.height / 2 - cam.y * zoom), q = wallSpot(hover.wall, level, hoverPx[0], hoverPx[1]), c = wallItemCentre(level, { k: tool.slice(3), axis: hover.wall.axis, at: q.at, line: hover.wall.line, h: stairH(hover.wall, hover.wall.stair ? q.h : def.h || wallH.item), ...(tool === "wi:i_window" ? { w: 32, b: 0, top: 128 } : {}) });
+    const ox = Math.round(canvas.width / 2 - cam.x * zoom), oy = Math.round(canvas.height / 2 - cam.y * zoom), q = wallSpot(hover.wall, level, hoverPx[0], hoverPx[1]), t0 = { k: tool.slice(3), axis: hover.wall.axis, at: q.at }; snapWallItem(t0); const c = wallItemCentre(level, { k: tool.slice(3), axis: hover.wall.axis, at: t0.at, line: hover.wall.line, h: stairH(hover.wall, hover.wall.stair ? q.h : def.locked ? def.h : wallH.item), ...(tool === "wi:i_window" ? { w: 32, b: 0, top: 128 } : {}) });
     ctx.save(); ctx.imageSmoothingEnabled = false; ctx.globalAlpha = .8;
     for (const L of box.layers) { const img = spriteImg("art/wall/" + L.f); if (!img.complete || !img.naturalWidth) continue; const w = img.naturalWidth * zoom, h = img.naturalHeight * zoom, X = ox + (c[0] + L.x) * zoom, Y = oy + (c[1] + L.y) * zoom; ctx.save(); if (L.flip) { ctx.translate(X + w, Y); ctx.scale(-1, 1); ctx.drawImage(img, 0, 0, w, h); } else ctx.drawImage(img, X, Y, w, h); ctx.restore(); }
     ctx.restore();
@@ -1260,7 +1270,12 @@ function drawEntranceBlock() {
 function drawGhost() {
     drawEntranceBlock();
     drawSconceGhost(); drawWallItemGhost();
+    if (drag && drag.kind === "move" && selected && selected.type === "wallitem") drawWallArt(selected.l, selected.o, .9);
+    for (const q of pendingArt) { if (q.wall) drawWallArt(q.l, q.o, 1); else if (q.l === level && REGS) drawPiece({ ...q.o, ok: true }, 1); }
     const g = ghostPiece(); if (!g || !REGS) return;
+    drawPiece(g, g.ok ? .7 : .3);
+}
+function drawPiece(g, alpha) {
     const z = levelZ(level), ox = Math.round(canvas.width / 2 - cam.x * zoom), oy = Math.round(canvas.height / 2 - cam.y * zoom);
     const put = (img, x, y, flip) => {
         if (!img.complete || !img.naturalWidth) return;
@@ -1270,7 +1285,7 @@ function drawGhost() {
         ctx.restore();
     };
     const sprite = (img, reg, tx, ty, flip) => { const a = P(tx, ty, tileZ(level, tx, ty)), lx = a[0] - 16, ly = a[1] + 8; put(img, flip ? lx + 32 + reg[0] - img.naturalWidth : lx - reg[0], ly - reg[1], flip); };
-    ctx.save(); ctx.imageSmoothingEnabled = false; ctx.globalAlpha = g.ok ? .7 : .3;
+    ctx.save(); ctx.imageSmoothingEnabled = false; ctx.globalAlpha = alpha;
     if (g.tele) sprite(spriteImg("art/tele/hh_furni_special_50/" + TELE_SPRITE + ".png"), REGS.tele[TELE_SPRITE], g.x, g.y, g.flip);
     else if (floorPiece(g.k)) { const fp = floorPiece(g.k), im = pieceImg(fp.f), off = g.k.startsWith("mark_") ? .5 : g.k === "trophy" ? 0 : .25, a = P(g.x + off, g.y + off, tileZ(level, g.x, g.y)); if (im.complete && im.naturalWidth) { ctx.save(); ctx.imageSmoothingEnabled = false; if (g.k === "trophy" && !((g.rot || 0) & 1)) { ctx.translate(ox + a[0] * zoom, 0); ctx.scale(-1, 1); ctx.drawImage(im, -fp.ox * zoom, oy + (a[1] - fp.oy) * zoom, fp.w * zoom, fp.h * zoom); } else ctx.drawImage(im, ox + (a[0] - fp.ox) * zoom, oy + (a[1] - fp.oy) * zoom, fp.w * zoom, fp.h * zoom); ctx.restore(); } }
     else if (g.k === "rope") { for (const [X, Y, c] of ropeArt(level, g).list) { ctx.fillStyle = "rgb(" + c + ")"; ctx.fillRect(ox + X * zoom, oy + Y * zoom, zoom, zoom); } }
@@ -1281,7 +1296,7 @@ function drawGhost() {
 function act(px, py) {
     const [fx, fy] = tileIn(level, px, py), X = Math.floor(fx), Y = Math.floor(fy);
     const w = isWallItemTool(tool) || tool === "sconce" || tool === "globelight" ? hangWallAt(px, py, level) : wallAt(px, py, level);
-    const place = fn => { snapshot(); fn(); changed(); };
+    const place = fn => { snapshot(); const pl = (level.props || []).length, wl = (level.wallItems || []).length; fn(); const now = performance.now(); pendingVersion = version; if ((level.props || []).length > pl) pendingArt.push({ l: level, o: level.props[level.props.length - 1], at: now }); if ((level.wallItems || []).length > wl) pendingArt.push({ l: level, o: level.wallItems[level.wallItems.length - 1], wall: true, at: now }); changed(); };
     if (tool === "globelight") {
         const f = pillarFaceAt(level, px, py);
         if (f) { place(() => { const L = f.o.lights || [], has = L.includes(f.face); f.o.lights = has ? L.filter(q => q !== f.face) : [...L, f.face]; if (!f.o.lights.length) { delete f.o.lights; delete f.o.lightUp; } else if (!has) { if (wallH.lamp !== 106) f.o.lightUp = wallH.lamp - 106; else delete f.o.lightUp; } }); return; }
@@ -1314,7 +1329,7 @@ function act(px, py) {
         });
         return;
     }
-    if (isWallItemTool(tool)) { if (w) { const q = wallSpot(w, level, px, py); place(() => (level.wallItems = level.wallItems || []).push({ k: tool.slice(3), axis: w.axis, at: (() => { const t = { k: tool.slice(3), at: q.at }; snapWallItem(t); return t.at; })(), line: w.line, h: stairH(w, w.stair ? q.h : (wallItemOf(tool.slice(3)) || {}).h || wallH.item), ...(tool === "wi:i_window" ? { w: 32, b: 0, top: 128, view: "lawn" } : {}) })); } return; }
+    if (isWallItemTool(tool)) { if (w) { const q = wallSpot(w, level, px, py); place(() => (level.wallItems = level.wallItems || []).push({ k: tool.slice(3), axis: w.axis, at: (() => { const t = { k: tool.slice(3), at: q.at, axis: w.axis }; snapWallItem(t); return t.at; })(), line: w.line, h: stairH(w, w.stair ? q.h : (() => { const d0 = wallItemOf(tool.slice(3)); return d0 && d0.locked ? d0.h : wallH.item; })()), ...(tool === "wi:i_window" ? { w: 32, b: 0, top: 128, view: "lawn" } : {}) })); } return; }
     if (tool === "sconce") { if (w) place(() => (level.lamps = level.lamps || []).push({ axis: w.axis, at: w.at + .5, line: w.line, ...lampField(lampHeight(level, w, px, py)) })); return; }
     if (tool === "globelight") { if (w) place(() => (level.lamps = level.lamps || []).push({ axis: w.axis, at: w.at + .5, line: w.line, style: "globe", ...lampField(lampHeight(level, w, px, py)) })); return; }
     if (tool === "lift") {
@@ -1529,7 +1544,7 @@ function sortByDifficulty() {
 
 /* ---------- select and move ---------- */
 let selected = null;            // { type, l, o }
-const TALL = { xmastree: [30, 136], gift1: [12, 20], gift2: [12, 20], gift3: [12, 20], gift4: [12, 20], trophy: [28, 84], rarecase: [15, 62], mark_scuff: [14, 12], mark_tile: [14, 12], rope: [14, 36], pillartall: [12, 150], smtable: [13, 24], ballpost: [13, 28], ero_stone: [16, 40], ero_walnut: [16, 40], ero_evergreen: [16, 40], ero_flower: [16, 40], lamp: [12, 54], statue: [26, 105], pillar: [12, 110], plant: [11, 50], ero: [16, 40], fountain: [26, 34], shelf: [22, 62], cabinet: [32, 82], water: [12, 44], chair: [11, 28], table: [16, 22], sofa: [34, 28] };
+const TALL = { xmastree: [20, 72], xmassmalltree: [14, 30], snowman: [14, 34], xmaslantern: [10, 24], xmasdrinks: [12, 18], xmasduck: [10, 16], gift1: [12, 20], gift2: [12, 20], gift3: [12, 20], gift4: [12, 20], trophy: [28, 84], rarecase: [15, 62], mark_scuff: [14, 12], mark_tile: [14, 12], rope: [14, 36], pillartall: [12, 150], smtable: [13, 24], ballpost: [13, 28], ero_stone: [16, 40], ero_walnut: [16, 40], ero_evergreen: [16, 40], ero_flower: [16, 40], lamp: [12, 54], statue: [26, 105], pillar: [12, 110], plant: [11, 50], ero: [16, 40], fountain: [26, 34], shelf: [22, 62], cabinet: [32, 82], water: [12, 44], chair: [11, 28], table: [16, 22], sofa: [34, 28] };
 function pickIn(l, px, py) {
     const [fx, fy] = tileIn(l, px, py), X = Math.floor(fx), Y = Math.floor(fy);
     /* upright things first, front-most first, by what you can actually see of them */
@@ -1552,7 +1567,7 @@ function pickIn(l, px, py) {
     /* a painting or poster, by the art you can see */
     for (const q of [...(l.wallItems || [])].reverse()) {
         const def = wallItemOf(q.k), box = q.k === "i_window" ? windowBox(q) : def && (q.axis === "x" ? def.x : def.y); if (!box || seeHidden(l, wallZ(l, q) - levelZ(l))) continue;
-        const c = wallItemCentre(l, q); if (Math.abs(px - c[0]) <= box.w / 2 + 1 && Math.abs(py - c[1]) <= box.h / 2 + 1) return { type: "wallitem", l, o: q };
+        if (def && def.xmas && !window.hallwayXmas) continue; const r = wallItemRect(l, q); if (r && px >= r.x0 - 1 && px <= r.x0 + r.w + 1 && py >= r.y0 - 1 && py <= r.y0 + r.h + 1) return { type: "wallitem", l, o: q };
     }
     for (const q of (l.doors || [])) if (!q.spare && !seeHidden(l, wallZ(l, q) - levelZ(l)) && signHit(l, q, px, py)) return { type: "sign", l, o: q };
     for (const q of map.stairs) if (q.low === l.id && signHit(l, q, px, py)) return { type: "sign", l, o: q };
@@ -1641,7 +1656,7 @@ function signHandles(b) {
 }
 function handleAt(b, px, py) { const r = Math.max(5, 7 / zoom), h = signHandles(b); for (const k of Object.keys(h)) if (Math.abs(px - h[k][0]) <= r && Math.abs(py - h[k][1]) <= r) return k; return null; }
 const TYPE_NAMES = { entrance: "Entrance", wallitem: "On the wall", steps: "Small steps", wall: "Wall", sign: "Maze sign", prop: "Furniture", tele: "Imperial Teleport", door: "Door", lamp: "Wall light", lift: "Lift", stair: "Stairs", medal: "Carpet crest", rug: "Rug" };
-const PROP_NAMES = { xmastree: "Christmas tree", gift1: "Gift", gift2: "Gift", gift3: "Gift", gift4: "Gift", trophy: "Old trophy cabinet", rarecase: "Rare in a glass case", mark_scuff: "Floor scuffs", mark_tile: "Lifted floor tile", rope: "Rope barrier", pillartall: "Tall pillar", smtable: "Small round table", ballpost: "Ball post", ero_stone: "Stone planter", ero_walnut: "Walnut planter", ero_evergreen: "Evergreen planter", ero_flower: "Flower planter", sofa: "Sofa", chair: "Chair", table: "Table", lamp: "Floor lamp", plant: "Plant", ero: "Planter", pillar: "Pillar", statue: "Statue", fountain: "Fountain", shelf: "Bookcase", cabinet: "Cabinet", water: "Water cooler" };
+const PROP_NAMES = { xmastree: "Christmas tree", xmassmalltree: "Small tree", snowman: "Snowman", xmaslantern: "Lantern", xmasdrinks: "Christmas drinks", xmasduck: "Christmas duck", gift1: "Gift", gift2: "Gift", gift3: "Gift", gift4: "Gift", trophy: "Old trophy cabinet", rarecase: "Rare in a glass case", mark_scuff: "Floor scuffs", mark_tile: "Lifted floor tile", rope: "Rope barrier", pillartall: "Tall pillar", smtable: "Small round table", ballpost: "Ball post", ero_stone: "Stone planter", ero_walnut: "Walnut planter", ero_evergreen: "Evergreen planter", ero_flower: "Flower planter", sofa: "Sofa", chair: "Chair", table: "Table", lamp: "Floor lamp", plant: "Plant", ero: "Planter", pillar: "Pillar", statue: "Statue", fountain: "Fountain", shelf: "Bookcase", cabinet: "Cabinet", water: "Water cooler" };
 const THUMB_FOR = { sign: "door", door: "door", lamp: "sconce", lift: "lift", medal: "medal", rug: "rug", tele: "tele" };
 function thumbFor(hit) {
     if (hit.type === "wallitem") { const def = wallItemOf(hit.o.k); return def ? "art/wall/" + def.y.layers[0].f : null; }
@@ -1724,6 +1739,7 @@ function select(hit) {
         if (long) { btn("Shorter", () => resizeSelected(-1)); btn("Longer", () => resizeSelected(1)); }
         if (hit.type === "wallitem" && String(hit.o.k).startsWith("i_peel")) { const q = hit.o, f = document.createElement("label"); f.className = "field"; const n = document.createElement("span"); n.className = "f-label"; n.textContent = "Behind it"; const sel = document.createElement("select"); sel.className = "f-ctl"; for (const [v, t] of [["", "Nothing"], ["note", "A note"], ["6x14|0", "A door: staff corridor 1"], ["6x14|1", "A door: staff corridor 2"], ["6x14|2", "A door: staff corridor 3"], ["4x8|0", "A door: passage 1"], ["4x8|1", "A door: passage 2"], ["4x8|2", "A door: passage 3"]]) { const o = document.createElement("option"); o.value = v; o.textContent = t; sel.appendChild(o); } sel.value = !q.behind ? "" : q.behind.kind === "note" ? "note" : q.behind.size + "|" + q.behind.n; sel.addEventListener("change", () => { snapshot(); if (!sel.value) delete q.behind; else if (sel.value === "note") q.behind = { kind: "note", text: (q.behind && q.behind.text) || "" }; else { const [size, m] = sel.value.split("|"); q.behind = { kind: "door", size, n: +m }; } changed(); select(hit); }); f.append(n, sel); box.appendChild(f);
           if (q.behind && q.behind.kind === "note") { const ta = document.createElement("textarea"); ta.rows = 3; ta.value = q.behind.text || ""; ta.setAttribute("aria-label", "What the note says"); ta.style.width = "100%"; ta.addEventListener("change", () => { snapshot(); q.behind.text = ta.value; changed(); }); box.appendChild(ta); } }
+        if (hit.type === "prop" && hit.o.k === "rarecase") { const fp = floorPiece("rarecase"), f = document.createElement("label"); f.className = "field"; const n = document.createElement("span"); n.className = "f-label"; n.textContent = "What's inside"; const sel = document.createElement("select"); sel.className = "f-ctl"; for (const [k, v] of Object.entries((fp && fp.opts) || {}).sort((a, c) => a[1].name.localeCompare(c[1].name))) { const o = document.createElement("option"); o.value = k; o.textContent = v.name; sel.appendChild(o); } sel.value = hit.o.rare || (fp && fp.rare0) || ""; sel.addEventListener("change", () => { snapshot(); hit.o.rare = sel.value; changed(); }); f.append(n, sel); box.appendChild(f); }
         if (hit.type === "prop" && hit.o.k === "rope") { const f = document.createElement("label"); f.className = "field"; const n = document.createElement("span"); n.className = "f-label"; n.textContent = "Comes off at night"; const c = document.createElement("span"); c.className = "f-ctl"; const t = document.createElement("input"); t.type = "checkbox"; t.checked = !!hit.o.night; t.addEventListener("change", () => { snapshot(); if (t.checked) hit.o.night = true; else delete hit.o.night; changed(); }); c.appendChild(t); f.append(n, c); box.appendChild(f); }
         if (hit.type === "prop" && hit.o.k === "rope") {
             if (Parts.lengthOf(hit.o) < RopeBarrier.MIN_FOR_CARD) say("At 2 tiles there's no room for its card. Make it longer to have one.");
@@ -1873,7 +1889,7 @@ function moveSelected(d, px, py) {
         /* an edge of a window: in 4px steps, and never too small to read as a window or taller than the wall */
         const v = d.win, dx = px - d.px, dy = py - d.py, snap = n => Math.round(n / 4) * 4;
         if (d.winSide === "r" || d.winSide === "l") { o.w = Math.max(24, Math.min(160, snap(v.w + (d.winSide === "r" ? dx : -dx)))); o.at = v.at + (d.winSide === (o.axis === "x" ? "r" : "l") ? 1 : -1) * (o.w - v.w) / 32; }
-        else if (d.winSide === "t") o.top = Math.max(v.b + 32, Math.min(128, snap(v.top - dy)));
+        else if (d.winSide === "t") o.top = Math.max(v.b + 32, Math.min(WALL - 4, snap(v.top - dy)));
         else o.b = Math.max(0, Math.min(v.top - 32, snap(v.b - dy)));
         if (JSON.stringify(o) !== before && !d.moved) { d.moved = true; undoStack.push(d.before); if (undoStack.length > 80) undoStack.shift(); redoStack.length = 0; syncButtons(); }
         if (d.moved) { requestArt(); paint(); }
@@ -1881,7 +1897,7 @@ function moveSelected(d, px, py) {
     }
     if (s.type === "wallitem") {
         const X = px + d.grab[0], Y = py + d.grab[1], w = hangWallAt(X, Y, l);
-        if (w && !w.drop && !isHalf(l, w.axis, w.line, wallTile(w))) { const q = wallSpot(w, l, X, Y); o.axis = w.axis; o.line = w.line; o.at = q.at; const lockDef = wallItemOf(o.k), headroom = lockDef && lockDef.tell ? 134 - ((o.axis === "x" ? lockDef.x : lockDef.y).h >> 1) : 999; if (lockDef && lockDef.locked) o.h = lockDef.h; else if (ctrlNow) o.h = Math.min(headroom, snapWall(q.h, "item")); else if (o.h === undefined) o.h = (lockDef && lockDef.h) || 100; else o.h = snapWall(o.h, "item"); }
+        if (w && !w.drop && !isHalf(l, w.axis, w.line, wallTile(w))) { const q = wallSpot(w, l, X, Y); o.axis = w.axis; o.line = w.line; o.at = q.at; snapWallItem(o); const lockDef = wallItemOf(o.k), headroom = lockDef && lockDef.tell ? 134 - ((o.axis === "x" ? lockDef.x : lockDef.y).h >> 1) : 999; if (lockDef && lockDef.locked) o.h = lockDef.h; else if (ctrlNow) o.h = Math.min(headroom, snapWall(q.h, "item")); else if (o.h === undefined) o.h = (lockDef && lockDef.h) || 100; else o.h = snapWall(o.h, "item"); }
         if (JSON.stringify(o) !== before && !d.moved) { d.moved = true; undoStack.push(d.before); if (undoStack.length > 80) undoStack.shift(); redoStack.length = 0; syncButtons(); }
         if (d.moved) { requestArt(); paint(); }
         return;
@@ -1964,7 +1980,7 @@ function drawSelection() {
         : s.type === "rug" ? tileZ(s.l, o.x0, o.y0) : o.x !== undefined && o.y !== undefined ? tileZ(s.l, o.x, o.y) : levelZ(s.l);
     if (s.type === "wallitem") {
         const def = wallItemOf(o.k), box = o.k === "i_window" ? windowBox(o) : def && (o.axis === "x" ? def.x : def.y); if (!box) return;
-        const m = wallItemCentre(s.l, o), a = toScreen(m[0] - box.w / 2, m[1] - box.h / 2), b = toScreen(m[0] + box.w / 2, m[1] + box.h / 2);
+        const r0 = wallItemRect(s.l, o), a = toScreen(r0.x0, r0.y0), b = toScreen(r0.x0 + r0.w, r0.y0 + r0.h);
         ctx.strokeStyle = "#4fd1ff"; ctx.lineWidth = 2; ctx.strokeRect(a[0], a[1], b[0] - a[0], b[1] - a[1]);
         if (o.k === "i_window") { const hs = windowHandles(s.l, o); for (const k of Object.keys(hs)) { const q = toScreen(hs[k][0], hs[k][1]); ctx.fillStyle = "#000"; ctx.fillRect(q[0] - 6, q[1] - 6, 12, 12); ctx.fillStyle = "#4fd1ff"; ctx.fillRect(q[0] - 4, q[1] - 4, 8, 8); } }
         return;
@@ -2266,7 +2282,7 @@ function clampCam() {
 const nodeKey = (l, x, y) => l.id + "|" + x + "|" + y;
 function solid(l) {
     const s = new Set();
-    for (const p of (l.props || [])) { if (p.k.startsWith("mark_") || (p.k === "rope" && p.night && realNight()) || (tool === "walk" && !window.hallwayXmas && (p.k === "xmastree" || /^gift\d$/.test(p.k)))) continue; for (const t of Parts.tiles(p)) s.add(t[0] + "," + t[1]); }   // scuffs and a lifted tile are only marks on the floor
+    for (const p of (l.props || [])) { if (p.k.startsWith("mark_") || (p.k === "rope" && p.night && realNight()) || (tool === "walk" && !window.hallwayXmas && XMAS_PROP(p.k))) continue; for (const t of Parts.tiles(p)) s.add(t[0] + "," + t[1]); }   // scuffs and a lifted tile are only marks on the floor
     for (const t of (l.teles || [])) s.add(t.x + "," + t.y);
     return s;
 }
@@ -2345,7 +2361,7 @@ function stairLevels() {
         if (q.k !== "i_desk") return; const dfn = WALL_ITEMS.find(w => w.id === q.k); if (!dfn) return;
         const o = Math.round(q.at - (dfn.snapAt || 0)), tile = (back, along) => q.axis === "y" ? [q.line - back, o + along] : [o + along, q.line - back], gap = tile(0, 5);
         const S = { id: "LP" + low.id + "-" + i, name: "Lost Property", k: low.k, tiles: new Map(), stair: { low, up: null, lost: { axis: q.axis, line: q.line, o } } }, z = tileZ(low, gap[0], gap[1]);
-        S.tiles.set(tile(1, 5) + "", z); for (let a = 1; a <= 5; a++) S.tiles.set(tile(2, a) + "", z);
+        S.tiles.set(tile(1, 5) + "", z); for (let a = 2; a <= 5; a++) S.tiles.set(tile(2, a) + "", z);
         const first = tile(1, 5); link(S, first[0], first[1], low, gap[0], gap[1]);
         S.nearestFirst = [...S.tiles.entries()].map(([k, zz]) => { const [x, y] = k.split(",").map(Number); return { x, y, z: zz }; }).sort((p, r) => (r.x + r.y) - (p.x + p.y));
         out.push(S); byName.set(S.id, S);
@@ -2973,7 +2989,7 @@ function cutInFront(c, x0, y0) {
                 c.fillRect(m[0] - 2, m[1] - 37, 5, 39); cutPoly(c, [[m[0] - 11, m[1] - 35], [m[0] + 11, m[1] - 35], [m[0] + 8, m[1] - 50], [m[0] - 8, m[1] - 50]]);
                 continue;
             }
-            if (p.k === "rarecase" || p.k === "trophy" || p.k === "xmastree" || /^gift\d$/.test(p.k)) { const fp = floorPiece(p.k), im = pieceImg(fp.f), a = P(p.x + (p.k === "trophy" ? 0 : .25), p.y + (p.k === "trophy" ? 0 : .25), tileZ(lv, p.x, p.y)), run = Parts.tiles(p), last = run[run.length - 1], flipIt = p.k === "trophy" && !((p.rot || 0) & 1); if ((lv !== l || inFrontOfYou(last[0], last[1], ax, ay)) && nearby(a) && im.complete && im.naturalWidth) { if (flipIt) { c.save(); c.translate(a[0], 0); c.scale(-1, 1); c.drawImage(im, -fp.ox, a[1] - fp.oy); c.restore(); } else c.drawImage(im, a[0] - fp.ox, a[1] - fp.oy); } continue; }
+            if (p.k === "rarecase" || p.k === "trophy" || XMAS_PROP(p.k)) { const fp = floorPiece(p.k), im = pieceImg(fp.f), a = P(p.x + (p.k === "trophy" ? 0 : .25), p.y + (p.k === "trophy" ? 0 : .25), tileZ(lv, p.x, p.y)), run = Parts.tiles(p), last = run[run.length - 1], flipIt = p.k === "trophy" && !((p.rot || 0) & 1); if ((lv !== l || inFrontOfYou(last[0], last[1], ax, ay)) && nearby(a) && im.complete && im.naturalWidth) { if (flipIt) { c.save(); c.translate(a[0], 0); c.scale(-1, 1); c.drawImage(im, -fp.ox, a[1] - fp.oy); c.restore(); } else c.drawImage(im, a[0] - fp.ox, a[1] - fp.oy); } continue; }
             if (p.k.startsWith("mark_")) continue;
             if (p.k === "rope") { const art = ropeArt(lv, p); for (const [X, Y, , t] of art.list) { const q = art.row[t]; if ((lv !== l || inFrontOfYou(q[0], q[1], ax, ay)) && nearby([X, Y])) c.fillRect(X, Y, 1, 1); } continue; }
             if (walker.seat && walker.seat.p === p) {
@@ -3233,6 +3249,7 @@ function buildLibrary() {
     const lib = $("library"); lib.textContent = "";
     const q = $("search").value.trim().toLowerCase();
     for (const [title, list] of TOOLS) {
+        if (title === "Christmas" && !window.hallwayXmas) continue;
         const items = list.filter(i => !q || i[1].toLowerCase().includes(q));
         if (!items.length) continue;
         const h = document.createElement("div"); h.className = "cat-head"; h.textContent = title; lib.appendChild(h);
@@ -3279,6 +3296,7 @@ function buildUI() {
     $("heightSlider").addEventListener("input", e => setBrush(+e.target.value));
     $("heightLevel").addEventListener("click", () => setBrush(0));
     $("liftStay").addEventListener("click", hideLiftPanel);
+    { const b = $("xmasToggle"), show = () => { b.classList.toggle("on", !!window.hallwayXmas); b.setAttribute("aria-pressed", String(!!window.hallwayXmas)); }; show(); b.addEventListener("click", () => { window.hallwayXmas = !window.hallwayXmas; try { localStorage.setItem("hallway-editor-xmas", window.hallwayXmas ? "1" : "0"); } catch (err) { /* this visit only */ } show(); if (!window.hallwayXmas && (XMAS_PROP(tool) || (isWallItemTool(tool) && (wallItemOf(tool.slice(3)) || {}).xmas))) setTool("select"); for (const t of tiles.values()) if (t.img.close) t.img.close(); tiles.clear(); if (typeof buildLibrary === "function") buildLibrary(); pump(); paint(); }); }
     $("scareOdds").addEventListener("change", e => { const v = Math.max(0, Math.min(500, Math.round(+e.target.value || 0))); snapshot(); map.scareOdds = v; changed(); });
     setBrush(heightBrush);
     $("way").addEventListener("change", e => { snapshot(); level.way = e.target.value; buildLevels(); changed(); });
