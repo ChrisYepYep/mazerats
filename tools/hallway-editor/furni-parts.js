@@ -36,7 +36,7 @@
     const FLIPPED = { cabinet: true };
     const CHAIR = [[2, false], [2, true], [0, true], [0, false]];          // clockwise: the client's side, and its mirror
 
-    const turns = k => k === "chair" ? 4 : (k === "rarecase" || k === "mark_scuff" || k === "mark_tile" || k === "lamp" || k === "pillar" || k === "pillartall" || k === "smtable" || k === "ballpost") ? 1 : 2;
+    const turns = k => k === "chair" ? 4 : (k === "mark_scuff" || k === "mark_tile" || k === "lamp" || k === "pillar" || k === "pillartall" || k === "smtable" || k === "ballpost") ? 1 : 2;
     const rotOf = p => { const t = turns(p.k); return (((p.rot || 0) % t) + t) % t; };
     const lengthOf = p => { const r = ROWS[p.k]; return r ? (r.max ? r.max : Math.max(r.min, p.len || r.def)) : 1; };
 

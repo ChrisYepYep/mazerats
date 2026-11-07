@@ -2886,7 +2886,7 @@ function build(cfg) {
                 else if (FLOOR_PIECES[k]) {
                     if (k === "xmastree" && xmasOn) w.treeGlows.push(w.S(x + .25, y + .25));
                     if (!(XMAS_K.has(k) && !xmasOn) && w.partAt({ x, y })) { const fp = FLOOR_PIECES[k], flat = k.startsWith("mark_"), base = w.S(x + (flat ? .5 : .25), y + (flat ? .5 : .25)), im = wallArt(k === "rarecase" && p[12] && fp.opts && fp.opts[p[12]] ? fp.opts[p[12]].f : fp.f), z = w.z, X0 = Math.round(base[0]) - fp.ox, Y0 = Math.round(base[1]) - fp.oy;
-                        w.sprites.push({ depth: x + y + (flat ? -.6 : .5), ftx: x, fty: y, draw: () => { for (let j = 0; j < im.h; j++) for (let i = 0; i < im.w; i++) { const q = (j * im.w + i) * 4, A = im.rgba[q + 3]; if (!A) continue; const X = X0 + i, Y = Y0 + j, c = [im.rgba[q], im.rgba[q + 1], im.rgba[q + 2]]; if (A < 255) { pieceTint(X, Y, c, A); continue; } layer.set(X, Y, c); if (X >= 0 && Y >= 0 && X < bw && Y < bh) { const v = ((c[0] << 16) | (c[1] << 8) | c[2]) + 1; w.keep[Y * bw + X] = v; if (k === "rarecase" && c[0] === 186 && c[1] === 206 && c[2] === 220) w.glowing[Y * bw + X] = v; } } } }); }
+                        w.sprites.push({ depth: x + y + (flat ? -.6 : .5), ftx: x, fty: y, draw: () => { for (let j = 0; j < im.h; j++) for (let i = 0; i < im.w; i++) { const q = (j * im.w + i) * 4, A = im.rgba[q + 3]; if (!A) continue; const X = k === "rarecase" && (p[5] & 1) ? Math.round(base[0]) + fp.ox - i : X0 + i, Y = Y0 + j, c = [im.rgba[q], im.rgba[q + 1], im.rgba[q + 2]]; if (A < 255) { pieceTint(X, Y, c, A); continue; } layer.set(X, Y, c); if (X >= 0 && Y >= 0 && X < bw && Y < bh) { const v = ((c[0] << 16) | (c[1] << 8) | c[2]) + 1; w.keep[Y * bw + X] = v; if (k === "rarecase" && c[0] === 186 && c[1] === 206 && c[2] === 220) w.glowing[Y * bw + X] = v; } } } }); }
                 }
                 else if (k === "rope") {
                     /* each tile of it takes its own place in the queue, so what stands nearer on another tile still covers it */
@@ -4094,7 +4094,7 @@ MODULES["furni-parts.js"] = { dir: "/site/tools/hallway-editor", run: function (
     const FLIPPED = { cabinet: true };
     const CHAIR = [[2, false], [2, true], [0, true], [0, false]];          // clockwise: the client's side, and its mirror
 
-    const turns = k => k === "chair" ? 4 : (k === "rarecase" || k === "mark_scuff" || k === "mark_tile" || k === "lamp" || k === "pillar" || k === "pillartall" || k === "smtable" || k === "ballpost") ? 1 : 2;
+    const turns = k => k === "chair" ? 4 : (k === "mark_scuff" || k === "mark_tile" || k === "lamp" || k === "pillar" || k === "pillartall" || k === "smtable" || k === "ballpost") ? 1 : 2;
     const rotOf = p => { const t = turns(p.k); return (((p.rot || 0) % t) + t) % t; };
     const lengthOf = p => { const r = ROWS[p.k]; return r ? (r.max ? r.max : Math.max(r.min, p.len || r.def)) : 1; };
 
