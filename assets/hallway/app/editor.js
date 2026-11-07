@@ -57,7 +57,7 @@ const TOOLS = [
     ["On walls", [["door", "Door", T_ + "door.png"], ["halfwall", "Half wall", ICON.halfwall], ["nowall", "No wall", ICON.nowall], ["addwall", "Show wall", ICON.addwall], ["sconce", "Wall light", T_ + "sconce.png"], ["globelight", "Globe wall light", "art/sconce-globe-y.png"], ["entrance", "Entrance", H_ + "entry_upper_right_mask.png"], ["lift", "Lift", T_ + "lift.png"], ["stair", "Stairs: straight", T_ + "stair.png"], ["turn", "Stairs: turning", T_ + "turn.png"], ["side", "Stairs: left wall", T_ + "side.png"], ["sideturn", "Stairs: left wall, turning", T_ + "sideturn.png"]]],
     ["Furniture", [["sofa", "Sofa", T_ + "sofa.png"], ["chair", "Chair", H_ + "hw_chair_a_0_2_0.png"], ["table", "Table", T_ + "table.png"], ["smtable", "Small round table", H_ + "hw_smtble_a_0_0_0.png"], ["ballpost", "Ball post", H_ + "pillar0_a_0_0_0.png"], ["rope", "Rope barrier", T_ + "rope.png"], ["lamp", "Floor lamp", T_ + "lamp.png"], ["plant", "Plant", H_ + "hw_plant_a_0_0_0.png"], ["ero", "Planter", T_ + "planter.png"], ...PLANTERS.map(([k, name]) => [k, name, T_ + "planter-" + k.slice(4) + ".png"]), ["pillar", "Pillar", H_ + "pillar1_a_0_0_0.png"], ["pillartall", "Tall pillar", T_ + "pillartall.png"], ["statue", "Statue", H_ + "hw_statue_a_0_0_0.png"], ["fountain", "Fountain", H_ + "hw_fountain_a_0_0_0.png"], ["shelf", "Bookcase", H_ + "hw_shelf_a_0_4_0.png"], ["cabinet", "Cabinet", H_ + "hw_closet1_a_0_2_0.png"], ["water", "Water cooler", H_ + "hw_watermatic_a_0_4_0.png"], ["rarecase", "Rare in a glass case", "art/wall/i_rarecase.png"], ["trophy", "Old trophy cabinet", "art/wall/i_trophy.png"], ["mark_scuff", "Floor scuffs", "art/wall/i_mark_scuff.png"], ["mark_tile", "Lifted floor tile", "art/wall/i_mark_tile.png"]]],
     ...WALL_GROUPS.map(([kind, title]) => [title, WALL_ITEMS.filter(i => i.kind === kind).map(i => ["wi:" + i.id, i.name, "art/wall/" + i.y.layers[0].f])]),
-    ["Christmas", [["xmastree", "Christmas tree", "art/wall/i_xmastree.png"], ["xmassmalltree", "Small tree", "art/wall/i_xmassmalltree.png"], ["snowman", "Snowman", "art/wall/i_snowman.png"], ["xmaslantern", "Lantern", "art/wall/i_xmaslantern.png"], ["xmasdrinks", "Christmas drinks", "art/wall/i_xmasdrinks.png"], ["xmasduck", "Christmas duck", "art/wall/i_xmasduck.png"], ["gift1", "Gift", "art/wall/i_gift1.png"], ["gift2", "Gift, blue", "art/wall/i_gift2.png"], ["gift3", "Gift, green", "art/wall/i_gift3.png"], ["gift4", "Gift, gold", "art/wall/i_gift4.png"], ...WALL_ITEMS.filter(i => i.kind === "xmas").map(i => ["wi:" + i.id, i.name, "art/wall/" + i.y.layers[0].f])]],
+    ["Christmas", [["swag", "Garland (drag along a wall)", "art/wall/i_swag.png"], ["xmastree", "Christmas tree", "art/wall/i_xmastree.png"], ["xmassmalltree", "Small tree", "art/wall/i_xmassmalltree.png"], ["snowman", "Snowman", "art/wall/i_snowman.png"], ["xmaslantern", "Lantern", "art/wall/i_xmaslantern.png"], ["xmasdrinks", "Christmas drinks", "art/wall/i_xmasdrinks.png"], ["xmasduck", "Christmas duck", "art/wall/i_xmasduck.png"], ["gift1", "Gift", "art/wall/i_gift1.png"], ["gift2", "Gift, blue", "art/wall/i_gift2.png"], ["gift3", "Gift, green", "art/wall/i_gift3.png"], ["gift4", "Gift, gold", "art/wall/i_gift4.png"], ...WALL_ITEMS.filter(i => i.kind === "xmas").map(i => ["wi:" + i.id, i.name, "art/wall/" + i.y.layers[0].f])]],
     ["Railings", EDGE_STYLES.map(([k, name]) => ["edge:" + k, name, "art/edge-" + k + ".png"])],
     ["Tidy", [["del", "Delete things", ICON.del], ["edges", "Map edges", ICON.edges]]]
 ];
@@ -469,6 +469,12 @@ function halfBrush(d, px, py) {
         if (!d.did) { snapshot(); d.did = true; }
         setWallState(level, w.axis, w.line, t, d.to);
     }
+    paint();
+}
+/* the garland, a wall tile at a time: drag along walls to lay it, start on a laid tile to take it up */
+function swagBrush(d, px, py) {
+    const x0 = d.px === undefined ? px : d.px, y0 = d.py === undefined ? py : d.py, n = Math.max(1, Math.ceil(Math.hypot(px - x0, py - y0) / 5)); d.px = px; d.py = py;
+    for (let i = 1; i <= n; i++) { const w = wallAt(x0 + (px - x0) * i / n, y0 + (py - y0) * i / n, level, true); if (!w) continue; const key = w.axis + "|" + w.line + "|" + wallTile(w), list = level.swags || [], has = list.includes(key); if (d.to === undefined) d.to = !has; if (has === d.to) continue; if (!d.did) { snapshot(); d.did = true; } if (d.to) (level.swags = list).push(key); else { level.swags = list.filter(k => k !== key); if (!level.swags.length) delete level.swags; } }
     paint();
 }
 function endHalfBrush(d) { if (d.kept) flash("Left the tiles with a door, wall light or something hanging on them at full height."); if (d.did) changed(); }
@@ -1006,7 +1012,7 @@ window.HallwayLive = {
 };
 function overlay() {
     const z = levelZ(level);
-    if (tool === "halfwall" || tool === "nowall") for (const [list, col] of [[level.halfTiles, "#4fd1ff"], [level.noWalls, "#ff6a5f"]]) for (const k of (list || [])) {
+    if (tool === "halfwall" || tool === "nowall" || tool === "swag") for (const [list, col] of tool === "swag" ? [[level.swags, "#7dff9a"]] : [[level.halfTiles, "#4fd1ff"], [level.noWalls, "#ff6a5f"]]) for (const k of (list || [])) {
         const [axis, lineS, tileS] = k.split("|"), L = +lineS, t = +tileS;
         if (axis === "x") line(t, L, t + 1, L, tileZ(level, t, L), col, 3); else line(L, t, L, t + 1, tileZ(level, L, t), col, 3);
     }
@@ -1067,7 +1073,7 @@ function setTool(t) {
     if (window.HALLWAY_PLAY && t !== "walk" && tool === "walk") return;      // on the site you only ever walk; you leave by the entrance or the Leave button
     if (t === "walk" && tool === "walk") return;
     doorCarry = null;
-    if (drag) { if (["rubout", "halfwall", "edgebrush", "edge", "move"].includes(drag.kind) && lastClient) canvas.dispatchEvent(new PointerEvent("pointerup", { clientX: lastClient[0], clientY: lastClient[1], bubbles: true, pointerId: 1 })); drag = null; }
+    if (drag) { if (["rubout", "halfwall", "swag", "edgebrush", "edge", "move"].includes(drag.kind) && lastClient) canvas.dispatchEvent(new PointerEvent("pointerup", { clientX: lastClient[0], clientY: lastClient[1], bubbles: true, pointerId: 1 })); drag = null; }
     putBack();
     if (t !== tool) placeRot = 0;
     tool = t; hover = null; drag = null; heightHold = null;
@@ -1747,6 +1753,7 @@ function select(hit) {
         if (long) { btn("Shorter", () => resizeSelected(-1)); btn("Longer", () => resizeSelected(1)); }
         if (hit.type === "wallitem" && String(hit.o.k).startsWith("i_peel")) { const q = hit.o, f = document.createElement("label"); f.className = "field"; const n = document.createElement("span"); n.className = "f-label"; n.textContent = "Behind it"; const sel = document.createElement("select"); sel.className = "f-ctl"; for (const [v, t] of [["", "Nothing"], ["note", "A note"], ["6x14|0", "A door: staff corridor 1"], ["6x14|1", "A door: staff corridor 2"], ["6x14|2", "A door: staff corridor 3"], ["4x8|0", "A door: passage 1"], ["4x8|1", "A door: passage 2"], ["4x8|2", "A door: passage 3"]]) { const o = document.createElement("option"); o.value = v; o.textContent = t; sel.appendChild(o); } sel.value = !q.behind ? "" : q.behind.kind === "note" ? "note" : q.behind.size + "|" + q.behind.n; sel.addEventListener("change", () => { snapshot(); if (!sel.value) delete q.behind; else if (sel.value === "note") q.behind = { kind: "note", text: (q.behind && q.behind.text) || "" }; else { const [size, m] = sel.value.split("|"); q.behind = { kind: "door", size, n: +m }; } changed(); select(hit); }); f.append(n, sel); box.appendChild(f);
           if (q.behind && q.behind.kind === "note") { const ta = document.createElement("textarea"); ta.rows = 3; ta.value = q.behind.text || ""; ta.setAttribute("aria-label", "What the note says"); ta.style.width = "100%"; ta.addEventListener("change", () => { snapshot(); q.behind.text = ta.value; changed(); }); box.appendChild(ta); } }
+        if (hit.type === "wallitem" && hit.o.k === "i_festoon") { const q = hit.o, row = (label, ctl) => { const f = document.createElement("label"); f.className = "field"; const n = document.createElement("span"); n.className = "f-label"; n.textContent = label; f.append(n, ctl); box.appendChild(f); }, sel = document.createElement("select"); sel.className = "f-ctl"; for (const [v, t] of [["amber", "Amber"], ["warm", "Warm white"], ["multi", "Many colours"], ["redgreen", "Red and green"], ["blue", "Blue and white"], ["cool", "Cool white"]]) { const o = document.createElement("option"); o.value = v; o.textContent = t; sel.appendChild(o); } sel.value = q.colour || "amber"; sel.addEventListener("change", () => { snapshot(); if (sel.value === "amber") delete q.colour; else q.colour = sel.value; changed(); }); row("Bulbs", sel); const tw = document.createElement("input"); tw.type = "checkbox"; tw.checked = !!q.twinkle; tw.addEventListener("change", () => { snapshot(); if (tw.checked) q.twinkle = true; else delete q.twinkle; changed(); }); row("A gentle twinkle", tw); }
         if (hit.type === "prop" && hit.o.k === "rarecase") { const fp = floorPiece("rarecase"), f = document.createElement("label"); f.className = "field"; const n = document.createElement("span"); n.className = "f-label"; n.textContent = "What's inside"; const sel = document.createElement("select"); sel.className = "f-ctl"; for (const [k, v] of Object.entries((fp && fp.opts) || {}).sort((a, c) => a[1].name.localeCompare(c[1].name))) { const o = document.createElement("option"); o.value = k; o.textContent = v.name; sel.appendChild(o); } sel.value = hit.o.rare || (fp && fp.rare0) || ""; sel.addEventListener("change", () => { snapshot(); hit.o.rare = sel.value; changed(); }); f.append(n, sel); box.appendChild(f); }
         if (hit.type === "prop" && hit.o.k === "rope") { const f = document.createElement("label"); f.className = "field"; const n = document.createElement("span"); n.className = "f-label"; n.textContent = "Comes off at night"; const c = document.createElement("span"); c.className = "f-ctl"; const t = document.createElement("input"); t.type = "checkbox"; t.checked = !!hit.o.night; t.addEventListener("change", () => { snapshot(); if (t.checked) hit.o.night = true; else delete hit.o.night; changed(); }); c.appendChild(t); f.append(n, c); box.appendChild(f); }
         if (hit.type === "prop" && hit.o.k === "rope") {
@@ -2132,6 +2139,7 @@ canvas.addEventListener("pointerdown", e => {
     if (tool === "edges") { const edge = edgeAt(px, py); if (edge) { snapshot(); drag = { kind: "edge", edge }; } return; }
     if (tool === "walk") { walkPress(px, py); return; }
     if (tool === "halfwall" || tool === "nowall" || tool === "addwall") { drag = { kind: "halfwall" }; halfBrush(drag, px, py); return; }
+    if (tool === "swag") { drag = { kind: "swag" }; swagBrush(drag, px, py); return; }
     if (tool === "steps") {
         const f = tileIn(level, px, py), edge = heightEdgeAt(level, f[0], f[1]);
         if (!edge) { flash("Steps go where two heights meet. Set a floor's height first, with Floor height."); return; }
@@ -2158,6 +2166,7 @@ canvas.addEventListener("pointermove", e => {
     }
     if (drag && drag.kind === "rubout") { rubOut(drag, px, py); return; }
     if (drag && drag.kind === "halfwall") { halfBrush(drag, px, py); return; }
+    if (drag && drag.kind === "swag") { swagBrush(drag, px, py); return; }
     if (drag && drag.kind === "edgebrush") { edgeBrush(drag, px, py); return; }
     if (drag && drag.kind === "move") { moveSelected(drag, px, py); return; }
     if (!drag && (tool === "select" || tool === "walk")) {
@@ -2188,7 +2197,7 @@ canvas.addEventListener("pointermove", e => {
     if (drag && drag.kind === "rect" && brushTool(tool) && e.ctrlKey) return;
     if (drag && drag.kind === "rect") { drag.rect = snapRect(drag.a, tool === "floor" ? paintTile(px, py) : tileIn(level, px, py)); paint(); return; }
     if (level && tool !== "pan" && tool !== "walk" && tool !== "edges") {
-        const wallTool = ["entrance", "door", "sconce", "globelight", "lift", "stair", "turn", "side", "sideturn", "halfwall", "nowall", "addwall"].includes(tool) || tool === "del" || isWallItemTool(tool);
+        const wallTool = ["entrance", "door", "sconce", "globelight", "lift", "stair", "turn", "side", "sideturn", "halfwall", "nowall", "addwall", "swag"].includes(tool) || tool === "del" || isWallItemTool(tool);
         const [fx, fy] = tileIn(level, px, py);
         if (isWallItemTool(tool)) hoverPx = [px, py];
         const onFloor = hasFloor(level, Math.floor(fx), Math.floor(fy));
@@ -2211,6 +2220,7 @@ canvas.addEventListener("pointerup", e => {
     if (d.kind === "move" && d.ctrlDelete && !d.moved) { deleteSelected(); return; }
     if (d.kind === "rubout") { endRub(d); return; }
     if (d.kind === "halfwall") { endHalfBrush(d); return; }
+    if (d.kind === "swag") { if (d.did) changed(); return; }
     if (d.kind === "edgebrush") { endEdgeBrush(d); return; }
     if (d.kind === "laysteps") {
         snapshot();
