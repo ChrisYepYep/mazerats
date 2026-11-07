@@ -159,7 +159,9 @@
     setInterval(() => { if (!screensaver.on && !document.hidden && LIVE.walker && LIVE.idleFor > IDLE_MS && !LIVE.busy) ssStart(); }, 1000);
     /* the tap that ends it goes no further, so it doesn't send you walking */
     const stop = e => { if (!screensaver.on) return; e.stopImmediatePropagation(); if (e.cancelable) e.preventDefault(); ssEnd(); };
-    for (const ev of ["pointerdown", "mousedown", "keydown", "wheel", "touchstart"]) window.addEventListener(ev, stop, { capture: true, passive: false });
-    let lastMove = null; window.addEventListener("pointermove", e => { const was = lastMove; lastMove = [e.clientX, e.clientY]; if (!was || Math.hypot(e.clientX - was[0], e.clientY - was[1]) < 3) return; if (screensaver.on) { if (Math.hypot(e.clientX - was[0], e.clientY - was[1]) > 6) ssEnd(); } else LIVE.markActive(); }, { capture: true, passive: true });
+    /* only a click, a tap or a key ends it: moving the mouse or the wheel doesn't */
+    for (const ev of ["pointerdown", "mousedown", "keydown", "touchstart"]) window.addEventListener(ev, stop, { capture: true, passive: false });
+    window.addEventListener("wheel", e => { if (screensaver.on) { e.preventDefault(); e.stopPropagation(); } }, { capture: true, passive: false });
+    let lastMove = null; window.addEventListener("pointermove", e => { const was = lastMove; lastMove = [e.clientX, e.clientY]; if (!was || Math.hypot(e.clientX - was[0], e.clientY - was[1]) < 3) return; if (!screensaver.on) LIVE.markActive(); }, { capture: true, passive: true });
     window.HallwayScreensaver = { start: ssStart, stop: ssEnd, get on() { return screensaver.on; }, get state() { const f = screensaver.floors && screensaver.floors[screensaver.i]; return { phase: screensaver.phase, i: screensaver.i, floor: f && f.l.name, d: Math.round(screensaver.d), len: f && Math.round(f.r.len), dir: screensaver.dir, stuck: screensaver.stuck }; } };
 })();
