@@ -126,7 +126,7 @@
         /* the music rests, and comes back where it was */
         const A = window.HallwayAudio; screensaver.music = !!(A && A.playing); if (screensaver.music) A.stop();
         LIVE.holdCamera(true); document.body.classList.add("hw-screensaver");
-        if (!screensaver.title) { const t = screensaver.title = document.createElement("div"); t.className = "hw-ss-title"; t.textContent = "Maze Rats Hallway"; t.setAttribute("aria-hidden", "true"); (document.getElementById("stage") || document.body).appendChild(t); }
+        if (!screensaver.title) { const t = screensaver.title = document.createElement("div"); t.className = "hw-ss-title"; t.setAttribute("aria-hidden", "true"); const big = document.createElement("div"), small = document.createElement("div"); big.className = "hw-ss-name"; big.textContent = "Maze Rats Hallway"; small.className = "hw-ss-hint"; small.textContent = "Click or press any key to exit screensaver."; t.append(big, small); (document.getElementById("stage") || document.body).appendChild(t); }
         screensaver.title.classList.remove("on"); void screensaver.title.offsetWidth; screensaver.title.classList.add("on");
         LIVE.wake(); screensaver.raf = requestAnimationFrame(ssTick); return true;
     }
