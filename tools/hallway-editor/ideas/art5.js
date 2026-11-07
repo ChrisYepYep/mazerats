@@ -67,13 +67,14 @@ function bell() { return stamp([
     ".KKKKKKK."
 ], { K: "1a1006", W: "fffbe0", H: "f7e29a", G: "d9b04f", D: "a67f36", E: "7a5416", T: "6e4524", U: "452313" }, 4, 10); }
 /* the sign: the map's own stair sign, turned to stand straight out from this wall, on its arm and chains */
+let signMirror = false; const setSignMirror = v => { signMirror = v; };
 function signOut(c, ax, ay, lines) {
     const P = W3.PLAQUE, src = fs.readFileSync(H + "render/hw3.js", "utf8"), i = src.indexOf("function stairPlaque("), k = src.indexOf("    const ink = hex(", i);
     const Hd = lines.length > 1 ? 30 : 18, Wmax = Math.max(...lines.map(s => W3.H.textW(s, "vb"))), Wd = Math.max(50, Wmax + 2 * (P.frame + P.pad));
     const fn = new Function("hex", "H", "C", "PLAQUE", "plaqueWidth", "ARROW", src.slice(i, k) + "}\nreturn stairPlaque;")(W3.H.hex, W3.H, W3.H.C, { ...P, H: Hd }, () => Wd, []);
     const set = (x, y, v) => { if (x < 0 || y < 0 || x >= c.w || y >= c.h) return; const q = (y * c.w + x) * 4, t = typeof v === "string" ? col(v) : v; c.d[q] = t[0]; c.d[q + 1] = t[1]; c.d[q + 2] = t[2]; c.d[q + 3] = 255; };
     fn({ w: c.w, h: c.h, set: (x, y, v) => set(2 * ax - x, y, v) }, ax, ay, lines.join(" "), {});
-    const L0 = ax - P.off - Wd, B = ay - P.h + Math.floor((Wd + P.off) / 2), put = (v, t, cc) => { const s = Wd - 1 - v; set(2 * ax - (L0 + s), B - Math.floor(s / 2) - t, cc); };
+    const L0 = ax - P.off - Wd, B = ay - P.h + Math.floor((Wd + P.off) / 2), put = (v, t, cc) => { const s = signMirror ? v : Wd - 1 - v; set(2 * ax - (L0 + s), B - Math.floor(s / 2) - t, cc); };
     const ink = col("f6cf80"), cut = col("170703");
     lines.forEach((word, n) => { const tw = W3.H.textW(word, "vb"); let U = (Wd - tw) >> 1; const floor = lines.length > 1 ? (n === 0 ? 17 : 4) : P.textFloor - 2; for (const ch of word) { const g = W3.H.VOL.vb[ch] || W3.H.VOL.vb[" "]; for (const [dt, cc] of [[-1, cut], [0, ink]]) g.rows.forEach((r, j) => { for (let q = 0; q < r.length; q++) if (r[q] === "1") put(U + q, floor + 10 - j + dt, cc); }); U += g.w; } });
 }
@@ -410,4 +411,4 @@ function hole(axis) {
     return { w, h, ox: 1 + (W >> 1), oy: Bot + rise(W >> 1), rgba };
 }
 
-module.exports = { stoneAt, fbm, FIRE, SIGN_GREEN, SIGN_LIT, SIGN_WHITE, desk, bell, signOut, key, peel, PEELS, ghost, damp, bite, bookDoor, passage, staffRoom, lights, hotelItems, hallWindow, garland, hole, setW, mulW, stamp, BZ };
+module.exports = { setSignMirror, stoneAt, fbm, FIRE, SIGN_GREEN, SIGN_LIT, SIGN_WHITE, desk, bell, signOut, key, peel, PEELS, ghost, damp, bite, bookDoor, passage, staffRoom, lights, hotelItems, hallWindow, garland, hole, setW, mulW, stamp, BZ };

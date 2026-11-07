@@ -8,7 +8,7 @@ const fs = require("fs"), path = require("path");
 const A5 = require("./ideas/art5.js"), A4 = require("./ideas/art4.js"), A = require("./ideas/art.js"), L = require("./ideas/lib.js"), R = L.R;
 const { encodePng } = require(R + "tools/png-encode.js");
 const OUT = path.join(__dirname, "art", "wall"), LIST = path.join(__dirname, "wall-items.js"), TINT = 200;
-let mirrored = false; const memo = {}, setM = v => { mirrored = v; A.setMirrorText(v); };
+let mirrored = false; const memo = {}, setM = v => { mirrored = v; A.setMirrorText(v); A5.setSignMirror(v); };
 
 /* run a drawing on grey g; a is where the piece's own origin lands */
 function onGrey(draw, g) { const c = { w: 340, h: 340, d: Buffer.alloc(340 * 340 * 4) }; for (let i = 0; i < c.d.length; i += 4) { c.d[i] = g; c.d[i + 1] = g; c.d[i + 2] = g; c.d[i + 3] = 255; } const a = [170, 280]; draw(c, a); return { c, a }; }
@@ -41,6 +41,7 @@ function add(id, name, kind, draw, o = {}) {
     const def = { id: "i_" + id, name, kind, tell: true, h, x: { w: art.w, h: art.h, layers: [layer(f2, true)] }, y: { w: art.w, h: art.h, layers: [layer(f, false)] } };
     if (o.lit) { const lit = capture(o.lit, art.box), fl = "i_" + id + "_lit.png"; write(fl, lit); let fl2 = fl; if (o.text) { setM(true); const m = capture(o.lit, art.box); fl2 = "i_" + id + "_lit_m.png"; write(fl2, m); setM(false); } def.x.layers[0].litF = fl2; def.y.layers[0].litF = fl; def.lit = o.glow; }
     if (o.locked) def.locked = true;
+    if (o.snap) def.snapAt = (def.y.layers[0].x + art.ox) / 16;
     items.push(def); return def;
 }
 const put = (c, s, a) => L.put(c, s, a[0], a[1]);
@@ -79,6 +80,18 @@ floorPiece("mark_scuff", (c, a) => { const N = (x, y) => { const s = Math.sin(x 
 floorPiece("mark_tile", (c, a) => { for (let i = -14; i <= 14; i++) { const X = a[0] + i, base = a[1] + 8 - Math.abs(i) * .55; setPx(c, X, Math.round(base), [46, 30, 18]); setPx(c, X, Math.round(base) - 1, [226, 196, 150], .8); } });
 /* the key, on its own, for Chris to edit: nothing else reads it until the hunts are built */
 write("i_key.png", (() => { const k = A5.key(); return k; })());
+
+/* ---- 17: Lost Property: the recess, its shelves and what's on them, the bell and ledger. The sign's its own piece, so it can be dragged about ---- */
+{ const small = require("./ideas/smallsprites.json").filter(k => !/mushroom|deepgrove/.test(k[0]) || /pot/.test(k[0]));
+  const seen = new Set(), pool = small.filter(k => /duck|CF_|prize|balloon|capsule/.test(k[0])).map(k => [k, L.loadPng(R + "assets/furni/" + k[2])]).filter(([k, im]) => im.w <= 14 && im.h <= 11).filter(([k]) => { const n = k[0].replace(/d+/g, "").split("_").slice(0, 2).join("_"); if (seen.has(n)) return false; seen.add(n); return true; });
+  const d = A5.desk();
+  add("desk", "Lost Property desk", "hotel", (c, a) => { L.put(c, d.sprite, a[0], a[1]); const at = (x, y, z) => [a[0] + x - y, a[1] + (x + y) / 2 - z]; let n = 0; const cols = [[d.X0 + 1.4, d.X0 + 16], [d.X0 + 17.4, d.X1 - 1]];
+      for (const z of d.shelfZ) for (const [x0, x1] of cols) { const [k, im] = pool[n++ % pool.length], xc = (x0 + x1) / 2, q = at(xc, 6.5, z), X0p = Math.round(q[0] - im.w / 2), Y0p = Math.round(q[1] - im.h + 1); for (let j = 0; j < im.h; j++) for (let u = 0; u < im.w; u++) { const o = (j * im.w + u) * 4; if (im.rgba[o + 3] < 128) continue; const X = X0p + u, Y = Y0p + j, mx = X - a[0] + 7, mz = a[1] + (mx + 7) / 2 - Y, wy = a[0] - X, wz = a[1] + wy / 2 - Y; if (mx <= x0 || mx >= x1 || mz <= z - 3 || mz >= z + 11.5 || wz >= d.HT - 1 || wy <= 1) continue; const qq = (Y * c.w + X) * 4; c.d[qq] = im.rgba[o]; c.d[qq + 1] = im.rgba[o + 1]; c.d[qq + 2] = im.rgba[o + 2]; } }
+      let q = at(-2, 18, 31); L.put(c, A5.bell(), q[0], q[1]); q = at(-2, 50, 31); L.put(c, A4.ledger(), q[0], q[1]); }, { locked: true, snap: true });
+  add("lpsign", "Lost Property sign", "hotel", (c, a) => A5.signOut(c, a[0], a[1], ["Lost", "Property"]), { text: true });
+  /* what can go missing: small things only */
+  const dir = path.join(__dirname, "art", "ideas", "lost"); fs.mkdirSync(dir, { recursive: true }); const items = small.filter(s => s[3] <= 18 && s[4] <= 18 && !/CF_1_|CF_5_/.test(s[0])); for (const s of items) fs.copyFileSync(R + "assets/furni/" + s[2], path.join(dir, s[2]));
+  fs.writeFileSync(path.join(__dirname, "art", "ideas", "lost.json"), JSON.stringify(items.map(s => ({ k: s[0], name: s[1], f: s[2], w: s[3], h: s[4] })))); console.log("lost things", items.length); }
 
 /* ---- 53: the hole on the skirting, and the rat, frames in a row with what each needs to stand on its feet. The page reads these, nothing is baked ---- */
 add("rathole", "Rat hole", "tell", (c, a) => L.put(c, A5.hole("x"), a[0], a[1]), { locked: true, drop: 12 });
