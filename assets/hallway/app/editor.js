@@ -714,6 +714,18 @@ function moodTile(mood, tx, ty) {
     }
     return t || null;                                           // the last version of it, until the new one's in
 }
+/* The whole map, not only what's on screen: the time of day showing first, nearest first, then the one coming, then, on the walking page and not on a phone, the rest (the editor draws its own, so it stops at what it can show). A slot's always left for what's on screen, so looking around stays quick */
+const MOODS_ALL = ["day", "dusk", "night", "dawn"];
+function preloadMap() {
+    if (!map || !map.rect || !version || document.hidden) return; const m = moodNow(); if (!m) return;
+    const r = map.rect, order = []; for (const q of [m.a, m.b]) if (!order.includes(q)) order.push(q);
+    if (timeMode === "cycle") { const at = CYCLE.findIndex(c => c[1] === m.b), after = at >= 0 ? CYCLE.slice(at + 1).map(c => c[1]) : []; for (const q of after) if (!order.includes(q)) order.push(q); }
+    const small = window.matchMedia && matchMedia("(pointer: coarse)").matches; if (!small && window.HALLWAY_PLAY) for (const q of MOODS_ALL) if (!order.includes(q)) order.push(q);
+    const cells = []; for (let ty = Math.floor(r.y / TILE); ty <= Math.floor((r.y + r.h) / TILE); ty++) for (let tx = Math.floor(r.x / TILE); tx <= Math.floor((r.x + r.w) / TILE); tx++) cells.push([tx, ty, Math.hypot((tx + .5) * TILE - cam.x, (ty + .5) * TILE - cam.y)]);
+    cells.sort((p, q) => p[2] - q[2]);
+    for (const mood of order) for (const [tx, ty] of cells) { if (moodInflight.size >= Math.max(1, CONCURRENT - 1)) return; const k = (window.hallwayXmas && mood !== "failing" ? mood + "+x" : mood) + "|" + tx + "," + ty, t = moodTiles.get(k); if (t && t.v === version) continue; if (moodInflight.has(k) || tileWaiting(k)) continue; moodTile(mood, tx, ty); }
+}
+setInterval(preloadMap, 300);
 function drawMoods(ox, oy, x0, x1, y0, y1) {
     const m = moodNow(); if (!m) return false;
     for (let ty = y0; ty <= y1; ty++) for (let tx = x0; tx <= x1; tx++) {
