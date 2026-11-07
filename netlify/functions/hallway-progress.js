@@ -4,7 +4,7 @@
    to their account"). Guests never come here: hallway progress stays in their
    browser, and is merged in here the first time they sign in.
 
-   GET   { scraps: [id, ...], key: bool, lost: { day, streak, shelf: [...] }, hunts: { id: { found: [...], done } } }
+   GET   { scraps: [id, ...], key: bool, lost: { day, streak, shelf: [...], points, best, missed }, hunts: { id: { found: [...], done } } }
    POST  the same shape, or any part of it. It only ever adds: scraps and found
          clues are added to, the key can't be lost, a hunt can't be un-finished,
          and an older Lost Property day can't overwrite a newer one. So two
@@ -48,13 +48,14 @@ function sameOrigin(event) {
 
 const ids = (list) => (Array.isArray(list) ? [...new Set(list.filter((s) => typeof s === "string" && ID.test(s)))].slice(0, MAX_LIST) : []);
 
+const num = v => (Number.isInteger(v) && v > 0 && v < 1e9 ? v : 0);
 const view = (doc) => {
     const d = doc || {};
     const lost = d.lost || {};
     return {
         scraps: ids(d.scraps),
         key: d.key === true,
-        lost: { day: DAY.test(lost.day || "") ? lost.day : "", streak: Number.isInteger(lost.streak) && lost.streak > 0 ? lost.streak : 0, shelf: ids(lost.shelf) },
+        lost: { day: DAY.test(lost.day || "") ? lost.day : "", streak: Number.isInteger(lost.streak) && lost.streak > 0 ? lost.streak : 0, shelf: ids(lost.shelf), points: num(lost.points), best: num(lost.best), missed: num(lost.missed) },
         hunts: d.hunts && typeof d.hunts === "object" ? d.hunts : {}
     };
 };
@@ -64,7 +65,7 @@ const view = (doc) => {
 function cleanBody(body) {
     const out = { scraps: ids(body.scraps), key: body.key === true, lost: null, hunts: {} };
     const l = body.lost;
-    if (l && typeof l === "object" && DAY.test(l.day || "") && Number.isInteger(l.streak) && l.streak >= 0 && l.streak < 100000) out.lost = { day: l.day, streak: l.streak, shelf: ids(l.shelf) };
+    if (l && typeof l === "object" && DAY.test(l.day || "") && Number.isInteger(l.streak) && l.streak >= 0 && l.streak < 100000) out.lost = { day: l.day, streak: l.streak, shelf: ids(l.shelf), points: num(l.points), best: num(l.best), missed: num(l.missed) };
     if (body.hunts && typeof body.hunts === "object" && !Array.isArray(body.hunts)) {
         for (const [id, h] of Object.entries(body.hunts).slice(0, 50)) {
             if (!ID.test(id) || id.includes(".") || !h || typeof h !== "object") continue;
@@ -88,6 +89,8 @@ function mergeInto(doc, clean) {
     } else if (clean.lost) {
         next.lost = { ...was.lost, shelf: [...new Set([...was.lost.shelf, ...clean.lost.shelf])].slice(0, MAX_LIST) };
     }
+    /* Lost Property's own totals (8 Nov 2026): points, best find and misses only go up. They're the player's record, not the board: hallway-lost.js keeps that, on its own clock */
+    if (clean.lost) for (const k of ["points", "best", "missed"]) next.lost[k] = Math.max(was.lost[k] || 0, clean.lost[k] || 0);
     for (const [id, h] of Object.entries(clean.hunts)) {
         const old = was.hunts[id] || { found: [], done: false };
         next.hunts[id] = { found: [...new Set([...(old.found || []), ...h.found])].slice(0, MAX_LIST), done: old.done === true || h.done };

@@ -131,6 +131,8 @@ const PLACES = [
     { label: "advent_doors", collection: "advent_doors", filter: id => ({ playerId: id }) },
     // hallway-progress.js: scraps, the key, Lost Property and hunts in the Hallway (7 Nov 2026).
     { label: "hallway_progress", collection: "hallway_progress", filter: id => ({ playerId: id }) },
+    { label: "hallway_lost", collection: "hallway_lost", filter: id => ({ playerId: id }) },
+    { label: "hallway_lost_open", collection: "hallway_lost_open", filter: id => ({ playerId: id }) },
     // guess-scores.js: a scored day each, with name and avatar — the board.
     { label: "guess_scores", collection: "guess_scores", filter: id => ({ playerId: id }) },
     // daily-scores.js: Odd One Out (and the retired Ratrospect and One Wall

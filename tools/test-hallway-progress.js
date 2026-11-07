@@ -18,7 +18,7 @@ const load0 = Module._load; Module._load = function (req, parent, ...r) { if (fa
 const { handler } = require(path.join(__dirname, "..", "netlify", "functions", "hallway-progress.js"));
 const call = async (method, body, headers = {}) => { const r = await handler({ httpMethod: method, headers: { host: "x.test", ...headers }, body: body === undefined ? undefined : JSON.stringify(body) }); return { status: r.statusCode, body: JSON.parse(r.body) }; };
 (async () => {
-    let r = await call("GET"); assert.deepStrictEqual(r.body, { scraps: [], key: false, lost: { day: "", streak: 0, shelf: [] }, hunts: {} }, "starts empty");
+    let r = await call("GET"); assert.deepStrictEqual(r.body, { scraps: [], key: false, lost: { day: "", streak: 0, shelf: [], points: 0, best: 0, missed: 0 }, hunts: {} }, "starts empty");
     r = await call("POST", { scraps: ["a", "b"], key: true }); assert.equal(r.status, 200); assert.deepStrictEqual(r.body.scraps, ["a", "b"]); assert.equal(r.body.key, true);
     r = await call("POST", { scraps: ["b", "c"], key: false }); assert.deepStrictEqual(r.body.scraps, ["a", "b", "c"], "scraps only add"); assert.equal(r.body.key, true, "the key can't be lost");
     r = await call("POST", { lost: { day: "2026-11-07", streak: 3, shelf: ["duck"] } }); assert.equal(r.body.lost.streak, 3);
@@ -31,5 +31,6 @@ const call = async (method, body, headers = {}) => { const r = await handler({ h
     r = await handler({ httpMethod: "POST", headers: {}, body: "x".repeat(20000) }); assert.equal(r.statusCode, 413);
     /* two tabs at once: neither loses its scrap */
     const [a, b] = await Promise.all([call("POST", { scraps: ["left"] }), call("POST", { scraps: ["right"] })]); r = await call("GET"); assert.ok(r.body.scraps.includes("left") && r.body.scraps.includes("right"), "racing saves both land");
+    r = await call("POST", { lost: { day: "2026-11-08", streak: 4, shelf: [], points: 900, best: 600, missed: 1 } }); r = await call("POST", { lost: { day: "2026-11-08", streak: 4, shelf: [], points: 300, best: 100, missed: 0 } }); assert.equal(r.body.lost.points, 900, "points never go down"); assert.equal(r.body.lost.best, 600); assert.equal(r.body.lost.missed, 1);
     console.log("hallway-progress: all good", "(index ensured " + indexed + " times)");
 })().catch(e => { console.error(e); process.exit(1); });
