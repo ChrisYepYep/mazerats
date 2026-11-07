@@ -26,7 +26,7 @@
         ]],
         ["On the walls", [
             ["Maze's picture", { k: "frame", w: 34, h: 26, up: 34, slot: 0 }, null], ["Window", { k: "window" }, R_ + "window-r.png"], ["Wall light", { k: "sconce", up: 70 }, "art/sconce-x.png"], ["Globe wall light", { k: "sconce", style: "globe", up: 70 }, "art/sconce-globe-x.png"],
-            ...(window.WALL_ITEMS || []).map(i => [i.name, { k: "painting", id: i.id, up: 62 }, "art/wall/" + i.x.layers[0].f])
+            ...(window.WALL_ITEMS || []).filter(i => !i.tell).map(i => [i.name, { k: "painting", id: i.id, up: 62 }, "art/wall/" + i.x.layers[0].f])
         ]]
     ];
     const Z_MAX = 120;

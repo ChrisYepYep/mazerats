@@ -7,6 +7,9 @@ const FloorLamps = require("./floor-lamps.js");
 const EdgeItems = require("./edge-items.js");
 const RopeBarrier = require("./rope-barrier.js");
 const WALL_ITEM = new Map(require("../wall-items.js").map(i => [i.id, i]));
+const HallWindow = require("./hall-window.js");
+const FLOOR_PIECES = (() => { try { return require("../wall-items.js").floor || {}; } catch (e) { return {}; } })();
+const glowsAfterDark = c => (c[0] === 46 && c[1] === 224 && c[2] === 124) || (c[0] === 255 && c[1] === 255 && c[2] === 255);
 const wallArtCache = new Map(), wallArt = f => { if (!wallArtCache.has(f)) wallArtCache.set(f, H_readPng(require("path").join(__dirname, "../art/wall", f))); return wallArtCache.get(f); };
 const H_readPng = require("path").resolve(__dirname, "../../png-decode.js") && require("../../png-decode.js").readPng;
 const W2 = require("./hw2.js");
@@ -1202,6 +1205,8 @@ function build(cfg) {
     const view = cl ? (() => { const c = at(cl[0], cl[1], cl[2]); return [c[0] - (cl[3] >> 1) - 40, c[1] - (cl[4] >> 1) - 40, c[0] + (cl[3] >> 1) + 40, c[1] + (cl[4] >> 1) + 40]; })() : [0, 0, pw, ph];
     const bw = view[2] - view[0], bh = view[3] - view[1];
     const out = new Buf(bw, bh, "000000"), layer = new Buf(bw, bh, "07060a");
+    /* a tint or see-through pixel of a new piece: remembered with what's under it now, and worked out after the colouring, on whatever colour the wall ends up. If something's gone over it by then, it's dropped */
+    const pieceTint = (X, Y, c, A) => { if (X < 0 || Y < 0 || X >= bw || Y >= bh) return; const p = (Y * bw + X) * 4; w.tints.push([X, Y, c, A, (layer.d[p] << 16) | (layer.d[p + 1] << 8) | layer.d[p + 2]]); };
     const furniX = new Int16Array(bw * bh), furniY = new Int16Array(bw * bh), furniC = new Int32Array(bw * bh), furniRun = new Uint8Array(bw * bh), NO_FURNI = -32768;
     const wallOwner = new Uint16Array(bw * bh), stairPx = new Uint8Array(bw * bh), railUnder = new Map();
     const mask = new Uint8Array(bw * bh), zb = new Int16Array(bw * bh), fc = new Int32Array(bw * bh), done = new Uint8Array(bw * bh);
@@ -1249,7 +1254,7 @@ function build(cfg) {
         const backWall = (X, Y, z) => { const Q = tileOf.get(X + "," + Y); return !!Q && (z === undefined || Q.z === z) && Q.y0 === Y && !has.has(X + "," + (Y - 1)) && !holes.has(X + "," + (Y - 1)) && !Q.noBack && (Q.notch || !airBelow(X, Y - 1) || doorEdge("x", X, Y) || shown("x", Y, X)); };
         const sideWall = (X, Y, z) => { const Q = tileOf.get(X + "," + Y); return !!Q && (z === undefined || Q.z === z) && Q.x0 === X && !has.has((X - 1) + "," + Y) && !holes.has((X - 1) + "," + Y) && (Q.notch || !airBelow(X - 1, Y) || doorEdge("y", X, Y) || shown("y", X, Y)); };
         layer.d.fill(0); for (let i = 0; i < layer.d.length; i += 4) { layer.d[i] = VOID[0]; layer.d[i + 1] = VOID[1]; layer.d[i + 2] = VOID[2]; layer.d[i + 3] = 255; }
-        mask.fill(0); w.keep.fill(0); w.glowing.fill(0); w.footShadows = [];
+        mask.fill(0); w.keep.fill(0); w.glowing.fill(0); w.footShadows = []; w.tints = []; w.sunWins = [];
         w.lamps = [];
         wallOwner.fill(0);
         const signs = [], pushSign = signs.push.bind(signs); let signPatch = null;
@@ -1496,6 +1501,10 @@ function build(cfg) {
                 w.sprites = landingOf ? landingQueue : (lv.later = lv.later || []);      // one queue for every part of a floor, or a raised part's things paint over what stands on the part next to it      // all in one queue, or what stands against a wall gets painted over by what is behind it
                 const from = w.sprites.length; let partsNow = null;
                 if (k === "lamp") floorLamp(w, x, y, p[6], p[7]);
+                else if (FLOOR_PIECES[k]) {
+                    if (w.partAt({ x, y })) { const fp = FLOOR_PIECES[k], flat = k.startsWith("mark_"), base = w.S(x + (flat ? .5 : .25), y + (flat ? .5 : .25)), im = wallArt(fp.f), z = w.z, X0 = Math.round(base[0]) - fp.ox, Y0 = Math.round(base[1]) - fp.oy;
+                        w.sprites.push({ depth: x + y + (flat ? -.6 : .5), ftx: x, fty: y, draw: () => { for (let j = 0; j < im.h; j++) for (let i = 0; i < im.w; i++) { const q = (j * im.w + i) * 4, A = im.rgba[q + 3]; if (!A) continue; const X = X0 + i, Y = Y0 + j, c = [im.rgba[q], im.rgba[q + 1], im.rgba[q + 2]]; if (A < 255) { pieceTint(X, Y, c, A); continue; } layer.set(X, Y, c); if (X >= 0 && Y >= 0 && X < bw && Y < bh) w.keep[Y * bw + X] = ((c[0] << 16) | (c[1] << 8) | c[2]) + 1; } } }); }
+                }
                 else if (k === "rope") {
                     /* each tile of it takes its own place in the queue, so what stands nearer on another tile still covers it */
                     const row = Parts.parts({ k, x, y, len: p[4], rot: p[5] }), art = RopeBarrier.pixels({ x, y, len: row.length, rot: p[5], noCard: p[10] }, (fx, fy) => { w.partAt({ x: Math.floor(fx), y: Math.floor(fy) }); return w.S(fx, fy); });
@@ -1594,22 +1603,31 @@ function build(cfg) {
             }
             for (const it of (P.wi || [])) {
                 const def = WALL_ITEM.get(it.k); if (!def) continue;
+                if (it.k === "i_window") { const zw = P.z, wide = it.w || 52, b0 = it.b || 0, top0 = it.top || 78, flip = it.axis === "x", one = () => { const zs = w.z; w.z = zw; const start = it.at - wide / 32, s0 = flip ? w.S(start + wide / 16, it.line) : w.S(it.line, start); w.z = zs; const a0 = Math.round(s0[0]), a1 = Math.round(s0[1]) - 6, view = wallArt("i_view_" + (Mname === "day" ? "day" : Mname === "night" || Mname === "failing" ? "night" : Mname === "dawn" ? "dawn" : "dusk") + ".png"), place = HallWindow.PLACES[it.view] || HallWindow.PLACES.lawn, H2 = top0 - b0, offx = place[0] - wide / 2, offy = place[1] - H2 / 2, Y0 = a1 + wide / 2 - top0;
+                        /* looking out: the picture stays upright, only its outline follows the wall */
+                        for (let u = 0; u < wide; u++) { for (let v = 0; v < H2; v++) { const sxm = a0 - wide + u, sy = Y0 - Math.floor(u / 2) + v, X = flip ? 2 * a0 - sxm - 1 : sxm, sxv = Math.max(0, Math.min(view.w - 1, Math.round(u + offx))), syv = Math.max(0, Math.min(view.h - 1, Math.round(sy - Y0 + offy))), q = (syv * view.w + sxv) * 4; let c = [view.rgba[q], view.rgba[q + 1], view.rgba[q + 2]]; c = c.map((n, k) => n * .88 + [200, 225, 240][k] * .12); const slant = u - (H2 - v) * .34; for (const [o, sw] of [[.2, 7], [.34, 3], [.72, 5]]) { const x0 = wide * o; if (slant >= x0 && slant < x0 + sw) { c = c.map(n => n * .8 + 255 * .2); break; } } c = c.map(n => Math.round(Math.min(255, n))); layer.set(X, sy, c); if (X >= 0 && sy >= 0 && X < bw && sy < bh) { const n = ((c[0] << 16) | (c[1] << 8) | c[2]) + 1; w.keep[sy * bw + X] = n; w.glowing[sy * bw + X] = n; } } }
+                        const fr = HallWindow.art(wide, b0, top0); for (let j = 0; j < fr.h; j++) for (let i = 0; i < fr.w; i++) { const q = (j * fr.w + i) * 4; if (fr.rgba[q + 3] < 128) continue; const sx = a0 - fr.ox + i, X = flip ? 2 * a0 - sx - 1 : sx, Y = a1 - fr.oy + j, c = [fr.rgba[q], fr.rgba[q + 1], fr.rgba[q + 2]]; layer.set(X, Y, c); if (X >= 0 && Y >= 0 && X < bw && Y < bh) { w.keep[Y * bw + X] = ((c[0] << 16) | (c[1] << 8) | c[2]) + 1; if (w.glowing[Y * bw + X]) w.glowing[Y * bw + X] = 0; } }
+                        if (Mname === "day") w.sunWins.push({ a0, a1, W: wide, b: b0, top: top0, flip, z: zw, line: it.line, start }); };
+                    const behind0 = it.axis === "x" ? zAt(Math.floor(it.at), P.y0 - 1) : zAt(P.x0 - 1, Math.floor(it.at - 1)), onDrop0 = behind0 !== null && behind0 > P.z; if (onDrop0) continue; if (it.axis === "x" ? inReach(it.at, P.y0, 340) : inReach(P.x0, it.at, 340)) one(); continue; }
                 if (!(it.axis === "x" ? inReach(it.at, P.y0, 340) : inReach(P.x0, it.at, 340))) continue;
                 const behind = it.axis === "x" ? zAt(Math.floor(it.at), P.y0 - 1) : zAt(P.x0 - 1, Math.floor(it.at - 1)), onDrop = behind !== null && behind > P.z;
                 if (onDrop && cut !== null && behind > cut) continue;
                 const zHere = P.z, one = () => {
                     const zs = w.z; w.z = zHere;
-                    const base = it.axis === "x" ? w.S(it.at, it.line) : w.S(it.line, it.at), cx = Math.round(base[0]), cy = Math.round(base[1] - (it.h === undefined ? 100 : it.h));
+                    const base = it.axis === "x" ? w.S(it.at, it.line) : w.S(it.line, it.at), base0 = base, cx = Math.round(base[0]), cy = Math.round(base[1] - (it.h === undefined ? (def.h || 100) : it.h));
                     w.z = zs;
+                    const litNow = !!def.lit && !M.off;
                     for (const l of (it.axis === "x" ? def.x : def.y).layers) {
-                        const im = wallArt(l.f);
+                        const im = wallArt(litNow && l.litF ? l.litF : l.f);
                         for (let j = 0; j < im.h; j++) for (let i = 0; i < im.w; i++) {
-                            const q = (j * im.w + i) * 4; if (im.rgba[q + 3] < 128) continue;
+                            const q = (j * im.w + i) * 4, A = im.rgba[q + 3]; if (def.tell ? !A : A < 128) continue;
                             const X = cx + l.x + (l.flip ? im.w - 1 - i : i), Y = cy + l.y + j, c = [im.rgba[q], im.rgba[q + 1], im.rgba[q + 2]];
+                            if (def.tell && A < 255) { pieceTint(X, Y, c, A); continue; }
                             layer.set(X, Y, c);
-                            if (X >= 0 && Y >= 0 && X < bw && Y < bh) w.keep[Y * bw + X] = ((c[0] << 16) | (c[1] << 8) | c[2]) + 1;
+                            if (X >= 0 && Y >= 0 && X < bw && Y < bh) { const v = ((c[0] << 16) | (c[1] << 8) | c[2]) + 1; w.keep[Y * bw + X] = v; if (litNow && glowsAfterDark(c)) w.glowing[Y * bw + X] = v; }
                         }
                     }
+                    if (litNow) { const g = def.lit.at, flip = it.axis === "x", gu = flip ? -(g[0] - g[1]) : g[0] - g[1], gv = (g[0] + g[1]) / 2 - g[2]; w.lamps.push({ x: Math.round(base0[0] + gu), y: Math.round(base0[1] + gv), tx: it.axis === "x" ? it.at : P.x0, ty: it.axis === "x" ? P.y0 : it.at, i: w.lamps.length, colour: def.lit.colour, axisY: it.axis !== "x", lz: zHere, sign: true }); }
                 };
                 if (onDrop) (P.raised ? w.sprites : (lv.later = lv.later || [])).push({ depth: (it.axis === "x" ? it.at + P.y0 : P.x0 + it.at) + .35, tx: it.axis === "x" ? Math.floor(it.at) : P.x0, ty: it.axis === "x" ? P.y0 : Math.floor(it.at), draw: one }); else one();
             }
@@ -1888,7 +1906,9 @@ function build(cfg) {
         const colour = cfg.single || lv.way;
         /* only what's still showing: furniture or a nearer wall may have gone over it since */
         for (const [i, c] of lampPx) { const p = i * 4; if (((layer.d[p] << 16) | (layer.d[p + 1] << 8) | layer.d[p + 2]) !== c) lampPx.delete(i); }
+        const tintsLeft = w.tints.filter(t => { const p = (t[1] * bw + t[0]) * 4; return ((layer.d[p] << 16) | (layer.d[p + 1] << 8) | layer.d[p + 2]) === t[4]; });
         recolour(layer, colour, [0, 0, bw, bh], w.keep, wallTag ? { tag: wallTag, ways: wallWays } : null);
+        for (const [X, Y, c, A] of tintsLeft) { const p = (Y * bw + X) * 4; if (A === 200) { for (let k = 0; k < 3; k++) layer.d[p + k] = Math.min(255, layer.d[p + k] * c[k] / 128); } else { const m = (A - 1) / 100; for (let k = 0; k < 3; k++) layer.d[p + k] = layer.d[p + k] * (1 - m) + c[k] * m; } }
         /* a lamp's foot shadow, on the floor only: after the colouring, since a darkened pixel isn't one of the floor's colours any more */
         for (const [sx, sy, sz] of w.footShadows) for (let j = -5; j <= 6; j++) for (let i = -11; i <= 11; i++) {
             const e = (i * i) / 110 + ((j - 1) * (j - 1)) / 27; if (e > 1) continue;
@@ -1898,7 +1918,7 @@ function build(cfg) {
         const dim = lv.closed ? (lv.dim || .5) : 1;
         const lamps = w.lamps.filter(l => !l.tele).map(l => { const key = lampKey(l.tx, l.ty); let c = (lv.closed && key % 3) ? null : M.lamp(l.free || l.colour || Mname !== "failing" ? 0 : key);
             /* a light with its own colour: as strong as the mood's lights, in that colour */
-            if (c && l.colour) { const q = hex(l.colour.replace(/^#/, "")), top = Math.max(q[0], q[1], q[2], 1), power = Math.max(...c); c = q.map(v => v / top * power); }
+            if (c && l.colour) { const q = hex(l.colour.replace(/^#/, "")), top = Math.max(q[0], q[1], q[2], 1), power = Math.max(...c); c = q.map(v => v / top * power * (l.sign ? .42 : 1)); }
             return c && !l.dead ? { ...l, c } : null; }).filter(Boolean);
         const lightAt = (x, y, isFloor, zv) => {
             const L = [M.amb[0], M.amb[1], M.amb[2]];
@@ -1936,6 +1956,12 @@ function build(cfg) {
             const k0 = L[0] * dim, k1 = L[1] * dim, k2 = L[2] * dim;
             layer.d[p] = Math.min(255, layer.d[p] * k0); layer.d[p + 1] = Math.min(255, layer.d[p + 1] * k1); layer.d[p + 2] = Math.min(255, layer.d[p + 2] * k2);
         }
+        if (w.sunWins.length) { const HT = { sofa: 14, chair: 14, table: 14, smtable: 14, ero: 20, ero_stone: 20, ero_walnut: 20, ero_evergreen: 20, ero_flower: 20, cabinet: 40, shelf: 40, plant: 26, statue: 60, fountain: 20, rarecase: 40, water: 30 }, heights = new Map(); for (const P of lv.patches) for (const p of (P.props || [])) { const ht = HT[p[0]]; if (ht) for (const t of Parts.tiles({ k: p[0], x: p[1], y: p[2], len: p[4], rot: p[5] })) heights.set(t[0] + "," + t[1], ht); }
+            for (const s of w.sunWins) { const Sn = HallWindow.SUN, toTile = (mx, my) => s.flip ? [s.start + my / 16, s.line + mx / 16] : [s.line + mx / 16, s.start + my / 16], blocked = (mx, my, mz) => { const t = mx / Sn[0]; for (let k = .02; k < 1; k += .03) { const px = mx - k * mx, py = my - k * t * Sn[1], pz = mz - k * t * Sn[2], q = toTile(px, py), ht = heights.get(Math.floor(q[0]) + "," + Math.floor(q[1])); if (ht && pz < ht && pz >= 0) return true; } return false; };
+                const reach = 92 + s.W; for (let y = Math.max(0, s.a1 - s.top - 60); y < Math.min(bh, s.a1 + reach); y++) for (let x = Math.max(0, s.a0 - reach - 80); x < Math.min(bw, s.a0 + reach + 80); x++) { const i0 = y * bw + x, sx = (s.flip ? s.a0 - x : x - s.a0), sy = y - s.a1, isF = mask[i0] === 1 && zb[i0] === s.z, isFur = furniX[i0] !== NO_FURNI && zb[i0] === s.z; let al = 0;
+                    if (isF || isFur) { const z0 = isFur ? (heights.get(furniX[i0] + "," + furniY[i0]) || -1) : 0; if (z0 >= 0) { const syf = sy + z0, mx = syf + sx / 2, my = syf - sx / 2; if (mx > 0 && mx < 92) { const q = toTile(mx, my), on = !isFur || (Math.floor(q[0]) === furniX[i0] && Math.floor(q[1]) === furniY[i0]), t = mx / Sn[0]; if (on && HallWindow.litByWindow(s.W, s.b, s.top, my - t * Sn[1], z0 - t * Sn[2]) && !blocked(mx, my, z0 + .3)) al += .36; } } }
+                    if (isF || isFur || wallOwner[i0]) for (let z = 6; z < 76; z += 5) { const sy2 = sy + z, mx2 = sy2 + sx / 2, my2 = sy2 - sx / 2; if (mx2 > 0 && mx2 < 92) { const t = mx2 / Sn[0]; if (HallWindow.litByWindow(s.W, s.b, s.top, my2 - t * Sn[1], z - t * Sn[2])) al += .012; } }
+                    if (al > 0) { const p = i0 * 4, m = Math.min(.58, al); layer.d[p] = layer.d[p] * (1 - m) + 255 * m; layer.d[p + 1] = layer.d[p + 1] * (1 - m) + 226 * m; layer.d[p + 2] = layer.d[p + 2] * (1 - m) + 150 * m; } } } }
         /* each lit lamp burns bright, whatever the ambient */
         for (const l of lamps) if (!l.free) for (let j = -3; j <= 9; j++) for (let i = -6; i <= 6; i++) { const X = l.x + i, Y = l.y + j + Math.floor(i / 2) * (l.axisY ? -1 : 1) - 6; if (X < 0 || Y < 0 || X >= bw || Y >= bh) continue; }
         const lampLit = [...lampPx.keys()].map(i => [i, layer.d[i * 4], layer.d[i * 4 + 1], layer.d[i * 4 + 2]]);
