@@ -35,6 +35,19 @@
     };
     /* the size a maze gets, by how much there is of it */
     const sizeFor = pictures => pictures <= 9 ? "9x8" : pictures <= 19 ? "10x9" : pictures <= 39 ? "12x10" : "16x8";
+    /* rooms behind the doors you link by hand: the staff corridors and the way behind a bookcase. No maze is ever given these sizes */
+    const st = (k, x, y, more) => ({ k: "st_" + k, x, y, ...(more || {}) });
+    S["6x14"] = [
+        { floor: "slate", walls: "staff", items: [st("hazard", 0, 8), st("grate", 3, 6), st("pipes", 0, 0), st("duct", 0, 0), st("vent", 0, 2), st("ventx", 2, 0), st("cabinet", 0, 4), st("boiler", 0, 9), st("fan", 0, 12), st("light_batten", 0, 1), st("light_bulkhead", 0, 7), st("light_pendant", 3, 3)] },
+        { floor: "slate", walls: "staff", items: [st("pipes", 0, 0), st("ventx", 2, 0), st("cabinet", 0, 9), st("grate", 3, 3), st("light_caged", 0, 2), st("light_caged", 0, 7), st("light_work", 4, 9)] },
+        { floor: "slate", walls: "staff", items: [st("duct", 0, 0), st("vent", 0, 4), st("fan", 0, 8), st("grate", 2, 8), st("light_pendant", 2, 3), st("light_bulkhead", 0, 11)] }
+    ];
+    S["8x6"] = [{ floor: "wood", walls: "", items: [lamp(0, 5), thing("globe", 6, 0)] }, { floor: "wood", walls: "", items: [lamp(7, 0)] }, { floor: "slate", walls: "", items: [lamp(0, 5)] }];
+    S["4x8"] = [
+        { floor: "slate", walls: "", items: [st("light_caged", 0, 3)] },
+        { floor: "slate", walls: "", items: [thing("crate", 0, 0), st("light_caged", 0, 4)] },
+        { floor: "slate", walls: "staff", items: [st("light_batten", 0, 3)] }
+    ];
     const api = { layouts: S, sizeFor };
     if (typeof module !== "undefined") module.exports = api; else window.RoomStarter = api;
 })();

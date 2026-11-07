@@ -7,8 +7,8 @@
     <meta name="robots" content="noindex">
     <title>Hallway · Editor</title>
     <link rel="icon" href="art/tile-selector.png">
-    <link rel="stylesheet" href="editor.css?v=e76aea05b56bcb9c">
-    <link rel="stylesheet" href="play.css?v=e76aea05b56bcb9c">
+    <link rel="stylesheet" href="editor.css?v=e4abe681313e377f">
+    <link rel="stylesheet" href="play.css?v=e4abe681313e377f">
     <link rel="stylesheet" href="rooms.css">
 </head>
 <body>
@@ -68,6 +68,7 @@
             <button class="tab" data-tab="floors" type="button" role="tab">Floors</button>
             <button class="tab" data-tab="map" type="button" role="tab">Map</button>
             <button class="tab" data-tab="music" type="button" role="tab">Music</button>
+            <button class="tab" data-tab="hunts" type="button" role="tab">Hunts</button>
             <button class="tab" data-tab="problems" type="button" role="tab">Problems<span id="probBadge" class="badge"></span></button>
         </nav>
         <div id="tab-inspect" class="panel"><div id="doorInfo"></div></div>
@@ -101,6 +102,14 @@
                 <div class="btn-row"><button id="edgesBtn" class="btn small" type="button">Map edges</button><button id="whole" class="btn small" type="button">See the whole map</button></div>
             </div>
             <div class="section">
+                <h4>Christmas baubles</h4>
+                <div id="baubleRow"></div>
+            </div>
+            <div class="section">
+                <h4>The Basement</h4>
+                <label class="hint">Lights fail once in <input id="scareOdds" type="number" min="0" max="500" style="width:56px"> visits (0 never)</label>
+            </div>
+            <div class="section">
                 <h4>Mazes</h4>
                 <p id="namesInfo" class="hint"></p>
                 <div class="btn-row"><button id="sortMazes" class="btn small" type="button">Sort onto floors by difficulty</button></div>
@@ -119,6 +128,7 @@
                 <p class="hint dim">Each fades into the next, in a shuffled order, so there's never a silence.</p>
             </div>
         </div>
+        <div id="tab-hunts" class="panel" hidden><div id="huntsBox"></div></div>
         <div id="tab-problems" class="panel" hidden><div id="check"></div></div>
     </aside>
 
@@ -157,8 +167,9 @@
         <div class="btn-row end"><button id="keysClose" class="btn" type="button">Close</button></div>
     </div>
 </div>
-<script src="play.js?v=e76aea05b56bcb9c"></script>
+<script src="play.js?v=e4abe681313e377f"></script>
 <script src="hallway-audio.js"></script>
+<script src="progress.js"></script>
 <script src="lift-sounds.js"></script>
 <script src="furni-parts.js"></script>
     <script src="render/edge-items.js"></script>
@@ -168,6 +179,13 @@
     <script src="room-starter.js"></script>
     <script src="room-view.js"></script>
     <script src="rooms-editor.js"></script>
-    <script src="editor.js?v=e76aea05b56bcb9c"></script>
+    <script src="live-xmas-early.js"></script>
+    <script src="editor.js?v=e4abe681313e377f"></script>
+    <script src="live-moving.js"></script>
+    <script src="live-basement.js"></script>
+    <script src="live-lost.js"></script>
+    <script src="live-hunts.js"></script>
+    <script src="live-xmas.js"></script>
+    <script src="hunts-editor.js"></script>
 </body>
 </html>

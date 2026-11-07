@@ -40,12 +40,15 @@ const MIN_FOR_CARD = 3;            // on 2 tiles the clasps and the card leave n
 function pixels(p, at) {
     const n = Math.max(2, p.len || 3), along = !!p.rot, spot = d => along ? at(p.x + .5, p.y + d) : at(p.x + d, p.y + .5);
     const a = spot(IN), b = spot(n - IN), list = [], put = (x, y, c, t) => list.push([x, y, c, t]);
-    const pole = (f, t) => POLE.forEach((row, r) => { for (let i = 0; i < 15; i++) if (row[i] !== ".") put(f[0] + i - 7, f[1] + r - FOOT, G[row[i]], t); });
+    const part = p.part, poles = part !== "rope" && part !== "hanging", cords = part !== "poles" && part !== "hanging";
+    const pole = (f, t) => { if (poles) POLE.forEach((row, r) => { for (let i = 0; i < 15; i++) if (row[i] !== ".") put(f[0] + i - 7, f[1] + r - FOOT, G[row[i]], t); }); };
     const dir = b[0] > a[0] ? 1 : -1, wide = Math.abs(b[0] - a[0]), sag = Math.min(11, 3 + n * 1.3);
     const yAt = X => { const t = Math.abs(X - a[0]) / wide; return a[1] + (b[1] - a[1]) * t - ATTACH + sag * 4 * t * (1 - t); };
     pole(a, 0);
     let last = null;
-    for (let k = END; k <= wide - END; k++) {
+    /* unclipped: it hangs from the near pole */
+    if (part === "hanging") for (let k = 0; k < 16; k++) { put(b[0] + 3, b[1] - ATTACH + k, k < 2 ? G.l : k % 4 < 2 ? ROPE.lit : ROPE.mid, n - 1); put(b[0] + 4, b[1] - ATTACH + k, ROPE.line, n - 1); }
+    if (cords) for (let k = END; k <= wide - END; k++) {
         const X = a[0] + dir * k, y = Math.round(yAt(X)), from = last === null ? y : Math.min(y, last), to = last === null ? y : Math.max(y, last);
         const t = Math.max(0, Math.min(n - 1, Math.floor(IN + (k / wide) * (n - 2 * IN))));
         put(X, from - 1, ((k + Math.floor(k / 2)) % 4) < 2 ? ROPE.lit : ROPE.lit2, t);
@@ -70,8 +73,8 @@ function pixels(p, at) {
         for (let y = -2; y <= 2; y++) for (let x = -2; x <= 2; x++) { const d = Math.hypot(x, y); if (d <= 2.4) put(R[0] + x, R[1] + y, d > 1.4 ? G.K : y < 0 ? G.W : G.l, t); }
         for (let s = 0; s <= L - 2; s += .4) put(Math.round(R[0] + ux * s), Math.round(R[1] + uy * s), s > 1 && s < L - 3 ? G.h : G.l, t);
     };
-    clasp(a, dir, 0); clasp(b, -dir, n - 1);
-    if (!p.noCard && n >= MIN_FOR_CARD) {
+    if (cords) { clasp(a, dir, 0); clasp(b, -dir, n - 1); }
+    if (cords && !p.noCard && n >= MIN_FOR_CARD) {
         /* it hangs flat in the rope's plane, so it slants with it. Two plain ruled lines: two rows apart they'd lock into a checker on the slant. */
         const t = Math.floor(n / 2), slope = (b[1] - a[1]) / (b[0] - a[0]), midX = Math.round((a[0] + b[0]) / 2), left = midX - Math.floor(CARD_W / 2), cy = Math.round(yAt(midX)) + 1;
         const yOf = u => cy + Math.round((u - Math.floor(CARD_W / 2)) * slope);

@@ -24,12 +24,15 @@
             ["Plant", hall("plant"), H_ + "hw_plant_a_0_0_0.png"], ["Planter", hall("ero"), T_ + "planter.png"], ["Stone planter", hall("ero_stone"), T_ + "planter-stone.png"], ["Walnut planter", hall("ero_walnut"), T_ + "planter-walnut.png"], ["Evergreen planter", hall("ero_evergreen"), T_ + "planter-evergreen.png"], ["Flower planter", hall("ero_flower"), T_ + "planter-flower.png"],
             ["Pillar", hall("pillar"), H_ + "pillar1_a_0_0_0.png"], ["Tall pillar", hall("pillartall"), T_ + "pillartall.png"], ["Statue", hall("statue"), H_ + "hw_statue_a_0_0_0.png"], ["Fountain", hall("fountain"), H_ + "hw_fountain_a_0_0_0.png"], ["Hallway bookcase", hall("shelf"), H_ + "hw_shelf_a_0_4_0.png"], ["Cabinet", hall("cabinet"), H_ + "hw_closet1_a_0_2_0.png"], ["Water cooler", hall("water"), H_ + "hw_watermatic_a_0_4_0.png"]
         ]],
+        ["Staff corridors", [["Pipes", { k: "st_pipes" }, R_ + "st_pipes.png"], ["Boiler", { k: "st_boiler" }, R_ + "st_boiler.png"], ["Duct", { k: "st_duct" }, R_ + "st_duct.png"], ["Vent", { k: "st_vent" }, R_ + "st_vent.png"], ["Vent, other wall", { k: "st_ventx" }, R_ + "st_ventx.png"], ["Fan unit", { k: "st_fan" }, R_ + "st_fan.png"], ["Fuse cabinet", { k: "st_cabinet" }, R_ + "st_cabinet.png"], ["Floor grate", { k: "st_grate" }, R_ + "st_grate.png"], ["Hazard stripes", { k: "st_hazard" }, R_ + "st_hazard.png"],
+            ["Bulkhead light", { k: "st_light_bulkhead" }, R_ + "st_light_bulkhead.png"], ["Hanging lamp", { k: "st_light_pendant" }, R_ + "st_light_pendant.png"], ["Strip light", { k: "st_light_batten" }, R_ + "st_light_batten.png"], ["Caged lamp", { k: "st_light_caged" }, R_ + "st_light_caged.png"], ["Work lamp", { k: "st_light_work" }, R_ + "st_light_work.png"]]],
         ["On the walls", [
             ["Maze's picture", { k: "frame", w: 34, h: 26, up: 34, slot: 0 }, null], ["Window", { k: "window" }, R_ + "window-r.png"], ["Wall light", { k: "sconce", up: 70 }, "art/sconce-x.png"], ["Globe wall light", { k: "sconce", style: "globe", up: 70 }, "art/sconce-globe-x.png"],
-            ...(window.WALL_ITEMS || []).map(i => [i.name, { k: "painting", id: i.id, up: 62 }, "art/wall/" + i.x.layers[0].f])
+            ...(window.WALL_ITEMS || []).filter(i => !i.tell).map(i => [i.name, { k: "painting", id: i.id, up: 62 }, "art/wall/" + i.x.layers[0].f])
         ]]
     ];
     const Z_MAX = 120;
+    let wallsSel = null;
     let host = null;
     function open(api) {
         if (host) return;
@@ -42,7 +45,7 @@
 
         const own = () => { const m = api.map(); if (!m.rooms) m.rooms = {}; if (!m.rooms.layouts) m.rooms.layouts = JSON.parse(JSON.stringify(window.RoomStarter.layouts)); if (!m.rooms.assign) m.rooms.assign = {}; return m.rooms; };
         const layout = () => V.layouts(api.map())[size][n];
-        const roomNow = () => { const [w, h] = size.split("x").map(Number), L = layout(); return { w, h, floor: L.floor, items: L.items }; };
+        const roomNow = () => { const [w, h] = size.split("x").map(Number), L = layout(); return { w, h, floor: L.floor, walls: L.walls, items: L.items }; };
         const commit = () => { api.changed(); paintSoon(); checks(); };
         const before = () => { undo.push(JSON.stringify(api.map().rooms || null)); if (undo.length > 60) undo.shift(); redo = []; if (api.snapshot) api.snapshot(); };
         /* the same item, in the map's own copy, after own() has cloned the starter */
@@ -52,7 +55,7 @@
         const say = t => { tip.textContent = t || ""; tip.hidden = !t; };
 
         /* ---------- top bar ---------- */
-        const sizeSel = el("select"); SIZES().forEach(s => { const o = el("option", "", s.replace("x", " x ")); o.value = s; sizeSel.appendChild(o); });
+        const sizeSel = el("select"); SIZES().forEach(s => { const o = el("option", "", s === "6x14" ? "Staff corridor (6 x 14)" : s === "4x8" ? "Passage (4 x 8)" : s === "8x6" ? "Finders' Lounge (8 x 6)" : s.replace("x", " x ")); o.value = s; sizeSel.appendChild(o); });
         const nums = el("div", "re-nums"), floorSel = el("select"); [["slate", "Grey squares"], ["wood", "Wood"]].forEach(([v, t]) => { const o = el("option", "", t); o.value = v; floorSel.appendChild(o); });
         const seeSel = el("select"), tabLayout = el("button", "btn", "Layouts"), tabMazes = el("button", "btn", "Which maze has which"), done = el("button", "btn primary", "Done"), undoB = el("button", "btn", "Undo");
         [tabLayout, tabMazes, done, undoB].forEach(b => { b.type = "button"; });
@@ -61,6 +64,7 @@
         const numBtns = [0, 1, 2].map(i => { const b = el("button", "re-num", String(i + 1)); b.type = "button"; b.addEventListener("click", () => { n = i; sel = null; carry = null; lockTile = null; sync(); }); nums.appendChild(b); return b; });
         sizeSel.addEventListener("change", () => { size = sizeSel.value; sel = null; carry = null; lockTile = null; sync(); });
         floorSel.addEventListener("change", () => editing(L => { L.floor = floorSel.value; }));
+        const wallSel = el("select"); [["", "Stone"], ["staff", "Staff"]].forEach(([v, t]) => { const o = el("option", "", t); o.value = v; wallSel.appendChild(o); }); wallSel.addEventListener("change", () => editing(L => { L.walls = wallSel.value; })); wallsSel = wallSel; bar.insertBefore(lab("Walls", wallSel), bar.children[6]);
         seeSel.addEventListener("change", () => { const m = mazes.find(q => q.slug === seeSel.value); preview = m ? V.mazeFacts(m) : null; paintSoon(); });
         const doUndo = () => { if (!undo.length) return; redo.push(JSON.stringify(api.map().rooms || null)); restore(undo.pop()); };
         const doRedo = () => { if (!redo.length) return; undo.push(JSON.stringify(api.map().rooms || null)); restore(redo.pop()); };
@@ -347,7 +351,7 @@
         addEventListener("keydown", keys, true); addEventListener("keyup", keysUp, true); addEventListener("resize", paintSoon);
 
         function sync() {
-            sizeSel.value = size; floorSel.value = layout().floor; numBtns.forEach((b, i) => b.setAttribute("aria-pressed", String(i === n)));
+            sizeSel.value = size; floorSel.value = layout().floor; if (wallsSel) wallsSel.value = layout().walls || ""; numBtns.forEach((b, i) => b.setAttribute("aria-pressed", String(i === n)));
             selectB.setAttribute("aria-pressed", String(!tool)); toolBtns.forEach(([b, it]) => b.setAttribute("aria-pressed", String(tool === it)));
             tabLayout.setAttribute("aria-pressed", String(tab === "layout")); tabMazes.setAttribute("aria-pressed", String(tab === "mazes"));
             panel(); checks(); paintSoon();

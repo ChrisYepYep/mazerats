@@ -463,17 +463,22 @@
     }
 
     /* ---------- the live player ---------- */
-    let eng = null, timer = 0, order = [], orderAt = 0, playing = false;
+    let eng = null, timer = 0, order = [], orderAt = 0, playing = false, voice = null;
     const api = {
         tracks: TRACKS.map(t => ({ name: t.name, minutes: t.mins })),
         onChange: null,
         get playing() { return playing; },
-        get current() { return eng ? eng.idx : -1; },
+        get current() { return eng && !voice ? eng.idx : -1; },
         volume: .8,
-        get position() { if (!eng || !playing) return null; const b = eng.active.find(x => x.i === eng.idx && x.stopAt === null); return b ? { at: Math.max(0, eng.ctx.currentTime - b.t0), of: b.end - b.t0 } : null; },
+        get position() { if (!eng || !playing || voice) return null; const b = eng.active.find(x => x.i === eng.idx && x.stopAt === null); return b ? { at: Math.max(0, eng.ctx.currentTime - b.t0), of: b.end - b.t0 } : null; },
         resume() { if (eng && playing && eng.ctx.state !== "running") eng.ctx.resume().catch(() => {}); },
-        setVolume(v) { api.volume = v; if (eng && playing) { const t = eng.ctx.currentTime; eng.master.gain.cancelScheduledValues(t); eng.master.gain.setTargetAtTime(v * .62, t, .1); } },
+        setVolume(v) { api.volume = v; if (voice) voice.setVolume(v); if (eng && playing && !voice) { const t = eng.ctx.currentTime; eng.master.gain.cancelScheduledValues(t); eng.master.gain.setTargetAtTime(v * .62, t, .1); } },
+        /* voice: { start(volume), stop(), setVolume(v) }. It plays only while the music's on; the player's own place in the round is kept for when it gives back */
+        takeOver(v) { if (voice === v) return; if (voice && playing) voice.stop(); voice = v; if (playing) { fadeOutTracks(); v.start(api.volume); } changed(); },
+        giveBack(v) { if (voice !== v) return; voice = null; if (playing) { v.stop(); playing = false; api.start(); } changed(); },
+        get takenOver() { return !!voice; },
         start(i) {
+            if (voice) { playing = true; voice.start(api.volume); changed(); return; }
             const AC = window.AudioContext || window.webkitAudioContext; if (!AC) return;
             if (!eng) eng = build(new AC({ latencyHint: "playback" }));   // music: a longer buffer, so a busy page never starves it (the editor drawing the map on every core did)
             if (eng.ctx.state === "suspended") eng.ctx.resume();
@@ -486,16 +491,12 @@
             tick(); changed();
         },
         stop() {
-            playing = false; clearInterval(timer); timer = 0;
-            if (!eng) return changed();
-            const t = eng.ctx.currentTime;
-            eng.master.gain.cancelScheduledValues(t); eng.master.gain.setTargetAtTime(0, t, .7);
-            for (const b of eng.active) if (b.stopAt === null) fadeBus(eng, b, t + 3, .1);
-            const e0 = eng; setTimeout(() => { if (!playing) { e0.active.length = 0; e0.ctx.suspend(); } }, 3400);
+            if (voice && playing) voice.stop();
+            playing = false; fadeOutTracks();
             changed();
         },
-        play(i) { if (!playing) return api.start(i); handover(eng, i, true, eng.ctx.currentTime); pump(eng, eng.ctx.currentTime + LOOKAHEAD, eng.ctx.currentTime); changed(); },
-        next() { if (!playing) return api.start(); api.play(nextIndex()); },
+        play(i) { if (voice) return; if (!playing) return api.start(i); handover(eng, i, true, eng.ctx.currentTime); pump(eng, eng.ctx.currentTime + LOOKAHEAD, eng.ctx.currentTime); changed(); },
+        next() { if (voice) return; if (!playing) return api.start(); api.play(nextIndex()); },
         /* for checking: render a stretch offline, with the tracks handing over at even spacing. marks: when each one began. */
         renderPreview(seconds, list, sampleRate) {
             const c = new OfflineAudioContext(2, Math.floor((sampleRate || 44100) * seconds), sampleRate || 44100), e = build(c), marks = [];
@@ -508,6 +509,14 @@
         },
         _forTests: { TRACKS, sigOf, rootFor, tuneFor }
     };
+    function fadeOutTracks() {
+        clearInterval(timer); timer = 0;
+        if (!eng) return;
+        const t = eng.ctx.currentTime;
+        eng.master.gain.cancelScheduledValues(t); eng.master.gain.setTargetAtTime(0, t, .7);
+        for (const b of eng.active) if (b.stopAt === null) fadeBus(eng, b, t + 3, .1);
+        const e0 = eng; setTimeout(() => { if (!playing || voice) { e0.active.length = 0; e0.ctx.suspend(); } }, 3400);
+    }
     /* the next in the round, but never the one already playing: picking one by hand can put it next */
     function nextIndex() { let n = roundNext(); if (eng && n === eng.idx && TRACKS.length > 1) n = roundNext(); return n; }
     function roundNext() {

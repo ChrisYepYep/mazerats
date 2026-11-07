@@ -49,8 +49,10 @@
     const sizeOf = r => ({ w: (r.w + r.h) * 16 + MARGIN * 2, h: WALL_H + (r.w + r.h) * 8 + SLAB + MARGIN * 2 + 24 });
     const scr = (r, x, y, z) => { const o = originOf(r); return [o.ox + Math.round((x - y) * 16), o.oy + Math.round((x + y) * 8 - (z || 0))]; };
     const shells = new Map();
+    /* the staff corridors' walls: skirting, a painted plate dado, a rail, Rooms stone above */
+    function staffWall(u, z, k) { if (z < 4) return [24 * k, 22 * k, 21 * k]; if (z < 8) return [46 * k, 42 * k, 40 * k]; if (z < 9) return [24, 20, 18]; if (z < 40) { const pl = mod(u, 32), iz = Math.floor(z); if (pl < 1) return [26 * k, 30 * k, 30 * k]; if (pl < 2) return [84 * k, 96 * k, 94 * k]; if ((pl < 4 || pl > 29) && (iz === 13 || iz === 23 || iz === 33)) return [172 * k, 176 * k, 170 * k]; if ((pl < 4 || pl > 29) && (iz === 12 || iz === 22 || iz === 32)) return [28 * k, 30 * k, 30 * k]; return [64 * k, 76 * k, 74 * k]; } if (z < 42) return [34, 30, 28]; if (z < 43) return [104 * k, 100 * k, 94 * k]; if (z >= WALL_H - 2) return [120 * k, 116 * k, 108 * k]; const row = Math.floor(z / 8), off = row % 2 ? 12 : 0, a = mod(u + off, 24); if (mod(z, 8) < 1 || a < 1) return [38 * k, 36 * k, 34 * k]; const n = mod(Math.floor((u + off) / 24) * 7 + row * 3, 5), t = [78, 84, 74, 88, 70][n]; return [t * k, t * .97 * k, t * .92 * k]; }
     function shell(r) {
-        const key = r.w + "x" + r.h + r.floor; let c = shells.get(key); if (c) return c;
+        const key = r.w + "x" + r.h + r.floor + (r.walls || ""); let c = shells.get(key); if (c) return c;
         const s = sizeOf(r), o = originOf(r); c = document.createElement("canvas"); c.width = s.w; c.height = s.h;
         const x = c.getContext("2d"), im = x.createImageData(s.w, s.h), d = im.data, floor = floorAt(r.floor);
         const set = (X, Y, col) => { if (X < 0 || Y < 0 || X >= s.w || Y >= s.h) return; const p = (Y * s.w + X) * 4; d[p] = col[0]; d[p + 1] = col[1]; d[p + 2] = col[2]; d[p + 3] = 255; };
@@ -64,6 +66,7 @@
             }
         }
         const wallPx = (face, u, up, X, Y) => {
+            if (r.walls === "staff") { set(X, Y, staffWall(u, up, face === "r" ? .74 : 1)); return; }
             let c0 = stoneAt(u, up); const k = face === "r" ? .74 : 1; c0 = [c0[0] * k, c0[1] * k, c0[2] * k];
             if (up < 2) c0 = [20, 16, 15]; else if (up < 7) c0 = [46, 42, 40]; else if (up < 8) c0 = [28, 24, 22];
             if (up >= WALL_H - 3) c0 = up >= WALL_H - 1 ? [120, 116, 108] : [86, 82, 76];
@@ -77,9 +80,10 @@
     }
 
     /* ---------- what's where ---------- */
-    const FURNI = { table: "table", globe: "globe", chair4: "chair4", chair6: "chair6", stool: "stool", crate: "crate", barrel: "barrel", cupboard: "cupboard", candelabra: "candelabra" };
+    const STAFF = ["st_pipes", "st_boiler", "st_duct", "st_vent", "st_ventx", "st_fan", "st_cabinet", "st_light_bulkhead", "st_light_pendant", "st_light_batten", "st_light_caged", "st_light_work"], STAFF_FLAT = new Set(["st_grate", "st_hazard"]), STAFF_SOFT = new Set(["st_pipes", "st_duct", "st_vent", "st_ventx", "st_fan", "st_light_bulkhead", "st_light_pendant", "st_light_batten", "st_light_caged"]);
+    const FURNI = { table: "table", globe: "globe", chair4: "chair4", chair6: "chair6", stool: "stool", crate: "crate", barrel: "barrel", cupboard: "cupboard", candelabra: "candelabra" }; for (const k of [...STAFF, ...STAFF_FLAT]) FURNI[k] = k;
     const isWall = it => it.k === "frame" || it.k === "window" || it.k === "painting" || it.k === "sconce";
-    const isRug = it => it.k === "rug" || it.k === "rugRound";
+    const isRug = it => it.k === "rug" || it.k === "rugRound" || STAFF_FLAT.has(it.k);
     const Parts = () => window.FurniParts;
     const hallPiece = it => ({ k: it.p, x: it.x, y: it.y, rot: it.rot, len: it.len });
     function footprint(it) {
@@ -95,7 +99,7 @@
     const exitTiles = (r, edge) => { if (edge === "y") { const a = (r.w >> 1) - 1; return [[a, r.h - 1], [a + 1, r.h - 1]]; } const a = (r.h >> 1) - 1; return [[r.w - 1, a], [r.w - 1, a + 1]]; };
     /* the arrow's 2x2: the two you leave by, and the two inside them. Nothing may stand on it */
     const arrowTiles = (r, edge) => { const e = exitTiles(r, edge); return edge === "y" ? [...e, [e[0][0], e[0][1] - 1], [e[1][0], e[1][1] - 1]] : [...e, [e[0][0] - 1, e[0][1]], [e[1][0] - 1, e[1][1]]]; };
-    const solidSet = r => { const s = new Set(); for (const it of r.items) { if (isWall(it) || isRug(it)) continue; const f = footprint(it); if (f) for (let x = f[0]; x < f[0] + f[2]; x++) for (let y = f[1]; y < f[1] + f[3]; y++) s.add(x + "," + y); } return s; };
+    const solidSet = r => { const s = new Set(); for (const it of r.items) { if (isWall(it) || isRug(it) || STAFF_SOFT.has(it.k)) continue; const f = footprint(it); if (f) for (let x = f[0]; x < f[0] + f[2]; x++) for (let y = f[1]; y < f[1] + f[3]; y++) s.add(x + "," + y); } return s; };
 
     /* ---------- a maze's own things ---------- */
     const SITE = (window.HALLWAY_PLAY || window.HALLWAY_EDIT) ? "" : "https://mazerats.net";
@@ -129,6 +133,7 @@
     const hallImg = n => { let i = hallImgs.get(n); if (!i) { i = new Image(); i.onload = () => RoomView.onArt && RoomView.onArt(); i.src = n; hallImgs.set(n, i); } return i; };
     const TALL_BY = 64;
     function drawHall(ctx, r, it) {
+        if (it.p === "trophy") { const fp = window.FLOOR_PIECES && window.FLOOR_PIECES.trophy, i = hallImg("art/wall/i_trophy.png"), m = scr(r, it.x + .25, it.y + .25); if (fp && i.complete && i.naturalWidth) ctx.drawImage(i, m[0] - fp.ox, m[1] - fp.oy); return; }
         if (it.p === "lamp") { const m = scr(r, it.x + .5, it.y + .5), i = hallImg("art/lamp-" + (it.style || "hotel") + ".png"); if (i.complete && i.naturalWidth) ctx.drawImage(i, m[0] - 40, m[1] - 96); return; }
         const regs = RoomView.regs; if (!regs) return;
         const list = Parts().parts(hallPiece(it)).sort((a, b) => (a.x + a.y) - (b.x + b.y));
@@ -164,6 +169,7 @@
     function lampGlows(ctx, r) { for (const it of r.items) if (it.k === "lamp") { const s = scr(r, it.x + .5, it.y + .5, it.z || 0); ctx.globalCompositeOperation = "lighter"; ctx.drawImage(img("lampglow"), s[0] - 32, s[1] - 61); ctx.globalCompositeOperation = "source-over"; } }
     function drawRugs(ctx, r) {
         for (const it of r.items) {
+            if (STAFF_FLAT.has(it.k)) { spriteAt(ctx, it.k, r, it.x, it.y, 0, it.flip); continue; }
             if (it.k === "rugRound") { const s = scr(r, it.x + .5, it.y + .5); ctx.drawImage(img("rug-round"), s[0] - 53, s[1] - 27); continue; }
             if (it.k !== "rug") continue;
             const W = it.w, H = it.h, band = (d, col) => { const a = scr(r, it.x + d, it.y + d), b = scr(r, it.x + W - d, it.y + d), c = scr(r, it.x + W - d, it.y + H - d), e = scr(r, it.x + d, it.y + H - d); ctx.fillStyle = col; ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.lineTo(b[0], b[1]); ctx.lineTo(c[0], c[1]); ctx.lineTo(e[0], e[1]); ctx.closePath(); ctx.fill(); };
@@ -195,12 +201,14 @@
     /* The dim of the room and its pools of light, one layer over everything but the lamps' own glow */
     const lightMaps = new Map();
     function lightMap(r) {
-        const key = JSON.stringify([r.w, r.h, r.items.filter(i => i.k === "lamp" || i.k === "window" || i.k === "sconce" || (i.k === "hall" && i.p === "lamp")).map(i => [i.k, i.x, i.y, i.wall, i.at, i.up])]); let c = lightMaps.get(key); if (c) return c;
+        const key = JSON.stringify([r.w, r.h, r.walls || "", r.items.filter(i => i.k === "lamp" || i.k === "window" || i.k === "sconce" || (i.k === "hall" && i.p === "lamp") || String(i.k).startsWith("st_light")).map(i => [i.k, i.x, i.y, i.wall, i.at, i.up])]); let c = lightMaps.get(key); if (c) return c;
         if (lightMaps.size > 24) lightMaps.clear();
         const s = sizeOf(r); c = document.createElement("canvas"); c.width = s.w; c.height = s.h; const x = c.getContext("2d");
-        x.fillStyle = "rgb(168,168,162)"; x.fillRect(0, 0, s.w, s.h); x.globalCompositeOperation = "lighter";
+        x.fillStyle = r.walls === "staff" ? "rgb(96,98,104)" : "rgb(168,168,162)"; x.fillRect(0, 0, s.w, s.h); x.globalCompositeOperation = "lighter";
         const glow = (X, Y, R, col) => { x.save(); x.translate(X, Y); x.scale(1, .6); const g = x.createRadialGradient(0, 0, 0, 0, 0, R); g.addColorStop(0, col); g.addColorStop(1, "rgba(0,0,0,0)"); x.fillStyle = g; x.fillRect(-R, -R, R * 2, R * 2); x.restore(); };
         const mid = scr(r, r.w / 2, r.h / 2); glow(mid[0], mid[1], Math.max(r.w, r.h) * 22, "rgba(58,50,36,1)");
+        /* each staff light lights what's round it, the bare work lamp most of all */
+        for (const it of r.items) if (String(it.k).startsWith("st_light")) { const p = scr(r, it.x + .5, it.y + .5, it.k === "st_light_work" ? 30 : 60); glow(p[0], p[1], it.k === "st_light_work" ? 96 : 80, it.k === "st_light_caged" ? "rgba(112,92,54,1)" : it.k === "st_light_batten" ? "rgba(96,104,108,1)" : "rgba(116,104,74,1)"); }
         for (const it of r.items) { if (it.k === "sconce") { const p = it.wall === "l" ? scr(r, .6, it.at) : scr(r, it.at, .6); glow(p[0], p[1], 60, "rgba(90,78,56,1)"); } if (it.k === "lamp" || (it.k === "hall" && it.p === "lamp")) { const p = scr(r, it.x + .5, it.y + .5); glow(p[0], p[1] - 6, 90, "rgba(96,84,60,1)"); } if (it.k === "window") { const p = it.wall === "l" ? scr(r, 1.6, it.at + 1) : scr(r, it.at + 1, 1.6); glow(p[0], p[1], 64, "rgba(30,62,56,1)"); } }
         lightMaps.set(key, c); return c;
     }
@@ -311,7 +319,9 @@
     function floorPixel(kind, u, v) { return floorAt(kind)(u, v); }
 
     /* ---------- which room a maze has ---------- */
-    function layouts(map) { return (map && map.rooms && map.rooms.layouts) || window.RoomStarter.layouts; }
+    function layouts(map) { const own = map && map.rooms && map.rooms.layouts; if (!own) return window.RoomStarter.layouts; for (const k of Object.keys(window.RoomStarter.layouts)) if (!own[k]) own[k] = JSON.parse(JSON.stringify(window.RoomStarter.layouts[k])); return own; }
+    /* a room that isn't a maze's: one of the layouts, behind any door you link to it */
+    function special(map, size, n) { const list = layouts(map)[size]; if (!list) return null; const b = list[n] || list[0], [w, h] = size.split("x").map(Number); return { room: { w, h, floor: b.floor, walls: b.walls, items: b.items }, facts: { name: b.walls === "staff" ? "Staff only" : "", m: { creator: "" }, slots: [], pictures: [] } }; }
     function roomFor(map, maze) {
         const facts = mazeFacts(maze), slug = maze.slug || facts.name, a = map && map.rooms && map.rooms.assign && map.rooms.assign[slug], L = layouts(map);
         const size = (a && a.size) || window.RoomStarter.sizeFor(facts.pictures.length), list = L[size], n = a && a.layout !== undefined ? a.layout : hash(hashText(slug), 7) % list.length;
@@ -471,5 +481,5 @@
             test: { go, useIt, toPx }
         };
     }
-    const RoomView = window.RoomView = { route, load, layouts, roomFor, mazes, mazeFacts, enter, paintRoom, sizeOf, scr, tileAt, itemAt, footprint, exitTiles, arrowTiles, solidSet, isWall, isRug, floorPixel, FURNI, ghost, hallImg, indexOf: () => index, onArt: null, regs: null };
+    const RoomView = window.RoomView = { special, route, load, layouts, roomFor, mazes, mazeFacts, enter, paintRoom, sizeOf, scr, tileAt, itemAt, footprint, exitTiles, arrowTiles, solidSet, isWall, isRug, floorPixel, FURNI, ghost, hallImg, indexOf: () => index, onArt: null, regs: null };
 })();
