@@ -2094,6 +2094,7 @@ function drawRubbed() {
     for (const q of rubbed) quad(q.X, q.Y, q.X + 1, q.Y + 1, tileZ(q.l, q.X, q.Y), "rgba(168,128,84,.92)", null);
 }
 function walkPress(px, py) {
+    if (openHeld) { openHeld = false; }
     if (walker && walker.busy) return;
     for (const f of liveClicks) { try { if (f(px, py)) return; } catch (err) { console.error(err); } }
     const u = useUnder(px, py);
@@ -2488,8 +2489,8 @@ function liftTile() {
    frame rate, and if you've dragged it away it glides back the same way once you let go. */
 let camRunning = false, camLast = 0;
 const FOLLOW_MS = 240;
-let camHeld = false;
-const following = () => isOn("follow") && tool === "walk" && !!walker && !camHeld;
+let camHeld = false, openHeld = false;      // openHeld: the opening view stays on the statue until you first move
+const following = () => isOn("follow") && tool === "walk" && !!walker && !camHeld && !openHeld;
 function camTarget() {
     const t = P(walker.x + .5, walker.y + .5, walker.z), saved = [cam.x, cam.y];
     cam.x = t[0]; cam.y = t[1] - 40; clampCam();
@@ -2936,7 +2937,10 @@ function startWalk() {
         const S = stairLevels().list.find(q => q.stair.entrance), e = map.entrance, m = entranceTiles(e)[1], ix = e.axis === "x" ? m : e.line - 2, iy = e.axis === "x" ? e.line - 2 : m;
         if (S) { walker.l = S; walker.x = ix; walker.y = iy; walker.z = nodeZ(S, ix, iy); walker.arriving = true; const path = graphFrom(S, ix, iy, [l, x, y]); if (path) setTimeout(() => { if (walker && walker.arriving) followRoute(path, null, null); }, 200); }
     }
-    cam.x = (x - y) * 16; cam.y = (x + y) * 8 - levelZ(l) - 60; clampCam();
+    cam.x = (x - y) * 16; cam.y = (x + y) * 8 - levelZ(l) - 60;
+    /* on the site, the hallway opens on its statue (or its Christmas tree), wherever you come in */
+    if (window.HALLWAY_PLAY) { for (const lv of map.levels) { const st = (lv.props || []).find(p => p.k === "statue"); if (st) { const a = P(st.x + 1, st.y + 1, tileZ(lv, st.x, st.y) + 40); cam.x = a[0]; cam.y = a[1]; openHeld = true; break; } } }
+    clampCam();
     paint();
 }
 function walkTo(px, py) {
