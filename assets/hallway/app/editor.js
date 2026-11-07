@@ -1221,6 +1221,13 @@ function liftFits(l, x, y, self) {
     for (let t = x; t < x + 3; t++) if (!hasFloor(l, t, y) || wallState(l, "x", y, t) !== "full") return false;
     return true;
 }
+function drawLampArt(l, q, alpha) {
+    const globe = q.style === "globe", img = spriteImg(globe ? (q.axis === "x" ? "art/sconce-globe-x.png" : "art/sconce-globe-y.png") : "art/lamps/wall-light.png?" + (artAt || 0)); if (!img.complete || !img.naturalWidth) return;
+    const zw = wallZ(l, q), a = q.axis === "x" ? P(q.at, q.line, zw + (q.h || 106)) : P(q.line, q.at, zw + (q.h || 106)), ox = Math.round(canvas.width / 2 - cam.x * zoom), oy = Math.round(canvas.height / 2 - cam.y * zoom);
+    ctx.save(); ctx.imageSmoothingEnabled = false; ctx.globalAlpha = alpha;
+    if (!globe) ctx.drawImage(img, q.axis === "x" ? 0 : 40, 0, 40, 40, ox + (a[0] - 20) * zoom, oy + (a[1] - 25) * zoom, 40 * zoom, 40 * zoom); else ctx.drawImage(img, ox + (a[0] - 20) * zoom, oy + (a[1] - 25) * zoom, img.naturalWidth * zoom, img.naturalHeight * zoom);
+    ctx.restore();
+}
 function drawSconceGhost() {
     if (tool === "globelight" && lastMouse) {
         const f = pillarFaceAt(level, lastMouse[0], lastMouse[1]);
@@ -1271,6 +1278,7 @@ function drawGhost() {
     drawEntranceBlock();
     drawSconceGhost(); drawWallItemGhost();
     if (drag && drag.kind === "move" && selected && selected.type === "wallitem") drawWallArt(selected.l, selected.o, .9);
+    if (drag && drag.kind === "move" && selected && selected.type === "lamp" && selected.o.axis) drawLampArt(selected.l, selected.o, .9);
     for (const q of pendingArt) { if (q.wall) drawWallArt(q.l, q.o, 1); else if (q.l === level && REGS) drawPiece({ ...q.o, ok: true }, 1); }
     const g = ghostPiece(); if (!g || !REGS) return;
     drawPiece(g, g.ok ? .7 : .3);
