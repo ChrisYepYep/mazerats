@@ -100,7 +100,7 @@
     LIVE.add({ active: () => !screensaver.on && sunAmount() > 0 && dustWindows().length > 0, over: drawDust });
 
     /* ---------- the screensaver: a minute idle, the camera glides along a floor's paths, on the player's own map and inside its limits. Any input ends it ---------- */
-    const IDLE_MS = window.HALLWAY_IDLE_MS || 60000, SPEED = 26, FADE = 1.6, MAX_LEN = 2100, DAY_NIGHT = .09;
+    const IDLE_MS = window.HALLWAY_IDLE_MS || 60000, SPEED = 13, EASE = 1.6, FADE = 1.6, MAX_LEN = 2100, DAY_NIGHT = .09;
     const routes = new Map();
     /* the furthest apart two tiles can be, keeping off the walls */
     function floorRoute(l) {
@@ -112,37 +112,54 @@
         if (!best) { routes.set(l, { key, pts: [] }); return routes.get(l); }
         const r1 = bfs(best.st), r2 = bfs(r1.last), path = []; for (let c = r2.last; c; c = r2.prev.get(c)) path.push(c);
         const z = l.k * 163, rise = l.rise || {}; let pts = path.map(c => { const [cx, cy] = c.split(",").map(Number), r = rise[c] || 0; return [(cx - cy) * 32, (cx + cy) * 16 + 16 - z - r - 60]; });
-        const smooth = (a, n) => a.map((_, i) => { let x = 0, y = 0, m = 0; for (let d = -n; d <= n; d++) { const q = a[Math.max(0, Math.min(a.length - 1, i + d))]; x += q[0]; y += q[1]; m++; } return [x / m, y / m]; }); pts = smooth(smooth(pts, 3), 3);
+        const smooth = (a, n) => a.map((_, i) => { let x = 0, y = 0, m = 0; for (let d = -n; d <= n; d++) { const q = a[Math.max(0, Math.min(a.length - 1, i + d))]; x += q[0]; y += q[1]; m++; } return [x / m, y / m]; }); pts = smooth(smooth(smooth(smooth(pts, 6), 6), 5), 4);
         let len = 0; const route = [pts[0]], seg = [0]; for (let i = 1; i < pts.length && len < MAX_LEN; i++) { len += Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]); route.push(pts[i]); seg.push(len); }
         const out = { key, pts: route, seg, len, secs: len / SPEED }; routes.set(l, out); return out;
     }
     const along = (r, d) => { let lo = 0, hi = r.seg.length - 1; while (hi - lo > 1) { const m = (lo + hi) >> 1; if (r.seg[m] <= d) lo = m; else hi = m; } const k = (d - r.seg[lo]) / Math.max(1e-6, r.seg[hi] - r.seg[lo]), a = r.pts[lo], b = r.pts[hi]; return [a[0] + (b[0] - a[0]) * k, a[1] + (b[1] - a[1]) * k]; };
     function ssStart() {
         const map = LIVE.map; if (!map || screensaver.on || !LIVE.walker) return false;
-        const floors = map.levels.filter(l => l.k >= 0 && l.cells && l.cells.length).map(floorRoute).filter(r => r.len > 400); if (!floors.length) return false;
-        screensaver.on = true; screensaver.floors = floors; screensaver.i = Math.floor(Math.random() * floors.length); screensaver.t0 = performance.now(); screensaver.was = { cam: LIVE.cam, zoom: LIVE.zoom }; screensaver.leaving = true; LIVE.holdCamera(true);
-        document.body.classList.add("hw-screensaver"); LIVE.wake(); screensaver.raf = requestAnimationFrame(ssTick); return true;
+        const floors = map.levels.filter(l => l.k >= 0 && l.cells && l.cells.length).map(l => ({ l, r: floorRoute(l) })).filter(f => f.r.len > 400); if (!floors.length) return false;
+        /* the floor you're on, from the point on its path nearest where you were looking, going whichever way has further to go */
+        const cam = LIVE.cam; let i = Math.max(0, floors.findIndex(f => f.l === LIVE.floor)), r = floors[i].r, best = 0, bd = 1e12; r.pts.forEach((p, k) => { const d = (p[0] - cam.x) ** 2 + (p[1] - cam.y) ** 2; if (d < bd) { bd = d; best = k; } });
+        Object.assign(screensaver, { on: true, floors, i, d: r.seg[best], dir: r.seg[best] > r.len / 2 ? -1 : 1, cam: { x: cam.x, y: cam.y }, phase: "move", t0: performance.now(), last: performance.now(), was: { cam }, fade: 0, dim: 0 });
+        /* the music rests, and comes back where it was */
+        const A = window.HallwayAudio; screensaver.music = !!(A && A.playing); if (screensaver.music) A.stop();
+        LIVE.holdCamera(true); document.body.classList.add("hw-screensaver");
+        if (!screensaver.title) { const t = screensaver.title = document.createElement("div"); t.className = "hw-ss-title"; t.textContent = "Maze Rats Hallway"; t.setAttribute("aria-hidden", "true"); (document.getElementById("stage") || document.body).appendChild(t); }
+        screensaver.title.classList.remove("on"); void screensaver.title.offsetWidth; screensaver.title.classList.add("on");
+        LIVE.wake(); screensaver.raf = requestAnimationFrame(ssTick); return true;
     }
     function ssEnd() {
-        if (!screensaver.on) return; screensaver.on = false; cancelAnimationFrame(screensaver.raf); document.body.classList.remove("hw-screensaver"); LIVE.forceMood(null); const w = screensaver.was;
+        if (!screensaver.on) return; screensaver.on = false; cancelAnimationFrame(screensaver.raf); document.body.classList.remove("hw-screensaver"); if (screensaver.title) screensaver.title.classList.remove("on"); LIVE.forceMood(null); const w = screensaver.was;
         LIVE.camera(w.cam.x, w.cam.y); LIVE.holdCamera(false); LIVE.markActive(); LIVE.wake();
+        if (screensaver.music && window.HallwayAudio && !HallwayAudio.playing) HallwayAudio.start();
     }
     function ssTick(now) {
         if (!screensaver.on) return; screensaver.raf = requestAnimationFrame(ssTick);
-        const t = (now - screensaver.t0) / 1000;
-        /* first the view you left goes, then the first floor comes up */
-        if (screensaver.leaving) { screensaver.fade = Math.min(1, t / FADE); if (t >= FADE) { screensaver.leaving = false; screensaver.t0 = now; screensaver.startAt = now; } return; }
-        const r = screensaver.floors[screensaver.i]; if (t >= r.secs) { screensaver.i = (screensaver.i + 1) % screensaver.floors.length; screensaver.t0 = now; return; }
-        const p = along(r, t * SPEED); LIVE.camera(p[0], p[1]); screensaver.fade = Math.max(0, 1 - Math.min(t, r.secs - t) / FADE);
+        const dt = Math.min(.1, (now - screensaver.last) / 1000); screensaver.last = now; const t = (now - screensaver.t0) / 1000;
+        screensaver.dim = Math.min(1, screensaver.dim + dt / 2.5);
+        let f = screensaver.floors[screensaver.i], r = f.r;
+        if (screensaver.phase === "move") {
+            screensaver.d += screensaver.dir * SPEED * dt;
+            if ((screensaver.dir < 0 && screensaver.d <= 0) || (screensaver.dir > 0 && screensaver.d >= r.len)) { screensaver.d = Math.max(0, Math.min(r.len, screensaver.d)); if (screensaver.floors.length > 1) { screensaver.phase = "out"; screensaver.t0 = now; } else screensaver.dir = -screensaver.dir; }
+        } else if (screensaver.phase === "out") {
+            screensaver.fade = Math.min(1, t / FADE);
+            if (t >= FADE) { screensaver.i = (screensaver.i + 1) % screensaver.floors.length; f = screensaver.floors[screensaver.i]; r = f.r; screensaver.d = 0; screensaver.dir = 1; const p = along(r, 0); screensaver.cam = { x: p[0], y: p[1] }; screensaver.phase = "in"; screensaver.t0 = now; }
+        } else if (screensaver.phase === "in") {
+            screensaver.fade = Math.max(0, 1 - t / FADE); screensaver.d += SPEED * dt; if (t >= FADE) screensaver.phase = "move";
+        }
+        /* the camera follows a point on the path on a soft spring, so no turn is ever sudden; from where you were looking, it eases in */
+        const p = along(r, screensaver.d), k = 1 - Math.exp(-dt / EASE); let mx = (p[0] - screensaver.cam.x) * k, my = (p[1] - screensaver.cam.y) * k; const sp = Math.hypot(mx, my), cap = SPEED * 1.6 * dt; if (sp > cap) { mx *= cap / sp; my *= cap / sp; } screensaver.cam.x += mx; screensaver.cam.y += my; LIVE.camera(screensaver.cam.x, screensaver.cam.y); const real = LIVE.cam; screensaver.stuck = Math.hypot(real.x - screensaver.cam.x, real.y - screensaver.cam.y) > 2; screensaver.cam = { x: real.x, y: real.y };
         /* day slowly turning to night; the tiles that are about to show are asked for now, so nothing arrives late */
-        const k = (Math.sin((now - (screensaver.startAt || now)) / 1000 * DAY_NIGHT - 1.57) + 1) / 2; LIVE.forceMood({ a: "day", b: "night", f: k });
-        if (Math.floor(t * 2) !== screensaver.asked) { screensaver.asked = Math.floor(t * 2); const a = along(r, Math.min(r.len, (t + 8) * SPEED)), v = LIVE.view(), hw = (v.x1 - v.x0) / 2, hh = (v.y1 - v.y0) / 2; for (let y = a[1] - hh; y <= a[1] + hh + 512; y += 512) for (let x = a[0] - hw; x <= a[0] + hw + 512; x += 512) for (const m of ["day", "night"]) LIVE.loadMood(m, x, y); }
+        const kk = (Math.sin((now - (screensaver.startAt || (screensaver.startAt = now))) / 1000 * DAY_NIGHT - 1.57) + 1) / 2; LIVE.forceMood({ a: "day", b: "night", f: kk });
+        if (Math.floor(now / 500) !== screensaver.asked) { screensaver.asked = Math.floor(now / 500); const a = along(r, Math.max(0, Math.min(r.len, screensaver.d + screensaver.dir * 8 * SPEED))), v = LIVE.view(), hw = (v.x1 - v.x0) / 2, hh = (v.y1 - v.y0) / 2; for (let y = a[1] - hh; y <= a[1] + hh + 512; y += 512) for (let x = a[0] - hw; x <= a[0] + hw + 512; x += 512) for (const m of ["day", "night"]) LIVE.loadMood(m, x, y); }
     }
-    LIVE.add({ active: () => screensaver.on, over(c) { const f = screensaver.fade || 0; if (f > 0) { c.fillStyle = `rgba(0,0,0,${f})`; c.fillRect(0, 0, c.canvas.width, c.canvas.height); } } });
+    LIVE.add({ active: () => screensaver.on, over(c) { const W = c.canvas.width, Hh = c.canvas.height, dim = .38 * (screensaver.dim || 0), f = screensaver.fade || 0; c.fillStyle = `rgba(0,0,0,${dim + (1 - dim) * f})`; c.fillRect(0, 0, W, Hh); } });
     setInterval(() => { if (!screensaver.on && !document.hidden && LIVE.walker && LIVE.idleFor > IDLE_MS && !LIVE.busy) ssStart(); }, 1000);
     /* the tap that ends it goes no further, so it doesn't send you walking */
     const stop = e => { if (!screensaver.on) return; e.stopImmediatePropagation(); if (e.cancelable) e.preventDefault(); ssEnd(); };
     for (const ev of ["pointerdown", "mousedown", "keydown", "wheel", "touchstart"]) window.addEventListener(ev, stop, { capture: true, passive: false });
     let lastMove = null; window.addEventListener("pointermove", e => { const was = lastMove; lastMove = [e.clientX, e.clientY]; if (!was || Math.hypot(e.clientX - was[0], e.clientY - was[1]) < 3) return; if (screensaver.on) { if (Math.hypot(e.clientX - was[0], e.clientY - was[1]) > 6) ssEnd(); } else LIVE.markActive(); }, { capture: true, passive: true });
-    window.HallwayScreensaver = { start: ssStart, stop: ssEnd, get on() { return screensaver.on; } };
+    window.HallwayScreensaver = { start: ssStart, stop: ssEnd, get on() { return screensaver.on; }, get state() { const f = screensaver.floors && screensaver.floors[screensaver.i]; return { phase: screensaver.phase, i: screensaver.i, floor: f && f.l.name, d: Math.round(screensaver.d), len: f && Math.round(f.r.len), dir: screensaver.dir, stuck: screensaver.stuck }; } };
 })();
