@@ -264,3 +264,5 @@ input[type="text"], input[type="search"], input:not([type]) { cursor: text !impo
 .hw-replies.hw-replies-under .mr-btn, .hw-replies.hw-replies-under .btn { width: 100%; text-align: left; padding: 3px 10px; white-space: nowrap; }
 /* the screensaver hides the chat while it runs; it comes back as it was */
 body.hw-screensaver .hw-bubble, body.hw-screensaver .hw-replies { visibility: hidden; }
+/* the screensaver words sit low on the screen, out of the way of the view */
+.hw-ss-title { top: auto; bottom: 9%; transform: translateX(-50%); }
