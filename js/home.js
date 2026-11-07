@@ -12440,10 +12440,12 @@ document.addEventListener("DOMContentLoaded", () => {
        as "Admins only" (js/admin-menu.js), and once a layout saved there
        places it, that layout decides, Shown included. */
     const ADMINS_FIRST = ["articles", "hallway"];
+    /* Once the Warren's switch says Live, the Hallway's row is everybody's, placed or not */
+    const adminsFirstNow = () => ADMINS_FIRST.filter(id => !(id === "hallway" && hallwayState === "live"));
     function applyMenuLayout(entries) {
         const layout = menuLayout;
         if (!layout || !Array.isArray(layout.top)) {
-            return entries.filter(e => !(ADMINS_FIRST.includes(MENU_IDS[e.name]) && !adminVerifiedNow()));
+            return entries.filter(e => !(adminsFirstNow().includes(MENU_IDS[e.name]) && !adminVerifiedNow()));
         }
         // The menu as written, as units (a row and any sections under it), each with where it is written.
         const units = [];
@@ -12461,7 +12463,7 @@ document.addEventListener("DOMContentLoaded", () => {
         const folds = layout.folds || {};
         const placed = new Set(layout.top.concat(folds.archive || [], folds.games || []));
         const hidden = new Set(Array.isArray(layout.hidden) ? layout.hidden : []);
-        const admins = new Set((Array.isArray(layout.admins) ? layout.admins : []).concat(ADMINS_FIRST.filter(id => !placed.has(id))));
+        const admins = new Set((Array.isArray(layout.admins) ? layout.admins : []).concat(adminsFirstNow().filter(id => !placed.has(id))));
         const shows = u => !u.id || (!hidden.has(u.id) && (!admins.has(u.id) || adminVerifiedNow()));
         const unplaced = where => units.filter(u => u.home === where && (!u.id || !placed.has(u.id)));
         const flat = list => [].concat(...list.filter(shows).map(u => u.unit));

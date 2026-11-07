@@ -4,35 +4,47 @@
 (function () {
     "use strict";
     window.HALLWAY_PLAY = true;
+    /* Site data blocked or full mustn't stop a visitor walking: settings just don't stick */
+    try { window.localStorage.getItem("x"); const set = Storage.prototype.setItem; Storage.prototype.setItem = function (k, v) { try { set.call(this, k, v); } catch (e) { /* full */ } }; }
+    catch (e) { const mem = new Map(); try { Object.defineProperty(window, "localStorage", { value: { getItem: k => (mem.has(k) ? mem.get(k) : null), setItem: (k, v) => { mem.set(k, String(v)); }, removeItem: k => { mem.delete(k); } } }); } catch (e2) { /* nothing more to try */ } }
     const realFetch = window.fetch.bind(window);
     const FN = "/.netlify/functions/hallway";
     let online = false;
-    const manifest = Promise.all([
-        realFetch("../manifest.json", { cache: "no-cache" }).then(r => r.json()),
+    /* The copy published from the Warren is the map, once there is one: a local publish carries code, and never hides it */
+    const readManifest = () => Promise.all([
+        realFetch("../manifest.json", { cache: "no-cache" }).then(r => r.json()).catch(() => ({ tiles: {} })),
         realFetch(FN + "?what=live").then(r => r.ok ? r.json() : null).catch(() => null)
-    ]).then(([here, there]) => { online = !!(there && there.online && there.publishedAt > (here.publishedAt || "")); if (online) window.hallwayOnlineLift = there.lift || {}; return online ? there : here; });
+    ]).then(([here, there]) => { online = !!(there && there.online); if (online) window.hallwayOnlineLift = there.lift || {}; return online ? there : here; });
+    let manifest = readManifest();
     const json = o => new Response(JSON.stringify(o), { status: 200, headers: { "Content-Type": "application/json" } });
     /* A square with nothing on it: one black pixel, so the page doesn't keep asking */
-    let blank = null;
+    let blank = null, tilesRead = 0;
     const blankTile = () => blank || (blank = new Promise(res => { const c = document.createElement("canvas"); c.width = c.height = 1; const x = c.getContext("2d"); x.fillStyle = "#000"; x.fillRect(0, 0, 1, 1); c.toBlob(res, "image/png"); }));
     window.fetch = async function (url, opts) {
         const u = typeof url === "string" ? url : url.url;
         if (!u.startsWith("/api/")) return realFetch(url, opts);
         const m = await manifest, q = new URL(u, location.href), p = q.pathname;
-        if (p === "/api/map") return online ? realFetch(FN + "?what=map") : realFetch("../map.json", { cache: "no-cache" });
+        if (p === "/api/map") return online ? realFetch(FN + "?what=map&v=" + encodeURIComponent(m.version || "")) : realFetch("../map.json", { cache: "no-cache" });
         if (p === "/api/names") return json({ names: [], font: {}, difficulty: {} });
         if (p === "/api/art") return json({ at: 0 });
         if (p === "/api/version") return json({ v: m.version, report: {}, tile: m.tile });
         if (p === "/api/tile") {
             /* The editor's own light, when no time of day is asked for, is daylight here */
-            const name = m.tiles[(q.searchParams.get("m") || "day") + "|" + q.searchParams.get("tx") + "," + q.searchParams.get("ty")];
-            if (name) return realFetch(online ? FN + "?tile=" + name : "../tiles/" + name, opts);
+            const key = (q.searchParams.get("m") || "day") + "|" + q.searchParams.get("tx") + "," + q.searchParams.get("ty"), name = m.tiles[key];
+            if (name) {
+                const r = await realFetch(online ? FN + "?tile=" + name : "../tiles/" + name, opts); if (r.status !== 404) return r;
+                /* A publish has replaced it while this page was open. The newest list says what's there now. */
+                if (!tilesRead || Date.now() - tilesRead > 30000) { tilesRead = Date.now(); manifest = readManifest(); }
+                const m2 = await manifest, name2 = m2.tiles[key];
+                if (name2 && name2 !== name) return realFetch(online ? FN + "?tile=" + name2 : "../tiles/" + name2, opts);
+                return r;
+            }
             return new Response(await blankTile(), { status: 200, headers: { "Content-Type": "image/png" } });
         }
         return new Response("", { status: 404 });
     };
     window.hallwayLiftSrc = (way, f) => { const file = encodeURIComponent(way).replace(/%/g, "_") + "-" + f + ".png"; return online && window.hallwayOnlineLift[file] ? FN + "?tile=" + window.hallwayOnlineLift[file] : "../lift/" + file; };
-    window.hallwayTell = what => { try { if (parent !== window) parent.postMessage(typeof what === "string" ? { hallway: what } : { hallway: "progress", ...what }, location.origin); } catch (e) { /* on its own, there's nobody to tell */ } };
+    window.hallwayTell = what => { try { if (parent !== window) parent.postMessage(typeof what === "string" ? { hallway: what } : { hallway: "progress", ...what }, location.origin); else if (what === "leave") location.href = "/home"; } catch (e) { /* on its own, there's nobody to tell */ } };
 
     /* Its music is on unless it's been turned off; the first click brings it in, as browsers require */
     try { if (localStorage.getItem("hallway-music") === null) localStorage.setItem("hallway-music", "1"); if (localStorage.getItem("hallway-time") === null) localStorage.setItem("hallway-time", "cycle"); } catch (e) { /* private mode */ }
@@ -41,7 +53,7 @@
        A signed-in player whose Habbo is linked walks as it. Anyone else types their Origins name and picks the hotel, as Fallin' Furni asks, or walks as a guest.
        The art comes through the site's function: the page needs to read its pixels, and Habbo's imaging service doesn't allow that from here. */
     const GUEST = "hr-145-1061.hd-180-1014.ch-220-1204.lg-280-1200.sh-300-1314", KEY = "hallway-avatar", HOTELS = ["COM", "ES", "BR"];
-    let figure = GUEST;
+    let figure = GUEST, linkedName = null, pickedNow = false;
     const remembered = () => { try { return JSON.parse(localStorage.getItem(KEY) || "null"); } catch (e) { return null; } };
     window.hallwayAvatarSrc = n => {
         const m = /^s-(\d)-(std|wlk|sit)(-crr|-drk)?-(\d)$/.exec(n); if (!m) return "art/av/" + n + ".png";
@@ -63,6 +75,7 @@
     }
     function picker(onDone) {
         if (document.getElementById("playPicker")) return;
+        const opener = document.activeElement;
         const back = document.createElement("div"); back.id = "playPicker"; back.className = "mr-overlay"; back.setAttribute("role", "dialog"); back.setAttribute("aria-label", "Choose your Habbo");
         const win = document.createElement("div"); win.className = "mr-window"; const tbar = document.createElement("div"); tbar.className = "mr-titlebar"; const h2 = document.createElement("h2"); h2.textContent = "Choose your Habbo";
         const x = document.createElement("button"); x.type = "button"; x.className = "mr-close"; x.setAttribute("aria-label", "Close"); const xi = document.createElement("img"); xi.src = "art/rooms/modal_topclose_x.png"; xi.alt = ""; x.appendChild(xi); tbar.append(h2, x);
@@ -77,19 +90,35 @@
         const guest = document.createElement("button"); guest.type = "button"; guest.className = "mr-btn guest"; guest.textContent = "Walk in as a guest";
         const was = remembered(); if (was) { input.value = was.name || ""; if (HOTELS.includes(was.hotel)) sel.value = was.hotel; }
         form.append(row, say, guest); frame.appendChild(form); win.append(tbar, frame); back.appendChild(win); document.body.appendChild(back); input.focus();
-        const done = () => { back.remove(); if (onDone) onDone(); };
+        const done = () => { document.removeEventListener("keydown", keys, true); back.remove(); if (opener && opener.focus) opener.focus(); if (onDone) onDone(); };
+        const keys = e => {
+            if (e.key === "Escape") { e.stopPropagation(); done(); return; }
+            if (e.key !== "Tab") return;
+            const all = [...win.querySelectorAll("button, input, select")].filter(q => !q.disabled); if (!all.length) return; const i = all.indexOf(document.activeElement);
+            if (e.shiftKey && i <= 0) { e.preventDefault(); all[all.length - 1].focus(); } else if (!e.shiftKey && (i === all.length - 1 || i < 0)) { e.preventDefault(); all[0].focus(); }
+        };
+        document.addEventListener("keydown", keys, true);
+        const keep = o => { pickedNow = true; try { localStorage.setItem(KEY, JSON.stringify(linkedName ? { ...o, overLinked: linkedName } : o)); } catch (e) { /* private mode */ } };
         x.addEventListener("click", done); back.addEventListener("click", e => { if (e.target === back) done(); });
-        guest.addEventListener("click", () => { try { localStorage.setItem(KEY, JSON.stringify({ guest: true })); } catch (e) { /* private mode */ } wear(GUEST); done(); });
+        guest.addEventListener("click", () => { keep({ guest: true }); wear(GUEST); done(); });
         form.addEventListener("submit", async ev => {
             ev.preventDefault(); const name = input.value.trim(); if (!name) { say.textContent = "Type your Habbo Origins username, or walk in as a guest."; return; }
             go.disabled = true; say.textContent = "Looking up...";
-            try { const f = await lookUp(name, sel.value); try { localStorage.setItem(KEY, JSON.stringify(f)); } catch (e) { /* private mode */ } wear(f.figure); done(); }
+            try { const f = await lookUp(name, sel.value); keep(f); wear(f.figure); done(); }
             catch (e) { say.textContent = e.message; go.disabled = false; }
         });
     }
     async function chooseAvatar() {
-        const mine = await signedInHabbo(); if (mine) { wear(mine.figure); return; }
-        const was = remembered(); if (was && was.figure) { wear(was.figure); return; } if (was && was.guest) return;
+        const mine = await signedInHabbo(), was = remembered();
+        if (mine) linkedName = mine.name;
+        /* Picked while that was being looked up: the pick stands, and stands next time too */
+        if (pickedNow) { if (mine && was) try { localStorage.setItem(KEY, JSON.stringify({ ...was, overLinked: mine.name })); } catch (e) { /* private mode */ } return; }
+        if (mine) {
+            /* Your linked Habbo, unless you chose someone else while signed in as it */
+            if (was && was.overLinked === mine.name) { wear(was.figure || GUEST); return; }
+            wear(mine.figure); return;
+        }
+        if (was && was.figure) { wear(was.figure); return; } if (was && was.guest) return;
         picker();
     }
 
@@ -109,8 +138,14 @@
         const menus = [];
         const dropdown = (label, title, fill) => {
             const menu = document.createElement("div"); menu.className = "play-menu"; menu.hidden = true; menu.setAttribute("role", "menu"); menus.push(menu);
-            const btn = add(label, title, e => { e.stopPropagation(); const show = menu.hidden; shutMenus(); if (!show) return; fill(menu, () => { shutMenus(); }); const r = btn.getBoundingClientRect(); menu.style.left = r.left + "px"; menu.style.top = (r.bottom + 4) + "px"; menu.hidden = false; btn.setAttribute("aria-expanded", "true"); });
-            btn.setAttribute("aria-haspopup", "true"); btn.setAttribute("aria-expanded", "false"); menu.btn = btn; document.body.appendChild(menu); return btn;
+            const btn = add(label, title, e => { e.stopPropagation(); const show = menu.hidden; shutMenus(); if (!show) return; fill(menu, () => { shutMenus(); }); const r = btn.getBoundingClientRect(); menu.style.top = (r.bottom + 4) + "px"; menu.hidden = false; menu.style.left = Math.max(8, Math.min(r.left, innerWidth - menu.offsetWidth - 8)) + "px"; btn.setAttribute("aria-expanded", "true"); if (!e.detail) { const first = menu.querySelector("button"); if (first) first.focus(); } });
+            btn.setAttribute("aria-haspopup", "true"); btn.setAttribute("aria-expanded", "false"); menu.btn = btn; document.body.appendChild(menu);
+            menu.addEventListener("keydown", e => {
+                const all = [...menu.querySelectorAll("button")], i = all.indexOf(document.activeElement);
+                if (e.key === "Escape") { e.stopPropagation(); shutMenus(); btn.focus(); }
+                else if (e.key === "ArrowDown" || e.key === "ArrowUp") { e.preventDefault(); e.stopPropagation(); all[(i + (e.key === "ArrowDown" ? 1 : -1) + all.length) % all.length].focus(); }
+            });
+            return btn;
         };
         const shutMenus = () => { for (const m of menus) { m.hidden = true; m.btn.setAttribute("aria-expanded", "false"); } };
         const row = (menu, name, on, fn) => { const b = document.createElement("button"); b.type = "button"; b.setAttribute("role", "menuitemradio"); b.setAttribute("aria-checked", String(on)); b.textContent = name; b.addEventListener("click", fn); menu.appendChild(b); };
@@ -124,17 +159,18 @@
         });
         add("Avatar", "Choose your Habbo", () => picker());
         document.addEventListener("click", e => { if (!menus.some(m => m.contains(e.target))) shutMenus(); });
-        const paint = () => { const on = wanted(); mute.textContent = on ? "Mute" : "Unmute"; mute.classList.toggle("is-on", !on); };
+        let shownOn = null; const paint = () => { const on = wanted(); if (on === shownOn) return; shownOn = on; mute.textContent = on ? "Mute" : "Unmute"; mute.classList.toggle("is-on", !on); };
         setInterval(paint, 500); paint();
         document.body.append(bar);
     }
     /* Ready once there's something to see, or after a few seconds whatever happens */
     function whenDrawn() {
+        const peek = document.createElement("canvas"), px = peek.getContext("2d", { willReadFrequently: true }); peek.width = peek.height = 1;      // read from a copy: reading the view itself can slow it for the whole visit
         const started = performance.now(), v = document.getElementById("view"), told = () => { const n = performance.getEntriesByType("resource").length; window.hallwayTell({ progress: Math.min(.95, n / 42) }); };
         const look = () => {
             told();
             let seen = false;
-            try { if (v && v.width > 2) { const d = v.getContext("2d").getImageData(v.width >> 1, v.height >> 1, 1, 1).data; seen = d[0] + d[1] + d[2] > 0 && !(d[0] === 11 && d[1] === 12 && d[2] === 15); } } catch (e) { seen = true; }
+            try { if (v && v.width > 2) { px.drawImage(v, v.width >> 1, v.height >> 1, 1, 1, 0, 0, 1, 1); const d = px.getImageData(0, 0, 1, 1).data; seen = d[0] + d[1] + d[2] > 0 && !(d[0] === 11 && d[1] === 12 && d[2] === 15); } } catch (e) { seen = true; }
             if (seen || performance.now() - started > 8000) window.hallwayTell("ready"); else setTimeout(look, 120);
         };
         look();

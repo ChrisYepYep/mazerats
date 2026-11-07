@@ -118,6 +118,10 @@ function json(res, code, o) { res.writeHead(code, { "Content-Type": "application
 
 http.createServer(async (req, res) => {
     const url = new URL(req.url, "http://localhost");
+    /* This page and nothing else: any website could otherwise write to it while it's running */
+    const hostOk = /^(localhost|127\.0\.0\.1):\d+$/.test(req.headers.host || ""), origin = req.headers.origin;
+    if (!hostOk || (origin && !/^http:\/\/(localhost|127\.0\.0\.1):\d+$/.test(origin)) || (req.method === "POST" && url.pathname === "/api/map" && !/^application\/json/.test(req.headers["content-type"] || ""))) { res.writeHead(403); return res.end("Not from here"); }
+    if (req.method === "POST" && origin && new URL(origin).host !== req.headers.host) { res.writeHead(403); return res.end("Not from here"); }
     try {
         if (url.pathname === "/api/map" && req.method === "GET") {
             res.writeHead(200, { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" });

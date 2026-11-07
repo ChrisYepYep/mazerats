@@ -64,6 +64,19 @@ for (const name of fs.readdirSync(ROOT)) {
         problems.push(`${name} is a page at the root but is in neither PUBLIC nor PRIVATE_PAGES in tools/build-dist.js`);
     }
 }
+/* The Hallway's pictures and art (7 Nov 2026): a manifest naming tiles that were never `git add`ed
+   ships holes in the map with nothing to say so. Its pictures are named by a script, not the markup. */
+{
+    const HW = path.join(OUT, "assets", "hallway"), manifestFile = path.join(HW, "manifest.json");
+    if (fs.existsSync(manifestFile)) {
+        const man = JSON.parse(fs.readFileSync(manifestFile, "utf8"));
+        for (const name of new Set(Object.values(man.tiles || {}))) if (!fs.existsSync(path.join(HW, "tiles", name))) problems.push(`assets/hallway/manifest.json names tiles/${name}, which is not in dist/`);
+        const map = JSON.parse(fs.readFileSync(path.join(HW, "map.json"), "utf8"));
+        for (const way of new Set((map.levels || []).map(l => (l.colour ? "hex:" + l.colour : l.way)))) for (let f = 0; f < 6; f++) { const file = encodeURIComponent(way).replace(/%/g, "_") + "-" + f + ".png"; if (!fs.existsSync(path.join(HW, "lift", file))) problems.push(`assets/hallway/lift/${file} is not in dist/`); }
+        const worker = fs.readFileSync(path.join(HW, "app", "renderer-worker.js"), "utf8"), art = /const ART_FILES = (\[.*?\]);\n/.exec(worker);
+        if (art) for (const f of JSON.parse(art[1])) if (!fs.existsSync(path.join(HW, "app", "art", f))) problems.push(`assets/hallway/app/art/${f} is not in dist/`);
+    }
+}
 if (problems.length) {
     console.error("build-dist:\n  " + problems.join("\n  "));
     process.exit(1);

@@ -1,12 +1,14 @@
 /* The lift's sounds, made live and kept quiet: nothing bright, nothing sudden. Doors are a soft felted slide with a low wooden settle at the end. The ride is a
    slow warm hum you feel more than hear. Arrival is two low, rounded notes that swell in and fade, with no ding on the front of them.
    The maze doors are heavier and wooden: a latch, a slow swing on old hinges, and shutting, a low bump as it meets its frame.
-   LiftSounds.doors(), .ride(seconds), .arrive(), .doorOpen(), .doorShut() */
+   LiftSounds.doors(), .ride(seconds), .arrive(), .doorOpen(), .doorShut(), .doorLocked() */
 "use strict";
 (function () {
     let ctx = null, out = null, noise = null;
     function start() {
-        if (ctx) { if (ctx.state === "suspended") ctx.resume(); return true; }
+        /* Mute on the walking page means quiet, doors and lifts too */
+        try { if (window.HALLWAY_PLAY && localStorage.getItem("hallway-music") === "0") return false; } catch (e) { /* no storage: sounds on */ }
+        if (ctx) { if (ctx.state !== "running") ctx.resume().catch(() => {}); return true; }
         const AC = window.AudioContext || window.webkitAudioContext; if (!AC) return false;
         ctx = new AC({ latencyHint: "balanced" });
         out = ctx.createGain(); out.gain.value = .9;
@@ -48,6 +50,11 @@
             tone(t, 240, .06, .003, .05); tone(t + .05, 150, .06, .003, .09);      // the latch
             felt(t + .12, 1.0, 110, 240, .13);                                     // the swing
             tone(t + .95, 70, .03, .05, .35);                                      // and its weight coming to rest
+        },
+        resume() { if (ctx && ctx.state !== "running") ctx.resume().catch(() => {}); },
+        doorLocked() {
+            if (!start()) return; const t = ctx.currentTime + .02;
+            tone(t, 240, .06, .003, .05); tone(t + .07, 170, .05, .003, .06); tone(t + .17, 240, .05, .003, .05); tone(t + .24, 170, .04, .003, .06);      // the handle tried, twice
         },
         doorShut() {
             if (!start()) return; const t = ctx.currentTime + .02;

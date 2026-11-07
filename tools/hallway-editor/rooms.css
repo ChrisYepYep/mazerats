@@ -1,6 +1,6 @@
 /* The maze rooms: the room itself, the book that opens from it, and the rooms' editor. */
 @font-face { font-family: 'Volter Goldfish'; src: url('art/rooms/VolterGoldfish.woff2') format('woff2'); font-weight: 400; font-display: swap; }
-.room-view { position: absolute; inset: 0; z-index: 22; display: block; }
+.room-view { position: absolute; inset: 0; z-index: 22; display: block; touch-action: none; }
 /* The maze and its owner, in the dark to the left of the room */
 .room-label { position: absolute; z-index: 23; max-width: 200px; transform: translate(-100%, -50%); color: #d8cbb2; font: 400 .5625rem/1.5 'Volter Goldfish', sans-serif; text-align: left; pointer-events: none; }
 .room-label .room-owner { color: #ab8b64; }
@@ -37,7 +37,7 @@
 .rb-page:first-child { border-right: 0; background: linear-gradient(to left, #b9a27c 0, #d4c096 5px, #dfcca3 10px, #e2d0a8 13px); }
 .rb-page:nth-child(2) { padding-left: 14px; padding-right: 13px; border-left: 0; background: linear-gradient(to right, #b9a27c 0, #d4c096 5px, #dfcca3 10px, #e2d0a8 13px); }
 .rb-body { flex: 1 1 0; min-height: 0; overflow: hidden; }
-.rb-page h2 { margin: 0 0 3px; overflow: hidden; color: #7a1c16; font: 400 9px/12px 'Volter Goldfish Bold', 'Volter Goldfish', monospace; text-overflow: ellipsis; white-space: nowrap; }
+.rb-page h2 { margin: 0 0 3px; overflow-wrap: anywhere; color: #7a1c16; font: 400 9px/12px 'Volter Goldfish Bold', 'Volter Goldfish', monospace; }
 .rb-by { margin: 0 0 3px; }
 .rb-page dl { display: grid; grid-template-columns: 56px 1fr; gap: 0; margin: 0 0 5px; padding: 3px 0 4px; border-block: 1px solid #ac946c; }
 .rb-page dt { color: #705032; }

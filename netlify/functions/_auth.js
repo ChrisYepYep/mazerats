@@ -351,7 +351,7 @@ async function canWrite(event, scope = "site") {
        a write still in flight went unrecorded as often as not. It still can
        never take a save down (record swallows its own errors), and holds
        one up by AUDIT_WAIT_MS at most — see _audit.js. */
-    if (allowed) await recordWrite(event, usernameFromToken(event), sessionOf(event));
+    if (allowed && !event.quietWrite) await recordWrite(event, usernameFromToken(event), sessionOf(event));
     return allowed;
 }
 

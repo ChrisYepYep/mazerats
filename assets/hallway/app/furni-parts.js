@@ -58,6 +58,8 @@
         if (p.k === "fountain" || p.k === "statue") return [[p.x, p.y], [p.x + 1, p.y], [p.x, p.y + 1], [p.x + 1, p.y + 1]];
         return [[p.x, p.y]];
     }
-    const api = { ROWS, parts, tiles, turns, rotOf, lengthOf };
+    /* A maze's name for its door: the archive's with its glyphs and decoration off ("*ÕMaze EmpireÕ*" is Maze Empire's door), as render/hw.js's clean() has it */
+    const mazeName = n => String(n || "").replace(/[^\x20-\x7e]/g, "").replace(/\*/g, "").replace(/\[|\]/g, "").trim().replace(/\s+/g, " ");
+    const api = { ROWS, parts, tiles, turns, rotOf, lengthOf, mazeName };
     if (typeof module !== "undefined" && module.exports) module.exports = api; else root.FurniParts = api;
 })(typeof window !== "undefined" ? window : globalThis);

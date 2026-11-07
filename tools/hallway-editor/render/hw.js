@@ -226,6 +226,7 @@ function wallRunX(w, x0, x1, y, o) {
             if (n++ >= limit) break;
             b.set(p[0] + i, p[1] - T + j, [im.rgba[s], im.rgba[s + 1], im.rgba[s + 2]]);
         }
+        const up = im.above && im.above[i]; if (up) for (const q of up) b.set(p[0] + i, p[1] - T + q[0], [q[1], q[2], q[3]]);
     };
     const half = o && o.half, none = o && o.none, gone = half && (at => half(at) || none(at)), ends = [], lowEnds = [], lowStarts = [];
     for (let x = Math.floor(x0 / 8) * 8; x < x1; x += 8) {
@@ -267,6 +268,7 @@ function wallRunY(w, x, y0, y1, o) {
             if (n++ >= limit) break;
             b.set(p[0] - W + i, p[1] - T + j, [im.rgba[s], im.rgba[s + 1], im.rgba[s + 2]]);
         }
+        const up = im.above && im.above[i]; if (up) for (const q of up) b.set(p[0] - W + i, p[1] - T + q[0], [q[1], q[2], q[3]]);
     };
     const half = o && o.half, none = o && o.none, gone = half && (at => half(at) || none(at)), ends = [], lowEnds = [], lowStarts = [];
     for (let y = Math.floor(y0 / 8) * 8; y < y1; y += 8) {
@@ -361,7 +363,7 @@ function door(w, x, y, o) {
                 if (h >= 1 && h <= 5) c = h === 5 ? C.b4 : (h === 1 ? C.b1 : C.b2);    // kick plate
             }
             /* handle on the free side */
-            if (u >= DW - 6 && u <= DW - 4 && h >= 28 && h <= 32) c = (h === 32) ? C.b5 : (u === DW - 6 ? C.b1 : C.b3);
+            if (u >= 5 && u <= 7 && h >= 28 && h <= 32) c = (h === 32) ? C.b5 : (u === 7 ? C.b1 : C.b3);
             if (o.hover && !fr) c = c.map((v, i) => Math.min(255, v + [26, 18, 4][i]));
         }
         if (c) b.set(P[0], P[1], c);

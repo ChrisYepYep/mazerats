@@ -38,7 +38,7 @@
         const bar = el("div", "re-bar"), left = el("div", "re-left"), right = el("div", "re-right"), stage = el("div", "re-stage"), c = el("canvas"), tip = el("div", "re-tip"); stage.append(c, tip);
         host.append(bar, left, stage, right);
         let size = SIZES()[0], n = 0, tool = null, sel = null, zoom = 2, preview = null, mazes = [], undo = [], redo = [], tab = "layout";
-        let mouse = null, placeZ = 0, placeTurn = 0, carry = null, drag = null, ctrlY = null, ctrlSpare = 0, lockTile = null, lifting = false, heightBox = null;
+        let mouse = null, placeZ = 0, placeTurn = 0, carry = null, drag = null, ctrlY = null, ctrlSpare = 0, lockTile = null, lifting = false, heightBox = null, ctrlFrom = null, ctrlArmed = false;
 
         const own = () => { const m = api.map(); if (!m.rooms) m.rooms = {}; if (!m.rooms.layouts) m.rooms.layouts = JSON.parse(JSON.stringify(window.RoomStarter.layouts)); if (!m.rooms.assign) m.rooms.assign = {}; return m.rooms; };
         const layout = () => V.layouts(api.map())[size][n];
@@ -58,15 +58,15 @@
         [tabLayout, tabMazes, done, undoB].forEach(b => { b.type = "button"; });
         const lab = (t, e) => { const l = el("label", "re-lab"); l.append(el("span", "", t), e); return l; };
         bar.append(el("strong", "", "Rooms"), tabLayout, tabMazes, lab("Size", sizeSel), lab("Layout", nums), lab("Floor", floorSel), lab("Show with", seeSel), undoB, el("span", "re-spacer"), done);
-        const numBtns = [0, 1, 2].map(i => { const b = el("button", "re-num", String(i + 1)); b.type = "button"; b.addEventListener("click", () => { n = i; sel = null; sync(); }); nums.appendChild(b); return b; });
-        sizeSel.addEventListener("change", () => { size = sizeSel.value; sel = null; sync(); });
+        const numBtns = [0, 1, 2].map(i => { const b = el("button", "re-num", String(i + 1)); b.type = "button"; b.addEventListener("click", () => { n = i; sel = null; carry = null; lockTile = null; sync(); }); nums.appendChild(b); return b; });
+        sizeSel.addEventListener("change", () => { size = sizeSel.value; sel = null; carry = null; lockTile = null; sync(); });
         floorSel.addEventListener("change", () => editing(L => { L.floor = floorSel.value; }));
         seeSel.addEventListener("change", () => { const m = mazes.find(q => q.slug === seeSel.value); preview = m ? V.mazeFacts(m) : null; paintSoon(); });
         const doUndo = () => { if (!undo.length) return; redo.push(JSON.stringify(api.map().rooms || null)); restore(undo.pop()); };
         const doRedo = () => { if (!redo.length) return; undo.push(JSON.stringify(api.map().rooms || null)); restore(redo.pop()); };
         undoB.addEventListener("click", doUndo);
         tabLayout.addEventListener("click", () => { tab = "layout"; sync(); }); tabMazes.addEventListener("click", () => { tab = "mazes"; sync(); });
-        const close = () => { removeEventListener("keydown", keys, true); removeEventListener("keyup", keysUp, true); removeEventListener("resize", paintSoon); V.onArt = null; host.remove(); host = null; };
+        const close = () => { endLift(); if (drag && drag.moved) commit(); drag = null; removeEventListener("keydown", keys, true); removeEventListener("keyup", keysUp, true); removeEventListener("resize", paintSoon); V.onArt = null; host.remove(); host = null; };
         done.addEventListener("click", close);
 
         /* ---------- the palette ---------- */
@@ -95,7 +95,7 @@
             if (q.k === "shelf") { q.axis = q.axis === "x" ? "y" : "x"; return q; }
             if (q.k === "rug") { const w = q.w; q.w = q.h; q.h = w; return q; }
             if (q.k === "chair4" || q.k === "chair6") { const i = CHAIR_ROT.findIndex(c => c[0] === q.k && c[1] === !!q.flip), nx = CHAIR_ROT[(i + 1) % 4]; q.k = nx[0]; q.flip = nx[1]; if (!q.flip) delete q.flip; return q; }
-            if (V.isWall(q)) { q.wall = q.wall === "l" ? "r" : "l"; return q; }
+            if (V.isWall(q)) { q.wall = q.wall === "l" ? "r" : "l"; const r = roomNow(), len = q.wall === "l" ? r.h : r.w; if (q.at !== undefined) q.at = Math.min(len - .5, q.at); return q; }
             if (q.k === "rugRound" || q.k === "lamp") return null;
             q.flip = !q.flip; if (!q.flip) delete q.flip; return q;
         }
@@ -127,7 +127,7 @@
         /* what's being placed or carried, put where the mouse is */
         function heldAt(base, p, r) {
             const q = { ...base };
-            if (V.isWall(q)) { if (!lockTile || q.wall === undefined) hang(q, wallPoint(r, p[0], p[1])); return q; }
+            if (V.isWall(q)) { if (!lockTile || q.wall === undefined) { hang(q, wallPoint(r, p[0], p[1])); if (carry && base === carry.item && carry.upKept !== undefined) q.up = carry.upKept; } return q; }
             const t = lockTile || V.tileAt(r, p[0], p[1]); q.x = t[0]; q.y = t[1]; return q;
         }
         /* dragged out to a length, as the hallway's sofas are */
@@ -151,7 +151,7 @@
             right.appendChild(el("h3", "", nameOf(sel)));
             const num = (label, key, min, max, step, fallback) => {
                 const row = el("label", "re-lab"), i = el("input"); i.type = "text"; i.inputMode = "numeric"; i.autocomplete = "off"; i.value = sel[key] === undefined ? fallback : sel[key]; let begun = false;
-                const apply = () => { if (i.value.trim() === "" || !Number.isFinite(Number(i.value))) return; const v = Math.max(min, Math.min(max, Math.round(Number(i.value)))); if (!begun) { begun = true; editingNoCommit(); } if (key === "z" && !v) delete sel.z; else sel[key] = v; api.changed(); paintSoon(); };
+                const apply = () => { if (i.value.trim() === "" || !Number.isFinite(Number(i.value))) return; const v = Math.max(min, Math.min(max, Math.round(Number(i.value)))); if (!V.isWall(sel) && (key === "n" || key === "len" || key === "w" || key === "h") && !fits(roomNow(), { ...sel, [key]: v }, sel)) { say("There isn't room for that here."); return; } say(""); if (!begun) { begun = true; editingNoCommit(); } if (key === "z" && !v) delete sel.z; else sel[key] = v; api.changed(); paintSoon(); };
                 i.addEventListener("input", apply);
                 i.addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); i.blur(); } if (e.key === "ArrowUp" || e.key === "ArrowDown") { e.preventDefault(); i.value = Math.max(min, Math.min(max, (Number(i.value) || 0) + (e.key === "ArrowUp" ? 1 : -1) * (e.shiftKey ? 10 : step || 1))); apply(); } });
                 i.addEventListener("blur", () => { begun = false; i.value = sel && sel[key] !== undefined ? sel[key] : fallback === undefined ? "" : fallback; checks(); });
@@ -166,7 +166,7 @@
             if (!V.isWall(sel) && !V.isRug(sel)) num("Height off the floor", "z", 0, Z_MAX, 1, 0);
             const row = el("div", "re-actions"), t = el("button", "btn", "Turn"), del = el("button", "btn", "Remove"); t.type = del.type = "button"; t.addEventListener("click", () => turnThing(sel)); del.addEventListener("click", removeSel); row.append(t, del); right.appendChild(row);
         }
-        const removeSel = () => { if (!sel) return; editing(L => { L.items.splice(L.items.indexOf(sel), 1); }); sel = null; panel(); };
+        const removeSel = () => { if (!sel) return; if (carry && carry.it === sel) { carry = null; lockTile = null; } if (layout().items.indexOf(sel) < 0) { sel = null; panel(); return; } editing(L => { L.items.splice(L.items.indexOf(sel), 1); }); sel = null; panel(); };
         function turnThing(it) {
             const q = turned(it); if (!q) { say("This one looks the same from every side."); return; }
             if (!fits(roomNow(), q, it)) { say("There isn't room to turn it there."); return; }
@@ -192,6 +192,19 @@
             for (const e of ["x", "y"]) for (const t of V.arrowTiles(r, e)) if (solid.has(t[0] + "," + t[1])) msgs.push("Something stands on a way in.");
             if (!r.items.some(i => i.k === "ledger")) msgs.push("No ledger, so nowhere to read about the maze.");
             if (!r.items.some(i => i.k === "album")) msgs.push("No album, so the pictures can't all be seen.");
+            /* can you get to it? */
+            const way = [...V.arrowTiles(r, "x"), ...V.arrowTiles(r, "y")].find(t => !solid.has(t[0] + "," + t[1]));
+            if (way) {
+                const reach = (x, y) => (x === way[0] && y === way[1]) || !!V.route(r, way, [x, y]), free = (x, y) => x >= 0 && y >= 0 && x < r.w && y < r.h && !solid.has(x + "," + y);
+                for (const it of r.items) {
+                    if (it.k !== "ledger" && it.k !== "album" && it.k !== "frame") continue;
+                    const out = [], f = V.footprint(it);
+                    if (it.k === "frame") { const t = Math.floor(it.at); for (const a of [t, t - 1, t + 1]) for (const d of [0, 1]) out.push(it.wall === "l" ? [d, a] : [a, d]); }
+                    else if (f) for (let x = f[0] - 1; x <= f[0] + f[2]; x++) for (let y = f[1] - 1; y <= f[1] + f[3]; y++) out.push([x, y]);
+                    if (!out.some(q => free(q[0], q[1]) && reach(q[0], q[1]))) msgs.push(it.k === "frame" ? "A picture has nowhere to stand in front of it. It opens from across the room." : "The " + it.k + " can't be walked up to.");
+                }
+            }
+            const slots = r.items.filter(q => q.k === "frame").map(q => q.slot); if (new Set(slots).size !== slots.length) msgs.push("Two pictures on the wall show the same picture.");
             for (const m of [...new Set(msgs)]) issues.appendChild(el("p", "", m));
         }
 
@@ -226,19 +239,26 @@
             if (!e.ctrlKey && !e.metaKey) { endLift(); ctrlY = null; ctrlSpare = 0; lockTile = null; return false; }
             const dragged = drag && drag.kind === "move" ? drag.it : null, held = carry ? carry.item : null, placing = tool && !drag && !V.isWall(tool), selected = !dragged && !held && !placing && !drag && sel && !V.isRug(sel) ? sel : null;
             if (!dragged && !held && !placing && !selected) return false;
-            if (ctrlY === null) { ctrlY = e.clientY; lockTile = mouse ? V.tileAt(roomNow(), mouse[0], mouse[1]) : null; return true; }
+            if (ctrlY === null) { ctrlY = e.clientY; ctrlFrom = [e.clientX, e.clientY]; ctrlArmed = false; lockTile = mouse ? V.tileAt(roomNow(), mouse[0], mouse[1]) : null; return true; }
+            if (!ctrlArmed) {
+                const dx = Math.abs(e.clientX - ctrlFrom[0]), dy = Math.abs(e.clientY - ctrlFrom[1]);
+                if (dx < 4 && dy < 4) return true;
+                if (dx > dy && selected) { ctrlFrom = [e.clientX, e.clientY]; ctrlY = e.clientY; return false; }       // heading across, perhaps to Ctrl-click something else
+                ctrlArmed = true; ctrlY = e.clientY;
+            }
             /* the piece follows the mouse: a pixel of the room for each pixel moved on the screen */
             ctrlSpare += (ctrlY - e.clientY) / zoom; ctrlY = e.clientY;
             const steps = Math.trunc(ctrlSpare); if (!steps) return true;
             ctrlSpare -= steps;
             if (selected && !lifting) { lifting = true; editingNoCommit(); }
             const it = dragged || held || (selected ? sel : null);
-            if (it && V.isWall(it)) { if (it.k !== "window") { it.up = clampUp(it, (it.up || 0) + steps); say("Height on the wall: " + it.up); showHeight(it.up); } }
+            if (it && V.isWall(it)) { if (it.k !== "window") { const fromUp = held ? heldUpNow(it) : it.up || 0; it.up = clampUp(it, fromUp + steps); if (held) carry.upKept = it.up; say("Height on the wall: " + it.up); showHeight(it.up); } }
             else if (it) { if (V.isRug(it)) return true; const v = Math.max(0, Math.min(Z_MAX, (it.z || 0) + steps)); if (v) it.z = v; else delete it.z; say("Height: " + v); showHeight(v); }
             else { placeZ = Math.max(0, Math.min(Z_MAX, placeZ + steps)); say("Height: " + placeZ); }
             if (dragged) drag.moved = true;
             return true;
         }
+        const heldUpNow = it => carry && carry.upKept !== undefined ? carry.upKept : it.up || 0;
         const showHeight = v => { if (heightBox && document.activeElement !== heightBox) heightBox.value = v; };
         const endLift = () => { if (!lifting) return; lifting = false; say(""); commit(); panel(); };
 
@@ -246,6 +266,7 @@
         c.addEventListener("contextmenu", e => e.preventDefault());
         function place(it) {
             const r = roomNow(); if (!fits(r, it)) { say("There isn't room for that here."); paintSoon(); return; }
+            if (it.k === "frame") { const used = new Set(r.items.filter(q => q.k === "frame").map(q => q.slot)); let n = 0; while (used.has(n)) n++; it.slot = n; }
             editing(L => { if (V.isRug(it)) L.items.unshift(it); else L.items.push(it); }); if (!placeZ) say("");
         }
         c.addEventListener("pointerdown", e => {
@@ -266,7 +287,10 @@
             if (e.shiftKey && it) { turnThing(it); return; }
             if (e.altKey && it) { sel = it; carry = { it, item: { ...it } }; say("Carrying. Click to put it down, Esc to cancel."); panel(); paintSoon(); return; }
             sel = it; panel(); paintSoon();
-            if (it) drag = { kind: "move", it, moved: false, began: false, from: t, x0: it.x, y0: it.y, ctrlAtStart: e.ctrlKey || e.metaKey };
+            if (it) {
+                drag = { kind: "move", it, moved: false, began: false, from: t, x0: it.x, y0: it.y, ctrlAtStart: e.ctrlKey || e.metaKey, at: p };
+                if (V.isWall(it)) { const c = it.wall === "l" ? V.scr(r, 0, it.at) : V.scr(r, it.at, 0), o = V.scr(r, 0, 0), up = it.k === "frame" ? (it.up || 0) + it.h / 2 : it.k === "window" ? 58 : it.up || 0; drag.grip = [p[0] - c[0], p[1] - (o[1] + it.at * 8 - up)]; }
+            }
         });
         /* the first real change of a drag: a step of undo, and the map's own copy to change */
         const beginDrag = () => { if (drag.began) return; drag.began = true; const idx = layout().items.indexOf(drag.it); before(); own(); drag.it = layout().items[idx]; sel = drag.it; };
@@ -277,7 +301,7 @@
             if (!ctrl) mouse = p;
             if (drag && drag.kind === "new") { drag.item = drag.base.k === "rug" ? rugFrom(drag.base, drag.a, [Math.max(0, Math.min(r.w - 1, t[0])), Math.max(0, Math.min(r.h - 1, t[1]))]) : runFrom(drag.base, drag.a, t); }
             else if (drag && !ctrl) {
-                if (V.isWall(drag.it)) { beginDrag(); hang(drag.it, wallPoint(r, p[0], p[1])); drag.moved = true; }
+                if (V.isWall(drag.it)) { if (!drag.moved && Math.hypot(p[0] - drag.at[0], p[1] - drag.at[1]) * zoom < 4) { paintSoon(); return; } beginDrag(); hang(drag.it, wallPoint(r, p[0] - drag.grip[0], p[1] - drag.grip[1])); drag.moved = true; }
                 else if (t[0] !== drag.from[0] || t[1] !== drag.from[1]) {
                     beginDrag(); const it = drag.it, q = { ...it, x: drag.x0 + t[0] - drag.from[0], y: drag.y0 + t[1] - drag.from[1] };
                     if (fits(r, q, it)) { it.x = q.x; it.y = q.y; drag.moved = true; }

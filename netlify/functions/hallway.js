@@ -22,6 +22,7 @@ const { SECURITY_HEADERS } = require("./_headers");
 const STORE = "hallway", MAX_MAP = 4 * 1024 * 1024, MAX_TILE = 3 * 1024 * 1024, HASH = /^[a-f0-9]{20}$/;
 const reply = (statusCode, body, extra) => ({ statusCode, headers: { ...SECURITY_HEADERS, "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store", ...(extra || {}) }, body: typeof body === "string" ? body : JSON.stringify(body) });
 const FIGURE = /^[a-z]{2}-\d+(-\d+)*(\.[a-z]{2}-\d+(-\d+)*)*$/;
+const USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36";
 const WATER = 1;      // the clear glass, as tools/hallway-editor/fetch-avatar.js
 async function avatarFrame(q) {
     const figure = String(q.av || ""), d = String(q.d), a = String(q.a), f = String(q.f || "0"), h = String(q.h || "");
@@ -30,11 +31,16 @@ async function avatarFrame(q) {
     const url = "https://www.habbo.com/habbo-imaging/avatarimage?" + new URLSearchParams({ figure, size: "s", direction: d, head_direction: d, action: action + item, frame: f, gesture: "sml" });
     const ctl = new AbortController(), t = setTimeout(() => ctl.abort(), 7000);
     try {
-        const r = await fetch(url, { signal: ctl.signal }); if (!r.ok) return reply(502, { error: "Habbo isn't answering" });
+        /* As the site's other asks of Habbo: its firewall answers a bare request with an error page. One more try on a bad answer. */
+        let r = await fetch(url, { signal: ctl.signal, headers: { "User-Agent": USER_AGENT, Accept: "image/png,image/*" } }); if (!r.ok && r.status !== 404) r = await fetch(url, { signal: ctl.signal, headers: { "User-Agent": USER_AGENT, Accept: "image/png,image/*" } });
+        if (!r.ok) return reply(502, { error: "Habbo isn't answering" });
         const b = Buffer.from(await r.arrayBuffer()); if (b.length < 8 || b.length > 200000 || b.readUInt32BE(0) !== 0x89504e47) return reply(502, { error: "Habbo isn't answering" });
-        return { statusCode: 200, isBase64Encoded: true, headers: { ...SECURITY_HEADERS, "Content-Type": "image/png", "Cache-Control": "public, max-age=604800", "Netlify-Vary": "query" }, body: b.toString("base64") };
+        return { statusCode: 200, isBase64Encoded: true, headers: { ...SECURITY_HEADERS, "Content-Type": "image/png", "Cache-Control": "public, max-age=604800", "Netlify-Vary": "query=av|d|a|h|f" }, body: b.toString("base64") };
     } catch (e) { return reply(502, { error: "Habbo isn't answering" }); } finally { clearTimeout(t); }
 }
+const sha = t => crypto.createHash("sha1").update(t).digest("hex").slice(0, 20);
+/* The draft is read back straight after a save, so it has to be the newest, not a copy from the edge */
+const readDraft = async store => { try { return await store.get("draft", { type: "text", consistency: "strong" }); } catch (e) { return store.get("draft", { type: "text" }); } };
 const looksLikeMap = m => m && typeof m === "object" && Array.isArray(m.levels) && m.levels.length > 0 && m.levels.length < 40;
 
 exports.handler = async (event) => {
@@ -48,13 +54,16 @@ exports.handler = async (event) => {
             return { statusCode: 200, isBase64Encoded: true, headers: { ...SECURITY_HEADERS, "Content-Type": "image/png", "Cache-Control": "public, max-age=31536000, immutable", "Netlify-Vary": "query=tile" }, body: Buffer.from(data).toString("base64") };
         }
         if (q.what === "live" || q.what === "map") {
-            const text = await store.get(q.what === "live" ? "manifest" : "map", { type: "text" });
+            let key = q.what === "live" ? "manifest" : "map";
+            /* The map belonging to the version the page was told about, else to the version that's live. Maps from before they were kept by version are under "map". */
+            if (q.what === "map") { let v = /^[a-f0-9]{16}$/.test(q.v || "") ? q.v : null; if (!v) { const man = await store.get("manifest", { type: "json" }); v = man && man.mapVersion; } if (v) { const t = await store.get("map/" + v, { type: "text" }); if (t) return reply(200, t, { "Cache-Control": "public, max-age=0, must-revalidate" }); } }
+            const text = await store.get(key, { type: "text" });
             if (!text) return reply(404, { error: "Nothing published here yet" });
             return reply(200, text, { "Cache-Control": "public, max-age=0, must-revalidate" });
         }
         if (q.what === "draft" || q.what === "known") {
             if (!(await auth.hasLiveSession(event))) return auth.UNAUTHORIZED;
-            if (q.what === "draft") { const text = await store.get("draft", { type: "text" }); return reply(200, text || "null"); }
+            if (q.what === "draft") { const text = await readDraft(store); return reply(200, text || "null"); }
             const { blobs } = await store.list({ prefix: "tile/" });
             return reply(200, { known: blobs.map(b => b.key.slice(5)) });
         }
@@ -62,12 +71,17 @@ exports.handler = async (event) => {
     }
     if (event.httpMethod !== "POST") return reply(405, { error: "Method not allowed" });
     /* The owner and the admins, not a read-only role; and it goes in the Warren's action log, as every write does */
+    let body; try { body = JSON.parse(event.body || "{}"); } catch (e) { body = null; }
+    /* One line in the log for a publish, not one for each of its pictures */
+    if (body && body.action === "tile") event.quietWrite = true;
     if (!(await auth.canWrite(event))) return await auth.refuseWrite(event);
-    let body; try { body = JSON.parse(event.body || "{}"); } catch (e) { return reply(400, { error: "Not JSON" }); }
+    if (!body) return reply(400, { error: "Not JSON" });
 
     if (body.action === "draft") {
         if (!looksLikeMap(body.map)) return reply(400, { error: "Not a map" });
         const text = JSON.stringify(body.map); if (text.length > MAX_MAP) return reply(413, { error: "That map is too big" });
+        /* Saved from somewhere else since this copy was opened: the editor asks before replacing it */
+        if (body.base && !body.force) { const was = await readDraft(store); if (was && sha(was) !== body.base && was !== text) return reply(409, { error: "It's been saved from somewhere else" }); }
         await store.set("draft", text);
         return reply(200, { saved: true, at: Date.now() });
     }
@@ -84,15 +98,24 @@ exports.handler = async (event) => {
         const m = body.manifest;
         if (!looksLikeMap(body.map) || !m || typeof m.tiles !== "object" || typeof m.lift !== "object") return reply(400, { error: "Not something to publish" });
         const mapText = JSON.stringify(body.map); if (mapText.length > MAX_MAP) return reply(413, { error: "That map is too big" });
+        if (body.base) { const was = await readDraft(store); if (was && sha(was) !== body.base && was !== mapText) return reply(409, { error: "It's been saved from somewhere else" }); }
         /* Every picture it names has to be here, or visitors get holes */
         const { blobs } = await store.list({ prefix: "tile/" }), have = new Set(blobs.map(b => b.key.slice(5)));
         const named = [...Object.values(m.tiles), ...Object.values(m.lift)];
         for (const h of named) if (!HASH.test(String(h)) || !have.has(h)) return reply(400, { error: "A picture is missing: " + h });
         const version = crypto.createHash("sha1").update(mapText + JSON.stringify(m.tiles)).digest("hex").slice(0, 16), publishedAt = new Date().toISOString();
-        await store.set("map", mapText);
-        await store.set("manifest", JSON.stringify({ version, tile: m.tile || 512, moods: m.moods || [], publishedAt, online: true, tiles: m.tiles, lift: m.lift }));
-        /* Pictures nothing names any more go, keeping the store from growing for ever */
-        const keep = new Set(named); for (const h of have) if (!keep.has(h)) await store.delete("tile/" + h);
+        /* The map first under its own version, then the one write that makes both live: a failure in between changes nothing visitors see */
+        await store.set("map/" + version, mapText);
+        await store.set("manifest", JSON.stringify({ version, mapVersion: version, tile: m.tile || 512, moods: m.moods || [], publishedAt, online: true, tiles: m.tiles, lift: m.lift }));
+        /* It's live, so nothing past here can make this a failure. Pages open on the last few publishes still ask for their pictures, so those stay; what's older goes, a few at a time, and anything left is tried again next time. */
+        try {
+            const recent = (await store.get("recent", { type: "json" }).catch(() => null)) || [], now = [{ version, tiles: named }, ...recent.filter(r => r && r.version !== version)].slice(0, 3);
+            await store.set("recent", JSON.stringify(now));
+            const keep = new Set(now.flatMap(r => r.tiles || [])), gone = [...have].filter(h => !keep.has(h)), until = Date.now() + 4000;
+            for (let i = 0; i < gone.length && Date.now() < until; i += 12) await Promise.all(gone.slice(i, i + 12).map(h => store.delete("tile/" + h)));
+            const { blobs: maps } = await store.list({ prefix: "map/" }), keepMaps = new Set(now.map(r => "map/" + r.version));
+            await Promise.all(maps.filter(b => !keepMaps.has(b.key)).slice(0, 12).map(b => store.delete(b.key)));
+        } catch (e) { console.error("hallway tidy-up", e); }
         return reply(200, { published: true, version, publishedAt });
     }
     return reply(400, { error: "No such action" });

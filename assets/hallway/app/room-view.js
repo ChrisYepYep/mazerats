@@ -272,7 +272,7 @@
     /* What a pixel is on, nearest first, furniture by its painted box. Used for walking up to things and by the editor */
     function itemAt(r, X, Y) {
         const hit = it => {
-            if (it.k === "frame") { const c = it.wall === "l" ? scr(r, 0, it.at) : scr(r, it.at, 0), u = X - c[0], sl = it.wall === "l" ? -.5 : .5, h = c[1] + u * sl - Y; return Math.abs(u) <= it.w / 2 + FRAME && h >= it.up && h <= it.up + it.h + FRAME * 2; }
+            if (it.k === "frame") { const c = it.wall === "l" ? scr(r, 0, it.at) : scr(r, it.at, 0), W = it.w + FRAME * 2, Hh = it.h + FRAME * 2, sl = it.wall === "l" ? -.5 : .5, lx = X - (c[0] - W / 2), ly = Y - (c[1] - it.up - Hh) - sl * lx; return lx >= 0 && lx <= W && ly >= 0 && ly <= Hh; }      // the same slant drawFrame draws it on
             if (it.k === "window") { const c = it.wall === "l" ? scr(r, 0, it.at) : scr(r, it.at, 0), u = X - c[0], h = c[1] + (it.wall === "l" ? -u / 2 : u / 2) - Y; return Math.abs(u) < 12 && h > 16 && h < 100; }
             if (it.k === "painting" || it.k === "sconce") { const c = it.wall === "l" ? scr(r, 0, it.at) : scr(r, it.at, 0), u = X - c[0], h = c[1] + (it.wall === "l" ? -u / 2 : u / 2) - it.up - Y; return it.k === "sconce" ? Math.abs(u) < 12 && Math.abs(h) < 14 : Math.abs(u) < 28 && Math.abs(h) < 32; }
             if (it.k === "rugRound") { const s = scr(r, it.x + .5, it.y + .5), a = (X - s[0]) / 53, b = (Y - s[1]) / 27; return a * a + b * b <= 1; }
@@ -320,7 +320,7 @@
     }
     const hashText = s => { let h = 0; for (const ch of String(s)) h = Math.imul(h, 31) + ch.charCodeAt(0) | 0; return h >>> 0; };
     let archive = null;
-    const mazes = () => archive || (archive = fetch((window.HALLWAY_PLAY || window.HALLWAY_EDIT) ? "/.netlify/functions/rooms" : "/api/archive").then(r => r.json()).then(j => j.rooms || j).catch(() => { archive = null; return []; }));
+    const mazes = () => archive || (archive = fetch((window.HALLWAY_PLAY || window.HALLWAY_EDIT) ? "/.netlify/functions/rooms" : "/api/archive").then(r => { if (!r.ok) throw new Error("archive " + r.status); return r.json(); }).then(j => { const list = j.rooms || j; if (!Array.isArray(list)) throw new Error("no list"); return list; }).catch(() => { archive = null; return []; }));
 
     /* ---------- the book: what opens when you walk up to the ledger or an album ---------- */
     const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text !== undefined) e.textContent = text; return e; };
@@ -334,7 +334,7 @@
         bar.appendChild(el("h2", "", p.label || title)); x.type = "button"; x.setAttribute("aria-label", "Close"); close.src = "art/rooms/modal_topclose_x.png"; close.alt = ""; x.appendChild(close); bar.appendChild(x);
         i.alt = p.label || ""; frame.appendChild(i); win.append(bar, frame); back.appendChild(win); host.appendChild(back);
         const shut = () => { back.remove(); document.removeEventListener("keydown", key, true); if (onClose) onClose(); };
-        const key = e => { e.stopImmediatePropagation(); if (e.key === "Escape") shut(); };
+        const key = e => { if (back.hidden) return; e.stopImmediatePropagation(); if (e.key === "Escape") shut(); };      // not until it's showing
         document.addEventListener("keydown", key, true);
         x.addEventListener("click", shut); back.addEventListener("click", e => { if (e.target === back) shut(); });
         i.onload = () => { i.width = Math.max(1, Math.floor(i.naturalWidth / 2)); i.height = Math.max(1, Math.floor(i.naturalHeight / 2)); back.hidden = false; };
@@ -346,12 +346,12 @@
         if (what.kind === "picture") return pictureWindow(host, what.pic, facts.name, onClose);
         const back = el("div", "rb-back"), book = el("div", "rb-book"), left = el("div", "rb-page"), right = el("div", "rb-page"); back.setAttribute("role", "dialog"); back.setAttribute("aria-label", what.kind === "ledger" ? "The ledger" : "An album");
         book.append(left, right); back.appendChild(book); const close = el("button", "mr-btn rb-close", "Close"); close.type = "button"; back.appendChild(close); host.appendChild(back);
-        const fit = () => { book.style.zoom = host.clientWidth >= 860 && host.clientHeight >= 580 ? 2 : 1; }; fit(); addEventListener("resize", fit);
+        const fit = () => { book.style.zoom = host.clientWidth >= 980 && host.clientHeight >= 580 ? 2 : 1; }; fit(); addEventListener("resize", fit);
         let shutPic = null;
-        const shut = () => { if (shutPic) shutPic(); back.remove(); removeEventListener("resize", fit); document.removeEventListener("keydown", key); if (onClose) onClose(); };
+        const shut = () => { if (shutPic) shutPic(); back.remove(); removeEventListener("resize", fit); document.removeEventListener("keydown", key, true); if (onClose) onClose(); };
         close.addEventListener("click", shut); back.addEventListener("click", e => { if (e.target === back) shut(); });
-        const key = e => { if (e.key === "Escape") shut(); if (e.key === "ArrowRight") turn(1); if (e.key === "ArrowLeft") turn(-1); }; document.addEventListener("keydown", key);
-        const figure = p => { const f = el("figure", "rb-pic"), i = el("img"); i.src = p.url; i.alt = p.label || ""; i.loading = "lazy"; f.appendChild(i); if (p.label) f.appendChild(el("figcaption", "", p.label)); f.addEventListener("click", () => { shutPic = pictureWindow(back, p, facts.name, () => { shutPic = null; }); }); return f; };
+        const key = e => { if (shutPic) return; if (e.key === "Escape" || e.key === "ArrowRight" || e.key === "ArrowLeft") e.stopPropagation(); if (e.key === "Escape") shut(); if (e.key === "ArrowRight") turn(2); if (e.key === "ArrowLeft") turn(-2); }; document.addEventListener("keydown", key, true);
+        const figure = p => { const f = el("figure", "rb-pic"), i = el("img"); i.src = p.url; i.alt = p.label || ""; i.loading = "lazy"; f.appendChild(i); if (p.label) f.appendChild(el("figcaption", "", p.label)); f.addEventListener("click", () => { if (shutPic) return; shutPic = pictureWindow(back, p, facts.name, () => { shutPic = null; }); }); return f; };
         /* the pages: each a function that fills one */
         let pages = [], page = 0;
         const body = host_ => { const b = el("div", "rb-body"); host_.appendChild(b); return b; };
@@ -375,14 +375,14 @@
             paint(); return shut;
         }
         /* The ledger: its facts, its write-up, and the entrance and finish opposite. Whatever doesn't fit carries on over the page, measured, so none of it is ever cut off */
-        const m = facts.m, rows = [["Status", m.status], ["Difficulty", String(m.difficulty || "").replace(/-/g, " ")], ["Hotel", m.hotel], ["Archived", m.added], ["Pictures", (m.gallery || []).length], ["Type", (m.tags || []).map(t => String(t).toLowerCase()).join(", ")]];
+        const m = facts.m, rows = [["Status", m.status], ["Difficulty", String(m.difficulty || "").replace(/-/g, " ")], ["Hotel", m.hotel], ["Archived", m.added], ["Pictures", facts.pictures.length], ["Type", (m.tags || []).map(t => String(t).toLowerCase()).join(", ")]];
         const head = b => { b.appendChild(el("h2", "", facts.name)); b.appendChild(el("p", "rb-by", "Built by " + (m.creator || "unknown"))); const dl = el("dl"); for (const [k, v] of rows) if (v !== undefined && v !== "" && v !== null) { dl.appendChild(el("dt", "", k)); dl.appendChild(el("dd", "", String(v))); } b.appendChild(dl); };
         const lead = clean(m.description), more = clean(m.details), text = more && lead && !more.startsWith(lead.slice(0, 30)) ? lead + "\n\n" + more : (more || lead);
         const pics = []; if (m.entrance && m.entrance.image) pics.push({ url: picUrl(m.entrance.image), label: "The entrance" }); if (m.finish && m.finish.image) pics.push({ url: picUrl(m.finish.image), label: "The finish" }); if (!pics.length && facts.pictures[0]) pics.push(facts.pictures[0]);
         const picsPage = b => { const w = el("div", "rb-two"); pics.forEach(p => w.appendChild(figure(p))); b.appendChild(w); };
         /* how many of these words fit on a page, by trying them */
         const words = text.split(/(\s+)/), pageOf = (from, withHead) => {
-            left.textContent = ""; const b = body(left); if (withHead) head(b); const p = el("p", "rb-text"); b.appendChild(p);
+            left.textContent = ""; const b = body(left); left.appendChild(el("div", "rb-foot")); if (withHead) head(b); const p = el("p", "rb-text"); if (!withHead) p.style.paddingRight = "3px"; b.appendChild(p);
             const fits = n => { p.textContent = words.slice(from, n).join("").trimStart(); return b.scrollHeight <= b.clientHeight; };
             let lo = from, hi = words.length; if (fits(hi)) return hi;
             while (hi - lo > 1) { const mid = (lo + hi) >> 1; if (fits(mid)) lo = mid; else hi = mid; }
@@ -405,16 +405,17 @@
         const r = opts.room, facts = opts.facts, edge = opts.edge, c = document.createElement("canvas"); c.className = "room-view"; host.appendChild(c);
         /* whose room this is, in the dark to its left */
         const label = el("div", "room-label"), nameLine = el("div", "", facts.name), ownerLine = el("div", "room-owner", String(facts.m.creator || "")); label.append(nameLine, ownerLine); host.appendChild(label);
-        const placeLabel = v => { const room = v.x, room2 = v.y + s0h(v) / 2, roomy = room >= 150; label.classList.toggle("is-tight", !roomy); label.style.left = roomy ? (room - 16) + "px" : ""; label.style.top = roomy ? room2 + "px" : ""; };
+        const placeLabel = v => { const room = v.x, room2 = v.y + s0h(v) / 2, roomy = room >= 216; label.classList.toggle("is-tight", !roomy); label.style.left = roomy ? (room - 16) + "px" : ""; label.style.top = roomy ? room2 + "px" : ""; };
         const s0h = v => sizeOf(r).h * v.z;
         const ctx = c.getContext("2d"), s = sizeOf(r), buf = document.createElement("canvas"); buf.width = s.w; buf.height = s.h; const bx = buf.getContext("2d");
         /* you come in over the arrow and stop just past it, or on it if something stands there */
         const ex = exitTiles(r, edge), start = ex[0], solidNow = solidSet(r), past = d => edge === "y" ? [start[0], start[1] - d] : [start[0] - d, start[1]], inward = !solidNow.has(past(2) + "") ? past(2) : past(1);
         const w = { x: start[0], y: start[1], dir: edge === "y" ? 0 : 6, frame: 0, walking: false, pts: [], then: null, last: 0 };
         let hover = null, dead = false, bookOpen = null, raf = 0, moved = false;
-        const place = () => { const z = opts.zoom(), W = host.clientWidth, H = host.clientHeight; c.width = W; c.height = H; const v = { z, x: Math.round((W - s.w * z) / 2), y: Math.round((H - s.h * z) / 2) }; placeLabel(v); return v; };
+        const zoomNow = () => Math.max(1, Math.min(opts.zoom(), Math.floor(Math.min(host.clientWidth / s.w, host.clientHeight / s.h)) || 1));      // no looking around in a room, so it's never bigger than the stage
+        const place = () => { const z = zoomNow(), W = host.clientWidth, H = host.clientHeight; c.width = W; c.height = H; const v = { z, x: Math.round((W - s.w * z) / 2), y: Math.round((H - s.h * z) / 2) }; placeLabel(v); return v; };
         let view = place();
-        const paint = now => { if (dead) return; view = (c.width !== host.clientWidth || c.height !== host.clientHeight || view.z !== opts.zoom()) ? place() : view; bx.clearRect(0, 0, s.w, s.h); paintRoom(bx, r, { facts, walker: w, hover, edges: [edge], now }); ctx.imageSmoothingEnabled = false; ctx.fillStyle = "#000"; ctx.fillRect(0, 0, c.width, c.height); ctx.drawImage(buf, view.x, view.y, s.w * view.z, s.h * view.z); };
+        const paint = now => { if (dead) return; view = (c.width !== host.clientWidth || c.height !== host.clientHeight || view.z !== zoomNow()) ? place() : view; bx.clearRect(0, 0, s.w, s.h); paintRoom(bx, r, { facts, walker: w, hover, edges: [edge], now }); ctx.imageSmoothingEnabled = false; ctx.fillStyle = "#000"; ctx.fillRect(0, 0, c.width, c.height); ctx.drawImage(buf, view.x, view.y, s.w * view.z, s.h * view.z); };
         const loop = now => { if (dead) return; if (w.walking) step(now); paint(now); raf = requestAnimationFrame(loop); };
         const step = now => {
             const dt = Math.min(200, now - w.last); w.last = now; let budget = dt / MS_PER_TILE;
@@ -429,7 +430,7 @@
             if (!w.pts.length) { w.walking = false; const t = w.then; w.then = null; if (t) t(); else arrived(); }
         };
         const arrived = () => { if (moved && ex.some(t => t[0] === w.x && t[1] === w.y) && opts.onLeave) { const f = opts.onLeave; opts.onLeave = null; f(); } };
-        const go = (to, then) => { const from = [Math.round(w.x), Math.round(w.y)], p = route(r, from, to); if (!p) return false; w.pts = p; w.then = then || null; if (!p.length) { if (then) then(); else arrived(); return true; } if (!w.walking) { w.walking = true; w.last = performance.now(); } return true; };
+        const go = (to, then) => { const from = [Math.round(w.x), Math.round(w.y)], p = route(r, from, to); if (!p) return false; if (!p.length) { w.pts = []; w.then = null; w.walking = false; w.x = from[0]; w.y = from[1]; if (then) then(); else arrived(); return true; } w.pts = p; w.then = then || null; if (!w.walking) { w.walking = true; w.last = performance.now(); } return true; };
         const toPx = e => { const b = c.getBoundingClientRect(); return [(e.clientX - b.left - view.x) / view.z, (e.clientY - b.top - view.y) / view.z]; };
         /* walk up to a thing: the nearest free tile touching it, then it opens */
         const spots = it => {
@@ -441,6 +442,7 @@
         const useIt = it => {
             const from = [Math.round(w.x), Math.round(w.y)]; let best = null;
             for (const q of spots(it)) { const p = (q[0] === from[0] && q[1] === from[1]) ? [] : route(r, from, q); if (p && (!best || p.length < best.p.length)) best = { q, p }; }
+            if (!best) { for (let x = 0; x < r.w; x++) for (let y = 0; y < r.h; y++) { const f = footprint(it), cx = f ? f[0] + f[2] / 2 : it.wall === "l" ? 0 : it.at, cy = f ? f[1] + f[3] / 2 : it.wall === "l" ? it.at : 0, d = Math.hypot(x + .5 - cx, y + .5 - cy); if (best && d >= best.d) continue; const p = (x === from[0] && y === from[1]) ? [] : route(r, from, [x, y]); if (p) best = { q: [x, y], p, d }; } }
             if (!best) return;
             go(best.q, () => {
                 const f = footprint(it); if (f) { const face = DIRS.findIndex(q => q[0] === Math.sign(Math.max(f[0], Math.min(f[0] + f[2] - 1, w.x)) - w.x) && q[1] === Math.sign(Math.max(f[1], Math.min(f[1] + f[3] - 1, w.y)) - w.y)); if (face >= 0) w.dir = face; }
@@ -448,7 +450,7 @@
                 if (it.k === "ledger") what = { kind: "ledger" };
                 if (it.k === "album") { const a = albumsOf(r, facts).get(it); if (a) what = { kind: "album", album: a }; }
                 if (it.k === "frame") { const p = facts.slots[it.slot]; if (p) what = { kind: "picture", pic: p }; }
-                if (what) bookOpen = openBook(host, facts, what, () => { bookOpen = null; });
+                if (what && !bookOpen) bookOpen = openBook(host, facts, what, () => { bookOpen = null; });
             });
         };
         const usable = it => it && (it.k === "ledger" || (it.k === "album" && albumsOf(r, facts).has(it)) || (it.k === "frame" && facts.slots[it.slot]));
@@ -469,5 +471,5 @@
             test: { go, useIt, toPx }
         };
     }
-    const RoomView = window.RoomView = { load, layouts, roomFor, mazes, mazeFacts, enter, paintRoom, sizeOf, scr, tileAt, itemAt, footprint, exitTiles, arrowTiles, solidSet, isWall, isRug, floorPixel, FURNI, ghost, hallImg, indexOf: () => index, onArt: null, regs: null };
+    const RoomView = window.RoomView = { route, load, layouts, roomFor, mazes, mazeFacts, enter, paintRoom, sizeOf, scr, tileAt, itemAt, footprint, exitTiles, arrowTiles, solidSet, isWall, isRug, floorPixel, FURNI, ghost, hallImg, indexOf: () => index, onArt: null, regs: null };
 })();

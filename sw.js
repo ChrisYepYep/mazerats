@@ -154,6 +154,8 @@ function classify(req, url) {
     if (path === "/.netlify/images") return "pic";
     if (path.startsWith("/.netlify/")) return null;
     if (/^\/js\/[^/]+\.js$/.test(path) || /^\/css\/[^/]+\.css$/.test(path)) return "static";
+    // The Hallway's hundreds of pictures would push visitors' saved maze pictures out.
+    if (path.startsWith("/assets/hallway/")) return null;
     if (/^\/assets\/.+\.(?:png|gif|jpe?g|webp|svg|ico|woff2?|ttf)$/i.test(path)) return "pic";
     return null;
 }

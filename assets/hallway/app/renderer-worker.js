@@ -308,6 +308,7 @@ function wallRunX(w, x0, x1, y, o) {
             if (n++ >= limit) break;
             b.set(p[0] + i, p[1] - T + j, [im.rgba[s], im.rgba[s + 1], im.rgba[s + 2]]);
         }
+        const up = im.above && im.above[i]; if (up) for (const q of up) b.set(p[0] + i, p[1] - T + q[0], [q[1], q[2], q[3]]);
     };
     const half = o && o.half, none = o && o.none, gone = half && (at => half(at) || none(at)), ends = [], lowEnds = [], lowStarts = [];
     for (let x = Math.floor(x0 / 8) * 8; x < x1; x += 8) {
@@ -349,6 +350,7 @@ function wallRunY(w, x, y0, y1, o) {
             if (n++ >= limit) break;
             b.set(p[0] - W + i, p[1] - T + j, [im.rgba[s], im.rgba[s + 1], im.rgba[s + 2]]);
         }
+        const up = im.above && im.above[i]; if (up) for (const q of up) b.set(p[0] - W + i, p[1] - T + q[0], [q[1], q[2], q[3]]);
     };
     const half = o && o.half, none = o && o.none, gone = half && (at => half(at) || none(at)), ends = [], lowEnds = [], lowStarts = [];
     for (let y = Math.floor(y0 / 8) * 8; y < y1; y += 8) {
@@ -443,7 +445,7 @@ function door(w, x, y, o) {
                 if (h >= 1 && h <= 5) c = h === 5 ? C.b4 : (h === 1 ? C.b1 : C.b2);    // kick plate
             }
             /* handle on the free side */
-            if (u >= DW - 6 && u <= DW - 4 && h >= 28 && h <= 32) c = (h === 32) ? C.b5 : (u === DW - 6 ? C.b1 : C.b3);
+            if (u >= 5 && u <= 7 && h >= 28 && h <= 32) c = (h === 32) ? C.b5 : (u === 7 ? C.b1 : C.b3);
             if (o.hover && !fr) c = c.map((v, i) => Math.min(255, v + [26, 18, 4][i]));
         }
         if (c) b.set(P[0], P[1], c);
@@ -1759,7 +1761,7 @@ function flightUpToYou(w, o) {
                 if (r === rows && k < steps - 1) break;
                 const cc = c0 + (u + r + .5) / 16, dd = d0 + (r + .5) / 16; if (cc < c0 || cc >= c1) continue;
                 const uu = Math.floor((cc - c0) * 16), end = uu === 0 || uu === wide - 1, far = r === 0, onRug = cc >= ca && cc < cb, rc = onRug && rugAt(cc, k * 6 + r);
-                const col = far && k === 0 ? C.k : onRug ? (far ? dim(rc, .6) : rc) : far || end ? pq(.3) : r === 1 ? pq(1) : grainAt(alongY ? cc : dd, alongY ? dd : cc);
+                const col = far && k === 0 && !onRug ? C.k : onRug ? (far ? dim(rc, .6) : rc) : far || end ? pq(.3) : r === 1 ? pq(1) : grainAt(alongY ? cc : dd, alongY ? dd : cc);
                 w.b.set(p[0], p[1] + r, col);
             }
         }
@@ -1927,7 +1929,7 @@ function floorLamp(w, tx, ty, style, colour) {
     const kind = LAMP_STYLES[style] ? style : "hotel", p = w.S(tx + .5, ty + .5);
     w.sprites.push({ depth: tx + ty + .4, draw: () => {
         const bd = w.b, cx = p[0], cy = p[1], art = FloorLamps.pixels(kind, !!w.lightsOff, colour);
-        if (w.footShadows) w.footShadows.push([cx, cy]);
+        if (w.footShadows) w.footShadows.push([cx, cy, w.z]);
         for (const [dx, dy, c, g] of art.list) {
             const X = cx + dx, Y = cy + dy;
             bd.set(X, Y, c);
@@ -2122,7 +2124,7 @@ const TALLX = tallPiece(piece("wall_upper_right_basic"), true), TALLY = tallPiec
    8 tiles. Along the wall everything repeats 64 across and 32 down, so those columns are redrawn from further along it. A wall's
    true start still uses the client's own slanted cut. */
 function seamless(im, right) {
-    const o = { w: im.w, h: im.h, rgba: Buffer.from(im.rgba) }, N = 26, POST = 10, W = im.w - POST;
+    const o = { w: im.w, h: im.h, rgba: Buffer.from(im.rgba), above: {} }, N = 26, POST = 10, W = im.w - POST;
     /* both ends of the 128 columns of wall: x's run 0..127 with the post after, y's 10..137 with the post before */
     const first = right ? 0 : POST;
     for (let k = 0; k < N; k++) for (const [i, from] of [[first + k, first + k + 64], [first + W - 1 - k, first + W - 1 - k - 64]]) {
@@ -2132,6 +2134,8 @@ function seamless(im, right) {
             const q = (R * im.w + from) * 4;
             im.rgba.copy(o.rgba, (r * im.w + i) * 4, q, q + 4);
         }
+        /* the slant runs the top of these columns off the top of the piece: those rows are kept beside it */
+        for (let r = -Math.abs(rise); r < 0; r++) { const R = r + rise; if (R < 0 || R >= im.h) continue; const q = (R * im.w + from) * 4; if (im.rgba[q + 3] < 128) continue; (o.above[i] = o.above[i] || []).push([r, im.rgba[q], im.rgba[q + 1], im.rgba[q + 2]]); }
     }
     return o;
 }
@@ -2503,9 +2507,9 @@ function fromMap(map, names) {
             if (name) report.named++;
             P.dn.push({ d: [d.axis, d.at], name, sign: d.sign });
         }
-        for (const q of (l.lamps || [])) { const P = onWall(q.axis, q.at, q.line); if (P) P.l.push([q.axis, q.at, q.colour, q.style, q.h]); }
-        for (const q of (l.wallItems || [])) { const P = onWall(q.axis, q.at, q.line); if (P) P.wi.push(q); }
-        for (const p of (l.props || [])) { const run = Parts.tiles(p), end = run[run.length - 1], P = onLanding(p.x, p.y) || (Parts.ROWS[p.k] && at(end[0], end[1])) || at(p.x, p.y) || real2[0]; if (!P) continue; const c = new Set(l.cells), against = !c.has(Math.floor(p.x / 2) + "," + Math.floor((p.y - 2) / 2)) || !c.has(Math.floor((p.x - 2) / 2) + "," + Math.floor(p.y / 2)); P.props.push([p.k, p.x, p.y, !against, p.len, p.rot, p.style, p.colour, p.lights, p.lightUp]); }
+        for (const q of (l.lamps || [])) { const P = onWall(q.axis, q.at, q.line); if (P) P.l.push([q.axis, q.at, q.colour, q.style, q.h]); else report.lost.push("lamp " + q.axis + q.at + " on " + l.id); }
+        for (const q of (l.wallItems || [])) { const P = onWall(q.axis, q.at, q.line); if (P) P.wi.push(q); else report.lost.push((q.k || "wall item") + " " + q.axis + q.at + " on " + l.id); }
+        for (const p of (l.props || [])) { const run = Parts.tiles(p), end = run[run.length - 1], P = onLanding(p.x, p.y) || (Parts.ROWS[p.k] && at(end[0], end[1])) || at(p.x, p.y); if (!P) report.lost.push(p.k + " at " + p.x + "," + p.y + " on " + l.id); const P2 = P || real2[0]; if (!P2) continue; const c = new Set(l.cells), against = !c.has(Math.floor(p.x / 2) + "," + Math.floor((p.y - 2) / 2)) || !c.has(Math.floor((p.x - 2) / 2) + "," + Math.floor(p.y / 2)); P2.props.push([p.k, p.x, p.y, !against, p.len, p.rot, p.style, p.colour, p.lights, p.lightUp]); }
 
     }
     for (const q of (map.lifts || (map.lift ? [map.lift] : []))) {
@@ -2661,7 +2665,7 @@ function build(cfg) {
             const left = [...drawList]; drawList.length = 0;
             while (left.length) { let i = left.findIndex(A => !left.some(B => B !== A && isBehind(B, A))); if (i < 0) i = 0; drawList.push(left.splice(i, 1)[0]); }
         }
-        const raisedLater = uneven ? drawList.filter(q => q.z > lowest && !q.notch) : [];
+        const raisedLater = uneven ? drawList.filter(q => q.z > lowest) : [];
         for (const q of raisedLater) q.raised = true;
         {
             const behind = (A, B) => (A.x1 <= B.x0 && A.y0 < B.y1) || (A.y1 <= B.y0 && A.x0 < B.x1), left = [...raisedLater], sorted = [];
@@ -2689,7 +2693,7 @@ function build(cfg) {
             const hi = toYou ? near : back, lo = toYou ? back : near;
             if (hi <= lo || (cut !== null && hi > cut)) continue;
             const diff = hi - lo, onR = (X, Y) => (lv.rugs || []).some(r => X >= r.x0 && X < r.x1 && Y >= r.y0 && Y < r.y1);
-            let a0 = null, a1 = null; for (let t = st.a + 1; t < st.b - 1; t++) if (alongY ? onR(t, st.line) || onR(t, st.line - 1) : onR(st.line, t) || onR(st.line - 1, t)) { if (a0 === null) a0 = t; a1 = t + 1; }
+            let a0 = null, a1 = null; for (let t = st.a; t < st.b; t++) if (alongY ? onR(t, st.line) || onR(t, st.line - 1) : onR(st.line, t) || onR(st.line - 1, t)) { if (a0 === null) a0 = t; a1 = t + 1; }
             const count = Math.round(diff / STEP_R), reach = count * STEP_D, f = { axis: alongY ? "y" : "x", c0: st.a, c1: st.b, dTop: st.line, dStart: st.line - reach, steps: count, rise: STEP_R, tread: STEP_D, zB: lo, carpet: a0 === null ? null : [a0, a1], way: cfg.single || lv.way, tiled: true };
             const along = toYou ? Math.floor(st.line - reach) : st.line;
             const d0 = toYou ? Math.floor(st.line - reach) : st.line, d1 = toYou ? st.line : Math.ceil(st.line + reach);
@@ -2702,7 +2706,7 @@ function build(cfg) {
             let t = 0, px = Math.floor(x), py = Math.floor(y); const reach = (Z1 + 64) / 16;
             while (t < reach) {
                 const tx = px + 1 - x, ty = py + 1 - y, nt = Math.min(tx, ty) + 1e-6, X = Math.floor(x + nt), Y = Math.floor(y + nt), zz = z + nt * 16, Q = tileOf.get(X + "," + Y);
-                if (Q && !Q.notch) { if (zz <= Q.z) return false; if ((Y > py && backWall(X, Y) && zz <= Q.z + Z1) || (X > px && sideWall(X, Y) && zz <= Q.z + Z1)) return false; }
+                if (Q && !Q.notch) { if (zz <= Q.z) return false; if ((Y > py && backWall(X, Y) && zz <= Q.z + Z1 + 4) || (X > px && sideWall(X, Y) && zz <= Q.z + Z1 + 4)) return false; }      // a rail's pixels stand a little off the point tested
                 t = nt; px = X; py = Y;
             }
             return true;
@@ -3002,7 +3006,6 @@ function build(cfg) {
             for (const f of (P.sf || [])) {
                 if (!f.landing) {
                     flight(w, f);
-                    if (f.axis && !f.tiled) (lv.later = lv.later || []).push({ furni: true, depth: (f.axis === "y" ? f.c0 + f.dTop : f.dTop + f.c0) + 40, tx: f.axis === "y" ? f.c0 : Math.floor(f.dTop), ty: f.axis === "y" ? Math.floor(f.dTop) : f.c0, railsOf: P, draw: () => { const zUp = P.upLv.src ? P.z + Z1 : P.z + Z1; flightRails(w, railsFor(f, lv.patches), (x, y, col, c, d, z) => { if (z > zUp) return; const t = (zUp - z) / 16; if (P.upLv.tileSet.has(Math.floor(c + t) + "," + Math.floor(d + t))) return; if (seesRail(c, d, z)) layer.set(x, y, col); }); } });
                     continue;
                 }
                 const L = f.landing, zs = w.z; w.z = L.z;
@@ -3043,7 +3046,19 @@ function build(cfg) {
             if (!f.axis || f.tiled) continue; const zUp = P.z + Z1;
             (lv.later = lv.later || []).push({ furni: true, depth: -1e6, tx: f.axis === "y" ? f.c0 : Math.floor(f.dTop), ty: f.axis === "y" ? Math.floor(f.dTop) : f.c0, draw: () => flightRails(w, railsFor(f, q.patches), (x, y, col, c, d, z) => { if (z > zUp) layer.set(x, y, col); }) });
         }
-        for (const P of raisedLater) { w.z = P.z; w.sprites = []; queueScenery(P); P.queued = true; }
+        /* The stair rails go in the one queue before anything is drawn: a stairwell can be drawn from that queue itself, and what's added to it by then is never reached */
+        for (const P of drawList) if (P.notch && P.upLv && (!P.raised || raisedLater.includes(P))) {
+            const up = P.upLv; if (!up.tileSet) { up.tileSet = new Set(); for (const q of up.patches) if (!q.notch) for (let X = q.x0; X < q.x1; X++) for (let Y = q.y0; Y < q.y1; Y++) up.tileSet.add(X + "," + Y); }
+            const landings = (P.sf || []).filter(f => f.landing).map(f => f.landing);
+            for (const f of (P.sf || [])) if (!f.landing && f.axis && !f.tiled) (lv.later = lv.later || []).push({ furni: true, depth: (f.axis === "y" ? f.c0 + f.dTop : f.dTop + f.c0) + 40, tx: f.axis === "y" ? f.c0 : Math.floor(f.dTop), ty: f.axis === "y" ? Math.floor(f.dTop) : f.c0, railsOf: P, draw: () => { const zUp = P.z + Z1; flightRails(w, railsFor(f, lv.patches), (x, y, col, c, d, z) => {
+                if (z > zUp) return; const t = (zUp - z) / 16; if (P.upLv.tileSet.has(Math.floor(c + t) + "," + Math.floor(d + t))) return; if (!seesRail(c, d, z)) return;
+                /* what stands on the landing and nearer than this bit of rail stays in front of it */
+                if (x >= 0 && y >= 0 && x < bw && y < bh) { const i = y * bw + x, fx = furniX[i]; if (fx !== NO_FURNI) { const fy = furniY[i]; if (landings.some(L => fx >= L.x0 && fx < L.x1 && fy >= L.y0 && fy < L.y1) && fx + fy + 2 > c + d) return; } }
+                layer.set(x, y, col);
+            }); } });
+        }
+        /* a landing's things are drawn with the landing, as part of it, so only the other parts' go in the queue */
+        for (const P of raisedLater) { if (P.notch && (P.sf || []).some(f => f.landing)) continue; w.z = P.z; w.sprites = []; queueScenery(P); P.queued = true; }
         for (const P of drawList) if (!P.raised) drawPatch(P);
         delete layer.set;
         const later = lv.later ? lv.later.sort((a, c) => a.depth - c.depth || (a.ty || 0) - (c.ty || 0)) : [];
@@ -3077,14 +3092,20 @@ function build(cfg) {
         w.z = lowest; later.forEach(drawSprite);
         /* A wall with a floor above it, whose edge lies right along the wall's top, goes straight up under that floor with no cap of its own, however low its own floor is:
            from the bottom of the upper floor's edge down to where the plain wallpaper starts, the wallpaper's own repeat, taken from further down the same column. */
+        /* what has been painted over since is not furniture or a lamp any more, or it would keep old wall from being tidied below */
+        for (let i = 0; i < furniX.length; i++) if (furniX[i] !== NO_FURNI) { const p = i * 4; if (((layer.d[p] << 16) | (layer.d[p + 1] << 8) | layer.d[p + 2]) !== furniC[i]) furniX[i] = NO_FURNI; }
+        for (const [i, c] of lampPx) { const p = i * 4; if (((layer.d[p] << 16) | (layer.d[p + 1] << 8) | layer.d[p + 2]) !== c) lampPx.delete(i); }
         if (aboveLv && !lv.closed) {
             const upSet = new Set(); for (const q of aboveLv.patches) if (!q.notch) for (let X = q.x0; X < q.x1; X++) for (let Y = q.y0; Y < q.y1; Y++) upSet.add(X + "," + Y);
             const upBase = aboveLv.src.k * Z1, upRise = (X, Y) => (aboveLv.src.rise && aboveLv.src.rise[Math.floor(X / 2) + "," + Math.floor(Y / 2)]) || 0, REPEAT = 18, EDGE_ROWS = 13, CAP_ROWS = 24;
             const fill = (sx, y0, y1) => {
                 if (sx < 0 || sx >= bw) return;
                 for (let y = Math.max(0, y0); y <= y1 && y < bh; y++) {
-                    let yy = y; while (yy <= y1) yy += REPEAT; if (yy >= bh) continue;
-                    const i = y * bw + sx, j = yy * bw + sx; if (furniX[i] !== NO_FURNI || furniX[j] !== NO_FURNI || lampPx.has(i) || lampPx.has(j)) continue;
+                    let yy = y; while (yy <= y1) yy += REPEAT;
+                    const i = y * bw + sx; if (furniX[i] !== NO_FURNI || lampPx.has(i)) continue;
+                    /* a lamp or furniture on the repeat: the next repeat down has the same wallpaper */
+                    while (yy < bh && (furniX[yy * bw + sx] !== NO_FURNI || lampPx.has(yy * bw + sx))) yy += REPEAT;
+                    if (yy >= bh) continue; const j = yy * bw + sx;
                     const a = j * 4, b2 = i * 4; if (layer.d[a] === VOID[0] && layer.d[a + 1] === VOID[1] && layer.d[a + 2] === VOID[2]) continue;
                     layer.d[b2] = layer.d[a]; layer.d[b2 + 1] = layer.d[a + 1]; layer.d[b2 + 2] = layer.d[a + 2];
                     if (wallTag) { wallTag[i] = wallTag[j]; wallC[i] = wallC[j]; }
@@ -3162,7 +3183,7 @@ function build(cfg) {
             const inSight = (x, y, z) => { let t = 0, px = Math.floor(x), py = Math.floor(y); while (t < 8) { const tx = px + 1 - x, ty = py + 1 - y, nt = Math.min(tx, ty) + 1e-6, X = Math.floor(x + nt), Y = Math.floor(y + nt), Q = tileOf.get(X + "," + Y); if (Q && !Q.notch && z + nt * 16 < Q.z) return false; t = nt; px = X; py = Y; } return true; };
             /* one edge, one junction: along +1 on screen from the junction into the lower floor, or -1 */
             const wedge = (axis, line, at, dir, lo, hi) => {
-                const drop = hi - lo, L = Math.min(96, Math.max(24, drop * 3));
+                const drop = hi - lo, L = Math.min(48, Math.max(24, drop * 3));      // a big drop is steep, or the slope hides tiles you can walk on
                 for (let n = 0; n < L; n++) {
                     /* n pixels along from the junction: u is the screen column from the point (at, line) */
                     const u = dir > 0 ? n : -1 - n, along = axis === "x" ? (u + .5) / 16 : -(u + .5) / 16;
@@ -3195,9 +3216,9 @@ function build(cfg) {
         for (const [i, c] of lampPx) { const p = i * 4; if (((layer.d[p] << 16) | (layer.d[p + 1] << 8) | layer.d[p + 2]) !== c) lampPx.delete(i); }
         recolour(layer, colour, [0, 0, bw, bh], w.keep, wallTag ? { tag: wallTag, ways: wallWays } : null);
         /* a lamp's foot shadow, on the floor only: after the colouring, since a darkened pixel isn't one of the floor's colours any more */
-        for (const [sx, sy] of w.footShadows) for (let j = -5; j <= 6; j++) for (let i = -11; i <= 11; i++) {
+        for (const [sx, sy, sz] of w.footShadows) for (let j = -5; j <= 6; j++) for (let i = -11; i <= 11; i++) {
             const e = (i * i) / 110 + ((j - 1) * (j - 1)) / 27; if (e > 1) continue;
-            const X = sx + i + 1, Y = sy + j; if (X < 0 || Y < 0 || X >= bw || Y >= bh || !mask[Y * bw + X]) continue;
+            const X = sx + i + 1, Y = sy + j; if (X < 0 || Y < 0 || X >= bw || Y >= bh || !mask[Y * bw + X] || (sz !== undefined && zb[Y * bw + X] !== sz)) continue;
             const k = e < .45 ? .62 : e < .75 ? .74 : .86, q = (Y * bw + X) * 4; layer.d[q] *= k; layer.d[q + 1] *= k; layer.d[q + 2] *= k;
         }
         const dim = lv.closed ? (lv.dim || .5) : 1;
@@ -3277,6 +3298,17 @@ function build(cfg) {
                 layer.d[i * 4] = layer.d[j * 4]; layer.d[i * 4 + 1] = layer.d[j * 4 + 1]; layer.d[i * 4 + 2] = layer.d[j * 4 + 2];
             }
             delete lv.noCap;
+        }
+        /* A floor tile's stepped edge and the moulding under it can miss each other by a row on every other column, and what's on the floor below shows through the slit. Close them with the moulding's own colour. */
+        {
+            const isVoid = i => { const p = i * 4; return layer.d[p] === VOID[0] && layer.d[p + 1] === VOID[1] && layer.d[p + 2] === VOID[2]; };
+            let slits = 0;
+            for (let y = 1; y < bh - 2; y++) for (let x = 0; x < bw; x++) {
+                const i = y * bw + x; if (!isVoid(i) || !mask[i - bw]) continue;
+                const below = !isVoid(i + bw) ? i + bw : -1; if (below < 0) continue;
+                layer.d[i * 4] = layer.d[below * 4]; layer.d[i * 4 + 1] = layer.d[below * 4 + 1]; layer.d[i * 4 + 2] = layer.d[below * 4 + 2]; slits++;
+            }
+            if (cfg.report) (cfg.report.slits = cfg.report.slits || {})[lv.id || "?"] = slits;
         }
         /* In this view a line of sight climbs as it comes toward you, so of two things on one line the
            higher is always the nearer. Everything on a floor stands lower than the underside of the
@@ -3772,7 +3804,9 @@ MODULES["furni-parts.js"] = { dir: "/site/tools/hallway-editor", run: function (
         if (p.k === "fountain" || p.k === "statue") return [[p.x, p.y], [p.x + 1, p.y], [p.x, p.y + 1], [p.x + 1, p.y + 1]];
         return [[p.x, p.y]];
     }
-    const api = { ROWS, parts, tiles, turns, rotOf, lengthOf };
+    /* A maze's name for its door: the archive's with its glyphs and decoration off ("*ÕMaze EmpireÕ*" is Maze Empire's door), as render/hw.js's clean() has it */
+    const mazeName = n => String(n || "").replace(/[^\x20-\x7e]/g, "").replace(/\*/g, "").replace(/\[|\]/g, "").trim().replace(/\s+/g, " ");
+    const api = { ROWS, parts, tiles, turns, rotOf, lengthOf, mazeName };
     if (typeof module !== "undefined" && module.exports) module.exports = api; else root.FurniParts = api;
 })(typeof window !== "undefined" ? window : globalThis);
 
@@ -3938,7 +3972,7 @@ function sign(q) {
     if (q.stair) W.stairPlaque(b, cx, cy, name, { left: q.left === "1" });
     else W.signIso(b, cx, cy, name, { alongY: q.y === "1", max: 14, w: sw || undefined, h: sh || undefined, way: q.way });
     for (let i = 0; i < b.d.length; i += 4) { if (b.d[i + 1] !== 0 || b.d[i] !== b.d[i + 2]) continue; if (b.d[i] === 255) b.d[i + 3] = 0; else { b.d[i] = 0; b.d[i + 2] = 0; b.d[i + 3] = 115; } }
-    return { w: bw, h: bh, d: b.d };
+    return { w: bw, h: bh, d: b.d, cx, cy };
 }
 const send = (id, o, buf) => postMessage({ id, ...o }, buf || []);
 onmessage = async e => {
@@ -3952,6 +3986,7 @@ onmessage = async e => {
             return send(job.id, { font });
         }
         await ready;
+        if (job.type === "report") { let report; try { report = W.fromMap(JSON.parse(job.text), job.names).report; } catch (err) { report = { error: String(err && err.message || err) }; } return send(job.id, { report }); }
         if (job.type === "map") { maps.set(job.v, JSON.parse(job.text)); while (maps.size > 4) maps.delete(maps.keys().next().value); return send(job.id, { ok: true }); }
         if (job.type === "tile") {
             const map = maps.get(job.v); if (!map) return send(job.id, { needMap: true });
@@ -3972,7 +4007,7 @@ onmessage = async e => {
         }
         if (job.type === "lift" || job.type === "sign") {
             const r = job.type === "lift" ? lift(job.way, job.slide) : sign(job.q), d = new Uint8Array(r.d);
-            return send(job.id, { w: r.w, h: r.h, d }, [d.buffer]);
+            return send(job.id, { w: r.w, h: r.h, d, cx: r.cx, cy: r.cy }, [d.buffer]);
         }
         throw new Error("No such job: " + job.type);
     } catch (err) { send(job.id, { error: String(err && err.stack || err) }); }

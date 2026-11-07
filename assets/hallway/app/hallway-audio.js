@@ -457,7 +457,7 @@
     function pump(e, until, now) {
         for (const bus of e.active) {
             const barLen = barLenOf(TRACKS[bus.i]);
-            while (bus.t0 + bus.nextBar * barLen < until && (bus.stopAt === null || bus.t0 + bus.nextBar * barLen < bus.stopAt)) scheduleBar(e, bus, bus.nextBar++);
+            while (bus.t0 + bus.nextBar * barLen < until && (bus.stopAt === null || bus.t0 + bus.nextBar * barLen < bus.stopAt)) { if (bus.t0 + bus.nextBar * barLen < now - .05) { bus.nextBar++; continue; } scheduleBar(e, bus, bus.nextBar++); }      // bars missed in a long stall are skipped, not all played at once
         }
         e.active = e.active.filter(b => { if (b.stopAt !== null && now > b.stopAt + 8) { try { b.g.disconnect(); b.wetG.disconnect(); } catch (x) { /* already gone */ } return false; } return true; });
     }
@@ -471,6 +471,7 @@
         get current() { return eng ? eng.idx : -1; },
         volume: .8,
         get position() { if (!eng || !playing) return null; const b = eng.active.find(x => x.i === eng.idx && x.stopAt === null); return b ? { at: Math.max(0, eng.ctx.currentTime - b.t0), of: b.end - b.t0 } : null; },
+        resume() { if (eng && playing && eng.ctx.state !== "running") eng.ctx.resume().catch(() => {}); },
         setVolume(v) { api.volume = v; if (eng && playing) { const t = eng.ctx.currentTime; eng.master.gain.cancelScheduledValues(t); eng.master.gain.setTargetAtTime(v * .62, t, .1); } },
         start(i) {
             const AC = window.AudioContext || window.webkitAudioContext; if (!AC) return;

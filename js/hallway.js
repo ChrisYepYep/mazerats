@@ -64,6 +64,8 @@
         root.classList.toggle("hallway-instant", !!instant);
         place();
         root.classList.add("hallway-open");
+        /* What's slid away is out of the keyboard's way and a screen reader's too */
+        for (const e of document.querySelectorAll("body > main, body > .fellow-fansites")) e.inert = true;
         void stage.offsetWidth;
         stage.classList.add("is-in");
         const head = document.querySelector(".site-header");
@@ -87,7 +89,10 @@
         frame.dataset.creep = String(creep);
         stage.appendChild(frame);
         const turn = document.createElement("div"); turn.className = "hallway-turn"; turn.textContent = "Turn your phone sideways for more room"; stage.appendChild(turn);
-        frame._ready = () => { clearInterval(creep); fill.style.width = "100%"; frame.classList.add("is-ready"); setTimeout(() => load.remove(), 450); try { frame.focus(); frame.contentWindow.focus(); } catch (e) { /* as above */ } };
+        /* Never stuck: too long without "ready", or the page saying it couldn't start, gets a note with a way back */
+        const trouble = () => { clearInterval(creep); clearTimeout(frame._late); if (!frame || frame.classList.contains("is-ready")) return; load.remove(); frame.remove(); stage.appendChild(note("The hallway wouldn't open", "Something didn't load. Try again in a little while.", true)); };
+        frame._late = setTimeout(trouble, 30000); frame._trouble = trouble;
+        frame._ready = () => { clearInterval(creep); clearTimeout(frame._late); fill.style.width = "100%"; frame.classList.add("is-ready"); setTimeout(() => load.remove(), 450); try { frame.focus(); frame.contentWindow.focus(); } catch (e) { /* as above */ } };
     }
 
     /* open: from the menu tab. arrived: already at /hallway, nothing to slide. */
@@ -102,6 +107,7 @@
         }
         opened = true;
         if (!arrived && !PATH.test(location.pathname)) { try { history.pushState({ hallway: 1 }, "", "/hallway"); pushed = true; } catch (e) { /* no address, still opens */ } }
+        else if (history.state && history.state.hallway) pushed = true;      // come back to by Forward: the entry behind it is still the archive
         build(!!arrived);
         if (state === "live" || admin) startWalk(state);
         else { const [t, w] = NOTES[state]; stage.appendChild(note(t, w, true)); }
@@ -116,6 +122,9 @@
             else if (PATH.test(location.pathname)) { try { history.replaceState(history.state, "", "/home" + location.search + location.hash); } catch (e) { /* stays */ } }
         } else pushed = false;
         root.classList.remove("hallway-instant", "hallway-open");
+        for (const e of document.querySelectorAll("body > main, body > .fellow-fansites")) e.inert = false;
+        const spine = document.getElementById("side-spine"); if (spine) { try { spine.focus({ preventScroll: true }); } catch (e) { /* nowhere to put it */ } }
+        if (frame) { clearInterval(+frame.dataset.creep); clearTimeout(frame._late); }
         removeEventListener("resize", place);
         if (headWatch) { headWatch.disconnect(); headWatch = null; }
         if (stage) {
@@ -135,6 +144,7 @@
         if (e.origin !== location.origin || !frame || e.source !== frame.contentWindow || !e.data) return;
         if (e.data.hallway === "progress") frame._told = Math.max(frame._told || 0, Number(e.data.progress) || 0);
         if (e.data.hallway === "ready" && frame._ready) frame._ready();
+        if (e.data.hallway === "failed" && frame._trouble) frame._trouble();
         if (e.data.hallway === "leave") close();
     });
 

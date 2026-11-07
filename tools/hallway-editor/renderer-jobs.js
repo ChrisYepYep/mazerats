@@ -19,7 +19,7 @@ function sign(q) {
     if (q.stair) W.stairPlaque(b, cx, cy, name, { left: q.left === "1" });
     else W.signIso(b, cx, cy, name, { alongY: q.y === "1", max: 14, w: sw || undefined, h: sh || undefined, way: q.way });
     for (let i = 0; i < b.d.length; i += 4) { if (b.d[i + 1] !== 0 || b.d[i] !== b.d[i + 2]) continue; if (b.d[i] === 255) b.d[i + 3] = 0; else { b.d[i] = 0; b.d[i + 2] = 0; b.d[i + 3] = 115; } }
-    return { w: bw, h: bh, d: b.d };
+    return { w: bw, h: bh, d: b.d, cx, cy };
 }
 const send = (id, o, buf) => postMessage({ id, ...o }, buf || []);
 onmessage = async e => {
@@ -33,6 +33,7 @@ onmessage = async e => {
             return send(job.id, { font });
         }
         await ready;
+        if (job.type === "report") { let report; try { report = W.fromMap(JSON.parse(job.text), job.names).report; } catch (err) { report = { error: String(err && err.message || err) }; } return send(job.id, { report }); }
         if (job.type === "map") { maps.set(job.v, JSON.parse(job.text)); while (maps.size > 4) maps.delete(maps.keys().next().value); return send(job.id, { ok: true }); }
         if (job.type === "tile") {
             const map = maps.get(job.v); if (!map) return send(job.id, { needMap: true });
@@ -53,7 +54,7 @@ onmessage = async e => {
         }
         if (job.type === "lift" || job.type === "sign") {
             const r = job.type === "lift" ? lift(job.way, job.slide) : sign(job.q), d = new Uint8Array(r.d);
-            return send(job.id, { w: r.w, h: r.h, d }, [d.buffer]);
+            return send(job.id, { w: r.w, h: r.h, d, cx: r.cx, cy: r.cy }, [d.buffer]);
         }
         throw new Error("No such job: " + job.type);
     } catch (err) { send(job.id, { error: String(err && err.stack || err) }); }
