@@ -289,9 +289,9 @@ function stairPlaque(b, ax, ay, name, o) {
         for (let s = 0; s < Wd; s++) for (let t = 0; t < Hd; t++) { const r = Math.min(s, Wd - 1 - s, t, Hd - 1 - t); set(s, t, r === 0 ? BR[t > Hd / 2 ? 3 : 1] : r === 1 ? BR[0] : WD[(s + (t >> 1)) % 9 ? 1 : 2]); }
     });
     const ink = hex("f6cf80"), cut = hex("170703");
-    /* the arrow, centred, pointing up towards the stairs: to the right, or the left when the stairs are that side */
+    /* the arrow, centred, pointing the way the stairs climb */
     const a0 = (Wd - 9) >> 1;
-    for (const [dt, c] of [[-1, cut], [0, ink]]) ARROW.forEach((row, j) => { for (let i = 0; i < 9; i++) if (row[o.left ? 8 - i : i] === "1") put(a0 + i, arrowFloor + 8 - j + dt, c); });
+    for (const [dt, c] of [[-1, cut], [0, ink]]) ARROW.forEach((row, j) => { for (let i = 0; i < 9; i++) if (row[i] === "1") put(a0 + i, arrowFloor + 8 - j + dt, c); });
     /* the words, on their baseline: each letter's picture has blank rows above, and its foot at row 10 */
     const words = String(name).split(" "), tw = words.reduce((a, t) => a + H.textW(t, "vb"), 0) + (words.length - 1) * wordGap;
     let U = (Wd - tw) >> 1;
@@ -358,6 +358,8 @@ const plankAtUnits = (xu, yu) => {
     const g = plankHash(row * 8 + (ry >> 2), n, Math.floor((xp + plankHash(row, ry >> 2, 3) % 40) / 40)) % 9;
     return PLANK_TONES[Math.min(last, g === 0 ? body + 1 : body)];
 };
+/* A storey is 163px and 20 steps of 8 make 160: the top step takes the difference, so a flight meets the floor above */
+const STAIR_TOP = 3;
 /* The client's own short flights: each step 4px tall and 6px deep. */
 const STEP_R = 4, STEP_D = 6 / 16;
 /* Steps climbing towards you: the higher floor is nearer than the lower one, so each step's front faces away and only the tops show,
@@ -393,8 +395,18 @@ function flightUpToYou(w, o) {
         }
     }
 }
+/* One pixel of the ordinary wall standing on a line. faceY: the wall runs along y at x = line, as a flight's side does when it climbs along y. high: how far up the wall this pixel is, so the top of the wallpaper's repeat can stand in for the cap. */
+function stairWallPx(w, faceY, line, sx, sy, high, zFloor) {
+    const im = faceY ? SEAMY : SEAMX, W = 138, T = w.wallTop, CAP = 26, REPEAT = 18;
+    let i, p1;
+    if (faceY) { const at = line * 16 + w.ox - sx, ym = Math.floor((at - 1) / 128) * 8; i = W - (at - ym * 16); p1 = Math.round((line + ym) * 8) + w.oy - zFloor; }
+    else { const at = sx - w.ox + line * 16, xm = Math.floor(at / 128) * 8; i = at - xm * 16; p1 = Math.round((xm + line) * 8) + w.oy - zFloor; }
+    let j = sy - p1 + T; if (high > Z1 - CAP) j += REPEAT * Math.ceil((high - (Z1 - CAP)) / REPEAT);
+    if (i < 0 || i >= im.w || j < 0 || j >= im.h) return null;
+    const s = (j * im.w + i) * 4; return im.rgba[s + 3] < 128 ? null : [im.rgba[s], im.rgba[s + 1], im.rgba[s + 2]];
+}
 function flight(w, o) {
-    const { axis, c0, c1, dTop, steps, zB, carpet, way } = o, alongY = axis === "y", pq = stepTones(way), planks = !!(wayOf(way) || {}).planks, grainAt = planks ? plankXY : parquetAt, tiled = !!o.tiled, woody = tiled || planks, R = o.rise || 8, D = o.tread || .5, dBot = dTop + steps * D, topZ = steps * R;
+    const { axis, c0, c1, dTop, steps, zB, carpet, way } = o, alongY = axis === "y", pq = stepTones(way), planks = !!(wayOf(way) || {}).planks, grainAt = planks ? plankXY : parquetAt, tiled = !!o.tiled, woody = tiled || planks, R = o.rise || 8, D = o.tread || .5, dBot = dTop + steps * D, topOf = k => (k + 1) * R + (k === steps - 1 ? o.topExtra || 0 : 0), topZ = topOf(steps - 1);
     const scr = (c, d, z) => alongY ? [Math.round((c - d) * 16) + w.ox, Math.round((c + d) * 8) + w.oy - zB - z] : [Math.round((d - c) * 16) + w.ox, Math.round((c + d) * 8) + w.oy - zB - z];
     const pts = [[c0, dBot, 0], [c1, dBot, 0], [c0, dTop, topZ], [c1, dTop, topZ], [c1, dTop, 0], [c0, dTop, 0]].map(q => scr(q[0], q[1], q[2]));
     const X0 = Math.max(0, Math.min(...pts.map(q => q[0])) - 2), X1 = Math.min(w.b.w - 1, Math.max(...pts.map(q => q[0])) + 2);
@@ -418,7 +430,7 @@ function flight(w, o) {
         for (let k = 0; k < steps; k++) {
             const front = dBot - k * D, back = front - D;
             /* the tread */
-            const tt = (k + 1) * R / 16;
+            const tt = topOf(k) / 16;
             if (tt > best) {
                 const cc = c + tt, dd = d + tt;
                 if (cc >= c0 && cc < c1 && dd < front && dd >= back) {
@@ -429,44 +441,54 @@ function flight(w, o) {
             }
             /* the riser */
             const tr = front - d, zz = tr * 16;
-            if (tr > best && zz >= k * R && zz < (k + 1) * R) {
+            if (tr > best && zz >= k * R && zz < topOf(k)) {
                 const cc = c + tr;
                 if (cc >= c0 && cc < c1) {
-                    const h = zz - k * R, shade = h >= R - 1 ? .42 : h < 1 ? .5 : .66;
+                    const h = zz - k * R, tall = topOf(k) - k * R, shade = h >= tall - 1 ? .42 : h < 1 ? .5 : .66;
                     best = tr;
-                    col = skin(cc, k * 16 + Math.floor(h), woody ? u => h >= R - 1 ? pq(0) : h < 1 ? pq(.15) : (u >> 1) % 3 ? pq(.42) : pq(.3) : () => h >= R - 1 ? C.d0 : h < 1 ? C.d1 : C.d2, shade);
+                    col = skin(cc, k * 16 + Math.floor(h), woody ? u => h >= tall - 1 ? pq(0) : h < 1 ? pq(.15) : (u >> 1) % 3 ? pq(.42) : pq(.3) : () => h >= tall - 1 ? C.d0 : h < 1 ? C.d1 : C.d2, shade);
                 }
             }
         }
         /* the side facing you */
         const ts = c1 - c, ds = d + ts, zs = ts * 16;
-        if (ts > best && ds >= dTop && ds < dBot && zs >= 0) {
-            const k = Math.floor((dBot - ds) / D), top = (k + 1) * R;
-            if (zs < top) { const gap = top - zs; best = ts; col = woody ? (gap < 1 ? pq(1) : gap < 2 ? pq(0) : zs < 1 ? C.k : (Math.floor(ds * 16) >> 1) % 3 ? pq(.55) : pq(.4)) : gap < 1 ? C.d6 : gap < 2 ? C.k : zs < 1 ? C.k : ((Math.floor(ds * 16) >> 1) % 6 === 0 ? C.d2 : C.d3); }
+        if (o.near !== false && ts > best && ds >= dTop && ds < dBot && zs >= 0) {
+            const k = Math.floor((dBot - ds) / D), top = topOf(k);
+            if (zs < top) { const gap = top - zs, wallAt = !tiled && (gap < 1 ? C.k : stairWallPx(w, alongY, c1, sx, sy, zs + zB - (o.wallFloor === undefined ? zB : o.wallFloor), o.wallFloor === undefined ? zB : o.wallFloor)); best = ts; col = wallAt || (woody ? (gap < 1 ? pq(1) : gap < 2 ? pq(0) : zs < 1 ? C.k : (Math.floor(ds * 16) >> 1) % 3 ? pq(.55) : pq(.4)) : (gap < 1 ? C.d6 : gap < 2 ? C.k : zs < 1 ? C.k : ((Math.floor(ds * 16) >> 1) % 6 === 0 ? C.d2 : C.d3))); }
         }
         if (col) w.b.set(sx, sy, col);
     }
 }
-/* A flight's handrails: one on the wall on brass brackets, one on the open side on spindles, each a proper moulded rail of five rows, ending in a post where it reaches the floor above.
+/* A flight's banisters, one each side: a proper moulded rail of five rows on a spindle per step, with a post at each end.
    They're drawn after the walls round them, or those paint over most of them, and put(x, y, colour, c, d, z) says which pixels of them can be seen from here, at what height in the room. */
 /* With floor beyond its open side at its foot, that side's up against a wall that stands in front of it, so it has no rail to see */
-const railsFor = (f, patches) => { const dBot = f.dTop + f.steps * .5 - .5, X = f.axis === "y" ? f.c1 : dBot, Y = f.axis === "y" ? dBot : f.c1, walled = patches.some(q => !q.notch && X >= q.x0 && X < q.x1 && Y >= q.y0 && Y < q.y1); return walled ? { ...f, near: false } : f; };
-function flightRails(w, o, put) {
+const railsFor = (f, patches) => { const dBot = f.dTop + f.steps * .5 - .5, X = f.axis === "y" ? f.c1 : dBot, Y = f.axis === "y" ? dBot : f.c1, inFloor = (A, B) => patches.some(q => !q.notch && A >= q.x0 && A < q.x1 && B >= q.y0 && B < q.y1), walled = !inFloor(X, Y) && (f.axis === "y" ? inFloor(X, Y + 1) : inFloor(X + 1, Y)); return walled ? { ...f, near: false } : f; };
+function flightRails(w, o, paint) {
     const { axis, c0, c1, steps, zB } = o, alongY = axis === "y", D = .5, dTop = o.dTop, dBot = dTop + steps * D;
+    const put = (x, y, col, c, d, z) => paint(x, y, col, alongY ? c : d, alongY ? d : c, z);
     const at = (c, d, z) => alongY ? [Math.round((c - d) * 16) + w.ox, Math.round((c + d) * 8) + w.oy - zB - z] : [Math.round((d - c) * 16) + w.ox, Math.round((c + d) * 8) + w.oy - zB - z];
     const RAIL = 22, len = steps * 8, PROFILE = [C.k, C.d7, C.d6, C.d5, C.d3, C.k];
     const dot = (c, d, z, up, col) => { const q = at(c, d, z); put(q[0], q[1] - up, col, c, d, zB + z + up); };
     const rail = (c, near) => {
-        if (near) for (let i = 8; i < len; i += 8) { const d = dBot - i / 16, z = i - 8 + 8; /* a spindle on each step */ for (let h = 1; h < RAIL - 2; h++) { const q = at(c, d, z + h); put(q[0], q[1], C.k, c, d, zB + z + h); put(q[0] + 1, q[1], h % 6 === 3 ? C.d6 : C.d5, c, d, zB + z + h); put(q[0] + 2, q[1], C.k, c, d, zB + z + h); } }
-        else for (let i = 16; i < len; i += 32) { const d = dBot - i / 16, z = i + RAIL; for (let h = 3; h < 7; h++) { put(at(c, d, z)[0], at(c, d, z)[1] + h, h === 6 ? C.k : C.b2, c, d, zB + z - h); } }
-        for (let i = 0; i <= len; i++) { const d = dBot - i / 16, z = i + RAIL; PROFILE.forEach((col, r) => dot(c, d, z, 3 - r, col)); }
+        for (let i = 8; i < len; i += 8) { const d = dBot - i / 16, z = i - 8 + 8; /* a spindle on each step */ for (let h = 1; h < RAIL - 2; h++) { const q = at(c, d, z + h); put(q[0], q[1], C.k, c, d, zB + z + h); put(q[0] + 1, q[1], h % 6 === 3 ? C.d6 : C.d5, c, d, zB + z + h); put(q[0] + 2, q[1], C.k, c, d, zB + z + h); } }
+        const rowOf = i => at(c, dBot - i / 16, i + RAIL)[1];
+        for (let i = 0; i <= len; i++) {
+            const d = dBot - i / 16, z = i + RAIL; PROFILE.forEach((col, r) => dot(c, d, z, 3 - r, col));
+            /* where the next column jumps two rows, carry the outline across the gap */
+            const q = at(c, d, z), rise = i < len ? q[1] - rowOf(i + 1) : 0, sag = i > 0 ? rowOf(i - 1) - q[1] : 0;
+            for (let g = 1; g < rise; g++) put(q[0], q[1] - 3 - g, C.k, c, d, zB + z + 3 + g);
+            for (let g = 1; g < sag; g++) put(q[0], q[1] + 2 + g, C.k, c, d, zB + z - 2 - g);
+        }
         /* the post at each end */
         const post = (d, z, tall) => { for (let h = 0; h < tall; h++) for (let k = -2; k <= 2; k++) { const q = at(c, d, z + h); put(q[0] + k, q[1], Math.abs(k) === 2 ? C.k : k < 0 ? C.d6 : k === 0 ? C.d4 : C.d2, c, d, zB + z + h); } for (let k = -2; k <= 2; k++) for (let h = 0; h < 3; h++) { const q = at(c, d, z + tall + h); put(q[0] + k, q[1], h === 2 || Math.abs(k) === 2 ? C.k : k < 1 ? C.b4 : C.b2, c, d, zB + z + tall + h); } };
-        if (near) post(dBot, 0, RAIL + 3);
+        post(dBot, 0, RAIL + 3);
         post(dTop, len, RAIL + 3);
+        /* flat along the landing's back wall, on spindles like the rest */
+        if (!near && o.run) { const n = o.run * 16; for (let j = 1; j <= n; j++) { const d = dBot + j / 16, z = RAIL; PROFILE.forEach((col, r) => dot(c, d, z, 3 - r, col)); if (j % 8 === 0 && j < n) for (let h = 1; h < RAIL - 2; h++) { const q = at(c, d, h); put(q[0], q[1], C.k, c, d, zB + h); put(q[0] + 1, q[1], h % 6 === 3 ? C.d6 : C.d5, c, d, zB + h); put(q[0] + 2, q[1], C.k, c, d, zB + h); } } post(dBot + o.run, 0, RAIL + 3); }
+        if (near && o.landRun) { const n = o.landRun * 16; for (let j = 1; j <= n; j++) { const d = dTop - j / 16, z = len + RAIL; PROFILE.forEach((col, r) => dot(c, d, z, 3 - r, col)); if (j % 8 === 0 && j < n) for (let h = 1; h < RAIL - 2; h++) { const q = at(c, d, len + h); put(q[0], q[1], C.k, c, d, zB + len + h); put(q[0] + 1, q[1], h % 6 === 3 ? C.d6 : C.d5, c, d, zB + len + h); put(q[0] + 2, q[1], C.k, c, d, zB + len + h); } } post(dTop - o.landRun, len, RAIL + 3); }
     };
-    if (o.far !== false) rail(c0 + .1, false);
-    if (o.near !== false) rail(c1 - .05, true);
+    if (o.far !== false) rail(c0 + .3, false);
+    if (o.near !== false) rail(c1 - .3, true);
 }
 function flightY(w, a, b, yTop, steps, zB) {
     /* climbs toward -y; step 0 is the top. Half a tile deep, 8px rise. */
@@ -1003,6 +1025,7 @@ function cutStairs(byId, STAIRS) {
     /* The carpet comes from the rugs you've laid: a rug that reaches the foot or the head of a flight runs
        up it, as wide as it is there. No rug at either end, and the stairs are bare polished wood. */
     const onRug = (lv, X, Y) => (lv.rugs || []).some(r => X >= r.x0 && X < r.x1 && Y >= r.y0 && Y < r.y1);
+    const rugSpan = (c0, c1, hit) => { let lo = null, hi = null; for (let c = c0; c < c1; c++) if (hit(c)) { if (lo === null) lo = c; hi = c + 1; } return lo === null ? null : [lo, hi]; };
     const span = (c0, c1, hit) => { let lo = null, hi = null; for (let c = c0 + 1; c < c1 - 1; c++) if (hit(c)) { if (lo === null) lo = c; hi = c + 1; } return lo === null ? null : [lo, hi]; };
     for (const st of STAIRS) {
         const low = byId(st.low), up = byId(st.up), way = low.way;
@@ -1010,17 +1033,17 @@ function cutStairs(byId, STAIRS) {
         if (st.kind === "straight") {
             punch(up, { x0: st.a, x1: st.b, y0: st.y - 10, y1: st.y });
             const carpet = !known ? [st.a + 1, st.b - 1] : span(st.a, st.b, x => onRug(low, x, st.y) || onRug(low, x, st.y - 1) || onRug(up, x, st.y - 11) || onRug(up, x, st.y - 10));
-            low.patches.push({ x0: st.a, x1: st.b, y0: st.y - 10, y1: st.y, z: st.z, notch: true, upLv: up, sf: [{ axis: "y", c0: st.a, c1: st.b, dTop: st.y - 10, steps: 20, zB: st.z, carpet, way }] });
+            low.patches.push({ x0: st.a, x1: st.b, y0: st.y - 10, y1: st.y, z: st.z, notch: true, upLv: up, sf: [{ axis: "y", c0: st.a, c1: st.b, dTop: st.y - 10, steps: 20, zB: st.z, carpet, way, topExtra: STAIR_TOP }] });
             (low.stairSigns = low.stairSigns || []).push({ x: st.signX || st.a - 2, y: st.y, z: st.z, name: st.label, sign: st.sign, mid: (st.a + st.b) / 2 });
         } else if (st.kind === "turn") {
             punch(up, { x0: st.a, x1: st.b, y0: st.y - 10, y1: st.y });
             punch(up, { x0: st.a - 4, x1: st.a, y0: st.y - 10, y1: st.y - 6 });
             const Y = st.y, carpet = !known ? [st.a + 1, st.b - 1] : span(st.a, st.b, x => onRug(low, x, Y) || onRug(low, x, Y - 1) || onRug(up, x, Y - 11) || onRug(up, x, Y - 10)) || (span(Y - 10, Y - 6, y => onRug(up, st.a - 5, y)) && [st.a + 1, st.b - 1]);
-            const rugged = !!carpet, turnRug = rugged ? rugField([{ x0: st.a, x1: carpet[1], y0: Y - 9, y1: Y - 7 }, { x0: st.a - 2, x1: st.a, y0: Y - 9, y1: Y - 7 }, { x0: carpet[0], x1: carpet[1], y0: Y - 7, y1: Y - 3 }]) : null;
-            low.patches.push({ x0: st.a - 4, x1: st.a, y0: Y - 10, y1: Y - 6, z: st.z, notch: true, upLv: up, sf: [{ axis: "x", c0: Y - 10, c1: Y - 6, dTop: st.a - 4, steps: 8, zB: st.z + 96, carpet: rugged ? [Y - 9, Y - 7] : null, way, near: false }] });
+            const rugged = !!carpet, head = rugSpan(Y - 10, Y - 6, y => onRug(up, st.a - 5, y)) || [Y - 9, Y - 7], turnRug = rugged ? rugField([{ x0: st.a, x1: carpet[1], y0: head[0], y1: head[1] }, { x0: st.a - 2, x1: st.a, y0: head[0], y1: head[1] }, { x0: carpet[0], x1: carpet[1], y0: head[1], y1: Y - 3 }]) : null;
+            low.patches.push({ x0: st.a - 4, x1: st.a, y0: Y - 10, y1: Y - 6, z: st.z, notch: true, upLv: up, sf: [{ axis: "x", c0: Y - 10, c1: Y - 6, dTop: st.a - 4, steps: 8, zB: st.z + 96, carpet: rugged ? head : null, way, near: false, topExtra: STAIR_TOP, run: st.b - st.a }] });
             low.patches.push({ x0: st.a, x1: st.b, y0: Y - 10, y1: Y, z: st.z, notch: true, upLv: up, sf: [
                 { landing: { x0: st.a, x1: st.b, y0: Y - 10, y1: Y - 6, z: st.z + 96, rug: turnRug } },
-                { axis: "y", c0: st.a, c1: st.b, dTop: Y - 6, steps: 12, zB: st.z, carpet, way }
+                { axis: "y", c0: st.a, c1: st.b, dTop: Y - 6, steps: 12, zB: st.z, carpet, way, landRun: 4 }
             ] });
             (low.stairSigns = low.stairSigns || []).push({ x: st.b + 6, y: st.y, z: st.z, name: st.label, sign: st.sign, mid: (st.a + st.b) / 2 });
         } else if (st.kind === "sideturn") {
@@ -1028,16 +1051,16 @@ function cutStairs(byId, STAIRS) {
             punch(up, { x0: st.x - 10, x1: st.x, y0: st.a, y1: st.b });
             punch(up, { x0: st.x - 10, x1: st.x - 6, y0: st.a - 4, y1: st.a });
             const X = st.x, carpet = !known ? [st.a + 1, st.b - 1] : span(st.a, st.b, y => onRug(low, X, y) || onRug(low, X - 1, y) || onRug(up, X - 11, y) || onRug(up, X - 10, y)) || (span(X - 10, X - 6, x => onRug(up, x, st.a - 5)) && [st.a + 1, st.b - 1]);
-            const rugged = !!carpet, turnRug = rugged ? rugField([{ x0: X - 9, x1: X - 7, y0: st.a, y1: carpet[1] }, { x0: X - 9, x1: X - 7, y0: st.a - 2, y1: st.a }, { x0: X - 7, x1: X - 3, y0: carpet[0], y1: carpet[1] }]) : null;
-            low.patches.push({ x0: X - 10, x1: X - 6, y0: st.a - 4, y1: st.a, z: st.z, notch: true, upLv: up, sf: [{ axis: "y", c0: X - 10, c1: X - 6, dTop: st.a - 4, steps: 8, zB: st.z + 96, carpet: rugged ? [X - 9, X - 7] : null, way, near: false }] });
+            const rugged = !!carpet, head = rugSpan(X - 10, X - 6, x => onRug(up, x, st.a - 5)) || [X - 9, X - 7], turnRug = rugged ? rugField([{ x0: head[0], x1: head[1], y0: st.a, y1: carpet[1] }, { x0: head[0], x1: head[1], y0: st.a - 2, y1: st.a }, { x0: head[1], x1: X - 3, y0: carpet[0], y1: carpet[1] }]) : null;
+            low.patches.push({ x0: X - 10, x1: X - 6, y0: st.a - 4, y1: st.a, z: st.z, notch: true, upLv: up, sf: [{ axis: "y", c0: X - 10, c1: X - 6, dTop: st.a - 4, steps: 8, zB: st.z + 96, carpet: rugged ? head : null, way, near: false, topExtra: STAIR_TOP, run: st.b - st.a }] });
             low.patches.push({ x0: X - 10, x1: X, y0: st.a, y1: st.b, z: st.z, notch: true, upLv: up, sf: [
                 { landing: { x0: X - 10, x1: X - 6, y0: st.a, y1: st.b, z: st.z + 96, rug: turnRug, edgeX: true } },
-                { axis: "x", c0: st.a, c1: st.b, dTop: X - 6, steps: 12, zB: st.z, carpet, way }
+                { axis: "x", c0: st.a, c1: st.b, dTop: X - 6, steps: 12, zB: st.z, carpet, way, landRun: 4 }
             ] });
         } else {
             punch(up, { x0: st.x - 10, x1: st.x, y0: st.a, y1: st.b });
             const carpet = !known ? [st.a + 1, st.b - 1] : span(st.a, st.b, y => onRug(low, st.x, y) || onRug(low, st.x - 1, y) || onRug(up, st.x - 11, y) || onRug(up, st.x - 10, y));
-            low.patches.push({ x0: st.x - 10, x1: st.x, y0: st.a, y1: st.b, z: st.z, notch: true, upLv: up, sf: [{ axis: "x", c0: st.a, c1: st.b, dTop: st.x - 10, steps: 20, zB: st.z, carpet, way }] });
+            low.patches.push({ x0: st.x - 10, x1: st.x, y0: st.a, y1: st.b, z: st.z, notch: true, upLv: up, sf: [{ axis: "x", c0: st.a, c1: st.b, dTop: st.x - 10, steps: 20, zB: st.z, carpet, way, topExtra: STAIR_TOP }] });
         }
     }
 }
@@ -1180,7 +1203,7 @@ function build(cfg) {
     const bw = view[2] - view[0], bh = view[3] - view[1];
     const out = new Buf(bw, bh, "000000"), layer = new Buf(bw, bh, "07060a");
     const furniX = new Int16Array(bw * bh), furniY = new Int16Array(bw * bh), furniC = new Int32Array(bw * bh), furniRun = new Uint8Array(bw * bh), NO_FURNI = -32768;
-    const wallOwner = new Uint16Array(bw * bh);
+    const wallOwner = new Uint16Array(bw * bh), stairPx = new Uint8Array(bw * bh), railUnder = new Map();
     const mask = new Uint8Array(bw * bh), zb = new Int16Array(bw * bh), fc = new Int32Array(bw * bh), done = new Uint8Array(bw * bh);
     const gx = oxx - view[0], gy = oyy - view[1];
     const w = {
@@ -1231,7 +1254,7 @@ function build(cfg) {
         wallOwner.fill(0);
         const signs = [], pushSign = signs.push.bind(signs); let signPatch = null;
         signs.push = o => pushSign({ ...o, wallZ: signPatch ? signPatch.z : w.z, wallLine: signPatch ? (o.alongY ? signPatch.x0 : signPatch.y0) : null });
-        furniX.fill(NO_FURNI);
+        furniX.fill(NO_FURNI); stairPx.fill(0); railUnder.clear();
         const drawSprite = s => {
             if (!s.furni) return s.draw();
             const own = Object.prototype.hasOwnProperty.call(layer, "set"), was = layer.set;
@@ -1517,7 +1540,7 @@ function build(cfg) {
             } else delete layer.set;
             /* note a lower part's walls as they go on */
             const beforeWalls = Object.prototype.hasOwnProperty.call(layer, "set") ? layer.set : null, ownerId = lv.patches.indexOf(P) + 1;
-            if (ownerId) { const was = layer.set; layer.set = function (x, y, c) { was.call(layer, x, y, c); if (x >= 0 && y >= 0 && x < bw && y < bh) wallOwner[y * bw + x] = ownerId; }; }
+            if (ownerId) { const was = layer.set; layer.set = function (x, y, c) { was.call(layer, x, y, c); if (x >= 0 && y >= 0 && x < bw && y < bh) { wallOwner[y * bw + x] = ownerId; stairPx[y * bw + x] = 0; } }; }
             /* walls wherever nothing lies behind */
             let run = null;
             for (let X = P.x0; X <= P.x1; X++) { const open = X < P.x1 && !has.has(X + "," + (P.y0 - 1)) && !holes.has(X + "," + (P.y0 - 1)) && !P.noBack && (P.notch || !airBelow(X, P.y0 - 1) || doorEdge("x", X, P.y0) || shown("x", P.y0, X)); if (open && run === null) run = X; if (!open && run !== null) { tagged(() => H.wallRunX(w, run, X, P.y0, { ...cornerEnd(backWall(X, P.y0, P.z), sideWall(X, P.y0 - 1), zAt(X, P.y0 - 1), P.z), noStart: backWall(run - 1, P.y0, P.z), col: colOf("x", P.y0), ...halfOf("x", P.y0) })); run = null; } }
@@ -1645,16 +1668,22 @@ function build(cfg) {
                 w.z = zs;
             }
             for (const f of (P.sf || [])) {
+                const was = layer.set, own = Object.prototype.hasOwnProperty.call(layer, "set");
+                layer.set = function (x, y, c) { was.call(layer, x, y, c); if (x >= 0 && y >= 0 && x < bw && y < bh) { const p = (y * bw + x) * 4; if (layer.d[p] === c[0] && layer.d[p + 1] === c[1] && layer.d[p + 2] === c[2]) stairPx[y * bw + x] = 1; } };
+                const mine = () => { if (own) layer.set = was; else delete layer.set; };
                 if (!f.landing) {
                     flight(w, f);
+                    mine();
                     continue;
                 }
                 const L = f.landing, zs = w.z; w.z = L.z;
                 for (let Y = L.y0; Y < L.y1; Y++) for (let X = L.x0; X < L.x1; X++) { const XX = X, YY = Y; tileDraw(XX, YY, (dx, dy) => (L.rug && rugFieldAt(L.rug, XX, YY, dx, dy)) || ((wayOf(cfg.single || lv.way) || {}).planks ? plankAt(XX, YY, dx, dy) : modPx(plain, false, 2 + m4(XX), 2 + m4(YY), dx, dy))); }
+                /* under its open edge, the wall carries on down to the floor */
+                { const H0 = L.z - P.z; if (L.edgeX) { for (let at = L.x0 * 16; at < L.x1 * 16; at++) { const sx = at - L.y1 * 16 + w.ox, base = Math.round((at / 16 + L.y1) * 8) + w.oy - P.z; for (let h = 0; h < H0; h++) { const c = stairWallPx(w, false, L.y1, sx, base - h, h, P.z); if (c) layer.set(sx, base - h, c); } } } else for (let at = L.y0 * 16 + 1; at <= L.y1 * 16; at++) { const sx = L.x1 * 16 - at + w.ox, base = Math.round((L.x1 + at / 16) * 8) + w.oy - P.z; for (let h = 0; h < H0; h++) { const c = stairWallPx(w, true, L.x1, sx, base - h, h, P.z); if (c) layer.set(sx, base - h, c); } } }
                 /* its edge, on the side you can see */
                 if (L.edgeX) { for (let X = L.x0; X < L.x1; X++) for (let u = 0; u <= 16; u++) pal.forEach((c, d) => { const Q = w.WX(X, L.y1, u, -1 - d); layer.set(Q[0], Q[1], c); }); }
                 else for (let Y = L.y0; Y < L.y1; Y++) for (let u = 0; u <= 16; u++) pal.forEach((c, d) => { const Q = w.WY(L.x1, Y + 1, u, -1 - d); layer.set(Q[0], Q[1], c); });
-                w.z = zs;
+                w.z = zs; mine();
             }
             for (const fl of (P.fl || [])) flightY(w, fl[1], fl[2], fl[3], fl[4], fl[5]);
             if (P.lift !== undefined) lift(w, P.lift, P.y0, { open: cfg.liftOpen });
@@ -1685,16 +1714,17 @@ function build(cfg) {
         /* the top of a handrail coming up the stairs stands above this floor, so it's in this floor's picture */
         for (const q of levels) if (q !== lv) for (const P of q.patches) if (P.notch && P.upLv === lv) for (const f of (P.sf || [])) {
             if (!f.axis || f.tiled) continue; const zUp = P.z + Z1;
-            (lv.later = lv.later || []).push({ furni: true, depth: -1e6, tx: f.axis === "y" ? f.c0 : Math.floor(f.dTop), ty: f.axis === "y" ? Math.floor(f.dTop) : f.c0, draw: () => flightRails(w, railsFor(f, q.patches), (x, y, col, c, d, z) => { if (z > zUp) layer.set(x, y, col); }) });
+            (lv.later = lv.later || []).push({ furni: true, afterFloors: true, depth: f.c0 + f.dTop + 1, tx: f.axis === "y" ? f.c0 : Math.floor(f.dTop), ty: f.axis === "y" ? Math.floor(f.dTop) : f.c0, rect: f.axis === "y" ? { x0: f.c0, x1: f.c1, y0: Math.floor(f.dTop), y1: Math.floor(f.dTop) + 2 } : { x0: Math.floor(f.dTop), x1: Math.floor(f.dTop) + 2, y0: f.c0, y1: f.c1 }, draw: () => flightRails(w, railsFor(f, q.patches), (x, y, col, c, d, z) => { if (z > zUp && seesRail(c, d, z)) layer.set(x, y, col); }) });
         }
         /* The stair rails go in the one queue before anything is drawn: a stairwell can be drawn from that queue itself, and what's added to it by then is never reached */
         for (const P of drawList) if (P.notch && P.upLv && (!P.raised || raisedLater.includes(P))) {
             const up = P.upLv; if (!up.tileSet) { up.tileSet = new Set(); for (const q of up.patches) if (!q.notch) for (let X = q.x0; X < q.x1; X++) for (let Y = q.y0; Y < q.y1; Y++) up.tileSet.add(X + "," + Y); }
             const landings = (P.sf || []).filter(f => f.landing).map(f => f.landing);
-            for (const f of (P.sf || [])) if (!f.landing && f.axis && !f.tiled) (lv.later = lv.later || []).push({ furni: true, depth: (f.axis === "y" ? f.c0 + f.dTop : f.dTop + f.c0) + 40, tx: f.axis === "y" ? f.c0 : Math.floor(f.dTop), ty: f.axis === "y" ? Math.floor(f.dTop) : f.c0, railsOf: P, draw: () => { const zUp = P.z + Z1; flightRails(w, railsFor(f, lv.patches), (x, y, col, c, d, z) => {
+            for (const f of (P.sf || [])) if (!f.landing && f.axis && !f.tiled) (lv.later = lv.later || []).push({ furni: true, afterFloors: !!f.run, depth: (f.axis === "y" ? f.c0 + f.dTop : f.dTop + f.c0) + 40, tx: f.axis === "y" ? f.c0 : Math.floor(f.dTop), ty: f.axis === "y" ? Math.floor(f.dTop) : f.c0, railsOf: P, draw: () => { const zUp = P.z + Z1; flightRails(w, railsFor(f, lv.patches), (x, y, col, c, d, z) => {
                 if (z > zUp) return; const t = (zUp - z) / 16; if (P.upLv.tileSet.has(Math.floor(c + t) + "," + Math.floor(d + t))) return; if (!seesRail(c, d, z)) return;
                 /* what stands on the landing and nearer than this bit of rail stays in front of it */
                 if (x >= 0 && y >= 0 && x < bw && y < bh) { const i = y * bw + x, fx = furniX[i]; if (fx !== NO_FURNI) { const fy = furniY[i]; if (landings.some(L => fx >= L.x0 && fx < L.x1 && fy >= L.y0 && fy < L.y1) && fx + fy + 2 > c + d) return; } }
+                if (x >= 0 && y >= 0 && x < bw && y < bh) { const i = y * bw + x; if (!railUnder.has(i) && furniX[i] === NO_FURNI && !stairPx[i]) { const p = i * 4; railUnder.set(i, [layer.d[p], layer.d[p + 1], layer.d[p + 2]]); } }
                 layer.set(x, y, col);
             }); } });
         }
@@ -1717,8 +1747,8 @@ function build(cfg) {
             for (let i = 0; i < nodes.length; i++) for (let j = 0; j < nodes.length; j++) {
                 if (i === j) continue; const A = nodes[i], B = nodes[j];
                 if (A.P && B.P) { if (i < j) before(A, B); continue; }      // the parts keep the order already worked out for them
-                if (A.P && B.q) { const R = B.q.rect || B.foot; if (R && R.x0 < A.P.x1 && R.x1 > A.P.x0 && R.y0 < A.P.y1 && R.y1 > A.P.y0) before(A, B); continue; }
-                if (A.q && B.P) { const R = A.q.rect || A.foot; if (R && !(R.x0 < B.P.x1 && R.x1 > B.P.x0 && R.y0 < B.P.y1 && R.y1 > B.P.y0) && patchBehind(R, B.P) && !A.q.withFloor) before(A, B); continue; }
+                if (A.P && B.q) { if (B.q.afterFloors) { before(A, B); continue; } const R = B.q.rect || B.foot; if (R && R.x0 < A.P.x1 && R.x1 > A.P.x0 && R.y0 < A.P.y1 && R.y1 > A.P.y0) before(A, B); continue; }
+                if (A.q && B.P) { if (A.q.afterFloors) continue; const R = A.q.rect || A.foot; if (R && !(R.x0 < B.P.x1 && R.x1 > B.P.x0 && R.y0 < B.P.y1 && R.y1 > B.P.y0) && patchBehind(R, B.P) && !A.q.withFloor) before(A, B); continue; }
                 if (A.foot && B.foot && sees(A.foot, B.foot) && !sees(B.foot, A.foot)) before(A, B);
             }
             for (let left = nodes.length; left > 0; left--) {
@@ -1738,29 +1768,32 @@ function build(cfg) {
         for (const [i, c] of lampPx) { const p = i * 4; if (((layer.d[p] << 16) | (layer.d[p + 1] << 8) | layer.d[p + 2]) !== c) lampPx.delete(i); }
         if (aboveLv && !lv.closed) {
             const upSet = new Set(); for (const q of aboveLv.patches) if (!q.notch) for (let X = q.x0; X < q.x1; X++) for (let Y = q.y0; Y < q.y1; Y++) upSet.add(X + "," + Y);
-            const upBase = aboveLv.src.k * Z1, upRise = (X, Y) => (aboveLv.src.rise && aboveLv.src.rise[Math.floor(X / 2) + "," + Math.floor(Y / 2)]) || 0, REPEAT = 18, EDGE_ROWS = 13, CAP_ROWS = 24;
-            const fill = (sx, y0, y1) => {
+            const upBase = aboveLv.src.k * Z1, upRise = (X, Y) => (aboveLv.src.rise && aboveLv.src.rise[Math.floor(X / 2) + "," + Math.floor(Y / 2)]) || 0, REPEAT = 18, EDGE_ROWS = 13, CAP_ROWS = 24, WALL_REPEAT = 64, WOOD_ROWS = 46;
+            const fill = (sx, y0, y1, yMax, dir, wallAtTile, line, floorZ) => {
                 if (sx < 0 || sx >= bw) return;
+                const plain = (X, Y) => { const n = Y * bw + X; return !stairPx[n] && (furniX[n] === NO_FURNI || railUnder.has(n)) && !lampPx.has(n); };
+                /* the next repeat down has the same wallpaper, as long as it's still wallpaper and not the wood or the floor below it */
+                const down = (X, Y, last) => { if (X < 0 || X >= bw) return -1; while (Y >= 0 && Y < bh && Y <= last) { if (plain(X, Y)) return Y * bw + X; Y += REPEAT; } return -1; };
                 for (let y = Math.max(0, y0); y <= y1 && y < bh; y++) {
                     let yy = y; while (yy <= y1) yy += REPEAT;
-                    const i = y * bw + sx; if (furniX[i] !== NO_FURNI || lampPx.has(i)) continue;
-                    /* a lamp or furniture on the repeat: the next repeat down has the same wallpaper */
-                    while (yy < bh && (furniX[yy * bw + sx] !== NO_FURNI || lampPx.has(yy * bw + sx))) yy += REPEAT;
-                    if (yy >= bh) continue; const j = yy * bw + sx;
-                    const a = j * 4, b2 = i * 4; if (layer.d[a] === VOID[0] && layer.d[a + 1] === VOID[1] && layer.d[a + 2] === VOID[2]) continue;
-                    layer.d[b2] = layer.d[a]; layer.d[b2 + 1] = layer.d[a + 1]; layer.d[b2 + 2] = layer.d[a + 2];
+                    const i = y * bw + sx; if (furniX[i] !== NO_FURNI || lampPx.has(i) || stairPx[i]) continue;
+                    let j = down(sx, yy, yMax);
+                    for (let n = 1; j < 0 && n <= 4; n++) for (const s of [1, -1]) { if (j >= 0 || !wallAtTile(s * n * 4)) continue; const X2 = sx + s * dir * n * WALL_REPEAT; if (X2 < 0 || X2 >= bw) continue; j = down(X2, yy + s * n * WALL_REPEAT / 2, yMax + s * n * WALL_REPEAT / 2); }
+                    if (j < 0) { const art = stairWallPx(w, dir < 0, line, sx, y, yMax + WOOD_ROWS - y, floorZ); if (art) { const b2 = i * 4; layer.d[b2] = art[0]; layer.d[b2 + 1] = art[1]; layer.d[b2 + 2] = art[2]; } continue; }
+                    const a = j * 4, b2 = i * 4, under = railUnder.get(j), from = under || [layer.d[a], layer.d[a + 1], layer.d[a + 2]]; if (from[0] === VOID[0] && from[1] === VOID[1] && from[2] === VOID[2]) continue;
+                    layer.d[b2] = from[0]; layer.d[b2 + 1] = from[1]; layer.d[b2 + 2] = from[2];
                     if (wallTag) { wallTag[i] = wallTag[j]; wallC[i] = wallC[j]; }
                 }
             };
             for (const [key, Q] of tileOf) {
                 const [X, Y] = key.split(",").map(Number), f = Q.z;
-                if (backWall(X, Y) && !noneSet.has("x|" + Y + "|" + X) && !halfSet.has("x|" + Y + "|" + X) && upSet.has(X + "," + (Y - 1)) && !upSet.has(X + "," + Y)) {
-                    const zUp = upBase + upRise(X, Y - 1);
-                    for (let u = 0; u < 16; u++) { const sx = (X - Y) * 16 + u + gx, base8 = Math.round((X + u / 16 + Y) * 8) + gy; fill(sx, base8 - zUp + EDGE_ROWS, base8 - (f + Z1) + CAP_ROWS - 1); }
+                if (backWall(X, Y) && !noneSet.has("x|" + Y + "|" + X) && !halfSet.has("x|" + Y + "|" + X) && (upSet.has(X + "," + (Y - 1)) || upSet.has(X + "," + Y))) {
+                    const zUp = upBase + upRise(X, upSet.has(X + "," + (Y - 1)) ? Y - 1 : Y);
+                    for (let u = 0; u < 16; u++) { const sx = (X - Y) * 16 + u + gx, base8 = Math.round((X + u / 16 + Y) * 8) + gy; fill(sx, base8 - zUp + EDGE_ROWS, base8 - (f + Z1) + CAP_ROWS - 1, base8 - f - WOOD_ROWS, 1, n => backWall(X + n, Y), Y, f); }
                 }
-                if (sideWall(X, Y) && !noneSet.has("y|" + X + "|" + Y) && !halfSet.has("y|" + X + "|" + Y) && upSet.has((X - 1) + "," + Y) && !upSet.has(X + "," + Y)) {
-                    const zUp = upBase + upRise(X - 1, Y);
-                    for (let u = 0; u < 16; u++) { const sx = (X - Y) * 16 - u + gx, base8 = Math.round((X + Y + u / 16) * 8) + gy; fill(sx, base8 - zUp + EDGE_ROWS, base8 - (f + Z1) + CAP_ROWS - 1); }
+                if (sideWall(X, Y) && !noneSet.has("y|" + X + "|" + Y) && !halfSet.has("y|" + X + "|" + Y) && (upSet.has((X - 1) + "," + Y) || upSet.has(X + "," + Y))) {
+                    const zUp = upBase + upRise(upSet.has((X - 1) + "," + Y) ? X - 1 : X, Y);
+                    for (let u = 0; u < 16; u++) { const sx = (X - Y) * 16 - u + gx, base8 = Math.round((X + Y + u / 16) * 8) + gy; fill(sx, base8 - zUp + EDGE_ROWS, base8 - (f + Z1) + CAP_ROWS - 1, base8 - f - WOOD_ROWS, -1, n => sideWall(X, Y + n), X, f); }
                 }
             }
         }
@@ -1849,7 +1882,7 @@ function build(cfg) {
         /* anything painted over a floor pixel since is not floor any more */
         for (let i = 0; i < mask.length; i++) if (mask[i]) { const p = i * 4; if (((layer.d[p] << 16) | (layer.d[p + 1] << 8) | layer.d[p + 2]) !== fc[i]) mask[i] = 0; }
         const stairPlaques = [];
-        for (const ss of (lv.stairSigns || [])) { const zs = w.z; w.z = ss.z; const q = w.WX(ss.x, ss.y, 0, 0); stairPlaques.push({ s: q, z: ss.z, line: ss.y, name: ss.name, sign: ss.sign || {}, left: ss.x + ((ss.sign && ss.sign.u) || 0) / 16 > ss.mid }); w.z = zs; }
+        for (const ss of (lv.stairSigns || [])) { const zs = w.z; w.z = ss.z; const q = w.WX(ss.x, ss.y, 0, 0); stairPlaques.push({ s: q, z: ss.z, line: ss.y, name: ss.name, sign: ss.sign || {} }); w.z = zs; }
         if (wallTag) for (let i = 0; i < wallTag.length; i++) if (wallTag[i]) { const p = i * 4; if (((layer.d[p] << 16) | (layer.d[p + 1] << 8) | layer.d[p + 2]) !== wallC[i]) wallTag[i] = 0; }
         /* colour, then light from each lamp, then the signs */
         const colour = cfg.single || lv.way;
@@ -1926,7 +1959,7 @@ function build(cfg) {
             onWall(s.wallZ, s.wallLine, !!s.alongY, () => signIso(layer, s.s[0] + u, s.s[1] + sh * Math.floor(u / 2) - v, s.name, { alongY: s.alongY, hover: s.hover, max: 14, w: g.w, h: g.h, way: colour }));
         }
         for (const [i, r, g, b2] of lampLit) { layer.d[i * 4] = r; layer.d[i * 4 + 1] = g; layer.d[i * 4 + 2] = b2; }
-        if (!cfg.noSigns && !lv.closed) for (const q of stairPlaques) { if (q.sign.hide) continue; const u = q.sign.u || 0, v = q.sign.blade ? q.sign.v || 0 : 0; onWall(q.z, q.line, false, () => stairPlaque(layer, q.s[0] + u, q.s[1] + Math.floor(u / 2) - v, q.name, { left: q.left })); }
+        if (!cfg.noSigns && !lv.closed) for (const q of stairPlaques) { if (q.sign.hide) continue; const u = q.sign.u || 0, v = q.sign.blade ? q.sign.v || 0 : 0; onWall(q.z, q.line, false, () => stairPlaque(layer, q.s[0] + u, q.s[1] + Math.floor(u / 2) - v, q.name)); }
         if (cfg.avatar && cfg.avatar.lv === lv.id) { const P = lv.patches.find(q => cfg.avatar.x >= q.x0 && cfg.avatar.x < q.x1 && cfg.avatar.y >= q.y0 && cfg.avatar.y < q.y1) || lv.patches[0]; const zz = P.z; const c = [Math.round((cfg.avatar.x - cfg.avatar.y) * 16) + gx, Math.round((cfg.avatar.x + cfg.avatar.y) * 8) + gy - zz + 8]; if (c[0] >= 0 && c[1] >= 0 && c[0] < bw && c[1] < bh) avL = lightAt(c[0], c[1], true, zz).map(v => Math.min(1.05, v)); w.avS = [c[0], c[1]]; }
         /* the cap of this floor's wall, wherever the floor above asked for it to go: the wallpaper's own repeat, from further down the same column */
         if (lv.noCap) {

@@ -656,7 +656,7 @@ let version = null, artTimer = 0, versionSeq = 0, lastReport = null;
 let live = null;
 function liveSrc() {
     const s = live.hit, g = s.o.sign || {}, name = s.o.kind ? stairSignName(s.o) : doorName(s.o);
-    const q = new URLSearchParams({ name: name || "", way: s.l.colour ? "hex:" + s.l.colour : s.l.way }); if (g.w) q.set("w", g.w); if (g.h) q.set("h", g.h); if (!s.o.kind && s.o.axis !== "x") q.set("y", "1"); if (s.o.kind) { q.set("stair", "1"); if (stairSignLeft(s.o)) q.set("left", "1"); }
+    const q = new URLSearchParams({ name: name || "", way: s.l.colour ? "hex:" + s.l.colour : s.l.way }); if (g.w) q.set("w", g.w); if (g.h) q.set("h", g.h); if (!s.o.kind && s.o.axis !== "x") q.set("y", "1"); if (s.o.kind) { q.set("stair", "1"); }
     return "/api/sign?" + q;
 }
 async function liveFetch() {
@@ -1537,11 +1537,11 @@ function wrapPx(name, maxW) { const lines = []; let cur = ""; for (const word of
 const SIGN_PAD = 12, SIGN_LH = 10, SIGN_V = 7;     // how far above the usual line a sign sits unless you've moved it
 /* a stair's sign: the same plaque, on the wall beside the flight (a flight through a left wall has none) */
 const stairSignName = st => st.label || (byId(st.up) ? byId(st.up).name : "Up");
-/* the hanging plaque's sums, as stairPlaque in hw3.js does them; its arrow points to whichever side the stairs are */
+/* the hanging plaque's sums, as stairPlaque in hw3.js does them */
 const PLAQUE = { h: 66, off: 3, H: 30, arm: 8 };
-const stairSignLeft = st => stairSignX(st) + (((st.sign || {}).u) || 0) / 16 > (st.a + st.b) / 2;
+const plaqueWide = name => { const words = name.split(" "), tw = words.reduce((a, t) => a + textW(t), 0) + (words.length - 1) * 4; return Math.max(50, tw + 12); };
 function plaqueBox(l, d) {
-    const name = stairSignName(d), words = name.split(" "), tw = words.reduce((a, t) => a + textW(t), 0) + (words.length - 1) * 4, W = Math.max(50, tw + 12);
+    const W = plaqueWide(stairSignName(d));
     const g = d.sign || {}, u = g.u || 0, v = g.blade ? g.v || 0 : 0, base = P(stairSignX(d), d.y, levelZ(l)), ax = base[0] + u, ay = base[1] + Math.floor(u / 2) - v;
     const L = ax - PLAQUE.off - W, B = ay - PLAQUE.h + Math.floor((W + PLAQUE.off) / 2), corner = (s, t) => [L + s, B - Math.floor(s / 2) - t];
     return { stair: true, door: false, W, H: PLAQUE.H, sh: 1, base, u, v, minW: W, minH: PLAQUE.H, lines: [name], L, B, at: (uu, vv) => [ax + uu, ay - vv], pts: [corner(0, 0), corner(W, 0), corner(W, PLAQUE.H), corner(0, PLAQUE.H)] };
@@ -1625,7 +1625,7 @@ function select(hit) {
             f.appendChild(n); f.appendChild(sel); box.appendChild(f);
         }
     } else if (hit.type === "sign") {
-        say(hit.o.kind ? "Drag it along the wall or up and down. Its size follows the floor's name, and its arrow points to whichever side the stairs are." : "Drag it to move it. Drag the handle on any side to resize it: narrower wraps the text, and it grows taller to fit. Its bottom stays put and it stays centred on the door.");
+        say(hit.o.kind ? "Drag it along the wall or up and down. Its size follows the floor's name, and its arrow points the way the stairs climb." : "Drag it to move it. Drag the handle on any side to resize it: narrower wraps the text, and it grows taller to fit. Its bottom stays put and it stays centred on the door.");
         btn("Reset size and place", () => { snapshot(); delete hit.o.sign; changed(); select(hit); });
     } else if (hit.type === "stair") say((hit.o.kind === "turn" ? "Turning at a landing" : hit.o.kind === "side" ? "Through a top-left wall" : hit.o.kind === "sideturn" ? "Through a top-left wall, turning at a landing" : "Straight") + ". Drag along the wall to move.");
     else if (hit.type === "rug") say(`${hit.o.x1 - hit.o.x0} by ${hit.o.y1 - hit.o.y0} tiles. Drag it to move, or drag an edge to resize.`);

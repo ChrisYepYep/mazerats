@@ -16,7 +16,7 @@ function lift(way, slide) {
 function sign(q) {
     const sw = Number(q.w) || 0, sh = Number(q.h) || 0, name = q.name || "", bw = Math.max(sw, 240) + 40, bh = (bw >> 1) + Math.max(sh, 100) + 60, cx = bw >> 1, cy = bh - (bw >> 2) - 20, b = new W.Buf(bw, bh);
     for (let i = 0; i < b.d.length; i += 4) { b.d[i] = 255; b.d[i + 1] = 0; b.d[i + 2] = 255; b.d[i + 3] = 255; }
-    if (q.stair) W.stairPlaque(b, cx, cy, name, { left: q.left === "1" });
+    if (q.stair) W.stairPlaque(b, cx, cy, name);
     else W.signIso(b, cx, cy, name, { alongY: q.y === "1", max: 14, w: sw || undefined, h: sh || undefined, way: q.way });
     for (let i = 0; i < b.d.length; i += 4) { if (b.d[i + 1] !== 0 || b.d[i] !== b.d[i + 2]) continue; if (b.d[i] === 255) b.d[i + 3] = 0; else { b.d[i] = 0; b.d[i + 2] = 0; b.d[i + 3] = 115; } }
     return { w: bw, h: bh, d: b.d, cx, cy };
