@@ -901,6 +901,8 @@ function drawSelector() {
         }
         g.restore();
     }
+    /* behind the Lost Property counter: the counter and the wall beside it stand in front, as they do for hustle */
+    if (hover.l.stair && hover.l.stair.lost && walker) { const me = walker; walker = { x: tx, y: ty, z: nodeZ(hover.l, tx, ty), l: hover.l, dir: 2, frame: 0, st: null }; try { cutInFront(g, X0, Y0); } finally { walker = me; } }
     ctx.drawImage(sc, ox + X0 * zoom, oy + Y0 * zoom, W * zoom, H * zoom);
 }
 
