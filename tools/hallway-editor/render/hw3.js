@@ -576,11 +576,11 @@ function flightX(w, y0, y1, xTop, steps, zB, o) {
 /* Floor lamps: the art is in floor-lamps.js. A lamp keeps its own colours on every floor, its glowing parts stay out of
    the room's lighting so a lit shade never bleaches, and it leaves a soft shadow at its foot. */
 const LAMP_STYLES = FloorLamps.STYLES;
-function floorLamp(w, tx, ty, style, colour) {
-    const kind = LAMP_STYLES[style] ? style : "hotel", p = w.S(tx + .5, ty + .5);
-    w.sprites.push({ depth: tx + ty + .4, draw: () => {
-        const bd = w.b, cx = p[0], cy = p[1], art = FloorLamps.pixels(kind, !!w.lightsOff, colour);
-        if (w.footShadows) w.footShadows.push([cx, cy, w.z]);
+function floorLamp(w, tx, ty, style, colour, lift) {
+    const kind = style === "tableglobe" || LAMP_STYLES[style] ? style : "hotel", p = w.S(tx + .5, ty + .5), up = lift || 0;
+    w.sprites.push({ depth: tx + ty + (up ? .55 : .4), draw: () => {
+        const bd = w.b, cx = p[0], cy = p[1] - up, art = FloorLamps.pixels(kind, !!w.lightsOff, colour);
+        if (w.footShadows && !up) w.footShadows.push([cx, cy, w.z]);
         for (const [dx, dy, c, g] of art.list) {
             const X = cx + dx, Y = cy + dy;
             bd.set(X, Y, c);
@@ -590,7 +590,7 @@ function floorLamp(w, tx, ty, style, colour) {
             if (w.glowing) w.glowing[i] = g ? v : 0;
         }
     }});
-    w.lamps.push({ free: true, tx: tx + .5, ty: ty + .5, lz: w.z, x: p[0], y: p[1] - FloorLamps.pixels(kind, false).lightH, colour });
+    w.lamps.push({ free: true, tx: tx + .5, ty: ty + .5, lz: w.z + up, x: p[0], y: p[1] - up - FloorLamps.pixels(kind, false).lightH, colour });
 }
 
 /* ---- the entrance ----
@@ -1163,9 +1163,8 @@ function fromMap(map, names) {
             P.dn.push({ d: [d.axis, d.at], name, sign: d.sign, kind: d.kind });
         }
         for (const q of (l.lamps || [])) { const P = onWall(q.axis, q.at, q.line); if (P) P.l.push([q.axis, q.at, q.colour, q.style, q.h]); else report.lost.push("lamp " + q.axis + q.at + " on " + l.id); }
-        for (const k of (l.swags || [])) { const [ax, ln, t] = k.split("|"), q = { k: "i_swag", axis: ax, line: +ln, at: ax === "x" ? +t + .5 : +t + 1.5 }, P = onWall(q.axis, q.at, q.line); if (P) P.wi.push(q); }
         for (const q of (l.wallItems || [])) { const P = onWall(q.axis, q.at, q.line); if (P) P.wi.push(q); else report.lost.push((q.k || "wall item") + " " + q.axis + q.at + " on " + l.id); }
-        for (const p of (l.props || [])) { const run = Parts.tiles(p), end = run[run.length - 1], P = onLanding(p.x, p.y) || (Parts.ROWS[p.k] && at(end[0], end[1])) || at(p.x, p.y); if (!P) report.lost.push(p.k + " at " + p.x + "," + p.y + " on " + l.id); const P2 = P || real2[0]; if (!P2) continue; const c = new Set(l.cells), against = !c.has(Math.floor(p.x / 2) + "," + Math.floor((p.y - 2) / 2)) || !c.has(Math.floor((p.x - 2) / 2) + "," + Math.floor(p.y / 2)); P2.props.push([p.k, p.x, p.y, !against, p.len, p.rot, p.style, p.colour, p.lights, p.lightUp, p.noCard, !!p.night, p.rare]); }
+        for (const p of (l.props || [])) { const run = Parts.tiles(p), end = run[run.length - 1], P = onLanding(p.x, p.y) || (Parts.ROWS[p.k] && at(end[0], end[1])) || at(p.x, p.y); if (!P) report.lost.push(p.k + " at " + p.x + "," + p.y + " on " + l.id); const P2 = P || real2[0]; if (!P2) continue; const c = new Set(l.cells), against = !c.has(Math.floor(p.x / 2) + "," + Math.floor((p.y - 2) / 2)) || !c.has(Math.floor((p.x - 2) / 2) + "," + Math.floor(p.y / 2)); P2.props.push([p.k, p.x, p.y, !against, p.len, p.rot, p.style, p.colour, p.lights, p.lightUp, p.noCard, !!p.night, p.rare, p.z || 0]); }
 
     }
     for (const q of (map.lifts || (map.lift ? [map.lift] : []))) {
@@ -1504,6 +1503,7 @@ function build(cfg) {
                 w.sprites = landingOf ? landingQueue : (lv.later = lv.later || []);      // one queue for every part of a floor, or a raised part's things paint over what stands on the part next to it      // all in one queue, or what stands against a wall gets painted over by what is behind it
                 const from = w.sprites.length; let partsNow = null;
                 if (k === "lamp") floorLamp(w, x, y, p[6], p[7]);
+                else if (k === "tablelamp") { if (w.partAt({ x, y })) floorLamp(w, x, y, "tableglobe", p[7], p[13] || 0); }
                 else if (k === "trophy") {
                     const row = Parts.parts({ k, x, y, rot: p[5] }), far = row[0], turned = !!(p[5] & 1), near = row[row.length - 1];
                     if (w.partAt(far)) { const fp = FLOOR_PIECES[k], base = w.S(x, y), im = wallArt(fp.f), X0 = Math.round(base[0]), Y0 = Math.round(base[1]);

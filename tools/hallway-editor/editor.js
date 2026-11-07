@@ -23,7 +23,7 @@ let hover = null, drag = null, spaceHeld = false;
 /* Wall lights and wall items hang at a set height, in steps of 4; hold Ctrl and move the mouse up or down to change it */
 const wallH = { lamp: 106, item: 100 }, WALL_STEP = 4, WALL_RANGE = { lamp: [44, 136], item: [20, 146] };
 const wallHeightKind = t => t === "sconce" || t === "globelight" ? "lamp" : isWallItemTool(t) ? "item" : null;
-let wallCtrlLast = null, wallCtrlSpare = 0, ctrlNow = false;
+let wallCtrlLast = null, wallCtrlSpare = 0, ctrlNow = false, lampCtrlLast = null;
 const snapWall = (h, kind) => Math.max(WALL_RANGE[kind][0], Math.min(WALL_RANGE[kind][1], Math.round(h / WALL_STEP) * WALL_STEP));
 let doorCarry = null;     // a door on its way to another floor: the next click on a wall there puts it down
 let backHeld = false;     // hold B with the globe wall light: a pillar's faces turned away from you
@@ -55,9 +55,9 @@ const WALL_ITEMS = window.WALL_ITEMS || [], WALL_GROUPS = [["painting", "Hallway
 const TOOLS = [
     ["Floors", [["floor", "Paint floor", T_ + "floor.png"], ["erase", "Remove floor", ICON.erase], ["rug", "Rug", T_ + "rug.png"], ["medal", "Carpet crest", T_ + "crest.png"], ["height", "Floor height", ICON.raise], ["steps", "Small steps", T_ + "stair.png"]]],
     ["On walls", [["door", "Door", T_ + "door.png"], ["halfwall", "Half wall", ICON.halfwall], ["nowall", "No wall", ICON.nowall], ["addwall", "Show wall", ICON.addwall], ["sconce", "Wall light", T_ + "sconce.png"], ["globelight", "Globe wall light", "art/sconce-globe-y.png"], ["entrance", "Entrance", H_ + "entry_upper_right_mask.png"], ["lift", "Lift", T_ + "lift.png"], ["stair", "Stairs: straight", T_ + "stair.png"], ["turn", "Stairs: turning", T_ + "turn.png"], ["side", "Stairs: left wall", T_ + "side.png"], ["sideturn", "Stairs: left wall, turning", T_ + "sideturn.png"]]],
-    ["Furniture", [["sofa", "Sofa", T_ + "sofa.png"], ["chair", "Chair", H_ + "hw_chair_a_0_2_0.png"], ["table", "Table", T_ + "table.png"], ["smtable", "Small round table", H_ + "hw_smtble_a_0_0_0.png"], ["ballpost", "Ball post", H_ + "pillar0_a_0_0_0.png"], ["rope", "Rope barrier", T_ + "rope.png"], ["lamp", "Floor lamp", T_ + "lamp.png"], ["plant", "Plant", H_ + "hw_plant_a_0_0_0.png"], ["ero", "Planter", T_ + "planter.png"], ...PLANTERS.map(([k, name]) => [k, name, T_ + "planter-" + k.slice(4) + ".png"]), ["pillar", "Pillar", H_ + "pillar1_a_0_0_0.png"], ["pillartall", "Tall pillar", T_ + "pillartall.png"], ["statue", "Statue", H_ + "hw_statue_a_0_0_0.png"], ["fountain", "Fountain", H_ + "hw_fountain_a_0_0_0.png"], ["shelf", "Bookcase", H_ + "hw_shelf_a_0_4_0.png"], ["cabinet", "Cabinet", H_ + "hw_closet1_a_0_2_0.png"], ["water", "Water cooler", H_ + "hw_watermatic_a_0_4_0.png"], ["rarecase", "Rare in a glass case", "art/wall/i_rarecase.png"], ["trophy", "Old trophy cabinet", "art/wall/i_trophy.png"], ["mark_scuff", "Floor scuffs", "art/wall/i_mark_scuff.png"], ["mark_tile", "Lifted floor tile", "art/wall/i_mark_tile.png"]]],
+    ["Furniture", [["sofa", "Sofa", T_ + "sofa.png"], ["chair", "Chair", H_ + "hw_chair_a_0_2_0.png"], ["table", "Table", T_ + "table.png"], ["smtable", "Small round table", H_ + "hw_smtble_a_0_0_0.png"], ["ballpost", "Ball post", H_ + "pillar0_a_0_0_0.png"], ["rope", "Rope barrier", T_ + "rope.png"], ["lamp", "Floor lamp", T_ + "lamp.png"], ["plant", "Plant", H_ + "hw_plant_a_0_0_0.png"], ["ero", "Planter", T_ + "planter.png"], ...PLANTERS.map(([k, name]) => [k, name, T_ + "planter-" + k.slice(4) + ".png"]), ["pillar", "Pillar", H_ + "pillar1_a_0_0_0.png"], ["pillartall", "Tall pillar", T_ + "pillartall.png"], ["statue", "Statue", H_ + "hw_statue_a_0_0_0.png"], ["fountain", "Fountain", H_ + "hw_fountain_a_0_0_0.png"], ["shelf", "Bookcase", H_ + "hw_shelf_a_0_4_0.png"], ["cabinet", "Cabinet", H_ + "hw_closet1_a_0_2_0.png"], ["water", "Water cooler", H_ + "hw_watermatic_a_0_4_0.png"], ["tablelamp", "Globe table lamp", "art/wall/i_tablelamp.png"], ["rarecase", "Rare in a glass case", "art/wall/i_rarecase.png"], ["trophy", "Old trophy cabinet", "art/wall/i_trophy.png"], ["mark_scuff", "Floor scuffs", "art/wall/i_mark_scuff.png"], ["mark_tile", "Lifted floor tile", "art/wall/i_mark_tile.png"]]],
     ...WALL_GROUPS.map(([kind, title]) => [title, WALL_ITEMS.filter(i => i.kind === kind).map(i => ["wi:" + i.id, i.name, "art/wall/" + i.y.layers[0].f])]),
-    ["Christmas", [["swag", "Garland (drag along a wall)", "art/wall/i_swag.png"], ["xmastree", "Christmas tree", "art/wall/i_xmastree.png"], ["xmassmalltree", "Small tree", "art/wall/i_xmassmalltree.png"], ["snowman", "Snowman", "art/wall/i_snowman.png"], ["xmaslantern", "Lantern", "art/wall/i_xmaslantern.png"], ["xmasdrinks", "Christmas drinks", "art/wall/i_xmasdrinks.png"], ["xmasduck", "Christmas duck", "art/wall/i_xmasduck.png"], ["gift1", "Gift", "art/wall/i_gift1.png"], ["gift2", "Gift, blue", "art/wall/i_gift2.png"], ["gift3", "Gift, green", "art/wall/i_gift3.png"], ["gift4", "Gift, gold", "art/wall/i_gift4.png"], ...WALL_ITEMS.filter(i => i.kind === "xmas").map(i => ["wi:" + i.id, i.name, "art/wall/" + i.y.layers[0].f])]],
+    ["Christmas", [["garland", "Garland (drag along a wall)", "art/wall/i_swag.png"], ["garland2", "Garland, two tiles", "art/wall/i_swag.png"], ["festoon", "Festoon lights (drag along a wall)", "art/wall/i_festoon.png"], ["xmastree", "Christmas tree", "art/wall/i_xmastree.png"], ["xmassmalltree", "Small tree", "art/wall/i_xmassmalltree.png"], ["snowman", "Snowman", "art/wall/i_snowman.png"], ["xmaslantern", "Lantern", "art/wall/i_xmaslantern.png"], ["xmasdrinks", "Christmas drinks", "art/wall/i_xmasdrinks.png"], ["xmasduck", "Christmas duck", "art/wall/i_xmasduck.png"], ["gift1", "Gift", "art/wall/i_gift1.png"], ["gift2", "Gift, blue", "art/wall/i_gift2.png"], ["gift3", "Gift, green", "art/wall/i_gift3.png"], ["gift4", "Gift, gold", "art/wall/i_gift4.png"], ...WALL_ITEMS.filter(i => i.kind === "xmas").map(i => ["wi:" + i.id, i.name, "art/wall/" + i.y.layers[0].f])]],
     ["Railings", EDGE_STYLES.map(([k, name]) => ["edge:" + k, name, "art/edge-" + k + ".png"])],
     ["Tidy", [["del", "Delete things", ICON.del], ["edges", "Map edges", ICON.edges]]]
 ];
@@ -758,7 +758,7 @@ function avatarTint(c) {
     const near = (x, y) => { const d = Math.hypot(walker.x + .5 - x, walker.y + .5 - y) / 7; if (d < 1) glow += (1 - d) * (1 - d); };
     if (on) {
         for (const q of (on.lamps || [])) { if (q.axis === "x") near(q.at, q.line + 1.6); else near(q.line + 1.6, q.at); }
-        for (const p of (on.props || [])) if (p.k === "lamp" || (p.lights && p.lights.length)) near(p.x + .5, p.y + .5);
+        for (const p of (on.props || [])) if (p.k === "lamp" || p.k === "tablelamp" || (p.lights && p.lights.length)) near(p.x + .5, p.y + .5);
     }
     glow = Math.min(1, glow);
     c.save(); c.globalCompositeOperation = "source-atop";
@@ -996,7 +996,9 @@ window.HallwayLive = {
     add(l) { liveLayers.add(l); wakeLive(); return () => liveLayers.delete(l); }, wake() { wakeLive(); if (map) paint(); },
     onFloor(f) { floorWatchers.add(f); return () => floorWatchers.delete(f); }, get floor() { return floorIn; },
     get idleFor() { return performance.now() - lastActive; }, get walker() { return walker; }, get map() { return map; },
-    mapPoint: (x, y, z) => P(x, y, z), get zoom() { return zoom; }, markActive,
+    mapPoint: (x, y, z) => P(x, y, z), doorName: d => doorName(d),
+    /* the top of a wall at one of its tiles, as high as it stands there: null where there is no wall */
+    wallTop(l, axis, line, t) { const st = wallState(l, axis, line, t); if (st === "none") return null; return wallZ(l, { axis, line, at: axis === "x" ? t + .5 : t + 1.5 }) + (st === "half" ? HALF_WALL : WALL); }, get zoom() { return zoom; }, markActive,
     /* for the things that move about the floor like a person: furniture in front cuts them, the time of day tints them. c is a 33 by 56 canvas, as the avatar's */
     as(who, fn) { const me = walker; walker = who; try { fn(); } finally { walker = me; } }, cutInFront: (c, x0, y0) => cutInFront(c, x0, y0), tint: c => avatarTint(c),
     tileFree(l) { const so = solid(l), hs = holes(l), sl = stairLevels().slots.get(l); return (x, y) => hasFloor(l, x, y) && !so.has(x + "," + y) && !hs.some(h => inRect(h, x, y)) && !(sl && sl.has(x + "," + y)); },
@@ -1073,7 +1075,7 @@ function setTool(t) {
     if (window.HALLWAY_PLAY && t !== "walk" && tool === "walk") return;      // on the site you only ever walk; you leave by the entrance or the Leave button
     if (t === "walk" && tool === "walk") return;
     doorCarry = null;
-    if (drag) { if (["rubout", "halfwall", "swag", "edgebrush", "edge", "move"].includes(drag.kind) && lastClient) canvas.dispatchEvent(new PointerEvent("pointerup", { clientX: lastClient[0], clientY: lastClient[1], bubbles: true, pointerId: 1 })); drag = null; }
+    if (drag) { if (["rubout", "halfwall", "swag", "garland", "festoon", "edgebrush", "edge", "move"].includes(drag.kind) && lastClient) canvas.dispatchEvent(new PointerEvent("pointerup", { clientX: lastClient[0], clientY: lastClient[1], bubbles: true, pointerId: 1 })); drag = null; }
     putBack();
     if (t !== tool) placeRot = 0;
     tool = t; hover = null; drag = null; heightHold = null;
@@ -1081,6 +1083,7 @@ function setTool(t) {
     if ($("heightBar")) $("heightBar").hidden = !brushTool(t);
     if (brushTool(t)) setBrush(brushes[t]);
     if (isWallItemTool(t)) { const d0 = wallItemOf(t.slice(3)); wallH.item = (d0 && d0.h) || 100; }
+    if (t === "tablelamp") tableLampZ = null;
     if (t !== "walk") walker = null; else startWalk();
     document.querySelectorAll("[data-tool]").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.tool === t)));
     $("toolName").textContent = TOOL_NAMES[t] || "";
@@ -1095,7 +1098,7 @@ function snapRect(a, b) {
     if (tool === "rug") return { x0: Math.floor(x0), x1: Math.floor(x1) + 1, y0: Math.floor(y0), y1: Math.floor(y1) + 1 };
     return { x0: Math.floor(x0 / 2) * 2, x1: (Math.floor(x1 / 2) + 1) * 2, y0: Math.floor(y0 / 2) * 2, y1: (Math.floor(y1 / 2) + 1) * 2 };
 }
-const FURNI = ["xmastree", "xmassmalltree", "snowman", "xmaslantern", "xmasdrinks", "xmasduck", "gift1", "gift2", "gift3", "gift4", "sofa", "chair", "table", "smtable", "ballpost", "rope", "lamp", "plant", "ero", "ero_stone", "ero_walnut", "ero_evergreen", "ero_flower", "pillar", "pillartall", "statue", "fountain", "shelf", "cabinet", "water", "rarecase", "trophy", "mark_scuff", "mark_tile"];
+const FURNI = ["tablelamp", "xmastree", "xmassmalltree", "snowman", "xmaslantern", "xmasdrinks", "xmasduck", "gift1", "gift2", "gift3", "gift4", "sofa", "chair", "table", "smtable", "ballpost", "rope", "lamp", "plant", "ero", "ero_stone", "ero_walnut", "ero_evergreen", "ero_flower", "pillar", "pillartall", "statue", "fountain", "shelf", "cabinet", "water", "rarecase", "trophy", "mark_scuff", "mark_tile"];
 const Parts = window.FurniParts;
 let placeRot = 0;                // which way round the next piece goes, set with R
 const fits = (l, p) => (Parts.ROWS[p.k] ? Parts.tiles(p) : [[p.x, p.y]]).every(t => placeable(l, t[0], t[1]));
@@ -1111,11 +1114,15 @@ function furniRun(a, b) {
     return { k, x: rot || step > 0 ? a[0] : a[0] - (n - 1), y: !rot || step > 0 ? a[1] : a[1] - (n - 1), len: n, rot, ok: n >= r.min };
 }
 const LAMP_STYLES = { hotel: "Hotel drum", torch: "Uplighter", tiffany: "Stained glass", globe: "Globe" };
+const TABLE_TOP = { table: 18, smtable: 15 };
+let tableLampZ = null;      // null: sit on whatever table is there
+const tableUnder = (l, x, y) => (l.props || []).find(p => TABLE_TOP[p.k] && Parts.tiles(p).some(t => t[0] === x && t[1] === y)) || null;
+const lampZAt = (l, x, y) => tableLampZ !== null ? tableLampZ : (t => t ? TABLE_TOP[t.k] : 0)(tableUnder(l, x, y));
 let lampStyle = localStorage.getItem("hallway-lamp") || "hotel"; if (!LAMP_STYLES[lampStyle]) lampStyle = "hotel";
 function placeRun(run) {
     if (!run.ok) { flash("There isn't room for that here."); paint(); return; }
     snapshot();
-    const p = { k: run.k, x: run.x, y: run.y }; if (run.len) p.len = run.len; if (run.rot) p.rot = run.rot; if (run.k === "lamp" && lampStyle !== "hotel") p.style = lampStyle;
+    const p = { k: run.k, x: run.x, y: run.y }; if (run.len) p.len = run.len; if (run.rot) p.rot = run.rot; if (run.k === "lamp" && lampStyle !== "hotel") p.style = lampStyle; if (run.k === "tablelamp") { const z = lampZAt(level, run.x, run.y); if (z) p.z = z; }
     (level.props = level.props || []).push(p);
     changed();
 }
@@ -1155,7 +1162,7 @@ function turnHeld() {
 }
 /* a desk sits on whole tiles; anything else standing on the floor keeps to the half-pixels where its foot follows the floor's own steps */
 function snapWallItem(q) { const dfn = WALL_ITEMS.find(w => w.id === q.k); if (!dfn) return; if (dfn.snapAt !== undefined) { q.at = Math.round(q.at - dfn.snapAt) + dfn.snapAt; return; } if (dfn.locked && q.axis) { let n = Math.round(q.at * 16); if (q.axis === "y" ? n % 2 === 0 : n % 2 !== 0) n++; q.at = n / 16; } }
-let pickNext = null; document.addEventListener("keydown", e => { if (pickNext && e.key === "Escape") { pickNext = null; flash("Cancelled."); } }, true);
+let pickNext = null; const lastFestoon = { colour: "amber", twinkle: false }; document.addEventListener("keydown", e => { if (pickNext && e.key === "Escape") { pickNext = null; flash("Cancelled."); } }, true);
 function pickUp(hit) {
     snapshot();
     const list = hit.type === "prop" ? hit.l.props : hit.l.teles;
@@ -1209,7 +1216,7 @@ function ghostPiece() {
     }
     if (drag && drag.kind === "furni") return drag.run;
     if (drag || !hover || !hover.tile || hover.l !== level) return null;
-    if (FURNI.includes(tool)) return furniRun(hover.tile, hover.tile);
+    if (FURNI.includes(tool)) { const g = furniRun(hover.tile, hover.tile); if (tool === "tablelamp") g.z = lampZAt(level, g.x, g.y); return g; }
     if (tool === "tele") return { tele: true, x: hover.tile[0], y: hover.tile[1], flip: !hasFloor(level, hover.tile[0] - 1, hover.tile[1]) !== !!(placeRot & 1), ok: true };
     return null;
 }
@@ -1290,6 +1297,7 @@ function drawGhost() {
     drawPiece(g, g.ok ? .7 : .3);
 }
 function drawPiece(g, alpha) {
+    if (g.k === "tablelamp") { const fp = floorPiece("tablelampArt"); if (!fp) return; const im = pieceImg(fp.f), a = P(g.x + .5, g.y + .5, tileZ(level, g.x, g.y) + (g.z || 0)), ox = Math.round(canvas.width / 2 - cam.x * zoom), oy = Math.round(canvas.height / 2 - cam.y * zoom); if (im.complete && im.naturalWidth) { ctx.save(); ctx.imageSmoothingEnabled = false; ctx.globalAlpha = alpha; ctx.drawImage(im, ox + (a[0] - fp.ox) * zoom, oy + (a[1] - fp.oy) * zoom, fp.w * zoom, fp.h * zoom); ctx.restore(); } return; }
     const z = levelZ(level), ox = Math.round(canvas.width / 2 - cam.x * zoom), oy = Math.round(canvas.height / 2 - cam.y * zoom);
     const put = (img, x, y, flip) => {
         if (!img.complete || !img.naturalWidth) return;
@@ -1558,7 +1566,7 @@ function sortByDifficulty() {
 
 /* ---------- select and move ---------- */
 let selected = null;            // { type, l, o }
-const TALL = { xmastree: [20, 72], xmassmalltree: [14, 30], snowman: [14, 34], xmaslantern: [10, 24], xmasdrinks: [12, 18], xmasduck: [10, 16], gift1: [12, 20], gift2: [12, 20], gift3: [12, 20], gift4: [12, 20], trophy: [28, 84], rarecase: [15, 62], mark_scuff: [14, 12], mark_tile: [14, 12], rope: [14, 36], pillartall: [12, 150], smtable: [13, 24], ballpost: [13, 28], ero_stone: [16, 40], ero_walnut: [16, 40], ero_evergreen: [16, 40], ero_flower: [16, 40], lamp: [12, 54], statue: [26, 105], pillar: [12, 110], plant: [11, 50], ero: [16, 40], fountain: [26, 34], shelf: [22, 62], cabinet: [32, 82], water: [12, 44], chair: [11, 28], table: [16, 22], sofa: [34, 28] };
+const TALL = { tablelamp: [8, 22], xmastree: [20, 72], xmassmalltree: [14, 30], snowman: [14, 34], xmaslantern: [10, 24], xmasdrinks: [12, 18], xmasduck: [10, 16], gift1: [12, 20], gift2: [12, 20], gift3: [12, 20], gift4: [12, 20], trophy: [28, 84], rarecase: [15, 62], mark_scuff: [14, 12], mark_tile: [14, 12], rope: [14, 36], pillartall: [12, 150], smtable: [13, 24], ballpost: [13, 28], ero_stone: [16, 40], ero_walnut: [16, 40], ero_evergreen: [16, 40], ero_flower: [16, 40], lamp: [12, 54], statue: [26, 105], pillar: [12, 110], plant: [11, 50], ero: [16, 40], fountain: [26, 34], shelf: [22, 62], cabinet: [32, 82], water: [12, 44], chair: [11, 28], table: [16, 22], sofa: [34, 28] };
 function pickIn(l, px, py) {
     const [fx, fy] = tileIn(l, px, py), X = Math.floor(fx), Y = Math.floor(fy);
     /* upright things first, front-most first, by what you can actually see of them */
@@ -1618,6 +1626,8 @@ function pick(px, py) {
     if (selected && selected.type === "wallitem" && selected.o.k === "i_window" && windowHandleAt(selected.l, selected.o, px, py)) return selected;
     /* of two things on one line of sight the higher is the nearer, so the top floor goes first, and
        a floor or wall you can see stops the click reaching anything hidden behind it */
+    if (window.hallwayXmas && window.HallwayGarland && level) for (const g of (level.garlands || [])) for (let t = g.a; t < g.b; t++) { const q = HallwayGarland.tileAt(level, g, t); if (q && Math.abs(px - q.c[0]) <= 9 && py >= q.c[1] - 2 && py <= q.c[1] + 16) return { type: "garland", l: level, o: g }; }
+    if (window.hallwayXmas && window.HallwayFestoon && level) for (const f of (level.festoons || [])) { const s = HallwayFestoon.shape(f); for (const [u, d] of s.bulbs.concat(s.pts.filter((q, i) => i % 6 === 0))) { const p = HallwayFestoon.onScreen(level, f, u, -d); if (Math.abs(px - p[0]) <= 4 && py >= p[1] - 3 && py <= p[1] + 9) return { type: "festoon", l: level, o: f }; } }
     for (const l of [...map.levels].sort((a, c) => c.k - a.k)) {
         const h = pickIn(l, px, py); if (h) return h;
         const [fx, fy] = tileIn(l, px, py), X = Math.floor(fx), Y = Math.floor(fy);
@@ -1669,8 +1679,8 @@ function signHandles(b) {
     return h;
 }
 function handleAt(b, px, py) { const r = Math.max(5, 7 / zoom), h = signHandles(b); for (const k of Object.keys(h)) if (Math.abs(px - h[k][0]) <= r && Math.abs(py - h[k][1]) <= r) return k; return null; }
-const TYPE_NAMES = { entrance: "Entrance", wallitem: "On the wall", steps: "Small steps", wall: "Wall", sign: "Maze sign", prop: "Furniture", tele: "Imperial Teleport", door: "Door", lamp: "Wall light", lift: "Lift", stair: "Stairs", medal: "Carpet crest", rug: "Rug" };
-const PROP_NAMES = { xmastree: "Christmas tree", xmassmalltree: "Small tree", snowman: "Snowman", xmaslantern: "Lantern", xmasdrinks: "Christmas drinks", xmasduck: "Christmas duck", gift1: "Gift", gift2: "Gift", gift3: "Gift", gift4: "Gift", trophy: "Old trophy cabinet", rarecase: "Rare in a glass case", mark_scuff: "Floor scuffs", mark_tile: "Lifted floor tile", rope: "Rope barrier", pillartall: "Tall pillar", smtable: "Small round table", ballpost: "Ball post", ero_stone: "Stone planter", ero_walnut: "Walnut planter", ero_evergreen: "Evergreen planter", ero_flower: "Flower planter", sofa: "Sofa", chair: "Chair", table: "Table", lamp: "Floor lamp", plant: "Plant", ero: "Planter", pillar: "Pillar", statue: "Statue", fountain: "Fountain", shelf: "Bookcase", cabinet: "Cabinet", water: "Water cooler" };
+const TYPE_NAMES = { garland: "Garland", festoon: "Festoon lights", entrance: "Entrance", wallitem: "On the wall", steps: "Small steps", wall: "Wall", sign: "Maze sign", prop: "Furniture", tele: "Imperial Teleport", door: "Door", lamp: "Wall light", lift: "Lift", stair: "Stairs", medal: "Carpet crest", rug: "Rug" };
+const PROP_NAMES = { tablelamp: "Globe table lamp", xmastree: "Christmas tree", xmassmalltree: "Small tree", snowman: "Snowman", xmaslantern: "Lantern", xmasdrinks: "Christmas drinks", xmasduck: "Christmas duck", gift1: "Gift", gift2: "Gift", gift3: "Gift", gift4: "Gift", trophy: "Old trophy cabinet", rarecase: "Rare in a glass case", mark_scuff: "Floor scuffs", mark_tile: "Lifted floor tile", rope: "Rope barrier", pillartall: "Tall pillar", smtable: "Small round table", ballpost: "Ball post", ero_stone: "Stone planter", ero_walnut: "Walnut planter", ero_evergreen: "Evergreen planter", ero_flower: "Flower planter", sofa: "Sofa", chair: "Chair", table: "Table", lamp: "Floor lamp", plant: "Plant", ero: "Planter", pillar: "Pillar", statue: "Statue", fountain: "Fountain", shelf: "Bookcase", cabinet: "Cabinet", water: "Water cooler" };
 const THUMB_FOR = { sign: "door", door: "door", lamp: "sconce", lift: "lift", medal: "medal", rug: "rug", tele: "tele" };
 function thumbFor(hit) {
     if (hit.type === "wallitem") { const def = wallItemOf(hit.o.k); return def ? "art/wall/" + def.y.layers[0].f : null; }
@@ -1754,6 +1764,11 @@ function select(hit) {
         if (hit.type === "wallitem" && String(hit.o.k).startsWith("i_peel")) { const q = hit.o, f = document.createElement("label"); f.className = "field"; const n = document.createElement("span"); n.className = "f-label"; n.textContent = "Behind it"; const sel = document.createElement("select"); sel.className = "f-ctl"; for (const [v, t] of [["", "Nothing"], ["note", "A note"], ["6x14|0", "A door: staff corridor 1"], ["6x14|1", "A door: staff corridor 2"], ["6x14|2", "A door: staff corridor 3"], ["4x8|0", "A door: passage 1"], ["4x8|1", "A door: passage 2"], ["4x8|2", "A door: passage 3"]]) { const o = document.createElement("option"); o.value = v; o.textContent = t; sel.appendChild(o); } sel.value = !q.behind ? "" : q.behind.kind === "note" ? "note" : q.behind.size + "|" + q.behind.n; sel.addEventListener("change", () => { snapshot(); if (!sel.value) delete q.behind; else if (sel.value === "note") q.behind = { kind: "note", text: (q.behind && q.behind.text) || "" }; else { const [size, m] = sel.value.split("|"); q.behind = { kind: "door", size, n: +m }; } changed(); select(hit); }); f.append(n, sel); box.appendChild(f);
           if (q.behind && q.behind.kind === "note") { const ta = document.createElement("textarea"); ta.rows = 3; ta.value = q.behind.text || ""; ta.setAttribute("aria-label", "What the note says"); ta.style.width = "100%"; ta.addEventListener("change", () => { snapshot(); q.behind.text = ta.value; changed(); }); box.appendChild(ta); } }
         if (hit.type === "wallitem" && hit.o.k === "i_festoon") { const q = hit.o, row = (label, ctl) => { const f = document.createElement("label"); f.className = "field"; const n = document.createElement("span"); n.className = "f-label"; n.textContent = label; f.append(n, ctl); box.appendChild(f); }, sel = document.createElement("select"); sel.className = "f-ctl"; for (const [v, t] of [["amber", "Amber"], ["warm", "Warm white"], ["multi", "Many colours"], ["redgreen", "Red and green"], ["blue", "Blue and white"], ["cool", "Cool white"]]) { const o = document.createElement("option"); o.value = v; o.textContent = t; sel.appendChild(o); } sel.value = q.colour || "amber"; sel.addEventListener("change", () => { snapshot(); if (sel.value === "amber") delete q.colour; else q.colour = sel.value; changed(); }); row("Bulbs", sel); const tw = document.createElement("input"); tw.type = "checkbox"; tw.checked = !!q.twinkle; tw.addEventListener("change", () => { snapshot(); if (tw.checked) q.twinkle = true; else delete q.twinkle; changed(); }); row("A gentle twinkle", tw); }
+        if (hit.type === "garland") { const g = hit.o, f = document.createElement("label"); f.className = "field"; const n = document.createElement("span"); n.className = "f-label"; n.textContent = "Baubles"; const cb = document.createElement("input"); cb.type = "checkbox"; cb.checked = g.baubles !== false; cb.addEventListener("change", () => { snapshot(); if (cb.checked) delete g.baubles; else g.baubles = false; changed(); }); f.append(n, cb); box.appendChild(f); const p = document.createElement("p"); p.className = "hint"; p.textContent = "Their colours are set on the Map tab."; box.appendChild(p); }
+        if (hit.type === "festoon") { const q = hit.o, row = (label, ctl) => { const f = document.createElement("label"); f.className = "field"; const n = document.createElement("span"); n.className = "f-label"; n.textContent = label; f.append(n, ctl); box.appendChild(f); }, sel = document.createElement("select"); sel.className = "f-ctl"; for (const [v, t] of [["amber", "Amber"], ["warm", "Warm white"], ["multi", "Many colours"], ["redgreen", "Red and green"], ["blue", "Blue and white"], ["cool", "Cool white"]]) { const o = document.createElement("option"); o.value = v; o.textContent = t; sel.appendChild(o); } sel.value = q.colour || "amber"; sel.addEventListener("change", () => { snapshot(); if (sel.value === "amber") delete q.colour; else q.colour = sel.value; lastFestoon.colour = sel.value; changed(); }); row("Bulbs", sel);
+          const tw = document.createElement("input"); tw.type = "checkbox"; tw.checked = !!q.twinkle; tw.addEventListener("change", () => { snapshot(); if (tw.checked) q.twinkle = true; else delete q.twinkle; lastFestoon.twinkle = tw.checked; changed(); }); row("A gentle twinkle", tw);
+          const hh = document.createElement("input"); hh.type = "number"; hh.min = "40"; hh.max = "140"; hh.className = "f-ctl"; hh.value = String(q.h || 118); hh.addEventListener("change", () => { snapshot(); q.h = Math.max(40, Math.min(140, Math.round(+hh.value || 118))); changed(); }); row("Height on the wall", hh); }
+        if (hit.type === "prop" && hit.o.k === "tablelamp") { const f = document.createElement("label"); f.className = "field"; const n = document.createElement("span"); n.className = "f-label"; n.textContent = "Height off the floor"; const i = document.createElement("input"); i.type = "number"; i.min = "0"; i.max = "60"; i.value = String(hit.o.z || 0); i.className = "f-ctl"; i.addEventListener("change", () => { snapshot(); const v = Math.max(0, Math.min(60, Math.round(+i.value || 0))); if (v) hit.o.z = v; else delete hit.o.z; changed(); }); f.append(n, i); box.appendChild(f); }
         if (hit.type === "prop" && hit.o.k === "rarecase") { const fp = floorPiece("rarecase"), f = document.createElement("label"); f.className = "field"; const n = document.createElement("span"); n.className = "f-label"; n.textContent = "What's inside"; const sel = document.createElement("select"); sel.className = "f-ctl"; for (const [k, v] of Object.entries((fp && fp.opts) || {}).sort((a, c) => a[1].name.localeCompare(c[1].name))) { const o = document.createElement("option"); o.value = k; o.textContent = v.name; sel.appendChild(o); } sel.value = hit.o.rare || (fp && fp.rare0) || ""; sel.addEventListener("change", () => { snapshot(); hit.o.rare = sel.value; changed(); }); f.append(n, sel); box.appendChild(f); }
         if (hit.type === "prop" && hit.o.k === "rope") { const f = document.createElement("label"); f.className = "field"; const n = document.createElement("span"); n.className = "f-label"; n.textContent = "Comes off at night"; const c = document.createElement("span"); c.className = "f-ctl"; const t = document.createElement("input"); t.type = "checkbox"; t.checked = !!hit.o.night; t.addEventListener("change", () => { snapshot(); if (t.checked) hit.o.night = true; else delete hit.o.night; changed(); }); c.appendChild(t); f.append(n, c); box.appendChild(f); }
         if (hit.type === "prop" && hit.o.k === "rope") {
@@ -1779,7 +1794,7 @@ function select(hit) {
         }
     }
     else say("Drag it to move it, or use the arrow keys to nudge it.");
-    if (hit.type === "lamp" || (hit.type === "prop" && (hit.o.k === "lamp" || ((hit.o.k === "pillar" || hit.o.k === "pillartall") && hit.o.lights)))) {
+    if (hit.type === "lamp" || (hit.type === "prop" && (hit.o.k === "lamp" || hit.o.k === "tablelamp" || ((hit.o.k === "pillar" || hit.o.k === "pillartall") && hit.o.lights)))) {
         colourRow(box, "Light colour", () => hit.o.colour || null, v => { if (v) hit.o.colour = v; else delete hit.o.colour; }, "#ffd98a", "The mood's own");
     }
     if (hit.type !== "sign" && hit.type !== "wall" && hit.type !== "entrance") btn("Delete", deleteSelected, "ghost danger");
@@ -1844,7 +1859,7 @@ function mazePicker(box, door) {
 function deleteSelected() {
     const s = selected; if (!s) return;
     if (s.type === "sign") { flash(s.o.kind ? "A staircase always has its sign." : "A door always has its sign. Make the door spare to take it away."); return; }
-    const lists = { lift: map.lifts, wallitem: s.l.wallItems, steps: s.l.steps, prop: s.l.props, tele: s.l.teles, door: s.l.doors, lamp: s.l.lamps, medal: s.l.medals, rug: s.l.rugs, stair: map.stairs };
+    const lists = { garland: s.l.garlands, festoon: s.l.festoons, lift: map.lifts, wallitem: s.l.wallItems, steps: s.l.steps, prop: s.l.props, tele: s.l.teles, door: s.l.doors, lamp: s.l.lamps, medal: s.l.medals, rug: s.l.rugs, stair: map.stairs };
     const list = lists[s.type], i = list ? list.indexOf(s.o) : -1;
     if (i < 0) { flash(s.type === "entrance" ? "The hallway always has an entrance. Drag it to move it." : "That can't be deleted."); return; }
     snapshot(); list.splice(i, 1);
@@ -2140,6 +2155,8 @@ canvas.addEventListener("pointerdown", e => {
     if (tool === "walk") { walkPress(px, py); return; }
     if (tool === "halfwall" || tool === "nowall" || tool === "addwall") { drag = { kind: "halfwall" }; halfBrush(drag, px, py); return; }
     if (tool === "swag") { drag = { kind: "swag" }; swagBrush(drag, px, py); return; }
+    if (tool === "garland" || tool === "garland2") { const w = wallAt(px, py, level, true); if (!w) return; const t = wallTile(w); if (tool === "garland2") { snapshot(); const g = { axis: w.axis, line: w.line, a: t, b: t + 2 }; (level.garlands = level.garlands || []).push(g); changed(); select({ type: "garland", l: level, o: g }); return; } drag = { kind: "garland", axis: w.axis, line: w.line, t0: t }; window.HallwayGarland.draft = { l: level, axis: w.axis, line: w.line, a: t, b: t + 1 }; paint(); return; }
+    if (tool === "festoon") { const w = wallAt(px, py, level, true); if (!w) return; const t = wallTile(w); drag = { kind: "festoon", axis: w.axis, line: w.line, t0: t, t1: t }; window.HallwayFestoon.draft = { l: level, axis: w.axis, line: w.line, a: t, b: t + 1, h: 118, colour: lastFestoon.colour, twinkle: lastFestoon.twinkle }; paint(); return; }
     if (tool === "steps") {
         const f = tileIn(level, px, py), edge = heightEdgeAt(level, f[0], f[1]);
         if (!edge) { flash("Steps go where two heights meet. Set a floor's height first, with Floor height."); return; }
@@ -2167,6 +2184,8 @@ canvas.addEventListener("pointermove", e => {
     if (drag && drag.kind === "rubout") { rubOut(drag, px, py); return; }
     if (drag && drag.kind === "halfwall") { halfBrush(drag, px, py); return; }
     if (drag && drag.kind === "swag") { swagBrush(drag, px, py); return; }
+    if (drag && drag.kind === "garland") { const w = wallAt(px, py, level, true); if (w && w.axis === drag.axis && w.line === drag.line) { const t1 = wallTile(w), dr = window.HallwayGarland.draft; dr.a = Math.min(drag.t0, t1); dr.b = Math.max(drag.t0, t1) + 1; paint(); } return; }
+    if (drag && drag.kind === "festoon") { const w = wallAt(px, py, level, true); if (w && w.axis === drag.axis && w.line === drag.line) { drag.t1 = wallTile(w); const dr = window.HallwayFestoon.draft; dr.a = Math.min(drag.t0, drag.t1); dr.b = Math.max(drag.t0, drag.t1) + 1; paint(); } return; }
     if (drag && drag.kind === "edgebrush") { edgeBrush(drag, px, py); return; }
     if (drag && drag.kind === "move") { moveSelected(drag, px, py); return; }
     if (!drag && (tool === "select" || tool === "walk")) {
@@ -2197,7 +2216,7 @@ canvas.addEventListener("pointermove", e => {
     if (drag && drag.kind === "rect" && brushTool(tool) && e.ctrlKey) return;
     if (drag && drag.kind === "rect") { drag.rect = snapRect(drag.a, tool === "floor" ? paintTile(px, py) : tileIn(level, px, py)); paint(); return; }
     if (level && tool !== "pan" && tool !== "walk" && tool !== "edges") {
-        const wallTool = ["entrance", "door", "sconce", "globelight", "lift", "stair", "turn", "side", "sideturn", "halfwall", "nowall", "addwall", "swag"].includes(tool) || tool === "del" || isWallItemTool(tool);
+        const wallTool = ["entrance", "door", "sconce", "globelight", "lift", "stair", "turn", "side", "sideturn", "halfwall", "nowall", "addwall", "swag", "festoon", "garland", "garland2"].includes(tool) || tool === "del" || isWallItemTool(tool);
         const [fx, fy] = tileIn(level, px, py);
         if (isWallItemTool(tool)) hoverPx = [px, py];
         const onFloor = hasFloor(level, Math.floor(fx), Math.floor(fy));
@@ -2221,6 +2240,8 @@ canvas.addEventListener("pointerup", e => {
     if (d.kind === "rubout") { endRub(d); return; }
     if (d.kind === "halfwall") { endHalfBrush(d); return; }
     if (d.kind === "swag") { if (d.did) changed(); return; }
+    if (d.kind === "garland") { const dr = window.HallwayGarland.draft; window.HallwayGarland.draft = null; if (dr) { snapshot(); const g = { axis: dr.axis, line: dr.line, a: dr.a, b: dr.b }; (level.garlands = level.garlands || []).push(g); changed(); select({ type: "garland", l: level, o: g }); } paint(); return; }
+    if (d.kind === "festoon") { const dr = window.HallwayFestoon.draft; window.HallwayFestoon.draft = null; if (dr) { snapshot(); const f = { axis: dr.axis, line: dr.line, a: dr.a, b: dr.b, h: dr.h }; if (dr.colour && dr.colour !== "amber") f.colour = dr.colour; if (dr.twinkle) f.twinkle = true; (level.festoons = level.festoons || []).push(f); changed(); select({ type: "festoon", l: level, o: f }); } paint(); return; }
     if (d.kind === "edgebrush") { endEdgeBrush(d); return; }
     if (d.kind === "laysteps") {
         snapshot();
@@ -2274,6 +2295,9 @@ canvas.addEventListener("dblclick", e => {
 });
 canvas.addEventListener("pointermove", e => {
     const kind = wallHeightKind(tool);
+    { const lampNow = tool === "tablelamp" ? "tool" : carry && carry.p.k === "tablelamp" ? "carry" : drag && drag.kind === "move" && selected && selected.type === "prop" && selected.o.k === "tablelamp" ? "drag" : null;
+      if (lampNow && (e.ctrlKey || e.metaKey)) { if (lampCtrlLast === null) { lampCtrlLast = e.clientY; return; } const n = Math.trunc((lampCtrlLast - e.clientY) / 4); if (!n) return; lampCtrlLast -= n * 4; const o = lampNow === "carry" ? carry.p : lampNow === "drag" ? selected.o : null, now = o ? (o.z || 0) : (tableLampZ !== null ? tableLampZ : (hover && hover.tile ? lampZAt(level, hover.tile[0], hover.tile[1]) : 0)), v = Math.max(0, Math.min(60, now + n)); if (o) { o.z = v; if (!v) delete o.z; if (lampNow === "drag") drag.moved = true; } else tableLampZ = v; setStatus("Height: " + v); paint(); return; }
+      if (!(e.ctrlKey || e.metaKey)) lampCtrlLast = null; }
     if (!kind || !(e.ctrlKey || e.metaKey) || drag) { wallCtrlLast = null; wallCtrlSpare = 0; return; }
     if (wallCtrlLast === null) { wallCtrlLast = e.clientY; return; }
     wallCtrlSpare += wallCtrlLast - e.clientY; wallCtrlLast = e.clientY;
@@ -3143,6 +3167,7 @@ function setZoom(z, sx, sy) {
     paint(); followNow();
 }
 function showMapInfo() {
+    for (const l of map.levels) if (l.swags && l.swags.length) { const runs = new Map(); for (const k of l.swags) { const [ax, ln, t] = k.split("|"); const key = ax + "|" + ln; if (!runs.has(key)) runs.set(key, []); runs.get(key).push(+t); } l.garlands = l.garlands || []; for (const [key, ts] of runs) { const [ax, ln] = key.split("|"); ts.sort((p, q) => p - q); let a = ts[0], b = a + 1; for (const t of ts.slice(1)) { if (t === b) b++; else { l.garlands.push({ axis: ax, line: +ln, a, b }); a = t; b = t + 1; } } l.garlands.push({ axis: ax, line: +ln, a, b }); } delete l.swags; }
     { const row = $("baubleRow"); if (row && !row.children.length) for (const c of ["red", "gold", "blue", "silver", "purple", "pink", "teal"]) { const f = document.createElement("label"); f.className = "hint"; f.style.marginRight = "8px"; const t = document.createElement("input"); t.type = "checkbox"; t.dataset.c = c; t.addEventListener("change", () => { const on = [...row.querySelectorAll("input")].filter(q => q.checked).map(q => q.dataset.c); if (!on.length) { t.checked = true; return; } snapshot(); map.baubles = on; changed(); }); f.append(t, " " + c); row.appendChild(f); } if (row) for (const t of row.querySelectorAll("input")) t.checked = !map.baubles || map.baubles.includes(t.dataset.c); }
     const so = $("scareOdds"); if (so && document.activeElement !== so) so.value = map.scareOdds === undefined ? 25 : map.scareOdds;
     const r = map.rect, pw = 1440 / 2, ph = 774 / 2;

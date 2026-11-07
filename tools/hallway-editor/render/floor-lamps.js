@@ -310,7 +310,24 @@ function sconce(out, off, colour) {
 }
 const memo = new Map();
 /* every pixel of one design, off or lit: [dx, dy, [r, g, b], glowing], and how far up its light sits */
+/* the table lamp: the globe lamp's own globe, gallery ring and cup from his drawing, on a low foot and a short stem instead of the pole */
+function tableGlobe(off, colour) {
+    const k = "tableglobe" + (off ? "|off" : "|lit") + (colour || ""); if (memo.has(k)) return memo.get(k);
+    const sh = globeSheet(), top = sh ? pixelsFromSheet(sh, off, colour).list : pixels("globe", off, colour, GLOBE).list, LIFT = 6, px = new Map(), r = R.antique;
+    for (const [dx, dy, c, g] of top) if (dy <= -11) px.set(dx + "," + (dy + LIFT), [dx, dy + LIFT, c, g]);
+    const put = (x, y, t) => px.set(x + "," + y, [x, y, pick(r, t), false]);
+    /* the foot: a flat round, its top lit, its front edge in shade */
+    for (const [y, w, t] of [[0, 3, .3], [-1, 4, .5], [-2, 3, .8]]) for (let x = -w; x <= w; x++) put(x, y, x < 0 ? t + .12 : t);
+    /* the stem, up to the cup */
+    for (let y = -3; y >= -5; y--) { put(-1, y, .9); put(0, y, .6); put(1, y, .35); }
+    /* a black line round the outside, as every piece has */
+    const out = [...px.values()], has = (x, y) => px.has(x + "," + y), line = [];
+    for (const [x, y] of out) for (const [a, b] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) if (!has(x + a, y + b)) line.push([x + a, y + b, [0, 0, 0], false]);
+    const seen = new Set(), list = [...out]; for (const q of line) { const kk = q[0] + "," + q[1]; if (seen.has(kk) || has(q[0], q[1])) continue; seen.add(kk); list.push(q); }
+    const v = { list, lightH: 18 - LIFT }; memo.set(k, v); return v;
+}
 function pixels(kind, off, colour, opt) {
+    if (kind === "tableglobe") return tableGlobe(off, colour);
     if (kind === "globe" && !opt) { const sh = globeSheet(); if (sh) return pixelsFromSheet(sh, off, colour); }
     const k = kind + (off ? "|off" : "|lit") + (colour && !off && kind !== "tiffany" ? colour : "") + JSON.stringify(opt || (kind === "globe" ? GLOBE : 0));
     if (memo.has(k)) return memo.get(k);
