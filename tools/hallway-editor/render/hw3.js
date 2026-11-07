@@ -1160,7 +1160,7 @@ function fromMap(map, names) {
             if (!P) { report.lost.push("door " + d.axis + d.at); continue; }
             const name = d.spare ? null : (d.name || nameList[ni++] || null);
             if (name) report.named++;
-            P.dn.push({ d: [d.axis, d.at], name, sign: d.sign });
+            P.dn.push({ d: [d.axis, d.at], name, sign: d.sign, kind: d.kind });
         }
         for (const q of (l.lamps || [])) { const P = onWall(q.axis, q.at, q.line); if (P) P.l.push([q.axis, q.at, q.colour, q.style, q.h]); else report.lost.push("lamp " + q.axis + q.at + " on " + l.id); }
         for (const q of (l.wallItems || [])) { const P = onWall(q.axis, q.at, q.line); if (P) P.wi.push(q); else report.lost.push((q.k || "wall item") + " " + q.axis + q.at + " on " + l.id); }
@@ -1205,6 +1205,8 @@ function build(cfg) {
     const view = cl ? (() => { const c = at(cl[0], cl[1], cl[2]); return [c[0] - (cl[3] >> 1) - 40, c[1] - (cl[4] >> 1) - 40, c[0] + (cl[3] >> 1) + 40, c[1] + (cl[4] >> 1) + 40]; })() : [0, 0, pw, ph];
     const bw = view[2] - view[0], bh = view[3] - view[1];
     const out = new Buf(bw, bh, "000000"), layer = new Buf(bw, bh, "07060a");
+    /* a door, or a bookcase hiding one: closed it's a still picture wider than the opening, the page draws it opening */
+    const doorOrBook = (w, x, y, o, it) => { const fp = it && it.kind === "book" && FLOOR_PIECES.bookdoor; if (!fp) return H.door(w, x, y, o); const flip = !o.mapY, s = flip ? w.S(x - .5, y) : w.S(x, y - 2.5), im = wallArt(fp.f), a0 = Math.round(s[0]), a1 = Math.round(s[1]); for (let j = 0; j < im.h; j++) for (let i = 0; i < im.w; i++) { const q = (j * im.w + i) * 4; if (im.rgba[q + 3] < 128) continue; const sx = a0 - fp.ox + i, X = flip ? 2 * a0 - sx - 1 : sx, Y = a1 - fp.oy + j, c = [im.rgba[q], im.rgba[q + 1], im.rgba[q + 2]]; layer.set(X, Y, c); if (X >= 0 && Y >= 0 && X < bw && Y < bh) w.keep[Y * bw + X] = ((c[0] << 16) | (c[1] << 8) | c[2]) + 1; } };
     /* a tint or see-through pixel of a new piece: remembered with what's under it now, and worked out after the colouring, on whatever colour the wall ends up. If something's gone over it by then, it's dropped */
     const pieceTint = (X, Y, c, A) => { if (X < 0 || Y < 0 || X >= bw || Y >= bh || furniX[Y * bw + X] !== NO_FURNI) return; const p = (Y * bw + X) * 4; w.tints.push([X, Y, c, A, (layer.d[p] << 16) | (layer.d[p + 1] << 8) | layer.d[p + 2]]); };
     const furniX = new Int16Array(bw * bh), furniY = new Int16Array(bw * bh), furniC = new Int32Array(bw * bh), furniRun = new Uint8Array(bw * bh), NO_FURNI = -32768;
@@ -1596,15 +1598,15 @@ function build(cfg) {
                     const a = axis === "x" ? at2 : at2 - 2, zHere = P.z, tileLine = axis === "x" ? P.y0 : P.x0;
                     (P.raised ? w.sprites : (lv.later = lv.later || [])).push({ depth: (axis === "x" ? at2 + P.y0 : P.x0 + at2) + .3, tx: axis === "x" ? a : tileLine, ty: axis === "x" ? tileLine : a, draw: () => {
                         const zs = w.z; w.z = zHere;
-                        if (axis === "x") H.door(w, at2, tileLine, { hover, open });
-                        else H.door(w, tileLine, at2, { mapY: true, hover, open });
+                        if (axis === "x") doorOrBook(w, at2, tileLine, { hover, open }, it);
+                        else doorOrBook(w, tileLine, at2, { mapY: true, hover, open }, it);
                         w.z = zs;
                     } });
                     if (it.name) { if (axis === "x") signs.push({ s: w.WX(at2 + 1, P.y0, 0, 71), name: it.name, hover, sign: { v: 7, ...it.sign } }); else signs.push({ s: w.WY(P.x0, at2 - 1, 0, 71), name: it.name, alongY: true, hover, sign: { v: 7, ...it.sign } }); }
                     continue;
                 }
-                if (axis === "x") { H.door(w, at2, P.y0, { hover, open }); if (it.name) { const s = w.WX(at2 + 1, P.y0, 0, 71); signs.push({ s, name: it.name, hover, sign: { v: 7, ...it.sign } }); } }
-                else { H.door(w, P.x0, at2, { mapY: true, hover, open }); if (it.name) { const s = w.WY(P.x0, at2 - 1, 0, 71); signs.push({ s, name: it.name, alongY: true, hover, sign: { v: 7, ...it.sign } }); } }
+                if (axis === "x") { doorOrBook(w, at2, P.y0, { hover, open }, it); if (it.name) { const s = w.WX(at2 + 1, P.y0, 0, 71); signs.push({ s, name: it.name, hover, sign: { v: 7, ...it.sign } }); } }
+                else { doorOrBook(w, P.x0, at2, { mapY: true, hover, open }, it); if (it.name) { const s = w.WY(P.x0, at2 - 1, 0, 71); signs.push({ s, name: it.name, alongY: true, hover, sign: { v: 7, ...it.sign } }); } }
             }
             for (const it of (P.wi || [])) {
                 const def = WALL_ITEM.get(it.k); if (!def) continue;

@@ -216,7 +216,7 @@ function pipeY(x, z, r, y0, y1, c) { const tone = v => v > .72 ? c[0] : v > .42 
 const riser = (x, y, r, z0, z1, c) => cyl(x, y, r, z0, z1, { ramp: [c[3], c[2], c[1], c[0]], top: col(c[1]), edge: col(c[4]) });
 const joint = (x, y, z, r, c) => box(x - r, x + r, y - r, y + r, z - r, z + r, { top: col(c[0]), y: col(c[1]), x: col(c[2]), edge: col(c[4]) });
 function staffRoom(opt = {}) {
-    const LX = 96, LY = 224, WH = 112, ps = [];
+    const LX = 96, LY = 224, WH = 112, ps = [], marks = [], mark = k => marks.push([k, ps.length]);
     const stone = (u, z, k) => { const row = Math.floor(z / 8), off = row % 2 ? 12 : 0, a = mod(u + off, 24); if (mod(z, 8) < 1 || a < 1) return [38 * k, 36 * k, 34 * k]; const n = mod(Math.floor((u + off) / 24) * 7 + row * 3, 5), t = [78, 84, 74, 88, 70][n], chip = 0; return [(t + chip) * k, (t + chip) * .97 * k, (t + chip) * .92 * k]; };
     const wallTex = (u, z, k) => { if (z < 4) return [24 * k, 22 * k, 21 * k]; if (z < 8) return [46 * k, 42 * k, 40 * k]; if (z < 9) return [24, 20, 18]; if (z < 40) { const pl = mod(u, 32), iz = Math.floor(z); if (pl < 1) return [26 * k, 30 * k, 30 * k]; if (pl < 2) return [84 * k, 96 * k, 94 * k]; if ((pl < 4 || pl > 29) && (iz === 13 || iz === 23 || iz === 33)) return [172 * k, 176 * k, 170 * k]; if ((pl < 4 || pl > 29) && (iz === 12 || iz === 22 || iz === 32)) return [28 * k, 30 * k, 30 * k]; return [64 * k, 76 * k, 74 * k]; } if (z < 42) return [34, 30, 28]; if (z < 43) return [104 * k, 100 * k, 94 * k]; if (z >= WH - 2) return [120 * k, 116 * k, 108 * k]; return stone(u, z, k); };
     ps.push(box(-6, 0, -6, LY, 0, WH, { top: col("78746c"), x: (f, p) => wallTex(p[1] + 6, p[2], 1), y: col("3a3834"), edge: null, noLine: true, tex: null }));
@@ -224,7 +224,7 @@ function staffRoom(opt = {}) {
     /* the floor: slate, a yellow-and-black warning edge round the plant, and a drain */
     const floorTop = (f, p) => { const x = p[0], y = p[1]; if (x < 28 && y > 130 && y < 202) { if (x > 22 || y < 136 || y > 196) return mod(Math.floor((x + y) / 4), 2) ? [226, 186, 42] : [28, 26, 22]; } return slateAt(x, y); };
     ps.push(box(0, LX, 0, LY, -8, 0, { top: floorTop, x: col("262626"), y: col("3a3a3a"), edge: null, noLine: true }));
-    /* a steel main and a copper line, on clamps, with valves and a pressure gauge along the way */
+    mark("pipes"); /* a steel main and a copper line, on clamps, with valves and a pressure gauge along the way */
     ps.push(pipeY(5, 94, 2.5, 0, 180, STEEL), joint(5, 2, 94, 4, STEEL), joint(5, 180, 94, 3.5, STEEL), riser(5, 180, 2.5, 46, 94, STEEL));
     ps.push(pipeY(5, 84, 2.5, 0, 150, COPPER), joint(5, 2, 84, 4, COPPER), joint(5, 150, 84, 3.5, COPPER), riser(5, 150, 2.5, 46, 84, COPPER));
     for (let y = 16; y < 150; y += 32) { ps.push(box(0, 8.4, y, y + 2, 79, 99, { top: col("6a665e"), y: col("4c4942"), x: col("3e3b36"), edge: col("16140f"), tex(f, p) { if (f === "x" && (Math.floor(p[2]) === 81 || Math.floor(p[2]) === 96)) return "a8a498"; return null; } })); }
@@ -237,7 +237,7 @@ function staffRoom(opt = {}) {
     ps.push(joint(5, 88, 84, 3.6, COPPER), cyl(11, 88, 1, 80, 88, M("7a838c", "4c545c", "33312c", K)));
     { const RW = M("ff7a60", "c8352a", "8a1f16", "2a0604"); for (let i = 0; i < 14; i++) { const a = i / 14 * Math.PI * 2; ps.push(box(9.5, 12.5, 88 + Math.cos(a) * 5 - .7, 88 + Math.cos(a) * 5 + .7, 84 + Math.sin(a) * 5 - .7, 84 + Math.sin(a) * 5 + .7, RW)); } ps.push(box(10, 12, 84, 92, 83.4, 84.6, RW), box(10, 12, 87.4, 88.6, 80, 88, RW)); }
     ps.push(joint(5, 128, 94, 3.3, STEEL), box(4, 6, 127, 129, 97, 101, M("aab2ba", "7a838c", "4c545c", K)), box(1.5, 7.5, 124, 132, 101, 109, { top: col("aab2ba"), y: col("7a838c"), x: col("4c545c"), edge: col(K), tex(f, p) { if (f !== "x") return null; const d = Math.hypot(p[1] - 128, p[2] - 105); if (d > 3.6) return "2a2e32"; if (Math.abs((p[1] - 128) + (p[2] - 105)) < .7 && p[2] > 105) return "b22a1e"; return "f4f2e6"; } }));
-    /* the boiler: riveted plates, two gauges, an inspection hatch, a burner door, a name plate, its pipes and a drain */
+    mark("boiler"); /* the boiler: riveted plates, two gauges, an inspection hatch, a burner door, a name plate, its pipes and a drain */
     const rivet = (u, z, step0, step1) => mod(u, step0) < 1 && mod(z, step1) < 1;
     const steelTex = (f, p) => {
         if (f === "x") { const u = p[1], z = p[2];
@@ -256,16 +256,16 @@ function staffRoom(opt = {}) {
     /* a drain cock on the front, a stub of pipe on the side, the burner's handle */
     ps.push(box(16, 19, 150, 152, 4, 7, M("c9824a", "96582c", "6a3a1a", K)), box(18, 21, 149, 153, 3, 5, M("ff7a60", "c8352a", "8a1f16", K)), box(16, 18, 160, 163, 12, 14, M("dfe5ea", "aab2ba", "7a838c", K)));
     ps.push(cyl(8, 192, 2.4, 22, 28, M("aab2ba", "7a838c", "4c545c", K)));
-    /* the duct: seams and rivets, flanges, hangers */
+    mark("duct"); /* the duct: seams and rivets, flanges, hangers */
     const galv = (f, p) => { if (f === "y") { const m = mod(p[0], 16); if (m < 1) return "5a6268"; if (m < 2) return "cdd4da"; if ((Math.floor(p[2]) === 98 || Math.floor(p[2]) === 108) && mod(p[0], 4) < 1) return "e8edf0"; return null; } if (f === "x") { const m = mod(p[1], 16); if (m < 1) return "5a6268"; if (m < 2) return "aab2ba"; return null; } if (f === "top") return mod(p[0], 16) < 1 ? "8d959d" : null; return null; };
     ps.push(box(0, 72, 0, 14, 96, 110, { top: col("b4bcc4"), y: col("98a0a8"), x: col("7a838c"), edge: col("1a1e22"), tex: galv }));
     ps.push(box(72, 84, -2, 16, 92, 112, { top: col("b4bcc4"), y: col("98a0a8"), x: col("7a838c"), edge: col("1a1e22"), tex(f, p) { if (f === "y" && (Math.floor(p[2]) === 94 || Math.floor(p[2]) === 110) && mod(p[0], 3) < 1) return "e8edf0"; if (f === "x" && mod(p[2], 3) < 1 && p[1] > 0 && p[1] < 14 && p[2] > 94 && p[2] < 110) return "23272b"; return null; } }));
     for (const x of [24, 56]) ps.push(box(x, x + 1.6, 14, 15.2, 90, 112, M("6a665e", "4c4942", "33312c", K)));
-    /* vents: a frame, screws and real louvres */
+    mark("vent"); /* vents: a frame, screws and real louvres */
     const louvre = (axis, a, b, z0, z1) => (f, p) => { if (f !== axis) return null; const c = axis === "x" ? p[1] : p[0], z = p[2]; if (c < a + 1.5 || c > b - 1.5 || z < z0 + 1.5 || z > z1 - 1.5) return ((Math.abs(c - a - .8) < .8 || Math.abs(c - b + .8) < .8) && (Math.abs(z - z0 - .8) < .8 || Math.abs(z - z1 + .8) < .8)) ? "1a1e22" : "b4bcc4"; return mod(z, 3) < 1 ? "14171a" : mod(z, 3) < 2 ? "aab2ba" : "6a727a"; };
     ps.push(box(0, 2, 40, 64, 52, 68, { top: col("b4bcc4"), y: col("7a838c"), x: col("8d959d"), edge: col("1a1e22"), tex: louvre("x", 40, 64, 52, 68) }));
-        ps.push(box(30, 56, 0, 2, 50, 66, { top: col("b4bcc4"), y: col("8d959d"), x: col("7a838c"), edge: col("1a1e22"), tex: louvre("y", 30, 56, 50, 66) }));
-    /* the fan unit: a cage over real blades, corner bolts, a rating plate, slats down its side, a cable in */
+        mark("ventx"); ps.push(box(30, 56, 0, 2, 50, 66, { top: col("b4bcc4"), y: col("8d959d"), x: col("7a838c"), edge: col("1a1e22"), tex: louvre("y", 30, 56, 50, 66) }));
+    mark("fan"); /* the fan unit: a cage over real blades, corner bolts, a rating plate, slats down its side, a cable in */
     const fanTex = (f, p) => {
         if (f === "x") { const u = p[1] - 202, v = p[2] - 62, d = Math.hypot(u, v); if (d < 12.5) { if (d > 11.5) return "14171a"; if (d > 10.6) return "c0c6cc"; const on = Math.abs(u) < .6 || Math.abs(v) < .6 || Math.abs(u - v) < .7 || Math.abs(u + v) < .7; if (mod(d, 3) < 1 || (on && d > 2)) return "b4bcc4"; if (d < 2.4) return "dfe5ea"; const th = Math.atan2(v, u); return mod(th * 5 / (Math.PI * 2) + d * .05, 1) < .5 ? "5a6268" : "23272b"; } if (Math.abs(Math.abs(u) - 12) < 1 && Math.abs(Math.abs(v) - 14) < 1) return "dfe5ea"; if (p[1] > 190 && p[1] < 196 && p[2] > 48 && p[2] < 52) return "e8d8a8"; return null; }
         if (f === "y") { if (p[2] > 50 && p[2] < 74 && p[0] > 2 && p[0] < 10) return mod(p[2], 3) < 1 ? "14171a" : "98a0a8"; return null; }
@@ -273,9 +273,9 @@ function staffRoom(opt = {}) {
         return null; };
     ps.push(box(0, 12, 188, 216, 46, 78, { top: col("b4bcc4"), y: col("8d959d"), x: col("8d959d"), edge: col("1a1e22"), tex: fanTex }));
     ps.push(cyl(3, 214, 1.4, 78, 90, M("6a665e", "4c4942", "33312c", K)));
-    /* a floor grate, properly framed */
+    mark("grate"); /* a floor grate, properly framed */
     ps.push(box(50, 66, 96, 128, -.2, .2, { top: (f, p) => { if (p[0] < 51 || p[0] > 65 || p[1] < 97 || p[1] > 127) return [120, 124, 128]; return mod(p[0], 3) < 1 || mod(p[1], 3) < 1 ? [24, 24, 24] : [96, 100, 104]; }, x: col("222"), y: col("222"), edge: col("111111") }));
-    /* the electrical cabinet: two doors, top slats, a warning triangle, a label, handles, hinges, cables at the foot */
+    mark("cabinet"); /* the electrical cabinet: two doors, top slats, a warning triangle, a label, handles, hinges, cables at the foot */
     const cab = (f, p) => { if (f === "x") { const y = p[1], z = p[2];
             const u = y - 84, zz = z - 50; if (Math.abs(u) <= 6 - zz * .5 && zz >= 0 && zz < 11) return (Math.abs(u) <= 4.4 - zz * .5 && zz >= 1.2 && zz < 8.4) ? (Math.abs(u) < .8 && ((zz > 3.4 && zz < 7.4) || (zz > 1.6 && zz < 2.8)) ? "111111" : "f0c830") : "111111";
             if (z > 65 && z < 70 && y > 64 && y < 88) return mod(z, 2) < 1 ? "14171a" : "98a0a8";
@@ -289,6 +289,7 @@ function staffRoom(opt = {}) {
     for (const [y, c] of [[66, "c8352a"], [71, "3a7ad6"], [84, "f0c830"]]) ps.push(cyl(3, y, 1, 0, 8, M(c, c, c, K)));
     /* conduit from the cabinet up to the duct */
     ps.push(riser(4, 72, 1.3, 72, 96, IRON), riser(4, 84, 1.3, 72, 80, IRON));
+    if (opt.parts) { const out = {}; marks.forEach(([k, a], i) => { const b = i + 1 < marks.length ? marks[i + 1][1] : ps.length; out[k] = render(ps.slice(a, b), { crease: false, light: opt.light, depthEdge: true }); }); out.hazard = render([box(0, 28, 130, 202, -.1, .1, { top: floorTop, x: col("262626"), y: col("3a3a3a"), edge: null, noLine: true })], { crease: false, depthEdge: false }); return out; }
     return { sprite: render(ps, { crease: false, light: opt.light, depthEdge: true }), LX, LY, WH };
 }
 /* ---- the lights ---- */

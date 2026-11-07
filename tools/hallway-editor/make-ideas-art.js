@@ -87,6 +87,20 @@ add("rathole", "Rat hole", "tell", (c, a) => L.put(c, A5.hole("x"), a[0], a[1]),
   const out = new Uint8ClampedArray(W * Hh * 4); for (const q of parts) for (let y = 0; y < q.h; y++) for (let x = 0; x < q.w * 4; x++) out[(y * W + q.at) * 4 + x] = q.s.rgba[((y + q.y0) * q.s.w + q.x0) * 4 + x];
   const dir = path.join(__dirname, "art", "ideas"); fs.mkdirSync(dir, { recursive: true }); fs.writeFileSync(path.join(dir, "rat.png"), encodePng(W, Hh, Buffer.from(out))); fs.writeFileSync(path.join(dir, "rat.json"), JSON.stringify(sheet)); }
 
+/* ---- 23: the bookcase door, its frames in a row for the page, and its closed state for the renderer ---- */
+{ const F = A5.bookDoor(), pass = A5.passage(F.W, F.H - 2), all = [...F.frames, ...F.pulls, pass], trim = q => q; let W = 0, Hh = 0; const put2 = all.map(q => { const at = W; W += q.w + 1; Hh = Math.max(Hh, q.h); return at; }), out = new Uint8ClampedArray(W * Hh * 4);
+  all.forEach((q, n) => { for (let y = 0; y < q.h; y++) for (let x = 0; x < q.w * 4; x++) out[(y * W + put2[n]) * 4 + x] = q.rgba[y * q.w * 4 + x]; });
+  const dir = path.join(__dirname, "art", "ideas"), meta = (q, n) => ({ x: put2[n], w: q.w, h: q.h, ox: q.ox, oy: q.oy }); fs.writeFileSync(path.join(dir, "book.png"), encodePng(W, Hh, Buffer.from(out))); fs.writeFileSync(path.join(dir, "book.json"), JSON.stringify({ frames: F.frames.map(meta), pulls: F.pulls.map((q, i) => meta(q, F.frames.length + i)), passage: meta(pass, all.length - 1), W: F.W, H: F.H, STEP: F.STEP }));
+  const closed = F.pulls[0]; write("i_bookdoor.png", closed); FLOOR.bookdoor = { f: "i_bookdoor.png", ox: closed.ox, oy: closed.oy, w: closed.w, h: closed.h }; }
+
+/* ---- 24: the staff rooms' fittings and lights, one sprite each, kept with the rooms' art: ax and ay say where the anchor tile's left corner falls ---- */
+{ const parts = A5.staffRoom({ parts: true }), li = A5.lights(), ROOM = path.join(__dirname, "art", "rooms"), indexFile = path.join(ROOM, "index.json"), index = JSON.parse(fs.readFileSync(indexFile, "utf8"));
+  const save = (name, q, tx, ty, fx, fy) => { fs.writeFileSync(path.join(ROOM, name + ".png"), encodePng(q.w, q.h, Buffer.from(q.rgba))); index.sprites[name] = { w: q.w, h: q.h, ax: q.ox + (tx - ty) * 16 - 16, ay: q.oy + (tx + ty) * 8 + 8, fx, fy }; };
+  /* art coordinates: 16 to a tile, wall along x = 0 */
+  save("st_pipes", parts.pipes, 0, 0, 1, 12); save("st_boiler", parts.boiler, 0, 9, 2, 4); save("st_duct", parts.duct, 0, 0, 6, 1); save("st_vent", parts.vent, 0, 2, 1, 2); save("st_ventx", parts.ventx, 2, 0, 2, 1); save("st_fan", parts.fan, 0, 12, 1, 2); save("st_grate", parts.grate, 3, 6, 1, 2); save("st_cabinet", parts.cabinet, 0, 4, 1, 2); save("st_hazard", parts.hazard, 0, 8, 2, 5);
+  for (const [k, l] of Object.entries(li)) save("st_light_" + k, l.s, l.floor ? -.5 : k === "pendant" ? -.875 : 0, l.floor ? -.5 : k === "pendant" ? -.5 : -.5, 1, 1);
+  fs.writeFileSync(indexFile, JSON.stringify(index)); console.log("staff lights:", Object.entries(li).map(([k, l]) => k + (l.floor ? " (floor)" : "")).join(", ")); }
+
 /* ---- the list: the i_ entries replace themselves, the rest stay as make-wall-items.js made them ---- */
 let old = []; try { delete require.cache[require.resolve(LIST)]; old = require(LIST).filter(i => !String(i.id).startsWith("i_")); } catch (e) { throw new Error("wall-items.js: " + e.message); }
 const FL = JSON.stringify(FLOOR);

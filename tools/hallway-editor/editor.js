@@ -1653,6 +1653,12 @@ function select(hit) {
         say(hit.o.spare ? (hit.o.opens ? "A spare door with no sign. It opens, but there's nothing behind it." : "A spare door: locked, with no sign.") : (doorName(hit.o) || "No maze left for this door yet."));
         btn(hit.o.spare ? "Give it a maze" : "Make it spare", () => { snapshot(); setDoorSpare(hit.o, !hit.o.spare); changed(); select(hit); buildLevels(); });
         doorFloorKind(hit.o);
+        { const d = hit.o, field = (label, ctl) => { const f = document.createElement("label"); f.className = "field"; const n = document.createElement("span"); n.className = "f-label"; n.textContent = label; const c = document.createElement("span"); c.className = "f-ctl"; c.appendChild(ctl); f.append(n, c); box.appendChild(f); }, opts = (s, list, now) => { for (const [v, t] of list) { const o = document.createElement("option"); o.value = v; o.textContent = t; if (v === now) o.selected = true; s.appendChild(o); } };
+          const kind = document.createElement("select"); opts(kind, [["", "A door"], ["book", "A bookcase door"]], d.kind || ""); kind.addEventListener("change", () => { snapshot(); if (kind.value === "book") { d.kind = "book"; setDoorSpare(d, true); if (!d.to) d.to = { kind: "room", size: "4x8", n: 0 }; } else delete d.kind; changed(); select(hit); buildLevels(); }); field("What it looks like", kind);
+          const here = d.to && d.to.kind === "room" ? d.to.size + "|" + d.to.n : "", to = document.createElement("select"), rooms = []; for (const n of [0, 1, 2]) rooms.push(["6x14|" + n, "Staff corridor " + (n + 1)]); for (const n of [0, 1, 2]) rooms.push(["4x8|" + n, "Passage " + (n + 1)]); opts(to, [["", d.kind === "book" ? "Nowhere" : "Its maze"], ...rooms], here);
+          to.addEventListener("change", () => { snapshot(); if (to.value) { const [size, n] = to.value.split("|"); d.to = { kind: "room", size, n: +n }; setDoorSpare(d, true); } else delete d.to; changed(); select(hit); buildLevels(); }); field("Leads to", to);
+          if (d.kind === "book") { const sp = document.createElement("input"); sp.type = "range"; sp.min = "25"; sp.max = "300"; sp.step = "5"; sp.value = String(Math.round((d.speed || 1) * 100)); const shown = () => { sp.title = sp.value + "% of its normal speed"; }; shown(); sp.addEventListener("pointerdown", () => snapshot()); sp.addEventListener("input", () => { d.speed = +sp.value / 100; shown(); }); sp.addEventListener("change", () => { changed(); setDoor(d, true, 3000); }); field("How fast it opens", sp); }
+        }
         if (!doorLinked(hit.o)) {
             const f = document.createElement("label"); f.className = "field";
             const n = document.createElement("span"); n.className = "f-label"; n.textContent = "Opens when used";
@@ -2242,7 +2248,7 @@ function solid(l) {
 let stairMemo = null;
 const nodeZ = (l, x, y) => l.tiles ? l.tiles.get(x + "," + y) : tileZ(l, x, y) + stepLift(l, x, y);
 function stairLevels() {
-    const memoKey = JSON.stringify([map.stairs, map.lifts, map.entrance, map.levels.map(l => (l.doors || []).map(d => [d.axis, d.at, d.line, !!d.spare]))]);
+    const memoKey = JSON.stringify([map.stairs, map.lifts, map.entrance, map.levels.map(l => (l.doors || []).map(d => [d.axis, d.at, d.line, !!d.spare, !!d.to]))]);
     if (stairMemo && stairMemo.cs === cellSets && stairMemo.stairs === map.stairs && stairMemo.json === memoKey) return stairMemo;
     const out = [], links = new Map(), slots = new Map(), byName = new Map();
     const link = (a, ax, ay, c, cx, cy) => {
@@ -2300,7 +2306,7 @@ function stairLevels() {
     }
     /* behind every maze's door: two tiles wide, deep enough for the wall beside it to hide you, the first of its room's floor. No slots: the floor behind a wall isn't taken */
     for (const low of map.levels) (low.doors || []).forEach((d, i) => {
-        if (d.spare) return;
+        if (d.spare && !d.to) return;
         const fr = doorFront(d), S = { id: "DR" + low.id + "-" + i, name: "Door", k: low.k, tiles: new Map(), stair: { low, up: null, door: d } }, z = tileZ(low, fr[0][0], fr[0][1]);
         for (const t of fr) for (let k = 1; k <= DOOR_DEEP; k++) S.tiles.set(d.axis === "x" ? t[0] + "," + (d.line - k) : (d.line - k) + "," + t[1], z);
         for (const t of fr) { if (d.axis === "x") link(S, t[0], d.line - 1, low, t[0], t[1]); else link(S, d.line - 1, t[1], low, t[0], t[1]); }
@@ -2461,7 +2467,7 @@ setInterval(() => {
     for (const [d, st] of doorStates) {
         const here = walker && walker.l.stair && walker.l.stair.door === d;
         if (st.to === 1 && st.shutAt && performance.now() > st.shutAt && !here) setDoor(d, false);
-        if (st.autoIn && doorEase(st.p) >= .86) { st.autoIn = false; walkIntoDoor(d); }
+        if (st.autoIn && (d.kind === "book" ? st.p >= .8 : doorEase(st.p) >= .86)) { st.autoIn = false; walkIntoDoor(d); }
     }
     if (moving) paint();
     noteFloor(); if (walker && walker.walking) markActive();
@@ -2492,6 +2498,8 @@ function drawLifts(ox, oy) {
    Past those tiles you're in the room, floating in the dark; the arrow on its floor brings you back out here. */
 const doorStates = new Map(); let roomSession = null;
 const DOOR_DEEP = 3, DOOR_OPEN_MS = 1150, DOOR_SHUT_MS = 950, DOOR_FRAMES = 60;
+/* a bookcase is heavy: the same movement whatever its speed, only stretched */
+const BOOK_OPEN_MS = 2950, BOOK_SHUT_MS = 1500, doorMs = (d, open) => d.kind === "book" ? (open ? BOOK_OPEN_MS : BOOK_SHUT_MS) / (d.speed || 1) : (open ? DOOR_OPEN_MS : DOOR_SHUT_MS);
 const doorIsOpen = d => { const s = doorStates.get(d); return !!s && s.to === 1; };
 const doorFront = d => d.axis === "x" ? [[d.at, d.line], [d.at + 1, d.line]] : [[d.line, d.at - 1], [d.line, d.at - 2]];
 /* It's a heavy door. The latch lets go first, it starts slowly, swings, and eases to rest */
@@ -2500,7 +2508,7 @@ let doorRaf = 0, doorLast = 0;
 function doorRun(now) {
     doorRaf = 0; const dt = Math.max(0, Math.min(250, now - doorLast)); doorLast = now; let moving = false;   // a frame's time can be from just before it was asked for
     for (const [d, st] of doorStates) {
-        st.p = Math.max(0, Math.min(1, st.p + (st.to ? dt / DOOR_OPEN_MS : -dt / DOOR_SHUT_MS))); if (st.p !== st.to) moving = true;
+        st.p = Math.max(0, Math.min(1, st.p + (st.to ? dt / doorMs(d, true) : -dt / doorMs(d, false)))); if (st.p !== st.to) moving = true;
         if (!st.to && !st.p) { doorStates.delete(d); doorFrames.delete(d); }
     }
     paint(); if (moving) doorRaf = requestAnimationFrame(doorRun);
@@ -2526,7 +2534,7 @@ function doorAtPx(px, py) {
     return null;
 }
 /* A door leads somewhere if it has a maze the archive has. The rest stay shut unless you've said they open, and then they only open: there's nothing to walk into */
-const doorTargets = {}; window.hallwayDoorTargets = doorTargets;
+const doorTargets = { room: to => (window.RoomView ? RoomView.special(map, to.size, to.n) : null) }; window.hallwayDoorTargets = doorTargets;
 const doorTarget = d => { const go = d.to && doorTargets[d.to.kind]; return go ? go(d.to, d) : null; };
 const doorLinked = d => d.to ? !!doorTarget(d) : !d.spare && !!d.name && (!roomFloors || !roomFloors.size || roomFloors.has(FurniParts.mazeName(d.name)));
 function walkIntoDoor(d) {
@@ -2606,8 +2614,23 @@ function doorFloorKind(d) {
     if (d.to) { const t = doorTarget(d); return (t && t.room.floor) || "slate"; }
     return (roomFloors && roomFloors.get(FurniParts.mazeName(d.name))) || "slate";
 }
+/* the bookcase door: its pictures are drawn once in art/ideas; here they only take the time of day's tint */
+let bookArt = null, bookImg = null; const bookCv = document.createElement("canvas"), BOOK_MAX = 84, BOOK_FOOT = 0;
+function loadBook() { if (bookArt !== null) return; bookArt = false; const i = new Image(); i.onload = () => { bookImg = i; paint(); }; i.src = "art/ideas/book.png"; fetch("art/ideas/book.json").then(r => r.json()).then(j => { bookArt = j; paint(); }).catch(() => {}); }
+const bookEase = v => v < .5 ? 4 * v * v * v : 1 - Math.pow(-2 * v + 2, 3) / 2;
+function bookAngle(T) { if (T < .55) return 0; if (T < .75) return 3 * ((T - .55) / .2); if (T < 2.35) return 3 + (BOOK_MAX - 3) * bookEase((T - .75) / 1.6); if (T < 2.6) return BOOK_MAX - 3 * ((T - 2.35) / .25); if (T < 2.95) return BOOK_MAX - 3 + 1.5 * ((T - 2.6) / .35); return BOOK_MAX - 1.5; }
+function drawBookDoor(d, st, ox, oy) {
+    loadBook(); if (!bookArt || !bookImg || st.p <= 0) return;
+    const l = map.levels.find(q => (q.doors || []).includes(d)); if (!l) return;
+    const T = st.p * BOOK_OPEN_MS / 1000, opening = st.to === 1, ang = opening ? bookAngle(T) : (BOOK_MAX - 1.5) * bookEase(st.p), z = doorZ(l, d), flip = d.axis === "x", a = flip ? P(d.at - .5, d.line, z) : P(d.line, d.at - 2.5, z), sh = opening && T > .55 && T < .68 && Math.floor(T * 40) % 2 ? 1 : 0;
+    const pics = [bookArt.passage, opening && T < .55 ? bookArt.pulls[Math.min(7, Math.floor(T * 14))] : bookArt.frames[Math.round(ang / bookArt.STEP)]], m = moodNow() || { a: map.light || "sconces", b: map.light || "sconces", f: 0 }, A = MOOD_TINT[m.a] || MOOD_TINT.day, B = MOOD_TINT[m.b] || MOOD_TINT.day, v = [0, 1, 2, 3].map(i => A[i] + (B[i] - A[i]) * m.f);
+    ctx.save(); ctx.translate(ox + a[0] * zoom, oy + (a[1] - BOOK_FOOT) * zoom); ctx.scale(flip ? -zoom : zoom, zoom); ctx.imageSmoothingEnabled = false;
+    for (const s of pics) { if (!s) continue; bookCv.width = s.w; bookCv.height = s.h; const g = bookCv.getContext("2d"); g.drawImage(bookImg, s.x, 0, s.w, s.h, 0, 0, s.w, s.h); if (v[3] > 0) { g.globalCompositeOperation = "source-atop"; g.fillStyle = `rgba(${v[0] | 0},${v[1] | 0},${v[2] | 0},${v[3]})`; g.fillRect(0, 0, s.w, s.h); } ctx.drawImage(bookCv, -s.ox + sh, -s.oy); }
+    ctx.restore();
+}
 function drawDoorways(ox, oy) {
     for (const [d, st] of doorStates) {
+        if (d.kind === "book") { drawBookDoor(d, st, ox, oy); continue; }
         const frame = Math.round(doorEase(st.p) * DOOR_FRAMES); if (!frame) continue;
         const l = map.levels.find(q => (q.doors || []).includes(d)); if (!l) continue;
         const a = doorPoint(l, d), floor = doorFloorKind(d), m = moodNow(), X = ox + a[0] * zoom, Y = oy + (a[1] - doorBase(d)) * zoom, S = 32 * zoom, H = 84 * zoom;
