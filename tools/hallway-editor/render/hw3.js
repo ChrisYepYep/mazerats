@@ -1225,7 +1225,7 @@ function build(cfg) {
         const a = w.S(X, Y);
         for (let dy = 0; dy < 16; dy++) { const half = dy < 8 ? dy * 2 + 2 : (15 - dy) * 2 + 2; for (let dx = -half; dx <= half; dx++) { const c = smp(dx, dy); if (c) { const sx = a[0] + dx, sy = a[1] + dy; if (sx >= 0 && sy >= 0 && sx < bw && sy < bh) { layer.set(sx, sy, c); mask[sy * bw + sx] = 1; zb[sy * bw + sx] = w.z; fc[sy * bw + sx] = (c[0] << 16) | (c[1] << 8) | c[2]; } } } }
     };
-    const inView = P => { const x0 = (P.x0 - P.y1) * 16 + gx - 200, x1 = (P.x1 - P.y0) * 16 + gx + 200, y0 = (P.x0 + P.y0) * 8 + gy - P.z - 200, y1 = (P.x1 + P.y1) * 8 + gy - P.z + 200; return !(x1 < 0 || x0 > bw || y1 < 0 || y0 > bh); };
+    const inView = P => { const x0 = (P.x0 - P.y1) * 16 + gx - 200 - (xmasOn ? 120 : 0), x1 = (P.x1 - P.y0) * 16 + gx + 200 + (xmasOn ? 120 : 0), y0 = (P.x0 + P.y0) * 8 + gy - P.z - 200 - (xmasOn ? 260 : 0), y1 = (P.x1 + P.y1) * 8 + gy - P.z + 200; return !(x1 < 0 || x0 > bw || y1 < 0 || y0 > bh); };
     const xmasOn = /\+x$/.test(cfg.light || ""), way = cfg.way, Mname = String(cfg.light || "").replace("+x", "") || (cfg.map && cfg.map.light) || "sconces", M = LIGHTS[Mname] || LIGHTS.sconces, XMAS_K = new Set(["xmastree", "xmaslantern", "xmassmalltree", "xmasdrinks", "xmasduck", "snowman", "gift1", "gift2", "gift3", "gift4"]);
     w.lightsOff = !!M.off;
     let avL = [1, 1, 1];
@@ -1256,7 +1256,7 @@ function build(cfg) {
         const backWall = (X, Y, z) => { const Q = tileOf.get(X + "," + Y); return !!Q && (z === undefined || Q.z === z) && Q.y0 === Y && !has.has(X + "," + (Y - 1)) && !holes.has(X + "," + (Y - 1)) && !Q.noBack && (Q.notch || !airBelow(X, Y - 1) || doorEdge("x", X, Y) || shown("x", Y, X)); };
         const sideWall = (X, Y, z) => { const Q = tileOf.get(X + "," + Y); return !!Q && (z === undefined || Q.z === z) && Q.x0 === X && !has.has((X - 1) + "," + Y) && !holes.has((X - 1) + "," + Y) && (Q.notch || !airBelow(X - 1, Y) || doorEdge("y", X, Y) || shown("y", X, Y)); };
         layer.d.fill(0); for (let i = 0; i < layer.d.length; i += 4) { layer.d[i] = VOID[0]; layer.d[i + 1] = VOID[1]; layer.d[i + 2] = VOID[2]; layer.d[i + 3] = 255; }
-        mask.fill(0); w.keep.fill(0); w.glowing.fill(0); w.footShadows = []; w.tints = []; w.sunWins = []; w.afterAll = []; w.treeGlows = [];
+        mask.fill(0); w.keep.fill(0); w.glowing.fill(0); w.footShadows = []; w.tints = []; w.sunWins = []; w.afterAll = []; w.treeGlows = []; w.bigTrees = []; w.treePx = [];
         w.lamps = [];
         wallOwner.fill(0);
         const signs = [], pushSign = signs.push.bind(signs); let signPatch = null;
@@ -1498,7 +1498,7 @@ function build(cfg) {
             if (landingOf) w.partAt = () => { if (cut !== null && landZ > cut) return false; w.z = landZ; return true; };
             for (const p of (P.props || [])) {
                 const [k, x, y] = p;
-                if (!inReach(x, y, 340)) continue;
+                if (!inReach(x, y, k === "statue" && xmasOn ? 480 : 340)) continue;
                 if (landingOf) w.z = landZ;
                 w.sprites = landingOf ? landingQueue : (lv.later = lv.later || []);      // one queue for every part of a floor, or a raised part's things paint over what stands on the part next to it      // all in one queue, or what stands against a wall gets painted over by what is behind it
                 const from = w.sprites.length; let partsNow = null;
@@ -1514,6 +1514,11 @@ function build(cfg) {
                     if (k === "rarecase" && w.partAt({ x, y })) { const lp = w.S(x + .5, y + .5); w.lamps.push({ free: true, tx: x + .5, ty: y + .5, lz: w.z, x: lp[0], y: lp[1] - 30, colour: "#ffe2a8", sign: true }); }
                     if (!(XMAS_K.has(k) && !xmasOn) && w.partAt({ x, y })) { const fp = FLOOR_PIECES[k], flat = k.startsWith("mark_"), base = w.S(x + (flat ? .5 : .25), y + (flat ? .5 : .25)), im = wallArt(k === "rarecase" && p[12] && fp.opts && fp.opts[p[12]] ? fp.opts[p[12]].f : fp.f), z = w.z, X0 = Math.round(base[0]) - fp.ox, Y0 = Math.round(base[1]) - fp.oy;
                         w.sprites.push({ depth: x + y + (flat ? -.6 : .5), ftx: x, fty: y, draw: () => { for (let j = 0; j < im.h; j++) for (let i = 0; i < im.w; i++) { const q = (j * im.w + i) * 4, A = im.rgba[q + 3]; if (!A) continue; const X = k === "rarecase" && (p[5] & 1) ? Math.round(base[0]) + fp.ox - i : X0 + i, Y = Y0 + j, c = [im.rgba[q], im.rgba[q + 1], im.rgba[q + 2]]; if (A < 255) { pieceTint(X, Y, c, A); continue; } layer.set(X, Y, c); if (X >= 0 && Y >= 0 && X < bw && Y < bh) { const v = ((c[0] << 16) | (c[1] << 8) | c[2]) + 1; w.keep[Y * bw + X] = v; if (k === "rarecase" && ((c[0] === 186 && c[1] === 206 && c[2] === 220) || (c[0] === 255 && c[1] === 243 && c[2] === 200) || (c[0] === 246 && c[1] === 226 && c[2] === 168))) w.glowing[Y * bw + X] = v; } } } }); }
+                }
+                else if (k === "statue" && xmasOn && FLOOR_PIECES.bigtree) {
+                    /* at Christmas the statue gives way to the giant tree: its foot at the statue's middle, drawn over the sofas round it as the mock-up has it, its lights and star always lit */
+                    if (w.partAt({ x, y })) { const fp = FLOOR_PIECES.bigtree, base = w.S(x + 1, y + 1), im = wallArt(fp.f), li = wallArt(fp.lights), X0 = Math.round(base[0]) - fp.ox, Y0 = Math.round(base[1]) - fp.oy; w.bigTrees.push({ X0, Y0, li, fx: x + 1, fy: y + 1 });
+                        w.sprites.push({ depth: x + y + 2.6, ftx: x + 1, fty: y + 1, draw: () => { for (let j = 0; j < im.h; j++) for (let i = 0; i < im.w; i++) { const q = (j * im.w + i) * 4, lit = li.rgba[q + 3] > 0, src = lit ? li.rgba : im.rgba; if (!src[q + 3]) continue; const X = X0 + i, Y = Y0 + j, c = [src[q], src[q + 1], src[q + 2]]; layer.set(X, Y, c); if (X >= 0 && Y >= 0 && X < bw && Y < bh) { const v = ((c[0] << 16) | (c[1] << 8) | c[2]) + 1; w.keep[Y * bw + X] = lit ? v : 0; w.glowing[Y * bw + X] = lit ? v : 0; if (Y < Y0 + fp.oy - 120) w.treePx.push(Y * bw + X); } } } }); }
                 }
                 else if (k === "rope") {
                     /* each tile of it takes its own place in the queue, so what stands nearer on another tile still covers it */
@@ -1977,6 +1982,11 @@ function build(cfg) {
             const k0 = L[0] * dim, k1 = L[1] * dim, k2 = L[2] * dim;
             layer.d[p] = Math.min(255, layer.d[p] * k0); layer.d[p + 1] = Math.min(255, layer.d[p + 1] * k1); layer.d[p + 2] = Math.min(255, layer.d[p + 2] * k2);
         }
+        /* the giant tree lights the room round it, and in the dark every bulb and the star has a halo */
+        { const dark = Math.max(0, Math.min(1, 1 - (M.amb[0] + M.amb[1] + M.amb[2]) / 3)); for (const t of w.bigTrees) { const add = (x, y, c, a) => { if (x < 0 || y < 0 || x >= bw || y >= bh || a <= 0) return; const i = (y * bw + x) * 4; layer.d[i] = Math.min(255, layer.d[i] + c[0] * a); layer.d[i + 1] = Math.min(255, layer.d[i + 1] + c[1] * a); layer.d[i + 2] = Math.min(255, layer.d[i + 2] + c[2] * a); };
+            const cx = t.X0 + (FLOOR_PIECES.bigtree.ox), cy = t.Y0 + FLOOR_PIECES.bigtree.oy; for (let y = -170; y < 120; y++) for (let x = -240; x < 240; x++) { const d = Math.hypot(x / 240, (y - 10) / 120); if (d < 1) { const X = cx + x, Y = cy + y; add(X, Y, [255, 190, 120], dark * (X >= 0 && Y >= 0 && X < bw && Y < bh && furniX[Y * bw + X] === t.fx && furniY[Y * bw + X] === t.fy ? .07 : .26) * (1 - d) * (1 - d)); } }
+            if (dark > .05) { const li = t.li; for (let j = 0; j < li.h; j++) for (let i = 0; i < li.w; i++) { const q = (j * li.w + i) * 4; if (!li.rgba[q + 3]) continue; const c = [li.rgba[q], li.rgba[q + 1], li.rgba[q + 2]]; for (let dy = -3; dy <= 3; dy++) for (let dx = -3; dx <= 3; dx++) { const d = Math.hypot(dx, dy); if (d > 0 && d < 3.4) { const X = t.X0 + i + dx, Y = t.Y0 + j + dy, p = Y * bw + X; if (X >= 0 && Y >= 0 && X < bw && Y < bh && !w.glowing[p]) add(X, Y, c, dark * .03 * (1 - d / 3.4)); } } } }
+            const sx = cx, sy = t.Y0 + 2; if (dark > .05) for (let y = -26; y <= 26; y++) for (let x = -26; x <= 26; x++) { const d = Math.hypot(x, y); if (d < 26) add(sx + x, sy + y + 12, [255, 230, 160], dark * .5 * Math.pow(1 - d / 26, 2)); } } }
         /* the tree's always lit, and lights the room round it */
         for (const g of w.treeGlows) { const X0 = Math.round(g[0]), Y0 = Math.round(g[1]) - 6, gl = (cx, cy, R, sy, a) => { for (let y = Math.max(0, Math.floor(cy - R * sy)); y < Math.min(bh, cy + R * sy); y++) for (let x = Math.max(0, Math.floor(cx - R)); x < Math.min(bw, cx + R); x++) { const d = Math.hypot(x - cx, (y - cy) / sy) / R; if (d >= 1) continue; const i = (y * bw + x) * 4, k = a * (1 - d); if (layer.d[i] === 7 && layer.d[i + 1] === 6 && layer.d[i + 2] === 10) continue; layer.d[i] = Math.min(255, layer.d[i] + 255 * k); layer.d[i + 1] = Math.min(255, layer.d[i + 1] + 190 * k); layer.d[i + 2] = Math.min(255, layer.d[i + 2] + 96 * k); } }; gl(X0, Y0, 60, .55, .3); gl(X0, Y0 - 34, 48, 1, .16); }
         if (w.sunWins.length) { const HT = { sofa: 14, chair: 14, table: 14, smtable: 14, ero: 20, ero_stone: 20, ero_walnut: 20, ero_evergreen: 20, ero_flower: 20, cabinet: 40, shelf: 40, plant: 26, statue: 60, fountain: 20, rarecase: 40, water: 30 }, heights = new Map(); for (const P of lv.patches) for (const p of (P.props || [])) { const ht = HT[p[0]]; if (ht) for (const t of Parts.tiles({ k: p[0], x: p[1], y: p[2], len: p[4], rot: p[5] })) heights.set(t[0] + "," + t[1], ht); }
@@ -2038,10 +2048,12 @@ function build(cfg) {
            higher is always the nearer. Everything on a floor stands lower than the underside of the
            floor above. So the floors are drawn from the top down, and a lower one only ever fills
            what is still empty: it can never paint over anything above it. */
+        /* except the giant tree: it rises through the opening of the floor above, so over that floor's back wall the tree stands in front */
+        const myOrder = levels.indexOf(lv) + 1, treeOver = w.treePx.length ? new Set(w.treePx) : null;
         for (let p = 0, i = 0; p < layer.d.length; p += 4, i++) {
-            if (done[i]) continue;
+            if (done[i] && !(treeOver && done[i] === myOrder - 1 && treeOver.has(i))) continue;
             if (layer.d[p] === VOID[0] && layer.d[p + 1] === VOID[1] && layer.d[p + 2] === VOID[2]) continue;
-            out.d[p] = layer.d[p]; out.d[p + 1] = layer.d[p + 1]; out.d[p + 2] = layer.d[p + 2]; done[i] = 1;
+            out.d[p] = layer.d[p]; out.d[p + 1] = layer.d[p + 1]; out.d[p + 2] = layer.d[p + 2]; done[i] = myOrder;
         }
     }
     return { report: levels.report, b: out, view, at: (x, y, z) => { const c = at(x, y, z); return [c[0] - view[0], c[1] - view[1]]; }, cfg, avL, avS: w.avS, doors: ni };
