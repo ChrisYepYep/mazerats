@@ -1639,7 +1639,7 @@ function build(cfg) {
                     }
                     if (litNow) { const g = def.lit.at, flip = it.axis === "x", gu = flip ? -(g[0] - g[1]) : g[0] - g[1], gv = (g[0] + g[1]) / 2 - g[2]; w.lamps.push({ x: Math.round(base0[0] + gu), y: Math.round(base0[1] + gv), tx: it.axis === "x" ? it.at : P.x0, ty: it.axis === "x" ? P.y0 : it.at, i: w.lamps.length, colour: def.lit.colour, axisY: it.axis !== "x", lz: zHere, sign: true }); }
                 };
-                if (def.tell) w.afterAll.push({ zHere: P.z, depth: (it.axis === "x" ? it.at + P.y0 : P.x0 + it.at) + .35, tx: it.axis === "x" ? Math.floor(it.at) : P.x0, ty: it.axis === "x" ? P.y0 : Math.floor(it.at), draw: one }); else if (onDrop) (P.raised ? w.sprites : (lv.later = lv.later || [])).push({ depth: (it.axis === "x" ? it.at + P.y0 : P.x0 + it.at) + .35, tx: it.axis === "x" ? Math.floor(it.at) : P.x0, ty: it.axis === "x" ? P.y0 : Math.floor(it.at), draw: one }); else one();
+                if (def.tell) w.afterAll.push({ zHere: P.z, depth: (it.axis === "x" ? it.at + P.y0 : P.x0 + it.at) + .35, tx: it.axis === "x" ? Math.floor(it.at) : P.x0, ty: it.axis === "x" ? P.y0 : Math.floor(it.at), draw: one, axis: it.axis, line: it.axis === "x" ? P.y0 : P.x0, out: def.out || 0 }); else if (onDrop) (P.raised ? w.sprites : (lv.later = lv.later || [])).push({ depth: (it.axis === "x" ? it.at + P.y0 : P.x0 + it.at) + .35, tx: it.axis === "x" ? Math.floor(it.at) : P.x0, ty: it.axis === "x" ? P.y0 : Math.floor(it.at), draw: one }); else one();
             }
             for (const [axis, at2, lc, style, lampHigh] of (P.l || [])) {
                 if (!(axis === "x" ? inReach(at2, P.y0, 340) : inReach(P.x0, at2, 340))) continue;
@@ -1791,7 +1791,7 @@ function build(cfg) {
         w.z = lowest; later.forEach(drawSprite);
         const paintedAfter = new Set(); w.afterAll.sort((a, c) => a.depth - c.depth).forEach(s => {
             const own = Object.prototype.hasOwnProperty.call(layer, "set"), was = layer.set, mine = new Set();
-            layer.set = function (x, y, c) { if (x >= 0 && y >= 0 && x < bw && y < bh) { const i = y * bw + x; if ((furniX[i] !== NO_FURNI && !mine.has(i)) || (mask[i] === 1 && zb[i] > s.zHere)) return; mine.add(i); paintedAfter.add(i); was.call(layer, x, y, c); furniX[i] = s.tx; furniY[i] = s.ty; furniRun[i] = 0; const p = i * 4; furniC[i] = (layer.d[p] << 16) | (layer.d[p + 1] << 8) | layer.d[p + 2]; } };
+            layer.set = function (x, y, c) { if (x >= 0 && y >= 0 && x < bw && y < bh) { const i = y * bw + x; if ((furniX[i] !== NO_FURNI && !mine.has(i) && (!s.axis || (s.axis === "y" ? furniX[i] >= s.line + s.out : furniY[i] >= s.line + s.out))) || (mask[i] === 1 && zb[i] > s.zHere)) return; mine.add(i); paintedAfter.add(i); was.call(layer, x, y, c); furniX[i] = s.tx; furniY[i] = s.ty; furniRun[i] = 0; const p = i * 4; furniC[i] = (layer.d[p] << 16) | (layer.d[p + 1] << 8) | layer.d[p + 2]; } };
             w.z = s.zHere; s.draw();
             if (own) layer.set = was; else delete layer.set;
         });

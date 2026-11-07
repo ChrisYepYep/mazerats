@@ -132,7 +132,6 @@
             const known = new Set(((await (await realFetch(`${FN}?what=known`, admin())).json()).known) || []);
             const hasXmas = map.levels.some(l => (l.props || []).some(p => /^(xmas|gift\d|snowman)/.test(p.k)) || (l.wallItems || []).some(q => /^i_(garland|window|bunting|festoon|wreath|stockings|holly|canes)/.test(q.k)));
             const onlyBasement = window.FurniParts.basementTiles(map), DRAW = [...MOODS, "failing", ...(hasXmas ? MOODS.map(m => m + "+x") : [])];
-            publishing.of = DRAW.length + ways.length + 1;
             while (workers.length < POOL) freshWorker();
             const tiles = {}, lift = {};
             const send = async (blob) => {
@@ -145,19 +144,34 @@
                 }
                 return hash;
             };
-            /* A whole time of day is a lot of memory: each is drawn in a thread of its own that's thrown away after, two at once, and one at a time if that's still too much */
-            const oneMood = async light => { const w = freshWorker(); try { return await ask(w, { type: "mood", text, light, names }); } finally { retire(w); } };
-            const MAIN = DRAW.filter(m => MOODS.includes(m)), EXTRA = DRAW.filter(m => !MOODS.includes(m));
-            let i = 0, alone = false;
-            const runMoods = async () => { while (i < MAIN.length) { const light = MAIN[i++]; let a; try { a = await oneMood(light); } catch (e) { if (!/memory|allocation|Array buffer|stopped/i.test(String(e && e.message))) throw e; alone = true; await new Promise(r => setTimeout(r, 1500)); a = await oneMood(light); } for (const t of a.tiles) tiles[light + "|" + t.tx + "," + t.ty] = await send(await pngOf(512, 512, t.d)); publishing.at++; } };
-            await Promise.all(Array.from({ length: Math.min(2, AT_ONCE, MAIN.length) }, (_, n) => n === 0 ? runMoods() : new Promise(r => setTimeout(r, 400)).then(() => alone ? null : runMoods())));
-            /* the failing lights and Christmas: only the squares they can change, each drawn on its own, so the memory stays small */
-            { const w = freshWorker(), v = "publish-" + Date.now(), solid = d => { const o = new Uint8Array(d.length); o.set(d); for (let k = 0; k < o.length; k += 4) { if (o[k] === 7 && o[k + 1] === 6 && o[k + 2] === 10) o[k] = o[k + 1] = o[k + 2] = 0; o[k + 3] = 255; } return o; };
-              try { await ask(w, { type: "map", v, text }); const xmasTiles = window.FurniParts.xmasTiles(map);
-                for (const light of EXTRA) { const want = light === "failing" ? onlyBasement : xmasTiles; for (const key of want) { const [tx, ty] = key.split(",").map(Number); const a = await ask(w, { type: "tile", v, x: tx * 512, y: ty * 512, w: 512, h: 512, light, names }); if (a.needMap) { await ask(w, { type: "map", v, text }); continue; } const plain = tiles[light.replace("+x", "").replace("failing", "night") + "|" + key]; if (!plain && light !== "failing") continue; tiles[light + "|" + key] = await send(await pngOf(512, 512, solid(a.d))); } publishing.at++; } } finally { retire(w); } }
+            /* Square by square, every thread at once: each square is drawn with a margin round it, so what stands just outside it still shades it, and the result is the same picture as drawing the whole map at once (checked for day and night, 9 Nov). Small, so memory stays low */
+            const PAD = 96, v = "publish-" + Date.now(), rect = map.rect, squares = [];
+            for (let ty = Math.floor(rect.y / 512) - 1; ty <= Math.floor((rect.y + rect.h) / 512) + 1; ty++) for (let tx = Math.floor(rect.x / 512) - 1; tx <= Math.floor((rect.x + rect.w) / 512) + 1; tx++) squares.push(tx + "," + ty);
+            const xmasTiles = window.FurniParts.xmasTiles(map), jobs = [];
+            for (const light of DRAW) { const want = light === "failing" ? [...onlyBasement] : light.includes("+x") ? [...xmasTiles] : squares; for (const key of want) jobs.push([light, key]); }
+            publishing.of = jobs.length + ways.length * 6 + 1;
+            const blank = d => { for (let k = 0; k < d.length; k += 4) if ((d[k] || d[k + 1] || d[k + 2]) && !(d[k] === 7 && d[k + 1] === 6 && d[k + 2] === 10)) return false; return true; };
+            const solid = d => { const o = new Uint8Array(d.length); o.set(d); for (let k = 0; k < o.length; k += 4) { if (o[k] === 7 && o[k + 1] === 6 && o[k + 2] === 10) o[k] = o[k + 1] = o[k + 2] = 0; o[k + 3] = 255; } return o; };
+            const crew = []; for (let n = 0; n < POOL; n++) crew.push(freshWorker());
+            let next = 0;
+            try {
+                await Promise.all(crew.map(async w => {
+                    await ask(w, { type: "map", v, text });
+                    while (next < jobs.length) {
+                        const [light, key] = jobs[next++], [tx, ty] = key.split(",").map(Number);
+                        let a = await ask(w, { type: "tile", v, x: tx * 512, y: ty * 512, w: 512, h: 512, light, names, pad: PAD });
+                        if (a.needMap) { await ask(w, { type: "map", v, text }); a = await ask(w, { type: "tile", v, x: tx * 512, y: ty * 512, w: 512, h: 512, light, names, pad: PAD }); }
+                        publishing.at++;
+                        if (blank(a.d)) continue;
+                        tiles[light + "|" + key] = await send(await pngOf(512, 512, solid(a.d)));
+                    }
+                }));
+            } finally { for (const w of crew) retire(w); }
+            /* the failing lights and Christmas only where there's something under them */
+            for (const k of Object.keys(tiles)) { const m = /^(failing|[a-z]+\+x)\|(.*)$/.exec(k); if (!m) continue; const plain = (m[1] === "failing" ? "night" : m[1].replace("+x", "")) + "|" + m[2]; if (!tiles[plain]) delete tiles[k]; }
             for (const k of Object.keys(tiles)) { if (k.includes("+x|") && tiles[k] === tiles[k.replace("+x", "")]) delete tiles[k]; }
             for (const way of ways) {
-                for (let f = 0; f < 6; f++) { const a = await ask(idle(), { type: "lift", way, slide: f / 5 }); lift[encodeURIComponent(way).replace(/%/g, "_") + "-" + f + ".png"] = await send(await pngOf(a.w, a.h, a.d)); }
+                for (let f = 0; f < 6; f++) { publishing.at++; const a = await ask(idle(), { type: "lift", way, slide: f / 5 }); lift[encodeURIComponent(way).replace(/%/g, "_") + "-" + f + ".png"] = await send(await pngOf(a.w, a.h, a.d)); }
                 publishing.at++;
             }
             const r = await realFetch(FN, admin({ method: "POST", body: JSON.stringify({ action: "publish", map, base, manifest: { tile: 512, moods: MOODS, tiles, lift } }) }));

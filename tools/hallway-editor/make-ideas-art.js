@@ -42,7 +42,7 @@ function add(id, name, kind, draw, o = {}) {
     if (o.lit) { const lit = capture(o.lit, art.box), fl = "i_" + id + "_lit.png"; write(fl, lit); let fl2 = fl; if (o.text) { setM(true); const m = capture(o.lit, art.box); fl2 = "i_" + id + "_lit_m.png"; write(fl2, m); setM(false); } def.x.layers[0].litF = fl2; def.y.layers[0].litF = fl; def.lit = o.glow; }
     if (o.locked) def.locked = true;
     if (o.keep) { def.ax = art.ox; def.ay = art.oy; }
-    if (o.pivot) { def.h = 100; def.y.layers[0].x = -art.ox; def.y.layers[0].y = -art.oy; def.x.layers[0].x = art.ox - art.w + 1; def.x.layers[0].y = -art.oy; }
+    if (o.pivot) { def.out = 2; def.h = 100; def.y.layers[0].x = -art.ox; def.y.layers[0].y = -art.oy; def.x.layers[0].x = art.ox - art.w + 1; def.x.layers[0].y = -art.oy; }
     if (o.xmas) def.xmas = true;
     if (o.snap) def.snapAt = (def.y.layers[0].x + art.ox) / 16;
     items.push(def); return def;

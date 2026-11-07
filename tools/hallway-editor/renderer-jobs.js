@@ -38,7 +38,7 @@ onmessage = async e => {
         if (job.type === "tile") {
             const map = maps.get(job.v); if (!map) return send(job.id, { needMap: true });
             const { x, y, w, h } = job, cx = x + w / 2, cy = y + h / 2, MX = (cx + 2 * cy) / 32, MY = (2 * cy - cx) / 32;
-            const world = W.build({ map, names: job.names, liftOpen: job.liftOpen, cut: job.cut, light: job.light, clip: [MX, MY, 0, w, h] });
+            const pad = job.pad || 0, world = W.build({ map, names: job.names, liftOpen: job.liftOpen, cut: job.cut, light: job.light, clip: [MX, MY, 0, w + 2 * pad, h + 2 * pad] });      // pad: what stands just outside the square still gets its say on the square
             const c = world.at(MX, MY, 0), crop = world.b.crop(c[0] - w / 2, c[1] - h / 2, w, h), d = new Uint8Array(crop.d);
             return send(job.id, { w, h, d }, [d.buffer]);
         }
