@@ -3272,7 +3272,7 @@ function showMusic() {
     const p = A.position;
     $("nowBar").style.width = p ? Math.min(100, p.at / p.of * 100) + "%" : "0";
     $("nowTime").textContent = p ? fmtTime(Math.max(0, p.at)) + " of " + fmtTime(p.of) : "";
-    document.querySelectorAll("#musicList .layer-row").forEach((b, k) => b.setAttribute("aria-pressed", String(on && k === i)));
+    document.querySelectorAll("#musicList .layer-row").forEach((b, k) => { b.setAttribute("aria-pressed", String(on && k === i)); b.hidden = !!A.inSeason && !A.inSeason(k); });
 }
 function setMusic(on, track) {
     const A = window.HallwayAudio; if (!A) return;
