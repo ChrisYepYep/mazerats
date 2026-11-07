@@ -37,7 +37,7 @@ const items = [];
 function add(id, name, kind, draw, o = {}) {
     setM(false); const art = capture(draw), f = "i_" + id + ".png"; write(f, art);
     let f2 = f; if (o.text) { setM(true); const m = capture(draw, art.box); f2 = "i_" + id + "_m.png"; write(f2, m); setM(false); }
-    const { h, y } = hang(art), layer = (file, flip) => ({ f: file, x: -(art.w >> 1), y, flip: flip ? 1 : 0 });
+    const { h, y } = hang(art), layer = (file, flip) => ({ f: file, x: -(art.w >> 1), y: y + (o.drop || 0), flip: flip ? 1 : 0 });
     const def = { id: "i_" + id, name, kind, tell: true, h, x: { w: art.w, h: art.h, layers: [layer(f2, true)] }, y: { w: art.w, h: art.h, layers: [layer(f, false)] } };
     if (o.lit) { const lit = capture(o.lit, art.box), fl = "i_" + id + "_lit.png"; write(fl, lit); let fl2 = fl; if (o.text) { setM(true); const m = capture(o.lit, art.box); fl2 = "i_" + id + "_lit_m.png"; write(fl2, m); setM(false); } def.x.layers[0].litF = fl2; def.y.layers[0].litF = fl; def.lit = o.glow; }
     if (o.locked) def.locked = true;
@@ -79,6 +79,13 @@ floorPiece("mark_scuff", (c, a) => { const N = (x, y) => { const s = Math.sin(x 
 floorPiece("mark_tile", (c, a) => { for (let i = -14; i <= 14; i++) { const X = a[0] + i, base = a[1] + 8 - Math.abs(i) * .55; setPx(c, X, Math.round(base), [46, 30, 18]); setPx(c, X, Math.round(base) - 1, [226, 196, 150], .8); } });
 /* the key, on its own, for Chris to edit: nothing else reads it until the hunts are built */
 write("i_key.png", (() => { const k = A5.key(); return k; })());
+
+/* ---- 53: the hole on the skirting, and the rat, frames in a row with what each needs to stand on its feet. The page reads these, nothing is baked ---- */
+add("rathole", "Rat hole", "tell", (c, a) => L.put(c, A5.hole("x"), a[0], a[1]), { locked: true, drop: 12 });
+{ const r = require("./ideas/old-items2.js").bakeRat(), dirs = ["x", "y", "nx", "ny"], sheet = {}, parts = []; let W = 0, Hh = 0;
+  for (const d of dirs) { sheet[d] = r[d].map(s => { let x0 = s.w, y0 = s.h, x1 = -1, y1 = -1; for (let y = 0; y < s.h; y++) for (let x = 0; x < s.w; x++) if (s.rgba[(y * s.w + x) * 4 + 3]) { x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y); } const w = x1 - x0 + 1, h = y1 - y0 + 1, f = { x: W, w, h, ox: s.ox - x0, oy: s.oy - y0 }; parts.push({ s, x0, y0, w, h, at: W }); W += w + 1; Hh = Math.max(Hh, h); return f; }); }
+  const out = new Uint8ClampedArray(W * Hh * 4); for (const q of parts) for (let y = 0; y < q.h; y++) for (let x = 0; x < q.w * 4; x++) out[(y * W + q.at) * 4 + x] = q.s.rgba[((y + q.y0) * q.s.w + q.x0) * 4 + x];
+  const dir = path.join(__dirname, "art", "ideas"); fs.mkdirSync(dir, { recursive: true }); fs.writeFileSync(path.join(dir, "rat.png"), encodePng(W, Hh, Buffer.from(out))); fs.writeFileSync(path.join(dir, "rat.json"), JSON.stringify(sheet)); }
 
 /* ---- the list: the i_ entries replace themselves, the rest stay as make-wall-items.js made them ---- */
 let old = []; try { delete require.cache[require.resolve(LIST)]; old = require(LIST).filter(i => !String(i.id).startsWith("i_")); } catch (e) { throw new Error("wall-items.js: " + e.message); }

@@ -683,7 +683,9 @@ const MOOD_NAME = { day: "Day", dusk: "Evening", night: "Night", dawn: "Dawn" };
 let timeMode = localStorage.getItem("hallway-time") || "cycle";
 const cycleStart = performance.now();
 const moodTiles = new Map(), moodInflight = new Map();
+let moodForced = null;
 function moodNow() {
+    if (moodForced) return moodForced;
     if (timeMode === "map") return null;
     if (timeMode !== "cycle") return { a: timeMode, b: timeMode, f: 0 };
     const t = ((performance.now() - cycleStart) % CYCLE_MS) / 1000;
@@ -968,7 +970,14 @@ window.HallwayLive = {
     add(l) { liveLayers.add(l); wakeLive(); return () => liveLayers.delete(l); }, wake: wakeLive,
     onFloor(f) { floorWatchers.add(f); return () => floorWatchers.delete(f); }, get floor() { return floorIn; },
     get idleFor() { return performance.now() - lastActive; }, get walker() { return walker; }, get map() { return map; },
-    mapPoint: (x, y, z) => P(x, y, z), get zoom() { return zoom; }
+    mapPoint: (x, y, z) => P(x, y, z), get zoom() { return zoom; }, markActive,
+    /* for the things that move about the floor like a person: furniture in front cuts them, the time of day tints them. c is a 33 by 56 canvas, as the avatar's */
+    as(who, fn) { const me = walker; walker = who; try { fn(); } finally { walker = me; } }, cutInFront: (c, x0, y0) => cutInFront(c, x0, y0), tint: c => avatarTint(c),
+    tileFree(l) { const so = solid(l), hs = holes(l), sl = stairLevels().slots.get(l); return (x, y) => hasFloor(l, x, y) && !so.has(x + "," + y) && !hs.some(h => inRect(h, x, y)) && !(sl && sl.has(x + "," + y)); },
+    nodeZ: (l, x, y) => nodeZ(l, x, y), mood: () => moodNow(), forceMood(m) { moodForced = m; }, loadMood: (m, x, y) => { const tx = Math.floor(x / TILE), ty = Math.floor(y / TILE); moodTile(m, tx, ty); },
+    view() { const hw = canvas.width / zoom / 2, hh = canvas.height / zoom / 2; return { x0: cam.x - hw, x1: cam.x + hw, y0: cam.y - hh, y1: cam.y + hh, w: canvas.width, h: canvas.height }; },
+    camera(x, y) { cam.x = x; cam.y = y; clampCam(); }, get cam() { return { x: cam.x, y: cam.y }; }, holdCamera(on) { camHeld = on; if (!on) followNow(); }, setZoom: z => setZoom(z, canvas.width / 2, canvas.height / 2),
+    get busy() { return !!roomSession || !$("liftPanel").hidden || !!(walker && (walker.walking || walker.busy)) || !!document.querySelector(".hw-sheet:not([hidden]), #picker:not([hidden])"); }
 };
 function overlay() {
     const z = levelZ(level);
@@ -2378,7 +2387,8 @@ function liftTile() {
    frame rate, and if you've dragged it away it glides back the same way once you let go. */
 let camRunning = false, camLast = 0;
 const FOLLOW_MS = 240;
-const following = () => isOn("follow") && tool === "walk" && !!walker;
+let camHeld = false;
+const following = () => isOn("follow") && tool === "walk" && !!walker && !camHeld;
 function camTarget() {
     const t = P(walker.x + .5, walker.y + .5, walker.z), saved = [cam.x, cam.y];
     cam.x = t[0]; cam.y = t[1] - 40; clampCam();

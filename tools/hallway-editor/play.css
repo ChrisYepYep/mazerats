@@ -41,3 +41,6 @@ html, body { background: #000; overflow: hidden; }
     /* under 16px a phone zooms the page when the box gets the cursor, and it stays zoomed */
     #playPicker input, #playPicker select { height: 32px; font-size: 16px; }
 }
+
+/* the screensaver: nothing over the map but the map */
+body.hw-screensaver #playBar, body.hw-screensaver .play-menu { opacity: 0; pointer-events: none; transition: opacity .6s; }
