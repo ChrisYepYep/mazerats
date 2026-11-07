@@ -26,6 +26,8 @@
     for (const v of ["stone", "walnut", "evergreen", "flower"]) ROWS["ero_" + v] = { def: 2, min: 2, flip: false, part: (i, n) => ["hwv_" + v + (i === 0 ? 1 : i === n - 1 ? 5 : 2 + (i - 1) % 3) + "_a_0_0_0"] };
     /* drawn by render/rope-barrier.js, not from the client's sprites */
     ROWS.rope = { def: 3, min: 2, flip: false, part: () => [] };
+    /* one piece of art lying across three tiles: it doesn't stretch */
+    ROWS.trophy = { def: 3, min: 3, max: 3, flip: false, part: () => [] };
     const SINGLES = {
         plant: ["hw_plant_a_0_0_0"], statue: ["hw_statue_a_0_0_0"], fountain: ["hw_fountain_a_0_0_0"],
         rarecase: [], mark_scuff: [], mark_tile: [], shelf: ["hw_shelf_a_0_4_0"], cabinet: ["hw_closet1_a_0_2_0"], water: ["hw_watermatic_a_0_4_0"],
@@ -36,7 +38,7 @@
 
     const turns = k => k === "chair" ? 4 : (k === "rarecase" || k === "mark_scuff" || k === "mark_tile" || k === "lamp" || k === "pillar" || k === "pillartall" || k === "smtable" || k === "ballpost") ? 1 : 2;
     const rotOf = p => { const t = turns(p.k); return (((p.rot || 0) % t) + t) % t; };
-    const lengthOf = p => { const r = ROWS[p.k]; return r ? Math.max(r.min, p.len || r.def) : 1; };
+    const lengthOf = p => { const r = ROWS[p.k]; return r ? (r.max ? r.max : Math.max(r.min, p.len || r.def)) : 1; };
 
     /* the sprites, tile by tile, in drawing order. Mirroring a row about its first tile turns a run
        along x into a run along y, so the pieces still meet. */

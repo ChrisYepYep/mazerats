@@ -55,7 +55,7 @@ const WALL_ITEMS = window.WALL_ITEMS || [], WALL_GROUPS = [["painting", "Hallway
 const TOOLS = [
     ["Floors", [["floor", "Paint floor", T_ + "floor.png"], ["erase", "Remove floor", ICON.erase], ["rug", "Rug", T_ + "rug.png"], ["medal", "Carpet crest", T_ + "crest.png"], ["height", "Floor height", ICON.raise], ["steps", "Small steps", T_ + "stair.png"]]],
     ["On walls", [["door", "Door", T_ + "door.png"], ["halfwall", "Half wall", ICON.halfwall], ["nowall", "No wall", ICON.nowall], ["addwall", "Show wall", ICON.addwall], ["sconce", "Wall light", T_ + "sconce.png"], ["globelight", "Globe wall light", "art/sconce-globe-y.png"], ["entrance", "Entrance", H_ + "entry_upper_right_mask.png"], ["lift", "Lift", T_ + "lift.png"], ["stair", "Stairs: straight", T_ + "stair.png"], ["turn", "Stairs: turning", T_ + "turn.png"], ["side", "Stairs: left wall", T_ + "side.png"], ["sideturn", "Stairs: left wall, turning", T_ + "sideturn.png"]]],
-    ["Furniture", [["sofa", "Sofa", T_ + "sofa.png"], ["chair", "Chair", H_ + "hw_chair_a_0_2_0.png"], ["table", "Table", T_ + "table.png"], ["smtable", "Small round table", H_ + "hw_smtble_a_0_0_0.png"], ["ballpost", "Ball post", H_ + "pillar0_a_0_0_0.png"], ["rope", "Rope barrier", T_ + "rope.png"], ["lamp", "Floor lamp", T_ + "lamp.png"], ["plant", "Plant", H_ + "hw_plant_a_0_0_0.png"], ["ero", "Planter", T_ + "planter.png"], ...PLANTERS.map(([k, name]) => [k, name, T_ + "planter-" + k.slice(4) + ".png"]), ["pillar", "Pillar", H_ + "pillar1_a_0_0_0.png"], ["pillartall", "Tall pillar", T_ + "pillartall.png"], ["statue", "Statue", H_ + "hw_statue_a_0_0_0.png"], ["fountain", "Fountain", H_ + "hw_fountain_a_0_0_0.png"], ["shelf", "Bookcase", H_ + "hw_shelf_a_0_4_0.png"], ["cabinet", "Cabinet", H_ + "hw_closet1_a_0_2_0.png"], ["water", "Water cooler", H_ + "hw_watermatic_a_0_4_0.png"], ["rarecase", "Rare in a glass case", "art/wall/i_rarecase.png"], ["mark_scuff", "Floor scuffs", "art/wall/i_mark_scuff.png"], ["mark_tile", "Lifted floor tile", "art/wall/i_mark_tile.png"]]],
+    ["Furniture", [["sofa", "Sofa", T_ + "sofa.png"], ["chair", "Chair", H_ + "hw_chair_a_0_2_0.png"], ["table", "Table", T_ + "table.png"], ["smtable", "Small round table", H_ + "hw_smtble_a_0_0_0.png"], ["ballpost", "Ball post", H_ + "pillar0_a_0_0_0.png"], ["rope", "Rope barrier", T_ + "rope.png"], ["lamp", "Floor lamp", T_ + "lamp.png"], ["plant", "Plant", H_ + "hw_plant_a_0_0_0.png"], ["ero", "Planter", T_ + "planter.png"], ...PLANTERS.map(([k, name]) => [k, name, T_ + "planter-" + k.slice(4) + ".png"]), ["pillar", "Pillar", H_ + "pillar1_a_0_0_0.png"], ["pillartall", "Tall pillar", T_ + "pillartall.png"], ["statue", "Statue", H_ + "hw_statue_a_0_0_0.png"], ["fountain", "Fountain", H_ + "hw_fountain_a_0_0_0.png"], ["shelf", "Bookcase", H_ + "hw_shelf_a_0_4_0.png"], ["cabinet", "Cabinet", H_ + "hw_closet1_a_0_2_0.png"], ["water", "Water cooler", H_ + "hw_watermatic_a_0_4_0.png"], ["rarecase", "Rare in a glass case", "art/wall/i_rarecase.png"], ["trophy", "Old trophy cabinet", "art/wall/i_trophy.png"], ["mark_scuff", "Floor scuffs", "art/wall/i_mark_scuff.png"], ["mark_tile", "Lifted floor tile", "art/wall/i_mark_tile.png"]]],
     ...WALL_GROUPS.map(([kind, title]) => [title, WALL_ITEMS.filter(i => i.kind === kind).map(i => ["wi:" + i.id, i.name, "art/wall/" + i.y.layers[0].f])]),
     ["Railings", EDGE_STYLES.map(([k, name]) => ["edge:" + k, name, "art/edge-" + k + ".png"])],
     ["Tidy", [["del", "Delete things", ICON.del], ["edges", "Map edges", ICON.edges]]]
@@ -584,9 +584,9 @@ function wallSpot(w, l, px, py) {
     const a = w.axis === "x" ? P(at, w.line, wallZ(l, q)) : P(w.line, at, wallZ(l, q));
     return { at: Math.round(at * 16) / 16, h: Math.max(20, Math.min(WALL - 10, Math.round(a[1] - py))) };
 }
-const wallItemCentre = (l, q) => { const a = q.axis === "x" ? P(q.at, q.line, wallZ(l, q)) : P(q.line, q.at, wallZ(l, q)); return [Math.round(a[0]), Math.round(a[1] - (q.k === "i_window" ? ((q.top || 78) + (q.b || 0)) / 2 : q.h === undefined ? 100 : q.h))]; };
-const windowBox = q => ({ w: (q.w || 52) + 12, h: (q.top || 78) - (q.b || 0) + Math.round((q.w || 52) / 2) + 10 });
-function windowHandles(l, q) { const c = wallItemCentre(l, q), W = q.w || 52, Hh = (q.top || 78) - (q.b || 0), s = q.axis === "x" ? 1 : -1; return { r: [c[0] + W / 2 + 4, c[1] + s * (W / 4)], l: [c[0] - W / 2 - 4, c[1] - s * (W / 4)], t: [c[0], c[1] - Hh / 2 - 4], b: [c[0], c[1] + Hh / 2 + 4] }; }
+const wallItemCentre = (l, q) => { const a = q.axis === "x" ? P(q.at, q.line, wallZ(l, q)) : P(q.line, q.at, wallZ(l, q)); const def = wallItemOf(q.k); return [Math.round(a[0]), Math.round(a[1] - (q.k === "i_window" ? ((q.top === undefined ? 128 : q.top) + (q.b || 0)) / 2 : (def && def.locked) || q.h === undefined ? (def && def.h) || 100 : q.h))]; };
+const windowBox = q => ({ w: (q.w || 32) + 12, h: (q.top || 128) - (q.b || 0) + Math.round((q.w || 32) / 2) + 10 });
+function windowHandles(l, q) { const c = wallItemCentre(l, q), W = q.w || 32, Hh = (q.top || 128) - (q.b || 0), s = q.axis === "x" ? 1 : -1; return { r: [c[0] + W / 2 + 4, c[1] + s * (W / 4)], l: [c[0] - W / 2 - 4, c[1] - s * (W / 4)], t: [c[0], c[1] - Hh / 2 - 4], b: [c[0], c[1] + Hh / 2 + 4] }; }
 function windowHandleAt(l, q, px, py) { const r = Math.max(5, 7 / zoom), h = windowHandles(l, q); for (const k of Object.keys(h)) if (Math.abs(px - h[k][0]) <= r && Math.abs(py - h[k][1]) <= r) return k; return null; }
 
 /* ---------- undo ---------- */
@@ -1054,7 +1054,7 @@ function snapRect(a, b) {
     if (tool === "rug") return { x0: Math.floor(x0), x1: Math.floor(x1) + 1, y0: Math.floor(y0), y1: Math.floor(y1) + 1 };
     return { x0: Math.floor(x0 / 2) * 2, x1: (Math.floor(x1 / 2) + 1) * 2, y0: Math.floor(y0 / 2) * 2, y1: (Math.floor(y1 / 2) + 1) * 2 };
 }
-const FURNI = ["sofa", "chair", "table", "smtable", "ballpost", "rope", "lamp", "plant", "ero", "ero_stone", "ero_walnut", "ero_evergreen", "ero_flower", "pillar", "pillartall", "statue", "fountain", "shelf", "cabinet", "water", "rarecase", "mark_scuff", "mark_tile"];
+const FURNI = ["sofa", "chair", "table", "smtable", "ballpost", "rope", "lamp", "plant", "ero", "ero_stone", "ero_walnut", "ero_evergreen", "ero_flower", "pillar", "pillartall", "statue", "fountain", "shelf", "cabinet", "water", "rarecase", "trophy", "mark_scuff", "mark_tile"];
 const Parts = window.FurniParts;
 let placeRot = 0;                // which way round the next piece goes, set with R
 const fits = (l, p) => (Parts.ROWS[p.k] ? Parts.tiles(p) : [[p.x, p.y]]).every(t => placeable(l, t[0], t[1]));
@@ -1206,7 +1206,7 @@ let hoverPx = null;
 function drawWallItemGhost() {
     if (!isWallItemTool(tool) || !hover || !hover.wall || !hoverPx) return;
     const def = wallItemOf(tool.slice(3)), box = def && (hover.wall.axis === "x" ? def.x : def.y); if (!box) return;
-    const ox = Math.round(canvas.width / 2 - cam.x * zoom), oy = Math.round(canvas.height / 2 - cam.y * zoom), q = wallSpot(hover.wall, level, hoverPx[0], hoverPx[1]), c = wallItemCentre(level, { axis: hover.wall.axis, at: q.at, line: hover.wall.line, h: stairH(hover.wall, hover.wall.stair ? q.h : wallH.item) });
+    const ox = Math.round(canvas.width / 2 - cam.x * zoom), oy = Math.round(canvas.height / 2 - cam.y * zoom), q = wallSpot(hover.wall, level, hoverPx[0], hoverPx[1]), c = wallItemCentre(level, { k: tool.slice(3), axis: hover.wall.axis, at: q.at, line: hover.wall.line, h: stairH(hover.wall, hover.wall.stair ? q.h : def.h || wallH.item), ...(tool === "wi:i_window" ? { w: 32, b: 0, top: 128 } : {}) });
     ctx.save(); ctx.imageSmoothingEnabled = false; ctx.globalAlpha = .8;
     for (const L of box.layers) { const img = spriteImg("art/wall/" + L.f); if (!img.complete || !img.naturalWidth) continue; const w = img.naturalWidth * zoom, h = img.naturalHeight * zoom, X = ox + (c[0] + L.x) * zoom, Y = oy + (c[1] + L.y) * zoom; ctx.save(); if (L.flip) { ctx.translate(X + w, Y); ctx.scale(-1, 1); ctx.drawImage(img, 0, 0, w, h); } else ctx.drawImage(img, X, Y, w, h); ctx.restore(); }
     ctx.restore();
@@ -1241,7 +1241,7 @@ function drawGhost() {
     const sprite = (img, reg, tx, ty, flip) => { const a = P(tx, ty, tileZ(level, tx, ty)), lx = a[0] - 16, ly = a[1] + 8; put(img, flip ? lx + 32 + reg[0] - img.naturalWidth : lx - reg[0], ly - reg[1], flip); };
     ctx.save(); ctx.imageSmoothingEnabled = false; ctx.globalAlpha = g.ok ? .7 : .3;
     if (g.tele) sprite(spriteImg("art/tele/hh_furni_special_50/" + TELE_SPRITE + ".png"), REGS.tele[TELE_SPRITE], g.x, g.y, g.flip);
-    else if (floorPiece(g.k)) { const fp = floorPiece(g.k), im = pieceImg(fp.f), a = P(g.x + (g.k.startsWith("mark_") ? .5 : .25), g.y + (g.k.startsWith("mark_") ? .5 : .25), tileZ(level, g.x, g.y)); if (im.complete && im.naturalWidth) { ctx.imageSmoothingEnabled = false; ctx.drawImage(im, ox + (a[0] - fp.ox) * zoom, oy + (a[1] - fp.oy) * zoom, fp.w * zoom, fp.h * zoom); } }
+    else if (floorPiece(g.k)) { const fp = floorPiece(g.k), im = pieceImg(fp.f), off = g.k.startsWith("mark_") ? .5 : g.k === "trophy" ? 0 : .25, a = P(g.x + off, g.y + off, tileZ(level, g.x, g.y)); if (im.complete && im.naturalWidth) { ctx.save(); ctx.imageSmoothingEnabled = false; if (g.k === "trophy" && !((g.rot || 0) & 1)) { ctx.translate(ox + a[0] * zoom, 0); ctx.scale(-1, 1); ctx.drawImage(im, -fp.ox * zoom, oy + (a[1] - fp.oy) * zoom, fp.w * zoom, fp.h * zoom); } else ctx.drawImage(im, ox + (a[0] - fp.ox) * zoom, oy + (a[1] - fp.oy) * zoom, fp.w * zoom, fp.h * zoom); ctx.restore(); } }
     else if (g.k === "rope") { for (const [X, Y, c] of ropeArt(level, g).list) { ctx.fillStyle = "rgb(" + c + ")"; ctx.fillRect(ox + X * zoom, oy + Y * zoom, zoom, zoom); } }
     else if (g.k === "lamp") { const a = P(g.x + .5, g.y + .5, tileZ(level, g.x, g.y)); put(spriteImg("art/lamp-" + (g.style || lampStyle) + ".png"), a[0] - 40, a[1] - 96, false); }
     else for (const q of Parts.parts(g)) for (const n of q.names) { const reg = REGS.hall[n]; if (reg) sprite(spriteImg(H_ + n + ".png"), reg, q.x, q.y, q.flip); }
@@ -1283,7 +1283,7 @@ function act(px, py) {
         });
         return;
     }
-    if (isWallItemTool(tool)) { if (w) { const q = wallSpot(w, level, px, py); place(() => (level.wallItems = level.wallItems || []).push({ k: tool.slice(3), axis: w.axis, at: q.at, line: w.line, h: stairH(w, w.stair ? q.h : (wallItemOf(tool.slice(3)) || {}).h || wallH.item), ...(tool === "wi:i_window" ? { w: 52, b: 0, top: 78, view: "lawn" } : {}) })); } return; }
+    if (isWallItemTool(tool)) { if (w) { const q = wallSpot(w, level, px, py); place(() => (level.wallItems = level.wallItems || []).push({ k: tool.slice(3), axis: w.axis, at: q.at, line: w.line, h: stairH(w, w.stair ? q.h : (wallItemOf(tool.slice(3)) || {}).h || wallH.item), ...(tool === "wi:i_window" ? { w: 32, b: 0, top: 128, view: "lawn" } : {}) })); } return; }
     if (tool === "sconce") { if (w) place(() => (level.lamps = level.lamps || []).push({ axis: w.axis, at: w.at + .5, line: w.line, ...lampField(lampHeight(level, w, px, py)) })); return; }
     if (tool === "globelight") { if (w) place(() => (level.lamps = level.lamps || []).push({ axis: w.axis, at: w.at + .5, line: w.line, style: "globe", ...lampField(lampHeight(level, w, px, py)) })); return; }
     if (tool === "lift") {
@@ -1498,7 +1498,7 @@ function sortByDifficulty() {
 
 /* ---------- select and move ---------- */
 let selected = null;            // { type, l, o }
-const TALL = { rarecase: [15, 62], mark_scuff: [14, 12], mark_tile: [14, 12], rope: [14, 36], pillartall: [12, 150], smtable: [13, 24], ballpost: [13, 28], ero_stone: [16, 40], ero_walnut: [16, 40], ero_evergreen: [16, 40], ero_flower: [16, 40], lamp: [12, 54], statue: [26, 105], pillar: [12, 110], plant: [11, 50], ero: [16, 40], fountain: [26, 34], shelf: [22, 62], cabinet: [32, 82], water: [12, 44], chair: [11, 28], table: [16, 22], sofa: [34, 28] };
+const TALL = { trophy: [28, 84], rarecase: [15, 62], mark_scuff: [14, 12], mark_tile: [14, 12], rope: [14, 36], pillartall: [12, 150], smtable: [13, 24], ballpost: [13, 28], ero_stone: [16, 40], ero_walnut: [16, 40], ero_evergreen: [16, 40], ero_flower: [16, 40], lamp: [12, 54], statue: [26, 105], pillar: [12, 110], plant: [11, 50], ero: [16, 40], fountain: [26, 34], shelf: [22, 62], cabinet: [32, 82], water: [12, 44], chair: [11, 28], table: [16, 22], sofa: [34, 28] };
 function pickIn(l, px, py) {
     const [fx, fy] = tileIn(l, px, py), X = Math.floor(fx), Y = Math.floor(fy);
     /* upright things first, front-most first, by what you can actually see of them */
@@ -1610,7 +1610,7 @@ function signHandles(b) {
 }
 function handleAt(b, px, py) { const r = Math.max(5, 7 / zoom), h = signHandles(b); for (const k of Object.keys(h)) if (Math.abs(px - h[k][0]) <= r && Math.abs(py - h[k][1]) <= r) return k; return null; }
 const TYPE_NAMES = { entrance: "Entrance", wallitem: "On the wall", steps: "Small steps", wall: "Wall", sign: "Maze sign", prop: "Furniture", tele: "Imperial Teleport", door: "Door", lamp: "Wall light", lift: "Lift", stair: "Stairs", medal: "Carpet crest", rug: "Rug" };
-const PROP_NAMES = { rarecase: "Rare in a glass case", mark_scuff: "Floor scuffs", mark_tile: "Lifted floor tile", rope: "Rope barrier", pillartall: "Tall pillar", smtable: "Small round table", ballpost: "Ball post", ero_stone: "Stone planter", ero_walnut: "Walnut planter", ero_evergreen: "Evergreen planter", ero_flower: "Flower planter", sofa: "Sofa", chair: "Chair", table: "Table", lamp: "Floor lamp", plant: "Plant", ero: "Planter", pillar: "Pillar", statue: "Statue", fountain: "Fountain", shelf: "Bookcase", cabinet: "Cabinet", water: "Water cooler" };
+const PROP_NAMES = { trophy: "Old trophy cabinet", rarecase: "Rare in a glass case", mark_scuff: "Floor scuffs", mark_tile: "Lifted floor tile", rope: "Rope barrier", pillartall: "Tall pillar", smtable: "Small round table", ballpost: "Ball post", ero_stone: "Stone planter", ero_walnut: "Walnut planter", ero_evergreen: "Evergreen planter", ero_flower: "Flower planter", sofa: "Sofa", chair: "Chair", table: "Table", lamp: "Floor lamp", plant: "Plant", ero: "Planter", pillar: "Pillar", statue: "Statue", fountain: "Fountain", shelf: "Bookcase", cabinet: "Cabinet", water: "Water cooler" };
 const THUMB_FOR = { sign: "door", door: "door", lamp: "sconce", lift: "lift", medal: "medal", rug: "rug", tele: "tele" };
 function thumbFor(hit) {
     if (hit.type === "wallitem") { const def = wallItemOf(hit.o.k); return def ? "art/wall/" + def.y.layers[0].f : null; }
@@ -1789,7 +1789,7 @@ function stairFits(up, r, self) {
 function beginMove(hit, px, py) {
     const [fx, fy] = tileIn(hit.l, px, py);
     const m = { kind: "move", hit, before: JSON.stringify(map), moved: false, fx, fy, orig: JSON.parse(JSON.stringify(hit.o)) };
-    if (hit.type === "wallitem") { const c = wallItemCentre(hit.l, hit.o); m.grab = [c[0] - px, c[1] - py]; if (hit.o.k === "i_window") { m.winSide = windowHandleAt(hit.l, hit.o, px, py); m.px = px; m.py = py; m.win = { w: hit.o.w || 52, b: hit.o.b || 0, top: hit.o.top || 78, at: hit.o.at }; } }
+    if (hit.type === "wallitem") { const c = wallItemCentre(hit.l, hit.o); m.grab = [c[0] - px, c[1] - py]; if (hit.o.k === "i_window") { m.winSide = windowHandleAt(hit.l, hit.o, px, py); m.px = px; m.py = py; m.win = { w: hit.o.w || 32, b: hit.o.b || 0, top: hit.o.top || 128, at: hit.o.at }; } }
     if (hit.type === "sign") {
         const b = signBox(hit.l, hit.o), side = b && handleAt(b, px, py);
         m.side = side; m.px = px; m.py = py; m.box = b && { W: b.W, H: b.H, u: b.u, v: b.v };
@@ -1841,7 +1841,7 @@ function moveSelected(d, px, py) {
     }
     if (s.type === "wallitem") {
         const X = px + d.grab[0], Y = py + d.grab[1], w = hangWallAt(X, Y, l);
-        if (w && !w.drop && !isHalf(l, w.axis, w.line, wallTile(w))) { const q = wallSpot(w, l, X, Y); o.axis = w.axis; o.line = w.line; o.at = q.at; if (ctrlNow) o.h = snapWall(q.h, "item"); else if (o.h === undefined) o.h = 100; else o.h = snapWall(o.h, "item"); }
+        if (w && !w.drop && !isHalf(l, w.axis, w.line, wallTile(w))) { const q = wallSpot(w, l, X, Y); o.axis = w.axis; o.line = w.line; o.at = q.at; const lockDef = wallItemOf(o.k), headroom = lockDef && lockDef.tell ? 134 - ((o.axis === "x" ? lockDef.x : lockDef.y).h >> 1) : 999; if (lockDef && lockDef.locked) o.h = lockDef.h; else if (ctrlNow) o.h = Math.min(headroom, snapWall(q.h, "item")); else if (o.h === undefined) o.h = (lockDef && lockDef.h) || 100; else o.h = snapWall(o.h, "item"); }
         if (JSON.stringify(o) !== before && !d.moved) { d.moved = true; undoStack.push(d.before); if (undoStack.length > 80) undoStack.shift(); redoStack.length = 0; syncButtons(); }
         if (d.moved) { requestArt(); paint(); }
         return;
@@ -2901,7 +2901,7 @@ function cutInFront(c, x0, y0) {
                 c.fillRect(m[0] - 2, m[1] - 37, 5, 39); cutPoly(c, [[m[0] - 11, m[1] - 35], [m[0] + 11, m[1] - 35], [m[0] + 8, m[1] - 50], [m[0] - 8, m[1] - 50]]);
                 continue;
             }
-            if (p.k === "rarecase") { const fp = floorPiece(p.k), im = pieceImg(fp.f), a = P(p.x + .25, p.y + .25, tileZ(lv, p.x, p.y)), q = [a[0] - fp.ox, a[1] - fp.oy]; if ((lv !== l || inFrontOfYou(p.x, p.y, ax, ay)) && nearby(a) && im.complete && im.naturalWidth) c.drawImage(im, q[0], q[1]); continue; }
+            if (p.k === "rarecase" || p.k === "trophy") { const fp = floorPiece(p.k), im = pieceImg(fp.f), a = P(p.x + (p.k === "trophy" ? 0 : .25), p.y + (p.k === "trophy" ? 0 : .25), tileZ(lv, p.x, p.y)), run = Parts.tiles(p), last = run[run.length - 1], flipIt = p.k === "trophy" && !((p.rot || 0) & 1); if ((lv !== l || inFrontOfYou(last[0], last[1], ax, ay)) && nearby(a) && im.complete && im.naturalWidth) { if (flipIt) { c.save(); c.translate(a[0], 0); c.scale(-1, 1); c.drawImage(im, -fp.ox, a[1] - fp.oy); c.restore(); } else c.drawImage(im, a[0] - fp.ox, a[1] - fp.oy); } continue; }
             if (p.k.startsWith("mark_")) continue;
             if (p.k === "rope") { const art = ropeArt(lv, p); for (const [X, Y, , t] of art.list) { const q = art.row[t]; if ((lv !== l || inFrontOfYou(q[0], q[1], ax, ay)) && nearby([X, Y])) c.fillRect(X, Y, 1, 1); } continue; }
             if (walker.seat && walker.seat.p === p) {
