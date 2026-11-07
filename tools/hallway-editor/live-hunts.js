@@ -38,14 +38,14 @@
 
     /* ---------- the night rope: the poles are in the picture, the rope is drawn here by the Hallway's own time; the Time list can't open it ---------- */
     function drawRopes(c, ox, oy, nearer) {
-        const l = LIVE.floor, w = LIVE.walker; if (!l || !w || !l.props) return; const R = window.RopeBarrier; if (!R) return; const night = LIVE.realNight();
-        for (const p of l.props) { if (p.k !== "rope" || !p.night) continue; const near = p.x + p.y > w.x + w.y; if (near !== nearer) continue; const at = (fx, fy) => { const q = LIVE.mapPoint(fx, fy, LIVE.nodeZ(l, Math.floor(fx), Math.floor(fy)) || 0); return [Math.round(q[0]), Math.round(q[1])]; }, art = R.pixels({ x: p.x, y: p.y, len: p.len, rot: p.rot, noCard: p.noCard, part: night ? "hanging" : "rope" }, at);
+        const w = LIVE.walker, l = LIVE.floor || (!window.HALLWAY_PLAY && LIVE.editorApi().level); if (!l || !l.props) return; if (!w && nearer) return; const R = window.RopeBarrier; if (!R) return; const night = LIVE.realNight();
+        for (const p of l.props) { if (p.k !== "rope" || !p.night) continue; if (w && (p.x + p.y > w.x + w.y) !== nearer) continue; const at = (fx, fy) => { const q = LIVE.mapPoint(fx, fy, LIVE.nodeZ(l, Math.floor(fx), Math.floor(fy)) || 0); return [Math.round(q[0]), Math.round(q[1])]; }, art = R.pixels({ x: p.x, y: p.y, len: p.len, rot: p.rot, noCard: p.noCard, part: night ? "hanging" : "rope" }, at);
             c.save(); c.translate(ox, oy); c.scale(LIVE.zoom, LIVE.zoom); for (const [X, Y, col] of art.list) { c.fillStyle = "rgb(" + col + ")"; c.fillRect(X, Y, 1, 1); } c.restore(); }
     }
 
     /* ---------- clicks ---------- */
     const paperSound = () => { try { if (localStorage.getItem("hallway-music") === "0") return; const C = window.AudioContext || window.webkitAudioContext, A = paperSound.a || (paperSound.a = new C()); if (A.state !== "running") A.resume().catch(() => {}); const n = A.createBufferSource(), b = A.createBuffer(1, A.sampleRate * .14, A.sampleRate), d = b.getChannelData(0); for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / d.length, 2) * .16; n.buffer = b; const f = A.createBiquadFilter(); f.type = "highpass"; f.frequency.value = 2400; n.connect(f); f.connect(A.destination); n.start(); } catch (e) { /* silent */ } };
-    function readScrap(s) { paperSound(); const p = prog(); if (p && !p.get().scraps.includes(s.id)) { p.save({ scraps: [...p.get().scraps, s.id] }); if (window.Track && Track.event) Track.event("hallway_scrap"); } const b = el("div", "hw-paper"); b.appendChild(el("p", "", s.text)); win().open("Scrap", b); }
+    function readScrap(s) { paperSound(); const p = prog(); if (p && !p.get().scraps.includes(s.id)) { p.save({ scraps: [...p.get().scraps, s.id] }); window.hwTrack("hallway_scrap"); } const b = el("div", "hw-paper"); b.appendChild(el("p", "", s.text)); win().open("Scrap", b); }
     function scrapList() { const p = prog(), got = (p ? p.get().scraps : []).map(id => scraps().find(s => s.id === id)).filter(Boolean), b = el("div", "hw-scraps"); if (!got.length) b.appendChild(el("p", "no", "Nothing yet. Keep your eyes on the floor.")); for (const s of got) b.appendChild(el("p", "got", s.text)); win().open("Scraps", b); }
     function solve(h, i) {
         paperSound(); const p = prog(), found = [...foundOf(h), "c" + i]; hintShown = false;
@@ -53,7 +53,7 @@
         const c = h.clues[i], l = levelOf(c.level); if (l) for (const d of (l.doors || [])) { if (d.kind !== "book" || !c.px) continue; const a = d.axis === "x" ? LIVE.mapPoint(d.at + 1, d.line, LIVE.nodeZ(l, Math.floor(d.at), d.line) || 0) : LIVE.mapPoint(d.line, d.at - 1, LIVE.nodeZ(l, d.line, Math.floor(d.at) - 1) || 0); if (Math.abs(a[0] - c.px) < 34 && c.py < a[1] + 6 && c.py > a[1] - 96) window.__hallway && __hallway.setDoor && __hallway.setDoor(d, true, 15000); }
         const finished = found.filter(k => /^c\d+$/.test(k)).length >= h.clues.length;
         p.save({ hunts: { [h.id]: { found, done: finished } }, key: finished || p.get().key });
-        if (window.Track && Track.event) Track.event(finished ? "hallway_hunt_done" : "hallway_clue");
+        window.hwTrack(finished ? "hallway_hunt_done" : "hallway_clue");
         if (finished) finish(h); else showPanel();
     }
     function finish(h) {

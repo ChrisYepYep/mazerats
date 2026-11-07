@@ -68,3 +68,15 @@ body.hw-screensaver #playBar, body.hw-screensaver .play-menu { opacity: 0; point
 .hw-clue { position: absolute; left: 14px; top: 62px; z-index: 28; }
 .hw-clue .hint { color: #f2be70; }
 .hw-clue small { opacity: .8; }
+
+/* phones: windows come up from the bottom, and everything's big enough for a thumb */
+@media (max-width: 700px), (pointer: coarse) {
+    .hw-sheet { align-items: flex-end !important; }
+    .hw-sheet .mr-window { width: 100%; max-width: none; margin: 0; border-radius: 12px 12px 0 0; }
+    .hw-sheet-body { max-width: none; max-height: 56vh; overflow-y: auto; font-size: 9px; }
+    .hw-sheet .mr-close, .hw-clue .mr-close { min-width: 38px; min-height: 38px; }
+    .hw-clue { left: 0; right: 0; top: auto; bottom: 0; width: 100%; }
+    .hunts .h { min-height: 44px; align-items: center; }
+    #playBar .mr-btn { min-height: 38px; }
+    #liftStay { min-height: 40px; }
+}

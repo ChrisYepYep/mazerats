@@ -1333,6 +1333,7 @@ document.addEventListener("DOMContentLoaded", () => {
     // Friendly names for what js/track.js records (netlify/functions/track.js, EVENT_NAMES).
     const FEATURE_NAMES = {
         "page": "Viewed a page",
+        "hallway_lost_found": "Hallway: found the lost thing", "hallway_lost_handed": "Hallway: handed it in", "hallway_scrap": "Hallway: read a scrap", "hallway_clue": "Hallway: solved a clue", "hallway_hunt_done": "Hallway: finished a hunt",
         "search": "Searched the archive",
         "tab": "Switched archive tab",
         "whats-new": "Opened What's New",

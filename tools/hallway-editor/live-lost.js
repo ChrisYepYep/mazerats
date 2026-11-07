@@ -35,7 +35,7 @@
     }
     LIVE.add({ under: (c, ox, oy) => drawThing(c, ox, oy, false), over: (c, ox, oy) => drawThing(c, ox, oy, true), still: true });
     /* drawn with the map's own paints, so it never needs a frame loop of its own */
-    function pick() { const t = showing(); if (!t) return; setCarry(t.thing); if (window.Track && Track.event) Track.event("hallway_lost_found"); }
+    function pick() { const t = showing(); if (!t) return; setCarry(t.thing); window.hwTrack("hallway_lost_found"); }
     LIVE.onClick((px, py) => {
         const t = showing(); if (t && t.thing) { const q = where(t), hw = (t.thing.w >> 1) + 3; if (Math.abs(px - q.X) <= hw && py <= q.Y + 5 && py >= q.Y - t.thing.h - 4) { const w = LIVE.walker; if (Math.round(w.x) === t.spot.x && Math.round(w.y) === t.spot.y && !w.walking) { pick(); return true; } if (LIVE.walkTo(t.spot.l, t.spot.x, t.spot.y, pick)) return true; return false; } }
         /* the bell, or anywhere on the counter: walk up to it */
@@ -51,7 +51,7 @@
     function bellSound() { let A; try { if (localStorage.getItem("hallway-music") === "0") return; const C = window.AudioContext || window.webkitAudioContext; A = bellSound.a || (bellSound.a = new C()); if (A.state !== "running") A.resume().catch(() => {}); } catch (e) { return; } const t = A.currentTime + .01; for (const [f, v] of [[2093, .09], [3136, .05], [4186, .02]]) { const o = A.createOscillator(), h = A.createGain(); o.type = "sine"; o.frequency.value = f; h.gain.setValueAtTime(0, t); h.gain.linearRampToValueAtTime(v, t + .003); h.gain.exponentialRampToValueAtTime(.0005, t + 1.1); o.connect(h); h.connect(A.destination); o.start(t); o.stop(t + 1.15); } }
     function ringBell() {
         bellSound(); const p = prog(); if (!p) return; const st = p.get(), lost = st.lost || { day: "", streak: 0, shelf: [] }, day = today(); let justNow = null;
-        if (carrying && lost.day !== day) { const streak = lost.day === yesterday() ? (lost.streak || 0) + 1 : 1, shelf = [...new Set([...(lost.shelf || []), carrying.k])]; justNow = carrying; p.save({ lost: { day, streak, shelf } }); setCarry(null); if (window.Track && Track.event) Track.event("hallway_lost_handed"); }
+        if (carrying && lost.day !== day) { const streak = lost.day === yesterday() ? (lost.streak || 0) + 1 : 1, shelf = [...new Set([...(lost.shelf || []), carrying.k])]; justNow = carrying; p.save({ lost: { day, streak, shelf } }); setCarry(null); window.hwTrack("hallway_lost_handed"); }
         ledger(justNow);
     }
     function ledger(justNow) {

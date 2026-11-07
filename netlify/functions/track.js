@@ -100,6 +100,7 @@ const DAY_COUNTER_KEEP_S = 2 * 24 * 60 * 60;
    that is not on this list. */
 const EVENT_NAMES = new Set([
     "page", "search", "tab", "whats-new", "timeline",
+    "hallway_lost_found", "hallway_lost_handed", "hallway_scrap", "hallway_clue", "hallway_hunt_done",
     "maze-open", "event-open", "photo-open",
     "furni-open", "furni-browse", "furni-also-list",
     "walked-toggle", "saved-toggle", "share-copy",
