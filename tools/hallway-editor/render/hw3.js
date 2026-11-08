@@ -49,7 +49,7 @@ function rugAt(R, X, Y, dx, dy) {
    floor_mat_*_corner pieces have, and no rosette. */
 const CORNER = (() => {
     const im = piece("floor_mat_upper_end"), N = 28, wood = new Set(); for (let i = 0; i < plain.rgba.length; i += 4) if (plain.rgba[i + 3] > 128) wood.add((plain.rgba[i] << 16) | (plain.rgba[i + 1] << 8) | plain.rgba[i + 2]);
-    const at = (a, b) => { const px = 128 + a - b, py = Math.floor((a + b) / 2); if (px < 0 || py < 0 || px >= im.w || py >= im.h) return null; const q = (py * im.w + px) * 4; return im.rgba[q + 3] < 128 ? null : [im.rgba[q], im.rgba[q + 1], im.rgba[q + 2]]; };
+    const at = (a, b) => { const px = 128 + a - b, py = Math.ceil((a + b) / 2); if (px < 0 || py < 0 || px >= im.w || py >= im.h) return null; const q = (py * im.w + px) * 4; return im.rgba[q + 3] < 128 ? null : [im.rgba[q], im.rgba[q + 1], im.rgba[q + 2]]; };
     const isRug = c => c && !wood.has((c[0] << 16) | (c[1] << 8) | c[2]) && !(c[0] < 30 && c[1] < 30 && c[2] < 30);
     let a0 = 1e9, b0 = 1e9; for (let a = 0; a < 128; a++) for (let b = 0; b < 128; b++) if (isRug(at(a, b))) { if (a < a0) a0 = a; if (b < b0) b0 = b; }
     /* the rug's own stripes and fill, which the patch leaves to the rug */
@@ -145,8 +145,8 @@ function rugFieldAt(F, X, Y, dx, dy) {
     let cn = F.cornerNear.get(key); if (!cn) { cn = F.corners.filter(c => Math.abs(c.A - TX * 16) < 48 && Math.abs(c.B - TY * 16) < 48); F.cornerNear.set(key, cn); }
     for (const c of cn) {
         const u = c.sa * (a - c.A), v = c.sb * (b - c.B); if (u < 0 || v < 0) continue;
-        /* measured from the unrounded point, so the cut edge is a clean line and not every other pixel */
-        if (c.cut) { if (u + v >= 40) continue; const fa = X * 16 + (dx + 2 * dy) / 2, fb = Y * 16 + (2 * dy - dx) / 2, w2 = c.sa * (fa - c.A) + c.sb * (fb - c.B) + (c.sa < 0 ? 1 : 0) + (c.sb < 0 ? 1 : 0), d = c.flat ? (w2 - 16) / 1.789 : (w2 - 16) * 1.118; if (d < 0) return null; if (d < r) r = Math.floor(d); }
+        /* measured from the unrounded point, so the cut edge is a clean line and not every other pixel; one stripe of the border to each pixel row (a flat cut) or column (an upright one), as the straight edges have, so none is skipped (8 Nov: "distorted") */
+        if (c.cut) { if (u + v >= 40) continue; const fa = X * 16 + (dx + 2 * dy) / 2, fb = Y * 16 + (2 * dy - dx) / 2, w2 = c.sa * (fa - c.A) + c.sb * (fb - c.B) + (c.sa < 0 ? 1 : 0) + (c.sb < 0 ? 1 : 0), d = c.flat ? (w2 - 16) / 2 : (w2 - 16); if (d < 0) return null; if (d < r) r = Math.floor(d); }
         else if (u >= 1 && v >= 1 && r >= 1) { const p = CORNER.get(u - 1, v - 1); if (p) return p; }
     }
     if (r < RUG.ramp.length) return RUG.ramp[r];
@@ -2367,4 +2367,4 @@ function shot(world, px, py, vw, vh, zoom, o) {
     }
     return out;
 }
-module.exports = { smallGlobe, lift, recolour, drawPortal, portalArt, build, shot, plan, fromMap, WAYS, LIGHTS, LAMP_STYLES, signIso, stairPlaque, customSign, plaqueWidth, PLAQUE, floorLamp, H, Buf };
+module.exports = { rugParts: () => ({ CORNER, RUG }), smallGlobe, lift, recolour, drawPortal, portalArt, build, shot, plan, fromMap, WAYS, LIGHTS, LAMP_STYLES, signIso, stairPlaque, customSign, plaqueWidth, PLAQUE, floorLamp, H, Buf };
