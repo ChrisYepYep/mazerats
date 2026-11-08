@@ -112,7 +112,7 @@ const levelZ = l => l.k * Z1;
 /* A floor's height within itself, as in the real hallways: l.rise holds a cell's height in pixels, a whole number of steps. The
    client's own short flights are 4px a step, 6px deep. */
 const HEIGHT = 1, STEP_R = 4, STEP_D = 6 / 16, MAX_RISE = 64;
-const heightAt = (l, x, y) => ((l.rise && l.rise[cellKey(x, y)]) || 0) + ((l.lift && l.lift[cellKey(x, y)]) || 0);
+const heightAt = (l, x, y) => ((l.rise && l.rise[cellKey(x, y)]) || 0) + ((l.floorLift && l.floorLift[cellKey(x, y)]) || 0);
 /* the height a cell's walls stand at: its rise alone, not the lift that raises only its floor (render/hw3.js patchesByHeight) */
 const wallHeightAt = (l, x, y) => (l.rise && l.rise[cellKey(x, y)]) || 0;
 const tileZ = (l, x, y) => levelZ(l) + heightAt(l, x, y) + (landingOf(l, x, y) ? LANDING : 0);
@@ -308,7 +308,7 @@ function heightLocked(l, x, y) {
 /* steps that no longer stand at a drop go; heights where the floor's gone go */
 function tidyHeights(l) {
     if (l.rise) { for (const k of Object.keys(l.rise)) if (!l.rise[k] || !cells(l).has(k)) delete l.rise[k]; if (!Object.keys(l.rise).length) delete l.rise; }
-    if (l.lift) { for (const k of Object.keys(l.lift)) if (!l.lift[k] || !cells(l).has(k)) delete l.lift[k]; if (!Object.keys(l.lift).length) delete l.lift; }
+    if (l.floorLift) { for (const k of Object.keys(l.floorLift)) if (!l.floorLift[k] || !cells(l).has(k)) delete l.floorLift[k]; if (!Object.keys(l.floorLift).length) delete l.floorLift; }
     /* a flight only stays where there's still a drop, tile by tile: it splits if its middle has gone */
     if (l.steps) { const out = []; for (const st of l.steps) { let from = null, rise = 0; for (let t = st.a; t <= st.b; t++) { const r = t < st.b ? stepRise(l, { ...st, a: t, b: t + 1 }) : 0; if (r !== rise) { if (rise > 0) out.push({ ...st, a: from, b: t }); from = t; rise = r; } } } l.steps = out; if (!l.steps.length) delete l.steps; }
     if (l.edgeItems) { l.edgeItems = l.edgeItems.filter(q => { const on = edgeOn(q); return tileEdges(l, on[0], on[1]).some(e => sameEdge(q, e)); }); if (!l.edgeItems.length) delete l.edgeItems; }
@@ -2310,8 +2310,8 @@ canvas.addEventListener("pointerup", e => {
                 if (!hasFloor(level, x, y)) continue;
                 let stuck = false; for (let a = x; a < x + 2 && !stuck; a++) for (let b = y; b < y + 2 && !stuck; b++) if (heightLocked(level, a, b)) stuck = true;
                 if (stuck && heightBrush) { locked = true; continue; }
-                const k = cellKey(x, y), now = (level.lift && level.lift[k]) || 0; if (now === heightBrush) continue;
-                (level.lift = level.lift || {})[k] = heightBrush; changedAny = true;
+                const k = cellKey(x, y), now = (level.floorLift && level.floorLift[k]) || 0; if (now === heightBrush) continue;
+                (level.floorLift = level.floorLift || {})[k] = heightBrush; changedAny = true;
             }
             tidyHeights(level);
             if (!changedAny) { undoStack.pop(); flash(locked ? "Stairs and the lift have to stay level with the floor round them." : "That floor's already raised that much."); paint(); return; }
@@ -2798,7 +2798,9 @@ function drawBookDoor(d, st, ox, oy) {
    walks into the now open doorway, it must go behind the door." The loose book is the one lit blue in the closed picture. ---------- */
 let bookBox = null;
 function bookBounds() {
-    if (bookBox !== null) return bookBox; if (!bookArt || !bookImg) return null;
+    if (bookBox !== null) return bookBox; if (!bookArt) return null;
+    if (bookArt.book) return (bookBox = bookArt.book);              // where the build says it is; it no longer stands out by its colour
+    if (!bookImg) return null;
     const s = bookArt.pulls[0], cv = document.createElement("canvas"); cv.width = s.w; cv.height = s.h; const g = cv.getContext("2d"); g.drawImage(bookImg, s.x, 0, s.w, s.h, 0, 0, s.w, s.h);
     const d = g.getImageData(0, 0, s.w, s.h).data; let x0 = 1e9, y0 = 1e9, x1 = -1, y1 = -1;
     for (let j = 0; j < s.h; j++) for (let i = 0; i < s.w; i++) { const q = (j * s.w + i) * 4; if (d[q + 3] > 128 && d[q + 2] > 180 && d[q + 2] > d[q] + 60) { x0 = Math.min(x0, i); x1 = Math.max(x1, i); y0 = Math.min(y0, j); y1 = Math.max(y1, j); } }
@@ -3218,7 +3220,7 @@ function cutInFront(c, x0, y0) {
     const R = 14, tx = Math.floor(ax), ty = Math.floor(ay);
     for (let X = tx - R; X <= tx + R; X++) for (let Y = ty - R; Y <= ty + R; Y++) {
         if (!hasFloor(l, X, Y) || pastDoor(X, Y)) continue;
-        const zt = tileZ(l, X, Y), zw = zt - ((l.lift && l.lift[cellKey(X, Y)]) || 0);      // a wall stands where its rise puts it, under a floor raised on its own
+        const zt = tileZ(l, X, Y), zw = zt - ((l.floorLift && l.floorLift[cellKey(X, Y)]) || 0);      // a wall stands where its rise puts it, under a floor raised on its own
         if (Y > ay && open(X, Y - 1, "x") && !inOpening(X, Y, "x")) { const hw = isNone(l, "x", Y, X) ? 0 : isHalf(l, "x", Y, X) ? HALF_WALL : WALL; cutPoly(c, [P(X, Y, zt), P(X + 1, Y, zt), P(X + 1, Y, zw + hw), P(X, Y, zw + hw)]); }
         if (X > ax && open(X - 1, Y, "y") && !inOpening(X, Y, "y")) { const hw = isNone(l, "y", X, Y) ? 0 : isHalf(l, "y", X, Y) ? HALF_WALL : WALL; cutPoly(c, [P(X, Y, zt), P(X, Y + 1, zt), P(X, Y + 1, zw + hw), P(X, Y, zw + hw)]); }
         /* a raised part of the floor in front covers you */
