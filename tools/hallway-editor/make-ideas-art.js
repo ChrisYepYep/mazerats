@@ -124,7 +124,7 @@ write("i_key.png", (() => { const k = A5.key(); return k; })());
       let q = at(-2, 18, 31); L.put(c, A5.bell(), q[0], q[1]); q = at(-2, 50, 31); L.put(c, A4.ledger(), q[0], q[1]); }, { locked: true, snap: true, drop: 6 });
   add("lpsign", "Lost Property sign", "hotel", (c, a) => A5.signOut(c, a[0], a[1], ["Lost", "Property"]), { text: true, pivot: true });
   /* a sign with his own words: this picture is only the editor's; the map draws the real one from its text (render/hw3.js customSign) */
-  add("custsign", "Sign: your own words", "hotel", (c, a) => A5.signOut(c, a[0], a[1], ["Your", "words"]), { text: true, pivot: true });
+  add("custsign", "Custom sign", "hotel", (c, a) => A5.signOut(c, a[0], a[1], ["Your", "words"]), { text: true, pivot: true });
   /* what can go missing: small things only */
   const dir = path.join(__dirname, "art", "ideas", "lost"); fs.mkdirSync(dir, { recursive: true }); const items = small.filter(s => s[3] <= 18 && s[4] <= 18 && !/CF_1_|CF_5_/.test(s[0])); for (const s of items) fs.copyFileSync(R + "assets/furni/" + s[2], path.join(dir, s[2]));
   fs.writeFileSync(path.join(__dirname, "art", "ideas", "lost.json"), JSON.stringify(items.map(s => ({ k: s[0], name: s[1], f: s[2], w: s[3], h: s[4] })))); console.log("lost things", items.length);

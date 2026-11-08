@@ -1903,7 +1903,8 @@ function build(cfg) {
                     w.z = zs;
                     const litNow = !!def.lit && !M.off;
                     if (it.k === "i_custsign") { const key = JSON.stringify([it.text, it.arrow, it.arrowSame, it.oneLine, it.axis]); let art = customSignMemo.get(key); if (!art) { art = customSign(it, it.axis === "x"); customSignMemo.set(key, art); }
-                        const flip = it.axis === "x"; for (let j = 0; j < art.h; j++) for (let i = 0; i < art.w; i++) { const q = (j * art.w + i) * 4; if (art.rgba[q + 3] < 128) continue; const X = flip ? cx - (i - art.ax) : cx + (i - art.ax), Y = cy + (j - art.ay); w.b.set(X, Y, [art.rgba[q], art.rgba[q + 1], art.rgba[q + 2]]); }
+                        const flip = it.axis === "x"; for (let j = 0; j < art.h; j++) for (let i = 0; i < art.w; i++) { const q = (j * art.w + i) * 4; if (art.rgba[q + 3] < 128) continue; const X = flip ? cx - (i - art.ax) : cx + (i - art.ax), Y = cy + (j - art.ay) - 12; layer.set(X, Y, [art.rgba[q], art.rgba[q + 1], art.rgba[q + 2]]); if (X >= 0 && Y >= 0 && X < bw && Y < bh) w.keep[Y * bw + X] = ((art.rgba[q] << 16) | (art.rgba[q + 1] << 8) | art.rgba[q + 2]) + 1; }
+                        /* 12 up: its bracket meets the wall where the editor's stand-in does (8 Nov: they were 12px apart, so under a ledge it vanished into the floor above) */
                         return; }
                     if (it.k === "i_garland" && def.spots) { const BAUB = { red: ["c8352a", "ff8a78", "7a1b16"], gold: ["d6ad56", "fff4c8", "86601f"], blue: ["3a7ad6", "a8d0ff", "1f4a90"], silver: ["c9cdd4", "ffffff", "7a808a"], purple: ["8a3ac8", "d0a0ff", "4e1f7a"], pink: ["e0568c", "ffb0cc", "8a2450"], teal: ["2aa8a0", "a0f0e8", "146a64"] }, hx = s => [parseInt(s.slice(0, 2), 16), parseInt(s.slice(2, 4), 16), parseInt(s.slice(4, 6), 16)], chosen = ((cfg.map && cfg.map.baubles) || Object.keys(BAUB)).filter(n => BAUB[n]), use = chosen.length ? chosen : Object.keys(BAUB), lay = (it.axis === "x" ? def.x : def.y).layers[0], ROW = ["..c..", ".KKK.", "KHGGK", "KGGGK", "KGGDK", ".KKK."], iw = wallArt(lay.f).w; (() => def.spots.forEach((q, n) => { const B = BAUB[use[n % use.length]], X = cx + lay.x + (lay.flip ? iw - 1 - q[0] : q[0]) - 2, Y = cy + lay.y + q[1]; ROW.forEach((r, j) => { for (let u = 0; u < 5; u++) { const ch = r[u]; if (ch === ".") continue; layer.set(X + u, Y + j, ch === "K" ? [0, 0, 0] : ch === "c" ? hx("d6ad56") : ch === "H" ? hx(B[1]) : ch === "D" ? hx(B[2]) : hx(B[0])); } }); }))(); }
                     for (const l of (it.axis === "x" ? def.x : def.y).layers) {
@@ -2351,4 +2352,4 @@ function shot(world, px, py, vw, vh, zoom, o) {
     }
     return out;
 }
-module.exports = { smallGlobe, lift, recolour, drawPortal, portalArt, build, shot, plan, fromMap, WAYS, LIGHTS, LAMP_STYLES, signIso, stairPlaque, plaqueWidth, PLAQUE, floorLamp, H, Buf };
+module.exports = { smallGlobe, lift, recolour, drawPortal, portalArt, build, shot, plan, fromMap, WAYS, LIGHTS, LAMP_STYLES, signIso, stairPlaque, customSign, plaqueWidth, PLAQUE, floorLamp, H, Buf };
