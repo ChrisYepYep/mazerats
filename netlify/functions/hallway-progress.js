@@ -14,18 +14,31 @@
    record and nothing is ranked from it: anything that does rank (a hunt's
    finishing order) has to be decided on the server, not read from here.
 
+   HUNTS ARE CHECKED HERE (8 Nov 2026, the owner's: "Server should check").
+   A hunt has to be one on the published map, and its clues only count in
+   order: clue 2 isn't taken until clue 1 is in. Each clue's time in is kept
+   (`at`). A hunt is finished, with its place and the key, only when every
+   clue is in and at least MIN_CLUE_MS a clue has passed since the first: a
+   page saying "done" decides nothing. A hunt that's complete but too quick
+   (a guest's whole hunt arriving at sign-in) finishes at a later save, once
+   enough time has gone by. The key comes only from a finished hunt. With
+   the map unreadable, clues are kept but nothing finishes until it's back.
+
    Signed in, with a live session, and not banned: the same gate every player
    write goes through (writeRefusal in _bans.js). */
 const { getDb, ensureUniqueIndex } = require("./_db");
 const { playerFrom, sessionRevoked } = require("./_player");
 const { SECURITY_HEADERS } = require("./_headers");
 const { writeRefusal } = require("./_bans");
+const { publishedMap } = require("./_hallway-map");
 
 const COLLECTION = "hallway_progress";
 const MAX_BODY = 16 * 1024;
 const MAX_LIST = 400;
 const ID = /^[\w .:'-]{1,60}$/;
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
+const MIN_CLUE_MS = 8000;
+const CLUE = /^c\d{1,3}$/;
 
 const json = (statusCode, data) => ({
     statusCode,
@@ -56,7 +69,7 @@ const view = (doc) => {
         scraps: ids(d.scraps),
         key: d.key === true,
         lost: { day: DAY.test(lost.day || "") ? lost.day : "", streak: Number.isInteger(lost.streak) && lost.streak > 0 ? lost.streak : 0, shelf: ids(lost.shelf), points: num(lost.points), best: num(lost.best), missed: num(lost.missed) },
-        hunts: d.hunts && typeof d.hunts === "object" ? d.hunts : {}
+        hunts: Object.fromEntries(Object.entries(d.hunts && typeof d.hunts === "object" ? d.hunts : {}).map(([id, h]) => [id, { found: ids(h && h.found), done: !!(h && h.done), ...(h && h.place ? { place: h.place } : {}) }]))
     };
 };
 
@@ -77,14 +90,17 @@ function cleanBody(body) {
     return out;
 }
 
+/* The hunts on the published map: id -> how many clues. null when the map can't be read. */
+const huntsOf = map => map && Array.isArray(map.levels) ? new Map((Array.isArray(map.hunts) ? map.hunts : []).filter(h => h && typeof h.id === "string" && Array.isArray(h.clues) && h.clues.length).map(h => [h.id, h.clues.length])) : null;
+
 /* The update for what's been sent: each part can only move forwards. */
-function mergeInto(doc, clean) {
-    const was = view(doc);
+function mergeInto(doc, clean, map, now = Date.now()) {
+    const was = view(doc), rawHunts = (doc && doc.hunts) || {};
     const next = {
         scraps: [...new Set([...was.scraps, ...clean.scraps])].slice(0, MAX_LIST),
-        key: was.key || clean.key,
+        key: was.key,
         lost: was.lost,
-        hunts: { ...was.hunts }
+        hunts: { ...rawHunts }          // as stored, with each clue's time in
     };
     /* "Brought back" is a running total: whichever device or day says more is right, so an old tab or a guest's browser signing in can't take it down (8 Nov 2026) */
     if (clean.lost && clean.lost.day >= was.lost.day) {
@@ -94,11 +110,25 @@ function mergeInto(doc, clean) {
     }
     /* Lost Property's own totals (8 Nov 2026): points, best find and misses only go up. They're the player's record, not the board: hallway-lost.js keeps that, on its own clock */
     if (clean.lost) for (const k of ["points", "best", "missed"]) next.lost[k] = Math.max(was.lost[k] || 0, clean.lost[k] || 0);
+    const defs = huntsOf(map);
     for (const [id, h] of Object.entries(clean.hunts)) {
-        const old = was.hunts[id] || { found: [], done: false };
-        next.hunts[id] = { found: [...new Set([...(old.found || []), ...h.found])].slice(0, MAX_LIST), done: old.done === true || h.done };
+        const n = defs ? defs.get(id) : undefined;
+        if (defs && n === undefined) continue;                       // not a hunt on the map
+        const old = rawHunts[id] || { found: [], done: false }, found = ids(old.found).filter(k => CLUE.test(k)), at = { ...(old.at || {}) };
+        if (n !== undefined) { for (let i = 0; i < n; i++) { const k = "c" + i; if (found.includes(k)) continue; if (!h.found.includes(k)) break; found.push(k); at[k] = now; } }
+        else for (const k of h.found) if (CLUE.test(k) && !found.includes(k)) { found.push(k); at[k] = now; }
+        next.hunts[id] = { found: found.slice(0, MAX_LIST), done: old.done === true, at };
         if (old.place) next.hunts[id].place = old.place;
     }
+    /* finished: every clue in, and not quicker than a person could */
+    for (const [id, h] of Object.entries(next.hunts)) {
+        if (h.done) continue; const n = defs && defs.get(id); if (!n) continue;
+        const raw = clean.hunts[id] ? h : rawHunts[id] || h, at = raw.at || {}, found = ids(raw.found);
+        if (!Array.from({ length: n }, (_, i) => "c" + i).every(k => found.includes(k))) continue;
+        const first = at.c0 || now; if (now - first < (n - 1) * MIN_CLUE_MS) continue;
+        next.hunts[id] = { ...raw, found, at, done: true };
+    }
+    next.key = was.key || Object.values(next.hunts).some(h => h.done);
     return next;
 }
 
@@ -159,9 +189,9 @@ async function handler(event) {
     try {
         for (let tries = 0; tries < 4; tries++) {
             const doc = await col.findOne({ playerId: player.id }, { projection: { _id: 0 } });
-            const next = mergeInto(doc, clean);
-            /* your place in a hunt is decided here, the moment you first finish it */
-            for (const [id, h] of Object.entries(clean.hunts)) { const was = doc && doc.hunts && doc.hunts[id]; if (h.done && !(was && was.done)) next.hunts[id].place = (await col.countDocuments({ ["hunts." + id + ".done"]: true })) + 1; }
+            const next = mergeInto(doc, clean, await publishedMap());
+            /* your place in a hunt is decided here, the moment it's first finished */
+            for (const [id, h] of Object.entries(next.hunts)) { const was = doc && doc.hunts && doc.hunts[id]; if (h.done && !(was && was.done)) next.hunts[id].place = (await col.countDocuments({ ["hunts." + id + ".done"]: true })) + 1; }
             const rev = (doc && doc.rev) || 0;
             const set = { ...next, rev: rev + 1, updatedAt: new Date().toISOString() };
             try {

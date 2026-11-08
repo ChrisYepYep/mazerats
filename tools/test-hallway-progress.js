@@ -1,7 +1,8 @@
 /* The Hallway's progress store against a fake database: nothing here can reach the real one (local dev points at production Mongo, so this replaces _db, _player and _bans before the function loads).
    node tools/test-hallway-progress.js */
 const Module = require("module"), path = require("path"), assert = require("assert");
-const docs = new Map(); let refuse = null, me = { id: "p1" }, indexed = 0;
+const docs = new Map(); let refuse = null, me = { id: "p1" }, indexed = 0, clock = Date.UTC(2026, 10, 8, 12), MAP = { levels: [{ id: "g", k: 0 }], hunts: [{ id: "keys", clues: [{}, {}, {}] }, { id: "quick", clues: [{}, {}] }] };
+const realNow = Date.now; Date.now = () => clock;
 const col = {
     async countDocuments(q) { const k = Object.keys(q)[0].split(".")[1]; let n = 0; for (const d of docs.values()) if (d.hunts && d.hunts[k] && d.hunts[k].done) n++; return n; },
     async findOne(q) { const d = docs.get(q.playerId); return d ? JSON.parse(JSON.stringify(d)) : null; },
@@ -11,6 +12,7 @@ const fakes = {
     "./_db": { getDb: async () => ({ collection: n => n === "players" ? { findOne: async () => ({}) } : col }), ensureUniqueIndex: async () => { indexed++; } },
     "./_player": { playerFrom: () => me, sessionRevoked: () => false },
     "./_bans": { writeRefusal: async () => refuse },
+    "./_hallway-map": { publishedMap: async () => MAP },
     "./_errors": { withErrorReporting: (n, f) => f },
     "./_headers": { SECURITY_HEADERS: {} }
 };
@@ -19,11 +21,21 @@ const { handler } = require(path.join(__dirname, "..", "netlify", "functions", "
 const call = async (method, body, headers = {}) => { const r = await handler({ httpMethod: method, headers: { host: "x.test", ...headers }, body: body === undefined ? undefined : JSON.stringify(body) }); return { status: r.statusCode, body: JSON.parse(r.body) }; };
 (async () => {
     let r = await call("GET"); assert.deepStrictEqual(r.body, { scraps: [], key: false, lost: { day: "", streak: 0, shelf: [], points: 0, best: 0, missed: 0 }, hunts: {} }, "starts empty");
-    r = await call("POST", { scraps: ["a", "b"], key: true }); assert.equal(r.status, 200); assert.deepStrictEqual(r.body.scraps, ["a", "b"]); assert.equal(r.body.key, true);
-    r = await call("POST", { scraps: ["b", "c"], key: false }); assert.deepStrictEqual(r.body.scraps, ["a", "b", "c"], "scraps only add"); assert.equal(r.body.key, true, "the key can't be lost");
+    r = await call("POST", { scraps: ["a", "b"], key: true }); assert.equal(r.status, 200); assert.deepStrictEqual(r.body.scraps, ["a", "b"]); assert.equal(r.body.key, false, "the page can't just say it has the key");
+    r = await call("POST", { scraps: ["b", "c"] }); assert.deepStrictEqual(r.body.scraps, ["a", "b", "c"], "scraps only add");
     r = await call("POST", { lost: { day: "2026-11-07", streak: 3, shelf: ["duck"] } }); assert.equal(r.body.lost.streak, 3);
     r = await call("POST", { lost: { day: "2026-11-05", streak: 1, shelf: ["coin"] } }); assert.equal(r.body.lost.day, "2026-11-07", "an older day can't win"); assert.equal(r.body.lost.streak, 3); assert.deepStrictEqual(r.body.lost.shelf, ["duck", "coin"], "but what it found still counts");
-    r = await call("POST", { hunts: { keys: { found: ["c1"], done: true } } }); r = await call("POST", { hunts: { keys: { found: ["c2"], done: false } } }); assert.deepStrictEqual(r.body.hunts.keys, { found: ["c1", "c2"], done: true, place: 1 }, "a hunt can't be un-finished");
+    /* hunts, checked against the map */
+    r = await call("POST", { hunts: { keys: { found: ["c0", "c1", "c2"], done: true } } }); assert.deepStrictEqual(r.body.hunts.keys, { found: ["c0", "c1", "c2"], done: false }, "a whole hunt at once is too quick to count");
+    r = await call("POST", { hunts: { nope: { found: ["c0"], done: true } } }); assert.ok(!("nope" in r.body.hunts), "only hunts on the map");
+    me = { id: "p9" }; r = await call("POST", { hunts: { keys: { found: ["c1", "c2"], done: true } } }); assert.deepStrictEqual(r.body.hunts.keys.found, [], "clues only in order");
+    r = await call("POST", { hunts: { keys: { found: ["c0"] } } }); clock += 9e3; r = await call("POST", { hunts: { keys: { found: ["c0", "c1"] } } }); clock += 9e3; r = await call("POST", { hunts: { keys: { found: ["c0", "c1", "c2", "c7"], done: true } } });
+    assert.deepStrictEqual(r.body.hunts.keys, { found: ["c0", "c1", "c2"], done: true, place: 1 }, "played through: finished, first"); assert.equal(r.body.key, true, "the key comes with it");
+    r = await call("POST", { hunts: { keys: { found: [], done: false } } }); assert.equal(r.body.hunts.keys.done, true, "a hunt can't be un-finished");
+    me = { id: "p1" }; clock += 60e3; r = await call("POST", { scraps: ["later"] }); assert.deepStrictEqual(r.body.hunts.keys, { found: ["c0", "c1", "c2"], done: true, place: 2 }, "the too-quick one finishes at a later save, second"); assert.equal(r.body.key, true);
+    r = await call("POST", { scraps: ["b"], key: false }); assert.equal(r.body.key, true, "the key can't be lost");
+    MAP = null; r = await call("POST", { hunts: { quick: { found: ["c0", "c1"], done: true } } }); assert.deepStrictEqual(r.body.hunts.quick, { found: ["c0", "c1"], done: false }, "no map: clues kept, nothing finishes"); MAP = { levels: [{ id: "g", k: 0 }], hunts: [{ id: "keys", clues: [{}, {}, {}] }, { id: "quick", clues: [{}, {}] }] };
+    clock += 30e3; r = await call("POST", {}); assert.equal(r.body.hunts.quick.done, true, "and finishes when it's back");
     r = await call("POST", { scraps: ["<script>", 5, "ok"], hunts: { "a.b": { found: [] }, $set: { found: [] } }, lost: { day: "nonsense", streak: 2 } }); assert.ok(r.body.scraps.includes("ok")); assert.ok(!r.body.scraps.includes("<script>"), "bad ids dropped"); assert.ok(!("a.b" in r.body.hunts) && !("$set" in r.body.hunts), "bad hunt ids dropped"); assert.equal(r.body.lost.day, "2026-11-07");
     r = await call("POST", {}, { origin: "https://evil.test" }); assert.equal(r.status, 403, "other sites refused");
     refuse = { statusCode: 403, body: JSON.stringify({ error: "banned" }) }; r = await call("POST", { scraps: ["z"] }); assert.equal(r.status, 403, "bans stop writes"); r = await call("GET"); assert.equal(r.status, 200, "bans don't stop reads"); assert.ok(!r.body.scraps.includes("z")); refuse = null;
@@ -34,5 +46,5 @@ const call = async (method, body, headers = {}) => { const r = await handler({ h
     r = await call("POST", { lost: { day: "2026-11-08", streak: 4, shelf: [], points: 900, best: 600, missed: 1 } }); r = await call("POST", { lost: { day: "2026-11-08", streak: 4, shelf: [], points: 300, best: 100, missed: 0 } }); assert.equal(r.body.lost.points, 900, "points never go down"); assert.equal(r.body.lost.best, 600); assert.equal(r.body.lost.missed, 1);
     r = await call("POST", { lost: { day: "2026-11-09", streak: 2, shelf: [] } }); assert.equal(r.body.lost.streak, 4, "brought back never goes down");
     r = await call("POST", { lost: { day: "2099-01-01", streak: 9, shelf: [] } }); assert.notEqual(r.body.lost.day, "2099-01-01", "a date in the future is refused");
-    console.log("hallway-progress: all good", "(index ensured " + indexed + " times)");
+    Date.now = realNow; console.log("hallway-progress: all good", "(index ensured " + indexed + " times)");
 })().catch(e => { console.error(e); process.exit(1); });

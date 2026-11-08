@@ -25,6 +25,7 @@ const fakes = {
     "./_player": { playerFrom: () => me, sessionRevoked: () => false },
     "./_bans": { writeRefusal: async () => refuse, netHashFor: () => net, withoutBanned: async (db, lists) => lists.map(l => l.filter(r => !banned.has(r.id) && players[r.id] && players[r.id].nick)) },
     "./_publicid": { publicLists: async (db, lists) => lists.map(l => l.map(r => ({ ...r, id: "pub-" + r.id, avatar: null }))) },
+    "./_hallway-map": { publishedMap: async () => MAP, _reset: () => {} },
     "./_blobs": { blobStore: () => ({ get: async (k, o) => k === "manifest" ? { mapVersion: "v1" } : k === "map/v1" ? JSON.stringify(MAP) : null }) },
     "./_errors": { withErrorReporting: (n, f) => f },
     "./_headers": { SECURITY_HEADERS: {} }

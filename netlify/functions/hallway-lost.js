@@ -54,7 +54,7 @@ const { playerFrom } = require("./_player");
 const { SECURITY_HEADERS } = require("./_headers");
 const { writeRefusal, withoutBanned, netHashFor } = require("./_bans");
 const { publicLists } = require("./_publicid");
-const { blobStore } = require("./_blobs");
+const { publishedMap, _reset: resetMap } = require("./_hallway-map");
 const THINGS = require("./_hallway-lost-things.json");
 
 const COLLECTION = "hallway_lost";
@@ -109,19 +109,7 @@ function spotsOf(map) {
     }
     return out;
 }
-let spotCache = null;
-async function liveSpots() {
-    if (spotCache && Date.now() - spotCache.at < 60e3) return spotCache.spots;
-    let map = null;
-    try {
-        const store = blobStore("hallway"), man = await store.get("manifest", { type: "json" });
-        const text = (man && man.mapVersion && await store.get("map/" + man.mapVersion, { type: "text" })) || await store.get("map", { type: "text" });
-        if (text) map = JSON.parse(text);
-    } catch (e) { console.error("hallway-lost: couldn't read the published map", e); }
-    const spots = spotsOf(map);
-    spotCache = { at: Date.now(), spots };
-    return spots;
-}
+const liveSpots = async () => spotsOf(await publishedMap());
 const sameSpot = (a, b) => !!a && !!b && a.x === b.x && a.y === b.y && (a.level === b.level || a.level === null || b.level === null);
 
 /* What to send them for: a thing they haven't found yet if there is one (his: avoid repeats), never the one they
@@ -301,5 +289,5 @@ async function handler(event) {
 }
 
 exports.handler = handler;
-exports._for = { pointsFor, weekOf, spotsOf, choose, visitorName, LIMIT_SECS, THINGS, resetSpots: () => { spotCache = null; } };
+exports._for = { pointsFor, weekOf, spotsOf, choose, visitorName, LIMIT_SECS, THINGS, resetSpots: () => resetMap() };
 exports.handler = require("./_errors").withErrorReporting("hallway-lost", exports.handler);
