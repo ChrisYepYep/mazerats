@@ -1746,7 +1746,9 @@ function select(hit) {
         say(hit.o.kind ? "Drag it along the wall or up and down. Its size follows the floor's name, and its arrow points the way the stairs climb." : "Drag it to move it. Drag the handle on any side to resize it: narrower wraps the text, and it grows taller to fit. Its bottom stays put and it stays centred on the door.");
         btn("Reset size and place", () => { snapshot(); delete hit.o.sign; changed(); select(hit); });
     } else if (hit.type === "stair") say((hit.o.kind === "turn" ? "Turning at a landing" : hit.o.kind === "side" ? "Through a top-left wall" : hit.o.kind === "sideturn" ? "Through a top-left wall, turning at a landing" : "Straight") + ". Drag along the wall to move.");
-    else if (hit.type === "rug") say(`${hit.o.x1 - hit.o.x0} by ${hit.o.y1 - hit.o.y0} tiles. Drag it to move, or drag an edge to resize.`);
+    else if (hit.type === "rug") { say((hit.o.style === "small" ? "Small squares floor, " : "") + `${hit.o.x1 - hit.o.x0} by ${hit.o.y1 - hit.o.y0} tiles. Drag it to move, or drag an edge to resize.`);
+        /* a rug's corners: square with the client's rosette, or cut a tile across */
+        if (hit.o.style !== "small") { const f = document.createElement("label"); f.className = "field"; const n = document.createElement("span"); n.className = "f-label"; n.textContent = "Cut corners"; const c = document.createElement("span"); c.className = "f-ctl"; const t = document.createElement("input"); t.type = "checkbox"; t.checked = !!hit.o.chamfer; t.addEventListener("change", () => { snapshot(); if (t.checked) hit.o.chamfer = true; else delete hit.o.chamfer; changed(); }); c.appendChild(t); f.append(n, c); box.appendChild(f); } }
     else if (hit.type === "lift") say("Drag it along a back wall to move it. In the hallway, double-click a lift to open it, then walk in.");
     else if (hit.type === "entrance") say("Where Habbos arrive, and where they leave by walking back in. Drag it along a wall to move it.");
     else if (hit.type === "wall") wallPanel(box, hit);

@@ -42,6 +42,31 @@ function rugAt(R, X, Y, dx, dy) {
     return R.alongY ? RUG.at(68 + (((b % 32) + 32) % 32), RUG.core + (((a % 16) + 16) % 16)) : RUG.at(68 + (((a % 32) + 32) % 32), RUG.core + (((b % 16) + 16) % 16));
 }
 
+/* ---- rug corners (8 Nov 2026, the owner's, from the client's own rugs) ----
+   A square corner has the client's rosette in it, the border's stripes curling round it: lifted from floor_mat_upper_end, whose mat has one
+   in its top corner, and used for all four corners counting in from each. Only its ornament and border are used; the rug's own stripes
+   carry on underneath. A rug with chamfer: true has its corners cut a tile across instead, the border following the cut, as the client's
+   floor_mat_*_corner pieces have, and no rosette. */
+const CORNER = (() => {
+    const im = piece("floor_mat_upper_end"), N = 28, wood = new Set(); for (let i = 0; i < plain.rgba.length; i += 4) if (plain.rgba[i + 3] > 128) wood.add((plain.rgba[i] << 16) | (plain.rgba[i + 1] << 8) | plain.rgba[i + 2]);
+    const at = (a, b) => { const px = 128 + a - b, py = Math.floor((a + b) / 2); if (px < 0 || py < 0 || px >= im.w || py >= im.h) return null; const q = (py * im.w + px) * 4; return im.rgba[q + 3] < 128 ? null : [im.rgba[q], im.rgba[q + 1], im.rgba[q + 2]]; };
+    const isRug = c => c && !wood.has((c[0] << 16) | (c[1] << 8) | c[2]) && !(c[0] < 30 && c[1] < 30 && c[2] < 30);
+    let a0 = 1e9, b0 = 1e9; for (let a = 0; a < 128; a++) for (let b = 0; b < 128; b++) if (isRug(at(a, b))) { if (a < a0) a0 = a; if (b < b0) b0 = b; }
+    /* the rug's own stripes and fill, which the patch leaves to the rug */
+    const plainCols = new Set(); for (let i = 0; i < 32; i++) for (let j = 0; j < 16; j++) { const c = RUG.at(68 + i, RUG.core + j); if (c) plainCols.add((c[0] << 16) | (c[1] << 8) | c[2]); }
+    const px = []; for (let v = 0; v < N; v++) for (let u = 0; u < N; u++) { const c = at(a0 + u, b0 + v); px.push(c && isRug(c) && !plainCols.has((c[0] << 16) | (c[1] << 8) | c[2]) ? c : null); }
+    return { N, get: (u, v) => u >= 0 && v >= 0 && u < N && v < N ? px[v * N + u] : null };
+})();
+/* the convex corners of a joined shape: where it is, which way is in, and whether it's cut */
+function rugCorners(set, cut) {
+    const out = [], has = (x, y) => set.has(x + "," + y);
+    for (const k of set) { const [X, Y] = k.split(",").map(Number), c = cut.has(k);
+        if (!has(X - 1, Y) && !has(X, Y - 1)) out.push({ A: X * 16, B: Y * 16, sa: 1, sb: 1, flat: true, cut: c });
+        if (!has(X + 1, Y) && !has(X, Y - 1)) out.push({ A: X * 16 + 15, B: Y * 16, sa: -1, sb: 1, flat: false, cut: c });
+        if (!has(X + 1, Y) && !has(X, Y + 1)) out.push({ A: X * 16 + 15, B: Y * 16 + 15, sa: -1, sb: -1, flat: true, cut: c });
+        if (!has(X - 1, Y) && !has(X, Y + 1)) out.push({ A: X * 16, B: Y * 16 + 15, sa: 1, sb: -1, flat: false, cut: c }); }
+    return out;
+}
 /* Touching rugs join: the border is worked out from the shape they make together, so it runs round
    the outside of the whole thing, in and out of its corners, and never across a join. */
 function rugField(rugs) {
@@ -61,7 +86,8 @@ function rugField(rugs) {
         const v = (y1 - y0) > (x1 - x0);
         for (const k of seen) along.set(k, v);
     }
-    return { set, along, near: new Map() };
+    const cut = new Set(); for (const r of rugs) if (r.chamfer) for (let X = r.x0; X < r.x1; X++) for (let Y = r.y0; Y < r.y1; Y++) cut.add(X + "," + Y);
+    return { set, along, near: new Map(), corners: rugCorners(set, cut), cornerNear: new Map() };
 }
 /* ---- the small-squares floor (8 Nov 2026): the floor inside the entrance's tunnel, laid where you drag it, as a rug is. The hallway's own
    wood, cut into squares half a tile across, each with a dark groove along its far edges and a light one along its near edges, as the
@@ -114,6 +140,14 @@ function rugFieldAt(F, X, Y, dx, dy) {
         const da = a < ax ? ax - a - 1 : a >= ax + 16 ? a - ax - 16 : 0, db = b < by ? by - b - 1 : b >= by + 16 ? b - by - 16 : 0;
         const d = Math.max(da, db);
         if (d < r) r = d;
+    }
+    /* the corners: cut ones move the edge in, square ones have the rosette */
+    let cn = F.cornerNear.get(key); if (!cn) { cn = F.corners.filter(c => Math.abs(c.A - TX * 16) < 48 && Math.abs(c.B - TY * 16) < 48); F.cornerNear.set(key, cn); }
+    for (const c of cn) {
+        const u = c.sa * (a - c.A), v = c.sb * (b - c.B); if (u < 0 || v < 0) continue;
+        /* measured from the unrounded point, so the cut edge is a clean line and not every other pixel */
+        if (c.cut) { if (u + v >= 40) continue; const fa = X * 16 + (dx + 2 * dy) / 2, fb = Y * 16 + (2 * dy - dx) / 2, w2 = c.sa * (fa - c.A) + c.sb * (fb - c.B) + (c.sa < 0 ? 1 : 0) + (c.sb < 0 ? 1 : 0), d = c.flat ? (w2 - 16) / 1.789 : (w2 - 16) * 1.118; if (d < 0) return null; if (d < r) r = Math.floor(d); }
+        else if (u >= 1 && v >= 1 && r >= 1) { const p = CORNER.get(u - 1, v - 1); if (p) return p; }
     }
     if (r < RUG.ramp.length) return RUG.ramp[r];
     return F.along.get(key) ? RUG.at(68 + (((b % 32) + 32) % 32), RUG.core + (((a % 16) + 16) % 16)) : RUG.at(68 + (((a % 32) + 32) % 32), RUG.core + (((b % 16) + 16) % 16));
