@@ -1022,10 +1022,10 @@ window.HallwayLive = {
     get idleFor() { return performance.now() - lastActive; }, get walker() { return walker; }, get map() { return map; },
     mapPoint: (x, y, z) => P(x, y, z), doorName: d => doorName(d),
     /* the top of a wall at one of its tiles, as high as it stands there: null where there is no wall */
-    wallTop(l, axis, line, t) { const st = wallState(l, axis, line, t); if (st === "none") return null; const own = wallZ(l, { axis, line, at: axis === "x" ? t + .5 : t + 1.5 }) + (st === "half" ? HALF_WALL : WALL); if (st === "half") return own;
+    wallTop(l, axis, line, t) { const st = wallState(l, axis, line, t); if (st === "none") return null; const own = wallZ(l, { axis, line, at: axis === "x" ? t + .5 : t + 1 }) + (st === "half" ? HALF_WALL : WALL); if (st === "half") return own;
         /* a full wall under the floor above goes on up to that floor's edge, as hw3 draws it (its "fill"): so where the floor above is raised, the top is higher there (8 Nov, his: the garland stayed level) */
         const up = map.levels.find(q => q.k === l.k + 1); if (!up) return own; const X = axis === "x" ? t : line, Y = axis === "x" ? line : t, A = axis === "x" ? [X, Y - 1] : [X - 1, Y], cov = hasFloor(up, A[0], A[1]) ? A : hasFloor(up, X, Y) ? [X, Y] : null;
-        return cov ? Math.max(own, levelZ(up) + wallHeightAt(up, cov[0], cov[1]) - 13) : own; }, get zoom() { return zoom; }, markActive,
+        return cov ? levelZ(up) + wallHeightAt(up, cov[0], cov[1]) - 13 : own; },     /* that floor's underside, higher or lower than the wall's own */ get zoom() { return zoom; }, markActive,
     /* for the things that move about the floor like a person: furniture in front cuts them, the time of day tints them. c is a 33 by 56 canvas, as the avatar's */
     as(who, fn) { const me = walker; walker = who; try { fn(); } finally { walker = me; } }, cutInFront: (c, x0, y0) => cutInFront(c, x0, y0), tint: (c, w, h) => avatarTint(c, w, h),
     /* where a wall item's picture goes on the map, and a piece's picture and where it's drawn from (live-leet.js) */

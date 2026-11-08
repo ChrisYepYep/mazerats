@@ -1381,6 +1381,7 @@ const H = require("./hw.js");
 const FloorLamps = require("./floor-lamps.js");
 const EdgeItems = require("./edge-items.js");
 const RopeBarrier = require("./rope-barrier.js");
+const Garland = require("./garland.js");
 const WALL_ITEM = new Map(require("../wall-items.js").map(i => [i.id, i]));
 const HallWindow = require("./hall-window.js");
 const FLOOR_PIECES = (() => { try { return require("../wall-items.js").floor || {}; } catch (e) { return {}; } })();
@@ -2813,7 +2814,7 @@ function fromMap(map, names) {
     /* stairs: each one cuts its slot and its hole */
     const stairs = (map.stairs || []).filter(st => byId(st.low) && byId(st.up)).map(st => ({ ...st, z: byId(st.low).k * Z1, label: st.label || byId(st.up).name }));
     cutStairs(byId, stairs);
-    for (const lv of lvls) for (const P of lv.patches) { P.l = []; P.props = []; P.teles = []; P.dn = []; P.wi = []; }
+    for (const lv of lvls) for (const P of lv.patches) { P.l = []; P.props = []; P.teles = []; P.dn = []; P.wi = []; P.gar = []; }
 
     /* then everything that stands on or against the floors */
     let ni = 0; const report = { doors: 0, named: 0, lost: [] };
@@ -2839,6 +2840,8 @@ function fromMap(map, names) {
         }
         for (const q of (l.lamps || [])) { const P = onWall(q.axis, q.at, q.line); if (P) P.l.push([q.axis, q.at, q.colour, q.style, q.h]); else report.lost.push("lamp " + q.axis + q.at + " on " + l.id); }
         for (const q of (l.wallItems || [])) { const P = onWall(q.axis, q.at, q.line); if (P) P.wi.push(q); else report.lost.push((q.k || "wall item") + " " + q.axis + q.at + " on " + l.id); }
+        /* each tile of a Christmas garland goes with the part of the floor whose wall it hangs on */
+        for (const g of (l.garlands || [])) for (let t = g.a; t < g.b; t++) { const P = onWall(g.axis, t + .5, g.line); if (P) P.gar.push({ g, t }); }
         for (const p of (l.props || [])) { const run = Parts.tiles(p), end = run[run.length - 1], P = onLanding(p.x, p.y) || (Parts.ROWS[p.k] && at(end[0], end[1])) || at(p.x, p.y); if (!P) report.lost.push(p.k + " at " + p.x + "," + p.y + " on " + l.id); const P2 = P || real2[0]; if (!P2) continue; const c = new Set(l.cells), against = !c.has(Math.floor(p.x / 2) + "," + Math.floor((p.y - 2) / 2)) || !c.has(Math.floor((p.x - 2) / 2) + "," + Math.floor(p.y / 2)); P2.props.push([p.k, p.x, p.y, !against, p.len, p.rot, p.style, p.colour, p.lights, p.lightUp, p.noCard, !!p.night, p.rare, p.z || 0]); }
 
     }
@@ -2887,6 +2890,9 @@ function build(cfg) {
     /* a tint or see-through pixel of a new piece: remembered with what's under it now, and worked out after the colouring, on whatever colour the wall ends up. If something's gone over it by then, it's dropped */
     const pieceTint = (X, Y, c, A) => { if (X < 0 || Y < 0 || X >= bw || Y >= bh || furniX[Y * bw + X] !== NO_FURNI) return; const p = (Y * bw + X) * 4; w.tints.push([X, Y, c, A, (layer.d[p] << 16) | (layer.d[p + 1] << 8) | layer.d[p + 2]]); };
     const furniX = new Int16Array(bw * bh), furniY = new Int16Array(bw * bh), furniC = new Int32Array(bw * bh), furniRun = new Uint8Array(bw * bh), NO_FURNI = -32768;
+    /* what hangs on a wall (pictures, posters, garlands): never wallpaper, whatever is done to its colour afterwards, so the wall going up
+       under a floor above never copies it upwards (9 Nov 2026, his: the Leet Show poster's top showed again above it under a ledge) */
+    const itemPx = new Uint8Array(bw * bh);
     const wallOwner = new Uint16Array(bw * bh), stairPx = new Uint8Array(bw * bh), railUnder = new Map();
     const mask = new Uint8Array(bw * bh), zb = new Int16Array(bw * bh), fc = new Int32Array(bw * bh), done = new Uint8Array(bw * bh);
     const gx = oxx - view[0], gy = oyy - view[1];
@@ -2938,7 +2944,7 @@ function build(cfg) {
         wallOwner.fill(0);
         const signs = [], pushSign = signs.push.bind(signs); let signPatch = null;
         signs.push = o => pushSign({ ...o, wallZ: signPatch ? signPatch.z : w.z, wallLine: signPatch ? (o.alongY ? signPatch.x0 : signPatch.y0) : null });
-        furniX.fill(NO_FURNI); stairPx.fill(0); railUnder.clear();
+        furniX.fill(NO_FURNI); itemPx.fill(0); stairPx.fill(0); railUnder.clear();
         const drawSprite = s => {
             if (!s.furni) return s.draw();
             const own = Object.prototype.hasOwnProperty.call(layer, "set"), was = layer.set;
@@ -2972,7 +2978,7 @@ function build(cfg) {
         };
         /* Walls you've set to half height, tile by tile: the client's low panelled wall, standing on the floor. (halfWalls is the older
            form, by 2-tile section.) */
-        const halfSet = new Set((lv.src && lv.src.halfTiles) || []);
+        const halfSet = new Set((lv.src && lv.src.halfTiles) || []), garlandMemo = new Map();
         for (const k of ((lv.src && lv.src.halfWalls) || [])) { const [ax, ln, c] = k.split("|"); halfSet.add(ax + "|" + ln + "|" + (+c * 2)); halfSet.add(ax + "|" + ln + "|" + (+c * 2 + 1)); }
         const noneSet = new Set((lv.src && lv.src.noWalls) || []), portalTiles = new Set();
         for (const q of (lv.portals || [])) for (let t = 0; t < 8; t++) { const k = q.axis + "|" + q.line + "|" + (q.at + t); noneSet.add(k); portalTiles.add(k); }
@@ -3310,6 +3316,23 @@ function build(cfg) {
                 if (axis === "x") { doorOrBook(w, at2, P.y0, { hover, open }, it); if (it.name) { const s = w.WX(at2 + 1, P.y0, 0, 71); signs.push({ s, name: it.name, hover, sign: { v: 7, ...it.sign } }); } }
                 else { doorOrBook(w, P.x0, at2, { mapY: true, hover, open }, it); if (it.name) { const s = w.WY(P.x0, at2 - 1, 0, 71); signs.push({ s, name: it.name, alongY: true, hover, sign: { v: 7, ...it.sign } }); } }
             }
+            /* Christmas garlands (render/garland.js), baked in so walls and furniture in front cover them as they do a picture (9 Nov, his).
+               The whole run's pixels are worked out once, from each tile's wall top: the floor's own wall, or higher where it goes on up to
+               a raised floor above (as the "fill" further down draws it), so the garland climbs where the wall does. */
+            if (xmasOn) for (const { g, t } of (P.gar || [])) {
+                if (!garlandMemo.has(g)) {
+                    const topOf = tt => { const X = g.axis === "x" ? tt : g.line, Y = g.axis === "x" ? g.line : tt, key = g.axis + "|" + g.line + "|" + tt, Q = tileOf.get(X + "," + Y); if (!Q || noneSet.has(key)) return null;
+                        const own = Q.z - (Q.floorLift || 0) + (halfSet.has(key) ? 48 : w.wallTop); if (halfSet.has(key) || !aboveLv) return own;
+                        const A = g.axis === "x" ? [X, Y - 1] : [X - 1, Y], cell = (x, y) => Math.floor(x / 2) + "," + Math.floor(y / 2), cov = aboveCells.has(cell(A[0], A[1])) ? A : aboveCells.has(cell(X, Y)) ? [X, Y] : null;
+                        /* under a floor above, the top is that floor's underside, higher or lower than a wall's own (a lowered floor above hangs lower) */ return cov ? aboveLv.src.k * Z1 + (((aboveLv.src.rise || {})[cell(cov[0], cov[1])]) || 0) - 13 : own; };
+                    const tops = []; for (let tt = g.a; tt < g.b; tt++) tops.push(topOf(tt));
+                    garlandMemo.set(g, new Map(Garland.pixels(g, tops, (x, y, z) => { const zs = w.z; w.z = z; const s = w.S(x, y); w.z = zs; return s; }, cfg.map && cfg.map.baubles).map(q => [q.t, q.px])));
+                }
+                const px = garlandMemo.get(g).get(t); if (!px) continue;
+                const at = t + .5; if (!(g.axis === "x" ? inReach(at, P.y0, 340) : inReach(P.x0, at, 340))) continue;
+                w.afterAll.push({ zHere: P.z, depth: (g.axis === "x" ? at + P.y0 : P.x0 + at) + .35, tx: g.axis === "x" ? t : P.x0, ty: g.axis === "x" ? P.y0 : t, axis: g.axis, line: g.axis === "x" ? P.y0 : P.x0, out: 0,
+                    draw: () => { for (const [X, Y, c] of px) { layer.set(X, Y, c); if (X >= 0 && Y >= 0 && X < bw && Y < bh) w.keep[Y * bw + X] = ((c[0] << 16) | (c[1] << 8) | c[2]) + 1; } } });
+            }
             for (const it of (P.wi || [])) {
                 const def = WALL_ITEM.get(it.k); if (!def) continue;
                 if (def.xmas && !xmasOn) continue;
@@ -3498,7 +3521,7 @@ function build(cfg) {
         w.z = lowest; later.forEach(drawSprite);
         const paintedAfter = new Set(); w.afterAll.sort((a, c) => a.depth - c.depth).forEach(s => {
             const own = Object.prototype.hasOwnProperty.call(layer, "set"), was = layer.set, mine = new Set();
-            layer.set = function (x, y, c) { if (x >= 0 && y >= 0 && x < bw && y < bh) { const i = y * bw + x; if ((furniX[i] !== NO_FURNI && !mine.has(i) && (!s.axis || (s.axis === "y" ? furniX[i] >= s.line + s.out : furniY[i] >= s.line + s.out))) || (mask[i] === 1 && zb[i] > s.zHere)) return; mine.add(i); paintedAfter.add(i); was.call(layer, x, y, c); furniX[i] = s.tx; furniY[i] = s.ty; furniRun[i] = 0; const p = i * 4; furniC[i] = (layer.d[p] << 16) | (layer.d[p + 1] << 8) | layer.d[p + 2]; } };
+            layer.set = function (x, y, c) { if (x >= 0 && y >= 0 && x < bw && y < bh) { const i = y * bw + x; if ((furniX[i] !== NO_FURNI && !mine.has(i) && (!s.axis || (s.axis === "y" ? furniX[i] >= s.line + s.out : furniY[i] >= s.line + s.out))) || (mask[i] === 1 && zb[i] > s.zHere)) return; mine.add(i); itemPx[i] = 1; paintedAfter.add(i); was.call(layer, x, y, c); furniX[i] = s.tx; furniY[i] = s.ty; furniRun[i] = 0; const p = i * 4; furniC[i] = (layer.d[p] << 16) | (layer.d[p + 1] << 8) | layer.d[p + 2]; } };
             w.z = s.zHere; s.draw();
             if (own) layer.set = was; else delete layer.set;
         });
@@ -3514,7 +3537,7 @@ function build(cfg) {
             const upBase = aboveLv.src.k * Z1, upRise = (X, Y) => (aboveLv.src.rise && aboveLv.src.rise[Math.floor(X / 2) + "," + Math.floor(Y / 2)]) || 0, REPEAT = 18, EDGE_ROWS = 13, CAP_ROWS = 24, WALL_REPEAT = 64, WOOD_ROWS = 46;
             const fill = (sx, y0, y1, yMax, dir, wallAtTile, line, floorZ) => {
                 if (sx < 0 || sx >= bw) return;
-                const plain = (X, Y) => { const n = Y * bw + X; return !stairPx[n] && (furniX[n] === NO_FURNI || railUnder.has(n)) && !lampPx.has(n); };
+                const plain = (X, Y) => { const n = Y * bw + X; return !stairPx[n] && !itemPx[n] && (furniX[n] === NO_FURNI || railUnder.has(n)) && !lampPx.has(n); };
                 /* the next repeat down has the same wallpaper, as long as it's still wallpaper and not the wood or the floor below it */
                 /* only from the wall that owns most of this column below: where two walls meet at a corner, rows of the other one sat in it and were copied up as a column of little triangles (8 Nov, his, Floor 2 by Kn0ck Kn0ck v0.0) */
                 const owners = new Map(); for (let y = Math.max(0, y1 + 1); y <= yMax && y < bh; y++) { const n = y * bw + sx; if (plain(sx, y)) owners.set(wallOwner[n], (owners.get(wallOwner[n]) || 0) + 1); }
@@ -3522,7 +3545,7 @@ function build(cfg) {
                 const down = (X, Y, last) => { if (X < 0 || X >= bw) return -1; while (Y >= 0 && Y < bh && Y <= last) { if (plain(X, Y) && (X !== sx || home < 0 || wallOwner[Y * bw + X] === home)) return Y * bw + X; Y += REPEAT; } return -1; };
                 for (let y = Math.max(0, y0); y <= y1 && y < bh; y++) {
                     let yy = y; while (yy <= y1) yy += REPEAT;
-                    const i = y * bw + sx; if (furniX[i] !== NO_FURNI || lampPx.has(i) || stairPx[i]) continue;
+                    const i = y * bw + sx; if (furniX[i] !== NO_FURNI || lampPx.has(i) || stairPx[i] || itemPx[i]) continue;
                     let j = down(sx, yy, yMax);
                     for (let n = 1; j < 0 && n <= 4; n++) for (const s of [1, -1]) { if (j >= 0 || !wallAtTile(s * n * 4)) continue; const X2 = sx + s * dir * n * WALL_REPEAT; if (X2 < 0 || X2 >= bw) continue; j = down(X2, yy + s * n * WALL_REPEAT / 2, yMax + s * n * WALL_REPEAT / 2); }
                     if (j < 0) { const art = stairWallPx(w, dir < 0, line, sx, y, yMax + WOOD_ROWS - y, floorZ); if (art) { const b2 = i * 4; layer.d[b2] = art[0]; layer.d[b2 + 1] = art[1]; layer.d[b2 + 2] = art[2]; } continue; }
@@ -3732,8 +3755,9 @@ function build(cfg) {
             const REPEAT = 18, isVoid = i => { const p = i * 4; return layer.d[p] === VOID[0] && layer.d[p + 1] === VOID[1] && layer.d[p + 2] === VOID[2]; };
             for (const [sx, y0, y1] of lv.noCap) for (let y = y0; y <= y1; y++) {
                 if (sx < 0 || sx >= bw || y < 0 || y >= bh) continue;
-                const i = y * bw + sx; if (isVoid(i) || furniX[i] !== NO_FURNI) continue;
-                let yy = y; while (yy <= y1) yy += REPEAT; if (yy >= bh) continue;
+                const i = y * bw + sx; if (isVoid(i) || furniX[i] !== NO_FURNI || itemPx[i]) continue;
+                /* from the plain wallpaper a repeat or more further down: never a picture or poster hung there (9 Nov 2026, his: the Leet Show poster's top showed again above it) */
+                let yy = y; while (yy <= y1) yy += REPEAT; while (yy < bh && (itemPx[yy * bw + sx] || furniX[yy * bw + sx] !== NO_FURNI || lampPx.has(yy * bw + sx))) yy += REPEAT; if (yy >= bh) continue;
                 const j = yy * bw + sx; if (isVoid(j)) continue;
                 layer.d[i * 4] = layer.d[j * 4]; layer.d[i * 4 + 1] = layer.d[j * 4 + 1]; layer.d[i * 4 + 2] = layer.d[j * 4 + 2];
             }
@@ -4331,10 +4355,74 @@ if (typeof window !== "undefined") window.RopeBarrier = api;
 })();
 
 } };
+MODULES["garland.js"] = { dir: "/site/tools/hallway-editor/render", run: function (module, exports, require, __dirname) {
+/* The Christmas garland along the walls (l.garlands = [{ axis, line, a, b, baubles }], one swag a tile from a to b - 1).
+   Shared by the drawing (render/hw3.js bakes it into the Christmas tiles, so walls and furniture in front cover it) and the editor
+   (live-xmas.js: the one being laid, and finding a click), so the two can't disagree (9 Nov 2026).
+
+   Each tile is ideas/christmas.js swag() pixel for pixel (i_swag.png), but able to climb: where the wall's top steps up, the wall going
+   on up to a raised floor above, the rope rises across the higher tiles (at most 16 a tile, never above the wall) instead of staying level.
+   Where along the wall: the middle of tile t is at t + 0.5 on both walls. (It used to be t + 1.5 on a "y" wall: a tile further along than
+   the one laid, so it sat a tile to the left and followed the next tile's top, not its own.) */
+(function () {
+"use strict";
+const GK = [10, 8, 8], GH = s => [parseInt(s.slice(0, 2), 16), parseInt(s.slice(2, 4), 16), parseInt(s.slice(4, 6), 16)];
+const GN = (a, b) => { const s = Math.sin(a * 12.9898 + b * 78.233) * 43758.5453; return s - Math.floor(s); }, gsag = (u, w, z0, drop) => z0 - drop * 4 * (u / w) * (1 - u / w);
+const BAUB = { red: ["c8352a", "ff8a78", "7a1b16"], gold: ["d6ad56", "fff4c8", "86601f"], blue: ["3a7ad6", "a8d0ff", "1f4a90"], silver: ["c9cdd4", "ffffff", "7a808a"], purple: ["8a3ac8", "d0a0ff", "4e1f7a"], pink: ["e0568c", "ffb0cc", "8a2450"], teal: ["2aa8a0", "a0f0e8", "146a64"] };
+const ROW = ["..c..", ".KKK.", "KHGGK", "KGGGK", "KGGDK", ".KKK."];
+/* one tile's pixels, relative to the picture's anchor: [x, y, [r, g, b]]. up: how much higher its far end hangs than its near end; back: the
+   same for the tile before, which the holly's other half lies over. A level tile gives exactly i_swag.png's pixels. */
+const memo = new Map();
+function tile(up, back) {
+    const key = up + "|" + back; if (memo.has(key)) return memo.get(key);
+    const px = new Map(), wall = (u, z, col) => px.set(Math.round(-u) + "," + Math.round(Math.floor(u / 2) - z), col);
+    const shape = paint => { const seen = new Map(), mark = (u, z, col) => seen.set(Math.round(u) + "," + Math.round(z), col); paint(mark); for (const k of seen.keys()) { const [u, z] = k.split(",").map(Number); for (const [p, q] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) if (!seen.has((u + p) + "," + (z + q))) wall(u + p, z + q, GK); } for (const [k, col] of seen) { const [u, z] = k.split(",").map(Number); wall(u, z, col); } };
+    const W = 16, Z = 126, DROP = 3, lift = u => u >= 0 ? up * u / W : back * u / W, rope = u => gsag(u, W, Z, DROP) + lift(u);
+    for (let u = 0; u < W; u += .5) { const z = rope(u); for (let d = -2.5; d <= 2.5; d += .5) { const n = GN(Math.round(u * 2), Math.round(d * 2) + 9), edge = Math.abs(d) > 2.2 - n * .8; if (edge && n < .6) continue; const col = d > 1.5 ? GH("6cb05e") : d > .5 ? (n > .5 ? GH("4fa858") : GH("3f8a44")) : d > -1 ? GH("2f7d3a") : GH("1c5426"); wall(u, z + d, col); } wall(u, z - 3, GK); wall(u, z + 3, [16, 34, 18]);
+        /* climbing steeply, the needles would come apart into stripes: fill each half-step's rise */
+        const z2 = rope(u + .5); for (let s = 1; s < Math.abs(z2 - z) - .5; s++) { const zz = z + Math.sign(z2 - z) * s; for (let d = -2; d <= 2; d += .5) wall(u, zz + d, d > 1.5 ? GH("6cb05e") : d > .5 ? GH("3f8a44") : d > -1 ? GH("2f7d3a") : GH("1c5426")); } }
+    /* holly where the tiles meet, each half lying along its own tile's rope */
+    for (const side of [-1, 1]) shape(mark => { for (let i = 0; i < 6; i++) { const wid = Math.round(2 * Math.sin((i + 1) / 7 * Math.PI)) + (i % 3 === 1 ? 1 : 0); for (let j = -wid; j <= wid; j++) mark(side * (i + 1), Z + 1 + j - i * .3 + lift(side * (i + 1)), j === 0 ? GH("6cb05e") : (j > 0 ? GH("3f8a44") : GH("1c5426"))); } });
+    shape(mark => { for (const [p, q] of [[0, 0], [2, -1], [-2, -1]]) for (const [e, f] of [[0, 0], [1, 0], [0, 1], [1, 1]]) mark(p + e, Z - 2 + q + f, e === 0 && f === 1 ? GH("ff8a78") : e === 1 && f === 0 ? GH("a81f16") : GH("e0352a")); });
+    const out = []; for (const [k, col] of px) { const [x, y] = k.split(",").map(Number); out.push([x, y, col]); }
+    memo.set(key, out); return out;
+}
+/* where the rope hangs at each join along the run, from each tile's wall top (null: no wall there): never above the wall either side of
+   it, and where the top steps, a climb of at most 16 a tile on the higher side, so the garland stays on the wall all the way up */
+function joins(tops) {
+    const n = tops.length, E = [];
+    for (let e = 0; e <= n; e++) { const a = e > 0 ? tops[e - 1] : null, b = e < n ? tops[e] : null; E.push(a === null ? b : b === null ? a : Math.min(a, b)); }
+    const CLIMB = 16; for (let e = 0; e <= n; e++) if (E[e] !== null) for (let j = 0; j <= n; j++) if (E[j] !== null) E[e] = Math.min(E[e], E[j] + CLIMB * Math.abs(e - j));
+    return E;
+}
+/* the middle of tile t along the wall, as a map point's two coordinates */
+const along = (g, t) => g.axis === "x" ? [t + .5, g.line] : [g.line, t + .5];
+/* the whole garland's pixels: tops[i] is tile g.a + i's wall top; screen(x, y, z) is where a map point goes on screen; baubles: the colours
+   chosen (map.baubles). Out: [{ t, px: [[X, Y, [r, g, b]], ...] }], a tile at a time, so each can be drawn in its own turn. */
+function pixels(g, tops, screen, baubles) {
+    const E = joins(tops), use = (baubles || Object.keys(BAUB)).filter(n => BAUB[n]), names = use.length ? use : Object.keys(BAUB), out = []; let n = 0;
+    for (let t = g.a; t < g.b; t++) {
+        const i = t - g.a; if (tops[i] === null || E[i] === null || E[i + 1] === null) continue;
+        const p = along(g, t), s = screen(p[0], p[1], E[i] - 6), cx = Math.round(s[0]), cy = Math.round(s[1]);
+        const up = Math.round(E[i + 1] - E[i]), back = i > 0 && E[i - 1] !== null ? Math.round(E[i] - E[i - 1]) : 0, flip = g.axis === "x", px = [];
+        for (const [x, y, col] of tile(up, back)) px.push([flip ? cx - 8 - x : cx + 8 + x, cy + 124 + y, col]);
+        /* a bauble in the dip of each tile's swag, half way up its climb */
+        if (g.baubles !== false) { const B = BAUB[names[n++ % names.length]], bx = cx - 2, by = cy + 8 - Math.round(up / 2); ROW.forEach((r, j) => { for (let u = 0; u < 5; u++) { const ch = r[u]; if (ch === ".") continue; px.push([bx + u, by + j, ch === "K" ? [0, 0, 0] : ch === "c" ? GH("d6ad56") : ch === "H" ? GH(B[1]) : ch === "D" ? GH(B[2]) : GH(B[0])]); } }); }
+        out.push({ t, mid: [cx, cy + 8 - Math.round(up / 2)], px });
+    }
+    return out;
+}
+const api = { tile, joins, pixels, along, BAUB };
+if (typeof module !== "undefined" && module.exports) module.exports = api;
+if (typeof window !== "undefined") window.HallwayGarlandArt = api;
+})();
+
+} };
 MODULES["iso3d.js"] = { dir: "/site/tools/hallway-editor/ideas", run: function (module, exports, require, __dirname) {
 /* A small ray-caster for making new furniture in the hallway's own projection: 16 units to a tile, screen x = x - y, screen y = (x + y) / 2 - z.
    Every pixel looks along (1,1,1), so there are no gaps or wobbly edges, and a 1px outline and flat shading bands make it read like the client's art.
    A material is { top, x, y, nx, ny, edge, line } of colours (x is the face looking +x, the darker visible side; y the one looking +y, the lighter), or a function (face, p) => colour. */
+(function () {
 "use strict";
 const hex = h => [parseInt(h.slice(0, 2), 16), parseInt(h.slice(2, 4), 16), parseInt(h.slice(4, 6), 16)];
 const col = c => typeof c === "string" ? hex(c.replace("#", "")) : c;
@@ -4412,15 +4500,20 @@ function render(prims, opt = {}) {
     }
     return { w, h, ox: -B.x0, oy: -B.y0, rgba: out };
 }
-module.exports = { box, cyl, ball, M, render, bounds, col, hex };
+const api = { box, cyl, ball, M, render, bounds, col, hex };
+/* in node, and in the page as window.Iso3d (the window snow, live-xmas.js) */
+if (typeof module !== "undefined" && module.exports) module.exports = api;
+if (typeof window !== "undefined") window.Iso3d = api;
+})();
 
 } };
 MODULES["hall-window.js"] = { dir: "/site/tools/hallway-editor/render", run: function (module, exports, require, __dirname) {
 /* A window in the wall: frame in the wall's own wood, a clean board along the bottom, dark inner frame, glazing bars. Any width, bottom and top.
    Drawn once per size with the same small ray-caster the other new pieces were made with, and shared by the drawing and nothing else.
    Its art is for a wall running along y; hw3.js mirrors it for the other. */
+(function () {
 "use strict";
-const iso = require("../ideas/iso3d.js"), { box, M, render, col } = iso;
+const iso = typeof window !== "undefined" && window.Iso3d ? window.Iso3d : require("../ideas/iso3d.js"), { box, M, render, col } = iso;
 const groove = (face, p) => { if (face === "x") return Math.floor(p[1] + 400) % 6 === 0 ? "34180b" : Math.floor(p[1] + 400) % 6 === 3 ? "593422" : "452313"; if (face === "y") return Math.floor(p[0] + 400) % 6 === 0 ? "452313" : "593422"; return null; };
 const cache = new Map();
 function barsOf(W) { return Math.max(1, Math.round(W / 26)); }
@@ -4445,7 +4538,11 @@ const SUN = [1, .34, -.92];
 function litByWindow(W, b, top, wy, wz) { if (wy < 1 || wy > W - 1 || wz < b + 2 || wz > top - 2) return false; const bars = barsOf(W); for (let i = 1; i <= bars; i++) if (Math.abs(wy - W * i / (bars + 1)) < 1.3) return false; for (const z of railsOf(b, top)) if (Math.abs(wz - z) < 1.3) return false; return true; }
 /* which part of the grounds each window looks on: centres in the hotel view's picture */
 const PLACES = { lawn: [640, 350], road: [480, 400], maze: [560, 430], park: [340, 320] };
-module.exports = { art, SUN, litByWindow, PLACES };
+const api = { art, SUN, litByWindow, PLACES };
+/* in node, and in the page as window.HallWindow: the window snow falls only where the view shows past this frame */
+if (typeof module !== "undefined" && module.exports) module.exports = api;
+if (typeof window !== "undefined") window.HallWindow = api;
+})();
 
 } };
 MODULES["furni-parts.js"] = { dir: "/site/tools/hallway-editor", run: function (module, exports, require, __dirname) {
@@ -4525,7 +4622,8 @@ MODULES["furni-parts.js"] = { dir: "/site/tools/hallway-editor", run: function (
     /* the squares of the picture a floor below ground can be seen in, so the failing lights only draw those */
     api.xmasTiles = (map, size = 512) => { const out = new Set(), add = (x, y, l, r, u, d) => { for (let ty = Math.floor((y - u) / size); ty <= Math.floor((y + d) / size); ty++) for (let tx = Math.floor((x - l) / size); tx <= Math.floor((x + r) / size); tx++) out.add(tx + "," + ty); }, S = (x, y, z) => [(x - y) * 16, (x + y) * 8 - z];
         for (const l of map.levels) { const z = l.k * 163; for (const p of l.props || []) if (p.k === "statue") { const q = S(p.x + 1, p.y + 1, z); add(q[0], q[1], 250, 250, 400, 130); }      /* the giant tree in its place, and its glow */
-            for (const p of l.props || []) if (/^(xmas|gift\d|snowman)/.test(p.k)) { const q = S(p.x + .5, p.y + .5, z); add(q[0], q[1], 110, 110, 160, 70); } for (const q of l.wallItems || []) if (/^i_(garland|window|bunting|festoon|wreath|stockings|holly|canes)/.test(q.k)) { const a = q.axis === "y" ? S(q.line, q.at, z) : S(q.at, q.line, z); add(a[0], a[1], 120, 120, 200, 60); } }
+            for (const p of l.props || []) if (/^(xmas|gift\d|snowman)/.test(p.k)) { const q = S(p.x + .5, p.y + .5, z); add(q[0], q[1], 110, 110, 160, 70); } for (const q of l.wallItems || []) if (/^i_(garland|window|bunting|festoon|wreath|stockings|holly|canes)/.test(q.k)) { const a = q.axis === "y" ? S(q.line, q.at, z) : S(q.at, q.line, z); add(a[0], a[1], 120, 120, 200, 60); }
+            for (const g of l.garlands || []) for (let t = g.a; t < g.b; t++) { const a = g.axis === "y" ? S(g.line, t + .5, z) : S(t + .5, g.line, z); add(a[0], a[1], 40, 40, 260, 40); } }
         return out; };
     api.basementTiles = (map, size = 512) => { const out = new Set(); for (const l of map.levels) { if (l.k >= 0) continue; const z = l.k * 163; for (const c of l.cells || []) { const [cx, cy] = c.split(",").map(Number), x = (cx - cy) * 32, y = (cx + cy) * 16 - z; for (let ty = Math.floor((y - 200) / size); ty <= Math.floor((y + 40) / size); ty++) for (let tx = Math.floor((x - 40) / size); tx <= Math.floor((x + 40) / size); tx++) out.add(tx + "," + ty); } } return out; };
     if (typeof module !== "undefined" && module.exports) module.exports = api; else root.FurniParts = api;
