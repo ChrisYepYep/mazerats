@@ -1612,7 +1612,7 @@ function sortByDifficulty() {
 
 /* ---------- select and move ---------- */
 let selected = null;            // { type, l, o }
-const TALL = { leetstand: [30, 100], barstool: [9, 24], plant_palm: [16, 74], plant_orange: [12, 48], plant_bonsai: [16, 32], plant_roses: [8, 36], plant_cactus: [12, 52], plant_bay: [24, 64], plant_sunflower: [9, 46], archway: [17, 118], mark_arrow: [17, 10], arcade_ff: [16, 56], arcade_pura: [16, 56], arcade_guess: [16, 56], arcade_odd: [16, 56], arcade_scout: [16, 56], arcade_quiz: [16, 56], tablelamp: [8, 22], xmastree: [20, 72], xmassmalltree: [14, 30], snowman: [14, 34], xmaslantern: [10, 24], xmasdrinks: [12, 18], xmasduck: [10, 16], gift1: [12, 20], gift2: [12, 20], gift3: [12, 20], gift4: [12, 20], trophy: [28, 84], rarecase: [15, 62], mark_scuff: [14, 12], mark_tile: [14, 12], rope: [14, 36], pillartall: [12, 150], smtable: [13, 24], ballpost: [13, 28], ero_stone: [16, 40], ero_walnut: [16, 40], ero_evergreen: [16, 40], ero_flower: [16, 40], lamp: [12, 54], statue: [26, 105], pillar: [12, 110], plant: [11, 50], ero: [16, 40], fountain: [26, 34], shelf: [22, 62], cabinet: [32, 82], water: [12, 44], chair: [11, 28], table: [16, 22], sofa: [34, 28] };
+const TALL = { leetstand: [48, 112], barstool: [9, 24], plant_palm: [16, 74], plant_orange: [12, 48], plant_bonsai: [16, 32], plant_roses: [8, 36], plant_cactus: [12, 52], plant_bay: [24, 64], plant_sunflower: [9, 46], archway: [17, 118], mark_arrow: [17, 10], arcade_ff: [16, 56], arcade_pura: [16, 56], arcade_guess: [16, 56], arcade_odd: [16, 56], arcade_scout: [16, 56], arcade_quiz: [16, 56], tablelamp: [8, 22], xmastree: [20, 72], xmassmalltree: [14, 30], snowman: [14, 34], xmaslantern: [10, 24], xmasdrinks: [12, 18], xmasduck: [10, 16], gift1: [12, 20], gift2: [12, 20], gift3: [12, 20], gift4: [12, 20], trophy: [28, 84], rarecase: [15, 62], mark_scuff: [14, 12], mark_tile: [14, 12], rope: [14, 36], pillartall: [12, 150], smtable: [13, 24], ballpost: [13, 28], ero_stone: [16, 40], ero_walnut: [16, 40], ero_evergreen: [16, 40], ero_flower: [16, 40], lamp: [12, 54], statue: [26, 105], pillar: [12, 110], plant: [11, 50], ero: [16, 40], fountain: [26, 34], shelf: [22, 62], cabinet: [32, 82], water: [12, 44], chair: [11, 28], table: [16, 22], sofa: [34, 28] };
 function pickIn(l, px, py) {
     const [fx, fy] = tileIn(l, px, py), X = Math.floor(fx), Y = Math.floor(fy);
     /* upright things first, front-most first, by what you can actually see of them */
@@ -2181,8 +2181,8 @@ function walkPress(px, py) {
     for (const f of liveClicks) { try { if (f(px, py)) return; } catch (err) { console.error(err); } }
     { const dd = doorAtPx(px, py); if (dd && dd.d.kind === "book" && onBook(dd.l, dd.d, px, py)) { bookDoor(dd.l, dd.d); return; } }
     const u = useUnder(px, py);
-    if (u && isSeat(u.p.k)) { sitOn(u); return; }
     if (u && u.p.k === "water") return;                     // it takes a double-click
+    { const st = seatUnder(px, py); if (st) { sitOn(st); return; } }                    // the seat, or the tile it stands on
     const dh = doorAtPx(px, py); if (dh) { const st = walkerStart(); if (!(st.l === dh.l && doorFront(dh.d).some(t => t[0] === st.x && t[1] === st.y))) useDoor(dh.l, dh.d); return; }
     walkTo(px, py);
 }
@@ -2282,7 +2282,7 @@ canvas.addEventListener("pointermove", e => {
             const sb = selected && selected.type === "sign" ? signBox(selected.l, selected.o) : null, side = sb && handleAt(sb, px, py);
             canvas.style.cursor = side ? (side === "l" || side === "r" ? "ew-resize" : "ns-resize") : hit ? "move" : "default";
             $("st-hover").textContent = !hit ? "" : hit.type === "sign" ? (hit.o.kind ? stairSignName(hit.o) : doorName(hit.o) || "Sign") : hit.type === "door" ? (hit.o.spare ? "Spare door" : (doorName(hit.o) || "Door with no maze yet")) : hit.type === "prop" ? (PROP_NAMES[hit.o.k] || "") : TYPE_NAMES[hit.type];
-        } else { const w2 = useUnder(px, py); $("st-hover").textContent = !w2 ? "" : w2.p.k === "water" ? "Double-click for a drink" : isSeat(w2.p.k) ? "Click to sit" : ""; canvas.style.cursor = w2 && (w2.p.k === "water" || isSeat(w2.p.k)) ? "pointer" : ""; }
+        } else { const w2 = useUnder(px, py) || seatUnder(px, py); $("st-hover").textContent = !w2 ? "" : w2.p.k === "water" ? "Double-click for a drink" : isSeat(w2.p.k) ? "Click to sit" : ""; canvas.style.cursor = w2 && (w2.p.k === "water" || isSeat(w2.p.k)) ? "pointer" : ""; }
         paint(); return;
     }
     if (drag && drag.kind === "edge") {
@@ -2641,8 +2641,11 @@ function stairUnder(M, l, px, py) {
 }
 
 /* Sitting. The tile and the way you face come from the piece: a sofa faces away from its back, a chair the way it's turned. */
-const SEAT_LIFT = { sofa: 3, chair: 3, barstool: 14 };     /* the stool's cushion stands higher than a chair's seat */
-const isSeat = k => k === "sofa" || k === "chair" || k === "barstool";     // low enough that you sit in the seat, not hover over it
+const SEAT_LIFT = { sofa: 3, chair: 3, barstool: 11 };     /* the stool's cushion stands higher than a chair's seat */
+const isSeat = k => k === "sofa" || k === "chair" || k === "barstool";
+/* the seat standing on a floor tile, if any: clicking the tile sits you there, as clicking the seat does (9 Nov, his) */
+const seatOnTile = (l, X, Y) => { if (!l || l.stair) return null; const p = (l.props || []).find(q => isSeat(q.k) && Parts.tiles(q).some(t => t[0] === X && t[1] === Y)); return p ? { l, p, x: X, y: Y } : null; };
+const seatUnder = (px, py) => { const u = useUnder(px, py); if (u && isSeat(u.p.k)) return u; if (u) return null; const f = floorUnder(px, py); return f ? seatOnTile(f[0], f[1], f[2]) : null; };     // low enough that you sit in the seat, not hover over it
 const seatFacing = p => p.k === "sofa" ? (Parts.rotOf(p) ? 2 : 4) : [2, 4, 6, 0][Parts.rotOf(p)];
 const STEP_OF = d => DIRS[d];
 /* ---------- the lifts ----------

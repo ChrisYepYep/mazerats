@@ -100,7 +100,7 @@
     LIVE.add({ active: () => !screensaver.on && sunAmount() > 0 && dustWindows().length > 0, over: drawDust });
 
     /* ---------- the screensaver: a minute idle, the camera glides along a floor's paths, on the player's own map and inside its limits. Any input ends it ---------- */
-    const IDLE_MS = window.HALLWAY_IDLE_MS || 60000, SPEED = 13, EASE = 1.6, FADE = 1.6, MAX_LEN = 2100, DAY_NIGHT = .09;
+    const IDLE_MS = window.HALLWAY_IDLE_MS || 60000, SPEED = 13, EASE = 1.6, FADE = 1.6, MAX_LEN = 2100;
     const routes = new Map();
     /* the furthest apart two tiles can be, keeping off the walls */
     function floorRoute(l) {
@@ -151,9 +151,10 @@
         }
         /* the camera follows a point on the path on a soft spring, so no turn is ever sudden; from where you were looking, it eases in */
         const p = along(r, screensaver.d), k = 1 - Math.exp(-dt / EASE); let mx = (p[0] - screensaver.cam.x) * k, my = (p[1] - screensaver.cam.y) * k; const sp = Math.hypot(mx, my), cap = SPEED * 1.6 * dt; if (sp > cap) { mx *= cap / sp; my *= cap / sp; } screensaver.cam.x += mx; screensaver.cam.y += my; LIVE.camera(screensaver.cam.x, screensaver.cam.y); const real = LIVE.cam; screensaver.stuck = Math.hypot(real.x - screensaver.cam.x, real.y - screensaver.cam.y) > 2; screensaver.cam = { x: real.x, y: real.y };
-        /* day slowly turning to night; the tiles that are about to show are asked for now, so nothing arrives late */
-        const kk = (Math.sin((now - (screensaver.startAt || (screensaver.startAt = now))) / 1000 * DAY_NIGHT - 1.57) + 1) / 2; LIVE.forceMood({ a: "day", b: "night", f: kk });
-        if (Math.floor(now / 500) !== screensaver.asked) { screensaver.asked = Math.floor(now / 500); const a = along(r, Math.max(0, Math.min(r.len, screensaver.d + screensaver.dir * 8 * SPEED))), v = LIVE.view(), hw = (v.x1 - v.x0) / 2, hh = (v.y1 - v.y0) / 2; for (let y = a[1] - hh; y <= a[1] + hh + 512; y += 512) for (let x = a[0] - hw; x <= a[0] + hw + 512; x += 512) for (const m of ["day", "night"]) LIVE.loadMood(m, x, y); }
+        /* the time of day stays as it was (9 Nov 2026, his): a time you chose holds, and the day and night cycle runs on from where it was.
+           The tiles about to show are asked for now, in the light they'll be in, so nothing arrives late */
+        const md = LIVE.mood(), moods = md ? [...new Set([md.a, md.b])] : [];
+        if (Math.floor(now / 500) !== screensaver.asked) { screensaver.asked = Math.floor(now / 500); const a = along(r, Math.max(0, Math.min(r.len, screensaver.d + screensaver.dir * 8 * SPEED))), v = LIVE.view(), hw = (v.x1 - v.x0) / 2, hh = (v.y1 - v.y0) / 2; for (let y = a[1] - hh; y <= a[1] + hh + 512; y += 512) for (let x = a[0] - hw; x <= a[0] + hw + 512; x += 512) for (const m of moods) LIVE.loadMood(m, x, y); }
     }
     LIVE.add({ active: () => screensaver.on, over(c) { const W = c.canvas.width, Hh = c.canvas.height, dim = .38 * (screensaver.dim || 0), f = screensaver.fade || 0; c.fillStyle = `rgba(0,0,0,${dim + (1 - dim) * f})`; c.fillRect(0, 0, W, Hh); } });
     setInterval(() => { if (!screensaver.on && !document.hidden && LIVE.walker && LIVE.idleFor > IDLE_MS && !LIVE.busy) ssStart(); }, 1000);
