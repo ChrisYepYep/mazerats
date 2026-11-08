@@ -3428,6 +3428,7 @@ function buildMusic() {
     }
     showMusic();
 }
+const libShut = new Set((() => { try { return JSON.parse(localStorage.getItem("hallway-editor-shut") || "[]"); } catch (err) { return []; } })());
 function buildLibrary() {
     const lib = $("library"); lib.textContent = "";
     const q = $("search").value.trim().toLowerCase();
@@ -3435,7 +3436,14 @@ function buildLibrary() {
         if (title === "Christmas" && !window.hallwayXmas) continue;
         const items = list.filter(i => !q || i[1].toLowerCase().includes(q));
         if (!items.length) continue;
-        const h = document.createElement("div"); h.className = "cat-head"; h.textContent = title; lib.appendChild(h);
+        /* each section folds away with a click on its heading, and stays as you left it (8 Nov: "save me some scrolling"); a search shows every match */
+        const shut = !q && libShut.has(title), h = document.createElement("button"); h.type = "button"; h.className = "cat-head"; h.setAttribute("aria-expanded", String(!shut));
+        h.innerHTML = '<svg class="cat-chev" width="12" height="12" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5l8 7-8 7" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+        const ht = document.createElement("span"); ht.textContent = title; h.appendChild(ht);
+        if (shut) { const n = document.createElement("span"); n.className = "cat-count"; n.textContent = items.length; h.appendChild(n); }
+        h.addEventListener("click", () => { if (libShut.has(title)) libShut.delete(title); else libShut.add(title); try { localStorage.setItem("hallway-editor-shut", JSON.stringify([...libShut])); } catch (err) { /* this visit only */ } const top = $("library").scrollTop; buildLibrary(); $("library").scrollTop = top; });
+        lib.appendChild(h);
+        if (shut) continue;
         const g = document.createElement("div"); g.className = "lib-grid"; lib.appendChild(g);
         for (const [id, label, src] of items) {
             const b = document.createElement("button"); b.type = "button"; b.className = "lib-item"; b.dataset.tool = id; b.title = HINTS[id] || label;
