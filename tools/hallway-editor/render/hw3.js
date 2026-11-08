@@ -377,6 +377,58 @@ function stairPlaque(b, ax, ay, name, o) {
     }
 }
 
+/* ---- a sign with your own words (8 Nov 2026, the owner's: "a custom placeable version of the lost property sign, where i can type the
+   text for it and choose if i want it to have an arrow, and whether the arrow is wrapped onto a new line ... the ability for the sign to be
+   smaller in height, to cleanly display just one line of text (and option to allow arrow on that same line too)").
+   The Lost Property sign's own plaque, arm and chains (stairPlaque's), standing straight out from the wall, drawn here so its words can be
+   anything. A wall item { k: "i_custsign", text, arrow: "" | "left" | "right", arrowSame, oneLine }: up to two lines of text (a new line
+   in text, or "|"), or one on the smaller sign; the arrow on a line of its own, or beside the words. Drawn into its own canvas, anchored
+   where the wall item hangs, as make-ideas-art.js's signOut is: the face runs out to the right, and an x wall has it mirrored. */
+const SIGN_ARROW = ["....1....", "....11...", "1111111..", "11111111.", "1111111..", "....11...", "....1...."];
+function customSign(it, mirrored) {
+    const one = !!it.oneLine, arrow = it.arrow === "left" || it.arrow === "right" ? it.arrow : "", same = !!arrow && (one || !!it.arrowSame);
+    let lines = String(it.text || "Your words").split(/\n|\|/).map(t => t.trim()).filter(Boolean); if (!lines.length) lines = [" "];
+    lines = one ? [lines.join(" ")] : lines.slice(0, arrow && !same ? 1 : 2);
+    const rows = arrow && !same ? [...lines, "\u0000arrow"] : lines, AW = 9, GAP = 4, pad = 6;
+    const lineW = t => t === "\u0000arrow" ? AW : H.textW(t, "vb") + (same ? AW + GAP : 0);
+    const Wd = Math.max(50, Math.max(...rows.map(lineW)) + 2 * pad), Hd = rows.length > 1 ? 30 : 18, floors = rows.length > 1 ? [17, 4] : [5];
+    const CW = Wd + 40, CH = Hd + 110, ax = 10, ay = CH - 4, b = new Buf(CW, CH);
+    for (let i = 0; i < b.d.length; i += 4) b.d[i + 3] = 0;
+    const cv = { w: CW, h: CH, set: (x, y, c) => { const X = 2 * ax - x; if (X < 0 || y < 0 || X >= CW || y >= CH) return; const q = (y * CW + X) * 4; b.d[q] = c[0]; b.d[q + 1] = c[1]; b.d[q + 2] = c[2]; b.d[q + 3] = 255; }, get: (x, y) => { const X = 2 * ax - x, q = (y * CW + X) * 4; return [b.d[q], b.d[q + 1], b.d[q + 2]]; } };
+    /* the plaque, arm and chains, from stairPlaque with no words of its own */
+    const BR = ["7a4a14", "b47a22", "ddaa63", "f2be70", "ffe7a8"].map(hex), WD = ["240a02", "3a1508", "4c1c0c", "5a2410", "7a3a1a", "925030"].map(hex), IRON = ["121016", "26222c", "3c3744", "5a5462"].map(hex);
+    const { h, off } = PLAQUE, L0 = ax - off - Wd, B = ay - h + Math.floor((Wd + off) / 2);
+    const at = (s2, t) => [L0 + s2, B - Math.floor(s2 / 2) - t];
+    const outlined = draw => { const seen = new Map(), mark = (x, y, c) => { if (x >= -CW && y >= 0 && x < 2 * CW && y < CH) seen.set(y * 4 * CW + (x + CW), c); }; draw(mark); const has = (x, y) => seen.has(y * 4 * CW + (x + CW));
+        for (const k of seen.keys()) { const x = (k % (4 * CW)) - CW, y = Math.floor(k / (4 * CW)); for (const [p, q] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) if (!has(x + p, y + q)) cv.set(x + p, y + q, C.k); }
+        for (const [k, c] of seen) cv.set((k % (4 * CW)) - CW, Math.floor(k / (4 * CW)), c); };
+    const armH = h + Hd + 8, len = Wd + off + 2;
+    outlined(mark => {
+        for (let t = -6; t <= 6; t++) for (const u of [-1, 0, 1]) mark(ax + u, ay - armH - t + Math.floor(u / 2), u < 0 ? BR[3] : u ? BR[1] : BR[2]);
+        for (let u = 0; u <= len; u++) { const y = ay - armH + Math.floor(u / 2); mark(ax - u, y, IRON[2]); mark(ax - u, y - 1, IRON[3]); }
+        for (let a = 0; a < 44; a++) { const th = a / 44 * Math.PI * 1.5, r = 6 * (1 - a / 66); mark(Math.round(ax - 9 + Math.cos(th) * r), Math.round(ay - armH + 9 - Math.sin(th) * r), IRON[2]); }
+        const e = [ax - len, ay - armH + Math.floor(len / 2) - 1]; for (const [p, q] of [[0, 0], [-1, 0], [1, 0], [0, -1], [0, 1]]) mark(e[0] + p, e[1] + q, BR[3]);
+    });
+    for (const sc of [6, Wd - 7]) { const top = at(sc, Hd), armY = ay - armH + Math.floor((ax - top[0]) / 2) + 1; for (let y = armY; y < top[1]; y++) cv.set(top[0], y, (y - armY) % 3 === 2 ? BR[0] : BR[2]); }
+    outlined(mark => {
+        const set = (s2, t, c) => { const q = at(s2, t); mark(q[0], q[1], c); };
+        for (let d = 1; d <= 2; d++) { for (let s2 = 0; s2 < Wd; s2++) { const q = at(s2, Hd - 1); mark(q[0] - d, q[1] - Math.ceil(d / 2), WD[5]); } for (let t = 0; t < Hd; t++) { const q = at(0, t); mark(q[0] - d, q[1] - Math.ceil(d / 2), WD[1]); } }
+        for (let s2 = 0; s2 < Wd; s2++) for (let t = 0; t < Hd; t++) { const r = Math.min(s2, Wd - 1 - s2, t, Hd - 1 - t); set(s2, t, r === 0 ? BR[t > Hd / 2 ? 3 : 1] : r === 1 ? BR[0] : WD[(s2 + (t >> 1)) % 9 ? 1 : 2]); }
+    });
+    /* the words and the arrow, read from the free end in, cut into the wood */
+    /* on an x wall the whole sign is flipped, so the words are written the other way first, as signOut does */
+    const ink = hex("f6cf80"), cut = hex("170703"), put = (v, t, c) => { const s2 = mirrored ? v : Wd - 1 - v, q = at(s2, t); cv.set(q[0], q[1], c); };
+    const arrowAt = (U, floor) => { for (const [dt, c] of [[-1, cut], [0, ink]]) SIGN_ARROW.forEach((row, j) => { for (let i = 0; i < AW; i++) { const k = arrow === "left" ? AW - 1 - i : i; if (row[k] === "1") put(U + i, floor + 7 - j + dt, c); } }); };
+    rows.forEach((row, n) => {
+        const floor = floors[n], w0 = lineW(row); let U = (Wd - w0) >> 1;
+        if (row === "\u0000arrow") { arrowAt(U, floor); return; }
+        if (same && arrow === "left") { arrowAt(U, floor); U += AW + GAP; }
+        for (const ch of row) { const g = H.VOL.vb[ch] || H.VOL.vb[" "]; for (const [dt, c] of [[-1, cut], [0, ink]]) g.rows.forEach((r, j) => { for (let i = 0; i < r.length; i++) if (r[i] === "1") put(U + i, floor + 10 - j + dt, c); }); U += g.w; }
+        if (same && arrow === "right") arrowAt(U + GAP, floor);
+    });
+    return { w: CW, h: CH, rgba: b.d, ax, ay };
+}
+const customSignMemo = new Map();
 /* ---- half-size stairs ---- */
 const TR = { run: [hex("510000"), hex("730000")], trim: [hex("bc5200"), hex("9d2500")] };
 function treadCol(u, v, wpx) {
@@ -1793,6 +1845,9 @@ function build(cfg) {
                     const base = it.axis === "x" ? w.S(it.at, it.line) : w.S(it.line, it.at), base0 = base, cx = Math.round(base[0]), cy = Math.round(base[1] - (def.locked || it.h === undefined ? (def.h || 100) : it.h));
                     w.z = zs;
                     const litNow = !!def.lit && !M.off;
+                    if (it.k === "i_custsign") { const key = JSON.stringify([it.text, it.arrow, it.arrowSame, it.oneLine, it.axis]); let art = customSignMemo.get(key); if (!art) { art = customSign(it, it.axis === "x"); customSignMemo.set(key, art); }
+                        const flip = it.axis === "x"; for (let j = 0; j < art.h; j++) for (let i = 0; i < art.w; i++) { const q = (j * art.w + i) * 4; if (art.rgba[q + 3] < 128) continue; const X = flip ? cx - (i - art.ax) : cx + (i - art.ax), Y = cy + (j - art.ay); w.b.set(X, Y, [art.rgba[q], art.rgba[q + 1], art.rgba[q + 2]]); }
+                        return; }
                     if (it.k === "i_garland" && def.spots) { const BAUB = { red: ["c8352a", "ff8a78", "7a1b16"], gold: ["d6ad56", "fff4c8", "86601f"], blue: ["3a7ad6", "a8d0ff", "1f4a90"], silver: ["c9cdd4", "ffffff", "7a808a"], purple: ["8a3ac8", "d0a0ff", "4e1f7a"], pink: ["e0568c", "ffb0cc", "8a2450"], teal: ["2aa8a0", "a0f0e8", "146a64"] }, hx = s => [parseInt(s.slice(0, 2), 16), parseInt(s.slice(2, 4), 16), parseInt(s.slice(4, 6), 16)], chosen = ((cfg.map && cfg.map.baubles) || Object.keys(BAUB)).filter(n => BAUB[n]), use = chosen.length ? chosen : Object.keys(BAUB), lay = (it.axis === "x" ? def.x : def.y).layers[0], ROW = ["..c..", ".KKK.", "KHGGK", "KGGGK", "KGGDK", ".KKK."], iw = wallArt(lay.f).w; (() => def.spots.forEach((q, n) => { const B = BAUB[use[n % use.length]], X = cx + lay.x + (lay.flip ? iw - 1 - q[0] : q[0]) - 2, Y = cy + lay.y + q[1]; ROW.forEach((r, j) => { for (let u = 0; u < 5; u++) { const ch = r[u]; if (ch === ".") continue; layer.set(X + u, Y + j, ch === "K" ? [0, 0, 0] : ch === "c" ? hx("d6ad56") : ch === "H" ? hx(B[1]) : ch === "D" ? hx(B[2]) : hx(B[0])); } }); }))(); }
                     for (const l of (it.axis === "x" ? def.x : def.y).layers) {
                         const im = wallArt(litNow && l.litF ? l.litF : l.f);
