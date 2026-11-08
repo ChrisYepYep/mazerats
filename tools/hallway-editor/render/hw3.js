@@ -734,7 +734,7 @@ const portalArt = (phase = 0) => portalMemo.get(phase) || (portalMemo.set(phase,
         const o = { w: frame.w, h: frame.h + WALL_ADD, rgba: Buffer.alloc(frame.w * (frame.h + WALL_ADD) * 4) };
         const shift = wall === SEAMX ? phase * 16 : -phase * 16, base = wall === SEAMX ? 0 : 10, sx = x => x < base || x >= base + 128 ? x : base + (((x - base + shift) % 128) + 128) % 128;
         /* the piece is drawn on the wall's slant: a column further along is half as far up or down */
-        const copyWall = (r, x) => { const X = sx(x), R = r + (wall === SEAMX ? (X - x) / 2 : -(X - x) / 2); if (X < wall.w && R >= 0 && R < wall.h) wall.rgba.copy(o.rgba, (r * o.w + x) * 4, (R * wall.w + X) * 4, (R * wall.w + X + 1) * 4); };
+        const copyWall = (r, x) => { if (!wall) return; const X = sx(x), R = r + (wall === SEAMX ? (X - x) / 2 : -(X - x) / 2); if (X < wall.w && R >= 0 && R < wall.h) wall.rgba.copy(o.rgba, (r * o.w + x) * 4, (R * wall.w + X) * 4, (R * wall.w + X + 1) * 4); };
         for (let x = 0; x < o.w; x++) {
             if (x < lo || x > hi) { for (let r = 0; r < o.h; r++) copyWall(r, x); continue; }
             const src = stub(x) ? raw : frame; let top = -1;
@@ -748,7 +748,8 @@ const portalArt = (phase = 0) => portalMemo.get(phase) || (portalMemo.set(phase,
         }
         return o;
     };
-    return { y: { alcove: tallPiece(eY, false), arch: surround(mY, eY, SEAMY, 28, 120, x => x >= 104) }, x: { alcove: tallPiece(eX, true), arch: surround(mX, eX, SEAMX, 17, 110, x => x <= 36) } };
+    /* free: the arch alone, no wall round it, for the freestanding archway */
+    return { y: { alcove: tallPiece(eY, false), arch: surround(mY, eY, SEAMY, 28, 120, x => x >= 104), free: surround(mY, eY, null, 28, 120, x => x >= 104) }, x: { alcove: tallPiece(eX, true), arch: surround(mX, eX, SEAMX, 17, 110, x => x <= 36), free: surround(mX, eX, null, 17, 110, x => x <= 36) } };
 })()), portalMemo.get(phase));
 function drawPortal(w, axis, line, at, part, theatre) {
     const b = w.b, T = w.wallTop, ph = ((at % 8) + 8) % 8, art = theatre ? theatreArt(ph, axis, part, T) : portalArt(ph)[axis][part];
@@ -851,6 +852,46 @@ function theatreArt(phase, axis, part, T) {
         for (const [px, j] of ink) put(px, rowOf(px) - 11 + j, [246, 204, 104]);
     }
     theatreMemo.set(key, o); return o;
+}
+
+/* ---- the freestanding archway (8 Nov 2026, the owner's: "Make this archway into a drawable placeable item, it'll morph to the length
+   drawn, and cleanly meet a wall when drawn up to a wall"). The entrance's own arch, without the wall round it (portalArt's free piece):
+   a post at each end, the beam between stretched to the length drawn, the vents and EXIT plaque in the middle of it when there's room.
+   An end that meets a wall has no post: the beam runs into the wall. Given a little depth, its far side showing above and to one side.
+   archwayArt(axis, n, wallA, wallB): axis the way it runs ("x" or "y"); n tiles long; wallA / wallB: no post at the start / the end.
+   Measured along the piece in px from its start ("along"): posts 17..39 and 94..111, the plain beam at 40, the middle 40..93. */
+const ARCH = { a0: 17, aA: 40, aB: 94, a1: 111, plainAt: 41, depth: 4 };
+const archMemo = new Map();
+function archwayArt(axis, n, wallA, wallB) {
+    const key = axis + n + (wallA ? "A" : "") + (wallB ? "B" : ""); if (archMemo.has(key)) return archMemo.get(key);
+    const src = portalArt(0)[axis].free, SW = src.w, SH = src.h, colOf = a => axis === "x" ? a : 138 - a;
+    const W = n * 16, postA = wallA ? 0 : ARCH.aA - ARCH.a0, postB = wallB ? 0 : ARCH.a1 - ARCH.aB, mid = W - postA - postB, natMid = ARCH.aB - ARCH.aA;
+    /* which of the piece's columns goes at each column along the archway */
+    const from = d => {
+        if (d < postA) return ARCH.a0 + d;
+        if (d >= W - postB) return ARCH.aB + (d - (W - postB));
+        const m = d - postA;
+        if (mid >= natMid) { const pad = (mid - natMid) >> 1; return m >= pad && m < pad + natMid ? ARCH.aA + (m - pad) : ARCH.plainAt; }
+        return ARCH.plainAt;
+    };
+    /* the face, column by column, each moved to its new place on the slant */
+    const PAD = 12, OW = W + PAD * 2, OH = SH + PAD, o = new Buf(OW, OH); for (let i = 0; i < o.d.length; i += 4) o.d[i + 3] = 0;
+    const face = new Uint8Array(OW * OH), set = (x, y, c) => { if (x < 0 || y < 0 || x >= OW || y >= OH) return; const q = (y * OW + x) * 4; o.d[q] = c[0]; o.d[q + 1] = c[1]; o.d[q + 2] = c[2]; o.d[q + 3] = 255; };
+    const dir = axis === "x" ? 1 : -1, put0 = [];
+    for (let d = 0; d < W; d++) { const sa = from(d), sc = colOf(sa), dy = Math.floor(d / 2) - Math.floor(sa / 2), X = PAD + (dir > 0 ? d : W - 1 - d);
+        for (let j = 0; j < SH; j++) { const q = (j * SW + sc) * 4; if (src.rgba[q + 3] < 128) continue; const Y = j + dy + PAD; if (Y < 0 || Y >= OH) continue; put0.push([X, Y, [src.rgba[q], src.rgba[q + 1], src.rgba[q + 2]]]); face[Y * OW + X] = 1; } }
+    /* its depth: the face's own shape again, a pixel at a time back from it (away from you: up and to the right on an x run, up and to the
+       left on a y run), darker down the sides and lighter over the top */
+    const bx = dir > 0 ? 2 : -2;
+    for (let k = ARCH.depth; k >= 1; k--) for (const [X, Y, c] of put0) { const XX = X + bx * k, YY = Y - k; if (XX < 0 || YY < 0 || XX >= OW || YY >= OH || face[YY * OW + XX]) continue; const top = !face[(Y - 1) * OW + X], lum = c[0] * .3 + c[1] * .59 + c[2] * .11; set(XX, YY, top ? (k === ARCH.depth ? [120, 76, 44] : [158, 104, 62]) : lum < 70 ? [42, 18, 8] : [84, 50, 28]); }
+    /* an outline round the depth, as everything has, then the face over it */
+    const solid = (x, y) => x >= 0 && y >= 0 && x < OW && y < OH && o.d[(y * OW + x) * 4 + 3] === 255;
+    const line = []; for (let y = 0; y < OH; y++) for (let x = 0; x < OW; x++) if (solid(x, y) && !face[y * OW + x]) for (const [p, q] of [[1, 0], [-1, 0], [0, -1]]) if (!solid(x + p, y + q) && !(face[(y + q) * OW + x + p])) line.push([x + p, y + q]);
+    for (const [x, y] of line) set(x, y, [0, 0, 0]);
+    for (const [X, Y, c] of put0) set(X, Y, c);
+    /* the start of the run (along 0) at the floor sits at this point of the picture */
+    const out = { w: OW, h: OH, rgba: o.d, ax: dir > 0 ? PAD : PAD + W - 1 + 1, ay: PAD };
+    archMemo.set(key, out); return out;
 }
 
 /* A small wall light to match the globe lamp: a little antique bronze plate, a short curved arm, a cup and a round glass globe.
@@ -1731,6 +1772,16 @@ function build(cfg) {
                     /* at Christmas the statue gives way to the giant tree: its foot at the statue's middle, drawn over the sofas round it as the mock-up has it, its lights and star always lit */
                     if (w.partAt({ x, y })) { const fp = FLOOR_PIECES.bigtree, base = w.S(x + 1, y + 1), im = wallArt(fp.f), li = wallArt(fp.lights), X0 = Math.round(base[0]) - fp.ox, Y0 = Math.round(base[1]) - fp.oy; w.bigTrees.push({ X0, Y0, li, fx: x + 1, fy: y + 1 });
                         w.sprites.push({ depth: x + y + 2.6, ftx: x + 1, fty: y + 1, draw: () => { for (let j = 0; j < im.h; j++) for (let i = 0; i < im.w; i++) { const q = (j * im.w + i) * 4, lit = li.rgba[q + 3] > 0, src = lit ? li.rgba : im.rgba; if (!src[q + 3]) continue; const X = X0 + i, Y = Y0 + j, c = [src[q], src[q + 1], src[q + 2]]; layer.set(X, Y, c); if (X >= 0 && Y >= 0 && X < bw && Y < bh) { const v = ((c[0] << 16) | (c[1] << 8) | c[2]) + 1; w.keep[Y * bw + X] = lit ? v : 0; w.glowing[Y * bw + X] = lit ? v : 0; if (Y < Y0 + fp.oy - 120) w.treePx.push(Y * bw + X); w.treeAll.push(Y * bw + X, v - 1, lit ? 1 : 0); } } } }); }
+                }
+                else if (k === "archway") {
+                    /* the run, and whether each end meets a wall: no floor beyond it */
+                    const n = Parts.lengthOf({ k, len: p[4] }), alongY = !!((p[5] || 0) & 1), cells = new Set((lv.src && lv.src.cells) || []), floorAt = (X, Y) => cells.has(Math.floor(X / 2) + "," + Math.floor(Y / 2));
+                    const wallA = alongY ? !floorAt(x, y - 1) : !floorAt(x - 1, y), wallB = alongY ? !floorAt(x, y + n) : !floorAt(x + n, y);
+                    const art = archwayArt(alongY ? "y" : "x", n, wallA, wallB), T = w.wallTop, far = alongY ? { x, y: y + n - 1 } : { x: x + n - 1, y };
+                    if (w.partAt({ x, y })) { const z = w.z; w.sprites.push({ depth: x + y + n * .5 + .2, ftx: far.x, fty: far.y, draw: () => {
+                        const zs = w.z; w.z = z; const s0 = alongY ? w.S(x + .5, y) : w.S(x, y + .5); w.z = zs; const X0 = Math.round(s0[0]) - (alongY ? art.ax - 1 : art.ax), Y0 = Math.round(s0[1]) - T - art.ay;
+                        for (let j = 0; j < art.h; j++) for (let i = 0; i < art.w; i++) { const q = (j * art.w + i) * 4; if (art.rgba[q + 3] < 128) continue; const c = [art.rgba[q], art.rgba[q + 1], art.rgba[q + 2]]; layer.set(X0 + i, Y0 + j, c); }
+                    } }); }
                 }
                 else if (k === "rope") {
                     /* each tile of it takes its own place in the queue, so what stands nearer on another tile still covers it */
