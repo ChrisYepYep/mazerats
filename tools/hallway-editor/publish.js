@@ -11,7 +11,7 @@
 
    Lines of "progress n of m" go to the console, for the Publish button. */
 "use strict";
-const fs = require("fs"), path = require("path"), crypto = require("crypto");
+const fs = require("fs"), path = require("path"), crypto = require("crypto"), os = require("os"), { Worker, isMainThread, parentPort, workerData } = require("worker_threads");
 const W = require("./render/hw3.js"), { encodePng } = require("../png-encode.js");
 const HERE = __dirname, SITE = path.join(HERE, "..", ".."), OUT = path.join(SITE, "assets", "hallway");
 const MOODS = ["day", "dusk", "night", "dawn"], TILE = 512;
@@ -29,7 +29,25 @@ function copyDir(from, to) {
 function isBlank(d) { for (let i = 0; i < d.length; i += 4) if ((d[i] || d[i + 1] || d[i + 2]) && !(d[i] === 7 && d[i + 1] === 6 && d[i + 2] === 10)) return false; return true; }
 const liftFile = (way, f) => encodeURIComponent(way).replace(/%/g, "_") + "-" + f + ".png";
 
-function main() {
+/* one lighting set: every square of it, written to tiles/ unless a square with the same picture is there already */
+function drawLight(mapFile, light) {
+    const text = fs.readFileSync(mapFile, "utf8"), load = () => JSON.parse(text), names = W.H.names2(), tiles = {}, used = [];
+    const onlyBasement = light === "failing" ? require("./furni-parts.js").basementTiles(load()) : null;
+    const world = W.build({ map: load(), names, light }), b = world.b, o = world.at(0, 0, 0);
+    /* A square of the editor's picture is tile-sized in map pixels, counted from the map's origin, which the whole picture has moved */
+    const tx0 = Math.floor(-o[0] / TILE), ty0 = Math.floor(-o[1] / TILE), tx1 = Math.ceil((b.w - o[0]) / TILE), ty1 = Math.ceil((b.h - o[1]) / TILE);
+    for (let ty = ty0; ty <= ty1; ty++) for (let tx = tx0; tx <= tx1; tx++) {
+        if (onlyBasement && !onlyBasement.has(tx + "," + ty)) continue;
+        const v = b.crop(o[0] + tx * TILE, o[1] + ty * TILE, TILE, TILE); if (isBlank(v.d)) continue;
+        const px = Buffer.from(v.d); for (let i = 0; i < px.length; i += 4) { if (px[i] === 7 && px[i + 1] === 6 && px[i + 2] === 10) px[i] = px[i + 1] = px[i + 2] = 0; px[i + 3] = 255; }
+        const png = encodePng(TILE, TILE, px), hash = crypto.createHash("sha1").update(png).digest("hex").slice(0, 20), name = hash + ".png", file = path.join(OUT, "tiles", name);
+        if (!fs.existsSync(file)) fs.writeFileSync(file, png);
+        used.push(name); tiles[light + "|" + tx + "," + ty] = name;
+    }
+    return { tiles, used };
+}
+
+async function main() {
     const mapFile = process.argv[2] || path.join(HERE, "map.json"), text = fs.readFileSync(mapFile, "utf8"), load = () => JSON.parse(text), map = load();
     /* The names are locked to their doors in the map, so the live list isn't needed, except for a map from before that */
     const names = W.H.names2();
@@ -37,23 +55,21 @@ function main() {
     /* New things go in beside the old, and swap in at the end: a publish that fails part way leaves the last good one whole */
     const LIFT_NEW = path.join(OUT, "lift.new"), APP_NEW = path.join(OUT, "app.new");
     fs.rmSync(LIFT_NEW, { recursive: true, force: true }); fs.rmSync(APP_NEW, { recursive: true, force: true }); fs.mkdirSync(LIFT_NEW, { recursive: true });
-    const tiles = {}, used = new Set(), total = MOODS.length + 1, onlyBasement = require("./furni-parts.js").basementTiles(load());
-    let done = 0;
+    const tiles = {}, used = new Set();
     const hasXmas = load().levels.some(l => (l.props || []).some(p => /^(xmas|gift\d|snowman)/.test(p.k)) || (l.wallItems || []).some(q => /^i_(garland|window|bunting|festoon|wreath|stockings|holly|canes)/.test(q.k)));
-    for (const light of [...MOODS, "failing", ...(hasXmas ? MOODS.map(m => m + "+x") : [])]) {
-        const world = W.build({ map: load(), names, light }), b = world.b, o = world.at(0, 0, 0);
-        /* A square of the editor's picture is tile-sized in map pixels, counted from the map's origin, which the whole picture has moved */
-        const tx0 = Math.floor(-o[0] / TILE), ty0 = Math.floor(-o[1] / TILE), tx1 = Math.ceil((b.w - o[0]) / TILE), ty1 = Math.ceil((b.h - o[1]) / TILE);
-        for (let ty = ty0; ty <= ty1; ty++) for (let tx = tx0; tx <= tx1; tx++) {
-            if (light === "failing" && !onlyBasement.has(tx + "," + ty)) continue;
-            const v = b.crop(o[0] + tx * TILE, o[1] + ty * TILE, TILE, TILE); if (isBlank(v.d)) continue;
-            const px = Buffer.from(v.d); for (let i = 0; i < px.length; i += 4) { if (px[i] === 7 && px[i + 1] === 6 && px[i + 2] === 10) px[i] = px[i + 1] = px[i + 2] = 0; px[i + 3] = 255; }
-            const png = encodePng(TILE, TILE, px), hash = crypto.createHash("sha1").update(png).digest("hex").slice(0, 20), name = hash + ".png", file = path.join(OUT, "tiles", name);
-            if (!fs.existsSync(file)) fs.writeFileSync(file, png);
-            used.add(name); tiles[light + "|" + tx + "," + ty] = name;
-        }
-        done++; console.log(`progress ${done} of ${total + 1}`);
-    }
+    const lights = [...MOODS, "failing", ...(hasXmas ? MOODS.map(m => m + "+x") : [])], steps = lights.length + 1;
+    /* each lighting set drawn in a thread of its own, several at once (8 Nov 2026: one after another took five minutes), each square
+       written as it's drawn; the same squares, named by their contents, as before */
+    let done = 0; const drawn = new Map();
+    const one = light => new Promise((res, rej) => {
+        const w = new Worker(__filename, { workerData: { mapFile, light } });
+        w.once("message", got => { drawn.set(light, got); for (const n of got.used) used.add(n); done++; console.log(`progress ${done} of ${steps}`); res(); });
+        w.once("error", rej); w.once("exit", code => { if (code) rej(new Error("Drawing " + light + " stopped (" + code + ")")); });
+    });
+    const queue = [...lights], threads = Math.max(1, Math.min(queue.length, os.cpus().length - 2, 6));
+    await Promise.all(Array.from({ length: threads }, async () => { while (queue.length) await one(queue.shift()); }));
+    /* in the same order whichever finished first, so the same map always makes the same version */
+    for (const light of lights) Object.assign(tiles, drawn.get(light).tiles);
     /* Christmas keeps only what it changes; the page falls back on the plain square */
     for (const k of Object.keys(tiles)) { if (!k.includes("+x|")) continue; if (tiles[k] === tiles[k.replace("+x", "")]) delete tiles[k]; }
     /* The lift's doors, in each floor's colours */
@@ -76,7 +92,7 @@ function main() {
     const version = finish(text, tiles, app, LIFT_NEW);
     /* Only now are the pictures nothing names any more taken away */
     for (const f of fs.readdirSync(path.join(OUT, "tiles"))) if (!used.has(f)) fs.unlinkSync(path.join(OUT, "tiles", f));
-    console.log(`progress ${total + 1} of ${total + 1}`);
+    console.log(`progress ${steps} of ${steps}`);
     console.log(`published ${version}: ${used.size} pictures`);
 }
 
@@ -104,5 +120,6 @@ function finish(text, tiles, app, liftNew) {
     fs.writeFileSync(path.join(OUT, "manifest.json"), JSON.stringify({ version, tile: TILE, moods: MOODS, publishedAt: new Date().toISOString(), tiles }));
     return version;
 }
-if (require.main === module) main();
+if (!isMainThread) parentPort.postMessage(drawLight(workerData.mapFile, workerData.light));
+else if (require.main === module) main().catch(e => { console.error(e && e.stack || e); process.exit(1); });
 module.exports = { main, liftFile };
