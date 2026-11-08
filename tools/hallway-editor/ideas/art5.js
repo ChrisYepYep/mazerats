@@ -157,6 +157,7 @@ function bite(c, a, u0, bites) {
 }
 
 /* ---- 23: the bookcase door, thinner, turned properly in 3D ---- */
+let bookAt = null;
 function bookDoor() {
     const P = name => L.loadPng(H + "art/rooms/" + name + ".png"), n = 3, parts = []; for (let i = 0; i < n; i++) { const k = i === 0 ? 27 : i === n - 1 ? 19 : 26 - ((i - 1) % 7); parts.push([P("shelf" + k), -i * 16 - 16 + (k === 19 ? -2 : 0), i * 8 + 16 - 74]); }
     let x0 = 1e9, x1 = -1e9, y0 = 1e9, y1 = -1e9; for (const [im, x, y] of parts) { x0 = Math.min(x0, x); x1 = Math.max(x1, x + im.w); y0 = Math.min(y0, y); y1 = Math.max(y1, y + im.h); }
@@ -186,9 +187,11 @@ function bookDoor() {
         /* the book: side, top, then spine, all from the same three directions as the door */
         { const K0 = [4, 14, 26], P0 = d => { const f = F(d); return [f[0] + nn[0] * pull, f[1] + nn[1] * pull]; }, Q0 = d => F(d), z1 = BTOP, z0 = BTOP - BH, tone = (arr, k = 1) => arr.map(v => Math.min(255, v * k));
           const fill = (poly, col) => polyFill(poly, (x, y) => put(x, y, col[0], col[1], col[2]));
-          if (pull > 0) { const sideD = sn - cs > 0 ? BD + BW : BD; fill([S(Q0(sideD), z1), S(P0(sideD), z1), S(P0(sideD), z0), S(Q0(sideD), z0)], sn - cs > 0 ? [20, 84, 136] : [26, 104, 164]); fill([S(Q0(BD), z1), S(Q0(BD + BW), z1), S(P0(BD + BW), z1), S(P0(BD), z1)], [232, 222, 192]); const A1 = S(Q0(sideD), z1), A2 = S(P0(sideD), z1), B1 = S(Q0(sideD), z0), B2 = S(P0(sideD), z0); for (let e = 0; e <= 12; e++) { const t = e / 12; put(A1[0] + (A2[0] - A1[0]) * t, A1[1] + (A2[1] - A1[1]) * t, K0[0], K0[1], K0[2]); put(B1[0] + (B2[0] - B1[0]) * t, B1[1] + (B2[1] - B1[1]) * t, K0[0], K0[1], K0[2]); } }
+          if (pull > 0) { const sideD = sn - cs > 0 ? BD + BW : BD; fill([S(Q0(sideD), z1), S(P0(sideD), z1), S(P0(sideD), z0), S(Q0(sideD), z0)], sn - cs > 0 ? [24, 28, 38] : [32, 37, 50]); fill([S(Q0(BD), z1), S(Q0(BD + BW), z1), S(P0(BD + BW), z1), S(P0(BD), z1)], [196, 184, 150]); const A1 = S(Q0(sideD), z1), A2 = S(P0(sideD), z1), B1 = S(Q0(sideD), z0), B2 = S(P0(sideD), z0); for (let e = 0; e <= 12; e++) { const t = e / 12; put(A1[0] + (A2[0] - A1[0]) * t, A1[1] + (A2[1] - A1[1]) * t, K0[0], K0[1], K0[2]); put(B1[0] + (B2[0] - B1[0]) * t, B1[1] + (B2[1] - B1[1]) * t, K0[0], K0[1], K0[2]); } }
           /* the spine: a column at a time */
-          const Sa = S(P0(BD), z1), Sb = S(P0(BD + BW), z1), n0 = Math.round(Sa[0]), n1 = Math.round(Sb[0]); for (let X = n0; X <= n1; X++) { const t = n1 === n0 ? 0 : (X - n0) / (n1 - n0), Yt = Sa[1] + (Sb[1] - Sa[1]) * t; for (let v = 0; v <= BH; v++) { const edge = v === 0 || v === BH || X === n1, band = v === 3 || v === 10, cc = edge ? K0 : band ? (t < .3 ? [255, 236, 170] : [214, 173, 86]) : t < .3 ? [150, 222, 255] : t < .6 ? [64, 180, 240] : [38, 146, 214]; put(X, Yt + v, cc[0], cc[1], cc[2]); } } }
+          const Sa = S(P0(BD), z1), Sb = S(P0(BD + BW), z1), n0 = Math.round(Sa[0]), n1 = Math.round(Sb[0]); for (let X = n0; X <= n1; X++) { const t = n1 === n0 ? 0 : (X - n0) / (n1 - n0), Yt = Sa[1] + (Sb[1] - Sa[1]) * t; for (let v = 0; v <= BH; v++) { const edge = v === 0 || v === BH || X === n1, band = v === 3 || v === 10, cc = edge ? K0 : band ? (t < .3 ? [122, 98, 52] : [92, 72, 36]) : t < .3 ? [58, 66, 86] : t < .6 ? [44, 50, 66] : [34, 38, 52]; put(X, Yt + v, cc[0], cc[1], cc[2]); }
+            /* where it is, for the page to know a click on it: it can't be found by its colour any more */
+            if (pull === 0) bookAt = { x0: n0, x1: n1, y0: Math.floor(Math.min(Sa[1], Sb[1])), y1: Math.ceil(Math.max(Sa[1], Sb[1]) + BH) }; } }
         /* a black line round the whole door, like every sprite */
         const edge = []; for (let y = 1; y < Ch - 1; y++) for (let x = 1; x < Cw - 1; x++) if (door[y * Cw + x] && (!door[y * Cw + x - 1] || !door[y * Cw + x + 1] || !door[(y - 1) * Cw + x] || !door[(y + 1) * Cw + x])) edge.push((y * Cw + x) * 4);
         for (const q of edge) { out[q] = 0; out[q + 1] = 0; out[q + 2] = 0; out[q + 3] = 255; }
@@ -197,7 +200,8 @@ function bookDoor() {
     
     const frames = [], STEP = 3; for (let d = 0; d <= 84; d += STEP) frames.push(frameOf(slot, d * Math.PI / 180, 7));
     const pulls = []; for (let k = 0; k <= 7; k++) pulls.push(frameOf(slot, 0, k));
-    return { frames, pulls, W: Wd, H: Hh, STEP };
+    const closed = pulls[0], book = bookAt && { x0: bookAt.x0 - closed.ox, x1: bookAt.x1 - closed.ox, y0: bookAt.y0 - closed.oy, y1: bookAt.y1 - closed.oy };
+    return { frames, pulls, W: Wd, H: Hh, STEP, book };
 }
 /* the way behind it: Rooms stone, slate underfoot, a lantern lighting the far wall */
 function passage(Wd, Hh) {
