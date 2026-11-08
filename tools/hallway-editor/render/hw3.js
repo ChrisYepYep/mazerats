@@ -1342,11 +1342,15 @@ function rectify(cells) {
 /* A floor can step up or down within itself, as the real hallways do: l.rise holds a cell's height in pixels, a whole number of
    steps, and the floor is cut into rectangles at each height. A floor with none comes out exactly as before. */
 const OLD_HEIGHT = 32;
+/* l.lift (8 Nov 2026, the owner's: "a secondary floor height tool that only raises the floor tiles, furniture on them, and doors, but
+   doesn't effect the wall height"): more height for a cell's floor, what stands on it and its doors, while its walls stay where l.rise alone
+   puts them. The raised floor covers their foot, so they stand that much shorter with their tops where they were. */
 function patchesByHeight(l) {
-    const hs = l.rise || Object.fromEntries(Object.entries(l.heights || {}).map(([k, v]) => [k, v * OLD_HEIGHT])), groups = new Map();
-    for (const c of l.cells) { const h = hs[c] || 0; if (!groups.has(h)) groups.set(h, []); groups.get(h).push(c); }
+    const hs = l.rise || Object.fromEntries(Object.entries(l.heights || {}).map(([k, v]) => [k, v * OLD_HEIGHT])), lift = l.lift || {}, groups = new Map();
+    for (const c of l.cells) { const k = (hs[c] || 0) + "|" + (lift[c] || 0); if (!groups.has(k)) groups.set(k, []); groups.get(k).push(c); }
     const out = [];
-    for (const [h, cs] of [...groups.entries()].sort((a, c) => a[0] - c[0])) for (const r of rectify(cs)) out.push({ ...r, z: l.k * Z1 + h, up: h });
+    for (const [k, cs] of [...groups.entries()].sort((a, c) => { const [r1, l1] = a[0].split("|").map(Number), [r2, l2] = c[0].split("|").map(Number); return (r1 + l1) - (r2 + l2); })) {
+        const [r, lf] = k.split("|").map(Number); for (const q of rectify(cs)) out.push({ ...q, z: l.k * Z1 + r + lf, up: r + lf, lift: lf }); }
     return out;
 }
 function fromMap(map, names) {
@@ -1828,12 +1832,14 @@ function build(cfg) {
             /* note a lower part's walls as they go on */
             const beforeWalls = Object.prototype.hasOwnProperty.call(layer, "set") ? layer.set : null, ownerId = lv.patches.indexOf(P) + 1;
             if (ownerId) { const was = layer.set; layer.set = function (x, y, c) { was.call(layer, x, y, c); if (x >= 0 && y >= 0 && x < bw && y < bh) { wallOwner[y * bw + x] = ownerId; stairPx[y * bw + x] = 0; } }; }
-            /* walls wherever nothing lies behind */
+            /* walls wherever nothing lies behind, at the height its walls stand at (its lift is the floor's alone) */
+            const zWalls = P.z - (P.lift || 0); w.z = zWalls;
             let run = null;
             for (let X = P.x0; X <= P.x1; X++) { const open = X < P.x1 && !has.has(X + "," + (P.y0 - 1)) && !holes.has(X + "," + (P.y0 - 1)) && !P.noBack && (P.notch || !airBelow(X, P.y0 - 1) || doorEdge("x", X, P.y0) || shown("x", P.y0, X)); if (open && run === null) run = X; if (!open && run !== null) { tagged(() => H.wallRunX(w, run, X, P.y0, { ...cornerEnd(backWall(X, P.y0, P.z), sideWall(X, P.y0 - 1), zAt(X, P.y0 - 1), P.z), noStart: backWall(run - 1, P.y0, P.z), col: colOf("x", P.y0), ...halfOf("x", P.y0) })); run = null; } }
             run = null;
             for (let Y = P.y0; Y <= P.y1; Y++) { const open = Y < P.y1 && !has.has((P.x0 - 1) + "," + Y) && !holes.has((P.x0 - 1) + "," + Y) && (P.notch || !airBelow(P.x0 - 1, Y) || doorEdge("y", P.x0, Y) || shown("y", P.x0, Y)); if (open && run === null) run = Y; if (!open && run !== null) { tagged(() => H.wallRunY(w, P.x0, run, Y, { ...cornerEnd(sideWall(P.x0, Y, P.z), backWall(P.x0 - 1, Y), zAt(P.x0 - 1, Y), P.z), noStart: sideWall(P.x0, run - 1, P.z), col: colOf("y", P.x0), ...halfOf("y", P.x0) })); run = null; } }
             for (const q of (lv.portals || [])) { if (tileOf.get(q.axis === "x" ? q.at + "," + q.line : q.line + "," + q.at) === P) { drawPortal(w, q.axis, q.line, q.at, "alcove", q.theatre); drawPortal(w, q.axis, q.line, q.at, "arch", q.theatre); } }
+            w.z = P.z;
             /* A wall running alongside small steps climbs with them, panelling, paper and cap together, so it flows from the lower floor's wall into the higher one's instead of jumping.
                Each column of it moves up by how far the steps have climbed there; the steps, drawn after, cover what's left at its foot. */
             for (const st of ((lv.src && lv.src.steps) || [])) {
@@ -1891,7 +1897,7 @@ function build(cfg) {
                 if (!(it.axis === "x" ? inReach(it.at, P.y0, 340) : inReach(P.x0, it.at, 340))) continue;
                 const behind = it.axis === "x" ? zAt(Math.floor(it.at), P.y0 - 1) : zAt(P.x0 - 1, Math.floor(it.at - 1)), onDrop = behind !== null && behind > P.z;
                 if (onDrop && cut !== null && behind > cut) continue;
-                const zHere = P.z, one = () => {
+                const zHere = P.z - (P.lift || 0), one = () => {
                     const zs = w.z; w.z = zHere;
                     const base = it.axis === "x" ? w.S(it.at, it.line) : w.S(it.line, it.at), base0 = base, cx = Math.round(base[0]), cy = Math.round(base[1] - (def.locked || it.h === undefined ? (def.h || 100) : it.h));
                     w.z = zs;
@@ -1918,7 +1924,7 @@ function build(cfg) {
                 if (!(axis === "x" ? inReach(at2, P.y0, 340) : inReach(P.x0, at2, 340))) continue;
                 const behind = axis === "x" ? zAt(Math.floor(at2), P.y0 - 1) : zAt(P.x0 - 1, Math.floor(at2 - 1)), onDrop = behind !== null && behind > P.z;
                 if (onDrop && cut !== null && behind > cut) continue;
-                const zHere = P.z, tileX = axis === "x" ? at2 : P.x0, tileY = axis === "x" ? P.y0 : at2;
+                const zHere = P.z - (P.lift || 0), tileX = axis === "x" ? at2 : P.x0, tileY = axis === "x" ? P.y0 : at2;
                 const dead = !lc && !M.off && Mname === "failing" && !M.lamp(lampKey(tileX, tileY));
                 const one = () => {
                     const usualH = w.lampH, zs = w.z; w.z = zHere; if (lampHigh !== undefined) w.lampH = lampHigh;

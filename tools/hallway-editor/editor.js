@@ -55,7 +55,7 @@ const PLANTERS = [["ero_stone", "Stone planter"], ["ero_walnut", "Walnut planter
 const EDGE_STYLES = [["wood", "Dark oak rail"], ["gold", "Gold rail"]];
 const WALL_ITEMS = window.WALL_ITEMS || [], WALL_GROUPS = [["painting", "Hallway paintings"], ["custom", "More paintings"], ["window", "Windows"], ["hotel", "The old hotel"], ["tell", "Wear and tear"]];
 const TOOLS = [
-    ["Floors", [["floor", "Paint floor", T_ + "floor.png"], ["erase", "Remove floor", ICON.erase], ["rug", "Rug", T_ + "rug.png"], ["smallfloor", "Small squares floor", ICON.smallfloor], ["mark_arrow", "Arrow tile (links to another)", ICON.arrow], ["medal", "Carpet crest", T_ + "crest.png"], ["height", "Floor height", ICON.raise], ["steps", "Small steps", T_ + "stair.png"]]],
+    ["Floors", [["floor", "Paint floor", T_ + "floor.png"], ["erase", "Remove floor", ICON.erase], ["rug", "Rug", T_ + "rug.png"], ["smallfloor", "Small squares floor", ICON.smallfloor], ["mark_arrow", "Arrow tile (links to another)", ICON.arrow], ["medal", "Carpet crest", T_ + "crest.png"], ["height", "Floor height", ICON.raise], ["floorlift", "Raise the floor only (walls stay)", ICON.raise], ["steps", "Small steps", T_ + "stair.png"]]],
     ["On walls", [["door", "Door", T_ + "door.png"], ["halfwall", "Half wall", ICON.halfwall], ["nowall", "No wall", ICON.nowall], ["addwall", "Show wall", ICON.addwall], ["sconce", "Wall light", T_ + "sconce.png"], ["globelight", "Globe wall light", "art/sconce-globe-y.png"], ["entrance", "Entrance", H_ + "entry_upper_right_mask.png"], ["theatre", "Theatredrome entrance (for show)", H_ + "entry_upper_right_mask.png"], ["lift", "Lift", T_ + "lift.png"], ["stair", "Stairs: straight", T_ + "stair.png"], ["turn", "Stairs: turning", T_ + "turn.png"], ["side", "Stairs: left wall", T_ + "side.png"], ["sideturn", "Stairs: left wall, turning", T_ + "sideturn.png"]]],
     ["Furniture", [["sofa", "Sofa", T_ + "sofa.png"], ["chair", "Chair", H_ + "hw_chair_a_0_2_0.png"], ["table", "Table", T_ + "table.png"], ["smtable", "Small round table", H_ + "hw_smtble_a_0_0_0.png"], ["ballpost", "Ball post", H_ + "pillar0_a_0_0_0.png"], ["rope", "Rope barrier", T_ + "rope.png"], ["archway", "Archway (drag it out)", H_ + "entry_upper_right_mask.png"], ["lamp", "Floor lamp", T_ + "lamp.png"], ["plant", "Plant", H_ + "hw_plant_a_0_0_0.png"], ["ero", "Planter", T_ + "planter.png"], ...PLANTERS.map(([k, name]) => [k, name, T_ + "planter-" + k.slice(4) + ".png"]), ["pillar", "Pillar", H_ + "pillar1_a_0_0_0.png"], ["pillartall", "Tall pillar", T_ + "pillartall.png"], ["statue", "Statue", H_ + "hw_statue_a_0_0_0.png"], ["fountain", "Fountain", H_ + "hw_fountain_a_0_0_0.png"], ["shelf", "Bookcase", H_ + "hw_shelf_a_0_4_0.png"], ["cabinet", "Cabinet", H_ + "hw_closet1_a_0_2_0.png"], ["water", "Water cooler", H_ + "hw_watermatic_a_0_4_0.png"], ["tablelamp", "Globe table lamp", "art/wall/i_tablelamp.png"], ["rarecase", "Rare in a glass case", "art/wall/i_rarecase.png"], ["trophy", "Old trophy cabinet", "art/wall/i_trophy.png"], ["mark_scuff", "Floor scuffs", "art/wall/i_mark_scuff.png"], ["mark_tile", "Lifted floor tile", "art/wall/i_mark_tile.png"]]],
     ...WALL_GROUPS.map(([kind, title]) => [title, WALL_ITEMS.filter(i => i.kind === kind).map(i => ["wi:" + i.id, i.name, "art/wall/" + i.y.layers[0].f])]),
@@ -89,6 +89,7 @@ const HINTS = {
     addwall: "Where a floor's edge looks out over the floor below, the map leaves the wall off. Dashed green lines show those edges: click or drag along one to put the wall there. Solid green lines are walls you've added: click or drag along one to take it off again.",
     nowall: "Click or drag along a wall to take it away, tile by tile. Red lines show where a wall's gone: click or drag along one to bring it back. Tiles with a door, wall light or something hanging on them keep their wall.",
     height: "Pick a height in the bar on the map, then drag over floor to set it to exactly that. Hold Ctrl and move the mouse up or down to change the height. 0 is level.",
+    floorlift: "Raises the floor, what stands on it and its doors, but not its walls: they keep their tops and stand shorter. Pick a height in the bar, then drag over floor. 0 puts it back.",
     steps: "Hover where two heights meet, on any side, and drag along it to lay steps from there to where you let go. Select them afterwards to move them or change the width.",
     medal: "Click to put the carpet crest down. Use Select and move to move it after.",
     door: "Click a top wall to add a door. It takes the next maze without one. To change it, select the door and use its Maze list.",
@@ -111,7 +112,9 @@ const levelZ = l => l.k * Z1;
 /* A floor's height within itself, as in the real hallways: l.rise holds a cell's height in pixels, a whole number of steps. The
    client's own short flights are 4px a step, 6px deep. */
 const HEIGHT = 1, STEP_R = 4, STEP_D = 6 / 16, MAX_RISE = 64;
-const heightAt = (l, x, y) => (l.rise && l.rise[cellKey(x, y)]) || 0;
+const heightAt = (l, x, y) => ((l.rise && l.rise[cellKey(x, y)]) || 0) + ((l.lift && l.lift[cellKey(x, y)]) || 0);
+/* the height a cell's walls stand at: its rise alone, not the lift that raises only its floor (render/hw3.js patchesByHeight) */
+const wallHeightAt = (l, x, y) => (l.rise && l.rise[cellKey(x, y)]) || 0;
 const tileZ = (l, x, y) => levelZ(l) + heightAt(l, x, y) + (landingOf(l, x, y) ? LANDING : 0);
 const allHeights = l => { if (!l.rise) return [0]; return [...new Set([0, ...Object.values(l.rise)])].sort((a, c) => c - a); };
 const heightsOf = l => { const all = allHeights(l); return seeCut !== null && l === level ? all.filter(h => h <= seeCut) : all; };
@@ -169,7 +172,7 @@ function tileIn(l, px, py) {
     return seeHidden(l, heightAt(l, Math.floor(flat[0]), Math.floor(flat[1]))) ? [-1e6, -1e6] : flat;
 }
 /* the floor height at a wall thing: its line, on the tile it stands against */
-const wallZ = (l, q) => levelZ(l) + (q.axis === "x" ? heightAt(l, Math.floor(q.at), q.line) : heightAt(l, q.line, Math.ceil(q.at) - 1));
+const wallZ = (l, q) => levelZ(l) + (q.axis === "x" ? wallHeightAt(l, Math.floor(q.at), q.line) : wallHeightAt(l, q.line, Math.ceil(q.at) - 1));
 function toPx(sx, sy) { const r = canvas.getBoundingClientRect(), w = r.width, h = r.height; return [(sx - r.left - w / 2) / zoom + cam.x, (sy - r.top - h / 2) / zoom + cam.y]; }
 function toScreen(px, py) { return [(px - cam.x) * zoom + canvas.width / 2, (py - cam.y) * zoom + canvas.height / 2]; }
 window.__active = () => level;
@@ -305,6 +308,7 @@ function heightLocked(l, x, y) {
 /* steps that no longer stand at a drop go; heights where the floor's gone go */
 function tidyHeights(l) {
     if (l.rise) { for (const k of Object.keys(l.rise)) if (!l.rise[k] || !cells(l).has(k)) delete l.rise[k]; if (!Object.keys(l.rise).length) delete l.rise; }
+    if (l.lift) { for (const k of Object.keys(l.lift)) if (!l.lift[k] || !cells(l).has(k)) delete l.lift[k]; if (!Object.keys(l.lift).length) delete l.lift; }
     /* a flight only stays where there's still a drop, tile by tile: it splits if its middle has gone */
     if (l.steps) { const out = []; for (const st of l.steps) { let from = null, rise = 0; for (let t = st.a; t <= st.b; t++) { const r = t < st.b ? stepRise(l, { ...st, a: t, b: t + 1 }) : 0; if (r !== rise) { if (rise > 0) out.push({ ...st, a: from, b: t }); from = t; rise = r; } } } l.steps = out; if (!l.steps.length) delete l.steps; }
     if (l.edgeItems) { l.edgeItems = l.edgeItems.filter(q => { const on = edgeOn(q); return tileEdges(l, on[0], on[1]).some(e => sameEdge(q, e)); }); if (!l.edgeItems.length) delete l.edgeItems; }
@@ -557,7 +561,7 @@ function drawEdgeGhost() {
 }
 /* The brush: drag over floor to set it to exactly this height. */
 let heightBrush = 16, ctrlLast = null, ctrlSpare = 0, heightHold = null;
-const brushTool = t => t === "height" || t === "floor", brushes = { height: 16, floor: 0 };
+const brushTool = t => t === "height" || t === "floor" || t === "floorlift", brushes = { height: 16, floor: 0, floorlift: 8 };
 /* with the Paint floor tool, a tile off the floor is judged on the height being painted, so the ghost stays under the mouse */
 const paintTile = (px, py) => { const a = tileIn(level, px, py); return hasFloor(level, Math.floor(a[0]), Math.floor(a[1])) ? a : pxToTile(px, py, levelZ(level) + heightBrush); };
 function setBrush(v) {
@@ -2206,7 +2210,7 @@ canvas.addEventListener("pointerdown", e => {
         if (!edge) { flash("Steps go where two heights meet. Set a floor's height first, with Floor height."); return; }
         drag = { kind: "laysteps", edge, st: { axis: edge.axis, line: edge.line, dir: edge.dir, a: edge.t, b: edge.t + 1 } }; paint(); return;
     }
-    if (tool === "floor" || tool === "erase" || tool === "rug" || tool === "smallfloor" || tool === "height") {
+    if (tool === "floor" || tool === "erase" || tool === "rug" || tool === "smallfloor" || tool === "height" || tool === "floorlift") {
         const a = tool === "floor" ? paintTile(px, py) : tileIn(level, px, py), zr = hasFloor(level, Math.floor(a[0]), Math.floor(a[1])) ? tileZ(level, Math.floor(a[0]), Math.floor(a[1])) : levelZ(level) + (tool === "floor" ? heightBrush : 0);
         drag = { kind: "rect", a, z: zr, rect: snapRect(a, a) }; paint(); return;
     }
@@ -2299,6 +2303,21 @@ canvas.addEventListener("pointerup", e => {
         const r = d.rect;
         snapshot();
         const unchanged = () => { if (undoStack[undoStack.length - 1] !== JSON.stringify(map)) return false; undoStack.pop(); syncButtons(); paint(); return true; };
+        /* the floor alone, its walls left where they stand */
+        if (tool === "floorlift") {
+            let changedAny = false, locked = false;
+            for (let x = r.x0; x < r.x1; x += 2) for (let y = r.y0; y < r.y1; y += 2) {
+                if (!hasFloor(level, x, y)) continue;
+                let stuck = false; for (let a = x; a < x + 2 && !stuck; a++) for (let b = y; b < y + 2 && !stuck; b++) if (heightLocked(level, a, b)) stuck = true;
+                if (stuck && heightBrush) { locked = true; continue; }
+                const k = cellKey(x, y), now = (level.lift && level.lift[k]) || 0; if (now === heightBrush) continue;
+                (level.lift = level.lift || {})[k] = heightBrush; changedAny = true;
+            }
+            tidyHeights(level);
+            if (!changedAny) { undoStack.pop(); flash(locked ? "Stairs and the lift have to stay level with the floor round them." : "That floor's already raised that much."); paint(); return; }
+            if (locked) flash("Left the floor round the stairs and lift as it was, so they still meet it.");
+            changed(); return;
+        }
         if (tool === "height") {
             let changedAny = false, locked = false;
             for (let x = r.x0; x < r.x1; x += 2) for (let y = r.y0; y < r.y1; y += 2) {
@@ -3199,9 +3218,9 @@ function cutInFront(c, x0, y0) {
     const R = 14, tx = Math.floor(ax), ty = Math.floor(ay);
     for (let X = tx - R; X <= tx + R; X++) for (let Y = ty - R; Y <= ty + R; Y++) {
         if (!hasFloor(l, X, Y) || pastDoor(X, Y)) continue;
-        const zt = tileZ(l, X, Y);
-        if (Y > ay && open(X, Y - 1, "x") && !inOpening(X, Y, "x")) { const hw = isNone(l, "x", Y, X) ? 0 : isHalf(l, "x", Y, X) ? HALF_WALL : WALL; cutPoly(c, [P(X, Y, zt), P(X + 1, Y, zt), P(X + 1, Y, zt + hw), P(X, Y, zt + hw)]); }
-        if (X > ax && open(X - 1, Y, "y") && !inOpening(X, Y, "y")) { const hw = isNone(l, "y", X, Y) ? 0 : isHalf(l, "y", X, Y) ? HALF_WALL : WALL; cutPoly(c, [P(X, Y, zt), P(X, Y + 1, zt), P(X, Y + 1, zt + hw), P(X, Y, zt + hw)]); }
+        const zt = tileZ(l, X, Y), zw = zt - ((l.lift && l.lift[cellKey(X, Y)]) || 0);      // a wall stands where its rise puts it, under a floor raised on its own
+        if (Y > ay && open(X, Y - 1, "x") && !inOpening(X, Y, "x")) { const hw = isNone(l, "x", Y, X) ? 0 : isHalf(l, "x", Y, X) ? HALF_WALL : WALL; cutPoly(c, [P(X, Y, zt), P(X + 1, Y, zt), P(X + 1, Y, zw + hw), P(X, Y, zw + hw)]); }
+        if (X > ax && open(X - 1, Y, "y") && !inOpening(X, Y, "y")) { const hw = isNone(l, "y", X, Y) ? 0 : isHalf(l, "y", X, Y) ? HALF_WALL : WALL; cutPoly(c, [P(X, Y, zt), P(X, Y + 1, zt), P(X, Y + 1, zw + hw), P(X, Y, zw + hw)]); }
         /* a raised part of the floor in front covers you */
         if (zt > walker.z + 2 && X + Y > ax + ay && !stepsAt(l, X, Y)) cutPoly(c, [P(X, Y, zt), P(X + 1, Y, zt), P(X + 1, Y + 1, zt), P(X, Y + 1, zt)]);
     }
