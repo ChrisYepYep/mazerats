@@ -3,6 +3,8 @@
 
    - Sit hustle on any chair or sofa (map.hustle).
    - Add spots: click floor tiles one after another; click a spot again to take it away (map.lostSpots: { level, x, y, skip }).
+   - Show all floors puts every floor's markers on the map at once (this floor's pink, the other floors' blue and named, the picked one yellow). Drag a marker to move its spot;
+     the ticks are worked out again for where it lands.
    - Pick a spot from the list, or click its marker on the map: every lost thing in a strip with how much of it shows there; click one,
      or use the arrow keys, to see it on the map. Each is ticked if it can be hidden there. A new spot ticks the ones where between a fifth
      and four fifths shows; untick or tick any.
@@ -49,7 +51,7 @@
         hr.append(btn("Sit him on a seat", sitHustle), ui.showHustle = btn("Show me", () => { const h = LOST().hustleSeat(); if (h) go(h.l, h.x, h.y); }));
         hs.append(el("h4", "", "hustle"), ui.hustle, hr);
         const sp = el("div", "lp-sec"); ui.count = el("h4", ""); ui.mode = el("p", "hint");
-        const ar = el("div", "btn-row"); ui.add = btn("Add or remove spots", () => setAdding(!adding)); ar.append(ui.add, btn("Re-tick them all", async () => { api().snapshot(); for (const s of list()) await autoSkip(s); api().changed(); rows(); detail(); }));
+        const ar = el("div", "btn-row"); ui.add = btn("Add or remove spots", () => setAdding(!adding)); ui.all = btn("Show all floors", () => { showAll = !showAll; ui.all.classList.toggle("primary", showAll); ui.all.setAttribute("aria-pressed", String(showAll)); LIVE.wake(); }); ui.all.setAttribute("aria-pressed", "false"); ar.append(ui.add, ui.all, btn("Re-tick them all", async () => { api().snapshot(); for (const s of list()) await autoSkip(s); api().changed(); rows(); detail(); }));
         ui.list = el("div", "lp-spots"); sp.append(ui.count, ui.mode, ar, ui.list);
         const dt = el("div", "lp-sec lp-detail"); ui.title = el("h4", ""); ui.empty = el("p", "hint", "Pick a spot in the list above, or click its marker on the map.");
         ui.body = el("div", "lp-body"); ui.now = el("div", "lp-now"); ui.nowImg = el("img"); ui.nowImg.alt = ""; const nw = el("div", "lp-now-words"); ui.nowName = el("b", ""); ui.nowPct = el("span", ""); const can = el("label", "lp-can"); ui.can = el("input"); ui.can.type = "checkbox"; ui.can.addEventListener("change", () => { const t = things()[at]; if (t) toggle(t); }); can.append(ui.can, document.createTextNode(" Can be hidden here")); nw.append(ui.nowName, ui.nowPct, can); ui.now.append(ui.nowImg, nw);
@@ -60,7 +62,7 @@
         hustleLine(); modeLine(); rows(); detail();
     }
     function hustleLine() { const hs = LOST().hustleSeat(), placed = LIVE.map.hustle; ui.hustle.textContent = placed && hs ? "Sits on " + hs.l.name + ", tile " + hs.x + ", " + hs.y + "." : hs ? "Not placed yet, so he sits on the seat nearest the desk (" + hs.l.name + ", " + hs.x + ", " + hs.y + ")." : "Not placed yet, and there's no seat near the desk."; ui.showHustle.hidden = !hs; }
-    function modeLine() { ui.add.textContent = adding ? "Done adding" : "Add or remove spots"; ui.add.classList.toggle("primary", adding); ui.mode.textContent = adding ? "Click free floor tiles beside furniture to add spots; click a spot again to take it away. Done or Esc stops." : "The server hides each thing at one of these, never where it's unticked. Click a marker on the map to pick its spot."; }
+    function modeLine() { ui.add.textContent = adding ? "Done adding" : "Add or remove spots"; ui.add.classList.toggle("primary", adding); ui.mode.textContent = adding ? "Click free floor tiles beside furniture to add spots; click a spot again to take it away. Done or Esc stops." : "The server hides each thing at one of these, never where it's unticked. Click a marker on the map to pick its spot, or drag it to move the spot."; }
     /* the list: rebuilt only when spots come or go, its scroll kept; the picked one just lit */
     let rowsSig = "";
     function rows() {
@@ -89,8 +91,8 @@
 
     /* ---------- doing things ---------- */
     function go(l, x, y) { if (api().level !== l) api().setFloor(l); const p = LIVE.mapPoint(x + .5, y + .5, LIVE.nodeZ(l, x, y) || 0); LIVE.camera(p[0], p[1] - 20); LIVE.wake(); }
-    function pick(key) {
-        selKey = key; const s = sel(); if (!s) { rows(); detail(); return; } const l = levelOf(s); if (l) go(l, s.x, s.y);
+    function pick(key, here) {
+        selKey = key; const s = sel(); if (!s) { rows(); detail(); return; } const l = levelOf(s); if (l && !here) go(l, s.x, s.y); else if (l && api().level !== l) api().setFloor(l);
         if (fitsFor !== key) { fits = new Map(); fitsFor = null; measure(s).then(f => { if (selKey === key) { fits = f; fitsFor = key; detail(); } }); }
         show(); rows(); detail();
     }
@@ -117,15 +119,33 @@
         else if (e.key === "ArrowLeft" || e.key === "ArrowUp") { e.preventDefault(); e.stopImmediatePropagation(); step(-1); }
         else if (e.key === " " && things()[at]) { e.preventDefault(); e.stopImmediatePropagation(); toggle(things()[at]); }
     }, true);
-    /* a click on a spot's marker picks it, while the tab's open and you're not adding */
+    /* ---------- the markers: this floor's, or every floor's with Show all floors. Click one to pick its spot; drag it to move the spot ---------- */
+    let showAll = false, drag = null;
+    const where = s => { const l = levelOf(s); if (!l) return null; const p = LIVE.mapPoint(s.x + .5, s.y + .5, LIVE.nodeZ(l, s.x, s.y) || 0); return { l, X: p[0], Y: p[1] }; };
+    const markersShown = () => { const lv = api().level; return shown().filter(s => showAll || (lv && s.level === lv.id)); };
+    /* the marker under a point of the map: inside its diamond, the nearest to the camera if two overlap */
+    function markerAt(px, py) { let best = null, bz = -1e9; for (const s of markersShown()) { const w = where(s); if (!w) continue; if (Math.abs(px - w.X) / 17 + Math.abs(py - w.Y) / 9 > 1 && !(Math.abs(px - w.X) <= 6 && py <= w.Y && py >= w.Y - 26)) continue; const z = w.l.k * 1000 + s.x + s.y; if (z > bz) { bz = z; best = s; } } return best; }
+    /* where a dragged spot would go: a free floor tile, not the Basement, not another spot */
+    function dropAt(cx, cy, key) { const h = api().tileAt(cx, cy); if (!h) return null; const l = LIVE.map.levels.find(q => q.id === h.level); if (!l || l.k < 0) return { ...h, ok: false, why: "Not in the Basement." }; if (shown().some(s => keyOf(s) === keyOf(h) && keyOf(s) !== key)) return { ...h, ok: false, why: "There's a spot there already." }; if (keyOf(h) !== key && !LIVE.tileFree(l)(h.x, h.y)) return { ...h, ok: false, why: "Something's standing there." }; return { ...h, ok: true }; }
     const view = document.getElementById("view");
-    if (view) view.addEventListener("pointerdown", e => { if (!tabOpen() || adding || e.button !== 0 || !LIVE.map) return; const h = api().tileAt(e.clientX, e.clientY); if (!h) return; const s = shown().find(q => keyOf(q) === keyOf(h)); if (!s) return; e.stopImmediatePropagation(); e.preventDefault(); pick(keyOf(s)); }, true);
-
-    /* markers on the map for the spots on this floor while the tab's open */
+    if (view) {
+        view.addEventListener("pointerdown", e => { if (!tabOpen() || adding || e.button !== 0 || !LIVE.map) return; const [px, py] = api().toPx(e.clientX, e.clientY), s = markerAt(px, py); if (!s) return;
+            e.stopImmediatePropagation(); e.preventDefault(); pick(keyOf(s), true); drag = { key: keyOf(s), x0: e.clientX, y0: e.clientY, moved: false, to: null }; try { view.setPointerCapture(e.pointerId); } catch (err) { /* fine */ } }, true);
+        view.addEventListener("pointermove", e => { if (!drag) return; e.stopImmediatePropagation(); if (!drag.moved && Math.hypot(e.clientX - drag.x0, e.clientY - drag.y0) < 5) return; drag.moved = true; view.style.cursor = "grabbing"; drag.to = dropAt(e.clientX, e.clientY, drag.key); LIVE.wake(); }, true);
+        const end = e => { if (!drag) return; e.stopImmediatePropagation(); const d = drag; drag = null; view.style.cursor = ""; LIVE.wake(); if (!d.moved || !d.to) return; if (!d.to.ok) { flash(d.to.why); return; } if (keyOf(d.to) === d.key) return;
+            let moved = null; edit(() => { const s = list().find(q => keyOf(q) === d.key); if (s) { s.level = d.to.level; s.x = d.to.x; s.y = d.to.y; moved = s; } }); if (!moved) return;
+            selKey = keyOf(moved); fitsFor = null; fits = new Map(); rowsSig = ""; stripFor = null; rows(); detail(); show(); autoSkip(moved).then(() => api().changed()); flash("Moved to " + name(moved) + ". Its ticks were worked out again for there."); };
+        view.addEventListener("pointerup", end, true); view.addEventListener("pointercancel", end, true);
+    }
     LIVE.add({ still: true, over: (c, ox, oy) => {
-        if (!tabOpen() || !LIVE.map) return; const lv = api().level; if (!lv) return; const z = LIVE.zoom;
-        for (const s of shown()) { if (s.level !== lv.id) continue; const p = LIVE.mapPoint(s.x + .5, s.y + .5, LIVE.nodeZ(lv, s.x, s.y) || 0), X = ox + p[0] * z, Y = oy + p[1] * z, on = keyOf(s) === selKey;
-            c.save(); c.beginPath(); c.moveTo(X, Y - 8 * z); c.lineTo(X + 16 * z, Y); c.lineTo(X, Y + 8 * z); c.lineTo(X - 16 * z, Y); c.closePath(); c.lineWidth = Math.max(1, z) * (on ? 2 : 1); c.strokeStyle = on ? "#ffe066" : "rgba(242,190,112,.9)"; c.fillStyle = on ? "rgba(255,224,102,.18)" : "rgba(242,190,112,.12)"; c.fill(); c.stroke(); c.restore(); }
+        if (!tabOpen() || !LIVE.map) return; const z = LIVE.zoom, lv = api().level;
+        /* a diamond on the tile and a pin standing over it, bold enough to find at any zoom */
+        const diamond = (X, Y, stroke, fill, w, dash) => { c.save(); c.beginPath(); c.moveTo(X, Y - 8 * z); c.lineTo(X + 16 * z, Y); c.lineTo(X, Y + 8 * z); c.lineTo(X - 16 * z, Y); c.closePath(); c.lineWidth = Math.max(2, w); if (dash) c.setLineDash([4 * z, 3 * z]); c.strokeStyle = stroke; c.fillStyle = fill; c.fill(); c.stroke(); const r = Math.max(4, 3 * z), h = Math.max(14, 12 * z); c.setLineDash([]); c.lineWidth = Math.max(1.5, z); c.strokeStyle = "rgba(0,0,0,.75)"; c.beginPath(); c.moveTo(X, Y); c.lineTo(X, Y - h); c.stroke(); c.beginPath(); c.arc(X, Y - h - r, r, 0, Math.PI * 2); c.fillStyle = stroke; c.fill(); c.stroke(); c.restore(); };
+        for (const s of markersShown()) { const w = where(s); if (!w) continue; const on = keyOf(s) === selKey, other = lv && w.l !== lv, dragging = drag && drag.moved && keyOf(s) === drag.key, X = ox + w.X * z, Y = oy + w.Y * z;
+            diamond(X, Y, on ? "#ffe066" : other ? "rgba(140,200,255,.9)" : "#ff5fd2", on ? "rgba(255,224,102,.3)" : other ? "rgba(140,200,255,.25)" : "rgba(255,95,210,.22)", Math.max(1, z) * (on ? 2 : 1), dragging);
+            if (showAll && other) { c.save(); c.font = (10 * Math.max(1, z / 2)) + "px sans-serif"; c.textAlign = "center"; c.fillStyle = "rgba(140,200,255,.95)"; c.fillText(w.l.name, X, Y + 20 * z); c.restore(); } }
+        /* where it's going */
+        if (drag && drag.moved && drag.to) { const t = drag.to, l = LIVE.map.levels.find(q => q.id === t.level); if (l) { const p = LIVE.mapPoint(t.x + .5, t.y + .5, LIVE.nodeZ(l, t.x, t.y) || 0); diamond(ox + p[0] * z, oy + p[1] * z, t.ok ? "#9fe08a" : "#ff6a5c", t.ok ? "rgba(159,224,138,.25)" : "rgba(255,106,92,.25)", Math.max(1, z) * 2); } }
     } });
     /* the preview goes when the tab does; an undo or a reload of the map brings the list up to date */
     let wasOpen = false, mapWas = null; setInterval(() => { if (!box || !ui.list) return; const o = tabOpen(); if (o !== wasOpen) { wasOpen = o; if (!o) { setAdding(false); if (LOST()) LOST().setPreview(null); } else { hustleLine(); rows(); detail(); show(); } LIVE.wake(); } if (o && LIVE.map !== mapWas) { mapWas = LIVE.map; hustleLine(); rows(); detail(); show(); } }, 300);
