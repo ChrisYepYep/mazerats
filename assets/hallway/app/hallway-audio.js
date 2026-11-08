@@ -62,6 +62,39 @@
           comp: "roll", bass: "none", drums: "none", form: "AB",
           chords: [[0, 7, 10, 14, 15], [3, 10, 14, 19], [-4, 3, 7, 12], [-2, 5, 8, 12, 14]], b: [[5, 12, 15, 19], [3, 10, 14, 19], [-4, 3, 7, 12], [-5, 2, 5, 10]] }
     ];
+
+    /* ---------- Christmas (8 Nov 2026, the owner's: "lofi chilled versions of carols"): only while the Hallway wears Christmas, and then only these ----------
+       melody: a bar at a time, [beat, semitones above the root's octave, length in beats]. Every other time round it plays only the notes on the beat, so it isn't the same twice */
+    const I = [0, 7, 11, 14, 16], IV = [-7, 0, 4, 7, 9], V = [-5, 2, 5, 9, 12], ii = [2, 9, 12, 16, 17], vi = [-3, 4, 7, 11, 12], II7 = [2, 9, 12, 18], III7 = [4, 11, 14, 20];
+    const SILENT = [[[0, 7, 1.5], [1.5, 9, .5], [2, 7, 1]], [[0, 4, 3]], [[0, 7, 1.5], [1.5, 9, .5], [2, 7, 1]], [[0, 4, 3]], [[0, 14, 2], [2, 14, 1]], [[0, 11, 3]], [[0, 12, 2], [2, 12, 1]], [[0, 7, 3]],
+        [[0, 9, 2], [2, 9, 1]], [[0, 12, 1.5], [1.5, 11, .5], [2, 9, 1]], [[0, 7, 1.5], [1.5, 9, .5], [2, 7, 1]], [[0, 4, 3]], [[0, 9, 2], [2, 9, 1]], [[0, 12, 1.5], [1.5, 11, .5], [2, 9, 1]], [[0, 7, 1.5], [1.5, 9, .5], [2, 7, 1]], [[0, 4, 3]],
+        [[0, 14, 2], [2, 14, 1]], [[0, 17, 1.5], [1.5, 14, .5], [2, 11, 1]], [[0, 12, 3]], [[0, 16, 3]], [[0, 12, 1], [1, 7, 1], [2, 4, 1]], [[0, 7, 1.5], [1.5, 5, .5], [2, 2, 1]], [[0, 0, 3]], []];
+    const JB1 = [[0, 4, 1], [1, 4, 1], [2, 4, 2]], JB3 = [[0, 4, 1], [1, 7, 1], [2, 0, 1.5], [3.5, 2, .5]], JB5 = [[0, 5, 1], [1, 5, 1], [2, 5, 1.5], [3.5, 5, .5]], JB6 = [[0, 5, 1], [1, 4, 1], [2, 4, 1], [3, 4, .5], [3.5, 4, .5]];
+    const JINGLE = [JB1, JB1, JB3, [[0, 4, 4]], JB5, JB6, [[0, 4, 1], [1, 2, 1], [2, 2, 1], [3, 4, 1]], [[0, 2, 2], [2, 7, 2]], JB1, JB1, JB3, [[0, 4, 4]], JB5, JB6, [[0, 7, 1], [1, 7, 1], [2, 5, 1], [3, 2, 1]], [[0, 0, 4]]];
+    const DK1 = [[0, 7, 1.5], [1.5, 5, .5], [2, 4, 1], [3, 2, 1]], DK2 = [[0, 0, 1], [1, 2, 1], [2, 4, 1], [3, 0, 1]], DK3 = [[0, 2, .5], [.5, 4, .5], [1, 5, .5], [1.5, 2, .5], [2, 4, 1.5], [3.5, 2, .5]], DK4 = [[0, 0, 1], [1, -1, 1], [2, 0, 2]];
+    const DECK = [DK1, DK2, DK3, DK4, DK1, DK2, DK3, DK4, [[0, 2, 1.5], [1.5, 4, .5], [2, 5, 1], [3, 2, 1]], [[0, 4, 1.5], [1.5, 5, .5], [2, 7, 1], [3, 2, 1]], [[0, 4, .5], [.5, 6, .5], [1, 7, 1], [2, 9, .5], [2.5, 11, .5], [3, 12, 1]], [[0, 11, 1], [1, 9, 1], [2, 7, 2]],
+        DK1, DK2, [[0, 9, .5], [.5, 9, .5], [1, 9, .5], [1.5, 9, .5], [2, 7, 1.5], [3.5, 5, .5]], [[0, 4, 1], [1, 2, 1], [2, 0, 2]]];
+    const WISH = [[[0, 12, 1], [1, 12, .5], [1.5, 14, .5], [2, 12, .5], [2.5, 11, .5]], [[0, 9, 1], [1, 9, 1], [2, 9, 1]], [[0, 14, 1], [1, 14, .5], [1.5, 16, .5], [2, 14, .5], [2.5, 12, .5]], [[0, 11, 1], [1, 7, 1], [2, 7, 1]],
+        [[0, 16, 1], [1, 16, .5], [1.5, 17, .5], [2, 16, .5], [2.5, 14, .5]], [[0, 12, 1], [1, 9, 1], [2, 7, .5], [2.5, 7, .5]], [[0, 9, 1], [1, 14, 1], [2, 11, 1]], [[0, 12, 2], [2, 7, 1]]];
+    const CAROLS = [
+        /* by the fire, the lights low: brushes, long upright notes, a felt piano with the tune */
+        { name: "Silent Night", xmas: true, root: 48, mode: "maj", bpm: 64, beats: 3, swing: .06, every: 1, mins: 4, lead: "felt", leadVel: .062, tune: "melody", melody: SILENT, mOff: 12, pad: 900, padVel: .016, top: 3200, room: 1.4,
+          comp: "waltz", bass: "soft", drums: "brush", form: "A", jingle: .012,
+          chords: [I, I, I, I, V, V, I, I, IV, IV, I, I, IV, IV, I, I, V, V, I, vi, I, V, I, I] },
+        /* the sleigh ride, slowed right down: a head-nod beat, electric piano stabs and the tune on vibes, bells on every beat */
+        { name: "Jingle Bells", xmas: true, root: 50, mode: "maj", bpm: 78, swing: .12, every: 1, mins: 3.6, lead: "vibes", leadVel: .07, tune: "melody", melody: JINGLE, mOff: 24, pad: 900, padVel: .02, top: 5200,
+          comp: "stab", compAt: [0, 1.5, 3.5], bass: "boom", drums: "boom", kick: [0, 2.5], snare: [1, 3], hat: .5, form: "A", jingle: .03,
+          chords: [I, I, I, I, IV, I, II7, V, I, I, I, I, IV, I, V, I] },
+        /* fa la la on a music box over rippling felt piano and a soft shuffle */
+        { name: "Deck the Halls", xmas: true, root: 53, mode: "maj", bpm: 80, swing: .08, every: 1, mins: 3.8, lead: "box", leadVel: .04, tune: "melody", melody: DECK, mOff: 12, pad: 1100, padVel: .012, top: 6500,
+          comp: "arp", bass: "soft", drums: "soft", form: "A", jingle: .02,
+          chords: [I, I, ii, V, I, I, ii, V, V, I, II7, V, I, I, IV, I] },
+        /* a jazz waltz for the end of the night: ride, walking bass, the tune on piano */
+        { name: "We Wish You a Merry Christmas", xmas: true, root: 51, mode: "maj", bpm: 132, beats: 3, swing: .14, every: 1, mins: 3.2, lead: "piano", leadVel: .07, tune: "melody", melody: WISH, mOff: 12, pad: 1000, padVel: .01, top: 6000, room: 1.1,
+          comp: "waltz", bass: "walk", drums: "waltz", form: "A", jingle: .016,
+          chords: [I, vi, ii, V, III7, IV, V, I] }
+    ];
+    TRACKS.push(...CAROLS);
     /* a little seeded random, so a track's bar is the same whenever it's asked for */
     function rng(seed) { let s = seed >>> 0 || 1; return () => (s = (s * 1664525 + 1013904223) >>> 0) / 4294967296; }
     /* a key signature, as the pitch class of its major key */
@@ -237,12 +270,17 @@
         g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(vel, t + dur * .4); g.gain.linearRampToValueAtTime(0, t + dur);
         s.connect(f); f.connect(g); g.connect(bus.drum); s.start(t, (t * 3.1) % .8); s.stop(t + dur + .02);
     }
+    function sleigh(e, bus, t, vel) {
+        const c = e.ctx; noiseHit(e, bus, t, .09, vel * .7, "highpass", 7500, .7, .2);
+        for (let k = 0; k < 3; k++) { const o = c.createOscillator(), g = c.createGain(), at = t + k * .011; o.type = "sine"; o.frequency.value = 5200 + ((t * 977 + k * 1301) % 2600); g.gain.setValueAtTime(vel * .35, at); g.gain.exponentialRampToValueAtTime(.0003, at + .07); o.connect(g); g.connect(bus.drum); o.start(at); o.stop(at + .08); }
+    }
     const hat = (e, bus, t, vel, open) => noiseHit(e, bus, t, open ? .16 : .035, vel, "highpass", 6200, .5, 0);
 
     /* ---------- a track: bar by bar, the same whenever it's asked for ---------- */
     /* Its tune, one bar at a time. Each kind moves differently: walk wanders through a few notes; motif keeps one rhythm for a whole section, so you can hum it;
        run is a jazz player's line of eighths, then a rest; sparse is a few long notes with room round them. The same phrase comes round, and comes back changed. */
     function tuneFor(tr, seedTrack, phrase, barInCycle, ch) {
+        if (tr.melody) { const m = (tr.melody[barInCycle % tr.melody.length] || []).map(([b, s, d]) => [b, s + (tr.mOff || 12), d]); return phrase % 2 ? m.filter(n => n[0] % 1 === 0).map(([b, s, d]) => [b, s, Math.max(d, 1)]) : m; }
         const beats = tr.beats || 4, R = rng((seedTrack + 1) * 3571 + phrase * 977 + barInCycle * 131), big = tr.scale === 7, scale = big ? (tr.mode === "min" ? MINOR7 : MAJOR7) : (tr.mode === "min" ? MINOR : MAJOR), N = scale.length, out = [];
         let step = Math.floor(R() * N) + (big ? 3 : 2);
         const noteAt = s => scale[((s % N) + N) % N] + 12 * Math.floor(s / N);
@@ -391,13 +429,14 @@
         const setAt = c => form[c % form.length] === "B" && tr.b ? tr.b : tr.chords, letter = form[cycle % form.length], round = Math.floor(cycle / form.length);
         const ch = setAt(cycle)[Math.floor(inCycle / every)], nextBar = bar + 1, next = setAt(Math.floor(nextBar / cycleLen))[Math.floor((nextBar % cycleLen) / every)], notes = ch.map(s => root + s);
         /* it breathes: every so often the beat drops out for a turn of the chords, and the tune rests for one */
-        const coming = bar < bus.intro, noBeat = !coming && cycle % 8 === 7, noTune = coming || cycle % 6 === 5;
+        const coming = bar < bus.intro, noBeat = !coming && cycle % 8 === 7, noTune = (coming && !tr.melody) || cycle % 6 === 5;      // a carol sings from its first bar, or the tune would start mid-line
         const x = { e, bus, tr, R, t, nudge, spb, beats, root, ch, next, notes, bar, cycle, inCycle, cycleLen, coming };
 
         if (tr.padVel && bar % every === 0) pad(e, bus, t, barLen * every, notes, tr.pad, tr.padVel);
         COMP[tr.comp](x);
         if (!coming || bar >= 1) BASS[tr.bass](x);
         if (!coming && !noBeat) DRUMS[tr.drums](x);
+        if (tr.jingle && !coming && !noBeat) for (let b = 0; b < beats; b += .5) if (b % 1 === 0 || R() < .5) sleigh(e, bus, nudge(b), tr.jingle * (b % 1 === 0 ? 1 : .55) * (.8 + R() * .4));
         if (!noTune) {
             /* a section's tune comes round the same for two rounds, then changes */
             const phrase = letter === "B" ? 2 + round % 2 : Math.floor(round / 2) % 3 * 3, vel = tr.leadVel || LEAD_VEL[tr.lead];
@@ -463,9 +502,11 @@
     }
 
     /* ---------- the live player ---------- */
-    let eng = null, timer = 0, order = [], orderAt = 0, playing = false, voice = null;
+    let eng = null, timer = 0, order = [], orderAt = 0, playing = false, voice = null, orderXmas = null;
+    const xmasNow = () => !!window.hallwayXmas, inSeason = i => !!TRACKS[i].xmas === xmasNow();
     const api = {
-        tracks: TRACKS.map(t => ({ name: t.name, minutes: t.mins })),
+        tracks: TRACKS.map(t => ({ name: t.name, minutes: t.mins, xmas: !!t.xmas })),
+        inSeason,
         onChange: null,
         get playing() { return playing; },
         get current() { return eng && !voice ? eng.idx : -1; },
@@ -486,7 +527,7 @@
             for (const b of eng.active) if (b.stopAt !== null && b.stopAt > t) { for (const g of [b.g.gain, b.wetG.gain]) { g.cancelScheduledValues(t); g.setValueAtTime(g.value, t); g.linearRampToValueAtTime(0, t + .25); } b.stopAt = t + .25; }
             eng.master.gain.cancelScheduledValues(t); eng.master.gain.setTargetAtTime(api.volume * .62, t, .8);
             playing = true;
-            if (!eng.active.some(b => b.stopAt === null)) startBus(eng, i === undefined ? nextIndex() : i, t + .05, 3, undefined, 2);
+            if (!eng.active.some(b => b.stopAt === null)) startBus(eng, i === undefined || !inSeason(i) ? nextIndex() : i, t + .05, 3, undefined, 2);
             if (!timer) timer = setInterval(tick, 500);
             tick(); changed();
         },
@@ -518,17 +559,18 @@
         const e0 = eng; setTimeout(() => { if (!playing || voice) { e0.active.length = 0; e0.ctx.suspend(); } }, 3400);
     }
     /* the next in the round, but never the one already playing: picking one by hand can put it next */
-    function nextIndex() { let n = roundNext(); if (eng && n === eng.idx && TRACKS.length > 1) n = roundNext(); return n; }
+    function nextIndex() { let n = roundNext(); if (eng && n === eng.idx && TRACKS.filter((_, i) => inSeason(i)).length > 1) n = roundNext(); return n; }
     function roundNext() {
         /* a shuffled round, so every track comes up before any comes back */
-        if (orderAt >= order.length) { const a = TRACKS.map((_, i) => i); for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } if (eng && a[0] === eng.idx && a.length > 1) a.push(a.shift()); order = a; orderAt = 0; }
+        if (orderXmas !== xmasNow()) { orderXmas = xmasNow(); order = []; orderAt = 0; }
+        if (orderAt >= order.length) { const a = TRACKS.map((_, i) => i).filter(inSeason); for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } if (eng && a[0] === eng.idx && a.length > 1) a.push(a.shift()); order = a; orderAt = 0; }
         return order[orderAt++];
     }
     function changed() { if (api.onChange) api.onChange(); }
     function tick() {
         if (!eng || !playing) return;
         const now = eng.ctx.currentTime, cur = eng.active.find(b => b.stopAt === null);
-        if (cur && cur.t0 <= now && now >= cur.end - HANDOVER_LEAD) handover(eng, nextIndex(), false, now);
+        if (cur && cur.t0 <= now && (now >= cur.end - HANDOVER_LEAD || (!inSeason(cur.i) && !cur.outOfSeason && (cur.outOfSeason = true)))) handover(eng, nextIndex(), false, now);
         pump(eng, now + LOOKAHEAD, now);
         changed();
     }

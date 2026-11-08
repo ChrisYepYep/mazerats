@@ -1,4 +1,4 @@
-/* Lost Property: Hustle stands behind the desk. Walk up and he asks for help finding Furni Index items lost round the Hallway; bring them back one at a time, half hidden by the furniture, as many rounds as you like.
+/* Lost Property: hustle stands behind the desk. Walk up and he asks for help finding Furni Index items lost round the Hallway; bring them back one at a time, half hidden by the furniture, as many rounds as you like.
    What you bring back is kept in the browser, or on the account when signed in (progress.js). Also here: the site's own window for the things that open on the Hallway. */
 (function () {
     "use strict";
@@ -8,23 +8,41 @@
     const SPOTS = [["Ground", 58, 46], ["Ground", 75, 15], ["Ground", 83, 15], ["Ground", 91, 15], ["Floor 1", 71, -10], ["Floor 1", 151, -16], ["Floor 2", 60, -21], ["Ground", 94, -7], ["Ground", 73, 3], ["Ground", 86, 3], ["Floor 1", 36, -1], ["Floor 2", 20, 15], ["Floor 2", 26, 5], ["Floor 2", 26, 8], ["Ground", 96, -8], ["Ground", 78, 2], ["Ground", 67, 0], ["Floor 1", 83, -12], ["Ground", 71, 4], ["Ground", 74, 15], ["Ground", 82, 15], ["Ground", 84, 5], ["Ground", 58, 38]];
     const today = () => new Date().toISOString().slice(0, 10);
     const prog = () => window.HallwayProgress, ROUND_SIZE = 1, ROUND = "hallway-lost-round", CARRY = "hallway-carrying";
-    let things = null, imgs = new Map(); const thingImg = f => { let i = imgs.get(f); if (!i) { i = new Image(); i.onload = () => LIVE.wake(); i.src = "art/ideas/lost/" + f; imgs.set(f, i); } return i; };
+    /* the clock and the points (8 Nov 2026, the owner's: a 15-minute limit to find each one, and a score). The board's own points come from netlify/functions/hallway-lost.js, on its clock; these are what the page shows meanwhile, worked out the same way */
+    const LIMIT_MS = 15 * 60e3, MIN_SECS = 20, LOSTFN = "/.netlify/functions/hallway-lost";
+    const pointsFor = (secs, hints) => { const s = Math.max(MIN_SECS, secs); if (s * 1000 > LIMIT_MS + 20e3) return 0; return Math.round((100 + 900 * Math.max(0, 1 - Math.min(s * 1000, LIMIT_MS) / LIMIT_MS)) / 10) * 10 + 150 * Math.max(0, 3 - (hints | 0)); };
+    const lostPost = body => { const p = prog(); if (!p || !p.signedIn) return Promise.resolve(null); return fetch(LOSTFN, { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json", Accept: "application/json" }, body: JSON.stringify(body) }).then(r => r.ok ? r.json() : null).catch(() => null); };
+    let carryPts = 0;
+    let things = null, imgs = new Map(); const thingImg = f => { let i = imgs.get(f); if (!i) { i = new Image(); let tries = 0; i.onload = () => LIVE.wake(); i.onerror = () => { if (++tries <= 6) setTimeout(() => { i.src = "art/ideas/lost/" + f + "?r=" + tries; }, 1500 * tries); }; i.src = "art/ideas/lost/" + f; imgs.set(f, i); } return i; };
+    if (window.HALLWAY_PLAY && window.HallwayProgress) HallwayProgress.load();
     fetch("art/ideas/lost.json").then(r => r.json()).then(j => { things = j.filter(t => t && t.name && t.name.trim()); restore(); }).catch(() => { things = []; });
     /* a round: a handful of lost things, each with a spot that still works, brought back one at a time. Kept in this browser; what you've handed in goes in your progress */
     let round = null, carrying = null;
-    const spots = () => { const map = LIVE.map, out = []; if (!map) return out; (map.lostSpots || SPOTS).forEach(([floor, x, y], i) => { const l = map.levels.find(q => q.name === floor); if (l && l.k >= 0 && LIVE.tileFree(l)(x, y)) out.push({ l, x, y, kind: SPOT_KIND[i] }); }); return out; };
+    const KIND_OF = k => k === "sofa" ? "sofa" : k === "chair" ? "chair" : /table/.test(k) ? "table" : /^ero/.test(k) ? "planter" : null;
+    function kindAt(l, x, y) { let best = null, bd = 9; for (const p of (l.props || [])) { const kind = KIND_OF(p.k); if (!kind) continue; const tiles = window.FurniParts && FurniParts.tiles ? FurniParts.tiles(p) : [[p.x, p.y]]; for (const [tx, ty] of tiles) { const d = Math.max(Math.abs(tx - x), Math.abs(ty - y)); if (d <= 1 && (d < bd || (d === bd && best === "planter" && kind !== "planter"))) { bd = d; best = kind; } } } return best; }
+    const spots = () => { const map = LIVE.map, out = []; if (!map) return out; (map.lostSpots || SPOTS).forEach(([floor, x, y], i) => { const l = map.levels.find(q => q.name === floor); if (!l || l.k < 0 || !LIVE.tileFree(l)(x, y)) return; const kind = kindAt(l, x, y) || (SPOT_KIND[i] === "steps" ? "steps" : null); if (kind) out.push({ l, x, y, kind }); }); return out; };
     /* how much of a thing shows at a spot, with whatever stands in front of it cut away: null until the furniture's pictures are in */
     const vis = document.createElement("canvas"); vis.width = 33; vis.height = 56; const vg = vis.getContext("2d", { willReadFrequently: true });
     function showsAt(spot, thing) { const im = thingImg(thing.f); if (!im.complete || !im.naturalWidth) return null; const z = LIVE.nodeZ(spot.l, spot.x, spot.y) || 0, p = LIVE.mapPoint(spot.x + .5, spot.y + .5, z), x0 = Math.round(p[0]) - 16, y0 = Math.round(p[1]) - 50, count = () => { const d = vg.getImageData(0, 0, 33, 56).data; let n = 0; for (let i = 3; i < d.length; i += 4) if (d[i] > 127) n++; return n; };
         vg.clearRect(0, 0, 33, 56); vg.drawImage(im, 16 - (im.naturalWidth >> 1), 50 - im.naturalHeight + 3); const all = count(); if (!all) return null; LIVE.as({ x: spot.x, y: spot.y, z, l: spot.l, dir: 2, frame: 0, st: null }, () => LIVE.cutInFront(vg, x0, y0)); return count() / all; }
     const shuffled = list => { const o = [...list]; for (let i = o.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [o[i], o[j]] = [o[j], o[i]]; } return o; };
-    const saveRound = () => { try { if (round) localStorage.setItem(ROUND, JSON.stringify({ items: round.items.map(q => ({ k: q.thing.k, floor: q.spot.l.name, x: q.spot.x, y: q.spot.y, kind: q.spot.kind, hints: q.hints || 0 })), at: round.at })); else localStorage.removeItem(ROUND); } catch (e) { /* this visit only */ } };
-    function newRound() { const sp = shuffled(spots()), th = shuffled(things || []); if (!sp.length || !th.length) return false;
-        /* a spot where between a fifth and four fifths of it shows; if the pictures aren't in yet, the first spot will do */
-        let pick = null; for (const spot of sp) { for (const thing of th.slice(0, 6)) { const f = showsAt(spot, thing); if (f !== null && f >= .2 && f <= .85) { pick = { thing, spot, hints: 0 }; break; } } if (pick) break; }
-        if (!pick) pick = { thing: th[0], spot: sp[0], hints: 0 };
-        round = { items: [pick], at: 0 }; saveRound(); return true; }
-    function restore() { try { const r = JSON.parse(localStorage.getItem(ROUND) || "null"); const wait = setInterval(() => { if (!LIVE.map) return; clearInterval(wait); if (r) { const items = r.items.map(q => { const l = LIVE.map.levels.find(v => v.name === q.floor), thing = things.find(t => t.k === q.k); return l && thing && l.k >= 0 ? { thing, spot: { l, x: q.x, y: q.y, kind: q.kind }, hints: q.hints || 0 } : null; }).filter(Boolean); if (items.length) round = { items, at: Math.min(r.at, items.length) }; } const c = localStorage.getItem(CARRY), t = c && things.find(q => q.k === c); if (t) setCarry(t); }, 200); } catch (e) { /* start afresh */ } }
+    const saveRound = () => { try { if (round) localStorage.setItem(ROUND, JSON.stringify({ items: round.items.map(q => ({ k: q.thing.k, floor: q.spot.l.name, x: q.spot.x, y: q.spot.y, kind: q.spot.kind, hints: q.hints || 0, t0: q.t0 || Date.now() })), at: round.at })); else localStorage.removeItem(ROUND); } catch (e) { /* this visit only */ } };
+    /* a spot where between a fifth and four fifths of the thing shows. If the pictures it's judged by aren't in yet, the first spot does for now and it's checked again once they are (recheck) */
+    const sleep = ms => new Promise(r => setTimeout(r, ms));
+    function measureAll(sp, th) { for (const spot of sp) for (const thing of th) showsAt(spot, thing); }
+    async function choose(th, notSpot, sameFloor) {
+        let sp = shuffled(spots()).filter(q => !notSpot || q.x !== notSpot.x || q.y !== notSpot.y || q.l !== notSpot.l); if (sameFloor && sp.some(q => q.l === sameFloor)) sp = sp.filter(q => q.l === sameFloor); th = th.slice(0, 6); if (!sp.length || !th.length) return null;
+        const pics = th.map(t => thingImg(t.f)); for (let i = 0; i < 25 && pics.some(p => !p.complete); i++) await sleep(100);
+        measureAll(sp, th); await sleep(900); measureAll(sp, th); await sleep(500);
+        for (const spot of sp) for (const thing of th) { const f = showsAt(spot, thing); if (f !== null && f >= .2 && f <= .85) return { thing, spot, hints: 0 }; }
+        return { thing: th[0], spot: sp[0], hints: 0 };
+    }
+    /* once hustle has asked for it, it stays where it is: only furniture put down on its very tile (in the editor) moves it, and then to somewhere on the same floor */
+    let moving = false;
+    async function recheck(t) { if (!t || carrying || moving || LIVE.tileFree(t.spot.l)(t.spot.x, t.spot.y)) return; moving = true; try { const again = await choose([t.thing], t.spot, t.spot.l); if (again && wanted() === t) { t.spot = again.spot; saveRound(); LIVE.wake(); } } finally { moving = false; } }
+    async function newRound() { const pick = await choose(shuffled(things || [])); if (!pick) return false;
+        pick.t0 = Date.now(); round = { items: [pick], at: 0 }; saveRound(); lostPost({ act: "start", k: pick.thing.k }); window.hwTrack("hallway_lost_start"); tick(); return true; }
+    function restore() { try { const r = JSON.parse(localStorage.getItem(ROUND) || "null"); let polls = 0; const wait = setInterval(() => { if (!LIVE.map) { if (++polls > 600) clearInterval(wait); return; } clearInterval(wait); if (r) { const items = r.items.map(q => { const l = LIVE.map.levels.find(v => v.name === q.floor), thing = things.find(t => t.k === q.k); return l && thing && l.k >= 0 ? { thing, spot: { l, x: q.x, y: q.y, kind: q.kind }, hints: q.hints || 0, t0: q.t0 || Date.now() } : null; }).filter(Boolean); if (items.length) round = { items, at: Math.min(r.at, items.length) }; } const c = localStorage.getItem(CARRY), t = c && things.find(q => q.k === c); if (t) { setCarry(t); carryPts = +localStorage.getItem(CARRY + "-pts") || 0; } tick(); }, 200); } catch (e) { /* start afresh */ } }
     function setCarry(t) { carrying = t; window.HallwayCarry.item = t ? thingImg(t.f) : null; try { if (t) localStorage.setItem(CARRY, t.k); else localStorage.removeItem(CARRY); } catch (e) { /* only this visit */ } LIVE.wake(); }
     const wanted = () => round && round.items[round.at] || null;
 
@@ -38,12 +56,14 @@
         LIVE.as({ x: t.spot.x, y: t.spot.y, z: q.z, l: t.spot.l, dir: 2, frame: 0, st: null }, () => { LIVE.cutInFront(g, x0, y0); LIVE.tint(g); });
         c.save(); c.translate(ox, oy); c.scale(LIVE.zoom, LIVE.zoom); c.imageSmoothingEnabled = false; c.drawImage(cv, x0, y0); c.restore();
     }
-    LIVE.add({ under: (c, ox, oy) => { drawThing(c, ox, oy, false); drawHustle(c, ox, oy); }, over: (c, ox, oy) => { drawThing(c, ox, oy, true); placeBubbles(); }, still: true });
-    function pick() { const t = showing(); if (!t) return; setCarry(t.thing); window.hwTrack("hallway_lost_found"); say("You", "Got it! That's the " + t.thing.name.toLowerCase() + "."); }
+    let layerErrors = 0; const safe = fn => (c, ox, oy) => { try { fn(c, ox, oy); } catch (e) { if (++layerErrors <= 3) console.error("Lost Property:", e); } };
+    LIVE.add({ under: safe((c, ox, oy) => { drawThing(c, ox, oy, false); drawHustle(c, ox, oy); }), over: safe((c, ox, oy) => { drawThing(c, ox, oy, true); placeBubbles(); }), still: true });
+    function pick() { const t = showing(); if (!t) return; const secs = Math.round((Date.now() - (t.t0 || Date.now())) / 1000); carryPts = pointsFor(secs, t.hints); setCarry(t.thing); window.hwTrack("hallway_lost_found"); say("You", "Got it! That's the " + nice(t.thing.name) + ".", false); flash("+" + carryPts + " points", fmt(secs * 1000) + " to find" + (t.hints ? ", " + t.hints + (t.hints === 1 ? " clue" : " clues") : ", no clues")); lostPost({ act: "found", k: t.thing.k }).then(r => { if (r && typeof r.points === "number" && r.points) { carryPts = r.points; saveCarryPts(); } }); saveCarryPts(); tick(); }
+    const saveCarryPts = () => { try { if (carrying) localStorage.setItem(CARRY + "-pts", String(carryPts)); else localStorage.removeItem(CARRY + "-pts"); } catch (e) { /* this visit */ } };
     LIVE.onClick((px, py) => {
         const t = showing(); if (t && t.thing) { const q = where(t), hw = (t.thing.w >> 1) + 3; if (Math.abs(px - q.X) <= hw && py <= q.Y + 5 && py >= q.Y - t.thing.h - 4) { const w = LIVE.walker; if (Math.round(w.x) === t.spot.x && Math.round(w.y) === t.spot.y && !w.walking) { pick(); return true; } if (LIVE.walkTo(t.spot.l, t.spot.x, t.spot.y, pick)) return true; return false; } }
-        /* the counter, the bell or Hustle: walk up to him */
-        const desk = deskAt(px, py); if (desk && repliesBox) return true; if (desk) { talked = false; if (standingAt(desk)) { talk(desk); return true; } const f = desk.front; if (LIVE.walkTo(desk.l, f[0], f[1], () => talk(desk))) return true; return false; }
+        /* the counter, the bell or hustle: walk up to him */
+        const desk = deskAt(px, py); if (desk && (repliesBox || busy)) return true; if (desk) { talked = false; if (standingAt(desk)) { talk(desk); return true; } const f = desk.front; if (LIVE.walkTo(desk.l, f[0], f[1], () => talk(desk))) return true; return false; }
         return false;
     });
     function desks() { const l = LIVE.floor, out = []; if (!l) return out; const def = (window.WALL_ITEMS || []).find(i => i.id === "i_desk"); if (!def) return out; for (const q of (l.wallItems || [])) { if (q.k !== "i_desk") continue; const o = Math.round(q.at - def.snapAt), tile = (back, along) => q.axis === "y" ? [q.line - back, o + along] : [o + along, q.line - back]; out.push({ l, q, o, front: tile(-0, 1), fronts: [0, 1, 2, 3, 4].map(k => tile(0, k)), npc: tile(2, 1), dir: q.axis === "y" ? 2 : 4 }); } return out; }
@@ -53,7 +73,7 @@
     }
     const standingAt = d => { const w = LIVE.walker; return !!w && !w.walking && d.fronts.some(t => t[0] === Math.round(w.x) && t[1] === Math.round(w.y)) && w.l === d.l; };
 
-    /* ---------- Hustle, behind the counter. His look is saved in art/npc/hustle, so it never changes ---------- */
+    /* ---------- hustle, behind the counter. His look is saved in art/npc/hustle, so it never changes ---------- */
     const npcCv = document.createElement("canvas"); npcCv.width = 33; npcCv.height = 56; const ng = npcCv.getContext("2d", { willReadFrequently: true });
     const npcImg = dir => { const f = "art/npc/hustle/s-" + dir + "-std-0.png"; let i = imgs.get(f); if (!i) { i = new Image(); i.onload = () => LIVE.wake(); i.src = f; imgs.set(f, i); } return i; };
     function drawHustle(c, ox, oy) {
@@ -63,55 +83,119 @@
     }
     let lastHead = null, lastHeadAt = null;
 
-    /* ---------- speech bubbles, as the game's: white, rounded, the speaker's name first, the newest at the bottom, the old ones pushed up ---------- */
+    /* ---------- speech bubbles, as the game's: white, rounded, the speaker's name first, the newest at the bottom, the old ones pushed up.
+       Each sits over its own speaker: yours over your Habbo, hustle's over hustle. What's said at the desk goes when you walk away from it ---------- */
     let bubbleBox = null; const bubbles = [];
-    function say(who, text) { const stage = document.getElementById("stage") || document.body; if (!bubbleBox) { bubbleBox = document.createElement("div"); bubbleBox.className = "hw-bubbles"; stage.appendChild(bubbleBox); } const b = document.createElement("div"); b.className = "hw-bubble"; const n = document.createElement("b"); n.textContent = who + ": "; b.append(n, document.createTextNode(text)); bubbleBox.appendChild(b); bubbles.push({ el: b, at: performance.now() }); while (bubbles.length > 3) bubbles.shift().el.remove(); placeBubbles(); LIVE.wake(); }
-    function placeBubbles() { if (!bubbleBox) return; const now = performance.now(); while (!repliesBox && bubbles.length && now - bubbles[0].at > 30000) bubbles.shift().el.remove(); if (!bubbles.length || !lastHead) { bubbleBox.hidden = !bubbles.length && !repliesBox; if (!lastHead) return; } bubbleBox.hidden = false; const v = LIVE.view(), cvs = document.getElementById("view"), r = cvs.getBoundingClientRect(), hostR = bubbleBox.parentNode.getBoundingClientRect(), sx = r.width / v.w * LIVE.zoom, sy = r.height / v.h * LIVE.zoom; bubbleBox.style.transform = "translate(-50%, -100%) scale(" + ((LIVE.zoom >= 2 && LIVE.view().w >= 760 ? 2 : 1)) + ")"; { const sc = (LIVE.zoom >= 2 && LIVE.view().w >= 760 ? 2 : 1), half = Math.min(bubbleBox.offsetWidth * sc, r.width) / 2, x = r.left - hostR.left + (lastHead[0] - v.x0) * sx, lo = r.left - hostR.left + half + 4, hi = r.left - hostR.left + r.width - half - 4; bubbleBox.style.left = Math.round(Math.max(lo, Math.min(hi, x))) + "px"; } { const headY = r.top - hostR.top + (lastHead[1] - v.y0) * sy, rh = repliesBox ? repliesBox.offsetHeight + 6 : 0, sc = (LIVE.zoom >= 2 && LIVE.view().w >= 760 ? 2 : 1), bh = bubbleBox.offsetHeight * sc, bottom = Math.max(headY - rh, r.top - hostR.top + bh + 6); bubbleBox.style.top = Math.round(bottom) + "px"; if (repliesBox) { const x = parseFloat(bubbleBox.style.left) || 0; repliesBox.style.left = Math.round(x) + "px"; repliesBox.style.top = Math.round(bottom + 4) + "px"; } } }
+    function say(who, text, atDesk) { const stage = document.getElementById("stage") || document.body; if (!bubbleBox) { bubbleBox = document.createElement("div"); bubbleBox.className = "hw-bubbles"; bubbleBox.setAttribute("aria-live", "polite"); stage.appendChild(bubbleBox); } const b = document.createElement("div"); b.className = "hw-bubble"; const n = document.createElement("b"); n.textContent = who + ": "; b.append(n, document.createTextNode(text)); bubbleBox.appendChild(b); bubbles.push({ el: b, at: performance.now(), who: who === H ? "npc" : "you", desk: atDesk !== false }); while (bubbles.length > 3) bubbles.shift().el.remove(); placeBubbles(); LIVE.wake(); }
+    function dropDeskBubbles() { for (let i = bubbles.length - 1; i >= 0; i--) if (bubbles[i].desk) { bubbles[i].el.remove(); bubbles.splice(i, 1); } if (bubbleBox && !bubbles.length) bubbleBox.hidden = true; }
+    const youHead = () => { const w = LIVE.walker; if (!w || w.l !== LIVE.floor && !(w.l && w.l.stair)) return null; const p = LIVE.mapPoint(w.x + .5, w.y + .5, w.z); return [Math.round(p[0]), Math.round(p[1]) - 44 + (w.seat ? 8 : 0)]; };
+    function placeBubbles() {
+        if (!bubbleBox) return; const now = performance.now(); while (!repliesBox && bubbles.length && now - bubbles[0].at > 30000) bubbles.shift().el.remove();
+        const heads = { npc: lastHead, you: youHead() }, last = bubbles[bubbles.length - 1], anchor = last ? heads[last.who] || heads.npc || heads.you : heads.npc;
+        if (!bubbles.length && !repliesBox || !anchor) { bubbleBox.hidden = true; return; } bubbleBox.hidden = false;
+        const v = LIVE.view(), cvs = document.getElementById("view"), r = cvs.getBoundingClientRect(), hostR = bubbleBox.parentNode.getBoundingClientRect(), sx = r.width / v.w * LIVE.zoom, sy = r.height / v.h * LIVE.zoom, sc = LIVE.zoom >= 2 && v.w >= 760 ? 2 : 1;
+        const toX = h => r.left - hostR.left + (h[0] - v.x0) * sx, toY = h => r.top - hostR.top + (h[1] - v.y0) * sy, lo = r.left - hostR.left + 4, hi = r.left - hostR.left + r.width - 4;
+        bubbleBox.style.transform = "translate(-50%, -100%) scale(" + sc + ")";
+        const ax = Math.max(lo + 150 * sc, Math.min(hi - 150 * sc, toX(anchor))); bubbleBox.style.left = Math.round(ax) + "px";
+        /* each bubble slides over to its own speaker, kept on screen */
+        for (const q of bubbles) { const h = heads[q.who] || anchor, half = q.el.offsetWidth * sc / 2, x = Math.max(lo + half, Math.min(hi - half, toX(h))); q.el.style.transform = "translateX(" + Math.round((x - ax) / sc) + "px)"; }
+        const rh = repliesBox ? repliesBox.offsetHeight + 6 : 0, bh = bubbleBox.offsetHeight * sc, bottom = Math.min(Math.max(toY(anchor) - rh, r.top - hostR.top + bh + 6), hostR.height - rh - 8); bubbleBox.style.top = Math.round(bottom) + "px";
+        if (repliesBox) { const half = repliesBox.offsetWidth / 2, x = Math.max(lo + half, Math.min(hi - half, toX(anchor))); repliesBox.style.left = Math.round(x) + "px"; repliesBox.style.top = Math.round(bottom + 4) + "px"; }
+    }
     let repliesBox = null;
-    function replies(list) { closeReplies(); const stage = document.getElementById("stage") || document.body; repliesBox = document.createElement("div"); repliesBox.className = "hw-replies hw-replies-under"; repliesBox.setAttribute("role", "group"); repliesBox.setAttribute("aria-label", "Reply to Hustle"); repliesBox.addEventListener("pointerdown", e => e.stopPropagation()); for (const [text, fn] of list) { const b = document.createElement("button"); b.type = "button"; b.className = "mr-btn btn small"; b.textContent = text; b.addEventListener("click", () => { closeReplies(); say("You", text); setTimeout(fn, 500); }); repliesBox.appendChild(b); } (document.getElementById("stage") || document.body).appendChild(repliesBox); placeBubbles(); }
+    function replies(list) { closeReplies(); const stage = document.getElementById("stage") || document.body; repliesBox = document.createElement("div"); repliesBox.className = "hw-replies hw-replies-under"; repliesBox.setAttribute("role", "group"); repliesBox.setAttribute("aria-label", "Reply to hustle"); repliesBox.addEventListener("pointerdown", e => e.stopPropagation()); for (const [text, fn] of list) { const b = document.createElement("button"); b.type = "button"; b.className = "mr-btn btn small"; b.textContent = text; b.addEventListener("click", () => { if (busy) return; busy = true; closeReplies(); say("You", text); setTimeout(() => { busy = false; fn(); }, 500); }); repliesBox.appendChild(b); } (document.getElementById("stage") || document.body).appendChild(repliesBox); placeBubbles(); const first = repliesBox.querySelector("button"); if (first && !matchMedia("(pointer: coarse)").matches) first.focus({ preventScroll: true }); }
     function closeReplies() { if (repliesBox) { repliesBox.remove(); repliesBox = null; } }
     const ding = () => { let A; try { if (localStorage.getItem("hallway-music") === "0") return; const C = window.AudioContext || window.webkitAudioContext; A = ding.a || (ding.a = new C()); if (A.state !== "running") A.resume().catch(() => {}); } catch (e) { return; } const t = A.currentTime + .01; for (const [f, v] of [[2093, .09], [3136, .05], [4186, .02]]) { const o = A.createOscillator(), h = A.createGain(); o.type = "sine"; o.frequency.value = f; h.gain.setValueAtTime(0, t); h.gain.linearRampToValueAtTime(v, t + .003); h.gain.exponentialRampToValueAtTime(.0005, t + 1.1); o.connect(h); h.connect(A.destination); o.start(t); o.stop(t + 1.15); } };
-    const H = "Hustle", asking = t => "It's the " + t.thing.name.toLowerCase() + ". It's somewhere in the Hallway.";
+    const PROPER = /^(christmas|xmas|valentine'?s?|easter|halloween|habbo|habbos|santa|rudolph|london|paris|egypt|egyptian|japanese|chinese|tiki|dragon's)$/i;
+    function nice(name) { return String(name || "").split(" ").map((w, i) => PROPER.test(w) ? w.charAt(0).toUpperCase() + w.slice(1).toLowerCase() : w.toLowerCase()).join(" "); }
+    const H = "hustle", asking = t => "It's the " + nice(t.thing.name) + ". It's somewhere in the Hallway.";
     const totalIn = () => { const p = prog(), l = p && p.get().lost; return (l && l.streak) || 0; };
-    function startRound() { if (!newRound()) { say(H, "Actually, I can't think of anything missing right now. Come back in a bit."); return; } const t = wanted(); say(H, "Thank you! " + asking(t)); chatMenu(); }
+    async function startRound() { busy = true; try { if (!(await newRound())) { say(H, "Actually, I can't think of anything missing right now. Come back in a bit."); return; } const t = wanted(); say(H, "Thank you! " + asking(t)); chatMenu(); } finally { busy = false; } }
     const DOING = { sofa: "I was having a sit-down on one of the sofas before I made my way back here.", chair: "I sat down on a chair for a bit, to look at my notes.", table: "I put my things down on a table for a minute.", planter: "I stopped to look at the plants on the way.", steps: "I sat on some small steps to catch my breath." };
     const floorWords = l => l.k === 0 ? "the Ground floor" : l.name;
     function clue(t) {
-        t.hints = (t.hints || 0) + 1; saveRound(); const sp = t.spot;
+        t.hints = (t.hints || 0) + 1; saveRound(); if (t.hints <= 3) { lostPost({ act: "hint" }); window.hwTrack("hallway_lost_clue"); } const sp = t.spot;
         if (t.hints === 1) return "I'm fairly sure I was on " + floorWords(sp.l) + " when I lost it.";
-        if (t.hints === 2) { const near = (sp.l.props || []).find(p => Math.abs(p.x - sp.x) <= 2 && Math.abs(p.y - sp.y) <= 2 && /^(sofa|chair|table|smtable|ero)/.test(p.k)), kind = sp.kind || (near ? (near.k === "sofa" ? "sofa" : near.k === "chair" ? "chair" : /table/.test(near.k) ? "table" : "planter") : "sofa"); return DOING[kind] || DOING.sofa; }
-        if (t.hints === 3) { let best = null, bd = 1e9; for (const d of (sp.l.doors || [])) { const nm = d.name || (LIVE.doorName && LIVE.doorName(d)); if (!nm || d.spare) continue; d.__nm = nm; const dx = (d.axis === "x" ? d.at : d.line) - sp.x, dy = (d.axis === "x" ? d.line : d.at) - sp.y, dd = Math.hypot(dx, dy); if (dd < bd) { bd = dd; best = d; } } return best && bd < 30 ? "Oh, and I remember walking past the door to " + (best.__nm || best.name) + "." : "I didn't go far from there, I'm sure of that."; }
+        if (t.hints === 2) { const kind = kindAt(sp.l, sp.x, sp.y) || sp.kind; return DOING[kind] || "I wandered about a bit, I'll be honest."; }
+        if (t.hints === 3) { let best = null, bd = 1e9; for (const d of (sp.l.doors || [])) { const nm = d.name || (LIVE.doorName && LIVE.doorName(d)); if (!nm || d.spare) continue; const dx = (d.axis === "x" ? d.at : d.line) - sp.x, dy = (d.axis === "x" ? d.line : d.at) - sp.y, dd = Math.hypot(dx, dy); if (dd < bd) { bd = dd; best = nm; } } return best && bd <= 12 ? "Oh, and I remember walking past the door to " + best + "." : "I didn't go far from where I sat, I'm sure of that."; }
         return "That's honestly all I can remember. It's there somewhere!";
     }
-    function chatMenu() { const list = []; if (wanted() && !carrying) { list.push(["I'm on it", () => say(H, "Good luck. Mind the rats.")]); list.push(["Any idea where it is?", () => { const t = wanted(); if (t) { say(H, clue(t)); chatMenu(); } }]); list.push(["What was it again?", () => { const t = wanted(); if (t) { say(H, asking(t)); chatMenu(); } }]); list.push(["Ask for a different one", () => { const t = round.items[round.at], sp = shuffled(spots()), th = shuffled(things).filter(q => !round.items.some(v => v.thing === q)); if (sp[0] && th[0]) { round.items[round.at] = { thing: th[0], spot: sp[0] }; saveRound(); say(H, "Fine, forget that one. " + asking(round.items[round.at])); } chatMenu(); }]); } list.push(["See my shelf", () => { ledger(); chatMenu(); }]); replies(list); }
-    let talked = false;
+    function chatMenu() { const list = []; if (wanted() && !carrying) { list.push(["I'm on it", () => say(H, "Good luck. Mind the rats.")]); list.push(["Any idea where it is?", () => { const t = wanted(); if (t) { say(H, clue(t)); chatMenu(); } }]); list.push(["What was it again?", () => { const t = wanted(); if (t) { say(H, asking(t)); chatMenu(); } }]); list.push(["Ask for a different one", async () => { const th = shuffled(things).filter(q => !round.items.some(v => v.thing === q)); if (th[0]) { busy = true; const again = await choose(th).finally(() => { busy = false; }); if (again && round) { again.t0 = Date.now(); round.items[round.at] = again; saveRound(); lostPost({ act: "start", k: again.thing.k }); window.hwTrack("hallway_lost_swap"); tick(); } say(H, "Fine, forget that one. " + asking(round.items[round.at])); } chatMenu(); }]); } list.push(["See my shelf", () => { ledger(); chatMenu(); }]); replies(list); }
+    let talked = false, busy = false;
     function talk(d) {
-        talked = true; ding();
-        if (carrying) { const p = prog(), st = p && p.get(), lost = (st && st.lost) || { shelf: [] }, total = (lost.streak || 0) + 1, got = carrying; if (p) p.save({ lost: { day: today(), streak: total, shelf: [...new Set([...(lost.shelf || []), got.k])] } }); setCarry(null); window.hwTrack("hallway_lost_handed"); if (round) { round.at++; saveRound(); } say(H, "The " + got.name.toLowerCase() + "! That's going straight back in the index. Thank you."); const t = wanted(); if (t) { setTimeout(() => { say(H, asking(t)); chatMenu(); }, 1100); } else { round = null; saveRound(); setTimeout(() => { say(H, "You've brought back " + total + " so far. Got time to find another?"); replies([["Go on then", startRound], ["See my shelf", () => { ledger(); replies([["Go on then", startRound], ["Not right now", () => say(H, "No problem. I'll be here.")]]); }], ["Not right now", () => say(H, "No problem. I'll be here.")]]); }, 1100); } return; }
+        if (busy) return; talked = true; ding();
+        if (carrying) { const p = prog(), st = p && p.get(), lost = (st && st.lost) || { shelf: [] }, total = (lost.streak || 0) + 1, got = carrying; const pts = carryPts || 0, points = (lost.points || 0) + pts, best = Math.max(lost.best || 0, pts); if (p) p.save({ lost: { day: today(), streak: total, shelf: [...new Set([...(lost.shelf || []), got.k])], points, best, missed: lost.missed || 0 } }); carryPts = 0; saveCarryPts(); setCarry(null); window.hwTrack("hallway_lost_handed"); if (round) { round.at++; saveRound(); } say(H, "The " + nice(got.name) + "! That's going straight back in the index. Thank you." + (pts ? " That's " + pts + " points to you." : "")); const t = wanted(); if (t) { setTimeout(() => { say(H, asking(t)); chatMenu(); }, 1100); } else { round = null; saveRound(); setTimeout(() => { say(H, "You've brought back " + total + " so far. Got time to find another?"); replies([["Go on then", startRound], ["See my shelf", () => { ledger(); replies([["Go on then", startRound], ["Not right now", () => say(H, "No problem. I'll be here.")]]); }], ["Not right now", () => say(H, "No problem. I'll be here.")]]); }, 1100); } return; }
         if (wanted()) { say(H, "Any luck? " + asking(wanted())); chatMenu(); return; }
         say(H, totalIn() ? "Back again? More of the Furni Index items have gone missing in the Maze Rats Hallway!" : "Can you help me? Some of the Furni Index items have been lost in the Maze Rats Hallway!");
         replies([["Of course, what's missing?", startRound], ["See my shelf", () => { ledger(); replies([["Of course, what's missing?", startRound], ["Not right now", () => say(H, "No problem. I'll be here.")]]); }], ["Not right now", () => say(H, "No problem. I'll be here.")]]);
     }
     /* walking up to the front of the desk starts it; walking off ends the chat */
-    setInterval(() => { const w = LIVE.walker; if (!w || document.hidden) return; const near = desks().find(standingAt); if (near && !talked) talk(near); if (!near && !w.walking) { const anyClose = desks().some(d => Math.abs(d.front[0] - w.x) + Math.abs(d.front[1] - w.y) < 8); if (!anyClose) { talked = false; closeReplies(); } } if (!near && w.walking && repliesBox) closeReplies(); if (!near && !w.walking) talked = talked && desks().some(standingAt); }, 300);
+    setInterval(() => { const w = LIVE.walker; if (!w || document.hidden) return; const near = desks().find(standingAt); if (near && !talked) talk(near); if (!near && !w.walking) { const anyClose = desks().some(d => Math.abs(d.front[0] - w.x) + Math.abs(d.front[1] - w.y) < 8); if (!anyClose) { talked = false; closeReplies(); } } if (!near && w.walking && (repliesBox || bubbles.some(q => q.desk))) { closeReplies(); dropDeskBubbles(); } if (!near && !w.walking) talked = talked && desks().some(standingAt); }, 300);
 
+    /* ---------- the clock on screen, and what happens when it runs out ---------- */
+    const fmt = ms => { const s = Math.max(0, Math.ceil(ms / 1000)); return Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0"); };
+    let hud = null, hudKey = "";
+    let mapSeen = null;
+    function tick() {
+        const t = wanted(), stage = document.getElementById("stage") || document.body;
+        if (t && !carrying) { const l = t.spot.l, sig = (l.props || []).reduce((n, p) => n + p.x * 7 + p.y * 13 + p.k.length, 0) + "|" + (l.props || []).length; if (sig !== mapSeen) { mapSeen = sig; recheck(t); } }
+        /* out of time: it's gone, a miss, and hustle will have another */
+        if (t && !carrying && t.t0 && Date.now() - t.t0 > LIMIT_MS) { const name = nice(t.thing.name), p = prog(), st = p && p.get(), lost = (st && st.lost) || {}; if (p) p.save({ lost: { ...lost, day: lost.day || today(), shelf: lost.shelf || [], missed: (lost.missed || 0) + 1 } }); round = null; saveRound(); window.hwTrack("hallway_lost_missed"); flash("Time's up", "Too slow: the " + name + " went missing for good. Ask hustle for another."); }
+        const now = wanted(), show = !!(now || carrying) && !document.body.classList.contains("hw-screensaver");
+        if (!show) { if (hud) hud.hidden = true; return; }
+        if (!hud) { hud = document.createElement("button"); hud.type = "button"; hud.className = "hw-lost-hud"; hud.setAttribute("aria-label", "Lost Property: open your shelf"); hud.addEventListener("pointerdown", e => e.stopPropagation()); hud.addEventListener("click", () => ledger()); stage.appendChild(hud); }
+        hud.hidden = false; const thing = carrying || now.thing, key = thing.k + (carrying ? "c" : "");
+        if (key !== hudKey) { hudKey = key; hud.replaceChildren(); const i = document.createElement("img"); i.src = "art/ideas/lost/" + thing.f; i.alt = ""; const w = document.createElement("span"); w.className = "hw-lost-hud-words"; const a = document.createElement("small"), b = document.createElement("b"); w.append(a, b); hud.append(i, w); }
+        const [small, big] = hud.querySelectorAll(".hw-lost-hud-words > *");
+        if (carrying) { small.textContent = "Take it to hustle"; big.textContent = carryPts ? carryPts + " pts" : nice(thing.name); hud.classList.remove("low", "very-low"); hud.classList.add("got"); return; }
+        hud.classList.remove("got"); const left = LIMIT_MS - (Date.now() - now.t0); small.textContent = "Find the " + nice(thing.name); big.textContent = fmt(left); hud.classList.toggle("low", left < 120e3); hud.classList.toggle("very-low", left < 30e3);
+    }
+    setInterval(() => { if (!document.hidden) tick(); }, 1000);
+    /* a moment's note in the middle of the screen: the points for a find, or time running out */
+    function flash(title, sub) { const stage = document.getElementById("stage") || document.body, f = document.createElement("div"); f.className = "hw-lost-flash"; f.setAttribute("role", "status"); const b = document.createElement("b"), s = document.createElement("span"); b.textContent = title; s.textContent = sub || ""; f.append(b, s); stage.appendChild(f); setTimeout(() => f.classList.add("out"), 3200); setTimeout(() => f.remove(), 3800); }
+
+    /* ---------- the Lost Property window: the search on now, your record, every thing there is to find, and this week's best ---------- */
     function ledger() {
-        const st = prog().get(), lost = st.lost || { shelf: [] }, t = wanted(), body = document.createElement("div"); body.className = "hw-ledger";
-        const row = document.createElement("div"); row.className = "today"; const words = document.createElement("div"), head = document.createElement("b"), shownThing = carrying || (t && t.thing); if (shownThing) { const i = document.createElement("img"); i.src = "art/ideas/lost/" + shownThing.f; i.alt = ""; row.appendChild(i); }
-        head.textContent = shownThing ? "Now: " + shownThing.name.toLowerCase() : "Nothing to find just now"; words.appendChild(head); words.appendChild(document.createElement("br")); words.appendChild(document.createTextNode(carrying ? "You've got it. Take it to Hustle." : t ? "Somewhere in the Hallway." : "Ask Hustle at the desk.")); row.appendChild(words); body.appendChild(row);
-        const s = document.createElement("div"); s.className = "streak"; s.textContent = "Brought back: " + (lost.streak || 0); body.appendChild(s);
-        const h5 = document.createElement("h5"); h5.textContent = "Your shelf"; body.appendChild(h5); const shelf = document.createElement("div"); shelf.className = "shelf"; for (const k of (lost.shelf || [])) { const th = (things || []).find(q => q.k === k); if (!th) continue; const i = document.createElement("img"); i.src = "art/ideas/lost/" + th.f; i.alt = th.name; i.title = th.name; shelf.appendChild(i); }
-        if (st.key) { const i = document.createElement("img"); i.src = "art/wall/i_key.png"; i.alt = "The Caretaker's key"; i.title = "The Caretaker's key"; shelf.appendChild(i); }
-        if (!shelf.children.length) { const em = document.createElement("span"); em.textContent = "Nothing yet."; shelf.appendChild(em); } body.appendChild(shelf);
-        openWindow("Lost Property", body);
+        const st = prog().get(), lost = st.lost || { shelf: [] }, body = document.createElement("div"); body.className = "hw-ledger hw-lp";
+        const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text !== undefined) e.textContent = text; return e; };
+        const img = (th, scale) => { const i = el("img"); i.src = "art/ideas/lost/" + th.f; i.alt = th.name; if (th.w && th.h) { i.width = th.w * scale; i.height = th.h * scale; } return i; };
+        /* the search on now */
+        const now = el("div", "hw-lp-now"), t = wanted(), shown = carrying || (t && t.thing);
+        const pic = el("div", "hw-lp-pic"); if (shown) pic.appendChild(img(shown, 2)); else pic.appendChild(el("span", "hw-lp-q", "?")); now.appendChild(pic);
+        const words = el("div", "hw-lp-words"), live = el("div", "hw-lp-live"); now.appendChild(words);
+        let timer = 0;
+        if (carrying) words.append(el("small", "", "You've found it"), el("b", "", "The " + nice(carrying.name)), el("p", "", "Take it back to hustle at the desk to bank " + (carryPts || 0) + " points."));
+        else if (t) { words.append(el("small", "", "Looking for"), el("b", "", "The " + nice(t.thing.name)), live); const upd = () => { const left = LIMIT_MS - (Date.now() - t.t0), secs = Math.round((Date.now() - t.t0) / 1000); live.replaceChildren(el("span", "hw-lp-clock" + (left < 120e3 ? " low" : ""), fmt(left) + " left"), el("span", "", "Clues " + Math.min(3, t.hints || 0) + " of 3"), el("span", "", "Worth " + pointsFor(secs, t.hints) + " points now")); }; upd(); timer = setInterval(upd, 1000); }
+        else words.append(el("small", "", "Nothing to find just now"), el("b", "", "Ask hustle at the desk"), el("p", "", "Each thing has 15 minutes. Find it fast, without clues, for the most points."));
+        body.appendChild(now);
+        /* your record */
+        const stats = el("div", "hw-lp-stats"); for (const [n, v] of [["Points", lost.points || 0], ["Best find", lost.best || 0], ["Brought back", lost.streak || 0], ["Missed", lost.missed || 0]]) { const s = el("div", "hw-lp-stat"); s.append(el("b", "", String(v)), el("small", "", n)); stats.appendChild(s); } body.appendChild(stats);
+        /* two tabs: your shelf, and the week's board */
+        const tabs = el("div", "hw-lp-tabs"), shelfTab = el("button", "on", "Your shelf"), boardTab = el("button", "", "This week's best"), pane = el("div", "hw-lp-pane"); shelfTab.type = boardTab.type = "button"; tabs.setAttribute("role", "tablist"); for (const b of [shelfTab, boardTab]) b.setAttribute("role", "tab"); tabs.append(shelfTab, boardTab); body.append(tabs, pane);
+        const select = on => { for (const b of [shelfTab, boardTab]) { b.classList.toggle("on", b === on); b.setAttribute("aria-selected", String(b === on)); } };
+        const showShelf = () => { select(shelfTab); pane.replaceChildren();
+            const all = things || [], have = new Set(lost.shelf || []), count = all.filter(q => have.has(q.k)).length; pane.appendChild(el("p", "hw-lp-count", "Collected " + count + " of " + all.length));
+            const shelf = el("div", "hw-lp-shelf"); for (const th of all) { const got = have.has(th.k), slot = el("div", "hw-lp-slot" + (got ? " got" : "")), i = img(th, 1); if (!got) i.alt = "Not found yet"; slot.title = got ? th.name : "Not found yet"; slot.appendChild(i); shelf.appendChild(slot); }
+            if (st.key) { const slot = el("div", "hw-lp-slot got key"), i = el("img"); i.src = "art/wall/i_key.png"; i.alt = "The Caretaker's key"; slot.title = "The Caretaker's key"; slot.appendChild(i); shelf.appendChild(slot); }
+            pane.appendChild(shelf); };
+        const showBoard = () => { select(boardTab); pane.replaceChildren(el("p", "hw-lp-count", "Loading the board..."));
+            fetch(LOSTFN, { credentials: "same-origin", headers: { Accept: "application/json" } }).then(r => r.ok ? r.json() : Promise.reject(new Error(String(r.status)))).then(b => {
+                pane.replaceChildren(el("p", "hw-lp-count", "Monday to Sunday: points for everything found this week"));
+                if (!b.rows.length) pane.appendChild(el("p", "hw-lp-empty", "Nobody's on the board yet this week. Be the first."));
+                else { const tb = el("table", "hw-lp-board"), hd = el("tr"); for (const h of ["#", "Mazer", "Points", "Found", "Best"]) hd.appendChild(el("th", "", h)); tb.appendChild(hd); for (const r of b.rows) { const tr = el("tr"); for (const v of [r.rank, r.name || "A Mazer", r.points, r.finds, r.best]) tr.appendChild(el("td", "", String(v))); tb.appendChild(tr); } pane.appendChild(tb); }
+                const p = prog(); pane.appendChild(el("p", "hw-lp-you", b.me ? "You: #" + b.me.rank + " with " + b.me.points + " points" : p && p.signedIn ? "Find something this week to get on the board. You need a nickname to appear." : "Sign in with a nickname to go on the board. Your points still count here, in this browser."));
+            }).catch(() => pane.replaceChildren(el("p", "hw-lp-empty", "The board couldn't be reached just now."))); };
+        shelfTab.addEventListener("click", showShelf); boardTab.addEventListener("click", showBoard); showShelf();
+        const w = openWindow("Lost Property", body); w.back.classList.add("hw-lp-window");
+        if (timer) { const stop = setInterval(() => { if (!w.back.isConnected) { clearInterval(timer); clearInterval(stop); } }, 1000); }
     }
 
     /* ---------- the site's window, on the Hallway; a bottom sheet on a phone ---------- */
     function openWindow(title, content) {
         const stage = document.getElementById("stage") || document.body, back = document.createElement("div"), win = document.createElement("div"), bar = document.createElement("div"), h = document.createElement("h2"), x = document.createElement("button"), xi = document.createElement("img"), frame = document.createElement("div");
-        back.className = "mr-overlay hw-sheet"; back.setAttribute("role", "dialog"); back.setAttribute("aria-label", title); win.className = "mr-window"; bar.className = "mr-titlebar"; frame.className = "mr-frame hw-sheet-body"; h.textContent = title; x.className = "mr-close"; x.type = "button"; x.setAttribute("aria-label", "Close"); xi.src = "art/rooms/modal_topclose_x.png"; xi.alt = ""; x.appendChild(xi); bar.append(h, x);
+        back.className = "mr-overlay hw-sheet"; back.setAttribute("role", "dialog"); back.setAttribute("aria-modal", "true"); back.setAttribute("aria-label", title); win.className = "mr-window"; bar.className = "mr-titlebar"; frame.className = "mr-frame hw-sheet-body"; h.textContent = title; x.className = "mr-close"; x.type = "button"; x.setAttribute("aria-label", "Close"); xi.src = "art/rooms/modal_topclose_x.png"; xi.alt = ""; x.appendChild(xi); bar.append(h, x);
         if (typeof content === "string") frame.innerHTML = content; else frame.appendChild(content); win.append(bar, frame); back.appendChild(win); stage.appendChild(back);
-        const shut = () => { back.remove(); document.removeEventListener("keydown", key, true); }, key = e => { if (e.key === "Escape") { e.stopImmediatePropagation(); shut(); } };
+        const before = document.activeElement, shut = () => { back.remove(); document.removeEventListener("keydown", key, true); if (before && before.focus && before.isConnected) before.focus({ preventScroll: true }); }, key = e => { if (e.key === "Escape") { e.stopImmediatePropagation(); shut(); } };
         document.addEventListener("keydown", key, true); x.addEventListener("click", shut); back.addEventListener("pointerdown", e => e.stopPropagation()); back.addEventListener("click", e => { if (e.target === back) shut(); }); x.focus();
         return { shut, back };
     }

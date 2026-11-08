@@ -119,6 +119,8 @@
     const along = (r, d) => { let lo = 0, hi = r.seg.length - 1; while (hi - lo > 1) { const m = (lo + hi) >> 1; if (r.seg[m] <= d) lo = m; else hi = m; } const k = (d - r.seg[lo]) / Math.max(1e-6, r.seg[hi] - r.seg[lo]), a = r.pts[lo], b = r.pts[hi]; return [a[0] + (b[0] - a[0]) * k, a[1] + (b[1] - a[1]) * k]; };
     function ssStart() {
         const map = LIVE.map; if (!map || screensaver.on || !LIVE.walker) return false;
+        /* not from the Basement: it has no route of its own, and gliding off to Ground from there is wrong */
+        if (LIVE.floor && LIVE.floor.k < 0) return false;
         const floors = map.levels.filter(l => l.k >= 0 && l.cells && l.cells.length).map(l => ({ l, r: floorRoute(l) })).filter(f => f.r.len > 400); if (!floors.length) return false;
         /* the floor you're on, from the point on its path nearest where you were looking, going whichever way has further to go */
         const cam = LIVE.cam; let i = Math.max(0, floors.findIndex(f => f.l === LIVE.floor)), r = floors[i].r, best = 0, bd = 1e12; r.pts.forEach((p, k) => { const d = (p[0] - cam.x) ** 2 + (p[1] - cam.y) ** 2; if (d < bd) { bd = d; best = k; } });
@@ -126,7 +128,7 @@
         /* the music rests, and comes back where it was */
         const A = window.HallwayAudio; screensaver.music = !!(A && A.playing); if (screensaver.music) A.stop();
         LIVE.holdCamera(true); document.body.classList.add("hw-screensaver");
-        if (!screensaver.title) { const t = screensaver.title = document.createElement("div"); t.className = "hw-ss-title"; t.setAttribute("aria-hidden", "true"); const big = document.createElement("div"), small = document.createElement("div"); big.className = "hw-ss-name"; big.textContent = "Maze Rats Hallway"; small.className = "hw-ss-hint"; small.textContent = "Click or press any key to exit screensaver."; t.append(big, small); (document.getElementById("stage") || document.body).appendChild(t); }
+        if (!screensaver.title) { const t = screensaver.title = document.createElement("div"); t.className = "hw-ss-title"; t.setAttribute("aria-hidden", "true"); const big = document.createElement("div"), small = document.createElement("div"); big.className = "hw-ss-name"; big.textContent = "Maze Rats Hallway"; small.className = "hw-ss-hint"; small.textContent = matchMedia("(pointer: coarse)").matches ? "Tap to exit screensaver." : "Click or press any key to exit screensaver."; t.append(big, small); (document.getElementById("stage") || document.body).appendChild(t); }
         screensaver.title.classList.remove("on"); void screensaver.title.offsetWidth; screensaver.title.classList.add("on");
         LIVE.wake(); screensaver.raf = requestAnimationFrame(ssTick); return true;
     }
