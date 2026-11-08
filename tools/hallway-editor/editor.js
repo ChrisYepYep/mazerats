@@ -816,7 +816,7 @@ function seeThroughDown() {
 }
 function requestArt(now) { clearTimeout(artTimer); artTimer = setTimeout(newVersion, now ? 0 : 220); }
 async function newVersion() {
-    const seq = ++versionSeq;
+    const seq = ++versionSeq; firstDrawBar();
     try {
         /* while a sign's being dragged, the art leaves it out */
         const liveNow = live && !live.ending ? live.hit.o : null, keep = liveNow && liveNow.sign;
@@ -852,8 +852,23 @@ function nextTiles() {
     for (let ty = Math.floor(r.y / TILE); ty <= Math.floor((r.y + r.h) / TILE); ty++) for (let tx = Math.floor(r.x / TILE); tx <= Math.floor((r.x + r.w) / TILE); tx++) add(tx, ty, false);
     return out.sort((p, q) => p.d - q.d);
 }
+/* The first time the map is drawn, a bar over it shows how far it's got (8 Nov: "a progressive loading bar when drawing in the
+   map for the first time"). Counted over the squares in view; it goes once they're all in and doesn't come back for later edits. */
+let firstDrawn = false, loadBar = null;
+function firstDrawBar() {
+    if (firstDrawn || window.HALLWAY_PLAY || !map || !map.rect) return;
+    /* the squares on screen: with a time of day on, those are all it draws */
+    const [x0, x1, y0, y1] = visibleTiles(), r = map.rect; let all = 0, done = 0;
+    for (let ty = Math.max(y0, Math.floor(r.y / TILE)); ty <= Math.min(y1, Math.floor((r.y + r.h) / TILE)); ty++) for (let tx = Math.max(x0, Math.floor(r.x / TILE)); tx <= Math.min(x1, Math.floor((r.x + r.w) / TILE)); tx++) { all++; const t = tiles.get(tx + "," + ty); if (t && t.v === version) done++; }
+    if (!loadBar) { loadBar = document.createElement("div"); loadBar.className = "first-draw"; loadBar.setAttribute("role", "progressbar"); loadBar.setAttribute("aria-label", "Drawing the map"); loadBar.innerHTML = '<span class="fd-text">Drawing the map</span><span class="fd-track"><span class="fd-fill"></span></span><span class="fd-num"></span>'; $("stage").appendChild(loadBar); }
+    if (!version) { all = Math.max(1, all); done = 0; }                       // still starting up: shown, at nothing yet
+    const pc = all ? Math.round(100 * done / all) : 100;
+    loadBar.setAttribute("aria-valuenow", String(pc)); loadBar.querySelector(".fd-fill").style.width = pc + "%"; loadBar.querySelector(".fd-num").textContent = pc + "%";
+    if (done >= all) { firstDrawn = true; const b = loadBar; b.classList.add("done"); setTimeout(() => b.remove(), 600); loadBar = null; }
+}
 function pump() {
     if (!version || !map) return;
+    firstDrawBar();
     const want = nextTiles();
     for (const n of want) {
         if (inflight.size >= CONCURRENT) break;
@@ -874,7 +889,7 @@ async function loadTile(n) {
         if (v === version) {
             const old = tiles.get(n.k); if (old && old.img.close) old.img.close();
             tiles.set(n.k, { img, v });
-            paint();
+            firstDrawBar(); paint();
         } else if (img.close) img.close();
     } catch (e) {
         if (e.name !== "AbortError") { tileFailed(n.k); console.error(e); setStatus("A square couldn't be drawn"); }
