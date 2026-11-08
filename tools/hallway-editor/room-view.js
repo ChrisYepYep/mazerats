@@ -96,7 +96,9 @@
     }
     const inFoot = (f, x, y) => f && x >= f[0] && y >= f[1] && x < f[0] + f[2] && y < f[1] + f[3];
     /* You come in and go out over the middle two tiles of a near edge, whichever faces the hallway door you used */
-    const exitTiles = (r, edge) => { if (edge === "y") { const a = (r.w >> 1) - 1; return [[a, r.h - 1], [a + 1, r.h - 1]]; } const a = (r.h >> 1) - 1; return [[r.w - 1, a], [r.w - 1, a + 1]]; };
+    /* ... or wherever along it the layout puts it (exitAt: { y, x }, the first of the two tiles; 8 Nov 2026, his: the arrows "should be moveable by me") */
+    const exitAt = (r, edge) => { const len = edge === "y" ? r.w : r.h, own = r.exitAt && Number.isInteger(r.exitAt[edge]) ? r.exitAt[edge] : null; return Math.max(0, Math.min(len - 2, own === null ? (len >> 1) - 1 : own)); };
+    const exitTiles = (r, edge) => { if (edge === "y") { const a = exitAt(r, "y"); return [[a, r.h - 1], [a + 1, r.h - 1]]; } const a = exitAt(r, "x"); return [[r.w - 1, a], [r.w - 1, a + 1]]; };
     /* the arrow's 2x2: the two you leave by, and the two inside them. Nothing may stand on it */
     const arrowTiles = (r, edge) => { const e = exitTiles(r, edge); return edge === "y" ? [...e, [e[0][0], e[0][1] - 1], [e[1][0], e[1][1] - 1]] : [...e, [e[0][0] - 1, e[0][1]], [e[1][0] - 1, e[1][1]]]; };
     const solidSet = r => { const s = new Set(); for (const it of r.items) { if (isWall(it) || isRug(it) || STAFF_SOFT.has(it.k)) continue; const f = footprint(it); if (f) for (let x = f[0]; x < f[0] + f[2]; x++) for (let y = f[1]; y < f[1] + f[3]; y++) s.add(x + "," + y); } return s; };
@@ -229,7 +231,7 @@
        colour darkened, with a darker line round it. Pixel by pixel, on the slant, so its edges stay crisp. */
     const arrowPics = new Map();
     function arrowPicture(r, edge) {
-        const key = r.w + "x" + r.h + edge; let c = arrowPics.get(key); if (c) return c;
+        const key = r.w + "x" + r.h + edge + exitAt(r, edge); let c = arrowPics.get(key); if (c) return c;
         const s0 = sizeOf(r), o = originOf(r), ts = arrowTiles(r, edge), x0 = Math.min(...ts.map(t => t[0])), y0 = Math.min(...ts.map(t => t[1]));
         /* across: 0 to 2 over the two tiles' width. out: 0 to 2 towards the edge */
         const inside = (X, Y) => {
@@ -321,12 +323,12 @@
     /* ---------- which room a maze has ---------- */
     function layouts(map) { const own = map && map.rooms && map.rooms.layouts; if (!own) return window.RoomStarter.layouts; for (const k of Object.keys(window.RoomStarter.layouts)) if (!own[k]) own[k] = JSON.parse(JSON.stringify(window.RoomStarter.layouts[k])); return own; }
     /* a room that isn't a maze's: one of the layouts, behind any door you link to it */
-    function special(map, size, n) { const list = layouts(map)[size]; if (!list) return null; const b = list[n] || list[0], [w, h] = size.split("x").map(Number); return { room: { w, h, floor: b.floor, walls: b.walls, items: b.items }, facts: { name: b.walls === "staff" ? "Staff only" : "", m: { creator: "" }, slots: [], pictures: [] } }; }
+    function special(map, size, n) { const list = layouts(map)[size]; if (!list) return null; const b = list[n] || list[0], [w, h] = size.split("x").map(Number); return { room: { w, h, floor: b.floor, walls: b.walls, items: b.items, exitAt: b.exitAt }, facts: { name: b.walls === "staff" ? "Staff only" : "", m: { creator: "" }, slots: [], pictures: [] } }; }
     function roomFor(map, maze) {
         const facts = mazeFacts(maze), slug = maze.slug || facts.name, a = map && map.rooms && map.rooms.assign && map.rooms.assign[slug], L = layouts(map);
         const size = (a && a.size) || window.RoomStarter.sizeFor(facts.pictures.length), list = L[size], n = a && a.layout !== undefined ? a.layout : hash(hashText(slug), 7) % list.length;
         const [w, h] = size.split("x").map(Number), base = list[n] || list[0];
-        return { room: { w, h, floor: base.floor, items: base.items }, facts, size, layout: n };
+        return { room: { w, h, floor: base.floor, items: base.items, exitAt: base.exitAt }, facts, size, layout: n };
     }
     const hashText = s => { let h = 0; for (const ch of String(s)) h = Math.imul(h, 31) + ch.charCodeAt(0) | 0; return h >>> 0; };
     let archive = null;
@@ -445,7 +447,7 @@
         /* walk up to a thing: the nearest free tile touching it, then it opens */
         const spots = it => {
             const out = [], f = footprint(it);
-            if (it.k === "frame") { const t = Math.floor(it.at); for (const a of [t, t - 1, t + 1]) for (const d of [0, 1]) out.push(it.wall === "l" ? [d, a] : [a, d]); return out; }
+            if (it.k === "frame" || (it.k === "painting" && it.id === "i_staffdoor")) { const t = Math.floor(it.at); for (const a of [t, t - 1, t + 1]) for (const d of [0, 1]) out.push(it.wall === "l" ? [d, a] : [a, d]); return out; }
             for (let x = f[0] - 1; x <= f[0] + f[2]; x++) for (let y = f[1] - 1; y <= f[1] + f[3]; y++) if (!inFoot(f, x, y)) out.push([x, y]);
             return out;
         };
@@ -456,6 +458,7 @@
             if (!best) return;
             go(best.q, () => {
                 const f = footprint(it); if (f) { const face = DIRS.findIndex(q => q[0] === Math.sign(Math.max(f[0], Math.min(f[0] + f[2] - 1, w.x)) - w.x) && q[1] === Math.sign(Math.max(f[1], Math.min(f[1] + f[3] - 1, w.y)) - w.y)); if (face >= 0) w.dir = face; }
+                if (isExitDoor(it)) { if (opts.onLeave) { const f = opts.onLeave; opts.onLeave = null; f(); } return; }
                 let what = null;
                 if (it.k === "ledger") what = { kind: "ledger" };
                 if (it.k === "album") { const a = albumsOf(r, facts).get(it); if (a) what = { kind: "album", album: a }; }
@@ -463,7 +466,9 @@
                 if (what && !bookOpen) bookOpen = openBook(host, facts, what, () => { bookOpen = null; });
             });
         };
-        const usable = it => it && (it.k === "ledger" || (it.k === "album" && albumsOf(r, facts).has(it)) || (it.k === "frame" && facts.slots[it.slot]));
+        /* a staff door (a wall picture, i_staffdoor) is a way out, as the arrow is */
+        const isExitDoor = it => !!it && it.k === "painting" && it.id === "i_staffdoor";
+        const usable = it => it && (it.k === "ledger" || (it.k === "album" && albumsOf(r, facts).has(it)) || (it.k === "frame" && facts.slots[it.slot]) || isExitDoor(it));
         c.addEventListener("pointermove", e => { const p = toPx(e), t = tileAt(r, p[0], p[1]), it = itemAt(r, p[0], p[1]); c.style.cursor = usable(it) ? "pointer" : "default"; hover = !usable(it) && t[0] >= 0 && t[1] >= 0 && t[0] < r.w && t[1] < r.h && !solidSet(r).has(t[0] + "," + t[1]) ? t : null; });
         c.addEventListener("pointerleave", () => { hover = null; });
         c.addEventListener("wheel", e => { e.preventDefault(); if (opts.wheel) opts.wheel(e.deltaY); }, { passive: false });
