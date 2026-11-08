@@ -347,3 +347,9 @@ body.hw-screensaver .hw-clue { visibility: hidden; }
 #lostBox .lp-thumb small.bad { color: #ff8a5c; }
 #lostBox .lp-thumb.on { border-color: #ffe066; background: rgba(255, 224, 102, .14); }
 #lostBox .lp-thumb.skip img { opacity: .3; }
+#lostBox [hidden] { display: none !important; }
+#lostBox .lp-sec + .lp-sec { border-top: 1px solid rgba(255, 255, 255, .1); margin-top: 10px; }
+#lostBox .lp-detail { min-height: 420px; }
+#lostBox .lp-nav { align-items: center; }
+#lostBox .lp-now { min-height: 64px; }
+#lostBox .lp-strip { max-height: 230px; }

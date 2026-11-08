@@ -788,12 +788,12 @@ function drawLiveSign() {
     ctx.imageSmoothingEnabled = false;
     ctx.drawImage(live.img, ox + (p[0] - live.anchor[0]) * zoom, oy + (p[1] - live.anchor[1]) * zoom, live.img.width * zoom, live.img.height * zoom);
 }
-/* he edits art/lamps/globe-lamp.png in his own program: when it's saved, the map follows */
+/* he edits the lamp sheets in art/lamps (globe-lamp, globe-table-lamp, the wall lights) in his own program: when one is saved, the map follows */
 let artAt = null;
 if (!window.HALLWAY_PLAY && !window.HALLWAY_EDIT) setInterval(async () => {
     try {
         const o = await (await fetch("/api/art")).json();
-        if (artAt !== null && o.at !== artAt && map) { requestArt(true); setTimeout(() => { for (const n of ["art/lamp-globe.png", "art/sconce-globe-x.png", "art/sconce-globe-y.png", "art/sconce-globe-back-l.png", "art/sconce-globe-back-r.png"]) { const i = spriteImgs[n]; if (i) i.src = n + "?" + o.at; } }, 1500); }
+        if (artAt !== null && o.at !== artAt && map) { requestArt(true); setTimeout(() => { for (const n of ["art/lamp-globe.png", "art/sconce-globe-x.png", "art/sconce-globe-y.png", "art/sconce-globe-back-l.png", "art/sconce-globe-back-r.png", "art/wall/i_tablelamp.png"]) { const i = spriteImgs[n]; if (i) i.src = n + "?" + o.at; } }, 1500); }
         artAt = o.at;
     } catch (e) { /* the server's away; it'll say so elsewhere */ }
 }, 1000);
@@ -1009,7 +1009,7 @@ window.HallwayLive = {
     view() { const hw = canvas.width / zoom / 2, hh = canvas.height / zoom / 2; return { x0: cam.x - hw, x1: cam.x + hw, y0: cam.y - hh, y1: cam.y + hh, w: canvas.width, h: canvas.height }; },
     camera(x, y) { cam.x = x; cam.y = y; clampCam(); }, get cam() { return { x: cam.x, y: cam.y }; }, holdCamera(on) { camHeld = on; if (!on) followNow(); }, setZoom: z => setZoom(z, canvas.width / 2, canvas.height / 2),
     realNight: () => realNight(), enterRoom(target, axis) { if (!walker || roomSession) return false; const me = walker; me.busy = true; me.pts = []; me.walking = false; roomSession = RoomView.enter($("stage"), { room: target.room, facts: target.facts, edge: axis === "x" ? "y" : "x", zoom: () => zoom, wheel: d => setZoom(zoom + (d < 0 ? 1 : -1)), onLeave: () => { roomSession.close(); roomSession = null; me.busy = false; paint(); } }); return true; },
-    editorApi: () => ({ snapshot, changed, setTool, paint, flash: t => flash(t), setFloor: l => setFloor(l), get tool() { return tool; }, pickOnce(f) { pickNext = f; flash("Click the spot on the map. Esc cancels."); }, get level() { return level; } }),
+    editorApi: () => ({ snapshot, changed, setTool, paint, flash: t => flash(t), setFloor: l => setFloor(l), tileAt(cx, cy) { const [px, py] = toPx(cx, cy), u = floorUnder(px, py); return u ? { level: u[0].stair ? u[0].stair.low.id : u[0].id, x: u[1], y: u[2] } : null; }, get tool() { return tool; }, pickOnce(f) { pickNext = f || null; if (f) flash("Click the spot on the map. Esc cancels."); }, get level() { return level; } }),
     onClick(f) { liveClicks.add(f); return () => liveClicks.delete(f); },
     walkTo(l, x, y, then) { if (!walker || walker.busy) return false; const s = walkerStart(), path = graphFrom(s.l, s.x, s.y, [l, x, y]); if (!path) return false; followRoute(path, s.here, then || null); return true; },
     get graphLevels() { return stairLevels().list; },
@@ -2317,16 +2317,9 @@ canvas.addEventListener("pointermove", e => {
 canvas.addEventListener("contextmenu", e => e.preventDefault());
 canvas.addEventListener("pointercancel", () => { if (drag && drag.kind === "rubout") { const d = drag; drag = null; endRub(d); } if (drag && drag.kind === "halfwall") { const d = drag; drag = null; endHalfBrush(d); } });
 canvas.addEventListener("wheel", e => { e.preventDefault(); if (seeCut !== null) { const all = allHeights(level), i = all.indexOf(seeCut), n = Math.max(0, Math.min(all.length - 1, i + (e.deltaY > 0 ? 1 : -1))); setCut(all[n]); return; } setZoom(zoom + (e.deltaY < 0 ? 1 : -1), e.clientX, e.clientY); }, { passive: false });
-/* How far the camera may go: the map's rect, grown to every floor's tiles with room for a Habbo's head over them. The rect was only ever set once, and floors have grown past it since (8 Nov 2026) */
-let camRectFor = null, camRectV = null;
-function camRect() {
-    if (!map || !map.rect) return null;
-    const sig = map.levels.map(l => (l.cells || []).length + ":" + l.k).join(",");
-    if (camRectFor === map && camRectV && camRectV.sig === sig) return camRectV.r;
-    let x0 = map.rect.x, y0 = map.rect.y, x1 = map.rect.x + map.rect.w, y1 = map.rect.y + map.rect.h;
-    for (const l of map.levels) { if (!l.cells || !l.cells.length) continue; const z = levelZ(l); for (const c of l.cells) { const i = c.indexOf(","), cx = +c.slice(0, i), cy = +c.slice(i + 1), x = (cx - cy) * 32, y = (cx + cy) * 16 - z; x0 = Math.min(x0, x - 48); x1 = Math.max(x1, x + 48); y0 = Math.min(y0, y - 110); y1 = Math.max(y1, y + 56); } }
-    camRectFor = map; camRectV = { sig, r: { x: x0, y: y0, w: x1 - x0, h: y1 - y0 } }; return camRectV.r;
-}
+/* How far the camera may go: the map's edges (the Map edges tool), which is also as far as the published picture goes, so the view never shows past it.
+   8 Nov 2026: growing it to every floor's tiles showed black beyond the edges (his: "this shouldn't be possible"). Tiles outside the edges are the map's to fix: the Problems tab names them. */
+function camRect() { return map && map.rect ? map.rect : null; }
 function clampCam() {
     if (tool !== "walk" || !map.rect) return;
     const r = camRect(), hw = canvas.width / zoom / 2, hh = canvas.height / zoom / 2;
@@ -3210,6 +3203,9 @@ function runChecks() {
     const blank = map.levels.reduce((n, l) => n + (l.doors || []).filter(d => !d.spare && !d.name).length, 0);
     if (blank) card(`${blank} doors have no maze. Make them spare, or give them one.`, "");
     if (!map.entrance) card("There's no entrance yet: Habbos arrive by it. It's in the library, under On walls.", "err");
+    /* floor past the map's edges: it isn't in the published picture, and the camera stops at the edges, so walking there is walking off screen */
+    if (map.rect) { const R = map.rect; for (const lv of map.levels) { if (!lv.cells || !lv.cells.length) continue; const z = levelZ(lv); let n = 0, first = null; for (const c of lv.cells) { const i = c.indexOf(","), cx = +c.slice(0, i), cy = +c.slice(i + 1), X = (cx - cy) * 32, Y = (cx + cy) * 16 - z; if (X - 32 < R.x || X + 32 > R.x + R.w || Y < R.y || Y + 32 > R.y + R.h) { n++; if (!first) first = [cx * 2, cy * 2]; } }
+        if (n) card(`${n} squares of ${lv.name} are past the map's edges, so nobody can see them. Widen the edges with Map edges, under Tidy. Show one.`, "err", () => { level = lv; buildLevels(); const p = P(first[0] + 1, first[1] + 1, levelZ(lv)); cam.x = p[0]; cam.y = p[1]; paint(); }); } }
     const [l, x, y] = liftTile(), reached = graphFrom(l, x, y);
     const cut = [];
     for (const lv of map.levels) for (const d of (lv.doors || [])) {
