@@ -29,11 +29,14 @@
     /* the spots, as the editor's Lost Property tab saves them in the map: { level, x, y, skip } (skip: the things that don't show well there) */
     const levelOf = (map, raw) => map.levels.find(q => raw.level !== undefined && raw.level !== null ? q.id === raw.level : q.name === raw.name);
     function mapSpots() { const map = LIVE.map; if (!map) return []; return (map.lostSpots || OLD_SPOTS).map(s => { const raw = Array.isArray(s) ? { name: s[0], x: s[1], y: s[2] } : s, l = raw && levelOf(map, raw); if (!l || l.k < 0) return null; return { l, x: raw.x, y: raw.y, skip: raw.skip || [], raw }; }).filter(Boolean); }
+    /* a spot can be under a table, a chair or a sofa (8 Nov 2026, his): you can't stand there, so it's picked up from a free tile beside it */
+    const underFurni = spot => !LIVE.tileFree(spot.l)(spot.x, spot.y);
+    const reachFrom = spot => { if (!underFurni(spot)) return [[spot.x, spot.y]]; const free = LIVE.tileFree(spot.l), out = []; for (const [i, j] of [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [-1, -1], [1, -1], [-1, 1]]) if (free(spot.x + i, spot.y + j)) out.push([spot.x + i, spot.y + j]); return out; };
     const kindOf = spot => kindAt(spot.l, spot.x, spot.y) || "steps";
     /* how much of a thing shows at a spot, with whatever stands in front of it cut away: null until the pictures are in */
     const vis = document.createElement("canvas"); vis.width = 33; vis.height = 56; const vg = vis.getContext("2d", { willReadFrequently: true });
     function showsAt(spot, thing) { const im = thingImg(thing.f); if (!im.complete || !im.naturalWidth) return null; const z = LIVE.nodeZ(spot.l, spot.x, spot.y) || 0, p = LIVE.mapPoint(spot.x + .5, spot.y + .5, z), x0 = Math.round(p[0]) - 16, y0 = Math.round(p[1]) - 50, count = () => { const d = vg.getImageData(0, 0, 33, 56).data; let n = 0; for (let i = 3; i < d.length; i += 4) if (d[i] > 127) n++; return n; };
-        vg.clearRect(0, 0, 33, 56); vg.drawImage(im, 16 - (im.naturalWidth >> 1), 50 - im.naturalHeight + 3); const all = count(); if (!all) return null; LIVE.as({ x: spot.x, y: spot.y, z, l: spot.l, dir: 2, frame: 0, st: null }, () => LIVE.cutInFront(vg, x0, y0)); return count() / all; }
+        vg.clearRect(0, 0, 33, 56); vg.drawImage(im, 16 - (im.naturalWidth >> 1), 50 - im.naturalHeight + 3); const all = count(); if (!all) return null; LIVE.as({ x: spot.x, y: spot.y, z, l: spot.l, dir: 2, frame: 0, st: null, under: underFurni(spot) }, () => LIVE.cutInFront(vg, x0, y0)); return count() / all; }
     const shuffled = list => { const o = [...list]; for (let i = o.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [o[i], o[j]] = [o[j], o[i]]; } return o; };
     const saveRound = () => { try { if (round) localStorage.setItem(ROUND, "1"); else localStorage.removeItem(ROUND); } catch (e) { /* this visit only */ } };
     /* the editor on its own: a thing you haven't found, at a spot that suits it */
@@ -66,7 +69,7 @@
     function drawThing(c, ox, oy, nearer) {
         const t = showing(); if (!t) return; const im = thingImg(t.thing.f); if (!im.complete || !im.naturalWidth) return; if (inFront(t.spot.l, t.spot.x, t.spot.y) !== nearer) return;
         const q = where(t), x0 = q.X - 16, y0 = q.Y - 50; g.clearRect(0, 0, 33, 56); g.imageSmoothingEnabled = false; g.drawImage(im, 16 - (im.naturalWidth >> 1), 50 - im.naturalHeight + 3);
-        LIVE.as({ x: t.spot.x, y: t.spot.y, z: q.z, l: t.spot.l, dir: 2, frame: 0, st: null }, () => { LIVE.cutInFront(g, x0, y0); LIVE.tint(g); });
+        LIVE.as({ x: t.spot.x, y: t.spot.y, z: q.z, l: t.spot.l, dir: 2, frame: 0, st: null, under: underFurni(t.spot) }, () => { LIVE.cutInFront(g, x0, y0); LIVE.tint(g); });
         c.save(); c.translate(ox, oy); c.scale(LIVE.zoom, LIVE.zoom); c.imageSmoothingEnabled = false; c.drawImage(cv, x0, y0); c.restore();
     }
 
@@ -113,7 +116,7 @@
     const saveCarryPts = () => { try { if (carrying) localStorage.setItem(CARRY + "-pts", String(carryPts)); else localStorage.removeItem(CARRY + "-pts"); } catch (e) { /* this visit */ } };
 
     LIVE.onClick((px, py) => {
-        const t = showing(); if (t && t !== preview && t.thing) { const q = where(t), hw = (t.thing.w >> 1) + 3; if (Math.abs(px - q.X) <= hw && py <= q.Y + 5 && py >= q.Y - t.thing.h - 4) { const w = LIVE.walker; if (Math.round(w.x) === t.spot.x && Math.round(w.y) === t.spot.y && !w.walking) { pick(); return true; } if (LIVE.walkTo(t.spot.l, t.spot.x, t.spot.y, pick)) return true; } }
+        const t = showing(); if (t && t !== preview && t.thing) { const q = where(t), hw = (t.thing.w >> 1) + 3; if (Math.abs(px - q.X) <= hw && py <= q.Y + 5 && py >= q.Y - t.thing.h - 4) { const w = LIVE.walker, from = reachFrom(t.spot).sort((a, b) => Math.hypot(a[0] - w.x, a[1] - w.y) - Math.hypot(b[0] - w.x, b[1] - w.y)); if (!w.walking && w.l === t.spot.l && from.some(([x, y]) => Math.round(w.x) === x && Math.round(w.y) === y)) { pick(); return true; } for (const [x, y] of from) if (LIVE.walkTo(t.spot.l, x, y, pick)) return true; } }
         /* hustle: walk up to him */
         if (onHustle(px, py)) { if (repliesBox || busy) return true; talked = false; if (byHustle()) { talk(); return true; } const s = hustleSeat(), w = LIVE.walker, near = nextTo(s).sort((a, b) => Math.hypot(a[0] - w.x, a[1] - w.y) - Math.hypot(b[0] - w.x, b[1] - w.y)); for (const [x, y] of near) if (LIVE.walkTo(s.l, x, y, () => talk())) return true; return true; }
         /* the desk: hand in what you're carrying; otherwise its book, your record */
