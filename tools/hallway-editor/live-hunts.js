@@ -87,7 +87,8 @@
         w = win().open("Hunts", b);
     }
     /* the page's buttons */
-    function barButtons() { const bar = document.getElementById("playBar"); if (!bar || bar.dataset.hunts) return !!bar; bar.dataset.hunts = "1"; const add = (t, title, fn) => { const b = el("button", "mr-btn", t); b.type = "button"; b.title = title; b.addEventListener("click", fn); bar.appendChild(b); return b; }; add("Hunts", "Treasure hunts", board); add("Scraps", "What you've found", scrapList); return true; }
+    function barButtons() { if (window.HallwayBar && !barButtons.done) { barButtons.done = true; HallwayBar.menuItem("Hunts", "Treasure hunts", board); HallwayBar.menuItem("Scraps", "What you've found", scrapList); return true; } if (barButtons.done) return true;
+        const bar = document.getElementById("playBar"); if (!bar || bar.dataset.hunts) return !!bar; bar.dataset.hunts = "1"; const add = (t, title, fn) => { const b = el("button", "mr-btn", t); b.type = "button"; b.title = title; b.addEventListener("click", fn); bar.appendChild(b); return b; }; add("Hunts", "Treasure hunts", board); add("Scraps", "What you've found", scrapList); return true; }
     const wait = setInterval(() => { if (barButtons()) clearInterval(wait); }, 500);
     setTimeout(() => { if (huntNow()) showPanel(); }, 3000);
     window.HallwayHunts = { board, start, scrapList, solve, get current() { return huntNow(); } };
