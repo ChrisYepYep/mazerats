@@ -183,7 +183,7 @@ function bookDoor() {
         const X0 = S(F(0))[0], X1 = S(F(Wd))[0], k0 = 1 + .16 * Math.min(1, a0 / 1.2);
         for (let X = Math.round(X0); X <= Math.round(X1); X++) { const d = Math.min(Wd - 1e-3, Math.max(0, (X - X0) / (sn + cs))), c = SIDE + Math.floor(d), b0 = base(c), Yb = S(F(d))[1]; for (let r = 0; r < Hh; r++) { const sy = b0 - Hh + 1 + r; if (sy < 0) continue; const p = (sy * CW + c) * 4; if (!src[p + 3]) continue; put(X, Yb - Hh + 1 + r, Math.min(255, src[p] * k0), Math.min(255, src[p + 1] * k0), Math.min(255, src[p + 2] * k0)); } }
         /* the top */
-        const tq = [S(F(-2), Hh), S(F(Wd + 2), Hh), S(Bk(Wd + 2), Hh), S(Bk(-2), Hh)]; polyFill(tq, (x, y) => { const m = mod(x + y * 2, 9); if (m === 0) put(x, y, 160, 75, 37); else put(x, y, 195, 98, 51); });
+        const tq = [S(F(-2), Hh), S(F(Wd + 3), Hh), S(Bk(Wd + 3), Hh), S(Bk(-2), Hh)]; polyFill(tq, (x, y) => { const m = mod(x + y * 2, 9); if (m === 0) put(x, y, 160, 75, 37); else put(x, y, 195, 98, 51); });
         /* the book: side, top, then spine, all from the same three directions as the door */
         { const K0 = [4, 14, 26], P0 = d => { const f = F(d); return [f[0] + nn[0] * pull, f[1] + nn[1] * pull]; }, Q0 = d => F(d), z1 = BTOP, z0 = BTOP - BH, tone = (arr, k = 1) => arr.map(v => Math.min(255, v * k));
           const fill = (poly, col) => polyFill(poly, (x, y) => put(x, y, col[0], col[1], col[2]));

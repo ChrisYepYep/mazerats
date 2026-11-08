@@ -2797,7 +2797,7 @@ function doorFloorKind(d) {
     return (roomFloors && roomFloors.get(FurniParts.mazeName(d.name))) || "slate";
 }
 /* the bookcase door: its pictures are drawn once in art/ideas; here they only take the time of day's tint */
-let bookArt = null, bookImg = null; const bookCv = document.createElement("canvas"), BOOK_MAX = 84, BOOK_FOOT = 6;       // its foot on the wall's own foot (8 Nov 2026: it stood 6px into the floor); render/hw3.js lifts the map's picture the same
+let bookArt = null, bookImg = null; const bookCv = document.createElement("canvas"), BOOK_MAX = 84, BOOK_FOOT = 3;       // its back on the wall's foot (8 Nov 2026: at 6 its front was there and its back in the wall); render/hw3.js lifts the map's picture the same
 function loadBook() { if (bookArt !== null) return; bookArt = false; const i = new Image(); i.onload = () => { bookImg = i; paint(); }; i.src = "art/ideas/book.png"; fetch("art/ideas/book.json").then(r => r.json()).then(j => { bookArt = j; paint(); }).catch(() => {}); }
 const bookEase = v => v < .5 ? 4 * v * v * v : 1 - Math.pow(-2 * v + 2, 3) / 2;
 function bookAngle(T) { if (T < .55) return 0; if (T < .75) return 3 * ((T - .55) / .2); if (T < 2.35) return 3 + (BOOK_MAX - 3) * bookEase((T - .75) / 1.6); if (T < 2.6) return BOOK_MAX - 3 * ((T - 2.35) / .25); if (T < 2.95) return BOOK_MAX - 3 + 1.5 * ((T - 2.6) / .35); return BOOK_MAX - 1.5; }
