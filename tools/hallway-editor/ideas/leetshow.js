@@ -17,19 +17,22 @@ function letters(s, font, tall) { const on = new Set(); for (const k of A.vol(s,
 /* the date-stamp lettering, the same the page stamps the date with (stamp-font.js); turned round for the mirrored picture of a wall item,
    as Volter is, so it reads the right way once flipped */
 const SF = require("../stamp-font.js"), mirrored = () => { const on = A.vol("L", "v"); let lo = 99, hi = -99, bar = null; for (const k of on) { const [x, y] = k.split(",").map(Number); lo = Math.min(lo, x); hi = Math.max(hi, x); if (y === 2) bar = x; } return bar !== null && bar === hi && hi !== lo; };
-function stamped(s) { const t = SF.stamp(s), m = mirrored(), on = new Set(t.px.map(([x, y]) => (m ? t.w - 1 - x : x) + "," + y)); return { on, w: t.w + 1 }; }
+function stamped(s, tall) { const t = SF.stamp(s), m = mirrored(), on = new Set(); for (const [x, y] of t.px) { const X = m ? t.w - 1 - x : x; if (tall) { on.add(X + "," + y * 2); on.add(X + "," + (y * 2 + 1)); } else on.add(X + "," + y); } return { on, w: t.w + 1 }; }
 /* the cream paper slip the page stamps the next show's date on, pasted across the foot of the bill. SLIP is its colour and nothing
    else on the poster is: live-leet.js finds the slip in the picture by it */
 const SLIP = "f3e7c7", SLIP_RIM = "d9c49a", SLIP_DK = "b49c6e";
-/* the poster itself, W by H: a function from (u across, v down) to a colour. slip: [top row, rows] */
-function art(W, H, lines, slip) {
-    const placed = lines.map(([s, font, tall, v, colour, shadow]) => { const t = font === "stamp" ? stamped(s) : letters(s, font, tall); return { ...t, font, u0: Math.round((W - t.w) / 2) + 1, v0: v, colour, shadow }; });
+/* the poster itself, W by H: a function from (u across, v down) to a colour. slip: [top row, rows, right across]: right across, it's pasted
+   over the border from edge to edge, as a theatre's date strip is. o.thin: a border of three, not four (the narrow stand's bill) */
+function art(W, H, lines, slip, o = {}) {
+    const placed = lines.map(([s, font, tall, v, colour, shadow]) => { const t = font === "stamp" ? stamped(s, tall) : letters(s, font, tall); return { ...t, font, tall, u0: Math.round((W - t.w) / 2) + 1, v0: v, colour, shadow }; });
     return (u, v) => {
         if (u < 0 || v < 0 || u >= W || v >= H) return null;
         /* the gold rule round the edge, a dark line inside it */
-        const e = Math.min(u, v, W - 1 - u, H - 1 - v); if (e === 0) return C.edge; if (e === 2) return C.gold; if (e === 3) return C.edge;
+        const e = Math.min(u, v, W - 1 - u, H - 1 - v), b = o.thin ? 1 : 0, border = () => e === 0 ? C.edge : e === 2 - b ? C.gold : e === 3 - b ? C.edge : null;
+        /* the border first, unless a slip pasted right across lies over it */
+        if (!(slip && slip[2] && v >= slip[0] && v <= slip[0] + slip[1])) { const bc = border(); if (bc) return bc; }
         if (slip) {
-            const [t0, n] = slip, t1 = t0 + n - 1, l0 = 4, l1 = W - 5;
+            const [t0, n, across] = slip, t1 = t0 + n - 1, l0 = across ? 0 : 4, l1 = across ? W - 1 : W - 5;
             if (v >= t0 && v <= t1 && u >= l0 && u <= l1) {
                 /* corners clipped, a darker rim top and bottom, a lighter fold down the left */
                 if ((v === t0 || v === t1) && (u === l0 || u === l1)) return C.shadow;
@@ -39,20 +42,21 @@ function art(W, H, lines, slip) {
             if (v === t1 + 1 && u > l0 && u <= l1 + 1) return C.shadow;
             if (u === l1 + 1 && v > t0 && v <= t1) return C.shadow;
         }
-        for (const t of placed) { const x = u - t.u0, y = v - t.v0; if (t.on.has(x + "," + y)) return t.font === "stamp" ? t.colour : y < 2 ? C.goldLt : t.colour; if (t.shadow && t.on.has((x - 1) + "," + (y - 1))) return C.shadow; }
+        { const bc = border(); if (bc) return bc; }
+        for (const t of placed) { const x = u - t.u0, y = v - t.v0; if (t.on.has(x + "," + y)) return t.font === "stamp" && !t.tall ? t.colour : y < 2 ? C.goldLt : t.colour; if (t.shadow && t.on.has((x - 1) + "," + (y - 1))) return C.shadow; }
         /* the sunburst, rising from behind the title, and a darker edge to the sheet */
         const cx = W / 2, cy = H * .42, a = Math.atan2(v - cy, u - cx), ray = Math.floor((a + Math.PI) / (Math.PI * 2) * 24) & 1, r = Math.hypot((u - cx) / W, (v - cy) / H);
-        if (e === 1) return C.rayDk;
+        if (e === 1 && !o.thin) return C.rayDk;
         return r > .52 ? C.rayDk : ray ? C.ray : C.ground;
     };
 }
 /* a deco rule: a line with a diamond in the middle */
 function withRule(f, W, v0, plain) { return (u, v) => { const d = Math.abs(u - (W - 1) / 2); if (!plain && v >= v0 - 2 && v <= v0 + 2 && d + Math.abs(v - v0) <= 2) return d + Math.abs(v - v0) <= 1 ? C.goldLt : C.gold; if (v === v0 && (plain || d > 4) && d < W / 2 - 7) return C.goldDk; return f(u, v); }; }
 /* No "live on Twitch" (9 Nov, his): a bill for a show at the Theatredrome, with the next stream's real date and time stamped on its slip */
-const PORTRAIT = { W: 56, H: 85 }, LANDSCAPE = { W: 100, H: 58 }, SMALL = PORTRAIT, NARROW = { W: 46, H: 94 };
-/* the narrow stand's bill (9 Nov 2026, his: a 2 by 1 stand, "keeping the current quality of texts"): the same lettering, a taller sheet,
-   "NEXT UP" over a slip with three lines (day, date, time) */
-const narrow = () => withRule(art(NARROW.W, NARROW.H, [["THE", "v", false, 6, C.gold, true], ["LEET", "vb", true, 15, C.gold, true], ["SHOW", "vb", true, 31, C.gold, true], ["NEXT UP", "stamp", false, 51, C.gold, false]], [60, 29]), NARROW.W, 47);
+const PORTRAIT = { W: 56, H: 85 }, LANDSCAPE = { W: 100, H: 58 }, SMALL = PORTRAIT, NARROW = { W: 25, H: 92 };
+/* the narrow stand's bill (9 Nov 2026, his: a 2 by 1 stand, then "the poster is too wide, fit it to the width of the feet"): 25 across, so the
+   date stamp's lettering throughout, the title twice as tall; "NEXT" over a slip pasted right across, three short lines (day, date, time) */
+const narrow = () => withRule(art(NARROW.W, NARROW.H, [["THE", "stamp", false, 4, C.gold, true], ["LEET", "stamp", true, 13, C.gold, true], ["SHOW", "stamp", true, 29, C.gold, true], ["NEXT", "stamp", false, 50, C.gold, false]], [59, 29, true], { thin: true }), NARROW.W, 46);
 const portrait = (P = PORTRAIT) => withRule(art(P.W, P.H, [["THE", "v", false, 6, C.gold, true], ["LEET", "vb", true, 15, C.gold, true], ["SHOW", "vb", true, 31, C.gold, true], ["NEXT SHOW", "stamp", false, 51, C.gold, false]], [60, 20]), P.W, 47);
 const landscape = () => withRule(art(LANDSCAPE.W, LANDSCAPE.H, [["THE", "v", false, 5, C.gold, true], ["LEET SHOW", "vb", true, 13, C.gold, true], ["NEXT SHOW", "stamp", false, 32, C.gold, false]], [41, 11]), LANDSCAPE.W, 29, true);
 /* the poster on the wall in a bronze frame: the wall item's own way of drawing, face "x" (the hallway's framed signs) */
@@ -65,13 +69,13 @@ function wall(which) {
    It stands across four tiles. alongY: the run goes along y and the poster faces +x; otherwise along x, facing +y. The origin is the far
    corner of the first tile (hw3 draws it from there, as the trophy cabinet). */
 function stand(alongY, thin) {
-    const P = thin ? NARROW : SMALL, tex0 = thin ? narrow() : portrait(SMALL), W = P.W + 6, Hh = P.H + 6, z0 = 8, L = thin ? 32 : 64, mid = 8, t = 1.2, a0 = (L - W) / 2, a1 = a0 + W, zt = z0 + Hh - 3;
+    const P = thin ? NARROW : SMALL, tex0 = thin ? narrow() : portrait(SMALL), ft = thin ? 2 : 3, W = P.W + 2 * ft, Hh = P.H + 2 * ft, z0 = 8, L = thin ? 32 : 64, mid = 8, t = 1.2, a0 = (L - W) / 2, a1 = a0 + W, zt = z0 + Hh - ft;
     /* in the run's own frame: s along it, d across it (the poster's facing side is +d) */
     const B = (s0, s1, d0, d1, za, zb, m) => alongY ? box(d0, d1, s0, s1, za, zb, m) : box(s0, s1, d0, d1, za, zb, m);
-    const faceTex = (f, p) => alongY ? (f === "x" ? tex0(Math.floor(a1 - 3 - p[1]), Math.floor(zt - p[2])) : null) : (f === "y" ? tex0(Math.floor(p[0] - a0 - 3), Math.floor(zt - p[2])) : null);
+    const faceTex = (f, p) => alongY ? (f === "x" ? tex0(Math.floor(a1 - ft - p[1]), Math.floor(zt - p[2])) : null) : (f === "y" ? tex0(Math.floor(p[0] - a0 - ft), Math.floor(zt - p[2])) : null);
     const back = col("2a1a10"), face = { top: col(C.ground), y: alongY ? back : col(C.ground), x: alongY ? col(C.ground) : back, edge: null, noLine: true, tex: faceTex };
-    const prims = [B(a0 + 3, a1 - 3, mid - t, mid + t - .2, z0 + 3, z0 + Hh - 3, face),
-        B(a0, a0 + 3, mid - t - .4, mid + t + .4, z0, z0 + Hh, FRAME), B(a1 - 3, a1, mid - t - .4, mid + t + .4, z0, z0 + Hh, FRAME), B(a0, a1, mid - t - .4, mid + t + .6, z0 + Hh - 3, z0 + Hh, FRAME), B(a0, a1, mid - t - .4, mid + t + .4, z0, z0 + 3, FRAME)];
+    const prims = [B(a0 + ft, a1 - ft, mid - t, mid + t - .2, z0 + ft, z0 + Hh - ft, face),
+        B(a0, a0 + ft, mid - t - .4, mid + t + .4, z0, z0 + Hh, FRAME), B(a1 - ft, a1, mid - t - .4, mid + t + .4, z0, z0 + Hh, FRAME), B(a0, a1, mid - t - .4, mid + t + .6, z0 + Hh - ft, z0 + Hh, FRAME), B(a0, a1, mid - t - .4, mid + t + .4, z0, z0 + ft, FRAME)];
     /* the poles run up through the frame's sides, so the stand and its feet stay on its own four tiles (9 Nov, his: a foot out on the next
        tile went under the rug there) */
     /* the narrow one: the poster is wider than its two tiles, so it's mounted in front of two poles that stand inside them, the feet on its own tiles */

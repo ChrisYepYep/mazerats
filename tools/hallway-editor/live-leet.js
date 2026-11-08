@@ -18,10 +18,13 @@
     function lines(map, now, f = feed, room) {
         const ls = (map && map.leetShow) || {}, mins = ls.mins || 180, typed = (ls.times || []).map(t => new Date(t)).filter(d => !isNaN(d));
         const fromTwitch = !!(f && f.ok), streams = fromTwitch ? (f.times || []).map(t => new Date(t.start)).filter(d => !isNaN(d)) : [];
-        if (fromTwitch && f.live) return ["ON NOW!", "LIVE"];
+        /* the narrow stand's slip is only 24 across: the short form, day / 14/11 / 20:30 */
+        const tiny = room && room.x1 - room.x0 < 30;
+        if (fromTwitch && f.live) return tiny ? ["LIVE", "NOW"] : ["ON NOW!", "LIVE"];
         const times = (streams.length ? streams : typed).sort((a, b) => a - b);
-        if (!fromTwitch && times.some(d => d <= now && now < +d + mins * 60000)) return ["ON NOW!", "LIVE"];
-        const next = times.find(d => d > now); if (!next) return ["COMING", "SOON"];
+        if (!fromTwitch && times.some(d => d <= now && now < +d + mins * 60000)) return tiny ? ["LIVE", "NOW"] : ["ON NOW!", "LIVE"];
+        const next = times.find(d => d > now); if (!next) return tiny ? ["SOON"] : ["COMING", "SOON"];
+        if (tiny) return [DAYS[next.getDay()], next.getDate() + "/" + String(next.getMonth() + 1).padStart(2, "0"), String(next.getHours()).padStart(2, "0") + ":" + String(next.getMinutes()).padStart(2, "0")];
         const today = new Date(now), tomorrow = new Date(now); tomorrow.setDate(tomorrow.getDate() + 1);
         const named = DAYS[next.getDay()], date = next.getDate() + " " + MONTHS[next.getMonth()];
         /* the narrow stand's slip: three short lines, and no room for TOMORROW there, so the day's name */
