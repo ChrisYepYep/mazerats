@@ -973,7 +973,7 @@ function paint() {
     drawSelector();
     drawGhost();
     drawRect();
-    if (walker) drawWalker();
+    if (walker) { drawWalker(); drawBookOver(ox, oy); }
     drawLive("over", ox, oy);
 }
 /* ---------- things that move over the tiles (the rat, dust, the Basement) ----------
@@ -2136,6 +2136,7 @@ function walkPress(px, py) {
     if (openHeld) { openHeld = false; }
     if (walker && walker.busy) return;
     for (const f of liveClicks) { try { if (f(px, py)) return; } catch (err) { console.error(err); } }
+    { const dd = doorAtPx(px, py); if (dd && dd.d.kind === "book" && onBook(dd.l, dd.d, px, py)) { bookDoor(dd.l, dd.d); return; } }
     const u = useUnder(px, py);
     if (u && (u.p.k === "sofa" || u.p.k === "chair")) { sitOn(u); return; }
     if (u && u.p.k === "water") return;                     // it takes a double-click
@@ -2147,7 +2148,7 @@ function walkDouble(px, py) {
     const u = useUnder(px, py);
     if (u && u.p.k === "water") { getDrink(u); return; }
     const q = liftAt(px, py); if (q) { useLift(q); return; }
-    const dd = doorAtPx(px, py); if (dd) useDoor(dd.l, dd.d);
+    const dd = doorAtPx(px, py); if (dd) { if (dd.d.kind === "book") { if (onBook(dd.l, dd.d, px, py)) bookDoor(dd.l, dd.d); return; } useDoor(dd.l, dd.d); }
 }
 /* Fingers, while walking: a tap walks, two quick taps are a double-click, a drag looks around, two fingers zoom. They never reach the mouse's handlers below. */
 const fingers = new Map(); let fingerDo = null, lastTap = null, tappedAt = 0;
@@ -2648,7 +2649,10 @@ let doorRaf = 0, doorLast = 0;
 function doorRun(now) {
     doorRaf = 0; const dt = Math.max(0, Math.min(250, now - doorLast)); doorLast = now; let moving = false;   // a frame's time can be from just before it was asked for
     for (const [d, st] of doorStates) {
-        st.p = Math.max(0, Math.min(1, st.p + (st.to ? dt / doorMs(d, true) : -dt / doorMs(d, false)))); if (st.p !== st.to) moving = true;
+        st.p = Math.max(0, Math.min(1, st.p + (st.to ? dt / doorMs(d, true) : -dt / doorMs(d, false))));
+        /* a bookcase waits, nudged open, while you step back out of its way (bookDoor) */
+        if (st.hold && st.to && st.p > st.hold) st.p = st.hold;
+        if (st.p !== st.to && !(st.hold && st.p === st.hold)) moving = true;
         if (!st.to && !st.p) { doorStates.delete(d); doorFrames.delete(d); }
     }
     paint(); if (moving) doorRaf = requestAnimationFrame(doorRun);
@@ -2755,7 +2759,7 @@ function doorFloorKind(d) {
     return (roomFloors && roomFloors.get(FurniParts.mazeName(d.name))) || "slate";
 }
 /* the bookcase door: its pictures are drawn once in art/ideas; here they only take the time of day's tint */
-let bookArt = null, bookImg = null; const bookCv = document.createElement("canvas"), BOOK_MAX = 84, BOOK_FOOT = 0;
+let bookArt = null, bookImg = null; const bookCv = document.createElement("canvas"), BOOK_MAX = 84, BOOK_FOOT = 6;       // its foot on the wall's own foot (8 Nov 2026: it stood 6px into the floor); render/hw3.js lifts the map's picture the same
 function loadBook() { if (bookArt !== null) return; bookArt = false; const i = new Image(); i.onload = () => { bookImg = i; paint(); }; i.src = "art/ideas/book.png"; fetch("art/ideas/book.json").then(r => r.json()).then(j => { bookArt = j; paint(); }).catch(() => {}); }
 const bookEase = v => v < .5 ? 4 * v * v * v : 1 - Math.pow(-2 * v + 2, 3) / 2;
 function bookAngle(T) { if (T < .55) return 0; if (T < .75) return 3 * ((T - .55) / .2); if (T < 2.35) return 3 + (BOOK_MAX - 3) * bookEase((T - .75) / 1.6); if (T < 2.6) return BOOK_MAX - 3 * ((T - 2.35) / .25); if (T < 2.95) return BOOK_MAX - 3 + 1.5 * ((T - 2.6) / .35); return BOOK_MAX - 1.5; }
@@ -2768,6 +2772,49 @@ function drawBookDoor(d, st, ox, oy) {
     for (const s of pics) { if (!s) continue; bookCv.width = s.w; bookCv.height = s.h; const g = bookCv.getContext("2d"); g.drawImage(bookImg, s.x, 0, s.w, s.h, 0, 0, s.w, s.h); if (v[3] > 0) { g.globalCompositeOperation = "source-atop"; g.fillStyle = `rgba(${v[0] | 0},${v[1] | 0},${v[2] | 0},${v[3]})`; g.fillRect(0, 0, s.w, s.h); } ctx.drawImage(bookCv, -s.ox + sh, -s.oy); }
     ctx.restore();
 }
+/* ---------- the bookcase door (8 Nov 2026, his): "it truly needs to be only opened by an individual book. When the book is clicked, it pops
+   out slightly, and the bookcase nudges open a bit, the avatar walks a few tiles away, and then the door swings open. When the avatar then
+   walks into the now open doorway, it must go behind the door." The loose book is the one lit blue in the closed picture. ---------- */
+let bookBox = null;
+function bookBounds() {
+    if (bookBox !== null) return bookBox; if (!bookArt || !bookImg) return null;
+    const s = bookArt.pulls[0], cv = document.createElement("canvas"); cv.width = s.w; cv.height = s.h; const g = cv.getContext("2d"); g.drawImage(bookImg, s.x, 0, s.w, s.h, 0, 0, s.w, s.h);
+    const d = g.getImageData(0, 0, s.w, s.h).data; let x0 = 1e9, y0 = 1e9, x1 = -1, y1 = -1;
+    for (let j = 0; j < s.h; j++) for (let i = 0; i < s.w; i++) { const q = (j * s.w + i) * 4; if (d[q + 3] > 128 && d[q + 2] > 180 && d[q + 2] > d[q] + 60) { x0 = Math.min(x0, i); x1 = Math.max(x1, i); y0 = Math.min(y0, j); y1 = Math.max(y1, j); } }
+    bookBox = x1 < 0 ? false : { x0: x0 - s.ox, x1: x1 - s.ox, y0: y0 - s.oy, y1: y1 - s.oy }; return bookBox;
+}
+function onBook(l, d, px, py) {
+    loadBook(); const b = bookBounds(); if (!b) return false;
+    const z = doorZ(l, d), flip = d.axis === "x", a = flip ? P(d.at - .5, d.line, z) : P(d.line, d.at - 2.5, z), u = (px - a[0]) * (flip ? -1 : 1), v = py - (a[1] - BOOK_FOOT);
+    return u >= b.x0 - 3 && u <= b.x1 + 3 && v >= b.y0 - 3 && v <= b.y1 + 3;
+}
+/* its pictures are wanted before the first click on the book, so they come as soon as the map has a bookcase door */
+{ const pre = setInterval(() => { if (!map) return; clearInterval(pre); if (map.levels.some(l => (l.doors || []).some(d => d.kind === "book"))) loadBook(); }, 500); }
+const BOOK_HOLD = .75 / (BOOK_OPEN_MS / 1000);         // the swing waits here: book out, case nudged a hand's width
+function bookDoor(l, d) {
+    if (!walker || walker.busy) return; const fr = doorFront(d), s0 = walkerStart(), there = !walker.walking && s0.l === l && fr.some(t => t[0] === s0.x && t[1] === s0.y);
+    if (!doorLinked(d) && !d.opens) { if (window.LiftSounds) LiftSounds.doorLocked(); flash("It won't budge."); return; }
+    if (doorIsOpen(d)) { const st = doorStates.get(d); if (st && st.p >= .98) { goInBook(l, d); } return; }
+    if (!there) { const r = routeToOneOf(l, fr, s0.l, s0.x, s0.y); if (r) followRoute(r.path, s0.here, () => bookDoor(l, d)); else noWay("There's no way to that bookcase."); return; }
+    walker.dir = d.axis === "x" ? 0 : 6;
+    setDoor(d, true, 20000); const st = doorStates.get(d); st.hold = BOOK_HOLD; st.autoIn = false; st.goIn = true;
+    /* step back, out of its swing: three tiles straight out if you can, else two */
+    setTimeout(() => {
+        const me = walkerStart(), out = d.axis === "x" ? [0, 1] : [1, 0], here = [me.x, me.y]; let path = null;
+        for (const k of [3, 2, 4, 1]) { const t = [here[0] + out[0] * k, here[1] + out[1] * k]; path = graphFrom(me.l, me.x, me.y, [l, t[0], t[1]]); if (path) break; }
+        const release = () => { const q = doorStates.get(d); if (!q) return; q.hold = 0; if (!doorRaf) { doorLast = performance.now(); doorRaf = requestAnimationFrame(doorRun); } };
+        if (path) followRoute(path, me.here, () => { walker.dir = d.axis === "x" ? 0 : 6; release(); }); else release();
+    }, 800 / (d.speed || 1));
+}
+/* once it's open: back to its front, and in */
+function goInBook(l, d) {
+    const fr = doorFront(d), s0 = walkerStart();
+    if (fr.some(t => t[0] === s0.x && t[1] === s0.y) && s0.l === l) { walkIntoDoor(d); return; }
+    const r = routeToOneOf(l, fr, s0.l, s0.x, s0.y); if (r) followRoute(r.path, s0.here, () => walkIntoDoor(d));
+}
+setInterval(() => { for (const [d, st] of doorStates) if (d.kind === "book" && st.goIn && st.to && st.p >= .98 && walker && !walker.walking && !walker.busy) { st.goIn = false; const l = map.levels.find(q => (q.doors || []).includes(d)); if (l) goInBook(l, d); } }, 100);
+/* you in its doorway: the open bookcase stands in front of you */
+function drawBookOver(ox, oy) { if (!walker || !walker.l.stair || !walker.l.stair.door) return; const d = walker.l.stair.door, st = doorStates.get(d); if (d.kind === "book" && st) drawBookDoor(d, st, ox, oy); }
 function drawDoorways(ox, oy) {
     for (const [d, st] of doorStates) {
         if (d.kind === "book") { drawBookDoor(d, st, ox, oy); continue; }
