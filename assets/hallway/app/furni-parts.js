@@ -30,6 +30,8 @@
     ROWS.archway = { def: 6, min: 3, flip: false, part: () => [] };
     /* one piece of art lying across three tiles: it doesn't stretch */
     ROWS.trophy = { def: 3, min: 3, max: 3, flip: false, part: () => [] };
+    /* The Leet Show's poster stand: two tiles, its own picture each way round (render/hw3.js) */
+    ROWS.leetstand = { def: 2, min: 2, max: 2, flip: false, part: () => [] };
     const SINGLES = {
         plant: ["hw_plant_a_0_0_0"], statue: ["hw_statue_a_0_0_0"], fountain: ["hw_fountain_a_0_0_0"],
         plant_palm: [], plant_orange: [], plant_bonsai: [], plant_roses: [], plant_cactus: [], plant_bay: [], plant_sunflower: [], barstool: [], rarecase: [], arcade_ff: [], arcade_pura: [], arcade_guess: [], arcade_odd: [], arcade_scout: [], arcade_quiz: [], tablelamp: [], xmastree: [], xmaslantern: [], xmassmalltree: [], xmasdrinks: [], xmasduck: [], snowman: [], gift1: [], gift2: [], gift3: [], gift4: [], mark_scuff: [], mark_tile: [], mark_arrow: [], shelf: ["hw_shelf_a_0_4_0"], cabinet: ["hw_closet1_a_0_2_0"], water: ["hw_watermatic_a_0_4_0"],
