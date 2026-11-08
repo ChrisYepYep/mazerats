@@ -62,7 +62,7 @@
         hustleLine(); modeLine(); rows(); detail();
     }
     function hustleLine() { const hs = LOST().hustleSeat(), placed = LIVE.map.hustle; ui.hustle.textContent = placed && hs ? "Sits on " + hs.l.name + ", tile " + hs.x + ", " + hs.y + "." : hs ? "Not placed yet, so he sits on the seat nearest the desk (" + hs.l.name + ", " + hs.x + ", " + hs.y + ")." : "Not placed yet, and there's no seat near the desk."; ui.showHustle.hidden = !hs; }
-    function modeLine() { ui.add.textContent = adding ? "Done adding" : "Add or remove spots"; ui.add.classList.toggle("primary", adding); ui.mode.textContent = adding ? "Click free floor tiles beside furniture to add spots; click a spot again to take it away. Done or Esc stops." : "The server hides each thing at one of these, never where it's unticked. Click a marker on the map to pick its spot, or drag it to move the spot."; }
+    function modeLine() { ui.add.textContent = adding ? "Done adding" : "Add or remove spots"; ui.add.classList.toggle("primary", adding); ui.mode.textContent = adding ? "Click floor tiles to add spots, beside furniture or under it; click a spot again to take it away. Done or Esc stops." : "The server hides each thing at one of these, never where it's unticked. Click a marker on the map to pick its spot, or drag it to move the spot."; }
     /* the list: rebuilt only when spots come or go, its scroll kept; the picked one just lit */
     let rowsSig = "";
     function rows() {
@@ -109,7 +109,6 @@
         else if (!l || l.k < 0) flash("Not in the Basement.");
         else { const key = keyOf(hit), had = shown().find(s => keyOf(s) === key);
             if (had) { removeSpot(had); flash("Spot taken away."); }
-            else if (!LIVE.tileFree(l)(hit.x, hit.y)) flash("Something's standing there: pick a free tile beside the furniture.");
             else { const s = { level: hit.level, x: hit.x, y: hit.y, skip: [] }; edit(() => list().push(s)); selKey = key; fitsFor = null; fits = new Map(); show(); rows(); detail(); autoSkip(s).then(() => api().changed()); } }
         arm(); }); }
     document.addEventListener("keydown", e => {
@@ -126,7 +125,7 @@
     /* the marker under a point of the map: inside its diamond, the nearest to the camera if two overlap */
     function markerAt(px, py) { let best = null, bz = -1e9; for (const s of markersShown()) { const w = where(s); if (!w) continue; if (Math.abs(px - w.X) / 17 + Math.abs(py - w.Y) / 9 > 1 && !(Math.abs(px - w.X) <= 6 && py <= w.Y && py >= w.Y - 26)) continue; const z = w.l.k * 1000 + s.x + s.y; if (z > bz) { bz = z; best = s; } } return best; }
     /* where a dragged spot would go: a free floor tile, not the Basement, not another spot */
-    function dropAt(cx, cy, key) { const h = api().tileAt(cx, cy); if (!h) return null; const l = LIVE.map.levels.find(q => q.id === h.level); if (!l || l.k < 0) return { ...h, ok: false, why: "Not in the Basement." }; if (shown().some(s => keyOf(s) === keyOf(h) && keyOf(s) !== key)) return { ...h, ok: false, why: "There's a spot there already." }; if (keyOf(h) !== key && !LIVE.tileFree(l)(h.x, h.y)) return { ...h, ok: false, why: "Something's standing there." }; return { ...h, ok: true }; }
+    function dropAt(cx, cy, key) { const h = api().tileAt(cx, cy); if (!h) return null; const l = LIVE.map.levels.find(q => q.id === h.level); if (!l || l.k < 0) return { ...h, ok: false, why: "Not in the Basement." }; if (shown().some(s => keyOf(s) === keyOf(h) && keyOf(s) !== key)) return { ...h, ok: false, why: "There's a spot there already." }; return { ...h, ok: true }; }
     const view = document.getElementById("view");
     if (view) {
         view.addEventListener("pointerdown", e => { if (!tabOpen() || adding || e.button !== 0 || !LIVE.map) return; const [px, py] = api().toPx(e.clientX, e.clientY), s = markerAt(px, py); if (!s) return;
