@@ -720,9 +720,9 @@ function drawPortal(w, axis, line, at, part, theatre) {
 const TC = { edge: [52, 14, 6], gold: [201, 132, 46], goldDk: [150, 88, 30], inner: [74, 14, 8], core: [116, 18, 12], core2: [100, 14, 9] };
 /* the carpet at a point, in tiles across the opening (0 to 4) and in from the wall (negative: out on the hallway floor) */
 function theatreCarpet(across, depth, a, b) {
-    /* its front edge at the opening, a tile back from where it first was (his, 8 Nov) */
-    if (across < .25 || across > 3.75 || depth < 0) return null;
-    const d = Math.min(across - .25, 3.75 - across, depth) * 16;
+    /* its front edge a tile inside the opening, two back from where it first was (his, 8 Nov) */
+    if (across < .25 || across > 3.75 || depth < 1) return null;
+    const d = Math.min(across - .25, 3.75 - across, depth - 1) * 16;
     if (d < 1) return TC.edge; if (d < 2) return TC.goldDk; if (d < 3.5) return TC.gold; if (d < 4.5) return TC.inner;
     return ((a + b) & 1) ? TC.core : TC.core2;
 }
@@ -750,55 +750,53 @@ function theatreArt(phase, axis, part, T) {
         const first = new Map(); for (let j = 128; j < H; j++) for (let i = 0; i < W; i++) if (!first.has(i) && isFloor(i, j)) first.set(i, j);
         for (const i of first.keys()) { const near = []; for (let k = -3; k <= 3; k++) if (first.has(i + k)) near.push(first.get(i + k)); near.sort((p, q) => p - q); floorTop.set(i, near[Math.floor(near.length / 2)]); }
         for (let i = 0; i < W; i++) if (floorTop.has(i)) for (let j = floorTop.get(i); j < H; j++) { const [dX, dY] = floorAt(i, j), c = theatreCarpet(across(dX, dY), depth(dX, dY), Math.floor((axis === "y" ? dY : dX) * 16), Math.floor((axis === "y" ? dX : dY) * 16)); if (c) put(i, j, c); }
-        /* The curtains (his, 8 Nov: "high quality isometric pixel art", then "cut off by the floor, and need to be more naturally hanging,
-           so curved a bit"). Two drapes of the Theatredrome's blue-grey hang a tile and a half into the tunnel, so they come right down onto the carpet:
-           each sweeps in an S from the top of the opening back to a gold tie-back two thirds of the way down, then falls to the floor with a
-           little flare, finished with a hem whose foot follows its folds and a soft shadow on the carpet. The folds gather into the tie; each
-           has a lit ridge and a dark crease. Between them, the dark of the stage. A scalloped pelmet with a gold braid and fringe runs over the
-           top. Rows run along the tunnel's slant, as the wall's own lines do. */
-        const RAMP = [[22, 31, 41], [31, 44, 57], [43, 61, 76], [58, 81, 98], [76, 103, 121], [98, 128, 146]], GOLD = [222, 168, 72], GOLD_DK = [150, 98, 34], VOID = [[10, 12, 16], [16, 19, 25]];
-        const BAYER2 = [[0, 2], [3, 1]], slope = axis === "y" ? -.5 : .5, mid = (i0 + i1) / 2, Wd = i1 - i0, top = 94, ty = .62;
-        const tone = (v, i, j) => { v = Math.max(0, Math.min(RAMP.length - 1.001, v)); const lo = Math.floor(v), f = v - lo; return RAMP[f * 4 > BAYER2[j & 1][i & 1] + .5 ? Math.min(RAMP.length - 1, lo + 1) : lo]; };
-        /* where the curtain line meets the floor in each column: a little way in from the opening */
-        const hang = i => { const m = (axis === "x" ? i : i - 138) / 16, d = 1.5; return Math.round(T + 8 * (axis === "y" ? -2 * d - m : m - 2 * d)); };
-        const edgeAt = y => y < ty ? .28 + .22 * (1 + Math.cos(Math.PI * y / ty)) / 2 : .28 + .1 * Math.sin(Math.PI / 2 * (y - ty) / (1 - ty));
-        const foldC = (x, y) => { const e = edgeAt(y), u = (x < .5 ? x : 1 - x) / e; return { e, u, c: Math.cos(2 * Math.PI * u * 4) }; };
-        for (let i = i0; i <= i1; i++) {
-            const lift = slope * (i - mid), x = (i - i0) / Wd, foot = hang(i), height = Math.max(1, foot - top - lift);
-            for (let j = Math.floor(top + lift); j <= foot + 2; j++) {
-                const q = at(i, j); if (j < 0 || j >= H || o.rgba[q + 3] < 128) continue;
-                const y = Math.min(1, (j - top - lift) / height), r = j - top - lift;
-                /* the pelmet: 8 rows, scalloped along its foot */
-                const scallop = 8 + Math.round(2 * Math.sin(Math.PI * (((i - i0) % 9) / 9)));
-                if (r < scallop) { put(i, j, r === 0 ? [70, 96, 116] : r === 2 ? GOLD : r === scallop - 1 ? (((i + j) & 1) ? GOLD : GOLD_DK) : r === scallop - 2 ? RAMP[1] : tone(2.4 - r * .08, i, j)); continue; }
-                const { e, u, c } = foldC(x, y), inDrape = u <= 1;
-                /* the hem: its foot dips a pixel under each fold's ridge */
-                const hemFoot = foot - (c > .2 ? 0 : 1);
-                if (j > hemFoot) { if (inDrape && j <= hemFoot + 2) { const cq = at(i, j); o.rgba[cq] = Math.round(o.rgba[cq] * .62); o.rgba[cq + 1] = Math.round(o.rgba[cq + 1] * .62); o.rgba[cq + 2] = Math.round(o.rgba[cq + 2] * .62); } continue; }
-                if (!inDrape) { const glow = Math.max(0, 1 - Math.abs(x - .5) * 3) * y; put(i, j, glow > .4 && ((i + j) & 1) ? VOID[1] : VOID[0]); continue; }
-                if (j === hemFoot) { put(i, j, RAMP[1]); continue; }
-                if (j === hemFoot - 1) { put(i, j, c > 0 ? RAMP[4] : RAMP[3]); continue; }
-                const edgePx = (1 - u) * e * Wd;
-                if (edgePx < 1) { put(i, j, RAMP[0]); continue; }
-                if (edgePx < 2) { put(i, j, RAMP[4]); continue; }
-                /* the tie-back: a gold cord round the gathered drape */
-                if (Math.abs(y - ty) * height < 1.1) { put(i, j, (i & 1) ? GOLD : GOLD_DK); continue; }
-                /* the folds: crisp bands, a lit ridge on each crest and a dark crease in each trough, darker under the pelmet */
-                if (c > .93 && y > .1) { put(i, j, RAMP[5]); continue; }
-                if (c < -.93) { put(i, j, RAMP[0]); continue; }
-                const light = 2.4 + 1.5 * c + .4 * u - (y < .12 ? 1 : 0), lo = Math.floor(light), f = light - lo;
-                put(i, j, f > .42 && f < .58 ? tone(light, i, j) : RAMP[Math.max(0, Math.min(RAMP.length - 1, Math.round(light)))]);
+        /* The curtain (his, 8 Nov: "high quality isometric pixel art"; then "the drapes don't reach the floor, have a black area between
+           them, and could look more isometric"). A stage curtain hung on a plane parallel to the wall, a little way into the tunnel: drawn as
+           cloth in its own flat frame (u across, v down from the rail) and laid onto that plane, so its rail and hem slope as the wall does,
+           its folds stand upright, and its hem rests on the floor, the top running up behind the arch as a stage curtain hangs behind its
+           proscenium. Two halves meet in the middle, the right lapping over the left. Each has six folds with a lit ridge and a dark crease,
+           gathered a little towards the floor, and a hem that dips under each ridge, with a soft shadow on the carpet. Colours: the
+           Theatredrome's own blue-grey curtain (esirippu), and the client's way of shading: flat tones, dithered only at a step. */
+        const RAMP = [[20, 28, 38], [29, 41, 54], [40, 57, 72], [54, 76, 93], [71, 97, 115], [92, 122, 140], [116, 146, 162]];
+        const BAYER2 = [[0, 2], [3, 1]], slope = axis === "y" ? -.5 : .5, mid = (i0 + i1) / 2, Wd = i1 - i0, D = 2.5, HT = 118;
+        const tone = (v, i, j) => { v = Math.max(0, Math.min(RAMP.length - 1.001, v)); const lo = Math.floor(v), f = v - lo; return RAMP[(f > .38 && f < .62) ? (BAYER2[j & 1][i & 1] < 2 ? lo : lo + 1) : Math.round(v)]; };
+        /* the floor under the curtain's line in each column, and its rail HT above */
+        const footOf = i => { const m = (axis === "x" ? i : i - 138) / 16; return Math.round(T + 8 * (axis === "y" ? -2 * D - m : m - 2 * D)); };
+        const cloth = (u, v) => {
+            /* which half, and where across it: 0 at its outer edge, 1 at the middle */
+            const right = u >= .5, w = right ? (1 - u) * 2 : u * 2, gather = 1 - .06 * v * v, x = Math.min(1, w / gather);
+            /* folds of uneven width, as cloth hangs, and a little narrower near the rail */
+            const folds = 4, ph = x * folds + .18 * Math.sin(x * 9.3 + (right ? 1.7 : 0)) + .1 * Math.sin(x * 23) * (1 - v) + (right ? .5 : 0), c = Math.cos(2 * Math.PI * ph);
+            return { c, x, right, lap: right && w < .035 };
+        };
+        for (let i = i0 - 2; i <= i1 + 2; i++) {
+            const foot = footOf(i), rail = foot - HT, u = Math.max(0, Math.min(1, (i - i0) / Wd));
+            for (let j = Math.max(0, rail); j <= foot + 2 && j < H; j++) {
+                const q = at(i, j); if (o.rgba[q + 3] < 128) continue;
+                const v = (j - rail) / HT, k = cloth(u, v), dip = k.c > .3 ? 0 : 1, hem = foot - dip;
+                if (j > hem) { if (j <= hem + 2) { o.rgba[q] = Math.round(o.rgba[q] * .6); o.rgba[q + 1] = Math.round(o.rgba[q + 1] * .6); o.rgba[q + 2] = Math.round(o.rgba[q + 2] * .6); } continue; }
+                if (j === hem) { put(i, j, RAMP[1]); continue; }
+                if (j === hem - 1) { put(i, j, k.c > 0 ? RAMP[5] : RAMP[4]); continue; }
+                /* where the halves meet: the right one's edge laps over, dark beneath it */
+                if (k.lap) { put(i, j, (1 - u) * 2 < .015 ? RAMP[0] : RAMP[5]); continue; }
+                if (k.c > .92) { put(i, j, RAMP[6]); continue; }
+                if (k.c < -.86) { put(i, j, RAMP[0]); continue; }
+                /* lit from the front and the left; a touch darker towards the floor and at the outer edges, in the tunnel's shade */
+                const light = 3.2 + 2.1 * k.c - .9 * v * v - .8 * Math.max(0, .18 - Math.min(u, 1 - u)) * 6;
+                put(i, j, tone(light, i, j));
             }
         }
-        /* the tassels, hanging from each tie at the drape's edge */
-        for (const side of [0, 1]) { const ex = Math.round(side ? i1 - .28 * Wd : i0 + .28 * Wd), lift = slope * (ex - mid), r0 = Math.round(top + lift + ty * (hang(ex) - top - lift));
-            for (let v = 1; v <= 6; v++) for (let u = -1; u <= 1; u++) { if (v < 3 && u !== 0) continue; if (v === 6 && u === 0) { put(ex, r0 + v, GOLD_DK); continue; } if (v === 6) continue; put(ex + u, r0 + v, u === -1 ? GOLD_DK : u === 1 ? [168, 112, 42] : GOLD); } }
     } else {
         /* the plaque: along the beam over the opening, where EXIT and its vents were */
         const slope = axis === "y" ? -.5 : .5, cx = (i0 + i1) / 2, cj = 103, rowOf = i => Math.round(cj + slope * (i - cx));
-        for (let i = i0 + 4; i <= i1 - 4; i++) { const r = rowOf(i); for (let j = r - 11; j <= r + 5; j++) put(i, j, j === r - 11 || j === r + 5 || i === i0 + 4 || i === i1 - 4 ? [26, 14, 8] : j === r - 10 ? [120, 76, 40] : [64, 38, 22]); }
-        const word = "THEATREDROME", tw = word.length * 4 - 1; let x = Math.round(cx - tw / 2);
-        for (const ch of word) { const g = THEATRE_FONT[ch], base = rowOf(x + 1) - 5; for (let v = 0; v < 5; v++) for (let u = 0; u < 3; u++) if (g[v][u] === "#") { put(x + u, base + v, [240, 196, 96]); put(x + u, base + v + 1, [34, 18, 10]); } x += 4; }
+        /* a marquee board right across the beam, with a row of little lit bulbs along its top and its foot (his: a Theatredrome version of the EXIT sign) */
+        const p0 = Math.round(cx - 44), p1 = Math.round(cx + 44);
+        for (let i = p0; i <= p1; i++) { const r = rowOf(i); for (let j = r - 12; j <= r + 6; j++) { const edge = j === r - 12 || j === r + 6 || i === p0 || i === p1, bulbRow = j === r - 10 || j === r + 4, bulb = bulbRow && i > p0 + 2 && i < p1 - 2 && (i - p0) % 4 === 2; put(i, j, edge ? [26, 14, 8] : bulb ? [255, 236, 170] : bulbRow && (i - p0) % 4 !== 2 ? [86, 52, 26] : j === r - 11 || j === r + 5 ? [118, 74, 36] : [58, 32, 18]); } }
+        const word = "THEATREDROME", glyphs = [...word].map(ch => require("./hw.js").VOL.v[ch]), tw = glyphs.reduce((n, g) => n + g.w, 0); let x = Math.round(cx - tw / 2);
+        const ink = [];
+        for (const g of glyphs) { g.rows.forEach((r, j) => { for (let k = 0; k < r.length; k++) if (r[k] === "1") ink.push([x + k - 1, j]); }); x += g.w; }
+        for (const [px, j] of ink) put(px, rowOf(px) - 11 + j + 1, [24, 12, 6]);
+        for (const [px, j] of ink) put(px, rowOf(px) - 11 + j, [246, 204, 104]);
     }
     theatreMemo.set(key, o); return o;
 }
