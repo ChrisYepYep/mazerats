@@ -81,7 +81,7 @@ const HINTS = {
     ero: "Drag along the floor to draw it as long as you like, or click for the usual size. The way you drag sets which way it runs, and Shift or R turns it.",
     select: "Click anything to select it, drag to move it, Delete to remove it. Drag a rug's edge to resize it. Drag empty floor to move the view.",
     pan: "Drag to move. Scroll to zoom. Hold Space with any tool to move.",
-    walk: "Click a floor to walk your Habbo there, up stairs too. Click a sofa or chair to sit. Double-click a water cooler for a drink, or a lift to open it. Walk back into the entrance to leave.",
+    walk: "Click a floor to walk your Habbo there, up stairs too. Click the tile a seat stands on to sit. Double-click a water cooler for a drink, or a lift to open it. Walk back into the entrance to leave.",
     floor: "Drag on the active floor to paint it, in whole parquet squares.",
     erase: "Drag to remove floor. Anything standing on it goes too.",
     rug: "Drag a rectangle of rug. Rugs that touch join up into one. Hold the right button and drag over a rug to rub it out like a brush.",
@@ -2182,7 +2182,7 @@ function walkPress(px, py) {
     { const dd = doorAtPx(px, py); if (dd && dd.d.kind === "book" && onBook(dd.l, dd.d, px, py)) { bookDoor(dd.l, dd.d); return; } }
     const u = useUnder(px, py);
     if (u && u.p.k === "water") return;                     // it takes a double-click
-    { const st = seatUnder(px, py); if (st) { sitOn(st); return; } }                    // the seat, or the tile it stands on
+    { const st = seatUnder(px, py); if (st) { sitOn(st); return; } }                    // the tile you point at holds a seat
     const dh = doorAtPx(px, py); if (dh) { const st = walkerStart(); if (!(st.l === dh.l && doorFront(dh.d).some(t => t[0] === st.x && t[1] === st.y))) useDoor(dh.l, dh.d); return; }
     walkTo(px, py);
 }
@@ -2282,7 +2282,7 @@ canvas.addEventListener("pointermove", e => {
             const sb = selected && selected.type === "sign" ? signBox(selected.l, selected.o) : null, side = sb && handleAt(sb, px, py);
             canvas.style.cursor = side ? (side === "l" || side === "r" ? "ew-resize" : "ns-resize") : hit ? "move" : "default";
             $("st-hover").textContent = !hit ? "" : hit.type === "sign" ? (hit.o.kind ? stairSignName(hit.o) : doorName(hit.o) || "Sign") : hit.type === "door" ? (hit.o.spare ? "Spare door" : (doorName(hit.o) || "Door with no maze yet")) : hit.type === "prop" ? (PROP_NAMES[hit.o.k] || "") : TYPE_NAMES[hit.type];
-        } else { const w2 = useUnder(px, py) || seatUnder(px, py); $("st-hover").textContent = !w2 ? "" : w2.p.k === "water" ? "Double-click for a drink" : isSeat(w2.p.k) ? "Click to sit" : ""; canvas.style.cursor = w2 && (w2.p.k === "water" || isSeat(w2.p.k)) ? "pointer" : ""; }
+        } else { const w2 = useUnder(px, py), water = !!w2 && w2.p.k === "water"; $("st-hover").textContent = water ? "Double-click for a drink" : ""; canvas.style.cursor = water ? "pointer" : ""; }
         paint(); return;
     }
     if (drag && drag.kind === "edge") {
@@ -2645,7 +2645,9 @@ const SEAT_LIFT = { sofa: 3, chair: 3, barstool: 11 };     /* the stool's cushio
 const isSeat = k => k === "sofa" || k === "chair" || k === "barstool";
 /* the seat standing on a floor tile, if any: clicking the tile sits you there, as clicking the seat does (9 Nov, his) */
 const seatOnTile = (l, X, Y) => { if (!l || l.stair) return null; const p = (l.props || []).find(q => isSeat(q.k) && Parts.tiles(q).some(t => t[0] === X && t[1] === Y)); return p ? { l, p, x: X, y: Y } : null; };
-const seatUnder = (px, py) => { const u = useUnder(px, py); if (u && isSeat(u.p.k)) return u; if (u) return null; const f = floorUnder(px, py); return f ? seatOnTile(f[0], f[1], f[2]) : null; };     // low enough that you sit in the seat, not hover over it
+/* seats are click-through (9 Nov, his): the floor tile under the pointer decides, never the seat's picture, so aiming at the tile behind a chair
+   takes you to that tile even when the chair's back is in the way, and you sit only when the tile you point at holds a seat */
+const seatUnder = (px, py) => { const f = floorUnder(px, py); return f ? seatOnTile(f[0], f[1], f[2]) : null; };     // low enough that you sit in the seat, not hover over it
 const seatFacing = p => p.k === "sofa" ? (Parts.rotOf(p) ? 2 : 4) : [2, 4, 6, 0][Parts.rotOf(p)];
 const STEP_OF = d => DIRS[d];
 /* ---------- the lifts ----------
