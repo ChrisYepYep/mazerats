@@ -65,18 +65,50 @@
     LIVE.add({ still: true, under: drawFestoons });
     LIVE.add({ active: () => !!window.hallwayXmas && runsOn(LIVE.floor).some(f => f.twinkle), under() { } });
     /* ---------- garlands: l.garlands = [{ axis, line, a, b, baubles }] ---------- */
-    const swagImg = new Image(); swagImg.onload = () => LIVE.wake(); swagImg.src = "art/wall/i_swag.png";
     const BAUB = { red: ["c8352a", "ff8a78", "7a1b16"], gold: ["d6ad56", "fff4c8", "86601f"], blue: ["3a7ad6", "a8d0ff", "1f4a90"], silver: ["c9cdd4", "ffffff", "7a808a"], purple: ["8a3ac8", "d0a0ff", "4e1f7a"], pink: ["e0568c", "ffb0cc", "8a2450"], teal: ["2aa8a0", "a0f0e8", "146a64"] };
     const ROW = ["..c..", ".KKK.", "KHGGK", "KGGGK", "KGGDK", ".KKK."];
-    /* one tile's place: where the art goes so its rope runs 12px under the wall's top there */
-    function tileAt(l, g, t) { const def = (window.WALL_ITEMS || []).find(i => i.id === "i_swag"); if (!def || !LIVE.wallTop) return null; const at = g.axis === "x" ? t + .5 : t + 1.5, top = LIVE.wallTop(l, g.axis, g.line, t); if (top === null) return null; const c = g.axis === "x" ? LIVE.mapPoint(at, g.line, top - 6) : LIVE.mapPoint(g.line, at, top - 6); return { def, c, box: g.axis === "x" ? def.x : def.y }; }
+    /* one tile's place: where the art goes so its rope runs 12px under the wall's top there (on a climb, half way up it, so a click finds it) */
+    function tileAt(l, g, t) { const def = (window.WALL_ITEMS || []).find(i => i.id === "i_swag"); if (!def || !LIVE.wallTop) return null; const at = g.axis === "x" ? t + .5 : t + 1.5; let top = LIVE.wallTop(l, g.axis, g.line, t); if (top === null) return null;
+        if (t >= g.a && t < g.b) { const { E } = joins(l, g), i = t - g.a; if (E[i] !== null && E[i + 1] !== null) top = (E[i] + E[i + 1]) / 2; } const c = g.axis === "x" ? LIVE.mapPoint(at, g.line, top - 6) : LIVE.mapPoint(g.line, at, top - 6); return { def, c, box: g.axis === "x" ? def.x : def.y }; }
+    /* One tile of garland, pixel for pixel as ideas/christmas.js swag() draws i_swag.png, but able to climb: where the wall's top steps up
+       (the floor above raised, the wall going on up to it) the rope rises across the higher tiles instead of staying level (8 Nov, his).
+       up = how much higher the tile's far end hangs than its near end; back = the same for the tile before, which the holly's other half lies over.
+       Pixels come out relative to the picture's own anchor: [x, y, colour]. A level tile gives exactly the picture's pixels. */
+    const GK = [10, 8, 8], GH = s => [parseInt(s.slice(0, 2), 16), parseInt(s.slice(2, 4), 16), parseInt(s.slice(4, 6), 16)];
+    const GN = (a, b) => { const s = Math.sin(a * 12.9898 + b * 78.233) * 43758.5453; return s - Math.floor(s); }, gsag = (u, w, z0, drop) => z0 - drop * 4 * (u / w) * (1 - u / w);
+    const tileMemo = new Map();
+    function swagTile(up, back) {
+        const key = up + "|" + back; if (tileMemo.has(key)) return tileMemo.get(key);
+        const px = new Map(), wall = (u, z, col) => px.set(Math.round(-u) + "," + Math.round(Math.floor(u / 2) - z), col);
+        const shape = paint => { const seen = new Map(), mark = (u, z, col) => seen.set(Math.round(u) + "," + Math.round(z), col); paint(mark); for (const k of seen.keys()) { const [u, z] = k.split(",").map(Number); for (const [p, q] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) if (!seen.has((u + p) + "," + (z + q))) wall(u + p, z + q, GK); } for (const [k, col] of seen) { const [u, z] = k.split(",").map(Number); wall(u, z, col); } };
+        const W = 16, Z = 126, DROP = 3, lift = u => u >= 0 ? up * u / W : back * u / W, rope = u => gsag(u, W, Z, DROP) + lift(u);
+        for (let u = 0; u < W; u += .5) { const z = rope(u); for (let d = -2.5; d <= 2.5; d += .5) { const n = GN(Math.round(u * 2), Math.round(d * 2) + 9), edge = Math.abs(d) > 2.2 - n * .8; if (edge && n < .6) continue; const col = d > 1.5 ? GH("6cb05e") : d > .5 ? (n > .5 ? GH("4fa858") : GH("3f8a44")) : d > -1 ? GH("2f7d3a") : GH("1c5426"); wall(u, z + d, col); } wall(u, z - 3, GK); wall(u, z + 3, [16, 34, 18]);
+            /* climbing steeply, the needles would come apart into stripes: fill each half-step's rise */
+            const z2 = rope(u + .5); for (let s = 1; s < Math.abs(z2 - z) - .5; s++) { const zz = z + Math.sign(z2 - z) * s; for (let d = -2; d <= 2; d += .5) wall(u, zz + d, d > 1.5 ? GH("6cb05e") : d > .5 ? GH("3f8a44") : d > -1 ? GH("2f7d3a") : GH("1c5426")); } }
+        /* holly where the tiles meet, each half lying along its own tile's rope */
+        for (const side of [-1, 1]) shape(mark => { for (let i = 0; i < 6; i++) { const wid = Math.round(2 * Math.sin((i + 1) / 7 * Math.PI)) + (i % 3 === 1 ? 1 : 0); for (let j = -wid; j <= wid; j++) mark(side * (i + 1), Z + 1 + j - i * .3 + lift(side * (i + 1)), j === 0 ? GH("6cb05e") : (j > 0 ? GH("3f8a44") : GH("1c5426"))); } });
+        shape(mark => { for (const [p, q] of [[0, 0], [2, -1], [-2, -1]]) for (const [e, f] of [[0, 0], [1, 0], [0, 1], [1, 1]]) mark(p + e, Z - 2 + q + f, e === 0 && f === 1 ? GH("ff8a78") : e === 1 && f === 0 ? GH("a81f16") : GH("e0352a")); });
+        const out = []; for (const [k, col] of px) { const [x, y] = k.split(",").map(Number); out.push([x, y, `rgb(${col[0]},${col[1]},${col[2]})`]); }
+        tileMemo.set(key, out); return out;
+    }
+    /* where the rope hangs at each join along the run: never above the wall on either side of it, and where the top steps, a climb of at most
+       16 a tile on the higher side, so the garland stays on the wall all the way up */
+    function joins(l, g) {
+        const n = g.b - g.a, top = [], E = []; for (let i = 0; i < n; i++) top.push(LIVE.wallTop(l, g.axis, g.line, g.a + i));
+        for (let e = 0; e <= n; e++) { const a = e > 0 ? top[e - 1] : null, b = e < n ? top[e] : null; E.push(a === null ? b : b === null ? a : Math.min(a, b)); }
+        const CLIMB = 16; for (let e = 0; e <= n; e++) if (E[e] !== null) for (let j = 0; j <= n; j++) if (E[j] !== null) E[e] = Math.min(E[e], E[j] + CLIMB * Math.abs(e - j));
+        return { top, E };
+    }
     function drawGarland(c, l, g, ghost) {
-        if (!swagImg.complete || !swagImg.naturalWidth) return; const use = ((LIVE.map && LIVE.map.baubles) || Object.keys(BAUB)).filter(n => BAUB[n]), hex = s => "#" + s; let n = 0;
-        c.globalAlpha = ghost ? .7 : 1;
-        for (let t = g.a; t < g.b; t++) { const q = tileAt(l, g, t); if (!q) continue; const L0 = q.box.layers[0], X = Math.round(q.c[0]) + L0.x, Y = Math.round(q.c[1]) + L0.y;
-            if (L0.flip) { c.save(); c.translate(X + swagImg.naturalWidth, Y); c.scale(-1, 1); c.drawImage(swagImg, 0, 0); c.restore(); } else c.drawImage(swagImg, X, Y);
-            /* a bauble in the dip of each tile's swag */
-            if (g.baubles !== false) { const B = BAUB[use[n++ % use.length]] || BAUB.red, bx = Math.round(q.c[0]) - 2, by = Math.round(q.c[1]) + 8; ROW.forEach((r, j) => { for (let u = 0; u < 5; u++) { const ch = r[u]; if (ch === ".") continue; c.fillStyle = ch === "K" ? "#000" : ch === "c" ? "#d6ad56" : ch === "H" ? hex(B[1]) : ch === "D" ? hex(B[2]) : hex(B[0]); c.fillRect(bx + u, by + j, 1, 1); } }); } }
+        if (!LIVE.wallTop || !LIVE.mapPoint) return; const use = ((LIVE.map && LIVE.map.baubles) || Object.keys(BAUB)).filter(n => BAUB[n]), hex = s => "#" + s; let n = 0;
+        c.globalAlpha = ghost ? .7 : 1; const { top, E } = joins(l, g);
+        for (let t = g.a; t < g.b; t++) { const i = t - g.a; if (top[i] === null || E[i] === null || E[i + 1] === null) continue;
+            /* the tile's near end hangs 6 under its join; c is where the picture's anchor goes, as tileAt's was for a level wall */
+            const at = g.axis === "x" ? t + .5 : t + 1.5, p = g.axis === "x" ? LIVE.mapPoint(at, g.line, E[i] - 6) : LIVE.mapPoint(g.line, at, E[i] - 6), cx = Math.round(p[0]), cy = Math.round(p[1]);
+            const up = Math.round(E[i + 1] - E[i]), back = i > 0 && E[i - 1] !== null ? Math.round(E[i] - E[i - 1]) : 0, flip = g.axis === "x";
+            for (const [x, y, col] of swagTile(up, back)) { c.fillStyle = col; c.fillRect(flip ? cx - 8 - x : cx + 8 + x, cy + 124 + y, 1, 1); }
+            /* a bauble in the dip of each tile's swag, half way up its climb */
+            if (g.baubles !== false) { const B = BAUB[use[n++ % use.length]] || BAUB.red, bx = cx - 2, by = cy + 8 - Math.round(up / 2); ROW.forEach((r, j) => { for (let u = 0; u < 5; u++) { const ch = r[u]; if (ch === ".") continue; c.fillStyle = ch === "K" ? "#000" : ch === "c" ? "#d6ad56" : ch === "H" ? hex(B[1]) : ch === "D" ? hex(B[2]) : hex(B[0]); c.fillRect(bx + u, by + j, 1, 1); } }); } }
         c.globalAlpha = 1;
     }
     window.HallwayGarland = { tileAt, draft: null };
