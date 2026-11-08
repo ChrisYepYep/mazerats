@@ -165,9 +165,9 @@ function bookDoor() {
     for (const [im, x, y] of parts) for (let j = 0; j < im.h; j++) for (let u = 0; u < im.w; u++) { const p = (j * im.w + u) * 4; if (im.rgba[p + 3] < 128) continue; const q = ((y + j - y0) * CW + x + u - x0) * 4; for (let k = 0; k < 4; k++) flat[q + k] = im.rgba[p + k]; }
     const SIDE = 16, Wd = CW - SIDE, T = 6, base = c => { for (let j = CH - 1; j >= 0; j--) if (flat[(j * CW + c) * 4 + 3]) return j; return 0; }, firstOf = c => { for (let j = 0; j < CH; j++) if (flat[(j * CW + c) * 4 + 3]) return j; return 0; };
     const Hh = base(CW - 1) - firstOf(CW - 1) + 1;
-    const BD = 20, BW = 4, BTOP = base(SIDE + BD) - 30 + 1, BH = 13;
+    const BD = 20, BW = 4, BROW = 26, BTOP = base(SIDE + BD) - BROW + 1, BH = 13;
     /* in the flat picture, just the dark slot it lives in */
-    const slot = new Uint8ClampedArray(flat); for (let v = 0; v < BH; v++) for (let u = -1; u < BW + 1; u++) { const X = SIDE + BD + u, Y = 30 - (u >> 1) + v, q = (Y * CW + X) * 4; slot[q] = 6; slot[q + 1] = 5; slot[q + 2] = 6; slot[q + 3] = 255; }
+    const slot = new Uint8ClampedArray(flat); for (let v = 0; v < BH; v++) for (let u = -1; u < BW + 1; u++) { const X = SIDE + BD + u, Y = BROW - (u >> 1) + v, q = (Y * CW + X) * 4; slot[q] = 6; slot[q + 1] = 5; slot[q + 2] = 6; slot[q + 3] = 255; }
     const ox = Wd + 24, oy = Hh + 24, Cw = Wd * 2 + 70, Ch = Hh + Wd + 70;
     const frameOf = (src, a0, pull = 0) => {
         const out = new Uint8ClampedArray(Cw * Ch * 4), door = new Uint8Array(Cw * Ch), sn = Math.sin(a0), cs = Math.cos(a0), u = [sn, -cs], nn = [cs, sn];
@@ -183,7 +183,7 @@ function bookDoor() {
         const X0 = S(F(0))[0], X1 = S(F(Wd))[0], k0 = 1 + .16 * Math.min(1, a0 / 1.2);
         for (let X = Math.round(X0); X <= Math.round(X1); X++) { const d = Math.min(Wd - 1e-3, Math.max(0, (X - X0) / (sn + cs))), c = SIDE + Math.floor(d), b0 = base(c), Yb = S(F(d))[1]; for (let r = 0; r < Hh; r++) { const sy = b0 - Hh + 1 + r; if (sy < 0) continue; const p = (sy * CW + c) * 4; if (!src[p + 3]) continue; put(X, Yb - Hh + 1 + r, Math.min(255, src[p] * k0), Math.min(255, src[p + 1] * k0), Math.min(255, src[p + 2] * k0)); } }
         /* the top */
-        const tq = [S(F(0), Hh), S(F(Wd), Hh), S(Bk(Wd), Hh), S(Bk(0), Hh)]; polyFill(tq, (x, y) => { const m = mod(x + y * 2, 9); if (m === 0) put(x, y, 104, 74, 46); else put(x, y, 126, 92, 58); });
+        const tq = [S(F(-2), Hh), S(F(Wd + 2), Hh), S(Bk(Wd + 2), Hh), S(Bk(-2), Hh)]; polyFill(tq, (x, y) => { const m = mod(x + y * 2, 9); if (m === 0) put(x, y, 160, 75, 37); else put(x, y, 195, 98, 51); });
         /* the book: side, top, then spine, all from the same three directions as the door */
         { const K0 = [4, 14, 26], P0 = d => { const f = F(d); return [f[0] + nn[0] * pull, f[1] + nn[1] * pull]; }, Q0 = d => F(d), z1 = BTOP, z0 = BTOP - BH, tone = (arr, k = 1) => arr.map(v => Math.min(255, v * k));
           const fill = (poly, col) => polyFill(poly, (x, y) => put(x, y, col[0], col[1], col[2]));
@@ -192,6 +192,10 @@ function bookDoor() {
           const Sa = S(P0(BD), z1), Sb = S(P0(BD + BW), z1), n0 = Math.round(Sa[0]), n1 = Math.round(Sb[0]); for (let X = n0; X <= n1; X++) { const t = n1 === n0 ? 0 : (X - n0) / (n1 - n0), Yt = Sa[1] + (Sb[1] - Sa[1]) * t; for (let v = 0; v <= BH; v++) { const edge = v === 0 || v === BH || X === n1, band = v === 3 || v === 10, cc = edge ? K0 : band ? (t < .3 ? [122, 98, 52] : [92, 72, 36]) : t < .3 ? [58, 66, 86] : t < .6 ? [44, 50, 66] : [34, 38, 52]; put(X, Yt + v, cc[0], cc[1], cc[2]); }
             /* where it is, for the page to know a click on it: it can't be found by its colour any more */
             if (pull === 0) bookAt = { x0: n0, x1: n1, y0: Math.floor(Math.min(Sa[1], Sb[1])), y1: Math.ceil(Math.max(Sa[1], Sb[1]) + BH) }; } }
+        /* the wood, in the hallway bookcase's colours: the Rooms shelves it's made from are a much darker oak */
+        for (let i = 0; i < Cw * Ch; i++) { if (!door[i]) continue; const q = i * 4, r = out[q], g = out[q + 1], b = out[q + 2]; if (!(r >= g && g >= b && r - b > 8)) continue;
+            const mx = Math.max(r, g, b), mn = Math.min(r, g, b), sat = (mx - mn) / Math.max(1, mx), l = r * .3 + g * .59 + b * .11; if (sat < .4 || l > 62) continue;
+            const c = l < 18 ? [51, 0, 0] : l < 29 ? [126, 37, 10] : l < 38 ? [148, 56, 23] : l < 48 ? [160, 75, 37] : [195, 98, 51]; out[q] = c[0]; out[q + 1] = c[1]; out[q + 2] = c[2]; }
         /* a black line round the whole door, like every sprite */
         const edge = []; for (let y = 1; y < Ch - 1; y++) for (let x = 1; x < Cw - 1; x++) if (door[y * Cw + x] && (!door[y * Cw + x - 1] || !door[y * Cw + x + 1] || !door[(y - 1) * Cw + x] || !door[(y + 1) * Cw + x])) edge.push((y * Cw + x) * 4);
         for (const q of edge) { out[q] = 0; out[q + 1] = 0; out[q + 2] = 0; out[q + 3] = 255; }

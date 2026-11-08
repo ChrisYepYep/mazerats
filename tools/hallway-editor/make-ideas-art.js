@@ -148,7 +148,7 @@ add("rathole", "Rat hole", "tell", (c, a) => L.put(c, A5.hole("x"), a[0], a[1]),
   /* a thin band under the top board was see-through, so the wallpaper showed between it and the shelves (his, 8 Nov: "a gap near the top"):
      in each frame of the case, any clear pixel between the case's top and its foot in a column is filled with the case's dark wood */
   for (const q of [...F.frames, ...F.pulls]) for (let x = 0; x < q.w; x++) { let top = -1, bot = -1; for (let y = 0; y < q.h; y++) if (q.rgba[(y * q.w + x) * 4 + 3] >= 128) { if (top < 0) top = y; bot = y; } if (top < 0) continue;
-      for (let y = top; y <= bot; y++) { const i = (y * q.w + x) * 4; if (q.rgba[i + 3] >= 128) continue; q.rgba[i] = 34; q.rgba[i + 1] = 18; q.rgba[i + 2] = 9; q.rgba[i + 3] = 255; } }
+      for (let y = top; y <= bot; y++) { const i = (y * q.w + x) * 4; if (q.rgba[i + 3] >= 128) continue; q.rgba[i] = 51; q.rgba[i + 1] = 0; q.rgba[i + 2] = 0; q.rgba[i + 3] = 255; } }
   const all = [...F.frames, ...F.pulls, pass], trim = q => q; let W = 0, Hh = 0; const put2 = all.map(q => { const at = W; W += q.w + 1; Hh = Math.max(Hh, q.h); return at; }), out = new Uint8ClampedArray(W * Hh * 4);
   all.forEach((q, n) => { for (let y = 0; y < q.h; y++) for (let x = 0; x < q.w * 4; x++) out[(y * W + put2[n]) * 4 + x] = q.rgba[y * q.w * 4 + x]; });
   const dir = path.join(__dirname, "art", "ideas"), meta = (q, n) => ({ x: put2[n], w: q.w, h: q.h, ox: q.ox, oy: q.oy }); fs.writeFileSync(path.join(dir, "book.png"), encodePng(W, Hh, Buffer.from(out))); fs.writeFileSync(path.join(dir, "book.json"), JSON.stringify({ book: F.book, frames: F.frames.map(meta), pulls: F.pulls.map((q, i) => meta(q, F.frames.length + i)), passage: meta(pass, all.length - 1), W: F.W, H: F.H, STEP: F.STEP }));
