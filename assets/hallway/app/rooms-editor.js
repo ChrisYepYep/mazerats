@@ -28,7 +28,9 @@
             ["Bulkhead light", { k: "st_light_bulkhead" }, R_ + "st_light_bulkhead.png"], ["Hanging lamp", { k: "st_light_pendant" }, R_ + "st_light_pendant.png"], ["Strip light", { k: "st_light_batten" }, R_ + "st_light_batten.png"], ["Caged lamp", { k: "st_light_caged" }, R_ + "st_light_caged.png"], ["Work lamp", { k: "st_light_work" }, R_ + "st_light_work.png"]]],
         ["On the walls", [
             ["Maze's picture", { k: "frame", w: 34, h: 26, up: 34, slot: 0 }, null], ["Window", { k: "window" }, R_ + "window-r.png"], ["Wall light", { k: "sconce", up: 70 }, "art/sconce-x.png"], ["Globe wall light", { k: "sconce", style: "globe", up: 70 }, "art/sconce-globe-x.png"],
-            ...(window.WALL_ITEMS || []).filter(i => !i.tell).map(i => [i.name, { k: "painting", id: i.id, up: 62 }, "art/wall/" + i.x.layers[0].f])
+            /* the staff door: walking up to it takes you back out, as the arrow does */
+            ["Staff door (a way out)", { k: "painting", id: "i_staffdoor", up: ((window.WALL_ITEMS || []).find(i => i.id === "i_staffdoor") || { h: 40 }).h }, "art/wall/i_staffdoor.png"],
+            ...(window.WALL_ITEMS || []).filter(i => !i.tell).map(i => [i.name, { k: "painting", id: i.id, up: i.locked ? i.h : 62 }, "art/wall/" + i.x.layers[0].f])
         ]]
     ];
     const Z_MAX = 120;
@@ -45,7 +47,7 @@
 
         const own = () => { const m = api.map(); if (!m.rooms) m.rooms = {}; if (!m.rooms.layouts) m.rooms.layouts = JSON.parse(JSON.stringify(window.RoomStarter.layouts)); if (!m.rooms.assign) m.rooms.assign = {}; return m.rooms; };
         const layout = () => V.layouts(api.map())[size][n];
-        const roomNow = () => { const [w, h] = size.split("x").map(Number), L = layout(); return { w, h, floor: L.floor, walls: L.walls, items: L.items }; };
+        const roomNow = () => { const [w, h] = size.split("x").map(Number), L = layout(); return { w, h, floor: L.floor, walls: L.walls, items: L.items, exitAt: L.exitAt }; };
         const commit = () => { api.changed(); paintSoon(); checks(); };
         const before = () => { undo.push(JSON.stringify(api.map().rooms || null)); if (undo.length > 60) undo.shift(); redo = []; if (api.snapshot) api.snapshot(); };
         /* the same item, in the map's own copy, after own() has cloned the starter */
@@ -127,7 +129,9 @@
             return { wall, at: Math.round(at * 10) / 10, up: Math.round((o[1] + at * 8 - Y) / 2) * 2 };
         }
         const clampUp = (it, up) => { const lo = it.k === "frame" ? 6 : 16, hi = it.k === "frame" ? 90 : 96; return Math.max(lo, Math.min(hi, up)); };
-        const hang = (it, w) => { it.wall = w.wall; it.at = w.at; if (it.k !== "window") it.up = clampUp(it, it.k === "frame" ? w.up - it.h / 2 : w.up); };
+        /* a staff door stands on the floor whatever height the mouse is at */
+        const doorUp = () => ((window.WALL_ITEMS || []).find(i => i.id === "i_staffdoor") || { h: 40 }).h;
+        const hang = (it, w) => { it.wall = w.wall; it.at = w.at; if (it.k === "painting" && it.id === "i_staffdoor") { it.up = doorUp(); return; } if (it.k !== "window") it.up = clampUp(it, it.k === "frame" ? w.up - it.h / 2 : w.up); };
         /* what's being placed or carried, put where the mouse is */
         function heldAt(base, p, r) {
             const q = { ...base };
@@ -287,6 +291,8 @@
                 if (!V.isWall(it) && (lengthwise(it) || it.k === "rug") && !lockTile) { if (!inRoom(r, t)) return; drag = { kind: "new", a: t, base: it, item: it.k === "rug" ? rugFrom(it, t, t) : { ...it, x: t[0], y: t[1] } }; paintSoon(); return; }
                 place(it); return;
             }
+            /* an arrow, the way in and out: drag it along its edge */
+            for (const edge of ["x", "y"]) if (V.arrowTiles(r, edge).some(q => q[0] === t[0] && q[1] === t[1])) { drag = { kind: "arrow", edge, began: false, moved: false }; say("Drag along the edge to move the way in and out."); paintSoon(); return; }
             const it = V.itemAt(r, p[0], p[1]);
             if (e.shiftKey && it) { turnThing(it); return; }
             if (e.altKey && it) { sel = it; carry = { it, item: { ...it } }; say("Carrying. Click to put it down, Esc to cancel."); panel(); paintSoon(); return; }
@@ -303,6 +309,10 @@
             if ((e.ctrlKey || e.metaKey) && drag && drag.kind === "move") beginDrag();
             const ctrl = ctrlMove(e);
             if (!ctrl) mouse = p;
+            if (drag && drag.kind === "arrow") { const along = drag.edge === "y" ? t[0] : t[1], len = drag.edge === "y" ? r.w : r.h, a = Math.max(0, Math.min(len - 2, along)), now = (layout().exitAt || {})[drag.edge];
+                if (a !== (Number.isInteger(now) ? now : (len >> 1) - 1)) { const ts = drag.edge === "y" ? [[a, r.h - 1], [a + 1, r.h - 1], [a, r.h - 2], [a + 1, r.h - 2]] : [[r.w - 1, a], [r.w - 1, a + 1], [r.w - 2, a], [r.w - 2, a + 1]], solid = V.solidSet(r);
+                    if (!ts.some(q => solid.has(q[0] + "," + q[1]))) { if (!drag.began) { drag.began = true; before(); own(); } const L = layout(); L.exitAt = { ...(L.exitAt || {}), [drag.edge]: a }; drag.moved = true; } }
+                paintSoon(); return; }
             if (drag && drag.kind === "new") { drag.item = drag.base.k === "rug" ? rugFrom(drag.base, drag.a, [Math.max(0, Math.min(r.w - 1, t[0])), Math.max(0, Math.min(r.h - 1, t[1]))]) : runFrom(drag.base, drag.a, t); }
             else if (drag && !ctrl) {
                 if (V.isWall(drag.it)) { if (!drag.moved && Math.hypot(p[0] - drag.at[0], p[1] - drag.at[1]) * zoom < 4) { paintSoon(); return; } beginDrag(); hang(drag.it, wallPoint(r, p[0] - drag.grip[0], p[1] - drag.grip[1])); drag.moved = true; }
@@ -315,6 +325,7 @@
         });
         c.addEventListener("pointerup", e => {
             if (!drag) return; const d = drag; drag = null; ctrlY = null; ctrlSpare = 0; lockTile = null;
+            if (d.kind === "arrow") { if (d.moved) commit(); say(""); return; }
             if (d.kind === "new") { place(d.item); return; }
             if (d.moved) { commit(); panel(); say(""); return; }
             if (d.began) undo.pop();

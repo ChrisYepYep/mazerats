@@ -26,6 +26,8 @@
     for (const v of ["stone", "walnut", "evergreen", "flower"]) ROWS["ero_" + v] = { def: 2, min: 2, flip: false, part: (i, n) => ["hwv_" + v + (i === 0 ? 1 : i === n - 1 ? 5 : 2 + (i - 1) % 3) + "_a_0_0_0"] };
     /* drawn by render/rope-barrier.js, not from the client's sprites */
     ROWS.rope = { def: 3, min: 2, flip: false, part: () => [] };
+    /* the freestanding archway: drawn by render/hw3.js archwayArt, any length from 3 tiles */
+    ROWS.archway = { def: 6, min: 3, flip: false, part: () => [] };
     /* one piece of art lying across three tiles: it doesn't stretch */
     ROWS.trophy = { def: 3, min: 3, max: 3, flip: false, part: () => [] };
     const SINGLES = {

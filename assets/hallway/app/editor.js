@@ -55,9 +55,9 @@ const PLANTERS = [["ero_stone", "Stone planter"], ["ero_walnut", "Walnut planter
 const EDGE_STYLES = [["wood", "Dark oak rail"], ["gold", "Gold rail"]];
 const WALL_ITEMS = window.WALL_ITEMS || [], WALL_GROUPS = [["painting", "Hallway paintings"], ["custom", "More paintings"], ["window", "Windows"], ["hotel", "The old hotel"], ["tell", "Wear and tear"]];
 const TOOLS = [
-    ["Floors", [["floor", "Paint floor", T_ + "floor.png"], ["erase", "Remove floor", ICON.erase], ["rug", "Rug", T_ + "rug.png"], ["smallfloor", "Small squares floor", ICON.smallfloor], ["mark_arrow", "Arrow tile (links to another)", ICON.arrow], ["medal", "Carpet crest", T_ + "crest.png"], ["height", "Floor height", ICON.raise], ["steps", "Small steps", T_ + "stair.png"]]],
+    ["Floors", [["floor", "Paint floor", T_ + "floor.png"], ["erase", "Remove floor", ICON.erase], ["rug", "Rug", T_ + "rug.png"], ["smallfloor", "Small squares floor", ICON.smallfloor], ["mark_arrow", "Arrow tile (links to another)", ICON.arrow], ["medal", "Carpet crest", T_ + "crest.png"], ["height", "Floor height", ICON.raise], ["floorlift", "Raise the floor only (walls stay)", ICON.raise], ["steps", "Small steps", T_ + "stair.png"]]],
     ["On walls", [["door", "Door", T_ + "door.png"], ["halfwall", "Half wall", ICON.halfwall], ["nowall", "No wall", ICON.nowall], ["addwall", "Show wall", ICON.addwall], ["sconce", "Wall light", T_ + "sconce.png"], ["globelight", "Globe wall light", "art/sconce-globe-y.png"], ["entrance", "Entrance", H_ + "entry_upper_right_mask.png"], ["theatre", "Theatredrome entrance (for show)", H_ + "entry_upper_right_mask.png"], ["lift", "Lift", T_ + "lift.png"], ["stair", "Stairs: straight", T_ + "stair.png"], ["turn", "Stairs: turning", T_ + "turn.png"], ["side", "Stairs: left wall", T_ + "side.png"], ["sideturn", "Stairs: left wall, turning", T_ + "sideturn.png"]]],
-    ["Furniture", [["sofa", "Sofa", T_ + "sofa.png"], ["chair", "Chair", H_ + "hw_chair_a_0_2_0.png"], ["table", "Table", T_ + "table.png"], ["smtable", "Small round table", H_ + "hw_smtble_a_0_0_0.png"], ["ballpost", "Ball post", H_ + "pillar0_a_0_0_0.png"], ["rope", "Rope barrier", T_ + "rope.png"], ["lamp", "Floor lamp", T_ + "lamp.png"], ["plant", "Plant", H_ + "hw_plant_a_0_0_0.png"], ["ero", "Planter", T_ + "planter.png"], ...PLANTERS.map(([k, name]) => [k, name, T_ + "planter-" + k.slice(4) + ".png"]), ["pillar", "Pillar", H_ + "pillar1_a_0_0_0.png"], ["pillartall", "Tall pillar", T_ + "pillartall.png"], ["statue", "Statue", H_ + "hw_statue_a_0_0_0.png"], ["fountain", "Fountain", H_ + "hw_fountain_a_0_0_0.png"], ["shelf", "Bookcase", H_ + "hw_shelf_a_0_4_0.png"], ["cabinet", "Cabinet", H_ + "hw_closet1_a_0_2_0.png"], ["water", "Water cooler", H_ + "hw_watermatic_a_0_4_0.png"], ["tablelamp", "Globe table lamp", "art/wall/i_tablelamp.png"], ["rarecase", "Rare in a glass case", "art/wall/i_rarecase.png"], ["trophy", "Old trophy cabinet", "art/wall/i_trophy.png"], ["mark_scuff", "Floor scuffs", "art/wall/i_mark_scuff.png"], ["mark_tile", "Lifted floor tile", "art/wall/i_mark_tile.png"]]],
+    ["Furniture", [["sofa", "Sofa", T_ + "sofa.png"], ["chair", "Chair", H_ + "hw_chair_a_0_2_0.png"], ["table", "Table", T_ + "table.png"], ["smtable", "Small round table", H_ + "hw_smtble_a_0_0_0.png"], ["ballpost", "Ball post", H_ + "pillar0_a_0_0_0.png"], ["rope", "Rope barrier", T_ + "rope.png"], ["archway", "Archway (drag it out)", H_ + "entry_upper_right_mask.png"], ["lamp", "Floor lamp", T_ + "lamp.png"], ["plant", "Plant", H_ + "hw_plant_a_0_0_0.png"], ["ero", "Planter", T_ + "planter.png"], ...PLANTERS.map(([k, name]) => [k, name, T_ + "planter-" + k.slice(4) + ".png"]), ["pillar", "Pillar", H_ + "pillar1_a_0_0_0.png"], ["pillartall", "Tall pillar", T_ + "pillartall.png"], ["statue", "Statue", H_ + "hw_statue_a_0_0_0.png"], ["fountain", "Fountain", H_ + "hw_fountain_a_0_0_0.png"], ["shelf", "Bookcase", H_ + "hw_shelf_a_0_4_0.png"], ["cabinet", "Cabinet", H_ + "hw_closet1_a_0_2_0.png"], ["water", "Water cooler", H_ + "hw_watermatic_a_0_4_0.png"], ["tablelamp", "Globe table lamp", "art/wall/i_tablelamp.png"], ["rarecase", "Rare in a glass case", "art/wall/i_rarecase.png"], ["trophy", "Old trophy cabinet", "art/wall/i_trophy.png"], ["mark_scuff", "Floor scuffs", "art/wall/i_mark_scuff.png"], ["mark_tile", "Lifted floor tile", "art/wall/i_mark_tile.png"]]],
     ...WALL_GROUPS.map(([kind, title]) => [title, WALL_ITEMS.filter(i => i.kind === kind).map(i => ["wi:" + i.id, i.name, "art/wall/" + i.y.layers[0].f])]),
     ["Games", [["arcade_ff", "Arcade: Fallin' Furni", "art/wall/i_arcade_ff.png"], ["arcade_pura", "Arcade: Pura Panic", "art/wall/i_arcade_pura.png"], ["arcade_guess", "Arcade: Guess the Maze", "art/wall/i_arcade_guess.png"], ["arcade_odd", "Arcade: Odd One Out", "art/wall/i_arcade_odd.png"], ["arcade_scout", "Arcade: green (no game yet)", "art/wall/i_arcade_scout.png"], ["arcade_quiz", "Arcade: purple (no game yet)", "art/wall/i_arcade_quiz.png"]]],
     ["Christmas", [["garland", "Garland (drag along a wall)", "art/wall/i_swag.png"], ["garland2", "Garland, two tiles", "art/wall/i_swag.png"], ["festoon", "Festoon lights (drag along a wall)", "art/wall/i_festoon.png"], ["xmastree", "Christmas tree", "art/wall/i_xmastree.png"], ["xmassmalltree", "Small tree", "art/wall/i_xmassmalltree.png"], ["snowman", "Snowman", "art/wall/i_snowman.png"], ["xmaslantern", "Lantern", "art/wall/i_xmaslantern.png"], ["xmasdrinks", "Christmas drinks", "art/wall/i_xmasdrinks.png"], ["xmasduck", "Christmas duck", "art/wall/i_xmasduck.png"], ["gift1", "Gift", "art/wall/i_gift1.png"], ["gift2", "Gift, blue", "art/wall/i_gift2.png"], ["gift3", "Gift, green", "art/wall/i_gift3.png"], ["gift4", "Gift, gold", "art/wall/i_gift4.png"], ...WALL_ITEMS.filter(i => i.kind === "xmas").map(i => ["wi:" + i.id, i.name, "art/wall/" + i.y.layers[0].f])]],
@@ -89,6 +89,7 @@ const HINTS = {
     addwall: "Where a floor's edge looks out over the floor below, the map leaves the wall off. Dashed green lines show those edges: click or drag along one to put the wall there. Solid green lines are walls you've added: click or drag along one to take it off again.",
     nowall: "Click or drag along a wall to take it away, tile by tile. Red lines show where a wall's gone: click or drag along one to bring it back. Tiles with a door, wall light or something hanging on them keep their wall.",
     height: "Pick a height in the bar on the map, then drag over floor to set it to exactly that. Hold Ctrl and move the mouse up or down to change the height. 0 is level.",
+    floorlift: "Raises the floor, what stands on it and its doors, but not its walls: they keep their tops and stand shorter. Pick a height in the bar, then drag over floor. 0 puts it back.",
     steps: "Hover where two heights meet, on any side, and drag along it to lay steps from there to where you let go. Select them afterwards to move them or change the width.",
     medal: "Click to put the carpet crest down. Use Select and move to move it after.",
     door: "Click a top wall to add a door. It takes the next maze without one. To change it, select the door and use its Maze list.",
@@ -111,7 +112,9 @@ const levelZ = l => l.k * Z1;
 /* A floor's height within itself, as in the real hallways: l.rise holds a cell's height in pixels, a whole number of steps. The
    client's own short flights are 4px a step, 6px deep. */
 const HEIGHT = 1, STEP_R = 4, STEP_D = 6 / 16, MAX_RISE = 64;
-const heightAt = (l, x, y) => (l.rise && l.rise[cellKey(x, y)]) || 0;
+const heightAt = (l, x, y) => ((l.rise && l.rise[cellKey(x, y)]) || 0) + ((l.lift && l.lift[cellKey(x, y)]) || 0);
+/* the height a cell's walls stand at: its rise alone, not the lift that raises only its floor (render/hw3.js patchesByHeight) */
+const wallHeightAt = (l, x, y) => (l.rise && l.rise[cellKey(x, y)]) || 0;
 const tileZ = (l, x, y) => levelZ(l) + heightAt(l, x, y) + (landingOf(l, x, y) ? LANDING : 0);
 const allHeights = l => { if (!l.rise) return [0]; return [...new Set([0, ...Object.values(l.rise)])].sort((a, c) => c - a); };
 const heightsOf = l => { const all = allHeights(l); return seeCut !== null && l === level ? all.filter(h => h <= seeCut) : all; };
@@ -169,7 +172,7 @@ function tileIn(l, px, py) {
     return seeHidden(l, heightAt(l, Math.floor(flat[0]), Math.floor(flat[1]))) ? [-1e6, -1e6] : flat;
 }
 /* the floor height at a wall thing: its line, on the tile it stands against */
-const wallZ = (l, q) => levelZ(l) + (q.axis === "x" ? heightAt(l, Math.floor(q.at), q.line) : heightAt(l, q.line, Math.ceil(q.at) - 1));
+const wallZ = (l, q) => levelZ(l) + (q.axis === "x" ? wallHeightAt(l, Math.floor(q.at), q.line) : wallHeightAt(l, q.line, Math.ceil(q.at) - 1));
 function toPx(sx, sy) { const r = canvas.getBoundingClientRect(), w = r.width, h = r.height; return [(sx - r.left - w / 2) / zoom + cam.x, (sy - r.top - h / 2) / zoom + cam.y]; }
 function toScreen(px, py) { return [(px - cam.x) * zoom + canvas.width / 2, (py - cam.y) * zoom + canvas.height / 2]; }
 window.__active = () => level;
@@ -305,6 +308,7 @@ function heightLocked(l, x, y) {
 /* steps that no longer stand at a drop go; heights where the floor's gone go */
 function tidyHeights(l) {
     if (l.rise) { for (const k of Object.keys(l.rise)) if (!l.rise[k] || !cells(l).has(k)) delete l.rise[k]; if (!Object.keys(l.rise).length) delete l.rise; }
+    if (l.lift) { for (const k of Object.keys(l.lift)) if (!l.lift[k] || !cells(l).has(k)) delete l.lift[k]; if (!Object.keys(l.lift).length) delete l.lift; }
     /* a flight only stays where there's still a drop, tile by tile: it splits if its middle has gone */
     if (l.steps) { const out = []; for (const st of l.steps) { let from = null, rise = 0; for (let t = st.a; t <= st.b; t++) { const r = t < st.b ? stepRise(l, { ...st, a: t, b: t + 1 }) : 0; if (r !== rise) { if (rise > 0) out.push({ ...st, a: from, b: t }); from = t; rise = r; } } } l.steps = out; if (!l.steps.length) delete l.steps; }
     if (l.edgeItems) { l.edgeItems = l.edgeItems.filter(q => { const on = edgeOn(q); return tileEdges(l, on[0], on[1]).some(e => sameEdge(q, e)); }); if (!l.edgeItems.length) delete l.edgeItems; }
@@ -557,7 +561,7 @@ function drawEdgeGhost() {
 }
 /* The brush: drag over floor to set it to exactly this height. */
 let heightBrush = 16, ctrlLast = null, ctrlSpare = 0, heightHold = null;
-const brushTool = t => t === "height" || t === "floor", brushes = { height: 16, floor: 0 };
+const brushTool = t => t === "height" || t === "floor" || t === "floorlift", brushes = { height: 16, floor: 0, floorlift: 8 };
 /* with the Paint floor tool, a tile off the floor is judged on the height being painted, so the ghost stays under the mouse */
 const paintTile = (px, py) => { const a = tileIn(level, px, py); return hasFloor(level, Math.floor(a[0]), Math.floor(a[1])) ? a : pxToTile(px, py, levelZ(level) + heightBrush); };
 function setBrush(v) {
@@ -1103,7 +1107,7 @@ function snapRect(a, b) {
     if (tool === "rug" || tool === "smallfloor") return { x0: Math.floor(x0), x1: Math.floor(x1) + 1, y0: Math.floor(y0), y1: Math.floor(y1) + 1 };
     return { x0: Math.floor(x0 / 2) * 2, x1: (Math.floor(x1 / 2) + 1) * 2, y0: Math.floor(y0 / 2) * 2, y1: (Math.floor(y1 / 2) + 1) * 2 };
 }
-const FURNI = ["mark_arrow", "arcade_ff", "arcade_pura", "arcade_guess", "arcade_odd", "arcade_scout", "arcade_quiz", "tablelamp", "xmastree", "xmassmalltree", "snowman", "xmaslantern", "xmasdrinks", "xmasduck", "gift1", "gift2", "gift3", "gift4", "sofa", "chair", "table", "smtable", "ballpost", "rope", "lamp", "plant", "ero", "ero_stone", "ero_walnut", "ero_evergreen", "ero_flower", "pillar", "pillartall", "statue", "fountain", "shelf", "cabinet", "water", "rarecase", "trophy", "mark_scuff", "mark_tile"];
+const FURNI = ["archway", "mark_arrow", "arcade_ff", "arcade_pura", "arcade_guess", "arcade_odd", "arcade_scout", "arcade_quiz", "tablelamp", "xmastree", "xmassmalltree", "snowman", "xmaslantern", "xmasdrinks", "xmasduck", "gift1", "gift2", "gift3", "gift4", "sofa", "chair", "table", "smtable", "ballpost", "rope", "lamp", "plant", "ero", "ero_stone", "ero_walnut", "ero_evergreen", "ero_flower", "pillar", "pillartall", "statue", "fountain", "shelf", "cabinet", "water", "rarecase", "trophy", "mark_scuff", "mark_tile"];
 const Parts = window.FurniParts;
 let placeRot = 0;                // which way round the next piece goes, set with R
 const fits = (l, p) => (Parts.ROWS[p.k] ? Parts.tiles(p) : [[p.x, p.y]]).every(t => placeable(l, t[0], t[1]));
@@ -1317,6 +1321,8 @@ function drawPiece(g, alpha) {
     else if (floorPiece(g.k)) { const fp = floorPiece(g.k), im = pieceImg(g.k === "rarecase" && g.rare && fp.opts && fp.opts[g.rare] ? fp.opts[g.rare].f : fp.f), off = g.k.startsWith("mark_") ? .5 : g.k === "trophy" ? 0 : .25, a = P(g.x + off, g.y + off, tileZ(level, g.x, g.y)); if (im.complete && im.naturalWidth) { ctx.save(); ctx.imageSmoothingEnabled = false; if ((g.k === "trophy" && !((g.rot || 0) & 1)) || ((g.k === "rarecase" || g.k.startsWith("arcade_")) && ((g.rot || 0) & 1))) { ctx.translate(ox + a[0] * zoom, 0); ctx.scale(-1, 1); ctx.drawImage(im, -fp.ox * zoom, oy + (a[1] - fp.oy) * zoom, fp.w * zoom, fp.h * zoom); } else ctx.drawImage(im, ox + (a[0] - fp.ox) * zoom, oy + (a[1] - fp.oy) * zoom, fp.w * zoom, fp.h * zoom); ctx.restore(); } }
     else if (g.k === "mark_arrow") { const x0 = g.x - (g.x & 1), y0 = g.y - (g.y & 1), z = tileZ(level, x0, y0), Q = (u, v) => { const a = P(x0 + u, y0 + v, z); return [ox + a[0] * zoom, oy + a[1] * zoom]; }, d = (((g.rot || 0) % 4) + 4) % 4, rot = ([u, v]) => d === 0 ? [u, v] : d === 1 ? [2 - v, u] : d === 2 ? [2 - u, 2 - v] : [v, 2 - u], line = pts => { ctx.beginPath(); pts.forEach((q, i) => { const [X, Y] = Q(...rot(q)); if (i) ctx.lineTo(X, Y); else ctx.moveTo(X, Y); }); ctx.closePath(); ctx.stroke(); };
         ctx.lineWidth = Math.max(1, zoom); ctx.strokeStyle = "#ffe066"; line([[0, 0], [2, 0], [2, 2], [0, 2]]); ctx.strokeStyle = "#4a2c12"; ctx.lineWidth = Math.max(1.5, zoom * 1.5); line([[1.625, 1], [.5, .3125], [.5, 1.6875]]); }
+    else if (g.k === "archway") { const n = Parts.lengthOf(g), alongY = !!((g.rot || 0) & 1), z = tileZ(level, g.x, g.y), at = (along, up) => { const a = alongY ? P(g.x + .5, g.y + along, z + up) : P(g.x + along, g.y + .5, z + up); return [ox + a[0] * zoom, oy + a[1] * zoom]; }, path = pts => { ctx.beginPath(); pts.forEach((q, i) => i ? ctx.lineTo(q[0], q[1]) : ctx.moveTo(q[0], q[1])); ctx.stroke(); };
+        ctx.lineWidth = Math.max(1.5, zoom); ctx.strokeStyle = "#ffe066"; path([at(0, 0), at(0, 118), at(n, 118), at(n, 0)]); path([at(1.4, 0), at(1.4, 70), at(n - 1.4, 70), at(n - 1.4, 0)]); }
     else if (g.k === "rope") { for (const [X, Y, c] of ropeArt(level, g).list) { ctx.fillStyle = "rgb(" + c + ")"; ctx.fillRect(ox + X * zoom, oy + Y * zoom, zoom, zoom); } }
     else if (g.k === "lamp") { const a = P(g.x + .5, g.y + .5, tileZ(level, g.x, g.y)); put(spriteImg("art/lamp-" + (g.style || lampStyle) + ".png"), a[0] - 40, a[1] - 96, false); }
     else for (const q of Parts.parts(g)) for (const n of q.names) { const reg = REGS.hall[n]; if (reg) sprite(spriteImg(H_ + n + ".png"), reg, q.x, q.y, q.flip); }
@@ -1584,7 +1590,7 @@ function sortByDifficulty() {
 
 /* ---------- select and move ---------- */
 let selected = null;            // { type, l, o }
-const TALL = { mark_arrow: [17, 10], arcade_ff: [16, 56], arcade_pura: [16, 56], arcade_guess: [16, 56], arcade_odd: [16, 56], arcade_scout: [16, 56], arcade_quiz: [16, 56], tablelamp: [8, 22], xmastree: [20, 72], xmassmalltree: [14, 30], snowman: [14, 34], xmaslantern: [10, 24], xmasdrinks: [12, 18], xmasduck: [10, 16], gift1: [12, 20], gift2: [12, 20], gift3: [12, 20], gift4: [12, 20], trophy: [28, 84], rarecase: [15, 62], mark_scuff: [14, 12], mark_tile: [14, 12], rope: [14, 36], pillartall: [12, 150], smtable: [13, 24], ballpost: [13, 28], ero_stone: [16, 40], ero_walnut: [16, 40], ero_evergreen: [16, 40], ero_flower: [16, 40], lamp: [12, 54], statue: [26, 105], pillar: [12, 110], plant: [11, 50], ero: [16, 40], fountain: [26, 34], shelf: [22, 62], cabinet: [32, 82], water: [12, 44], chair: [11, 28], table: [16, 22], sofa: [34, 28] };
+const TALL = { archway: [17, 118], mark_arrow: [17, 10], arcade_ff: [16, 56], arcade_pura: [16, 56], arcade_guess: [16, 56], arcade_odd: [16, 56], arcade_scout: [16, 56], arcade_quiz: [16, 56], tablelamp: [8, 22], xmastree: [20, 72], xmassmalltree: [14, 30], snowman: [14, 34], xmaslantern: [10, 24], xmasdrinks: [12, 18], xmasduck: [10, 16], gift1: [12, 20], gift2: [12, 20], gift3: [12, 20], gift4: [12, 20], trophy: [28, 84], rarecase: [15, 62], mark_scuff: [14, 12], mark_tile: [14, 12], rope: [14, 36], pillartall: [12, 150], smtable: [13, 24], ballpost: [13, 28], ero_stone: [16, 40], ero_walnut: [16, 40], ero_evergreen: [16, 40], ero_flower: [16, 40], lamp: [12, 54], statue: [26, 105], pillar: [12, 110], plant: [11, 50], ero: [16, 40], fountain: [26, 34], shelf: [22, 62], cabinet: [32, 82], water: [12, 44], chair: [11, 28], table: [16, 22], sofa: [34, 28] };
 function pickIn(l, px, py) {
     const [fx, fy] = tileIn(l, px, py), X = Math.floor(fx), Y = Math.floor(fy);
     /* upright things first, front-most first, by what you can actually see of them */
@@ -1698,7 +1704,7 @@ function signHandles(b) {
 }
 function handleAt(b, px, py) { const r = Math.max(5, 7 / zoom), h = signHandles(b); for (const k of Object.keys(h)) if (Math.abs(px - h[k][0]) <= r && Math.abs(py - h[k][1]) <= r) return k; return null; }
 const TYPE_NAMES = { garland: "Garland", festoon: "Festoon lights", entrance: "Entrance", wallitem: "On the wall", steps: "Small steps", wall: "Wall", sign: "Maze sign", prop: "Furniture", tele: "Imperial Teleport", door: "Door", lamp: "Wall light", lift: "Lift", stair: "Stairs", medal: "Carpet crest", rug: "Rug" };
-const PROP_NAMES = { mark_arrow: "Arrow tile", arcade_ff: "Arcade: Fallin' Furni", arcade_pura: "Arcade: Pura Panic", arcade_guess: "Arcade: Guess the Maze", arcade_odd: "Arcade: Odd One Out", arcade_scout: "Arcade: green (no game yet)", arcade_quiz: "Arcade: purple (no game yet)", tablelamp: "Globe table lamp", xmastree: "Christmas tree", xmassmalltree: "Small tree", snowman: "Snowman", xmaslantern: "Lantern", xmasdrinks: "Christmas drinks", xmasduck: "Christmas duck", gift1: "Gift", gift2: "Gift", gift3: "Gift", gift4: "Gift", trophy: "Old trophy cabinet", rarecase: "Rare in a glass case", mark_scuff: "Floor scuffs", mark_tile: "Lifted floor tile", rope: "Rope barrier", pillartall: "Tall pillar", smtable: "Small round table", ballpost: "Ball post", ero_stone: "Stone planter", ero_walnut: "Walnut planter", ero_evergreen: "Evergreen planter", ero_flower: "Flower planter", sofa: "Sofa", chair: "Chair", table: "Table", lamp: "Floor lamp", plant: "Plant", ero: "Planter", pillar: "Pillar", statue: "Statue", fountain: "Fountain", shelf: "Bookcase", cabinet: "Cabinet", water: "Water cooler" };
+const PROP_NAMES = { archway: "Archway", mark_arrow: "Arrow tile", arcade_ff: "Arcade: Fallin' Furni", arcade_pura: "Arcade: Pura Panic", arcade_guess: "Arcade: Guess the Maze", arcade_odd: "Arcade: Odd One Out", arcade_scout: "Arcade: green (no game yet)", arcade_quiz: "Arcade: purple (no game yet)", tablelamp: "Globe table lamp", xmastree: "Christmas tree", xmassmalltree: "Small tree", snowman: "Snowman", xmaslantern: "Lantern", xmasdrinks: "Christmas drinks", xmasduck: "Christmas duck", gift1: "Gift", gift2: "Gift", gift3: "Gift", gift4: "Gift", trophy: "Old trophy cabinet", rarecase: "Rare in a glass case", mark_scuff: "Floor scuffs", mark_tile: "Lifted floor tile", rope: "Rope barrier", pillartall: "Tall pillar", smtable: "Small round table", ballpost: "Ball post", ero_stone: "Stone planter", ero_walnut: "Walnut planter", ero_evergreen: "Evergreen planter", ero_flower: "Flower planter", sofa: "Sofa", chair: "Chair", table: "Table", lamp: "Floor lamp", plant: "Plant", ero: "Planter", pillar: "Pillar", statue: "Statue", fountain: "Fountain", shelf: "Bookcase", cabinet: "Cabinet", water: "Water cooler" };
 const THUMB_FOR = { sign: "door", door: "door", lamp: "sconce", lift: "lift", medal: "medal", rug: "rug", tele: "tele" };
 function thumbFor(hit) {
     if (hit.type === "wallitem") { const def = wallItemOf(hit.o.k); return def ? "art/wall/" + def.y.layers[0].f : null; }
@@ -2204,7 +2210,7 @@ canvas.addEventListener("pointerdown", e => {
         if (!edge) { flash("Steps go where two heights meet. Set a floor's height first, with Floor height."); return; }
         drag = { kind: "laysteps", edge, st: { axis: edge.axis, line: edge.line, dir: edge.dir, a: edge.t, b: edge.t + 1 } }; paint(); return;
     }
-    if (tool === "floor" || tool === "erase" || tool === "rug" || tool === "smallfloor" || tool === "height") {
+    if (tool === "floor" || tool === "erase" || tool === "rug" || tool === "smallfloor" || tool === "height" || tool === "floorlift") {
         const a = tool === "floor" ? paintTile(px, py) : tileIn(level, px, py), zr = hasFloor(level, Math.floor(a[0]), Math.floor(a[1])) ? tileZ(level, Math.floor(a[0]), Math.floor(a[1])) : levelZ(level) + (tool === "floor" ? heightBrush : 0);
         drag = { kind: "rect", a, z: zr, rect: snapRect(a, a) }; paint(); return;
     }
@@ -2297,6 +2303,21 @@ canvas.addEventListener("pointerup", e => {
         const r = d.rect;
         snapshot();
         const unchanged = () => { if (undoStack[undoStack.length - 1] !== JSON.stringify(map)) return false; undoStack.pop(); syncButtons(); paint(); return true; };
+        /* the floor alone, its walls left where they stand */
+        if (tool === "floorlift") {
+            let changedAny = false, locked = false;
+            for (let x = r.x0; x < r.x1; x += 2) for (let y = r.y0; y < r.y1; y += 2) {
+                if (!hasFloor(level, x, y)) continue;
+                let stuck = false; for (let a = x; a < x + 2 && !stuck; a++) for (let b = y; b < y + 2 && !stuck; b++) if (heightLocked(level, a, b)) stuck = true;
+                if (stuck && heightBrush) { locked = true; continue; }
+                const k = cellKey(x, y), now = (level.lift && level.lift[k]) || 0; if (now === heightBrush) continue;
+                (level.lift = level.lift || {})[k] = heightBrush; changedAny = true;
+            }
+            tidyHeights(level);
+            if (!changedAny) { undoStack.pop(); flash(locked ? "Stairs and the lift have to stay level with the floor round them." : "That floor's already raised that much."); paint(); return; }
+            if (locked) flash("Left the floor round the stairs and lift as it was, so they still meet it.");
+            changed(); return;
+        }
         if (tool === "height") {
             let changedAny = false, locked = false;
             for (let x = r.x0; x < r.x1; x += 2) for (let y = r.y0; y < r.y1; y += 2) {
@@ -2370,7 +2391,7 @@ function clampCam() {
 const nodeKey = (l, x, y) => l.id + "|" + x + "|" + y;
 function solid(l) {
     const s = new Set();
-    for (const p of (l.props || [])) { if (p.k.startsWith("mark_") || (p.k === "rope" && p.night && realNight()) || (tool === "walk" && !window.hallwayXmas && XMAS_PROP(p.k))) continue; for (const t of Parts.tiles(p)) s.add(t[0] + "," + t[1]); }   // scuffs and a lifted tile are only marks on the floor
+    for (const p of (l.props || [])) { if (p.k.startsWith("mark_") || (p.k === "rope" && p.night && realNight()) || (tool === "walk" && !window.hallwayXmas && XMAS_PROP(p.k))) continue; if (p.k === "archway") { for (const t of archPosts(l, p)) s.add(t[0] + "," + t[1]); continue; } for (const t of Parts.tiles(p)) s.add(t[0] + "," + t[1]); }   // scuffs and a lifted tile are only marks on the floor
     for (const t of (l.teles || [])) s.add(t.x + "," + t.y);
     return s;
 }
@@ -3100,6 +3121,20 @@ function cutSprite(c, img, x, y, flip) {
 }
 function cutPoly(c, pts) { c.beginPath(); pts.forEach((p, i) => i ? c.lineTo(p[0], p[1]) : c.moveTo(p[0], p[1])); c.closePath(); c.fill(); }
 /* a tile against the Habbo: nearer along x or y, with a tile's grace for art that spills over its edge, as the map itself orders things. Where that says nothing, the nearer diagonal. */
+/* ---------- the freestanding archway (render/hw3.js archwayArt): its posts, and whether each end meets a wall ---------- */
+function archEnds(l, p) { const ts = Parts.tiles(p), n = ts.length, alongY = !!((p.rot || 0) & 1); return { ts, n, alongY, wallA: alongY ? !hasFloor(l, p.x, p.y - 1) : !hasFloor(l, p.x - 1, p.y), wallB: alongY ? !hasFloor(l, p.x, p.y + n) : !hasFloor(l, p.x + n, p.y) }; }
+function archPosts(l, p) { const e = archEnds(l, p), out = []; if (!e.wallA) out.push(e.ts[0]); if (!e.wallB) out.push(e.ts[e.n - 1]); return out; }
+/* walking behind it, its posts and beam stand in front of you: their shapes on its plane, through the middle of its row */
+function cutArchways(c, l, ax, ay, nearby) {
+    for (const p of (l.props || [])) { if (p.k !== "archway") continue; const e = archEnds(l, p), behind = e.alongY ? ax < p.x : ay < p.y; if (!behind) continue;
+        const within = e.alongY ? ay > p.y - 3 && ay < p.y + e.n + 2 : ax > p.x - 3 && ax < p.x + e.n + 2; if (!within) continue;
+        const z = tileZ(l, p.x, p.y), at = (along, up) => e.alongY ? P(p.x + .5, p.y + along, z + up) : P(p.x + along, p.y + .5, z + up), quad = (a0, a1, u0, u1) => cutPoly(c, [at(a0, u0), at(a1, u0), at(a1, u1), at(a0, u1)]);
+        if (!nearby(at(e.n / 2, 0))) continue;
+        quad(0, e.n, 70, 118);
+        if (!e.wallA) quad(0, 1.4, 0, 118);
+        if (!e.wallB) quad(e.n - 1.1, e.n + .3, 0, 118);          // the art's far post is 17px, its depth a little beyond
+    }
+}
 function inFrontOfYou(X, Y, ax, ay) {
     const G = .99, youBehind = (ax + 1 <= X && ay < Y + 1 + G && Y < ay + 1 + G) || (ay + 1 <= Y && ax < X + 1 + G && X < ax + 1 + G), itBehind = (X + 1 <= ax && Y < ay + 1 + G && ay < Y + 1 + G) || (Y + 1 <= ay && X < ax + 1 + G && ax < X + 1 + G);
     if (youBehind !== itBehind) return youBehind;
@@ -3130,6 +3165,7 @@ function cutInFront(c, x0, y0) {
             if (p.k === "statue" && window.hallwayXmas && floorPiece("bigtree")) { const fp = floorPiece("bigtree"), im = pieceImg(fp.f), a = P(p.x + 1, p.y + 1, tileZ(lv, p.x, p.y)); if ((lv !== l || ax + ay < p.x + p.y + 2.6) && im.complete && im.naturalWidth && Math.abs(a[0] - (x0 + 16)) < fp.w && a[1] - fp.oy < y0 + 120 && a[1] + fp.h > y0) cutSprite(c, im, Math.round(a[0]) - fp.ox, Math.round(a[1]) - fp.oy, false); continue; }
             if (p.k === "rarecase" || p.k === "trophy" || p.k.startsWith("arcade_") || XMAS_PROP(p.k)) { const fp = floorPiece(p.k), im = pieceImg(fp.f), a = P(p.x + (p.k === "trophy" ? 0 : .25), p.y + (p.k === "trophy" ? 0 : .25), tileZ(lv, p.x, p.y)), run = Parts.tiles(p), last = run[run.length - 1], flipIt = (p.k === "trophy" && !((p.rot || 0) & 1)) || ((p.k === "rarecase" || p.k.startsWith("arcade_")) && ((p.rot || 0) & 1)); if ((lv !== l || inFrontOfYou(last[0], last[1], ax, ay)) && nearby(a) && im.complete && im.naturalWidth) { if (flipIt) { c.save(); c.translate(a[0], 0); c.scale(-1, 1); c.drawImage(im, -fp.ox, a[1] - fp.oy); c.restore(); } else c.drawImage(im, a[0] - fp.ox, a[1] - fp.oy); } continue; }
             if (p.k.startsWith("mark_")) continue;
+            if (p.k === "archway") { if (lv !== l) { for (const q of Parts.tiles(p)) { const a = P(q[0] + .5, q[1] + .5, tileZ(lv, q[0], q[1])); if (nearby(a)) cutPoly(c, [[a[0] - 17, a[1]], [a[0] + 17, a[1]], [a[0] + 17, a[1] - 118], [a[0] - 17, a[1] - 118]]); } } else cutArchways(c, lv, ax, ay, nearby); continue; }
             if (p.k === "rope") { const art = ropeArt(lv, p); for (const [X, Y, , t] of art.list) { const q = art.row[t]; if ((lv !== l || inFrontOfYou(q[0], q[1], ax, ay)) && nearby([X, Y])) c.fillRect(X, Y, 1, 1); } continue; }
             if (walker.seat && walker.seat.p === p) {
                 /* you sit on the seat. A chair turned away from the camera has its back nearer than you, so that part covers you. */
@@ -3182,9 +3218,9 @@ function cutInFront(c, x0, y0) {
     const R = 14, tx = Math.floor(ax), ty = Math.floor(ay);
     for (let X = tx - R; X <= tx + R; X++) for (let Y = ty - R; Y <= ty + R; Y++) {
         if (!hasFloor(l, X, Y) || pastDoor(X, Y)) continue;
-        const zt = tileZ(l, X, Y);
-        if (Y > ay && open(X, Y - 1, "x") && !inOpening(X, Y, "x")) { const hw = isNone(l, "x", Y, X) ? 0 : isHalf(l, "x", Y, X) ? HALF_WALL : WALL; cutPoly(c, [P(X, Y, zt), P(X + 1, Y, zt), P(X + 1, Y, zt + hw), P(X, Y, zt + hw)]); }
-        if (X > ax && open(X - 1, Y, "y") && !inOpening(X, Y, "y")) { const hw = isNone(l, "y", X, Y) ? 0 : isHalf(l, "y", X, Y) ? HALF_WALL : WALL; cutPoly(c, [P(X, Y, zt), P(X, Y + 1, zt), P(X, Y + 1, zt + hw), P(X, Y, zt + hw)]); }
+        const zt = tileZ(l, X, Y), zw = zt - ((l.lift && l.lift[cellKey(X, Y)]) || 0);      // a wall stands where its rise puts it, under a floor raised on its own
+        if (Y > ay && open(X, Y - 1, "x") && !inOpening(X, Y, "x")) { const hw = isNone(l, "x", Y, X) ? 0 : isHalf(l, "x", Y, X) ? HALF_WALL : WALL; cutPoly(c, [P(X, Y, zt), P(X + 1, Y, zt), P(X + 1, Y, zw + hw), P(X, Y, zw + hw)]); }
+        if (X > ax && open(X - 1, Y, "y") && !inOpening(X, Y, "y")) { const hw = isNone(l, "y", X, Y) ? 0 : isHalf(l, "y", X, Y) ? HALF_WALL : WALL; cutPoly(c, [P(X, Y, zt), P(X, Y + 1, zt), P(X, Y + 1, zw + hw), P(X, Y, zw + hw)]); }
         /* a raised part of the floor in front covers you */
         if (zt > walker.z + 2 && X + Y > ax + ay && !stepsAt(l, X, Y)) cutPoly(c, [P(X, Y, zt), P(X + 1, Y, zt), P(X + 1, Y + 1, zt), P(X, Y + 1, zt)]);
     }
