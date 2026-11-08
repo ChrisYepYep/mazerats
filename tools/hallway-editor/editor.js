@@ -1660,6 +1660,9 @@ function pickIn(l, px, py) {
     }
     return null;
 }
+let treeData = null; const treeAlpha = (im, i, j) => { if (!treeData || treeData.im !== im) { const c = document.createElement("canvas"); c.width = im.naturalWidth; c.height = im.naturalHeight; const g = c.getContext("2d", { willReadFrequently: true }); g.drawImage(im, 0, 0); treeData = { im, w: c.width, d: g.getImageData(0, 0, c.width, c.height).data }; } return treeData.d[(j * treeData.w + i) * 4 + 3] > 100; };
+/* how far round the tree walkers are kept out, in tiles beyond the statue's own 2x2 (8 Nov, his: "mark out a non-walkable section, so users can't walk into/under the tree") */
+const treeKeepOut = (p, f) => { const n = Math.max(0, Math.min(6, p.treeOut || 0)); if (!n) return; for (let x = p.x - n; x < p.x + 2 + n; x++) for (let y = p.y - n; y < p.y + 2 + n; y++) f(x, y); };
 function pick(px, py) {
     if (selected && selected.type === "sign") { const b = signBox(selected.l, selected.o); if (b && handleAt(b, px, py)) return selected; }
     if (selected && selected.type === "wallitem" && selected.o.k === "i_window" && windowHandleAt(selected.l, selected.o, px, py)) return selected;
@@ -1667,6 +1670,8 @@ function pick(px, py) {
        a floor or wall you can see stops the click reaching anything hidden behind it */
     if (window.hallwayXmas && window.HallwayGarland && level) for (const g of (level.garlands || [])) for (let t = g.a; t < g.b; t++) { const q = HallwayGarland.tileAt(level, g, t); if (q && Math.abs(px - q.c[0]) <= 9 && py >= q.c[1] - 2 && py <= q.c[1] + 16) return { type: "garland", l: level, o: g }; }
     if (window.hallwayXmas && window.HallwayFestoon && level) for (const f of (level.festoons || [])) { const s = HallwayFestoon.shape(f); for (const [u, d] of s.bulbs.concat(s.pts.filter((q, i) => i % 6 === 0))) { const p = HallwayFestoon.onScreen(level, f, u, -d); if (Math.abs(px - p[0]) <= 4 && py >= p[1] - 3 && py <= p[1] + 9) return { type: "festoon", l: level, o: f }; } }
+    /* at Christmas the statue is the giant tree, far bigger than its tiles: anywhere on its picture selects it (8 Nov, his) */
+    if (window.hallwayXmas && level && floorPiece("bigtree")) { const fp = floorPiece("bigtree"), im = pieceImg(fp.f); for (const p of (level.props || [])) { if (p.k !== "statue") continue; const a = P(p.x + 1, p.y + 1, tileZ(level, p.x, p.y)), i = Math.round(px - (a[0] - fp.ox)), j = Math.round(py - (a[1] - fp.oy)); if (i < 0 || j < 0 || i >= fp.w || j >= fp.h) continue; if (!im.complete || !im.naturalWidth || treeAlpha(im, i, j)) return { type: "prop", l: level, o: p }; } }
     for (const l of [...map.levels].sort((a, c) => c.k - a.k)) {
         const h = pickIn(l, px, py); if (h) return h;
         const [fx, fy] = tileIn(l, px, py), X = Math.floor(fx), Y = Math.floor(fy);
@@ -1817,6 +1822,10 @@ function select(hit) {
         if (hit.type === "festoon") { const q = hit.o, row = (label, ctl) => { const f = document.createElement("label"); f.className = "field"; const n = document.createElement("span"); n.className = "f-label"; n.textContent = label; f.append(n, ctl); box.appendChild(f); }, sel = document.createElement("select"); sel.className = "f-ctl"; for (const [v, t] of [["amber", "Amber"], ["warm", "Warm white"], ["multi", "Many colours"], ["redgreen", "Red and green"], ["blue", "Blue and white"], ["cool", "Cool white"]]) { const o = document.createElement("option"); o.value = v; o.textContent = t; sel.appendChild(o); } sel.value = q.colour || "amber"; sel.addEventListener("change", () => { snapshot(); if (sel.value === "amber") delete q.colour; else q.colour = sel.value; lastFestoon.colour = sel.value; changed(); }); row("Bulbs", sel);
           const tw = document.createElement("input"); tw.type = "checkbox"; tw.checked = !!q.twinkle; tw.addEventListener("change", () => { snapshot(); if (tw.checked) q.twinkle = true; else delete q.twinkle; lastFestoon.twinkle = tw.checked; changed(); }); row("A gentle twinkle", tw);
           const hh = document.createElement("input"); hh.type = "number"; hh.min = "40"; hh.max = "140"; hh.className = "f-ctl"; hh.value = String(q.h || 118); hh.addEventListener("change", () => { snapshot(); q.h = Math.max(40, Math.min(140, Math.round(+hh.value || 118))); changed(); }); row("Height on the wall", hh); }
+        if (hit.type === "prop" && hit.o.k === "statue") { const f = document.createElement("label"); f.className = "field"; const n = document.createElement("span"); n.className = "f-label"; n.textContent = "Christmas tree: keep walkers out"; const sel = document.createElement("select"); sel.className = "f-ctl"; sel.setAttribute("aria-label", "How far round the Christmas tree walkers are kept out");
+            for (let k = 0; k <= 6; k++) { const o = document.createElement("option"); o.value = String(k); o.textContent = k ? `${k} tile${k === 1 ? "" : "s"} round it (${2 + 2 * k} by ${2 + 2 * k})` : "Only its own 2 by 2"; sel.appendChild(o); }
+            sel.value = String(hit.o.treeOut || 0); sel.addEventListener("change", () => { snapshot(); const v = +sel.value; if (v) hit.o.treeOut = v; else delete hit.o.treeOut; changed(); paint(); }); f.append(n, sel); box.appendChild(f);
+            if (!window.hallwayXmas) say("The tree only stands here at Christmas: switch Christmas on to see it. The walkers are kept out only then."); }
         if (hit.type === "prop" && hit.o.k === "tablelamp") { const f = document.createElement("label"); f.className = "field"; const n = document.createElement("span"); n.className = "f-label"; n.textContent = "Height off the floor"; const i = document.createElement("input"); i.type = "number"; i.min = "0"; i.max = "60"; i.value = String(hit.o.z || 0); i.className = "f-ctl"; i.addEventListener("change", () => { snapshot(); const v = Math.max(0, Math.min(60, Math.round(+i.value || 0))); if (v) hit.o.z = v; else delete hit.o.z; changed(); }); f.append(n, i); box.appendChild(f); }
         /* an arrow tile: linked to another, stepping on either takes you to the other (live-arrows.js) */
         if (hit.type === "prop" && hit.o.k === "mark_arrow") { const me = hit.o; if (!me.id) me.id = "ar" + Date.now().toString(36);
@@ -2069,6 +2078,8 @@ function drawSelection() {
     const o = s.o, c = "#ffffff", f = "rgba(255,255,255,.22)";
     const z = o.axis !== undefined && o.line !== undefined && s.type !== "steps" ? wallZ(s.l, s.type === "wall" ? { axis: o.axis, at: o.a + (o.axis === "y" ? 1 : 0), line: o.line } : o)
         : s.type === "rug" ? tileZ(s.l, o.x0, o.y0) : o.x !== undefined && o.y !== undefined ? tileZ(s.l, o.x, o.y) : levelZ(s.l);
+    /* the tree's keep-out, outlined in red on the floor */
+    if (s.type === "prop" && o.k === "statue" && o.treeOut) { const n = o.treeOut, pts = [[o.x - n, o.y - n], [o.x + 2 + n, o.y - n], [o.x + 2 + n, o.y + 2 + n], [o.x - n, o.y + 2 + n]].map(q => toScreen(...P(q[0], q[1], z))); ctx.save(); ctx.setLineDash([6, 4]); ctx.strokeStyle = "#ff6a5a"; ctx.fillStyle = "rgba(255,90,70,.12)"; ctx.lineWidth = 2; ctx.beginPath(); pts.forEach((q, i) => i ? ctx.lineTo(q[0], q[1]) : ctx.moveTo(q[0], q[1])); ctx.closePath(); ctx.fill(); ctx.stroke(); ctx.restore(); }
     if (s.type === "wallitem") {
         const def = wallItemOf(o.k), box = o.k === "i_window" ? windowBox(o) : def && (o.axis === "x" ? def.x : def.y); if (!box) return;
         const r0 = wallItemRect(s.l, o), a = toScreen(r0.x0, r0.y0), b = toScreen(r0.x0 + r0.w, r0.y0 + r0.h);
@@ -2410,6 +2421,7 @@ function solid(l) {
     const s = new Set();
     for (const p of (l.props || [])) { if (p.k.startsWith("mark_") || (p.k === "rope" && p.night && realNight()) || (tool === "walk" && !window.hallwayXmas && XMAS_PROP(p.k))) continue; if (p.k === "archway") { for (const t of archPosts(l, p)) s.add(t[0] + "," + t[1]); continue; } for (const t of Parts.tiles(p)) s.add(t[0] + "," + t[1]); }   // scuffs and a lifted tile are only marks on the floor
     for (const t of (l.teles || [])) s.add(t.x + "," + t.y);
+    if (window.hallwayXmas) for (const p of (l.props || [])) if (p.k === "statue") treeKeepOut(p, (x, y) => s.add(x + "," + y));
     return s;
 }
 /* Every flight is a little floor of its own, each tile at its own height: walked, clicked and shown with the
