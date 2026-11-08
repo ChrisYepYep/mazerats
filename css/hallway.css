@@ -154,3 +154,7 @@ html.hallway-instant #hallway-stage { transition: none; }
     .hallway-pill { top: 34px; }
     @keyframes hallway-turn-away { to { opacity: 0; visibility: hidden; } }
 }
+
+/* Full screen (F11, or the hallway asking for it): the footer slides away too and the hallway takes its room (8 Nov 2026, his) */
+html.hallway-open.hallway-full body > .site-footer { transform: translateY(calc(100vh + 100%)); }
+html.hallway-open.hallway-full #hallway-stage { bottom: 0; }

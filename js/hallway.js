@@ -39,7 +39,11 @@
     const stateOf = s => (s && !s.fromCache && ["coming-soon", "maintenance", "live"].includes(s.hallwayState)) ? s.hallwayState : "hidden";
 
     /* The hallway fills from the bottom of the top bar to the top of the footer, whatever size they are */
+    /* Full screen, whether F11 (the window fills the screen) or the page asking for it: the footer goes (8 Nov 2026, his) */
+    const fullNow = () => !!document.fullscreenElement || matchMedia("(display-mode: fullscreen)").matches || (Math.abs(innerHeight - screen.height) <= 1 && Math.abs(innerWidth - screen.width) <= 1);
+    document.addEventListener("fullscreenchange", () => place());
     function place() {
+        root.classList.toggle("hallway-full", fullNow());
         const head = document.querySelector(".site-header"), foot = document.querySelector("body > .site-footer");
         root.style.setProperty("--hallway-top", Math.max(0, head ? Math.round(head.getBoundingClientRect().bottom) : 0) + "px");
         if (!foot) return;
@@ -114,7 +118,13 @@
         box.append(words, bar); load.appendChild(box); stage.appendChild(load);
         /* It fills as the page says things have arrived, and still creeps on a slow line rather than looking stuck */
         let shown = 0; const creep = setInterval(() => { const aim = Math.max(frame && frame._told ? frame._told * 100 : 0, 24); shown += (aim - shown) * .12; fill.style.width = shown + "%"; }, 120);
-        if (state !== "live") { const pill = document.createElement("div"); pill.className = "hallway-pill"; pill.textContent = `${LABELS[state] || state}: only admins can walk it`; stage.appendChild(pill); }
+        /* not open to everyone yet: a DEV MODE pill in the site's top bar, not a note over the hallway (8 Nov, his) */
+        if (state !== "live" && !document.querySelector(".hallway-dev-pill")) {
+            const pill = document.createElement("span"); pill.className = "header-badge header-state-pill hallway-dev-pill"; pill.textContent = "DEV MODE | HALLWAY";
+            pill.title = `${LABELS[state] || state}: only admins can walk it`;
+            const after = document.querySelector(".site-header .brand-group .header-badge"), group = document.querySelector(".site-header .brand-group");
+            if (after) after.after(pill); else if (group) group.appendChild(pill);
+        }
         frame = document.createElement("iframe");
         frame.title = "The Hallway"; frame.src = PLAY; frame.allow = "autoplay; fullscreen";
         frame.addEventListener("load", () => { try { frame.contentWindow.focus(); } catch (e) { /* it asks for the keyboard itself on a click */ } });
@@ -154,6 +164,7 @@
             else if (PATH.test(location.pathname)) { try { history.replaceState(history.state, "", "/home" + location.search + location.hash); } catch (e) { /* stays */ } }
         } else pushed = false;
         root.classList.remove("hallway-instant", "hallway-open");
+        for (const e of document.querySelectorAll(".hallway-dev-pill")) e.remove();
         for (const e of document.querySelectorAll("body > main, body > .fellow-fansites")) e.inert = false;
         const spine = document.getElementById("side-spine"); if (spine) { try { spine.focus({ preventScroll: true }); } catch (e) { /* nowhere to put it */ } }
         if (frame) { clearInterval(+frame.dataset.creep); clearTimeout(frame._late); }
