@@ -158,3 +158,9 @@ let old = []; try { delete require.cache[require.resolve(LIST)]; old = require(L
 const FL = JSON.stringify(FLOOR);
 fs.writeFileSync(LIST, `/* made by make-wall-items.js and make-ideas-art.js */\n(function () { const L = ${JSON.stringify([...old, ...items])}, F = ${FL}; if (typeof module !== "undefined") { module.exports = L; L.floor = F; } else { window.WALL_ITEMS = L; window.FLOOR_PIECES = F; } })();\n`);
 console.log(items.length, "wall pieces,", Object.keys(FLOOR).length, "floor pieces:", items.map(i => i.id + " " + i.y.w + "x" + i.y.h + " h" + i.h).join(", "));
+/* The arcade cabinets as Chris has drawn them (8 Nov 2026): a picture in art/arcades/ takes the place of the one made from ideas/arcades.js,
+   at the same size, so it stands where the made one did. A different size is left out, with a warning, as its foot would move. */
+{ const own = path.join(__dirname, "art", "arcades"); if (fs.existsSync(own)) for (const f of fs.readdirSync(own)) { if (!/^i_arcade_\w+\.png$/.test(f)) continue;
+    const mine = L.loadPng(path.join(own, f)), made = path.join(__dirname, "art", "wall", f); if (!fs.existsSync(made)) continue; const was = L.loadPng(made);
+    if (mine.w !== was.w || mine.h !== was.h) { console.warn("art/arcades/" + f + " is " + mine.w + "x" + mine.h + ", not " + was.w + "x" + was.h + ": left out"); continue; }
+    fs.copyFileSync(path.join(own, f), made); } }

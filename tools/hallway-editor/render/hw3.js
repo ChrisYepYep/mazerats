@@ -698,8 +698,8 @@ const portalArt = (phase = 0) => portalMemo.get(phase) || (portalMemo.set(phase,
     };
     return { y: { alcove: tallPiece(eY, false), arch: surround(mY, eY, SEAMY, 28, 120, x => x >= 104) }, x: { alcove: tallPiece(eX, true), arch: surround(mX, eX, SEAMX, 17, 110, x => x <= 36) } };
 })()), portalMemo.get(phase));
-function drawPortal(w, axis, line, at, part) {
-    const b = w.b, T = w.wallTop, art = portalArt(((at % 8) + 8) % 8)[axis][part];
+function drawPortal(w, axis, line, at, part, theatre) {
+    const b = w.b, T = w.wallTop, ph = ((at % 8) + 8) % 8, art = theatre ? theatreArt(ph, axis, part, T) : portalArt(ph)[axis][part];
     const p = axis === "x" ? w.S(at, line) : w.S(line, at), x0 = axis === "x" ? p[0] : p[0] - 138;
     /* the wall carries straight on either side, so its pieces' end posts aren't wanted */
     const i0 = axis === "x" ? 0 : 10, i1 = axis === "x" ? 128 : 138;
@@ -709,6 +709,98 @@ function drawPortal(w, axis, line, at, part) {
         if (part === "arch" && !art.rgba[q] && !art.rgba[q + 1] && !art.rgba[q + 2] && (i < 8 || i > art.w - 8)) continue;
         b.set(x0 + i, p[1] - T + j, [art.rgba[q], art.rgba[q + 1], art.rgba[q + 2]]);
     }
+}
+
+/* ---- the Theatredrome entrance (8 Nov 2026, the owner's: "Using the entrance portal as a base, make a version of that which is just a
+   non-functioning placeable item, that is an entrance to the Theatredrome ... add in some curtains inside the tunnel, and make a bit of the
+   Theatredrome's carpet poking out from the tunnel too. The exit sign at the top would need to be changed").
+   The entrance's own two pieces, changed: the tunnel's floor is the Theatredrome's red carpet, which carries on a tile out onto the hallway
+   floor (theatreCarpetAt, from the floor pass); the Theatredrome's blue-grey stage curtains (his pick, from the client's esirippu) hang across
+   the tunnel, parted; and the EXIT plaque and its vents are one long plaque saying THEATREDROME. map.theatres: [{ level, axis, line, at }]. */
+const TC = { edge: [52, 14, 6], gold: [201, 132, 46], goldDk: [150, 88, 30], inner: [74, 14, 8], core: [116, 18, 12], core2: [100, 14, 9] };
+/* the carpet at a point, in tiles across the opening (0 to 4) and in from the wall (negative: out on the hallway floor) */
+function theatreCarpet(across, depth, a, b) {
+    /* its front edge at the opening, a tile back from where it first was (his, 8 Nov) */
+    if (across < .25 || across > 3.75 || depth < 0) return null;
+    const d = Math.min(across - .25, 3.75 - across, depth) * 16;
+    if (d < 1) return TC.edge; if (d < 2) return TC.goldDk; if (d < 3.5) return TC.gold; if (d < 4.5) return TC.inner;
+    return ((a + b) & 1) ? TC.core : TC.core2;
+}
+/* the floor pass: the tile out in front of a Theatredrome entrance */
+function theatreCarpetAt(list, X, Y, dx, dy) {
+    const fa = X + (dx + 2 * dy) / 32, fb = Y + (2 * dy - dx) / 32, a = Math.floor(fa * 16), b = Math.floor(fb * 16);
+    for (const q of list) { const across = q.axis === "y" ? fb - q.at - 2 : fa - q.at - 2, depth = q.axis === "y" ? q.line - fa : q.line - fb; if (depth > 4 || depth < -1) continue; const c = theatreCarpet(across, depth, a, b); if (c) return c; }
+    return null;
+}
+const THEATRE_FONT = { T: ["###", ".#.", ".#.", ".#.", ".#."], H: ["#.#", "#.#", "###", "#.#", "#.#"], E: ["###", "#..", "##.", "#..", "###"], A: [".#.", "#.#", "###", "#.#", "#.#"], R: ["##.", "#.#", "##.", "#.#", "#.#"], D: ["##.", "#.#", "#.#", "#.#", "##."], O: [".#.", "#.#", "#.#", "#.#", ".#."], M: ["#.#", "###", "###", "#.#", "#.#"] };
+const theatreMemo = new Map();
+function theatreArt(phase, axis, part, T) {
+    const key = phase + axis + part + T; if (theatreMemo.has(key)) return theatreMemo.get(key);
+    const src = portalArt(phase)[axis][part], o = { w: src.w, h: src.h, rgba: Buffer.from(src.rgba) }, W = o.w, H = o.h, at = (i, j) => (j * W + i) * 4;
+    const put = (i, j, c) => { if (i < 0 || j < 0 || i >= W || j >= H) return; const q = at(i, j); if (o.rgba[q + 3] < 128) return; o.rgba[q] = c[0]; o.rgba[q + 1] = c[1]; o.rgba[q + 2] = c[2]; };
+    const isFloor = (i, j) => { const q = at(i, j); if (src.rgba[q + 3] < 128) return false; const r = src.rgba[q], g = src.rgba[q + 1], b = src.rgba[q + 2], l = r * .3 + g * .59 + b * .11; return l > 95 && r > g && g > b && r - b > 40; };
+    /* the piece's pixel as a point on the floor, in tiles from the portal's own point */
+    const floorAt = (i, j) => { const sx = axis === "x" ? i : i - 138, sy = j - T, m = sx / 16, p = sy / 8; return [(m + p) / 2, (p - m) / 2]; };
+    const across = (dX, dY) => axis === "y" ? dY - 2 : dX - 2, depth = (dX, dY) => axis === "y" ? -dX : -dY;
+    const i0 = axis === "y" ? 42 : 33, i1 = axis === "y" ? 105 : 96;
+    if (part === "alcove") {
+        /* the carpet, where the tunnel's floor is */
+        const floorTop = new Map();
+        /* where the tunnel's floor starts in each column: its first floor-coloured pixel, smoothed over the columns either side so a groove can't leave a drip of curtain */
+        const first = new Map(); for (let j = 128; j < H; j++) for (let i = 0; i < W; i++) if (!first.has(i) && isFloor(i, j)) first.set(i, j);
+        for (const i of first.keys()) { const near = []; for (let k = -3; k <= 3; k++) if (first.has(i + k)) near.push(first.get(i + k)); near.sort((p, q) => p - q); floorTop.set(i, near[Math.floor(near.length / 2)]); }
+        for (let i = 0; i < W; i++) if (floorTop.has(i)) for (let j = floorTop.get(i); j < H; j++) { const [dX, dY] = floorAt(i, j), c = theatreCarpet(across(dX, dY), depth(dX, dY), Math.floor((axis === "y" ? dY : dX) * 16), Math.floor((axis === "y" ? dX : dY) * 16)); if (c) put(i, j, c); }
+        /* The curtains (his, 8 Nov: "high quality isometric pixel art", then "cut off by the floor, and need to be more naturally hanging,
+           so curved a bit"). Two drapes of the Theatredrome's blue-grey hang a tile and a half into the tunnel, so they come right down onto the carpet:
+           each sweeps in an S from the top of the opening back to a gold tie-back two thirds of the way down, then falls to the floor with a
+           little flare, finished with a hem whose foot follows its folds and a soft shadow on the carpet. The folds gather into the tie; each
+           has a lit ridge and a dark crease. Between them, the dark of the stage. A scalloped pelmet with a gold braid and fringe runs over the
+           top. Rows run along the tunnel's slant, as the wall's own lines do. */
+        const RAMP = [[22, 31, 41], [31, 44, 57], [43, 61, 76], [58, 81, 98], [76, 103, 121], [98, 128, 146]], GOLD = [222, 168, 72], GOLD_DK = [150, 98, 34], VOID = [[10, 12, 16], [16, 19, 25]];
+        const BAYER2 = [[0, 2], [3, 1]], slope = axis === "y" ? -.5 : .5, mid = (i0 + i1) / 2, Wd = i1 - i0, top = 94, ty = .62;
+        const tone = (v, i, j) => { v = Math.max(0, Math.min(RAMP.length - 1.001, v)); const lo = Math.floor(v), f = v - lo; return RAMP[f * 4 > BAYER2[j & 1][i & 1] + .5 ? Math.min(RAMP.length - 1, lo + 1) : lo]; };
+        /* where the curtain line meets the floor in each column: a little way in from the opening */
+        const hang = i => { const m = (axis === "x" ? i : i - 138) / 16, d = 1.5; return Math.round(T + 8 * (axis === "y" ? -2 * d - m : m - 2 * d)); };
+        const edgeAt = y => y < ty ? .28 + .22 * (1 + Math.cos(Math.PI * y / ty)) / 2 : .28 + .1 * Math.sin(Math.PI / 2 * (y - ty) / (1 - ty));
+        const foldC = (x, y) => { const e = edgeAt(y), u = (x < .5 ? x : 1 - x) / e; return { e, u, c: Math.cos(2 * Math.PI * u * 4) }; };
+        for (let i = i0; i <= i1; i++) {
+            const lift = slope * (i - mid), x = (i - i0) / Wd, foot = hang(i), height = Math.max(1, foot - top - lift);
+            for (let j = Math.floor(top + lift); j <= foot + 2; j++) {
+                const q = at(i, j); if (j < 0 || j >= H || o.rgba[q + 3] < 128) continue;
+                const y = Math.min(1, (j - top - lift) / height), r = j - top - lift;
+                /* the pelmet: 8 rows, scalloped along its foot */
+                const scallop = 8 + Math.round(2 * Math.sin(Math.PI * (((i - i0) % 9) / 9)));
+                if (r < scallop) { put(i, j, r === 0 ? [70, 96, 116] : r === 2 ? GOLD : r === scallop - 1 ? (((i + j) & 1) ? GOLD : GOLD_DK) : r === scallop - 2 ? RAMP[1] : tone(2.4 - r * .08, i, j)); continue; }
+                const { e, u, c } = foldC(x, y), inDrape = u <= 1;
+                /* the hem: its foot dips a pixel under each fold's ridge */
+                const hemFoot = foot - (c > .2 ? 0 : 1);
+                if (j > hemFoot) { if (inDrape && j <= hemFoot + 2) { const cq = at(i, j); o.rgba[cq] = Math.round(o.rgba[cq] * .62); o.rgba[cq + 1] = Math.round(o.rgba[cq + 1] * .62); o.rgba[cq + 2] = Math.round(o.rgba[cq + 2] * .62); } continue; }
+                if (!inDrape) { const glow = Math.max(0, 1 - Math.abs(x - .5) * 3) * y; put(i, j, glow > .4 && ((i + j) & 1) ? VOID[1] : VOID[0]); continue; }
+                if (j === hemFoot) { put(i, j, RAMP[1]); continue; }
+                if (j === hemFoot - 1) { put(i, j, c > 0 ? RAMP[4] : RAMP[3]); continue; }
+                const edgePx = (1 - u) * e * Wd;
+                if (edgePx < 1) { put(i, j, RAMP[0]); continue; }
+                if (edgePx < 2) { put(i, j, RAMP[4]); continue; }
+                /* the tie-back: a gold cord round the gathered drape */
+                if (Math.abs(y - ty) * height < 1.1) { put(i, j, (i & 1) ? GOLD : GOLD_DK); continue; }
+                /* the folds: crisp bands, a lit ridge on each crest and a dark crease in each trough, darker under the pelmet */
+                if (c > .93 && y > .1) { put(i, j, RAMP[5]); continue; }
+                if (c < -.93) { put(i, j, RAMP[0]); continue; }
+                const light = 2.4 + 1.5 * c + .4 * u - (y < .12 ? 1 : 0), lo = Math.floor(light), f = light - lo;
+                put(i, j, f > .42 && f < .58 ? tone(light, i, j) : RAMP[Math.max(0, Math.min(RAMP.length - 1, Math.round(light)))]);
+            }
+        }
+        /* the tassels, hanging from each tie at the drape's edge */
+        for (const side of [0, 1]) { const ex = Math.round(side ? i1 - .28 * Wd : i0 + .28 * Wd), lift = slope * (ex - mid), r0 = Math.round(top + lift + ty * (hang(ex) - top - lift));
+            for (let v = 1; v <= 6; v++) for (let u = -1; u <= 1; u++) { if (v < 3 && u !== 0) continue; if (v === 6 && u === 0) { put(ex, r0 + v, GOLD_DK); continue; } if (v === 6) continue; put(ex + u, r0 + v, u === -1 ? GOLD_DK : u === 1 ? [168, 112, 42] : GOLD); } }
+    } else {
+        /* the plaque: along the beam over the opening, where EXIT and its vents were */
+        const slope = axis === "y" ? -.5 : .5, cx = (i0 + i1) / 2, cj = 103, rowOf = i => Math.round(cj + slope * (i - cx));
+        for (let i = i0 + 4; i <= i1 - 4; i++) { const r = rowOf(i); for (let j = r - 11; j <= r + 5; j++) put(i, j, j === r - 11 || j === r + 5 || i === i0 + 4 || i === i1 - 4 ? [26, 14, 8] : j === r - 10 ? [120, 76, 40] : [64, 38, 22]); }
+        const word = "THEATREDROME", tw = word.length * 4 - 1; let x = Math.round(cx - tw / 2);
+        for (const ch of word) { const g = THEATRE_FONT[ch], base = rowOf(x + 1) - 5; for (let v = 0; v < 5; v++) for (let u = 0; u < 3; u++) if (g[v][u] === "#") { put(x + u, base + v, [240, 196, 96]); put(x + u, base + v + 1, [34, 18, 10]); } x += 4; }
+    }
+    theatreMemo.set(key, o); return o;
 }
 
 /* A small wall light to match the globe lamp: a little antique bronze plate, a short curved arm, a cup and a round glass globe.
@@ -1242,6 +1334,7 @@ function fromMap(map, names) {
         if (P) { (P.liftList = P.liftList || []).push(q.x); } else report.lost.push("lift " + q.x);
     }
     if (map.entrance) { const q = map.entrance, li3 = byId(q.level); if (li3) { (li3.portals = li3.portals || []).push(q); } }
+    for (const q of (map.theatres || [])) { const li4 = byId(q.level); if (li4) { (li4.portals = li4.portals || []).push({ ...q, theatre: true }); (li4.theatres = li4.theatres || []).push(q); } }
     const li = null;
     if (li) { const P = li.patches.find(q => !q.notch && q.y0 === map.lift.y && map.lift.x >= q.x0 && map.lift.x < q.x1); if (P) P.lift = map.lift.x; else report.lost.push("lift"); }
     seq.report = report;
@@ -1639,7 +1732,7 @@ function build(cfg) {
             for (let X = P.x0; X <= P.x1; X++) { const open = X < P.x1 && !has.has(X + "," + (P.y0 - 1)) && !holes.has(X + "," + (P.y0 - 1)) && !P.noBack && (P.notch || !airBelow(X, P.y0 - 1) || doorEdge("x", X, P.y0) || shown("x", P.y0, X)); if (open && run === null) run = X; if (!open && run !== null) { tagged(() => H.wallRunX(w, run, X, P.y0, { ...cornerEnd(backWall(X, P.y0, P.z), sideWall(X, P.y0 - 1), zAt(X, P.y0 - 1), P.z), noStart: backWall(run - 1, P.y0, P.z), col: colOf("x", P.y0), ...halfOf("x", P.y0) })); run = null; } }
             run = null;
             for (let Y = P.y0; Y <= P.y1; Y++) { const open = Y < P.y1 && !has.has((P.x0 - 1) + "," + Y) && !holes.has((P.x0 - 1) + "," + Y) && (P.notch || !airBelow(P.x0 - 1, Y) || doorEdge("y", P.x0, Y) || shown("y", P.x0, Y)); if (open && run === null) run = Y; if (!open && run !== null) { tagged(() => H.wallRunY(w, P.x0, run, Y, { ...cornerEnd(sideWall(P.x0, Y, P.z), backWall(P.x0 - 1, Y), zAt(P.x0 - 1, Y), P.z), noStart: sideWall(P.x0, run - 1, P.z), col: colOf("y", P.x0), ...halfOf("y", P.x0) })); run = null; } }
-            for (const q of (lv.portals || [])) { if (tileOf.get(q.axis === "x" ? q.at + "," + q.line : q.line + "," + q.at) === P) { drawPortal(w, q.axis, q.line, q.at, "alcove"); drawPortal(w, q.axis, q.line, q.at, "arch"); } }
+            for (const q of (lv.portals || [])) { if (tileOf.get(q.axis === "x" ? q.at + "," + q.line : q.line + "," + q.at) === P) { drawPortal(w, q.axis, q.line, q.at, "alcove", q.theatre); drawPortal(w, q.axis, q.line, q.at, "arch", q.theatre); } }
             /* A wall running alongside small steps climbs with them, panelling, paper and cap together, so it flows from the lower floor's wall into the higher one's instead of jumping.
                Each column of it moves up by how far the steps have climbed there; the steps, drawn after, cover what's left at its foot. */
             for (const st of ((lv.src && lv.src.steps) || [])) {
@@ -1748,6 +1841,7 @@ function build(cfg) {
                 if (med) { const ma = X - med.x, mb = Y - med.y; smp = (dx, dy) => modPx(crossPc, false, 2 + ma, 2 + mb, dx, dy); }
                 else if (lv.rugs && lv.rugs.length) { const XX = X, YY = Y, F = lv.rugF || (lv.rugF = rugField(lv.rugs)); smp = (dx, dy) => rugFieldAt(F, XX, YY, dx, dy) || plainS(dx, dy); }
                 else smp = plainS;
+                if (lv.theatres && lv.theatres.length) { const XX = X, YY = Y, under0 = smp, th = lv.theatres; smp = (dx, dy) => theatreCarpetAt(th, XX, YY, dx, dy) || under0(dx, dy); }
                 if ((lv.smalls && lv.smalls.length) || (lv.arrows && lv.arrows.length)) { const XX = X, YY = Y, under = smp, sm = lv.smalls || [], ars = lv.arrows || []; /* both are the hallway's wood, over a rug too */ smp = (dx, dy) => arrowAt(ars, XX, YY, dx, dy, plainS) || smallAt(sm, XX, YY, dx, dy, plainS) || under(dx, dy); }
                 tileDraw(X, Y, smp);
             }
@@ -2147,4 +2241,4 @@ function shot(world, px, py, vw, vh, zoom, o) {
     }
     return out;
 }
-module.exports = { smallGlobe, lift, recolour, drawPortal, build, shot, plan, fromMap, WAYS, LIGHTS, LAMP_STYLES, signIso, stairPlaque, plaqueWidth, PLAQUE, floorLamp, H, Buf };
+module.exports = { smallGlobe, lift, recolour, drawPortal, portalArt, build, shot, plan, fromMap, WAYS, LIGHTS, LAMP_STYLES, signIso, stairPlaque, plaqueWidth, PLAQUE, floorLamp, H, Buf };
