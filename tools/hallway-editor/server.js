@@ -36,10 +36,13 @@ const LAMP_ART = path.join(__dirname, "art", "lamps", "globe-lamp.png");
 const WALL_ART = path.join(__dirname, "art", "lamps", "globe-wall-light.png");
 const BACK_ART = path.join(__dirname, "art", "lamps", "globe-wall-light-back.png");
 const SCONCE_ART = path.join(__dirname, "art", "lamps", "wall-light.png");
-const artStamp = () => { let t = 0; for (const f of [LAMP_ART, WALL_ART, BACK_ART, SCONCE_ART]) { try { t += fs.statSync(f).mtimeMs; } catch (e) { /* not there */ } } return t; };
+const TABLE_ART = path.join(__dirname, "art", "lamps", "globe-table-lamp.png");
+const artStamp = () => { let t = 0; for (const f of [LAMP_ART, WALL_ART, BACK_ART, SCONCE_ART, TABLE_ART]) { try { t += fs.statSync(f).mtimeMs; } catch (e) { /* not there */ } } return t; };
 let artAt = artStamp();
 let publishing = { running: false, at: 0, of: 0, error: null };
-for (const f of [LAMP_ART, WALL_ART, BACK_ART, SCONCE_ART]) fs.watchFile(f, { interval: 400 }, () => {
+for (const f of [LAMP_ART, WALL_ART, BACK_ART, SCONCE_ART, TABLE_ART]) fs.watchFile(f, { interval: 400 }, () => {
+    /* the table lamp's picture for the palette and the ghost comes from make-ideas-art.js */
+    if (f === TABLE_ART) require("child_process").execFile(process.execPath, [path.join(__dirname, "make-ideas-art.js")], () => {});
     artAt = artStamp();
     /* and the ghost that follows the mouse when placing one */
     require("child_process").execFile(process.execPath, [path.join(__dirname, "make-furni-art.js")], () => {});

@@ -310,8 +310,39 @@ function sconce(out, off, colour) {
 }
 const memo = new Map();
 /* every pixel of one design, off or lit: [dx, dy, [r, g, b], glowing], and how far up its light sits */
-/* the table lamp: the globe lamp's own globe, gallery ring and cup from his drawing, on a low foot and a short stem instead of the pole */
+/* The globe table lamp is his to draw: art/lamps/globe-table-lamp.png, the lit lamp on the left and the same lamp off on the right, any size
+   (8 Nov 2026). Each stands on the bottom tip of its base, four pixels below which is the point it stands on. What's different between the two
+   is what makes the light, and takes a light's colour. Without a readable file it falls back on the drawn one (tableGlobeDrawn). */
+const TABLE_SHEET = path.join(__dirname, "..", "art", "lamps", "globe-table-lamp.png");
+let tableSheet = null;
 function tableGlobe(off, colour) {
+    try {
+        const at = fs.statSync(TABLE_SHEET).mtimeMs;
+        if (!tableSheet || tableSheet.at !== at) {
+            const im = readPng(TABLE_SHEET), used = x => { for (let y = 0; y < im.h; y++) if (im.rgba[(y * im.w + x) * 4 + 3] >= 128) return true; return false; }, runs = [];
+            for (let x = 0; x < im.w; x++) if (used(x)) { const r = runs[runs.length - 1]; if (r && r[1] === x - 1) r[1] = x; else runs.push([x, x]); }
+            /* the two lamps: the first and last stretch of columns with anything in them (a gap inside one lamp joins back up) */
+            const lit = [runs[0][0], runs.length > 1 ? runs[Math.floor(runs.length / 2) - 1 + (runs.length % 2)][1] : runs[0][1]], offR = runs.length > 1 ? [runs[Math.ceil(runs.length / 2)][0], runs[runs.length - 1][1]] : lit;
+            const foot = ([x0, x1]) => { for (let y = im.h - 1; y >= 0; y--) for (let x = x0; x <= x1; x++) if (im.rgba[(y * im.w + x) * 4 + 3] >= 128) return [x, y]; return [x0, im.h - 1]; };
+            tableSheet = { at, im, lit, off: offR, litFoot: foot(lit), offFoot: foot(offR), memo: new Map() };
+        }
+    } catch (e) { /* half-saved or missing: keep what we had */ }
+    if (!tableSheet) return tableGlobeDrawn(off, colour);
+    const k = (off ? "off" : "lit") + (colour && !off ? colour : ""), sh = tableSheet; if (sh.memo.has(k)) return sh.memo.get(k);
+    const { im } = sh, [x0, x1] = off ? sh.off : sh.lit, [fx, fy] = off ? sh.offFoot : sh.litFoot, OY = fy - 4, list = [];
+    const at = (x, y) => { if (x < 0 || y < 0 || x >= im.w || y >= im.h) return null; const q = (y * im.w + x) * 4; return im.rgba[q + 3] >= 128 ? [im.rgba[q], im.rgba[q + 1], im.rgba[q + 2]] : null; };
+    let top = 0, glowSum = 0, glowN = 0;
+    for (let y = 0; y < im.h; y++) for (let x = x0; x <= x1; x++) {
+        const c = at(x, y); if (!c) continue;
+        const dx = x - fx, dy = y - OY, twin = at(off ? sh.litFoot[0] + dx : sh.offFoot[0] + dx, (off ? sh.litFoot[1] : sh.offFoot[1]) - 4 + dy);
+        const glass = !off && !!twin && (twin[0] !== c[0] || twin[1] !== c[1] || twin[2] !== c[2]) && c[0] + c[1] + c[2] > 300;
+        if (glass) { glowSum += dy; glowN++; } top = Math.min(top, dy);
+        list.push([dx, dy, glass && colour ? tintGlow(c, colour) : c, glass]);
+    }
+    const v = { list, lightH: glowN ? Math.round(-glowSum / glowN) : Math.round(-top * .6) }; sh.memo.set(k, v); return v;
+}
+/* the table lamp: the globe lamp's own globe, gallery ring and cup from his drawing, on a low foot and a short stem instead of the pole */
+function tableGlobeDrawn(off, colour) {
     const k = "tableglobe" + (off ? "|off" : "|lit") + (colour || ""); if (memo.has(k)) return memo.get(k);
     const sh = globeSheet(), top = sh ? pixelsFromSheet(sh, off, colour).list : pixels("globe", off, colour, GLOBE).list, LIFT = 6, px = new Map(), r = R.antique;
     for (const [dx, dy, c, g] of top) if (dy <= -11) px.set(dx + "," + (dy + LIFT), [dx, dy + LIFT, c, g]);
