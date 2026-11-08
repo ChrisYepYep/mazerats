@@ -125,8 +125,7 @@
         /* the floor you're on, from the point on its path nearest where you were looking, going whichever way has further to go */
         const cam = LIVE.cam; let i = Math.max(0, floors.findIndex(f => f.l === LIVE.floor)), r = floors[i].r, best = 0, bd = 1e12; r.pts.forEach((p, k) => { const d = (p[0] - cam.x) ** 2 + (p[1] - cam.y) ** 2; if (d < bd) { bd = d; best = k; } });
         Object.assign(screensaver, { on: true, floors, i, d: r.seg[best], dir: r.seg[best] > r.len / 2 ? -1 : 1, cam: { x: cam.x, y: cam.y }, phase: "move", t0: performance.now(), last: performance.now(), was: { cam }, fade: 0, dim: 0 });
-        /* the music rests, and comes back where it was */
-        const A = window.HallwayAudio; screensaver.music = !!(A && A.playing); if (screensaver.music) A.stop();
+        /* the music plays on (8 Nov 2026, his: it should keep playing when the screensaver starts) */
         LIVE.holdCamera(true); document.body.classList.add("hw-screensaver");
         if (!screensaver.title) { const t = screensaver.title = document.createElement("div"); t.className = "hw-ss-title"; t.setAttribute("aria-hidden", "true"); const big = document.createElement("div"), small = document.createElement("div"); big.className = "hw-ss-name"; big.textContent = "Maze Rats Hallway"; small.className = "hw-ss-hint"; small.textContent = matchMedia("(pointer: coarse)").matches ? "Tap to exit screensaver." : "Click or press any key to exit screensaver."; t.append(big, small); (document.getElementById("stage") || document.body).appendChild(t); }
         screensaver.title.classList.remove("on"); void screensaver.title.offsetWidth; screensaver.title.classList.add("on");
@@ -135,7 +134,6 @@
     function ssEnd() {
         if (!screensaver.on) return; screensaver.on = false; cancelAnimationFrame(screensaver.raf); document.body.classList.remove("hw-screensaver"); if (screensaver.title) screensaver.title.classList.remove("on"); LIVE.forceMood(null); const w = screensaver.was;
         LIVE.camera(w.cam.x, w.cam.y); LIVE.holdCamera(false); LIVE.markActive(); LIVE.wake();
-        if (screensaver.music && window.HallwayAudio && !HallwayAudio.playing) HallwayAudio.start();
     }
     function ssTick(now) {
         if (!screensaver.on) return; screensaver.raf = requestAnimationFrame(ssTick);
