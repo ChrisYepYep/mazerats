@@ -757,7 +757,7 @@ function drawMoods(ox, oy, x0, x1, y0, y1) {
     const name = m.f < .5 ? m.a : m.b; if ($("timeNow").textContent !== MOOD_NAME[name]) $("timeNow").textContent = MOOD_NAME[name];
     return true;
 }
-function avatarTint(c) {
+function avatarTint(c, w = 33, h = 56) {
     const m = moodNow() || { a: map.light || "sconces", b: map.light || "sconces", f: 0 };
     const A = MOOD_TINT[m.a] || MOOD_TINT.day, B = MOOD_TINT[m.b] || MOOD_TINT.day, f = m.f, v = [0, 1, 2, 3].map(i => A[i] + (B[i] - A[i]) * f); if (v[3] <= 0) return;
     /* how much light reaches you from the lights near you, as the floor gets it */
@@ -769,8 +769,8 @@ function avatarTint(c) {
     }
     glow = Math.min(1, glow);
     c.save(); c.globalCompositeOperation = "source-atop";
-    c.fillStyle = `rgba(${v[0] | 0},${v[1] | 0},${v[2] | 0},${v[3] * (1 - glow * .85)})`; c.fillRect(0, 0, 33, 56);
-    if (glow > 0) { c.fillStyle = `rgba(255,190,110,${glow * .14 * Math.min(1, v[3] * 2.5)})`; c.fillRect(0, 0, 33, 56); }
+    c.fillStyle = `rgba(${v[0] | 0},${v[1] | 0},${v[2] | 0},${v[3] * (1 - glow * .85)})`; c.fillRect(0, 0, w, h);
+    if (glow > 0) { c.fillStyle = `rgba(255,190,110,${glow * .14 * Math.min(1, v[3] * 2.5)})`; c.fillRect(0, 0, w, h); }
     c.restore();
 }
 /* Only while something's changing: a fade between times of day, or a drink in hand */
@@ -1027,7 +1027,9 @@ window.HallwayLive = {
         const up = map.levels.find(q => q.k === l.k + 1); if (!up) return own; const X = axis === "x" ? t : line, Y = axis === "x" ? line : t, A = axis === "x" ? [X, Y - 1] : [X - 1, Y], cov = hasFloor(up, A[0], A[1]) ? A : hasFloor(up, X, Y) ? [X, Y] : null;
         return cov ? Math.max(own, levelZ(up) + wallHeightAt(up, cov[0], cov[1]) - 13) : own; }, get zoom() { return zoom; }, markActive,
     /* for the things that move about the floor like a person: furniture in front cuts them, the time of day tints them. c is a 33 by 56 canvas, as the avatar's */
-    as(who, fn) { const me = walker; walker = who; try { fn(); } finally { walker = me; } }, cutInFront: (c, x0, y0) => cutInFront(c, x0, y0), tint: c => avatarTint(c),
+    as(who, fn) { const me = walker; walker = who; try { fn(); } finally { walker = me; } }, cutInFront: (c, x0, y0) => cutInFront(c, x0, y0), tint: (c, w, h) => avatarTint(c, w, h),
+    /* where a wall item's picture goes on the map, and a piece's picture and where it's drawn from (live-leet.js) */
+    wallItemRect: (l, q) => wallItemRect(l, q), pieceOf: p => pieceOf(p), tileZ: (l, x, y) => tileZ(l, x, y),
     tileFree(l) { const so = solid(l), hs = holes(l), sl = stairLevels().slots.get(l); return (x, y) => hasFloor(l, x, y) && !so.has(x + "," + y) && !hs.some(h => inRect(h, x, y)) && !(sl && sl.has(x + "," + y)); },
     nodeZ: (l, x, y) => nodeZ(l, x, y), mood: () => moodNow(), forceMood(m) { moodForced = m; }, loadMood: (m, x, y) => { const tx = Math.floor(x / TILE), ty = Math.floor(y / TILE); moodTile(m, tx, ty); },
     view() { const hw = canvas.width / zoom / 2, hh = canvas.height / zoom / 2; return { x0: cam.x - hw, x1: cam.x + hw, y0: cam.y - hh, y1: cam.y + hh, w: canvas.width, h: canvas.height }; },
@@ -3347,6 +3349,9 @@ function showMapInfo() {
     for (const l of map.levels) if (l.swags && l.swags.length) { const runs = new Map(); for (const k of l.swags) { const [ax, ln, t] = k.split("|"); const key = ax + "|" + ln; if (!runs.has(key)) runs.set(key, []); runs.get(key).push(+t); } l.garlands = l.garlands || []; for (const [key, ts] of runs) { const [ax, ln] = key.split("|"); ts.sort((p, q) => p - q); let a = ts[0], b = a + 1; for (const t of ts.slice(1)) { if (t === b) b++; else { l.garlands.push({ axis: ax, line: +ln, a, b }); a = t; b = t + 1; } } l.garlands.push({ axis: ax, line: +ln, a, b }); } delete l.swags; }
     { const row = $("baubleRow"); if (row && !row.children.length) for (const c of ["red", "gold", "blue", "silver", "purple", "pink", "teal"]) { const f = document.createElement("label"); f.className = "hint"; f.style.marginRight = "8px"; const t = document.createElement("input"); t.type = "checkbox"; t.dataset.c = c; t.addEventListener("change", () => { const on = [...row.querySelectorAll("input")].filter(q => q.checked).map(q => q.dataset.c); if (!on.length) { t.checked = true; return; } snapshot(); map.baubles = on; changed(); }); f.append(t, " " + c); row.appendChild(f); } if (row) for (const t of row.querySelectorAll("input")) t.checked = !map.baubles || map.baubles.includes(t.dataset.c); }
     const so = $("scareOdds"); if (so && document.activeElement !== so) so.value = map.scareOdds === undefined ? 25 : map.scareOdds;
+    { const lt = $("leetTimes"), lm = $("leetMins"), ls = map.leetShow || {}, two = n => String(n).padStart(2, "0"), local = iso => { const d = new Date(iso); return d.getFullYear() + "-" + two(d.getMonth() + 1) + "-" + two(d.getDate()) + " " + two(d.getHours()) + ":" + two(d.getMinutes()); };
+      if (lt && document.activeElement !== lt) lt.value = (ls.times || []).map(local).join("\n"); if (lm && document.activeElement !== lm) lm.value = ls.mins || 180;
+      const nx = $("leetNext"); if (nx && window.LeetShow) { const t = LeetShow.lines(map, Date.now()); nx.textContent = "The posters say: " + t.join(" "); } }
     const r = map.rect, pw = 1440 / 2, ph = 774 / 2;
     $("mapInfo").textContent = `${(r.w / pw).toFixed(1)} pages wide, ${(r.h / ph).toFixed(1)} tall, at 2x.`;
 }
@@ -3528,6 +3533,10 @@ function buildUI() {
     $("heightLevel").addEventListener("click", () => setBrush(0));
     $("liftStay").addEventListener("click", hideLiftPanel);
     { const b = $("xmasToggle"), show = () => { b.classList.toggle("on", !!window.hallwayXmas); b.setAttribute("aria-pressed", String(!!window.hallwayXmas)); }; show(); b.addEventListener("click", () => { window.hallwayXmas = !window.hallwayXmas; try { localStorage.setItem("hallway-editor-xmas", window.hallwayXmas ? "1" : "0"); } catch (err) { /* this visit only */ } show(); if (!window.hallwayXmas && (XMAS_PROP(tool) || (isWallItemTool(tool) && (wallItemOf(tool.slice(3)) || {}).xmas))) setTool("select"); for (const t of tiles.values()) if (t.img.close) t.img.close(); tiles.clear(); if (typeof buildLibrary === "function") buildLibrary(); pump(); paint(); }); }
+    /* show times: one a line, read in this computer's own time and kept as moments, so every visitor sees them in theirs */
+    $("leetTimes").addEventListener("change", e => { const times = []; for (const line of e.target.value.split(/\n/)) { const m = line.trim().match(/^(\d{4})-(\d{1,2})-(\d{1,2})[ T]+(\d{1,2})[:.](\d{2})$/); if (!m) continue; const d = new Date(+m[1], +m[2] - 1, +m[3], +m[4], +m[5]); if (!isNaN(d)) times.push(d.toISOString()); }
+        times.sort(); snapshot(); map.leetShow = { ...(map.leetShow || {}), times }; changed(); showMapInfo(); if (window.HallwayLive) HallwayLive.wake(); });
+    $("leetMins").addEventListener("change", e => { const v = Math.max(15, Math.min(600, Math.round(+e.target.value || 180))); snapshot(); map.leetShow = { ...(map.leetShow || {}), mins: v }; changed(); showMapInfo(); });
     $("scareOdds").addEventListener("change", e => { const v = Math.max(0, Math.min(500, Math.round(+e.target.value || 0))); snapshot(); map.scareOdds = v; changed(); });
     setBrush(heightBrush);
     $("way").addEventListener("change", e => { snapshot(); level.way = e.target.value; buildLevels(); changed(); });

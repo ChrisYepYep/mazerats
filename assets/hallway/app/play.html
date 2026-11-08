@@ -108,6 +108,13 @@
                 <div id="baubleRow"></div>
             </div>
             <div class="section">
+                <h4>The Leet Show</h4>
+                <p class="hint dim">The posters stamp the next show's date and time, in each visitor's own time. One show a line, in your time: 2026-11-14 20:30</p>
+                <textarea id="leetTimes" rows="4" spellcheck="false" style="width:100%;font:12px monospace" aria-label="The Leet Show's show times"></textarea>
+                <label class="hint">Each show runs <input id="leetMins" type="number" min="15" max="600" style="width:56px"> minutes (the posters say ON NOW meanwhile)</label>
+                <p id="leetNext" class="hint"></p>
+            </div>
+            <div class="section">
                 <h4>The Basement</h4>
                 <label class="hint">Lights fail once in <input id="scareOdds" type="number" min="0" max="500" style="width:56px"> visits (0 never)</label>
             </div>
@@ -190,6 +197,8 @@
     <script src="live-arcade.js"></script>
     <script src="live-arrows.js"></script>
     <script src="live-theatre.js"></script>
+    <script src="stamp-font.js"></script>
+    <script src="live-leet.js"></script>
     <script src="live-hunts.js"></script>
     <script src="live-xmas.js"></script>
     <script src="hunts-editor.js"></script>
