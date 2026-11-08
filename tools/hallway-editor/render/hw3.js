@@ -197,6 +197,7 @@ function wayForWall(base, wall) {
 const POST_LIFT = 1.14, floorTint = name => { const way = wayOf(name) || WAYS.oxblood, spec = way.parquet; return c => { if (c[0] + c[1] + c[2] < 20) return null; const [, s, l] = toHsl(c); return fromHsl([spec[0], Math.min(way.maxS || 1, s * spec[1]), Math.min(1, l * spec[2] * POST_LIFT)]); }; };
 const wayOf = name => { if (WAYS[name]) return WAYS[name]; if (typeof name === "string" && name.startsWith("hex:")) return (WAYS[name] = wayFromColour(name.slice(4))); return undefined; };
 const colours = n => { const im = piece(n), out = new Set(); for (let i = 0; i < im.rgba.length; i += 4) if (im.rgba[i + 3] > 128) out.add((im.rgba[i] << 16) | (im.rgba[i + 1] << 8) | im.rgba[i + 2]); return out; };
+const STOOL_CUSHION = new Set([0xd34013, 0x9d2400, 0xe15e36, 0x730000]);
 const GROUPS = (() => {
     /* both faces of the wall: the client shades the second face with colours of its own, and any colour left out here
        stays the client's orange on every floor */
@@ -210,6 +211,8 @@ const GROUPS = (() => {
     for (const c of carpet) if (c) g.set(c, "carpet");
     for (const h of ["3a0a12", "4c1018", "6e1a14", "510000", "730000", "bc5200", "9d2500"]) g.set(num(hex(h)), "carpet");
     for (const h of ["b2814b", "9e7247"]) g.set(num(hex(h)), "parquet");
+    /* the arcade stool's cushion: the chair seat's reds and two of its own, in the carpet's colour on every floor */
+    for (const h of ["d34013", "9d2400", "e15e36", "730000"]) g.set(num(hex(h)), "carpet");
     for (const n of ["hw_sofa1_a_0_2_0", "hw_sofa2_a_0_2_0", "hw_sofa3_a_0_2_0", "hw_sofa3_b_0_2_0"]) for (const c of colours(n)) if (c && !g.has(c)) g.set(c, "carpet");
     return g;
 })();
@@ -1789,7 +1792,7 @@ function build(cfg) {
                     if (k === "xmastree" && xmasOn) w.treeGlows.push(w.S(x + .25, y + .25));
                     if (k === "rarecase" && w.partAt({ x, y })) { const lp = w.S(x + .5, y + .5); w.lamps.push({ free: true, tx: x + .5, ty: y + .5, lz: w.z, x: lp[0], y: lp[1] - 30, colour: "#ffe2a8", sign: true }); }
                     if (!(XMAS_K.has(k) && !xmasOn) && w.partAt({ x, y })) { const fp = FLOOR_PIECES[k], flat = k.startsWith("mark_"), base = w.S(x + (flat ? .5 : .25), y + (flat ? .5 : .25)), im = wallArt(k === "rarecase" && p[12] && fp.opts && fp.opts[p[12]] ? fp.opts[p[12]].f : fp.f), z = w.z, X0 = Math.round(base[0]) - fp.ox, Y0 = Math.round(base[1]) - fp.oy;
-                        w.sprites.push({ depth: x + y + (flat ? -.6 : .5), ftx: x, fty: y, draw: () => { for (let j = 0; j < im.h; j++) for (let i = 0; i < im.w; i++) { const q = (j * im.w + i) * 4, A = im.rgba[q + 3]; if (!A) continue; const X = (k === "rarecase" || k.startsWith("arcade_")) && (p[5] & 1) ? Math.round(base[0]) + fp.ox - i : X0 + i, Y = Y0 + j, c = [im.rgba[q], im.rgba[q + 1], im.rgba[q + 2]]; if (A < 255) { pieceTint(X, Y, c, A); continue; } layer.set(X, Y, c); if (X >= 0 && Y >= 0 && X < bw && Y < bh) { const v = ((c[0] << 16) | (c[1] << 8) | c[2]) + 1; w.keep[Y * bw + X] = v; if (k === "rarecase" && ((c[0] === 186 && c[1] === 206 && c[2] === 220) || (c[0] === 255 && c[1] === 243 && c[2] === 200) || (c[0] === 246 && c[1] === 226 && c[2] === 168))) w.glowing[Y * bw + X] = v; } } } }); }
+                        w.sprites.push({ depth: x + y + (flat ? -.6 : .5), ftx: x, fty: y, draw: () => { for (let j = 0; j < im.h; j++) for (let i = 0; i < im.w; i++) { const q = (j * im.w + i) * 4, A = im.rgba[q + 3]; if (!A) continue; const X = (k === "rarecase" || k.startsWith("arcade_")) && (p[5] & 1) ? Math.round(base[0]) + fp.ox - i : X0 + i, Y = Y0 + j, c = [im.rgba[q], im.rgba[q + 1], im.rgba[q + 2]]; if (A < 255) { pieceTint(X, Y, c, A); continue; } layer.set(X, Y, c); if (X >= 0 && Y >= 0 && X < bw && Y < bh) { const v = ((c[0] << 16) | (c[1] << 8) | c[2]) + 1; w.keep[Y * bw + X] = k === "barstool" && STOOL_CUSHION.has(v - 1) ? 0 : v; if (k === "rarecase" && ((c[0] === 186 && c[1] === 206 && c[2] === 220) || (c[0] === 255 && c[1] === 243 && c[2] === 200) || (c[0] === 246 && c[1] === 226 && c[2] === 168))) w.glowing[Y * bw + X] = v; } } } }); }
                 }
                 else if (k === "statue" && xmasOn && FLOOR_PIECES.bigtree) {
                     /* at Christmas the statue gives way to the giant tree: its foot at the statue's middle, drawn over the sofas round it as the mock-up has it, its lights and star always lit */
