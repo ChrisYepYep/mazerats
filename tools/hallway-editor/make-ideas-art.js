@@ -123,7 +123,9 @@ write("i_key.png", (() => { const k = A5.key(); return k; })());
   add("lpsign", "Lost Property sign", "hotel", (c, a) => A5.signOut(c, a[0], a[1], ["Lost", "Property"]), { text: true, pivot: true });
   /* what can go missing: small things only */
   const dir = path.join(__dirname, "art", "ideas", "lost"); fs.mkdirSync(dir, { recursive: true }); const items = small.filter(s => s[3] <= 18 && s[4] <= 18 && !/CF_1_|CF_5_/.test(s[0])); for (const s of items) fs.copyFileSync(R + "assets/furni/" + s[2], path.join(dir, s[2]));
-  fs.writeFileSync(path.join(__dirname, "art", "ideas", "lost.json"), JSON.stringify(items.map(s => ({ k: s[0], name: s[1], f: s[2], w: s[3], h: s[4] })))); console.log("lost things", items.length); }
+  fs.writeFileSync(path.join(__dirname, "art", "ideas", "lost.json"), JSON.stringify(items.map(s => ({ k: s[0], name: s[1], f: s[2], w: s[3], h: s[4] })))); console.log("lost things", items.length);
+  /* the server picks what's lost (netlify/functions/hallway-lost.js), from the named ones */
+  fs.writeFileSync(path.join(R, "netlify", "functions", "_hallway-lost-things.json"), JSON.stringify(items.filter(s => s[1] && String(s[1]).trim()).map(s => ({ k: s[0], name: s[1] })))); }
 
 /* ---- 18, 20: a scrap of paper, and the notice board ---- */
 { const s = A4.scrap(), dir = path.join(__dirname, "art", "ideas"); fs.mkdirSync(dir, { recursive: true }); fs.writeFileSync(path.join(dir, "scrap.png"), encodePng(s.w, s.h, Buffer.from(s.rgba)));

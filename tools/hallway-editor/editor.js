@@ -1009,7 +1009,7 @@ window.HallwayLive = {
     view() { const hw = canvas.width / zoom / 2, hh = canvas.height / zoom / 2; return { x0: cam.x - hw, x1: cam.x + hw, y0: cam.y - hh, y1: cam.y + hh, w: canvas.width, h: canvas.height }; },
     camera(x, y) { cam.x = x; cam.y = y; clampCam(); }, get cam() { return { x: cam.x, y: cam.y }; }, holdCamera(on) { camHeld = on; if (!on) followNow(); }, setZoom: z => setZoom(z, canvas.width / 2, canvas.height / 2),
     realNight: () => realNight(), enterRoom(target, axis) { if (!walker || roomSession) return false; const me = walker; me.busy = true; me.pts = []; me.walking = false; roomSession = RoomView.enter($("stage"), { room: target.room, facts: target.facts, edge: axis === "x" ? "y" : "x", zoom: () => zoom, wheel: d => setZoom(zoom + (d < 0 ? 1 : -1)), onLeave: () => { roomSession.close(); roomSession = null; me.busy = false; paint(); } }); return true; },
-    editorApi: () => ({ snapshot, changed, setTool, paint, pickOnce(f) { pickNext = f; flash("Click the spot on the map. Esc cancels."); }, get level() { return level; } }),
+    editorApi: () => ({ snapshot, changed, setTool, paint, flash: t => flash(t), setFloor: l => setFloor(l), get tool() { return tool; }, pickOnce(f) { pickNext = f; flash("Click the spot on the map. Esc cancels."); }, get level() { return level; } }),
     onClick(f) { liveClicks.add(f); return () => liveClicks.delete(f); },
     walkTo(l, x, y, then) { if (!walker || walker.busy) return false; const s = walkerStart(), path = graphFrom(s.l, s.x, s.y, [l, x, y]); if (!path) return false; followRoute(path, s.here, then || null); return true; },
     get graphLevels() { return stairLevels().list; },
@@ -1806,7 +1806,7 @@ function select(hit) {
 }
 function showTab(name) {
     document.querySelectorAll(".tab").forEach(t => { const on = t.dataset.tab === name; t.classList.toggle("active", on); t.setAttribute("aria-selected", String(on)); });
-    for (const n of ["inspect", "floors", "map", "music", "hunts", "problems"]) $("tab-" + n).hidden = n !== name;
+    for (const n of ["inspect", "floors", "map", "music", "hunts", "lost", "problems"]) if ($("tab-" + n)) $("tab-" + n).hidden = n !== name;
 }
 /* which maze every door has: chosen ones first, the rest A to Z through what's left, as the drawing does */
 function doorNames() {
