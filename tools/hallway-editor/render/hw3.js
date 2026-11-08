@@ -2109,7 +2109,10 @@ function build(cfg) {
                 if (sx < 0 || sx >= bw) return;
                 const plain = (X, Y) => { const n = Y * bw + X; return !stairPx[n] && (furniX[n] === NO_FURNI || railUnder.has(n)) && !lampPx.has(n); };
                 /* the next repeat down has the same wallpaper, as long as it's still wallpaper and not the wood or the floor below it */
-                const down = (X, Y, last) => { if (X < 0 || X >= bw) return -1; while (Y >= 0 && Y < bh && Y <= last) { if (plain(X, Y)) return Y * bw + X; Y += REPEAT; } return -1; };
+                /* only from the wall that owns most of this column below: where two walls meet at a corner, rows of the other one sat in it and were copied up as a column of little triangles (8 Nov, his, Floor 2 by Kn0ck Kn0ck v0.0) */
+                const owners = new Map(); for (let y = Math.max(0, y1 + 1); y <= yMax && y < bh; y++) { const n = y * bw + sx; if (plain(sx, y)) owners.set(wallOwner[n], (owners.get(wallOwner[n]) || 0) + 1); }
+                let home = -1, most = 0; for (const [k, v] of owners) if (v > most) { most = v; home = k; }
+                const down = (X, Y, last) => { if (X < 0 || X >= bw) return -1; while (Y >= 0 && Y < bh && Y <= last) { if (plain(X, Y) && (X !== sx || home < 0 || wallOwner[Y * bw + X] === home)) return Y * bw + X; Y += REPEAT; } return -1; };
                 for (let y = Math.max(0, y0); y <= y1 && y < bh; y++) {
                     let yy = y; while (yy <= y1) yy += REPEAT;
                     const i = y * bw + sx; if (furniX[i] !== NO_FURNI || lampPx.has(i) || stairPx[i]) continue;
