@@ -93,14 +93,17 @@ function rugField(rugs) {
    wood, cut into squares half a tile across, each with a dark groove along its far edges and a light one along its near edges, as the
    client's tunnel floor has. Stored with the rugs as { x0, x1, y0, y1, style: "small" }; the renderer keeps them apart from the rugs. */
 const shade = (c, k) => c && [Math.min(255, Math.round(c[0] * k)), Math.min(255, Math.round(c[1] * k)), Math.min(255, Math.round(c[2] * k))];
+/* The tiles themselves are the client's: the tunnel floor in entry_lower_right, small bevelled squares half a tile across, each with
+   its own grain, lit on the near-left and dark on the far edges. One 16 x 8 pixel repeat of it, lined up so its grooves fall where
+   the floor's half-tile lines do (8 Nov: "it looks more like a grid overlayed on top of the normal floor, rather than the small tiles
+   seen in the real hallways"). */
+const SMALL_TILE = (() => { const im = piece("entry_lower_right"), out = []; for (let j = 0; j < 8; j++) for (let i = 0; i < 16; i++) { const q = ((36 + j) * im.w + 60 + i) * 4; out.push([im.rgba[q], im.rgba[q + 1], im.rgba[q + 2]]); } return out; })();
 function smallAt(list, X, Y, dx, dy, base) {
     const a = Math.floor(X * 16 + (dx + 2 * dy) / 2), b = Math.floor(Y * 16 + (2 * dy - dx) / 2), TX = Math.floor(a / 16), TY = Math.floor(b / 16);
     if (!list.some(r => TX >= r.x0 && TX < r.x1 && TY >= r.y0 && TY < r.y1)) return null;
-    const c = base(dx, dy); if (!c) return null; const ua = ((a % 8) + 8) % 8, ub = ((b % 8) + 8) % 8;
-    if (ua === 0 || ub === 0) return shade(c, .56);
-    if (ua === 1 || ub === 1) return shade(c, 1.1);
-    if (ua === 7 || ub === 7) return shade(c, .9);
-    return c;
+    if (!base(dx, dy)) return null;
+    const sx = (X - Y) * 16 + dx, sy = (X + Y) * 8 + dy;
+    return SMALL_TILE[(((sy % 8) + 8) % 8) * 16 + (((sx % 16) + 16) % 16)];
 }
 /* ---- arrow tiles (8 Nov 2026): one of the floor's big squares with a triangle cut into it, as the real hallways have. { x, y, dir }:
    x, y the square's near tile (even, as the floor's squares are), dir 0 to 3 the way it points: +x, +y, -x, -y. The editor links two, and
