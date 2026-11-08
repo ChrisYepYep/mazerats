@@ -60,10 +60,23 @@
         return { len, pts, bulbs, hooks: Array.from({ length: spans + 1 }, (_, n) => n * w) };
     }
     const runsOn = l => (l && l.festoons) || [];
-    function onScreen(l, f, u, down) { const along = f.axis === "x" ? f.a + u / 16 : f.a + 1 + u / 16, t = f.axis === "x" ? [Math.floor(along), f.line] : [f.line, Math.floor(along)], z = (LIVE.nodeZ(l, t[0], t[1]) || l.k * 163) + (f.h || 118) - down; return f.axis === "x" ? LIVE.mapPoint(along, f.line, z) : LIVE.mapPoint(f.line, along, z); }
+    /* Where a string hangs (9 Nov 2026, his: festoons should behave as the garlands now do): its hooks just under the wall's top, or the
+       underside of the floor above, raised or lowered, following it as it steps (the garlands' own joins, render/garland.js), and on the tiles
+       it was laid on (on a y wall it used to sit a tile further along). HANG: how far under that edge the hooks go. */
+    const HANG = 5, topsMemo = new WeakMap();
+    function edgeOf(l, f) {
+        const m = topsMemo.get(f), now = performance.now(); if (m && m.l === l && m.a === f.a && m.b === f.b && now - m.at < 500) return m.E;
+        const tops = []; for (let t = f.a; t < f.b; t++) tops.push(LIVE.wallTop ? LIVE.wallTop(l, f.axis, f.line, t) : null);
+        let E = window.HallwayGarlandArt ? HallwayGarlandArt.joins(tops) : tops.concat([tops[tops.length - 1]]);
+        /* where there's no wall (a doorway), the edge either side carries on across it */
+        const known = E.map((v, i) => v === null ? null : i).filter(i => i !== null); if (!known.length) E = E.map(() => l.k * 163 + 150);
+        else E = E.map((v, i) => { if (v !== null) return v; let a = null, b = null; for (const k of known) { if (k < i) a = k; else if (b === null) b = k; } return a === null ? E[b] : b === null ? E[a] : E[a] + (E[b] - E[a]) * (i - a) / (b - a); });
+        topsMemo.set(f, { l, a: f.a, b: f.b, at: now, E }); return E;
+    }
+    function onScreen(l, f, u, down) { const E = edgeOf(l, f), e = Math.max(0, Math.min(E.length - 1, u / 16)), i = Math.min(E.length - 2, Math.floor(e)), k = e - i, top = E.length > 1 ? E[i] + (E[i + 1] - E[i]) * k : E[0], along = f.a + u / 16, z = top - HANG - down; return f.axis === "x" ? LIVE.mapPoint(along, f.line, z) : LIVE.mapPoint(f.line, along, z); }
     function nightness() { const m = LIVE.mood(); if (!m) return .6; const n = q => q === "night" ? 1 : q === "dusk" || q === "dawn" || q === "failing" ? .7 : .2; return n(m.a) * (1 - m.f) + n(m.b) * m.f; }
-    function drawString(c, l, f, t, night, ghost) {
-        const s = shape(f), pal = COL[f.colour] || COL.amber, px = (X, Y, cc, al) => { c.globalAlpha = al === undefined ? 1 : al; c.fillStyle = `rgb(${cc[0]},${cc[1]},${cc[2]})`; c.fillRect(Math.round(X), Math.round(Y), 1, 1); };
+    function drawString(c, l, f, t, night, ghost, glow) {
+        glow = glow || c; const s = shape(f), pal = COL[f.colour] || COL.amber, px = (X, Y, cc, al) => { c.globalAlpha = al === undefined ? 1 : al; c.fillStyle = `rgb(${cc[0]},${cc[1]},${cc[2]})`; c.fillRect(Math.round(X), Math.round(Y), 1, 1); };
         if (ghost) c.globalAlpha = .7;
         /* the flex, standing a little off the wall: its shadow first, a few pixels down */
         for (const [u, d] of s.pts) { const p = onScreen(l, f, u, -d); px(p[0], p[1] + 3, [0, 0, 0], .18 * (1 - night * .6)); }
@@ -73,7 +86,7 @@
         s.bulbs.forEach(([u, d], i) => {
             const p = onScreen(l, f, u, -d), X = Math.round(p[0]), Y = Math.round(p[1]), col = pal[i % pal.length], L = level(f, i, t);
             /* light on the wall round it, stronger after dark */
-            if (night > .3) { c.globalCompositeOperation = "lighter"; c.globalAlpha = 1; const g = c.createRadialGradient(X + .5, Y + 6, 0, X + .5, Y + 6, 16); g.addColorStop(0, `rgba(${col.lit[0]},${col.lit[1]},${col.lit[2]},${.32 * L * night})`); g.addColorStop(.4, `rgba(${col.lit[0]},${col.lit[1]},${col.lit[2]},${.11 * L * night})`); g.addColorStop(1, "rgba(0,0,0,0)"); c.fillStyle = g; c.fillRect(X - 16, Y - 10, 33, 33); c.globalCompositeOperation = "source-over"; }
+            if (night > .3) { glow.globalCompositeOperation = "lighter"; glow.globalAlpha = 1; const g = glow.createRadialGradient(X + .5, Y + 6, 0, X + .5, Y + 6, 16); g.addColorStop(0, `rgba(${col.lit[0]},${col.lit[1]},${col.lit[2]},${.32 * L * night})`); g.addColorStop(.4, `rgba(${col.lit[0]},${col.lit[1]},${col.lit[2]},${.11 * L * night})`); g.addColorStop(1, "rgba(0,0,0,0)"); glow.fillStyle = g; glow.fillRect(X - 16, Y - 10, 33, 33); glow.globalCompositeOperation = "source-over"; }
             /* the homepage's C9: a socket, the glass widening and closing to a point, a dark rim on the right, a highlight on the left */
             const SOCK = [26, 32, 26], SOCK_HI = [70, 84, 70], body = mix(col.dark, col.lit, L), edge = mix(mix(col.dark, [0, 0, 0], .35), col.dark, L), hi = mix(body, col.hi, L);
             px(X, Y + 1, SOCK); px(X - 1, Y + 2, SOCK_HI); px(X, Y + 2, SOCK_HI); px(X + 1, Y + 2, SOCK);
@@ -87,10 +100,23 @@
         c.globalAlpha = 1;
     }
     window.HallwayFestoon = { shape, onScreen, draft: null };
+    const strCv = document.createElement("canvas"), sgx = strCv.getContext("2d"), glowCv = document.createElement("canvas"), ggx = glowCv.getContext("2d");
     function drawFestoons(c, ox, oy, now) {
         if (!window.hallwayXmas) return; const l = LIVE.floor || (!window.HALLWAY_PLAY && LIVE.editorApi && LIVE.editorApi().level); if (!l) return; const list = runsOn(l), d = window.HallwayFestoon.draft; if (!list.length && !d) return;
         const t = now / 1000, night = nightness(); c.save(); c.translate(ox, oy); c.scale(LIVE.zoom, LIVE.zoom); c.imageSmoothingEnabled = false;
-        for (const f of list) drawString(c, l, f, t, night, false); if (d && d.l === l) drawString(c, l, d, t, night, true);
+        for (const f of list) {
+            /* its box on the map, from its own points */
+            let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9; const sh = shape(f); for (const [u, dd] of sh.pts.filter((q, i) => i % 4 === 0).concat(sh.bulbs)) { const p = onScreen(l, f, u, -dd); x0 = Math.min(x0, p[0]); x1 = Math.max(x1, p[0]); y0 = Math.min(y0, p[1]); y1 = Math.max(y1, p[1]); }
+            x0 = Math.floor(x0) - 20; y0 = Math.floor(y0) - 14; const w = Math.ceil(x1) + 21 - x0, h = Math.ceil(y1) + 28 - y0; if (w <= 0 || h <= 0 || w > 4000 || h > 2000) continue;
+            for (const cv of [strCv, glowCv]) if (cv.width < w || cv.height < h) { cv.width = Math.max(cv.width, w); cv.height = Math.max(cv.height, h); }
+            for (const g of [sgx, ggx]) { g.setTransform(1, 0, 0, 1, 0, 0); g.clearRect(0, 0, w, h); g.setTransform(1, 0, 0, 1, -x0, -y0); g.imageSmoothingEnabled = false; }
+            drawString(sgx, l, f, t, night, false, ggx);
+            for (const g of [sgx, ggx]) g.setTransform(1, 0, 0, 1, 0, 0);
+            const who = f.axis === "x" ? { x: f.a, y: f.line } : { x: f.line, y: f.a }, z = LIVE.nodeZ(l, who.x, who.y) || l.k * 163;
+            LIVE.as({ x: who.x, y: who.y, z, l, dir: 2, frame: 0, st: null }, () => { LIVE.cutInFront(sgx, x0, y0); LIVE.cutInFront(ggx, x0, y0); });
+            c.drawImage(strCv, 0, 0, w, h, x0, y0, w, h); c.globalCompositeOperation = "lighter"; c.drawImage(glowCv, 0, 0, w, h, x0, y0, w, h); c.globalCompositeOperation = "source-over";
+        }
+        if (d && d.l === l) drawString(c, l, d, t, night, true);
         c.restore();
     }
     LIVE.add({ still: true, under: drawFestoons });
