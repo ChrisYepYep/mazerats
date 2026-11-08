@@ -42,8 +42,8 @@
     }
     /* the pixels to stamp: each line centred across the slip, one row in from its top, two rows between lines. [[x, y], ...] in the picture */
     function onSlip(slip, lines) {
-        const out = [], width = slip.x1 - slip.x0 + 1;
-        lines.forEach((s, n) => { const t = stamp(s), u0 = Math.floor((width - t.w) / 2); for (const [x, y] of t.px) { const X = slip.x0 + u0 + x, c = slip.cols.get(X); if (!c) continue; const Y = c[0] + 1 + n * (H + 2) + y; if (Y <= c[1]) out.push([X, Y]); } });
+        const out = [], width = slip.x1 - slip.x0 + 1, v0 = Math.max(1, Math.floor((slip.rows - (lines.length * (H + 2) - 2)) / 2));
+        lines.forEach((s, n) => { const t = stamp(s), u0 = Math.floor((width - t.w) / 2); for (const [x, y] of t.px) { const X = slip.x0 + u0 + x, c = slip.cols.get(X); if (!c) continue; const Y = c[0] + v0 + n * (H + 2) + y; if (Y <= c[1]) out.push([X, Y]); } });
         return out;
     }
     const api = { stamp, findSlip, onSlip, GLYPHS: G, H };
