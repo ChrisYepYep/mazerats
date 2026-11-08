@@ -1663,7 +1663,7 @@ function pickIn(l, px, py) {
     }
     return null;
 }
-let treeData = null; const treeAlpha = (im, i, j) => { if (!treeData || treeData.im !== im) { const c = document.createElement("canvas"); c.width = im.naturalWidth; c.height = im.naturalHeight; const g = c.getContext("2d", { willReadFrequently: true }); g.drawImage(im, 0, 0); treeData = { im, w: c.width, d: g.getImageData(0, 0, c.width, c.height).data }; } return treeData.d[(j * treeData.w + i) * 4 + 3] > 100; };
+const alphaOf = new Map(); const treeAlpha = (im, i, j) => { let t = alphaOf.get(im); if (!t) { const c = document.createElement("canvas"); c.width = im.naturalWidth; c.height = im.naturalHeight; const g = c.getContext("2d", { willReadFrequently: true }); g.drawImage(im, 0, 0); t = { w: c.width, d: g.getImageData(0, 0, c.width, c.height).data }; alphaOf.set(im, t); } return t.d[(j * t.w + i) * 4 + 3] > 100; };
 /* how far round the tree walkers are kept out, in tiles beyond the statue's own 2x2 (8 Nov, his: "mark out a non-walkable section, so users can't walk into/under the tree") */
 const treeKeepOut = (p, f) => { const n = Math.max(0, Math.min(6, p.treeOut || 0)); if (!n) return; for (let x = p.x - n; x < p.x + 2 + n; x++) for (let y = p.y - n; y < p.y + 2 + n; y++) f(x, y); };
 function pick(px, py) {
@@ -2985,6 +2985,9 @@ function spriteSolidAt(path, X, Y) {
     return X >= 0 && Y >= 0 && X < m.w && Y < m.h && m.d[(Y * m.w + X) * 4 + 3] > 127;
 }
 function propPartAt(l, p, px, py) {
+    /* a seat drawn from its own picture (the arcade stool) has no client sprite to test: test its picture, where hw3 puts it (8 Nov, his: "Avatar can't sit on the new arcade stool") */
+    const fp = !p.k.startsWith("arcade_") && p.k !== "statue" ? floorPiece(p.k) : null;
+    if (fp) { const im = pieceImg(fp.f), a = P(p.x + .25, p.y + .25, tileZ(l, p.x, p.y)), i = Math.floor(px - (a[0] - fp.ox)), j = Math.floor(py - (a[1] - fp.oy)); if (!im.complete || !im.naturalWidth || i < 0 || j < 0 || i >= im.naturalWidth || j >= im.naturalHeight) return null; return treeAlpha(im, i, j) ? { x: p.x, y: p.y } : null; }
     if (!REGS) return null;
     for (const q of Parts.parts(p)) {
         const a = P(q.x, q.y, tileZ(l, q.x, q.y)), lx = a[0] - 16, ly = a[1] + 8;
