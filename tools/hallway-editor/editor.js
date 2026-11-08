@@ -2333,7 +2333,8 @@ canvas.addEventListener("pointerup", e => {
             if (locked) flash("Left the floor round the stairs and lift level, so they still meet it.");
             changed(); return;
         }
-        if (tool === "smallfloor") { if (r.x1 - r.x0 >= 1 && r.y1 - r.y0 >= 1) level.rugs = [...(level.rugs || []), { ...r, style: "small" }]; else { undoStack.pop(); paint(); return; } }
+        /* laid, and that is all: it used to fall through into the floor loop below, which took the floor away (8 Nov) */
+        if (tool === "smallfloor") { if (r.x1 - r.x0 >= 1 && r.y1 - r.y0 >= 1) { level.rugs = [...(level.rugs || []), { ...r, style: "small" }]; changed(); return; } undoStack.pop(); paint(); return; }
         if (tool === "rug") { if (r.x1 - r.x0 >= 2 && r.y1 - r.y0 >= 2) level.rugs = [...(level.rugs || []), { ...r, alongY: r.y1 - r.y0 > r.x1 - r.x0 }]; else { undoStack.pop(); flash("Rugs need to be at least 2 tiles each way."); paint(); return; } }
         else for (let x = r.x0; x < r.x1; x += 2) for (let y = r.y0; y < r.y1; y += 2) {
             const k = (x / 2) + "," + (y / 2);
