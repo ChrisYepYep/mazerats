@@ -10,7 +10,7 @@ const HERE = __dirname;
 /* what's bundled, and where each thinks it lives */
 const MODULES = [
     ["hw.js", "render/hw.js"], ["hw2.js", "render/hw2.js"], ["hw3.js", "render/hw3.js"], ["floor-lamps.js", "render/floor-lamps.js"],
-    ["edge-items.js", "render/edge-items.js"], ["rope-barrier.js", "render/rope-barrier.js"], ["iso3d.js", "ideas/iso3d.js"], ["hall-window.js", "render/hall-window.js"], ["furni-parts.js", "furni-parts.js"], ["wall-items.js", "wall-items.js"], ["png-decode.js", "../png-decode.js"]
+    ["edge-items.js", "render/edge-items.js"], ["rope-barrier.js", "render/rope-barrier.js"], ["garland.js", "render/garland.js"], ["iso3d.js", "ideas/iso3d.js"], ["hall-window.js", "render/hall-window.js"], ["furni-parts.js", "furni-parts.js"], ["wall-items.js", "wall-items.js"], ["png-decode.js", "../png-decode.js"]
 ];
 function listArt(dir, base = "") {
     const out = [];

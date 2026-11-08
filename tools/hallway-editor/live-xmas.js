@@ -5,13 +5,44 @@
     const worn = () => { try { if (/[?&]xmas=1/.test(location.search)) return true; const p = window.parent !== window ? window.parent : window; return !!(p.SkinWear && p.SkinWear.current && /^xmas$|christmas/i.test(String(p.SkinWear.current() || ""))); } catch (e) { return false; } };
     let tries = 0; const again = setInterval(() => { if (!window.HALLWAY_PLAY) { clearInterval(again); return; } if (worn() && !window.hallwayXmas) { window.hallwayXmas = true; if (window.HallwayLive) HallwayLive.wake(); } if (++tries > 8) clearInterval(again); }, 800);
     const LIVE = window.HallwayLive; if (!LIVE) return;
-    const barsOf = W => Math.max(1, Math.round(W / 26)), railsOf = (b, top) => top - b > 90 ? [b + (top - b) * .33, b + (top - b) * .66] : [b + (top - b) * .55];
-    const glass = (W, b, top, y, z) => { if (y < 1 || y > W - 1 || z < b + 3 || z > top - 2) return false; const n = barsOf(W); for (let i = 1; i <= n; i++) if (Math.abs(y - W * i / (n + 1)) < 1.3) return false; for (const r of railsOf(b, top)) if (Math.abs(z - r) < 1.3) return false; return true; };
-    function windows() { const l = LIVE.floor || (!window.HALLWAY_PLAY && LIVE.editorApi && LIVE.editorApi().level); if (!l || !l.wallItems) return []; const v = LIVE.view(), out = []; for (const q of l.wallItems) { if (q.k !== "i_window") continue; const t = q.axis === "y" ? [q.line, Math.floor(q.at)] : [Math.floor(q.at), q.line], z = LIVE.nodeZ(l, t[0], t[1]) || 0, a = q.axis === "y" ? LIVE.mapPoint(q.line, q.at, z) : LIVE.mapPoint(q.at, q.line, z); if (a[0] > v.x0 - 200 && a[0] < v.x1 + 200 && a[1] > v.y0 - 40 && a[1] < v.y1 + 200) out.push({ q, z }); } return out; }
+    /* Snow falling outside the windows (9 Nov 2026, his: "snowfall is appearing as if it's inside the window frame, it should be behind it to
+       appear outside, and doesn't always fall properly"). It falls in the view's own upright picture, as render/hw3.js lays the view out,
+       and shows only where the view does: never on the frame, its bars or rails (the frame's own pixels, render/hall-window.js), never over
+       what stands in front (cut as the rats are) or over the avatar (drawn under it). Each flake has its own steady speed, a slow sway and a
+       size: the far ones small, slow and dim, the near ones bigger and quicker. */
+    const HW = window.HallWindow;
+    function windows() { const l = LIVE.floor || (!window.HALLWAY_PLAY && LIVE.editorApi && LIVE.editorApi().level); if (!l || !l.wallItems) return []; const v = LIVE.view(), out = []; for (const q of l.wallItems) { if (q.k !== "i_window") continue; const t = q.axis === "y" ? [q.line, Math.floor(q.at)] : [Math.floor(q.at), q.line], z = LIVE.nodeZ(l, t[0], t[1]) || 0, a = q.axis === "y" ? LIVE.mapPoint(q.line, q.at, z) : LIVE.mapPoint(q.at, q.line, z); if (a[0] > v.x0 - 200 && a[0] < v.x1 + 200 && a[1] > v.y0 - 260 && a[1] < v.y1 + 200) out.push({ q, z, l }); } return out; }
+    /* a window's view on screen, and which of its pixels show past the frame: worked out once per window and place */
+    const views = new Map();
+    function viewOf(q, z) {
+        const wide = q.w || 52, b0 = q.b || 0, top0 = q.top || 78, flip = q.axis === "x", key = [q.axis, q.line, q.at, wide, b0, top0, z].join("|"); if (views.has(key)) return views.get(key);
+        const start = q.at - wide / 32, s0 = flip ? LIVE.mapPoint(start, q.line, z) : LIVE.mapPoint(q.line, start, z), a0 = Math.round(s0[0]), a1 = Math.round(s0[1]) - 6, H2 = top0 - b0, Y0 = a1 + wide / 2 - top0;
+        const frame = new Set(); if (HW) { const fr = HW.art(wide, b0, top0); for (let j = 0; j < fr.h; j++) for (let i = 0; i < fr.w; i++) { if (fr.rgba[(j * fr.w + i) * 4 + 3] < 128) continue; const sx = a0 - fr.ox + i; frame.add((flip ? 2 * a0 - sx - 1 : sx) + "," + (a1 - fr.oy + j)); } }
+        /* the view's pixel (u across, v down) on screen, or null where the frame covers it */
+        const at = (u, v) => { if (u < 0 || v < 0 || u >= wide || v >= H2) return null; const sxm = a0 - wide + u, X = flip ? 2 * a0 - sxm - 1 : sxm, Y = Y0 - Math.floor(u / 2) + v; return frame.has(X + "," + Y) ? null : [X, Y]; };
+        let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9; for (const u of [0, wide - 1]) for (const v of [0, H2 - 1]) { const sxm = a0 - wide + u, X = flip ? 2 * a0 - sxm - 1 : sxm, Y = Y0 - Math.floor(u / 2) + v; x0 = Math.min(x0, X); x1 = Math.max(x1, X); y0 = Math.min(y0, Y); y1 = Math.max(y1, Y); }
+        /* the flakes: about one for every 70 pixels of view, each with its own place, speed, sway and size */
+        const n = Math.max(6, Math.round(wide * H2 / 70)), flakes = []; for (let i = 0; i < n; i++) { const r = k => { const v = Math.sin((i + 1) * 12.9898 + k * 78.233 + wide) * 43758.5453; return v - Math.floor(v); }, near = r(1) > .72; flakes.push({ u: r(2) * wide, ph: r(3) * (H2 + 8), sp: near ? 11 + r(4) * 5 : 5 + r(4) * 4, sw: .6 + r(5) * 1.2, sf: .4 + r(6) * .5, sp2: r(7) * 6.28, big: near, a: near ? 1 : .55 + r(8) * .3 }); }
+        const o = { at, wide, H2, flakes, box: [x0 - 2, y0 - 2, x1 + 3, y1 + 3], who: flip ? { x: Math.floor(q.at - wide / 32), y: q.line } : { x: q.line, y: Math.floor(q.at - wide / 32) } };
+        if (views.size > 40) views.clear(); views.set(key, o); return o;
+    }
+    const snowCv = document.createElement("canvas"), sg = snowCv.getContext("2d");
     LIVE.add({ active: () => !!window.hallwayXmas && windows().length > 0,
-        over(c, ox, oy, now) { const t = now / 1000; c.translate(ox, oy); c.scale(LIVE.zoom, LIVE.zoom); c.fillStyle = "#ffffff";
-            for (const { q, z } of windows()) { const W = q.w || 52, b = q.b || 0, top = q.top || 78, start = q.at - W / 32, H = top - b;
-                for (let i = 0; i < W * 2; i++) { const u = (i * 17 + Math.round(Math.sin(t * .8 + i) * 2) + 500) % W, h = H - (Math.floor(i * 11 + t * (10 + i % 4)) % H), zz = b + h; if (!glass(W, b, top, u, zz)) continue; const p = q.axis === "y" ? LIVE.mapPoint(q.line, start + u / 16, z + zz) : LIVE.mapPoint(start + u / 16, q.line, z + zz); c.fillRect(Math.round(p[0]), Math.round(p[1]) - 6, 1, 1); } } } });
+        under(c, ox, oy, now) { const t = now / 1000;
+            for (const { q, z, l } of windows()) {
+                const V = viewOf(q, z), [bx0, by0, bx1, by1] = V.box, w = bx1 - bx0, h = by1 - by0; if (w <= 0 || h <= 0) continue;
+                if (snowCv.width < w || snowCv.height < h) { snowCv.width = Math.max(snowCv.width, w); snowCv.height = Math.max(snowCv.height, h); }
+                sg.clearRect(0, 0, snowCv.width, snowCv.height);
+                for (const f of V.flakes) {
+                    const v = ((f.ph + t * f.sp) % (V.H2 + 8)) - 4, u = f.u + Math.sin(t * f.sf + f.sp2) * f.sw;
+                    const put = (du, dv, al) => { const p = V.at(Math.round(u) + du, Math.round(v) + dv); if (!p) return; sg.fillStyle = `rgba(255,255,255,${al})`; sg.fillRect(p[0] - bx0, p[1] - by0, 1, 1); };
+                    put(0, 0, f.a); if (f.big) { put(1, 0, .55); put(0, 1, .55); put(1, 1, .3); }
+                }
+                /* what stands in front of the window hides the snow behind it, and the time of day tints it */
+                LIVE.as({ x: V.who.x, y: V.who.y, z, l, dir: 2, frame: 0, st: null }, () => { LIVE.cutInFront(sg, bx0, by0); LIVE.tint(sg, w, h); });
+                c.save(); c.translate(ox, oy); c.scale(LIVE.zoom, LIVE.zoom); c.imageSmoothingEnabled = false; c.drawImage(snowCv, 0, 0, w, h, bx0, by0, w, h); c.restore();
+            }
+        } });
 
     /* ---------- festoon lights: strings along the walls ---------- */
     const COL = { amber: [{ lit: [255, 176, 64], dark: [150, 84, 18], hi: [255, 236, 190] }], warm: [{ lit: [255, 226, 160], dark: [170, 130, 70], hi: [255, 250, 230] }], cool: [{ lit: [214, 236, 255], dark: [110, 140, 170], hi: [255, 255, 255] }],
@@ -64,57 +95,23 @@
     }
     LIVE.add({ still: true, under: drawFestoons });
     LIVE.add({ active: () => !!window.hallwayXmas && runsOn(LIVE.floor).some(f => f.twinkle), under() { } });
-    /* ---------- garlands: l.garlands = [{ axis, line, a, b, baubles }] ---------- */
-    const BAUB = { red: ["c8352a", "ff8a78", "7a1b16"], gold: ["d6ad56", "fff4c8", "86601f"], blue: ["3a7ad6", "a8d0ff", "1f4a90"], silver: ["c9cdd4", "ffffff", "7a808a"], purple: ["8a3ac8", "d0a0ff", "4e1f7a"], pink: ["e0568c", "ffb0cc", "8a2450"], teal: ["2aa8a0", "a0f0e8", "146a64"] };
-    const ROW = ["..c..", ".KKK.", "KHGGK", "KGGGK", "KGGDK", ".KKK."];
-    /* one tile's place: where the art goes so its rope runs 12px under the wall's top there (on a climb, half way up it, so a click finds it) */
-    function tileAt(l, g, t) { const def = (window.WALL_ITEMS || []).find(i => i.id === "i_swag"); if (!def || !LIVE.wallTop) return null; const at = g.axis === "x" ? t + .5 : t + 1.5; let top = LIVE.wallTop(l, g.axis, g.line, t); if (top === null) return null;
-        if (t >= g.a && t < g.b) { const { E } = joins(l, g), i = t - g.a; if (E[i] !== null && E[i + 1] !== null) top = (E[i] + E[i + 1]) / 2; } const c = g.axis === "x" ? LIVE.mapPoint(at, g.line, top - 6) : LIVE.mapPoint(g.line, at, top - 6); return { def, c, box: g.axis === "x" ? def.x : def.y }; }
-    /* One tile of garland, pixel for pixel as ideas/christmas.js swag() draws i_swag.png, but able to climb: where the wall's top steps up
-       (the floor above raised, the wall going on up to it) the rope rises across the higher tiles instead of staying level (8 Nov, his).
-       up = how much higher the tile's far end hangs than its near end; back = the same for the tile before, which the holly's other half lies over.
-       Pixels come out relative to the picture's own anchor: [x, y, colour]. A level tile gives exactly the picture's pixels. */
-    const GK = [10, 8, 8], GH = s => [parseInt(s.slice(0, 2), 16), parseInt(s.slice(2, 4), 16), parseInt(s.slice(4, 6), 16)];
-    const GN = (a, b) => { const s = Math.sin(a * 12.9898 + b * 78.233) * 43758.5453; return s - Math.floor(s); }, gsag = (u, w, z0, drop) => z0 - drop * 4 * (u / w) * (1 - u / w);
-    const tileMemo = new Map();
-    function swagTile(up, back) {
-        const key = up + "|" + back; if (tileMemo.has(key)) return tileMemo.get(key);
-        const px = new Map(), wall = (u, z, col) => px.set(Math.round(-u) + "," + Math.round(Math.floor(u / 2) - z), col);
-        const shape = paint => { const seen = new Map(), mark = (u, z, col) => seen.set(Math.round(u) + "," + Math.round(z), col); paint(mark); for (const k of seen.keys()) { const [u, z] = k.split(",").map(Number); for (const [p, q] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) if (!seen.has((u + p) + "," + (z + q))) wall(u + p, z + q, GK); } for (const [k, col] of seen) { const [u, z] = k.split(",").map(Number); wall(u, z, col); } };
-        const W = 16, Z = 126, DROP = 3, lift = u => u >= 0 ? up * u / W : back * u / W, rope = u => gsag(u, W, Z, DROP) + lift(u);
-        for (let u = 0; u < W; u += .5) { const z = rope(u); for (let d = -2.5; d <= 2.5; d += .5) { const n = GN(Math.round(u * 2), Math.round(d * 2) + 9), edge = Math.abs(d) > 2.2 - n * .8; if (edge && n < .6) continue; const col = d > 1.5 ? GH("6cb05e") : d > .5 ? (n > .5 ? GH("4fa858") : GH("3f8a44")) : d > -1 ? GH("2f7d3a") : GH("1c5426"); wall(u, z + d, col); } wall(u, z - 3, GK); wall(u, z + 3, [16, 34, 18]);
-            /* climbing steeply, the needles would come apart into stripes: fill each half-step's rise */
-            const z2 = rope(u + .5); for (let s = 1; s < Math.abs(z2 - z) - .5; s++) { const zz = z + Math.sign(z2 - z) * s; for (let d = -2; d <= 2; d += .5) wall(u, zz + d, d > 1.5 ? GH("6cb05e") : d > .5 ? GH("3f8a44") : d > -1 ? GH("2f7d3a") : GH("1c5426")); } }
-        /* holly where the tiles meet, each half lying along its own tile's rope */
-        for (const side of [-1, 1]) shape(mark => { for (let i = 0; i < 6; i++) { const wid = Math.round(2 * Math.sin((i + 1) / 7 * Math.PI)) + (i % 3 === 1 ? 1 : 0); for (let j = -wid; j <= wid; j++) mark(side * (i + 1), Z + 1 + j - i * .3 + lift(side * (i + 1)), j === 0 ? GH("6cb05e") : (j > 0 ? GH("3f8a44") : GH("1c5426"))); } });
-        shape(mark => { for (const [p, q] of [[0, 0], [2, -1], [-2, -1]]) for (const [e, f] of [[0, 0], [1, 0], [0, 1], [1, 1]]) mark(p + e, Z - 2 + q + f, e === 0 && f === 1 ? GH("ff8a78") : e === 1 && f === 0 ? GH("a81f16") : GH("e0352a")); });
-        const out = []; for (const [k, col] of px) { const [x, y] = k.split(",").map(Number); out.push([x, y, `rgb(${col[0]},${col[1]},${col[2]})`]); }
-        tileMemo.set(key, out); return out;
-    }
-    /* where the rope hangs at each join along the run: never above the wall on either side of it, and where the top steps, a climb of at most
-       16 a tile on the higher side, so the garland stays on the wall all the way up */
-    function joins(l, g) {
-        const n = g.b - g.a, top = [], E = []; for (let i = 0; i < n; i++) top.push(LIVE.wallTop(l, g.axis, g.line, g.a + i));
-        for (let e = 0; e <= n; e++) { const a = e > 0 ? top[e - 1] : null, b = e < n ? top[e] : null; E.push(a === null ? b : b === null ? a : Math.min(a, b)); }
-        const CLIMB = 16; for (let e = 0; e <= n; e++) if (E[e] !== null) for (let j = 0; j <= n; j++) if (E[j] !== null) E[e] = Math.min(E[e], E[j] + CLIMB * Math.abs(e - j));
-        return { top, E };
-    }
+    /* ---------- garlands: l.garlands = [{ axis, line, a, b, baubles }] ----------
+       Baked into the Christmas tiles by render/hw3.js (9 Nov 2026, his: they weren't hidden by walls and furniture in front, and sat a tile
+       to the left). Here only the one being laid is drawn, from the same pixels (render/garland.js), and a click finds a tile of one. */
+    const GA = window.HallwayGarlandArt;
+    const topsOf = (l, g) => { const tops = []; for (let t = g.a; t < g.b; t++) tops.push(LIVE.wallTop ? LIVE.wallTop(l, g.axis, g.line, t) : null); return tops; };
+    const screen = (x, y, z) => LIVE.mapPoint(x, y, z);
+    /* one tile's place: c is the middle of its dip, where a click finds it */
+    function tileAt(l, g, t) { if (!GA || !LIVE.wallTop || t < g.a || t >= g.b) return null; const q = GA.pixels(g, topsOf(l, g), screen, null).find(p => p.t === t); return q ? { c: [q.mid[0], q.mid[1] - 8] } : null; }
     function drawGarland(c, l, g, ghost) {
-        if (!LIVE.wallTop || !LIVE.mapPoint) return; const use = ((LIVE.map && LIVE.map.baubles) || Object.keys(BAUB)).filter(n => BAUB[n]), hex = s => "#" + s; let n = 0;
-        c.globalAlpha = ghost ? .7 : 1; const { top, E } = joins(l, g);
-        for (let t = g.a; t < g.b; t++) { const i = t - g.a; if (top[i] === null || E[i] === null || E[i + 1] === null) continue;
-            /* the tile's near end hangs 6 under its join; c is where the picture's anchor goes, as tileAt's was for a level wall */
-            const at = g.axis === "x" ? t + .5 : t + 1.5, p = g.axis === "x" ? LIVE.mapPoint(at, g.line, E[i] - 6) : LIVE.mapPoint(g.line, at, E[i] - 6), cx = Math.round(p[0]), cy = Math.round(p[1]);
-            const up = Math.round(E[i + 1] - E[i]), back = i > 0 && E[i - 1] !== null ? Math.round(E[i] - E[i - 1]) : 0, flip = g.axis === "x";
-            for (const [x, y, col] of swagTile(up, back)) { c.fillStyle = col; c.fillRect(flip ? cx - 8 - x : cx + 8 + x, cy + 124 + y, 1, 1); }
-            /* a bauble in the dip of each tile's swag, half way up its climb */
-            if (g.baubles !== false) { const B = BAUB[use[n++ % use.length]] || BAUB.red, bx = cx - 2, by = cy + 8 - Math.round(up / 2); ROW.forEach((r, j) => { for (let u = 0; u < 5; u++) { const ch = r[u]; if (ch === ".") continue; c.fillStyle = ch === "K" ? "#000" : ch === "c" ? "#d6ad56" : ch === "H" ? hex(B[1]) : ch === "D" ? hex(B[2]) : hex(B[0]); c.fillRect(bx + u, by + j, 1, 1); } }); } }
+        if (!GA || !LIVE.wallTop) return; c.globalAlpha = ghost ? .7 : 1;
+        for (const q of GA.pixels(g, topsOf(l, g), screen, LIVE.map && LIVE.map.baubles)) for (const [X, Y, col] of q.px) { c.fillStyle = `rgb(${col[0]},${col[1]},${col[2]})`; c.fillRect(X, Y, 1, 1); }
         c.globalAlpha = 1;
     }
     window.HallwayGarland = { tileAt, draft: null };
     function drawGarlands(c, ox, oy) {
-        if (!window.hallwayXmas) return; const l = LIVE.floor || (!window.HALLWAY_PLAY && LIVE.editorApi && LIVE.editorApi().level); if (!l) return; const list = l.garlands || [], d = window.HallwayGarland.draft; if (!list.length && !d) return;
-        c.save(); c.translate(ox, oy); c.scale(LIVE.zoom, LIVE.zoom); c.imageSmoothingEnabled = false; for (const g of list) drawGarland(c, l, g, false); if (d && d.l === l) drawGarland(c, l, d, true); c.restore();
+        if (!window.hallwayXmas) return; const l = LIVE.floor || (!window.HALLWAY_PLAY && LIVE.editorApi && LIVE.editorApi().level); if (!l) return; const d = window.HallwayGarland.draft; if (!d || d.l !== l) return;
+        c.save(); c.translate(ox, oy); c.scale(LIVE.zoom, LIVE.zoom); c.imageSmoothingEnabled = false; drawGarland(c, l, d, true); c.restore();
     }
     LIVE.add({ still: true, under: drawGarlands });
 })();

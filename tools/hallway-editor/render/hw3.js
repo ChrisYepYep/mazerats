@@ -6,6 +6,7 @@ const H = require("./hw.js");
 const FloorLamps = require("./floor-lamps.js");
 const EdgeItems = require("./edge-items.js");
 const RopeBarrier = require("./rope-barrier.js");
+const Garland = require("./garland.js");
 const WALL_ITEM = new Map(require("../wall-items.js").map(i => [i.id, i]));
 const HallWindow = require("./hall-window.js");
 const FLOOR_PIECES = (() => { try { return require("../wall-items.js").floor || {}; } catch (e) { return {}; } })();
@@ -1438,7 +1439,7 @@ function fromMap(map, names) {
     /* stairs: each one cuts its slot and its hole */
     const stairs = (map.stairs || []).filter(st => byId(st.low) && byId(st.up)).map(st => ({ ...st, z: byId(st.low).k * Z1, label: st.label || byId(st.up).name }));
     cutStairs(byId, stairs);
-    for (const lv of lvls) for (const P of lv.patches) { P.l = []; P.props = []; P.teles = []; P.dn = []; P.wi = []; }
+    for (const lv of lvls) for (const P of lv.patches) { P.l = []; P.props = []; P.teles = []; P.dn = []; P.wi = []; P.gar = []; }
 
     /* then everything that stands on or against the floors */
     let ni = 0; const report = { doors: 0, named: 0, lost: [] };
@@ -1464,6 +1465,8 @@ function fromMap(map, names) {
         }
         for (const q of (l.lamps || [])) { const P = onWall(q.axis, q.at, q.line); if (P) P.l.push([q.axis, q.at, q.colour, q.style, q.h]); else report.lost.push("lamp " + q.axis + q.at + " on " + l.id); }
         for (const q of (l.wallItems || [])) { const P = onWall(q.axis, q.at, q.line); if (P) P.wi.push(q); else report.lost.push((q.k || "wall item") + " " + q.axis + q.at + " on " + l.id); }
+        /* each tile of a Christmas garland goes with the part of the floor whose wall it hangs on */
+        for (const g of (l.garlands || [])) for (let t = g.a; t < g.b; t++) { const P = onWall(g.axis, t + .5, g.line); if (P) P.gar.push({ g, t }); }
         for (const p of (l.props || [])) { const run = Parts.tiles(p), end = run[run.length - 1], P = onLanding(p.x, p.y) || (Parts.ROWS[p.k] && at(end[0], end[1])) || at(p.x, p.y); if (!P) report.lost.push(p.k + " at " + p.x + "," + p.y + " on " + l.id); const P2 = P || real2[0]; if (!P2) continue; const c = new Set(l.cells), against = !c.has(Math.floor(p.x / 2) + "," + Math.floor((p.y - 2) / 2)) || !c.has(Math.floor((p.x - 2) / 2) + "," + Math.floor(p.y / 2)); P2.props.push([p.k, p.x, p.y, !against, p.len, p.rot, p.style, p.colour, p.lights, p.lightUp, p.noCard, !!p.night, p.rare, p.z || 0]); }
 
     }
@@ -1512,6 +1515,9 @@ function build(cfg) {
     /* a tint or see-through pixel of a new piece: remembered with what's under it now, and worked out after the colouring, on whatever colour the wall ends up. If something's gone over it by then, it's dropped */
     const pieceTint = (X, Y, c, A) => { if (X < 0 || Y < 0 || X >= bw || Y >= bh || furniX[Y * bw + X] !== NO_FURNI) return; const p = (Y * bw + X) * 4; w.tints.push([X, Y, c, A, (layer.d[p] << 16) | (layer.d[p + 1] << 8) | layer.d[p + 2]]); };
     const furniX = new Int16Array(bw * bh), furniY = new Int16Array(bw * bh), furniC = new Int32Array(bw * bh), furniRun = new Uint8Array(bw * bh), NO_FURNI = -32768;
+    /* what hangs on a wall (pictures, posters, garlands): never wallpaper, whatever is done to its colour afterwards, so the wall going up
+       under a floor above never copies it upwards (9 Nov 2026, his: the Leet Show poster's top showed again above it under a ledge) */
+    const itemPx = new Uint8Array(bw * bh);
     const wallOwner = new Uint16Array(bw * bh), stairPx = new Uint8Array(bw * bh), railUnder = new Map();
     const mask = new Uint8Array(bw * bh), zb = new Int16Array(bw * bh), fc = new Int32Array(bw * bh), done = new Uint8Array(bw * bh);
     const gx = oxx - view[0], gy = oyy - view[1];
@@ -1563,7 +1569,7 @@ function build(cfg) {
         wallOwner.fill(0);
         const signs = [], pushSign = signs.push.bind(signs); let signPatch = null;
         signs.push = o => pushSign({ ...o, wallZ: signPatch ? signPatch.z : w.z, wallLine: signPatch ? (o.alongY ? signPatch.x0 : signPatch.y0) : null });
-        furniX.fill(NO_FURNI); stairPx.fill(0); railUnder.clear();
+        furniX.fill(NO_FURNI); itemPx.fill(0); stairPx.fill(0); railUnder.clear();
         const drawSprite = s => {
             if (!s.furni) return s.draw();
             const own = Object.prototype.hasOwnProperty.call(layer, "set"), was = layer.set;
@@ -1597,7 +1603,7 @@ function build(cfg) {
         };
         /* Walls you've set to half height, tile by tile: the client's low panelled wall, standing on the floor. (halfWalls is the older
            form, by 2-tile section.) */
-        const halfSet = new Set((lv.src && lv.src.halfTiles) || []);
+        const halfSet = new Set((lv.src && lv.src.halfTiles) || []), garlandMemo = new Map();
         for (const k of ((lv.src && lv.src.halfWalls) || [])) { const [ax, ln, c] = k.split("|"); halfSet.add(ax + "|" + ln + "|" + (+c * 2)); halfSet.add(ax + "|" + ln + "|" + (+c * 2 + 1)); }
         const noneSet = new Set((lv.src && lv.src.noWalls) || []), portalTiles = new Set();
         for (const q of (lv.portals || [])) for (let t = 0; t < 8; t++) { const k = q.axis + "|" + q.line + "|" + (q.at + t); noneSet.add(k); portalTiles.add(k); }
@@ -1935,6 +1941,23 @@ function build(cfg) {
                 if (axis === "x") { doorOrBook(w, at2, P.y0, { hover, open }, it); if (it.name) { const s = w.WX(at2 + 1, P.y0, 0, 71); signs.push({ s, name: it.name, hover, sign: { v: 7, ...it.sign } }); } }
                 else { doorOrBook(w, P.x0, at2, { mapY: true, hover, open }, it); if (it.name) { const s = w.WY(P.x0, at2 - 1, 0, 71); signs.push({ s, name: it.name, alongY: true, hover, sign: { v: 7, ...it.sign } }); } }
             }
+            /* Christmas garlands (render/garland.js), baked in so walls and furniture in front cover them as they do a picture (9 Nov, his).
+               The whole run's pixels are worked out once, from each tile's wall top: the floor's own wall, or higher where it goes on up to
+               a raised floor above (as the "fill" further down draws it), so the garland climbs where the wall does. */
+            if (xmasOn) for (const { g, t } of (P.gar || [])) {
+                if (!garlandMemo.has(g)) {
+                    const topOf = tt => { const X = g.axis === "x" ? tt : g.line, Y = g.axis === "x" ? g.line : tt, key = g.axis + "|" + g.line + "|" + tt, Q = tileOf.get(X + "," + Y); if (!Q || noneSet.has(key)) return null;
+                        const own = Q.z - (Q.floorLift || 0) + (halfSet.has(key) ? 48 : w.wallTop); if (halfSet.has(key) || !aboveLv) return own;
+                        const A = g.axis === "x" ? [X, Y - 1] : [X - 1, Y], cell = (x, y) => Math.floor(x / 2) + "," + Math.floor(y / 2), cov = aboveCells.has(cell(A[0], A[1])) ? A : aboveCells.has(cell(X, Y)) ? [X, Y] : null;
+                        /* under a floor above, the top is that floor's underside, higher or lower than a wall's own (a lowered floor above hangs lower) */ return cov ? aboveLv.src.k * Z1 + (((aboveLv.src.rise || {})[cell(cov[0], cov[1])]) || 0) - 13 : own; };
+                    const tops = []; for (let tt = g.a; tt < g.b; tt++) tops.push(topOf(tt));
+                    garlandMemo.set(g, new Map(Garland.pixels(g, tops, (x, y, z) => { const zs = w.z; w.z = z; const s = w.S(x, y); w.z = zs; return s; }, cfg.map && cfg.map.baubles).map(q => [q.t, q.px])));
+                }
+                const px = garlandMemo.get(g).get(t); if (!px) continue;
+                const at = t + .5; if (!(g.axis === "x" ? inReach(at, P.y0, 340) : inReach(P.x0, at, 340))) continue;
+                w.afterAll.push({ zHere: P.z, depth: (g.axis === "x" ? at + P.y0 : P.x0 + at) + .35, tx: g.axis === "x" ? t : P.x0, ty: g.axis === "x" ? P.y0 : t, axis: g.axis, line: g.axis === "x" ? P.y0 : P.x0, out: 0,
+                    draw: () => { for (const [X, Y, c] of px) { layer.set(X, Y, c); if (X >= 0 && Y >= 0 && X < bw && Y < bh) w.keep[Y * bw + X] = ((c[0] << 16) | (c[1] << 8) | c[2]) + 1; } } });
+            }
             for (const it of (P.wi || [])) {
                 const def = WALL_ITEM.get(it.k); if (!def) continue;
                 if (def.xmas && !xmasOn) continue;
@@ -2123,7 +2146,7 @@ function build(cfg) {
         w.z = lowest; later.forEach(drawSprite);
         const paintedAfter = new Set(); w.afterAll.sort((a, c) => a.depth - c.depth).forEach(s => {
             const own = Object.prototype.hasOwnProperty.call(layer, "set"), was = layer.set, mine = new Set();
-            layer.set = function (x, y, c) { if (x >= 0 && y >= 0 && x < bw && y < bh) { const i = y * bw + x; if ((furniX[i] !== NO_FURNI && !mine.has(i) && (!s.axis || (s.axis === "y" ? furniX[i] >= s.line + s.out : furniY[i] >= s.line + s.out))) || (mask[i] === 1 && zb[i] > s.zHere)) return; mine.add(i); paintedAfter.add(i); was.call(layer, x, y, c); furniX[i] = s.tx; furniY[i] = s.ty; furniRun[i] = 0; const p = i * 4; furniC[i] = (layer.d[p] << 16) | (layer.d[p + 1] << 8) | layer.d[p + 2]; } };
+            layer.set = function (x, y, c) { if (x >= 0 && y >= 0 && x < bw && y < bh) { const i = y * bw + x; if ((furniX[i] !== NO_FURNI && !mine.has(i) && (!s.axis || (s.axis === "y" ? furniX[i] >= s.line + s.out : furniY[i] >= s.line + s.out))) || (mask[i] === 1 && zb[i] > s.zHere)) return; mine.add(i); itemPx[i] = 1; paintedAfter.add(i); was.call(layer, x, y, c); furniX[i] = s.tx; furniY[i] = s.ty; furniRun[i] = 0; const p = i * 4; furniC[i] = (layer.d[p] << 16) | (layer.d[p + 1] << 8) | layer.d[p + 2]; } };
             w.z = s.zHere; s.draw();
             if (own) layer.set = was; else delete layer.set;
         });
@@ -2139,7 +2162,7 @@ function build(cfg) {
             const upBase = aboveLv.src.k * Z1, upRise = (X, Y) => (aboveLv.src.rise && aboveLv.src.rise[Math.floor(X / 2) + "," + Math.floor(Y / 2)]) || 0, REPEAT = 18, EDGE_ROWS = 13, CAP_ROWS = 24, WALL_REPEAT = 64, WOOD_ROWS = 46;
             const fill = (sx, y0, y1, yMax, dir, wallAtTile, line, floorZ) => {
                 if (sx < 0 || sx >= bw) return;
-                const plain = (X, Y) => { const n = Y * bw + X; return !stairPx[n] && (furniX[n] === NO_FURNI || railUnder.has(n)) && !lampPx.has(n); };
+                const plain = (X, Y) => { const n = Y * bw + X; return !stairPx[n] && !itemPx[n] && (furniX[n] === NO_FURNI || railUnder.has(n)) && !lampPx.has(n); };
                 /* the next repeat down has the same wallpaper, as long as it's still wallpaper and not the wood or the floor below it */
                 /* only from the wall that owns most of this column below: where two walls meet at a corner, rows of the other one sat in it and were copied up as a column of little triangles (8 Nov, his, Floor 2 by Kn0ck Kn0ck v0.0) */
                 const owners = new Map(); for (let y = Math.max(0, y1 + 1); y <= yMax && y < bh; y++) { const n = y * bw + sx; if (plain(sx, y)) owners.set(wallOwner[n], (owners.get(wallOwner[n]) || 0) + 1); }
@@ -2147,7 +2170,7 @@ function build(cfg) {
                 const down = (X, Y, last) => { if (X < 0 || X >= bw) return -1; while (Y >= 0 && Y < bh && Y <= last) { if (plain(X, Y) && (X !== sx || home < 0 || wallOwner[Y * bw + X] === home)) return Y * bw + X; Y += REPEAT; } return -1; };
                 for (let y = Math.max(0, y0); y <= y1 && y < bh; y++) {
                     let yy = y; while (yy <= y1) yy += REPEAT;
-                    const i = y * bw + sx; if (furniX[i] !== NO_FURNI || lampPx.has(i) || stairPx[i]) continue;
+                    const i = y * bw + sx; if (furniX[i] !== NO_FURNI || lampPx.has(i) || stairPx[i] || itemPx[i]) continue;
                     let j = down(sx, yy, yMax);
                     for (let n = 1; j < 0 && n <= 4; n++) for (const s of [1, -1]) { if (j >= 0 || !wallAtTile(s * n * 4)) continue; const X2 = sx + s * dir * n * WALL_REPEAT; if (X2 < 0 || X2 >= bw) continue; j = down(X2, yy + s * n * WALL_REPEAT / 2, yMax + s * n * WALL_REPEAT / 2); }
                     if (j < 0) { const art = stairWallPx(w, dir < 0, line, sx, y, yMax + WOOD_ROWS - y, floorZ); if (art) { const b2 = i * 4; layer.d[b2] = art[0]; layer.d[b2 + 1] = art[1]; layer.d[b2 + 2] = art[2]; } continue; }
@@ -2357,8 +2380,9 @@ function build(cfg) {
             const REPEAT = 18, isVoid = i => { const p = i * 4; return layer.d[p] === VOID[0] && layer.d[p + 1] === VOID[1] && layer.d[p + 2] === VOID[2]; };
             for (const [sx, y0, y1] of lv.noCap) for (let y = y0; y <= y1; y++) {
                 if (sx < 0 || sx >= bw || y < 0 || y >= bh) continue;
-                const i = y * bw + sx; if (isVoid(i) || furniX[i] !== NO_FURNI) continue;
-                let yy = y; while (yy <= y1) yy += REPEAT; if (yy >= bh) continue;
+                const i = y * bw + sx; if (isVoid(i) || furniX[i] !== NO_FURNI || itemPx[i]) continue;
+                /* from the plain wallpaper a repeat or more further down: never a picture or poster hung there (9 Nov 2026, his: the Leet Show poster's top showed again above it) */
+                let yy = y; while (yy <= y1) yy += REPEAT; while (yy < bh && (itemPx[yy * bw + sx] || furniX[yy * bw + sx] !== NO_FURNI || lampPx.has(yy * bw + sx))) yy += REPEAT; if (yy >= bh) continue;
                 const j = yy * bw + sx; if (isVoid(j)) continue;
                 layer.d[i * 4] = layer.d[j * 4]; layer.d[i * 4 + 1] = layer.d[j * 4 + 1]; layer.d[i * 4 + 2] = layer.d[j * 4 + 2];
             }

@@ -1,8 +1,9 @@
 /* A window in the wall: frame in the wall's own wood, a clean board along the bottom, dark inner frame, glazing bars. Any width, bottom and top.
    Drawn once per size with the same small ray-caster the other new pieces were made with, and shared by the drawing and nothing else.
    Its art is for a wall running along y; hw3.js mirrors it for the other. */
+(function () {
 "use strict";
-const iso = require("../ideas/iso3d.js"), { box, M, render, col } = iso;
+const iso = typeof window !== "undefined" && window.Iso3d ? window.Iso3d : require("../ideas/iso3d.js"), { box, M, render, col } = iso;
 const groove = (face, p) => { if (face === "x") return Math.floor(p[1] + 400) % 6 === 0 ? "34180b" : Math.floor(p[1] + 400) % 6 === 3 ? "593422" : "452313"; if (face === "y") return Math.floor(p[0] + 400) % 6 === 0 ? "452313" : "593422"; return null; };
 const cache = new Map();
 function barsOf(W) { return Math.max(1, Math.round(W / 26)); }
@@ -27,4 +28,8 @@ const SUN = [1, .34, -.92];
 function litByWindow(W, b, top, wy, wz) { if (wy < 1 || wy > W - 1 || wz < b + 2 || wz > top - 2) return false; const bars = barsOf(W); for (let i = 1; i <= bars; i++) if (Math.abs(wy - W * i / (bars + 1)) < 1.3) return false; for (const z of railsOf(b, top)) if (Math.abs(wz - z) < 1.3) return false; return true; }
 /* which part of the grounds each window looks on: centres in the hotel view's picture */
 const PLACES = { lawn: [640, 350], road: [480, 400], maze: [560, 430], park: [340, 320] };
-module.exports = { art, SUN, litByWindow, PLACES };
+const api = { art, SUN, litByWindow, PLACES };
+/* in node, and in the page as window.HallWindow: the window snow falls only where the view shows past this frame */
+if (typeof module !== "undefined" && module.exports) module.exports = api;
+if (typeof window !== "undefined") window.HallWindow = api;
+})();

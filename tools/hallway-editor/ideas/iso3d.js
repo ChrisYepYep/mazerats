@@ -1,6 +1,7 @@
 /* A small ray-caster for making new furniture in the hallway's own projection: 16 units to a tile, screen x = x - y, screen y = (x + y) / 2 - z.
    Every pixel looks along (1,1,1), so there are no gaps or wobbly edges, and a 1px outline and flat shading bands make it read like the client's art.
    A material is { top, x, y, nx, ny, edge, line } of colours (x is the face looking +x, the darker visible side; y the one looking +y, the lighter), or a function (face, p) => colour. */
+(function () {
 "use strict";
 const hex = h => [parseInt(h.slice(0, 2), 16), parseInt(h.slice(2, 4), 16), parseInt(h.slice(4, 6), 16)];
 const col = c => typeof c === "string" ? hex(c.replace("#", "")) : c;
@@ -78,4 +79,8 @@ function render(prims, opt = {}) {
     }
     return { w, h, ox: -B.x0, oy: -B.y0, rgba: out };
 }
-module.exports = { box, cyl, ball, M, render, bounds, col, hex };
+const api = { box, cyl, ball, M, render, bounds, col, hex };
+/* in node, and in the page as window.Iso3d (the window snow, live-xmas.js) */
+if (typeof module !== "undefined" && module.exports) module.exports = api;
+if (typeof window !== "undefined") window.Iso3d = api;
+})();
