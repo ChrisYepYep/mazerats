@@ -2,7 +2,7 @@
    the theatredrome entrance, they should hear distant theatre ambience, which isn't always the same").
 
    The chase: the marquee's bulbs, found by the same sums render/hw3.js uses to draw them (theatreArt, the arch piece), lit round the board
-   one in three at a time, stepping on slowly. The baked bulbs stay lit underneath, so between steps they read as dimmed, not dark.
+   as a soft swell of light running round the board. The baked bulbs stay lit underneath, so between swells they read as dimmed, not dark.
 
    The ambience: real recordings (art/theatre, all CC0 or public domain: an audience before a show, an orchestra tuning, applause, a laugh),
    heard as if through the curtain and down the tunnel: muffled, quiet, louder the nearer you are on that floor. A bed of murmur from a
@@ -26,22 +26,45 @@
         for (const d of side) { right.push([p1 - 2, rowOf(p1 - 2) + d]); left.push([p0 + 2, rowOf(p0 + 2) + d]); }
         return (bulbMemo[axis] = [...top, ...right, ...bottom.reverse(), ...left.reverse()]);
     }
-    const STEP_MS = 520, reduced = matchMedia("(prefers-reduced-motion: reduce)");
+    /* A soft chase (9 Nov, his: "too far, make them softly fade/chase"): a slow swell of light running round the board, each bulb brightening
+       and fading smoothly as it passes, two swells at once; between them the bulbs rest at their baked glow, never dark.
+       And furniture in front hides them (his: "the lights clip in front of the pillar"): each bulb is cut as if something stood on the
+       floor tile in front of it, the way the rats are, worked out once per map and kept as a mask. */
+    const PERIOD = 4.2, WAVES = 2, reduced = matchMedia("(prefers-reduced-motion: reduce)");
+    const maskMemo = new Map(); let maskMap = null, maskAt = 0;
+    const cut = document.createElement("canvas"); cut.width = 33; cut.height = 56; const cg = cut.getContext("2d", { willReadFrequently: true });
+    /* which of a bulb's 7 by 7 pixels (its halo included) still show past the furniture in front of it */
+    function maskOf(t, X, Y, z) {
+        const key = t.q.axis + t.q.line + "," + t.q.at + "," + X + "," + Y; if (maskMemo.has(key)) return maskMemo.get(key);
+        const ref = t.q.axis === "x" ? LIVE.mapPoint(t.q.at, t.q.line, z) : LIVE.mapPoint(t.q.line, t.q.at, z), a = t.q.at + (X + .5 - ref[0]) / (t.q.axis === "x" ? 16 : -16);
+        /* the stand-in stands just behind the wall, so anything on the floor in front of it, against the wall too, counts as in front */ const tx = t.q.axis === "x" ? Math.floor(a) : t.q.line - 1, ty = t.q.axis === "x" ? t.q.line - 1 : Math.floor(a), x0 = Math.round(X) - 16, y0 = Math.round(Y) - 28;
+        cg.clearRect(0, 0, 33, 56); cg.fillStyle = "#fff"; cg.fillRect(13, 25, 7, 7);
+        LIVE.as({ x: tx, y: ty, z, l: t.l, dir: 2, frame: 0, st: null }, () => LIVE.cutInFront(cg, x0, y0));
+        const d = cg.getImageData(13, 25, 7, 7).data, m = new Uint8Array(49); let any = 0; for (let k = 0; k < 49; k++) { m[k] = d[k * 4 + 3] > 128 ? 1 : 0; any += m[k]; }
+        const out = { m, any: any > 0, all: any === 49 }; maskMemo.set(key, out); return out;
+    }
     LIVE.add({
         active: () => !reduced.matches && theatres().some(t => t.l === (LIVE.floor || (LIVE.editorApi && LIVE.editorApi().level))),
         under(c, ox, oy, now) {
-            const here = LIVE.floor || (LIVE.editorApi && LIVE.editorApi().level), v = LIVE.view(), step = Math.floor(now / STEP_MS);
+            const here = LIVE.floor || (LIVE.editorApi && LIVE.editorApi().level), v = LIVE.view(), t0 = now / 1000;
+            /* furniture can be moved in the editor: look again every couple of seconds there, once on the walking page */
+            if (LIVE.map !== maskMap || (!window.HALLWAY_PLAY && now - maskAt > 2000)) { maskMemo.clear(); maskMap = LIVE.map; maskAt = now; }
             c.save(); c.translate(ox, oy); c.scale(LIVE.zoom, LIVE.zoom);
             for (const t of theatres()) {
                 if (t.l !== here) continue;
                 const f = front(t), z = LIVE.nodeZ(t.l, f[0], f[1]) || 0, p = t.q.axis === "x" ? LIVE.mapPoint(t.q.at, t.q.line, z) : LIVE.mapPoint(t.q.line, t.q.at, z);
                 const x0 = t.q.axis === "x" ? p[0] : p[0] - 138, y0 = p[1] - T;
                 if (x0 > v.x1 || x0 + 140 < v.x0 || y0 > v.y1 || y0 + 160 < v.y0) continue;
-                const list = bulbsOf(t.q.axis);
+                const list = bulbsOf(t.q.axis), n0 = list.length;
                 list.forEach(([i, j], n) => {
-                    const lit = (n + step) % 3 === 0, X = x0 + i, Y = y0 + j;
-                    if (lit) { const g = c.createRadialGradient(X + .5, Y + .5, 0, X + .5, Y + .5, 3.2); g.addColorStop(0, "rgba(255,226,150,.55)"); g.addColorStop(1, "rgba(255,190,90,0)"); c.globalCompositeOperation = "lighter"; c.fillStyle = g; c.fillRect(X - 3, Y - 3, 7, 7); c.globalCompositeOperation = "source-over"; c.fillStyle = "#fff6d8"; c.fillRect(X, Y, 1, 1); }
-                    else { c.fillStyle = "#a86a2c"; c.fillRect(X, Y, 1, 1); }
+                    const X = Math.round(x0 + i), Y = Math.round(y0 + j), mk = maskOf(t, X, Y, z); if (!mk.any) return;
+                    /* how lit: a smooth swell, eased so it lingers at the top and the bottom */
+                    const ph = n / n0 * WAVES - t0 / PERIOD, b0 = .5 + .5 * Math.cos(2 * Math.PI * ph), b = b0 * b0 * (3 - 2 * b0);
+                    const core = [Math.round(176 + 79 * b), Math.round(122 + 124 * b), Math.round(58 + 158 * b)];
+                    if (mk.all) {
+                        if (b > .05) { const g = c.createRadialGradient(X + .5, Y + .5, 0, X + .5, Y + .5, 3.4); g.addColorStop(0, `rgba(255,226,150,${(.5 * b).toFixed(3)})`); g.addColorStop(1, "rgba(255,190,90,0)"); c.globalCompositeOperation = "lighter"; c.fillStyle = g; c.fillRect(X - 3, Y - 3, 7, 7); c.globalCompositeOperation = "source-over"; }
+                    } else if (b > .05) { c.globalCompositeOperation = "lighter"; for (let k = 0; k < 49; k++) { if (!mk.m[k]) continue; const dx = k % 7 - 3, dy = ((k / 7) | 0) - 3, d = Math.hypot(dx, dy); if (d > 3.4) continue; c.fillStyle = `rgba(255,214,130,${(.5 * b * (1 - d / 3.4)).toFixed(3)})`; c.fillRect(X + dx, Y + dy, 1, 1); } c.globalCompositeOperation = "source-over"; }
+                    if (mk.m[24]) { c.fillStyle = `rgb(${core[0]},${core[1]},${core[2]})`; c.fillRect(X, Y, 1, 1); }
                 });
             }
             c.restore();

@@ -805,6 +805,9 @@ function theatreArt(phase, axis, part, T) {
     const across = (dX, dY) => axis === "y" ? dY - 2 : dX - 2, depth = (dX, dY) => axis === "y" ? -dX : -dY;
     const i0 = axis === "y" ? 42 : 33, i1 = axis === "y" ? 105 : 96;
     if (part === "alcove") {
+        /* how far into the tunnel the curtain hangs: just behind the carpet's front edge, so its hem rests on the carpet all the way across
+           (9 Nov, his: at 2.5 tiles in, the tunnel's own side wall showed under it as a big gap) */
+        const CD = 1.25;
         /* the carpet, where the tunnel's floor is */
         const floorTop = new Map();
         /* where the tunnel's floor starts in each column: its first floor-coloured pixel, smoothed over the columns either side so a groove can't leave a drip of curtain */
@@ -812,44 +815,64 @@ function theatreArt(phase, axis, part, T) {
         for (const i of first.keys()) { const near = []; for (let k = -3; k <= 3; k++) if (first.has(i + k)) near.push(first.get(i + k)); near.sort((p, q) => p - q); floorTop.set(i, near[Math.floor(near.length / 2)]); }
         for (let i = 0; i < W; i++) if (floorTop.has(i)) for (let j = floorTop.get(i); j < H; j++) { const [dX, dY] = floorAt(i, j), c = theatreCarpet(across(dX, dY), depth(dX, dY), Math.floor((axis === "y" ? dY : dX) * 16), Math.floor((axis === "y" ? dX : dY) * 16)); if (c) put(i, j, c);
             /* light spilling from under the curtain onto the floor in front of it, warm, fading over 8 rows (his, 8 Nov: "a soft glow coming from under the curtains") */
-            const ac = across(dX, dY), t = ((-1) * (depth(dX, dY) - 2.5)) * 16 - 3;
+            const ac = across(dX, dY), t = ((-1) * (depth(dX, dY) - CD)) * 16 - 3;
             if (t > -1 && t <= 11 && ac > .1 && ac < 3.9) { const q = at(i, j); if (o.rgba[q + 3] < 128) continue; const a2 = .72 * Math.pow(1 - Math.max(0, t - 1) / 11, 1.5) * Math.min(1, (ac - .1) * 4, (3.9 - ac) * 4); o.rgba[q] = Math.round(o.rgba[q] + (255 - o.rgba[q]) * a2); o.rgba[q + 1] = Math.round(o.rgba[q + 1] + (184 - o.rgba[q + 1]) * a2); o.rgba[q + 2] = Math.round(o.rgba[q + 2] + (96 - o.rgba[q + 2]) * a2); if (a2 > .12) glow[j * W + i] = 1; } }
-        /* The curtain (his, 8 Nov: "high quality isometric pixel art"; then "the drapes don't reach the floor, have a black area between
-           them, and could look more isometric"). A stage curtain hung on a plane parallel to the wall, a little way into the tunnel: drawn as
-           cloth in its own flat frame (u across, v down from the rail) and laid onto that plane, so its rail and hem slope as the wall does,
-           its folds stand upright, and its hem rests on the floor, the top running up behind the arch as a stage curtain hangs behind its
-           proscenium. Two halves meet in the middle, the right lapping over the left. Each has six folds with a lit ridge and a dark crease,
-           gathered a little towards the floor, and a hem that dips under each ridge, with a soft shadow on the carpet. Colours: the
-           Theatredrome's own blue-grey curtain (esirippu), and the client's way of shading: flat tones, dithered only at a step. */
+        /* The curtain (his, 8 Nov: "high quality isometric pixel art"; "the drapes don't reach the floor ... could look more isometric";
+           9 Nov: "closer to the floor, and held open with a rope"). A stage curtain hung on a plane parallel to the wall, CD into the tunnel,
+           drawn as cloth in its own flat frame (u across, h up from the floor) laid onto that plane, so its hem slopes as the wall does and its
+           folds stand upright. Two halves, drawn apart: each sweeps from the middle up under the arch down to a gold rope tie-back at its
+           outer side, is gathered tight there, and flares out again to the floor, as theatre drapes are held open. Between them you see the
+           tunnel itself. Colours: the Theatredrome's own blue-grey curtain (esirippu),
+           shaded the client's way: flat tones, dithered only at a step. */
         const RAMP = [[20, 28, 38], [29, 41, 54], [40, 57, 72], [54, 76, 93], [71, 97, 115], [92, 122, 140], [116, 146, 162]];
-        const BAYER2 = [[0, 2], [3, 1]], slope = axis === "y" ? -.5 : .5, mid = (i0 + i1) / 2, Wd = i1 - i0, D = 2.5, HT = 118;
+        const GOLD = { k: [44, 26, 8], d: [138, 94, 30], m: [206, 160, 64], l: [246, 214, 128] };
+        const BAYER2 = [[0, 2], [3, 1]], mid = (i0 + i1) / 2, Wd = i1 - i0;
         const tone = (v, i, j) => { v = Math.max(0, Math.min(RAMP.length - 1.001, v)); const lo = Math.floor(v), f = v - lo; return RAMP[(f > .38 && f < .62) ? (BAYER2[j & 1][i & 1] < 2 ? lo : lo + 1) : Math.round(v)]; };
-        /* the floor under the curtain's line in each column, and its rail HT above */
-        const footOf = i => { const m = (axis === "x" ? i : i - 138) / 16; return Math.round(T + 8 * (axis === "y" ? -2 * D - m : m - 2 * D)); };
-        const cloth = (u, v) => {
-            /* which half, and where across it: 0 at its outer edge, 1 at the middle */
-            const right = u >= .5, w = right ? (1 - u) * 2 : u * 2, gather = 1 - .06 * v * v, x = Math.min(1, w / gather);
-            /* folds of uneven width, as cloth hangs, and a little narrower near the rail */
-            const folds = 4, ph = x * folds + .18 * Math.sin(x * 9.3 + (right ? 1.7 : 0)) + .1 * Math.sin(x * 23) * (1 - v) + (right ? .5 : 0), c = Math.cos(2 * Math.PI * ph);
-            return { c, x, right, lap: right && w < .035 };
-        };
+        /* the floor under the curtain's line in each column */
+        const footOf = i => { const m = (axis === "x" ? i : i - 138) / 16; return Math.round(T + 8 * (axis === "y" ? -2 * CD - m : m - 2 * CD)); };
+        /* how much of the curtain shows under the arch: from its hem up to the arch's lower edge, measured in the middle */
+        const arch = portalArt(phase)[axis].arch, visTop = i => { for (let j = 40; j < H; j++) { const q = at(i, j); if (arch.rgba[q + 3] < 128 && src.rgba[q + 3] >= 128) return j; } return null; };
+        const mi = Math.round(mid), HV = footOf(mi) + 3 - (visTop(mi) || footOf(mi) - 44);
+        /* each half's inner edge at height h above the floor, as a share of the half's width from its outer side: gathered to G at the tie,
+           sweeping up to meet the other half just above the arch's edge, flaring to F at the floor */
+        const HT = Math.round(HV * .4), G = .26, F = .38;
+        const edgeAt = h => h >= HT ? G + (1 - G) * Math.pow(Math.min(1, (h - HT) / (HV + 3 - HT)), 1.7) : G + (F - G) * Math.pow((HT - h) / HT, 1.3);
+        /* between the curtains: the tunnel itself, as it is, its carpet running in (9 Nov, his: "transparent between the curtains") */
         for (let i = i0 - 2; i <= i1 + 2; i++) {
-            const foot = footOf(i) + 3, rail = foot - HT, u = Math.max(0, Math.min(1, (i - i0) / Wd));
-                        for (let j = Math.max(0, rail); j <= foot && j < H; j++) {
-                const q = at(i, j), v = (j - rail) / HT, k = cloth(u, v), dip = k.c > .3 ? 0 : 1, hem = foot - dip;
-                if (o.rgba[q + 3] < 128) continue;
-                /* under the hem: the stage's light spilling out onto the carpet, warm, fading a few pixels out (his, 8 Nov: "a soft glow coming from under the curtains") */
+            const foot = footOf(i) + 3, u = Math.max(0, Math.min(1, (i - i0) / Wd)), right = u >= .5, w = right ? (1 - u) * 2 : u * 2;
+            for (let j = Math.max(0, foot - HV - 8); j <= foot && j < H; j++) {
+                const q = at(i, j); if (o.rgba[q + 3] < 128) continue;
+                const h = foot - j, e = edgeAt(h);
+                if (w > e + .02) {
+                    /* past the curtain; a soft shadow just inside each edge, where the cloth stands off it */
+                    if (j >= foot) continue;
+                    if (w < e + .09) { const q2 = at(i, j); put(i, j, [o.rgba[q2] * .6, o.rgba[q2 + 1] * .6, o.rgba[q2 + 2] * .6].map(Math.round)); } continue;
+                }
+                /* the cloth: its folds bunch into the gathered width, so they crowd together at the tie and fan out above and below it */
+                const x = Math.min(1, w / Math.max(.05, e)), ph = x * 4 + .18 * Math.sin(x * 9.3 + (right ? 1.7 : 0)) + .1 * Math.sin(x * 23) + (right ? .5 : 0), c = Math.cos(2 * Math.PI * ph);
+                const dip = c > .3 ? 0 : 1, hem = foot - dip;
                 if (j > hem) continue;
                 if (j === hem) { put(i, j, RAMP[1]); continue; }
-                if (j === hem - 1) { put(i, j, k.c > 0 ? RAMP[5] : RAMP[4]); continue; }
-                /* where the halves meet: the right one's edge laps over, dark beneath it */
-                if (k.lap) { put(i, j, (1 - u) * 2 < .015 ? RAMP[0] : RAMP[5]); continue; }
-                if (k.c > .92) { put(i, j, RAMP[6]); continue; }
-                if (k.c < -.86) { put(i, j, RAMP[0]); continue; }
-                /* lit from the front and the left; a touch darker towards the floor and at the outer edges, in the tunnel's shade */
-                const light = 3.2 + 2.1 * k.c - .9 * v * v - .8 * Math.max(0, .18 - Math.min(u, 1 - u)) * 6;
+                if (j === hem - 1) { put(i, j, c > 0 ? RAMP[5] : RAMP[4]); continue; }
+                /* the inner edge, a lit selvedge along it */
+                if (w > e - .035) { put(i, j, RAMP[5]); continue; }
+                /* the gold rope: a twisted cord round the gathered cloth, dipping a little to the inside */
+                const cord = HT + Math.round(1.5 * x);
+                if (h === cord + 1 || h === cord - 2) { put(i, j, GOLD.k); continue; }
+                if (h === cord || h === cord - 1) { put(i, j, ((i + h) & 1) ? (h === cord ? GOLD.l : GOLD.m) : (h === cord ? GOLD.m : GOLD.d)); continue; }
+                if (c > .92) { put(i, j, RAMP[6]); continue; }
+                if (c < -.86) { put(i, j, RAMP[0]); continue; }
+                /* lit from the front and the left; deeper in the creases where the rope pinches it, a touch darker towards the floor */
+                const pinch = Math.max(0, 1 - Math.abs(h - HT) / 7), light = 3.2 + 2.1 * c * (1 - .35 * pinch) - .9 * Math.pow(1 - h / HV, 2) - 1.1 * pinch;
                 put(i, j, tone(light, i, j));
             }
+        }
+        /* the tassel, hanging from the rope's knot at each half's inner edge: the knot, the tassel's head, its fringe */
+        for (const right of [false, true]) {
+            const e = edgeAt(HT), uu = right ? 1 - e / 2 : e / 2, ki = Math.round(i0 + uu * Wd) + (right ? 1 : -1), foot = footOf(ki) + 3, kj = foot - HT - 2;
+            const rows = [[0, [-1, 1]], [1, [-1, 1]], [2, [0, 0]], [3, [-1, 1]], [4, [-1, 1]], [5, [-2, 2]], [6, [-2, 2]], [7, [-2, 2]], [8, [-2, 2]], [9, [-1, 1]]];
+            for (const [r, [x0, x1]] of rows) for (let x = x0 - 1; x <= x1 + 1; x++) put(ki + x, kj + r, GOLD.k);
+            for (const [r, [x0, x1]] of rows) for (let x = x0; x <= x1; x++) put(ki + x, kj + r, r < 5 ? (x < 0 || (x === 0 && r < 2) ? GOLD.l : x > 0 ? GOLD.d : GOLD.m) : ((ki + x) & 1 ? GOLD.m : x < 0 ? GOLD.l : GOLD.d));
         }
     } else {
         /* the plaque: along the beam over the opening, where EXIT and its vents were */
