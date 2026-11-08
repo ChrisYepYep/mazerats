@@ -761,7 +761,9 @@ function drawPortal(w, axis, line, at, part, theatre) {
         /* solid black in the arch only ever hid the avatar in the client: it isn't drawn */
         if (part === "arch" && !art.rgba[q] && !art.rgba[q + 1] && !art.rgba[q + 2] && (i < 8 || i > art.w - 8)) continue;
         b.set(x0 + i, p[1] - T + j, [art.rgba[q], art.rgba[q + 1], art.rgba[q + 2]]);
+        if (art.glow && art.glow[j * art.w + i] && w.glowing) { const X = x0 + i, Y = p[1] - T + j; if (X >= 0 && Y >= 0 && X < b.w && Y < b.h) w.glowing[Y * b.w + X] = ((art.rgba[q] << 16) | (art.rgba[q + 1] << 8) | art.rgba[q + 2]) + 1; }
     }
+    if (theatre && part === "alcove" && w.lamps) { const tx = axis === "x" ? at + 4 : line + .4, ty = axis === "x" ? line + .4 : at + 4, lp = w.S(tx, ty); w.lamps.push({ free: true, tx, ty, lz: w.z, x: lp[0], y: lp[1] - 6, colour: "#ffb860" }); }
 }
 
 /* ---- the Theatredrome entrance (8 Nov 2026, the owner's: "Using the entrance portal as a base, make a version of that which is just a
@@ -789,7 +791,7 @@ const THEATRE_FONT = { T: ["###", ".#.", ".#.", ".#.", ".#."], H: ["#.#", "#.#",
 const theatreMemo = new Map();
 function theatreArt(phase, axis, part, T) {
     const key = phase + axis + part + T; if (theatreMemo.has(key)) return theatreMemo.get(key);
-    const src = portalArt(phase)[axis][part], o = { w: src.w, h: src.h, rgba: Buffer.from(src.rgba) }, W = o.w, H = o.h, at = (i, j) => (j * W + i) * 4;
+    const src = portalArt(phase)[axis][part], o = { w: src.w, h: src.h, rgba: Buffer.from(src.rgba) }, W = o.w, H = o.h, at = (i, j) => (j * W + i) * 4, glow = o.glow = new Uint8Array(W * H);
     const put = (i, j, c) => { if (i < 0 || j < 0 || i >= W || j >= H) return; const q = at(i, j); if (o.rgba[q + 3] < 128) return; o.rgba[q] = c[0]; o.rgba[q + 1] = c[1]; o.rgba[q + 2] = c[2]; };
     const isFloor = (i, j) => { const q = at(i, j); if (src.rgba[q + 3] < 128) return false; const r = src.rgba[q], g = src.rgba[q + 1], b = src.rgba[q + 2], l = r * .3 + g * .59 + b * .11; return l > 95 && r > g && g > b && r - b > 40; };
     /* the piece's pixel as a point on the floor, in tiles from the portal's own point */
@@ -802,7 +804,10 @@ function theatreArt(phase, axis, part, T) {
         /* where the tunnel's floor starts in each column: its first floor-coloured pixel, smoothed over the columns either side so a groove can't leave a drip of curtain */
         const first = new Map(); for (let j = 128; j < H; j++) for (let i = 0; i < W; i++) if (!first.has(i) && isFloor(i, j)) first.set(i, j);
         for (const i of first.keys()) { const near = []; for (let k = -3; k <= 3; k++) if (first.has(i + k)) near.push(first.get(i + k)); near.sort((p, q) => p - q); floorTop.set(i, near[Math.floor(near.length / 2)]); }
-        for (let i = 0; i < W; i++) if (floorTop.has(i)) for (let j = floorTop.get(i); j < H; j++) { const [dX, dY] = floorAt(i, j), c = theatreCarpet(across(dX, dY), depth(dX, dY), Math.floor((axis === "y" ? dY : dX) * 16), Math.floor((axis === "y" ? dX : dY) * 16)); if (c) put(i, j, c); }
+        for (let i = 0; i < W; i++) if (floorTop.has(i)) for (let j = floorTop.get(i); j < H; j++) { const [dX, dY] = floorAt(i, j), c = theatreCarpet(across(dX, dY), depth(dX, dY), Math.floor((axis === "y" ? dY : dX) * 16), Math.floor((axis === "y" ? dX : dY) * 16)); if (c) put(i, j, c);
+            /* light spilling from under the curtain onto the floor in front of it, warm, fading over 8 rows (his, 8 Nov: "a soft glow coming from under the curtains") */
+            const ac = across(dX, dY), t = ((-1) * (depth(dX, dY) - 2.5)) * 16 - 3;
+            if (t > -1 && t <= 11 && ac > .1 && ac < 3.9) { const q = at(i, j); if (o.rgba[q + 3] < 128) continue; const a2 = .72 * Math.pow(1 - Math.max(0, t - 1) / 11, 1.5) * Math.min(1, (ac - .1) * 4, (3.9 - ac) * 4); o.rgba[q] = Math.round(o.rgba[q] + (255 - o.rgba[q]) * a2); o.rgba[q + 1] = Math.round(o.rgba[q + 1] + (184 - o.rgba[q + 1]) * a2); o.rgba[q + 2] = Math.round(o.rgba[q + 2] + (96 - o.rgba[q + 2]) * a2); if (a2 > .12) glow[j * W + i] = 1; } }
         /* The curtain (his, 8 Nov: "high quality isometric pixel art"; then "the drapes don't reach the floor, have a black area between
            them, and could look more isometric"). A stage curtain hung on a plane parallel to the wall, a little way into the tunnel: drawn as
            cloth in its own flat frame (u across, v down from the rail) and laid onto that plane, so its rail and hem slope as the wall does,
@@ -823,11 +828,12 @@ function theatreArt(phase, axis, part, T) {
             return { c, x, right, lap: right && w < .035 };
         };
         for (let i = i0 - 2; i <= i1 + 2; i++) {
-            const foot = footOf(i), rail = foot - HT, u = Math.max(0, Math.min(1, (i - i0) / Wd));
-            for (let j = Math.max(0, rail); j <= foot + 2 && j < H; j++) {
-                const q = at(i, j); if (o.rgba[q + 3] < 128) continue;
-                const v = (j - rail) / HT, k = cloth(u, v), dip = k.c > .3 ? 0 : 1, hem = foot - dip;
-                if (j > hem) { if (j <= hem + 2) { o.rgba[q] = Math.round(o.rgba[q] * .6); o.rgba[q + 1] = Math.round(o.rgba[q + 1] * .6); o.rgba[q + 2] = Math.round(o.rgba[q + 2] * .6); } continue; }
+            const foot = footOf(i) + 3, rail = foot - HT, u = Math.max(0, Math.min(1, (i - i0) / Wd));
+                        for (let j = Math.max(0, rail); j <= foot && j < H; j++) {
+                const q = at(i, j), v = (j - rail) / HT, k = cloth(u, v), dip = k.c > .3 ? 0 : 1, hem = foot - dip;
+                if (o.rgba[q + 3] < 128) continue;
+                /* under the hem: the stage's light spilling out onto the carpet, warm, fading a few pixels out (his, 8 Nov: "a soft glow coming from under the curtains") */
+                if (j > hem) continue;
                 if (j === hem) { put(i, j, RAMP[1]); continue; }
                 if (j === hem - 1) { put(i, j, k.c > 0 ? RAMP[5] : RAMP[4]); continue; }
                 /* where the halves meet: the right one's edge laps over, dark beneath it */
@@ -843,13 +849,22 @@ function theatreArt(phase, axis, part, T) {
         /* the plaque: along the beam over the opening, where EXIT and its vents were */
         const slope = axis === "y" ? -.5 : .5, cx = (i0 + i1) / 2, cj = 103, rowOf = i => Math.round(cj + slope * (i - cx));
         /* a marquee board right across the beam, with a row of little lit bulbs along its top and its foot (his: a Theatredrome version of the EXIT sign) */
-        const p0 = Math.round(cx - 44), p1 = Math.round(cx + 44);
-        for (let i = p0; i <= p1; i++) { const r = rowOf(i); for (let j = r - 12; j <= r + 6; j++) { const edge = j === r - 12 || j === r + 6 || i === p0 || i === p1, bulbRow = j === r - 10 || j === r + 4, bulb = bulbRow && i > p0 + 2 && i < p1 - 2 && (i - p0) % 4 === 2; put(i, j, edge ? [26, 14, 8] : bulb ? [255, 236, 170] : bulbRow && (i - p0) % 4 !== 2 ? [86, 52, 26] : j === r - 11 || j === r + 5 ? [118, 74, 36] : [58, 32, 18]); } }
+        const p0 = Math.round(cx - 44), p1 = Math.round(cx + 44), sideRows = [-7, -3, 1];
+        for (let i = p0; i <= p1; i++) { const r = rowOf(i); for (let j = r - 12; j <= r + 6; j++) { const edge = j === r - 12 || j === r + 6 || i === p0 || i === p1, bulbRow = j === r - 10 || j === r + 4, bulb = bulbRow && i > p0 + 2 && i < p1 - 2 && (i - p0) % 4 === 2;
+            /* and down each end, between the top row and the bottom one */
+            const sideCol = i === p0 + 2 || i === p1 - 2, sideBulb = sideCol && sideRows.includes(j - r), sideStrip = (i === p0 + 2 || i === p1 - 2) && j > r - 10 && j < r + 4;
+            put(i, j, edge ? [26, 14, 8] : bulb || sideBulb ? [255, 236, 170] : (bulbRow && (i - p0) % 4 !== 2) || sideStrip ? [86, 52, 26] : j === r - 11 || j === r + 5 ? [118, 74, 36] : [58, 32, 18]);
+            if (bulb || sideBulb) glow[j * W + i] = 1; } }
+        /* in order round the board, for the page's slow chase (live-theatre.js) */
+        const top = [], right = [], bottom = [], left = [];
+        for (let i = p0 + 3; i < p1 - 2; i++) if ((i - p0) % 4 === 2) { top.push([i, rowOf(i) - 10]); bottom.push([i, rowOf(i) + 4]); }
+        for (const d of sideRows) { right.push([p1 - 2, rowOf(p1 - 2) + d]); left.push([p0 + 2, rowOf(p0 + 2) + d]); }
+        o.bulbs = [...top, ...right, ...bottom.reverse(), ...left.reverse()];
         const word = "THEATREDROME", glyphs = [...word].map(ch => require("./hw.js").VOL.v[ch]), tw = glyphs.reduce((n, g) => n + g.w, 0); let x = Math.round(cx - tw / 2);
         const ink = [];
         for (const g of glyphs) { g.rows.forEach((r, j) => { for (let k = 0; k < r.length; k++) if (r[k] === "1") ink.push([x + k - 1, j]); }); x += g.w; }
-        for (const [px, j] of ink) put(px, rowOf(px) - 11 + j + 1, [24, 12, 6]);
-        for (const [px, j] of ink) put(px, rowOf(px) - 11 + j, [246, 204, 104]);
+        for (const [px, j] of ink) put(px, rowOf(px) - 9 + j + 1, [24, 12, 6]);
+        for (const [px, j] of ink) { put(px, rowOf(px) - 9 + j, [246, 204, 104]); glow[(rowOf(px) - 9 + j) * W + px] = 1; }
     }
     theatreMemo.set(key, o); return o;
 }
