@@ -12014,6 +12014,9 @@ document.addEventListener("DOMContentLoaded", () => {
         return path === "/home" && !u.search && !u.hash;
     }
 
+    /* The Hallway's arcade cabinets open the games through this, over the Hallway (8 Nov 2026) */
+    window.openSiteLinkInPlace = openSiteLinkInPlace;
+
     /* Pulls the account's ticks down as soon as we know who is signed in,
        and again if they sign in or out during the visit. onChange fires on
        every answer including "nobody", which now takes the account's
