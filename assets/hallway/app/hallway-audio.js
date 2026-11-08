@@ -503,7 +503,8 @@
 
     /* ---------- the live player ---------- */
     let eng = null, timer = 0, order = [], orderAt = 0, playing = false, voice = null, orderXmas = null;
-    const xmasNow = () => !!window.hallwayXmas, inSeason = i => !!TRACKS[i].xmas === xmasNow();
+    /* carols only at Christmas, shuffled in with the rest then (8 Nov 2026, his: "Christmas should also play the normal soundtrack, shuffled in with christmas music") */
+    const xmasNow = () => !!window.hallwayXmas, inSeason = i => !TRACKS[i].xmas || xmasNow();
     const api = {
         tracks: TRACKS.map(t => ({ name: t.name, minutes: t.mins, xmas: !!t.xmas })),
         inSeason,

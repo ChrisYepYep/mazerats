@@ -57,7 +57,7 @@ const TOOLS = [
     ["On walls", [["door", "Door", T_ + "door.png"], ["halfwall", "Half wall", ICON.halfwall], ["nowall", "No wall", ICON.nowall], ["addwall", "Show wall", ICON.addwall], ["sconce", "Wall light", T_ + "sconce.png"], ["globelight", "Globe wall light", "art/sconce-globe-y.png"], ["entrance", "Entrance", H_ + "entry_upper_right_mask.png"], ["lift", "Lift", T_ + "lift.png"], ["stair", "Stairs: straight", T_ + "stair.png"], ["turn", "Stairs: turning", T_ + "turn.png"], ["side", "Stairs: left wall", T_ + "side.png"], ["sideturn", "Stairs: left wall, turning", T_ + "sideturn.png"]]],
     ["Furniture", [["sofa", "Sofa", T_ + "sofa.png"], ["chair", "Chair", H_ + "hw_chair_a_0_2_0.png"], ["table", "Table", T_ + "table.png"], ["smtable", "Small round table", H_ + "hw_smtble_a_0_0_0.png"], ["ballpost", "Ball post", H_ + "pillar0_a_0_0_0.png"], ["rope", "Rope barrier", T_ + "rope.png"], ["lamp", "Floor lamp", T_ + "lamp.png"], ["plant", "Plant", H_ + "hw_plant_a_0_0_0.png"], ["ero", "Planter", T_ + "planter.png"], ...PLANTERS.map(([k, name]) => [k, name, T_ + "planter-" + k.slice(4) + ".png"]), ["pillar", "Pillar", H_ + "pillar1_a_0_0_0.png"], ["pillartall", "Tall pillar", T_ + "pillartall.png"], ["statue", "Statue", H_ + "hw_statue_a_0_0_0.png"], ["fountain", "Fountain", H_ + "hw_fountain_a_0_0_0.png"], ["shelf", "Bookcase", H_ + "hw_shelf_a_0_4_0.png"], ["cabinet", "Cabinet", H_ + "hw_closet1_a_0_2_0.png"], ["water", "Water cooler", H_ + "hw_watermatic_a_0_4_0.png"], ["tablelamp", "Globe table lamp", "art/wall/i_tablelamp.png"], ["rarecase", "Rare in a glass case", "art/wall/i_rarecase.png"], ["trophy", "Old trophy cabinet", "art/wall/i_trophy.png"], ["mark_scuff", "Floor scuffs", "art/wall/i_mark_scuff.png"], ["mark_tile", "Lifted floor tile", "art/wall/i_mark_tile.png"]]],
     ...WALL_GROUPS.map(([kind, title]) => [title, WALL_ITEMS.filter(i => i.kind === kind).map(i => ["wi:" + i.id, i.name, "art/wall/" + i.y.layers[0].f])]),
-    ["Games", [["arcade_ff", "Arcade: Fallin' Furni", "art/wall/i_arcade_ff.png"], ["arcade_pura", "Arcade: Pura Panic", "art/wall/i_arcade_pura.png"], ["arcade_guess", "Arcade: Guess the Maze", "art/wall/i_arcade_guess.png"], ["arcade_odd", "Arcade: Odd One Out", "art/wall/i_arcade_odd.png"], ["arcade_scout", "Arcade: Scout's Trail", "art/wall/i_arcade_scout.png"], ["arcade_quiz", "Arcade: Quiz Night", "art/wall/i_arcade_quiz.png"]]],
+    ["Games", [["arcade_ff", "Arcade: Fallin' Furni", "art/wall/i_arcade_ff.png"], ["arcade_pura", "Arcade: Pura Panic", "art/wall/i_arcade_pura.png"], ["arcade_guess", "Arcade: Guess the Maze", "art/wall/i_arcade_guess.png"], ["arcade_odd", "Arcade: Odd One Out", "art/wall/i_arcade_odd.png"], ["arcade_scout", "Arcade: green (no game yet)", "art/wall/i_arcade_scout.png"], ["arcade_quiz", "Arcade: purple (no game yet)", "art/wall/i_arcade_quiz.png"]]],
     ["Christmas", [["garland", "Garland (drag along a wall)", "art/wall/i_swag.png"], ["garland2", "Garland, two tiles", "art/wall/i_swag.png"], ["festoon", "Festoon lights (drag along a wall)", "art/wall/i_festoon.png"], ["xmastree", "Christmas tree", "art/wall/i_xmastree.png"], ["xmassmalltree", "Small tree", "art/wall/i_xmassmalltree.png"], ["snowman", "Snowman", "art/wall/i_snowman.png"], ["xmaslantern", "Lantern", "art/wall/i_xmaslantern.png"], ["xmasdrinks", "Christmas drinks", "art/wall/i_xmasdrinks.png"], ["xmasduck", "Christmas duck", "art/wall/i_xmasduck.png"], ["gift1", "Gift", "art/wall/i_gift1.png"], ["gift2", "Gift, blue", "art/wall/i_gift2.png"], ["gift3", "Gift, green", "art/wall/i_gift3.png"], ["gift4", "Gift, gold", "art/wall/i_gift4.png"], ...WALL_ITEMS.filter(i => i.kind === "xmas").map(i => ["wi:" + i.id, i.name, "art/wall/" + i.y.layers[0].f])]],
     ["Railings", EDGE_STYLES.map(([k, name]) => ["edge:" + k, name, "art/edge-" + k + ".png"])],
     ["Tidy", [["del", "Delete things", ICON.del], ["edges", "Map edges", ICON.edges]]]
@@ -788,12 +788,12 @@ function drawLiveSign() {
     ctx.imageSmoothingEnabled = false;
     ctx.drawImage(live.img, ox + (p[0] - live.anchor[0]) * zoom, oy + (p[1] - live.anchor[1]) * zoom, live.img.width * zoom, live.img.height * zoom);
 }
-/* he edits art/lamps/globe-lamp.png in his own program: when it's saved, the map follows */
+/* he edits the lamp sheets in art/lamps (globe-lamp, globe-table-lamp, the wall lights) in his own program: when one is saved, the map follows */
 let artAt = null;
 if (!window.HALLWAY_PLAY && !window.HALLWAY_EDIT) setInterval(async () => {
     try {
         const o = await (await fetch("/api/art")).json();
-        if (artAt !== null && o.at !== artAt && map) { requestArt(true); setTimeout(() => { for (const n of ["art/lamp-globe.png", "art/sconce-globe-x.png", "art/sconce-globe-y.png", "art/sconce-globe-back-l.png", "art/sconce-globe-back-r.png"]) { const i = spriteImgs[n]; if (i) i.src = n + "?" + o.at; } }, 1500); }
+        if (artAt !== null && o.at !== artAt && map) { requestArt(true); setTimeout(() => { for (const n of ["art/lamp-globe.png", "art/sconce-globe-x.png", "art/sconce-globe-y.png", "art/sconce-globe-back-l.png", "art/sconce-globe-back-r.png", "art/wall/i_tablelamp.png"]) { const i = spriteImgs[n]; if (i) i.src = n + "?" + o.at; } }, 1500); }
         artAt = o.at;
     } catch (e) { /* the server's away; it'll say so elsewhere */ }
 }, 1000);
@@ -1009,7 +1009,7 @@ window.HallwayLive = {
     view() { const hw = canvas.width / zoom / 2, hh = canvas.height / zoom / 2; return { x0: cam.x - hw, x1: cam.x + hw, y0: cam.y - hh, y1: cam.y + hh, w: canvas.width, h: canvas.height }; },
     camera(x, y) { cam.x = x; cam.y = y; clampCam(); }, get cam() { return { x: cam.x, y: cam.y }; }, holdCamera(on) { camHeld = on; if (!on) followNow(); }, setZoom: z => setZoom(z, canvas.width / 2, canvas.height / 2),
     realNight: () => realNight(), enterRoom(target, axis) { if (!walker || roomSession) return false; const me = walker; me.busy = true; me.pts = []; me.walking = false; roomSession = RoomView.enter($("stage"), { room: target.room, facts: target.facts, edge: axis === "x" ? "y" : "x", zoom: () => zoom, wheel: d => setZoom(zoom + (d < 0 ? 1 : -1)), onLeave: () => { roomSession.close(); roomSession = null; me.busy = false; paint(); } }); return true; },
-    editorApi: () => ({ snapshot, changed, setTool, paint, pickOnce(f) { pickNext = f; flash("Click the spot on the map. Esc cancels."); }, get level() { return level; } }),
+    editorApi: () => ({ snapshot, changed, setTool, paint, flash: t => flash(t), setFloor: l => setFloor(l), toPx: (cx, cy) => toPx(cx, cy), tileAt(cx, cy) { const [px, py] = toPx(cx, cy), u = floorUnder(px, py); return u ? { level: u[0].stair ? u[0].stair.low.id : u[0].id, x: u[1], y: u[2] } : null; }, get tool() { return tool; }, pickOnce(f) { pickNext = f || null; if (f) flash("Click the spot on the map. Esc cancels."); }, get level() { return level; } }),
     onClick(f) { liveClicks.add(f); return () => liveClicks.delete(f); },
     walkTo(l, x, y, then) { if (!walker || walker.busy) return false; const s = walkerStart(), path = graphFrom(s.l, s.x, s.y, [l, x, y]); if (!path) return false; followRoute(path, s.here, then || null); return true; },
     get graphLevels() { return stairLevels().list; },
@@ -1683,7 +1683,7 @@ function signHandles(b) {
 }
 function handleAt(b, px, py) { const r = Math.max(5, 7 / zoom), h = signHandles(b); for (const k of Object.keys(h)) if (Math.abs(px - h[k][0]) <= r && Math.abs(py - h[k][1]) <= r) return k; return null; }
 const TYPE_NAMES = { garland: "Garland", festoon: "Festoon lights", entrance: "Entrance", wallitem: "On the wall", steps: "Small steps", wall: "Wall", sign: "Maze sign", prop: "Furniture", tele: "Imperial Teleport", door: "Door", lamp: "Wall light", lift: "Lift", stair: "Stairs", medal: "Carpet crest", rug: "Rug" };
-const PROP_NAMES = { arcade_ff: "Arcade: Fallin' Furni", arcade_pura: "Arcade: Pura Panic", arcade_guess: "Arcade: Guess the Maze", arcade_odd: "Arcade: Odd One Out", arcade_scout: "Arcade: Scout's Trail", arcade_quiz: "Arcade: Quiz Night", tablelamp: "Globe table lamp", xmastree: "Christmas tree", xmassmalltree: "Small tree", snowman: "Snowman", xmaslantern: "Lantern", xmasdrinks: "Christmas drinks", xmasduck: "Christmas duck", gift1: "Gift", gift2: "Gift", gift3: "Gift", gift4: "Gift", trophy: "Old trophy cabinet", rarecase: "Rare in a glass case", mark_scuff: "Floor scuffs", mark_tile: "Lifted floor tile", rope: "Rope barrier", pillartall: "Tall pillar", smtable: "Small round table", ballpost: "Ball post", ero_stone: "Stone planter", ero_walnut: "Walnut planter", ero_evergreen: "Evergreen planter", ero_flower: "Flower planter", sofa: "Sofa", chair: "Chair", table: "Table", lamp: "Floor lamp", plant: "Plant", ero: "Planter", pillar: "Pillar", statue: "Statue", fountain: "Fountain", shelf: "Bookcase", cabinet: "Cabinet", water: "Water cooler" };
+const PROP_NAMES = { arcade_ff: "Arcade: Fallin' Furni", arcade_pura: "Arcade: Pura Panic", arcade_guess: "Arcade: Guess the Maze", arcade_odd: "Arcade: Odd One Out", arcade_scout: "Arcade: green (no game yet)", arcade_quiz: "Arcade: purple (no game yet)", tablelamp: "Globe table lamp", xmastree: "Christmas tree", xmassmalltree: "Small tree", snowman: "Snowman", xmaslantern: "Lantern", xmasdrinks: "Christmas drinks", xmasduck: "Christmas duck", gift1: "Gift", gift2: "Gift", gift3: "Gift", gift4: "Gift", trophy: "Old trophy cabinet", rarecase: "Rare in a glass case", mark_scuff: "Floor scuffs", mark_tile: "Lifted floor tile", rope: "Rope barrier", pillartall: "Tall pillar", smtable: "Small round table", ballpost: "Ball post", ero_stone: "Stone planter", ero_walnut: "Walnut planter", ero_evergreen: "Evergreen planter", ero_flower: "Flower planter", sofa: "Sofa", chair: "Chair", table: "Table", lamp: "Floor lamp", plant: "Plant", ero: "Planter", pillar: "Pillar", statue: "Statue", fountain: "Fountain", shelf: "Bookcase", cabinet: "Cabinet", water: "Water cooler" };
 const THUMB_FOR = { sign: "door", door: "door", lamp: "sconce", lift: "lift", medal: "medal", rug: "rug", tele: "tele" };
 function thumbFor(hit) {
     if (hit.type === "wallitem") { const def = wallItemOf(hit.o.k); return def ? "art/wall/" + def.y.layers[0].f : null; }
@@ -1806,7 +1806,7 @@ function select(hit) {
 }
 function showTab(name) {
     document.querySelectorAll(".tab").forEach(t => { const on = t.dataset.tab === name; t.classList.toggle("active", on); t.setAttribute("aria-selected", String(on)); });
-    for (const n of ["inspect", "floors", "map", "music", "hunts", "problems"]) $("tab-" + n).hidden = n !== name;
+    for (const n of ["inspect", "floors", "map", "music", "hunts", "lost", "problems"]) if ($("tab-" + n)) $("tab-" + n).hidden = n !== name;
 }
 /* which maze every door has: chosen ones first, the rest A to Z through what's left, as the drawing does */
 function doorNames() {
@@ -2317,16 +2317,9 @@ canvas.addEventListener("pointermove", e => {
 canvas.addEventListener("contextmenu", e => e.preventDefault());
 canvas.addEventListener("pointercancel", () => { if (drag && drag.kind === "rubout") { const d = drag; drag = null; endRub(d); } if (drag && drag.kind === "halfwall") { const d = drag; drag = null; endHalfBrush(d); } });
 canvas.addEventListener("wheel", e => { e.preventDefault(); if (seeCut !== null) { const all = allHeights(level), i = all.indexOf(seeCut), n = Math.max(0, Math.min(all.length - 1, i + (e.deltaY > 0 ? 1 : -1))); setCut(all[n]); return; } setZoom(zoom + (e.deltaY < 0 ? 1 : -1), e.clientX, e.clientY); }, { passive: false });
-/* How far the camera may go: the map's rect, grown to every floor's tiles with room for a Habbo's head over them. The rect was only ever set once, and floors have grown past it since (8 Nov 2026) */
-let camRectFor = null, camRectV = null;
-function camRect() {
-    if (!map || !map.rect) return null;
-    const sig = map.levels.map(l => (l.cells || []).length + ":" + l.k).join(",");
-    if (camRectFor === map && camRectV && camRectV.sig === sig) return camRectV.r;
-    let x0 = map.rect.x, y0 = map.rect.y, x1 = map.rect.x + map.rect.w, y1 = map.rect.y + map.rect.h;
-    for (const l of map.levels) { if (!l.cells || !l.cells.length) continue; const z = levelZ(l); for (const c of l.cells) { const i = c.indexOf(","), cx = +c.slice(0, i), cy = +c.slice(i + 1), x = (cx - cy) * 32, y = (cx + cy) * 16 - z; x0 = Math.min(x0, x - 48); x1 = Math.max(x1, x + 48); y0 = Math.min(y0, y - 110); y1 = Math.max(y1, y + 56); } }
-    camRectFor = map; camRectV = { sig, r: { x: x0, y: y0, w: x1 - x0, h: y1 - y0 } }; return camRectV.r;
-}
+/* How far the camera may go: the map's edges (the Map edges tool), which is also as far as the published picture goes, so the view never shows past it.
+   8 Nov 2026: growing it to every floor's tiles showed black beyond the edges (his: "this shouldn't be possible"). Tiles outside the edges are the map's to fix: the Problems tab names them. */
+function camRect() { return map && map.rect ? map.rect : null; }
 function clampCam() {
     if (tool !== "walk" || !map.rect) return;
     const r = camRect(), hw = canvas.width / zoom / 2, hh = canvas.height / zoom / 2;
@@ -3210,6 +3203,9 @@ function runChecks() {
     const blank = map.levels.reduce((n, l) => n + (l.doors || []).filter(d => !d.spare && !d.name).length, 0);
     if (blank) card(`${blank} doors have no maze. Make them spare, or give them one.`, "");
     if (!map.entrance) card("There's no entrance yet: Habbos arrive by it. It's in the library, under On walls.", "err");
+    /* floor past the map's edges: it isn't in the published picture, and the camera stops at the edges, so walking there is walking off screen */
+    if (map.rect) { const R = map.rect; for (const lv of map.levels) { if (!lv.cells || !lv.cells.length) continue; const z = levelZ(lv); let n = 0, first = null; for (const c of lv.cells) { const i = c.indexOf(","), cx = +c.slice(0, i), cy = +c.slice(i + 1), X = (cx - cy) * 32, Y = (cx + cy) * 16 - z; if (X - 32 < R.x || X + 32 > R.x + R.w || Y < R.y || Y + 32 > R.y + R.h) { n++; if (!first) first = [cx * 2, cy * 2]; } }
+        if (n) card(`${n} squares of ${lv.name} are past the map's edges, so nobody can see them. Widen the edges with Map edges, under Tidy. Show one.`, "err", () => { level = lv; buildLevels(); const p = P(first[0] + 1, first[1] + 1, levelZ(lv)); cam.x = p[0]; cam.y = p[1]; paint(); }); } }
     const [l, x, y] = liftTile(), reached = graphFrom(l, x, y);
     const cut = [];
     for (const lv of map.levels) for (const d of (lv.doors || [])) {

@@ -151,12 +151,14 @@
         const row = (menu, name, on, fn) => { const b = document.createElement("button"); b.type = "button"; b.setAttribute("role", "menuitemradio"); b.setAttribute("aria-checked", String(on)); b.textContent = name; b.addEventListener("click", fn); menu.appendChild(b); };
         dropdown("Playlist", "Choose a track", (menu, done) => {
             menu.textContent = ""; const a = A(); if (!a) return;
-            a.tracks.forEach((t, i) => row(menu, t.name, a.playing && a.current === i, () => { const rows = document.querySelectorAll("#musicList .layer-row"); if (rows[i]) rows[i].click(); done(); }));
+            a.tracks.forEach((t, i) => (!a.inSeason || a.inSeason(i)) && row(menu, t.name, a.playing && a.current === i, () => { const rows = document.querySelectorAll("#musicList .layer-row"); if (rows[i]) rows[i].click(); done(); }));
         });
         dropdown("Time of day", "Choose the time of day", (menu, done) => {
             menu.textContent = ""; const sel = document.getElementById("timeMode"); if (!sel) return;
             for (const [value, name] of [["cycle", "Day and night cycle"], ["day", "Day"], ["dusk", "Evening"], ["night", "Night"], ["dawn", "Dawn"]]) row(menu, name, sel.value === value, () => { sel.value = value; sel.dispatchEvent(new Event("change")); done(); });
         });
+        /* the screensaver whenever you like, not only after a minute's quiet (8 Nov 2026, his). Any click or key ends it, as ever */
+        add("Screensaver", "Start the screensaver", () => { shutMenus(); const S = window.HallwayScreensaver; if (!S || S.on) return; if (!S.start() && window.HallwayWindow) HallwayWindow.open("Screensaver", "<p>Not from down here. Head back upstairs first.</p>"); });
         add("Avatar", "Choose your Habbo", () => picker());
         /* The editor's own Camera follows setting, whose button is hidden on this page. The editor doesn't take C here, so this does. */
         const follow = () => document.getElementById("follow"), following = () => { const e = follow(); return !!e && e.classList.contains("on"); };

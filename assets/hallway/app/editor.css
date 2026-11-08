@@ -328,3 +328,28 @@ body.hw-screensaver .hw-lost-hud, body.hw-screensaver .hw-lost-flash { visibilit
 body.hw-screensaver .hw-clue { visibility: hidden; }
 /* a long column of answers on a short screen scrolls rather than running off the bottom */
 .hw-replies.hw-replies-under { max-height: 46vh; overflow-y: auto; }
+/* the Lost Property tab (lost-editor.js) */
+#lostBox h4 { margin: 12px 0 4px; }
+#lostBox .lp-spots { display: flex; flex-direction: column; gap: 2px; max-height: 220px; overflow-y: auto; margin-top: 6px; }
+#lostBox .lp-spot { display: flex; align-items: center; gap: 6px; padding: 1px 2px; border-radius: 3px; }
+#lostBox .lp-spot.on { background: rgba(255, 224, 102, .14); }
+#lostBox .lp-spot-name { flex: none; background: none; border: 0; color: inherit; font: inherit; text-decoration: underline; cursor: pointer; padding: 2px 0; }
+#lostBox .lp-spot-meta { flex: 1; opacity: .65; font-size: 11px; }
+#lostBox .lp-x { padding: 0 6px; }
+#lostBox .lp-now { display: flex; gap: 10px; align-items: center; padding: 8px; background: rgba(0, 0, 0, .25); border-radius: 4px; }
+#lostBox .lp-now img { width: auto; height: 48px; image-rendering: pixelated; flex: none; min-width: 48px; object-fit: contain; }
+#lostBox .lp-now-words { display: flex; flex-direction: column; gap: 3px; }
+#lostBox .lp-strip { display: grid; grid-template-columns: repeat(auto-fill, minmax(44px, 1fr)); gap: 3px; max-height: 260px; overflow-y: auto; margin-top: 6px; }
+#lostBox .lp-thumb { display: flex; flex-direction: column; align-items: center; gap: 1px; padding: 3px 1px 1px; background: rgba(0, 0, 0, .25); border: 1px solid transparent; border-radius: 3px; cursor: pointer; color: inherit; }
+#lostBox .lp-thumb img { height: 22px; width: auto; image-rendering: pixelated; }
+#lostBox .lp-thumb small { font-size: 9px; }
+#lostBox .lp-thumb small.good { color: #9fe08a; }
+#lostBox .lp-thumb small.bad { color: #ff8a5c; }
+#lostBox .lp-thumb.on { border-color: #ffe066; background: rgba(255, 224, 102, .14); }
+#lostBox .lp-thumb.skip img { opacity: .3; }
+#lostBox [hidden] { display: none !important; }
+#lostBox .lp-sec + .lp-sec { border-top: 1px solid rgba(255, 255, 255, .1); margin-top: 10px; }
+#lostBox .lp-detail { min-height: 420px; }
+#lostBox .lp-nav { align-items: center; }
+#lostBox .lp-now { min-height: 64px; }
+#lostBox .lp-strip { max-height: 230px; }

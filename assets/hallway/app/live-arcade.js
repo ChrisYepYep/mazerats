@@ -4,7 +4,9 @@
 (function () {
     "use strict";
     const LIVE = window.HallwayLive; if (!LIVE) return;
-    const GAMES = { ff: ["Fallin' Furni", "/fallinfurni"], pura: ["Pura Panic", "/purapanic"], guess: ["Guess the Maze", "/guess"], odd: ["Odd One Out", "/odd"], scout: ["Scout's Trail", "/scout"], quiz: ["Quiz Night", "/quiz"] };
+    /* the green and purple cabinets (arcade_scout, arcade_quiz) are kept for games to come, but Scout's Trail and Quiz Night will never be
+       on the site (his, 8 Nov): they can be placed as decoration and do nothing when clicked */
+    const GAMES = { ff: ["Fallin' Furni", "/fallinfurni"], pura: ["Pura Panic", "/purapanic"], guess: ["Guess the Maze", "/guess"], odd: ["Odd One Out", "/odd"] };
     const cabinets = l => (l && l.props || []).filter(p => /^arcade_/.test(p.k) && GAMES[p.k.slice(7)]);
     /* the tile in front of its screen: the screen faces down to the right, or down to the left when it's turned */
     const fronts = p => (p.rot || 0) & 1 ? [[p.x, p.y + 1], [p.x + 1, p.y], [p.x - 1, p.y], [p.x, p.y - 1]] : [[p.x + 1, p.y], [p.x, p.y + 1], [p.x, p.y - 1], [p.x - 1, p.y]];
