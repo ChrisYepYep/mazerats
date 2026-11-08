@@ -3531,7 +3531,7 @@ function buildUI() {
         select(null); buildLevels(); changed(); flash(gone.name + " deleted. Undo brings it back.");
     });
     document.addEventListener("keydown", e => {
-        if (e.target.matches && e.target.matches("input, select")) return;
+        if (e.target.matches && e.target.matches("input, select, textarea, [contenteditable]")) return;
         if (e.code === "Space" && e.target.closest && e.target.closest("button")) return;       // it presses the button
         /* The walking page: looking around, zoom and the music. The rest are the editor's. */
         if (window.HALLWAY_PLAY && (e.ctrlKey || e.metaKey || e.altKey || !(e.code === "Space" || e.key === "+" || e.key === "=" || e.key === "-" || e.key.toLowerCase() === "m" || e.key.startsWith("Arrow")))) return;
