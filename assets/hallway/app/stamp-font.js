@@ -27,7 +27,7 @@
         for (const ch of String(s).toUpperCase()) {
             if (ch === " ") { x += SPACE; continue; }
             const g = G[ch]; if (!g) continue;
-            g.forEach((r, y) => { for (let i = 0; i < r.length; i++) if (r[i] === "#") out.push([x + i, y]); });
+            g.forEach((r, y) => { for (let i = 0; i < r.length; i++) if (r[i] === "#") out.push([x + i, y, x]); });
             x += g[0].length + 1;
         }
         return { px: out, w: Math.max(0, x - 1), h: H };
@@ -43,7 +43,9 @@
     /* the pixels to stamp: each line centred across the slip, one row in from its top, two rows between lines. [[x, y], ...] in the picture */
     function onSlip(slip, lines) {
         const out = [], width = slip.x1 - slip.x0 + 1, v0 = Math.max(1, Math.floor((slip.rows - (lines.length * (H + 2) - 2)) / 2));
-        lines.forEach((s, n) => { const t = stamp(s), u0 = Math.floor((width - t.w) / 2); for (const [x, y] of t.px) { const X = slip.x0 + u0 + x, c = slip.cols.get(X); if (!c) continue; const Y = c[0] + v0 + n * (H + 2) + y; if (Y <= c[1]) out.push([X, Y]); } });
+        /* each letter upright, from the top of the slip at its first column: a slip on a wall slants a pixel every two along, and letters
+           sheared by it fall apart at this size (9 Nov 2026, his: words looked cut off on the narrow stand) */
+        lines.forEach((s, n) => { const t = stamp(s), u0 = Math.floor((width - t.w) / 2); for (const [x, y, gx] of t.px) { const X = slip.x0 + u0 + x, c = slip.cols.get(X), g = slip.cols.get(slip.x0 + u0 + gx) || c; if (!c) continue; const Y = g[0] + v0 + n * (H + 2) + y; if (Y >= c[0] - 1 && Y <= c[1] + 1) out.push([X, Y]); } });     // the rims top and bottom are paper too
         return out;
     }
     const api = { stamp, findSlip, onSlip, GLYPHS: G, H };

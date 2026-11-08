@@ -37,7 +37,7 @@
     const ask = () => { if (document.hidden) return; fetch("/.netlify/functions/leet-schedule", { headers: { Accept: "application/json" } }).then(r => r.ok ? r.json() : null).then(j => { if (!j) return; const was = JSON.stringify(feed); feed = j; if (JSON.stringify(feed) !== was && window.HallwayLive) HallwayLive.wake(); }).catch(() => { /* the typed times stand */ }); };
     ask(); setInterval(ask, 5 * 60000);
     const LIVE = window.HallwayLive, SF = window.StampFont; if (!LIVE || !SF) return;
-    const SLIP = [0xf3, 0xe7, 0xc7], RIM = [0xd9, 0xc4, 0x9a], INK = [112, 12, 14];
+    const SLIP = [0xf3, 0xe7, 0xc7], RIM = [0xd9, 0xc4, 0x9a], DK = [0xb4, 0x9c, 0x6e], INK = [112, 12, 14];
 
     /* a picture's slip, as it is drawn on screen (flipped already where it is), once per picture and way round */
     const slips = new Map(), imgs = new Map();
@@ -96,7 +96,7 @@
             if (shown < s.cols.size * .3) continue;                                // the poster isn't there to be seen
             const text = lines(LIVE.map, Date.now(), feed, s), ln = s.rows >= 16 ? text : [text.join("  ")];
             c.save(); c.translate(ox, oy); c.scale(z, z);
-            for (const [x, y] of SF.onSlip(s, ln)) { const u = usual.get(x), p = at(x, y); if (!u || !p || !near(p, u)) continue; c.fillStyle = `rgb(${Math.round(p[0] * INK[0] / SLIP[0])},${Math.round(p[1] * INK[1] / SLIP[1])},${Math.round(p[2] * INK[2] / SLIP[2])})`; c.fillRect(P.x0 + x, P.y0 + y, 1, 1); }
+            for (const [x, y] of SF.onSlip(s, ln)) { const u = usual.get(x), p = at(x, y); if (!u || !p) continue; /* the slip, or its rim top or bottom (letters stand upright, so their edges can reach the rim), in this light */ const paper = near(p, u) || near(p, u.map((v, k) => v * RIM[k] / SLIP[k])) || near(p, u.map((v, k) => v * DK[k] / SLIP[k])); if (!paper) continue; c.fillStyle = `rgb(${Math.round(p[0] * INK[0] / SLIP[0])},${Math.round(p[1] * INK[1] / SLIP[1])},${Math.round(p[2] * INK[2] / SLIP[2])})`; c.fillRect(P.x0 + x, P.y0 + y, 1, 1); }
             c.restore();
         }
     } });
