@@ -29,7 +29,7 @@ function art(W, H, lines, slip) {
         /* the gold rule round the edge, a dark line inside it */
         const e = Math.min(u, v, W - 1 - u, H - 1 - v); if (e === 0) return C.edge; if (e === 2) return C.gold; if (e === 3) return C.edge;
         if (slip) {
-            const [t0, n] = slip, t1 = t0 + n - 1, l0 = 5, l1 = W - 6;
+            const [t0, n] = slip, t1 = t0 + n - 1, l0 = 4, l1 = W - 5;
             if (v >= t0 && v <= t1 && u >= l0 && u <= l1) {
                 /* corners clipped, a darker rim top and bottom, a lighter fold down the left */
                 if ((v === t0 || v === t1) && (u === l0 || u === l1)) return C.shadow;
@@ -49,9 +49,9 @@ function art(W, H, lines, slip) {
 /* a deco rule: a line with a diamond in the middle */
 function withRule(f, W, v0, plain) { return (u, v) => { const d = Math.abs(u - (W - 1) / 2); if (!plain && v >= v0 - 2 && v <= v0 + 2 && d + Math.abs(v - v0) <= 2) return d + Math.abs(v - v0) <= 1 ? C.goldLt : C.gold; if (v === v0 && (plain || d > 4) && d < W / 2 - 7) return C.goldDk; return f(u, v); }; }
 /* No "live on Twitch" (9 Nov, his): a bill for a show at the Theatredrome, with the next stream's real date and time stamped on its slip */
-const PORTRAIT = { W: 50, H: 76 }, LANDSCAPE = { W: 90, H: 54 }, SMALL = { W: 46, H: 76 };
-const portrait = (P = PORTRAIT) => withRule(art(P.W, P.H, [["THE", "v", false, 6, C.gold, true], ["LEET", "vb", true, 15, C.gold, true], ["SHOW", "vb", true, 31, C.gold, true], ["NEXT SHOW", "stamp", false, 51, C.gold, false]], [57, 14]), P.W, 47);
-const landscape = () => withRule(art(LANDSCAPE.W, LANDSCAPE.H, [["THE", "v", false, 5, C.gold, true], ["LEET SHOW", "vb", true, 13, C.gold, true], ["NEXT SHOW", "stamp", false, 32, C.gold, false]], [39, 9]), LANDSCAPE.W, 29, true);
+const PORTRAIT = { W: 56, H: 85 }, LANDSCAPE = { W: 100, H: 58 }, SMALL = PORTRAIT;
+const portrait = (P = PORTRAIT) => withRule(art(P.W, P.H, [["THE", "v", false, 6, C.gold, true], ["LEET", "vb", true, 15, C.gold, true], ["SHOW", "vb", true, 31, C.gold, true], ["NEXT SHOW", "stamp", false, 51, C.gold, false]], [60, 20]), P.W, 47);
+const landscape = () => withRule(art(LANDSCAPE.W, LANDSCAPE.H, [["THE", "v", false, 5, C.gold, true], ["LEET SHOW", "vb", true, 13, C.gold, true], ["NEXT SHOW", "stamp", false, 32, C.gold, false]], [41, 11]), LANDSCAPE.W, 29, true);
 /* the poster on the wall in a bronze frame: the wall item's own way of drawing, face "x" (the hallway's framed signs) */
 function wall(which) {
     const P = which === "landscape" ? LANDSCAPE : PORTRAIT, tex0 = which === "landscape" ? landscape() : portrait(), W = P.W + 6, Hh = P.H + 6, z0 = which === "landscape" ? 58 : 46, y1 = W - 3, zt = z0 + Hh - 3;
@@ -59,23 +59,23 @@ function wall(which) {
     return render([box(0, 1, 3, W - 3, z0 + 3, z0 + Hh - 3, face), box(0, 2.4, 0, 3, z0, z0 + Hh, FRAME), box(0, 2.4, W - 3, W, z0, z0 + Hh, FRAME), box(0, 3.2, 0, W, z0 + Hh - 3, z0 + Hh, FRAME), box(0, 2.4, 0, W, z0, z0 + 3, FRAME)]);
 }
 /* the poster stand: the poster in its bronze frame between two thin bronze poles, each on a little foot and topped with a ball.
-   It stands across two tiles. alongY: the run goes along y and the poster faces +x; otherwise along x, facing +y. The origin is the far
+   It stands across four tiles. alongY: the run goes along y and the poster faces +x; otherwise along x, facing +y. The origin is the far
    corner of the first tile (hw3 draws it from there, as the trophy cabinet). */
 function stand(alongY) {
-    const P = SMALL, tex0 = portrait(SMALL), W = P.W + 6, Hh = P.H + 6, z0 = 8, L = 32, mid = 8, t = 1.2, a0 = (L - W) / 2, a1 = a0 + W, zt = z0 + Hh - 3;
+    const P = SMALL, tex0 = portrait(SMALL), W = P.W + 6, Hh = P.H + 6, z0 = 8, L = 64, mid = 8, t = 1.2, a0 = (L - W) / 2, a1 = a0 + W, zt = z0 + Hh - 3;
     /* in the run's own frame: s along it, d across it (the poster's facing side is +d) */
     const B = (s0, s1, d0, d1, za, zb, m) => alongY ? box(d0, d1, s0, s1, za, zb, m) : box(s0, s1, d0, d1, za, zb, m);
     const faceTex = (f, p) => alongY ? (f === "x" ? tex0(Math.floor(a1 - 3 - p[1]), Math.floor(zt - p[2])) : null) : (f === "y" ? tex0(Math.floor(p[0] - a0 - 3), Math.floor(zt - p[2])) : null);
     const back = col("2a1a10"), face = { top: col(C.ground), y: alongY ? back : col(C.ground), x: alongY ? col(C.ground) : back, edge: null, noLine: true, tex: faceTex };
     const prims = [B(a0 + 3, a1 - 3, mid - t, mid + t - .2, z0 + 3, z0 + Hh - 3, face),
         B(a0, a0 + 3, mid - t - .4, mid + t + .4, z0, z0 + Hh, FRAME), B(a1 - 3, a1, mid - t - .4, mid + t + .4, z0, z0 + Hh, FRAME), B(a0, a1, mid - t - .4, mid + t + .6, z0 + Hh - 3, z0 + Hh, FRAME), B(a0, a1, mid - t - .4, mid + t + .4, z0, z0 + 3, FRAME)];
-    for (const s of [a0 - 1.6, a1 + 1.6]) {
+    /* the poles run up through the frame's sides, so the stand and its feet stay on its own four tiles (9 Nov, his: a foot out on the next
+       tile went under the rug there) */
+    for (const s of [a0 + 1.5, a1 - 1.5]) {
         const c = alongY ? [mid, s] : [s, mid];
         prims.push(cyl(c[0], c[1], 1.1, 2, z0 + Hh + 6, POLE), ball(c[0], c[1], z0 + Hh + 7.5, 2, POLE));
         /* the foot: a short bar across the run, so it stands */
         prims.push(B(s - 1.4, s + 1.4, mid - 6, mid + 6, 0, 2, FRAME));
-        /* a bracket from the pole to the frame, top and bottom */
-        for (const z of [z0 + 6, z0 + Hh - 7]) prims.push(B(Math.min(s, s < a0 ? a0 : a1), Math.max(s, s < a0 ? a0 : a1), mid - .6, mid + .6, z, z + 1.4, FRAME));
     }
     return render(prims);
 }

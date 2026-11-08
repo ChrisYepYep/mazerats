@@ -5,24 +5,33 @@
    ink, in the visitor's own time: "SAT 14 NOV / 8:30 PM", "TONIGHT", "TOMORROW", "ON NOW!" while it's on, "COMING SOON" when no show
    is set. The shows are the map's leetShow.times (set in the editor's Map tab); a feed can fill the same list later.
    The slip is found in the poster's own picture by its colour, so the stamp sits on it on either wall, either way the stand turns.
-   Furniture in front hides it, and the time of day tints it, as it does the avatar. */
+   It only goes where the slip really shows on screen, in the slip's own light. */
 (function () {
     "use strict";
     const DAYS = ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"], MONTHS = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"];
     const clock = d => { const h = d.getHours(), m = d.getMinutes(); return (h % 12 || 12) + (m ? ":" + String(m).padStart(2, "0") : "") + (h < 12 ? " AM" : " PM"); };
     const sameDay = (a, b) => a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
     /* what the slip says, as lines */
-    function lines(map, now) {
-        const ls = (map && map.leetShow) || {}, mins = ls.mins || 180, times = (ls.times || []).map(t => new Date(t)).filter(d => !isNaN(d)).sort((a, b) => a - b);
-        if (times.some(d => d <= now && now < +d + mins * 60000)) return ["ON NOW!", "LIVE"];
+    /* Vincent Leet's own Twitch schedule (netlify/functions/leet-schedule.js), when the site can ask it: its streams win over the times
+       typed in the editor, and ON NOW only when he's really live. Without it (not set up, the local editor, Twitch down) the typed times. */
+    let feed = null;
+    function lines(map, now, f = feed) {
+        const ls = (map && map.leetShow) || {}, mins = ls.mins || 180, typed = (ls.times || []).map(t => new Date(t)).filter(d => !isNaN(d));
+        const fromTwitch = !!(f && f.ok), streams = fromTwitch ? (f.times || []).map(t => new Date(t.start)).filter(d => !isNaN(d)) : [];
+        if (fromTwitch && f.live) return ["ON NOW!", "LIVE"];
+        const times = (streams.length ? streams : typed).sort((a, b) => a - b);
+        if (!fromTwitch && times.some(d => d <= now && now < +d + mins * 60000)) return ["ON NOW!", "LIVE"];
         const next = times.find(d => d > now); if (!next) return ["COMING", "SOON"];
         const today = new Date(now), tomorrow = new Date(now); tomorrow.setDate(tomorrow.getDate() + 1);
         const day = sameDay(next, today) ? "TONIGHT" : sameDay(next, tomorrow) ? "TOMORROW" : DAYS[next.getDay()] + " " + next.getDate() + " " + MONTHS[next.getMonth()];
         return [day, clock(next)];
     }
-    window.LeetShow = { lines };
+    window.LeetShow = { lines, get feed() { return feed; } };
+    /* ask on opening and every five minutes; the site keeps its own copy for a minute, so this is cheap */
+    const ask = () => { if (document.hidden) return; fetch("/.netlify/functions/leet-schedule", { headers: { Accept: "application/json" } }).then(r => r.ok ? r.json() : null).then(j => { if (!j) return; const was = JSON.stringify(feed); feed = j; if (JSON.stringify(feed) !== was && window.HallwayLive) HallwayLive.wake(); }).catch(() => { /* the typed times stand */ }); };
+    ask(); setInterval(ask, 5 * 60000);
     const LIVE = window.HallwayLive, SF = window.StampFont; if (!LIVE || !SF) return;
-    const SLIP = [0xf3, 0xe7, 0xc7], INK = [150, 26, 26];
+    const SLIP = [0xf3, 0xe7, 0xc7], RIM = [0xd9, 0xc4, 0x9a], INK = [112, 12, 14];
 
     /* a picture's slip, as it is drawn on screen (flipped already where it is), once per picture and way round */
     const slips = new Map(), imgs = new Map();
@@ -52,28 +61,38 @@
         }
         return out;
     }
-    /* the stamp, on its own canvas: cut by what's in front, tinted by the time of day, then onto the map */
-    const ink = document.createElement("canvas"), ig = ink.getContext("2d");
+    /* The stamp goes only where the slip really shows on screen (9 Nov, his: stray bits of it appeared where a poster was hidden by
+       another picture, or off the end of a wall). Each column of the slip is read back from the screen: its usual colour there is the
+       slip as lit right now, and a pixel that differs from it is something else in front. The ink is the slip's own colour darkened to
+       ink, so the time of day and the lamps tint it exactly as they tint the slip. */
+    const near = (p, q) => Math.abs(p[0] - q[0]) + Math.abs(p[1] - q[1]) + Math.abs(p[2] - q[2]) <= 14;
     LIVE.add({ still: true, under(c, ox, oy) {
         const l = LIVE.floor || (!window.HALLWAY_PLAY && LIVE.editorApi && LIVE.editorApi().level); if (!l) return;
+        const z = LIVE.zoom; if (z < 1) return;                                   // too small to read anyway
         const list = posters(l); if (!list.length) return;
-        const v = LIVE.view(), text = lines(LIVE.map, Date.now());
-        c.save(); c.translate(ox, oy); c.scale(LIVE.zoom, LIVE.zoom); c.imageSmoothingEnabled = false;
+        const v = LIVE.view(), text = lines(LIVE.map, Date.now()), W = c.canvas.width, H = c.canvas.height;
         for (const P of list) {
             const s = slipOf(P.f, P.flip); if (!s) continue;
             const im = img(P.f), w = im.naturalWidth, h = im.naturalHeight; if (P.x0 > v.x1 || P.x0 + w < v.x0 || P.y0 > v.y1 || P.y0 + h < v.y0) continue;
-            /* one line or two: the wide bill's slip has room for one */
-            const ln = s.rows >= 12 ? text : [text.join("  ")];
-            if (ink.width < w || ink.height < h) { ink.width = Math.max(ink.width, w); ink.height = Math.max(ink.height, h); }
-            ig.clearRect(0, 0, ink.width, ink.height); ig.fillStyle = `rgb(${INK[0]},${INK[1]},${INK[2]})`;
-            for (const [x, y] of SF.onSlip(s, ln)) ig.fillRect(x, y, 1, 1);
-            /* a stamp's ink is never quite even: a few pixels lighter, the same ones every time */
-            ig.fillStyle = "rgba(243,231,199,.35)"; for (const [x, y] of SF.onSlip(s, ln)) if (((x * 7 + y * 13) % 11) === 0) ig.fillRect(x, y, 1, 1);
-            const z = LIVE.tileZ(l, Math.floor(P.who.x), Math.floor(P.who.y)) || 0;
-            LIVE.as({ x: P.who.x, y: P.who.y, z, l, dir: 2, frame: 0, st: null, seat: P.who.seat || null }, () => { LIVE.cutInFront(ig, P.x0, P.y0); LIVE.tint(ig, w, h); });
-            c.drawImage(ink, 0, 0, w, h, P.x0, P.y0, w, h);
+            /* the slip's box on screen, read once */
+            let top = 1e9, bot = -1; for (const cc of s.cols.values()) { top = Math.min(top, cc[0]); bot = Math.max(bot, cc[1]); }
+            const X0 = Math.max(0, Math.floor(ox + (P.x0 + s.x0) * z)), Y0 = Math.max(0, Math.floor(oy + (P.y0 + top) * z)), X1 = Math.min(W, Math.ceil(ox + (P.x0 + s.x1 + 1) * z)), Y1 = Math.min(H, Math.ceil(oy + (P.y0 + bot + 1) * z));
+            if (X1 <= X0 || Y1 <= Y0) continue;
+            let d; try { d = c.getImageData(X0, Y0, X1 - X0, Y1 - Y0).data; } catch (e) { return; }
+            const at = (x, y) => { const X = Math.floor(ox + (P.x0 + x + .5) * z) - X0, Y = Math.floor(oy + (P.y0 + y + .5) * z) - Y0; if (X < 0 || Y < 0 || X >= X1 - X0 || Y >= Y1 - Y0) return null; const q = (Y * (X1 - X0) + X) * 4; return [d[q], d[q + 1], d[q + 2]]; };
+            /* each column's usual colour, if most of the column shows it */
+            const usual = new Map(); let shown = 0;
+            for (const [x, cc] of s.cols) { const seen = new Map(); let n = 0; for (let y = cc[0]; y <= cc[1]; y++) { const p = at(x, y); if (!p) continue; n++; const k = (p[0] >> 2) + "," + (p[1] >> 2) + "," + (p[2] >> 2); const e = seen.get(k); if (e) e.n++; else seen.set(k, { p, n: 1 }); }
+                let best = null; for (const e of seen.values()) if (!best || e.n > best.n) best = e; if (!best || best.n < n * .4) continue;
+                /* and the slip's rim just above it must be lit the same way: a plain wall or floor where no poster shows can't pass both */
+                const rim = at(x, cc[0] - 1); if (!rim || ![0, 1, 2].every(k => Math.abs(best.p[k] / SLIP[k] - rim[k] / RIM[k]) < .07)) continue;
+                usual.set(x, best.p); shown++; }
+            if (shown < s.cols.size * .3) continue;                                // the poster isn't there to be seen
+            const ln = s.rows >= 16 ? text : [text.join("  ")];
+            c.save(); c.translate(ox, oy); c.scale(z, z);
+            for (const [x, y] of SF.onSlip(s, ln)) { const u = usual.get(x), p = at(x, y); if (!u || !p || !near(p, u)) continue; c.fillStyle = `rgb(${Math.round(p[0] * INK[0] / SLIP[0])},${Math.round(p[1] * INK[1] / SLIP[1])},${Math.round(p[2] * INK[2] / SLIP[2])})`; c.fillRect(P.x0 + x, P.y0 + y, 1, 1); }
+            c.restore();
         }
-        c.restore();
     } });
     /* the stamp changes as shows come and go: look again each minute */
     setInterval(() => { const l = LIVE.floor; if (l && posters(l).length && !document.hidden) LIVE.wake(); }, 60000);
