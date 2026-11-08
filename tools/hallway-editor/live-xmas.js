@@ -128,6 +128,8 @@
     let bulbs = null, fp = null;
     function load() {
         if (bulbs !== null) return; bulbs = false; fp = (window.FLOOR_PIECES || {}).bigtree; if (!fp || !fp.lights) return;
+        /* the tree's second version (8 Nov) says where its bulbs are; the baubles' highlights are lit too, and must not get a halo */
+        if (fp.bulbs) { bulbs = fp.bulbs.map(b => ({ x: b[0] + .5, y: b[1] + .5, c: [b[2], b[3], b[4]], ph: Math.random(), per: 4 + Math.random() * 3 })); LIVE.wake(); return; }
         const im = new Image(); im.onload = () => {
             const c = document.createElement("canvas"); c.width = im.naturalWidth; c.height = im.naturalHeight; const g = c.getContext("2d", { willReadFrequently: true }); g.drawImage(im, 0, 0);
             const d = g.getImageData(0, 0, c.width, c.height).data, seen = new Uint8Array(c.width * c.height), out = [];
