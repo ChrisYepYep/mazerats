@@ -57,7 +57,7 @@ const WALL_ITEMS = window.WALL_ITEMS || [], WALL_GROUPS = [["painting", "Hallway
 const TOOLS = [
     ["Floors", [["floor", "Paint floor", T_ + "floor.png"], ["erase", "Remove floor", ICON.erase], ["rug", "Rug", T_ + "rug.png"], ["smallfloor", "Small squares floor", ICON.smallfloor], ["mark_arrow", "Arrow tile (links to another)", ICON.arrow], ["medal", "Carpet crest", T_ + "crest.png"], ["height", "Floor height", ICON.raise], ["floorlift", "Raise the floor only (walls stay)", ICON.raise], ["steps", "Small steps", T_ + "stair.png"]]],
     ["On walls", [["door", "Door", T_ + "door.png"], ["halfwall", "Half wall", ICON.halfwall], ["nowall", "No wall", ICON.nowall], ["addwall", "Show wall", ICON.addwall], ["sconce", "Wall light", T_ + "sconce.png"], ["globelight", "Globe wall light", "art/sconce-globe-y.png"], ["entrance", "Entrance", H_ + "entry_upper_right_mask.png"], ["theatre", "Theatredrome entrance (for show)", H_ + "entry_upper_right_mask.png"], ["lift", "Lift", T_ + "lift.png"], ["stair", "Stairs: straight", T_ + "stair.png"], ["turn", "Stairs: turning", T_ + "turn.png"], ["side", "Stairs: left wall", T_ + "side.png"], ["sideturn", "Stairs: left wall, turning", T_ + "sideturn.png"]]],
-    ["Furniture", [["sofa", "Sofa", T_ + "sofa.png"], ["chair", "Chair", H_ + "hw_chair_a_0_2_0.png"], ["table", "Table", T_ + "table.png"], ["smtable", "Small round table", H_ + "hw_smtble_a_0_0_0.png"], ["ballpost", "Ball post", H_ + "pillar0_a_0_0_0.png"], ["rope", "Rope barrier", T_ + "rope.png"], ["archway", "Archway (drag it out)", H_ + "entry_upper_right_mask.png"], ["lamp", "Floor lamp", T_ + "lamp.png"], ["plant", "Plant", H_ + "hw_plant_a_0_0_0.png"], ["ero", "Planter", T_ + "planter.png"], ...PLANTERS.map(([k, name]) => [k, name, T_ + "planter-" + k.slice(4) + ".png"]), ["pillar", "Pillar", H_ + "pillar1_a_0_0_0.png"], ["pillartall", "Tall pillar", T_ + "pillartall.png"], ["statue", "Statue", H_ + "hw_statue_a_0_0_0.png"], ["fountain", "Fountain", H_ + "hw_fountain_a_0_0_0.png"], ["shelf", "Bookcase", H_ + "hw_shelf_a_0_4_0.png"], ["cabinet", "Cabinet", H_ + "hw_closet1_a_0_2_0.png"], ["water", "Water cooler", H_ + "hw_watermatic_a_0_4_0.png"], ["tablelamp", "Globe table lamp", "art/wall/i_tablelamp.png"], ["rarecase", "Rare in a glass case", "art/wall/i_rarecase.png"], ["trophy", "Old trophy cabinet", "art/wall/i_trophy.png"], ["mark_scuff", "Floor scuffs", "art/wall/i_mark_scuff.png"], ["mark_tile", "Lifted floor tile", "art/wall/i_mark_tile.png"]]],
+    ["Furniture", [["sofa", "Sofa", T_ + "sofa.png"], ["chair", "Chair", H_ + "hw_chair_a_0_2_0.png"], ["barstool", "Arcade stool", "art/wall/i_barstool.png"], ["table", "Table", T_ + "table.png"], ["smtable", "Small round table", H_ + "hw_smtble_a_0_0_0.png"], ["ballpost", "Ball post", H_ + "pillar0_a_0_0_0.png"], ["rope", "Rope barrier", T_ + "rope.png"], ["archway", "Archway (drag it out)", H_ + "entry_upper_right_mask.png"], ["lamp", "Floor lamp", T_ + "lamp.png"], ["plant", "Plant", H_ + "hw_plant_a_0_0_0.png"], ["plant_palm", "Palm, terracotta pot", "art/wall/i_plant_palm.png"], ["plant_orange", "Orange tree, brass pot", "art/wall/i_plant_orange.png"], ["plant_bonsai", "Bonsai, walnut pot", "art/wall/i_plant_bonsai.png"], ["plant_roses", "Roses in a vase", "art/wall/i_plant_roses.png"], ["plant_cactus", "Cactus, terracotta pot", "art/wall/i_plant_cactus.png"], ["plant_bay", "Clipped bay, brass pot", "art/wall/i_plant_bay.png"], ["plant_sunflower", "Sunflower in a vase", "art/wall/i_plant_sunflower.png"], ["ero", "Planter", T_ + "planter.png"], ...PLANTERS.map(([k, name]) => [k, name, T_ + "planter-" + k.slice(4) + ".png"]), ["pillar", "Pillar", H_ + "pillar1_a_0_0_0.png"], ["pillartall", "Tall pillar", T_ + "pillartall.png"], ["statue", "Statue", H_ + "hw_statue_a_0_0_0.png"], ["fountain", "Fountain", H_ + "hw_fountain_a_0_0_0.png"], ["shelf", "Bookcase", H_ + "hw_shelf_a_0_4_0.png"], ["cabinet", "Cabinet", H_ + "hw_closet1_a_0_2_0.png"], ["water", "Water cooler", H_ + "hw_watermatic_a_0_4_0.png"], ["tablelamp", "Globe table lamp", "art/wall/i_tablelamp.png"], ["rarecase", "Rare in a glass case", "art/wall/i_rarecase.png"], ["trophy", "Old trophy cabinet", "art/wall/i_trophy.png"], ["mark_scuff", "Floor scuffs", "art/wall/i_mark_scuff.png"], ["mark_tile", "Lifted floor tile", "art/wall/i_mark_tile.png"]]],
     ...WALL_GROUPS.map(([kind, title]) => [title, WALL_ITEMS.filter(i => i.kind === kind).map(i => ["wi:" + i.id, i.name, "art/wall/" + i.y.layers[0].f])]),
     ["Games", [["arcade_ff", "Arcade: Fallin' Furni", "art/wall/i_arcade_ff.png"], ["arcade_pura", "Arcade: Pura Panic", "art/wall/i_arcade_pura.png"], ["arcade_guess", "Arcade: Guess the Maze", "art/wall/i_arcade_guess.png"], ["arcade_odd", "Arcade: Odd One Out", "art/wall/i_arcade_odd.png"], ["arcade_scout", "Arcade: green (no game yet)", "art/wall/i_arcade_scout.png"], ["arcade_quiz", "Arcade: purple (no game yet)", "art/wall/i_arcade_quiz.png"]]],
     ["Christmas", [["garland", "Garland (drag along a wall)", "art/wall/i_swag.png"], ["garland2", "Garland, two tiles", "art/wall/i_swag.png"], ["festoon", "Festoon lights (drag along a wall)", "art/wall/i_festoon.png"], ["xmastree", "Christmas tree", "art/wall/i_xmastree.png"], ["xmassmalltree", "Small tree", "art/wall/i_xmassmalltree.png"], ["snowman", "Snowman", "art/wall/i_snowman.png"], ["xmaslantern", "Lantern", "art/wall/i_xmaslantern.png"], ["xmasdrinks", "Christmas drinks", "art/wall/i_xmasdrinks.png"], ["xmasduck", "Christmas duck", "art/wall/i_xmasduck.png"], ["gift1", "Gift", "art/wall/i_gift1.png"], ["gift2", "Gift, blue", "art/wall/i_gift2.png"], ["gift3", "Gift, green", "art/wall/i_gift3.png"], ["gift4", "Gift, gold", "art/wall/i_gift4.png"], ...WALL_ITEMS.filter(i => i.kind === "xmas").map(i => ["wi:" + i.id, i.name, "art/wall/" + i.y.layers[0].f])]],
@@ -816,7 +816,7 @@ function seeThroughDown() {
 }
 function requestArt(now) { clearTimeout(artTimer); artTimer = setTimeout(newVersion, now ? 0 : 220); }
 async function newVersion() {
-    const seq = ++versionSeq;
+    const seq = ++versionSeq; firstDrawBar();
     try {
         /* while a sign's being dragged, the art leaves it out */
         const liveNow = live && !live.ending ? live.hit.o : null, keep = liveNow && liveNow.sign;
@@ -852,8 +852,23 @@ function nextTiles() {
     for (let ty = Math.floor(r.y / TILE); ty <= Math.floor((r.y + r.h) / TILE); ty++) for (let tx = Math.floor(r.x / TILE); tx <= Math.floor((r.x + r.w) / TILE); tx++) add(tx, ty, false);
     return out.sort((p, q) => p.d - q.d);
 }
+/* The first time the map is drawn, a bar over it shows how far it's got (8 Nov: "a progressive loading bar when drawing in the
+   map for the first time"). Counted over the squares in view; it goes once they're all in and doesn't come back for later edits. */
+let firstDrawn = false, loadBar = null;
+function firstDrawBar() {
+    if (firstDrawn || window.HALLWAY_PLAY || !map || !map.rect) return;
+    /* the squares on screen: with a time of day on, those are all it draws */
+    const [x0, x1, y0, y1] = visibleTiles(), r = map.rect; let all = 0, done = 0;
+    for (let ty = Math.max(y0, Math.floor(r.y / TILE)); ty <= Math.min(y1, Math.floor((r.y + r.h) / TILE)); ty++) for (let tx = Math.max(x0, Math.floor(r.x / TILE)); tx <= Math.min(x1, Math.floor((r.x + r.w) / TILE)); tx++) { all++; const t = tiles.get(tx + "," + ty); if (t && t.v === version) done++; }
+    if (!loadBar) { loadBar = document.createElement("div"); loadBar.className = "first-draw"; loadBar.setAttribute("role", "progressbar"); loadBar.setAttribute("aria-label", "Drawing the map"); loadBar.innerHTML = '<span class="fd-text">Drawing the map</span><span class="fd-track"><span class="fd-fill"></span></span><span class="fd-num"></span>'; $("stage").appendChild(loadBar); }
+    if (!version) { all = Math.max(1, all); done = 0; }                       // still starting up: shown, at nothing yet
+    const pc = all ? Math.round(100 * done / all) : 100;
+    loadBar.setAttribute("aria-valuenow", String(pc)); loadBar.querySelector(".fd-fill").style.width = pc + "%"; loadBar.querySelector(".fd-num").textContent = pc + "%";
+    if (done >= all) { firstDrawn = true; const b = loadBar; b.classList.add("done"); setTimeout(() => b.remove(), 600); loadBar = null; }
+}
 function pump() {
     if (!version || !map) return;
+    firstDrawBar();
     const want = nextTiles();
     for (const n of want) {
         if (inflight.size >= CONCURRENT) break;
@@ -874,7 +889,7 @@ async function loadTile(n) {
         if (v === version) {
             const old = tiles.get(n.k); if (old && old.img.close) old.img.close();
             tiles.set(n.k, { img, v });
-            paint();
+            firstDrawBar(); paint();
         } else if (img.close) img.close();
     } catch (e) {
         if (e.name !== "AbortError") { tileFailed(n.k); console.error(e); setStatus("A square couldn't be drawn"); }
@@ -1107,7 +1122,7 @@ function snapRect(a, b) {
     if (tool === "rug" || tool === "smallfloor") return { x0: Math.floor(x0), x1: Math.floor(x1) + 1, y0: Math.floor(y0), y1: Math.floor(y1) + 1 };
     return { x0: Math.floor(x0 / 2) * 2, x1: (Math.floor(x1 / 2) + 1) * 2, y0: Math.floor(y0 / 2) * 2, y1: (Math.floor(y1 / 2) + 1) * 2 };
 }
-const FURNI = ["archway", "mark_arrow", "arcade_ff", "arcade_pura", "arcade_guess", "arcade_odd", "arcade_scout", "arcade_quiz", "tablelamp", "xmastree", "xmassmalltree", "snowman", "xmaslantern", "xmasdrinks", "xmasduck", "gift1", "gift2", "gift3", "gift4", "sofa", "chair", "table", "smtable", "ballpost", "rope", "lamp", "plant", "ero", "ero_stone", "ero_walnut", "ero_evergreen", "ero_flower", "pillar", "pillartall", "statue", "fountain", "shelf", "cabinet", "water", "rarecase", "trophy", "mark_scuff", "mark_tile"];
+const FURNI = ["barstool", "plant_palm", "plant_orange", "plant_bonsai", "plant_roses", "plant_cactus", "plant_bay", "plant_sunflower", "archway", "mark_arrow", "arcade_ff", "arcade_pura", "arcade_guess", "arcade_odd", "arcade_scout", "arcade_quiz", "tablelamp", "xmastree", "xmassmalltree", "snowman", "xmaslantern", "xmasdrinks", "xmasduck", "gift1", "gift2", "gift3", "gift4", "sofa", "chair", "table", "smtable", "ballpost", "rope", "lamp", "plant", "ero", "ero_stone", "ero_walnut", "ero_evergreen", "ero_flower", "pillar", "pillartall", "statue", "fountain", "shelf", "cabinet", "water", "rarecase", "trophy", "mark_scuff", "mark_tile"];
 const Parts = window.FurniParts;
 let placeRot = 0;                // which way round the next piece goes, set with R
 const fits = (l, p) => (Parts.ROWS[p.k] ? Parts.tiles(p) : [[p.x, p.y]]).every(t => placeable(l, t[0], t[1]));
@@ -1590,7 +1605,7 @@ function sortByDifficulty() {
 
 /* ---------- select and move ---------- */
 let selected = null;            // { type, l, o }
-const TALL = { archway: [17, 118], mark_arrow: [17, 10], arcade_ff: [16, 56], arcade_pura: [16, 56], arcade_guess: [16, 56], arcade_odd: [16, 56], arcade_scout: [16, 56], arcade_quiz: [16, 56], tablelamp: [8, 22], xmastree: [20, 72], xmassmalltree: [14, 30], snowman: [14, 34], xmaslantern: [10, 24], xmasdrinks: [12, 18], xmasduck: [10, 16], gift1: [12, 20], gift2: [12, 20], gift3: [12, 20], gift4: [12, 20], trophy: [28, 84], rarecase: [15, 62], mark_scuff: [14, 12], mark_tile: [14, 12], rope: [14, 36], pillartall: [12, 150], smtable: [13, 24], ballpost: [13, 28], ero_stone: [16, 40], ero_walnut: [16, 40], ero_evergreen: [16, 40], ero_flower: [16, 40], lamp: [12, 54], statue: [26, 105], pillar: [12, 110], plant: [11, 50], ero: [16, 40], fountain: [26, 34], shelf: [22, 62], cabinet: [32, 82], water: [12, 44], chair: [11, 28], table: [16, 22], sofa: [34, 28] };
+const TALL = { barstool: [9, 24], plant_palm: [16, 74], plant_orange: [12, 48], plant_bonsai: [16, 32], plant_roses: [8, 36], plant_cactus: [12, 52], plant_bay: [24, 64], plant_sunflower: [9, 46], archway: [17, 118], mark_arrow: [17, 10], arcade_ff: [16, 56], arcade_pura: [16, 56], arcade_guess: [16, 56], arcade_odd: [16, 56], arcade_scout: [16, 56], arcade_quiz: [16, 56], tablelamp: [8, 22], xmastree: [20, 72], xmassmalltree: [14, 30], snowman: [14, 34], xmaslantern: [10, 24], xmasdrinks: [12, 18], xmasduck: [10, 16], gift1: [12, 20], gift2: [12, 20], gift3: [12, 20], gift4: [12, 20], trophy: [28, 84], rarecase: [15, 62], mark_scuff: [14, 12], mark_tile: [14, 12], rope: [14, 36], pillartall: [12, 150], smtable: [13, 24], ballpost: [13, 28], ero_stone: [16, 40], ero_walnut: [16, 40], ero_evergreen: [16, 40], ero_flower: [16, 40], lamp: [12, 54], statue: [26, 105], pillar: [12, 110], plant: [11, 50], ero: [16, 40], fountain: [26, 34], shelf: [22, 62], cabinet: [32, 82], water: [12, 44], chair: [11, 28], table: [16, 22], sofa: [34, 28] };
 function pickIn(l, px, py) {
     const [fx, fy] = tileIn(l, px, py), X = Math.floor(fx), Y = Math.floor(fy);
     /* upright things first, front-most first, by what you can actually see of them */
@@ -1645,6 +1660,9 @@ function pickIn(l, px, py) {
     }
     return null;
 }
+let treeData = null; const treeAlpha = (im, i, j) => { if (!treeData || treeData.im !== im) { const c = document.createElement("canvas"); c.width = im.naturalWidth; c.height = im.naturalHeight; const g = c.getContext("2d", { willReadFrequently: true }); g.drawImage(im, 0, 0); treeData = { im, w: c.width, d: g.getImageData(0, 0, c.width, c.height).data }; } return treeData.d[(j * treeData.w + i) * 4 + 3] > 100; };
+/* how far round the tree walkers are kept out, in tiles beyond the statue's own 2x2 (8 Nov, his: "mark out a non-walkable section, so users can't walk into/under the tree") */
+const treeKeepOut = (p, f) => { const n = Math.max(0, Math.min(6, p.treeOut || 0)); if (!n) return; for (let x = p.x - n; x < p.x + 2 + n; x++) for (let y = p.y - n; y < p.y + 2 + n; y++) f(x, y); };
 function pick(px, py) {
     if (selected && selected.type === "sign") { const b = signBox(selected.l, selected.o); if (b && handleAt(b, px, py)) return selected; }
     if (selected && selected.type === "wallitem" && selected.o.k === "i_window" && windowHandleAt(selected.l, selected.o, px, py)) return selected;
@@ -1652,6 +1670,8 @@ function pick(px, py) {
        a floor or wall you can see stops the click reaching anything hidden behind it */
     if (window.hallwayXmas && window.HallwayGarland && level) for (const g of (level.garlands || [])) for (let t = g.a; t < g.b; t++) { const q = HallwayGarland.tileAt(level, g, t); if (q && Math.abs(px - q.c[0]) <= 9 && py >= q.c[1] - 2 && py <= q.c[1] + 16) return { type: "garland", l: level, o: g }; }
     if (window.hallwayXmas && window.HallwayFestoon && level) for (const f of (level.festoons || [])) { const s = HallwayFestoon.shape(f); for (const [u, d] of s.bulbs.concat(s.pts.filter((q, i) => i % 6 === 0))) { const p = HallwayFestoon.onScreen(level, f, u, -d); if (Math.abs(px - p[0]) <= 4 && py >= p[1] - 3 && py <= p[1] + 9) return { type: "festoon", l: level, o: f }; } }
+    /* at Christmas the statue is the giant tree, far bigger than its tiles: anywhere on its picture selects it (8 Nov, his) */
+    if (window.hallwayXmas && level && floorPiece("bigtree")) { const fp = floorPiece("bigtree"), im = pieceImg(fp.f); for (const p of (level.props || [])) { if (p.k !== "statue") continue; const a = P(p.x + 1, p.y + 1, tileZ(level, p.x, p.y)), i = Math.round(px - (a[0] - fp.ox)), j = Math.round(py - (a[1] - fp.oy)); if (i < 0 || j < 0 || i >= fp.w || j >= fp.h) continue; if (!im.complete || !im.naturalWidth || treeAlpha(im, i, j)) return { type: "prop", l: level, o: p }; } }
     for (const l of [...map.levels].sort((a, c) => c.k - a.k)) {
         const h = pickIn(l, px, py); if (h) return h;
         const [fx, fy] = tileIn(l, px, py), X = Math.floor(fx), Y = Math.floor(fy);
@@ -1704,7 +1724,7 @@ function signHandles(b) {
 }
 function handleAt(b, px, py) { const r = Math.max(5, 7 / zoom), h = signHandles(b); for (const k of Object.keys(h)) if (Math.abs(px - h[k][0]) <= r && Math.abs(py - h[k][1]) <= r) return k; return null; }
 const TYPE_NAMES = { garland: "Garland", festoon: "Festoon lights", entrance: "Entrance", wallitem: "On the wall", steps: "Small steps", wall: "Wall", sign: "Maze sign", prop: "Furniture", tele: "Imperial Teleport", door: "Door", lamp: "Wall light", lift: "Lift", stair: "Stairs", medal: "Carpet crest", rug: "Rug" };
-const PROP_NAMES = { archway: "Archway", mark_arrow: "Arrow tile", arcade_ff: "Arcade: Fallin' Furni", arcade_pura: "Arcade: Pura Panic", arcade_guess: "Arcade: Guess the Maze", arcade_odd: "Arcade: Odd One Out", arcade_scout: "Arcade: green (no game yet)", arcade_quiz: "Arcade: purple (no game yet)", tablelamp: "Globe table lamp", xmastree: "Christmas tree", xmassmalltree: "Small tree", snowman: "Snowman", xmaslantern: "Lantern", xmasdrinks: "Christmas drinks", xmasduck: "Christmas duck", gift1: "Gift", gift2: "Gift", gift3: "Gift", gift4: "Gift", trophy: "Old trophy cabinet", rarecase: "Rare in a glass case", mark_scuff: "Floor scuffs", mark_tile: "Lifted floor tile", rope: "Rope barrier", pillartall: "Tall pillar", smtable: "Small round table", ballpost: "Ball post", ero_stone: "Stone planter", ero_walnut: "Walnut planter", ero_evergreen: "Evergreen planter", ero_flower: "Flower planter", sofa: "Sofa", chair: "Chair", table: "Table", lamp: "Floor lamp", plant: "Plant", ero: "Planter", pillar: "Pillar", statue: "Statue", fountain: "Fountain", shelf: "Bookcase", cabinet: "Cabinet", water: "Water cooler" };
+const PROP_NAMES = { barstool: "Arcade stool", plant_palm: "Palm, terracotta pot", plant_orange: "Orange tree, brass pot", plant_bonsai: "Bonsai, walnut pot", plant_roses: "Roses in a vase", plant_cactus: "Cactus, terracotta pot", plant_bay: "Clipped bay, brass pot", plant_sunflower: "Sunflower in a vase", archway: "Archway", mark_arrow: "Arrow tile", arcade_ff: "Arcade: Fallin' Furni", arcade_pura: "Arcade: Pura Panic", arcade_guess: "Arcade: Guess the Maze", arcade_odd: "Arcade: Odd One Out", arcade_scout: "Arcade: green (no game yet)", arcade_quiz: "Arcade: purple (no game yet)", tablelamp: "Globe table lamp", xmastree: "Christmas tree", xmassmalltree: "Small tree", snowman: "Snowman", xmaslantern: "Lantern", xmasdrinks: "Christmas drinks", xmasduck: "Christmas duck", gift1: "Gift", gift2: "Gift", gift3: "Gift", gift4: "Gift", trophy: "Old trophy cabinet", rarecase: "Rare in a glass case", mark_scuff: "Floor scuffs", mark_tile: "Lifted floor tile", rope: "Rope barrier", pillartall: "Tall pillar", smtable: "Small round table", ballpost: "Ball post", ero_stone: "Stone planter", ero_walnut: "Walnut planter", ero_evergreen: "Evergreen planter", ero_flower: "Flower planter", sofa: "Sofa", chair: "Chair", table: "Table", lamp: "Floor lamp", plant: "Plant", ero: "Planter", pillar: "Pillar", statue: "Statue", fountain: "Fountain", shelf: "Bookcase", cabinet: "Cabinet", water: "Water cooler" };
 const THUMB_FOR = { sign: "door", door: "door", lamp: "sconce", lift: "lift", medal: "medal", rug: "rug", tele: "tele" };
 function thumbFor(hit) {
     if (hit.type === "wallitem") { const def = wallItemOf(hit.o.k); return def ? "art/wall/" + def.y.layers[0].f : null; }
@@ -1802,6 +1822,11 @@ function select(hit) {
         if (hit.type === "festoon") { const q = hit.o, row = (label, ctl) => { const f = document.createElement("label"); f.className = "field"; const n = document.createElement("span"); n.className = "f-label"; n.textContent = label; f.append(n, ctl); box.appendChild(f); }, sel = document.createElement("select"); sel.className = "f-ctl"; for (const [v, t] of [["amber", "Amber"], ["warm", "Warm white"], ["multi", "Many colours"], ["redgreen", "Red and green"], ["blue", "Blue and white"], ["cool", "Cool white"]]) { const o = document.createElement("option"); o.value = v; o.textContent = t; sel.appendChild(o); } sel.value = q.colour || "amber"; sel.addEventListener("change", () => { snapshot(); if (sel.value === "amber") delete q.colour; else q.colour = sel.value; lastFestoon.colour = sel.value; changed(); }); row("Bulbs", sel);
           const tw = document.createElement("input"); tw.type = "checkbox"; tw.checked = !!q.twinkle; tw.addEventListener("change", () => { snapshot(); if (tw.checked) q.twinkle = true; else delete q.twinkle; lastFestoon.twinkle = tw.checked; changed(); }); row("A gentle twinkle", tw);
           const hh = document.createElement("input"); hh.type = "number"; hh.min = "40"; hh.max = "140"; hh.className = "f-ctl"; hh.value = String(q.h || 118); hh.addEventListener("change", () => { snapshot(); q.h = Math.max(40, Math.min(140, Math.round(+hh.value || 118))); changed(); }); row("Height on the wall", hh); }
+        if (hit.type === "prop" && hit.o.k === "barstool") { const face = ["down to the right", "down to the left", "up to the left", "up to the right"][Parts.rotOf(hit.o)]; say(`Sitting here, you face ${face}. It looks the same every way round: R turns which way you face (the arrow on the map shows it).`); }
+        if (hit.type === "prop" && hit.o.k === "statue") { const f = document.createElement("label"); f.className = "field"; const n = document.createElement("span"); n.className = "f-label"; n.textContent = "Christmas tree: keep walkers out"; const sel = document.createElement("select"); sel.className = "f-ctl"; sel.setAttribute("aria-label", "How far round the Christmas tree walkers are kept out");
+            for (let k = 0; k <= 6; k++) { const o = document.createElement("option"); o.value = String(k); o.textContent = k ? `${k} tile${k === 1 ? "" : "s"} round it (${2 + 2 * k} by ${2 + 2 * k})` : "Only its own 2 by 2"; sel.appendChild(o); }
+            sel.value = String(hit.o.treeOut || 0); sel.addEventListener("change", () => { snapshot(); const v = +sel.value; if (v) hit.o.treeOut = v; else delete hit.o.treeOut; changed(); paint(); }); f.append(n, sel); box.appendChild(f);
+            if (!window.hallwayXmas) say("The tree only stands here at Christmas: switch Christmas on to see it. The walkers are kept out only then."); }
         if (hit.type === "prop" && hit.o.k === "tablelamp") { const f = document.createElement("label"); f.className = "field"; const n = document.createElement("span"); n.className = "f-label"; n.textContent = "Height off the floor"; const i = document.createElement("input"); i.type = "number"; i.min = "0"; i.max = "60"; i.value = String(hit.o.z || 0); i.className = "f-ctl"; i.addEventListener("change", () => { snapshot(); const v = Math.max(0, Math.min(60, Math.round(+i.value || 0))); if (v) hit.o.z = v; else delete hit.o.z; changed(); }); f.append(n, i); box.appendChild(f); }
         /* an arrow tile: linked to another, stepping on either takes you to the other (live-arrows.js) */
         if (hit.type === "prop" && hit.o.k === "mark_arrow") { const me = hit.o; if (!me.id) me.id = "ar" + Date.now().toString(36);
@@ -2054,6 +2079,10 @@ function drawSelection() {
     const o = s.o, c = "#ffffff", f = "rgba(255,255,255,.22)";
     const z = o.axis !== undefined && o.line !== undefined && s.type !== "steps" ? wallZ(s.l, s.type === "wall" ? { axis: o.axis, at: o.a + (o.axis === "y" ? 1 : 0), line: o.line } : o)
         : s.type === "rug" ? tileZ(s.l, o.x0, o.y0) : o.x !== undefined && o.y !== undefined ? tileZ(s.l, o.x, o.y) : levelZ(s.l);
+    /* the arcade stool: which way you'll face on it */
+    if (s.type === "prop" && o.k === "barstool") { const d = STEP_OF(seatFacing(o)), c0 = toScreen(...P(o.x + .5, o.y + .5, z)), c1 = toScreen(...P(o.x + .5 + d.dx * .9, o.y + .5 + d.dy * .9, z)); ctx.save(); ctx.strokeStyle = "#4fd1ff"; ctx.fillStyle = "#4fd1ff"; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(c0[0], c0[1]); ctx.lineTo(c1[0], c1[1]); ctx.stroke(); const ang = Math.atan2(c1[1] - c0[1], c1[0] - c0[0]); ctx.beginPath(); ctx.moveTo(c1[0] + Math.cos(ang) * 8, c1[1] + Math.sin(ang) * 8); ctx.lineTo(c1[0] + Math.cos(ang + 2.4) * 9, c1[1] + Math.sin(ang + 2.4) * 9); ctx.lineTo(c1[0] + Math.cos(ang - 2.4) * 9, c1[1] + Math.sin(ang - 2.4) * 9); ctx.closePath(); ctx.fill(); ctx.restore(); }
+    /* the tree's keep-out, outlined in red on the floor */
+    if (s.type === "prop" && o.k === "statue" && o.treeOut) { const n = o.treeOut, pts = [[o.x - n, o.y - n], [o.x + 2 + n, o.y - n], [o.x + 2 + n, o.y + 2 + n], [o.x - n, o.y + 2 + n]].map(q => toScreen(...P(q[0], q[1], z))); ctx.save(); ctx.setLineDash([6, 4]); ctx.strokeStyle = "#ff6a5a"; ctx.fillStyle = "rgba(255,90,70,.12)"; ctx.lineWidth = 2; ctx.beginPath(); pts.forEach((q, i) => i ? ctx.lineTo(q[0], q[1]) : ctx.moveTo(q[0], q[1])); ctx.closePath(); ctx.fill(); ctx.stroke(); ctx.restore(); }
     if (s.type === "wallitem") {
         const def = wallItemOf(o.k), box = o.k === "i_window" ? windowBox(o) : def && (o.axis === "x" ? def.x : def.y); if (!box) return;
         const r0 = wallItemRect(s.l, o), a = toScreen(r0.x0, r0.y0), b = toScreen(r0.x0 + r0.w, r0.y0 + r0.h);
@@ -2145,7 +2174,7 @@ function walkPress(px, py) {
     for (const f of liveClicks) { try { if (f(px, py)) return; } catch (err) { console.error(err); } }
     { const dd = doorAtPx(px, py); if (dd && dd.d.kind === "book" && onBook(dd.l, dd.d, px, py)) { bookDoor(dd.l, dd.d); return; } }
     const u = useUnder(px, py);
-    if (u && (u.p.k === "sofa" || u.p.k === "chair")) { sitOn(u); return; }
+    if (u && isSeat(u.p.k)) { sitOn(u); return; }
     if (u && u.p.k === "water") return;                     // it takes a double-click
     const dh = doorAtPx(px, py); if (dh) { const st = walkerStart(); if (!(st.l === dh.l && doorFront(dh.d).some(t => t[0] === st.x && t[1] === st.y))) useDoor(dh.l, dh.d); return; }
     walkTo(px, py);
@@ -2246,7 +2275,7 @@ canvas.addEventListener("pointermove", e => {
             const sb = selected && selected.type === "sign" ? signBox(selected.l, selected.o) : null, side = sb && handleAt(sb, px, py);
             canvas.style.cursor = side ? (side === "l" || side === "r" ? "ew-resize" : "ns-resize") : hit ? "move" : "default";
             $("st-hover").textContent = !hit ? "" : hit.type === "sign" ? (hit.o.kind ? stairSignName(hit.o) : doorName(hit.o) || "Sign") : hit.type === "door" ? (hit.o.spare ? "Spare door" : (doorName(hit.o) || "Door with no maze yet")) : hit.type === "prop" ? (PROP_NAMES[hit.o.k] || "") : TYPE_NAMES[hit.type];
-        } else { const w2 = useUnder(px, py); $("st-hover").textContent = !w2 ? "" : w2.p.k === "water" ? "Double-click for a drink" : w2.p.k === "sofa" || w2.p.k === "chair" ? "Click to sit" : ""; canvas.style.cursor = w2 && (w2.p.k === "water" || w2.p.k === "sofa" || w2.p.k === "chair") ? "pointer" : ""; }
+        } else { const w2 = useUnder(px, py); $("st-hover").textContent = !w2 ? "" : w2.p.k === "water" ? "Double-click for a drink" : isSeat(w2.p.k) ? "Click to sit" : ""; canvas.style.cursor = w2 && (w2.p.k === "water" || isSeat(w2.p.k)) ? "pointer" : ""; }
         paint(); return;
     }
     if (drag && drag.kind === "edge") {
@@ -2333,7 +2362,8 @@ canvas.addEventListener("pointerup", e => {
             if (locked) flash("Left the floor round the stairs and lift level, so they still meet it.");
             changed(); return;
         }
-        if (tool === "smallfloor") { if (r.x1 - r.x0 >= 1 && r.y1 - r.y0 >= 1) level.rugs = [...(level.rugs || []), { ...r, style: "small" }]; else { undoStack.pop(); paint(); return; } }
+        /* laid, and that is all: it used to fall through into the floor loop below, which took the floor away (8 Nov) */
+        if (tool === "smallfloor") { if (r.x1 - r.x0 >= 1 && r.y1 - r.y0 >= 1) { level.rugs = [...(level.rugs || []), { ...r, style: "small" }]; changed(); return; } undoStack.pop(); paint(); return; }
         if (tool === "rug") { if (r.x1 - r.x0 >= 2 && r.y1 - r.y0 >= 2) level.rugs = [...(level.rugs || []), { ...r, alongY: r.y1 - r.y0 > r.x1 - r.x0 }]; else { undoStack.pop(); flash("Rugs need to be at least 2 tiles each way."); paint(); return; } }
         else for (let x = r.x0; x < r.x1; x += 2) for (let y = r.y0; y < r.y1; y += 2) {
             const k = (x / 2) + "," + (y / 2);
@@ -2394,6 +2424,7 @@ function solid(l) {
     const s = new Set();
     for (const p of (l.props || [])) { if (p.k.startsWith("mark_") || (p.k === "rope" && p.night && realNight()) || (tool === "walk" && !window.hallwayXmas && XMAS_PROP(p.k))) continue; if (p.k === "archway") { for (const t of archPosts(l, p)) s.add(t[0] + "," + t[1]); continue; } for (const t of Parts.tiles(p)) s.add(t[0] + "," + t[1]); }   // scuffs and a lifted tile are only marks on the floor
     for (const t of (l.teles || [])) s.add(t.x + "," + t.y);
+    if (window.hallwayXmas) for (const p of (l.props || [])) if (p.k === "statue") treeKeepOut(p, (x, y) => s.add(x + "," + y));
     return s;
 }
 /* Every flight is a little floor of its own, each tile at its own height: walked, clicked and shown with the
@@ -2603,7 +2634,8 @@ function stairUnder(M, l, px, py) {
 }
 
 /* Sitting. The tile and the way you face come from the piece: a sofa faces away from its back, a chair the way it's turned. */
-const SEAT_LIFT = { sofa: 3, chair: 3 };     // low enough that you sit in the seat, not hover over it
+const SEAT_LIFT = { sofa: 3, chair: 3, barstool: 14 };     /* the stool's cushion stands higher than a chair's seat */
+const isSeat = k => k === "sofa" || k === "chair" || k === "barstool";     // low enough that you sit in the seat, not hover over it
 const seatFacing = p => p.k === "sofa" ? (Parts.rotOf(p) ? 2 : 4) : [2, 4, 6, 0][Parts.rotOf(p)];
 const STEP_OF = d => DIRS[d];
 /* ---------- the lifts ----------
@@ -2781,7 +2813,7 @@ function doorFloorKind(d) {
     return (roomFloors && roomFloors.get(FurniParts.mazeName(d.name))) || "slate";
 }
 /* the bookcase door: its pictures are drawn once in art/ideas; here they only take the time of day's tint */
-let bookArt = null, bookImg = null; const bookCv = document.createElement("canvas"), BOOK_MAX = 84, BOOK_FOOT = 6;       // its foot on the wall's own foot (8 Nov 2026: it stood 6px into the floor); render/hw3.js lifts the map's picture the same
+let bookArt = null, bookImg = null; const bookCv = document.createElement("canvas"), BOOK_MAX = 84, BOOK_FOOT = 3;       // its back on the wall's foot (8 Nov 2026: at 6 its front was there and its back in the wall); render/hw3.js lifts the map's picture the same
 function loadBook() { if (bookArt !== null) return; bookArt = false; const i = new Image(); i.onload = () => { bookImg = i; paint(); }; i.src = "art/ideas/book.png"; fetch("art/ideas/book.json").then(r => r.json()).then(j => { bookArt = j; paint(); }).catch(() => {}); }
 const bookEase = v => v < .5 ? 4 * v * v * v : 1 - Math.pow(-2 * v + 2, 3) / 2;
 function bookAngle(T) { if (T < .55) return 0; if (T < .75) return 3 * ((T - .55) / .2); if (T < 2.35) return 3 + (BOOK_MAX - 3) * bookEase((T - .75) / 1.6); if (T < 2.6) return BOOK_MAX - 3 * ((T - 2.35) / .25); if (T < 2.95) return BOOK_MAX - 3 + 1.5 * ((T - 2.6) / .35); return BOOK_MAX - 1.5; }
@@ -2965,7 +2997,7 @@ function propPartAt(l, p, px, py) {
    Everything else just lets the click through to the floor. */
 function useUnder(px, py) {
     for (const l of [...map.levels].sort((a, c) => c.k - a.k)) {
-        const list = (l.props || []).filter(p => p.k === "chair" || p.k === "sofa" || p.k === "water").sort((a, c) => (c.x + c.y) - (a.x + a.y));
+        const list = (l.props || []).filter(p => isSeat(p.k) || p.k === "water").sort((a, c) => (c.x + c.y) - (a.x + a.y));
         for (const p of list) { const q = propPartAt(l, p, px, py); if (q) return { l, p, x: q.x, y: q.y }; }
         const [fx, fy] = tileIn(l, px, py), X = Math.floor(fx), Y = Math.floor(fy);
         if ((hasFloor(l, X, Y) && !holes(l).some(r => inRect(r, X, Y))) || wallAt(px, py, l)) return null;
@@ -3015,7 +3047,7 @@ function sitOn(u) {
     const diag = d.dx ? [[u.x + d.dx, u.y - 1], [u.x + d.dx, u.y + 1]] : [[u.x - 1, u.y + d.dy], [u.x + 1, u.y + d.dy]];
     const r = routeToOneOf(u.l, [front], s.l, s.x, s.y) || routeToOneOf(u.l, [...diag, ...sides], s.l, s.x, s.y);
     if (!r) {
-        const seated = (x, y) => (u.l.props || []).some(p => (p.k === "chair" || p.k === "sofa") && Parts.tiles(p).some(t => t[0] === x && t[1] === y));
+        const seated = (x, y) => (u.l.props || []).some(p => isSeat(p.k) && Parts.tiles(p).some(t => t[0] === x && t[1] === y));
         for (const q of [[u.x - 1, u.y], [u.x + 1, u.y], [u.x, u.y - 1], [u.x, u.y + 1]]) {
             if (!seated(q[0], q[1])) continue;
             const via = routeToOneOf(u.l, [[q[0] - 1, q[1]], [q[0] + 1, q[1]], [q[0], q[1] - 1], [q[0], q[1] + 1]], s.l, s.x, s.y); if (!via) continue;
@@ -3531,7 +3563,7 @@ function buildUI() {
         select(null); buildLevels(); changed(); flash(gone.name + " deleted. Undo brings it back.");
     });
     document.addEventListener("keydown", e => {
-        if (e.target.matches && e.target.matches("input, select")) return;
+        if (e.target.matches && e.target.matches("input, select, textarea, [contenteditable]")) return;
         if (e.code === "Space" && e.target.closest && e.target.closest("button")) return;       // it presses the button
         /* The walking page: looking around, zoom and the music. The rest are the editor's. */
         if (window.HALLWAY_PLAY && (e.ctrlKey || e.metaKey || e.altKey || !(e.code === "Space" || e.key === "+" || e.key === "=" || e.key === "-" || e.key.toLowerCase() === "m" || e.key.startsWith("Arrow")))) return;

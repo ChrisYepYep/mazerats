@@ -357,3 +357,16 @@ body.hw-screensaver .hw-clue { visibility: hidden; }
 #lostBox .lp-nav { align-items: center; }
 #lostBox .lp-now { min-height: 64px; }
 #lostBox .lp-strip { max-height: 230px; }
+/* the Warren sign-in has run out (edit.js) */
+.signin-note { position: fixed; z-index: 60; top: 64px; left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 12px; max-width: min(640px, calc(100vw - 24px)); padding: 12px 14px; background: var(--raised); border: 1px solid var(--line-2); border-radius: 10px; box-shadow: 0 10px 30px rgba(0, 0, 0, .45); color: var(--text); }
+.signin-note b { white-space: nowrap; }
+.signin-note span { color: var(--text-2); }
+.signin-note button { flex: none; padding: 7px 12px; border: 0; border-radius: 7px; background: var(--gold); color: var(--gold-ink); font: inherit; font-weight: 650; cursor: pointer; }
+.signin-note button:hover { filter: brightness(1.08); }
+/* the map's first drawing (editor.js firstDrawBar) */
+.first-draw { position: absolute; z-index: 30; top: 14px; left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 10px; width: min(420px, calc(100% - 28px)); padding: 9px 12px; background: rgba(21, 23, 27, .92); border: 1px solid var(--line-2); border-radius: 10px; box-shadow: 0 8px 24px rgba(0, 0, 0, .4); color: var(--text); font-size: 12.5px; pointer-events: none; transition: opacity .5s ease; }
+.first-draw.done { opacity: 0; }
+.first-draw .fd-text { flex: none; }
+.first-draw .fd-track { flex: 1; height: 6px; border-radius: 3px; background: var(--raised); overflow: hidden; }
+.first-draw .fd-fill { display: block; height: 100%; width: 0; background: var(--gold); border-radius: 3px; transition: width .25s ease; }
+.first-draw .fd-num { flex: none; min-width: 3ch; text-align: right; color: var(--text-2); font-variant-numeric: tabular-nums; }

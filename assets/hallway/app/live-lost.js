@@ -76,7 +76,7 @@
     /* ---------- hustle, sitting where he's been put (map.hustle: { level, x, y }, a chair or sofa tile). Before he's been put anywhere,
        the seat nearest the Lost Property desk. His look is saved in art/npc/hustle, so it never changes ---------- */
     const SEAT_LIFT = 3;
-    const seatAt = (l, x, y) => (l.props || []).find(p => (p.k === "chair" || p.k === "sofa") && tilesOf(p).some(t => t[0] === x && t[1] === y)) || null;
+    const seatAt = (l, x, y) => (l.props || []).find(p => (p.k === "chair" || p.k === "sofa" || p.k === "barstool") && tilesOf(p).some(t => t[0] === x && t[1] === y)) || null;
     const facing = p => { const r = window.FurniParts ? FurniParts.rotOf(p) : (p.rot || 0); return p.k === "sofa" ? (r ? 2 : 4) : [2, 4, 6, 0][r & 3]; };
     let seatKey = "", seatWas = null;
     function hustleSeat() {

@@ -7,7 +7,18 @@ html, body { background: #000; overflow: hidden; }
 #view { outline: none; }
 @font-face { font-family: 'Volter Goldfish'; src: url('/assets/fonts/VolterGoldfish.woff2') format('woff2'); font-weight: normal; font-display: swap; }
 /* The controls: nothing but the site's buttons, floating on the hallway */
-#playBar { position: fixed; top: 10px; left: 10px; z-index: 30; display: flex; flex-wrap: wrap; gap: 5px; align-items: center; pointer-events: none; }
+#playBar { position: fixed; top: 10px; left: 10px; z-index: 30; display: flex; flex-wrap: wrap; gap: 12px; align-items: center; pointer-events: none; }
+/* the bar in groups, each a strip of joined buttons (8 Nov 2026) */
+#playBar .play-group { display: inline-flex; gap: 2px; }
+#playBar .play-group > .mr-btn { border-radius: 0; }
+#playBar .play-group > .mr-btn:first-child { border-radius: 4px 0 0 4px; }
+#playBar .play-group > .mr-btn:last-child { border-radius: 0 4px 4px 0; }
+#playBar .play-group > .mr-btn:only-child { border-radius: 4px; }
+#playBar .play-icon { display: inline-flex; align-items: center; justify-content: center; min-width: 26px; }
+#playBar .play-icon svg { display: block; }
+.play-menu-head { padding: 5px 8px 2px; color: #ab8b64; font: 400 9px/14px 'Volter Goldfish', monospace; }
+.play-menu-sep { height: 1px; margin: 3px 4px; background: #1a1108; box-shadow: 0 1px 0 #60462b; }
+.play-menu button[role="menuitemcheckbox"][aria-checked="true"]::before { content: ""; display: inline-block; width: 5px; height: 5px; margin: 0 6px 1px 0; background: #ab8b64; }
 #playBar button { pointer-events: auto; }
 #playBar button.is-on { border-color: #ab8b64; color: #ab8b64; }
 /* A drop-down from one of them */

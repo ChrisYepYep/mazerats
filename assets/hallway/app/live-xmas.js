@@ -86,3 +86,48 @@
     }
     LIVE.add({ still: true, under: drawGarlands });
 })();
+
+/* ---------- the big tree's bulbs: a warm, soft incandescent glow round each, breathing slowly (8 Nov 2026, his: "The tree still doesn't
+   have that nostalgic, incandescent glow"). The bulbs are found once from the tree's lights picture; each gets a halo drawn with
+   "lighter" in a warm amber, on its own slow cycle, never off, as old filament bulbs on a string do. Drawn under the avatar. ---------- */
+(function () {
+    "use strict";
+    const LIVE = window.HallwayLive; if (!LIVE) return;
+    let bulbs = null, fp = null;
+    function load() {
+        if (bulbs !== null) return; bulbs = false; fp = (window.FLOOR_PIECES || {}).bigtree; if (!fp || !fp.lights) return;
+        const im = new Image(); im.onload = () => {
+            const c = document.createElement("canvas"); c.width = im.naturalWidth; c.height = im.naturalHeight; const g = c.getContext("2d", { willReadFrequently: true }); g.drawImage(im, 0, 0);
+            const d = g.getImageData(0, 0, c.width, c.height).data, seen = new Uint8Array(c.width * c.height), out = [];
+            /* each touching group of lit pixels is one bulb, at its middle, in its own colour */
+            for (let y = 0; y < c.height; y++) for (let x = 0; x < c.width; x++) { const i = y * c.width + x; if (seen[i] || d[i * 4 + 3] < 128) continue;
+                const st = [i], px = []; seen[i] = 1; while (st.length) { const k = st.pop(); px.push(k); const kx = k % c.width, ky = (k / c.width) | 0; for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { const nx = kx + dx, ny = ky + dy; if (nx < 0 || ny < 0 || nx >= c.width || ny >= c.height) continue; const n = ny * c.width + nx; if (!seen[n] && d[n * 4 + 3] >= 128) { seen[n] = 1; st.push(n); } } }
+                if (px.length > 40) continue;                                   // the star, not a bulb: it has its own glow
+                let sx = 0, sy = 0, r = 0, gg = 0, b = 0; for (const k of px) { sx += k % c.width; sy += (k / c.width) | 0; r += d[k * 4]; gg += d[k * 4 + 1]; b += d[k * 4 + 2]; }
+                const n = px.length; out.push({ x: sx / n + .5, y: sy / n + .5, c: [r / n, gg / n, b / n], ph: Math.random(), per: 4 + Math.random() * 3 });
+            }
+            bulbs = out; LIVE.wake();
+        };
+        im.src = "art/wall/" + fp.lights;
+    }
+    const trees = () => { if (!window.hallwayXmas) return []; const l = LIVE.floor || (LIVE.editorApi && LIVE.editorApi().level); if (!l) return []; return (l.props || []).filter(p => p.k === "statue").map(p => ({ l, p })); };
+    LIVE.add({
+        active: () => { if (!window.hallwayXmas) return false; load(); return !!bulbs && trees().length > 0; },
+        under(c, ox, oy, now) {
+            if (!bulbs || !fp) return; const t = now / 1000, v = LIVE.view();
+            c.save(); c.translate(ox, oy); c.scale(LIVE.zoom, LIVE.zoom); c.globalCompositeOperation = "lighter";
+            for (const { l, p } of trees()) {
+                const a = LIVE.mapPoint(p.x + 1, p.y + 1, LIVE.nodeZ(l, p.x, p.y) || 0), X0 = Math.round(a[0]) - fp.ox, Y0 = Math.round(a[1]) - fp.oy;
+                if (X0 > v.x1 || X0 + fp.w < v.x0 || Y0 > v.y1 || Y0 + fp.h < v.y0) continue;
+                for (const b of bulbs) {
+                    /* warm, never cold: the bulb's own colour pulled towards a filament's amber, and a slow breath of 70% to 100% */
+                    const k = .7 + .3 * (.5 + .5 * Math.sin((t / b.per + b.ph) * Math.PI * 2)), col = [Math.round(b.c[0] * .55 + 255 * .45), Math.round(b.c[1] * .55 + 176 * .45), Math.round(b.c[2] * .55 + 86 * .45)];
+                    const x = X0 + b.x, y = Y0 + b.y, R = 4, g = c.createRadialGradient(x, y, 0, x, y, R);
+                    g.addColorStop(0, `rgba(${col[0]},${col[1]},${col[2]},${(.2 * k).toFixed(3)})`); g.addColorStop(.5, `rgba(${col[0]},${col[1]},${col[2]},${(.06 * k).toFixed(3)})`); g.addColorStop(1, `rgba(${col[0]},${col[1]},${col[2]},0)`);
+                    c.fillStyle = g; c.fillRect(x - R, y - R, R * 2, R * 2);
+                }
+            }
+            c.restore();
+        }
+    });
+})();

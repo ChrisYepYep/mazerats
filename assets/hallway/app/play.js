@@ -125,11 +125,25 @@
     /* ---------- the controls: the site's own buttons, floating on the hallway ---------- */
     function controls() {
         const bar = document.createElement("div"); bar.id = "playBar";
-        const add = (label, title, fn) => { const b = document.createElement("button"); b.type = "button"; b.className = "mr-btn"; b.textContent = label; b.title = title; b.setAttribute("aria-label", title); b.addEventListener("click", fn); bar.appendChild(b); return b; };
+        /* In groups (8 Nov 2026, his: "it's got quite a few buttons now, and feels very messy/unorganised"): Leave, then the view (zoom and full screen),
+           then the music, and everything else under Menu. Hunts and Scraps join Menu through HallwayBar.menuItem (live-hunts.js). */
+        let into = bar; const group = name => { const g = document.createElement("span"); g.className = "play-group"; g.setAttribute("role", "group"); g.setAttribute("aria-label", name); bar.appendChild(g); into = g; return g; };
+        const add = (label, title, fn) => { const b = document.createElement("button"); b.type = "button"; b.className = "mr-btn"; b.textContent = label; b.title = title; b.setAttribute("aria-label", title); b.addEventListener("click", fn); into.appendChild(b); return b; };
         const click = id => { const e = document.getElementById(id); if (e) e.click(); };
-        add("Leave", "Back to the archive", () => window.hallwayTell("leave"));
-        add("-", "Zoom out", () => click("zoomOut"));
-        add("+", "Zoom in", () => click("zoomIn"));
+        group("Leave"); add("Leave", "Back to the archive", () => window.hallwayTell("leave"));
+        group("View"); add("-", "Zoom out", () => click("zoomOut")); add("+", "Zoom in", () => click("zoomIn"));
+        /* full screen: the page asks for it itself (its frame allows it), and F does the same */
+        const canFull = !!(document.documentElement.requestFullscreen && document.fullscreenEnabled !== false);
+        const toggleFull = () => { if (document.fullscreenElement) document.exitFullscreen().catch(() => {}); else document.documentElement.requestFullscreen().catch(() => {}); };
+        const ICON_FULL = '<svg width="11" height="11" viewBox="0 0 11 11" aria-hidden="true" shape-rendering="crispEdges"><path fill="currentColor" d="M0 0h4v1H1v3H0zM7 0h4v4h-1V1H7zM0 7h1v3h3v1H0zM10 7h1v4H7v-1h3z"/></svg>';
+        const ICON_SHRINK = '<svg width="11" height="11" viewBox="0 0 11 11" aria-hidden="true" shape-rendering="crispEdges"><path fill="currentColor" d="M3 0h1v4H0V3h3zM7 0h1v3h3v1H7zM0 7h4v4H3V8H0zM7 7h4v1H8v3H7z"/></svg>';
+        if (canFull) {
+            const full = add("", "Full screen (F)", toggleFull); full.classList.add("play-icon");
+            const paintFull = () => { const on = !!document.fullscreenElement; full.innerHTML = on ? ICON_SHRINK : ICON_FULL; full.title = on ? "Leave full screen (F)" : "Full screen (F)"; full.setAttribute("aria-label", full.title); };
+            document.addEventListener("fullscreenchange", paintFull); paintFull();
+            document.addEventListener("keydown", e => { if (e.repeat || e.ctrlKey || e.metaKey || e.altKey || e.key.toLowerCase() !== "f") return; const at = e.target; if (at && at.closest && at.closest("input, textarea, select, [contenteditable]")) return; toggleFull(); });
+        }
+        group("Music");
         const A = () => window.HallwayAudio;
         /* What you asked for counts, not whether it's started yet: a browser only lets it start on your first click */
         const wanted = () => { try { return localStorage.getItem("hallway-music") === "1"; } catch (e) { return false; } };
@@ -153,23 +167,29 @@
             menu.textContent = ""; const a = A(); if (!a) return;
             a.tracks.forEach((t, i) => (!a.inSeason || a.inSeason(i)) && row(menu, t.name, a.playing && a.current === i, () => { const rows = document.querySelectorAll("#musicList .layer-row"); if (rows[i]) rows[i].click(); done(); }));
         });
-        dropdown("Time of day", "Choose the time of day", (menu, done) => {
-            menu.textContent = ""; const sel = document.getElementById("timeMode"); if (!sel) return;
-            for (const [value, name] of [["cycle", "Day and night cycle"], ["day", "Day"], ["dusk", "Evening"], ["night", "Night"], ["dawn", "Dawn"]]) row(menu, name, sel.value === value, () => { sel.value = value; sel.dispatchEvent(new Event("change")); done(); });
-        });
-        /* the screensaver whenever you like, not only after a minute's quiet (8 Nov 2026, his). Any click or key ends it, as ever */
-        add("Screensaver", "Start the screensaver", () => { shutMenus(); const S = window.HallwayScreensaver; if (!S || S.on) return; if (!S.start() && window.HallwayWindow) HallwayWindow.open("Screensaver", "<p>Not from down here. Head back upstairs first.</p>"); });
-        add("Avatar", "Choose your Habbo", () => picker());
-        /* The editor's own Camera follows setting, whose button is hidden on this page. The editor doesn't take C here, so this does. */
-        const follow = () => document.getElementById("follow"), following = () => { const e = follow(); return !!e && e.classList.contains("on"); };
-        const camera = add("Camera follows", "Camera follows you, or stays put (C)", () => { click("follow"); paintCamera(); });
-        const paintCamera = () => { const on = following(); camera.textContent = on ? "Camera follows" : "Camera free"; camera.setAttribute("aria-pressed", String(on)); };
+        /* the editor's own Camera follows setting, whose button is hidden on this page; the editor doesn't take C here, so this does */
+        const following = () => { const e = document.getElementById("follow"); return !!e && e.classList.contains("on"); };
         document.addEventListener("keydown", e => {
             if (e.repeat || e.ctrlKey || e.metaKey || e.altKey || e.key.toLowerCase() !== "c") return;
             const at = e.target; if (at && at.closest && at.closest("input, textarea, select, [contenteditable]")) return;
-            click("follow"); paintCamera();
+            click("follow");
         });
-        setInterval(paintCamera, 500); paintCamera();
+        const extra = [];
+        window.HallwayBar = { menuItem(label, title, fn) { extra.push({ label, title, fn }); } };
+        const item = (menu, name, title, fn) => { const b = document.createElement("button"); b.type = "button"; b.setAttribute("role", "menuitem"); b.textContent = name; if (title) b.title = title; b.addEventListener("click", fn); menu.appendChild(b); };
+        const head = (menu, name) => { const h = document.createElement("div"); h.className = "play-menu-head"; h.textContent = name; menu.appendChild(h); };
+        const sep = menu => { const h = document.createElement("div"); h.className = "play-menu-sep"; h.setAttribute("role", "separator"); menu.appendChild(h); };
+        group("More");
+        dropdown("Menu", "Time of day, screensaver, your Habbo and more", (menu, done) => {
+            menu.textContent = "";
+            const sel = document.getElementById("timeMode");
+            if (sel) { head(menu, "Time of day"); for (const [value, name] of [["cycle", "Day and night cycle"], ["day", "Day"], ["dusk", "Evening"], ["night", "Night"], ["dawn", "Dawn"]]) row(menu, name, sel.value === value, () => { sel.value = value; sel.dispatchEvent(new Event("change")); done(); }); sep(menu); }
+            { const b = document.createElement("button"); b.type = "button"; b.setAttribute("role", "menuitemcheckbox"); b.setAttribute("aria-checked", String(following())); b.textContent = "Camera follows you (C)"; b.addEventListener("click", () => { click("follow"); done(); }); menu.appendChild(b); }
+            /* the screensaver whenever you like, not only after a minute's quiet (8 Nov 2026, his). Any click or key ends it, as ever */
+            item(menu, "Screensaver", "Start the screensaver", () => { done(); const S = window.HallwayScreensaver; if (!S || S.on) return; if (!S.start() && window.HallwayWindow) HallwayWindow.open("Screensaver", "<p>Not from down here. Head back upstairs first.</p>"); });
+            item(menu, "Your Habbo", "Choose your Habbo", () => { done(); picker(); });
+            if (extra.length) { sep(menu); for (const x of extra) item(menu, x.label, x.title, () => { done(); x.fn(); }); }
+        });
         document.addEventListener("click", e => { if (!menus.some(m => m.contains(e.target))) shutMenus(); });
         let shownOn = null; const paint = () => { const on = wanted(); if (on === shownOn) return; shownOn = on; mute.textContent = on ? "Mute" : "Unmute"; mute.classList.toggle("is-on", !on); };
         setInterval(paint, 500); paint();

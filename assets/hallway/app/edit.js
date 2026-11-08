@@ -11,6 +11,26 @@
     const json = (o, status = 200) => new Response(JSON.stringify(o), { status, headers: { "Content-Type": "application/json" } });
     if (!token()) { location.replace("/warren"); return; }
 
+    /* ---------- a sign-in that has run out (8 Nov: Save just failed when the Warren session expired) ----------
+       Any write the site refuses as signed out brings up a note on this page: sign in again in a new tab, and when the
+       Warren's sign-in lands (it shares this page's storage) the note goes and whatever was refused is tried again.
+       Nothing is lost meanwhile: the editor keeps its unsaved changes. */
+    let signNote = null, retry = null;
+    const signedOut = again => {
+        retry = again || retry;
+        if (signNote) return;
+        signNote = document.createElement("div"); signNote.className = "signin-note"; signNote.setAttribute("role", "alertdialog"); signNote.setAttribute("aria-label", "Signed out");
+        signNote.innerHTML = '<b>Your Warren sign-in has run out.</b><span>Your changes are still here. Sign in again and this tries again by itself.</span>';
+        const go = document.createElement("button"); go.type = "button"; go.textContent = "Sign in again"; go.addEventListener("click", () => window.open("/warren", "_blank"));
+        signNote.appendChild(go); document.body.appendChild(signNote);
+    };
+    const signedIn = () => { if (!signNote) return; signNote.remove(); signNote = null; const again = retry; retry = null; if (again) again(); };
+    let lastToken = token();
+    const tokenChanged = () => { const t = token(); if (t && t !== lastToken) { lastToken = t; signedIn(); } };
+    window.addEventListener("storage", e => { if (e.key === "mazerats_admin_token") tokenChanged(); });
+    window.addEventListener("focus", tokenChanged);
+    const write = async (o, again) => { const r = await realFetch(FN, admin(o)); if (r.status === 401) signedOut(again); return r; };
+
     /* ---------- the renderers ---------- */
     const POOL = Math.max(1, Math.min(6, (navigator.hardwareConcurrency || 4) - 2)), workers = [], waiting = new Map();
     /* Each time of day draws in about 650MB, so a small machine does them fewer at a time */
@@ -84,7 +104,7 @@
             savedText = text; return new Response(text, { status: 200 });
         }
         if (p === "/api/map") {
-            const r = await realFetch(FN, admin({ method: "POST", body: JSON.stringify({ action: "draft", map: JSON.parse(opts.body), base: await sha(baseText !== null ? baseText : savedText || ""), force: q.searchParams.get("force") === "1" || undefined }) }));
+            const r = await write({ method: "POST", body: JSON.stringify({ action: "draft", map: JSON.parse(opts.body), base: await sha(baseText !== null ? baseText : savedText || ""), force: q.searchParams.get("force") === "1" || undefined }) }, () => { const b = document.getElementById("save"); if (b && !b.disabled) b.click(); });
             if (r.ok) { savedText = opts.body; baseText = null; }
             return r;
         }
@@ -138,7 +158,7 @@
                 const buf = await blob.arrayBuffer(), hash = await sha(buf);
                 if (!known.has(hash)) {
                     let s = ""; const b = new Uint8Array(buf); for (let i = 0; i < b.length; i += 8192) s += String.fromCharCode.apply(null, b.subarray(i, i + 8192));
-                    const r = await realFetch(FN, admin({ method: "POST", body: JSON.stringify({ action: "tile", hash, png: btoa(s) }) }));
+                    const r = await write({ method: "POST", body: JSON.stringify({ action: "tile", hash, png: btoa(s) }) });
                     if (!r.ok) throw new Error("A picture wouldn't send: " + r.status);
                     known.add(hash);
                 }
@@ -174,7 +194,7 @@
                 for (let f = 0; f < 6; f++) { publishing.at++; const a = await ask(idle(), { type: "lift", way, slide: f / 5 }); lift[encodeURIComponent(way).replace(/%/g, "_") + "-" + f + ".png"] = await send(await pngOf(a.w, a.h, a.d)); }
                 publishing.at++;
             }
-            const r = await realFetch(FN, admin({ method: "POST", body: JSON.stringify({ action: "publish", map, base, manifest: { tile: 512, moods: MOODS, tiles, lift } }) }));
+            const r = await write({ method: "POST", body: JSON.stringify({ action: "publish", map, base, manifest: { tile: 512, moods: MOODS, tiles, lift } }) });
             if (r.status === 409) throw new Error("This map has been saved from somewhere else since you opened it, so nothing was published. Reload to see that copy.");
             if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || "The site wouldn't take it: " + r.status);
             publishing = { running: false, at: 0, of: 0, error: null };
