@@ -63,6 +63,41 @@ function rugField(rugs) {
     }
     return { set, along, near: new Map() };
 }
+/* ---- the small-squares floor (8 Nov 2026): the floor inside the entrance's tunnel, laid where you drag it, as a rug is. The hallway's own
+   wood, cut into squares half a tile across, each with a dark groove along its far edges and a light one along its near edges, as the
+   client's tunnel floor has. Stored with the rugs as { x0, x1, y0, y1, style: "small" }; the renderer keeps them apart from the rugs. */
+const shade = (c, k) => c && [Math.min(255, Math.round(c[0] * k)), Math.min(255, Math.round(c[1] * k)), Math.min(255, Math.round(c[2] * k))];
+function smallAt(list, X, Y, dx, dy, base) {
+    const a = Math.floor(X * 16 + (dx + 2 * dy) / 2), b = Math.floor(Y * 16 + (2 * dy - dx) / 2), TX = Math.floor(a / 16), TY = Math.floor(b / 16);
+    if (!list.some(r => TX >= r.x0 && TX < r.x1 && TY >= r.y0 && TY < r.y1)) return null;
+    const c = base(dx, dy); if (!c) return null; const ua = ((a % 8) + 8) % 8, ub = ((b % 8) + 8) % 8;
+    if (ua === 0 || ub === 0) return shade(c, .56);
+    if (ua === 1 || ub === 1) return shade(c, 1.1);
+    if (ua === 7 || ub === 7) return shade(c, .9);
+    return c;
+}
+/* ---- arrow tiles (8 Nov 2026): one of the floor's big squares with a triangle cut into it, as the real hallways have. { x, y, dir }:
+   x, y the square's near tile (even, as the floor's squares are), dir 0 to 3 the way it points: +x, +y, -x, -y. The editor links two, and
+   stepping on one takes you to the other (live-arrows.js); here it's only drawn. */
+const ARROW_TRI = [[26, 16], [8, 5], [8, 27]];
+function arrowAt(list, X, Y, dx, dy, base) {
+    const a = X * 16 + (dx + 2 * dy) / 2, b = Y * 16 + (2 * dy - dx) / 2;
+    for (const ar of list) {
+        let u = a - ar.x * 16, v = b - ar.y * 16; if (u < 0 || v < 0 || u >= 32 || v >= 32) continue;
+        /* into the square's own frame, pointing along +x */
+        const d = ((ar.dir || 0) % 4 + 4) % 4; if (d === 1) [u, v] = [v, 32 - u]; else if (d === 2) [u, v] = [32 - u, 32 - v]; else if (d === 3) [u, v] = [32 - v, u];
+        /* how far inside the triangle, and which edge is nearest */
+        let dist = 1e9, edge = 0;
+        for (let i = 0; i < 3; i++) { const [x0, y0] = ARROW_TRI[i], [x1, y1] = ARROW_TRI[(i + 1) % 3], ex = x1 - x0, ey = y1 - y0, len = Math.hypot(ex, ey), dd = ((u - x0) * ey - (v - y0) * ex) / len; if (dd < dist) { dist = dd; edge = i; } }
+        if (dist < -0.2) return null;
+        const c = base(dx, dy); if (!c) return null;
+        /* a groove all round, lit along the edges that face the light (up and to the left on screen) and dark along the others */
+        if (dist < 1.3) return shade(c, .42);
+        if (dist < 2.5) { const lit = d === 0 ? edge !== 0 : d === 2 ? edge === 0 : d === 1 ? edge === 2 : edge === 1; return shade(c, lit ? 1.22 : .7); }
+        return c;
+    }
+    return null;
+}
 function rugFieldAt(F, X, Y, dx, dy) {
     const a = Math.floor(X * 16 + (dx + 2 * dy) / 2), b = Math.floor(Y * 16 + (2 * dy - dx) / 2);
     const TX = Math.floor(a / 16), TY = Math.floor(b / 16), key = TX + "," + TY;
@@ -1099,7 +1134,7 @@ function patchesByHeight(l) {
 }
 function fromMap(map, names) {
     const real = [...map.levels].sort((a, c) => a.k - c.k);
-    const lvls = real.map(l => ({ id: l.id, name: l.name, way: l.colour ? "hex:" + l.colour : l.way, k: l.k, rugs: (l.rugs || []).map(r => ({ ...r })), medals: l.medals || [],
+    const lvls = real.map(l => ({ id: l.id, name: l.name, way: l.colour ? "hex:" + l.colour : l.way, k: l.k, rugs: (l.rugs || []).filter(r => r.style !== "small").map(r => ({ ...r })), smalls: (l.rugs || []).filter(r => r.style === "small").map(r => ({ ...r })), arrows: (l.props || []).filter(p => p.k === "mark_arrow").map(p => ({ x: p.x - (p.x & 1), y: p.y - (p.y & 1), dir: (((p.rot || 0) % 4) + 4) % 4 })), medals: l.medals || [],
         patches: patchesByHeight(l).map(r => ({ ...r, l: [], props: [], teles: [], dn: [] })), src: l }));
     for (const l of lvls) l.below = lvls.find(q => q.k === l.k - 1) || null;
     const byId = id => lvls.find(l => l.id === id);
@@ -1679,6 +1714,7 @@ function build(cfg) {
                 if (med) { const ma = X - med.x, mb = Y - med.y; smp = (dx, dy) => modPx(crossPc, false, 2 + ma, 2 + mb, dx, dy); }
                 else if (lv.rugs && lv.rugs.length) { const XX = X, YY = Y, F = lv.rugF || (lv.rugF = rugField(lv.rugs)); smp = (dx, dy) => rugFieldAt(F, XX, YY, dx, dy) || plainS(dx, dy); }
                 else smp = plainS;
+                if ((lv.smalls && lv.smalls.length) || (lv.arrows && lv.arrows.length)) { const XX = X, YY = Y, under = smp, sm = lv.smalls || [], ars = lv.arrows || []; /* both are the hallway's wood, over a rug too */ smp = (dx, dy) => arrowAt(ars, XX, YY, dx, dy, plainS) || smallAt(sm, XX, YY, dx, dy, plainS) || under(dx, dy); }
                 tileDraw(X, Y, smp);
             }
             /* slab edges */

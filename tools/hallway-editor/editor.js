@@ -40,6 +40,8 @@ const MAIN_TOOLS = [
 ];
 const H_ = "art/hall/hh_room_hallway/", T_ = "art/thumbs/";
 const ICON = {
+    smallfloor: '<svg viewBox="0 0 40 40"><path d="M20 6 38 15 20 24 2 15Z" fill="#c9995c" stroke="#3a2412"/><path d="M11 10.5 29 19.5M15.5 8.25 33.5 17.25M24.5 8.25 6.5 17.25M29 10.5 11 19.5M6.5 12.75 24.5 21.75M33.5 12.75 15.5 21.75" stroke="#5a3a1c" stroke-width="1"/></svg>',
+    arrow: '<svg viewBox="0 0 40 40"><path d="M20 6 38 15 20 24 2 15Z" fill="#c9995c" stroke="#3a2412"/><path d="M27 16.5 12 15.5 18 11Z" fill="none" stroke="#4a2c12" stroke-width="1.6"/></svg>',
     erase: '<svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round"><path d="M12 5l9 5-9 5-9-5z"/><path d="M8 19h8"/></svg>',
     del: '<svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/></svg>',
     halfwall: '<svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round"><path d="M3 6l9 4.5V21l-9-4.5z" stroke-dasharray="2.5 2.5"/><path d="M3 12l9 4.5V21l-9-4.5z" fill="currentColor" fill-opacity=".25"/><path d="M12 16.5L21 12v4.5L12 21"/></svg>',
@@ -53,7 +55,7 @@ const PLANTERS = [["ero_stone", "Stone planter"], ["ero_walnut", "Walnut planter
 const EDGE_STYLES = [["wood", "Dark oak rail"], ["gold", "Gold rail"]];
 const WALL_ITEMS = window.WALL_ITEMS || [], WALL_GROUPS = [["painting", "Hallway paintings"], ["custom", "More paintings"], ["window", "Windows"], ["hotel", "The old hotel"], ["tell", "Wear and tear"]];
 const TOOLS = [
-    ["Floors", [["floor", "Paint floor", T_ + "floor.png"], ["erase", "Remove floor", ICON.erase], ["rug", "Rug", T_ + "rug.png"], ["medal", "Carpet crest", T_ + "crest.png"], ["height", "Floor height", ICON.raise], ["steps", "Small steps", T_ + "stair.png"]]],
+    ["Floors", [["floor", "Paint floor", T_ + "floor.png"], ["erase", "Remove floor", ICON.erase], ["rug", "Rug", T_ + "rug.png"], ["smallfloor", "Small squares floor", ICON.smallfloor], ["mark_arrow", "Arrow tile (links to another)", ICON.arrow], ["medal", "Carpet crest", T_ + "crest.png"], ["height", "Floor height", ICON.raise], ["steps", "Small steps", T_ + "stair.png"]]],
     ["On walls", [["door", "Door", T_ + "door.png"], ["halfwall", "Half wall", ICON.halfwall], ["nowall", "No wall", ICON.nowall], ["addwall", "Show wall", ICON.addwall], ["sconce", "Wall light", T_ + "sconce.png"], ["globelight", "Globe wall light", "art/sconce-globe-y.png"], ["entrance", "Entrance", H_ + "entry_upper_right_mask.png"], ["lift", "Lift", T_ + "lift.png"], ["stair", "Stairs: straight", T_ + "stair.png"], ["turn", "Stairs: turning", T_ + "turn.png"], ["side", "Stairs: left wall", T_ + "side.png"], ["sideturn", "Stairs: left wall, turning", T_ + "sideturn.png"]]],
     ["Furniture", [["sofa", "Sofa", T_ + "sofa.png"], ["chair", "Chair", H_ + "hw_chair_a_0_2_0.png"], ["table", "Table", T_ + "table.png"], ["smtable", "Small round table", H_ + "hw_smtble_a_0_0_0.png"], ["ballpost", "Ball post", H_ + "pillar0_a_0_0_0.png"], ["rope", "Rope barrier", T_ + "rope.png"], ["lamp", "Floor lamp", T_ + "lamp.png"], ["plant", "Plant", H_ + "hw_plant_a_0_0_0.png"], ["ero", "Planter", T_ + "planter.png"], ...PLANTERS.map(([k, name]) => [k, name, T_ + "planter-" + k.slice(4) + ".png"]), ["pillar", "Pillar", H_ + "pillar1_a_0_0_0.png"], ["pillartall", "Tall pillar", T_ + "pillartall.png"], ["statue", "Statue", H_ + "hw_statue_a_0_0_0.png"], ["fountain", "Fountain", H_ + "hw_fountain_a_0_0_0.png"], ["shelf", "Bookcase", H_ + "hw_shelf_a_0_4_0.png"], ["cabinet", "Cabinet", H_ + "hw_closet1_a_0_2_0.png"], ["water", "Water cooler", H_ + "hw_watermatic_a_0_4_0.png"], ["tablelamp", "Globe table lamp", "art/wall/i_tablelamp.png"], ["rarecase", "Rare in a glass case", "art/wall/i_rarecase.png"], ["trophy", "Old trophy cabinet", "art/wall/i_trophy.png"], ["mark_scuff", "Floor scuffs", "art/wall/i_mark_scuff.png"], ["mark_tile", "Lifted floor tile", "art/wall/i_mark_tile.png"]]],
     ...WALL_GROUPS.map(([kind, title]) => [title, WALL_ITEMS.filter(i => i.kind === kind).map(i => ["wi:" + i.id, i.name, "art/wall/" + i.y.layers[0].f])]),
@@ -1049,7 +1051,7 @@ function overlay() {
         }
     }
     if (drag && drag.rect) {
-        const r = drag.rect, col = tool === "erase" ? "rgba(240,90,70,.4)" : tool === "rug" ? "rgba(200,60,60,.4)" : "rgba(242,190,112,.4)";
+        const r = drag.rect, col = tool === "erase" ? "rgba(240,90,70,.4)" : tool === "rug" ? "rgba(200,60,60,.4)" : tool === "smallfloor" ? "rgba(255,214,140,.45)" : "rgba(242,190,112,.4)";
         /* Paint floor lays it at the height it's set to; anything else goes on the floor that's there */
         areaQuad(level, r, col, "#fff", tool === "floor" ? (x, y) => z + (heightBrush || heightAt(level, x, y)) : null);
     }
@@ -1098,10 +1100,10 @@ function setTool(t) {
 }
 function snapRect(a, b) {
     const x0 = Math.min(a[0], b[0]), x1 = Math.max(a[0], b[0]), y0 = Math.min(a[1], b[1]), y1 = Math.max(a[1], b[1]);
-    if (tool === "rug") return { x0: Math.floor(x0), x1: Math.floor(x1) + 1, y0: Math.floor(y0), y1: Math.floor(y1) + 1 };
+    if (tool === "rug" || tool === "smallfloor") return { x0: Math.floor(x0), x1: Math.floor(x1) + 1, y0: Math.floor(y0), y1: Math.floor(y1) + 1 };
     return { x0: Math.floor(x0 / 2) * 2, x1: (Math.floor(x1 / 2) + 1) * 2, y0: Math.floor(y0 / 2) * 2, y1: (Math.floor(y1 / 2) + 1) * 2 };
 }
-const FURNI = ["arcade_ff", "arcade_pura", "arcade_guess", "arcade_odd", "arcade_scout", "arcade_quiz", "tablelamp", "xmastree", "xmassmalltree", "snowman", "xmaslantern", "xmasdrinks", "xmasduck", "gift1", "gift2", "gift3", "gift4", "sofa", "chair", "table", "smtable", "ballpost", "rope", "lamp", "plant", "ero", "ero_stone", "ero_walnut", "ero_evergreen", "ero_flower", "pillar", "pillartall", "statue", "fountain", "shelf", "cabinet", "water", "rarecase", "trophy", "mark_scuff", "mark_tile"];
+const FURNI = ["mark_arrow", "arcade_ff", "arcade_pura", "arcade_guess", "arcade_odd", "arcade_scout", "arcade_quiz", "tablelamp", "xmastree", "xmassmalltree", "snowman", "xmaslantern", "xmasdrinks", "xmasduck", "gift1", "gift2", "gift3", "gift4", "sofa", "chair", "table", "smtable", "ballpost", "rope", "lamp", "plant", "ero", "ero_stone", "ero_walnut", "ero_evergreen", "ero_flower", "pillar", "pillartall", "statue", "fountain", "shelf", "cabinet", "water", "rarecase", "trophy", "mark_scuff", "mark_tile"];
 const Parts = window.FurniParts;
 let placeRot = 0;                // which way round the next piece goes, set with R
 const fits = (l, p) => (Parts.ROWS[p.k] ? Parts.tiles(p) : [[p.x, p.y]]).every(t => placeable(l, t[0], t[1]));
@@ -1125,7 +1127,7 @@ let lampStyle = localStorage.getItem("hallway-lamp") || "hotel"; if (!LAMP_STYLE
 function placeRun(run) {
     if (!run.ok) { flash("There isn't room for that here."); paint(); return; }
     snapshot();
-    const p = { k: run.k, x: run.x, y: run.y }; if (run.len) p.len = run.len; if (run.rot) p.rot = run.rot; if (run.k === "lamp" && lampStyle !== "hotel") p.style = lampStyle; if (run.k === "tablelamp") { const z = lampZAt(level, run.x, run.y); if (z) p.z = z; }
+    const p = { k: run.k, x: run.x, y: run.y }; if (run.k === "mark_arrow") { p.x -= p.x & 1; p.y -= p.y & 1; p.id = "ar" + Date.now().toString(36); } if (run.len) p.len = run.len; if (run.rot) p.rot = run.rot; if (run.k === "lamp" && lampStyle !== "hotel") p.style = lampStyle; if (run.k === "tablelamp") { const z = lampZAt(level, run.x, run.y); if (z) p.z = z; }
     (level.props = level.props || []).push(p);
     changed();
 }
@@ -1313,6 +1315,8 @@ function drawPiece(g, alpha) {
     ctx.save(); ctx.imageSmoothingEnabled = false; ctx.globalAlpha = alpha;
     if (g.tele) sprite(spriteImg("art/tele/hh_furni_special_50/" + TELE_SPRITE + ".png"), REGS.tele[TELE_SPRITE], g.x, g.y, g.flip);
     else if (floorPiece(g.k)) { const fp = floorPiece(g.k), im = pieceImg(g.k === "rarecase" && g.rare && fp.opts && fp.opts[g.rare] ? fp.opts[g.rare].f : fp.f), off = g.k.startsWith("mark_") ? .5 : g.k === "trophy" ? 0 : .25, a = P(g.x + off, g.y + off, tileZ(level, g.x, g.y)); if (im.complete && im.naturalWidth) { ctx.save(); ctx.imageSmoothingEnabled = false; if ((g.k === "trophy" && !((g.rot || 0) & 1)) || ((g.k === "rarecase" || g.k.startsWith("arcade_")) && ((g.rot || 0) & 1))) { ctx.translate(ox + a[0] * zoom, 0); ctx.scale(-1, 1); ctx.drawImage(im, -fp.ox * zoom, oy + (a[1] - fp.oy) * zoom, fp.w * zoom, fp.h * zoom); } else ctx.drawImage(im, ox + (a[0] - fp.ox) * zoom, oy + (a[1] - fp.oy) * zoom, fp.w * zoom, fp.h * zoom); ctx.restore(); } }
+    else if (g.k === "mark_arrow") { const x0 = g.x - (g.x & 1), y0 = g.y - (g.y & 1), z = tileZ(level, x0, y0), Q = (u, v) => { const a = P(x0 + u, y0 + v, z); return [ox + a[0] * zoom, oy + a[1] * zoom]; }, d = (((g.rot || 0) % 4) + 4) % 4, rot = ([u, v]) => d === 0 ? [u, v] : d === 1 ? [2 - v, u] : d === 2 ? [2 - u, 2 - v] : [v, 2 - u], line = pts => { ctx.beginPath(); pts.forEach((q, i) => { const [X, Y] = Q(...rot(q)); if (i) ctx.lineTo(X, Y); else ctx.moveTo(X, Y); }); ctx.closePath(); ctx.stroke(); };
+        ctx.lineWidth = Math.max(1, zoom); ctx.strokeStyle = "#ffe066"; line([[0, 0], [2, 0], [2, 2], [0, 2]]); ctx.strokeStyle = "#4a2c12"; ctx.lineWidth = Math.max(1.5, zoom * 1.5); line([[1.625, 1], [.5, .3125], [.5, 1.6875]]); }
     else if (g.k === "rope") { for (const [X, Y, c] of ropeArt(level, g).list) { ctx.fillStyle = "rgb(" + c + ")"; ctx.fillRect(ox + X * zoom, oy + Y * zoom, zoom, zoom); } }
     else if (g.k === "lamp") { const a = P(g.x + .5, g.y + .5, tileZ(level, g.x, g.y)); put(spriteImg("art/lamp-" + (g.style || lampStyle) + ".png"), a[0] - 40, a[1] - 96, false); }
     else for (const q of Parts.parts(g)) for (const n of q.names) { const reg = REGS.hall[n]; if (reg) sprite(spriteImg(H_ + n + ".png"), reg, q.x, q.y, q.flip); }
@@ -1569,7 +1573,7 @@ function sortByDifficulty() {
 
 /* ---------- select and move ---------- */
 let selected = null;            // { type, l, o }
-const TALL = { arcade_ff: [16, 56], arcade_pura: [16, 56], arcade_guess: [16, 56], arcade_odd: [16, 56], arcade_scout: [16, 56], arcade_quiz: [16, 56], tablelamp: [8, 22], xmastree: [20, 72], xmassmalltree: [14, 30], snowman: [14, 34], xmaslantern: [10, 24], xmasdrinks: [12, 18], xmasduck: [10, 16], gift1: [12, 20], gift2: [12, 20], gift3: [12, 20], gift4: [12, 20], trophy: [28, 84], rarecase: [15, 62], mark_scuff: [14, 12], mark_tile: [14, 12], rope: [14, 36], pillartall: [12, 150], smtable: [13, 24], ballpost: [13, 28], ero_stone: [16, 40], ero_walnut: [16, 40], ero_evergreen: [16, 40], ero_flower: [16, 40], lamp: [12, 54], statue: [26, 105], pillar: [12, 110], plant: [11, 50], ero: [16, 40], fountain: [26, 34], shelf: [22, 62], cabinet: [32, 82], water: [12, 44], chair: [11, 28], table: [16, 22], sofa: [34, 28] };
+const TALL = { mark_arrow: [17, 10], arcade_ff: [16, 56], arcade_pura: [16, 56], arcade_guess: [16, 56], arcade_odd: [16, 56], arcade_scout: [16, 56], arcade_quiz: [16, 56], tablelamp: [8, 22], xmastree: [20, 72], xmassmalltree: [14, 30], snowman: [14, 34], xmaslantern: [10, 24], xmasdrinks: [12, 18], xmasduck: [10, 16], gift1: [12, 20], gift2: [12, 20], gift3: [12, 20], gift4: [12, 20], trophy: [28, 84], rarecase: [15, 62], mark_scuff: [14, 12], mark_tile: [14, 12], rope: [14, 36], pillartall: [12, 150], smtable: [13, 24], ballpost: [13, 28], ero_stone: [16, 40], ero_walnut: [16, 40], ero_evergreen: [16, 40], ero_flower: [16, 40], lamp: [12, 54], statue: [26, 105], pillar: [12, 110], plant: [11, 50], ero: [16, 40], fountain: [26, 34], shelf: [22, 62], cabinet: [32, 82], water: [12, 44], chair: [11, 28], table: [16, 22], sofa: [34, 28] };
 function pickIn(l, px, py) {
     const [fx, fy] = tileIn(l, px, py), X = Math.floor(fx), Y = Math.floor(fy);
     /* upright things first, front-most first, by what you can actually see of them */
@@ -1577,7 +1581,7 @@ function pickIn(l, px, py) {
     for (const u of upright) {
         if (seeHidden(l, heightAt(l, u.o.x, u.o.y))) continue;
         const [w, h] = u.k === "lamp" && u.o.style === "globe" ? [8, 28] : u.k === "pillar" && u.o.lights ? [18, 110] : u.k === "pillartall" && u.o.lights ? [18, 150] : TALL[u.k] || [14, 40], row = u.type === "prop" && Parts.ROWS[u.k];
-        for (const t of row ? Parts.tiles(u.o) : [[u.o.x, u.o.y]]) {
+        for (const t of row || u.k === "mark_arrow" ? Parts.tiles(u.o) : [[u.o.x, u.o.y]]) {
             const a = P(t[0] + .5, t[1] + .5, tileZ(l, t[0], t[1]));
             if (Math.abs(px - a[0]) <= (row ? 17 : w) && py <= a[1] + 8 && py >= a[1] - h) return { type: u.type, l, o: u.o };
         }
@@ -1683,7 +1687,7 @@ function signHandles(b) {
 }
 function handleAt(b, px, py) { const r = Math.max(5, 7 / zoom), h = signHandles(b); for (const k of Object.keys(h)) if (Math.abs(px - h[k][0]) <= r && Math.abs(py - h[k][1]) <= r) return k; return null; }
 const TYPE_NAMES = { garland: "Garland", festoon: "Festoon lights", entrance: "Entrance", wallitem: "On the wall", steps: "Small steps", wall: "Wall", sign: "Maze sign", prop: "Furniture", tele: "Imperial Teleport", door: "Door", lamp: "Wall light", lift: "Lift", stair: "Stairs", medal: "Carpet crest", rug: "Rug" };
-const PROP_NAMES = { arcade_ff: "Arcade: Fallin' Furni", arcade_pura: "Arcade: Pura Panic", arcade_guess: "Arcade: Guess the Maze", arcade_odd: "Arcade: Odd One Out", arcade_scout: "Arcade: green (no game yet)", arcade_quiz: "Arcade: purple (no game yet)", tablelamp: "Globe table lamp", xmastree: "Christmas tree", xmassmalltree: "Small tree", snowman: "Snowman", xmaslantern: "Lantern", xmasdrinks: "Christmas drinks", xmasduck: "Christmas duck", gift1: "Gift", gift2: "Gift", gift3: "Gift", gift4: "Gift", trophy: "Old trophy cabinet", rarecase: "Rare in a glass case", mark_scuff: "Floor scuffs", mark_tile: "Lifted floor tile", rope: "Rope barrier", pillartall: "Tall pillar", smtable: "Small round table", ballpost: "Ball post", ero_stone: "Stone planter", ero_walnut: "Walnut planter", ero_evergreen: "Evergreen planter", ero_flower: "Flower planter", sofa: "Sofa", chair: "Chair", table: "Table", lamp: "Floor lamp", plant: "Plant", ero: "Planter", pillar: "Pillar", statue: "Statue", fountain: "Fountain", shelf: "Bookcase", cabinet: "Cabinet", water: "Water cooler" };
+const PROP_NAMES = { mark_arrow: "Arrow tile", arcade_ff: "Arcade: Fallin' Furni", arcade_pura: "Arcade: Pura Panic", arcade_guess: "Arcade: Guess the Maze", arcade_odd: "Arcade: Odd One Out", arcade_scout: "Arcade: green (no game yet)", arcade_quiz: "Arcade: purple (no game yet)", tablelamp: "Globe table lamp", xmastree: "Christmas tree", xmassmalltree: "Small tree", snowman: "Snowman", xmaslantern: "Lantern", xmasdrinks: "Christmas drinks", xmasduck: "Christmas duck", gift1: "Gift", gift2: "Gift", gift3: "Gift", gift4: "Gift", trophy: "Old trophy cabinet", rarecase: "Rare in a glass case", mark_scuff: "Floor scuffs", mark_tile: "Lifted floor tile", rope: "Rope barrier", pillartall: "Tall pillar", smtable: "Small round table", ballpost: "Ball post", ero_stone: "Stone planter", ero_walnut: "Walnut planter", ero_evergreen: "Evergreen planter", ero_flower: "Flower planter", sofa: "Sofa", chair: "Chair", table: "Table", lamp: "Floor lamp", plant: "Plant", ero: "Planter", pillar: "Pillar", statue: "Statue", fountain: "Fountain", shelf: "Bookcase", cabinet: "Cabinet", water: "Water cooler" };
 const THUMB_FOR = { sign: "door", door: "door", lamp: "sconce", lift: "lift", medal: "medal", rug: "rug", tele: "tele" };
 function thumbFor(hit) {
     if (hit.type === "wallitem") { const def = wallItemOf(hit.o.k); return def ? "art/wall/" + def.y.layers[0].f : null; }
@@ -1772,6 +1776,18 @@ function select(hit) {
           const tw = document.createElement("input"); tw.type = "checkbox"; tw.checked = !!q.twinkle; tw.addEventListener("change", () => { snapshot(); if (tw.checked) q.twinkle = true; else delete q.twinkle; lastFestoon.twinkle = tw.checked; changed(); }); row("A gentle twinkle", tw);
           const hh = document.createElement("input"); hh.type = "number"; hh.min = "40"; hh.max = "140"; hh.className = "f-ctl"; hh.value = String(q.h || 118); hh.addEventListener("change", () => { snapshot(); q.h = Math.max(40, Math.min(140, Math.round(+hh.value || 118))); changed(); }); row("Height on the wall", hh); }
         if (hit.type === "prop" && hit.o.k === "tablelamp") { const f = document.createElement("label"); f.className = "field"; const n = document.createElement("span"); n.className = "f-label"; n.textContent = "Height off the floor"; const i = document.createElement("input"); i.type = "number"; i.min = "0"; i.max = "60"; i.value = String(hit.o.z || 0); i.className = "f-ctl"; i.addEventListener("change", () => { snapshot(); const v = Math.max(0, Math.min(60, Math.round(+i.value || 0))); if (v) hit.o.z = v; else delete hit.o.z; changed(); }); f.append(n, i); box.appendChild(f); }
+        /* an arrow tile: linked to another, stepping on either takes you to the other (live-arrows.js) */
+        if (hit.type === "prop" && hit.o.k === "mark_arrow") { const me = hit.o; if (!me.id) me.id = "ar" + Date.now().toString(36);
+            const all = () => map.levels.flatMap(l => (l.props || []).filter(p => p.k === "mark_arrow").map(p => ({ l, p }))), partner = all().find(q => q.p.id === me.link && me.link);
+            say(partner ? "Linked to the arrow on " + partner.l.name + ", tile " + partner.p.x + ", " + partner.p.y + ". Stepping on either takes you to the other." : "Not linked yet. Link it to another arrow and stepping on either takes you to the other. R turns it.");
+            const row = document.createElement("div"); row.className = "btn-row";
+            const b = (t, fn) => { const x = document.createElement("button"); x.type = "button"; x.className = "btn small"; x.textContent = t; x.addEventListener("click", fn); row.appendChild(x); };
+            b(partner ? "Link to a different arrow" : "Link to another arrow", () => { flash("Click the arrow to link it to. Esc cancels."); pickNext = u => { const lv = map.levels.find(l => l.id === u.level), o = lv && u.x !== undefined && (lv.props || []).find(p => p.k === "mark_arrow" && Parts.tiles(p).some(t => t[0] === u.x && t[1] === u.y));
+                if (!o || o === me) { flash("That isn't another arrow tile."); return; } snapshot(); if (!o.id) o.id = "ar" + Date.now().toString(36) + "b";
+                for (const q of all()) if (q.p !== me && q.p !== o && (q.p.link === me.id || q.p.link === o.id)) delete q.p.link;
+                me.link = o.id; o.link = me.id; changed(); select(hit); flash("Linked."); }; });
+            if (partner) { b("Show its partner", () => { level = partner.l; buildLevels(); const q = P(partner.p.x + 1, partner.p.y + 1, tileZ(partner.l, partner.p.x, partner.p.y)); cam.x = q[0]; cam.y = q[1]; select({ type: "prop", l: partner.l, o: partner.p }); paint(); }); b("Unlink", () => { snapshot(); delete partner.p.link; delete me.link; changed(); select(hit); }); }
+            box.appendChild(row); }
         if (hit.type === "prop" && hit.o.k === "rarecase") { const fp = floorPiece("rarecase"), f = document.createElement("label"); f.className = "field"; const n = document.createElement("span"); n.className = "f-label"; n.textContent = "What's inside"; const sel = document.createElement("select"); sel.className = "f-ctl"; for (const [k, v] of Object.entries((fp && fp.opts) || {}).sort((a, c) => a[1].name.localeCompare(c[1].name))) { const o = document.createElement("option"); o.value = k; o.textContent = v.name; sel.appendChild(o); } sel.value = hit.o.rare || (fp && fp.rare0) || ""; sel.addEventListener("change", () => { snapshot(); hit.o.rare = sel.value; changed(); }); f.append(n, sel); box.appendChild(f); }
         if (hit.type === "prop" && hit.o.k === "rope") { const f = document.createElement("label"); f.className = "field"; const n = document.createElement("span"); n.className = "f-label"; n.textContent = "Comes off at night"; const c = document.createElement("span"); c.className = "f-ctl"; const t = document.createElement("input"); t.type = "checkbox"; t.checked = !!hit.o.night; t.addEventListener("change", () => { snapshot(); if (t.checked) hit.o.night = true; else delete hit.o.night; changed(); }); c.appendChild(t); f.append(n, c); box.appendChild(f); }
         if (hit.type === "prop" && hit.o.k === "rope") {
@@ -2140,7 +2156,8 @@ const fingerUp = e => {
 };
 canvas.addEventListener("pointerup", fingerUp, true); canvas.addEventListener("pointercancel", fingerUp, true);
 canvas.addEventListener("pointerdown", e => {
-    if (pickNext) { const [px, py] = toPx(e.clientX, e.clientY), u = floorUnder(px, py), f = pickNext; pickNext = null; e.stopImmediatePropagation(); f(u ? { level: u[0].stair ? u[0].stair.low.id : u[0].id, px, py, x: u[1], y: u[2] } : { level: level.id, px, py }); return; }
+    /* only the left button picks: the wheel and the right button still move the view (8 Nov 2026) */
+    if (pickNext && e.button === 0 && !spaceHeld) { const [px, py] = toPx(e.clientX, e.clientY), u = floorUnder(px, py), f = pickNext; pickNext = null; e.stopImmediatePropagation(); f(u ? { level: u[0].stair ? u[0].stair.low.id : u[0].id, px, py, x: u[1], y: u[2] } : { level: level.id, px, py }); return; }
     canvas.focus(); canvas.setPointerCapture(e.pointerId);
     const [px, py] = toPx(e.clientX, e.clientY);
     if (isEdgeTool(tool) && !spaceHeld && e.button !== 1 && (e.button === 0 || edgeUnder(px, py))) { drag = { kind: "edgebrush", remove: e.button === 2 || e.ctrlKey || e.metaKey, laid: [], gone: [] }; edgeBrush(drag, px, py); return; }
@@ -2166,7 +2183,7 @@ canvas.addEventListener("pointerdown", e => {
         if (!edge) { flash("Steps go where two heights meet. Set a floor's height first, with Floor height."); return; }
         drag = { kind: "laysteps", edge, st: { axis: edge.axis, line: edge.line, dir: edge.dir, a: edge.t, b: edge.t + 1 } }; paint(); return;
     }
-    if (tool === "floor" || tool === "erase" || tool === "rug" || tool === "height") {
+    if (tool === "floor" || tool === "erase" || tool === "rug" || tool === "smallfloor" || tool === "height") {
         const a = tool === "floor" ? paintTile(px, py) : tileIn(level, px, py), zr = hasFloor(level, Math.floor(a[0]), Math.floor(a[1])) ? tileZ(level, Math.floor(a[0]), Math.floor(a[1])) : levelZ(level) + (tool === "floor" ? heightBrush : 0);
         drag = { kind: "rect", a, z: zr, rect: snapRect(a, a) }; paint(); return;
     }
@@ -2273,6 +2290,7 @@ canvas.addEventListener("pointerup", e => {
             if (locked) flash("Left the floor round the stairs and lift level, so they still meet it.");
             changed(); return;
         }
+        if (tool === "smallfloor") { if (r.x1 - r.x0 >= 1 && r.y1 - r.y0 >= 1) level.rugs = [...(level.rugs || []), { ...r, style: "small" }]; else { undoStack.pop(); paint(); return; } }
         if (tool === "rug") { if (r.x1 - r.x0 >= 2 && r.y1 - r.y0 >= 2) level.rugs = [...(level.rugs || []), { ...r, alongY: r.y1 - r.y0 > r.x1 - r.x0 }]; else { undoStack.pop(); flash("Rugs need to be at least 2 tiles each way."); paint(); return; } }
         else for (let x = r.x0; x < r.x1; x += 2) for (let y = r.y0; y < r.y1; y += 2) {
             const k = (x / 2) + "," + (y / 2);
@@ -3052,7 +3070,8 @@ function cutInFront(c, x0, y0) {
                 continue;
             }
             for (const q of Parts.parts(p)) {
-                if (lv === l && !inFrontOfYou(q.x, q.y, ax, ay)) continue;
+                /* a thing hidden under the furniture on its own tile (Lost Property) has that furniture in front of it too */
+                if (lv === l && !inFrontOfYou(q.x, q.y, ax, ay) && !(walker.under && q.x === Math.floor(ax) && q.y === Math.floor(ay))) continue;
                 const a = P(q.x, q.y, tileZ(lv, q.x, q.y)); if (!nearby(a)) continue;
                 const lx = a[0] - 16, ly = a[1] + 8;
                 for (const name of q.names) {

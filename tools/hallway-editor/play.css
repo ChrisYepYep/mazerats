@@ -179,3 +179,5 @@ body.hw-screensaver .hw-lost-hud, body.hw-screensaver .hw-lost-flash { visibilit
 body.hw-screensaver .hw-clue { visibility: hidden; }
 /* a long column of answers on a short screen scrolls rather than running off the bottom */
 .hw-replies.hw-replies-under { max-height: 46vh; overflow-y: auto; }
+/* the arrow tiles' quick fade (live-arrows.js) */
+.hw-arrow-veil { position: absolute; inset: 0; z-index: 40; background: #000; opacity: 0; pointer-events: none; }
