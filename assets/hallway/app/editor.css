@@ -75,7 +75,11 @@ select { height: 30px; padding: 0 6px; background: var(--raised); border: 1px so
 .search svg { position: absolute; left: 9px; top: 9px; }
 .search input[type=search] { width: 100%; height: 32px; padding: 0 10px 0 30px; background: var(--bg); border: 1px solid var(--line-2); border-radius: var(--radius); }
 .library { flex: 1; overflow-y: auto; padding: 0 6px 10px; scrollbar-width: thin; scrollbar-color: var(--line-2) transparent; min-height: 0; }
-.cat-head { display: flex; align-items: center; height: 26px; padding: 0 6px; margin-top: 4px; color: var(--text-2); font-size: 11.5px; font-weight: 650; letter-spacing: 0.06em; text-transform: uppercase; }
+.cat-head { display: flex; align-items: center; gap: 6px; width: 100%; height: 28px; padding: 0 6px; margin-top: 4px; color: var(--text-2); font: inherit; font-size: 11.5px; font-weight: 650; letter-spacing: 0.06em; text-transform: uppercase; background: none; border: 0; border-radius: 6px; text-align: left; cursor: pointer; }
+.cat-head:hover { color: var(--text); background: var(--panel-2); }
+.cat-chev { flex: none; transition: transform .15s ease; transform: rotate(90deg); }
+.cat-head[aria-expanded="false"] .cat-chev { transform: none; }
+.cat-count { margin-left: auto; font-weight: 600; letter-spacing: 0; opacity: .7; }
 .lib-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; padding: 2px 2px 6px; }
 .lib-item { display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 5px 2px 5px; background: var(--panel-2); border: 1px solid transparent; border-radius: 7px; min-width: 0; color: inherit; }
 .lib-item:hover { background: var(--raised); border-color: var(--line-2); }

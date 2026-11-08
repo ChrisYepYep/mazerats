@@ -1775,17 +1775,18 @@ function select(hit) {
         for (const [v, name] of [["lawn", "The lawn"], ["road", "The road"], ["maze", "The hedge maze"], ["park", "The car park"]]) { const op = document.createElement("option"); op.value = v; op.textContent = name; t.appendChild(op); }
         t.value = hit.o.view || "lawn"; t.addEventListener("change", () => { snapshot(); hit.o.view = t.value; changed(); }); c.appendChild(t); f.append(n, c); box.appendChild(f);
     }
-    else if (hit.type === "wallitem") { const def = wallItemOf(hit.o.k); say((def ? def.name + ". " : "") + "Drag it along the wall or onto another wall. Ctrl-drag moves it up or down."); }
     else if (hit.type === "steps") {
         const fl = flightOf(hit.l, hit.o);
         say(`${hit.o.b - hit.o.a} tile${hit.o.b - hit.o.a === 1 ? "" : "s"} wide, ${fl ? Math.round(fl.rise / STEP_R) : 0} steps, climbing ${hit.o.dir === "front" ? "towards you, so their fronts are hidden" : "away from you"}. Drag them along the edge.`);
         const resize = by => { const run = edgeRun(hit.l, hit.o.axis, hit.o.line, hit.o.a); let a = hit.o.a, b = hit.o.b + by; if (b > run.b) { a = Math.max(run.a, a - (b - run.b)); b = run.b; } if (b - a < 1 || (a === hit.o.a && b === hit.o.b)) return; snapshot(); hit.o.a = a; hit.o.b = b; changed(); select(hit); };
         btn("Narrower", () => resize(-1)); btn("Wider", () => resize(1));
     }
-    else if (hit.type === "prop" || hit.type === "tele") {
+    /* wall items share this branch so their own options below (the custom sign, torn paper, festoons) are reached (8 Nov: they weren't) */
+    else if (hit.type === "prop" || hit.type === "tele" || hit.type === "wallitem") {
         const long = hit.type === "prop" && Parts.ROWS[hit.o.k];
-        say((long ? `${Parts.lengthOf(hit.o)} tiles long. ` : "") + "Drag it to move it, or use the arrow keys to nudge it." + (hit.type === "tele" || Parts.turns(hit.o.k) > 1 ? " R turns it." : ""));
-        if (hit.type === "tele" || Parts.turns(hit.o.k) > 1) btn("Rotate", rotateSelected);
+        if (hit.type === "wallitem") { const def = wallItemOf(hit.o.k); say((def ? def.name + ". " : "") + "Drag it along the wall or onto another wall. Ctrl-drag moves it up or down."); }
+        else say((long ? `${Parts.lengthOf(hit.o)} tiles long. ` : "") + "Drag it to move it, or use the arrow keys to nudge it." + (hit.type === "tele" || Parts.turns(hit.o.k) > 1 ? " R turns it." : ""));
+        if (hit.type === "tele" || (hit.type === "prop" && Parts.turns(hit.o.k) > 1)) btn("Rotate", rotateSelected);
         if (long) { btn("Shorter", () => resizeSelected(-1)); btn("Longer", () => resizeSelected(1)); }
         /* a sign with your own words: drawn by the map from these (render/hw3.js customSign) */
         if (hit.type === "wallitem" && hit.o.k === "i_custsign") { const q = hit.o, row = (label, ctl) => { const f = document.createElement("label"); f.className = "field"; const n = document.createElement("span"); n.className = "f-label"; n.textContent = label; f.append(n, ctl); box.appendChild(f); }, set = (k, v) => { snapshot(); if (v === "" || v === false) delete q[k]; else q[k] = v; changed(); };
@@ -3427,6 +3428,7 @@ function buildMusic() {
     }
     showMusic();
 }
+const libShut = new Set((() => { try { return JSON.parse(localStorage.getItem("hallway-editor-shut") || "[]"); } catch (err) { return []; } })());
 function buildLibrary() {
     const lib = $("library"); lib.textContent = "";
     const q = $("search").value.trim().toLowerCase();
@@ -3434,7 +3436,14 @@ function buildLibrary() {
         if (title === "Christmas" && !window.hallwayXmas) continue;
         const items = list.filter(i => !q || i[1].toLowerCase().includes(q));
         if (!items.length) continue;
-        const h = document.createElement("div"); h.className = "cat-head"; h.textContent = title; lib.appendChild(h);
+        /* each section folds away with a click on its heading, and stays as you left it (8 Nov: "save me some scrolling"); a search shows every match */
+        const shut = !q && libShut.has(title), h = document.createElement("button"); h.type = "button"; h.className = "cat-head"; h.setAttribute("aria-expanded", String(!shut));
+        h.innerHTML = '<svg class="cat-chev" width="12" height="12" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5l8 7-8 7" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+        const ht = document.createElement("span"); ht.textContent = title; h.appendChild(ht);
+        if (shut) { const n = document.createElement("span"); n.className = "cat-count"; n.textContent = items.length; h.appendChild(n); }
+        h.addEventListener("click", () => { if (libShut.has(title)) libShut.delete(title); else libShut.add(title); try { localStorage.setItem("hallway-editor-shut", JSON.stringify([...libShut])); } catch (err) { /* this visit only */ } const top = $("library").scrollTop; buildLibrary(); $("library").scrollTop = top; });
+        lib.appendChild(h);
+        if (shut) continue;
         const g = document.createElement("div"); g.className = "lib-grid"; lib.appendChild(g);
         for (const [id, label, src] of items) {
             const b = document.createElement("button"); b.type = "button"; b.className = "lib-item"; b.dataset.tool = id; b.title = HINTS[id] || label;
