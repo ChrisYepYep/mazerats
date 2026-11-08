@@ -1812,8 +1812,8 @@ function build(cfg) {
                 const from = w.sprites.length; let partsNow = null;
                 if (k === "lamp") floorLamp(w, x, y, p[6], p[7]);
                 else if (k === "tablelamp") { if (w.partAt({ x, y })) floorLamp(w, x, y, "tableglobe", p[7], p[13] || 0); }
-                else if (k === "leetstand") {
-                    const row = Parts.parts({ k, x, y, rot: p[5] }), far = row[0], near = row[row.length - 1], fp = FLOOR_PIECES[(p[5] & 1) ? "leetstand_r" : "leetstand"];
+                else if (k === "leetstand" || k === "leetstand2") {
+                    const row = Parts.parts({ k, x, y, rot: p[5] }), far = row[0], near = row[row.length - 1], fp = FLOOR_PIECES[(p[5] & 1) ? k + "_r" : k];
                     if (fp && w.partAt(far)) { const base = w.S(x, y), im = wallArt(fp.f), X0 = Math.round(base[0]) - fp.ox, Y0 = Math.round(base[1]) - fp.oy;
                         w.sprites.push({ depth: near.x + near.y + .5, ftx: near.x, fty: near.y, draw: () => { for (let j = 0; j < im.h; j++) for (let i = 0; i < im.w; i++) { const q = (j * im.w + i) * 4, A = im.rgba[q + 3]; if (!A) continue; const X = X0 + i, Y = Y0 + j, c = [im.rgba[q], im.rgba[q + 1], im.rgba[q + 2]]; if (A < 255) { pieceTint(X, Y, c, A); continue; } layer.set(X, Y, c); if (X >= 0 && Y >= 0 && X < bw && Y < bh) w.keep[Y * bw + X] = ((c[0] << 16) | (c[1] << 8) | c[2]) + 1; } } }); }
                 }

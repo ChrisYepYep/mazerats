@@ -15,7 +15,7 @@
     /* Vincent Leet's own Twitch schedule (netlify/functions/leet-schedule.js), when the site can ask it: its streams win over the times
        typed in the editor, and ON NOW only when he's really live. Without it (not set up, the local editor, Twitch down) the typed times. */
     let feed = null;
-    function lines(map, now, f = feed) {
+    function lines(map, now, f = feed, room) {
         const ls = (map && map.leetShow) || {}, mins = ls.mins || 180, typed = (ls.times || []).map(t => new Date(t)).filter(d => !isNaN(d));
         const fromTwitch = !!(f && f.ok), streams = fromTwitch ? (f.times || []).map(t => new Date(t.start)).filter(d => !isNaN(d)) : [];
         if (fromTwitch && f.live) return ["ON NOW!", "LIVE"];
@@ -23,7 +23,10 @@
         if (!fromTwitch && times.some(d => d <= now && now < +d + mins * 60000)) return ["ON NOW!", "LIVE"];
         const next = times.find(d => d > now); if (!next) return ["COMING", "SOON"];
         const today = new Date(now), tomorrow = new Date(now); tomorrow.setDate(tomorrow.getDate() + 1);
-        const day = sameDay(next, today) ? "TONIGHT" : sameDay(next, tomorrow) ? "TOMORROW" : DAYS[next.getDay()] + " " + next.getDate() + " " + MONTHS[next.getMonth()];
+        const named = DAYS[next.getDay()], date = next.getDate() + " " + MONTHS[next.getMonth()];
+        /* the narrow stand's slip: three short lines, and no room for TOMORROW there, so the day's name */
+        if (room && room.rows >= 25) return sameDay(next, today) ? ["TONIGHT", clock(next)] : [named, date, clock(next)];
+        const day = sameDay(next, today) ? "TONIGHT" : sameDay(next, tomorrow) ? "TOMORROW" : named + " " + date;
         return [day, clock(next)];
     }
     window.LeetShow = { lines, get feed() { return feed; } };
@@ -54,7 +57,7 @@
             out.push({ f: L.f, flip: !!L.flip, x0: Math.round(r.x0), y0: Math.round(r.y0), who });
         }
         for (const p of l.props || []) {
-            if (p.k !== "leetstand") continue; const pc = LIVE.pieceOf(p); if (!pc) continue;
+            if (p.k !== "leetstand" && p.k !== "leetstand2") continue; const pc = LIVE.pieceOf(p); if (!pc) continue;
             const a = LIVE.mapPoint(p.x + pc.dx, p.y + pc.dx, LIVE.tileZ(l, p.x, p.y));
             /* the stand-in stands on the stand's own tile and is seated on it, so the stand itself doesn't hide its own slip */
             out.push({ f: pc.fp.f, flip: false, x0: Math.round(a[0]) - pc.fp.ox, y0: Math.round(a[1]) - pc.fp.oy, who: { x: p.x, y: p.y, seat: { p, x: p.x, y: p.y, l, dir: 2 } } });
@@ -70,7 +73,7 @@
         const l = LIVE.floor || (!window.HALLWAY_PLAY && LIVE.editorApi && LIVE.editorApi().level); if (!l) return;
         const z = LIVE.zoom; if (z < 1) return;                                   // too small to read anyway
         const list = posters(l); if (!list.length) return;
-        const v = LIVE.view(), text = lines(LIVE.map, Date.now()), W = c.canvas.width, H = c.canvas.height;
+        const v = LIVE.view(), W = c.canvas.width, H = c.canvas.height;
         for (const P of list) {
             const s = slipOf(P.f, P.flip); if (!s) continue;
             const im = img(P.f), w = im.naturalWidth, h = im.naturalHeight; if (P.x0 > v.x1 || P.x0 + w < v.x0 || P.y0 > v.y1 || P.y0 + h < v.y0) continue;
@@ -88,7 +91,7 @@
                 const rim = at(x, cc[0] - 1); if (!rim || ![0, 1, 2].every(k => Math.abs(best.p[k] / SLIP[k] - rim[k] / RIM[k]) < .07)) continue;
                 usual.set(x, best.p); shown++; }
             if (shown < s.cols.size * .3) continue;                                // the poster isn't there to be seen
-            const ln = s.rows >= 16 ? text : [text.join("  ")];
+            const text = lines(LIVE.map, Date.now(), feed, s), ln = s.rows >= 16 ? text : [text.join("  ")];
             c.save(); c.translate(ox, oy); c.scale(z, z);
             for (const [x, y] of SF.onSlip(s, ln)) { const u = usual.get(x), p = at(x, y); if (!u || !p || !near(p, u)) continue; c.fillStyle = `rgb(${Math.round(p[0] * INK[0] / SLIP[0])},${Math.round(p[1] * INK[1] / SLIP[1])},${Math.round(p[2] * INK[2] / SLIP[2])})`; c.fillRect(P.x0 + x, P.y0 + y, 1, 1); }
             c.restore();

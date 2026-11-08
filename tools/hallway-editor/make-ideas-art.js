@@ -121,7 +121,9 @@ floorPiece("mark_tile", (c, a) => { for (let i = -14; i <= 14; i++) { const X = 
   { const st = L.loadPng(require("path").join(__dirname, "art", "arcade-stool.png")); floorPiece("barstool", (c, a) => { const X = a[0] - 9, Y = a[1] - 19; for (let j = 0; j < st.h; j++) for (let i = 0; i < st.w; i++) { const p = (j * st.w + i) * 4; if (st.rgba[p + 3] < 128) continue; const q = ((Y + j) * c.w + X + i) * 4; for (let k = 0; k < 3; k++) c.d[q + k] = st.rgba[p + k]; } }); }
   /* The Leet Show (9 Nov 2026, ideas/leetshow.js): two posters for the wall and a poster stand on bronze poles, one picture for each way it turns */
   { const LS = require("./ideas/leetshow.js"); add("leet_poster", "The Leet Show: poster", "leet", (c, a) => put(c, LS.wall("portrait"), a), { text: true }); add("leet_bill", "The Leet Show: wide bill", "leet", (c, a) => put(c, LS.wall("landscape"), a), { text: true });
-    floorPiece("leetstand", (c, a) => put(c, LS.stand(false), a)); floorPiece("leetstand_r", (c, a) => put(c, LS.stand(true), a)); }
+    floorPiece("leetstand", (c, a) => put(c, LS.stand(false), a)); floorPiece("leetstand_r", (c, a) => put(c, LS.stand(true), a));
+    /* and a narrow one, two tiles (9 Nov 2026, his) */
+    floorPiece("leetstand2", (c, a) => put(c, LS.stand(false, true), a)); floorPiece("leetstand2_r", (c, a) => put(c, LS.stand(true, true), a)); }
   realFurni("xmaslantern", "s_xmas08_lantern_0_0_a.png"); realFurni("xmassmalltree", "s_small_xmastree_0_0_a.png"); realFurni("xmasdrinks", "s_xmas_drinks_0_0_a.png"); realFurni("xmasduck", "s_xmasduck_0_4_a.png");
   floorPiece("snowman", XM.snowman);
   add("bunting", "Christmas bunting", "xmas", XM.bunting, { xmas: true }); { const f = add("festoon", "Festoon lights (old)", "xmas-old", XM.festoon(), { xmas: true, keep: true }); f.bulbs = XM.festoon.bulbs().map(q => [q[0] + f.ax, q[1] + f.ay]); }

@@ -49,7 +49,10 @@ function art(W, H, lines, slip) {
 /* a deco rule: a line with a diamond in the middle */
 function withRule(f, W, v0, plain) { return (u, v) => { const d = Math.abs(u - (W - 1) / 2); if (!plain && v >= v0 - 2 && v <= v0 + 2 && d + Math.abs(v - v0) <= 2) return d + Math.abs(v - v0) <= 1 ? C.goldLt : C.gold; if (v === v0 && (plain || d > 4) && d < W / 2 - 7) return C.goldDk; return f(u, v); }; }
 /* No "live on Twitch" (9 Nov, his): a bill for a show at the Theatredrome, with the next stream's real date and time stamped on its slip */
-const PORTRAIT = { W: 56, H: 85 }, LANDSCAPE = { W: 100, H: 58 }, SMALL = PORTRAIT;
+const PORTRAIT = { W: 56, H: 85 }, LANDSCAPE = { W: 100, H: 58 }, SMALL = PORTRAIT, NARROW = { W: 46, H: 94 };
+/* the narrow stand's bill (9 Nov 2026, his: a 2 by 1 stand, "keeping the current quality of texts"): the same lettering, a taller sheet,
+   "NEXT UP" over a slip with three lines (day, date, time) */
+const narrow = () => withRule(art(NARROW.W, NARROW.H, [["THE", "v", false, 6, C.gold, true], ["LEET", "vb", true, 15, C.gold, true], ["SHOW", "vb", true, 31, C.gold, true], ["NEXT UP", "stamp", false, 51, C.gold, false]], [60, 29]), NARROW.W, 47);
 const portrait = (P = PORTRAIT) => withRule(art(P.W, P.H, [["THE", "v", false, 6, C.gold, true], ["LEET", "vb", true, 15, C.gold, true], ["SHOW", "vb", true, 31, C.gold, true], ["NEXT SHOW", "stamp", false, 51, C.gold, false]], [60, 20]), P.W, 47);
 const landscape = () => withRule(art(LANDSCAPE.W, LANDSCAPE.H, [["THE", "v", false, 5, C.gold, true], ["LEET SHOW", "vb", true, 13, C.gold, true], ["NEXT SHOW", "stamp", false, 32, C.gold, false]], [41, 11]), LANDSCAPE.W, 29, true);
 /* the poster on the wall in a bronze frame: the wall item's own way of drawing, face "x" (the hallway's framed signs) */
@@ -61,8 +64,8 @@ function wall(which) {
 /* the poster stand: the poster in its bronze frame between two thin bronze poles, each on a little foot and topped with a ball.
    It stands across four tiles. alongY: the run goes along y and the poster faces +x; otherwise along x, facing +y. The origin is the far
    corner of the first tile (hw3 draws it from there, as the trophy cabinet). */
-function stand(alongY) {
-    const P = SMALL, tex0 = portrait(SMALL), W = P.W + 6, Hh = P.H + 6, z0 = 8, L = 64, mid = 8, t = 1.2, a0 = (L - W) / 2, a1 = a0 + W, zt = z0 + Hh - 3;
+function stand(alongY, thin) {
+    const P = thin ? NARROW : SMALL, tex0 = thin ? narrow() : portrait(SMALL), W = P.W + 6, Hh = P.H + 6, z0 = 8, L = thin ? 32 : 64, mid = 8, t = 1.2, a0 = (L - W) / 2, a1 = a0 + W, zt = z0 + Hh - 3;
     /* in the run's own frame: s along it, d across it (the poster's facing side is +d) */
     const B = (s0, s1, d0, d1, za, zb, m) => alongY ? box(d0, d1, s0, s1, za, zb, m) : box(s0, s1, d0, d1, za, zb, m);
     const faceTex = (f, p) => alongY ? (f === "x" ? tex0(Math.floor(a1 - 3 - p[1]), Math.floor(zt - p[2])) : null) : (f === "y" ? tex0(Math.floor(p[0] - a0 - 3), Math.floor(zt - p[2])) : null);
@@ -71,12 +74,16 @@ function stand(alongY) {
         B(a0, a0 + 3, mid - t - .4, mid + t + .4, z0, z0 + Hh, FRAME), B(a1 - 3, a1, mid - t - .4, mid + t + .4, z0, z0 + Hh, FRAME), B(a0, a1, mid - t - .4, mid + t + .6, z0 + Hh - 3, z0 + Hh, FRAME), B(a0, a1, mid - t - .4, mid + t + .4, z0, z0 + 3, FRAME)];
     /* the poles run up through the frame's sides, so the stand and its feet stay on its own four tiles (9 Nov, his: a foot out on the next
        tile went under the rug there) */
-    for (const s of [a0 + 1.5, a1 - 1.5]) {
-        const c = alongY ? [mid, s] : [s, mid];
+    /* the narrow one: the poster is wider than its two tiles, so it's mounted in front of two poles that stand inside them, the feet on its own tiles */
+    const poleD = thin ? mid - t - 2.6 : mid, at = thin ? [3, L - 3] : [a0 + 1.5, a1 - 1.5];
+    for (const s of at) {
+        const c = alongY ? [poleD, s] : [s, poleD];
         prims.push(cyl(c[0], c[1], 1.1, 2, z0 + Hh + 6, POLE), ball(c[0], c[1], z0 + Hh + 7.5, 2, POLE));
         /* the foot: a short bar across the run, so it stands */
-        prims.push(B(s - 1.4, s + 1.4, mid - 6, mid + 6, 0, 2, FRAME));
+        prims.push(thin ? B(s - 1.4, s + 1.4, poleD - 5, poleD + 7, 0, 2, FRAME) : B(s - 1.4, s + 1.4, mid - 6, mid + 6, 0, 2, FRAME));
+        /* on the narrow one, an arm from each pole to the frame's back, top and bottom */
+        if (thin) for (const z of [z0 + 8, z0 + Hh - 9]) prims.push(B(s - .6, s + .6, poleD, mid - t - .4, z, z + 1.4, FRAME));
     }
     return render(prims);
 }
-module.exports = { wall, stand, portrait, landscape, PORTRAIT, LANDSCAPE, BRONZE, SLIP };
+module.exports = { wall, stand, portrait, landscape, narrow, PORTRAIT, LANDSCAPE, NARROW, BRONZE, SLIP };
