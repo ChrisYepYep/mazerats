@@ -55,7 +55,7 @@
 
     /* The site's own window (the same classes as every other, so it wears every palette, dark mode and skin) */
     /* the Hallway's own mark (9 Nov 2026, his pick "G3": script Maze Rats tucked into a gold HALLWAY), on its loader and closed screens */
-    const logo = (w = 240) => { const i = document.createElement("img"); i.className = "hallway-logo"; i.src = "/assets/img/hallway-logo-" + w + ".png"; i.srcset = "/assets/img/hallway-logo-" + w + ".png 1x, /assets/img/hallway-logo-" + w + "@2x.png 2x"; i.width = w; i.height = w === 420 ? 266 : 152; i.alt = "Maze Rats Hallway"; i.decoding = "async"; i.addEventListener("error", () => i.remove()); return i; };
+    const logo = (w = 240) => { const i = document.createElement("img"); i.className = "hallway-logo"; i.src = "/assets/img/hallway-logo-" + w + ".png"; i.srcset = "/assets/img/hallway-logo-" + w + ".png 1x, /assets/img/hallway-logo-" + w + "@2x.png 2x"; i.width = w; i.height = w === 420 ? 245 : 140; i.alt = "Maze Rats Hallway"; i.decoding = "async"; i.addEventListener("error", () => i.remove()); return i; };
     function note(title, words) {
         const n = document.createElement("div"); n.className = "modal hallway-note"; n.setAttribute("role", "status");
         const bar = document.createElement("div"); bar.className = "chrome-titlebar";
