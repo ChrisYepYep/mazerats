@@ -32,11 +32,13 @@
         }
         return { px: out, w: Math.max(0, x - 1), h: H };
     }
-    /* Where a picture's slip is: its pixels of exactly the slip colour (rgba, w by h, as the picture is drawn on screen, so flipped already
+    /* Where a picture's slip is: its pixels of exactly the slip colour (or colours) (rgba, w by h, as the picture is drawn on screen, so flipped already
        if it is). Each column has its own top, as the slip lies on a slanted face; across is the column from the slip's left. */
+    /* colour: one [r, g, b], or a list of them that all count as the slip (his narrow stand has light streaks across its paper, 9 Nov 2026:
+       left out, a streak at a column's top moved that column's lettering down and broke the letters apart) */
     function findSlip(rgba, w, h, colour) {
-        const cols = new Map(); let x0 = 1e9, x1 = -1;
-        for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) { const q = (y * w + x) * 4; if (rgba[q + 3] < 128 || rgba[q] !== colour[0] || rgba[q + 1] !== colour[1] || rgba[q + 2] !== colour[2]) continue; const c = cols.get(x); if (!c) cols.set(x, [y, y]); else { c[0] = Math.min(c[0], y); c[1] = Math.max(c[1], y); } x0 = Math.min(x0, x); x1 = Math.max(x1, x); }
+        const cols = new Map(), list = Array.isArray(colour[0]) ? colour : [colour]; let x0 = 1e9, x1 = -1;
+        for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) { const q = (y * w + x) * 4; if (rgba[q + 3] < 128 || !list.some(c => rgba[q] === c[0] && rgba[q + 1] === c[1] && rgba[q + 2] === c[2])) continue; const c = cols.get(x); if (!c) cols.set(x, [y, y]); else { c[0] = Math.min(c[0], y); c[1] = Math.max(c[1], y); } x0 = Math.min(x0, x); x1 = Math.max(x1, x); }
         if (x1 < 0) return null; let rows = 0; for (const c of cols.values()) rows = Math.max(rows, c[1] - c[0] + 1);
         return { x0, x1, cols, rows };
     }
