@@ -33,6 +33,10 @@
     const things = () => (LOST() && LOST().things) || [];
     const name = s => { const l = levelOf(s); return (l ? l.name : "?") + ", " + s.x + ", " + s.y; };
     const suits = f => f !== undefined && f >= LO && f <= HI;
+    /* a spot has to be one a Habbo can pick up: reached on foot or by lift, or, under furniture, from a free tile next to it (9 Nov scan, content
+       finding 1: G 96,-8 sat under a table boxed in by chairs, so the round could only end in a miss). The Problems tab lists any left over. */
+    const reachable = (l, x, y) => !api().lostSpotReachable || api().lostSpotReachable(l, x, y);
+    const STUCK = "Nobody can pick a thing up there: no free tile next to it can be reached.";
 
     /* how much of each thing shows at a spot: worked out once a spot is picked */
     async function measure(s) {
@@ -72,7 +76,7 @@
             for (const s of all) { const row = el("div", "lp-spot"), b = el("button", "lp-spot-name", name(s)); b.type = "button"; b.addEventListener("click", () => pick(keyOf(s)));
                 const meta = el("span", "lp-spot-meta"); row.append(b, meta, btn("×", () => removeSpot(s), "ghost lp-x")); ui.list.appendChild(row); ui.rowEls.set(keyOf(s), { row, meta }); }
             ui.list.scrollTop = top; }
-        for (const s of all) { const r = ui.rowEls.get(keyOf(s)); if (!r) continue; const l = levelOf(s); r.row.classList.toggle("on", keyOf(s) === selKey); r.meta.textContent = (l ? LOST().kindOf({ l, x: s.x, y: s.y }) : "?") + " · " + (n - (s.skip || []).length) + " of " + n; }
+        for (const s of all) { const r = ui.rowEls.get(keyOf(s)); if (!r) continue; const l = levelOf(s); r.row.classList.toggle("on", keyOf(s) === selKey); const stuck = l && !reachable(l, s.x, s.y); r.row.title = stuck ? STUCK : ""; r.meta.textContent = (stuck ? "can't be reached · " : "") + (l ? LOST().kindOf({ l, x: s.x, y: s.y }) : "?") + " · " + (n - (s.skip || []).length) + " of " + n; }
     }
     /* the picked spot: its strip made once per spot, then only lit and ticked */
     let stripFor = null;
@@ -109,6 +113,7 @@
         else if (!l || l.k < 0) flash("Not in the Basement.");
         else { const key = keyOf(hit), had = shown().find(s => keyOf(s) === key);
             if (had) { removeSpot(had); flash("Spot taken away."); }
+            else if (!reachable(l, hit.x, hit.y)) flash(STUCK);
             else { const s = { level: hit.level, x: hit.x, y: hit.y, skip: [] }; edit(() => list().push(s)); selKey = key; fitsFor = null; fits = new Map(); show(); rows(); detail(); autoSkip(s).then(() => api().changed()); } }
         arm(); }); }
     document.addEventListener("keydown", e => {
@@ -125,7 +130,7 @@
     /* the marker under a point of the map: inside its diamond, the nearest to the camera if two overlap */
     function markerAt(px, py) { let best = null, bz = -1e9; for (const s of markersShown()) { const w = where(s); if (!w) continue; if (Math.abs(px - w.X) / 17 + Math.abs(py - w.Y) / 9 > 1 && !(Math.abs(px - w.X) <= 6 && py <= w.Y && py >= w.Y - 26)) continue; const z = w.l.k * 1000 + s.x + s.y; if (z > bz) { bz = z; best = s; } } return best; }
     /* where a dragged spot would go: a free floor tile, not the Basement, not another spot */
-    function dropAt(cx, cy, key) { const h = api().tileAt(cx, cy); if (!h) return null; const l = LIVE.map.levels.find(q => q.id === h.level); if (!l || l.k < 0) return { ...h, ok: false, why: "Not in the Basement." }; if (shown().some(s => keyOf(s) === keyOf(h) && keyOf(s) !== key)) return { ...h, ok: false, why: "There's a spot there already." }; return { ...h, ok: true }; }
+    function dropAt(cx, cy, key) { const h = api().tileAt(cx, cy); if (!h) return null; const l = LIVE.map.levels.find(q => q.id === h.level); if (!l || l.k < 0) return { ...h, ok: false, why: "Not in the Basement." }; if (shown().some(s => keyOf(s) === keyOf(h) && keyOf(s) !== key)) return { ...h, ok: false, why: "There's a spot there already." }; if (!reachable(l, h.x, h.y)) return { ...h, ok: false, why: STUCK }; return { ...h, ok: true }; }
     const view = document.getElementById("view");
     if (view) {
         view.addEventListener("pointerdown", e => { if (!tabOpen() || adding || e.button !== 0 || !LIVE.map) return; const [px, py] = api().toPx(e.clientX, e.clientY), s = markerAt(px, py); if (!s) return;

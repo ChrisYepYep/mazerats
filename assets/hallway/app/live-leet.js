@@ -72,19 +72,36 @@
        slip as lit right now, and a pixel that differs from it is something else in front. The ink is the slip's own colour darkened to
        ink, so the time of day and the lamps tint it exactly as they tint the slip. */
     const near = (p, q) => Math.abs(p[0] - q[0]) + Math.abs(p[1] - q[1]) + Math.abs(p[2] - q[2]) <= 14;
-    LIVE.add({ still: true, under(c, ox, oy) {
-        const l = LIVE.floor || (!window.HALLWAY_PLAY && LIVE.editorApi && LIVE.editorApi().level); if (!l) return;
+    /* Read from a copy, never the view itself: reading a canvas back often makes the browser keep it off the graphics card, which slows
+       every paint for the whole visit (play.js says the same). And not every paint (9 Nov scan, page finding 3): what a slip stamped is
+       kept, and read again only when the camera, the zoom, the time of day, the squares' pictures or the words change, or after a second
+       (for whatever moves past it). */
+    const peek = document.createElement("canvas"), pk = peek.getContext("2d", { willReadFrequently: true });
+    const stamped = new Map(); let stampedFor = null; const AGAIN_MS = 1000;
+    function readBack(view, X0, Y0, w, h) {
+        if (peek.width < w || peek.height < h) { peek.width = Math.max(peek.width, w); peek.height = Math.max(peek.height, h); }
+        pk.clearRect(0, 0, w, h); pk.drawImage(view, X0, Y0, w, h, 0, 0, w, h); return pk.getImageData(0, 0, w, h).data;
+    }
+    /* Every floor's posters, not only the one you're on (9 Nov scan, content finding 3: the Floor 1 stand, seen from the Ground hall,
+       showed a blank slip). The slip's colour test below already passes over one that something covers. */
+    const allPosters = () => { const m = LIVE.map; if (!m) return []; const out = []; for (const l of m.levels) for (const P of posters(l)) out.push(P); return out; };
+    LIVE.add({ still: true, under(c, ox, oy, now) {
+        const here = LIVE.floor || (!window.HALLWAY_PLAY && LIVE.editorApi && LIVE.editorApi().level); if (!here) return;
         const z = LIVE.zoom; if (z < 1) return;                                   // too small to read anyway
-        const list = posters(l); if (!list.length) return;
-        const v = LIVE.view(), W = c.canvas.width, H = c.canvas.height;
+        const list = allPosters(); if (!list.length) return;
+        const v = LIVE.view(), W = c.canvas.width, H = c.canvas.height, m = LIVE.mood(), view = [ox, oy, z, W, H, m ? m.a + "|" + m.b + "|" + (+m.f || 0).toFixed(2) : "-", LIVE.tileGen, !!window.hallwayXmas].join(",");
+        if (stampedFor !== LIVE.map) { stamped.clear(); stampedFor = LIVE.map; }
         for (const P of list) {
             const s = slipOf(P.f, P.flip); if (!s) continue;
             const im = img(P.f), w = im.naturalWidth, h = im.naturalHeight; if (P.x0 > v.x1 || P.x0 + w < v.x0 || P.y0 > v.y1 || P.y0 + h < v.y0) continue;
+            const text = lines(LIVE.map, Date.now(), feed, s), ln = s.rows >= 16 ? text : [text.join("  ")], key = P.f + "|" + P.x0 + "," + P.y0, sig = view + "|" + ln.join("/");
+            const was = stamped.get(key); if (was && was.sig === sig && now - was.at < AGAIN_MS) { put(c, ox, oy, z, P, was.px); continue; }
+            const px = []; stamped.set(key, { sig, at: now, px }); if (stamped.size > 60) stamped.clear();
             /* the slip's box on screen, read once */
             let top = 1e9, bot = -1; for (const cc of s.cols.values()) { top = Math.min(top, cc[0]); bot = Math.max(bot, cc[1]); }
             const X0 = Math.max(0, Math.floor(ox + (P.x0 + s.x0) * z)), Y0 = Math.max(0, Math.floor(oy + (P.y0 + top) * z)), X1 = Math.min(W, Math.ceil(ox + (P.x0 + s.x1 + 1) * z)), Y1 = Math.min(H, Math.ceil(oy + (P.y0 + bot + 1) * z));
             if (X1 <= X0 || Y1 <= Y0) continue;
-            let d; try { d = c.getImageData(X0, Y0, X1 - X0, Y1 - Y0).data; } catch (e) { return; }
+            let d; try { d = readBack(c.canvas, X0, Y0, X1 - X0, Y1 - Y0); } catch (e) { return; }
             const at = (x, y) => { const X = Math.floor(ox + (P.x0 + x + .5) * z) - X0, Y = Math.floor(oy + (P.y0 + y + .5) * z) - Y0; if (X < 0 || Y < 0 || X >= X1 - X0 || Y >= Y1 - Y0) return null; const q = (Y * (X1 - X0) + X) * 4; return [d[q], d[q + 1], d[q + 2]]; };
             /* each column's usual colour, if most of the column shows it */
             const usual = new Map(); let shown = 0;
@@ -94,12 +111,12 @@
                 const rim = at(x, cc[0] - 1); if (!rim || ![0, 1, 2].every(k => Math.abs(best.p[k] / SLIP[k] - rim[k] / RIM[k]) < .07)) continue;
                 usual.set(x, best.p); shown++; }
             if (shown < s.cols.size * .3) continue;                                // the poster isn't there to be seen
-            const text = lines(LIVE.map, Date.now(), feed, s), ln = s.rows >= 16 ? text : [text.join("  ")];
-            c.save(); c.translate(ox, oy); c.scale(z, z);
-            for (const [x, y] of SF.onSlip(s, ln)) { const u = usual.get(x), p = at(x, y); if (!u || !p) continue; /* the slip, or its rim top or bottom (letters stand upright, so their edges can reach the rim), in this light */ const paper = near(p, u) || near(p, u.map((v, k) => v * RIM[k] / SLIP[k])) || near(p, u.map((v, k) => v * DK[k] / SLIP[k])); if (!paper) continue; c.fillStyle = `rgb(${Math.round(p[0] * INK[0] / SLIP[0])},${Math.round(p[1] * INK[1] / SLIP[1])},${Math.round(p[2] * INK[2] / SLIP[2])})`; c.fillRect(P.x0 + x, P.y0 + y, 1, 1); }
-            c.restore();
+            for (const [x, y] of SF.onSlip(s, ln)) { const u = usual.get(x), p = at(x, y); if (!u || !p) continue; /* the slip, or its rim top or bottom (letters stand upright, so their edges can reach the rim), in this light */ const paper = near(p, u) || near(p, u.map((v, k) => v * RIM[k] / SLIP[k])) || near(p, u.map((v, k) => v * DK[k] / SLIP[k])); if (!paper) continue; px.push(x, y, `rgb(${Math.round(p[0] * INK[0] / SLIP[0])},${Math.round(p[1] * INK[1] / SLIP[1])},${Math.round(p[2] * INK[2] / SLIP[2])})`); }
+            put(c, ox, oy, z, P, px);
         }
     } });
+    /* the stamp's ink: [x, y, colour] in threes, on the poster's picture */
+    function put(c, ox, oy, z, P, px) { if (!px.length) return; c.save(); c.translate(ox, oy); c.scale(z, z); for (let i = 0; i < px.length; i += 3) { c.fillStyle = px[i + 2]; c.fillRect(P.x0 + px[i], P.y0 + px[i + 1], 1, 1); } c.restore(); }
     /* the stamp changes as shows come and go: look again each minute */
-    setInterval(() => { const l = LIVE.floor; if (l && posters(l).length && !document.hidden) LIVE.wake(); }, 60000);
+    setInterval(() => { if (LIVE.floor && allPosters().length && !document.hidden) LIVE.wake(); }, 60000);
 })();

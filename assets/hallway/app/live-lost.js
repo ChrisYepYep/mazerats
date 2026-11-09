@@ -9,7 +9,7 @@
     const LIVE = window.HallwayLive; if (!LIVE) return;
     const PLAY = !!window.HALLWAY_PLAY;
     /* the first spots, by the tile next to the furniture that half hides them, kept for a map saved before the Lost Property tab */
-    const OLD_SPOTS = [["Ground", 58, 46], ["Ground", 75, 15], ["Ground", 83, 15], ["Ground", 91, 15], ["Floor 1", 71, -10], ["Floor 1", 151, -16], ["Floor 2", 60, -21], ["Ground", 94, -7], ["Ground", 73, 3], ["Ground", 86, 3], ["Floor 1", 36, -1], ["Floor 2", 20, 15], ["Floor 2", 26, 5], ["Floor 2", 26, 8], ["Ground", 96, -8], ["Ground", 78, 2], ["Ground", 67, 0], ["Floor 1", 83, -12], ["Ground", 71, 4], ["Ground", 74, 15], ["Ground", 82, 15], ["Ground", 84, 5], ["Ground", 58, 38]];
+    const OLD_SPOTS = [["Ground", 58, 46], ["Ground", 75, 15], ["Ground", 83, 15], ["Ground", 91, 15], ["Floor 1", 71, -10], ["Floor 1", 151, -16], ["Floor 2", 60, -21], ["Ground", 94, -7], ["Ground", 73, 3], ["Ground", 86, 3], ["Floor 1", 36, -1], ["Floor 2", 20, 15], ["Floor 2", 26, 5], ["Floor 2", 26, 8], ["Ground", 78, 2], ["Ground", 67, 0], ["Floor 1", 83, -12], ["Ground", 71, 4], ["Ground", 74, 15], ["Ground", 82, 15], ["Ground", 84, 5], ["Ground", 58, 38]];
     const today = () => new Date().toISOString().slice(0, 10);
     const prog = () => window.HallwayProgress, ROUND = "hallway-lost-round", CARRY = "hallway-carrying", VISITOR = "hallway-visitor";
     /* the clock and the points: the board's come from the server, on its clock; these are what the page shows meanwhile, worked out the same way */
@@ -17,7 +17,9 @@
     const pointsFor = (secs, hints) => { const s = Math.max(MIN_SECS, secs); if (s * 1000 > LIMIT_MS + 20e3) return 0; return Math.round((100 + 900 * Math.max(0, 1 - Math.min(s * 1000, LIMIT_MS) / LIMIT_MS)) / 10) * 10 + 150 * Math.max(0, 3 - (hints | 0)); };
     const visitor = () => { try { return localStorage.getItem(VISITOR) || undefined; } catch (e) { return undefined; } };
     /* every search goes through the server on the site, signed in or not; the editor on its own has no server, so it chooses for itself */
-    const lostPost = body => { if (!PLAY) return Promise.resolve(null); return fetch(LOSTFN, { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json", Accept: "application/json" }, body: JSON.stringify({ ...body, v: visitor() }) }).then(r => r.json().catch(() => ({})).then(j => r.ok ? j : { error: j.error || "status " + r.status, status: r.status })).catch(() => ({ error: "offline" })); };
+    const lostPost = body => { if (!PLAY) return Promise.resolve(null); return fetch(LOSTFN, { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json", Accept: "application/json" }, body: JSON.stringify({ ...body, v: visitor() }) }).then(r => r.json().catch(() => ({})).then(j => r.ok ? j : { error: j.error || "status " + r.status, status: r.status, noSwaps: !!j.noSwaps })).catch(() => ({ error: "offline" })); };
+    /* "ask for a different one": a few times a search, on the same clock, as the server allows (9 Nov scan, finding 2) */
+    const MAX_SWAPS = 2;
     let carryPts = 0;
     let things = null, imgs = new Map(); const thingImg = f => { let i = imgs.get(f); if (!i) { i = new Image(); let tries = 0; i.onload = () => LIVE.wake(); i.onerror = () => { if (++tries <= 6) setTimeout(() => { i.src = "art/ideas/lost/" + f + "?r=" + tries; }, 1500 * tries); }; i.src = "art/ideas/lost/" + f; imgs.set(f, i); } return i; };
     if (PLAY && window.HallwayProgress) HallwayProgress.load();
@@ -32,7 +34,14 @@
     /* a spot can be under a table, a chair or a sofa (8 Nov 2026, his): you can't stand there, so it's picked up from a free tile beside it */
     const underFurni = spot => !LIVE.tileFree(spot.l)(spot.x, spot.y);
     const reachFrom = spot => { if (!underFurni(spot)) return [[spot.x, spot.y]]; const free = LIVE.tileFree(spot.l), out = []; for (const [i, j] of [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [-1, -1], [1, -1], [-1, 1]]) if (free(spot.x + i, spot.y + j)) out.push([spot.x + i, spot.y + j]); return out; };
-    const kindOf = spot => kindAt(spot.l, spot.x, spot.y) || "steps";
+    /* a spot nobody can pick up is never used (9 Nov scan, content finding 1: G 96,-8, under a table with a chair on every side). The server's
+       spotsOf skips the same ones, worked out from the map (_hallway-map.js pickUpFrom); here the engine can also say whether the free tile is
+       reached at all */
+    const canPickUp = spot => { const r = LIVE.editorApi && LIVE.editorApi().lostSpotReachable; return r ? r(spot.l, spot.x, spot.y) : reachFrom(spot).length > 0; };
+    /* small steps only where there are some (9 Nov scan, content finding 2: 11 spots with nothing near were told "I sat on some small steps"):
+       a tile within 2 that a flight lifts. Anywhere else hint 2 says the neutral "I wandered about a bit" */
+    const nearSteps = spot => { if (!(spot.l.steps || []).length || !LIVE.tileZ) return false; for (let i = -2; i <= 2; i++) for (let j = -2; j <= 2; j++) { const x = spot.x + i, y = spot.y + j, z = LIVE.nodeZ(spot.l, x, y); if (z !== undefined && z !== LIVE.tileZ(spot.l, x, y)) return true; } return false; };
+    const kindOf = spot => kindAt(spot.l, spot.x, spot.y) || (nearSteps(spot) ? "steps" : null);
     /* how much of a thing shows at a spot, with whatever stands in front of it cut away: null until the pictures are in */
     const vis = document.createElement("canvas"); vis.width = 33; vis.height = 56; const vg = vis.getContext("2d", { willReadFrequently: true });
     function showsAt(spot, thing) { const im = thingImg(thing.f); if (!im.complete || !im.naturalWidth) return null; const z = LIVE.nodeZ(spot.l, spot.x, spot.y) || 0, p = LIVE.mapPoint(spot.x + .5, spot.y + .5, z), x0 = Math.round(p[0]) - 16, y0 = Math.round(p[1]) - 50, count = () => { const d = vg.getImageData(0, 0, 33, 56).data; let n = 0; for (let i = 3; i < d.length; i += 4) if (d[i] > 127) n++; return n; };
@@ -40,14 +49,14 @@
     const shuffled = list => { const o = [...list]; for (let i = o.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [o[i], o[j]] = [o[j], o[i]]; } return o; };
     const saveRound = () => { try { if (round) localStorage.setItem(ROUND, "1"); else localStorage.removeItem(ROUND); } catch (e) { /* this visit only */ } };
     /* the editor on its own: a thing you haven't found, at a spot that suits it */
-    function chooseHere(notK) { const sp = mapSpots(), have = new Set(((prog() && prog().get().lost) || {}).shelf || []), all = (things || []).filter(t => t.k !== notK), fresh = all.filter(t => !have.has(t.k)); for (const t of shuffled(fresh.length ? fresh : all)) { const fit = sp.filter(s => !s.skip.includes(t.k)); if (fit.length) return { thing: t, spot: fit[Math.floor(Math.random() * fit.length)] }; } return null; }
+    function chooseHere(notK) { const sp = mapSpots().filter(canPickUp), have = new Set(((prog() && prog().get().lost) || {}).shelf || []), all = (things || []).filter(t => t.k !== notK), fresh = all.filter(t => !have.has(t.k)); for (const t of shuffled(fresh.length ? fresh : all)) { const fit = sp.filter(s => !s.skip.includes(t.k)); if (fit.length) return { thing: t, spot: fit[Math.floor(Math.random() * fit.length)] }; } return null; }
     /* a search from the server's answer */
-    function fromServer(r) { const map = LIVE.map, thing = things && things.find(t => t.k === r.k), l = map && levelOf(map, { level: r.spot.level, name: r.spot.name }); if (!thing || !l) return null; if (r.v) { try { localStorage.setItem(VISITOR, r.v); } catch (e) { /* only this visit */ } } if (r.name) myName = r.name; return { thing, spot: { l, x: r.spot.x, y: r.spot.y, skip: [] }, hints: 0, t0: Date.now() - (LIMIT_MS - (r.left || LIMIT_MS)) }; }
+    function fromServer(r) { const map = LIVE.map, thing = things && things.find(t => t.k === r.k), l = map && levelOf(map, { level: r.spot.level, name: r.spot.name }); if (!thing || !l) return null; if (r.v) { try { localStorage.setItem(VISITOR, r.v); } catch (e) { /* only this visit */ } } if (r.name) myName = r.name; return { thing, spot: { l, x: r.spot.x, y: r.spot.y, skip: [] }, hints: r.hints | 0, t0: Date.now() - (LIMIT_MS - (typeof r.left === "number" ? r.left : LIMIT_MS)), swapsLeft: typeof r.swapsLeft === "number" ? r.swapsLeft : MAX_SWAPS, resumed: !!r.resumed }; }
     let myName = null;
     async function newSearch(swap) {
         let pick;
-        if (PLAY) { const r = await lostPost({ act: swap ? "swap" : "start" }); if (!r || r.error) return r && r.status === 429 ? "busy" : null; pick = fromServer(r); }
-        else { const c = chooseHere(swap && wanted() && wanted().thing.k); if (c) pick = { ...c, hints: 0, t0: Date.now() }; }
+        if (PLAY) { const r = await lostPost({ act: swap ? "swap" : "start" }); if (!r || r.error) { if (r && r.noSwaps && round) { round.swapsLeft = 0; return "noswaps"; } return r && r.status === 429 ? "busy" : null; } pick = fromServer(r); }
+        else { const was = swap && wanted(); if (was && was.swapsLeft === 0) return "noswaps"; const c = chooseHere(was && was.thing.k); if (c) pick = { ...c, hints: 0, t0: was ? was.t0 : Date.now(), swapsLeft: was ? (was.swapsLeft === undefined ? MAX_SWAPS : was.swapsLeft) - 1 : MAX_SWAPS }; }
         if (!pick) return null; round = pick; saveRound(); window.hwTrack(swap ? "hallway_lost_swap" : "hallway_lost_start"); thingImg(pick.thing.f); tick(); LIVE.wake(); return pick;
     }
     /* coming back: a search you left has ended (his: go back to hustle). What you were carrying you still have. */
@@ -166,7 +175,7 @@
     function nice(name) { return String(name || "").split(" ").map(w => PROPER.test(w) ? w.charAt(0).toUpperCase() + w.slice(1).toLowerCase() : w.toLowerCase()).join(" "); }
     const H = "hustle", asking = t => "It's the " + nice(t.thing.name) + ". It's somewhere in the Hallway. Hand it in at the Lost Property desk when you find it.";
     const totalIn = () => { const p = prog(), l = p && p.get().lost; return (l && l.streak) || 0; };
-    async function startSearch() { busy = true; try { const t = await newSearch(false); if (t === "busy") { say(H, "Lots of people asking just now. Try me again in a little while."); return; } if (!t) { say(H, "Actually, I can't think of anything missing right now. Come back in a bit."); return; } say(H, "Thank you! " + asking(t)); chatMenu(); } finally { busy = false; } }
+    async function startSearch() { busy = true; try { const t = await newSearch(false); if (t === "busy") { say(H, "Lots of people asking just now. Try me again in a little while."); return; } if (!t) { say(H, "Actually, I can't think of anything missing right now. Come back in a bit."); return; } say(H, t.resumed ? "You're still looking for one, remember? " + asking(t) : "Thank you! " + asking(t)); chatMenu(); } finally { busy = false; } }
     const DOING = { sofa: "I was having a sit-down on one of the sofas before it went.", chair: "I sat down on a chair for a bit, to look at my notes.", table: "I put my things down on a table for a minute.", planter: "I stopped to look at the plants on the way.", steps: "I sat on some small steps to catch my breath." };
     const floorWords = l => l.k === 0 ? "the Ground floor" : l.name;
     async function clue(t) {
@@ -177,7 +186,7 @@
         return "That's honestly all I can remember. It's there somewhere!";
     }
     const NOT_NOW = ["Not right now", () => say(H, "No problem. I'll be sat here.")];
-    function chatMenu() { const list = []; if (round && !carrying) { list.push(["I'm on it", () => say(H, "Good luck. Mind the rats.")]); list.push(["Any idea where it is?", async () => { const t = round; if (t) { busy = true; const w = await clue(t).finally(() => { busy = false; }); say(H, w); chatMenu(); } }]); list.push(["What was it again?", () => { if (round) { say(H, asking(round)); chatMenu(); } }]); list.push(["Ask for a different one", async () => { busy = true; const again = await newSearch(true).finally(() => { busy = false; }); if (again && again !== "busy") say(H, "Fine, forget that one. " + asking(again)); else say(H, "I can't think of another just now. Keep looking for that one."); chatMenu(); }]); } list.push(["Lost Property record", () => { ledger(); chatMenu(); }]); replies(list); }
+    function chatMenu() { const list = []; if (round && !carrying) { list.push(["I'm on it", () => say(H, "Good luck. Mind the rats.")]); list.push(["Any idea where it is?", async () => { const t = round; if (t) { busy = true; const w = await clue(t).finally(() => { busy = false; }); say(H, w); chatMenu(); } }]); list.push(["What was it again?", () => { if (round) { say(H, asking(round)); chatMenu(); } }]); if (round.swapsLeft !== 0) list.push(["Ask for a different one", async () => { busy = true; const again = await newSearch(true).finally(() => { busy = false; }); if (again === "noswaps") say(H, "No, that's the last one I can swap. Keep looking for that one, the clock's still going."); else if (again && again !== "busy") say(H, "Fine, forget that one. " + asking(again) + (again.swapsLeft === 0 ? " That's the last swap, mind." : "")); else say(H, "I can't think of another just now. Keep looking for that one."); chatMenu(); }]); } list.push(["Lost Property record", () => { ledger(); chatMenu(); }]); replies(list); }
     let talked = false, busy = false;
     function talk() {
         if (busy) return; talked = true;
@@ -241,7 +250,8 @@
             if (st.key) { const slot = el("div", "hw-lp-slot got key"), i = el("img"); i.src = "art/wall/i_key.png"; i.alt = "The Caretaker's key"; slot.title = "The Caretaker's key"; slot.appendChild(i); shelf.appendChild(slot); }
             pane.appendChild(shelf); };
         const showBoard = () => { select(boardTab); pane.replaceChildren(el("p", "hw-lp-count", "Loading the board..."));
-            fetch(LOSTFN + (visitor() ? "?v=" + encodeURIComponent(visitor()) : ""), { credentials: "same-origin", headers: { Accept: "application/json" } }).then(r => r.ok ? r.json() : Promise.reject(new Error(String(r.status)))).then(b => {
+            /* the Visitor's token in a header, out of the address and the logs (9 Nov scan, finding 11) */
+            fetch(LOSTFN, { credentials: "same-origin", headers: { Accept: "application/json", ...(visitor() ? { "X-Hallway-Visitor": visitor() } : {}) } }).then(r => r.ok ? r.json() : Promise.reject(new Error(String(r.status)))).then(b => {
                 pane.replaceChildren(el("p", "hw-lp-count", "Monday to Sunday: points for everything found this week"));
                 if (!b.rows.length) pane.appendChild(el("p", "hw-lp-empty", "Nobody's on the board yet this week. Be the first."));
                 else { const tb = el("table", "hw-lp-board"), hd = el("tr"); for (const h of ["#", "Mazer", "Points", "Found", "Best"]) hd.appendChild(el("th", "", h)); tb.appendChild(hd); for (const r of b.rows) { const tr = el("tr"); for (const v of [r.rank, r.name || "A Mazer", r.points, r.finds, r.best]) tr.appendChild(el("td", "", String(v))); tb.appendChild(tr); } pane.appendChild(tb); }

@@ -668,6 +668,7 @@ const setStatus = t => { $("st-draw").textContent = t; };
    edit the old picture stays up and the new one lands over it, nearest squares first. */
 const TILE = 512, CONCURRENT = 6;
 const tiles = new Map();        // "tx,ty" -> { img, v }
+let tileGen = 0;                // goes up whenever a square's picture arrives, so what was read off the screen (live-leet.js) knows to look again
 const inflight = new Map();     // "tx,ty" -> AbortController
 let version = null, artTimer = 0, versionSeq = 0, lastReport = null;
 /* ---------- a sign, live while it's dragged ----------
@@ -715,7 +716,7 @@ function moodNow() {
     return { a: "day", b: "day", f: 0 };
 }
 function moodTile(mood, tx, ty) {
-    if (window.hallwayXmas && mood !== "failing") mood += "+x";
+    if (window.hallwayXmas) mood += "+x";                                 // failing too: the Basement blackout darkens the garlands rather than dropping them (9 Nov scan)
     const k = mood + "|" + tx + "," + ty, t = moodTiles.get(k);
     if (t && t.v === version) return t;
     if (!moodInflight.has(k) && moodInflight.size < CONCURRENT && version && !tileWaiting(k)) {
@@ -725,7 +726,7 @@ function moodTile(mood, tx, ty) {
                 const r = await fetch(`/api/tile?v=${v}&tx=${tx}&ty=${ty}&m=${encodeURIComponent(mood)}`, { signal: ctl.signal });
                 if (!r.ok) { tileFailed(k); return; }
                 const img = await createImageBitmap(await r.blob()); tileWaits.delete(k);
-                if (v === version) { const old = moodTiles.get(k); if (old && old.img.close) old.img.close(); moodTiles.set(k, { img, v }); paint(); } else if (img.close) img.close();
+                if (v === version) { const old = moodTiles.get(k); if (old && old.img.close) old.img.close(); moodTiles.set(k, { img, v }); tileGen++; paint(); } else if (img.close) img.close();
             } catch (e) { if (e.name !== "AbortError") tileFailed(k); /* the view asks again, in a while */ } finally { moodInflight.delete(k); }
         })();
     }
@@ -741,7 +742,7 @@ function preloadMap() {
     const small = window.matchMedia && matchMedia("(pointer: coarse)").matches; if (!small && window.HALLWAY_PLAY) for (const q of MOODS_ALL) if (!order.includes(q)) order.push(q);
     const cells = []; for (let ty = Math.floor(r.y / TILE); ty <= Math.floor((r.y + r.h) / TILE); ty++) for (let tx = Math.floor(r.x / TILE); tx <= Math.floor((r.x + r.w) / TILE); tx++) cells.push([tx, ty, Math.hypot((tx + .5) * TILE - cam.x, (ty + .5) * TILE - cam.y)]);
     cells.sort((p, q) => p[2] - q[2]);
-    for (const mood of order) for (const [tx, ty] of cells) { if (moodInflight.size >= Math.max(1, CONCURRENT - 1)) return; const k = (window.hallwayXmas && mood !== "failing" ? mood + "+x" : mood) + "|" + tx + "," + ty, t = moodTiles.get(k); if (t && t.v === version) continue; if (moodInflight.has(k) || tileWaiting(k)) continue; moodTile(mood, tx, ty); }
+    for (const mood of order) for (const [tx, ty] of cells) { if (moodInflight.size >= Math.max(1, CONCURRENT - 1)) return; const k = (window.hallwayXmas ? mood + "+x" : mood) + "|" + tx + "," + ty, t = moodTiles.get(k); if (t && t.v === version) continue; if (moodInflight.has(k) || tileWaiting(k)) continue; moodTile(mood, tx, ty); }
 }
 setInterval(preloadMap, 300);
 function drawMoods(ox, oy, x0, x1, y0, y1) {
@@ -888,7 +889,7 @@ async function loadTile(n) {
         tileWaits.delete(n.k);
         if (v === version) {
             const old = tiles.get(n.k); if (old && old.img.close) old.img.close();
-            tiles.set(n.k, { img, v });
+            tiles.set(n.k, { img, v }); tileGen++;
             firstDrawBar(); paint();
         } else if (img.close) img.close();
     } catch (e) {
@@ -994,13 +995,16 @@ function paint() {
     drawRect();
     if (walker) { drawWalker(); drawBookOver(ox, oy); }
     drawLive("over", ox, oy);
+    wakeLive();
 }
 /* ---------- things that move over the tiles (the rat, dust, the Basement) ----------
    paint() only runs when something asks, so anything animated registers here: { active(), under(ctx, ox, oy, now), over(ctx, ox, oy, now) }, either draw optional.
    under: after the tiles and doors, before the map's edge and the avatar. over: on top of everything. While any is active the map repaints each frame; a hidden tab doesn't run them. */
 const liveLayers = new Set(), liveClicks = new Set(); let liveFrame = 0;
 const liveOn = () => { for (const l of liveLayers) if (!l.still && (!l.active || l.active())) return true; return false; };
-function liveTick() { liveFrame = 0; if (document.hidden || !map || !liveOn()) return; paint(); liveFrame = requestAnimationFrame(liveTick); }
+/* paint() wakes them too, so a layer that's only active while its thing is on screen (the theatre's chase, the tree's glow) starts as soon as
+   the camera brings it into view; here paint() may have asked for the next frame already */
+function liveTick() { liveFrame = 0; if (document.hidden || !map || !liveOn()) return; paint(); if (!liveFrame) liveFrame = requestAnimationFrame(liveTick); }
 function wakeLive() { if (!liveFrame && !document.hidden && liveOn()) liveFrame = requestAnimationFrame(liveTick); }
 function drawLive(which, ox, oy) {
     if (!liveLayers.size) return; const now = performance.now();
@@ -1019,15 +1023,18 @@ for (const ev of ["pointerdown", "keydown", "wheel", "touchstart"]) document.add
 window.HallwayLive = {
     add(l) { liveLayers.add(l); wakeLive(); return () => liveLayers.delete(l); }, wake() { wakeLive(); if (map) paint(); },
     onFloor(f) { floorWatchers.add(f); return () => floorWatchers.delete(f); }, get floor() { return floorIn; },
-    get idleFor() { return performance.now() - lastActive; }, get walker() { return walker; }, get map() { return map; },
+    get idleFor() { return performance.now() - lastActive; }, get tileGen() { return tileGen; }, get walker() { return walker; }, get map() { return map; },
     mapPoint: (x, y, z) => P(x, y, z), doorName: d => doorName(d),
     /* the top of a wall at one of its tiles, as high as it stands there: null where there is no wall */
-    wallTop(l, axis, line, t) { const st = wallState(l, axis, line, t); if (st === "none") return null; const own = wallZ(l, { axis, line, at: axis === "x" ? t + .5 : t + 1 }) + (st === "half" ? HALF_WALL : WALL); if (st === "half") return own;
+    wallTop(l, axis, line, t) { const st = wallState(l, axis, line, t); if (st === "none") return null;
+        /* a drop (a step between floor heights) has no wall standing on it, only the step's face: nothing to hang from, as render/hw3.js has it (9 Nov scan, renderer finding 2) */
+        if (isDrop(l, axis, line, t)) return null; const own = wallZ(l, { axis, line, at: axis === "x" ? t + .5 : t + 1 }) + (st === "half" ? HALF_WALL : WALL); if (st === "half") return own;
         /* a full wall under the floor above goes on up to that floor's edge, as hw3 draws it (its "fill"): so where the floor above is raised, the top is higher there (8 Nov, his: the garland stayed level) */
         const up = map.levels.find(q => q.k === l.k + 1); if (!up) return own; const X = axis === "x" ? t : line, Y = axis === "x" ? line : t, A = axis === "x" ? [X, Y - 1] : [X - 1, Y], cov = hasFloor(up, A[0], A[1]) ? A : hasFloor(up, X, Y) ? [X, Y] : null;
         return cov ? levelZ(up) + wallHeightAt(up, cov[0], cov[1]) - 13 : own; },     /* that floor's underside, higher or lower than the wall's own */ get zoom() { return zoom; }, markActive,
-    /* for the things that move about the floor like a person: furniture in front cuts them, the time of day tints them. c is a 33 by 56 canvas, as the avatar's */
-    as(who, fn) { const me = walker; walker = who; try { fn(); } finally { walker = me; } }, cutInFront: (c, x0, y0) => cutInFront(c, x0, y0), tint: (c, w, h) => avatarTint(c, w, h),
+    /* for the things that move about the floor like a person: furniture in front cuts them, the time of day tints them. c is usually a 33 by 56
+       canvas, as the avatar's, and comes out hard-edged; soft (true) leaves a soft picture's alpha alone (the snow and the festoons) */
+    as(who, fn) { const me = walker; walker = who; try { fn(); } finally { walker = me; } }, cutInFront: (c, x0, y0, soft) => cutInFront(c, x0, y0, soft), tint: (c, w, h) => avatarTint(c, w, h),
     /* where a wall item's picture goes on the map, and a piece's picture and where it's drawn from (live-leet.js) */
     wallItemRect: (l, q) => wallItemRect(l, q), pieceOf: p => pieceOf(p), tileZ: (l, x, y) => tileZ(l, x, y),
     tileFree(l) { const so = solid(l), hs = holes(l), sl = stairLevels().slots.get(l); return (x, y) => hasFloor(l, x, y) && !so.has(x + "," + y) && !hs.some(h => inRect(h, x, y)) && !(sl && sl.has(x + "," + y)); },
@@ -1035,7 +1042,7 @@ window.HallwayLive = {
     view() { const hw = canvas.width / zoom / 2, hh = canvas.height / zoom / 2; return { x0: cam.x - hw, x1: cam.x + hw, y0: cam.y - hh, y1: cam.y + hh, w: canvas.width, h: canvas.height }; },
     camera(x, y) { cam.x = x; cam.y = y; clampCam(); }, get cam() { return { x: cam.x, y: cam.y }; }, holdCamera(on) { camHeld = on; if (!on) followNow(); }, setZoom: z => setZoom(z, canvas.width / 2, canvas.height / 2),
     realNight: () => realNight(), enterRoom(target, axis) { if (!walker || roomSession) return false; const me = walker; me.busy = true; me.pts = []; me.walking = false; roomSession = RoomView.enter($("stage"), { room: target.room, facts: target.facts, edge: axis === "x" ? "y" : "x", zoom: () => zoom, wheel: d => setZoom(zoom + (d < 0 ? 1 : -1)), onLeave: () => { roomSession.close(); roomSession = null; me.busy = false; paint(); } }); return true; },
-    editorApi: () => ({ snapshot, changed, setTool, paint, flash: t => flash(t), setFloor: l => setFloor(l), toPx: (cx, cy) => toPx(cx, cy), tileAt(cx, cy) { const [px, py] = toPx(cx, cy), u = floorUnder(px, py); return u ? { level: u[0].stair ? u[0].stair.low.id : u[0].id, x: u[1], y: u[2] } : null; }, get tool() { return tool; }, pickOnce(f) { pickNext = f || null; if (f) flash("Click the spot on the map. Esc cancels."); }, get level() { return level; } }),
+    editorApi: () => ({ lostSpotReachable: (l, x, y) => lostSpotReachable(l, x, y), snapshot, changed, setTool, paint, flash: t => flash(t), setFloor: l => setFloor(l), toPx: (cx, cy) => toPx(cx, cy), tileAt(cx, cy) { const [px, py] = toPx(cx, cy), u = floorUnder(px, py); return u ? { level: u[0].stair ? u[0].stair.low.id : u[0].id, x: u[1], y: u[2] } : null; }, get tool() { return tool; }, pickOnce(f) { pickNext = f || null; if (f) flash("Click the spot on the map. Esc cancels."); }, get level() { return level; } }),
     onClick(f) { liveClicks.add(f); return () => liveClicks.delete(f); },
     walkTo(l, x, y, then) { if (!walker || walker.busy) return false; const s = walkerStart(), path = graphFrom(s.l, s.x, s.y, [l, x, y]); if (!path) return false; followRoute(path, s.here, then || null); return true; },
     get graphLevels() { return stairLevels().list; },
@@ -2240,6 +2247,8 @@ canvas.addEventListener("pointerdown", e => {
     if (tool === "walk") { walkPress(px, py); return; }
     if (tool === "halfwall" || tool === "nowall" || tool === "addwall") { drag = { kind: "halfwall" }; halfBrush(drag, px, py); return; }
     if (tool === "swag") { drag = { kind: "swag" }; swagBrush(drag, px, py); return; }
+    /* not on a drop (a step between floor heights): there's no wall there to hang it from, and it floated a whole wall up (9 Nov scan, renderer finding 2) */
+    if (tool === "garland" || tool === "garland2" || tool === "festoon") { const w = wallAt(px, py, level, true); if (w && w.drop) { flash("That's a step, not a wall: hang it on a wall."); return; } }
     if (tool === "garland" || tool === "garland2") { const w = wallAt(px, py, level, true); if (!w) return; const t = wallTile(w); if (tool === "garland2") { snapshot(); const g = { axis: w.axis, line: w.line, a: t, b: t + 2 }; (level.garlands = level.garlands || []).push(g); changed(); select({ type: "garland", l: level, o: g }); return; } drag = { kind: "garland", axis: w.axis, line: w.line, t0: t }; window.HallwayGarland.draft = { l: level, axis: w.axis, line: w.line, a: t, b: t + 1 }; paint(); return; }
     if (tool === "festoon") { const w = wallAt(px, py, level, true); if (!w) return; const t = wallTile(w); drag = { kind: "festoon", axis: w.axis, line: w.line, t0: t, t1: t }; window.HallwayFestoon.draft = { l: level, axis: w.axis, line: w.line, a: t, b: t + 1, h: 118, colour: lastFestoon.colour, twinkle: lastFestoon.twinkle }; paint(); return; }
     if (tool === "steps") {
@@ -2269,8 +2278,8 @@ canvas.addEventListener("pointermove", e => {
     if (drag && drag.kind === "rubout") { rubOut(drag, px, py); return; }
     if (drag && drag.kind === "halfwall") { halfBrush(drag, px, py); return; }
     if (drag && drag.kind === "swag") { swagBrush(drag, px, py); return; }
-    if (drag && drag.kind === "garland") { const w = wallAt(px, py, level, true); if (w && w.axis === drag.axis && w.line === drag.line) { const t1 = wallTile(w), dr = window.HallwayGarland.draft; dr.a = Math.min(drag.t0, t1); dr.b = Math.max(drag.t0, t1) + 1; paint(); } return; }
-    if (drag && drag.kind === "festoon") { const w = wallAt(px, py, level, true); if (w && w.axis === drag.axis && w.line === drag.line) { drag.t1 = wallTile(w); const dr = window.HallwayFestoon.draft; dr.a = Math.min(drag.t0, drag.t1); dr.b = Math.max(drag.t0, drag.t1) + 1; paint(); } return; }
+    if (drag && drag.kind === "garland") { const w = wallAt(px, py, level, true); if (w && !w.drop && w.axis === drag.axis && w.line === drag.line) { const t1 = wallTile(w), dr = window.HallwayGarland.draft; dr.a = Math.min(drag.t0, t1); dr.b = Math.max(drag.t0, t1) + 1; paint(); } return; }
+    if (drag && drag.kind === "festoon") { const w = wallAt(px, py, level, true); if (w && !w.drop && w.axis === drag.axis && w.line === drag.line) { drag.t1 = wallTile(w); const dr = window.HallwayFestoon.draft; dr.a = Math.min(drag.t0, drag.t1); dr.b = Math.max(drag.t0, drag.t1) + 1; paint(); } return; }
     if (drag && drag.kind === "edgebrush") { edgeBrush(drag, px, py); return; }
     if (drag && drag.kind === "move") { moveSelected(drag, px, py); return; }
     if (!drag && (tool === "select" || tool === "walk")) {
@@ -2589,6 +2598,22 @@ function liftTile() {
     if (le) { const m = entranceTiles(e)[1]; return e.axis === "x" ? [le, m, e.line] : [le, e.line, m]; }
     const q = map.lifts[0], l = q && byId(q.level); if (l) return [l, q.x + 1, q.y];
     const g = map.levels.find(l => l.k === 0 && l.cells.length) || map.levels.find(l => l.cells.length), c = g.cells[0].split(",").map(Number); return [g, c[0] * 2, c[1] * 2];
+}
+/* Everywhere a Habbo can get to: on foot from where they arrive, and from any lift once they can walk to one, since any lift goes to all the
+   others (9 Nov scan, content finding 10: the check walked only from the entrance with the lift doors shut, so a floor reached only by lift,
+   the Basement, read as cut off). Worked out again after every change. */
+let reachMemo = null;
+function reachAll() {
+    if (reachMemo && reachMemo.map === map && reachMemo.at === lastChangeAt) return reachMemo.set;
+    const [l, x, y] = liftTile(), reached = graphFrom(l, x, y), fronts = map.lifts.map(q => [byId(q.level), q.x + 1, q.y]).filter(f => f[0]);
+    if (fronts.some(f => reached.has(nodeKey(f[0], f[1], f[2])))) for (const f of fronts) if (!reached.has(nodeKey(f[0], f[1], f[2]))) for (const k of graphFrom(f[0], f[1], f[2]).keys()) if (!reached.has(k)) reached.set(k, 0);
+    reachMemo = { map, at: lastChangeAt, set: reached }; return reached;
+}
+/* A Lost Property spot is fine if a Habbo can get to it, or, under furniture, to a free tile next to it, as live-lost.js picks it up */
+function lostSpotReachable(l, x, y) {
+    const reached = reachAll(), so = solid(l), hs = holes(l), sl = stairLevels().slots.get(l), free = (X, Y) => hasFloor(l, X, Y) && !so.has(X + "," + Y) && !hs.some(h => inRect(h, X, Y)) && !(sl && sl.has(X + "," + Y));
+    if (free(x, y)) return reached.has(nodeKey(l, x, y));
+    return [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [-1, -1], [1, -1], [-1, 1]].some(([i, j]) => free(x + i, y + j) && reached.has(nodeKey(l, x + i, y + j)));
 }
 /* The camera. While it's following it eases toward the Habbo at a rate that doesn't depend on the
    frame rate, and if you've dragged it away it glides back the same way once you let go. */
@@ -3190,7 +3215,8 @@ function inFrontOfYou(X, Y, ax, ay) {
     if (youBehind !== itBehind) return youBehind;
     return X + Y > ax + ay;
 }
-function cutInFront(c, x0, y0) {
+/* soft: keep the canvas's own soft pixels (the window snow, the festoons' glow, halos and shadow); everything else gets hard edges, as below */
+function cutInFront(c, x0, y0, soft) {
     const ax = walker.x, ay = walker.y;
     /* still on the flight's last tile as the next step heads onto a floor: it's still the stairs that count */
     const onStair = walker.st || walker.l.stair || null, l = onStair ? onStair.low : walker.l, z = levelZ(l);
@@ -3293,8 +3319,11 @@ function cutInFront(c, x0, y0) {
     }
     if (inDoor && inDoor.line - ((inDoor.axis === "x" ? ay : ax) + .5) > .05) { const a = doorPoint(l, inDoor), f = inDoor.axis === "x" ? 1 : -1; c.globalCompositeOperation = "destination-in"; c.beginPath(); c.moveTo(a[0], a[1] + 2); c.lineTo(a[0] + 32, a[1] + f * 16 + 2); c.lineTo(a[0] + 32, a[1] + f * 16 - 62); c.lineTo(a[0], a[1] - 62); c.closePath(); c.fill(); }
     c.restore();
-    /* hard edges, as everything else here has */
-    const d = c.getImageData(0, 0, 33, 56); for (let i = 3; i < d.data.length; i += 4) d.data[i] = d.data[i] > 127 ? 255 : 0; c.putImageData(d, 0, 0);
+    /* hard edges, as everything else here has: over the whole canvas it was given (9 Nov scan, page finding 2: it was always the avatar's
+       33 by 56 in the top left, so a bigger canvas came out hard in that corner and soft everywhere else). Soft pictures skip it: they're
+       meant to be see-through, and only the cut's own edge is left a little soft */
+    if (soft) return;
+    const W = c.canvas.width, H = c.canvas.height, d = c.getImageData(0, 0, W, H); for (let i = 3; i < d.data.length; i += 4) d.data[i] = d.data[i] > 127 ? 255 : 0; c.putImageData(d, 0, 0);
 }
 function drawWalker() {
     const now = performance.now(); if (walker.drink && now > walker.drink.until) walker.drink = null;
@@ -3381,7 +3410,7 @@ function runChecks() {
     /* floor past the map's edges: it isn't in the published picture, and the camera stops at the edges, so walking there is walking off screen */
     if (map.rect) { const R = map.rect; for (const lv of map.levels) { if (!lv.cells || !lv.cells.length) continue; const z = levelZ(lv); let n = 0, first = null; for (const c of lv.cells) { const i = c.indexOf(","), cx = +c.slice(0, i), cy = +c.slice(i + 1), X = (cx - cy) * 32, Y = (cx + cy) * 16 - z; if (X - 32 < R.x || X + 32 > R.x + R.w || Y < R.y || Y + 32 > R.y + R.h) { n++; if (!first) first = [cx * 2, cy * 2]; } }
         if (n) card(`${n} squares of ${lv.name} are past the map's edges, so nobody can see them. Widen the edges with Map edges, under Tidy. Show one.`, "err", () => { level = lv; buildLevels(); const p = P(first[0] + 1, first[1] + 1, levelZ(lv)); cam.x = p[0]; cam.y = p[1]; paint(); }); } }
-    const [l, x, y] = liftTile(), reached = graphFrom(l, x, y);
+    const reached = reachAll();
     const cut = [];
     for (const lv of map.levels) for (const d of (lv.doors || [])) {
         if (d.spare) continue;
@@ -3407,7 +3436,7 @@ function runChecks() {
     }
     for (const c of hidden.slice(0, 8)) card(`${doorName(c.d) || "A door"} on ${c.lv.name} is ${c.share > .6 ? "mostly" : "partly"} hidden by the floor above. Show it.`, "err", () => { level = c.lv; buildLevels(); const a = P(c.d.axis === "x" ? c.d.at : c.d.line, c.d.axis === "x" ? c.d.line : c.d.at, levelZ(c.lv) + 40); cam.x = a[0]; cam.y = a[1]; setTool("select"); select({ type: "door", l: c.lv, o: c.d }); });
     if (hidden.length > 8) card(`And ${hidden.length - 8} more doors are hidden by the floor above.`, "err");
-    if (!cut.length) card("Every door can be reached from the lift", "ok");
+    if (!cut.length) card("Every door can be reached from the entrance, on foot or by lift", "ok");
     for (const lv of map.levels) {
         if (!lv.rise) continue;
         const seen = new Set();
@@ -3419,8 +3448,12 @@ function runChecks() {
             if (!hasWay) { const [cx, cy] = part[0].split(",").map(Number), X = cx * 2, Y = cy * 2; card(`A part of ${lv.name} at ${h > 0 ? "+" : ""}${h} has no steps, so nobody can walk onto it. Show it.`, "err", () => { level = lv; buildLevels(); const a = P(X, Y, levelZ(lv) + h); cam.x = a[0]; cam.y = a[1]; clampCam(); paint(); }); }
         }
     }
-    for (const c of cut.slice(0, 8)) card(`A door on ${c.lv.name} can't be reached from the lift. Show it.`, "err", () => { level = c.lv; buildLevels(); const a = P(c.tx, c.ty, levelZ(c.lv)); cam.x = a[0]; cam.y = a[1]; setTool("select"); select({ type: "door", l: c.lv, o: c.d }); });
+    for (const c of cut.slice(0, 8)) card(`A door on ${c.lv.name} can't be reached from the entrance, on foot or by lift. Show it.`, "err", () => { level = c.lv; buildLevels(); const a = P(c.tx, c.ty, levelZ(c.lv)); cam.x = a[0]; cam.y = a[1]; setTool("select"); select({ type: "door", l: c.lv, o: c.d }); });
     if (cut.length > 8) card(`And ${cut.length - 8} more doors can't be reached.`, "err");
+    /* a Lost Property spot nobody can get to, or under furniture with no free tile beside it that anyone can get to, can only end in a miss (9 Nov scan, content finding 1) */
+    { const stuck = []; for (const s of (map.lostSpots || [])) { const lv = byId(s.level); if (lv && lv.k >= 0 && !lostSpotReachable(lv, s.x, s.y)) stuck.push({ lv, s }); }
+      for (const c of stuck.slice(0, 8)) card(`A Lost Property spot on ${c.lv.name} at ${c.s.x}, ${c.s.y} can't be picked up: nobody can reach it, or a free tile next to it. Move or remove it in the Lost Property tab. Show it.`, "err", () => { level = c.lv; buildLevels(); const a = P(c.s.x + .5, c.s.y + .5, nodeZ(c.lv, c.s.x, c.s.y) || levelZ(c.lv)); cam.x = a[0]; cam.y = a[1] - 20; clampCam(); paint(); });
+      if (stuck.length > 8) card(`And ${stuck.length - 8} more Lost Property spots can't be picked up.`, "err"); }
     for (const lv of map.levels) if (lv.k > 0 && !map.stairs.some(s => s.up === lv.id)) card(`There are no stairs up to ${lv.name}`, "err");
     for (const lv of map.levels) if (lv.k < 0 && !map.stairs.some(s => s.low === lv.id)) card(`There are no stairs up from ${lv.name}`, "err");
     if (lastReport && lastReport.lost && lastReport.lost.length) card(`${lastReport.lost.length} things aren't on a wall any more: ${lastReport.lost.slice(0, 4).join(", ")}`, "err");

@@ -40,7 +40,7 @@
         const id = nextId++; waiting.set(id, { res, rej, w }); w.busy++; w.postMessage({ ...job, id });
     });
     /* one drawing thread: it reports its jobs back, and if it dies, its jobs fail rather than wait for ever */
-    let startBase = null;
+    let startBase = null, art = null;      // art: the first thread's art, fetched and unpacked once and handed to every other (9 Nov scan, build 3)
     function makeWorker() {
         const w = new Worker("renderer-worker.js"); w.busy = 0; w.maps = new Set();
         w.onmessage = e => { const m = e.data, q = waiting.get(m.id); if (!q) return; waiting.delete(m.id); w.busy--; if (m.error) q.rej(new Error(m.error)); else q.res(m); };
@@ -48,7 +48,7 @@
         return w;
     }
     /* a fresh one in place of one that's died, already told where its art is */
-    function freshWorker() { const w = makeWorker(); workers.push(w); if (startBase) ask(w, { type: "start", base: startBase, names }).catch(() => { w.dead = true; }); return w; }
+    function freshWorker() { const w = makeWorker(); workers.push(w); if (startBase) ask(w, { type: "start", base: startBase, names, art }).catch(() => { w.dead = true; }); return w; }
     const retire = w => { try { w.terminate(); } catch (e) { /* gone */ } w.dead = true; const i = workers.indexOf(w); if (i >= 0) workers.splice(i, 1); };
     function startWorkers() {
         if (started) return started;
@@ -58,13 +58,13 @@
                 const clean = window.FurniParts.mazeName; names = rooms.filter(q => q && q.name).map(q => clean(q.name)).sort((a, c) => a.replace(/[^A-Za-z0-9]/g, "").toLowerCase().localeCompare(c.replace(/[^A-Za-z0-9]/g, "").toLowerCase()));
                 for (const q of rooms) if (q && q.name && q.difficulty) difficulty[clean(q.name)] = String(q.difficulty).toLowerCase().replace(/\s+/g, "-");
             } catch (e) { names = []; namesFailed = true; }
-            const base = new URL(".", location.href).href; startBase = base;
-            for (let i = 0; i < POOL; i++) {
-                const w = makeWorker();
-                workers.push(w);
-            }
-            const answers = await Promise.all(workers.map(w => ask(w, { type: "start", base, names })));
-            font = answers[0].font || {};
+            const base = new URL(".", location.href).href;
+            /* the first thread fetches the art; the rest are handed its copy, with no fetching of their own */
+            const first = makeWorker(); workers.push(first);
+            const a = await ask(first, { type: "start", base, names, wantArt: true });
+            art = a.art; font = a.font || {}; startBase = base;
+            for (let i = 1; i < POOL; i++) workers.push(makeWorker());
+            await Promise.all(workers.slice(1).map(w => ask(w, { type: "start", base, names, art })));
         })();
         started.catch(() => { for (const w of workers.splice(0)) { try { w.terminate(); } catch (e) { /* gone */ } } started = null; });      // the next try starts clean
         return started;
@@ -123,7 +123,8 @@
             const m = q.searchParams.get("m") || undefined, tx = Number(q.searchParams.get("tx")), ty = Number(q.searchParams.get("ty")), w = idle();
             if (opts && opts.signal && opts.signal.aborted) throw new DOMException("Aborted", "AbortError");
             if (!w.maps.has(v)) { w.maps.add(v); await ask(w, { type: "map", v, text: ver.text }); }
-            const a = await ask(w, { type: "tile", v, x: tx * 512, y: ty * 512, w: 512, h: 512, light: m, liftOpen: ver.liftOpen, cut: ver.cut, names });
+            /* with the same margin as Publish (9 Nov scan, renderer 4: without it tile 4,1 lost a stair-rail stub that's drawn from the square beside it) */
+            const a = await ask(w, { type: "tile", v, x: tx * 512, y: ty * 512, w: 512, h: 512, light: m, liftOpen: ver.liftOpen, cut: ver.cut, names, pad: 96 });
             if (a.needMap) { w.maps.delete(v); return new Response("", { status: 503 }); }
             return new Response(await pngOf(a.w, a.h, a.d), { status: 200, headers: { "Content-Type": "image/png" } });
         }
@@ -150,8 +151,11 @@
             const text = savedText, map = JSON.parse(text), base = await sha(baseText !== null ? baseText : text);      // one map all the way through, whatever's saved meanwhile
             const ways = [...new Set(map.levels.map(l => l.colour ? "hex:" + l.colour : l.way))];
             const known = new Set(((await (await realFetch(`${FN}?what=known`, admin())).json()).known) || []);
-            const hasXmas = map.levels.some(l => (l.props || []).some(p => /^(xmas|gift\d|snowman)/.test(p.k)) || (l.wallItems || []).some(q => /^i_(garland|window|bunting|festoon|wreath|stockings|holly|canes)/.test(q.k)));
-            const onlyBasement = window.FurniParts.basementTiles(map), DRAW = [...MOODS, "failing", ...(hasXmas ? MOODS.map(m => m + "+x") : [])];
+            /* Christmas from the data, as publish.js has it (9 Nov scan: garlands, the giant tree and i_swag didn't count), and the
+               Basement's blackout with Christmas where the two meet, so its garlands and window snow go dark rather than vanish */
+            const hasXmas = window.FurniParts.hasXmas(map), xmasTiles = hasXmas ? window.FurniParts.xmasTiles(map) : new Set();
+            const onlyBasement = window.FurniParts.basementTiles(map), failingX = [...onlyBasement].filter(k => xmasTiles.has(k));
+            const DRAW = [...MOODS, "failing", ...(hasXmas ? MOODS.map(m => m + "+x") : []), ...(failingX.length ? ["failing+x"] : [])];
             while (workers.length < POOL) freshWorker();
             const tiles = {}, lift = {};
             const send = async (blob) => {
@@ -167,8 +171,8 @@
             /* Square by square, every thread at once: each square is drawn with a margin round it, so what stands just outside it still shades it, and the result is the same picture as drawing the whole map at once (checked for day and night, 9 Nov). Small, so memory stays low */
             const PAD = 96, v = "publish-" + Date.now(), rect = map.rect, squares = [];
             for (let ty = Math.floor(rect.y / 512) - 1; ty <= Math.floor((rect.y + rect.h) / 512) + 1; ty++) for (let tx = Math.floor(rect.x / 512) - 1; tx <= Math.floor((rect.x + rect.w) / 512) + 1; tx++) squares.push(tx + "," + ty);
-            const xmasTiles = window.FurniParts.xmasTiles(map), jobs = [];
-            for (const light of DRAW) { const want = light === "failing" ? [...onlyBasement] : light.includes("+x") ? [...xmasTiles] : squares; for (const key of want) jobs.push([light, key]); }
+            const jobs = [];
+            for (const light of DRAW) { const want = light === "failing" ? [...onlyBasement] : light === "failing+x" ? failingX : light.includes("+x") ? [...xmasTiles] : squares; for (const key of want) jobs.push([light, key]); }
             publishing.of = jobs.length + ways.length * 6 + 1;
             const blank = d => { for (let k = 0; k < d.length; k += 4) if ((d[k] || d[k + 1] || d[k + 2]) && !(d[k] === 7 && d[k + 1] === 6 && d[k + 2] === 10)) return false; return true; };
             const solid = d => { const o = new Uint8Array(d.length); o.set(d); for (let k = 0; k < o.length; k += 4) { if (o[k] === 7 && o[k + 1] === 6 && o[k + 2] === 10) o[k] = o[k + 1] = o[k + 2] = 0; o[k + 3] = 255; } return o; };
@@ -187,7 +191,7 @@
                     }
                 }));
             } finally { for (const w of crew) retire(w); }
-            /* the failing lights and Christmas only where there's something under them */
+            /* the failing lights and Christmas only where there's something under them (failing+x goes by the failing square) */
             for (const k of Object.keys(tiles)) { const m = /^(failing|[a-z]+\+x)\|(.*)$/.exec(k); if (!m) continue; const plain = (m[1] === "failing" ? "night" : m[1].replace("+x", "")) + "|" + m[2]; if (!tiles[plain]) delete tiles[k]; }
             for (const k of Object.keys(tiles)) { if (k.includes("+x|") && tiles[k] === tiles[k.replace("+x", "")]) delete tiles[k]; }
             for (const way of ways) {

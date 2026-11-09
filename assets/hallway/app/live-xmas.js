@@ -26,7 +26,8 @@
         const o = { at, wide, H2, flakes, box: [x0 - 2, y0 - 2, x1 + 3, y1 + 3], who: flip ? { x: Math.floor(q.at - wide / 32), y: q.line } : { x: q.line, y: Math.floor(q.at - wide / 32) } };
         if (views.size > 40) views.clear(); views.set(key, o); return o;
     }
-    const snowCv = document.createElement("canvas"), sg = snowCv.getContext("2d");
+    /* read back each frame (cut and tinted), so kept where reading is cheap (9 Nov scan, page finding 4) */
+    const snowCv = document.createElement("canvas"), sg = snowCv.getContext("2d", { willReadFrequently: true });
     LIVE.add({ active: () => !!window.hallwayXmas && windows().length > 0,
         under(c, ox, oy, now) { const t = now / 1000;
             for (const { q, z, l } of windows()) {
@@ -39,7 +40,7 @@
                     put(0, 0, f.a); if (f.big) { put(1, 0, .55); put(0, 1, .55); put(1, 1, .3); }
                 }
                 /* what stands in front of the window hides the snow behind it, and the time of day tints it */
-                LIVE.as({ x: V.who.x, y: V.who.y, z, l, dir: 2, frame: 0, st: null }, () => { LIVE.cutInFront(sg, bx0, by0); LIVE.tint(sg, w, h); });
+                LIVE.as({ x: V.who.x, y: V.who.y, z, l, dir: 2, frame: 0, st: null }, () => { LIVE.cutInFront(sg, bx0, by0, true); LIVE.tint(sg, w, h); });
                 c.save(); c.translate(ox, oy); c.scale(LIVE.zoom, LIVE.zoom); c.imageSmoothingEnabled = false; c.drawImage(snowCv, 0, 0, w, h, bx0, by0, w, h); c.restore();
             }
         } });
@@ -76,8 +77,8 @@
     function onScreen(l, f, u, down) { const E = edgeOf(l, f), e = Math.max(0, Math.min(E.length - 1, u / 16)), i = Math.min(E.length - 2, Math.floor(e)), k = e - i, top = E.length > 1 ? E[i] + (E[i + 1] - E[i]) * k : E[0], along = f.a + u / 16, z = top - HANG - down; return f.axis === "x" ? LIVE.mapPoint(along, f.line, z) : LIVE.mapPoint(f.line, along, z); }
     function nightness() { const m = LIVE.mood(); if (!m) return .6; const n = q => q === "night" ? 1 : q === "dusk" || q === "dawn" || q === "failing" ? .7 : .2; return n(m.a) * (1 - m.f) + n(m.b) * m.f; }
     function drawString(c, l, f, t, night, ghost, glow) {
-        glow = glow || c; const s = shape(f), pal = COL[f.colour] || COL.amber, px = (X, Y, cc, al) => { c.globalAlpha = al === undefined ? 1 : al; c.fillStyle = `rgb(${cc[0]},${cc[1]},${cc[2]})`; c.fillRect(Math.round(X), Math.round(Y), 1, 1); };
-        if (ghost) c.globalAlpha = .7;
+        glow = glow || c; const s = shape(f), pal = COL[f.colour] || COL.amber, px = (X, Y, cc, al) => { c.globalAlpha = (al === undefined ? 1 : al) * (ghost ? .7 : 1); c.fillStyle = `rgb(${cc[0]},${cc[1]},${cc[2]})`; c.fillRect(Math.round(X), Math.round(Y), 1, 1); };
+        /* the one being laid is a ghost: px() sets its own alpha for every pixel, so the .7 is in there (9 Nov scan, page finding 5) */
         /* the flex, standing a little off the wall: its shadow first, a few pixels down */
         for (const [u, d] of s.pts) { const p = onScreen(l, f, u, -d); px(p[0], p[1] + 3, [0, 0, 0], .18 * (1 - night * .6)); }
         for (const [u, d] of s.pts) { const p = onScreen(l, f, u, -d); px(p[0], p[1], [24, 20, 16]); if (Math.round(u * 2) % 8 === 0) px(p[0], p[1] - 1, [70, 60, 50]); }
@@ -86,7 +87,7 @@
         s.bulbs.forEach(([u, d], i) => {
             const p = onScreen(l, f, u, -d), X = Math.round(p[0]), Y = Math.round(p[1]), col = pal[i % pal.length], L = level(f, i, t);
             /* light on the wall round it, stronger after dark */
-            if (night > .3) { glow.globalCompositeOperation = "lighter"; glow.globalAlpha = 1; const g = glow.createRadialGradient(X + .5, Y + 6, 0, X + .5, Y + 6, 16); g.addColorStop(0, `rgba(${col.lit[0]},${col.lit[1]},${col.lit[2]},${.32 * L * night})`); g.addColorStop(.4, `rgba(${col.lit[0]},${col.lit[1]},${col.lit[2]},${.11 * L * night})`); g.addColorStop(1, "rgba(0,0,0,0)"); glow.fillStyle = g; glow.fillRect(X - 16, Y - 10, 33, 33); glow.globalCompositeOperation = "source-over"; }
+            if (night > .3) { glow.globalCompositeOperation = "lighter"; glow.globalAlpha = ghost ? .7 : 1; const g = glow.createRadialGradient(X + .5, Y + 6, 0, X + .5, Y + 6, 16); g.addColorStop(0, `rgba(${col.lit[0]},${col.lit[1]},${col.lit[2]},${.32 * L * night})`); g.addColorStop(.4, `rgba(${col.lit[0]},${col.lit[1]},${col.lit[2]},${.11 * L * night})`); g.addColorStop(1, "rgba(0,0,0,0)"); glow.fillStyle = g; glow.fillRect(X - 16, Y - 10, 33, 33); glow.globalCompositeOperation = "source-over"; }
             /* the homepage's C9: a socket, the glass widening and closing to a point, a dark rim on the right, a highlight on the left */
             const SOCK = [26, 32, 26], SOCK_HI = [70, 84, 70], body = mix(col.dark, col.lit, L), edge = mix(mix(col.dark, [0, 0, 0], .35), col.dark, L), hi = mix(body, col.hi, L);
             px(X, Y + 1, SOCK); px(X - 1, Y + 2, SOCK_HI); px(X, Y + 2, SOCK_HI); px(X + 1, Y + 2, SOCK);
@@ -100,7 +101,7 @@
         c.globalAlpha = 1;
     }
     window.HallwayFestoon = { shape, onScreen, draft: null };
-    const strCv = document.createElement("canvas"), sgx = strCv.getContext("2d"), glowCv = document.createElement("canvas"), ggx = glowCv.getContext("2d");
+    const strCv = document.createElement("canvas"), sgx = strCv.getContext("2d", { willReadFrequently: true }), glowCv = document.createElement("canvas"), ggx = glowCv.getContext("2d", { willReadFrequently: true });
     function drawFestoons(c, ox, oy, now) {
         if (!window.hallwayXmas) return; const l = LIVE.floor || (!window.HALLWAY_PLAY && LIVE.editorApi && LIVE.editorApi().level); if (!l) return; const list = runsOn(l), d = window.HallwayFestoon.draft; if (!list.length && !d) return;
         const t = now / 1000, night = nightness(); c.save(); c.translate(ox, oy); c.scale(LIVE.zoom, LIVE.zoom); c.imageSmoothingEnabled = false;
@@ -113,7 +114,7 @@
             drawString(sgx, l, f, t, night, false, ggx);
             for (const g of [sgx, ggx]) g.setTransform(1, 0, 0, 1, 0, 0);
             const who = f.axis === "x" ? { x: f.a, y: f.line } : { x: f.line, y: f.a }, z = LIVE.nodeZ(l, who.x, who.y) || l.k * 163;
-            LIVE.as({ x: who.x, y: who.y, z, l, dir: 2, frame: 0, st: null }, () => { LIVE.cutInFront(sgx, x0, y0); LIVE.cutInFront(ggx, x0, y0); });
+            LIVE.as({ x: who.x, y: who.y, z, l, dir: 2, frame: 0, st: null }, () => { LIVE.cutInFront(sgx, x0, y0, true); LIVE.cutInFront(ggx, x0, y0, true); });
             c.drawImage(strCv, 0, 0, w, h, x0, y0, w, h); c.globalCompositeOperation = "lighter"; c.drawImage(glowCv, 0, 0, w, h, x0, y0, w, h); c.globalCompositeOperation = "source-over";
         }
         if (d && d.l === l) drawString(c, l, d, t, night, true);
@@ -168,14 +169,19 @@
         im.src = "art/wall/" + fp.lights;
     }
     const trees = () => { if (!window.hallwayXmas) return []; const l = LIVE.floor || (LIVE.editorApi && LIVE.editorApi().level); if (!l) return []; return (l.props || []).filter(p => p.k === "statue").map(p => ({ l, p })); };
+    /* the tree's picture on the map, and whether any of it is on screen */
+    const treeAt = ({ l, p }) => { const a = LIVE.mapPoint(p.x + 1, p.y + 1, LIVE.nodeZ(l, p.x, p.y) || 0); return [Math.round(a[0]) - fp.ox, Math.round(a[1]) - fp.oy]; };
+    const seen = (X0, Y0, v) => !(X0 > v.x1 || X0 + fp.w < v.x0 || Y0 > v.y1 || Y0 + fp.h < v.y0);
     LIVE.add({
-        active: () => { if (!window.hallwayXmas) return false; load(); return !!bulbs && trees().length > 0; },
+        /* only while the tree is on screen (9 Nov scan, page finding 1: at Christmas it kept the whole of Ground repainting every frame);
+           paint() wakes it again when the camera brings it into view */
+        active: () => { if (!window.hallwayXmas) return false; load(); if (!bulbs || !fp) return false; const ts = trees(); if (!ts.length) return false; const v = LIVE.view(); return ts.some(q => { const [X0, Y0] = treeAt(q); return seen(X0, Y0, v); }); },
         under(c, ox, oy, now) {
             if (!bulbs || !fp) return; const t = now / 1000, v = LIVE.view();
             c.save(); c.translate(ox, oy); c.scale(LIVE.zoom, LIVE.zoom); c.globalCompositeOperation = "lighter";
-            for (const { l, p } of trees()) {
-                const a = LIVE.mapPoint(p.x + 1, p.y + 1, LIVE.nodeZ(l, p.x, p.y) || 0), X0 = Math.round(a[0]) - fp.ox, Y0 = Math.round(a[1]) - fp.oy;
-                if (X0 > v.x1 || X0 + fp.w < v.x0 || Y0 > v.y1 || Y0 + fp.h < v.y0) continue;
+            for (const q of trees()) {
+                const [X0, Y0] = treeAt(q);
+                if (!seen(X0, Y0, v)) continue;
                 for (const b of bulbs) {
                     /* warm, never cold: the bulb's own colour pulled towards a filament's amber, and a slow breath of 70% to 100% */
                     const k = .7 + .3 * (.5 + .5 * Math.sin((t / b.per + b.ph) * Math.PI * 2)), col = [Math.round(b.c[0] * .55 + 255 * .45), Math.round(b.c[1] * .55 + 176 * .45), Math.round(b.c[2] * .55 + 86 * .45)];
