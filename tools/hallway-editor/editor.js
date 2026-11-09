@@ -844,7 +844,11 @@ async function newVersion() {
         /* while a sign's being dragged, the art leaves it out */
         const liveNow = live && !live.ending ? live.hit.o : null, keep = liveNow && liveNow.sign;
         if (liveNow) liveNow.sign = { ...keep, hide: true };
-        const text = JSON.stringify({ map: { ...map, rooms: undefined }, liftOpen: isOn("liftOpen"), cut: seeCut !== null ? { level: level.id, z: levelZ(level) + seeCut } : undefined });
+        /* and while a piece of furniture is dragged, the art leaves it out: one redraw when the drag starts, not one per tile it crosses, and
+           its ghost follows the mouse in the meantime (10 Nov scan, his: no ghost when moving, and moving felt slow) */
+        const held = drag && drag.kind === "move" && drag.moved && (drag.hit.type === "prop" || drag.hit.type === "tele") ? drag.hit : null, heldList = held && (held.type === "prop" ? held.l.props : held.l.teles), heldAt = heldList ? heldList.indexOf(held.o) : -1;
+        if (heldAt >= 0) heldList.splice(heldAt, 1);
+        let text; try { text = JSON.stringify({ map: { ...map, rooms: undefined }, liftOpen: isOn("liftOpen"), cut: seeCut !== null ? { level: level.id, z: levelZ(level) + seeCut } : undefined }); } finally { if (heldAt >= 0) heldList.splice(heldAt, 0, held.o); }
         if (liveNow) liveNow.sign = keep;
         const r = await fetch("/api/version", { method: "POST", headers: { "Content-Type": "application/json" }, body: text });
         if (!r.ok) throw new Error("version " + r.status);
@@ -1157,10 +1161,10 @@ function snapRect(a, b) {
     if (tool === "rug" || tool === "smallfloor") return { x0: Math.floor(x0), x1: Math.floor(x1) + 1, y0: Math.floor(y0), y1: Math.floor(y1) + 1 };
     return { x0: Math.floor(x0 / 2) * 2, x1: (Math.floor(x1 / 2) + 1) * 2, y0: Math.floor(y0 / 2) * 2, y1: (Math.floor(y1 / 2) + 1) * 2 };
 }
-const FURNI = ["leetstand", "leetstand2", "barstool", "plant_palm", "plant_orange", "plant_bonsai", "plant_roses", "plant_cactus", "plant_bay", "plant_sunflower", "archway", "mark_arrow", "arcade_ff", "arcade_pura", "arcade_guess", "arcade_odd", "arcade_scout", "arcade_quiz", "tablelamp", "xmastree", "xmassmalltree", "snowman", "xmaslantern", "xmasdrinks", "xmasduck", "xmasfir", "gift1", "gift2", "gift3", "gift4", "gift5", "gift6", "gift7", "gift8", "gift9", "gift10", "gift11", "sofa", "chair", "table", "smtable", "ballpost", "rope", "lamp", "plant", "ero", "ero_stone", "ero_walnut", "ero_evergreen", "ero_flower", "pillar", "pillartall", "statue", "fountain", "shelf", "cabinet", "water", "rarecase", "trophy", "mark_scuff", "mark_tile"];
+const FURNI = ["leetstand", "leetstand2", "barstool", "plant_palm", "plant_orange", "plant_bonsai", "plant_roses", "plant_cactus", "plant_bay", "plant_sunflower", "archway", "mark_arrow", "arcade_ff", "arcade_pura", "arcade_guess", "arcade_odd", "arcade_scout", "arcade_quiz", "tablelamp", "xmastree", "xmassmalltree", "snowman", "xmaslantern", "xmasdrinks", "xmasduck", "xmasfir", "xmasfir2", "xmasfir4", "gift1", "gift2", "gift3", "gift4", "gift5", "gift6", "gift7", "gift8", "gift9", "gift10", "gift11", "sofa", "chair", "table", "smtable", "ballpost", "rope", "lamp", "plant", "ero", "ero_stone", "ero_walnut", "ero_evergreen", "ero_flower", "pillar", "pillartall", "statue", "fountain", "shelf", "cabinet", "water", "rarecase", "trophy", "mark_scuff", "mark_tile"];
 const Parts = window.FurniParts;
 let placeRot = 0;                // which way round the next piece goes, set with R
-const fits = (l, p) => (Parts.ROWS[p.k] ? Parts.tiles(p) : [[p.x, p.y]]).every(t => placeable(l, t[0], t[1]));
+const fits = (l, p) => Parts.tiles(p).every(t => placeable(l, t[0], t[1]));       // every tile it stands on: the two-by-two ones too (10 Nov scan)
 /* what you'd get dragging from tile a to tile b: stops at the edge of the floor. A click is a drag of nothing. */
 function furniRun(a, b) {
     const k = tool, r = Parts.ROWS[k];
@@ -1191,8 +1195,12 @@ function placeRun(run) {
     snapshot();
     const p = { k: run.k, x: run.x, y: run.y }; if (run.k === "mark_arrow") { p.x -= p.x & 1; p.y -= p.y & 1; p.id = "ar" + Date.now().toString(36); } if (run.len) p.len = run.len; if (run.rot) p.rot = run.rot; if (run.k === "lamp" && lampStyle !== "hotel") p.style = lampStyle; if (run.k === "tablelamp") { const z = lampZAt(level, run.x, run.y); if (z) p.z = z; }
     (level.props = level.props || []).push(p);
+    showUntilDrawn(level, p);
     changed();
 }
+/* a piece just placed, put down or dropped is drawn at once, full strength, until the map's own pictures have it (10 Nov scan, his: "when the
+   click lands to place a furni item, it places straight away") */
+function showUntilDrawn(l, o, tele) { pendingVersion = version; pendingArt.push({ l, o, tele: !!tele, at: performance.now() }); }
 function rotateSelected() {
     const s = selected;
     if (s && s.type === "tele") { snapshot(); s.o.flip = !s.o.flip; changed(); select(s); return; }
@@ -1244,7 +1252,7 @@ function putDown() {
     if (!p || !(carry.tele ? hasFloor(level, p.x, p.y) : fits(level, p))) { flash("That doesn't fit there."); return; }
     if (!p.rot) delete p.rot;
     const list = carry.tele ? (level.teles = level.teles || []) : (level.props = level.props || []), type = carry.tele ? "tele" : "prop";
-    list.push(p); carry = null; changed(); select({ type, l: level, o: p });
+    list.push(p); carry = null; showUntilDrawn(level, p, type === "tele"); changed(); select({ type, l: level, o: p });
 }
 function putBack() {
     if (!carry) return;
@@ -1341,7 +1349,21 @@ function drawWallItemGhost() {
 }
 /* the rope barrier's pixels on the map: the same sums the drawing uses. Asked for every frame while walking, so kept until the piece or the floor under it changes. */
 /* a piece drawn from its own picture: which picture (the poster stand has one for each way it turns) and where it's drawn from (a whole run's far corner for the two that span tiles, else a quarter tile in) */
-const pieceOf = p => { const stand = p.k === "leetstand" || p.k === "leetstand2", k = stand && (Parts.rotOf(p) & 1) ? p.k + "_r" : p.k, fp = floorPiece(k), corner = p.k === "trophy" || stand; return fp ? { fp, dx: corner ? 0 : .25 } : null; };
+/* where render/hw3.js puts each one, so the ghost, the hit test and what cuts the walker all match the map (10 Nov 2026 scan: the trees
+   and the poster stand's ghosts stood a quarter tile off, the turned stand showed the wrong way round, a raised present's ghost sat on the floor):
+   dx, dy into the tile; flip: drawn mirrored about the foot; up: raised off the floor; lights: a second picture, always lit */
+const pieceOf = p => {
+    const stand = p.k === "leetstand" || p.k === "leetstand2", rot = Parts.rotOf(p), k = stand && (rot & 1) ? p.k + "_r" : p.k, fp = floorPiece(k); if (!fp) return null;
+    let dx = .25, dy = .25;
+    if (stand || p.k === "trophy") dx = dy = 0;
+    else if (p.k.startsWith("mark_")) dx = dy = .5;
+    else if (p.k === "xmasfir") dx = dy = .5;
+    else if (p.k === "xmasfir2") { dx = rot & 1 ? .5 : 1; dy = rot & 1 ? 1 : .5; }
+    else if (p.k === "xmasfir4") dx = dy = 1;
+    const flip = (p.k === "trophy" && !(rot & 1)) || ((p.k === "rarecase" || p.k.startsWith("arcade_")) && !!(rot & 1));
+    const f = p.k === "rarecase" && p.rare && fp.opts && fp.opts[p.rare] ? fp.opts[p.rare].f : fp.f;
+    return { fp, f, dx, dy, flip, up: p.k === "tablelamp" ? 0 : (p.z || 0), lights: fp.lights || null };
+};
 const floorPiece = k => (window.FLOOR_PIECES || {})[k] || null, pieceImgs = new Map(), pieceImg = f => { if (!pieceImgs.has(f)) { const i = new Image(); i.onload = () => paint(); i.src = "art/wall/" + f; pieceImgs.set(f, i); } return pieceImgs.get(f); };
 const ropeCache = new Map();
 function ropeArt(l, p) {
@@ -1361,7 +1383,8 @@ function drawGhost() {
     drawSconceGhost(); drawWallItemGhost();
     if (drag && drag.kind === "move" && selected && selected.type === "wallitem") drawWallArt(selected.l, selected.o, .9);
     if (drag && drag.kind === "move" && selected && selected.type === "lamp" && selected.o.axis) drawLampArt(selected.l, selected.o, .9);
-    for (const q of pendingArt) { if (q.wall) drawWallArt(q.l, q.o, 1); else if (q.l === level && REGS) drawPiece({ ...q.o, ok: true }, 1); }
+    if (drag && drag.kind === "move" && drag.moved && REGS && drag.hit.l === level && (drag.hit.type === "prop" || drag.hit.type === "tele")) drawPiece(drag.hit.type === "tele" ? { tele: true, x: drag.hit.o.x, y: drag.hit.o.y, flip: !!drag.hit.o.flip } : { ...drag.hit.o, ok: true }, .9);
+    for (const q of pendingArt) { if (q.wall) drawWallArt(q.l, q.o, 1); else if (q.l === level && REGS) drawPiece(q.tele ? { tele: true, x: q.o.x, y: q.o.y, flip: !!q.o.flip } : { ...q.o, ok: true }, 1); }
     const g = ghostPiece(); if (!g || !REGS) return;
     drawPiece(g, g.ok ? .7 : .3);
 }
@@ -1378,7 +1401,10 @@ function drawPiece(g, alpha) {
     const sprite = (img, reg, tx, ty, flip) => { const a = P(tx, ty, tileZ(level, tx, ty)), lx = a[0] - 16, ly = a[1] + 8; put(img, flip ? lx + 32 + reg[0] - img.naturalWidth : lx - reg[0], ly - reg[1], flip); };
     ctx.save(); ctx.imageSmoothingEnabled = false; ctx.globalAlpha = alpha;
     if (g.tele) sprite(spriteImg("art/tele/hh_furni_special_50/" + TELE_SPRITE + ".png"), REGS.tele[TELE_SPRITE], g.x, g.y, g.flip);
-    else if (floorPiece(g.k)) { const fp = floorPiece(g.k), im = pieceImg(g.k === "rarecase" && g.rare && fp.opts && fp.opts[g.rare] ? fp.opts[g.rare].f : fp.f), off = g.k.startsWith("mark_") ? .5 : g.k === "trophy" ? 0 : .25, a = P(g.x + off, g.y + off, tileZ(level, g.x, g.y) + (g.z || 0)); if (im.complete && im.naturalWidth) { ctx.save(); ctx.imageSmoothingEnabled = false; if ((g.k === "trophy" && !((g.rot || 0) & 1)) || ((g.k === "rarecase" || g.k.startsWith("arcade_")) && ((g.rot || 0) & 1))) { ctx.translate(ox + a[0] * zoom, 0); ctx.scale(-1, 1); ctx.drawImage(im, -fp.ox * zoom, oy + (a[1] - fp.oy) * zoom, fp.w * zoom, fp.h * zoom); } else ctx.drawImage(im, ox + (a[0] - fp.ox) * zoom, oy + (a[1] - fp.oy) * zoom, fp.w * zoom, fp.h * zoom); ctx.restore(); } }
+    else if (pieceOf(g)) { const pc = pieceOf(g), fp = pc.fp, a = P(g.x + pc.dx, g.y + pc.dy, tileZ(level, g.x, g.y) + pc.up), X = Math.round(a[0]), Y = Math.round(a[1]);
+        /* at whole pixels from the foot, as hw3 draws it (Math.round), so the ghost lands on the very pixels the piece will */
+        for (const f of pc.lights ? [pc.f, pc.lights] : [pc.f]) { const im = pieceImg(f); if (!im.complete || !im.naturalWidth) continue; ctx.save(); ctx.imageSmoothingEnabled = false;
+            if (pc.flip) { ctx.translate(ox + X * zoom, 0); ctx.scale(-1, 1); ctx.drawImage(im, -fp.ox * zoom, oy + (Y - fp.oy) * zoom, fp.w * zoom, fp.h * zoom); } else ctx.drawImage(im, ox + (X - fp.ox) * zoom, oy + (Y - fp.oy) * zoom, fp.w * zoom, fp.h * zoom); ctx.restore(); } }
     else if (g.k === "mark_arrow") { const x0 = g.x - (g.x & 1), y0 = g.y - (g.y & 1), z = tileZ(level, x0, y0), Q = (u, v) => { const a = P(x0 + u, y0 + v, z); return [ox + a[0] * zoom, oy + a[1] * zoom]; }, d = (((g.rot || 0) % 4) + 4) % 4, rot = ([u, v]) => d === 0 ? [u, v] : d === 1 ? [2 - v, u] : d === 2 ? [2 - u, 2 - v] : [v, 2 - u], line = pts => { ctx.beginPath(); pts.forEach((q, i) => { const [X, Y] = Q(...rot(q)); if (i) ctx.lineTo(X, Y); else ctx.moveTo(X, Y); }); ctx.closePath(); ctx.stroke(); };
         ctx.lineWidth = Math.max(1, zoom); ctx.strokeStyle = "#ffe066"; line([[0, 0], [2, 0], [2, 2], [0, 2]]); ctx.strokeStyle = "#4a2c12"; ctx.lineWidth = Math.max(1.5, zoom * 1.5); line([[1.625, 1], [.5, .3125], [.5, 1.6875]]); }
     else if (g.k === "archway") { const n = Parts.lengthOf(g), alongY = !!((g.rot || 0) & 1), z = tileZ(level, g.x, g.y), at = (along, up) => { const a = alongY ? P(g.x + .5, g.y + along, z + up) : P(g.x + along, g.y + .5, z + up); return [ox + a[0] * zoom, oy + a[1] * zoom]; }, path = pts => { ctx.beginPath(); pts.forEach((q, i) => i ? ctx.lineTo(q[0], q[1]) : ctx.moveTo(q[0], q[1])); ctx.stroke(); };
@@ -1391,7 +1417,7 @@ function drawPiece(g, alpha) {
 function act(px, py) {
     const [fx, fy] = tileIn(level, px, py), X = Math.floor(fx), Y = Math.floor(fy);
     const w = isWallItemTool(tool) || tool === "sconce" || tool === "globelight" ? hangWallAt(px, py, level) : wallAt(px, py, level);
-    const place = fn => { snapshot(); const pl = (level.props || []).length, wl = (level.wallItems || []).length; fn(); const now = performance.now(); pendingVersion = version; if ((level.props || []).length > pl) pendingArt.push({ l: level, o: level.props[level.props.length - 1], at: now }); if ((level.wallItems || []).length > wl) pendingArt.push({ l: level, o: level.wallItems[level.wallItems.length - 1], wall: true, at: now }); changed(); };
+    const place = fn => { snapshot(); const pl = (level.props || []).length, wl = (level.wallItems || []).length, tl = (level.teles || []).length; fn(); const now = performance.now(); pendingVersion = version; if ((level.props || []).length > pl) pendingArt.push({ l: level, o: level.props[level.props.length - 1], at: now }); if ((level.wallItems || []).length > wl) pendingArt.push({ l: level, o: level.wallItems[level.wallItems.length - 1], wall: true, at: now }); if ((level.teles || []).length > tl) pendingArt.push({ l: level, o: level.teles[level.teles.length - 1], tele: true, at: now }); changed(); };
     if (tool === "globelight") {
         const f = pillarFaceAt(level, px, py);
         if (f) { place(() => { const L = f.o.lights || [], has = L.includes(f.face); f.o.lights = has ? L.filter(q => q !== f.face) : [...L, f.face]; if (!f.o.lights.length) { delete f.o.lights; delete f.o.lightUp; } else if (!has) { if (wallH.lamp !== 106) f.o.lightUp = wallH.lamp - 106; else delete f.o.lightUp; } }); return; }
@@ -2150,8 +2176,9 @@ function drawSelection() {
     if (s.type === "rug") areaQuad(s.l, o, f, c);
     else if (s.type === "medal") areaQuad(s.l, { x0: o.x, y0: o.y, x1: o.x + 4, y1: o.y + 4 }, f, c);
     else if (s.type === "prop" || s.type === "tele") {
-        const run = s.type === "prop" ? Parts.tiles(o).filter(t => Parts.ROWS[o.k] || (t[0] === o.x && t[1] === o.y)) : [[o.x, o.y]], e = run[run.length - 1];
-        quad(o.x, o.y, e[0] + 1, e[1] + 1, z, f, c);
+        /* every tile it stands on: a two-by-two piece (the statue, the fountain, the big tree) showed only its first (10 Nov scan) */
+        const run = s.type === "prop" ? Parts.tiles(o) : [[o.x, o.y]], xs = run.map(t => t[0]), ys = run.map(t => t[1]);
+        quad(Math.min(...xs), Math.min(...ys), Math.max(...xs) + 1, Math.max(...ys) + 1, z, f, c);
     }
     else if (s.type === "door") { if (o.axis === "x") line(o.at, o.line, o.at + 2, o.line, z, c, 4); else line(o.line, o.at, o.line, o.at - 2, z, c, 4); }
     else if (s.type === "lamp") { if (o.axis === "x") line(o.at - .5, o.line, o.at + .5, o.line, z, c, 4); else line(o.line, o.at - .5, o.line, o.at + .5, z, c, 4); }
@@ -2378,7 +2405,7 @@ canvas.addEventListener("pointerup", e => {
         level.steps = (level.steps || []).filter(q => !(q.axis === d.st.axis && q.line === d.st.line && q.a < d.st.b && q.b > d.st.a));
         level.steps.push({ ...d.st }); changed(); return;
     }
-    if (d.kind === "move") { canvas.style.cursor = "default"; if (live) live.ending = true; if (d.moved) { changed(); select(selected); } return; }
+    if (d.kind === "move") { canvas.style.cursor = "default"; if (live) live.ending = true; if (d.moved) { if (d.hit.type === "prop" || d.hit.type === "tele") showUntilDrawn(d.hit.l, d.hit.o, d.hit.type === "tele"); changed(); select(selected); } return; }
     if (d.kind === "edge") { if (undoStack[undoStack.length - 1] === JSON.stringify(map)) { undoStack.pop(); syncButtons(); return; } changed(); return; }
     if (d.kind === "furni") { placeRot = d.run.rot || 0; placeRun(d.run); return; }
     if (d.kind === "rect") {
@@ -3104,7 +3131,7 @@ function spriteSolidAt(path, X, Y) {
 function propPartAt(l, p, px, py) {
     /* a seat drawn from its own picture (the arcade stool) has no client sprite to test: test its picture, where hw3 puts it (8 Nov, his: "Avatar can't sit on the new arcade stool") */
     const pc = !p.k.startsWith("arcade_") && p.k !== "statue" ? pieceOf(p) : null, fp = pc && pc.fp;
-    if (fp) { const im = pieceImg(fp.f), a = P(p.x + pc.dx, p.y + pc.dx, tileZ(l, p.x, p.y)), i = Math.floor(px - (a[0] - fp.ox)), j = Math.floor(py - (a[1] - fp.oy)); if (!im.complete || !im.naturalWidth || i < 0 || j < 0 || i >= im.naturalWidth || j >= im.naturalHeight) return null; return treeAlpha(im, i, j) ? { x: p.x, y: p.y } : null; }
+    if (fp) { const im = pieceImg(pc.f), a = P(p.x + pc.dx, p.y + pc.dy, tileZ(l, p.x, p.y) + pc.up), i = pc.flip ? Math.floor(a[0] + fp.ox - px) : Math.floor(px - (a[0] - fp.ox)), j = Math.floor(py - (a[1] - fp.oy)); if (!im.complete || !im.naturalWidth || i < 0 || j < 0 || i >= im.naturalWidth || j >= im.naturalHeight) return null; return treeAlpha(im, i, j) ? { x: p.x, y: p.y } : null; }
     if (!REGS) return null;
     for (const q of Parts.parts(p)) {
         const a = P(q.x, q.y, tileZ(l, q.x, q.y)), lx = a[0] - 16, ly = a[1] + 8;
@@ -3332,7 +3359,7 @@ function cutInFront(c, x0, y0, soft) {
             }
             /* at Christmas the statue is the giant tree, drawn over the sofas round it: what's behind it is cut by the tree's own shape */
             if (p.k === "statue" && window.hallwayXmas && floorPiece("bigtree")) { const fp = floorPiece("bigtree"), im = pieceImg(fp.f), a = P(p.x + 1, p.y + 1, tileZ(lv, p.x, p.y)); if ((lv !== l || ax + ay < p.x + p.y + 2.6) && im.complete && im.naturalWidth && Math.abs(a[0] - (x0 + 16)) < fp.w && a[1] - fp.oy < y0 + 120 && a[1] + fp.h > y0) cutSprite(c, im, Math.round(a[0]) - fp.ox, Math.round(a[1]) - fp.oy, false); continue; }
-            if (pieceOf(p) && !p.k.startsWith("mark_") && !(XMAS_PROP(p.k) && !window.hallwayXmas) && !(walker.seat && walker.seat.p === p)) { const pc = pieceOf(p), fp = pc.fp, im = pieceImg(fp.f), a = P(p.x + pc.dx, p.y + pc.dx, tileZ(lv, p.x, p.y)), run = Parts.tiles(p), last = run[run.length - 1], flipIt = (p.k === "trophy" && !((p.rot || 0) & 1)) || ((p.k === "rarecase" || p.k.startsWith("arcade_")) && ((p.rot || 0) & 1)); if ((lv !== l || inFrontOfYou(last[0], last[1], ax, ay)) && nearby(a) && im.complete && im.naturalWidth) { if (flipIt) { c.save(); c.translate(a[0], 0); c.scale(-1, 1); c.drawImage(im, -fp.ox, a[1] - fp.oy); c.restore(); } else c.drawImage(im, a[0] - fp.ox, a[1] - fp.oy); } continue; }
+            if (pieceOf(p) && !p.k.startsWith("mark_") && !(XMAS_PROP(p.k) && !window.hallwayXmas) && !(walker.seat && walker.seat.p === p)) { const pc = pieceOf(p), fp = pc.fp, im = pieceImg(pc.f), a = P(p.x + pc.dx, p.y + pc.dy, tileZ(lv, p.x, p.y) + pc.up), run = Parts.tiles(p), last = run[run.length - 1], flipIt = (p.k === "trophy" && !((p.rot || 0) & 1)) || ((p.k === "rarecase" || p.k.startsWith("arcade_")) && ((p.rot || 0) & 1)); if ((lv !== l || inFrontOfYou(last[0], last[1], ax, ay)) && nearby(a) && im.complete && im.naturalWidth) { if (flipIt) { c.save(); c.translate(a[0], 0); c.scale(-1, 1); c.drawImage(im, -fp.ox, a[1] - fp.oy); c.restore(); } else c.drawImage(im, a[0] - fp.ox, a[1] - fp.oy); } continue; }
             if (p.k.startsWith("mark_")) continue;
             if (p.k === "archway") { if (lv !== l) { for (const q of Parts.tiles(p)) { const a = P(q[0] + .5, q[1] + .5, tileZ(lv, q[0], q[1])); if (nearby(a)) cutPoly(c, [[a[0] - 17, a[1]], [a[0] + 17, a[1]], [a[0] + 17, a[1] - 118], [a[0] - 17, a[1] - 118]]); } } else cutArchways(c, lv, ax, ay, nearby); continue; }
             if (p.k === "rope") { const art = ropeArt(lv, p); for (const [X, Y, , t] of art.list) { const q = art.row[t]; if ((lv !== l || inFrontOfYou(q[0], q[1], ax, ay)) && nearby([X, Y])) c.fillRect(X, Y, 1, 1); } continue; }

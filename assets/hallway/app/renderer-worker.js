@@ -3037,7 +3037,7 @@ function build(cfg) {
         const backWall = (X, Y, z) => { const Q = tileOf.get(X + "," + Y); return !!Q && (z === undefined || Q.z === z) && Q.y0 === Y && !has.has(X + "," + (Y - 1)) && !holes.has(X + "," + (Y - 1)) && !Q.noBack && (Q.notch || !airBelow(X, Y - 1) || doorEdge("x", X, Y) || shown("x", Y, X)); };
         const sideWall = (X, Y, z) => { const Q = tileOf.get(X + "," + Y); return !!Q && (z === undefined || Q.z === z) && Q.x0 === X && !has.has((X - 1) + "," + Y) && !holes.has((X - 1) + "," + Y) && (Q.notch || !airBelow(X - 1, Y) || doorEdge("y", X, Y) || shown("y", X, Y)); };
         layer.d.fill(0); for (let i = 0; i < layer.d.length; i += 4) { layer.d[i] = VOID[0]; layer.d[i + 1] = VOID[1]; layer.d[i + 2] = VOID[2]; layer.d[i + 3] = 255; }
-        mask.fill(0); w.keep.fill(0); w.glowing.fill(0); w.footShadows = []; w.tints = []; w.sunWins = []; w.afterAll = []; w.treeGlows = []; w.bigTrees = []; w.treePx = []; w.treeAll = [];
+        mask.fill(0); w.glowAbove = new Map(); w.keep.fill(0); w.glowing.fill(0); w.footShadows = []; w.tints = []; w.sunWins = []; w.afterAll = []; w.garPx = new Set(); w.treeGlows = []; w.bigTrees = []; w.treePx = []; w.treeAll = [];
         w.lamps = [];
         wallOwner.fill(0);
         const signs = [], pushSign = signs.push.bind(signs); let signPatch = null;
@@ -3299,7 +3299,7 @@ function build(cfg) {
                     /* the small fir, the giant tree's kind (9 Nov 2026): at Christmas only, its foot at the tile's middle, its lights and star always lit */
                     /* the bigger ones stand at the middle of their tiles: two along x (or y, turned), or two by two */
                     const cx = x + (k === "xmasfir4" || (k === "xmasfir2" && !(p[5] & 1)) ? 1 : .5), cy = y + (k === "xmasfir4" || (k === "xmasfir2" && (p[5] & 1)) ? 1 : .5), fx = Math.ceil(cx) - 1, fy = Math.ceil(cy) - 1;
-                    if (xmasOn && w.partAt({ x, y }) && FLOOR_PIECES[k]) { const fp = FLOOR_PIECES[k], base = w.S(cx, cy), im = wallArt(fp.f), li = wallArt(fp.lights), X0 = Math.round(base[0]) - fp.ox, Y0 = Math.round(base[1]) - fp.oy;
+                    if (xmasOn && w.partAt({ x, y }) && FLOOR_PIECES[k]) { const fp = FLOOR_PIECES[k], base = w.S(cx, cy), im = wallArt(fp.f), li = wallArt(fp.lights), X0 = Math.round(base[0]) - fp.ox, Y0 = Math.round(base[1]) - fp.oy; w.bigTrees.push({ X0, Y0, li, fx, fy, fp, big: false });
                         w.sprites.push({ depth: cx + cy - .5, ftx: fx, fty: fy, draw: () => { for (let j = 0; j < im.h; j++) for (let i = 0; i < im.w; i++) { const q = (j * im.w + i) * 4, lit = li.rgba[q + 3] > 0, src = lit ? li.rgba : im.rgba; if (!src[q + 3]) continue; const X = X0 + i, Y = Y0 + j, c = [src[q], src[q + 1], src[q + 2]]; layer.set(X, Y, c); if (X >= 0 && Y >= 0 && X < bw && Y < bh) { const v = ((c[0] << 16) | (c[1] << 8) | c[2]) + 1; w.keep[Y * bw + X] = lit ? v : 0; w.glowing[Y * bw + X] = lit ? v : 0; } } } }); }
                 }
                 else if (FLOOR_PIECES[k]) {
@@ -3310,7 +3310,7 @@ function build(cfg) {
                 }
                 else if (k === "statue" && xmasOn && FLOOR_PIECES.bigtree) {
                     /* at Christmas the statue gives way to the giant tree: its foot at the statue's middle, drawn over the sofas round it as the mock-up has it, its lights and star always lit */
-                    if (w.partAt({ x, y })) { const fp = FLOOR_PIECES.bigtree, base = w.S(x + 1, y + 1), im = wallArt(fp.f), li = wallArt(fp.lights), X0 = Math.round(base[0]) - fp.ox, Y0 = Math.round(base[1]) - fp.oy; w.bigTrees.push({ X0, Y0, li, fx: x + 1, fy: y + 1 });
+                    if (w.partAt({ x, y })) { const fp = FLOOR_PIECES.bigtree, base = w.S(x + 1, y + 1), im = wallArt(fp.f), li = wallArt(fp.lights), X0 = Math.round(base[0]) - fp.ox, Y0 = Math.round(base[1]) - fp.oy; w.bigTrees.push({ X0, Y0, li, fx: x + 1, fy: y + 1, fp, big: true });
                         w.sprites.push({ depth: x + y + 2.6, ftx: x + 1, fty: y + 1, draw: () => { for (let j = 0; j < im.h; j++) for (let i = 0; i < im.w; i++) { const q = (j * im.w + i) * 4, lit = li.rgba[q + 3] > 0, src = lit ? li.rgba : im.rgba; if (!src[q + 3]) continue; const X = X0 + i, Y = Y0 + j, c = [src[q], src[q + 1], src[q + 2]]; layer.set(X, Y, c); if (X >= 0 && Y >= 0 && X < bw && Y < bh) { const v = ((c[0] << 16) | (c[1] << 8) | c[2]) + 1; w.keep[Y * bw + X] = lit ? v : 0; w.glowing[Y * bw + X] = lit ? v : 0; if (Y < Y0 + fp.oy - 120) w.treePx.push(Y * bw + X); w.treeAll.push(Y * bw + X, v - 1, lit ? 1 : 0); } } } }); }
                 }
                 else if (k === "archway") {
@@ -3468,8 +3468,8 @@ function build(cfg) {
                 }
                 const px = garlandMemo.get(g).get(t); if (!px) continue;
                 const at = t + .5; if (!(g.axis === "x" ? inReach(at, P.y0, 340) : inReach(P.x0, at, 340))) continue;
-                w.afterAll.push({ zHere: P.z, depth: (g.axis === "x" ? at + P.y0 : P.x0 + at) + .35, tx: g.axis === "x" ? t : P.x0, ty: g.axis === "x" ? P.y0 : t, axis: g.axis, line: g.axis === "x" ? P.y0 : P.x0, out: 0,
-                    draw: () => { for (const [X, Y, c] of px) { layer.set(X, Y, c); if (X >= 0 && Y >= 0 && X < bw && Y < bh) w.keep[Y * bw + X] = ((c[0] << 16) | (c[1] << 8) | c[2]) + 1; } } });
+                w.afterAll.push({ zHere: P.z, depth: (g.axis === "x" ? at + P.y0 : P.x0 + at) + .35, tx: g.axis === "x" ? t : P.x0, ty: g.axis === "x" ? P.y0 : t, axis: g.axis, line: g.axis === "x" ? P.y0 : P.x0, out: 0, garland: true,
+                    draw: () => { for (const [X, Y, c] of px) { layer.set(X, Y, c); if (X >= 0 && Y >= 0 && X < bw && Y < bh) { w.keep[Y * bw + X] = ((c[0] << 16) | (c[1] << 8) | c[2]) + 1; w.garPx.add(Y * bw + X); } } } });
             }
             for (const it of (P.wi || [])) {
                 const def = WALL_ITEM.get(it.k); if (!def) continue;
@@ -3479,7 +3479,7 @@ function build(cfg) {
                         for (let u = 0; u < wide; u++) { for (let v = 0; v < H2; v++) { const sxm = a0 - wide + u, sy = Y0 - Math.floor(u / 2) + v, X = flip ? 2 * a0 - sxm - 1 : sxm, sxv = Math.max(0, Math.min(view.w - 1, Math.round(u + offx))), syv = Math.max(0, Math.min(view.h - 1, Math.round(sy - Y0 + offy))), q = (syv * view.w + sxv) * 4; let c = [view.rgba[q], view.rgba[q + 1], view.rgba[q + 2]]; c = c.map((n, k) => n * .88 + [200, 225, 240][k] * .12); const slant = u - (H2 - v) * .34; for (const [o, sw] of [[.2, 7], [.34, 3], [.72, 5]]) { const x0 = wide * o; if (slant >= x0 && slant < x0 + sw) { c = c.map(n => n * .8 + 255 * .2); break; } } c = c.map(n => Math.round(Math.min(255, n))); layer.set(X, sy, c); if (X >= 0 && sy >= 0 && X < bw && sy < bh) { const n = ((c[0] << 16) | (c[1] << 8) | c[2]) + 1; w.keep[sy * bw + X] = n; w.glowing[sy * bw + X] = n; } } }
                         const fr = HallWindow.art(wide, b0, top0); for (let j = 0; j < fr.h; j++) for (let i = 0; i < fr.w; i++) { const q = (j * fr.w + i) * 4; if (fr.rgba[q + 3] < 128) continue; const sx = a0 - fr.ox + i, X = flip ? 2 * a0 - sx - 1 : sx, Y = a1 - fr.oy + j, c = [fr.rgba[q], fr.rgba[q + 1], fr.rgba[q + 2]]; layer.set(X, Y, c); if (X >= 0 && Y >= 0 && X < bw && Y < bh) { w.keep[Y * bw + X] = ((c[0] << 16) | (c[1] << 8) | c[2]) + 1; if (w.glowing[Y * bw + X]) w.glowing[Y * bw + X] = 0; } }
                         if (Mname === "day") w.sunWins.push({ a0, a1, W: wide, b: b0, top: top0, flip, z: zw, line: it.line, start }); };
-                    const behind0 = it.axis === "x" ? zAt(Math.floor(it.at), P.y0 - 1) : zAt(P.x0 - 1, Math.floor(it.at - 1)), onDrop0 = behind0 !== null && behind0 > P.z; if (onDrop0) continue; if (it.axis === "x" ? inReach(it.at, P.y0, 340) : inReach(P.x0, it.at, 340)) w.afterAll.push({ zHere: P.z, depth: (it.axis === "x" ? it.at + P.y0 : P.x0 + it.at) + .35, tx: it.axis === "x" ? Math.floor(it.at) : P.x0, ty: it.axis === "x" ? P.y0 : Math.floor(it.at), draw: one }); continue; }
+                    const behind0 = it.axis === "x" ? zAt(Math.floor(it.at), P.y0 - 1) : zAt(P.x0 - 1, Math.floor(it.at - 1)), onDrop0 = behind0 !== null && behind0 > P.z; if (onDrop0) continue; if (it.axis === "x" ? inReach(it.at, P.y0, 340) : inReach(P.x0, it.at, 340)) w.afterAll.push({ zHere: P.z, depth: (it.axis === "x" ? it.at + P.y0 : P.x0 + it.at) + .35, tx: it.axis === "x" ? Math.floor(it.at) : P.x0, ty: it.axis === "x" ? P.y0 : Math.floor(it.at), draw: one, hang: it.axis + (it.axis === "x" ? P.y0 : P.x0) }); continue; }
                 if (!(it.axis === "x" ? inReach(it.at, P.y0, 340) : inReach(P.x0, it.at, 340))) continue;
                 const behind = it.axis === "x" ? zAt(Math.floor(it.at), P.y0 - 1) : zAt(P.x0 - 1, Math.floor(it.at - 1)), onDrop = behind !== null && behind > P.z;
                 if (onDrop && cut !== null && behind > cut) continue;
@@ -3663,9 +3663,15 @@ function build(cfg) {
         /* the plain wallpaper each hung thing covers, so the wall going up under a floor above can still copy it from there (9 Nov scan, renderer 1:
            with garland pixels skipped, it copied from two or three repeats down, where the damask and the stripes' dither don't line up) */
         itemUnder.clear();
+        /* a garland hangs over whatever else is on its wall: a window, a poster, a picture (10 Nov 2026, his: "garlands get hidden by windows and
+           other wall items"). Each of its tiles goes after the last thing hung on the same wall, still before anything nearer the room */
+        { const lastOn = new Map(); for (const s of w.afterAll) if (!s.garland && (s.hang || s.axis)) { const k = s.hang || s.axis + s.line; lastOn.set(k, Math.max(lastOn.get(k) ?? -Infinity, s.depth)); }
+          for (const s of w.afterAll) if (s.garland && lastOn.has(s.axis + s.line)) s.depth = Math.max(s.depth, lastOn.get(s.axis + s.line) + .001); }
         const paintedAfter = new Set(); w.afterAll.sort((a, c) => a.depth - c.depth).forEach(s => {
             const own = Object.prototype.hasOwnProperty.call(layer, "set"), was = layer.set, mine = new Set();
-            layer.set = function (x, y, c) { if (x >= 0 && y >= 0 && x < bw && y < bh) { const i = y * bw + x; if ((furniX[i] !== NO_FURNI && !mine.has(i) && (!s.axis || (s.axis === "y" ? furniX[i] >= s.line + s.out : furniY[i] >= s.line + s.out))) || (mask[i] === 1 && zb[i] > s.zHere)) return; if (!itemPx[i] && furniX[i] === NO_FURNI && !stairPx[i] && !lampPx.has(i)) { const p = i * 4; itemUnder.set(i, [layer.d[p], layer.d[p + 1], layer.d[p + 2]]); } mine.add(i); itemPx[i] = 1; paintedAfter.add(i); was.call(layer, x, y, c); furniX[i] = s.tx; furniY[i] = s.ty; furniRun[i] = 0; const p = i * 4; furniC[i] = (layer.d[p] << 16) | (layer.d[p + 1] << 8) | layer.d[p + 2]; } };
+            layer.set = function (x, y, c) { if (x >= 0 && y >= 0 && x < bw && y < bh) { const i = y * bw + x; /* a garland goes over what else is hung on its own wall (10 Nov 2026, his): those pixels are marked as that wall's, not as furniture in front */
+                if (s.garland && itemPx[i] && (s.axis === "y" ? furniX[i] === s.line : furniY[i] === s.line) && !(mask[i] === 1 && zb[i] > s.zHere)) { /* hung on this wall: the garland goes over it */ }
+                else if ((furniX[i] !== NO_FURNI && !mine.has(i) && (!s.axis || (s.axis === "y" ? furniX[i] >= s.line + s.out : furniY[i] >= s.line + s.out))) || (mask[i] === 1 && zb[i] > s.zHere)) return; if (!itemPx[i] && furniX[i] === NO_FURNI && !stairPx[i] && !lampPx.has(i)) { const p = i * 4; itemUnder.set(i, [layer.d[p], layer.d[p + 1], layer.d[p + 2]]); } mine.add(i); itemPx[i] = 1; paintedAfter.add(i); was.call(layer, x, y, c); furniX[i] = s.tx; furniY[i] = s.ty; furniRun[i] = 0; const p = i * 4; furniC[i] = (layer.d[p] << 16) | (layer.d[p + 1] << 8) | layer.d[p + 2]; } };
             w.z = s.zHere; s.draw();
             if (own) layer.set = was; else delete layer.set;
         });
@@ -3859,12 +3865,36 @@ function build(cfg) {
             const k0 = L[0] * dim, k1 = L[1] * dim, k2 = L[2] * dim;
             layer.d[p] = Math.min(255, layer.d[p] * k0); layer.d[p + 1] = Math.min(255, layer.d[p + 1] * k1); layer.d[p + 2] = Math.min(255, layer.d[p + 2] * k2);
         }
-        /* the giant tree lights the room round it, and in the dark every bulb and the star has a halo */
-        { const dark = Math.max(0, Math.min(1, 1 - (M.amb[0] + M.amb[1] + M.amb[2]) / 3)); for (const t of w.bigTrees) { const add = (x, y, c, a) => { if (x < 0 || y < 0 || x >= bw || y >= bh || a <= 0) return; const i = (y * bw + x) * 4; layer.d[i] = Math.min(255, layer.d[i] + c[0] * a); layer.d[i + 1] = Math.min(255, layer.d[i + 1] + c[1] * a); layer.d[i + 2] = Math.min(255, layer.d[i + 2] + c[2] * a); };
-            const cx = t.X0 + (FLOOR_PIECES.bigtree.ox), cy = t.Y0 + FLOOR_PIECES.bigtree.oy; /* a warm pool on the floor and walls round it, strongest in the dark but there a little by day too; on the tree itself only a touch, so its own lights still read */
-            const pool = .16 + .74 * dark, lightUp = (x, y, a) => { if (x < 0 || y < 0 || x >= bw || y >= bh || a <= 0) return; const i = (y * bw + x) * 4; layer.d[i] = Math.min(255, layer.d[i] * (1 + 1.5 * a) + 120 * a); layer.d[i + 1] = Math.min(255, layer.d[i + 1] * (1 + 1.1 * a) + 70 * a); layer.d[i + 2] = Math.min(255, layer.d[i + 2] * (1 + .5 * a) + 26 * a); }; for (let y = -230; y < 160; y++) for (let x = -320; x < 320; x++) { const d = Math.hypot(x / 320, (y - 10) / 160); if (d < 1) { const X = cx + x, Y = cy + y, onTree = X >= 0 && Y >= 0 && X < bw && Y < bh && furniX[Y * bw + X] === t.fx && furniY[Y * bw + X] === t.fy; lightUp(X, Y, pool * (onTree ? .35 : 1) * Math.pow(1 - d, 1.3)); } }
-            if (dark > .05) { const li = t.li; for (let j = 0; j < li.h; j++) for (let i = 0; i < li.w; i++) { const q = (j * li.w + i) * 4; if (!li.rgba[q + 3]) continue; const c = [li.rgba[q], li.rgba[q + 1], li.rgba[q + 2]]; for (let dy = -3; dy <= 3; dy++) for (let dx = -3; dx <= 3; dx++) { const d = Math.hypot(dx, dy); if (d > 0 && d < 3.4) { const X = t.X0 + i + dx, Y = t.Y0 + j + dy, p = Y * bw + X; if (X >= 0 && Y >= 0 && X < bw && Y < bh && !w.glowing[p]) add(X, Y, c, dark * .045 * (1 - d / 3.4)); } } } }
-            const sx = cx, sy = t.Y0 + 2; if (dark > .05) for (let y = -26; y <= 26; y++) for (let x = -26; x <= 26; x++) { const d = Math.hypot(x, y); if (d < 26) add(sx + x, sy + y + 12, [255, 230, 160], dark * .5 * Math.pow(1 - d / 26, 2)); } } }
+        /* The Christmas trees' glow (10 Nov 2026, his: "I'm seeing no glow ... the glow must give users that nostalgic cosy christmas feeling"):
+           the giant tree and our own firs, in every light, strongest in the dark. Four parts:
+           - a warm pool of light on the floor and walls round it, as a room lit by a tree is;
+           - light from inside the tree: its needles warmer and brighter towards the trunk, as if the strands behind shine through;
+           - a soft halo round every bulb in the bulb's own colour, so the lights bloom rather than sit as dots;
+           - the star: a warm round glow and four faint rays.
+           Bulbs and star stay as drawn (w.glowing keeps them out of the night's dimming). The page adds a slow twinkle on top (live-trees.js). */
+        { const dark = Math.max(0, Math.min(1, 1 - (M.amb[0] + M.amb[1] + M.amb[2]) / 3));
+          /* above: the giant tree rises through the floor above, whose back wall is drawn over this floor there, so its star and top bulbs light that wall too (kept in w.glowAbove for the floors' compositing) */
+          let above = -1; w.glowAbove = w.glowAbove || new Map();
+          const add = (x, y, c, a) => { if (x < 0 || y < 0 || x >= bw || y >= bh || a <= 0) return; const n = y * bw + x, i = n * 4; layer.d[i] = Math.min(255, layer.d[i] + c[0] * a); layer.d[i + 1] = Math.min(255, layer.d[i + 1] + c[1] * a); layer.d[i + 2] = Math.min(255, layer.d[i + 2] + c[2] * a); if (y < above) { const g = w.glowAbove.get(n) || [0, 0, 0]; g[0] += c[0] * a; g[1] += c[1] * a; g[2] += c[2] * a; w.glowAbove.set(n, g); } };
+          /* warm light added the way a lamp adds it: more on what is already light, and easing off towards white rather than clipping to flat orange (the pillars by the tree went neon) */
+          const lightUp = (x, y, a) => { if (x < 0 || y < 0 || x >= bw || y >= bh || a <= 0) return; const i = (y * bw + x) * 4, up = (v, m, k) => v + (255 - v) * Math.min(1, (v * m + k) * a / 255); layer.d[i] = up(layer.d[i], 1.25, 70); layer.d[i + 1] = up(layer.d[i + 1], .95, 42); layer.d[i + 2] = up(layer.d[i + 2], .45, 14); };
+          for (const t of w.bigTrees) {
+              const fp = t.fp, big = t.big, li = t.li, cx = t.X0 + fp.ox, cy = t.Y0 + fp.oy; above = big ? cy - 120 : -1; const mine = (X, Y) => X >= 0 && Y >= 0 && X < bw && Y < bh && furniX[Y * bw + X] === t.fx && furniY[Y * bw + X] === t.fy;
+              /* the pool: an ellipse on the floor round its foot, as wide as the tree's lights reach; on the tree itself only a touch, so its own lights still read */
+              const RX = big ? 320 : Math.max(70, fp.w * 1.7), RY = RX / 2, pool = (big ? .16 : .12) + (big ? .74 : .5) * dark;
+              for (let y = Math.floor(-RY * 1.45); y < RY; y++) for (let x = -RX; x < RX; x++) { const d = Math.hypot(x / RX, (y - RY * .06) / RY); if (d < 1) { const X = cx + x, Y = cy + y; lightUp(X, Y, pool * (mine(X, Y) ? .3 : 1) * Math.pow(1 - d, 1.3)); } }
+              /* from inside: each needle pixel warmed by how near the trunk it is across that row, and more in its lower, fuller part */
+              const inner = .07 + .2 * dark, hw = fp.w / 2;
+              for (let j = 0; j < fp.h; j++) for (let i = 0; i < fp.w; i++) { const X = t.X0 + i, Y = t.Y0 + j; if (!mine(X, Y)) continue; const p = (Y * bw + X); if (w.glowing[p]) continue; const across = 1 - Math.min(1, Math.abs(i - fp.ox) / hw), down = Math.min(1, j / fp.h + .15); lightUp(X, Y, inner * across * across * down); }
+              /* a halo round every bulb */
+              const R = big ? 4.6 : 3.6, halo = .16 + .42 * dark;
+              for (const b of fp.bulbs || []) { const bx = t.X0 + b[0], by = t.Y0 + b[1], c = [b[2], b[3], b[4]]; for (let dy = -5; dy <= 5; dy++) for (let dx = -5; dx <= 5; dx++) { const d = Math.hypot(dx, dy); if (d <= .5 || d >= R) continue; const X = bx + dx, Y = by + dy; if (X < 0 || Y < 0 || X >= bw || Y >= bh || w.glowing[Y * bw + X]) continue; add(X, Y, c, halo * Math.pow(1 - d / R, 2)); } }
+              /* the star: the middle of the lit pixels at the top of the lights picture (its gold, not the bulbs below it) */
+              let sx = cx, sy = t.Y0 + 4; { let n = 0, X = 0, Y = 0; for (let j = 0; j < Math.min(li.h, big ? 34 : 18); j++) for (let i = 0; i < li.w; i++) { const q = (j * li.w + i) * 4; if (!li.rgba[q + 3] || li.rgba[q] + li.rgba[q + 1] < 400 || li.rgba[q + 2] > li.rgba[q + 1]) continue; n++; X += i; Y += j; } if (n) { sx = t.X0 + Math.round(X / n); sy = t.Y0 + Math.round(Y / n); } }
+              const SR = big ? 48 : 18, star = .3 + .6 * dark, gold = [255, 226, 150];
+              for (let y = -SR; y <= SR; y++) for (let x = -SR; x <= SR; x++) { const d = Math.hypot(x, y); if (d < SR && d > .5) add(sx + x, sy + y, gold, star * Math.pow(1 - d / SR, 1.9)); }
+              const RL = big ? 44 : 18; for (let k = 2; k < RL; k++) { const a = (.1 + .22 * dark) * Math.pow(1 - k / RL, 1.6); add(sx + k, sy, gold, a); add(sx - k, sy, gold, a); add(sx, sy + k, gold, a * .8); add(sx, sy - k, gold, a); }
+          } }
         /* the tree's always lit, and lights the room round it */
         for (const g of w.treeGlows) { const X0 = Math.round(g[0]), Y0 = Math.round(g[1]) - 6, gl = (cx, cy, R, sy, a) => { for (let y = Math.max(0, Math.floor(cy - R * sy)); y < Math.min(bh, cy + R * sy); y++) for (let x = Math.max(0, Math.floor(cx - R)); x < Math.min(bw, cx + R); x++) { const d = Math.hypot(x - cx, (y - cy) / sy) / R; if (d >= 1) continue; const i = (y * bw + x) * 4, k = a * (1 - d); if (layer.d[i] === 7 && layer.d[i + 1] === 6 && layer.d[i + 2] === 10) continue; layer.d[i] = Math.min(255, layer.d[i] + 255 * k); layer.d[i + 1] = Math.min(255, layer.d[i + 1] + 190 * k); layer.d[i + 2] = Math.min(255, layer.d[i + 2] + 96 * k); } }; gl(X0, Y0, 60, .55, .3); gl(X0, Y0 - 34, 48, 1, .16); }
         if (w.sunWins.length) { const HT = { sofa: 14, chair: 14, table: 14, smtable: 14, ero: 20, ero_stone: 20, ero_walnut: 20, ero_evergreen: 20, ero_flower: 20, cabinet: 40, shelf: 40, plant: 26, statue: 60, fountain: 20, rarecase: 40, water: 30 }, heights = new Map(); for (const P of lv.patches) for (const p of (P.props || [])) { const ht = HT[p[0]]; if (ht) for (const t of Parts.tiles({ k: p[0], x: p[1], y: p[2], len: p[4], rot: p[5] })) heights.set(t[0] + "," + t[1], ht); }
@@ -3892,11 +3922,14 @@ function build(cfg) {
         /* a sign takes the room's light like the wall it hangs on, but its name stays just readable in the dark */
         const SIGN_MIN_LIGHT = .32;
         const onWall = (z, line, alongY, paint, out = 0) => { layer.set = function (x, y, c) { if (x >= 0 && y >= 0 && x < bw && y < bh && covered(x, y, z, line, alongY, out)) return; const L = lightAt(x, y, false, z), keep = SIGN_MIN_LIGHT; Buf.prototype.set.call(layer, x, y, [Math.min(255, c[0] * Math.max(keep, L[0] * dim)), Math.min(255, c[1] * Math.max(keep, L[1] * dim)), Math.min(255, c[2] * Math.max(keep, L[2] * dim))]); }; paint(); delete layer.set; };
+        /* the garlands as lit, to put back over the door signs on their walls: the garland hangs in front of a maze's name plate (10 Nov 2026, his) */
+        const garLit = [...w.garPx].map(i => [i, layer.d[i * 4], layer.d[i * 4 + 1], layer.d[i * 4 + 2]]);
         if (!cfg.noSigns) for (const s of signs) if (!lv.closed) {
             const g = s.sign || {}, u = g.u || 0, v = g.v || 0, sh = s.alongY ? -1 : 1;
             if (g.hide) continue;                                       // the editor's showing this one live, being dragged
             onWall(s.wallZ, s.wallLine, !!s.alongY, () => signIso(layer, s.s[0] + u, s.s[1] + sh * Math.floor(u / 2) - v, s.name, { alongY: s.alongY, hover: s.hover, max: 14, w: g.w, h: g.h, way: colour }));
         }
+        for (const [i, r, g, b2] of garLit) { layer.d[i * 4] = r; layer.d[i * 4 + 1] = g; layer.d[i * 4 + 2] = b2; }
         for (const [i, r, g, b2] of lampLit) { layer.d[i * 4] = r; layer.d[i * 4 + 1] = g; layer.d[i * 4 + 2] = b2; }
         if (!cfg.noSigns && !lv.closed) for (const q of stairPlaques) { if (q.sign.hide) continue; const u = q.sign.u || 0, v = q.sign.blade ? q.sign.v || 0 : 0; onWall(q.z, q.line, false, () => stairPlaque(layer, q.s[0] + u, q.s[1] + Math.floor(u / 2) - v, q.name), q.sign.blade ? 2 : 0); }
         if (cfg.avatar && cfg.avatar.lv === lv.id) { const P = lv.patches.find(q => cfg.avatar.x >= q.x0 && cfg.avatar.x < q.x1 && cfg.avatar.y >= q.y0 && cfg.avatar.y < q.y1) || lv.patches[0]; const zz = P.z; const c = [Math.round((cfg.avatar.x - cfg.avatar.y) * 16) + gx, Math.round((cfg.avatar.x + cfg.avatar.y) * 8) + gy - zz + 8]; if (c[0] >= 0 && c[1] >= 0 && c[0] < bw && c[1] < bh) avL = lightAt(c[0], c[1], true, zz).map(v => Math.min(1.05, v)); w.avS = [c[0], c[1]]; }
@@ -3933,7 +3966,7 @@ function build(cfg) {
         /* except the giant tree: it rises through the opening of the floor above, so over that floor's back wall the tree stands in front */
         const myOrder = levels.indexOf(lv) + 1, treeOver = w.treePx.length ? new Set(w.treePx) : null;
         for (let p = 0, i = 0; p < layer.d.length; p += 4, i++) {
-            if (done[i] && !(treeOver && done[i] === myOrder - 1 && treeOver.has(i))) continue;
+            if (done[i] && !(treeOver && done[i] === myOrder - 1 && treeOver.has(i))) { const g = w.glowAbove && w.glowAbove.get(i); if (g && done[i] !== myOrder) { out.d[p] = Math.min(255, out.d[p] + g[0]); out.d[p + 1] = Math.min(255, out.d[p + 1] + g[1]); out.d[p + 2] = Math.min(255, out.d[p + 2] + g[2]); } continue; }
             if (layer.d[p] === VOID[0] && layer.d[p + 1] === VOID[1] && layer.d[p + 2] === VOID[2]) continue;
             out.d[p] = layer.d[p]; out.d[p + 1] = layer.d[p + 1]; out.d[p + 2] = layer.d[p + 2]; done[i] = myOrder;
         }

@@ -143,54 +143,80 @@
     LIVE.add({ still: true, under: drawGarlands });
 })();
 
-/* ---------- the big tree's bulbs: a warm, soft incandescent glow round each, breathing slowly (8 Nov 2026, his: "The tree still doesn't
-   have that nostalgic, incandescent glow"). The bulbs are found once from the tree's lights picture; each gets a halo drawn with
-   "lighter" in a warm amber, on its own slow cycle, never off, as old filament bulbs on a string do. Drawn under the avatar. ---------- */
+/* ---------- the Christmas trees' lights, alive: every bulb breathes slowly on its own, warm like an old filament bulb, now and then one
+   sparkles, and the star's glow swells and settles (8 Nov 2026, his: "that nostalgic, incandescent glow"; 10 Nov: "I'm seeing no glow",
+   so: the giant tree and our own firs alike, stronger as the light goes, and cut by whatever stands in front of the tree, as the snow is).
+   The steady glow is baked into the map's pictures (render/hw3.js); this only adds the movement on top, so it's never the whole of it.
+   It redraws about eleven times a second, not every frame, and only while a tree is on screen. ---------- */
 (function () {
     "use strict";
     const LIVE = window.HallwayLive; if (!LIVE) return;
-    let bulbs = null, fp = null;
-    function load() {
-        if (bulbs !== null) return; bulbs = false; fp = (window.FLOOR_PIECES || {}).bigtree; if (!fp || !fp.lights) return;
-        /* the tree's second version (8 Nov) says where its bulbs are; the baubles' highlights are lit too, and must not get a halo */
-        if (fp.bulbs) { bulbs = fp.bulbs.map(b => ({ x: b[0] + .5, y: b[1] + .5, c: [b[2], b[3], b[4]], ph: Math.random(), per: 4 + Math.random() * 3 })); LIVE.wake(); return; }
-        const im = new Image(); im.onload = () => {
-            const c = document.createElement("canvas"); c.width = im.naturalWidth; c.height = im.naturalHeight; const g = c.getContext("2d", { willReadFrequently: true }); g.drawImage(im, 0, 0);
-            const d = g.getImageData(0, 0, c.width, c.height).data, seen = new Uint8Array(c.width * c.height), out = [];
-            /* each touching group of lit pixels is one bulb, at its middle, in its own colour */
-            for (let y = 0; y < c.height; y++) for (let x = 0; x < c.width; x++) { const i = y * c.width + x; if (seen[i] || d[i * 4 + 3] < 128) continue;
-                const st = [i], px = []; seen[i] = 1; while (st.length) { const k = st.pop(); px.push(k); const kx = k % c.width, ky = (k / c.width) | 0; for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { const nx = kx + dx, ny = ky + dy; if (nx < 0 || ny < 0 || nx >= c.width || ny >= c.height) continue; const n = ny * c.width + nx; if (!seen[n] && d[n * 4 + 3] >= 128) { seen[n] = 1; st.push(n); } } }
-                if (px.length > 40) continue;                                   // the star, not a bulb: it has its own glow
-                let sx = 0, sy = 0, r = 0, gg = 0, b = 0; for (const k of px) { sx += k % c.width; sy += (k / c.width) | 0; r += d[k * 4]; gg += d[k * 4 + 1]; b += d[k * 4 + 2]; }
-                const n = px.length; out.push({ x: sx / n + .5, y: sy / n + .5, c: [r / n, gg / n, b / n], ph: Math.random(), per: 4 + Math.random() * 3 });
-            }
-            bulbs = out; LIVE.wake();
-        };
-        im.src = "art/wall/" + fp.lights;
-    }
-    const trees = () => { if (!window.hallwayXmas) return []; const l = LIVE.floor || (LIVE.editorApi && LIVE.editorApi().level); if (!l) return []; return (l.props || []).filter(p => p.k === "statue").map(p => ({ l, p })); };
-    /* the tree's picture on the map, and whether any of it is on screen */
-    const treeAt = ({ l, p }) => { const a = LIVE.mapPoint(p.x + 1, p.y + 1, LIVE.nodeZ(l, p.x, p.y) || 0); return [Math.round(a[0]) - fp.ox, Math.round(a[1]) - fp.oy]; };
-    const seen = (X0, Y0, v) => !(X0 > v.x1 || X0 + fp.w < v.x0 || Y0 > v.y1 || Y0 + fp.h < v.y0);
-    LIVE.add({
-        /* only while the tree is on screen (9 Nov scan, page finding 1: at Christmas it kept the whole of Ground repainting every frame);
-           paint() wakes it again when the camera brings it into view */
-        active: () => { if (!window.hallwayXmas) return false; load(); if (!bulbs || !fp) return false; const ts = trees(); if (!ts.length) return false; const v = LIVE.view(); return ts.some(q => { const [X0, Y0] = treeAt(q); return seen(X0, Y0, v); }); },
-        under(c, ox, oy, now) {
-            if (!bulbs || !fp) return; const t = now / 1000, v = LIVE.view();
-            c.save(); c.translate(ox, oy); c.scale(LIVE.zoom, LIVE.zoom); c.globalCompositeOperation = "lighter";
-            for (const q of trees()) {
-                const [X0, Y0] = treeAt(q);
-                if (!seen(X0, Y0, v)) continue;
-                for (const b of bulbs) {
-                    /* warm, never cold: the bulb's own colour pulled towards a filament's amber, and a slow breath of 70% to 100% */
-                    const k = .7 + .3 * (.5 + .5 * Math.sin((t / b.per + b.ph) * Math.PI * 2)), col = [Math.round(b.c[0] * .55 + 255 * .45), Math.round(b.c[1] * .55 + 176 * .45), Math.round(b.c[2] * .55 + 86 * .45)];
-                    const x = X0 + b.x, y = Y0 + b.y, R = 4, g = c.createRadialGradient(x, y, 0, x, y, R);
-                    g.addColorStop(0, `rgba(${col[0]},${col[1]},${col[2]},${(.2 * k).toFixed(3)})`); g.addColorStop(.5, `rgba(${col[0]},${col[1]},${col[2]},${(.06 * k).toFixed(3)})`); g.addColorStop(1, `rgba(${col[0]},${col[1]},${col[2]},0)`);
-                    c.fillStyle = g; c.fillRect(x - R, y - R, R * 2, R * 2);
-                }
-            }
-            c.restore();
+    const FP = k => (window.FLOOR_PIECES || {})[k] || null;
+    const floorNow = () => window.HALLWAY_PLAY ? LIVE.floor : (LIVE.editorApi && LIVE.editorApi().level) || LIVE.floor;
+    /* each tree on the floor shown: its picture's place and the tile its foot is on, as render/hw3.js puts it */
+    function trees() {
+        if (!window.hallwayXmas) return []; const l = floorNow(); if (!l) return []; const out = [];
+        for (const p of l.props || []) {
+            let k = null, fx, fy, cx, cy;
+            if (p.k === "statue") { k = "bigtree"; cx = p.x + 1; cy = p.y + 1; fx = p.x + 1; fy = p.y + 1; }
+            else if (p.k === "xmasfir" || p.k === "xmasfir2" || p.k === "xmasfir4") { const turned = ((p.rot || 0) & 1) === 1; k = p.k; cx = p.x + (p.k === "xmasfir4" || (p.k === "xmasfir2" && !turned) ? 1 : .5); cy = p.y + (p.k === "xmasfir4" || (p.k === "xmasfir2" && turned) ? 1 : .5); fx = Math.ceil(cx) - 1; fy = Math.ceil(cy) - 1; }
+            const fp = k && FP(k); if (!fp || !fp.bulbs) continue;
+            const a = LIVE.mapPoint(cx, cy, LIVE.nodeZ(l, p.x, p.y) || 0);
+            out.push({ l, p, k, fp, fx, fy, X0: Math.round(a[0]) - fp.ox, Y0: Math.round(a[1]) - fp.oy });
         }
-    });
+        return out;
+    }
+    const onScreen = (t, v) => !(t.X0 - 20 > v.x1 || t.X0 + t.fp.w + 20 < v.x0 || t.Y0 - 30 > v.y1 || t.Y0 + t.fp.h + 20 < v.y0);
+    /* the bulbs of each kind of tree, with a phase and pace each that stay the same from visit to visit */
+    const bulbsOf = new Map();
+    function bulbs(k, fp) {
+        if (bulbsOf.has(k)) return bulbsOf.get(k);
+        const rnd = n => { const v = Math.sin(n * 12.9898 + k.length * 78.233) * 43758.5453; return v - Math.floor(v); };
+        const list = fp.bulbs.map((b, i) => ({ x: b[0], y: b[1], c: [Math.round(b[2] * .6 + 255 * .4), Math.round(b[3] * .6 + 180 * .4), Math.round(b[4] * .6 + 90 * .4)], ph: rnd(i + 1), per: 2.6 + rnd(i + 7) * 3.8, sp: rnd(i + 13) < .14 }));
+        /* the star: the middle of the gold at the top of the tree's lights */
+        let sx = fp.ox, sy = 6, n = 0, X = 0, Y = 0; const im = new Image(); im.src = "art/wall/" + fp.lights;
+        const o = { list, star: [sx, sy], big: k === "bigtree" };
+        im.onload = () => { const c = document.createElement("canvas"); c.width = im.naturalWidth; c.height = Math.min(im.naturalHeight, o.big ? 34 : 18); const g = c.getContext("2d", { willReadFrequently: true }); g.drawImage(im, 0, 0); const d = g.getImageData(0, 0, c.width, c.height).data;
+            for (let j = 0; j < c.height; j++) for (let i = 0; i < c.width; i++) { const q = (j * c.width + i) * 4; if (!d[q + 3] || d[q] + d[q + 1] < 400 || d[q + 2] > d[q + 1]) continue; n++; X += i; Y += j; }
+            if (n) o.star = [X / n, Y / n]; LIVE.wake(); };
+        bulbsOf.set(k, o); return o;
+    }
+    /* one soft round halo per colour, drawn once */
+    const halos = new Map();
+    function halo(c, R) {
+        const key = c.join(",") + "|" + R; let h = halos.get(key); if (h) return h;
+        h = document.createElement("canvas"); h.width = h.height = R * 2 + 1; const g = h.getContext("2d"), gr = g.createRadialGradient(R + .5, R + .5, 0, R + .5, R + .5, R + .5);
+        gr.addColorStop(0, `rgba(${c[0]},${c[1]},${c[2]},1)`); gr.addColorStop(.35, `rgba(${c[0]},${c[1]},${c[2]},.38)`); gr.addColorStop(1, `rgba(${c[0]},${c[1]},${c[2]},0)`);
+        g.fillStyle = gr; g.fillRect(0, 0, h.width, h.height); if (halos.size > 200) halos.clear(); halos.set(key, h); return h;
+    }
+    function nightness() { const m = LIVE.mood(); if (!m) return .6; const n = q => q === "night" ? 1 : q === "dusk" || q === "dawn" || q === "failing" ? .7 : .2; return n(m.a) * (1 - m.f) + n(m.b) * m.f; }
+    const cv = document.createElement("canvas"), g = cv.getContext("2d", { willReadFrequently: true }), PAD = 26;
+    function draw(c, ox, oy, now) {
+        const ts = trees(); if (!ts.length) return; const v = LIVE.view(), t = now / 1000, s = .55 + .45 * nightness();
+        c.save(); c.translate(ox, oy); c.scale(LIVE.zoom, LIVE.zoom); c.imageSmoothingEnabled = true;
+        for (const tr of ts) {
+            if (!onScreen(tr, v)) continue;
+            const B = bulbs(tr.k, tr.fp), w = tr.fp.w + PAD * 2, h = tr.fp.h + PAD * 2, R = B.big ? 4 : 3;
+            if (cv.width < w || cv.height < h) { cv.width = Math.max(cv.width, w); cv.height = Math.max(cv.height, h); }
+            g.setTransform(1, 0, 0, 1, 0, 0); g.globalCompositeOperation = "source-over"; g.clearRect(0, 0, w, h); g.globalCompositeOperation = "lighter";
+            for (const b of B.list) {
+                /* a slow breath, 50% to 100%; a few now and then flare for a moment, as a loose filament does */
+                let k = .5 + .5 * (.5 + .5 * Math.sin((t / b.per + b.ph) * Math.PI * 2));
+                if (b.sp) { const u = ((t / (b.per * 2.3) + b.ph) % 1); if (u < .06) k += .9 * Math.sin(u / .06 * Math.PI); }
+                g.globalAlpha = Math.min(1, .3 * k * s); g.drawImage(halo(b.c, R), PAD + b.x - R, PAD + b.y - R);
+            }
+            /* the star: a glow that swells and settles over about five seconds */
+            const sk = .75 + .25 * Math.sin(t * 1.25), SR = B.big ? 20 : 9; g.globalAlpha = Math.min(1, (.32 + .3 * s) * sk); g.drawImage(halo([255, 228, 160], SR), PAD + B.star[0] - SR, PAD + B.star[1] - SR);
+            g.globalAlpha = 1; g.globalCompositeOperation = "source-over";
+            /* what stands in front of the tree hides its lights */
+            const X = tr.X0 - PAD, Y = tr.Y0 - PAD, z = LIVE.nodeZ(tr.l, tr.fx, tr.fy) || 0;
+            LIVE.as({ x: tr.fx, y: tr.fy, z, l: tr.l, dir: 2, frame: 0, st: null }, () => LIVE.cutInFront(g, X, Y, true));
+            c.globalCompositeOperation = "lighter"; c.drawImage(cv, 0, 0, w, h, X, Y, w, h); c.globalCompositeOperation = "source-over";
+        }
+        c.restore();
+    }
+    LIVE.add({ still: true, under: draw });
+    /* about eleven times a second while a tree is on screen and the tab is in view */
+    setInterval(() => { if (document.hidden || !window.hallwayXmas) return; const v = LIVE.view(); if (trees().some(tr => onScreen(tr, v))) LIVE.wake(); }, 90);
 })();
+
