@@ -4464,9 +4464,14 @@ function tile(up, back, start) {
     const px = new Map(), wall = (u, z, col) => px.set(Math.round(-u) + "," + Math.round(Math.floor(u / 2) - z), col);
     const shape = paint => { const seen = new Map(), mark = (u, z, col) => seen.set(Math.round(u) + "," + Math.round(z), col); paint(mark); for (const k of seen.keys()) { const [u, z] = k.split(",").map(Number); for (const [p, q] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) if (!seen.has((u + p) + "," + (z + q))) wall(u + p, z + q, GK); } for (const [k, col] of seen) { const [u, z] = k.split(",").map(Number); wall(u, z, col); } };
     const W = 16, Z = 126, DROP = 3, lift = u => u >= 0 ? up * u / W : back * u / W, rope = u => gsag(u, W, Z, DROP) + lift(u);
-    for (let u = 0; u < W; u += .5) { const z = rope(u); for (let d = -2.5; d <= 2.5; d += .5) { const n = GN(Math.round(u * 2), Math.round(d * 2) + 9), edge = Math.abs(d) > 2.2 - n * .8; if (edge && n < .6) continue; const col = d > 1.5 ? GH("6cb05e") : d > .5 ? (n > .5 ? GH("4fa858") : GH("3f8a44")) : d > -1 ? GH("2f7d3a") : GH("1c5426"); wall(u, z + d, col); } wall(u, z - 3, GK); wall(u, z + 3, [16, 34, 18]);
+    for (let u = 0; u < W; u += .5) { const z = rope(u);
+        /* the rope's thickness is measured straight up the wall, so where it runs steeply on screen (the wall's own slant and the climb
+           together) it went thin and stringy: thicken it by how much steeper than a level rope its climb runs (the swag's own dip left out, so a level tile is untouched), so it keeps its width across
+           the rope. A level or gently climbing tile is unchanged (k = 1), so it stays i_swag.png (9 Nov, his: "a bit thin and mangled") */
+        const s = .5 - up / W, k = Math.max(1, Math.hypot(1, s) / Math.hypot(1, .5));
+        for (let d = -2.5 * k; d <= 2.5 * k + 1e-9; d += .5) { const e = d / k, n = GN(Math.round(u * 2), Math.round(e * 2) + 9), edge = Math.abs(e) > 2.2 - n * .8; if (edge && n < .6) continue; const col = e > 1.5 ? GH("6cb05e") : e > .5 ? (n > .5 ? GH("4fa858") : GH("3f8a44")) : e > -1 ? GH("2f7d3a") : GH("1c5426"); wall(u, z + d, col); } wall(u, z - 3 * k, GK); wall(u, z + 3 * k, [16, 34, 18]);
         /* climbing steeply, the needles would come apart into stripes: fill each half-step's rise */
-        const z2 = rope(u + .5); for (let s = 1; s < Math.abs(z2 - z) - .5; s++) { const zz = z + Math.sign(z2 - z) * s; for (let d = -2; d <= 2; d += .5) wall(u, zz + d, d > 1.5 ? GH("6cb05e") : d > .5 ? GH("3f8a44") : d > -1 ? GH("2f7d3a") : GH("1c5426")); } }
+        const z2 = rope(u + .5); for (let st = 1; st < Math.abs(z2 - z) - .5; st++) { const zz = z + Math.sign(z2 - z) * st; for (let d = -2 * k; d <= 2 * k + 1e-9; d += .5) { const e = d / k; wall(u, zz + d, e > 1.5 ? GH("6cb05e") : e > .5 ? GH("3f8a44") : e > -1 ? GH("2f7d3a") : GH("1c5426")); } } }
     /* holly where the tiles meet, each half lying along its own tile's rope; the first tile of a run gets an end's holly */
     holly(shape, lift, Z, start ? "start" : "both");
     const out = []; for (const [k, col] of px) { const [x, y] = k.split(",").map(Number); out.push([x, y, col]); }
@@ -4501,7 +4506,8 @@ function pixels(g, tops, screen, baubles, edges) {
         /* the far end of a stretch's last tile: its own holly, where the next tile's hook would be */
         if (last) { const q = along(g, t + 1), s2 = screen(q[0], q[1], E[i + 1] - DOWN), ex = Math.round(s2[0]), ey = Math.round(s2[1]); for (const [x, y, col] of endCap(up)) px.push([flip ? ex - 8 - x : ex + 8 + x, ey + 124 + y, col]); }
         /* a bauble in the dip of each tile's swag, half way up its climb */
-        if (g.baubles !== false) { const B = BAUB[names[n++ % names.length]], bx = cx - 2, by = cy + 8 - Math.round(up / 2); ROW.forEach((r, j) => { for (let u = 0; u < 5; u++) { const ch = r[u]; if (ch === ".") continue; px.push([bx + u, by + j, ch === "K" ? [0, 0, 0] : ch === "c" ? GH("d6ad56") : ch === "H" ? GH(B[1]) : ch === "D" ? GH(B[2]) : GH(B[0])]); } }); }
+        /* hung from the rope's underside in its own column: on a steep fall the rope is lower there than half way, and the bauble sat in it */
+        if (g.baubles !== false) { const B = BAUB[names[n++ % names.length]], bx = cx - 2; let by = cy + 8 - Math.round(up / 2); for (const [x, y] of px) if (x === bx + 2 && y > by) by = y; ROW.forEach((r, j) => { for (let u = 0; u < 5; u++) { const ch = r[u]; if (ch === ".") continue; px.push([bx + u, by + j, ch === "K" ? [0, 0, 0] : ch === "c" ? GH("d6ad56") : ch === "H" ? GH(B[1]) : ch === "D" ? GH(B[2]) : GH(B[0])]); } }); }
         out.push({ t, mid: [cx, cy + 8 - Math.round(up / 2)], px });
     }
     return out;
