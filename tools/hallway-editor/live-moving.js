@@ -129,7 +129,10 @@
         LIVE.holdCamera(true); document.body.classList.add("hw-screensaver");
         if (!screensaver.title) { const t = screensaver.title = document.createElement("div"); t.className = "hw-ss-title"; t.setAttribute("aria-hidden", "true"); /* the Hallway's own card, and under it the way out on a little brass-edged plate to match (9 Nov 2026, his) */
             const big = document.createElement("img"), small = document.createElement("div"); big.className = "hw-ss-card"; big.src = "/assets/img/hallway-plaque@2x.png"; big.alt = ""; big.addEventListener("error", () => { const t2 = document.createElement("div"); t2.className = "hw-ss-name"; t2.textContent = "Maze Rats Hallway"; big.replaceWith(t2); });
-            small.className = "hw-ss-hint"; const hintText = document.createElement("span"); hintText.textContent = matchMedia("(pointer: coarse)").matches ? "Tap to return to the Hallway" : "Click or press any key to return to the Hallway"; small.appendChild(hintText); t.append(big, small); (document.getElementById("stage") || document.body).appendChild(t); }
+            /* the way out: a slim plate in the card's own oak, brass and raised brass capitals (9 Nov 2026, his: the pixel lettering looked grim) */
+            const tap = matchMedia("(pointer: coarse)").matches, words = tap ? "Tap to return to the Hallway" : "Click or press any key to return to the Hallway";
+            small.className = "hw-ss-plate"; const plate = document.createElement("img"); plate.src = "/assets/img/hallway-plate-" + (tap ? "tap" : "key") + "@2x.png"; plate.alt = words; plate.width = tap ? 336 : 507; plate.height = 50;
+            plate.addEventListener("error", () => { small.className = "hw-ss-hint"; small.textContent = words; }); small.appendChild(plate); t.append(big, small); (document.getElementById("stage") || document.body).appendChild(t); }
         screensaver.title.classList.remove("on"); void screensaver.title.offsetWidth; screensaver.title.classList.add("on");
         LIVE.wake(); screensaver.raf = requestAnimationFrame(ssTick); return true;
     }
