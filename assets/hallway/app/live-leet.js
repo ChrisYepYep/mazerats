@@ -2,8 +2,8 @@
    theatredrome, but a touch of realism with the date and time being a real stamp of when the next stream is").
 
    Each poster has a cream slip pasted across its foot (ideas/leetshow.js). Here the next show's date and time are stamped on it in red
-   ink, in the visitor's own time: "SAT 14 NOV / 8:30 PM", "TONIGHT", "TOMORROW", "ON NOW!" while it's on, "COMING SOON" when no show
-   is set. The shows are the map's leetShow.times (set in the editor's Map tab); a feed can fill the same list later.
+   ink, in the visitor's own time: "SAT 14 NOV / 8:30 PM", "TONIGHT", "TOMORROW", "ON NOW!" while it's on, "TBA" when no show
+   is known. The shows are the map's leetShow.times (set in the editor's Map tab); a feed can fill the same list later.
    The slip is found in the poster's own picture by its colour, so the stamp sits on it on either wall, either way the stand turns.
    It only goes where the slip really shows on screen, in the slip's own light. */
 (function () {
@@ -12,7 +12,7 @@
     const clock = d => { const h = d.getHours(), m = d.getMinutes(); return (h % 12 || 12) + (m ? ":" + String(m).padStart(2, "0") : "") + (h < 12 ? " AM" : " PM"); };
     const sameDay = (a, b) => a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
     /* what the slip says, as lines */
-    /* Vincent Leet's own Twitch schedule (netlify/functions/leet-schedule.js), when the site can ask it: its streams win over the times
+    /* Vincent Leet's own Twitch schedule (netlify/functions/leet-schedule.js, from Twitch's public calendar and preview picture, no app), when the site can ask it: its streams win over the times
        typed in the editor, and ON NOW only when he's really live. Without it (not set up, the local editor, Twitch down) the typed times. */
     let feed = null;
     function lines(map, now, f = feed, room) {
@@ -23,7 +23,8 @@
         if (fromTwitch && f.live) return tiny ? ["LIVE", "NOW"] : ["ON NOW!", "LIVE"];
         const times = (streams.length ? streams : typed).sort((a, b) => a - b);
         if (!fromTwitch && times.some(d => d <= now && now < +d + mins * 60000)) return tiny ? ["LIVE", "NOW"] : ["ON NOW!", "LIVE"];
-        const next = times.find(d => d > now); if (!next) return tiny ? ["SOON"] : ["COMING", "SOON"];
+        /* no show known: never COMING SOON (9 Nov 2026, his: "something much shorter that will fit on the narrow sign too"): TBA, under the poster's NEXT */
+        const next = times.find(d => d > now); if (!next) return ["TBA"];
         if (tiny) return [DAYS[next.getDay()], next.getDate() + "/" + String(next.getMonth() + 1).padStart(2, "0"), String(next.getHours()).padStart(2, "0") + ":" + String(next.getMinutes()).padStart(2, "0")];
         const today = new Date(now), tomorrow = new Date(now); tomorrow.setDate(tomorrow.getDate() + 1);
         const named = DAYS[next.getDay()], date = next.getDate() + " " + MONTHS[next.getMonth()];

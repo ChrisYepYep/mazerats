@@ -89,7 +89,9 @@
         const say = document.createElement("p"); say.className = "say"; say.setAttribute("role", "status");
         const guest = document.createElement("button"); guest.type = "button"; guest.className = "mr-btn guest"; guest.textContent = "Walk in as a guest";
         const was = remembered(); if (was) { input.value = was.name || ""; if (HOTELS.includes(was.hotel)) sel.value = was.hotel; }
-        form.append(row, say, guest); frame.appendChild(form); win.append(tbar, frame); back.appendChild(win); document.body.appendChild(back); input.focus();
+        /* under it all, what the Hallway is (9 Nov 2026, his words) */
+        const note = document.createElement("p"); note.className = "note"; note.textContent = "Maze Rats Hallway is a single player experience, any Habbos you see around the hallways are non-playable characters designed for ambient game mechanics.";
+        form.append(row, say, guest, note); frame.appendChild(form); win.append(tbar, frame); back.appendChild(win); document.body.appendChild(back); input.focus();
         const done = () => { document.removeEventListener("keydown", keys, true); back.remove(); if (opener && opener.focus) opener.focus(); if (onDone) onDone(); };
         const keys = e => {
             if (e.key === "Escape") { e.stopPropagation(); done(); return; }

@@ -35,7 +35,7 @@
     ROWS.leetstand2 = { def: 2, min: 2, max: 2, flip: false, part: () => [] };
     const SINGLES = {
         plant: ["hw_plant_a_0_0_0"], statue: ["hw_statue_a_0_0_0"], fountain: ["hw_fountain_a_0_0_0"],
-        plant_palm: [], plant_orange: [], plant_bonsai: [], plant_roses: [], plant_cactus: [], plant_bay: [], plant_sunflower: [], barstool: [], rarecase: [], arcade_ff: [], arcade_pura: [], arcade_guess: [], arcade_odd: [], arcade_scout: [], arcade_quiz: [], tablelamp: [], xmastree: [], xmaslantern: [], xmassmalltree: [], xmasdrinks: [], xmasduck: [], snowman: [], gift1: [], gift2: [], gift3: [], gift4: [], mark_scuff: [], mark_tile: [], mark_arrow: [], shelf: ["hw_shelf_a_0_4_0"], cabinet: ["hw_closet1_a_0_2_0"], water: ["hw_watermatic_a_0_4_0"],
+        plant_palm: [], plant_orange: [], plant_bonsai: [], plant_roses: [], plant_cactus: [], plant_bay: [], plant_sunflower: [], barstool: [], rarecase: [], arcade_ff: [], arcade_pura: [], arcade_guess: [], arcade_odd: [], arcade_scout: [], arcade_quiz: [], tablelamp: [], xmastree: [], xmaslantern: [], xmassmalltree: [], xmasdrinks: [], xmasduck: [], snowman: [], gift1: [], gift5: [], gift6: [], gift7: [], gift8: [], gift9: [], gift10: [], gift11: [], gift2: [], gift3: [], gift4: [], mark_scuff: [], mark_tile: [], mark_arrow: [], shelf: ["hw_shelf_a_0_4_0"], cabinet: ["hw_closet1_a_0_2_0"], water: ["hw_watermatic_a_0_4_0"],
         pillar: ["pillar1_a_0_0_0"], pillartall: ["pillar1_a_0_0_0"], smtable: ["hw_smtble_a_0_0_0"], ballpost: ["pillar0_a_0_0_0"]
     };
     const FLIPPED = { cabinet: true };
@@ -75,7 +75,7 @@
     /* What changes at Christmas, read from the same data the renderer goes by (9 Nov scan, build 2): render/hw3.js's XMAS_K props
        are only drawn under a "+x" light, every wall item whose wall-items.js entry has xmas likewise (i_swag was missing from the
        old hand list), a window shows snow, a statue becomes the giant tree, and the level's garlands are baked in */
-    const XMAS_K = new Set(["xmastree", "xmaslantern", "xmassmalltree", "xmasdrinks", "xmasduck", "snowman", "gift1", "gift2", "gift3", "gift4"]);
+    const XMAS_K = new Set(["xmastree", "xmaslantern", "xmassmalltree", "xmasdrinks", "xmasduck", "snowman", "gift1", "gift2", "gift3", "gift4", "gift5", "gift6", "gift7", "gift8", "gift9", "gift10", "gift11"]);
     let wallDefs = null;      // looked up the first time it's asked: on the page wall-items.js loads after this file
     const wallDef = k => { if (!wallDefs) { const L = typeof module !== "undefined" && module.exports ? require("./wall-items.js") : root.WALL_ITEMS; if (!L) return null; wallDefs = new Map(L.map(i => [i.id, i])); } return wallDefs.get(k) || null; };
     const xmasWallItem = k => k === "i_window" || !!(wallDef(k) || {}).xmas;
