@@ -877,6 +877,17 @@ function theatreArt(phase, axis, part, T) {
             /* light spilling from under the curtain onto the floor in front of it, warm, fading over 8 rows (his, 8 Nov: "a soft glow coming from under the curtains") */
             const ac = across(dX, dY), t = ((-1) * (depth(dX, dY) - CD)) * 16 - 3;
             if (!hisCurtains && t > -1 && t <= 11 && ac > .1 && ac < 3.9) { const q = at(i, j); if (o.rgba[q + 3] < 128) continue; const a2 = .72 * Math.pow(1 - Math.max(0, t - 1) / 11, 1.5) * Math.min(1, (ac - .1) * 4, (3.9 - ac) * 4); o.rgba[q] = Math.round(o.rgba[q] + (255 - o.rgba[q]) * a2); o.rgba[q + 1] = Math.round(o.rgba[q + 1] + (184 - o.rgba[q + 1]) * a2); o.rgba[q + 2] = Math.round(o.rgba[q + 2] + (96 - o.rgba[q + 2]) * a2); if (a2 > .12) glow[j * W + i] = 1; } }
+        /* The theatre's light coming out through the whole tunnel (9 Nov 2026, his: "a more natural glow coming from the whole tunnel"):
+           everything you see inside the opening, its floor, walls and back, warmed towards the theatre's lamplight, more the deeper in it is,
+           softening off at the opening's sides; and kept lit at night, so the tunnel glows in a dark hall. His curtains go over it, unlit. */
+        if (hisCurtains) { const archArt = portalArt(phase)[axis].arch, WARM = [255, 190, 110];
+            for (let i = i0 - 1; i <= i1 + 1; i++) {
+                let j0 = null; for (let j = 40; j < H; j++) { const q = at(i, j); if (archArt.rgba[q + 3] < 128 && src.rgba[q + 3] >= 128) { j0 = j; break; } } if (j0 === null) continue;
+                const u = Math.max(0, Math.min(1, (i - i0) / (i1 - i0))), side = Math.min(1, u * 4, (1 - u) * 4), ft = floorTop.has(i) ? floorTop.get(i) : H;
+                for (let j = j0; j < H; j++) { const q = at(i, j); if (o.rgba[q + 3] < 128 || archArt.rgba[q + 3] >= 128) continue;
+                    let deep; if (j < ft) deep = .55 + .45 * Math.min(1, (ft - j) / 60); else { const [dX, dY] = floorAt(i, j), dp = depth(dX, dY); if (dp <= 0) break; deep = Math.min(1, dp / 3); }
+                    const a2 = (.18 + .3 * deep) * (.45 + .55 * side); o.rgba[q] = Math.round(o.rgba[q] + (WARM[0] - o.rgba[q]) * a2 * .55 + o.rgba[q] * a2 * .35); o.rgba[q + 1] = Math.round(o.rgba[q + 1] + (WARM[1] - o.rgba[q + 1]) * a2 * .45 + o.rgba[q + 1] * a2 * .2); o.rgba[q + 2] = Math.round(o.rgba[q + 2] + (WARM[2] - o.rgba[q + 2]) * a2 * .3);
+                    for (let k = 0; k < 3; k++) o.rgba[q + k] = Math.min(255, o.rgba[q + k]); glow[j * W + i] = 1; } } }
         /* The curtains are his art since 9 Nov 2026 (art/theatre-curtains.png, his redraw in burgundy with gold cord tie-backs, drawn on a
            156 by 248 canvas 14 left and 14 above this piece on the "x" way; the other way is the same picture mirrored, 150 - x across, 13 up).
            Between them, the tunnel as it is. The cloth drawn in code before stays below, for a map that has no curtain picture. */
