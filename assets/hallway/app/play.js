@@ -89,9 +89,10 @@
         const say = document.createElement("p"); say.className = "say"; say.setAttribute("role", "status");
         const guest = document.createElement("button"); guest.type = "button"; guest.className = "mr-btn guest"; guest.textContent = "Walk in as a guest";
         const was = remembered(); if (was) { input.value = was.name || ""; if (HOTELS.includes(was.hotel)) sel.value = was.hotel; }
-        /* under it all, what the Hallway is (9 Nov 2026, his words) */
-        const note = document.createElement("p"); note.className = "note"; note.textContent = "Maze Rats Hallway is a single player experience, any Habbos you see around the hallways are non-playable characters designed for ambient game mechanics.";
-        form.append(row, say, guest, note); frame.appendChild(form); win.append(tbar, frame); back.appendChild(win); document.body.appendChild(back); input.focus();
+        /* under it all, set apart below a rule and quieter than the picker: what the Hallway is, what the username is for, and the fan-site line (9 Nov 2026, his words) */
+        const notes = document.createElement("div"); notes.className = "notes";
+        for (const [t, cls] of [["Maze Rats Hallway is a single player experience, any Habbos you see around the hallways are non-playable characters designed for ambient game mechanics.", ""], ["Your Habbo Origins username is only used to show your Habbo's look, and is only remembered on this device.", ""], ["Maze Rats is independent and not affiliated with, sponsored, supported, or endorsed by Sulake Oy or its affiliates. Any Habbo trademarks or intellectual property used here are done so in accordance with the Habbo Fan Site Policy.", "legal"]]) { const p = document.createElement("p"); p.textContent = t; if (cls) p.className = cls; notes.appendChild(p); }
+        form.append(row, say, guest, notes); frame.appendChild(form); win.append(tbar, frame); back.appendChild(win); document.body.appendChild(back); input.focus();
         const done = () => { document.removeEventListener("keydown", keys, true); back.remove(); if (opener && opener.focus) opener.focus(); if (onDone) onDone(); };
         const keys = e => {
             if (e.key === "Escape") { e.stopPropagation(); done(); return; }
