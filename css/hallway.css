@@ -192,3 +192,6 @@ html.hallway-instant #hallway-stage { transition: none; }
 /* Full screen (F11, or the hallway asking for it): the footer slides away too and the hallway takes its room (8 Nov 2026, his) */
 html.hallway-open.hallway-full body > .site-footer { transform: translateY(calc(100vh + 100%)); }
 html.hallway-open.hallway-full #hallway-stage { bottom: 0; }
+
+/* the closed screens' notes and fan-site statement, justified (10 Nov 2026, his) */
+.hallway-note-body .hallway-note-legal, .hallway-note-body .hallway-note-small { text-align: justify; text-align-last: left; hyphens: none; }
