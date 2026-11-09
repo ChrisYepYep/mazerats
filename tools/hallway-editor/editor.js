@@ -264,6 +264,11 @@ function hangWallAt(px, py, l) {
     const r = wallAt(px, py, l), inOpening = r && map.stairs.some(s => s.low === l.id && (thruLeft(s) ? r.axis === "y" && s.x === r.line && r.at > s.a && r.at <= s.b : r.axis === "x" && s.y === r.line && r.at >= s.a && r.at < s.b));
     return r && !inOpening ? r : stairWallAt(px, py, l) || r;
 }
+/* for garlands and festoons: any wall, hidden ones too, or a stairwell's, which the renderer hangs them on under the floor above (9 Nov 2026, his) */
+function garlandWallAt(px, py, l) {
+    const r = wallAt(px, py, l, true), inOpening = r && map.stairs.some(s => s.low === l.id && (thruLeft(s) ? r.axis === "y" && s.x === r.line && r.at > s.a && r.at <= s.b : r.axis === "x" && s.y === r.line && r.at >= s.a && r.at < s.b));
+    return r && !inOpening ? r : stairWallAt(px, py, l) || r;
+}
 /* a height that clears the steps or landing under it, and stays on the wall */
 const LAMP_MIN_WALL = 16, lampFits = (l, w) => !w.drop || retaining(l, w.axis, w.line, wallTile(w)).H >= LAMP_MIN_WALL;
 const lampHeight = (l, w, px, py) => w.stair ? stairH(w, wallSpot(w, l, px, py).h) : w.drop ? Math.min(wallH.lamp, retaining(l, w.axis, w.line, wallTile(w)).H - 8) : wallH.lamp;
@@ -2259,9 +2264,9 @@ canvas.addEventListener("pointerdown", e => {
     if (tool === "halfwall" || tool === "nowall" || tool === "addwall") { drag = { kind: "halfwall" }; halfBrush(drag, px, py); return; }
     if (tool === "swag") { drag = { kind: "swag" }; swagBrush(drag, px, py); return; }
     /* not on a drop (a step between floor heights): there's no wall there to hang it from, and it floated a whole wall up (9 Nov scan, renderer finding 2) */
-    if (tool === "garland" || tool === "garland2" || tool === "festoon") { const w = wallAt(px, py, level, true); if (w && w.drop) { flash("That's a step, not a wall: hang it on a wall."); return; } }
-    if (tool === "garland" || tool === "garland2") { const w = wallAt(px, py, level, true); if (!w) return; const t = wallTile(w); if (tool === "garland2") { snapshot(); const g = { axis: w.axis, line: w.line, a: t, b: t + 2 }; (level.garlands = level.garlands || []).push(g); changed(); select({ type: "garland", l: level, o: g }); return; } drag = { kind: "garland", axis: w.axis, line: w.line, t0: t }; window.HallwayGarland.draft = { l: level, axis: w.axis, line: w.line, a: t, b: t + 1 }; paint(); return; }
-    if (tool === "festoon") { const w = wallAt(px, py, level, true); if (!w) return; const t = wallTile(w); drag = { kind: "festoon", axis: w.axis, line: w.line, t0: t, t1: t }; window.HallwayFestoon.draft = { l: level, axis: w.axis, line: w.line, a: t, b: t + 1, h: 118, colour: lastFestoon.colour, twinkle: lastFestoon.twinkle }; paint(); return; }
+    if (tool === "garland" || tool === "garland2" || tool === "festoon") { const w = garlandWallAt(px, py, level); if (w && w.drop) { flash("That's a step, not a wall: hang it on a wall."); return; } }
+    if (tool === "garland" || tool === "garland2") { const w = garlandWallAt(px, py, level); if (!w) return; const t = wallTile(w); if (tool === "garland2") { snapshot(); const g = { axis: w.axis, line: w.line, a: t, b: t + 2 }; (level.garlands = level.garlands || []).push(g); changed(); select({ type: "garland", l: level, o: g }); return; } drag = { kind: "garland", axis: w.axis, line: w.line, t0: t }; window.HallwayGarland.draft = { l: level, axis: w.axis, line: w.line, a: t, b: t + 1 }; paint(); return; }
+    if (tool === "festoon") { const w = garlandWallAt(px, py, level); if (!w) return; const t = wallTile(w); drag = { kind: "festoon", axis: w.axis, line: w.line, t0: t, t1: t }; window.HallwayFestoon.draft = { l: level, axis: w.axis, line: w.line, a: t, b: t + 1, h: 118, colour: lastFestoon.colour, twinkle: lastFestoon.twinkle }; paint(); return; }
     if (tool === "steps") {
         const f = tileIn(level, px, py), edge = heightEdgeAt(level, f[0], f[1]);
         if (!edge) { flash("Steps go where two heights meet. Set a floor's height first, with Floor height."); return; }
@@ -2289,8 +2294,8 @@ canvas.addEventListener("pointermove", e => {
     if (drag && drag.kind === "rubout") { rubOut(drag, px, py); return; }
     if (drag && drag.kind === "halfwall") { halfBrush(drag, px, py); return; }
     if (drag && drag.kind === "swag") { swagBrush(drag, px, py); return; }
-    if (drag && drag.kind === "garland") { const w = wallAt(px, py, level, true); if (w && !w.drop && w.axis === drag.axis && w.line === drag.line) { const t1 = wallTile(w), dr = window.HallwayGarland.draft; dr.a = Math.min(drag.t0, t1); dr.b = Math.max(drag.t0, t1) + 1; paint(); } return; }
-    if (drag && drag.kind === "festoon") { const w = wallAt(px, py, level, true); if (w && !w.drop && w.axis === drag.axis && w.line === drag.line) { drag.t1 = wallTile(w); const dr = window.HallwayFestoon.draft; dr.a = Math.min(drag.t0, drag.t1); dr.b = Math.max(drag.t0, drag.t1) + 1; paint(); } return; }
+    if (drag && drag.kind === "garland") { const w = garlandWallAt(px, py, level); if (w && !w.drop && w.axis === drag.axis && w.line === drag.line) { const t1 = wallTile(w), dr = window.HallwayGarland.draft; dr.a = Math.min(drag.t0, t1); dr.b = Math.max(drag.t0, t1) + 1; paint(); } return; }
+    if (drag && drag.kind === "festoon") { const w = garlandWallAt(px, py, level); if (w && !w.drop && w.axis === drag.axis && w.line === drag.line) { drag.t1 = wallTile(w); const dr = window.HallwayFestoon.draft; dr.a = Math.min(drag.t0, drag.t1); dr.b = Math.max(drag.t0, drag.t1) + 1; paint(); } return; }
     if (drag && drag.kind === "edgebrush") { edgeBrush(drag, px, py); return; }
     if (drag && drag.kind === "move") { moveSelected(drag, px, py); return; }
     if (!drag && (tool === "select" || tool === "walk")) {
