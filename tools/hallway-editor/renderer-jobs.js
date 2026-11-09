@@ -27,10 +27,11 @@ onmessage = async e => {
     try {
         if (job.type === "start") {
             mazeList = job.names.map(n => "x\t" + n).join("\n");
-            if (!ready) ready = loadArt(job.base).then(() => { W = requireFrom(ROOT)("hw3.js"); });
+            /* the art from the page when another thread has loaded it already, or fetched here; wantArt: send it back, for the others */
+            if (!ready) ready = (job.art ? Promise.resolve(artIn(job.art)) : loadArt(job.base)).then(() => { W = requireFrom(ROOT)("hw3.js"); });
             await ready;
             const font = {}; for (const ch in W.H.VOL.vb) font[ch] = W.H.VOL.vb[ch].w;
-            return send(job.id, { font });
+            return send(job.id, job.wantArt ? { font, art: artOut() } : { font });
         }
         await ready;
         if (job.type === "report") { let report; try { report = W.fromMap(JSON.parse(job.text), job.names).report; } catch (err) { report = { error: String(err && err.message || err) }; } return send(job.id, { report }); }

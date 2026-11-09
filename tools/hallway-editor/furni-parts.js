@@ -72,12 +72,23 @@
     /* A maze's name for its door: the archive's with its glyphs and decoration off ("*ÕMaze EmpireÕ*" is Maze Empire's door), as render/hw.js's clean() has it */
     const mazeName = n => String(n || "").replace(/[^\x20-\x7e]/g, "").replace(/\*/g, "").replace(/\[|\]/g, "").trim().replace(/\s+/g, " ");
     const api = { ROWS, parts, tiles, turns, rotOf, lengthOf, mazeName };
-    /* the squares of the picture a floor below ground can be seen in, so the failing lights only draw those */
+    /* What changes at Christmas, read from the same data the renderer goes by (9 Nov scan, build 2): render/hw3.js's XMAS_K props
+       are only drawn under a "+x" light, every wall item whose wall-items.js entry has xmas likewise (i_swag was missing from the
+       old hand list), a window shows snow, a statue becomes the giant tree, and the level's garlands are baked in */
+    const XMAS_K = new Set(["xmastree", "xmaslantern", "xmassmalltree", "xmasdrinks", "xmasduck", "snowman", "gift1", "gift2", "gift3", "gift4"]);
+    let wallDefs = null;      // looked up the first time it's asked: on the page wall-items.js loads after this file
+    const wallDef = k => { if (!wallDefs) { const L = typeof module !== "undefined" && module.exports ? require("./wall-items.js") : root.WALL_ITEMS; if (!L) return null; wallDefs = new Map(L.map(i => [i.id, i])); } return wallDefs.get(k) || null; };
+    const xmasWallItem = k => k === "i_window" || !!(wallDef(k) || {}).xmas;
+    api.XMAS_K = XMAS_K; api.xmasWallItem = xmasWallItem;
+    /* whether a "+x" set is worth drawing at all: the same things xmasTiles gives squares to */
+    api.hasXmas = map => (map.levels || []).some(l => (l.garlands || []).length || (l.props || []).some(p => p.k === "statue" || XMAS_K.has(p.k)) || (l.wallItems || []).some(q => xmasWallItem(q.k)));
+    /* the squares of the picture Christmas changes, so the Warren's publish draws "+x" only there */
     api.xmasTiles = (map, size = 512) => { const out = new Set(), add = (x, y, l, r, u, d) => { for (let ty = Math.floor((y - u) / size); ty <= Math.floor((y + d) / size); ty++) for (let tx = Math.floor((x - l) / size); tx <= Math.floor((x + r) / size); tx++) out.add(tx + "," + ty); }, S = (x, y, z) => [(x - y) * 16, (x + y) * 8 - z];
         for (const l of map.levels) { const z = l.k * 163; for (const p of l.props || []) if (p.k === "statue") { const q = S(p.x + 1, p.y + 1, z); add(q[0], q[1], 250, 250, 400, 130); }      /* the giant tree in its place, and its glow */
-            for (const p of l.props || []) if (/^(xmas|gift\d|snowman)/.test(p.k)) { const q = S(p.x + .5, p.y + .5, z); add(q[0], q[1], 110, 110, 160, 70); } for (const q of l.wallItems || []) if (/^i_(garland|window|bunting|festoon|wreath|stockings|holly|canes)/.test(q.k)) { const a = q.axis === "y" ? S(q.line, q.at, z) : S(q.at, q.line, z); add(a[0], a[1], 120, 120, 200, 60); }
+            for (const p of l.props || []) if (XMAS_K.has(p.k)) { const q = S(p.x + .5, p.y + .5, z); add(q[0], q[1], 110, 110, 160, 70); } for (const q of l.wallItems || []) if (xmasWallItem(q.k)) { const a = q.axis === "y" ? S(q.line, q.at, z) : S(q.at, q.line, z); add(a[0], a[1], 120, 120, 200, 60); }
             for (const g of l.garlands || []) for (let t = g.a; t < g.b; t++) { const a = g.axis === "y" ? S(g.line, t + .5, z) : S(t + .5, g.line, z); add(a[0], a[1], 40, 40, 260, 40); } }
         return out; };
+    /* the squares of the picture a floor below ground can be seen in, so the failing lights only draw those */
     api.basementTiles = (map, size = 512) => { const out = new Set(); for (const l of map.levels) { if (l.k >= 0) continue; const z = l.k * 163; for (const c of l.cells || []) { const [cx, cy] = c.split(",").map(Number), x = (cx - cy) * 32, y = (cx + cy) * 16 - z; for (let ty = Math.floor((y - 200) / size); ty <= Math.floor((y + 40) / size); ty++) for (let tx = Math.floor((x - 40) / size); tx <= Math.floor((x + 40) / size); tx++) out.add(tx + "," + ty); } } return out; };
     if (typeof module !== "undefined" && module.exports) module.exports = api; else root.FurniParts = api;
 })(typeof window !== "undefined" ? window : globalThis);

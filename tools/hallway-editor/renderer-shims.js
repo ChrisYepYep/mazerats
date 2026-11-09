@@ -63,6 +63,12 @@ async function inflatePng(bytes) {
     const stream = new Blob([Buffer.concat(parts)]).stream().pipeThrough(new DecompressionStream("deflate"));
     return Buffer.from(new Uint8Array(await new Response(stream).arrayBuffer()));
 }
+/* The art is fetched and unpacked by one thread only, and handed to the rest by the page (9 Nov scan, build 3: every thread
+   fetched every file itself, about 4,400 requests an open). What comes through postMessage is a plain Uint8Array, so it's
+   given the Buffer's extras back, on the same memory */
+const asBuffer = u => new Buffer(u.buffer, u.byteOffset, u.length);
+function artOut() { return { files: FILES, inflated: INFLATED }; }
+function artIn(a) { for (const [k, v] of a.files) FILES.set(k, asBuffer(v)); for (const [k, v] of a.inflated) INFLATED.set(k, asBuffer(v)); }
 async function loadArt(base) {
     let at = 0;
     const one = async () => {

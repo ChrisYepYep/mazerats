@@ -18,11 +18,22 @@ const MOODS = ["day", "dusk", "night", "dawn"], TILE = 512;
 /* what the page needs of the editor: its code, its look and its art, and not the tools that made them */
 const APP = ["editor.js", "editor.css", "hallway-audio.js", "progress.js", "lift-sounds.js", "furni-parts.js", "wall-items.js", "colour-picker.js", "play.js", "play.css", "live-moving.js", "live-basement.js", "live-lost.js", "live-arcade.js", "live-arrows.js", "live-theatre.js", "stamp-font.js", "live-leet.js", "live-hunts.js", "live-xmas.js", "live-xmas-early.js", "hunts-editor.js", "lost-editor.js", "edit.js", "render/edge-items.js", "render/rope-barrier.js", "render/garland.js", "ideas/iso3d.js", "render/hall-window.js", "rooms.css", "room-starter.js", "room-view.js", "rooms-editor.js"];
 
-function copyDir(from, to) {
+/* art/'s scratch pictures stay at home (9 Nov scan, build 5): make-renderer.js's isScratch says which */
+const { isScratch } = require("./make-renderer.js");
+function copyDir(from, to, rel = "") {
     fs.mkdirSync(to, { recursive: true });
     for (const e of fs.readdirSync(from, { withFileTypes: true })) {
-        const a = path.join(from, e.name), b = path.join(to, e.name);
-        if (e.isDirectory()) copyDir(a, b); else fs.copyFileSync(a, b);
+        const a = path.join(from, e.name), b = path.join(to, e.name), r = rel ? rel + "/" + e.name : e.name;
+        if (e.isDirectory()) copyDir(a, b, r); else if (!isScratch(r)) fs.copyFileSync(a, b);
+    }
+}
+/* a directory rename, tried again while Windows says the folder is busy */
+function renameRetry(from, to) {
+    for (let i = 0; ; i++) {
+        try { return fs.renameSync(from, to); } catch (e) {
+            if (i >= 6 || !["EPERM", "EBUSY", "EACCES"].includes(e.code)) throw e;
+            Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 100 * (i + 1));      // a short wait, synchronously, as the rest of finish() is
+        }
     }
 }
 /* black, or the shade the renderer leaves past the picture's edge */
@@ -32,7 +43,9 @@ const liftFile = (way, f) => encodeURIComponent(way).replace(/%/g, "_") + "-" + 
 /* one lighting set: every square of it, written to tiles/ unless a square with the same picture is there already */
 function drawLight(mapFile, light) {
     const text = fs.readFileSync(mapFile, "utf8"), load = () => JSON.parse(text), names = W.H.names2(), tiles = {}, used = [];
-    const onlyBasement = light === "failing" ? require("./furni-parts.js").basementTiles(load()) : null;
+    /* the failing lights only where the Basement shows, and at Christmas only where something Christmassy is there too */
+    const FP = require("./furni-parts.js"), xmasToo = light === "failing+x" ? FP.xmasTiles(load()) : null;
+    const onlyBasement = light.startsWith("failing") ? new Set([...FP.basementTiles(load())].filter(k => !xmasToo || xmasToo.has(k))) : null;
     const world = W.build({ map: load(), names, light }), b = world.b, o = world.at(0, 0, 0);
     /* A square of the editor's picture is tile-sized in map pixels, counted from the map's origin, which the whole picture has moved */
     const tx0 = Math.floor(-o[0] / TILE), ty0 = Math.floor(-o[1] / TILE), tx1 = Math.ceil((b.w - o[0]) / TILE), ty1 = Math.ceil((b.h - o[1]) / TILE);
@@ -56,8 +69,11 @@ async function main() {
     const LIFT_NEW = path.join(OUT, "lift.new"), APP_NEW = path.join(OUT, "app.new");
     fs.rmSync(LIFT_NEW, { recursive: true, force: true }); fs.rmSync(APP_NEW, { recursive: true, force: true }); fs.mkdirSync(LIFT_NEW, { recursive: true });
     const tiles = {}, used = new Set();
-    const hasXmas = load().levels.some(l => (l.props || []).some(p => /^(xmas|gift\d|snowman)/.test(p.k)) || (l.wallItems || []).some(q => /^i_(garland|window|bunting|festoon|wreath|stockings|holly|canes)/.test(q.k)));
-    const lights = [...MOODS, "failing", ...(hasXmas ? MOODS.map(m => m + "+x") : [])], steps = lights.length + 1;
+    /* Christmas from the data, not a hand list (9 Nov scan: garlands, the giant tree and i_swag didn't count). The Basement's
+       blackout gets a Christmas set of its own where the two meet, so its garlands and window snow go dark rather than vanish */
+    const FP = require("./furni-parts.js"), hasXmas = FP.hasXmas(load()), xmasSq = hasXmas ? FP.xmasTiles(load()) : new Set();
+    const failingX = [...FP.basementTiles(load())].some(k => xmasSq.has(k));
+    const lights = [...MOODS, "failing", ...(hasXmas ? MOODS.map(m => m + "+x") : []), ...(failingX ? ["failing+x"] : [])], steps = lights.length + 1;
     /* each lighting set drawn in a thread of its own, several at once (8 Nov 2026: one after another took five minutes), each square
        written as it's drawn; the same squares, named by their contents, as before */
     let done = 0; const drawn = new Map();
@@ -115,11 +131,22 @@ function finish(text, tiles, app, liftNew) {
         .replace(/<script src="editor\.js"><\/script>/, `<script src="editor.js?v=${version}"></script>`);
     if (!/edit\.js/.test(edit)) throw new Error("Couldn't make edit.html: index.html has changed");
     fs.writeFileSync(path.join(app, "edit.html"), edit);
-    for (const [fresh, name] of [[app, "app"], [liftNew, "lift"]]) { const live = path.join(OUT, name); fs.rmSync(live, { recursive: true, force: true }); fs.renameSync(fresh, live); }
+    /* The swap (9 Nov scan, build 4): the live one is moved aside, not deleted, until the new one is in its place, so a rename
+       Windows refuses (antivirus or the indexer holding a file just written) never leaves the site with neither. A refusal of
+       that sort is tried again a few times; if the new one still won't go in, the old one goes back */
+    for (const [fresh, name] of [[app, "app"], [liftNew, "lift"]]) {
+        const live = path.join(OUT, name), old = path.join(OUT, name + ".old");
+        if (!fs.existsSync(live) && fs.existsSync(old)) renameRetry(old, live);      // a publish stopped dead mid-swap last time: its old one is the last good one
+        fs.rmSync(old, { recursive: true, force: true });
+        const hadLive = fs.existsSync(live);
+        if (hadLive) renameRetry(live, old);
+        try { renameRetry(fresh, live); } catch (e) { if (hadLive) renameRetry(old, live); throw e; }
+        fs.rmSync(old, { recursive: true, force: true });
+    }
     fs.writeFileSync(path.join(OUT, "map.json"), text);
     fs.writeFileSync(path.join(OUT, "manifest.json"), JSON.stringify({ version, tile: TILE, moods: MOODS, publishedAt: new Date().toISOString(), tiles }));
     return version;
 }
 if (!isMainThread) parentPort.postMessage(drawLight(workerData.mapFile, workerData.light));
 else if (require.main === module) main().catch(e => { console.error(e && e.stack || e); process.exit(1); });
-module.exports = { main, liftFile };
+module.exports = { main, liftFile, finish };

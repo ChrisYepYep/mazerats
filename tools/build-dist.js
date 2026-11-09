@@ -55,26 +55,16 @@ const PRIVATE_PAGES = ["dungeon.html"];
 // would have published).
 const SKIP = new Set([
     "assets/ariadne-levels", "assets/console-sounds.mp4", "assets/img/promo",
-    "js/rat-race-epic.js", "js/dungeon.js"
+    "js/rat-race-epic.js", "js/dungeon.js",
+    // what a Hallway publish (tools/hallway-editor/publish.js) builds beside the live
+    // app/ and lift/ and swaps in, should one have stopped part way (9 Nov 2026)
+    "assets/hallway/app.new", "assets/hallway/app.old", "assets/hallway/lift.new", "assets/hallway/lift.old"
 ]);
 
 const problems = [];
 for (const name of fs.readdirSync(ROOT)) {
     if (/\.html?$/i.test(name) && !PUBLIC.includes(name) && !PRIVATE_PAGES.includes(name)) {
         problems.push(`${name} is a page at the root but is in neither PUBLIC nor PRIVATE_PAGES in tools/build-dist.js`);
-    }
-}
-/* The Hallway's pictures and art (7 Nov 2026): a manifest naming tiles that were never `git add`ed
-   ships holes in the map with nothing to say so. Its pictures are named by a script, not the markup. */
-{
-    const HW = path.join(OUT, "assets", "hallway"), manifestFile = path.join(HW, "manifest.json");
-    if (fs.existsSync(manifestFile)) {
-        const man = JSON.parse(fs.readFileSync(manifestFile, "utf8"));
-        for (const name of new Set(Object.values(man.tiles || {}))) if (!fs.existsSync(path.join(HW, "tiles", name))) problems.push(`assets/hallway/manifest.json names tiles/${name}, which is not in dist/`);
-        const map = JSON.parse(fs.readFileSync(path.join(HW, "map.json"), "utf8"));
-        for (const way of new Set((map.levels || []).map(l => (l.colour ? "hex:" + l.colour : l.way)))) for (let f = 0; f < 6; f++) { const file = encodeURIComponent(way).replace(/%/g, "_") + "-" + f + ".png"; if (!fs.existsSync(path.join(HW, "lift", file))) problems.push(`assets/hallway/lift/${file} is not in dist/`); }
-        const worker = fs.readFileSync(path.join(HW, "app", "renderer-worker.js"), "utf8"), art = /const ART_FILES = (\[.*?\]);\n/.exec(worker);
-        if (art) for (const f of JSON.parse(art[1])) if (!fs.existsSync(path.join(HW, "app", "art", f))) problems.push(`assets/hallway/app/art/${f} is not in dist/`);
     }
 }
 if (problems.length) {
@@ -129,6 +119,33 @@ for (const page of fs.readdirSync(OUT).filter(n => /\.html$/i.test(n))) {
         const rel = localRef(ref) && refPath(ref).replace(/^\//, "");
         if (!rel || !/\.[a-z0-9]+$/i.test(rel)) continue;   // a route, not a file
         if (!fs.existsSync(path.join(OUT, rel))) problems.push(`${page} loads ${ref}, which is not in dist/`);
+    }
+}
+/* The Hallway's pictures and art (7 Nov 2026): a manifest naming tiles that were never `git add`ed
+   ships holes in the map with nothing to say so. Its pictures are named by a script, not the markup.
+   Checked here, in the dist/ just copied (9 Nov scan, build 1: it ran before the copy, against the last
+   build's dist/, so on Netlify's clean clone it never ran at all). And the two pages in app/, which the
+   check of the root pages above never reads: every script and stylesheet they load, relative to app/. */
+{
+    const HW = path.join(OUT, "assets", "hallway"), manifestFile = path.join(HW, "manifest.json");
+    if (fs.existsSync(manifestFile)) {
+        const man = JSON.parse(fs.readFileSync(manifestFile, "utf8"));
+        for (const name of new Set(Object.values(man.tiles || {}))) if (!fs.existsSync(path.join(HW, "tiles", name))) problems.push(`assets/hallway/manifest.json names tiles/${name}, which is not in dist/`);
+        const map = JSON.parse(fs.readFileSync(path.join(HW, "map.json"), "utf8"));
+        for (const way of new Set((map.levels || []).map(l => (l.colour ? "hex:" + l.colour : l.way)))) for (let f = 0; f < 6; f++) { const file = encodeURIComponent(way).replace(/%/g, "_") + "-" + f + ".png"; if (!fs.existsSync(path.join(HW, "lift", file))) problems.push(`assets/hallway/lift/${file} is not in dist/`); }
+        const workerFile = path.join(HW, "app", "renderer-worker.js");
+        if (!fs.existsSync(workerFile)) problems.push("assets/hallway/app/renderer-worker.js is not in dist/");
+        else { const art = /const ART_FILES = (\[.*?\]);\r?\n/.exec(fs.readFileSync(workerFile, "utf8")); if (!art) problems.push("assets/hallway/app/renderer-worker.js has no ART_FILES list"); else for (const f of JSON.parse(art[1])) if (!fs.existsSync(path.join(HW, "app", "art", f))) problems.push(`assets/hallway/app/art/${f} is not in dist/`); }
+        for (const page of ["play.html", "edit.html"]) {
+            const file = path.join(HW, "app", page);
+            if (!fs.existsSync(file)) { problems.push(`assets/hallway/app/${page} is not in dist/`); continue; }
+            for (const [, ref] of fs.readFileSync(file, "utf8").matchAll(/\b(?:src|href)\s*=\s*["']([^"']*)["']/gi)) {
+                const rel = localRef(ref) && refPath(ref);
+                if (!rel || !/\.[a-z0-9]+$/i.test(rel)) continue;   // a route, not a file
+                const target = rel.startsWith("/") ? path.join(OUT, rel) : path.join(HW, "app", rel);
+                if (!fs.existsSync(target)) problems.push(`assets/hallway/app/${page} loads ${ref}, which is not in dist/`);
+            }
+        }
     }
 }
 for (const sheet of fs.readdirSync(path.join(OUT, "css")).filter(n => /\.css$/i.test(n))) {

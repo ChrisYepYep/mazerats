@@ -12,16 +12,25 @@ const MODULES = [
     ["hw.js", "render/hw.js"], ["hw2.js", "render/hw2.js"], ["hw3.js", "render/hw3.js"], ["floor-lamps.js", "render/floor-lamps.js"],
     ["edge-items.js", "render/edge-items.js"], ["rope-barrier.js", "render/rope-barrier.js"], ["garland.js", "render/garland.js"], ["iso3d.js", "ideas/iso3d.js"], ["hall-window.js", "render/hall-window.js"], ["furni-parts.js", "furni-parts.js"], ["wall-items.js", "wall-items.js"], ["png-decode.js", "../png-decode.js"]
 ];
+/* Pictures kept in art/ that are only working notes (9 Nov scan, build 5): an alignment guide, and the source a generator
+   reads (make-ideas-art.js draws the arcade stool from arcade-stool.png). Neither is published nor fetched by the renderer */
+const SCRATCH = new Set(["arcade-stool.png"]);
+const isScratch = rel => /alignment/i.test(rel.split("/").pop()) || SCRATCH.has(rel);
+/* Only what the renderer reads (9 Nov scan, build 3: it was everything in art/, theatre audio and room pictures too, fetched by
+   every thread). Found by drawing the whole real map in every light with the file reads logged: render/hw.js's hall/ pieces,
+   regs.json and fontdump.html, render/hw2.js's av/ and tele/, render/hw3.js's wall/, render/floor-lamps.js's lamps/. A file
+   it reads that isn't here stops the Warren's editor with "No such file", so a new folder the renderer reads goes in here */
+const RENDERER_ART = ["hall", "wall", "tele", "av", "lamps", "regs.json", "fontdump.html"];
 function listArt(dir, base = "") {
     const out = [];
     for (const e of fs.readdirSync(path.join(dir, base), { withFileTypes: true })) {
         const rel = base ? base + "/" + e.name : e.name;
-        if (e.isDirectory()) out.push(...listArt(dir, rel)); else out.push(rel);
+        if (e.isDirectory()) out.push(...listArt(dir, rel)); else if (!isScratch(rel)) out.push(rel);
     }
     return out;
 }
 function make(outFile) {
-    const art = listArt(path.join(HERE, "art"));
+    const art = listArt(path.join(HERE, "art")).filter(f => RENDERER_ART.includes(f.split("/")[0]));
     /* The browser asks for every one of these by address, and one it can't get stops the whole editor: netlify dev won't serve a # in a name */
     const awkward = art.filter(f => !/^[\w ./()-]+$/.test(f)); if (awkward.length) throw new Error("Art with a name a web server may not serve: " + awkward.join(", "));
     let js = `/* Made by tools/hallway-editor/make-renderer.js. Don't edit it here. */\n"use strict";\nconst ART_FILES = ${JSON.stringify(art)};\n`;
@@ -35,4 +44,4 @@ function make(outFile) {
     fs.writeFileSync(outFile, js);
 }
 if (require.main === module) make(process.argv[2] || path.join(HERE, "renderer-worker.js"));
-module.exports = { make };
+module.exports = { make, isScratch };
