@@ -60,7 +60,7 @@ const PORTRAIT = { W: 56, H: 85 }, LANDSCAPE = { W: 100, H: 58 }, SMALL = PORTRA
 /* the narrow stand's bill (9 Nov 2026, his: a 2 by 1 stand, then "the poster is too wide, fit it to the width of the feet"): 25 across, so the
    date stamp's lettering throughout, the title twice as tall; "NEXT" over a slip pasted right across, three short lines (day, date, time) */
 const NARROW_LINES = [["THE", false, 4, true], ["LEET", true, 13, true], ["SHOW", true, 29, true], ["NEXT", false, 50, false]];
-const narrow = () => withRule(art(NARROW.W, NARROW.H, [], [59, 29, true], { thin: true }), NARROW.W, 46);
+const narrow = () => withRule(art(NARROW.W, NARROW.H, NARROW_LINES.map(([s, tall, v, shadow]) => [s, "stamp", tall, v, C.gold, shadow]), [59, 29, true], { thin: true }), NARROW.W, 46);
 const portrait = (P = PORTRAIT) => withRule(art(P.W, P.H, [["THE", "v", false, 6, C.gold, true], ["LEET", "vb", true, 15, C.gold, true], ["SHOW", "vb", true, 31, C.gold, true], ["NEXT SHOW", "stamp", false, 51, C.gold, false]], [60, 20]), P.W, 47);
 const landscape = () => withRule(art(LANDSCAPE.W, LANDSCAPE.H, [["THE", "v", false, 5, C.gold, true], ["LEET SHOW", "vb", true, 13, C.gold, true], ["NEXT SHOW", "stamp", false, 32, C.gold, false]], [41, 11]), LANDSCAPE.W, 29, true);
 /* the poster on the wall in a bronze frame: the wall item's own way of drawing, face "x" (the hallway's framed signs) */
@@ -80,7 +80,7 @@ function stand(alongY, thin) {
     /* where on the sheet a ray met it; on the narrow one a quarter in, as its columns and rows fall exactly on whole numbers and rounding noise
        would otherwise skip or repeat one */
     const nudge = thin ? .25 : 0;
-    const faceTex = (f, p) => { if (alongY ? f !== "x" : f !== "y") return null; const uc = (alongY ? a1 - fs - p[1] : p[0] - a0 - fs) + nudge, vc = zt - p[2] + nudge; return tex0(Math.floor(uc), Math.floor(vc), uc, vc, thin ? (alongY ? -.5 : .5) : 0); };
+    const faceTex = (f, p) => { if (alongY ? f !== "x" : f !== "y") return null; const uc = (alongY ? a1 - fs - p[1] : p[0] - a0 - fs) + nudge, vc = zt - p[2] + nudge; return tex0(Math.floor(uc), Math.floor(vc), uc, vc, 0); };
     const back = col("2a1a10"), face = { top: col(C.ground), y: alongY ? back : col(C.ground), x: alongY ? col(C.ground) : back, edge: null, noLine: true, tex: faceTex };
     const prims = [B(a0 + fs, a1 - fs, mid - t, mid + t - .2, z0 + ft, z0 + Hh - ft, face),
         B(a0, a0 + fs, mid - t - .4, mid + t + fd, z0, z0 + Hh, FRAME), B(a1 - fs, a1, mid - t - .4, mid + t + fd, z0, z0 + Hh, FRAME), B(a0, a1, mid - t - .4, mid + t + .6, z0 + Hh - ft, z0 + Hh, FRAME), B(a0, a1, mid - t - .4, mid + t + .4, z0, z0 + ft, FRAME)];
@@ -96,7 +96,8 @@ function stand(alongY, thin) {
         /* on the narrow one, an arm from each pole to the frame's back, top and bottom */
         if (thin) for (const z of [z0 + 8, z0 + Hh - 9]) prims.push(B(s - .6, s + .6, poleD, mid - t - .4, z, z + 1.4, FRAME));
     }
-    if (!thin) return render(prims);
+    return render(prims);
+    /* (9 Nov: letters laid on upright lost the wall's slant; his: "some of the letters have lost their isometric aspect". They're back in the sheet) */
     /* The narrow bill's lettering, laid onto the finished picture (9 Nov 2026, his: words looked cut off). Sheared by the slant through the
        sheet's texture, 4-wide letters fell apart; here every letter stays upright, from the row the sheet's line starts at in its own first
        column, so only the line steps down, a letter at a time. A second picture, the sheet coloured by where on it each pixel is, says where. */
