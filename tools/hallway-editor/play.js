@@ -93,9 +93,10 @@
         /* under it all, set apart below a rule and quieter than the picker: what the Hallway is, what the username is for, and the fan-site line (9 Nov 2026, his words) */
         const notes = document.createElement("div"); notes.className = "notes";
         for (const [t, cls] of [["Maze Rats Hallway is a single player experience, any Habbos you see around the hallways are non-playable characters designed for ambient game mechanics.", ""], ["Your Habbo Origins username is only used to show your Habbo's look, and is only remembered on this device.", ""], ["Maze Rats is independent and not affiliated with, sponsored, supported, or endorsed by Sulake Oy or its affiliates. Any Habbo trademarks or intellectual property used here are done so in accordance with the Habbo Fan Site Policy.", "legal"]]) { const p = document.createElement("p"); p.textContent = t; if (cls) p.className = cls; notes.appendChild(p); }
-        /* the Hallway's mark at the top of the splash (9 Nov 2026, his pick "G3") */
-        const mark = document.createElement("img"); mark.className = "logo"; mark.src = "/assets/img/hallway-logo@2x.png"; mark.alt = "Maze Rats Hallway"; mark.addEventListener("error", () => mark.remove());
-        form.append(mark, row, say, guest, notes); frame.appendChild(form); win.append(tbar, frame); back.appendChild(win); document.body.appendChild(back); input.focus();
+        /* the Hallway's mark on a wooden card of its own, above the window (9 Nov 2026, his: "in that wooden card thing you had it on in your mock ups") */
+        const card = document.createElement("div"); card.className = "hw-logo-card";
+        const mark = document.createElement("img"); mark.src = "/assets/img/hallway-logo@2x.png"; mark.alt = "Maze Rats Hallway"; mark.addEventListener("error", () => card.remove()); card.appendChild(mark);
+        form.append(row, say, guest, notes); frame.appendChild(form); win.append(tbar, frame); back.append(card, win); document.body.appendChild(back); input.focus();
         const done = () => { document.removeEventListener("keydown", keys, true); back.remove(); if (opener && opener.focus) opener.focus(); if (onDone) onDone(); };
         const keys = e => {
             if (e.key === "Escape") { e.stopPropagation(); done(); return; }
@@ -134,11 +135,15 @@
         const bar = document.createElement("div"); bar.id = "playBar";
         /* In groups (8 Nov 2026, his: "it's got quite a few buttons now, and feels very messy/unorganised"): Leave, then the view (zoom and full screen),
            then the music, and everything else under Menu. Hunts and Scraps join Menu through HallwayBar.menuItem (live-hunts.js). */
-        let into = bar; const group = name => { const g = document.createElement("span"); g.className = "play-group"; g.setAttribute("role", "group"); g.setAttribute("aria-label", name); bar.appendChild(g); into = g; return g; };
+        /* A wooden card in the top left, the Hallway's mark at its head and a labelled row for each kind of thing (9 Nov 2026, his: "the menu buttons in
+           a wooden card in the top left, with the logo text at the top of it ... clear, and maze rats hallway themed") */
+        bar.className = "hw-card";
+        { const mark = document.createElement("img"); mark.className = "hw-card-logo"; mark.src = "/assets/img/hallway-logo@2x.png"; mark.alt = "Maze Rats Hallway"; mark.addEventListener("error", () => mark.remove()); bar.appendChild(mark); }
+        let into = bar; const group = (name, label) => { const r = document.createElement("div"); r.className = "play-row"; if (label) { const l = document.createElement("span"); l.className = "play-label"; l.textContent = label; r.appendChild(l); } const g = document.createElement("span"); g.className = "play-group"; g.setAttribute("role", "group"); g.setAttribute("aria-label", name); r.appendChild(g); bar.appendChild(r); into = g; return g; };
         const add = (label, title, fn) => { const b = document.createElement("button"); b.type = "button"; b.className = "mr-btn"; b.textContent = label; b.title = title; b.setAttribute("aria-label", title); b.addEventListener("click", fn); into.appendChild(b); return b; };
         const click = id => { const e = document.getElementById(id); if (e) e.click(); };
-        group("Leave"); add("Leave", "Back to the archive", () => window.hallwayTell("leave"));
-        group("View"); add("-", "Zoom out", () => click("zoomOut")); add("+", "Zoom in", () => click("zoomIn"));
+        group("Leave"); add("Leave the Hallway", "Back to the archive", () => window.hallwayTell("leave")).classList.add("play-wide");
+        group("View", "View"); add("-", "Zoom out", () => click("zoomOut")); add("+", "Zoom in", () => click("zoomIn"));
         /* full screen: the page asks for it itself (its frame allows it), and F does the same */
         const canFull = !!(document.documentElement.requestFullscreen && document.fullscreenEnabled !== false);
         const toggleFull = () => { if (document.fullscreenElement) document.exitFullscreen().catch(() => {}); else document.documentElement.requestFullscreen().catch(() => {}); };
@@ -150,7 +155,7 @@
             document.addEventListener("fullscreenchange", paintFull); paintFull();
             document.addEventListener("keydown", e => { if (e.repeat || e.ctrlKey || e.metaKey || e.altKey || e.key.toLowerCase() !== "f") return; const at = e.target; if (at && at.closest && at.closest("input, textarea, select, [contenteditable]")) return; toggleFull(); });
         }
-        group("Music");
+        group("Music", "Music");
         const A = () => window.HallwayAudio;
         /* What you asked for counts, not whether it's started yet: a browser only lets it start on your first click */
         const wanted = () => { try { return localStorage.getItem("hallway-music") === "1"; } catch (e) { return false; } };
@@ -186,12 +191,16 @@
         const item = (menu, name, title, fn) => { const b = document.createElement("button"); b.type = "button"; b.setAttribute("role", "menuitem"); b.textContent = name; if (title) b.title = title; b.addEventListener("click", fn); menu.appendChild(b); };
         const head = (menu, name) => { const h = document.createElement("div"); h.className = "play-menu-head"; h.textContent = name; menu.appendChild(h); };
         const sep = menu => { const h = document.createElement("div"); h.className = "play-menu-sep"; h.setAttribute("role", "separator"); menu.appendChild(h); };
+        /* the camera following you, in the card itself, not inside Menu (9 Nov 2026, his) */
+        group("Camera", "Camera");
+        const cam = add("", "Camera follows you (C)", () => { click("follow"); paintCam(); }); cam.classList.add("play-toggle");
+        const paintCam = () => { const on = following(); cam.textContent = on ? "Follows you" : "Stays put"; cam.setAttribute("aria-pressed", String(on)); cam.classList.toggle("is-on", on); };
+        paintCam(); setInterval(paintCam, 500);
         group("More");
         dropdown("Menu", "Time of day, screensaver, your Habbo and more", (menu, done) => {
             menu.textContent = "";
             const sel = document.getElementById("timeMode");
             if (sel) { head(menu, "Time of day"); for (const [value, name] of [["cycle", "Day and night cycle"], ["day", "Day"], ["dusk", "Evening"], ["night", "Night"], ["dawn", "Dawn"]]) row(menu, name, sel.value === value, () => { sel.value = value; sel.dispatchEvent(new Event("change")); done(); }); sep(menu); }
-            { const b = document.createElement("button"); b.type = "button"; b.setAttribute("role", "menuitemcheckbox"); b.setAttribute("aria-checked", String(following())); b.textContent = "Camera follows you (C)"; b.addEventListener("click", () => { click("follow"); done(); }); menu.appendChild(b); }
             /* the screensaver whenever you like, not only after a minute's quiet (8 Nov 2026, his). Any click or key ends it, as ever */
             item(menu, "Screensaver", "Start the screensaver", () => { done(); const S = window.HallwayScreensaver; if (!S || S.on) return; if (!S.start() && window.HallwayWindow) HallwayWindow.open("Screensaver", "<p>Not from down here. Head back upstairs first.</p>"); });
             item(menu, "Your Habbo", "Choose your Habbo", () => { done(); picker(); });
