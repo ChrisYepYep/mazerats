@@ -119,6 +119,9 @@ floorPiece("mark_tile", (c, a) => { for (let i = -14; i <= 14; i++) { const X = 
   /* the arcade stool (8 Nov 2026, his art: art/arcade-stool.png, placed by art/arcade-stool-alignment.png). The piece's anchor is a quarter tile
      back from the tile's middle, so the stool's top-left is 9 left and 19 up from it: its middle over the tile's, its feet 4px below the middle */
   { const st = L.loadPng(require("path").join(__dirname, "art", "arcade-stool.png")); floorPiece("barstool", (c, a) => { const X = a[0] - 9, Y = a[1] - 19; for (let j = 0; j < st.h; j++) for (let i = 0; i < st.w; i++) { const p = (j * st.w + i) * 4; if (st.rgba[p + 3] < 128) continue; const q = ((Y + j) * c.w + X + i) * 4; for (let k = 0; k < 3; k++) c.d[q + k] = st.rgba[p + k]; } }); }
+  /* the Theatredrome entrance's curtains: his art (9 Nov 2026), art/theatre-curtains.png, copied as it is; hw3.js theatreArt lays it in the tunnel */
+  fs.copyFileSync(path.join(__dirname, "art", "theatre-curtains.png"), path.join(OUT, "i_theatre_curtains.png"));
+  fs.copyFileSync(path.join(__dirname, "art", "theatre-arch-patch.png"), path.join(OUT, "i_theatre_arch_patch.png"));   // and his shading on the arch's frame
   /* The Leet Show (9 Nov 2026, ideas/leetshow.js): two posters for the wall and a poster stand on bronze poles, one picture for each way it turns */
   { const LS = require("./ideas/leetshow.js"); add("leet_poster", "The Leet Show: poster", "leet", (c, a) => put(c, LS.wall("portrait"), a), { text: true }); add("leet_bill", "The Leet Show: wide bill", "leet", (c, a) => put(c, LS.wall("landscape"), a), { text: true });
     floorPiece("leetstand", (c, a) => put(c, LS.stand(false), a)); floorPiece("leetstand_r", (c, a) => put(c, LS.stand(true), a));

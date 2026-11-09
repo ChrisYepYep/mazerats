@@ -831,6 +831,14 @@ function theatreArt(phase, axis, part, T) {
             /* light spilling from under the curtain onto the floor in front of it, warm, fading over 8 rows (his, 8 Nov: "a soft glow coming from under the curtains") */
             const ac = across(dX, dY), t = ((-1) * (depth(dX, dY) - CD)) * 16 - 3;
             if (t > -1 && t <= 11 && ac > .1 && ac < 3.9) { const q = at(i, j); if (o.rgba[q + 3] < 128) continue; const a2 = .72 * Math.pow(1 - Math.max(0, t - 1) / 11, 1.5) * Math.min(1, (ac - .1) * 4, (3.9 - ac) * 4); o.rgba[q] = Math.round(o.rgba[q] + (255 - o.rgba[q]) * a2); o.rgba[q + 1] = Math.round(o.rgba[q + 1] + (184 - o.rgba[q + 1]) * a2); o.rgba[q + 2] = Math.round(o.rgba[q + 2] + (96 - o.rgba[q + 2]) * a2); if (a2 > .12) glow[j * W + i] = 1; } }
+        /* The curtains are his art since 9 Nov 2026 (art/theatre-curtains.png, his redraw in burgundy with gold cord tie-backs, drawn on a
+           156 by 248 canvas 14 left and 14 above this piece on the "x" way; the other way is the same picture mirrored, 150 - x across, 13 up).
+           Between them, the tunnel as it is. The cloth drawn in code before stays below, for a map that has no curtain picture. */
+        let curt = null; try { curt = wallArt("i_theatre_curtains.png"); } catch (e) { curt = null; }
+        if (curt) { for (let y = 0; y < curt.h; y++) for (let x = 0; x < curt.w; x++) { const p = (y * curt.w + x) * 4; if (curt.rgba[p + 3] < 128) continue;
+                const i = axis === "x" ? x - 14 : 150 - x, j = axis === "x" ? y - 14 : y - 13; if (i < 0 || j < 0 || i >= W || j >= H) continue; const q = at(i, j); if (o.rgba[q + 3] < 128) continue;
+                o.rgba[q] = curt.rgba[p]; o.rgba[q + 1] = curt.rgba[p + 1]; o.rgba[q + 2] = curt.rgba[p + 2]; } }
+        else {
         /* The curtain (his, 8 Nov: "high quality isometric pixel art"; "the drapes don't reach the floor ... could look more isometric";
            9 Nov: "closer to the floor, and held open with a rope"). A stage curtain hung on a plane parallel to the wall, CD into the tunnel,
            drawn as cloth in its own flat frame (u across, h up from the floor) laid onto that plane, so its hem slopes as the wall does and its
@@ -888,6 +896,7 @@ function theatreArt(phase, axis, part, T) {
             for (const [r, [x0, x1]] of rows) for (let x = x0 - 1; x <= x1 + 1; x++) put(ki + x, kj + r, GOLD.k);
             for (const [r, [x0, x1]] of rows) for (let x = x0; x <= x1; x++) put(ki + x, kj + r, r < 5 ? (x < 0 || (x === 0 && r < 2) ? GOLD.l : x > 0 ? GOLD.d : GOLD.m) : ((ki + x) & 1 ? GOLD.m : x < 0 ? GOLD.l : GOLD.d));
         }
+        }
     } else {
         /* the plaque: along the beam over the opening, where EXIT and its vents were */
         const slope = axis === "y" ? -.5 : .5, cx = (i0 + i1) / 2, cj = 103, rowOf = i => Math.round(cj + slope * (i - cx));
@@ -906,8 +915,17 @@ function theatreArt(phase, axis, part, T) {
         const word = "THEATREDROME", glyphs = [...word].map(ch => require("./hw.js").VOL.v[ch]), tw = glyphs.reduce((n, g) => n + g.w, 0); let x = Math.round(cx - tw / 2);
         const ink = [];
         for (const g of glyphs) { g.rows.forEach((r, j) => { for (let k = 0; k < r.length; k++) if (r[k] === "1") ink.push([x + k - 1, j]); }); x += g.w; }
-        for (const [px, j] of ink) put(px, rowOf(px) - 9 + j + 1, [24, 12, 6]);
-        for (const [px, j] of ink) { put(px, rowOf(px) - 9 + j, [246, 204, 104]); glow[(rowOf(px) - 9 + j) * W + px] = 1; }
+        /* a row higher than first drawn (9 Nov 2026, his redraw: the lettering up 1px on the board) */
+        for (const [px, j] of ink) put(px, rowOf(px) - 10 + j + 1, [24, 12, 6]);
+        for (const [px, j] of ink) { put(px, rowOf(px) - 10 + j, [246, 204, 104]); glow[(rowOf(px) - 10 + j) * W + px] = 1; }
+        /* his shading on the frame and the bar over the board (9 Nov 2026, art/theatre-arch-patch.png, made against the "x" way at phase 3):
+           the other way mirrored, 136 - x across and a row down; each pixel only where the plain arch under it is what it was drawn over */
+        let patch = null; try { patch = wallArt("i_theatre_arch_patch.png"); } catch (e) { patch = null; }
+        if (patch) { const ref = portalArt(3).x.arch, here = portalArt(phase)[axis].arch;
+            for (let b = 0; b < patch.h; b++) for (let a2 = 0; a2 < patch.w; a2++) { const p = (b * patch.w + a2) * 4; if (patch.rgba[p + 3] < 128) continue;
+                const i = axis === "x" ? a2 : 136 - a2, j = axis === "x" ? b : b + 1; if (i < 0 || j < 0 || i >= W || j >= H) continue;
+                const r0 = (b * ref.w + a2) * 4, h0 = (j * here.w + i) * 4; if (ref.rgba[r0 + 3] < 128 || here.rgba[h0 + 3] < 128 || ref.rgba[r0] !== here.rgba[h0] || ref.rgba[r0 + 1] !== here.rgba[h0 + 1] || ref.rgba[r0 + 2] !== here.rgba[h0 + 2]) continue;
+                put(i, j, [patch.rgba[p], patch.rgba[p + 1], patch.rgba[p + 2]]); } }
     }
     theatreMemo.set(key, o); return o;
 }
