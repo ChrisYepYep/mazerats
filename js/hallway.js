@@ -60,11 +60,9 @@
         const n = document.createElement("div"); n.className = "modal hallway-note"; n.setAttribute("role", "status");
         const bar = document.createElement("div"); bar.className = "chrome-titlebar";
         const h = document.createElement("h2"); h.textContent = title;
-        const x = document.createElement("button"); x.type = "button"; x.className = "chrome-close"; x.setAttribute("aria-label", "Close"); x.addEventListener("click", () => close());
-        const xi = document.createElement("img"); xi.src = "/assets/img/modal_topclose_x.png"; xi.alt = ""; xi.setAttribute("aria-hidden", "true"); x.appendChild(xi);
-        bar.append(h, x);
+        bar.append(h);      // no close: this window can't be closed, only left by its button (10 Nov 2026, his)
         const frame = document.createElement("div"); frame.className = "chrome-frame";
-        const body = document.createElement("div"); body.className = "hallway-note-body"; body.appendChild(logo());
+        const body = document.createElement("div"); body.className = "hallway-note-body";
         const p = document.createElement("p"); p.className = "hallway-note-words"; p.textContent = String(words).replace(/([.!?])\s+(?=[A-Z])/g, "$1\n"); body.appendChild(p);
         const b = document.createElement("button"); b.type = "button"; b.className = "guess-btn guess-btn--lead"; b.textContent = "Back to the archive"; b.addEventListener("click", () => close()); body.appendChild(b);
         /* the fan-site statement, as on the Hallway's own splash, under a rule and quieter than the note (9 Nov 2026, his) */
@@ -99,7 +97,11 @@
         for (const old of into.querySelectorAll(".hallway-closed-picture")) old.remove();
         into.prepend(c); void c.offsetWidth; c.classList.add("is-in");
     }
-    function closedScreen(title, words) { stage.classList.add("is-closed"); stage.appendChild(note(title, words)); closedPicture(stage, openGen).catch(() => { /* the plain dark is fine */ }); }
+    /* the Hallway's card on its oak plaque above, as the screensaver has it, and the window under it, the two together in the middle and scrolling
+       if the screen is short, so nothing is cut off (10 Nov 2026, his: the disclaimer was half hidden) */
+    function closedScreen(title, words) { stage.classList.add("is-closed"); const stack = document.createElement("div"); stack.className = "hallway-closed-stack";
+        const card = document.createElement("img"); card.className = "hallway-closed-plaque"; card.src = "/assets/img/hallway-plaque-420.png"; card.srcset = "/assets/img/hallway-plaque-420.png 1x, /assets/img/hallway-plaque-420@2x.png 2x"; card.width = 420; card.height = 248; card.alt = "Maze Rats Hallway"; card.addEventListener("error", () => card.replaceWith(logo()));
+        stack.append(card, note(title, words)); stage.appendChild(stack); closedPicture(stage, openGen).catch(() => { /* the plain dark is fine */ }); }
 
     function build(instant) {
         openGen++;

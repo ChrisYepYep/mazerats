@@ -85,14 +85,26 @@ html.hallway-instant #hallway-stage { transition: none; }
     pointer-events: none;
 }
 .hallway-closed-picture.is-in { opacity: .38; }
-/* Low on the screen, so the statue stands clear above it */
-.modal.hallway-note {
+/* The Hallway's card on its oak plaque, and the window under it, together in the middle of the screen (10 Nov 2026, his: as the screensaver
+   has it). On a short screen the two scroll rather than run off it, so the whole note and the fan-site statement can always be read. */
+.hallway-closed-stack {
     position: absolute;
-    left: 50%;
-    top: auto;
-    bottom: clamp(14px, 7%, 56px);
-    transform: translateX(-50%);
-    width: min(400px, calc(100% - 28px));
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: safe center;
+    gap: 14px;
+    padding: 22px 14px 26px;
+    box-sizing: border-box;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+}
+.hallway-closed-plaque { display: block; flex: none; width: 420px; max-width: 86vw; height: auto; filter: drop-shadow(0 14px 30px rgba(0, 0, 0, .7)); pointer-events: none; user-select: none; }
+.modal.hallway-note {
+    position: relative;
+    flex: none;
+    width: min(400px, 100%);
     max-width: none;
     margin: 0;
     animation: none;
