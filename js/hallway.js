@@ -31,7 +31,7 @@
     };
     const LABELS = { hidden: "Hidden", "coming-soon": "Coming soon", maintenance: "Maintenance" };
     const root = document.documentElement;
-    let stage = null, frame = null, opened = false, opening = false, pushed = false, headWatch = null, closing = 0;
+    let stage = null, frame = null, opened = false, opening = false, pushed = false, headWatch = null, closing = 0, openGen = 0;
 
     const settings = () => (typeof Api !== "undefined" && Api.getSiteSettings) ? Api.getSiteSettings().catch(() => null) : Promise.resolve(null);
     const isAdmin = () => window.hallwayAdminCheck ? Promise.resolve(window.hallwayAdminCheck()).catch(() => false) : Promise.resolve(false);
@@ -72,7 +72,7 @@
     /* Behind a closed screen: the hallway as it's published now, whichever copy the walk would use, drawn from the same
        pictures at 3x on whole pixels and centred on the statue. So it can't go out of date, and it follows the statue if that moves. */
     const FN = "/.netlify/functions/hallway", PIC_W = 900, PIC_H = 520, TILE = 512, STOREY = 163;
-    async function closedPicture(into) {
+    async function closedPicture(into, gen) {
         const read = url => fetch(url, { cache: "no-cache" }).then(r => r.ok ? r.json() : null).catch(() => null);
         const [here, there] = await Promise.all([read("/assets/hallway/manifest.json"), read(FN + "?what=live")]);
         const online = !!(there && there.online), man = online ? there : here; if (!man || !man.tiles) return;
@@ -89,11 +89,16 @@
             jobs.push(new Promise(done => { const i = new Image(); i.onload = () => { g.drawImage(i, tx * TILE - x0, ty * TILE - y0); done(); }; i.onerror = done; i.src = online ? FN + "?tile=" + name : "/assets/hallway/tiles/" + name; }));
         }
         await Promise.all(jobs);
+        /* Only for the opening that asked: closed and opened again quickly, the same stage is reused, and a late picture
+           from the first time stacked on the second's, the faded hallway showing through twice as strong (9 Nov scan, finding 3) */
+        if (gen !== openGen || !into.isConnected) return;
+        for (const old of into.querySelectorAll(".hallway-closed-picture")) old.remove();
         into.prepend(c); void c.offsetWidth; c.classList.add("is-in");
     }
-    function closedScreen(title, words) { stage.classList.add("is-closed"); stage.appendChild(note(title, words)); closedPicture(stage).catch(() => { /* the plain dark is fine */ }); }
+    function closedScreen(title, words) { stage.classList.add("is-closed"); stage.appendChild(note(title, words)); closedPicture(stage, openGen).catch(() => { /* the plain dark is fine */ }); }
 
     function build(instant) {
+        openGen++;
         clearTimeout(closing);
         if (!stage) { stage = document.createElement("div"); stage.id = "hallway-stage"; document.body.appendChild(stage); }
         stage.textContent = ""; stage.classList.remove("is-leaving", "is-in", "is-closed");
@@ -116,8 +121,15 @@
         const words = document.createElement("p"); words.className = "hallway-loader-text"; words.textContent = "Loading the hallway";
         const bar = document.createElement("div"); bar.className = "hallway-loader-bar"; const fill = document.createElement("i"); bar.appendChild(fill);
         box.append(words, bar); load.appendChild(box); stage.appendChild(load);
-        /* It fills as the page says things have arrived, and still creeps on a slow line rather than looking stuck */
-        let shown = 0; const creep = setInterval(() => { const aim = Math.max(frame && frame._told ? frame._told * 100 : 0, 24); shown += (aim - shown) * .12; fill.style.width = shown + "%"; }, 120);
+        /* It fills as the page says things have arrived, and still creeps on a slow line rather than looking stuck.
+           The page can't say anything until its own scripts are in, which is 20 seconds on a slow phone line, so until
+           then the bar counts what has arrived in the frame itself: the same count over the same 42 the page uses once
+           it's running, so the two agree. Each new arrival is a sign of life for the stall timer below (9 Nov scan, finding 1) */
+        const f = frame = document.createElement("iframe");
+        let shown = 0, seen = 0; const creep = setInterval(() => {
+            try { const n = f.contentWindow.performance.getEntriesByType("resource").length; if (n > seen) { seen = n; f._told = Math.max(f._told || 0, Math.min(.95, n / 42)); f._alive(); } } catch (e) { /* not there yet */ }
+            const aim = Math.max(f._told ? f._told * 100 : 0, 24); shown += (aim - shown) * .12; fill.style.width = shown + "%";
+        }, 120);
         /* not open to everyone yet: a DEV MODE pill in the site's top bar, not a note over the hallway (8 Nov, his) */
         if (state !== "live" && !document.querySelector(".hallway-dev-pill")) {
             const pill = document.createElement("span"); pill.className = "header-badge header-state-pill hallway-dev-pill"; pill.textContent = "DEV MODE | HALLWAY";
@@ -125,16 +137,19 @@
             const after = document.querySelector(".site-header .brand-group .header-badge"), group = document.querySelector(".site-header .brand-group");
             if (after) after.after(pill); else if (group) group.appendChild(pill);
         }
-        frame = document.createElement("iframe");
-        frame.title = "The Hallway"; frame.src = PLAY; frame.allow = "autoplay; fullscreen";
-        frame.addEventListener("load", () => { try { frame.contentWindow.focus(); } catch (e) { /* it asks for the keyboard itself on a click */ } });
-        frame.dataset.creep = String(creep);
-        stage.appendChild(frame);
+        f.title = "The Hallway"; f.src = PLAY; f.allow = "autoplay; fullscreen";
+        f.addEventListener("load", () => { f._alive(); try { f.contentWindow.focus(); } catch (e) { /* it asks for the keyboard itself on a click */ } });
+        f.dataset.creep = String(creep);
+        stage.appendChild(f);
         const turn = document.createElement("div"); turn.className = "hallway-turn"; turn.textContent = "Turn your phone sideways for more room"; stage.appendChild(turn);
-        /* Never stuck: too long without "ready", or the page saying it couldn't start, gets a note with a way back */
-        const trouble = () => { clearInterval(creep); clearTimeout(frame._late); if (!frame || frame.classList.contains("is-ready")) return; load.remove(); frame.remove(); closedScreen("The hallway wouldn't open", "Something didn't load. Try again in a little while."); };
-        frame._late = setTimeout(trouble, 30000); frame._trouble = trouble;
-        frame._ready = () => { clearInterval(creep); clearTimeout(frame._late); fill.style.width = "100%"; frame.classList.add("is-ready"); setTimeout(() => load.remove(), 450); try { frame.focus(); frame.contentWindow.focus(); } catch (e) { /* as above */ } };
+        /* Never stuck: 30 seconds with no sign of life, three minutes in all without "ready", or the page saying it couldn't
+           start, gets a note with a way back. The 30 seconds used to count from the start, which on a slow line killed it
+           while it was still arriving, every time (9 Nov scan, finding 1) */
+        const STALL = 30000, CAP = 180000;
+        const trouble = () => { clearInterval(creep); clearTimeout(f._late); clearTimeout(f._cap); if (frame !== f || f.classList.contains("is-ready")) return; load.remove(); f.remove(); closedScreen("The hallway wouldn't open", "Something didn't load. Try again in a little while."); };
+        f._alive = () => { clearTimeout(f._late); f._late = setTimeout(trouble, STALL); };
+        f._late = setTimeout(trouble, STALL); f._cap = setTimeout(trouble, CAP); f._trouble = trouble;
+        f._ready = () => { clearInterval(creep); clearTimeout(f._late); clearTimeout(f._cap); fill.style.width = "100%"; f.classList.add("is-ready"); setTimeout(() => load.remove(), 450); try { f.focus(); f.contentWindow.focus(); } catch (e) { /* as above */ } };
     }
 
     /* open: from the menu tab. arrived: already at /hallway, nothing to slide. */
@@ -158,7 +173,7 @@
 
     function close(fromHistory) {
         if (!opened) return;
-        opened = false;
+        opened = false; openGen++;
         if (!fromHistory) {
             if (pushed) { pushed = false; try { history.back(); } catch (e) { /* stays */ } }
             else if (PATH.test(location.pathname)) { try { history.replaceState(history.state, "", "/home" + location.search + location.hash); } catch (e) { /* stays */ } }
@@ -167,7 +182,7 @@
         for (const e of document.querySelectorAll(".hallway-dev-pill")) e.remove();
         for (const e of document.querySelectorAll("body > main, body > .fellow-fansites")) e.inert = false;
         const spine = document.getElementById("side-spine"); if (spine) { try { spine.focus({ preventScroll: true }); } catch (e) { /* nowhere to put it */ } }
-        if (frame) { clearInterval(+frame.dataset.creep); clearTimeout(frame._late); }
+        if (frame) { clearInterval(+frame.dataset.creep); clearTimeout(frame._late); clearTimeout(frame._cap); }
         removeEventListener("resize", place);
         if (headWatch) { headWatch.disconnect(); headWatch = null; }
         if (stage) {
@@ -185,7 +200,7 @@
     /* What the page in the frame says. Only ours. */
     addEventListener("message", e => {
         if (e.origin !== location.origin || !frame || e.source !== frame.contentWindow || !e.data) return;
-        if (e.data.hallway === "progress") frame._told = Math.max(frame._told || 0, Number(e.data.progress) || 0);
+        if (e.data.hallway === "progress") { frame._told = Math.max(frame._told || 0, Number(e.data.progress) || 0); if (frame._alive) frame._alive(); }
         if (e.data.hallway === "ready" && frame._ready) frame._ready();
         if (e.data.hallway === "failed" && frame._trouble) frame._trouble();
         if (e.data.hallway === "leave") close();

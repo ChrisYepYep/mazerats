@@ -24,6 +24,14 @@ html.hallway-open body > .site-footer {
     z-index: 6;
 }
 html.hallway-open body { overflow: hidden; }
+/* Nothing scrolls while it's open, so the scrollbar's kept gutter (style.css's html rule) was only an empty 10px strip
+   of page down the right edge beside the walk, the fixed stage stopping short of it; given back while it's open,
+   the same as the pages sized to the window (9 Nov scan, finding 2). Closing puts it back.
+   The overflow is the root's own as well as the body's: the Christmas skin clips the root sideways, and then the root's
+   overflow is the window's rather than the body's, so under it the page still scrolled (and showed its bar) beside the walk. */
+html.hallway-open { scrollbar-gutter: auto; overflow-y: hidden; }
+/* "Skip to the archive" points into the archive that has slid away (inert), so it has nowhere to go (9 Nov scan, finding 4) */
+html.hallway-open .skip-link { display: none; }
 /* Arriving straight at /hallway there is nothing to watch slide away. */
 html.hallway-instant body > main,
 html.hallway-instant body > .fellow-fansites,
