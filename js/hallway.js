@@ -54,6 +54,8 @@
     }
 
     /* The site's own window (the same classes as every other, so it wears every palette, dark mode and skin) */
+    /* the Hallway's own mark (9 Nov 2026, his pick "G3": script Maze Rats tucked into a gold HALLWAY), on its loader and closed screens */
+    const logo = () => { const i = document.createElement("img"); i.className = "hallway-logo"; i.src = "/assets/img/hallway-logo@2x.png"; i.alt = "Maze Rats Hallway"; i.decoding = "async"; i.addEventListener("error", () => i.remove()); return i; };
     function note(title, words) {
         const n = document.createElement("div"); n.className = "modal hallway-note"; n.setAttribute("role", "status");
         const bar = document.createElement("div"); bar.className = "chrome-titlebar";
@@ -62,7 +64,7 @@
         const xi = document.createElement("img"); xi.src = "/assets/img/modal_topclose_x.png"; xi.alt = ""; xi.setAttribute("aria-hidden", "true"); x.appendChild(xi);
         bar.append(h, x);
         const frame = document.createElement("div"); frame.className = "chrome-frame";
-        const body = document.createElement("div"); body.className = "hallway-note-body";
+        const body = document.createElement("div"); body.className = "hallway-note-body"; body.appendChild(logo());
         const p = document.createElement("p"); p.className = "hallway-note-words"; p.textContent = String(words).replace(/([.!?])\s+(?=[A-Z])/g, "$1\n"); body.appendChild(p);
         const b = document.createElement("button"); b.type = "button"; b.className = "guess-btn guess-btn--lead"; b.textContent = "Back to the archive"; b.addEventListener("click", () => close()); body.appendChild(b);
         /* the fan-site statement, as on the Hallway's own splash, under a rule and quieter than the note (9 Nov 2026, his) */
@@ -121,7 +123,7 @@
            wordmark over the maze, the label in Volter, and the bar that fills in whole blocks (home.html's .site-loader, its classes reused) */
         const load = document.createElement("div"); load.className = "hallway-loader";
         const box = document.createElement("div"); box.className = "site-loader-inner";
-        const mark = document.createElement("p"); mark.className = "site-loader-wordmark"; mark.setAttribute("aria-hidden", "true"); for (const t of ["MAZE", "RATS"]) { const sp = document.createElement("span"); sp.textContent = t; mark.appendChild(sp); }
+        const mark = logo(); mark.classList.add("hallway-logo-loader");        // the Hallway's mark where the site's wordmark would be
         const words = document.createElement("p"); words.className = "site-loader-label"; words.setAttribute("role", "status"); words.textContent = "LOADING THE HALLWAY";
         const bar = document.createElement("div"); bar.className = "site-loader-track"; const fill = document.createElement("div"); fill.className = "site-loader-fill"; bar.appendChild(fill);
         /* in whole 8px blocks, never half a block, as the site's bar */
