@@ -19,7 +19,14 @@ html, body { background: #000; overflow: hidden; }
 #playBar .play-row .play-group { flex: 1; }
 #playBar .play-row .play-group > .mr-btn { flex: 1; }
 #playBar .play-wide { flex: 1; }
-#playBar .play-toggle.is-on { color: #f2cf7c; border-color: #ab8b64; }
+/* the card's buttons, all one height and one look, each row's buttons sharing its width (9 Nov 2026, his: "sit neater and cleaner") */
+#playBar .mr-btn { height: 22px; min-height: 0; padding: 0 6px; color: #f3dcaa; background: linear-gradient(#3e2b17, #24170b); border: 1px solid #0b0603; box-shadow: inset 0 1px 0 rgba(229, 180, 92, .35); font: 400 9px/20px 'Volter Goldfish', monospace; text-shadow: 0 1px 0 #000; }
+#playBar .mr-btn:hover { color: #fff3d0; background: linear-gradient(#4c3520, #2c1c0e); }
+#playBar .mr-btn.is-on { color: #2a1604; text-shadow: 0 1px 0 rgba(255, 240, 200, .5); background: linear-gradient(#f2cf86, #c48a32 60%, #a06a20); box-shadow: inset 0 1px 0 #fff1c4; }
+#playBar .play-drop::after { content: ""; display: inline-block; margin-left: 6px; vertical-align: 1px; border-left: 3px solid transparent; border-right: 3px solid transparent; border-top: 4px solid currentColor; transition: transform .2s; }
+#playBar .play-drop[aria-expanded="true"]::after { transform: rotate(180deg); }
+#playBar .play-row { min-height: 22px; }
+#playBar .play-group { gap: 1px; }
 /* the splash's own wooden card, the mark alone, above the window */
 #playPicker { flex-direction: column; align-items: center; }
 #playPicker .hw-logo-card { margin: auto 0 10px; width: min(400px, 100%); filter: drop-shadow(0 10px 22px rgba(0, 0, 0, .65)); }
@@ -33,17 +40,27 @@ html, body { background: #000; overflow: hidden; }
 #playBar .play-group > .mr-btn:only-child { border-radius: 4px; }
 #playBar .play-icon { display: inline-flex; align-items: center; justify-content: center; min-width: 26px; }
 #playBar .play-icon svg { display: block; }
-.play-menu-head { padding: 5px 8px 2px; color: #ab8b64; font: 400 9px/14px 'Volter Goldfish', monospace; }
-.play-menu-sep { height: 1px; margin: 3px 4px; background: #1a1108; box-shadow: 0 1px 0 #60462b; }
-.play-menu button[role="menuitemcheckbox"][aria-checked="true"]::before { content: ""; display: inline-block; width: 5px; height: 5px; margin: 0 6px 1px 0; background: #ab8b64; }
+.play-menu-head { margin: 8px 0 3px; padding: 0 7px; color: #4a3312; font: 400 .55rem/1.4 'Silkscreen', 'Volter Goldfish', monospace; letter-spacing: .14em; text-transform: uppercase; }
+.play-menu-head:first-child { margin-top: 0; }
+.play-menu-sep { height: 1px; margin: 6px 7px; background: rgba(26, 15, 4, .35); box-shadow: 0 1px 0 rgba(255, 245, 225, .4); }
 #playBar button { pointer-events: auto; }
 #playBar button.is-on { border-color: #ab8b64; color: #ab8b64; }
 /* A drop-down from one of them */
-.play-menu { position: fixed; z-index: 31; display: flex; flex-direction: column; min-width: 150px; padding: 3px; background: #39250f; border: 1px solid #000; border-radius: 4px; box-shadow: inset 0 1px 0 #60462b, 0 6px 18px rgba(0, 0, 0, .6); }
+/* The Menu and Playlist drawers (9 Nov 2026, his): out from under the oak card's foot, styled as the archive's own Menu tab (a parchment card,
+   Volter rows parted by fine rules, small caps headings) with the Hallway's brass: a brass rail along the foot and a rivet at each corner */
+.play-menu { position: fixed; z-index: 29; display: flex; flex-direction: column; box-sizing: border-box; padding: 18px 8px 12px; overflow-y: auto;
+    background: linear-gradient(180deg, #b99c70 0, #c9ad84 14px, #ccb088 60%, #bfa274 100%); border: 1px solid #000; border-top: 0; border-radius: 0 0 4px 4px;
+    box-shadow: inset 0 12px 10px -8px rgba(0, 0, 0, .55), inset 0 -3px 0 #d9a84e, inset 0 -4px 0 #6a420e, 0 10px 22px rgba(0, 0, 0, .55);
+    transform: translateY(-14px); opacity: 0; clip-path: inset(14px 0 0 0); transition: transform .2s ease-out, opacity .2s ease-out, clip-path .2s ease-out; }
+.play-menu.is-open { transform: none; opacity: 1; clip-path: inset(0 0 -40px 0); }
+.play-menu::before, .play-menu::after { content: ""; position: absolute; bottom: 7px; width: 5px; height: 5px; border-radius: 50%; background: radial-gradient(circle at 35% 35%, #fff1c4, #c48a32 55%, #5a3406); box-shadow: 0 1px 0 rgba(0, 0, 0, .5); }
+.play-menu::before { left: 6px; } .play-menu::after { right: 6px; }
 .play-menu[hidden] { display: none; }
-.play-menu button { padding: 4px 8px; color: #d8cbb2; background: none; border: 0; border-radius: 2px; text-align: left; font: 400 9px/14px 'Volter Goldfish', monospace; cursor: url('art/rooms/pointer.png') 2 0, pointer; }
-.play-menu button:hover, .play-menu button:focus-visible { color: #fff8ec; background: #4a3c29; outline: none; }
-.play-menu button[aria-checked="true"] { color: #fff8ec; background: #2f2618; }
+.play-menu button { position: relative; padding: 6px 7px; color: #1a0f04; background: none; border: 0; border-radius: 3px; text-align: left; font: 400 9px/13px 'Volter Goldfish', monospace; cursor: url('art/rooms/pointer.png') 2 0, pointer; }
+.play-menu button + button::before { content: ""; position: absolute; left: 7px; right: 7px; top: -1px; height: 1px; background: rgba(26, 15, 4, .2); box-shadow: 0 1px 0 rgba(255, 245, 225, .35); }
+.play-menu button:hover, .play-menu button:focus-visible { color: #1a0f04; background: rgba(26, 15, 4, .1); outline: none; }
+.play-menu button[aria-checked="true"] { color: #1a0f04; background: rgba(106, 66, 14, .16); }
+.play-menu button[aria-checked="true"]::after { content: ""; position: absolute; right: 9px; top: 50%; width: 5px; height: 5px; margin-top: -3px; transform: rotate(45deg); background: linear-gradient(135deg, #fff1c4, #c48a32 60%, #6a420e); box-shadow: 0 0 0 1px rgba(0, 0, 0, .35); }
 /* Who you are, in one of the site's windows */
 #playPicker { z-index: 36; }
 #playPicker .mr-window { width: min(340px, 100%); }

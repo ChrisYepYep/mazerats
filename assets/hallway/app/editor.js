@@ -2675,7 +2675,7 @@ function lostSpotReachable(l, x, y) {
 }
 /* The camera. While it's following it eases toward the Habbo at a rate that doesn't depend on the
    frame rate, and if you've dragged it away it glides back the same way once you let go. */
-let camRunning = false, camLast = 0;
+let camRunning = false, camLast = 0, camVel = [0, 0];
 const FOLLOW_MS = 240;
 let camHeld = false, openHeld = false;      // openHeld: the opening view stays on the statue until you first move
 const following = () => isOn("follow") && tool === "walk" && !!walker && !camHeld && !openHeld;
@@ -2686,12 +2686,15 @@ function camTarget() {
     return out;
 }
 function camTick(now) {
-    if (!following() || (drag && drag.kind === "pan")) { camRunning = false; return false; }
-    const dt = Math.min(100, now - camLast); camLast = now;
-    const t = camTarget(), k = 1 - Math.exp(-dt / FOLLOW_MS);
-    cam.x += (t[0] - cam.x) * k; cam.y += (t[1] - cam.y) * k;
-    const settled = Math.hypot(t[0] - cam.x, t[1] - cam.y) < .5;
-    if (settled && !walker.walking) { cam.x = t[0]; cam.y = t[1]; camRunning = false; paint(); return false; }
+    if (!following() || (drag && drag.kind === "pan")) { camRunning = false; camVel = [0, 0]; return false; }
+    const dt = Math.min(100, now - camLast) / 1000; camLast = now;
+    /* A smooth damp, not a plain ease: it starts from rest and speeds up before it slows down, so coming back from somewhere you dragged it
+       glides instead of leaping (9 Nov 2026, his: "the snap is really quick"). The further it has to go, the longer it takes over it; close
+       by, while you walk, it keeps up as tightly as before */
+    const t = camTarget(), far = Math.hypot(t[0] - cam.x, t[1] - cam.y), smooth = FOLLOW_MS / 1000 + Math.min(.45, far / 1300), om = 2 / smooth, x = om * dt, ex = 1 / (1 + x + .48 * x * x + .235 * x * x * x);
+    for (const [k, i] of [["x", 0], ["y", 1]]) { const ch = cam[k] - t[i], tmp = (camVel[i] + om * ch) * dt; camVel[i] = (camVel[i] - om * tmp) * ex; cam[k] = t[i] + (ch + tmp) * ex; }
+    const settled = Math.hypot(t[0] - cam.x, t[1] - cam.y) < .5 && Math.hypot(camVel[0], camVel[1]) < 4;
+    if (settled && !walker.walking) { cam.x = t[0]; cam.y = t[1]; camVel = [0, 0]; camRunning = false; paint(); return false; }
     paint();
     return true;
 }

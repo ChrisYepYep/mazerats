@@ -165,7 +165,12 @@
         const menus = [];
         const dropdown = (label, title, fill) => {
             const menu = document.createElement("div"); menu.className = "play-menu"; menu.hidden = true; menu.setAttribute("role", "menu"); menus.push(menu);
-            const btn = add(label, title, e => { e.stopPropagation(); const show = menu.hidden; shutMenus(); if (!show) return; fill(menu, () => { shutMenus(); }); const r = btn.getBoundingClientRect(); menu.style.top = (r.bottom + 4) + "px"; menu.hidden = false; menu.style.left = Math.max(8, Math.min(r.left, innerWidth - menu.offsetWidth - 8)) + "px"; btn.setAttribute("aria-expanded", "true"); if (!e.detail) { const first = menu.querySelector("button"); if (first) first.focus(); } });
+            /* opens as a drawer from under the card's foot, the width of the card inside its border (9 Nov 2026, his: "a card that pops out from under the
+               bottom of the menu card", as the archive's own Menu tab slides out from its window) */
+            const btn = add(label, title, e => { e.stopPropagation(); const show = menu.hidden || !menu.classList.contains("is-open"); shutMenus(); if (!show) return; fill(menu, () => { shutMenus(); });
+                const r = bar.getBoundingClientRect(); menu.style.left = (r.left + 12) + "px"; menu.style.top = (r.bottom - 16) + "px"; menu.style.width = (r.width - 24) + "px"; menu.style.maxHeight = Math.max(120, innerHeight - r.bottom - 10) + "px";
+                clearTimeout(menu.shutting); menu.hidden = false; void menu.offsetWidth; menu.classList.add("is-open"); btn.setAttribute("aria-expanded", "true"); if (!e.detail) { const first = menu.querySelector("button"); if (first) first.focus(); } });
+            btn.classList.add("play-drop");
             btn.setAttribute("aria-haspopup", "true"); btn.setAttribute("aria-expanded", "false"); menu.btn = btn; document.body.appendChild(menu);
             menu.addEventListener("keydown", e => {
                 const all = [...menu.querySelectorAll("button")], i = all.indexOf(document.activeElement);
@@ -174,10 +179,10 @@
             });
             return btn;
         };
-        const shutMenus = () => { for (const m of menus) { m.hidden = true; m.btn.setAttribute("aria-expanded", "false"); } };
+        const shutMenus = () => { for (const m of menus) { if (m.hidden) continue; m.classList.remove("is-open"); m.btn.setAttribute("aria-expanded", "false"); clearTimeout(m.shutting); m.shutting = setTimeout(() => { if (!m.classList.contains("is-open")) m.hidden = true; }, 220); } };
         const row = (menu, name, on, fn) => { const b = document.createElement("button"); b.type = "button"; b.setAttribute("role", "menuitemradio"); b.setAttribute("aria-checked", String(on)); b.textContent = name; b.addEventListener("click", fn); menu.appendChild(b); };
         dropdown("Playlist", "Choose a track", (menu, done) => {
-            menu.textContent = ""; const a = A(); if (!a) return;
+            menu.textContent = ""; const a = A(); if (!a) return; head(menu, "Playlist");
             a.tracks.forEach((t, i) => (!a.inSeason || a.inSeason(i)) && row(menu, t.name, a.playing && a.current === i, () => { const rows = document.querySelectorAll("#musicList .layer-row"); if (rows[i]) rows[i].click(); done(); }));
         });
         /* the editor's own Camera follows setting, whose button is hidden on this page; the editor doesn't take C here, so this does */
@@ -194,8 +199,9 @@
         const sep = menu => { const h = document.createElement("div"); h.className = "play-menu-sep"; h.setAttribute("role", "separator"); menu.appendChild(h); };
         /* the camera following you, in the card itself, not inside Menu (9 Nov 2026, his) */
         group("Camera", "Camera");
-        const cam = add("", "Camera follows you (C)", () => { click("follow"); paintCam(); }); cam.classList.add("play-toggle");
-        const paintCam = () => { const on = following(); cam.textContent = on ? "Follows you" : "Stays put"; cam.setAttribute("aria-pressed", String(on)); cam.classList.toggle("is-on", on); };
+        /* two words, the one in use lit (9 Nov 2026, his: "Follow" and "Manual"); C still swaps them */
+        const camFollow = add("Follow", "The camera follows you (C)", () => { if (!following()) click("follow"); paintCam(); }), camManual = add("Manual", "You move the camera yourself (C)", () => { if (following()) click("follow"); paintCam(); });
+        const paintCam = () => { const on = following(); for (const [b, lit] of [[camFollow, on], [camManual, !on]]) { b.setAttribute("aria-pressed", String(lit)); b.classList.toggle("is-on", lit); } };
         paintCam(); setInterval(paintCam, 500);
         group("More");
         dropdown("Menu", "Time of day, screensaver, your Habbo and more", (menu, done) => {
