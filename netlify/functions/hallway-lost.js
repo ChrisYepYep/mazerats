@@ -4,16 +4,20 @@
    i don't want people ruining it with exploits", and guests on the board as
    "Visitor 001" etc., "randomly generated though, not going up from 1").
 
-   GET [?v=token]               this week's board: the top 20, and your own row.
+   GET [X-Hallway-Visitor: token]  this week's board: the top 20, and your own row.
+                                (?v=token too, from pages older than 9 Nov.)
                                 { week, from, to, rows: [...], me }
    POST {act: "start", v?}      hustle asks you to find something. THIS picks
                                 the thing and its spot from the published map's
                                 spots, preferring things you haven't found, and
                                 starts the clock on its own time. One search
-                                open per player; a new one replaces it.
-                                { k, spot: {level, x, y}, left, limit, v? }
-   POST {act: "swap", v?}       "ask for a different one": another thing, the
-                                clock starts again.
+                                open per player; asked again while it's still
+                                open, it hands back that one, clock running
+                                (resumed: true). Once it's over, a new one.
+                                { k, spot: {level, x, y}, left, limit, hints, swapsLeft, v? }
+   POST {act: "swap", v?}       "ask for a different one": another thing, on
+                                the same clock, MAX_SWAPS times a search; then
+                                409 { noSwaps: true }.
    POST {act: "hint", v?}       a clue was asked for: counted here. { hints }
    POST {act: "found", k, at: {level, x, y}, v?}
                                 you picked it up. Only the thing this search
@@ -35,7 +39,8 @@
 
    WHAT'S STILL TAKEN ON TRUST. The page has to be told where the thing is to
    draw it, so a script could read the spot and post a find. What it can't do
-   is choose an easy thing, see the spot before the clock starts, skip the
+   is choose an easy thing (a swap or a fresh start doesn't restart the clock,
+   and swaps are few), see the spot before the clock starts, skip the
    clue count (clues are counted here), finish quicker than MIN_SECS, find
    something it wasn't sent for, or put more than DAY_CAP finds a day on the
    board.
@@ -54,7 +59,7 @@ const { playerFrom } = require("./_player");
 const { SECURITY_HEADERS } = require("./_headers");
 const { writeRefusal, withoutBanned, netHashFor } = require("./_bans");
 const { publicLists } = require("./_publicid");
-const { publishedMap, _reset: resetMap } = require("./_hallway-map");
+const { publishedMap, standableOn, pickUpFrom, _reset: resetMap } = require("./_hallway-map");
 const THINGS = require("./_hallway-lost-things.json");
 
 const COLLECTION = "hallway_lost";
@@ -65,6 +70,7 @@ const DAY_CAP = 20;
 const TOP = 20;
 const MAX_BODY = 2048;
 const NEW_PER_HOUR = 10;
+const MAX_SWAPS = 2;            // "ask for a different one", per search (9 Nov scan, finding 2)
 const VISITOR_AUDIENCE = "mazerats-hallway-visitor";
 const ID = /^[\w .:'-]{1,60}$/;
 
@@ -95,21 +101,27 @@ function pointsFor(secs, hints) {
 
 /* ---- the spots: the published map's, as the editor's Lost Property tab saves them ----
    map.lostSpots: [{ level, x, y, skip: [k...] }], level a floor's id; the first
-   spots were [floorName, x, y]. Basement floors never count. Kept for a minute. */
-const OLD_SPOTS = [["Ground", 58, 46], ["Ground", 75, 15], ["Ground", 83, 15], ["Ground", 91, 15], ["Floor 1", 71, -10], ["Floor 1", 151, -16], ["Floor 2", 60, -21], ["Ground", 94, -7], ["Ground", 73, 3], ["Ground", 86, 3], ["Floor 1", 36, -1], ["Floor 2", 20, 15], ["Floor 2", 26, 5], ["Floor 2", 26, 8], ["Ground", 96, -8], ["Ground", 78, 2], ["Ground", 67, 0], ["Floor 1", 83, -12], ["Ground", 71, 4], ["Ground", 74, 15], ["Ground", 82, 15], ["Ground", 84, 5], ["Ground", 58, 38]];
+   spots were [floorName, x, y]. Basement floors never count. Kept for a minute.
+   A spot nobody can pick up is never dealt (9 Nov scan, Hallway content finding 1: G 96,-8 was under a table with a chair on every side,
+   so every search sent there could only end as a miss): it has to be standable, or have a free tile beside it, by the same rule as the
+   page's reachFrom (live-lost.js), worked out from the map here (_hallway-map.js pickUpFrom). So a map edit can't make another one. */
+const OLD_SPOTS = [["Ground", 58, 46], ["Ground", 75, 15], ["Ground", 83, 15], ["Ground", 91, 15], ["Floor 1", 71, -10], ["Floor 1", 151, -16], ["Floor 2", 60, -21], ["Ground", 94, -7], ["Ground", 73, 3], ["Ground", 86, 3], ["Floor 1", 36, -1], ["Floor 2", 20, 15], ["Floor 2", 26, 5], ["Floor 2", 26, 8], ["Ground", 78, 2], ["Ground", 67, 0], ["Floor 1", 83, -12], ["Ground", 71, 4], ["Ground", 74, 15], ["Ground", 82, 15], ["Ground", 84, 5], ["Ground", 58, 38]];
 function spotsOf(map) {
-    const levels = map && Array.isArray(map.levels) ? map.levels : [], out = [];
+    const levels = map && Array.isArray(map.levels) ? map.levels : [], out = [], frees = new Map();
     const list = map && Array.isArray(map.lostSpots) ? map.lostSpots : OLD_SPOTS;
     for (const s of list) {
         const raw = Array.isArray(s) ? { name: s[0], x: s[1], y: s[2] } : s;
         if (!raw || !Number.isInteger(raw.x) || !Number.isInteger(raw.y)) continue;
         const l = levels.length ? levels.find(q => raw.level !== undefined ? q.id === raw.level : q.name === raw.name) : null;
         if (levels.length && (!l || l.k < 0)) continue;
+        if (l) { if (!frees.has(l)) frees.set(l, standableOn(map, l)); if (!pickUpFrom(map, l, raw.x, raw.y, frees.get(l)).length) continue; }
         out.push({ level: l ? l.id : null, name: l ? l.name : raw.name, x: raw.x, y: raw.y, skip: Array.isArray(raw.skip) ? raw.skip.map(String) : [] });
     }
     return out;
 }
-const liveSpots = async () => spotsOf(await publishedMap());
+/* worked out once per map read (publishedMap keeps one for a minute), not on every start */
+let spotMemo = { map: undefined, spots: [] };
+const liveSpots = async () => { const m = await publishedMap(); if (spotMemo.map !== m) spotMemo = { map: m, spots: spotsOf(m) }; return spotMemo.spots; };
 const sameSpot = (a, b) => !!a && !!b && a.x === b.x && a.y === b.y && (a.level === b.level || a.level === null || b.level === null);
 
 /* What to send them for: a thing they haven't found yet if there is one (his: avoid repeats), never the one they
@@ -148,15 +160,42 @@ async function newVisitor(db, event) {
             if (doc && doc.n > NEW_PER_HOUR) return "busy";
         } catch (e) { console.error("hallway-lost: couldn't count new visitors", e); }
     }
+    const v = crypto.randomBytes(8).toString("hex"), n = await drawNumber(db, v);
+    return n ? { v, n } : null;
+}
+/* (9 Nov scan, finding 3) Numbers used to be held for all time, and drawn by trial: 30 tries at three digits, then 10 at four. Past the
+   first ~1000 Visitors every new one cost 30 failed inserts, and the whole space ran out at about 9,900, locking every signed-out player
+   out of Lost Property for good. Now a number comes back once its Visitor hasn't started a search for VISITOR_IDLE_DAYS (a TTL on `at`,
+   which each start renews; a Visitor coming back after that is given a new number on the same id, keeping their record), a few tries
+   per size and then a bigger size, and a size found full is skipped for a while on this instance. */
+const VISITOR_IDLE_DAYS = 56, TRIES = 6, SIZES = [[1, 1000], [1000, 10000], [10000, 100000]], fullUntil = new Map();
+let visitorIndexes = false;
+async function visitorsCol(db) {
     const col = db.collection(COLLECTION + "_visitors");
     await ensureUniqueIndex(col, ["n"]);
-    const v = crypto.randomBytes(8).toString("hex");
-    for (let i = 0; i < 40; i++) {
-        const n = i < 30 ? crypto.randomInt(1, 1000) : crypto.randomInt(1000, 10000);
-        try { await col.insertOne({ n, v, at: new Date() }); return { v, n }; }
-        catch (e) { if (!(e && e.code === 11000)) throw e; }
+    if (!visitorIndexes) { visitorIndexes = true; await col.createIndex({ at: 1 }, { expireAfterSeconds: VISITOR_IDLE_DAYS * 86400 }).catch(e => console.error("hallway-lost: visitors' TTL index", e)); await col.createIndex({ v: 1 }).catch(() => {}); }
+    return col;
+}
+async function drawNumber(db, v) {
+    const col = await visitorsCol(db), now = Date.now();
+    for (let s = 0; s < SIZES.length; s++) {
+        if ((fullUntil.get(s) || 0) > now && s < SIZES.length - 1) continue;
+        for (let i = 0; i < TRIES; i++) {
+            const n = crypto.randomInt(SIZES[s][0], SIZES[s][1]);
+            try { await col.insertOne({ n, v, at: new Date() }); return n; }
+            catch (e) { if (!(e && e.code === 11000)) throw e; }
+        }
+        fullUntil.set(s, now + 10 * 60e3);
     }
-    return null;
+    return 0;
+}
+/* a Visitor starting a search: their number's kept another VISITOR_IDLE_DAYS; if it was let go while they were away, a new one */
+async function keepVisitor(db, had) {
+    const col = await visitorsCol(db), r = await col.findOneAndUpdate({ v: had.v, n: had.n }, { $set: { at: new Date() } }, { returnDocument: "after" });
+    const doc = r && r.value !== undefined ? r.value : r;
+    if (doc) return null;
+    const n = await drawNumber(db, had.v);
+    return n ? { v: had.v, n } : null;
 }
 
 /* Who's playing: { id, name, token? } — a nicknamed player, or a Visitor (minted if `mint`). */
@@ -167,6 +206,10 @@ async function whoIs(db, event, body, mint) {
         if (row && typeof row.nick === "string" && row.nick) return { id: String(player.id), name: row.nick, player: true };
     }
     const had = readVisitor(body && body.v);
+    if (had && mint) {
+        const again = await keepVisitor(db, had), token = again && signVisitor(again.v, again.n);
+        if (again && token) return { id: "visitor:" + had.v, name: visitorName(again.n), player: false, token };
+    }
     if (had) return { id: "visitor:" + had.v, name: visitorName(had.n), player: false };
     if (!mint) return null;
     const made = await newVisitor(db, event);
@@ -188,8 +231,18 @@ async function board(db, wk, meId) {
     if (meId) {
         const mine = await col.findOne({ playerId: meId, week: wk.week }, { projection: { _id: 0, points: 1, finds: 1, best: 1, name: 1 } });
         if (mine && mine.points > 0) {
-            const above = await col.countDocuments({ week: wk.week, points: { $gt: mine.points } });
-            me = { name: mine.name || "", points: mine.points, finds: mine.finds || 0, best: mine.best || 0, rank: above + 1 };
+            /* ranked as the board is (9 Nov scan, finding 9): on it, your place in it; below it, the players above you the board would
+               show, so banned players (and players with no nickname, whom the board leaves off too) don't push you down */
+            const at = top.findIndex(r => r.id === meId);
+            let rank;
+            if (at >= 0) rank = at + 1;
+            else {
+                const ups = await col.find({ week: wk.week, points: { $gt: mine.points } }, { projection: { _id: 0, playerId: 1 } }).limit(5000).toArray();
+                const upRows = ups.map(r => ({ id: r.playerId })), upVisitors = upRows.filter(isVisitor).length;
+                const [upPlayers] = await withoutBanned(db, [upRows.filter(r => !isVisitor(r))]);
+                rank = upVisitors + upPlayers.length + 1;
+            }
+            me = { name: mine.name || "", points: mine.points, finds: mine.finds || 0, best: mine.best || 0, rank };
         }
     }
     const [pub] = await publicLists(db, [top.filter(r => !isVisitor(r)).map(r => ({ ...r }))]);
@@ -210,7 +263,10 @@ async function handler(event) {
 
     if (event.httpMethod === "GET") {
         try {
-            const q = event.queryStringParameters || {}, who = await whoIs(db, event, { v: q.v }, false);
+            /* the Visitor's token in a header, not the address, where request logs keep it (9 Nov scan, finding 11); ?v= still read
+               for pages loaded before this */
+            const q = event.queryStringParameters || {}, h = event.headers || {}, tok = h["x-hallway-visitor"] || h["X-Hallway-Visitor"] || q.v;
+            const who = await whoIs(db, event, { v: tok }, false);
             return json(200, await board(db, wk, who && who !== "busy" ? who.id : null));
         } catch (e) { console.error("hallway-lost: board read failed", e); return json(500, { error: "Couldn't read the board" }); }
     }
@@ -241,17 +297,27 @@ async function handler(event) {
     } catch (e) { console.error("hallway-lost: unique index unavailable", e); return json(503, { error: "Couldn't save just now" }); }
 
     try {
+        /* (9 Nov scan, finding 2) Re-rolling was free: start and swap each put a new thing at a new spot on a new clock, so a script could
+           roll until the spot was a step away. Now the clock is the search's, not the thing's: a swap keeps it running, and there are only
+           MAX_SWAPS of them a search (counted on the open row); a start while a search is still open hands back that same search, on its
+           own clock, rather than a fresh one. */
         if (act === "start" || act === "swap") {
-            const was = await opens.findOne({ playerId: id }, { projection: { _id: 0, k: 1 } });
-            if (act === "swap" && !was) return json(409, { error: "No search open" });
+            const was = await opens.findOne({ playerId: id }, { projection: { _id: 0, k: 1, spot: 1, t0: 1, hints: 1, swaps: 1 } });
+            const live = was && was.t0 && now - was.t0 <= (LIMIT_SECS + GRACE_SECS) * 1000 ? was : null;
+            const answer = (o, extra) => { const out = { k: o.k, spot: o.spot, left: Math.max(0, LIMIT_SECS * 1000 - (now - o.t0)), limit: LIMIT_SECS, name: who.name, hints: o.hints || 0, swapsLeft: Math.max(0, MAX_SWAPS - (o.swaps || 0)), ...(extra || {}) }; if (who.token) out.v = who.token; return json(200, out); };
+            if (act === "swap" && !live) return json(409, { error: "No search open" });
+            if (act === "start" && live && live.k && live.spot) return answer(live, { resumed: true });
+            if (act === "swap" && (live.swaps || 0) >= MAX_SWAPS) return json(409, { error: "No more swaps for this one", noSwaps: true, swapsLeft: 0 });
             const seenRow = await seenCol.findOne({ playerId: id }, { projection: { _id: 0, ks: 1 } });
             const pick = choose(await liveSpots(), new Set((seenRow && seenRow.ks) || []), was && was.k);
             if (!pick) return json(503, { error: "Nothing to find just now" });
             const spot = { level: pick.spot.level, name: pick.spot.name, x: pick.spot.x, y: pick.spot.y };
-            await opens.updateOne({ playerId: id }, { $set: { playerId: id, k: pick.k, spot, t0: now, hints: 0 } }, { upsert: true });
-            const out = { k: pick.k, spot, left: LIMIT_SECS * 1000, limit: LIMIT_SECS, name: who.name };
-            if (who.token) out.v = who.token;
-            return json(200, out);
+            const row = act === "swap" ? { k: pick.k, spot, t0: live.t0, hints: 0, swaps: (live.swaps || 0) + 1 } : { k: pick.k, spot, t0: now, hints: 0, swaps: 0 };
+            /* a swap only lands on the search it was asked of: two at once can't both spend the same swap */
+            const f = act === "swap" ? { playerId: id, t0: live.t0, swaps: live.swaps ? live.swaps : { $in: [0, null] } } : { playerId: id };
+            const r = await opens.updateOne(f, { $set: { playerId: id, ...row } }, { upsert: act === "start" });
+            if (act === "swap" && !r.matchedCount) return json(409, { error: "No more swaps for this one", noSwaps: true, swapsLeft: 0 });
+            return answer(row);
         }
         if (act === "hint") {
             const r = await opens.findOneAndUpdate({ playerId: id }, { $inc: { hints: 1 } }, { returnDocument: "after" });
@@ -289,5 +355,5 @@ async function handler(event) {
 }
 
 exports.handler = handler;
-exports._for = { pointsFor, weekOf, spotsOf, choose, visitorName, LIMIT_SECS, THINGS, resetSpots: () => resetMap() };
+exports._for = { pointsFor, weekOf, spotsOf, choose, visitorName, LIMIT_SECS, THINGS, resetSpots: () => { resetMap(); spotMemo = { map: undefined, spots: [] }; } };
 exports.handler = require("./_errors").withErrorReporting("hallway-lost", exports.handler);

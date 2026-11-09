@@ -8,9 +8,14 @@ const col = {
     async findOne(q) { const d = docs.get(q.playerId); return d ? JSON.parse(JSON.stringify(d)) : null; },
     async updateOne(f, u, o) { const d = docs.get(f.playerId); const noRev = f.rev && f.rev.$exists === false; if (d && noRev) { const e = new Error("dup"); e.code = 11000; throw e; } if (d && d.rev !== f.rev) return { matchedCount: 0 }; if (!d && !(o && o.upsert)) return { matchedCount: 0 }; docs.set(f.playerId, { playerId: f.playerId, ...(d || {}), ...u.$set }); return d ? { matchedCount: 1 } : { upsertedCount: 1 }; }
 };
+/* the places counter (9 Nov scan, finding 5) */
+const counters = new Map(), places = {
+    async findOneAndUpdate(f, u) { const d = counters.get(f._id); if (!d) return null; d.n += u.$inc.n; return { ...d }; },
+    async insertOne(d) { if (counters.has(d._id)) { const e = new Error("dup"); e.code = 11000; throw e; } counters.set(d._id, { ...d }); }
+};
 const fakes = {
-    "./_db": { getDb: async () => ({ collection: n => n === "players" ? { findOne: async () => ({}) } : col }), ensureUniqueIndex: async () => { indexed++; } },
-    "./_player": { playerFrom: () => me, sessionRevoked: () => false },
+    "./_db": { getDb: async () => ({ collection: n => n === "players" ? { findOne: async () => ({}) } : n === "hallway_hunt_places" ? places : col }), ensureUniqueIndex: async () => { indexed++; } },
+    "./_player": { playerFrom: e => e.headers.me ? { id: e.headers.me } : me, sessionRevoked: () => false },
     "./_bans": { writeRefusal: async () => refuse },
     "./_hallway-map": { publishedMap: async () => MAP },
     "./_errors": { withErrorReporting: (n, f) => f },
@@ -26,13 +31,27 @@ const call = async (method, body, headers = {}) => { const r = await handler({ h
     r = await call("POST", { lost: { day: "2026-11-07", streak: 3, shelf: ["duck"] } }); assert.equal(r.body.lost.streak, 3);
     r = await call("POST", { lost: { day: "2026-11-05", streak: 1, shelf: ["coin"] } }); assert.equal(r.body.lost.day, "2026-11-07", "an older day can't win"); assert.equal(r.body.lost.streak, 3); assert.deepStrictEqual(r.body.lost.shelf, ["duck", "coin"], "but what it found still counts");
     /* hunts, checked against the map */
-    r = await call("POST", { hunts: { keys: { found: ["c0", "c1", "c2"], done: true } } }); assert.deepStrictEqual(r.body.hunts.keys, { found: ["c0", "c1", "c2"], done: false }, "a whole hunt at once is too quick to count");
+    r = await call("POST", { hunts: { keys: { found: ["c0", "c1", "c2"], done: true } } }); assert.deepStrictEqual(r.body.hunts.keys, { found: ["c0"], done: false }, "a whole hunt at once: one clue a save (9 Nov scan, finding 4)");
+    clock += 3e3; r = await call("POST", { hunts: { keys: { found: ["c0", "c1", "c2"] } } }); assert.deepStrictEqual(r.body.hunts.keys.found, ["c0"], "and not sooner than MIN_CLUE_MS after the one before");
     r = await call("POST", { hunts: { nope: { found: ["c0"], done: true } } }); assert.ok(!("nope" in r.body.hunts), "only hunts on the map");
     me = { id: "p9" }; r = await call("POST", { hunts: { keys: { found: ["c1", "c2"], done: true } } }); assert.deepStrictEqual(r.body.hunts.keys.found, [], "clues only in order");
     r = await call("POST", { hunts: { keys: { found: ["c0"] } } }); clock += 9e3; r = await call("POST", { hunts: { keys: { found: ["c0", "c1"] } } }); clock += 9e3; r = await call("POST", { hunts: { keys: { found: ["c0", "c1", "c2", "c7"], done: true } } });
     assert.deepStrictEqual(r.body.hunts.keys, { found: ["c0", "c1", "c2"], done: true, place: 1 }, "played through: finished, first"); assert.equal(r.body.key, true, "the key comes with it");
     r = await call("POST", { hunts: { keys: { found: [], done: false } } }); assert.equal(r.body.hunts.keys.done, true, "a hunt can't be un-finished");
-    me = { id: "p1" }; clock += 60e3; r = await call("POST", { scraps: ["later"] }); assert.deepStrictEqual(r.body.hunts.keys, { found: ["c0", "c1", "c2"], done: true, place: 2 }, "the too-quick one finishes at a later save, second"); assert.equal(r.body.key, true);
+    me = { id: "p1" }; clock += 60e3; r = await call("POST", { scraps: ["later"] }); assert.deepStrictEqual(r.body.hunts.keys, { found: ["c0"], done: false }, "a save that doesn't send the hunt takes nothing for it");
+    /* the page sending its list again, as progress.js does while the server's behind: a clue each time */
+    r = await call("POST", { hunts: { keys: { found: ["c0", "c1", "c2"], done: true } } }); assert.deepStrictEqual(r.body.hunts.keys.found, ["c0", "c1"]);
+    clock += 9e3; r = await call("POST", { hunts: { keys: { found: ["c0", "c1", "c2"], done: true } } }); assert.deepStrictEqual(r.body.hunts.keys, { found: ["c0", "c1", "c2"], done: true, place: 2 }, "caught up: finished, second"); assert.equal(r.body.key, true);
+    /* two finishing at once can't share a place */
+    for (const p of ["r1", "r2"]) { me = { id: p }; for (const f of [["c0"], ["c0", "c1"], ["c0", "c1"]]) { clock += 9e3; await call("POST", { hunts: { keys: { found: f } } }); } }
+    clock += 9e3; const [ra, rb] = await Promise.all(["r1", "r2"].map(p => call("POST", { hunts: { keys: { found: ["c0", "c1", "c2"] } } }, { me: p })));
+    assert.deepStrictEqual([ra.body.hunts.keys.place, rb.body.hunts.keys.place].sort(), [3, 4], "places from the counter: " + ra.body.hunts.keys.place + ", " + rb.body.hunts.keys.place);
+    /* a row from before the times (finding 6): its clues get this save's time, and the next one is timed from there */
+    docs.set("old", { playerId: "old", rev: 1, hunts: { keys: { found: ["c0", "c1"], done: false } } }); me = { id: "old" };
+    r = await call("POST", { hunts: { keys: { found: ["c0", "c1", "c2"] } } }); assert.deepStrictEqual(r.body.hunts.keys.found, ["c0", "c1"], "timed from now, not taken at once"); assert.equal(typeof docs.get("old").hunts.keys.at.c1, "number");
+    clock += 9e3; r = await call("POST", { hunts: { keys: { found: ["c0", "c1", "c2"] } } }); assert.equal(r.body.hunts.keys.done, true, "and it can finish (it never could)");
+    docs.set("old2", { playerId: "old2", rev: 1, hunts: { keys: { found: ["c0", "c1", "c2"], done: false } } }); me = { id: "old2" }; r = await call("POST", { scraps: ["x"] }); assert.equal(r.body.hunts.keys.done, true, "an old complete row finishes at its next save");
+    me = { id: "p1" };
     r = await call("POST", { scraps: ["b"], key: false }); assert.equal(r.body.key, true, "the key can't be lost");
     MAP = null; r = await call("POST", { hunts: { quick: { found: ["c0", "c1"], done: true } } }); assert.deepStrictEqual(r.body.hunts.quick, { found: ["c0", "c1"], done: false }, "no map: clues kept, nothing finishes"); MAP = { levels: [{ id: "g", k: 0 }], hunts: [{ id: "keys", clues: [{}, {}, {}] }, { id: "quick", clues: [{}, {}] }] };
     clock += 30e3; r = await call("POST", {}); assert.equal(r.body.hunts.quick.done, true, "and finishes when it's back");

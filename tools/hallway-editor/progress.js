@@ -34,15 +34,38 @@
             const had = state, both = merge(online, had);
             state = both; tell();
             /* anything found as a guest goes up once, then the browser's copy is done with */
-            if (JSON.stringify(both) !== JSON.stringify(merge(blank(), online))) { try { state = merge(state, await post(both)); localStorage.removeItem(KEY); tell(); } catch (e) { /* kept in the browser for next time */ } } else { try { localStorage.removeItem(KEY); } catch (e) { /* fine */ } }
+            if (JSON.stringify(both) !== JSON.stringify(merge(blank(), online))) { try { const v = await post(both); state = merge(state, v); localStorage.removeItem(KEY); tell(); catchUp(v); } catch (e) { /* kept in the browser for next time */ } } else { try { localStorage.removeItem(KEY); } catch (e) { /* fine */ } }
             return state;
         })();
         return ready;
     }
+    /* The server takes a hunt's clues one a save, at least 8 seconds after the one before (9 Nov 2026 scan, finding 4), so a guest's hunt
+       merged at sign-in, or two clues found close together, leave it behind what's been found here. While it is, the hunts it's behind on
+       go again every CATCH_UP_MS, and are kept in the browser meanwhile so a reload carries on from them. Done when it has them all. */
+    const CATCH_UP_MS = 9000, HUNT_CLUE = /^c\d+$/; let catchTimer = 0, idle = 0;
+    function behind(v) {
+        const out = {};
+        for (const [id, h] of Object.entries(state.hunts || {})) { const s = v && v.hunts && v.hunts[id]; if (!s || s.done) continue; const mine = (h.found || []).filter(k => HUNT_CLUE.test(k)); if (mine.some(k => !(s.found || []).includes(k))) out[id] = { found: mine, n: (s.found || []).length }; }
+        return out;
+    }
+    function catchUp(v) {
+        clearTimeout(catchTimer); const b = behind(v), ids = Object.keys(b);
+        if (!ids.length) { idle = 0; return; }
+        try { const had = JSON.parse(localStorage.getItem(KEY) || "null") || {}; localStorage.setItem(KEY, JSON.stringify({ ...had, hunts: { ...(had.hunts || {}), ...Object.fromEntries(ids.map(id => [id, { found: b[id].found }])) } })); } catch (e) { /* this visit only */ }
+        catchTimer = setTimeout(() => {
+            post({ hunts: Object.fromEntries(ids.map(id => [id, { found: b[id].found }])) }).then(r => {
+                state = merge(state, r); tell();
+                /* the server didn't move at all three times running (a hunt taken off the map, say): leave it for the next visit */
+                const moved = ids.some(id => r.hunts && r.hunts[id] && ((r.hunts[id].found || []).length > b[id].n || r.hunts[id].done));
+                idle = moved ? 0 : idle + 1; if (idle < 3) catchUp(r);
+                if (!Object.keys(behind(r)).length) { try { localStorage.removeItem(KEY); } catch (e) { /* fine */ } }
+            }).catch(() => { /* kept in the browser for next time */ });
+        }, CATCH_UP_MS);
+    }
     function save(part) {
         state = merge(state, merge(blank(), { ...state, ...part, hunts: part.hunts || {}, scraps: part.scraps || [], lost: part.lost || state.lost, key: !!part.key }));
         tell();
-        if (signedIn) post(part).then(v => { state = merge(state, v); tell(); }).catch(() => writeLocal(state));
+        if (signedIn) post(part).then(v => { state = merge(state, v); tell(); if (part.hunts) catchUp(v); }).catch(() => writeLocal(state));
         else writeLocal(state);
         return state;
     }

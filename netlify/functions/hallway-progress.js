@@ -17,12 +17,22 @@
    HUNTS ARE CHECKED HERE (8 Nov 2026, the owner's: "Server should check").
    A hunt has to be one on the published map, and its clues only count in
    order: clue 2 isn't taken until clue 1 is in. Each clue's time in is kept
-   (`at`). A hunt is finished, with its place and the key, only when every
-   clue is in and at least MIN_CLUE_MS a clue has passed since the first: a
-   page saying "done" decides nothing. A hunt that's complete but too quick
-   (a guest's whole hunt arriving at sign-in) finishes at a later save, once
-   enough time has gone by. The key comes only from a finished hunt. With
-   the map unreadable, clues are kept but nothing finishes until it's back.
+   (`at`). A save takes one new clue at most, and only MIN_CLUE_MS or more
+   after the clue before it came in (9 Nov scan); the page sends what it has
+   again until the server has caught up (progress.js), so a guest's whole
+   hunt arriving at sign-in goes in a clue at a time. A hunt is finished,
+   with its place and the key, when every clue is in: a page saying "done"
+   decides nothing. The key comes only from a finished hunt. With the map
+   unreadable, clues are kept but nothing finishes until it's back.
+
+   STILL TAKEN ON TRUST: that a clue was really found. A script can still
+   finish a hunt by posting its clues one by one, MIN_CLUE_MS apart; only a
+   per-clue proof from the server (a token given out when a clue is opened)
+   would stop that, and that's the owner's call.
+
+   PLACES come from a counter per hunt in `hallway_hunt_places`, taken with
+   one atomic $inc, so two players finishing at once can't share a place
+   (9 Nov scan, finding 5). Not per player, so player-forget leaves it.
 
    Signed in, with a live session, and not banned: the same gate every player
    write goes through (writeRefusal in _bans.js). */
@@ -33,6 +43,7 @@ const { writeRefusal } = require("./_bans");
 const { publishedMap } = require("./_hallway-map");
 
 const COLLECTION = "hallway_progress";
+const PLACES = "hallway_hunt_places";
 const MAX_BODY = 16 * 1024;
 const MAX_LIST = 400;
 const ID = /^[\w .:'-]{1,60}$/;
@@ -110,26 +121,53 @@ function mergeInto(doc, clean, map, now = Date.now()) {
     }
     /* Lost Property's own totals (8 Nov 2026): points, best find and misses only go up. They're the player's record, not the board: hallway-lost.js keeps that, on its own clock */
     if (clean.lost) for (const k of ["points", "best", "missed"]) next.lost[k] = Math.max(was.lost[k] || 0, clean.lost[k] || 0);
+    /* (9 Nov scan, findings 4 and 6) One POST of every clue used to pass the in-order check, and the hunt finished at any save once
+       (n-1) x MIN_CLUE_MS had gone by since c0: a scripted finish and a place in two requests. Now a save takes at most ONE new clue per
+       hunt, and only once MIN_CLUE_MS has passed since the clue before it came in; the page sends its whole found list each time, and
+       progress.js sends it again a little later when the server is behind (a guest's hunt merged at sign-in comes in clue by clue that
+       way). Clues found before 8 Nov have no time in: they're given this save's, so the next clue is timed from now rather than never. */
     const defs = huntsOf(map);
     for (const [id, h] of Object.entries(clean.hunts)) {
         const n = defs ? defs.get(id) : undefined;
         if (defs && n === undefined) continue;                       // not a hunt on the map
         const old = rawHunts[id] || { found: [], done: false }, found = ids(old.found).filter(k => CLUE.test(k)), at = { ...(old.at || {}) };
-        if (n !== undefined) { for (let i = 0; i < n; i++) { const k = "c" + i; if (found.includes(k)) continue; if (!h.found.includes(k)) break; found.push(k); at[k] = now; } }
-        else for (const k of h.found) if (CLUE.test(k) && !found.includes(k)) { found.push(k); at[k] = now; }
+        for (const k of found) if (typeof at[k] !== "number") at[k] = now;
+        if (n !== undefined) {
+            for (let i = 0; i < n; i++) {
+                const k = "c" + i; if (found.includes(k)) continue; if (!h.found.includes(k)) break;
+                const prev = i ? at["c" + (i - 1)] : undefined; if (typeof prev === "number" && now - prev < MIN_CLUE_MS) break;
+                found.push(k); at[k] = now; break;                      // one a save
+            }
+        } else for (const k of h.found) if (CLUE.test(k) && !found.includes(k)) { found.push(k); at[k] = now; }
         next.hunts[id] = { found: found.slice(0, MAX_LIST), done: old.done === true, at };
         if (old.place) next.hunts[id].place = old.place;
     }
-    /* finished: every clue in, and not quicker than a person could */
+    /* finished: every clue in (each was timed as it came, above). A row saved before the times, not in this save, gets its times now */
     for (const [id, h] of Object.entries(next.hunts)) {
         if (h.done) continue; const n = defs && defs.get(id); if (!n) continue;
-        const raw = clean.hunts[id] ? h : rawHunts[id] || h, at = raw.at || {}, found = ids(raw.found);
-        if (!Array.from({ length: n }, (_, i) => "c" + i).every(k => found.includes(k))) continue;
-        const first = at.c0 || now; if (now - first < (n - 1) * MIN_CLUE_MS) continue;
+        const raw = clean.hunts[id] ? h : rawHunts[id] || h, at = { ...(raw.at || {}) }, found = ids(raw.found);
+        for (const k of found) if (CLUE.test(k) && typeof at[k] !== "number") at[k] = now;
+        if (!Array.from({ length: n }, (_, i) => "c" + i).every(k => found.includes(k))) { if (!clean.hunts[id] && raw.at === undefined && found.length) next.hunts[id] = { ...raw, found, at }; continue; }
         next.hunts[id] = { ...raw, found, at, done: true };
     }
     next.key = was.key || Object.values(next.hunts).some(h => h.done);
     return next;
+}
+
+/* The next finishing place in a hunt: one atomic $inc on its counter (9 Nov scan, finding 5: counting the finished rows, then writing,
+   gave two players finishing together the same place). A hunt's counter starts from the finishers already saved, the first time it's
+   needed. A save that then fails leaves a gap in the places, never a shared one. */
+async function nextPlace(db, col, id) {
+    const places = db.collection(PLACES), key = "hunt:" + id;
+    for (let tries = 0; tries < 3; tries++) {
+        const r = await places.findOneAndUpdate({ _id: key }, { $inc: { n: 1 } }, { returnDocument: "after" });
+        const doc = r && r.value !== undefined ? r.value : r;
+        if (doc && Number.isInteger(doc.n)) return doc.n;
+        const already = await col.countDocuments({ ["hunts." + id + ".done"]: true });
+        try { await places.insertOne({ _id: key, n: already + 1 }); return already + 1; }
+        catch (e) { if (!(e && e.code === 11000)) throw e; }      // another finisher made it first: take the next from it
+    }
+    throw new Error("hunt place counter unavailable");
 }
 
 async function handler(event) {
@@ -187,11 +225,12 @@ async function handler(event) {
     /* Read, merge, write only if nobody else has written since: two tabs saving
        at once retry against each other instead of one losing its scrap. */
     try {
+        const drawn = new Map();        // a place is drawn once per hunt per request, so a retry below doesn't take a second
         for (let tries = 0; tries < 4; tries++) {
             const doc = await col.findOne({ playerId: player.id }, { projection: { _id: 0 } });
             const next = mergeInto(doc, clean, await publishedMap());
             /* your place in a hunt is decided here, the moment it's first finished */
-            for (const [id, h] of Object.entries(next.hunts)) { const was = doc && doc.hunts && doc.hunts[id]; if (h.done && !(was && was.done)) next.hunts[id].place = (await col.countDocuments({ ["hunts." + id + ".done"]: true })) + 1; }
+            for (const [id, h] of Object.entries(next.hunts)) { const was = doc && doc.hunts && doc.hunts[id]; if (h.done && !(was && was.done)) { if (!drawn.has(id)) drawn.set(id, await nextPlace(db, col, id)); next.hunts[id].place = drawn.get(id); } }
             const rev = (doc && doc.rev) || 0;
             const set = { ...next, rev: rev + 1, updatedAt: new Date().toISOString() };
             try {

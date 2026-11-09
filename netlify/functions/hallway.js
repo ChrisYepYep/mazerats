@@ -19,7 +19,7 @@ const { blobStore } = require("./_blobs.js");
 const auth = require("./_auth.js");
 const { SECURITY_HEADERS } = require("./_headers");
 
-const STORE = "hallway", MAX_MAP = 4 * 1024 * 1024, MAX_TILE = 3 * 1024 * 1024, HASH = /^[a-f0-9]{20}$/;
+const STORE = "hallway", MAX_MAP = 4 * 1024 * 1024, MAX_TILE = 3 * 1024 * 1024, HASH = /^[a-f0-9]{20}$/, FRESH_MS = 10 * 60e3;
 const reply = (statusCode, body, extra) => ({ statusCode, headers: { ...SECURITY_HEADERS, "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store", ...(extra || {}) }, body: typeof body === "string" ? body : JSON.stringify(body) });
 const FIGURE = /^[a-z]{2}-\d+(-\d+)*(\.[a-z]{2}-\d+(-\d+)*)*$/;
 const USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36";
@@ -91,19 +91,23 @@ exports.handler = async (event) => {
         if (png.length > MAX_TILE || png.length < 8 || png.readUInt32BE(0) !== 0x89504e47) return reply(400, { error: "Not a picture" });
         const hash = crypto.createHash("sha1").update(png).digest("hex").slice(0, 20);
         if (hash !== body.hash) return reply(400, { error: "That picture isn't what it says" });
-        await store.set("tile/" + hash, png.buffer.slice(png.byteOffset, png.byteOffset + png.length));
+        /* when it came, so a publish's tidy-up leaves alone the pictures another publish is still sending (9 Nov scan, finding 7) */
+        await store.set("tile/" + hash, png.buffer.slice(png.byteOffset, png.byteOffset + png.length), { metadata: { at: Date.now() } });
         return reply(200, { ok: true });
     }
     if (body.action === "publish") {
         const m = body.manifest;
-        if (!looksLikeMap(body.map) || !m || typeof m.tiles !== "object" || typeof m.lift !== "object") return reply(400, { error: "Not something to publish" });
+        /* null is an "object" too, and Object.values(null) throws: a 400, not a 500 (9 Nov scan, finding 8) */
+        if (!looksLikeMap(body.map) || !m || !m.tiles || !m.lift || typeof m.tiles !== "object" || typeof m.lift !== "object") return reply(400, { error: "Not something to publish" });
         const mapText = JSON.stringify(body.map); if (mapText.length > MAX_MAP) return reply(413, { error: "That map is too big" });
         if (body.base) { const was = await readDraft(store); if (was && sha(was) !== body.base && was !== mapText) return reply(409, { error: "It's been saved from somewhere else" }); }
         /* Every picture it names has to be here, or visitors get holes */
         const { blobs } = await store.list({ prefix: "tile/" }), have = new Set(blobs.map(b => b.key.slice(5)));
         const named = [...Object.values(m.tiles), ...Object.values(m.lift)];
         for (const h of named) if (!HASH.test(String(h)) || !have.has(h)) return reply(400, { error: "A picture is missing: " + h });
-        const version = crypto.createHash("sha1").update(mapText + JSON.stringify(m.tiles)).digest("hex").slice(0, 16), publishedAt = new Date().toISOString();
+        /* the lift's pictures are part of what's live too: a publish where only they changed is a new version, or `recent` (kept by version)
+           would drop the old ones while pages open on the same version string still ask for them (9 Nov scan, finding 7) */
+        const version = crypto.createHash("sha1").update(mapText + JSON.stringify(m.tiles) + JSON.stringify(m.lift)).digest("hex").slice(0, 16), publishedAt = new Date().toISOString();
         /* The map first under its own version, then the one write that makes both live: a failure in between changes nothing visitors see */
         await store.set("map/" + version, mapText);
         await store.set("manifest", JSON.stringify({ version, mapVersion: version, tile: m.tile || 512, moods: m.moods || [], publishedAt, online: true, tiles: m.tiles, lift: m.lift }));
@@ -112,7 +116,9 @@ exports.handler = async (event) => {
             const recent = (await store.get("recent", { type: "json" }).catch(() => null)) || [], now = [{ version, tiles: named }, ...recent.filter(r => r && r.version !== version)].slice(0, 3);
             await store.set("recent", JSON.stringify(now));
             const keep = new Set(now.flatMap(r => r.tiles || [])), gone = [...have].filter(h => !keep.has(h)), until = Date.now() + 4000;
-            for (let i = 0; i < gone.length && Date.now() < until; i += 12) await Promise.all(gone.slice(i, i + 12).map(h => store.delete("tile/" + h)));
+            /* ...except a picture that came in the last FRESH_MS: another tab or admin may be sending it for a publish of its own, not yet in `recent` */
+            const fresh = async h => { try { const md = await store.getMetadata("tile/" + h); const at = md && md.metadata && Number(md.metadata.at); return !!at && Date.now() - at < FRESH_MS; } catch (e) { return true; } };
+            for (let i = 0; i < gone.length && Date.now() < until; i += 12) await Promise.all(gone.slice(i, i + 12).map(async h => { if (!(await fresh(h))) await store.delete("tile/" + h); }));
             const { blobs: maps } = await store.list({ prefix: "map/" }), keepMaps = new Set(now.map(r => "map/" + r.version));
             await Promise.all(maps.filter(b => !keepMaps.has(b.key)).slice(0, 12).map(b => store.delete(b.key)));
         } catch (e) { console.error("hallway tidy-up", e); }

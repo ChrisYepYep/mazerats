@@ -17,6 +17,11 @@ const { cachedJson } = require("./_cache");
 const LOGIN = (process.env.LEET_TWITCH_LOGIN || "vincentleet").toLowerCase();
 const HELIX = "https://api.twitch.tv/helix/";
 const TIMEOUT = 6000;
+/* (9 Nov scan, findings 1 and 10) The answer reads no query parameter, so every spelling of the address shares the edge's one copy
+   (vary "_", a name nobody sends: without it `?x=<random>` skipped the cache and asked Twitch every time, on the site's one app token).
+   And a short stale window: the archive's day-long one could keep showing ON NOW! for a day after a stream ended. */
+const LEET_CDN = "public, durable, s-maxage=60, stale-while-revalidate=120";
+const ONE = { cdn: LEET_CDN, vary: "_" };
 
 /* kept between calls while the function stays warm */
 let token = null, tokenUntil = 0, userId = null;
@@ -40,14 +45,14 @@ async function helix(path, id, secret) {
     }
 }
 
-exports.handler = async (event) => {
+async function handler(event) {
     if (event.httpMethod !== "GET") return { statusCode: 405, headers: { ...SECURITY_HEADERS, Allow: "GET" }, body: "" };
     const id = process.env.TWITCH_CLIENT_ID, secret = process.env.TWITCH_CLIENT_SECRET;
-    if (!id || !secret) return cachedJson(event, { ok: false, reason: "not set up", channel: LOGIN, times: [], live: null });
+    if (!id || !secret) return cachedJson(event, { ok: false, reason: "not set up", channel: LOGIN, times: [], live: null }, ONE);
     try {
         if (!userId) {
             const r = await helix("users?login=" + encodeURIComponent(LOGIN), id, secret); if (!r.ok) throw new Error("users " + r.status);
-            const u = ((await r.json()).data || [])[0]; if (!u) return cachedJson(event, { ok: false, reason: "no such channel", channel: LOGIN, times: [], live: null });
+            const u = ((await r.json()).data || [])[0]; if (!u) return cachedJson(event, { ok: false, reason: "no such channel", channel: LOGIN, times: [], live: null }, ONE);
             userId = u.id;
         }
         const [sr, lr] = await Promise.all([helix("schedule?first=10&broadcaster_id=" + userId, id, secret), helix("streams?user_id=" + userId, id, secret)]);
@@ -62,8 +67,12 @@ exports.handler = async (event) => {
         if (lr.ok) { const s = ((await lr.json()).data || [])[0]; if (s && s.type === "live") live = { since: s.started_at, title: String(s.title || "").slice(0, 140) }; }
         /* streams inside the vacation are not happening */
         if (vacation) times = times.filter(t => !(t.start >= vacation.start && (!vacation.end || t.start <= vacation.end)));
-        return cachedJson(event, { ok: true, channel: LOGIN, times, live, vacation });
+        return cachedJson(event, { ok: true, channel: LOGIN, times, live, vacation }, ONE);
     } catch (e) {
         return cachedJson(event, { ok: false, reason: "twitch unreachable", channel: LOGIN, times: [], live: null }, { cache: false });
     }
-};
+}
+
+exports.handler = handler;
+/* the site-wide rate limit and the Warren's Errors tab, as every other function (9 Nov scan, finding 1) */
+exports.handler = require("./_errors").withErrorReporting("leet-schedule", exports.handler);
