@@ -94,3 +94,14 @@
 .re-actions { display: flex; gap: 6px; margin-top: 10px; }
 .re-tip { position: absolute; left: 50%; top: 10px; transform: translateX(-50%); padding: 4px 10px; color: #1a1205; background: #f2be70; font-size: 12px; pointer-events: none; }
 .re-tip[hidden] { display: none; }
+
+/* 10 Nov scan: the Rooms window as the hallway editor's (status line, thumbnail, hint, the maze rows' Show) */
+.re-status { position: absolute; left: 0; right: 0; bottom: 0; display: flex; gap: 14px; padding: 4px 10px; color: #a9abb3; background: rgba(16, 17, 20, .86); font-size: 12px; pointer-events: none; }
+.re-status span:empty { display: none; }
+.re-stage canvas:focus { outline: none; }
+.re-thumb { display: block; max-width: 100%; max-height: 72px; margin: 0 0 8px; image-rendering: pixelated; }
+.re-hint { margin: 0 0 10px; color: #a9abb3; font-size: 12px; line-height: 1.4; }
+.re-right .re-lab select { max-width: 140px; }
+.re-maze { grid-template-columns: 1fr auto auto auto; }
+.re-maze .btn { height: 24px; padding: 0 7px; font-size: 11px; }
+.re-issues .btn { height: 24px; margin: 2px 0 6px; padding: 0 8px; font-size: 11px; }

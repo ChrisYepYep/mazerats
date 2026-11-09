@@ -256,12 +256,17 @@
         ctx.fillStyle = "#000"; ctx.fillRect(0, 0, ctx.canvas.width, ctx.canvas.height);   // the dark it floats in
         ctx.drawImage(shell(r), 0, 0);
         drawRugs(ctx, r);
+        /* the editor's ghost goes in where the real piece would, under what stands in front of it and in the room's light (10 Nov scan, rooms 6 and 25) */
+        const gh = o.ghost || null, ghostA = gh ? (gh.ok ? .72 : .3) : 1, withA = fn => { ctx.save(); ctx.globalAlpha = ghostA; fn(); ctx.restore(); };
+        if (gh && isRug(gh.it)) withA(() => drawRugs(ctx, { ...r, items: [gh.it] }));
         for (const edge of (o.edges || [])) ctx.drawImage(arrowPicture(r, edge), 0, 0);
         if (o.hover) { const q = [scr(r, o.hover[0], o.hover[1]), scr(r, o.hover[0] + 1, o.hover[1]), scr(r, o.hover[0] + 1, o.hover[1] + 1), scr(r, o.hover[0], o.hover[1] + 1)]; ctx.strokeStyle = o.hoverBad ? "rgba(255,110,90,.9)" : "rgba(255,255,255,.85)"; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(q[0][0], q[0][1]); q.slice(1).forEach(a => ctx.lineTo(a[0], a[1])); ctx.closePath(); ctx.stroke(); }
         for (const it of r.items) if (isWall(it) && it.k === "window") drawWallThing(ctx, r, it, facts);
         for (const it of r.items) if (isWall(it) && it.k !== "window") drawWallThing(ctx, r, it, facts);
+        if (gh && isWall(gh.it)) withA(() => drawWallThing(ctx, r, gh.it, null));
         const list = [];
         for (const it of r.items) { if (isWall(it) || isRug(it)) continue; const f = footprint(it); if (f) list.push({ f, it }); }
+        if (gh && !isWall(gh.it) && !isRug(gh.it)) { const f = footprint(gh.it); if (f) list.push({ f, it: gh.it, ghost: true }); }
         const w = o.walker;
         if (w) list.push({ f: [Math.round(w.x), Math.round(w.y), 1, 1], walker: true });
         for (const e of ordered(list)) {
@@ -269,8 +274,8 @@
                 const p = scr(r, w.x + .5, w.y + .5), n = w.walking ? `s-${w.dir}-wlk-${((Math.floor(w.frame) % 4) + 4) % 4}` : `s-${w.dir}-std-0`, i = AVATAR(n);
                 ctx.fillStyle = "rgba(0,0,0,.28)"; ctx.fillRect(p[0] - 8, p[1] - 1, 16, 2); ctx.fillRect(p[0] - 5, p[1] - 2, 10, 4);
                 if (i.complete && i.naturalWidth) ctx.drawImage(i, p[0] - 16, p[1] - 50);
-            } else drawItem(ctx, r, e.it, albums);
-            if (o.selected === e.it) { const f = e.f, q = [scr(r, f[0], f[1]), scr(r, f[0] + f[2], f[1]), scr(r, f[0] + f[2], f[1] + f[3]), scr(r, f[0], f[1] + f[3])]; ctx.strokeStyle = "#f2be70"; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(q[0][0], q[0][1]); q.slice(1).forEach(a => ctx.lineTo(a[0], a[1])); ctx.closePath(); ctx.stroke(); }
+            } else if (e.ghost) withA(() => drawItem(ctx, r, e.it, null));
+            else drawItem(ctx, r, e.it, albums);
         }
         ctx.globalCompositeOperation = "multiply"; ctx.drawImage(lightMap(r), 0, 0); ctx.globalCompositeOperation = "source-over";
         lampGlows(ctx, r);
@@ -278,10 +283,31 @@
     function ghost(ctx, r, it, ok) { ctx.save(); ctx.imageSmoothingEnabled = false; ctx.globalAlpha = ok ? .72 : .3; if (isWall(it)) drawWallThing(ctx, r, it, null); else if (it.k === "rug" || it.k === "rugRound") drawRugs(ctx, { ...r, items: [it] }); else drawItem(ctx, r, it, null); ctx.restore(); }
     /* Which tile a pixel is on */
     function tileAt(r, X, Y) { const o = originOf(r), dx = (X - o.ox) / 16, dy = (Y - o.oy) / 8, u = (dx + dy) / 2, v = (dy - dx) / 2; return [Math.floor(u), Math.floor(v)]; }
+    /* Each piece's own picture, drawn alone and kept as a mask of where it is solid, so a click finds what was clicked by what's
+       drawn there, as the hallway's editor does, not by a box (10 Nov scan, rooms 1 and 4: wall-hung staff pieces had no click at all) */
+    const masks = new Map();
+    function maskOf(r, it) {
+        if (it.k === "rug") return null;
+        const key = r.w + "x" + r.h + JSON.stringify(it); let m = masks.get(key); if (m) return m;
+        const s = sizeOf(r), c = document.createElement("canvas"); c.width = s.w; c.height = s.h; const g = c.getContext("2d", { willReadFrequently: true }); g.imageSmoothingEnabled = false;
+        if (isWall(it)) drawWallThing(g, r, it, null); else if (isRug(it)) drawRugs(g, { ...r, items: [it] }); else drawItem(g, r, it, null);
+        const d = g.getImageData(0, 0, s.w, s.h).data, a = new Uint8Array(s.w * s.h); let x0 = 1e9, y0 = 1e9, x1 = -1, y1 = -1;
+        for (let i = 0; i < a.length; i++) if (d[i * 4 + 3] > 24) { a[i] = 1; const X = i % s.w, Y = (i / s.w) | 0; if (X < x0) x0 = X; if (X > x1) x1 = X; if (Y < y0) y0 = Y; if (Y > y1) y1 = Y; }
+        if (x1 < 0) return null;      // its art isn't in yet: the box stands in, and nothing is kept
+        if (masks.size > 400) masks.clear();
+        m = { w: s.w, h: s.h, a, box: [x0, y0, x1 - x0 + 1, y1 - y0 + 1] }; masks.set(key, m); return m;
+    }
+    /* a pixel of it, or one beside it: thin pipes and lamp flexes stay clickable */
+    const onMask = (m, X, Y) => { X = Math.floor(X); Y = Math.floor(Y); for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) { const x = X + dx, y = Y + dy; if (x >= 0 && y >= 0 && x < m.w && y < m.h && m.a[y * m.w + x]) return true; } return false; };
+    /* the drawn box of a piece, in the room's own pixels (for the editor's selection) */
+    const drawnBox = (r, it) => { const m = maskOf(r, it); return m ? m.box : null; };
+    /* is this pixel on the way-out arrow's own shape (not just its tiles)? */
+    const onArrow = (r, edge, X, Y) => { const c = arrowPicture(r, edge), x = Math.floor(X), y = Math.floor(Y); if (x < 0 || y < 0 || x >= c.width || y >= c.height) return false; return c.getContext("2d").getImageData(x, y, 1, 1).data[3] > 0; };
     const HALL_UP = { statue: 90, fountain: 60, pillar: 110, pillartall: 174, plant: 46, shelf: 70, cabinet: 70, water: 50, sofa: 34, table: 24, chair: 36, smtable: 24, ballpost: 34, lamp: 70 };
     /* What a pixel is on, nearest first, furniture by its painted box. Used for walking up to things and by the editor */
     function itemAt(r, X, Y) {
-        const hit = it => {
+        const hit = it => { const m = maskOf(r, it); return m ? onMask(m, X, Y) : boxHit(it); };
+        const boxHit = it => {
             if (it.k === "frame") { const c = it.wall === "l" ? scr(r, 0, it.at) : scr(r, it.at, 0), W = it.w + FRAME * 2, Hh = it.h + FRAME * 2, sl = it.wall === "l" ? -.5 : .5, lx = X - (c[0] - W / 2), ly = Y - (c[1] - it.up - Hh) - sl * lx; return lx >= 0 && lx <= W && ly >= 0 && ly <= Hh; }      // the same slant drawFrame draws it on
             if (it.k === "window") { const c = it.wall === "l" ? scr(r, 0, it.at) : scr(r, it.at, 0), u = X - c[0], h = c[1] + (it.wall === "l" ? -u / 2 : u / 2) - Y; return Math.abs(u) < 12 && h > 16 && h < 100; }
             if (it.k === "painting" || it.k === "sconce") { const c = it.wall === "l" ? scr(r, 0, it.at) : scr(r, it.at, 0), u = X - c[0], h = c[1] + (it.wall === "l" ? -u / 2 : u / 2) - it.up - Y; return it.k === "sconce" ? Math.abs(u) < 12 && Math.abs(h) < 14 : Math.abs(u) < 28 && Math.abs(h) < 32; }
@@ -486,5 +512,5 @@
             test: { go, useIt, toPx }
         };
     }
-    const RoomView = window.RoomView = { special, route, load, layouts, roomFor, mazes, mazeFacts, enter, paintRoom, sizeOf, scr, tileAt, itemAt, footprint, exitTiles, arrowTiles, solidSet, isWall, isRug, floorPixel, FURNI, ghost, hallImg, indexOf: () => index, onArt: null, regs: null };
+    const RoomView = window.RoomView = { special, route, load, layouts, roomFor, mazes, mazeFacts, enter, paintRoom, sizeOf, scr, tileAt, itemAt, footprint, exitTiles, arrowTiles, solidSet, isWall, isRug, floorPixel, FURNI, ghost, drawnBox, onArrow, hallImg, indexOf: () => index, onArt: null, regs: null };
 })();

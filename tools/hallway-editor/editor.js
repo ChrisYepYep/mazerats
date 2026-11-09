@@ -3759,7 +3759,7 @@ function buildUI() {
     buildLibrary(); $("search").addEventListener("input", buildLibrary);
     buildMusic();
     $("walkBtn").addEventListener("click", () => setTool(tool === "walk" ? "select" : "walk"));
-    if ($("roomsBtn")) $("roomsBtn").addEventListener("click", () => window.RoomsEditor.open({ map: () => map, snapshot, changed: () => { roomFloors = null; doorFrames.clear(); changed(); } }));
+    if ($("roomsBtn")) $("roomsBtn").addEventListener("click", () => window.RoomsEditor.open({ map: () => map, snapshot, undo, redo, save: () => save(), unsnapshot: () => { undoStack.pop(); syncButtons(); }, canUndo: () => undoStack.length > 0, canRedo: () => redoStack.length > 0, changed: () => { roomFloors = null; doorFrames.clear(); changed(); } }));
     document.querySelectorAll(".tab").forEach(t => t.addEventListener("click", () => showTab(t.dataset.tab)));
     for (const [k, v] of Object.entries(LIGHTS)) { const o = document.createElement("option"); o.value = k; o.textContent = v; $("light").appendChild(o); }
     for (const [k, v] of Object.entries(WAYS)) { const o = document.createElement("option"); o.value = k; o.textContent = v; $("way").appendChild(o); }
