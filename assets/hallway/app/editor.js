@@ -1065,7 +1065,7 @@ window.HallwayLive = {
     camera(x, y) { cam.x = x; cam.y = y; clampCam(); }, get cam() { return { x: cam.x, y: cam.y }; }, holdCamera(on) { camHeld = on; if (!on) followNow(); }, setZoom: z => setZoom(z, canvas.width / 2, canvas.height / 2),
     realNight: () => realNight(), enterRoom(target, axis) { if (!walker || roomSession) return false; const me = walker; me.busy = true; me.pts = []; me.walking = false; roomSession = RoomView.enter($("stage"), { room: target.room, facts: target.facts, edge: axis === "x" ? "y" : "x", zoom: () => zoom, wheel: d => setZoom(zoom + (d < 0 ? 1 : -1)), onLeave: () => { roomSession.close(); roomSession = null; me.busy = false; paint(); } }); return true; },
     editorApi: () => ({ lostSpotReachable: (l, x, y) => lostSpotReachable(l, x, y), snapshot, changed, setTool, paint, flash: t => flash(t), setFloor: l => setFloor(l), toPx: (cx, cy) => toPx(cx, cy), tileAt(cx, cy) { const [px, py] = toPx(cx, cy), u = floorUnder(px, py); return u ? { level: u[0].stair ? u[0].stair.low.id : u[0].id, x: u[1], y: u[2] } : null; }, get tool() { return tool; }, pickOnce(f) { pickNext = f || null; if (f) flash("Click the spot on the map. Esc cancels."); }, get level() { return level; } }),
-    onClick(f) { liveClicks.add(f); return () => liveClicks.delete(f); },
+    onClick(f) { liveClicks.add(f); return () => liveClicks.delete(f); }, cheats: () => cheats,
     walkTo(l, x, y, then) { if (!walker || walker.busy) return false; const s = walkerStart(), path = graphFrom(s.l, s.x, s.y, [l, x, y]); if (!path) return false; followRoute(path, s.here, then || null); return true; },
     get graphLevels() { return stairLevels().list; },
     get busy() { return !!roomSession || !$("liftPanel").hidden || !!(walker && (walker.walking || walker.busy)) || !!document.querySelector(".hw-sheet:not([hidden]), #picker:not([hidden]), #playPicker:not([hidden]), .hw-clue:not([hidden])"); }
@@ -3200,13 +3200,22 @@ function walkTo(px, py) {
     const s = walkerStart(); let path = graphFrom(s.l, s.x, s.y, [l, X, Y]);
     if (!path && !(s.l.stair && s.l.stair.lift)) for (let r = 1; r <= 3 && !path; r++) for (let a = -r; a <= r && !path; a++) for (let b = -r; b <= r && !path; b++) { if (Math.max(Math.abs(a), Math.abs(b)) === r) path = graphFrom(s.l, s.x, s.y, [l, X + a, Y + b]); }
     if (!path) { noWay("There's no way there."); return; }
+    /* the "travel" cheat (9 Nov 2026, his): straight to the tile, no walk; only where a walk could have gone, so never into a wall or furniture */
+    if (cheats.travel) {
+        const [id, sx, sy] = path[path.length - 1].key.split("|"), L = nodeLevel(id);
+        walker.pts = []; walker.walking = false; walker.seat = null; walker.then = null; walker.arriving = false;
+        walker.l = L; walker.x = +sx; walker.y = +sy; walker.z = nodeZ(L, +sx, +sy); walker.st = L.stair || null; walker.frame = 0;
+        markActive(); followNow(); paint(); return;
+    }
     followRoute(path, s.here, null);
 }
+/* typed cheats from play.js: speed multiplies the walk, travel jumps to the clicked tile */
+const cheats = { speed: 1, travel: false };
 const MS_PER_TILE = 500, WALK_FRAME_MS = 84;     // the game's own: a tile takes half a second, whichever way
 function stepWalk(now) {
     if (!walker || !walker.walking) return;
     const dt = Math.min(200, now - walker.last); walker.last = now;
-    let budget = dt / MS_PER_TILE;
+    let budget = dt / MS_PER_TILE * cheats.speed;
     while (budget > 0 && walker.pts.length) {
         const n = walker.pts[0], dx = n.x - walker.x, dy = n.y - walker.y, d = Math.max(Math.abs(dx), Math.abs(dy));
         const face = directionOf(dx, dy); if (face >= 0) walker.dir = face;

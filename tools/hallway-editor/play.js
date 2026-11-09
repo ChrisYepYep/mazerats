@@ -133,7 +133,7 @@
 
     /* ---------- the controls: the site's own buttons, floating on the hallway ---------- */
     function controls() {
-        const bar = document.createElement("div"); bar.id = "playBar";
+        const bar = document.createElement("div"); bar.id = "playBar"; let fullSoon = 0;
         /* In groups (8 Nov 2026, his: "it's got quite a few buttons now, and feels very messy/unorganised"): Leave, then the view (zoom and full screen),
            then the music, and everything else under Menu. Hunts and Scraps join Menu through HallwayBar.menuItem (live-hunts.js). */
         /* A wooden card in the top left, the Hallway's mark at its head and a labelled row for each kind of thing (9 Nov 2026, his: "the menu buttons in
@@ -154,7 +154,9 @@
             const full = add("", "Full screen (F)", toggleFull); full.classList.add("play-icon");
             const paintFull = () => { const on = !!document.fullscreenElement; full.innerHTML = on ? ICON_SHRINK : ICON_FULL; full.title = on ? "Leave full screen (F)" : "Full screen (F)"; full.setAttribute("aria-label", full.title); };
             document.addEventListener("fullscreenchange", paintFull); paintFull();
-            document.addEventListener("keydown", e => { if (e.repeat || e.ctrlKey || e.metaKey || e.altKey || e.key.toLowerCase() !== "f") return; const at = e.target; if (at && at.closest && at.closest("input, textarea, select, [contenteditable]")) return; toggleFull(); });
+            document.addEventListener("keydown", e => { if (e.repeat || e.ctrlKey || e.metaKey || e.altKey || e.key.toLowerCase() !== "f") return; const at = e.target; if (at && at.closest && at.closest("input, textarea, select, [contenteditable]")) return;
+                /* a moment's grace, so typing the "fast" cheat doesn't go full screen on its F (cheatTyping cancels it) */
+                clearTimeout(fullSoon); fullSoon = setTimeout(toggleFull, 350); });
         }
         group("Music", "Music");
         const A = () => window.HallwayAudio;
@@ -217,6 +219,23 @@
         let shownOn = null; const paint = () => { const on = wanted(); if (on === shownOn) return; shownOn = on; mute.textContent = on ? "Mute" : "Unmute"; mute.classList.toggle("is-on", !on); };
         setInterval(paint, 500); paint();
         document.body.append(bar);
+        /* Cheats, typed anywhere on the map (9 Nov 2026, his): "fast" walks five times quicker, "travel" makes a click jump you to the tile. Typing the
+           word again turns it off. Nothing shows but a plate to the right of the card, one line per cheat, in the card's own button look. */
+        const CHEATS = { fast: ["Fast Walking", on => { cheatApi().speed = on ? 5 : 1; }], travel: ["Fast Travel", on => { cheatApi().travel = on; }] };
+        const cheatApi = () => (window.HallwayLive && HallwayLive.cheats ? HallwayLive.cheats() : {});
+        const cheatBox = document.createElement("div"); cheatBox.id = "playCheats"; cheatBox.setAttribute("aria-live", "polite"); document.body.append(cheatBox);
+        const cheatOn = {}; let typed = "";
+        const paintCheats = () => { cheatBox.textContent = ""; for (const w in CHEATS) if (cheatOn[w]) { const s = document.createElement("div"); s.className = "mr-btn"; s.textContent = "Cheat Activated: " + CHEATS[w][0]; cheatBox.appendChild(s); }
+            const r = bar.getBoundingClientRect(); cheatBox.style.left = Math.round(r.right + 8) + "px"; cheatBox.hidden = !cheatBox.childElementCount; };
+        addEventListener("resize", () => { if (!cheatBox.hidden) paintCheats(); }); cheatBox.hidden = true;
+        document.addEventListener("keydown", e => {
+            if (e.ctrlKey || e.metaKey || e.altKey || e.key.length !== 1) return;
+            const at = e.target; if (at && at.closest && at.closest("input, textarea, select, [contenteditable]")) return;
+            typed = (typed + e.key.toLowerCase()).slice(-12);
+            /* still on the way to a cheat word past its first letter: the F of "fast" mustn't go full screen */
+            if (Object.keys(CHEATS).some(w => { for (let n = 2; n <= w.length; n++) if (typed.endsWith(w.slice(0, n))) return true; return false; })) clearTimeout(fullSoon);
+            for (const w in CHEATS) if (typed.endsWith(w)) { typed = ""; cheatOn[w] = !cheatOn[w]; CHEATS[w][1](cheatOn[w]); paintCheats(); }
+        });
     }
     /* Ready once there's something to see, or after a few seconds whatever happens */
     function whenDrawn() {
