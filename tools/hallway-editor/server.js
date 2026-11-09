@@ -25,7 +25,7 @@ const W = require("./render/hw3.js");
 const { encodePng } = require("../png-encode.js");
 
 const PORT = Number(process.env.PORT) || 8778;
-const MAP = path.join(__dirname, "map.json");
+const MAP = process.env.HALLWAY_MAP || path.join(__dirname, "map.json");     // HALLWAY_MAP: a copy to open instead, for a test editor beside his own
 const HISTORY = path.join(__dirname, ".history");
 const KEEP = 40, TILE = 512, CACHE_MAX = 900;
 const THREADS = Math.max(2, Math.min(6, os.cpus().length - 1));
