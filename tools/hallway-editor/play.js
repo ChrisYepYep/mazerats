@@ -95,7 +95,8 @@
         for (const [t, cls] of [["Maze Rats Hallway is a single player experience, any Habbos you see around the hallways are non-playable characters designed for ambient game mechanics.", ""], ["Your Habbo Origins username is only used to show your Habbo's look, and is only remembered on this device.", ""], ["Maze Rats is independent and not affiliated with, sponsored, supported, or endorsed by Sulake Oy or its affiliates. Any Habbo trademarks or intellectual property used here are done so in accordance with the Habbo Fan Site Policy.", "legal"]]) { const p = document.createElement("p"); p.textContent = t; if (cls) p.className = cls; notes.appendChild(p); }
         /* the Hallway's mark on a wooden card of its own, above the window (9 Nov 2026, his: "in that wooden card thing you had it on in your mock ups") */
         const card = document.createElement("div"); card.className = "hw-logo-card";
-        const mark = document.createElement("img"); mark.src = "/assets/img/hallway-logo@2x.png"; mark.alt = "Maze Rats Hallway"; mark.addEventListener("error", () => card.remove()); card.appendChild(mark);
+        /* the whole card as one picture (his pick, 9 Nov 2026: dark oak, brass borders, the round rat crest, raised brass letters) */
+        const mark = document.createElement("img"); mark.src = "/assets/img/hallway-plaque@2x.png"; mark.alt = "Maze Rats Hallway"; mark.width = 560; mark.height = 330; mark.addEventListener("error", () => card.remove()); card.appendChild(mark);
         form.append(row, say, guest, notes); frame.appendChild(form); win.append(tbar, frame); back.append(card, win); document.body.appendChild(back); input.focus();
         const done = () => { document.removeEventListener("keydown", keys, true); back.remove(); if (opener && opener.focus) opener.focus(); if (onDone) onDone(); };
         const keys = e => {
