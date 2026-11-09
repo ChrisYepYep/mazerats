@@ -72,13 +72,15 @@
 
     /* ---------- the thing on the floor: half hidden by whatever's in front of it, and seen from any floor (his: "it should always show") ---------- */
     const cv = document.createElement("canvas"); cv.width = 33; cv.height = 56; const g = cv.getContext("2d", { willReadFrequently: true });
-    let preview = null;          // the editor's Lost Property tab: { spot, thing } to look at
+    let preview = null, thingKey = "";          // the editor's Lost Property tab: { spot, thing } to look at
     function showing() { if (preview) return preview; if (carrying || !round) return null; return round; }
     function where(t) { const z = LIVE.nodeZ(t.spot.l, t.spot.x, t.spot.y) || 0, p = LIVE.mapPoint(t.spot.x + .5, t.spot.y + .5, z); return { z, X: Math.round(p[0]), Y: Math.round(p[1]) }; }
     function drawThing(c, ox, oy, nearer) {
         const t = showing(); if (!t) return; const im = thingImg(t.thing.f); if (!im.complete || !im.naturalWidth) return; if (inFront(t.spot.l, t.spot.x, t.spot.y) !== nearer) return;
-        const q = where(t), x0 = q.X - 16, y0 = q.Y - 50; g.clearRect(0, 0, 33, 56); g.imageSmoothingEnabled = false; g.drawImage(im, 16 - (im.naturalWidth >> 1), 50 - im.naturalHeight + 3);
-        LIVE.as({ x: t.spot.x, y: t.spot.y, z: q.z, l: t.spot.l, dir: 2, frame: 0, st: null, under: underFurni(t.spot) }, () => { LIVE.cutInFront(g, x0, y0); LIVE.tint(g); });
+        const q = where(t), x0 = q.X - 16, y0 = q.Y - 50, m = LIVE.mood(), key = [x0, y0, t.spot.l.id, im.src, LIVE.tileGen, m ? m.a + m.b + (Math.round((+m.f || 0) * 40) / 40) : "-", nearer].join("|");
+        /* cut and tinted once for its spot, the map and the light as they are, not every frame (10 Nov scan) */
+        if (key !== thingKey) { thingKey = key; g.clearRect(0, 0, 33, 56); g.imageSmoothingEnabled = false; g.drawImage(im, 16 - (im.naturalWidth >> 1), 50 - im.naturalHeight + 3);
+            LIVE.as({ x: t.spot.x, y: t.spot.y, z: q.z, l: t.spot.l, dir: 2, frame: 0, st: null, under: underFurni(t.spot) }, () => { LIVE.cutInFront(g, x0, y0); LIVE.tint(g); }); }
         c.save(); c.translate(ox, oy); c.scale(LIVE.zoom, LIVE.zoom); c.imageSmoothingEnabled = false; c.drawImage(cv, x0, y0); c.restore();
     }
 
@@ -97,15 +99,18 @@
     }
     const npcCv = document.createElement("canvas"); npcCv.width = 33; npcCv.height = 56; const ng = npcCv.getContext("2d", { willReadFrequently: true });
     const npcImg = (dir, act) => { const f = "art/npc/hustle/s-" + dir + "-" + act + "-0.png"; let i = imgs.get(f); if (!i) { i = new Image(); i.onload = () => LIVE.wake(); i.src = f; imgs.set(f, i); } return i; };
-    let lastHead = null, hustleHit = null;
+    let lastHead = null, hustleHit = null, npcKey = "";
     function drawHustle(c, ox, oy, nearer) {
-        const s = hustleSeat(); if (!s) { lastHead = null; hustleHit = null; return; } if (inFront(s.l, s.x, s.y) !== nearer) return;
+        const s = hustleSeat(); if (!s) { lastHead = null; hustleHit = null; npcKey = ""; return; } if (inFront(s.l, s.x, s.y) !== nearer) return;
         let im = npcImg(s.dir, "sit"); if (!im.complete || !im.naturalWidth) im = npcImg(s.dir, "std"); if (!im.complete || !im.naturalWidth) return;
         const z = (LIVE.nodeZ(s.l, s.x, s.y) || 0) + SEAT_LIFT, p = LIVE.mapPoint(s.x + .5, s.y + .5, z), X = Math.round(p[0]), Y = Math.round(p[1]), x0 = X - 16, y0 = Y - 50;
-        ng.clearRect(0, 0, 33, 56); ng.drawImage(im, 0, 0);
-        LIVE.as({ x: s.x, y: s.y, z, l: s.l, dir: s.dir, frame: 0, st: null, seat: { x: s.x, y: s.y, l: s.l, dir: s.dir, p: s.p } }, () => { LIVE.cutInFront(ng, x0, y0); LIVE.tint(ng); });
+        /* cut and tinted once for where he sits, the map as it is and the light as it is, not every frame (10 Nov scan: 2.5ms of every frame) */
+        const m = LIVE.mood(), key = [x0, y0, s.l.id, im.src, LIVE.tileGen, m ? m.a + m.b + (Math.round((+m.f || 0) * 40) / 40) : "-", nearer].join("|");
+        if (key !== npcKey) { npcKey = key; ng.clearRect(0, 0, 33, 56); ng.drawImage(im, 0, 0);
+            LIVE.as({ x: s.x, y: s.y, z, l: s.l, dir: s.dir, frame: 0, st: null, seat: { x: s.x, y: s.y, l: s.l, dir: s.dir, p: s.p } }, () => { LIVE.cutInFront(ng, x0, y0); LIVE.tint(ng); });
+            hustleHit = { x0, y0, a: ng.getImageData(0, 0, 33, 56).data, s }; }
         c.save(); c.translate(ox, oy); c.scale(LIVE.zoom, LIVE.zoom); c.imageSmoothingEnabled = false; c.drawImage(npcCv, x0, y0); c.restore();
-        lastHead = [X, y0 + 14]; hustleHit = { x0, y0, a: ng.getImageData(0, 0, 33, 56).data, s };
+        lastHead = [X, y0 + 14];
     }
     const onHustle = (px, py) => { const h = hustleHit; if (!h) return false; const x = Math.floor(px - h.x0), y = Math.floor(py - h.y0); if (x < 0 || y < 0 || x >= 33 || y >= 56) return false; for (let j = -2; j <= 2; j++) for (let i = -2; i <= 2; i++) { const X = x + i, Y = y + j; if (X >= 0 && Y >= 0 && X < 33 && Y < 56 && h.a[(Y * 33 + X) * 4 + 3] > 100) return true; } return false; };
     /* the tiles you can talk to him from: next to his seat, or the seat beside his */

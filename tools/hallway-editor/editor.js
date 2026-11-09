@@ -634,8 +634,11 @@ function changed() {
     $("revert").hidden = false;
     dirty = true; $("dirty").hidden = false; cellSets = new Map(); lastChangeAt = performance.now();
     rememberDraft();
-    runChecks(); requestArt(); paint(); syncButtons();
+    requestArt(); paint(); syncButtons(); checksSoon();
 }
+/* the Problems check walks the whole Hallway: done just after the change shows, and once for a burst of changes, so a click places at once (10 Nov scan) */
+let checksTimer = 0;
+function checksSoon() { clearTimeout(checksTimer); checksTimer = setTimeout(() => { checksTimer = 0; runChecks(); }, 150); }
 /* The recovery copy in this browser, with the saved map it started from, so an old one can't quietly replace newer work */
 let serverText = null, lastProblems = 0;
 const textMark = t => { let h = 0; for (let i = 0; i < t.length; i++) h = (h * 31 + t.charCodeAt(i)) | 0; return t.length + ":" + h; };
@@ -650,6 +653,7 @@ function syncButtons() { $("undo").disabled = !undoStack.length; $("redo").disab
 /* Publish: sends the saved map to the site's own folder, drawn and ready. Nobody sees it until the site is deployed. */
 async function publish() {
     const b = $("publish"); if (b.disabled) return;
+    if (checksTimer) { clearTimeout(checksTimer); checksTimer = 0; runChecks(); }      // a check still waiting to run counts
     if (lastProblems && !window.confirm(`The Problems tab lists ${lastProblems} thing${lastProblems === 1 ? "" : "s"} wrong with this map. Publish it anyway?`)) return;
     b.disabled = true;
     try {
@@ -692,7 +696,54 @@ const TILE = 512, CONCURRENT = 6;
 const tiles = new Map();        // "tx,ty" -> { img, v }
 let tileGen = 0;                // goes up whenever a square's picture arrives, so what was read off the screen (live-leet.js) knows to look again
 const inflight = new Map();     // "tx,ty" -> AbortController
-let version = null, artTimer = 0, versionSeq = 0, lastReport = null;
+let version = null, artTimer = 0, versionSeq = 0, lastReport = null, lastVersionText = null;
+/* What an edit can have changed on the map's pictures, so only those squares are drawn again (10 Nov scan, his: "the editor feels slow and
+   clunky": one plant placed had every square in view redrawn, 41 of them, over eight seconds). Furniture, things on walls and garlands are
+   worked out as boxes round where they stand, before and after; anything else (walls, floors, heights, stairs, lights, a lamp, a tree, a
+   window's sunlight) has the whole map drawn again, as before. null: everything. */
+const LIGHTS_UP = k => k === "lamp" || k === "tablelamp" || k === "rarecase" || k === "statue" || k === "xmastree" || /^xmasfir/.test(k);
+function dirtyRegion(oldText, newText) {
+    let a, b; try { a = JSON.parse(oldText); b = JSON.parse(newText); } catch (e) { return null; }
+    const rest = m => JSON.stringify({ ...m.map, levels: undefined, rooms: undefined }) + JSON.stringify([m.liftOpen, m.cut]);
+    if (rest(a) !== rest(b) || a.map.levels.length !== b.map.levels.length) return null;
+    const LISTS = ["props", "wallItems", "garlands", "medals"], boxes = [];
+    for (let i = 0; i < a.map.levels.length; i++) {
+        const la = a.map.levels[i], lb = b.map.levels[i]; if (la.id !== lb.id) return null;
+        const strip = l => { const c = { ...l }; for (const k of LISTS) delete c[k]; return JSON.stringify(c); }; if (strip(la) !== strip(lb)) return null;
+        const l = byId(lb.id); if (!l) return null; const wins = (lb.wallItems || []).filter(q => q.k === "i_window").map(q => q.axis === "x" ? [q.at, q.line] : [q.line, q.at]);
+        for (const key of LISTS) {
+            const A = (la[key] || []).map(o => JSON.stringify(o)), B = (lb[key] || []).map(o => JSON.stringify(o)), count = new Map();
+            for (const t of A) count.set(t, (count.get(t) || 0) + 1); for (const t of B) count.set(t, (count.get(t) || 0) - 1);
+            for (const [t, n] of count) { if (!n) continue; const o = JSON.parse(t), box = boxOf(l, key, o, wins); if (!box) return null; boxes.push(box); }
+        }
+    }
+    return boxes;
+}
+function boxOf(l, key, o, wins) {
+    const z = levelZ(l), PAD = 40;
+    if (key === "props") {
+        if (LIGHTS_UP(o.k) || (o.lights && o.lights.length) || wins.some(w => Math.abs(w[0] - o.x) + Math.abs(w[1] - o.y) < 18)) return null;      // its light, or a window's sun shafts it can stand in, reach far
+        let tiles; try { tiles = Parts.tiles(o); } catch (e) { return null; }
+        const t = TALL[o.k] || [48, 160]; let x0 = 1e9, x1 = -1e9, y0 = 1e9, y1 = -1e9;
+        for (const [x, y] of tiles) { const p = P(x + .5, y + .5, tileZ(l, x, y) + (o.z || 0)); x0 = Math.min(x0, p[0] - t[0] - 32); x1 = Math.max(x1, p[0] + t[0] + 32); y0 = Math.min(y0, p[1] - t[1] - 24); y1 = Math.max(y1, p[1] + 24); }
+        return [x0 - PAD, y0 - PAD, x1 + PAD, y1 + PAD];
+    }
+    if (key === "wallItems") {
+        const def = wallItemOf(o.k); if (!def || def.lit || o.k === "i_window" || o.k === "i_fireexit") return null;
+        let r; try { r = wallItemRect(l, o); } catch (e) { return null; } if (!r) return null;
+        return [r.x0 - PAD - 16, r.y0 - PAD - 16, r.x0 + r.w + PAD + 16, r.y0 + r.h + PAD + 16];
+    }
+    if (key === "garlands") { const pts = []; for (const t of [o.a, o.b]) for (const h of [0, 200]) pts.push(o.axis === "x" ? P(t, o.line, z + h) : P(o.line, t, z + h)); const xs = pts.map(p => p[0]), ys = pts.map(p => p[1]); return [Math.min(...xs) - PAD - 32, Math.min(...ys) - PAD - 60, Math.max(...xs) + PAD + 32, Math.max(...ys) + PAD + 40]; }
+    if (key === "medals") { const p = P(o.x + 2, o.y + 2, z); return [p[0] - 160, p[1] - 160, p[0] + 160, p[1] + 120]; }
+    return null;
+}
+/* the squares no box touches are as good under the new version as the old: kept, marked new */
+function keepUntouched(was, now, boxes) {
+    if (!was || !boxes) return;
+    const touched = (tx, ty) => boxes.some(b => b[2] > tx * TILE && b[0] < (tx + 1) * TILE && b[3] > ty * TILE && b[1] < (ty + 1) * TILE);
+    for (const [k, t] of tiles) { if (t.v !== was) continue; const [tx, ty] = k.split(",").map(Number); if (!touched(tx, ty)) t.v = now; }
+    for (const [k, t] of moodTiles) { if (t.v !== was) continue; const [tx, ty] = k.split("|")[1].split(",").map(Number); if (!touched(tx, ty)) t.v = now; }
+}
 /* ---------- a sign, live while it's dragged ----------
    The map's art takes a moment to draw, so the sign being dragged comes out of it and is shown on top, from a
    picture of that sign alone that the server makes in a few milliseconds. It goes back once the real art is in. */
@@ -855,7 +906,8 @@ async function newVersion() {
         const o = await r.json();
         if (seq !== versionSeq) return;
         lastReport = o.report; runChecks();
-        if (o.v !== version) { for (const c of inflight.values()) c.abort(); inflight.clear(); version = o.v; }
+        if (o.v !== version) { const was = version; keepUntouched(was, o.v, was && lastVersionText ? dirtyRegion(lastVersionText, text) : null); for (const c of inflight.values()) c.abort(); inflight.clear(); version = o.v; }
+        lastVersionText = text;
         if (live && live.ending) live.finalV = o.v;
         pump(); paint();
     } catch (e) { console.error(e); setStatus("Can't reach the editor's server"); }
@@ -2602,6 +2654,12 @@ const STEPS = [DIRS[1], DIRS[3], DIRS[5], DIRS[7], DIRS[0], DIRS[2], DIRS[4], DI
 function directionOf(dx, dy) { const sx = Math.sign(Math.round(dx * 100)), sy = Math.sign(Math.round(dy * 100)), i = DIRS.findIndex(d => d.dx === sx && d.dy === sy); return i; }
 function walkGraph(startKey) {
     const solids = new Map(map.levels.map(l => [l, solid(l)])), holeSets = new Map(map.levels.map(l => [l, holes(l)])), M = stairLevels();
+    /* the map doesn't change during one search, so each tile's height and each flight of steps is worked out once: a search of the whole
+       Hallway (the Problems check, after every edit) took 370ms, nearly all of it asking the same heights again (10 Nov scan, his: "the editor
+       feels slow and clunky") */
+    const zc = new Map(), Z = (l, x, y) => { const k = nodeKey(l, x, y); let v = zc.get(k); if (v === undefined) { v = nodeZ(l, x, y); zc.set(k, v); } return v; };
+    const flights = new Map(map.levels.map(l => [l, (l.steps || []).map(st => ({ st, f: flightOf(l, st) })).filter(q => q.f)]));
+    const canStepC = (l, x, y, nx, ny) => { if (Math.abs(Z(l, x, y) - Z(l, nx, ny)) <= 1) return true; return (flights.get(l) || []).some(({ st, f }) => { const lo = Math.floor(f.from) - 1, hi = Math.ceil(f.to), inBand = (X, Y) => { const across = st.axis === "y" ? X : Y, along = st.axis === "y" ? Y : X; return across >= st.a && across < st.b && along >= lo && along <= hi; }; return inBand(x, y) && inBand(nx, ny); }); };
     const free = (l, x, y) => hasFloor(l, x, y) && !solids.get(l).has(x + "," + y) && !holeSets.get(l).some(h => inRect(h, x, y)) && !(M.slots.get(l) && M.slots.get(l).has(x + "," + y));
     const stands = (l, x, y) => l.tiles ? l.tiles.has(x + "," + y) && !(l.stair && l.stair.low && solids.get(l.stair.low) && solids.get(l.stair.low).has(x + "," + y)) : (free(l, x, y) || nodeKey(l, x, y) === startKey);
     /* the tiles taken only by low things (under 40 tall), which a diagonal step may brush past */
@@ -2612,9 +2670,9 @@ function walkGraph(startKey) {
         for (const k of tall) low.delete(k); return [l, low]; }));
     /* the tile beside a diagonal step: 2 free to walk, 1 a low thing on level floor, 0 a wall, a drop, the stair's side or something tall */
     const past = (l, x, y, X, Y) => {
-        if (stands(l, X, Y)) return l.tiles || canStep(l, x, y, X, Y) ? 2 : 0;
+        if (stands(l, X, Y)) return l.tiles || canStepC(l, x, y, X, Y) ? 2 : 0;
         if (l.tiles || !hasFloor(l, X, Y) || !lows.get(l).has(X + "," + Y) || holeSets.get(l).some(h => inRect(h, X, Y)) || (M.slots.get(l) && M.slots.get(l).has(X + "," + Y))) return 0;
-        return Math.abs(nodeZ(l, x, y) - nodeZ(l, X, Y)) <= 1 ? 1 : 0;
+        return Math.abs(Z(l, x, y) - Z(l, X, Y)) <= 1 ? 1 : 0;
     };
     return (l, x, y) => {
         const out = [];
@@ -2622,11 +2680,11 @@ function walkGraph(startKey) {
             const nx = x + dx, ny = y + dy;
             if (!stands(l, nx, ny)) continue;
             /* a drop can't be walked over, only the steps */
-            if (!l.tiles && !canStep(l, x, y, nx, ny)) continue;
+            if (!l.tiles && !canStepC(l, x, y, nx, ny)) continue;
             if (dx && dy) {
                 /* no diagonal from one step to the next: on a staircase the walk goes straight down the flight, not slantwise
                    across the treads (9 Nov 2026, his: "the vast majority of the stairs are walked diagonally"). Landings are level, so free. */
-                if (Math.abs(nodeZ(l, x, y) - nodeZ(l, nx, ny)) > 1) continue;
+                if (Math.abs(Z(l, x, y) - Z(l, nx, ny)) > 1) continue;
                 /* a corner may be cut past one low thing (a chair, a table, a rope), never past a wall, a drop, a pillar or anything
                    tall, where the Habbo slipped behind it mid-step (9 Nov, his); and never squeezed between two */
                 const a = past(l, x, y, x + dx, y), b = past(l, x, y, x, y + dy);

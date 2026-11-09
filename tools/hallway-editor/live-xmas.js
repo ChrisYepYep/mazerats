@@ -190,7 +190,15 @@
         g.fillStyle = gr; g.fillRect(0, 0, h.width, h.height); if (halos.size > 200) halos.clear(); halos.set(key, h); return h;
     }
     function nightness() { const m = LIVE.mood(); if (!m) return .6; const n = q => q === "night" ? 1 : q === "dusk" || q === "dawn" || q === "failing" ? .7 : .2; return n(m.a) * (1 - m.f) + n(m.b) * m.f; }
-    const cv = document.createElement("canvas"), g = cv.getContext("2d", { willReadFrequently: true }), PAD = 26;
+    const cv = document.createElement("canvas"), g = cv.getContext("2d"), PAD = 26;
+    /* what stands in front of each tree, as a mask: worked out once per tree and map, not every frame (it was 4ms of a 5ms frame) */
+    const masks = new Map();
+    function maskOf(tr, w, h) {
+        const key = [tr.l.id, tr.X0, tr.Y0, w, h, LIVE.tileGen].join("|"), mk = tr.k + "@" + tr.p.x + "," + tr.p.y; let m = masks.get(mk); if (m && m.key === key) return m.cv;
+        const c = (m && m.cv) || document.createElement("canvas"); c.width = w; c.height = h; const x = c.getContext("2d", { willReadFrequently: true }); x.fillStyle = "#fff"; x.fillRect(0, 0, w, h);
+        const z = LIVE.nodeZ(tr.l, tr.fx, tr.fy) || 0; LIVE.as({ x: tr.fx, y: tr.fy, z, l: tr.l, dir: 2, frame: 0, st: null }, () => LIVE.cutInFront(x, tr.X0 - PAD, tr.Y0 - PAD, true));
+        if (masks.size > 30) masks.clear(); masks.set(mk, { key, cv: c }); return c;
+    }
     function draw(c, ox, oy, now) {
         const ts = trees(); if (!ts.length) return; const v = LIVE.view(), t = now / 1000, s = .55 + .45 * nightness();
         c.save(); c.translate(ox, oy); c.scale(LIVE.zoom, LIVE.zoom); c.imageSmoothingEnabled = true;
@@ -209,8 +217,7 @@
             const sk = .75 + .25 * Math.sin(t * 1.25), SR = B.big ? 20 : 9; g.globalAlpha = Math.min(1, (.32 + .3 * s) * sk); g.drawImage(halo([255, 228, 160], SR), PAD + B.star[0] - SR, PAD + B.star[1] - SR);
             g.globalAlpha = 1; g.globalCompositeOperation = "source-over";
             /* what stands in front of the tree hides its lights */
-            const X = tr.X0 - PAD, Y = tr.Y0 - PAD, z = LIVE.nodeZ(tr.l, tr.fx, tr.fy) || 0;
-            LIVE.as({ x: tr.fx, y: tr.fy, z, l: tr.l, dir: 2, frame: 0, st: null }, () => LIVE.cutInFront(g, X, Y, true));
+            const X = tr.X0 - PAD, Y = tr.Y0 - PAD; g.globalCompositeOperation = "destination-in"; g.drawImage(maskOf(tr, w, h), 0, 0); g.globalCompositeOperation = "source-over";
             c.globalCompositeOperation = "lighter"; c.drawImage(cv, 0, 0, w, h, X, Y, w, h); c.globalCompositeOperation = "source-over";
         }
         c.restore();
