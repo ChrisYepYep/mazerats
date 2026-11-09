@@ -225,7 +225,9 @@
         const cheatApi = () => (window.HallwayLive && HallwayLive.cheats ? HallwayLive.cheats() : {});
         const cheatBox = document.createElement("div"); cheatBox.id = "playCheats"; cheatBox.setAttribute("aria-live", "polite"); document.body.append(cheatBox);
         const cheatOn = {}; let typed = "";
-        const paintCheats = () => { cheatBox.textContent = ""; for (const w in CHEATS) if (cheatOn[w]) { const s = document.createElement("div"); s.className = "mr-btn"; s.textContent = "Cheat Activated: " + CHEATS[w][0]; cheatBox.appendChild(s); }
+        const paintCheats = () => { cheatBox.textContent = ""; for (const w in CHEATS) if (cheatOn[w]) { const s = document.createElement("button"); s.type = "button"; s.className = "mr-btn"; s.textContent = "Cheat Activated: " + CHEATS[w][0]; s.title = "Click to turn this cheat off";
+                /* clicking the plate turns the cheat off (9 Nov 2026, his) */
+                s.addEventListener("click", e => { e.stopPropagation(); cheatOn[w] = false; CHEATS[w][1](false); typed = ""; paintCheats(); }); cheatBox.appendChild(s); }
             const r = bar.getBoundingClientRect(); cheatBox.style.left = Math.round(r.right + 8) + "px"; cheatBox.hidden = !cheatBox.childElementCount; };
         addEventListener("resize", () => { if (!cheatBox.hidden) paintCheats(); }); cheatBox.hidden = true;
         document.addEventListener("keydown", e => {
