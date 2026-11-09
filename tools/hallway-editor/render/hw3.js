@@ -620,6 +620,49 @@ function flightRails(w, o, paint) {
     };
     if (o.far !== false) rail(c0 + .3, false);
     if (o.near !== false) rail(c1 - .3, true);
+    /* The Christmas garland wound round the banister (9 Nov 2026, his pick of the mock-ups: "D2", turns well apart with the rail showing
+       between them). A thick rope of greenery coiled round the rail: where it passes in front, it crosses the rail on the slant; behind, it
+       only shows where it comes out above or below the rail, darker. Holly on every other turn, a bulb on each, berries between. Drawn into a
+       picture of its own first, so it gets a clean outline, then through put like the rail, so whatever stands in front still covers it. */
+    const GAR = { hi: [108, 176, 94], m1: [79, 168, 88], m2: [63, 138, 68], lo: [47, 125, 58], dk: [28, 84, 38], k: [10, 8, 8] };
+    const BULB = [[255, 90, 74], [255, 210, 74], [90, 208, 106], [90, 160, 255], [255, 138, 216]];
+    const coil = (c) => {
+        const PITCH = 10, RC = 3.9, TUBE = 1.45, RAILH = 2.6, px = new Map();
+        const axisAt = i => { const q = at(c, dBot - i / 16, i + RAIL); return [q[0], q[1] + .5]; };
+        const d0 = axisAt(0), d1 = axisAt(1), dx = d1[0] - d0[0], dy = d1[1] - d0[1], L = Math.hypot(dx, dy), nx = -dy / L, ny = dx / L;      // across the rail on screen
+        const sgn = ny < 0 ? -1 : 1, Nx = nx * sgn, Ny = ny * sgn;                                                                       // pointing down the screen
+        const mark = (x, y, v) => { const k = x + "," + y, was = px.get(k); if (!was || v.front > was.front || (v.front === was.front && v.rank > was.rank)) px.set(k, v); };
+        for (let i = 0; i <= len; i += .08) {
+            const th = 2 * Math.PI * i / PITCH, cs = Math.cos(th), sn = Math.sin(th), a = axisAt(i), front = cs > 0 ? 1 : 0;
+            const cx = a[0] - Nx * RC * sn, cy = a[1] - Ny * RC * sn, dd = dBot - i / 16;
+            for (let v = -2; v <= 2; v++) for (let u = -2; u <= 2; u++) {
+                const X = Math.round(cx + u), Y = Math.round(cy + v), ex = X - cx, ey = Y - cy, r = Math.hypot(ex, ey), rag = ((((X * 2654435761) ^ (Y * 40503)) >>> 0) % 100) / 100; if (r > TUBE + .25 + (rag > .7 ? .7 : 0)) continue;
+                /* behind the rail, only where it comes out past its edges */
+                if (!front) { const across = (X - a[0]) * Nx + (Y - a[1]) * Ny; if (Math.abs(across) < RAILH) continue; }
+                /* lit from above and the left; the side away from you darker; a little needle texture */
+                const lit = -(ex * Nx + ey * Ny) / TUBE * .55 - ex / TUBE * .25 + (front ? cs * .45 : -.6), n = ((X * 73856093) ^ (Y * 19349663)) & 7;
+                const col = !front ? (n < 2 ? GAR.lo : GAR.dk) : lit > .6 ? (n < 2 ? GAR.hi : n < 5 ? GAR.m1 : GAR.m2) : lit > .2 ? (n < 2 ? GAR.m1 : n < 5 ? GAR.m2 : GAR.lo) : lit > -.15 ? (n < 3 ? GAR.m2 : GAR.lo) : (n < 3 ? GAR.lo : GAR.dk);
+                mark(X, Y, { col, front, rank: lit, c, d: dd, z: zB + i + RAIL + (Y < a[1] ? 2 : 0) });
+            }
+        }
+        /* the outline: a dark pixel round the rope wherever it meets something else, so each turn reads clearly against the rail and wall */
+        const out = new Map();
+        for (const [k, v] of px) { const [X, Y] = k.split(",").map(Number); for (const [p, q] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { const k2 = (X + p) + "," + (Y + q); if (px.has(k2) || out.has(k2)) continue; if (!v.front) { const a = axisAt(Math.max(0, Math.min(len, (v.z - zB - RAIL)))); const across = (X + p - a[0]) * Nx + (Y + q - a[1]) * Ny; if (Math.abs(across) < RAILH) continue; } out.set(k2, { ...v, col: GAR.k }); } }
+        for (const [k, v] of out) { const [X, Y] = k.split(",").map(Number); put(X, Y, v.col, v.c, v.d, v.z); }
+        for (const [k, v] of px) { const [X, Y] = k.split(",").map(Number); put(X, Y, v.col, v.c, v.d, v.z); }
+        /* on each turn where it crosses in front: holly on every other one, a bulb on each, berries between */
+        for (let t = 0, n = 0; (t + .5) * PITCH <= len; t++) {
+            const i = t * PITCH + PITCH * .25, a = axisAt(i), dd = dBot - i / 16, zz = zB + i + RAIL + 3;
+            const top = [Math.round(a[0] - Nx * 2), Math.round(a[1] - Ny * 2)], bot = [Math.round(a[0] + Nx * 3), Math.round(a[1] + Ny * 3)];
+            if (t % 2 === 0) { const s2 = (n++ & 1) ? -1 : 1;
+                for (const [p, q, col] of [[-2, 0, GAR.k], [-1, -1, GAR.k], [0, -1, GAR.k], [1, -1, GAR.k], [2, 0, GAR.k], [-1, 0, GAR.hi], [0, 0, GAR.m1], [1, 0, GAR.hi], [-3, 1, GAR.k], [3, 1, GAR.k], [-2, 1, GAR.m2], [2, 1, GAR.m2]]) put(top[0] + p * s2, top[1] + q, col, c, dd, zz);
+                for (const [p, q, col] of [[0, -2, [224, 53, 42]], [-1, -2, [255, 138, 120]], [1, -2, [168, 31, 22]], [0, -3, [224, 53, 42]]]) put(top[0] + p, top[1] + q, col, c, dd, zz + 1); }
+            else { put(top[0], top[1] - 1, [224, 53, 42], c, dd, zz); put(top[0] - 1, top[1] - 1, [255, 138, 120], c, dd, zz); }
+            const B = BULB[t % BULB.length]; put(bot[0], bot[1] - 1, [20, 30, 20], c, dd, zz); put(bot[0], bot[1], [255, 246, 220], c, dd, zz); put(bot[0] - 1, bot[1], B, c, dd, zz); put(bot[0] + 1, bot[1], B, c, dd, zz); put(bot[0], bot[1] + 1, B, c, dd, zz);
+            if (w.lamps) w.garBulbs = (w.garBulbs || []).concat([[bot[0], bot[1], B]]);
+        }
+    };
+    if (o.garland) { if (o.far !== false) coil(c0 + .3); if (o.near !== false) coil(c1 - .3); }
 }
 function flightY(w, a, b, yTop, steps, zB) {
     /* climbs toward -y; step 0 is the top. Half a tile deep, 8px rise. */
@@ -822,6 +865,9 @@ function theatreArt(phase, axis, part, T) {
         /* how far into the tunnel the curtain hangs: just behind the carpet's front edge, so its hem rests on the carpet all the way across
            (9 Nov, his: at 2.5 tiles in, the tunnel's own side wall showed under it as a big gap) */
         const CD = 1.25;
+        /* his curtains (below) hang open, so there's no closed curtain for light to spill from under: the warm glow on the tunnel floor went with the
+           drawn ones, and with his it lay in the gap between them, orange by day and grey at night (9 Nov 2026, his: "a strange grey/glow") */
+        const hisCurtains = (() => { try { return !!wallArt("i_theatre_curtains.png"); } catch (e) { return false; } })();
         /* the carpet, where the tunnel's floor is */
         const floorTop = new Map();
         /* where the tunnel's floor starts in each column: its first floor-coloured pixel, smoothed over the columns either side so a groove can't leave a drip of curtain */
@@ -830,7 +876,7 @@ function theatreArt(phase, axis, part, T) {
         for (let i = 0; i < W; i++) if (floorTop.has(i)) for (let j = floorTop.get(i); j < H; j++) { const [dX, dY] = floorAt(i, j), c = theatreCarpet(across(dX, dY), depth(dX, dY), Math.floor((axis === "y" ? dY : dX) * 16), Math.floor((axis === "y" ? dX : dY) * 16)); if (c) put(i, j, c);
             /* light spilling from under the curtain onto the floor in front of it, warm, fading over 8 rows (his, 8 Nov: "a soft glow coming from under the curtains") */
             const ac = across(dX, dY), t = ((-1) * (depth(dX, dY) - CD)) * 16 - 3;
-            if (t > -1 && t <= 11 && ac > .1 && ac < 3.9) { const q = at(i, j); if (o.rgba[q + 3] < 128) continue; const a2 = .72 * Math.pow(1 - Math.max(0, t - 1) / 11, 1.5) * Math.min(1, (ac - .1) * 4, (3.9 - ac) * 4); o.rgba[q] = Math.round(o.rgba[q] + (255 - o.rgba[q]) * a2); o.rgba[q + 1] = Math.round(o.rgba[q + 1] + (184 - o.rgba[q + 1]) * a2); o.rgba[q + 2] = Math.round(o.rgba[q + 2] + (96 - o.rgba[q + 2]) * a2); if (a2 > .12) glow[j * W + i] = 1; } }
+            if (!hisCurtains && t > -1 && t <= 11 && ac > .1 && ac < 3.9) { const q = at(i, j); if (o.rgba[q + 3] < 128) continue; const a2 = .72 * Math.pow(1 - Math.max(0, t - 1) / 11, 1.5) * Math.min(1, (ac - .1) * 4, (3.9 - ac) * 4); o.rgba[q] = Math.round(o.rgba[q] + (255 - o.rgba[q]) * a2); o.rgba[q + 1] = Math.round(o.rgba[q + 1] + (184 - o.rgba[q + 1]) * a2); o.rgba[q + 2] = Math.round(o.rgba[q + 2] + (96 - o.rgba[q + 2]) * a2); if (a2 > .12) glow[j * W + i] = 1; } }
         /* The curtains are his art since 9 Nov 2026 (art/theatre-curtains.png, his redraw in burgundy with gold cord tie-backs, drawn on a
            156 by 248 canvas 14 left and 14 above this piece on the "x" way; the other way is the same picture mirrored, 150 - x across, 13 up).
            Between them, the tunnel as it is. The cloth drawn in code before stays below, for a map that has no curtain picture. */
@@ -1364,17 +1410,17 @@ function cutStairs(byId, STAIRS) {
         if (st.kind === "straight") {
             punch(up, { x0: st.a, x1: st.b, y0: st.y - 10, y1: st.y });
             const carpet = !known ? [st.a + 1, st.b - 1] : span(st.a, st.b, x => onRug(low, x, st.y) || onRug(low, x, st.y - 1) || onRug(up, x, st.y - 11) || onRug(up, x, st.y - 10));
-            low.patches.push({ x0: st.a, x1: st.b, y0: st.y - 10, y1: st.y, z: st.z, notch: true, upLv: up, sf: [{ axis: "y", c0: st.a, c1: st.b, dTop: st.y - 10, steps: 20, zB: st.z, carpet, way, topExtra: STAIR_TOP }] });
+            low.patches.push({ x0: st.a, x1: st.b, y0: st.y - 10, y1: st.y, z: st.z, notch: true, upLv: up, sf: [{ axis: "y", c0: st.a, c1: st.b, dTop: st.y - 10, steps: 20, garland: !!st.garland, zB: st.z, carpet, way, topExtra: STAIR_TOP }] });
             (low.stairSigns = low.stairSigns || []).push({ x: st.signX || st.a - 2, y: st.y, z: st.z, name: st.label, sign: st.sign, mid: (st.a + st.b) / 2 });
         } else if (st.kind === "turn") {
             punch(up, { x0: st.a, x1: st.b, y0: st.y - 10, y1: st.y });
             punch(up, { x0: st.a - 4, x1: st.a, y0: st.y - 10, y1: st.y - 6 });
             const Y = st.y, carpet = !known ? [st.a + 1, st.b - 1] : span(st.a, st.b, x => onRug(low, x, Y) || onRug(low, x, Y - 1) || onRug(up, x, Y - 11) || onRug(up, x, Y - 10)) || (span(Y - 10, Y - 6, y => onRug(up, st.a - 5, y)) && [st.a + 1, st.b - 1]);
             const rugged = !!carpet, head = rugSpan(Y - 10, Y - 6, y => onRug(up, st.a - 5, y)) || [Y - 9, Y - 7], turnRug = rugged ? rugField([{ x0: st.a, x1: carpet[1], y0: head[0], y1: head[1] }, { x0: st.a - 2, x1: st.a, y0: head[0], y1: head[1] }, { x0: carpet[0], x1: carpet[1], y0: head[1], y1: Y - 3 }]) : null;
-            low.patches.push({ x0: st.a - 4, x1: st.a, y0: Y - 10, y1: Y - 6, z: st.z, notch: true, upLv: up, sf: [{ axis: "x", c0: Y - 10, c1: Y - 6, dTop: st.a - 4, steps: 8, zB: st.z + 96, carpet: rugged ? head : null, way, near: false, topExtra: STAIR_TOP, run: st.b - st.a }] });
+            low.patches.push({ x0: st.a - 4, x1: st.a, y0: Y - 10, y1: Y - 6, z: st.z, notch: true, upLv: up, sf: [{ axis: "x", c0: Y - 10, c1: Y - 6, dTop: st.a - 4, steps: 8, garland: !!st.garland, zB: st.z + 96, carpet: rugged ? head : null, way, near: false, topExtra: STAIR_TOP, run: st.b - st.a }] });
             low.patches.push({ x0: st.a, x1: st.b, y0: Y - 10, y1: Y, z: st.z, notch: true, upLv: up, sf: [
                 { landing: { x0: st.a, x1: st.b, y0: Y - 10, y1: Y - 6, z: st.z + 96, rug: turnRug } },
-                { axis: "y", c0: st.a, c1: st.b, dTop: Y - 6, steps: 12, zB: st.z, carpet, way, landRun: 4 }
+                { axis: "y", c0: st.a, c1: st.b, dTop: Y - 6, steps: 12, garland: !!st.garland, zB: st.z, carpet, way, landRun: 4 }
             ] });
             (low.stairSigns = low.stairSigns || []).push({ x: st.b + 6, y: st.y, z: st.z, name: st.label, sign: st.sign, mid: (st.a + st.b) / 2 });
         } else if (st.kind === "sideturn") {
@@ -1383,15 +1429,15 @@ function cutStairs(byId, STAIRS) {
             punch(up, { x0: st.x - 10, x1: st.x - 6, y0: st.a - 4, y1: st.a });
             const X = st.x, carpet = !known ? [st.a + 1, st.b - 1] : span(st.a, st.b, y => onRug(low, X, y) || onRug(low, X - 1, y) || onRug(up, X - 11, y) || onRug(up, X - 10, y)) || (span(X - 10, X - 6, x => onRug(up, x, st.a - 5)) && [st.a + 1, st.b - 1]);
             const rugged = !!carpet, head = rugSpan(X - 10, X - 6, x => onRug(up, x, st.a - 5)) || [X - 9, X - 7], turnRug = rugged ? rugField([{ x0: head[0], x1: head[1], y0: st.a, y1: carpet[1] }, { x0: head[0], x1: head[1], y0: st.a - 2, y1: st.a }, { x0: head[1], x1: X - 3, y0: carpet[0], y1: carpet[1] }]) : null;
-            low.patches.push({ x0: X - 10, x1: X - 6, y0: st.a - 4, y1: st.a, z: st.z, notch: true, upLv: up, sf: [{ axis: "y", c0: X - 10, c1: X - 6, dTop: st.a - 4, steps: 8, zB: st.z + 96, carpet: rugged ? head : null, way, near: false, topExtra: STAIR_TOP, run: st.b - st.a }] });
+            low.patches.push({ x0: X - 10, x1: X - 6, y0: st.a - 4, y1: st.a, z: st.z, notch: true, upLv: up, sf: [{ axis: "y", c0: X - 10, c1: X - 6, dTop: st.a - 4, steps: 8, garland: !!st.garland, zB: st.z + 96, carpet: rugged ? head : null, way, near: false, topExtra: STAIR_TOP, run: st.b - st.a }] });
             low.patches.push({ x0: X - 10, x1: X, y0: st.a, y1: st.b, z: st.z, notch: true, upLv: up, sf: [
                 { landing: { x0: X - 10, x1: X - 6, y0: st.a, y1: st.b, z: st.z + 96, rug: turnRug, edgeX: true } },
-                { axis: "x", c0: st.a, c1: st.b, dTop: X - 6, steps: 12, zB: st.z, carpet, way, landRun: 4 }
+                { axis: "x", c0: st.a, c1: st.b, dTop: X - 6, steps: 12, garland: !!st.garland, zB: st.z, carpet, way, landRun: 4 }
             ] });
         } else {
             punch(up, { x0: st.x - 10, x1: st.x, y0: st.a, y1: st.b });
             const carpet = !known ? [st.a + 1, st.b - 1] : span(st.a, st.b, y => onRug(low, st.x, y) || onRug(low, st.x - 1, y) || onRug(up, st.x - 11, y) || onRug(up, st.x - 10, y));
-            low.patches.push({ x0: st.x - 10, x1: st.x, y0: st.a, y1: st.b, z: st.z, notch: true, upLv: up, sf: [{ axis: "x", c0: st.a, c1: st.b, dTop: st.x - 10, steps: 20, zB: st.z, carpet, way, topExtra: STAIR_TOP }] });
+            low.patches.push({ x0: st.x - 10, x1: st.x, y0: st.a, y1: st.b, z: st.z, notch: true, upLv: up, sf: [{ axis: "x", c0: st.a, c1: st.b, dTop: st.x - 10, steps: 20, garland: !!st.garland, zB: st.z, carpet, way, topExtra: STAIR_TOP }] });
         }
     }
 }
@@ -1566,7 +1612,7 @@ function build(cfg) {
         for (let dy = 0; dy < 16; dy++) { const half = dy < 8 ? dy * 2 + 2 : (15 - dy) * 2 + 2; for (let dx = -half; dx <= half; dx++) { const c = smp(dx, dy); if (c) { const sx = a[0] + dx, sy = a[1] + dy; if (sx >= 0 && sy >= 0 && sx < bw && sy < bh) { layer.set(sx, sy, c); mask[sy * bw + sx] = 1; zb[sy * bw + sx] = w.z; fc[sy * bw + sx] = (c[0] << 16) | (c[1] << 8) | c[2]; } } } }
     };
     const inView = P => { const x0 = (P.x0 - P.y1) * 16 + gx - 200 - (xmasOn ? 120 : 0), x1 = (P.x1 - P.y0) * 16 + gx + 200 + (xmasOn ? 120 : 0), y0 = (P.x0 + P.y0) * 8 + gy - P.z - 200 - (xmasOn ? 260 : 0), y1 = (P.x1 + P.y1) * 8 + gy - P.z + 200; return !(x1 < 0 || x0 > bw || y1 < 0 || y0 > bh); };
-    const xmasOn = /\+x$/.test(cfg.light || ""), way = cfg.way, Mname = String(cfg.light || "").replace("+x", "") || (cfg.map && cfg.map.light) || "sconces", M = LIGHTS[Mname] || LIGHTS.sconces, XMAS_K = new Set(["xmastree", "xmaslantern", "xmassmalltree", "xmasdrinks", "xmasduck", "snowman", "gift1", "gift2", "gift3", "gift4", "gift5", "gift6", "gift7", "gift8", "gift9", "gift10", "gift11"]);
+    const xmasOn = /\+x$/.test(cfg.light || ""), way = cfg.way, Mname = String(cfg.light || "").replace("+x", "") || (cfg.map && cfg.map.light) || "sconces", M = LIGHTS[Mname] || LIGHTS.sconces, XMAS_K = new Set(["xmastree", "xmaslantern", "xmassmalltree", "xmasdrinks", "xmasduck", "snowman", "gift1", "gift2", "gift3", "gift4", "gift5", "gift6", "gift7", "gift8", "gift9", "gift10", "gift11", "xmasfir"]);
     w.lightsOff = !!M.off;
     let avL = [1, 1, 1];
 
@@ -1853,6 +1899,11 @@ function build(cfg) {
                     const row = Parts.parts({ k, x, y, rot: p[5] }), far = row[0], turned = !!(p[5] & 1), near = row[row.length - 1];
                     if (w.partAt(far)) { const fp = FLOOR_PIECES[k], base = w.S(x, y), im = wallArt(fp.f), X0 = Math.round(base[0]), Y0 = Math.round(base[1]);
                         w.sprites.push({ depth: near.x + near.y + .5, ftx: near.x, fty: near.y, draw: () => { for (let j = 0; j < im.h; j++) for (let i = 0; i < im.w; i++) { const q = (j * im.w + i) * 4, A = im.rgba[q + 3]; if (!A) continue; const X = turned ? X0 - fp.ox + i : X0 + fp.ox - i, Y = Y0 - fp.oy + j, c = [im.rgba[q], im.rgba[q + 1], im.rgba[q + 2]]; if (A < 255) { pieceTint(X, Y, c, A); continue; } layer.set(X, Y, c); if (X >= 0 && Y >= 0 && X < bw && Y < bh) w.keep[Y * bw + X] = ((c[0] << 16) | (c[1] << 8) | c[2]) + 1; } } }); }
+                }
+                else if (k === "xmasfir") {
+                    /* the small fir, the giant tree's kind (9 Nov 2026): at Christmas only, its foot at the tile's middle, its lights and star always lit */
+                    if (xmasOn && w.partAt({ x, y }) && FLOOR_PIECES.xmasfir) { const fp = FLOOR_PIECES.xmasfir, base = w.S(x + .5, y + .5), im = wallArt(fp.f), li = wallArt(fp.lights), X0 = Math.round(base[0]) - fp.ox, Y0 = Math.round(base[1]) - fp.oy;
+                        w.sprites.push({ depth: x + y + .5, ftx: x, fty: y, draw: () => { for (let j = 0; j < im.h; j++) for (let i = 0; i < im.w; i++) { const q = (j * im.w + i) * 4, lit = li.rgba[q + 3] > 0, src = lit ? li.rgba : im.rgba; if (!src[q + 3]) continue; const X = X0 + i, Y = Y0 + j, c = [src[q], src[q + 1], src[q + 2]]; layer.set(X, Y, c); if (X >= 0 && Y >= 0 && X < bw && Y < bh) { const v = ((c[0] << 16) | (c[1] << 8) | c[2]) + 1; w.keep[Y * bw + X] = lit ? v : 0; w.glowing[Y * bw + X] = lit ? v : 0; } } } }); }
                 }
                 else if (FLOOR_PIECES[k]) {
                     if (k === "xmastree" && xmasOn) w.treeGlows.push(w.S(x + .25, y + .25));
@@ -2168,7 +2219,7 @@ function build(cfg) {
         for (const P of drawList) if (P.notch && P.upLv && (!P.raised || raisedLater.includes(P))) {
             const up = P.upLv; if (!up.tileSet) { up.tileSet = new Set(); for (const q of up.patches) if (!q.notch) for (let X = q.x0; X < q.x1; X++) for (let Y = q.y0; Y < q.y1; Y++) up.tileSet.add(X + "," + Y); }
             const landings = (P.sf || []).filter(f => f.landing).map(f => f.landing);
-            for (const f of (P.sf || [])) if (!f.landing && f.axis && !f.tiled) (lv.later = lv.later || []).push({ furni: true, afterFloors: !!f.run, depth: (f.axis === "y" ? f.c0 + f.dTop : f.dTop + f.c0) + 40, tx: f.axis === "y" ? f.c0 : Math.floor(f.dTop), ty: f.axis === "y" ? Math.floor(f.dTop) : f.c0, railsOf: P, draw: () => { const zUp = P.z + Z1; flightRails(w, railsFor(f, lv.patches), (x, y, col, c, d, z) => {
+            for (const f of (P.sf || [])) if (!f.landing && f.axis && !f.tiled) (lv.later = lv.later || []).push({ furni: true, afterFloors: !!f.run, depth: (f.axis === "y" ? f.c0 + f.dTop : f.dTop + f.c0) + 40, tx: f.axis === "y" ? f.c0 : Math.floor(f.dTop), ty: f.axis === "y" ? Math.floor(f.dTop) : f.c0, railsOf: P, draw: () => { const zUp = P.z + Z1; flightRails(w, (ro => xmasOn ? ro : { ...ro, garland: false })(railsFor(f, lv.patches)), (x, y, col, c, d, z) => {
                 if (z > zUp) return; const t = (zUp - z) / 16; if (P.upLv.tileSet.has(Math.floor(c + t) + "," + Math.floor(d + t))) return; if (!seesRail(c, d, z)) return;
                 /* what stands on the landing and nearer than this bit of rail stays in front of it */
                 if (x >= 0 && y >= 0 && x < bw && y < bh) { const i = y * bw + x, fx = furniX[i]; if (fx !== NO_FURNI) { const fy = furniY[i]; if (landings.some(L => fx >= L.x0 && fx < L.x1 && fy >= L.y0 && fy < L.y1) && fx + fy + 2 > c + d) return; } }
