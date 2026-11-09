@@ -43,18 +43,23 @@
         const d = cg.getImageData(13, 25, 7, 7).data, m = new Uint8Array(49); let any = 0; for (let k = 0; k < 49; k++) { m[k] = d[k * 4 + 3] > 128 ? 1 : 0; any += m[k]; }
         const out = { m, any: any > 0, all: any === 49 }; maskMemo.set(key, out); return out;
     }
+    /* the marquee's box on the map: its top left, and the floor height in front */
+    const boardOf = t => { const f = front(t), z = LIVE.nodeZ(t.l, f[0], f[1]) || 0, p = t.q.axis === "x" ? LIVE.mapPoint(t.q.at, t.q.line, z) : LIVE.mapPoint(t.q.line, t.q.at, z); return { z, x0: t.q.axis === "x" ? p[0] : p[0] - 138, y0: p[1] - T }; };
+    const inView = (b, v) => !(b.x0 > v.x1 || b.x0 + 140 < v.x0 || b.y0 > v.y1 || b.y0 + 160 < v.y0);
+    const here = () => LIVE.floor || (LIVE.editorApi && LIVE.editorApi().level);
     LIVE.add({
-        active: () => !reduced.matches && theatres().some(t => t.l === (LIVE.floor || (LIVE.editorApi && LIVE.editorApi().level))),
+        /* only while a theatre on this floor is on screen (9 Nov scan, page finding 1: it kept the whole of Floor 1 repainting every frame,
+           wherever you stood); paint() wakes it again when the camera brings one into view */
+        active: () => { if (reduced.matches) return false; const h = here(); if (!h) return false; const ts = theatres().filter(t => t.l === h); if (!ts.length) return false; const v = LIVE.view(); return ts.some(t => inView(boardOf(t), v)); },
         under(c, ox, oy, now) {
-            const here = LIVE.floor || (LIVE.editorApi && LIVE.editorApi().level), v = LIVE.view(), t0 = now / 1000;
+            const h = here(), v = LIVE.view(), t0 = now / 1000;
             /* furniture can be moved in the editor: look again every couple of seconds there, once on the walking page */
             if (LIVE.map !== maskMap || (!window.HALLWAY_PLAY && now - maskAt > 2000)) { maskMemo.clear(); maskMap = LIVE.map; maskAt = now; }
             c.save(); c.translate(ox, oy); c.scale(LIVE.zoom, LIVE.zoom);
             for (const t of theatres()) {
-                if (t.l !== here) continue;
-                const f = front(t), z = LIVE.nodeZ(t.l, f[0], f[1]) || 0, p = t.q.axis === "x" ? LIVE.mapPoint(t.q.at, t.q.line, z) : LIVE.mapPoint(t.q.line, t.q.at, z);
-                const x0 = t.q.axis === "x" ? p[0] : p[0] - 138, y0 = p[1] - T;
-                if (x0 > v.x1 || x0 + 140 < v.x0 || y0 > v.y1 || y0 + 160 < v.y0) continue;
+                if (t.l !== h) continue;
+                const B = boardOf(t), z = B.z, x0 = B.x0, y0 = B.y0;
+                if (!inView(B, v)) continue;
                 const list = bulbsOf(t.q.axis), n0 = list.length;
                 list.forEach(([i, j], n) => {
                     const X = Math.round(x0 + i), Y = Math.round(y0 + j), mk = maskOf(t, X, Y, z); if (!mk.any) return;
