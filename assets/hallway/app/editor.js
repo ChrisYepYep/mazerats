@@ -3624,7 +3624,16 @@ function buildUI() {
     });
     $("floorSel").addEventListener("change", e => setFloor(byId(e.target.value)));
     $("timeMode").value = timeMode;
-    $("timeMode").addEventListener("change", e => { timeMode = e.target.value; localStorage.setItem("hallway-time", timeMode); paint(); });
+    /* Changing the time of day by hand crossfades into the new light rather than jumping (9 Nov 2026, his): the view as it was is laid over
+       the top and faded away once the new light's pictures for what's on screen are in (or after a second and a half at most) */
+    $("timeMode").addEventListener("change", e => {
+        const stage = $("stage"), old = canvas.width && stage ? document.createElement("canvas") : null;
+        if (old) { old.width = canvas.width; old.height = canvas.height; old.getContext("2d").drawImage(canvas, 0, 0); old.style.cssText = "position:absolute;left:" + canvas.offsetLeft + "px;top:" + canvas.offsetTop + "px;z-index:24;pointer-events:none;opacity:1;transition:opacity .9s ease;width:" + canvas.clientWidth + "px;height:" + canvas.clientHeight + "px"; stage.appendChild(old); }
+        timeMode = e.target.value; localStorage.setItem("hallway-time", timeMode); paint();
+        if (!old) return; const t0 = performance.now();
+        const fade = () => { if (moodInflight.size && performance.now() - t0 < 1500) { setTimeout(fade, 60); return; } paint(); old.getBoundingClientRect(); old.style.opacity = 0; setTimeout(() => old.remove(), 950); };
+        setTimeout(fade, 60);
+    });
     $("light").addEventListener("change", e => { snapshot(); map.light = e.target.value; changed(); });
     $("wallPaint").addEventListener("change", e => { wallPaint = e.target.checked; if (!wallPaint && selected && selected.type === "wall") select(null); flash(wallPaint ? "Click a wall to change it." : "Walls can't be clicked now."); });
     $("sortMazes").addEventListener("click", sortByDifficulty);

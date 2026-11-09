@@ -96,7 +96,7 @@
         /* the Hallway's mark on a wooden card of its own, above the window (9 Nov 2026, his: "in that wooden card thing you had it on in your mock ups") */
         const card = document.createElement("div"); card.className = "hw-logo-card";
         /* the whole card as one picture (his pick, 9 Nov 2026: dark oak, brass borders, the round rat crest, raised brass letters) */
-        const mark = document.createElement("img"); mark.src = "/assets/img/hallway-plaque@2x.png"; mark.alt = "Maze Rats Hallway"; mark.width = 560; mark.height = 330; mark.addEventListener("error", () => card.remove()); card.appendChild(mark);
+        const mark = document.createElement("img"); mark.src = "/assets/img/hallway-plaque-420.png"; mark.srcset = "/assets/img/hallway-plaque-420.png 1x, /assets/img/hallway-plaque-420@2x.png 2x"; mark.width = 420; mark.height = 248; mark.alt = "Maze Rats Hallway"; mark.addEventListener("error", () => card.remove()); card.appendChild(mark);
         form.append(row, say, guest, notes); frame.appendChild(form); win.append(tbar, frame); back.append(card, win); document.body.appendChild(back); input.focus();
         const done = () => { document.removeEventListener("keydown", keys, true); back.remove(); if (opener && opener.focus) opener.focus(); if (onDone) onDone(); };
         const keys = e => {
@@ -139,7 +139,7 @@
         /* A wooden card in the top left, the Hallway's mark at its head and a labelled row for each kind of thing (9 Nov 2026, his: "the menu buttons in
            a wooden card in the top left, with the logo text at the top of it ... clear, and maze rats hallway themed") */
         bar.className = "hw-card";
-        { const mark = document.createElement("img"); mark.className = "hw-card-logo"; mark.src = "/assets/img/hallway-logo@2x.png"; mark.alt = "Maze Rats Hallway"; mark.addEventListener("error", () => mark.remove()); bar.appendChild(mark); }
+        { const mark = document.createElement("img"); mark.className = "hw-card-logo"; mark.src = "/assets/img/hallway-logo-176.png"; mark.srcset = "/assets/img/hallway-logo-176.png 1x, /assets/img/hallway-logo-176@2x.png 2x"; mark.width = 176; mark.height = 111; mark.alt = "Maze Rats Hallway"; mark.addEventListener("error", () => mark.remove()); bar.appendChild(mark); }
         let into = bar; const group = (name, label) => { const r = document.createElement("div"); r.className = "play-row"; if (label) { const l = document.createElement("span"); l.className = "play-label"; l.textContent = label; r.appendChild(l); } const g = document.createElement("span"); g.className = "play-group"; g.setAttribute("role", "group"); g.setAttribute("aria-label", name); r.appendChild(g); bar.appendChild(r); into = g; return g; };
         const add = (label, title, fn) => { const b = document.createElement("button"); b.type = "button"; b.className = "mr-btn"; b.textContent = label; b.title = title; b.setAttribute("aria-label", title); b.addEventListener("click", fn); into.appendChild(b); return b; };
         const click = id => { const e = document.getElementById(id); if (e) e.click(); };

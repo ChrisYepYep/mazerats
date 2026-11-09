@@ -9,11 +9,11 @@ html, body { background: #000; overflow: hidden; }
 /* The controls: nothing but the site's buttons, floating on the hallway */
 /* the controls' wooden card, top left (9 Nov 2026, his): the Hallway's mark at its head, then a labelled row each; the frame and wood as the
    branding mock-ups, dark brown lit from the middle with a thin gold rule inside the edge */
-#playBar { position: fixed; top: 10px; left: 10px; z-index: 30; display: flex; flex-direction: column; gap: 7px; width: 220px; padding: 24px 22px 26px; box-sizing: border-box;
+#playBar { position: fixed; top: 10px; left: 10px; z-index: 30; display: flex; flex-direction: column; gap: 7px; width: 220px; padding: 22px 22px 34px; box-sizing: border-box;
     /* the oak card with its brass borders (assets/img/hallway-card, drawn near this size so its grain isn't stretched), as a 9-slice: its corners stay
        as drawn, the rest fits whatever the card's height comes to */
     border: 1px solid transparent; border-image: url('/assets/img/hallway-card@2x.png') 88 fill / 44px stretch; filter: drop-shadow(0 8px 16px rgba(0, 0, 0, .6)); }
-#playBar .hw-card-logo { display: block; width: 100%; height: auto; margin: -2px 0 2px; pointer-events: none; user-select: none; }
+#playBar .hw-card-logo { display: block; width: 176px; height: auto; margin: -2px 0 2px; pointer-events: none; user-select: none; }
 #playBar .play-row { display: flex; align-items: center; gap: 8px; }
 #playBar .play-label { flex: 0 0 44px; color: #d9ad5e; text-shadow: 0 1px 0 #000; font: 400 9px/14px 'Volter Goldfish', monospace; }
 #playBar .play-row .play-group { flex: 1; }
@@ -29,7 +29,7 @@ html, body { background: #000; overflow: hidden; }
 #playBar .play-group { gap: 1px; }
 /* the splash's own wooden card, the mark alone, above the window */
 #playPicker { flex-direction: column; align-items: center; }
-#playPicker .hw-logo-card { margin: auto 0 10px; width: min(400px, 100%); filter: drop-shadow(0 10px 22px rgba(0, 0, 0, .65)); }
+#playPicker .hw-logo-card { margin: auto 0 10px; width: 420px; max-width: 100%; filter: drop-shadow(0 10px 22px rgba(0, 0, 0, .65)); }
 #playPicker .hw-logo-card img { display: block; width: 100%; height: auto; pointer-events: none; user-select: none; }
 #playPicker .hw-logo-card + .mr-window { margin: 0 auto auto; }
 /* the bar in groups, each a strip of joined buttons (8 Nov 2026) */
@@ -160,9 +160,9 @@ body.hw-screensaver #playBar, body.hw-screensaver .play-menu { opacity: 0; point
 .hw-ss-hint { color: #c9b89a; font: 400 9px/14px 'Volter Goldfish Bold', 'Volter Goldfish', monospace; text-shadow: 1px 1px 0 #1a0d05; transform: scale(2); white-space: nowrap; }
 @media (max-width: 700px) { .hw-ss-title { transform: translate(-50%, -50%); } .hw-ss-name { transform: scale(2); margin: 8px 0 12px; } .hw-ss-hint { transform: none; } }
 /* the screensaver with the Hallway's card (9 Nov 2026, his), and under it the way out on a slim plate made to match */
-.hw-ss-card { display: block; width: min(440px, 62vw); height: auto; margin: 0 0 14px; filter: drop-shadow(0 14px 30px rgba(0, 0, 0, .7)); pointer-events: none; user-select: none; }
-.hw-ss-plate img { display: block; width: min(507px, 80vw); height: auto; filter: drop-shadow(0 8px 16px rgba(0, 0, 0, .65)); pointer-events: none; user-select: none; }
-@media (pointer: coarse) { .hw-ss-plate img { width: min(336px, 80vw); } }
+.hw-ss-card { display: block; width: 420px; max-width: 86vw; height: auto; margin: 0 0 14px; filter: drop-shadow(0 14px 30px rgba(0, 0, 0, .7)); pointer-events: none; user-select: none; }
+.hw-ss-plate img { display: block; width: 599px; max-width: 92vw; height: auto; filter: drop-shadow(0 8px 16px rgba(0, 0, 0, .65)); pointer-events: none; user-select: none; }
+@media (pointer: coarse) { .hw-ss-plate img { width: 393px; } }
 @media (max-width: 700px) { .hw-ss-card { width: min(300px, 80vw); margin-bottom: 10px; } }
 /* hustle's answers: one tidy column of equal buttons */
 .hw-replies.hw-replies-under { flex-direction: column; flex-wrap: nowrap; align-items: stretch; width: max-content; max-width: none; gap: 3px; }

@@ -55,7 +55,7 @@
 
     /* The site's own window (the same classes as every other, so it wears every palette, dark mode and skin) */
     /* the Hallway's own mark (9 Nov 2026, his pick "G3": script Maze Rats tucked into a gold HALLWAY), on its loader and closed screens */
-    const logo = () => { const i = document.createElement("img"); i.className = "hallway-logo"; i.src = "/assets/img/hallway-logo@2x.png"; i.alt = "Maze Rats Hallway"; i.decoding = "async"; i.addEventListener("error", () => i.remove()); return i; };
+    const logo = (w = 240) => { const i = document.createElement("img"); i.className = "hallway-logo"; i.src = "/assets/img/hallway-logo-" + w + ".png"; i.srcset = "/assets/img/hallway-logo-" + w + ".png 1x, /assets/img/hallway-logo-" + w + "@2x.png 2x"; i.width = w; i.height = w === 420 ? 266 : 152; i.alt = "Maze Rats Hallway"; i.decoding = "async"; i.addEventListener("error", () => i.remove()); return i; };
     function note(title, words) {
         const n = document.createElement("div"); n.className = "modal hallway-note"; n.setAttribute("role", "status");
         const bar = document.createElement("div"); bar.className = "chrome-titlebar";
@@ -123,7 +123,7 @@
            wordmark over the maze, the label in Volter, and the bar that fills in whole blocks (home.html's .site-loader, its classes reused) */
         const load = document.createElement("div"); load.className = "hallway-loader";
         const box = document.createElement("div"); box.className = "site-loader-inner";
-        const mark = logo(); mark.classList.add("hallway-logo-loader");        // the Hallway's mark where the site's wordmark would be
+        const mark = logo(420); mark.classList.add("hallway-logo-loader");        // the Hallway's mark where the site's wordmark would be
         const words = document.createElement("p"); words.className = "site-loader-label"; words.setAttribute("role", "status"); words.textContent = "LOADING THE HALLWAY";
         const bar = document.createElement("div"); bar.className = "site-loader-track"; const fill = document.createElement("div"); fill.className = "site-loader-fill"; bar.appendChild(fill);
         /* in whole 8px blocks, never half a block, as the site's bar */
