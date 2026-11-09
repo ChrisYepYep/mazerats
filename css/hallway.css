@@ -111,7 +111,9 @@ html.hallway-instant #hallway-stage { transition: none; }
 }
 .hallway-note-body p { margin: 0; font: inherit; }
 /* the fan-site statement at the foot of a closed screen: below an engraved rule, in a muted brown, so it doesn't pull the eye from the note (9 Nov 2026, his) */
-.hallway-note-body .hallway-note-legal { align-self: stretch; margin-top: 2px; padding-top: 10px; border-top: 1px solid rgba(0, 0, 0, .55); box-shadow: inset 0 1px 0 rgba(255, 220, 160, .12); color: var(--parchment-mid, #c7a679); opacity: .72; text-align: center; }
+.hallway-note-body .hallway-note-legal { align-self: stretch; margin-top: 2px; padding-top: 10px; border-top: 1px solid rgba(0, 0, 0, .55); box-shadow: inset 0 1px 0 rgba(255, 220, 160, .12); color: var(--parchment-mid, #c7a679); opacity: .9; text-align: center; }
+/* the note itself a sentence to a line (9 Nov 2026, his) */
+.hallway-note-body .hallway-note-words { white-space: pre-line; }
 
 /* The loading bar, as Fallin' Furni's. It fills rather than slides: it's counting things in */
 .hallway-loader {

@@ -63,7 +63,7 @@
         bar.append(h, x);
         const frame = document.createElement("div"); frame.className = "chrome-frame";
         const body = document.createElement("div"); body.className = "hallway-note-body";
-        const p = document.createElement("p"); p.textContent = words; body.appendChild(p);
+        const p = document.createElement("p"); p.className = "hallway-note-words"; p.textContent = String(words).replace(/([.!?])\s+(?=[A-Z])/g, "$1\n"); body.appendChild(p);
         const b = document.createElement("button"); b.type = "button"; b.className = "guess-btn guess-btn--lead"; b.textContent = "Back to the archive"; b.addEventListener("click", () => close()); body.appendChild(b);
         /* the fan-site statement, as on the Hallway's own splash, under a rule and quieter than the note (9 Nov 2026, his) */
         const legal = document.createElement("p"); legal.className = "hallway-note-legal"; legal.textContent = "Maze Rats is independent and not affiliated with, sponsored, supported, or endorsed by Sulake Oy or its affiliates. Any Habbo trademarks or intellectual property used here are done so in accordance with the Habbo Fan Site Policy."; body.appendChild(legal);
