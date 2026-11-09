@@ -50,6 +50,42 @@
             const Y = c[0] + v0 + n * (H + 2) + y; if (Y >= c[0] - 1 && Y <= c[1] + 1) out.push([X, Y]); } });     // the rims top and bottom are paper too
         return out;
     }
-    const api = { stamp, findSlip, onSlip, GLYPHS: G, H };
+    /* A bold face for the narrow stand (9 Nov 2026, his pick, "two bold lines on the slant"): 9 rows, upright strokes two pixels thick,
+       for the day and the time alone, FRI over 8AM. Most 5 wide, N and T 6, I a bare stem, 1 and the colon narrow so 10AM still fits 21 */
+    const B = {
+        A: rows(".###. ##.## ##.## ##.## ##### ##.## ##.## ##.## ##.##"), B: rows("####. ##.## ##.## ##.## ####. ##.## ##.## ##.## ####."),
+        D: rows("####. ##.## ##.## ##.## ##.## ##.## ##.## ##.## ####."), E: rows("##### ##... ##... ##... ####. ##... ##... ##... #####"),
+        F: rows("##### ##... ##... ##... ####. ##... ##... ##... ##..."), H: rows("##.## ##.## ##.## ##.## ##### ##.## ##.## ##.## ##.##"),
+        I: rows("## ## ## ## ## ## ## ## ##"), L: rows("##... ##... ##... ##... ##... ##... ##... ##... #####"),
+        M: rows("##.## ##### ##### ##.## ##.## ##.## ##.## ##.## ##.##"), N: rows("##..## ###.## ###.## ###### ##.### ##.### ##..## ##..## ##..##"),
+        O: rows(".###. ##.## ##.## ##.## ##.## ##.## ##.## ##.## .###."), P: rows("####. ##.## ##.## ##.## ####. ##... ##... ##... ##..."),
+        R: rows("####. ##.## ##.## ##.## ####. ##.#. ##.## ##.## ##.##"), S: rows(".#### ##... ##... ##... .###. ...## ...## ...## ####."),
+        T: rows("###### ..##.. ..##.. ..##.. ..##.. ..##.. ..##.. ..##.. ..##.."), U: rows("##.## ##.## ##.## ##.## ##.## ##.## ##.## ##.## .###."),
+        V: rows("##.## ##.## ##.## ##.## ##.## ##.## .###. .###. ..#.."), W: rows("##.## ##.## ##.## ##.## ##.## ##### ##### ##.## #...#"),
+        0: rows(".###. ##.## ##.## ##.## ##.## ##.## ##.## ##.## .###."), 1: rows(".## ### .## .## .## .## .## .## .##"),
+        2: rows("####. ...## ...## ...## .###. ##... ##... ##... #####"), 3: rows("####. ...## ...## ...## .###. ...## ...## ...## ####."),
+        4: rows("##.## ##.## ##.## ##.## ##### ...## ...## ...## ...##"), 5: rows("##### ##... ##... ##... ####. ...## ...## ...## ####."),
+        6: rows(".###. ##... ##... ##... ####. ##.## ##.## ##.## .###."), 7: rows("##### ...## ...## ..##. ..##. .##.. .##.. .##.. .##.."),
+        8: rows(".###. ##.## ##.## ##.## .###. ##.## ##.## ##.## .###."), 9: rows(".###. ##.## ##.## ##.## .#### ...## ...## ...## .###."),
+        ":": rows(".. .. ## ## .. .. ## ## ..")
+    };
+    const BH = 9;
+    function stampBold(s) {
+        const out = []; let x = 0;
+        for (const ch of String(s).toUpperCase()) { const g = B[ch]; if (!g) continue; g.forEach((r, y) => { for (let i = 0; i < r.length; i++) if (r[i] === "#") out.push([x + i, y, x]); }); x += g[0].length + 1; }
+        return { px: out, w: Math.max(0, x - 1), h: BH };
+    }
+    /* the bold lines on a slip, on the wall's slant as onSlip, centred exactly (so the stand's two ways round are mirror images); a line too
+       wide for the slip in bold is stamped in the usual face instead */
+    function onSlipBold(slip, lines) {
+        const width = slip.x1 - slip.x0 + 1, made = lines.map(s => { const b = stampBold(s); return b.w <= width ? b : stamp(s); }), LEAD = 3;
+        const total = made.reduce((n, t) => n + t.h, 0) + LEAD * (made.length - 1), out = [];
+        let v = Math.max(1, Math.floor((slip.rows - total) / 2));
+        /* an odd space left over goes to the same side as the picture faces, so the two ways round match exactly */
+        const mirror = slip.cols.get(slip.x0) && slip.cols.get(slip.x1) && slip.cols.get(slip.x0)[0] > slip.cols.get(slip.x1)[0];
+        for (const t of made) { const u0 = (mirror ? Math.ceil : Math.floor)((width - t.w) / 2); for (const [x, y] of t.px) { const X = slip.x0 + u0 + x, c = slip.cols.get(X); if (!c) continue; const Y = c[0] + v + y; if (Y >= c[0] - 1 && Y <= c[1] + 1) out.push([X, Y]); } v += t.h + LEAD; }
+        return out;
+    }
+    const api = { stamp, stampBold, findSlip, onSlip, onSlipBold, GLYPHS: G, BOLD: B, H };
     if (typeof module !== "undefined" && module.exports) module.exports = api; else root.StampFont = api;
 })(typeof window !== "undefined" ? window : this);

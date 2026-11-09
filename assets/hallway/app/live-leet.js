@@ -25,7 +25,8 @@
         if (!fromTwitch && times.some(d => d <= now && now < +d + mins * 60000)) return tiny ? ["LIVE", "NOW"] : ["ON NOW!", "LIVE"];
         /* no show known: never COMING SOON (9 Nov 2026, his: "something much shorter that will fit on the narrow sign too"): TBA, under the poster's NEXT */
         const next = times.find(d => d > now); if (!next) return ["TBA"];
-        if (tiny) return [DAYS[next.getDay()], next.getDate() + "/" + String(next.getMonth() + 1).padStart(2, "0"), String(next.getHours()).padStart(2, "0") + ":" + String(next.getMinutes()).padStart(2, "0")];
+        /* two bold lines, the day over the time, as 8AM, or 8:30 off the hour (9 Nov 2026, his pick) */
+        if (tiny) return [DAYS[next.getDay()], clock(next).replace(" ", "").replace(/:\d\d[AP]M$/, m => m.slice(0, 3))];
         const today = new Date(now), tomorrow = new Date(now); tomorrow.setDate(tomorrow.getDate() + 1);
         const named = DAYS[next.getDay()], date = next.getDate() + " " + MONTHS[next.getMonth()];
         /* the narrow stand's slip: three short lines, and no room for TOMORROW there, so the day's name */
@@ -38,6 +39,7 @@
     const ask = () => { if (document.hidden) return; fetch("/.netlify/functions/leet-schedule", { headers: { Accept: "application/json" } }).then(r => r.ok ? r.json() : null).then(j => { if (!j) return; const was = JSON.stringify(feed); feed = j; if (JSON.stringify(feed) !== was && window.HallwayLive) HallwayLive.wake(); }).catch(() => { /* the typed times stand */ }); };
     ask(); setInterval(ask, 5 * 60000);
     const LIVE = window.HallwayLive, SF = window.StampFont; if (!LIVE || !SF) return;
+    const DARK = [44, 40, 42];   // the narrow stand's ink: a dark grey, nearly black (9 Nov 2026, his)
     const SLIP = [0xf3, 0xe7, 0xc7], RIM = [0xd9, 0xc4, 0x9a], DK = [0xb4, 0x9c, 0x6e], INK = [112, 12, 14], SHEEN = [0xef, 0xe1, 0xbd];   // SHEEN: the light streaks across the paper on his narrow stand (9 Nov 2026), paper too
 
     /* a picture's slip, as it is drawn on screen (flipped already where it is), once per picture and way round */
@@ -112,7 +114,9 @@
                 const rim = at(x, cc[0] - 1); if (!rim || ![0, 1, 2].every(k => Math.abs(best.p[k] / SLIP[k] - rim[k] / RIM[k]) < .07)) continue;
                 usual.set(x, best.p); shown++; }
             if (shown < s.cols.size * .3) continue;                                // the poster isn't there to be seen
-            for (const [x, y] of SF.onSlip(s, ln)) { const u = usual.get(x), p = at(x, y); if (!u || !p) continue; /* the slip, or its rim top or bottom (letters stand upright, so their edges can reach the rim), in this light */ const paper = near(p, u) || near(p, u.map((v, k) => v * RIM[k] / SLIP[k])) || near(p, u.map((v, k) => v * DK[k] / SLIP[k])) || near(p, u.map((v, k) => v * SHEEN[k] / SLIP[k])); if (!paper) continue; px.push(x, y, `rgb(${Math.round(p[0] * INK[0] / SLIP[0])},${Math.round(p[1] * INK[1] / SLIP[1])},${Math.round(p[2] * INK[2] / SLIP[2])})`); }
+            /* the narrow stand: two bold lines in dark grey (9 Nov 2026, his) */
+            const tiny = s.x1 - s.x0 < 30, ink = tiny ? DARK : INK;
+            for (const [x, y] of (tiny ? SF.onSlipBold(s, text) : SF.onSlip(s, ln))) { const u = usual.get(x), p = at(x, y); if (!u || !p) continue; /* the slip, or its rim top or bottom (letters stand upright, so their edges can reach the rim), in this light */ const paper = near(p, u) || near(p, u.map((v, k) => v * RIM[k] / SLIP[k])) || near(p, u.map((v, k) => v * DK[k] / SLIP[k])) || near(p, u.map((v, k) => v * SHEEN[k] / SLIP[k])); if (!paper) continue; px.push(x, y, `rgb(${Math.round(p[0] * ink[0] / SLIP[0])},${Math.round(p[1] * ink[1] / SLIP[1])},${Math.round(p[2] * ink[2] / SLIP[2])})`); }
             put(c, ox, oy, z, P, px);
         }
     } });
