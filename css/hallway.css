@@ -140,7 +140,7 @@ html.hallway-instant #hallway-stage { transition: none; }
     padding: 3px 9px;
     color: #15110c;
     background: #f4c77b;
-    font-family: "Volter", "Goldfish", sans-serif;
+    font-family: "Volter Goldfish", "Pixelify Sans", monospace;      /* the face's real name (10 Nov scan, live 5) */
     font-size: 0.625rem;
     pointer-events: none;
 }
@@ -167,7 +167,7 @@ html.hallway-instant #hallway-stage { transition: none; }
         white-space: nowrap;
         color: #15110c;
         background: #d9a85a;
-        font-family: "Volter", "Goldfish", sans-serif;
+        font-family: "Volter Goldfish", "Pixelify Sans", monospace;      /* the face's real name (10 Nov scan, live 5) */
         font-size: 0.625rem;
         pointer-events: none;
     }

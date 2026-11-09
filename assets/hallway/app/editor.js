@@ -860,7 +860,7 @@ setInterval(() => {
     if (!map || document.hidden) return;
     const m = timeMode === "cycle" ? moodNow() : null, mark = m ? m.a + "|" + m.b : null, fading = !!m && (m.f > 0 || mark !== moodPainted); moodPainted = mark;
     if (fading || (tool === "walk" && walker && walker.drink)) paint();
-}, 250);
+}, 500);      /* twice a second: a step of the fade is too small to see, and it ran for half the cycle (10 Nov scan, live 9) */
 function drawLiveSign() {
     if (!live) return;
     if (live.ending && live.finalV && version === live.finalV) {
@@ -2328,6 +2328,8 @@ function walkPress(px, py) {
     if (openHeld) { openHeld = false; }
     if (walker && walker.busy) return;
     for (const f of liveClicks) { try { if (f(px, py)) return; } catch (err) { console.error(err); } }
+    /* the open lift: a click anywhere in its doorway walks you into the cabin, not only on its floor strip (10 Nov scan, live 11) */
+    { const q = liftAt(px, py); if (q && liftOpen(q)) { const S = stairLevels().list.find(L => L.stair && L.stair.lift === q); if (S) { const s0 = walkerStart(), path = graphFrom(s0.l, s0.x, s0.y, [S, q.x, q.y - 1]); if (path) { setDoors(q, true, 20000 + path.length * MS_PER_TILE); followRoute(path, s0.here, null); return; } } } }
     { const dd = doorAtPx(px, py); if (dd && dd.d.kind === "book" && onBook(dd.l, dd.d, px, py)) { bookDoor(dd.l, dd.d); return; } }
     const u = useUnder(px, py);
     if (u && u.p.k === "water") return;                     // it takes a double-click
@@ -3322,7 +3324,12 @@ function startWalk() {
     }
     cam.x = (x - y) * 16; cam.y = (x + y) * 8 - levelZ(l) - 60;
     /* on the site, the hallway opens on its statue (or its Christmas tree), wherever you come in */
-    if (window.HALLWAY_PLAY) { for (const lv of map.levels) { const st = (lv.props || []).find(p => p.k === "statue"); if (st) { const a = P(st.x + 1, st.y + 1, tileZ(lv, st.x, st.y) + 40); cam.x = a[0]; cam.y = a[1]; openHeld = true; break; } } }
+    /* at Christmas a little higher, so the giant tree's star is in view too (10 Nov scan, live 4); and where the screen is too small for the
+       statue and you both (a phone), between the two, or on you (live 3: your Habbo started off the screen) */
+    if (window.HALLWAY_PLAY) { for (const lv of map.levels) { const st = (lv.props || []).find(p => p.k === "statue"); if (st) { const a = P(st.x + 1, st.y + 1, tileZ(lv, st.x, st.y) + 40 + (window.hallwayXmas ? 150 : 0)); cam.x = a[0]; cam.y = a[1]; openHeld = true;
+        const you = P(x + .5, y + .5, nodeZ(l, x, y) + 40), hw = canvas.width / zoom / 2, hh = canvas.height / zoom / 2, fits = (cx, cy) => Math.abs(you[0] - cx) < hw * .8 && Math.abs(you[1] - cy) < hh * .8;
+        if (!fits(cam.x, cam.y)) { const mx = (you[0] + cam.x) / 2, my = (you[1] + cam.y) / 2; if (fits(mx, my)) { cam.x = mx; cam.y = my; } else { cam.x = you[0]; cam.y = you[1]; } }
+        break; } } }
     clampCam();
     paint();
 }
@@ -3540,12 +3547,13 @@ function drawWalker() {
     if (!img.complete || !img.naturalWidth) return;
     const p = P(walker.x + .5, walker.y + .5, walker.z), feetX = Math.round(p[0]), feetY = Math.round(p[1]), x0 = feetX - 16, y0 = feetY - 50;
     avCtx.clearRect(0, 0, 33, 56);
+    /* a soft pixel shadow under the feet, on the floor: in the figure's own picture, so what hides the feet hides it too (10 Nov scan, live 7: it
+       sat on the face of a wall in front) */
+    if (!walker.st && !walker.seat) { avCtx.fillStyle = "rgba(0,0,0,.28)"; avCtx.fillRect(8, 49, 16, 2); avCtx.fillRect(11, 48, 10, 4); }
     if (window.HallwayCarry && (held || dr) && nameNow.includes("-crr-") || (window.HallwayCarry && dr)) HallwayCarry.draw(avCtx, img, nameNow, walker.dir, avatarImg); else avCtx.drawImage(img, 0, 0);
     cutInFront(avCtx, x0, y0);
     avatarTint(avCtx);
     const ox = Math.round(canvas.width / 2 - cam.x * zoom), oy = Math.round(canvas.height / 2 - cam.y * zoom);
-    /* a soft pixel shadow under the feet, on the floor */
-    if (!walker.st && !walker.seat) { ctx.fillStyle = "rgba(0,0,0,.28)"; ctx.fillRect(ox + (feetX - 8) * zoom, oy + (feetY - 1) * zoom, 16 * zoom, 2 * zoom); ctx.fillRect(ox + (feetX - 5) * zoom, oy + (feetY - 2) * zoom, 10 * zoom, 4 * zoom); }
     ctx.imageSmoothingEnabled = false;
     ctx.drawImage(avCanvas, ox + x0 * zoom, oy + y0 * zoom, 33 * zoom, 56 * zoom);
 }

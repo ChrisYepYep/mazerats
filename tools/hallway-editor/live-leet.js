@@ -114,6 +114,9 @@
                 const rim = at(x, cc[0] - 1); if (!rim || ![0, 1, 2].every(k => Math.abs(best.p[k] / SLIP[k] - rim[k] / RIM[k]) < .07)) continue;
                 usual.set(x, best.p); shown++; }
             if (shown < s.cols.size * .3) continue;                                // the poster isn't there to be seen
+            /* a column at the slip's very end can fail the test above (its rim is the frame's shade, not the paper's), and its ink was dropped: the
+               F of FRI lost its stem (10 Nov scan, live 2). Such a column takes the colour of the nearest one that passed, two columns away at most */
+            for (const x of s.cols.keys()) if (!usual.has(x)) for (let d = 1; d <= 2; d++) { const n = usual.get(x + d) || usual.get(x - d); if (n) { usual.set(x, n); break; } }
             /* the narrow stand: two bold lines in dark grey (9 Nov 2026, his) */
             const tiny = s.x1 - s.x0 < 30, ink = tiny ? DARK : INK;
             for (const [x, y] of (tiny ? SF.onSlipBold(s, text) : SF.onSlip(s, ln))) { const u = usual.get(x), p = at(x, y); if (!u || !p) continue; /* the slip, or its rim top or bottom (letters stand upright, so their edges can reach the rim), in this light */ const paper = near(p, u) || near(p, u.map((v, k) => v * RIM[k] / SLIP[k])) || near(p, u.map((v, k) => v * DK[k] / SLIP[k])) || near(p, u.map((v, k) => v * SHEEN[k] / SLIP[k])); if (!paper) continue; px.push(x, y, `rgb(${Math.round(p[0] * ink[0] / SLIP[0])},${Math.round(p[1] * ink[1] / SLIP[1])},${Math.round(p[2] * ink[2] / SLIP[2])})`); }

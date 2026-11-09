@@ -82,7 +82,7 @@
         const frame = document.createElement("div"); frame.className = "mr-frame";
         const form = document.createElement("form"); form.autocomplete = "off";
         const row = document.createElement("div"); row.className = "row";
-        const input = document.createElement("input"); input.id = "playName"; input.type = "text"; input.maxLength = 32; input.placeholder = "Habbo Origins Username"; input.setAttribute("aria-label", "Habbo Origins Username"); input.spellcheck = false;
+        const input = document.createElement("input"); input.id = "playName"; input.type = "text"; input.maxLength = 32; input.placeholder = "Habbo Origins Username"; if (matchMedia("(pointer: coarse)").matches) input.placeholder = "Origins username"; /* fits a phone's box (10 Nov scan, live 16) */ input.setAttribute("aria-label", "Habbo Origins Username"); input.spellcheck = false;
         const sel = document.createElement("select"); sel.setAttribute("aria-label", "Origins hotel"); sel.title = "Origins hotel"; for (const h of HOTELS) { const o = document.createElement("option"); o.value = o.textContent = h; sel.appendChild(o); }
         const go = document.createElement("button"); go.type = "submit"; go.className = "mr-btn"; go.textContent = "Go";
         row.append(input, sel, go);
@@ -140,8 +140,8 @@
            a wooden card in the top left, with the logo text at the top of it ... clear, and maze rats hallway themed") */
         bar.className = "hw-card";
         { const mark = document.createElement("img"); mark.className = "hw-card-logo"; mark.src = "/assets/img/hallway-logo-176.png"; mark.srcset = "/assets/img/hallway-logo-176.png 1x, /assets/img/hallway-logo-176@2x.png 2x"; mark.width = 176; mark.height = 111; mark.alt = "Maze Rats Hallway"; mark.addEventListener("error", () => mark.remove()); bar.appendChild(mark); }
-        let into = bar; const group = (name, label) => { const r = document.createElement("div"); r.className = "play-row"; if (label) { const l = document.createElement("span"); l.className = "play-label"; l.textContent = label; r.appendChild(l); } const g = document.createElement("span"); g.className = "play-group"; g.setAttribute("role", "group"); g.setAttribute("aria-label", name); r.appendChild(g); bar.appendChild(r); into = g; return g; };
-        const add = (label, title, fn) => { const b = document.createElement("button"); b.type = "button"; b.className = "mr-btn"; b.textContent = label; b.title = title; b.setAttribute("aria-label", title); b.addEventListener("click", fn); into.appendChild(b); return b; };
+        let into = bar; const group = (name, label) => { const r = document.createElement("div"); r.className = "play-row"; r.dataset.row = name; if (label) { const l = document.createElement("span"); l.className = "play-label"; l.textContent = label; r.appendChild(l); } const g = document.createElement("span"); g.className = "play-group"; g.setAttribute("role", "group"); g.setAttribute("aria-label", name); r.appendChild(g); bar.appendChild(r); into = g; return g; };
+        const add = (label, title, fn) => { const b = document.createElement("button"); b.type = "button"; b.className = "mr-btn"; b.textContent = label; b.title = title; if (!label || label.length < 2) b.setAttribute("aria-label", title); /* the words on it are its name; only icon buttons need one (10 Nov scan, live 14) */ b.addEventListener("click", fn); into.appendChild(b); return b; };
         const click = id => { const e = document.getElementById(id); if (e) e.click(); };
         group("Leave"); add("Leave the Hallway", "Back to the archive", () => window.hallwayTell("leave")).classList.add("play-wide");
         group("View", "View"); add("-", "Zoom out", () => click("zoomOut")); add("+", "Zoom in", () => click("zoomIn"));
@@ -197,7 +197,7 @@
         const extra = [];
         window.HallwayBar = { menuItem(label, title, fn) { extra.push({ label, title, fn }); } };
         const item = (menu, name, title, fn) => { const b = document.createElement("button"); b.type = "button"; b.setAttribute("role", "menuitem"); b.textContent = name; if (title) b.title = title; b.addEventListener("click", fn); menu.appendChild(b); };
-        const head = (menu, name) => { const h = document.createElement("div"); h.className = "play-menu-head"; h.textContent = name; menu.appendChild(h); };
+        const head = (menu, name) => { const h = document.createElement("div"); h.className = "play-menu-head"; h.setAttribute("role", "presentation"); h.textContent = name; menu.appendChild(h); };
         const sep = menu => { const h = document.createElement("div"); h.className = "play-menu-sep"; h.setAttribute("role", "separator"); menu.appendChild(h); };
         /* the camera following you, in the card itself, not inside Menu (9 Nov 2026, his) */
         group("Camera", "Camera");
@@ -215,10 +215,17 @@
             item(menu, "Your Habbo", "Choose your Habbo", () => { done(); picker(); });
             if (extra.length) { sep(menu); for (const x of extra) item(menu, x.label, x.title, () => { done(); x.fn(); }); }
         });
+        /* On a phone the card folds to its mark, Menu and More: the rest covered half the screen (10 Nov scan, live 3). More opens it out, Less folds it */
+        const narrow = matchMedia("(max-width: 700px), (max-height: 520px)"), fold = add("More", "Show the rest of the card", () => setFold(!bar.classList.contains("is-folded")));
+        fold.classList.add("play-fold");
+        const setFold = on => { bar.classList.toggle("is-folded", on); fold.textContent = on ? "More" : "Less"; fold.title = on ? "Show the rest of the card" : "Fold the card away"; fold.setAttribute("aria-expanded", String(!on)); };
+        setFold(narrow.matches); narrow.addEventListener("change", () => setFold(narrow.matches));
         document.addEventListener("click", e => { if (!menus.some(m => m.contains(e.target))) shutMenus(); });
+        /* Escape shuts a drawer however it was opened, and gives the focus back to its button (10 Nov scan, live 10) */
+        document.addEventListener("keydown", e => { if (e.key !== "Escape") return; const open = menus.find(m => m.classList.contains("is-open")); if (!open) return; e.preventDefault(); shutMenus(); if (open.btn) open.btn.focus(); });
         let shownOn = null; const paint = () => { const on = wanted(); if (on === shownOn) return; shownOn = on; mute.textContent = on ? "Mute" : "Unmute"; mute.classList.toggle("is-on", !on); };
         setInterval(paint, 500); paint();
-        document.body.append(bar);
+        document.body.prepend(bar);      /* first in the Tab order, before the map (10 Nov scan, live 21) */
         /* Cheats, typed anywhere on the map (9 Nov 2026, his): "fast" walks five times quicker, "travel" makes a click jump you to the tile. Typing the
            word again turns it off. Nothing shows but a plate to the right of the card, one line per cheat, in the card's own button look. */
         const CHEATS = { fast: ["Fast Walking", on => { cheatApi().speed = on ? 5 : 1; }], travel: ["Fast Travel", on => { cheatApi().travel = on; }] };

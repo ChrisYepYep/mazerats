@@ -81,7 +81,7 @@
     function sunAmount() { const m = LIVE.mood(); if (!m) return 0; return (m.a === "day" ? 1 - m.f : 0) + (m.b === "day" ? m.f : 0); }
     function dustWindows() {
         const l = LIVE.floor; if (!l || !l.wallItems || !LIVE.walker) return []; const v = LIVE.view(), out = [];
-        for (const q of l.wallItems) { if (q.k !== "i_window") continue; const t = q.axis === "y" ? [q.line, Math.floor(q.at)] : [Math.floor(q.at), q.line], z = LIVE.nodeZ(l, t[0], t[1]) || 0, a = q.axis === "y" ? LIVE.mapPoint(q.line, q.at, z) : LIVE.mapPoint(q.at, q.line, z); if (inView(v, a, 260)) out.push({ q, z }); }
+        for (const q of l.wallItems) { if (q.k !== "i_window") continue; const t = q.axis === "y" ? [q.line, Math.floor(q.at)] : [Math.floor(q.at), q.line], z = LIVE.nodeZ(l, t[0], t[1]) || 0, a = q.axis === "y" ? LIVE.mapPoint(q.line, q.at, z) : LIVE.mapPoint(q.at, q.line, z); if (inView(v, a, 160)) out.push({ q, z }); }      /* the motes reach about 100px from the window: 260 kept the map repainting with none on screen (10 Nov scan, live 8) */
         return out;
     }
     function drawDust(c, ox, oy, now) {

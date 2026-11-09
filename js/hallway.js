@@ -85,7 +85,7 @@
         for (const l of map.levels) for (const p of l.props || []) if (p.k === "statue") at = { x: p.x + 1, y: p.y + 1, z: l.k * STOREY + 45 };      // on 2 x 2 tiles, about 110px tall: its middle, not its feet
         if (!at && map.entrance) { const e = map.entrance, l = map.levels.find(q => q.id === e.level); at = { x: e.axis === "x" ? e.at + 4 : e.line, y: e.axis === "x" ? e.line : e.at + 4, z: ((l && l.k) || 0) * STOREY + 45 }; }
         if (!at) return;
-        const x0 = Math.round((at.x - at.y) * 16 - PIC_W / 2), y0 = Math.round((at.x + at.y) * 8 - at.z - PIC_H / 2);
+        const x0 = Math.round((at.x - at.y) * 16 - PIC_W / 2), y0 = Math.round((at.x + at.y) * 8 - at.z - PIC_H * .3);      // the statue a third of the way down, clear above the note (10 Nov scan, live 12: the note covered it)
         const c = document.createElement("canvas"); c.className = "hallway-closed-picture"; c.width = PIC_W; c.height = PIC_H; c.setAttribute("aria-hidden", "true");
         const g = c.getContext("2d"), jobs = [];
         for (let ty = Math.floor(y0 / TILE); ty <= Math.floor((y0 + PIC_H) / TILE); ty++) for (let tx = Math.floor(x0 / TILE); tx <= Math.floor((x0 + PIC_W) / TILE); tx++) {
@@ -129,6 +129,8 @@
         /* in whole 8px blocks, never half a block, as the site's bar */
         const fillTo = pct => { const inner = bar.clientWidth - 4 || 232; fill.style.width = (pct >= 100 ? inner : Math.min(inner, Math.floor(inner * pct / 100 / 8) * 8)) + "px"; };
         box.append(mark, words, bar); load.appendChild(box); stage.appendChild(load);
+        /* arriving straight at /hallway, the site's own loader stood over this one the whole time and a second after (10 Nov scan, live 1): it goes */
+        { const site = document.getElementById("site-loader"); if (site) { site.style.transition = "opacity .25s"; site.style.opacity = "0"; setTimeout(() => { site.style.display = "none"; }, 260); } }
         /* It fills as the page says things have arrived, and still creeps on a slow line rather than looking stuck.
            The page can't say anything until its own scripts are in, which is 20 seconds on a slow phone line, so until
            then the bar counts what has arrived in the frame itself: the same count over the same 42 the page uses once

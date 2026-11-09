@@ -40,7 +40,7 @@ html, body { background: #000; overflow: hidden; }
 #playBar .play-group > .mr-btn:only-child { border-radius: 4px; }
 #playBar .play-icon { display: inline-flex; align-items: center; justify-content: center; min-width: 26px; }
 #playBar .play-icon svg { display: block; }
-.play-menu-head { margin: 8px 0 3px; padding: 0 7px; color: #4a3312; font: 400 .55rem/1.4 'Silkscreen', 'Volter Goldfish', monospace; letter-spacing: .14em; text-transform: uppercase; }
+.play-menu-head { margin: 8px 0 3px; padding: 0 7px; color: #4a3312; font: 400 9px/14px 'Volter Goldfish', monospace; letter-spacing: 1px; text-transform: uppercase; }      /* whole pixels: Silkscreen isn't loaded here, and the fallback at 8.8px blurred (10 Nov scan, live 6) */
 .play-menu-head:first-child { margin-top: 0; }
 .play-menu-sep { height: 1px; margin: 6px 7px; background: rgba(26, 15, 4, .35); box-shadow: 0 1px 0 rgba(255, 245, 225, .4); }
 #playBar button { pointer-events: auto; }
@@ -237,9 +237,24 @@ body.hw-screensaver .hw-clue { visibility: hidden; }
 .hw-arrow-veil { position: absolute; inset: 0; z-index: 40; background: #000; opacity: 0; pointer-events: none; }
 
 /* the cheat plate to the right of the card (9 Nov 2026, his): one line per cheat that's on, in the card's own button look */
-#playCheats { position: fixed; top: 10px; z-index: 30; display: flex; flex-direction: column; align-items: flex-start; gap: 3px; }
+#playCheats { position: fixed; top: 10px; z-index: 30; display: flex; flex-direction: column; align-items: stretch; gap: 3px; }
 #playCheats[hidden] { display: none; }
 #playCheats .mr-btn { height: 22px; padding: 0 8px; color: #f3dcaa; background: linear-gradient(#3e2b17, #24170b); border: 1px solid #0b0603; border-radius: 4px;
     box-shadow: inset 0 1px 0 rgba(229, 180, 92, .35), 0 3px 8px rgba(0, 0, 0, .5); font: 400 9px/20px 'Volter Goldfish', monospace; text-shadow: 0 1px 0 #000; white-space: nowrap; cursor: url('art/rooms/pointer.png') 2 0, pointer; }
 #playCheats .mr-btn:hover, #playCheats .mr-btn:focus-visible { color: #fff3d0; background: linear-gradient(#4c3520, #2c1c0e); outline: none; }
 body.hw-screensaver #playCheats { opacity: 0; pointer-events: none; transition: opacity .6s; }
+
+/* the card folded on a phone (10 Nov scan, live 3): its mark smaller, and only Menu and More; More is only offered where it folds */
+#playBar .play-fold { display: none; }
+@media (max-width: 700px), (max-height: 520px) {
+    #playBar .play-fold { display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto; min-width: 52px; }
+    #playBar.is-folded .play-row:not([data-row="More"]) { display: none; }
+    #playBar.is-folded { width: 172px; padding: 16px 16px 26px; gap: 5px; }
+    #playBar.is-folded .hw-card-logo { width: 132px; height: auto; margin: -4px auto 0; }
+    /* the drawer rows a finger can hit (live 15) */
+    .play-menu button { min-height: 40px; }
+}
+/* the name box on a phone (10 Nov scan, live 16): Go matches the box beside it, and the close has a finger-sized target */
+@media (pointer: coarse) { #playPicker .mr-close { min-width: 38px; min-height: 38px; } #playPicker form button { font-size: 16px; } }
+/* the map shows where the keyboard is when it has it (10 Nov scan, live 21) */
+#view:focus-visible { outline: 2px solid rgba(217, 168, 78, .7); outline-offset: -2px; }

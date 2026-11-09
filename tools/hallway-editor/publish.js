@@ -121,7 +121,7 @@ function finish(text, tiles, app, liftNew) {
         .replace(/<script src="hallway-audio\.js"><\/script>/, `<script src="play.js?v=${version}"></script>\n<script src="hallway-audio.js"></script>`)
         .replace(/<script src="editor\.js"><\/script>/, `<script src="editor.js?v=${version}"></script>`);
     if (!/play\.js/.test(html) || !/play\.css/.test(html)) throw new Error("Couldn't make play.html: index.html has changed");
-    fs.writeFileSync(path.join(app, "play.html"), html);
+    fs.writeFileSync(path.join(app, "play.html"), html.replace(/<title>[^<]*<\/title>/, "<title>The Hallway · Maze Rats</title>"));      // the visitors' page, not the editor (10 Nov scan, live 18)
     /* And the editor for the Warren: the same page, with the renderer running in the browser */
     require("./make-renderer.js").make(path.join(app, "renderer-worker.js"));
     let edit = fs.readFileSync(path.join(HERE, "index.html"), "utf8");
