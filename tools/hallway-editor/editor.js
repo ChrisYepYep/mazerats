@@ -2390,11 +2390,13 @@ canvas.addEventListener("pointerup", e => {
                 if (!hasFloor(level, x, y)) continue;
                 let stuck = false; for (let a = x; a < x + 2 && !stuck; a++) for (let b = y; b < y + 2 && !stuck; b++) if (heightLocked(level, a, b)) stuck = true;
                 if (stuck && heightBrush) { locked = true; continue; }
-                const k = cellKey(x, y), now = (level.floorLift && level.floorLift[k]) || 0; if (now === heightBrush) continue;
-                (level.floorLift = level.floorLift || {})[k] = heightBrush; changedAny = true;
+                /* the height shown is where the floor ends up, as the preview draws it, not a lift on top of a sunken or raised part
+                   (9 Nov 2026, his: "+40 px" on a -64 part came out at -24, and then said it was already raised that much) */
+                const k = cellKey(x, y), rise = (level.rise && level.rise[k]) || 0, now = (level.floorLift && level.floorLift[k]) || 0, want = heightBrush - rise; if (now === want) continue;
+                (level.floorLift = level.floorLift || {})[k] = want; changedAny = true;
             }
             tidyHeights(level);
-            if (!changedAny) { undoStack.pop(); flash(locked ? "Stairs and the lift have to stay level with the floor round them." : "That floor's already raised that much."); paint(); return; }
+            if (!changedAny) { undoStack.pop(); flash(locked ? "Stairs and the lift have to stay level with the floor round them." : "That floor's already at that height."); paint(); return; }
             if (locked) flash("Left the floor round the stairs and lift as it was, so they still meet it.");
             changed(); return;
         }
