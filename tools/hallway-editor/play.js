@@ -73,7 +73,7 @@
             return await lookUp(d.habbo.name, d.habbo.hotel || "COM");
         } catch (e) { return null; }
     }
-    function picker(onDone) {
+    function picker(onDone, pre) {
         if (document.getElementById("playPicker")) return;
         const opener = document.activeElement;
         const back = document.createElement("div"); back.id = "playPicker"; back.className = "mr-overlay"; back.setAttribute("role", "dialog"); back.setAttribute("aria-label", "Choose your Habbo");
@@ -88,7 +88,8 @@
         row.append(input, sel, go);
         const say = document.createElement("p"); say.className = "say"; say.setAttribute("role", "status");
         const guest = document.createElement("button"); guest.type = "button"; guest.className = "mr-btn guest"; guest.textContent = "Walk in as a guest";
-        const was = remembered(); if (was) { input.value = was.name || ""; if (HOTELS.includes(was.hotel)) sel.value = was.hotel; }
+        const was = pre || remembered(); if (was) { input.value = was.name || ""; if (HOTELS.includes(was.hotel)) sel.value = was.hotel; }
+        if (pre) say.textContent = "Signed in as " + pre.name + ". Go, or pick someone else.";
         /* under it all, set apart below a rule and quieter than the picker: what the Hallway is, what the username is for, and the fan-site line (9 Nov 2026, his words) */
         const notes = document.createElement("div"); notes.className = "notes";
         for (const [t, cls] of [["Maze Rats Hallway is a single player experience, any Habbos you see around the hallways are non-playable characters designed for ambient game mechanics.", ""], ["Your Habbo Origins username is only used to show your Habbo's look, and is only remembered on this device.", ""], ["Maze Rats is independent and not affiliated with, sponsored, supported, or endorsed by Sulake Oy or its affiliates. Any Habbo trademarks or intellectual property used here are done so in accordance with the Habbo Fan Site Policy.", "legal"]]) { const p = document.createElement("p"); p.textContent = t; if (cls) p.className = cls; notes.appendChild(p); }
@@ -118,8 +119,9 @@
         if (pickedNow) { if (mine && was) try { localStorage.setItem(KEY, JSON.stringify({ ...was, overLinked: mine.name })); } catch (e) { /* private mode */ } return; }
         if (mine) {
             /* Your linked Habbo, unless you chose someone else while signed in as it */
-            if (was && was.overLinked === mine.name) { wear(was.figure || GUEST); return; }
-            wear(mine.figure); return;
+            /* and the splash still shows, your Habbo filled in, so you see what the Hallway is before walking in (9 Nov 2026, his) */
+            if (was && was.overLinked === mine.name) { wear(was.figure || GUEST); picker(null, was.guest ? null : was); return; }
+            wear(mine.figure); picker(null, mine); return;
         }
         if (was && was.figure) { wear(was.figure); return; } if (was && was.guest) return;
         picker();

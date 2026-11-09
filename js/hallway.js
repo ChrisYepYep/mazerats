@@ -65,6 +65,8 @@
         const body = document.createElement("div"); body.className = "hallway-note-body";
         const p = document.createElement("p"); p.textContent = words; body.appendChild(p);
         const b = document.createElement("button"); b.type = "button"; b.className = "guess-btn guess-btn--lead"; b.textContent = "Back to the archive"; b.addEventListener("click", () => close()); body.appendChild(b);
+        /* the fan-site statement, as on the Hallway's own splash, under a rule and quieter than the note (9 Nov 2026, his) */
+        const legal = document.createElement("p"); legal.className = "hallway-note-legal"; legal.textContent = "Maze Rats is independent and not affiliated with, sponsored, supported, or endorsed by Sulake Oy or its affiliates. Any Habbo trademarks or intellectual property used here are done so in accordance with the Habbo Fan Site Policy."; body.appendChild(legal);
         frame.appendChild(body); n.append(bar, frame);
         return n;
     }
@@ -115,12 +117,16 @@
     }
 
     function startWalk(state) {
-        /* Fallin' Furni's loader: a box, its words, a bar that fills */
+        /* The site's own loading screen, as the archive opens with (9 Nov 2026, his: "more styled to maze rats website"): the MAZE RATS
+           wordmark over the maze, the label in Volter, and the bar that fills in whole blocks (home.html's .site-loader, its classes reused) */
         const load = document.createElement("div"); load.className = "hallway-loader";
-        const box = document.createElement("div"); box.className = "hallway-loader-box";
-        const words = document.createElement("p"); words.className = "hallway-loader-text"; words.textContent = "Loading the hallway";
-        const bar = document.createElement("div"); bar.className = "hallway-loader-bar"; const fill = document.createElement("i"); bar.appendChild(fill);
-        box.append(words, bar); load.appendChild(box); stage.appendChild(load);
+        const box = document.createElement("div"); box.className = "site-loader-inner";
+        const mark = document.createElement("p"); mark.className = "site-loader-wordmark"; mark.setAttribute("aria-hidden", "true"); for (const t of ["MAZE", "RATS"]) { const sp = document.createElement("span"); sp.textContent = t; mark.appendChild(sp); }
+        const words = document.createElement("p"); words.className = "site-loader-label"; words.setAttribute("role", "status"); words.textContent = "LOADING THE HALLWAY";
+        const bar = document.createElement("div"); bar.className = "site-loader-track"; const fill = document.createElement("div"); fill.className = "site-loader-fill"; bar.appendChild(fill);
+        /* in whole 8px blocks, never half a block, as the site's bar */
+        const fillTo = pct => { const inner = bar.clientWidth - 4 || 232; fill.style.width = (pct >= 100 ? inner : Math.min(inner, Math.floor(inner * pct / 100 / 8) * 8)) + "px"; };
+        box.append(mark, words, bar); load.appendChild(box); stage.appendChild(load);
         /* It fills as the page says things have arrived, and still creeps on a slow line rather than looking stuck.
            The page can't say anything until its own scripts are in, which is 20 seconds on a slow phone line, so until
            then the bar counts what has arrived in the frame itself: the same count over the same 42 the page uses once
@@ -128,7 +134,7 @@
         const f = frame = document.createElement("iframe");
         let shown = 0, seen = 0; const creep = setInterval(() => {
             try { const n = f.contentWindow.performance.getEntriesByType("resource").length; if (n > seen) { seen = n; f._told = Math.max(f._told || 0, Math.min(.95, n / 42)); f._alive(); } } catch (e) { /* not there yet */ }
-            const aim = Math.max(f._told ? f._told * 100 : 0, 24); shown += (aim - shown) * .12; fill.style.width = shown + "%";
+            const aim = Math.max(f._told ? f._told * 100 : 0, 24); shown += (aim - shown) * .12; fillTo(shown);
         }, 120);
         /* not open to everyone yet: a DEV MODE pill in the site's top bar, not a note over the hallway (8 Nov, his) */
         if (state !== "live" && !document.querySelector(".hallway-dev-pill")) {
@@ -149,7 +155,7 @@
         const trouble = () => { clearInterval(creep); clearTimeout(f._late); clearTimeout(f._cap); if (frame !== f || f.classList.contains("is-ready")) return; load.remove(); f.remove(); closedScreen("The hallway wouldn't open", "Something didn't load. Try again in a little while."); };
         f._alive = () => { clearTimeout(f._late); f._late = setTimeout(trouble, STALL); };
         f._late = setTimeout(trouble, STALL); f._cap = setTimeout(trouble, CAP); f._trouble = trouble;
-        f._ready = () => { clearInterval(creep); clearTimeout(f._late); clearTimeout(f._cap); fill.style.width = "100%"; f.classList.add("is-ready"); setTimeout(() => load.remove(), 450); try { f.focus(); f.contentWindow.focus(); } catch (e) { /* as above */ } };
+        f._ready = () => { clearInterval(creep); clearTimeout(f._late); clearTimeout(f._cap); fillTo(100); f.classList.add("is-ready"); setTimeout(() => load.remove(), 450); try { f.focus(); f.contentWindow.focus(); } catch (e) { /* as above */ } };
     }
 
     /* open: from the menu tab. arrived: already at /hallway, nothing to slide. */
