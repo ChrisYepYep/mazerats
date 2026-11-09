@@ -195,17 +195,28 @@ function wallStands(l, X, Y, axis) {
     return false;
 }
 function wallAt(px, py, l, full) {
-    for (const dz of heightsOf(l)) for (let h = 0; h <= WALL; h += 4) {
-        const [fx, fy] = pxToTile(px, py + h, levelZ(l) + dz * HEIGHT), X = Math.floor(fx), Y = Math.floor(fy);
-        /* a point h up a wall: walk back to the wall's floor line */
-        if (hasFloor(l, X, Y) && heightAt(l, X, Y) === dz) {
-            const backOpen = !hasFloor(l, X, Y - 1) && fy - Y < .5 && wallStands(l, X, Y - 1, "x"), leftOpen = !hasFloor(l, X - 1, Y) && fx - X < .5 && wallStands(l, X - 1, Y, "y");
-            if (backOpen && (full || (!isNone(l, "x", Y, X) && (h <= HALF_WALL || !isHalf(l, "x", Y, X))))) return { axis: "x", at: X, line: Y };
-            if (leftOpen && (full || (!isNone(l, "y", X, Y) && (h <= HALF_WALL || !isHalf(l, "y", X, Y))))) return { axis: "y", at: Y + 1, line: X };
-            if (fy - Y < .5 && isDrop(l, "x", Y, X) && h <= retaining(l, "x", Y, X).H && (full || !isNone(l, "x", Y, X))) return { axis: "x", at: X, line: Y, drop: true };
-            if (fx - X < .5 && isDrop(l, "y", X, Y) && h <= retaining(l, "y", X, Y).H && (full || !isNone(l, "y", X, Y))) return { axis: "y", at: Y + 1, line: X, drop: true };
+    /* walking down from the point, the first wall met is the furthest back: where walls step forward a cell at a time, a point on a nearer
+       wall's face also lies over the floor in front of the wall behind it. The nearest wall that reaches the point is the one you see, so
+       keep looking and take the last found (9 Nov 2026, his: garlands couldn't be laid on short walls; the click went to the wall behind) */
+    for (const dz of heightsOf(l)) { let found = null;
+        for (let h = 0; h <= WALL; h += 4) {
+            const [fx, fy] = pxToTile(px, py + h, levelZ(l) + dz * HEIGHT), X = Math.floor(fx), Y = Math.floor(fy);
+            /* a point h up a wall: walk back to the wall's floor line */
+            /* a tile already answered keeps its first answer, as before (its corner picks the wall by where the point first crosses it) */
+            if (found && found.tile === X + "," + Y) continue;
+            const was = found;
+            if (hasFloor(l, X, Y) && heightAt(l, X, Y) === dz) {
+                const backOpen = !hasFloor(l, X, Y - 1) && fy - Y < .5 && wallStands(l, X, Y - 1, "x"), leftOpen = !hasFloor(l, X - 1, Y) && fx - X < .5 && wallStands(l, X - 1, Y, "y");
+                if (backOpen && (full || (!isNone(l, "x", Y, X) && (h <= HALF_WALL || !isHalf(l, "x", Y, X))))) found = { axis: "x", at: X, line: Y, tile: X + "," + Y };
+                else if (leftOpen && (full || (!isNone(l, "y", X, Y) && (h <= HALF_WALL || !isHalf(l, "y", X, Y))))) found = { axis: "y", at: Y + 1, line: X, tile: X + "," + Y };
+                else if (fy - Y < .5 && isDrop(l, "x", Y, X) && h <= retaining(l, "x", Y, X).H && (full || !isNone(l, "x", Y, X))) found = { axis: "x", at: X, line: Y, drop: true, tile: X + "," + Y };
+                else if (fx - X < .5 && isDrop(l, "y", X, Y) && h <= retaining(l, "y", X, Y).H && (full || !isNone(l, "y", X, Y))) found = { axis: "y", at: Y + 1, line: X, drop: true, tile: X + "," + Y };
+            }
+            /* only a wall in front takes over: another line nearer the viewer, or the other way round where walls step; further along the same wall, the first tile stays */
+            if (was && found !== was) { const ax = found.axis, ln = found.line, X2 = ax === "x" ? found.at : ln, Y2 = ax === "x" ? ln : found.at - 1, drawn = !isNone(l, ax, ln, ax === "x" ? X2 : Y2) && (h <= HALF_WALL || !isHalf(l, ax, ln, ax === "x" ? X2 : Y2));
+                if ((ax === was.axis && ln <= was.line) || !drawn) found = was; }   // and a wall not drawn (none, or a half wall below the point) hides nothing
         }
-    }
+        if (found) { delete found.tile; return found; } }
     return null;
 }
 /* the flights that go through a top-left wall: "side" straight on, "sideturn" turning at a landing. A "sideturn" is a "turn" mirrored, x for y. */
