@@ -125,7 +125,11 @@
     const saveCarryPts = () => { try { if (carrying) localStorage.setItem(CARRY + "-pts", String(carryPts)); else localStorage.removeItem(CARRY + "-pts"); } catch (e) { /* this visit */ } };
 
     LIVE.onClick((px, py) => {
-        const t = showing(); if (t && t !== preview && t.thing) { const q = where(t), hw = (t.thing.w >> 1) + 3; if (Math.abs(px - q.X) <= hw && py <= q.Y + 5 && py >= q.Y - t.thing.h - 4) { const w = LIVE.walker, from = reachFrom(t.spot).sort((a, b) => Math.hypot(a[0] - w.x, a[1] - w.y) - Math.hypot(b[0] - w.x, b[1] - w.y)); if (!w.walking && w.l === t.spot.l && from.some(([x, y]) => Math.round(w.x) === x && Math.round(w.y) === y)) { pick(); return true; } for (const [x, y] of from) if (LIVE.walkTo(t.spot.l, x, y, pick)) return true; } }
+        const t = showing(); if (t && t !== preview && t.thing) { const q = where(t), hw = (t.thing.w >> 1) + 3; if (Math.abs(px - q.X) <= hw && py <= q.Y + 5 && py >= q.Y - t.thing.h - 4) { const w = LIVE.walker, from = reachFrom(t.spot).sort((a, b) => Math.hypot(a[0] - w.x, a[1] - w.y) - Math.hypot(b[0] - w.x, b[1] - w.y)); if (!w.walking && w.l === t.spot.l && from.some(([x, y]) => Math.round(w.x) === x && Math.round(w.y) === y)) { pick(); return true; } for (const [x, y] of from) if (LIVE.walkTo(t.spot.l, x, y, pick)) return true;
+            /* boxed in by furniture: from a seat beside it, sitting down (9 Nov 2026, his) */
+            const api = LIVE.editorApi && LIVE.editorApi(), seats = api && api.lostSeatsBeside ? api.lostSeatsBeside(t.spot.l, t.spot.x, t.spot.y) : [];
+            if (w.seat && !w.walking && seats.some(([x, y]) => w.seat.l === t.spot.l && w.seat.x === x && w.seat.y === y)) { pick(); return true; }
+            for (const [x, y] of seats.sort((a, b) => Math.hypot(a[0] - w.x, a[1] - w.y) - Math.hypot(b[0] - w.x, b[1] - w.y))) if (LIVE.sitOn && LIVE.sitOn(t.spot.l, x, y, pick)) return true; } }
         /* hustle: walk up to him */
         if (onHustle(px, py)) { if (repliesBox || busy) return true; talked = false; if (byHustle()) { talk(); return true; } const s = hustleSeat(), w = LIVE.walker, near = nextTo(s).sort((a, b) => Math.hypot(a[0] - w.x, a[1] - w.y) - Math.hypot(b[0] - w.x, b[1] - w.y)); for (const [x, y] of near) if (LIVE.walkTo(s.l, x, y, () => talk())) return true; return true; }
         /* the desk: hand in what you're carrying; otherwise its book, your record */

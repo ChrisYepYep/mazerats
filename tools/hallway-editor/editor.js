@@ -1064,8 +1064,9 @@ window.HallwayLive = {
     view() { const hw = canvas.width / zoom / 2, hh = canvas.height / zoom / 2; return { x0: cam.x - hw, x1: cam.x + hw, y0: cam.y - hh, y1: cam.y + hh, w: canvas.width, h: canvas.height }; },
     camera(x, y) { cam.x = x; cam.y = y; clampCam(); }, get cam() { return { x: cam.x, y: cam.y }; }, holdCamera(on) { camHeld = on; if (!on) followNow(); }, setZoom: z => setZoom(z, canvas.width / 2, canvas.height / 2),
     realNight: () => realNight(), enterRoom(target, axis) { if (!walker || roomSession) return false; const me = walker; me.busy = true; me.pts = []; me.walking = false; roomSession = RoomView.enter($("stage"), { room: target.room, facts: target.facts, edge: axis === "x" ? "y" : "x", zoom: () => zoom, wheel: d => setZoom(zoom + (d < 0 ? 1 : -1)), onLeave: () => { roomSession.close(); roomSession = null; me.busy = false; paint(); } }); return true; },
-    editorApi: () => ({ lostSpotReachable: (l, x, y) => lostSpotReachable(l, x, y), snapshot, changed, setTool, paint, flash: t => flash(t), setFloor: l => setFloor(l), toPx: (cx, cy) => toPx(cx, cy), tileAt(cx, cy) { const [px, py] = toPx(cx, cy), u = floorUnder(px, py); return u ? { level: u[0].stair ? u[0].stair.low.id : u[0].id, x: u[1], y: u[2] } : null; }, get tool() { return tool; }, pickOnce(f) { pickNext = f || null; if (f) flash("Click the spot on the map. Esc cancels."); }, get level() { return level; } }),
+    editorApi: () => ({ lostSpotReachable: (l, x, y) => lostSpotReachable(l, x, y), lostSeatsBeside: (l, x, y) => lostSeatsBeside(l, x, y), snapshot, changed, setTool, paint, flash: t => flash(t), setFloor: l => setFloor(l), toPx: (cx, cy) => toPx(cx, cy), tileAt(cx, cy) { const [px, py] = toPx(cx, cy), u = floorUnder(px, py); return u ? { level: u[0].stair ? u[0].stair.low.id : u[0].id, x: u[1], y: u[2] } : null; }, get tool() { return tool; }, pickOnce(f) { pickNext = f || null; if (f) flash("Click the spot on the map. Esc cancels."); }, get level() { return level; } }),
     onClick(f) { liveClicks.add(f); return () => liveClicks.delete(f); }, cheats: () => cheats,
+    sitOn(l, x, y, then) { if (!walker || walker.busy) return false; const u = seatOnTile(l, x, y); return u ? !!sitOn(u, then) : false; },
     walkTo(l, x, y, then) { if (!walker || walker.busy) return false; const s = walkerStart(), path = graphFrom(s.l, s.x, s.y, [l, x, y]); if (!path) return false; followRoute(path, s.here, then || null); return true; },
     get graphLevels() { return stairLevels().list; },
     get busy() { return !!roomSession || !$("liftPanel").hidden || !!(walker && (walker.walking || walker.busy)) || !!document.querySelector(".hw-sheet:not([hidden]), #picker:not([hidden]), #playPicker:not([hidden]), .hw-clue:not([hidden])"); }
@@ -2671,8 +2672,28 @@ function reachAll() {
 function lostSpotReachable(l, x, y) {
     const reached = reachAll(), so = solid(l), hs = holes(l), sl = stairLevels().slots.get(l), free = (X, Y) => hasFloor(l, X, Y) && !so.has(X + "," + Y) && !hs.some(h => inRect(h, X, Y)) && !(sl && sl.has(X + "," + Y));
     if (free(x, y)) return reached.has(nodeKey(l, x, y));
-    return [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [-1, -1], [1, -1], [-1, 1]].some(([i, j]) => free(x + i, y + j) && reached.has(nodeKey(l, x + i, y + j)));
+    const AROUND = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [-1, -1], [1, -1], [-1, 1]];
+    if (AROUND.some(([i, j]) => free(x + i, y + j) && reached.has(nodeKey(l, x + i, y + j)))) return true;
+    /* or from a seat beside it you can sit on (9 Nov 2026, his: "if a user can sit on a chair next to the hidden spot, the item can be picked up from there") */
+    return AROUND.some(([i, j]) => seatReachable(l, x + i, y + j, reached, free));
 }
+/* a seat you can get into: from a reached tile beside it, or along a row of seats from one that is (sitOn steps seat to seat) */
+function seatReachable(l, X, Y, reached, free) {
+    if (!seatOnTile(l, X, Y)) return false;
+    const seen = new Set([X + "," + Y]), todo = [[X, Y]];
+    while (todo.length) {
+        const [a, b] = todo.pop();
+        for (const [i, j] of [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [-1, -1], [1, -1], [-1, 1]]) {
+            const p = a + i, q = b + j, k = p + "," + q; if (seen.has(k)) continue; seen.add(k);
+            if (free(p, q) && reached.has(nodeKey(l, p, q))) return true;
+            if (!i || !j) { if (seatOnTile(l, p, q)) todo.push([p, q]); }
+        }
+    }
+    return false;
+}
+/* the seats beside a Lost Property spot under furniture with no free tile beside it: live-lost.js sits you on one to pick it up */
+function lostSeatsBeside(l, x, y) { const reached = reachAll(), so = solid(l), hs = holes(l), sl = stairLevels().slots.get(l), free = (X, Y) => hasFloor(l, X, Y) && !so.has(X + "," + Y) && !hs.some(h => inRect(h, X, Y)) && !(sl && sl.has(X + "," + Y));
+    return [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [-1, -1], [1, -1], [-1, 1]].map(([i, j]) => [x + i, y + j]).filter(([X, Y]) => seatReachable(l, X, Y, reached, free)); }
 /* The camera. While it's following it eases toward the Habbo at a rate that doesn't depend on the
    frame rate, and if you've dragged it away it glides back the same way once you let go. */
 let camRunning = false, camLast = 0, camVel = [0, 0];
@@ -3133,15 +3154,15 @@ function followRoute(path, here, then) {
     if (!walker.walking && then) { const t = then; walker.then = null; t(); }
     followNow();
 }
-function sitOn(u) {
+function sitOn(u, then) {     // then: once seated (live-lost.js picks a thing up from a chair beside it)
     const face = seatFacing(u.p), d = STEP_OF(face), z = tileZ(u.l, u.x, u.y), s = walkerStart();
-    if (walker.seat && walker.seat.x === u.x && walker.seat.y === u.y && walker.seat.l === u.l) return;
+    if (walker.seat && walker.seat.x === u.x && walker.seat.y === u.y && walker.seat.l === u.l) { if (then) then(); return true; }
     /* the next seat along: straight across, no getting up and walking round */
     if (walker.seat && !walker.walking && walker.seat.l === u.l && Math.abs(walker.seat.x - u.x) <= 1 && Math.abs(walker.seat.y - u.y) <= 1) {
         walker.seat = null;
         walker.pts = [{ x: u.x, y: u.y, z: z + (SEAT_LIFT[u.p.k] || 7), l: u.l, st: null, seat: { x: u.x, y: u.y, l: u.l, dir: face, p: u.p } }];
-        walker.walking = true; walker.last = performance.now(); requestAnimationFrame(stepWalk);
-        return;
+        walker.walking = true; walker.then = then || null; walker.last = performance.now(); requestAnimationFrame(stepWalk);
+        return true;
     }
     /* come at it from the front if you can, else from either side, never over its back */
     const front = [u.x + d.dx, u.y + d.dy], sides = d.dx ? [[u.x, u.y - 1], [u.x, u.y + 1]] : [[u.x - 1, u.y], [u.x + 1, u.y]];
@@ -3154,16 +3175,17 @@ function sitOn(u) {
             const via = routeToOneOf(u.l, [[q[0] - 1, q[1]], [q[0] + 1, q[1]], [q[0], q[1] - 1], [q[0], q[1] + 1]], s.l, s.x, s.y); if (!via) continue;
             followRoute(via.path, s.here, () => {
                 walker.pts = [{ x: q[0], y: q[1], z: z + (SEAT_LIFT[u.p.k] || 7), l: u.l, st: null }, { x: u.x, y: u.y, z: z + (SEAT_LIFT[u.p.k] || 7), l: u.l, st: null, seat: { x: u.x, y: u.y, l: u.l, dir: face, p: u.p } }];
-                walker.walking = true; walker.last = performance.now(); requestAnimationFrame(stepWalk);
+                walker.walking = true; walker.then = then || null; walker.last = performance.now(); requestAnimationFrame(stepWalk);
             });
-            return;
+            return true;
         }
-        noWay("There's no way to that seat."); return;
+        if (!then) noWay("There's no way to that seat."); return false;
     }
     followRoute(r.path, s.here, () => {
         walker.pts = [{ x: u.x, y: u.y, z: z + (SEAT_LIFT[u.p.k] || 7), l: u.l, st: null, seat: { x: u.x, y: u.y, l: u.l, dir: face, p: u.p } }];
-        walker.walking = true; walker.last = performance.now(); requestAnimationFrame(stepWalk);
+        walker.walking = true; walker.then = then || null; walker.last = performance.now(); requestAnimationFrame(stepWalk);
     });
+    return true;
 }
 /* Double-click the water cooler: walk up to it, turn to it, and come away with a drink */
 const DRINK_MS = 120000, SIP_EVERY = 9000, SIP_MS = 1400;
@@ -3477,9 +3499,7 @@ function runChecks() {
     const blank = map.levels.reduce((n, l) => n + (l.doors || []).filter(d => !d.spare && !d.name).length, 0);
     if (blank) card(`${blank} doors have no maze. Make them spare, or give them one.`, "");
     if (!map.entrance) card("There's no entrance yet: Habbos arrive by it. It's in the library, under On walls.", "err");
-    /* floor past the map's edges: it isn't in the published picture, and the camera stops at the edges, so walking there is walking off screen */
-    if (map.rect) { const R = map.rect; for (const lv of map.levels) { if (!lv.cells || !lv.cells.length) continue; const z = levelZ(lv); let n = 0, first = null; for (const c of lv.cells) { const i = c.indexOf(","), cx = +c.slice(0, i), cy = +c.slice(i + 1), X = (cx - cy) * 32, Y = (cx + cy) * 16 - z; if (X - 32 < R.x || X + 32 > R.x + R.w || Y < R.y || Y + 32 > R.y + R.h) { n++; if (!first) first = [cx * 2, cy * 2]; } }
-        if (n) card(`${n} squares of ${lv.name} are past the map's edges, so nobody can see them. Widen the edges with Map edges, under Tidy. Show one.`, "err", () => { level = lv; buildLevels(); const p = P(first[0] + 1, first[1] + 1, levelZ(lv)); cam.x = p[0]; cam.y = p[1]; paint(); }); } }
+    /* floor past the map's edges, floor nobody can walk onto and a floor with no stairs to it aren't problems (9 Nov 2026, his): no cards for them */
     const reached = reachAll();
     const cut = [];
     for (const lv of map.levels) for (const d of (lv.doors || [])) {
@@ -3507,26 +3527,25 @@ function runChecks() {
     for (const c of hidden.slice(0, 8)) card(`${doorName(c.d) || "A door"} on ${c.lv.name} is ${c.share > .6 ? "mostly" : "partly"} hidden by the floor above. Show it.`, "err", () => { level = c.lv; buildLevels(); const a = P(c.d.axis === "x" ? c.d.at : c.d.line, c.d.axis === "x" ? c.d.line : c.d.at, levelZ(c.lv) + 40); cam.x = a[0]; cam.y = a[1]; setTool("select"); select({ type: "door", l: c.lv, o: c.d }); });
     if (hidden.length > 8) card(`And ${hidden.length - 8} more doors are hidden by the floor above.`, "err");
     if (!cut.length) card("Every door can be reached from the entrance, on foot or by lift", "ok");
-    for (const lv of map.levels) {
-        if (!lv.rise) continue;
-        const seen = new Set();
-        for (const k of Object.keys(lv.rise)) {
-            if (seen.has(k)) continue;
-            const h = lv.rise[k], todo = [k], part = []; seen.add(k);
-            while (todo.length) { const q = todo.pop(); part.push(q); const [x, y] = q.split(",").map(Number); for (const n of [[x + 1, y], [x - 1, y], [x, y + 1], [x, y - 1]]) { const key = n.join(","); if (!seen.has(key) && lv.rise[key] === h && cells(lv).has(key)) { seen.add(key); todo.push(key); } } }
-            const onIt = new Set(part), hasWay = (lv.steps || []).some(st => { for (let t = st.a; t < st.b; t++) for (const [X, Y] of st.axis === "y" ? [[t, st.line], [t, st.line - 1]] : [[st.line, t], [st.line - 1, t]]) if (onIt.has(cellKey(X, Y))) return true; return false; });
-            if (!hasWay) { const [cx, cy] = part[0].split(",").map(Number), X = cx * 2, Y = cy * 2; card(`A part of ${lv.name} at ${h > 0 ? "+" : ""}${h} has no steps, so nobody can walk onto it. Show it.`, "err", () => { level = lv; buildLevels(); const a = P(X, Y, levelZ(lv) + h); cam.x = a[0]; cam.y = a[1]; clampCam(); paint(); }); }
-        }
-    }
     for (const c of cut.slice(0, 8)) card(`A door on ${c.lv.name} can't be reached from the entrance, on foot or by lift. Show it.`, "err", () => { level = c.lv; buildLevels(); const a = P(c.tx, c.ty, levelZ(c.lv)); cam.x = a[0]; cam.y = a[1]; setTool("select"); select({ type: "door", l: c.lv, o: c.d }); });
     if (cut.length > 8) card(`And ${cut.length - 8} more doors can't be reached.`, "err");
     /* a Lost Property spot nobody can get to, or under furniture with no free tile beside it that anyone can get to, can only end in a miss (9 Nov scan, content finding 1) */
     { const stuck = []; for (const s of (map.lostSpots || [])) { const lv = byId(s.level); if (lv && lv.k >= 0 && !lostSpotReachable(lv, s.x, s.y)) stuck.push({ lv, s }); }
       for (const c of stuck.slice(0, 8)) card(`A Lost Property spot on ${c.lv.name} at ${c.s.x}, ${c.s.y} can't be picked up: nobody can reach it, or a free tile next to it. Move or remove it in the Lost Property tab. Show it.`, "err", () => { level = c.lv; buildLevels(); const a = P(c.s.x + .5, c.s.y + .5, nodeZ(c.lv, c.s.x, c.s.y) || levelZ(c.lv)); cam.x = a[0]; cam.y = a[1] - 20; clampCam(); paint(); });
       if (stuck.length > 8) card(`And ${stuck.length - 8} more Lost Property spots can't be picked up.`, "err"); }
-    for (const lv of map.levels) if (lv.k > 0 && !map.stairs.some(s => s.up === lv.id)) card(`There are no stairs up to ${lv.name}`, "err");
-    for (const lv of map.levels) if (lv.k < 0 && !map.stairs.some(s => s.low === lv.id)) card(`There are no stairs up from ${lv.name}`, "err");
-    if (lastReport && lastReport.lost && lastReport.lost.length) card(`${lastReport.lost.length} things aren't on a wall any more: ${lastReport.lost.slice(0, 4).join(", ")}`, "err");
+    /* lamps and wall items whose wall has gone: the renderer leaves them out (render/hw3.js report.lost), so they're never seen. One click
+       takes them out of the map (9 Nov 2026, his: "just remove those items"); anything else it lists is only named */
+    if (lastReport && lastReport.lost && lastReport.lost.length) {
+        const gone = [], other = [];
+        for (const t of lastReport.lost) {
+            const m = /^(.+) ([xy])(-?[\d.]+) on (\S+)$/.exec(t), lv = m && byId(m[4]);
+            const list = lv && (m[1] === "lamp" ? lv.lamps : lv.wallItems), q = list && list.find(o => o.axis === m[2] && o.at === +m[3] && (m[1] === "lamp" || (o.k || "wall item") === m[1]));
+            if (q) gone.push({ lv, list, q, what: m[1] === "lamp" ? "a wall lamp" : "a wall item (" + m[1] + ")" }); else other.push(t);
+        }
+        if (gone.length) card(`${gone.length} wall ${gone.length === 1 ? "thing is" : "things are"} on a wall that isn't there any more, so ${gone.length === 1 ? "it's" : "they're"} never drawn: ${gone.map(g => g.what + " on " + g.lv.name).join(", ")}. Remove ${gone.length === 1 ? "it" : "them"}.`, "err", () => {
+            snapshot(); for (const g of gone) { const i = g.list.indexOf(g.q); if (i >= 0) g.list.splice(i, 1); } lastReport.lost = other; changed(); runChecks(); flash(gone.length + " removed. Undo puts them back."); });
+        if (other.length) card(`${other.length} things couldn't be placed: ${other.slice(0, 4).join(", ")}`, "err");
+    }
     $("probBadge").textContent = problems || ""; lastProblems = problems;
 }
 

@@ -64,7 +64,21 @@ const AROUND = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [-1, -1], [1, -1], [-1
 function pickUpFrom(map, l, x, y, free) {
     const f = free || standableOn(map, l);
     if (f(x, y)) return [[x, y]];
-    return AROUND.map(([i, j]) => [x + i, y + j]).filter(t => f(t[0], t[1]));
+    const beside = AROUND.map(([i, j]) => [x + i, y + j]).filter(t => f(t[0], t[1]));
+    if (beside.length) return beside;
+    /* boxed in by furniture: from a seat beside it you can get into, sitting down (9 Nov 2026, his; editor.js seatReachable) */
+    return AROUND.map(([i, j]) => [x + i, y + j]).filter(t => seatReachable(l, t[0], t[1], f));
+}
+const SEATS = new Set(["chair", "sofa", "barstool"]);
+const seatOn = (l, x, y) => (l.props || []).some(p => p && SEATS.has(p.k) && (() => { try { return Parts.tiles(p); } catch (e) { return [[p.x, p.y]]; } })().some(t => t[0] === x && t[1] === y));
+function seatReachable(l, X, Y, f) {
+    if (!seatOn(l, X, Y)) return false;
+    const seen = new Set([X + "," + Y]), todo = [[X, Y]];
+    while (todo.length) {
+        const [a, b] = todo.pop();
+        for (const [i, j] of AROUND) { const p = a + i, q = b + j, k = p + "," + q; if (seen.has(k)) continue; seen.add(k); if (f(p, q)) return true; if ((!i || !j) && seatOn(l, p, q)) todo.push([p, q]); }
+    }
+    return false;
 }
 
 module.exports = { publishedMap, standableOn, pickUpFrom, _reset: () => { cache = null; } };
