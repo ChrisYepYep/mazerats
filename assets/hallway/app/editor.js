@@ -75,6 +75,12 @@ function thumbEl(src) {
     const i = document.createElement("img"); i.className = "thumb"; i.alt = ""; i.src = src; return i;
 }
 const HINTS = {
+    /* (10 Nov scan, editor 20) these five showed the furniture hint */
+    smallfloor: "Drag across the floor to lay the small squares floor over it. Its colour is the floor's own.",
+    theatre: "Click a wall to put the Theatredrome's entrance there. Drag it along the wall to move it.",
+    garland: "Drag along a wall to hang a garland as long as you like. It shows at Christmas only; its baubles' colours are on the Map tab.",
+    garland2: "Click a wall to hang a garland two tiles long. It shows at Christmas only.",
+    festoon: "Drag along a wall to string festoon lights as long as you like. Select them to choose the bulbs, a twinkle and the height. Christmas only.",
     sofa: "Drag along the floor to draw it as long as you like, or click for the usual size. The way you drag sets which way it runs, and Shift or R turns it.",
     rope: "Drag along the floor to draw it as long as you like, or click for 3 tiles. Nobody can walk through it. The way you drag sets which way it runs, and Shift or R turns it. Select it to take its card off.",
     table: "Drag along the floor to draw it as long as you like, or click for the usual size. The way you drag sets which way it runs, and Shift or R turns it.",
@@ -646,7 +652,7 @@ function rememberDraft() { try { localStorage.setItem("hallway-draft", JSON.stri
 const closePicker = () => { if (window.ColourPicker && ColourPicker.isOpen()) ColourPicker.close(true); };
 const syncLight = () => { const e = $("light"); if (e) e.value = map.light || "sconces"; };
 const stopWalkForChange = () => { if (tool === "walk") { setTool("select"); flash("Stopped walking: the map changed."); } };
-function restore(text) { stopWalkForChange(); closePicker(); carry = null; const id = level && level.id; select(null); map = JSON.parse(text); level = byId(id) || map.levels[0]; buildLevels(); syncLight(); changed(); }
+function restore(text) { stopWalkForChange(); closePicker(); carry = null; const id = level && level.id; setTimeout(() => { try { showMapInfo(); } catch (e) { /* the Map tab follows Undo and Redo (10 Nov scan, editor 21) */ } }, 0); select(null); map = JSON.parse(text); level = byId(id) || map.levels[0]; buildLevels(); syncLight(); changed(); }
 function undo() { if (!undoStack.length) return; redoStack.push(JSON.stringify(map)); restore(undoStack.pop()); }
 function redo() { if (!redoStack.length) return; undoStack.push(JSON.stringify(map)); restore(redoStack.pop()); }
 function syncButtons() { $("undo").disabled = !undoStack.length; $("redo").disabled = !redoStack.length; $("save").disabled = !dirty; $("save").classList.toggle("attention", dirty); }
@@ -803,7 +809,8 @@ function moodTile(mood, tx, ty) {
             } catch (e) { if (e.name !== "AbortError") tileFailed(k); /* the view asks again, in a while */ } finally { moodInflight.delete(k); }
         })();
     }
-    return t || null;                                           // the last version of it, until the new one's in
+    /* the last version of it until the new one's in; or, just after Christmas is turned on or off, the same square the other way (10 Nov scan, editor 7) */
+    return t || moodTiles.get(k.endsWith("+x|" + tx + "," + ty) ? k.replace("+x|", "|") : k.replace("|", "+x|")) || null;
 }
 /* The whole map, not only what's on screen: the time of day showing first, nearest first, then the one coming, then, on the walking page and not on a phone, the rest (the editor draws its own, so it stops at what it can show). A slot's always left for what's on screen, so looking around stays quick */
 const MOODS_ALL = ["day", "dusk", "night", "dawn"];
@@ -1000,6 +1007,10 @@ function drawSelector() {
             const lx = b[0] - 16, ly = b[1] + 8;
             for (const name of q.names) { const reg = REGS.hall[name], img = spriteImg("art/hall/hh_room_hallway/" + name + ".png"); if (reg && img.complete && img.naturalWidth) cutSprite(g, img, q.flip ? lx + 32 + reg[0] - img.naturalWidth : lx - reg[0], ly - reg[1], q.flip); }
         }
+        /* and the pieces drawn from their own pictures (arcades, plants, trees, presents...), as the map has them (10 Nov scan, editor 10) */
+        for (const p of on.props) { const pc = pieceOf(p); if (!pc || p.k.startsWith("mark_") || (XMAS_PROP(p.k) && !window.hallwayXmas)) continue; const run = Parts.tiles(p), last = run[run.length - 1]; if (last[0] + last[1] < tx + ty || Math.abs(p.x - tx) + Math.abs(p.y - ty) > 16) continue;
+            const b = P(p.x + pc.dx, p.y + pc.dy, tileZ(on, p.x, p.y) + pc.up), X = Math.round(b[0]), Y = Math.round(b[1]);
+            for (const f of pc.lights ? [pc.f, pc.lights] : [pc.f]) { const img = pieceImg(f); if (img.complete && img.naturalWidth) cutSprite(g, img, pc.flip ? X + pc.fp.ox + 1 - img.naturalWidth : X - pc.fp.ox, Y - pc.fp.oy, pc.flip); } }
         g.restore();
     }
     /* behind the Lost Property counter: the counter and the wall beside it stand in front, as they do for hustle */
@@ -1202,7 +1213,7 @@ function setTool(t) {
     if (t !== "walk") walker = null; else startWalk();
     document.querySelectorAll("[data-tool]").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.tool === t)));
     $("toolName").textContent = TOOL_NAMES[t] || "";
-    $("hint").textContent = isWallItemTool(t) ? "Click a wall to hang it. It hangs at a set height: hold Ctrl and move the mouse up or down to change it. Drag one afterwards to move it along; Ctrl-drag moves it up or down too." : isEdgeTool(t) ? "Paint along the edge of a floor or a flight of small steps: a white line shows the edge it's found. Right-drag over a railing or Ctrl-drag rubs it out. Right-drag elsewhere, or hold Space, moves the view." : HINTS[t && t.startsWith("ero_") ? "ero" : t] || "Click a floor tile to place it. Shift or R turns it first. Alt-click anything placed to move it, Shift-click to turn it, Ctrl-click to delete it.";
+    $("hint").textContent = isWallItemTool(t) ? ((wallItemOf(t.slice(3)) || {}).locked ? "Click a wall to hang it. It always hangs at its own height. Drag one afterwards to move it along." : "Click a wall to hang it. It hangs at a set height: hold Ctrl and move the mouse up or down to change it. Drag one afterwards to move it along; Ctrl-drag moves it up or down too.") : isEdgeTool(t) ? "Paint along the edge of a floor or a flight of small steps: a white line shows the edge it's found. Right-drag over a railing or Ctrl-drag rubs it out. Right-drag elsewhere, or hold Space, moves the view." : HINTS[t && t.startsWith("ero_") ? "ero" : t] || "Click a floor tile to place it. Shift or R turns it first. Alt-click anything placed to move it, Shift-click to turn it, Ctrl-click to delete it.";
     $("walkBar").hidden = t !== "walk"; $("walkLabel").textContent = t === "walk" ? "Stop walking" : "Walk it";
     $("view").style.cursor = t === "pan" ? "grab" : t === "walk" ? "pointer" : t === "select" ? "default" : "crosshair";
     if (t !== "select") select(null);
@@ -1220,7 +1231,7 @@ const fits = (l, p) => Parts.tiles(p).every(t => placeable(l, t[0], t[1]));     
 /* what you'd get dragging from tile a to tile b: stops at the edge of the floor. A click is a drag of nothing. */
 function furniRun(a, b) {
     const k = tool, r = Parts.ROWS[k];
-    if (!r) return { k, x: a[0], y: a[1], rot: placeRot, ok: true };
+    if (!r) return { k, x: a[0], y: a[1], rot: placeRot, ok: fits(level, { k, x: a[0], y: a[1], rot: placeRot }) };       // every tile it stands on (10 Nov scan, editor 4: a 2x2 went half off the floor)
     const dx = b[0] - a[0], dy = b[1] - a[1], clicked = !dx && !dy;
     const rot = clicked ? placeRot & 1 : Math.abs(dy) > Math.abs(dx) ? 1 : 0;
     const step = clicked ? 1 : Math.sign(rot ? dy : dx), want = clicked ? r.def : Math.abs(rot ? dy : dx) + 1;
@@ -1240,12 +1251,15 @@ const lampZAt = (l, x, y) => tableLampZ !== null ? tableLampZ : (t => t ? TABLE_
 /* where a raisable thing goes when placed: a lamp on the table there, a present on top of the highest present there (or where Ctrl put it) */
 /* what Ctrl is raising now: the tool's ghost, the thing being carried, or the one being dragged */
 const raisingNow = () => RAISE(tool) ? "tool" : carry && RAISE(carry.p.k) ? "carry" : drag && drag.kind === "move" && selected && selected.type === "prop" && RAISE(selected.o.k) ? "drag" : null;
-const raiseZAt = (l, x, y, k) => k === "tablelamp" ? lampZAt(l, x, y) : tableLampZ !== null ? tableLampZ : Math.max(0, ...(l.props || []).filter(p => /^gift\d+$/.test(p.k) && p.x === x && p.y === y).map(p => (p.z || 0) + GIFT_TOP(p.k)));
+const raiseZAt = (l, x, y, k, self) => k === "tablelamp" ? lampZAt(l, x, y) : tableLampZ !== null ? tableLampZ : Math.max(0, ...(l.props || []).filter(p => p !== self && /^gift\d+$/.test(p.k) && p.x === x && p.y === y).map(p => (p.z || 0) + GIFT_TOP(p.k)));
+/* a raised kind landing on a tile: on the table or the present there, as its ghost showed (10 Nov scan, editor 2 and 15: a stacked present was
+   placed on the floor inside the one below, and a lamp moved off its table floated) */
+const landRaised = (l, p) => { if (!RAISE(p.k)) return; const z = raiseZAt(l, p.x, p.y, p.k, p); if (z) p.z = z; else delete p.z; };
 let lampStyle = localStorage.getItem("hallway-lamp") || "hotel"; if (!LAMP_STYLES[lampStyle]) lampStyle = "hotel";
 function placeRun(run) {
     if (!run.ok) { flash("There isn't room for that here."); paint(); return; }
     snapshot();
-    const p = { k: run.k, x: run.x, y: run.y }; if (run.k === "mark_arrow") { p.x -= p.x & 1; p.y -= p.y & 1; p.id = "ar" + Date.now().toString(36); } if (run.len) p.len = run.len; if (run.rot) p.rot = run.rot; if (run.k === "lamp" && lampStyle !== "hotel") p.style = lampStyle; if (run.k === "tablelamp") { const z = lampZAt(level, run.x, run.y); if (z) p.z = z; }
+    const p = { k: run.k, x: run.x, y: run.y }; if (run.k === "mark_arrow") { p.x -= p.x & 1; p.y -= p.y & 1; p.id = "ar" + Date.now().toString(36); } if (run.len) p.len = run.len; if (run.rot) p.rot = run.rot; if (run.k === "lamp" && lampStyle !== "hotel") p.style = lampStyle; landRaised(level, p);
     (level.props = level.props || []).push(p);
     showUntilDrawn(level, p);
     changed();
@@ -1274,7 +1288,7 @@ const TELE_SPRITE = "s_doorD_b_0_1_1_4_0";
 /* ---------- Alt, Shift and Ctrl, as in Fallin' Furni's editor ----------
    Alt-click lifts a piece and you carry it until you click again; Shift turns what you're holding or placing,
    else the piece you click; Ctrl-click deletes (or, holding one, throws it away). Esc puts a carried piece back. */
-let carry = null, shiftTurned = false;
+let carry = null, shiftTurned = false, shiftAlone = false;
 const placingNow = () => !!carry || FURNI.includes(tool) || tool === "tele";
 function turnHeld() {
     if (carry) {
@@ -1303,6 +1317,7 @@ function putDown() {
     const t = hover && hover.tile, p = t ? { ...carry.p, x: t[0], y: t[1] } : null;
     if (!p || !(carry.tele ? hasFloor(level, p.x, p.y) : fits(level, p))) { flash("That doesn't fit there."); return; }
     if (!p.rot) delete p.rot;
+    if (!carry.tele) landRaised(level, p);
     const list = carry.tele ? (level.teles = level.teles || []) : (level.props = level.props || []), type = carry.tele ? "tele" : "prop";
     list.push(p); carry = null; showUntilDrawn(level, p, type === "tele"); changed(); select({ type, l: level, o: p });
 }
@@ -1315,12 +1330,12 @@ function modClick(e, px, py) {
     const ctrl = e.ctrlKey || e.metaKey;
     if (carry) {
         if (e.shiftKey) { if (shiftTurned) shiftTurned = false; else turnHeld(); }
-        else if (ctrl) { carry = null; flash("Thrown away. Ctrl+Z brings it back."); paint(); }
+        else if (ctrl && !(carry.p && RAISE(carry.p.k))) { carry = null; flash("Thrown away. Ctrl+Z brings it back."); paint(); }      // a raised kind carried with Ctrl held is being lifted, not thrown
         else putDown();
         return true;
     }
     if (!e.altKey && !e.shiftKey && !ctrl) return false;
-    if (e.shiftKey && placingNow()) { if (shiftTurned) shiftTurned = false; else turnHeld(); return true; }
+    if (e.shiftKey && placingNow()) { shiftAlone = false; if (shiftTurned) shiftTurned = false; else turnHeld(); return true; }
     const hit = pick(px, py);
     if (!hit) { flash(e.altKey ? "Nothing there to move." : e.shiftKey ? "Nothing there to turn." : "Nothing there to delete."); return true; }
     if (ctrl && (hit.type === "wallitem" || hit.type === "lamp")) { select(hit); drag = beginMove(hit, px, py); drag.ctrlDelete = true; return true; }
@@ -1405,6 +1420,8 @@ function drawWallItemGhost() {
    and the poster stand's ghosts stood a quarter tile off, the turned stand showed the wrong way round, a raised present's ghost sat on the floor):
    dx, dy into the tile; flip: drawn mirrored about the foot; up: raised off the floor; lights: a second picture, always lit */
 const pieceOf = p => {
+    /* at Christmas the statue is drawn as the giant tree, its foot at the statue's middle: its ghost is the tree too (10 Nov scan, editor 17) */
+    if (p.k === "statue" && window.hallwayXmas && floorPiece("bigtree")) { const fp = floorPiece("bigtree"); return { fp, f: fp.f, dx: 1, dy: 1, flip: false, up: 0, lights: fp.lights || null }; }
     const stand = p.k === "leetstand" || p.k === "leetstand2", rot = Parts.rotOf(p), k = stand && (rot & 1) ? p.k + "_r" : p.k, fp = floorPiece(k); if (!fp) return null;
     let dx = .25, dy = .25;
     if (stand || p.k === "trophy") dx = dy = 0;
@@ -1456,13 +1473,17 @@ function drawPiece(g, alpha) {
     else if (pieceOf(g)) { const pc = pieceOf(g), fp = pc.fp, a = P(g.x + pc.dx, g.y + pc.dy, tileZ(level, g.x, g.y) + pc.up), X = Math.round(a[0]), Y = Math.round(a[1]);
         /* at whole pixels from the foot, as hw3 draws it (Math.round), so the ghost lands on the very pixels the piece will */
         for (const f of pc.lights ? [pc.f, pc.lights] : [pc.f]) { const im = pieceImg(f); if (!im.complete || !im.naturalWidth) continue; ctx.save(); ctx.imageSmoothingEnabled = false;
-            if (pc.flip) { ctx.translate(ox + X * zoom, 0); ctx.scale(-1, 1); ctx.drawImage(im, -fp.ox * zoom, oy + (Y - fp.oy) * zoom, fp.w * zoom, fp.h * zoom); } else ctx.drawImage(im, ox + (X - fp.ox) * zoom, oy + (Y - fp.oy) * zoom, fp.w * zoom, fp.h * zoom); ctx.restore(); } }
+            if (pc.flip) { ctx.translate(ox + (X + 1) * zoom, 0); ctx.scale(-1, 1);      /* column i at X + ox - i, as hw3 draws it (10 Nov scan, editor 6: 1px left) */ ctx.drawImage(im, -fp.ox * zoom, oy + (Y - fp.oy) * zoom, fp.w * zoom, fp.h * zoom); } else ctx.drawImage(im, ox + (X - fp.ox) * zoom, oy + (Y - fp.oy) * zoom, fp.w * zoom, fp.h * zoom); ctx.restore(); } }
     else if (g.k === "mark_arrow") { const x0 = g.x - (g.x & 1), y0 = g.y - (g.y & 1), z = tileZ(level, x0, y0), Q = (u, v) => { const a = P(x0 + u, y0 + v, z); return [ox + a[0] * zoom, oy + a[1] * zoom]; }, d = (((g.rot || 0) % 4) + 4) % 4, rot = ([u, v]) => d === 0 ? [u, v] : d === 1 ? [2 - v, u] : d === 2 ? [2 - u, 2 - v] : [v, 2 - u], line = pts => { ctx.beginPath(); pts.forEach((q, i) => { const [X, Y] = Q(...rot(q)); if (i) ctx.lineTo(X, Y); else ctx.moveTo(X, Y); }); ctx.closePath(); ctx.stroke(); };
         ctx.lineWidth = Math.max(1, zoom); ctx.strokeStyle = "#ffe066"; line([[0, 0], [2, 0], [2, 2], [0, 2]]); ctx.strokeStyle = "#4a2c12"; ctx.lineWidth = Math.max(1.5, zoom * 1.5); line([[1.625, 1], [.5, .3125], [.5, 1.6875]]); }
     else if (g.k === "archway") { const n = Parts.lengthOf(g), alongY = !!((g.rot || 0) & 1), z = tileZ(level, g.x, g.y), at = (along, up) => { const a = alongY ? P(g.x + .5, g.y + along, z + up) : P(g.x + along, g.y + .5, z + up); return [ox + a[0] * zoom, oy + a[1] * zoom]; }, path = pts => { ctx.beginPath(); pts.forEach((q, i) => i ? ctx.lineTo(q[0], q[1]) : ctx.moveTo(q[0], q[1])); ctx.stroke(); };
         ctx.lineWidth = Math.max(1.5, zoom); ctx.strokeStyle = "#ffe066"; path([at(0, 0), at(0, 118), at(n, 118), at(n, 0)]); path([at(1.4, 0), at(1.4, 70), at(n - 1.4, 70), at(n - 1.4, 0)]); }
     else if (g.k === "rope") { for (const [X, Y, c] of ropeArt(level, g).list) { ctx.fillStyle = "rgb(" + c + ")"; ctx.fillRect(ox + X * zoom, oy + Y * zoom, zoom, zoom); } }
     else if (g.k === "lamp") { const a = P(g.x + .5, g.y + .5, tileZ(level, g.x, g.y)); put(spriteImg("art/lamp-" + (g.style || lampStyle) + ".png"), a[0] - 40, a[1] - 96, false); }
+    /* the tall pillar reaches up to the floor above: its shaft stretched by the same sum as hw3's tallBy and hw.js stretched() (10 Nov scan, editor 11) */
+    else if (g.k === "pillartall") { const up = map.levels.find(q => q.k === level.k + 1), z0 = tileZ(level, g.x, g.y), c = Math.floor(g.x / 2) + "," + Math.floor(g.y / 2), by = up ? Math.max(0, levelZ(up) + ((up.rise && up.rise[c]) || 0) - 12 - z0 - 94) : 0, SHAFT = 30;
+        for (const q of Parts.parts(g)) for (const n of q.names) { const reg = REGS.hall[n], img = spriteImg(H_ + n + ".png"); if (!reg || !img.complete || !img.naturalWidth) continue; const a = P(q.x, q.y, tileZ(level, q.x, q.y)), X = ox + (a[0] - 16 - reg[0]) * zoom, Y = oy + (a[1] + 8 - reg[1] - by) * zoom, w = img.naturalWidth, h = img.naturalHeight;
+            ctx.drawImage(img, 0, 0, w, SHAFT + 1, X, Y, w * zoom, (SHAFT + 1) * zoom); if (by) ctx.drawImage(img, 0, SHAFT, w, 1, X, Y + (SHAFT + 1) * zoom, w * zoom, by * zoom); ctx.drawImage(img, 0, SHAFT + 1, w, h - SHAFT - 1, X, Y + (SHAFT + 1 + by) * zoom, w * zoom, (h - SHAFT - 1) * zoom); } }
     else for (const q of Parts.parts(g)) for (const n of q.names) { const reg = REGS.hall[n]; if (reg) sprite(spriteImg(H_ + n + ".png"), reg, q.x, q.y, q.flip); }
     ctx.restore();
 }
@@ -1476,7 +1497,7 @@ function act(px, py) {
     }
     if (w && w.drop && (isWallItemTool(tool) || ["lift", "stair", "turn", "side", "sideturn"].includes(tool) || ((tool === "sconce" || tool === "globelight") && !lampFits(level, w)))) { flash("That wall's only as tall as the drop, too short for that."); return; }
     if (w && (isWallItemTool(tool) || ["door", "sconce", "globelight", "lift", "stair", "turn", "side", "sideturn"].includes(tool)) && isHalf(level, w.axis, w.line, wallTile(w))) { flash("That's a half wall. Put it back to full height first, with the Half wall tool."); return; }
-    if (FURNI.includes(tool)) { const t = furniTile(px, py); if (placeable(level, t[0], t[1])) placeRun(furniRun(t, t)); return; }
+    if (FURNI.includes(tool)) { const t = furniTile(px, py); if (placeable(level, t[0], t[1])) placeRun(furniRun(t, t)); return; }      // placeRun refuses a run that doesn't fit
     if (tool === "tele") { if (hasFloor(level, X, Y)) place(() => (level.teles = level.teles || []).push({ x: X, y: Y, flip: !hasFloor(level, X - 1, Y) !== !!(placeRot & 1) })); return; }
     if (tool === "medal") { if (hasFloor(level, X, Y)) place(() => { const m = { x: X - 2, y: Y - 2 }; (level.medals = level.medals || []).push(m); }); return; }
     if (tool === "door") {
@@ -1735,9 +1756,11 @@ function pickIn(l, px, py) {
     const upright = [...(l.props || []).map(o => ({ type: "prop", o, k: o.k })), ...(l.teles || []).map(o => ({ type: "tele", o, k: "statue" }))].sort((a, c) => (c.o.x + c.o.y) - (a.o.x + a.o.y));
     for (const u of upright) {
         if (seeHidden(l, heightAt(l, u.o.x, u.o.y))) continue;
+        if (u.type === "prop" && XMAS_PROP(u.k) && !window.hallwayXmas) continue;          // not drawn while Christmas is off: nothing to click (10 Nov scan, editor 9)
         const [w, h] = u.k === "lamp" && u.o.style === "globe" ? [8, 28] : u.k === "pillar" && u.o.lights ? [18, 110] : u.k === "pillartall" && u.o.lights ? [18, 150] : TALL[u.k] || [14, 40], row = u.type === "prop" && Parts.ROWS[u.k];
-        for (const t of row || u.k === "mark_arrow" ? Parts.tiles(u.o) : [[u.o.x, u.o.y]]) {
-            const a = P(t[0] + .5, t[1] + .5, tileZ(l, t[0], t[1]));
+        /* every tile it stands on (a two-by-two too), and as high as it's raised: a present on a stack, a lamp on a table (10 Nov scan, editor 8) */
+        for (const t of row || u.k === "mark_arrow" || u.k === "statue" || u.k === "fountain" || u.k === "xmasfir4" ? Parts.tiles(u.o) : [[u.o.x, u.o.y]]) {
+            const a = P(t[0] + .5, t[1] + .5, tileZ(l, t[0], t[1]) + (u.type === "prop" ? (u.o.z || 0) : 0));
             if (Math.abs(px - a[0]) <= (row ? 17 : w) && py <= a[1] + 8 && py >= a[1] - h) return { type: u.type, l, o: u.o };
         }
     }
@@ -1870,7 +1893,7 @@ function select(hit) {
     const head = document.createElement("div"); head.className = "insp-head";
     const src = thumbFor(hit); if (src) head.appendChild(thumbEl(src));
     const title = document.createElement("div"); title.className = "insp-title";
-    const t = document.createElement("strong"); t.textContent = hit.type === "prop" ? (PROP_NAMES[hit.o.k] || "Furniture") : hit.type === "sign" && hit.o.kind ? "Stairs sign" : TYPE_NAMES[hit.type]; title.appendChild(t);
+    const t = document.createElement("strong"); t.textContent = hit.type === "prop" ? (PROP_NAMES[hit.o.k] || "Furniture") : hit.type === "wallitem" && wallItemOf(hit.o.k) ? wallItemOf(hit.o.k).name : hit.type === "sign" && hit.o.kind ? "Stairs sign" : TYPE_NAMES[hit.type]; title.appendChild(t);
     const sub2 = document.createElement("span"); sub2.textContent = hit.l.name; title.appendChild(sub2);
     head.appendChild(title); box.appendChild(head);
     const say = text => { const p = document.createElement("p"); p.className = "hint"; p.textContent = text; box.appendChild(p); };
@@ -1928,6 +1951,14 @@ function select(hit) {
         btn("Narrower", () => resize(-1)); btn("Wider", () => resize(1));
     }
     /* wall items share this branch so their own options below (the custom sign, torn paper, festoons) are reached (8 Nov: they weren't) */
+    /* garlands and festoon lights: their own options (10 Nov scan, editor 5: they sat inside the furniture branch, so they never showed) */
+    else if (hit.type === "garland" || hit.type === "festoon") {
+        say(hit.type === "garland" ? "A garland along the wall. Delete it, or lay another over it with the Garland tool." : "Festoon lights along the wall. Delete them, or lay another run with the Festoon tool.");
+        if (hit.type === "garland") { const g = hit.o, f = document.createElement("label"); f.className = "field"; const n = document.createElement("span"); n.className = "f-label"; n.textContent = "Baubles"; const cb = document.createElement("input"); cb.type = "checkbox"; cb.checked = g.baubles !== false; cb.addEventListener("change", () => { snapshot(); if (cb.checked) delete g.baubles; else g.baubles = false; changed(); }); f.append(n, cb); box.appendChild(f); const p = document.createElement("p"); p.className = "hint"; p.textContent = "Their colours are set on the Map tab."; box.appendChild(p); }
+        if (hit.type === "festoon") { const q = hit.o, row = (label, ctl) => { const f = document.createElement("label"); f.className = "field"; const n = document.createElement("span"); n.className = "f-label"; n.textContent = label; f.append(n, ctl); box.appendChild(f); }, sel = document.createElement("select"); sel.className = "f-ctl"; for (const [v, t] of [["amber", "Amber"], ["warm", "Warm white"], ["multi", "Many colours"], ["redgreen", "Red and green"], ["blue", "Blue and white"], ["cool", "Cool white"]]) { const o = document.createElement("option"); o.value = v; o.textContent = t; sel.appendChild(o); } sel.value = q.colour || "amber"; sel.addEventListener("change", () => { snapshot(); if (sel.value === "amber") delete q.colour; else q.colour = sel.value; lastFestoon.colour = sel.value; changed(); }); row("Bulbs", sel);
+          const tw = document.createElement("input"); tw.type = "checkbox"; tw.checked = !!q.twinkle; tw.addEventListener("change", () => { snapshot(); if (tw.checked) q.twinkle = true; else delete q.twinkle; lastFestoon.twinkle = tw.checked; changed(); }); row("A gentle twinkle", tw);
+          const hh = document.createElement("input"); hh.type = "number"; hh.min = "40"; hh.max = "140"; hh.className = "f-ctl"; hh.value = String(q.h || 118); hh.addEventListener("change", () => { snapshot(); q.h = Math.max(40, Math.min(140, Math.round(+hh.value || 118))); changed(); }); row("Height on the wall", hh); }
+    }
     else if (hit.type === "prop" || hit.type === "tele" || hit.type === "wallitem") {
         const long = hit.type === "prop" && Parts.ROWS[hit.o.k];
         if (hit.type === "wallitem") { const def = wallItemOf(hit.o.k); say((def ? def.name + ". " : "") + "Drag it along the wall or onto another wall. Ctrl-drag moves it up or down."); }
@@ -1944,10 +1975,6 @@ function select(hit) {
         if (hit.type === "wallitem" && String(hit.o.k).startsWith("i_peel")) { const q = hit.o, f = document.createElement("label"); f.className = "field"; const n = document.createElement("span"); n.className = "f-label"; n.textContent = "Behind it"; const sel = document.createElement("select"); sel.className = "f-ctl"; for (const [v, t] of [["", "Nothing"], ["note", "A note"], ["6x14|0", "A door: staff corridor 1"], ["6x14|1", "A door: staff corridor 2"], ["6x14|2", "A door: staff corridor 3"], ["4x8|0", "A door: passage 1"], ["4x8|1", "A door: passage 2"], ["4x8|2", "A door: passage 3"]]) { const o = document.createElement("option"); o.value = v; o.textContent = t; sel.appendChild(o); } sel.value = !q.behind ? "" : q.behind.kind === "note" ? "note" : q.behind.size + "|" + q.behind.n; sel.addEventListener("change", () => { snapshot(); if (!sel.value) delete q.behind; else if (sel.value === "note") q.behind = { kind: "note", text: (q.behind && q.behind.text) || "" }; else { const [size, m] = sel.value.split("|"); q.behind = { kind: "door", size, n: +m }; } changed(); select(hit); }); f.append(n, sel); box.appendChild(f);
           if (q.behind && q.behind.kind === "note") { const ta = document.createElement("textarea"); ta.rows = 3; ta.value = q.behind.text || ""; ta.setAttribute("aria-label", "What the note says"); ta.style.width = "100%"; ta.addEventListener("change", () => { snapshot(); q.behind.text = ta.value; changed(); }); box.appendChild(ta); } }
         if (hit.type === "wallitem" && hit.o.k === "i_festoon") { const q = hit.o, row = (label, ctl) => { const f = document.createElement("label"); f.className = "field"; const n = document.createElement("span"); n.className = "f-label"; n.textContent = label; f.append(n, ctl); box.appendChild(f); }, sel = document.createElement("select"); sel.className = "f-ctl"; for (const [v, t] of [["amber", "Amber"], ["warm", "Warm white"], ["multi", "Many colours"], ["redgreen", "Red and green"], ["blue", "Blue and white"], ["cool", "Cool white"]]) { const o = document.createElement("option"); o.value = v; o.textContent = t; sel.appendChild(o); } sel.value = q.colour || "amber"; sel.addEventListener("change", () => { snapshot(); if (sel.value === "amber") delete q.colour; else q.colour = sel.value; changed(); }); row("Bulbs", sel); const tw = document.createElement("input"); tw.type = "checkbox"; tw.checked = !!q.twinkle; tw.addEventListener("change", () => { snapshot(); if (tw.checked) q.twinkle = true; else delete q.twinkle; changed(); }); row("A gentle twinkle", tw); }
-        if (hit.type === "garland") { const g = hit.o, f = document.createElement("label"); f.className = "field"; const n = document.createElement("span"); n.className = "f-label"; n.textContent = "Baubles"; const cb = document.createElement("input"); cb.type = "checkbox"; cb.checked = g.baubles !== false; cb.addEventListener("change", () => { snapshot(); if (cb.checked) delete g.baubles; else g.baubles = false; changed(); }); f.append(n, cb); box.appendChild(f); const p = document.createElement("p"); p.className = "hint"; p.textContent = "Their colours are set on the Map tab."; box.appendChild(p); }
-        if (hit.type === "festoon") { const q = hit.o, row = (label, ctl) => { const f = document.createElement("label"); f.className = "field"; const n = document.createElement("span"); n.className = "f-label"; n.textContent = label; f.append(n, ctl); box.appendChild(f); }, sel = document.createElement("select"); sel.className = "f-ctl"; for (const [v, t] of [["amber", "Amber"], ["warm", "Warm white"], ["multi", "Many colours"], ["redgreen", "Red and green"], ["blue", "Blue and white"], ["cool", "Cool white"]]) { const o = document.createElement("option"); o.value = v; o.textContent = t; sel.appendChild(o); } sel.value = q.colour || "amber"; sel.addEventListener("change", () => { snapshot(); if (sel.value === "amber") delete q.colour; else q.colour = sel.value; lastFestoon.colour = sel.value; changed(); }); row("Bulbs", sel);
-          const tw = document.createElement("input"); tw.type = "checkbox"; tw.checked = !!q.twinkle; tw.addEventListener("change", () => { snapshot(); if (tw.checked) q.twinkle = true; else delete q.twinkle; lastFestoon.twinkle = tw.checked; changed(); }); row("A gentle twinkle", tw);
-          const hh = document.createElement("input"); hh.type = "number"; hh.min = "40"; hh.max = "140"; hh.className = "f-ctl"; hh.value = String(q.h || 118); hh.addEventListener("change", () => { snapshot(); q.h = Math.max(40, Math.min(140, Math.round(+hh.value || 118))); changed(); }); row("Height on the wall", hh); }
         if (hit.type === "prop" && hit.o.k === "barstool") { const face = ["down to the right", "down to the left", "up to the left", "up to the right"][Parts.rotOf(hit.o)]; say(`Sitting here, you face ${face}. It looks the same every way round: R turns which way you face (the arrow on the map shows it).`); }
         if (hit.type === "prop" && hit.o.k === "statue") { const f = document.createElement("label"); f.className = "field"; const n = document.createElement("span"); n.className = "f-label"; n.textContent = "Christmas tree: keep walkers out"; const sel = document.createElement("select"); sel.className = "f-ctl"; sel.setAttribute("aria-label", "How far round the Christmas tree walkers are kept out");
             for (let k = 0; k <= 6; k++) { const o = document.createElement("option"); o.value = String(k); o.textContent = k ? `${k} tile${k === 1 ? "" : "s"} round it (${2 + 2 * k} by ${2 + 2 * k})` : "Only its own 2 by 2"; sel.appendChild(o); }
@@ -1990,7 +2017,7 @@ function select(hit) {
             c.appendChild(sel); f.appendChild(n); f.appendChild(c); box.appendChild(f);
         }
     }
-    else say("Drag it to move it, or use the arrow keys to nudge it.");
+    else say(hit.type === "lamp" ? "Drag it along the wall, or onto another wall. Ctrl-drag moves it up or down." : "Drag it to move it, or use the arrow keys to nudge it.");      // the arrows don't move a wall light (10 Nov scan, editor 22)
     if (hit.type === "lamp" || (hit.type === "prop" && (hit.o.k === "lamp" || hit.o.k === "tablelamp" || ((hit.o.k === "pillar" || hit.o.k === "pillartall") && hit.o.lights)))) {
         colourRow(box, "Light colour", () => hit.o.colour || null, v => { if (v) hit.o.colour = v; else delete hit.o.colour; }, "#ffd98a", "The mood's own");
     }
@@ -2135,7 +2162,7 @@ function moveSelected(d, px, py) {
         if (d.moved) { requestArt(); paint(); }
         return;
     }
-    if (s.type === "prop" || s.type === "tele") { const nx = g.x + dx, ny = g.y + dy; if (s.type === "prop" ? fits(l, { ...o, x: nx, y: ny }) : hasFloor(l, nx, ny)) { o.x = nx; o.y = ny; if (s.type === "tele") o.flip = !hasFloor(l, nx - 1, ny); } }
+    if (s.type === "prop" || s.type === "tele") { const nx = g.x + dx, ny = g.y + dy; if (s.type === "prop" ? fits(l, { ...o, x: nx, y: ny }) : hasFloor(l, nx, ny)) { const moved = o.x !== nx || o.y !== ny; o.x = nx; o.y = ny; if (s.type === "tele") o.flip = !hasFloor(l, nx - 1, ny); else if (moved && !ctrlNow) landRaised(l, o); } }
     else if (s.type === "medal") { o.x = g.x + dx; o.y = g.y + dy; }
     else if (s.type === "rug") {
         if (d.edge) {
@@ -2190,7 +2217,9 @@ function moveSelected(d, px, py) {
             carryStairThings(l, wasStair, o);
         }
     }
-    if (JSON.stringify(o) !== before && !d.moved) { d.moved = true; undoStack.push(d.before); if (undoStack.length > 80) undoStack.shift(); redoStack.length = 0; syncButtons(); }
+    if (JSON.stringify(o) !== before && !d.moved) { d.moved = true; undoStack.push(d.before); if (undoStack.length > 80) undoStack.shift(); redoStack.length = 0; syncButtons();
+        /* the map is drawn again without it, once, so only its ghost shows while it's dragged (10 Nov scan, editor 1: nothing asked, so it showed twice) */
+        if (s.type === "prop" || s.type === "tele") requestArt(true); }
     paint();
 }
 function nudgeSelected(dx, dy) {
@@ -2347,6 +2376,8 @@ canvas.addEventListener("pointerdown", e => {
     if (isEdgeTool(tool) && !spaceHeld && e.button !== 1 && (e.button === 0 || edgeUnder(px, py))) { drag = { kind: "edgebrush", remove: e.button === 2 || e.ctrlKey || e.metaKey, laid: [], gone: [] }; edgeBrush(drag, px, py); return; }
     if (brushTool(tool) && e.ctrlKey) return;                   // Ctrl is for changing the height, here
     if (wallHeightKind(tool) && (e.ctrlKey || e.metaKey)) return;
+    /* Ctrl raises a present or a table lamp being placed: the click with it held places it there, it never deletes what's under it (10 Nov scan, editor 3) */
+    if (e.button === 0 && !spaceHeld && (e.ctrlKey || e.metaKey) && !carry && raisingNow() === "tool") { act(px, py); return; }
     if (e.button === 0 && !spaceHeld && tool !== "walk" && modClick(e, px, py)) return;
     /* right button on a rug: rub it out, in any tool. Anywhere else it still drags the view (with the rug tool, it's always the brush). */
     if (e.button === 2 && !spaceHeld && tool !== "walk" && (tool === "rug" || rugUnder(px, py))) { drag = { kind: "rubout" }; rubOut(drag, px, py); return; }
@@ -2388,7 +2419,7 @@ canvas.addEventListener("pointermove", e => {
     if (drag && drag.kind === "pan") { cam.x = drag.cx - (e.clientX - drag.sx) / zoom; cam.y = drag.cy - (e.clientY - drag.sy) / zoom; clampCam(); paint(); return; }
     if (carry && !drag) {
         const f = tileIn(level, px, py), X = Math.floor(f[0]), Y = Math.floor(f[1]);
-        hover = { l: level, tile: hasFloor(level, X, Y) ? [X, Y] : null }; paint(); return;
+        hover = { l: level, tile: hasFloor(level, X, Y) ? [X, Y] : null }; $("st-where").textContent = hover.tile ? `${level.name}, tile ${X}, ${Y}` : ""; $("st-hover").textContent = PROP_NAMES[carry.p.k] || (carry.tele ? "Imperial Teleport" : ""); paint(); return;      // the status follows the carried piece (10 Nov scan, editor 26)
     }
     if (drag && drag.kind === "rubout") { rubOut(drag, px, py); return; }
     if (drag && drag.kind === "halfwall") { halfBrush(drag, px, py); return; }
@@ -3542,7 +3573,7 @@ function buildLevels() {
 function setFloor(l) { if (l === level) return; level = l; hover = null; buildLevels(); paint(); flash("Working on " + l.name); }
 function stepFloor(d) {
     const list = [...map.levels].sort((a, c) => a.k - c.k), i = list.indexOf(level), n = list[i + d];
-    if (n) { setFloor(n); const z = levelZ(n), a = P(cam.x, cam.y); }
+    if (n) setFloor(n);
 }
 function setZoom(z, sx, sy) {
     const r = canvas.getBoundingClientRect(), x = sx === undefined ? r.left + r.width / 2 : sx, y = sy === undefined ? r.top + r.height / 2 : sy;
@@ -3752,7 +3783,7 @@ function buildUI() {
     $("heightSlider").addEventListener("input", e => setBrush(+e.target.value));
     $("heightLevel").addEventListener("click", () => setBrush(0));
     $("liftStay").addEventListener("click", hideLiftPanel);
-    { const b = $("xmasToggle"), show = () => { b.classList.toggle("on", !!window.hallwayXmas); b.setAttribute("aria-pressed", String(!!window.hallwayXmas)); }; show(); b.addEventListener("click", () => { window.hallwayXmas = !window.hallwayXmas; try { localStorage.setItem("hallway-editor-xmas", window.hallwayXmas ? "1" : "0"); } catch (err) { /* this visit only */ } show(); if (!window.hallwayXmas && (XMAS_PROP(tool) || (isWallItemTool(tool) && (wallItemOf(tool.slice(3)) || {}).xmas))) setTool("select"); for (const t of tiles.values()) if (t.img.close) t.img.close(); tiles.clear(); if (typeof buildLibrary === "function") buildLibrary(); pump(); paint(); }); }
+    { const b = $("xmasToggle"), show = () => { b.classList.toggle("on", !!window.hallwayXmas); b.setAttribute("aria-pressed", String(!!window.hallwayXmas)); }; show(); b.addEventListener("click", () => { window.hallwayXmas = !window.hallwayXmas; try { localStorage.setItem("hallway-editor-xmas", window.hallwayXmas ? "1" : "0"); } catch (err) { /* this visit only */ } show(); if (!window.hallwayXmas && (XMAS_PROP(tool) || (isWallItemTool(tool) && (wallItemOf(tool.slice(3)) || {}).xmas))) setTool("select"); /* the squares in view stay up until the Christmas (or plain) ones land over them (10 Nov scan, editor 7: the map went black for seconds) */ for (const t of tiles.values()) t.v = null; if (typeof buildLibrary === "function") buildLibrary(); pump(); paint(); }); }
     /* show times: one a line, read in this computer's own time and kept as moments, so every visitor sees them in theirs */
     $("leetTimes").addEventListener("change", e => { const times = []; for (const line of e.target.value.split(/\n/)) { const m = line.trim().match(/^(\d{4})-(\d{1,2})-(\d{1,2})[ T]+(\d{1,2})[:.](\d{2})$/); if (!m) continue; const d = new Date(+m[1], +m[2] - 1, +m[3], +m[4], +m[5]); if (!isNaN(d)) times.push(d.toISOString()); }
         times.sort(); snapshot(); map.leetShow = { ...(map.leetShow || {}), times }; changed(); showMapInfo(); if (window.HallwayLive) HallwayLive.wake(); });
@@ -3809,7 +3840,9 @@ function buildUI() {
         if (e.key.toLowerCase() === "b" && tool === "globelight" && !e.ctrlKey && !e.metaKey) { if (!backHeld) { backHeld = true; paint(); } return; }
         if (e.key.toLowerCase() === "x" && !e.ctrlKey && !e.metaKey) { if (!e.repeat) seeThroughDown(); return; }
         if (e.key === "Alt") { e.preventDefault(); return; }
-        if (e.key === "Shift") { if (!e.repeat && placingNow()) { turnHeld(); shiftTurned = true; } return; }
+        /* Shift alone turns what you're placing, on its release: pressed for another key (? for Keys) it doesn't (10 Nov scan, editor 28) */
+        if (e.key === "Shift") { if (!e.repeat) shiftAlone = placingNow(); return; }
+        shiftAlone = false;
         const mod = e.ctrlKey || e.metaKey, key = e.key.toLowerCase();
         if (mod && key === "z") { e.preventDefault(); if (e.shiftKey) redo(); else undo(); return; }
         if (mod && key === "y") { e.preventDefault(); redo(); return; }
@@ -3836,7 +3869,7 @@ function buildUI() {
         const k = { ArrowLeft: [-60, 0], ArrowRight: [60, 0], ArrowUp: [0, -60], ArrowDown: [0, 60] }[e.key];
         if (k) { e.preventDefault(); cam.x += k[0]; cam.y += k[1]; clampCam(); paint(); followNow(); }
     });
-    document.addEventListener("keyup", e => { if (e.code === "Space") spaceHeld = false; if (e.key.toLowerCase() === "x") setCut(null); if (e.key.toLowerCase() === "b" && backHeld) { backHeld = false; paint(); } });
+    document.addEventListener("keyup", e => { if (e.key === "Shift" && shiftAlone) { shiftAlone = false; if (placingNow()) turnHeld(); } if (e.code === "Space") spaceHeld = false; if (e.key.toLowerCase() === "x") setCut(null); if (e.key.toLowerCase() === "b" && backHeld) { backHeld = false; paint(); } });
     window.addEventListener("blur", () => { setCut(null); backHeld = false; spaceHeld = false; });
     window.addEventListener("beforeunload", e => { if (dirty) { e.preventDefault(); e.returnValue = ""; } });
     new ResizeObserver(resize).observe($("stage"));

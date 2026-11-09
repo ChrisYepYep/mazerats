@@ -4828,7 +4828,10 @@ MODULES["furni-parts.js"] = { dir: "/site/tools/hallway-editor", run: function (
     const FLIPPED = { cabinet: true };
     const CHAIR = [[2, false], [2, true], [0, true], [0, false]];          // clockwise: the client's side, and its mirror
 
-    const turns = k => k === "chair" || k === "mark_arrow" || k === "barstool" ? 4 : (k === "mark_scuff" || k === "mark_tile" || k === "lamp" || k === "tablelamp" || k === "pillar" || k === "pillartall" || k === "smtable" || k === "ballpost") ? 1 : 2;
+    /* the pieces drawn from one picture that the renderer never mirrors look the same every way round: one turn, so R and Shift say so rather than
+       writing a turn that changes nothing (10 Nov scan, editor 14). The two-tile tree does turn: it lies along x or y */
+    const SAME_ROUND = k => k.startsWith("plant_") || /^gift\d+$/.test(k) || (k.startsWith("xmas") && k !== "xmasfir2") || k === "snowman";
+    const turns = k => k === "chair" || k === "mark_arrow" || k === "barstool" ? 4 : (k === "mark_scuff" || k === "mark_tile" || k === "lamp" || k === "tablelamp" || k === "pillar" || k === "pillartall" || k === "smtable" || k === "ballpost" || SAME_ROUND(k)) ? 1 : 2;
     const rotOf = p => { const t = turns(p.k); return (((p.rot || 0) % t) + t) % t; };
     const lengthOf = p => { const r = ROWS[p.k]; return r ? (r.max ? r.max : Math.max(r.min, p.len || r.def)) : 1; };
 

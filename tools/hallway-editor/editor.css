@@ -370,3 +370,17 @@ body.hw-screensaver .hw-clue { visibility: hidden; }
 .first-draw .fd-track { flex: 1; height: 6px; border-radius: 3px; background: var(--raised); overflow: hidden; }
 .first-draw .fd-fill { display: block; height: 100%; width: 0; background: var(--gold); border-radius: 3px; transition: width .25s ease; }
 .first-draw .fd-num { flex: none; min-width: 3ch; text-align: right; color: var(--text-2); font-variant-numeric: tabular-nums; }
+
+/* (10 Nov scan, editor 18 and 19) Below about 1500px the header ran off the right: Publish and Walk it were cut off. The spacing tightens, the
+   clock beside the Time list goes, and as a last resort the header scrolls sideways rather than hiding anything. The right panel's seven tabs
+   sit in an even grid of four across, not a ragged second row. */
+@media (max-width: 1500px) {
+    #top { gap: 5px; padding: 0 6px; }
+    #top .divider { margin: 0; }
+    #top .toggle { padding: 0 7px; }
+    .time-pick #timeNow { display: none; }
+    .time-pick select { max-width: 132px; }
+}
+@media (max-width: 1360px) { #top { overflow-x: auto; scrollbar-width: thin; } #top > * { flex-shrink: 0; } }
+.tabs { display: grid; grid-template-columns: repeat(4, 1fr); }
+.tabs .tab { flex: none; min-width: 0; height: auto; min-height: 32px; padding: 4px 2px; white-space: normal; line-height: 1.15; }
