@@ -2431,9 +2431,10 @@ function build(cfg) {
         const lampLit = [...lampPx.keys()].map(i => [i, layer.d[i * 4], layer.d[i * 4 + 1], layer.d[i * 4 + 2]]);
         /* A sign hangs on its wall, so anything nearer goes over it: furniture on the room's side of that wall, and floor higher than its wall's foot on the line of sight. */
         const maxZ = uneven ? Math.max(...drawList.map(q => q.z)) : 0;
-        const covered = (x, y, z, line, alongY) => {
+        /* out: how far a blade sign stands out from its wall, in tiles: furniture by the wall stands under it, not in front (9 Nov 2026, his: the Floor 2 sign went behind a rare case) */
+        const covered = (x, y, z, line, alongY, out = 0) => {
             const i = y * bw + x; if (line === null) return false;
-            if (furniX[i] !== NO_FURNI && (alongY ? furniX[i] : furniY[i]) >= line) return true;
+            if (furniX[i] !== NO_FURNI && (alongY ? furniX[i] : furniY[i]) >= line + out) return true;
             /* a wall of a part that lies wholly in front of this sign's wall */
             const wo = wallOwner[i]; if (wo) { const Q = lv.patches[wo - 1]; if ((alongY ? Q.x0 : Q.y0) > line) return true; }
             if (!uneven) return false;
@@ -2442,14 +2443,14 @@ function build(cfg) {
         };
         /* a sign takes the room's light like the wall it hangs on, but its name stays just readable in the dark */
         const SIGN_MIN_LIGHT = .32;
-        const onWall = (z, line, alongY, paint) => { layer.set = function (x, y, c) { if (x >= 0 && y >= 0 && x < bw && y < bh && covered(x, y, z, line, alongY)) return; const L = lightAt(x, y, false, z), keep = SIGN_MIN_LIGHT; Buf.prototype.set.call(layer, x, y, [Math.min(255, c[0] * Math.max(keep, L[0] * dim)), Math.min(255, c[1] * Math.max(keep, L[1] * dim)), Math.min(255, c[2] * Math.max(keep, L[2] * dim))]); }; paint(); delete layer.set; };
+        const onWall = (z, line, alongY, paint, out = 0) => { layer.set = function (x, y, c) { if (x >= 0 && y >= 0 && x < bw && y < bh && covered(x, y, z, line, alongY, out)) return; const L = lightAt(x, y, false, z), keep = SIGN_MIN_LIGHT; Buf.prototype.set.call(layer, x, y, [Math.min(255, c[0] * Math.max(keep, L[0] * dim)), Math.min(255, c[1] * Math.max(keep, L[1] * dim)), Math.min(255, c[2] * Math.max(keep, L[2] * dim))]); }; paint(); delete layer.set; };
         if (!cfg.noSigns) for (const s of signs) if (!lv.closed) {
             const g = s.sign || {}, u = g.u || 0, v = g.v || 0, sh = s.alongY ? -1 : 1;
             if (g.hide) continue;                                       // the editor's showing this one live, being dragged
             onWall(s.wallZ, s.wallLine, !!s.alongY, () => signIso(layer, s.s[0] + u, s.s[1] + sh * Math.floor(u / 2) - v, s.name, { alongY: s.alongY, hover: s.hover, max: 14, w: g.w, h: g.h, way: colour }));
         }
         for (const [i, r, g, b2] of lampLit) { layer.d[i * 4] = r; layer.d[i * 4 + 1] = g; layer.d[i * 4 + 2] = b2; }
-        if (!cfg.noSigns && !lv.closed) for (const q of stairPlaques) { if (q.sign.hide) continue; const u = q.sign.u || 0, v = q.sign.blade ? q.sign.v || 0 : 0; onWall(q.z, q.line, false, () => stairPlaque(layer, q.s[0] + u, q.s[1] + Math.floor(u / 2) - v, q.name)); }
+        if (!cfg.noSigns && !lv.closed) for (const q of stairPlaques) { if (q.sign.hide) continue; const u = q.sign.u || 0, v = q.sign.blade ? q.sign.v || 0 : 0; onWall(q.z, q.line, false, () => stairPlaque(layer, q.s[0] + u, q.s[1] + Math.floor(u / 2) - v, q.name), q.sign.blade ? 2 : 0); }
         if (cfg.avatar && cfg.avatar.lv === lv.id) { const P = lv.patches.find(q => cfg.avatar.x >= q.x0 && cfg.avatar.x < q.x1 && cfg.avatar.y >= q.y0 && cfg.avatar.y < q.y1) || lv.patches[0]; const zz = P.z; const c = [Math.round((cfg.avatar.x - cfg.avatar.y) * 16) + gx, Math.round((cfg.avatar.x + cfg.avatar.y) * 8) + gy - zz + 8]; if (c[0] >= 0 && c[1] >= 0 && c[0] < bw && c[1] < bh) avL = lightAt(c[0], c[1], true, zz).map(v => Math.min(1.05, v)); w.avS = [c[0], c[1]]; }
         /* the cap of this floor's wall, wherever the floor above asked for it to go: the wallpaper's own repeat, from further down the same column */
         if (lv.noCap) {
