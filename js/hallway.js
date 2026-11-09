@@ -66,7 +66,9 @@
         const p = document.createElement("p"); p.className = "hallway-note-words"; p.textContent = String(words).replace(/([.!?])\s+(?=[A-Z])/g, "$1\n"); body.appendChild(p);
         const b = document.createElement("button"); b.type = "button"; b.className = "guess-btn guess-btn--lead"; b.textContent = "Back to the archive"; b.addEventListener("click", () => close()); body.appendChild(b);
         /* the fan-site statement, as on the Hallway's own splash, under a rule and quieter than the note (9 Nov 2026, his) */
-        const legal = document.createElement("p"); legal.className = "hallway-note-legal"; legal.textContent = "Maze Rats is independent and not affiliated with, sponsored, supported, or endorsed by Sulake Oy or its affiliates. Any Habbo trademarks or intellectual property used here are done so in accordance with the Habbo Fan Site Policy."; body.appendChild(legal);
+        /* the splash's notes too, word for word, under a rule, then the fan-site statement (10 Nov 2026, his: they were missing here) */
+        for (const [i, t] of ["Maze Rats Hallway is a single player experience, any Habbos you see around the hallways are non-playable characters designed for ambient game mechanics.", "Your Habbo Origins username is only used to show your Habbo's look, and is only remembered on this device."].entries()) { const q = document.createElement("p"); q.className = i ? "hallway-note-small" : "hallway-note-legal"; q.textContent = t; body.appendChild(q); }
+        const legal = document.createElement("p"); legal.className = "hallway-note-small"; legal.textContent = "Maze Rats is independent and not affiliated with, sponsored, supported, or endorsed by Sulake Oy or its affiliates. Any Habbo trademarks or intellectual property used here are done so in accordance with the Habbo Fan Site Policy."; body.appendChild(legal);
         frame.appendChild(body); n.append(bar, frame);
         return n;
     }

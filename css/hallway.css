@@ -124,6 +124,8 @@ html.hallway-instant #hallway-stage { transition: none; }
 .hallway-note-body p { margin: 0; font: inherit; }
 /* the fan-site statement at the foot of a closed screen: below an engraved rule, in a muted brown, so it doesn't pull the eye from the note (9 Nov 2026, his) */
 .hallway-note-body .hallway-note-legal { align-self: stretch; margin-top: 2px; padding-top: 10px; border-top: 1px solid rgba(0, 0, 0, .55); box-shadow: inset 0 1px 0 rgba(255, 220, 160, .12); color: var(--parchment-mid, #c7a679); opacity: .9; text-align: center; }
+/* the notes after the first, in the same quiet brown, without a rule of their own (10 Nov 2026) */
+.hallway-note-body .hallway-note-small { align-self: stretch; margin-top: -4px; color: var(--parchment-mid, #c7a679); opacity: .9; text-align: center; }
 /* the Hallway's mark (9 Nov 2026): over a closed screen's note, and in place of the wordmark on the loader */
 .hallway-logo { display: block; width: 240px; max-width: 100%; height: auto; margin: -4px auto -6px; pointer-events: none; user-select: none; }
 .hallway-logo-loader { width: 420px; max-width: 86vw; margin: 0 auto 6px; }
