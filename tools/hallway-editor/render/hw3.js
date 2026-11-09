@@ -1626,7 +1626,7 @@ function build(cfg) {
         for (let dy = 0; dy < 16; dy++) { const half = dy < 8 ? dy * 2 + 2 : (15 - dy) * 2 + 2; for (let dx = -half; dx <= half; dx++) { const c = smp(dx, dy); if (c) { const sx = a[0] + dx, sy = a[1] + dy; if (sx >= 0 && sy >= 0 && sx < bw && sy < bh) { layer.set(sx, sy, c); mask[sy * bw + sx] = 1; zb[sy * bw + sx] = w.z; fc[sy * bw + sx] = (c[0] << 16) | (c[1] << 8) | c[2]; } } } }
     };
     const inView = P => { const x0 = (P.x0 - P.y1) * 16 + gx - 200 - (xmasOn ? 120 : 0), x1 = (P.x1 - P.y0) * 16 + gx + 200 + (xmasOn ? 120 : 0), y0 = (P.x0 + P.y0) * 8 + gy - P.z - 200 - (xmasOn ? 260 : 0), y1 = (P.x1 + P.y1) * 8 + gy - P.z + 200; return !(x1 < 0 || x0 > bw || y1 < 0 || y0 > bh); };
-    const xmasOn = /\+x$/.test(cfg.light || ""), way = cfg.way, Mname = String(cfg.light || "").replace("+x", "") || (cfg.map && cfg.map.light) || "sconces", M = LIGHTS[Mname] || LIGHTS.sconces, XMAS_K = new Set(["xmastree", "xmaslantern", "xmassmalltree", "xmasdrinks", "xmasduck", "snowman", "gift1", "gift2", "gift3", "gift4", "gift5", "gift6", "gift7", "gift8", "gift9", "gift10", "gift11", "xmasfir"]);
+    const xmasOn = /\+x$/.test(cfg.light || ""), way = cfg.way, Mname = String(cfg.light || "").replace("+x", "") || (cfg.map && cfg.map.light) || "sconces", M = LIGHTS[Mname] || LIGHTS.sconces, XMAS_K = new Set(["xmastree", "xmaslantern", "xmassmalltree", "xmasdrinks", "xmasduck", "snowman", "gift1", "gift2", "gift3", "gift4", "gift5", "gift6", "gift7", "gift8", "gift9", "gift10", "gift11", "xmasfir", "xmasfir2", "xmasfir4"]);
     w.lightsOff = !!M.off;
     let avL = [1, 1, 1];
 
@@ -1914,10 +1914,12 @@ function build(cfg) {
                     if (w.partAt(far)) { const fp = FLOOR_PIECES[k], base = w.S(x, y), im = wallArt(fp.f), X0 = Math.round(base[0]), Y0 = Math.round(base[1]);
                         w.sprites.push({ depth: near.x + near.y + .5, ftx: near.x, fty: near.y, draw: () => { for (let j = 0; j < im.h; j++) for (let i = 0; i < im.w; i++) { const q = (j * im.w + i) * 4, A = im.rgba[q + 3]; if (!A) continue; const X = turned ? X0 - fp.ox + i : X0 + fp.ox - i, Y = Y0 - fp.oy + j, c = [im.rgba[q], im.rgba[q + 1], im.rgba[q + 2]]; if (A < 255) { pieceTint(X, Y, c, A); continue; } layer.set(X, Y, c); if (X >= 0 && Y >= 0 && X < bw && Y < bh) w.keep[Y * bw + X] = ((c[0] << 16) | (c[1] << 8) | c[2]) + 1; } } }); }
                 }
-                else if (k === "xmasfir") {
+                else if (k === "xmasfir" || k === "xmasfir2" || k === "xmasfir4") {
                     /* the small fir, the giant tree's kind (9 Nov 2026): at Christmas only, its foot at the tile's middle, its lights and star always lit */
-                    if (xmasOn && w.partAt({ x, y }) && FLOOR_PIECES.xmasfir) { const fp = FLOOR_PIECES.xmasfir, base = w.S(x + .5, y + .5), im = wallArt(fp.f), li = wallArt(fp.lights), X0 = Math.round(base[0]) - fp.ox, Y0 = Math.round(base[1]) - fp.oy;
-                        w.sprites.push({ depth: x + y + .5, ftx: x, fty: y, draw: () => { for (let j = 0; j < im.h; j++) for (let i = 0; i < im.w; i++) { const q = (j * im.w + i) * 4, lit = li.rgba[q + 3] > 0, src = lit ? li.rgba : im.rgba; if (!src[q + 3]) continue; const X = X0 + i, Y = Y0 + j, c = [src[q], src[q + 1], src[q + 2]]; layer.set(X, Y, c); if (X >= 0 && Y >= 0 && X < bw && Y < bh) { const v = ((c[0] << 16) | (c[1] << 8) | c[2]) + 1; w.keep[Y * bw + X] = lit ? v : 0; w.glowing[Y * bw + X] = lit ? v : 0; } } } }); }
+                    /* the bigger ones stand at the middle of their tiles: two along x (or y, turned), or two by two */
+                    const cx = x + (k === "xmasfir4" || (k === "xmasfir2" && !(p[5] & 1)) ? 1 : .5), cy = y + (k === "xmasfir4" || (k === "xmasfir2" && (p[5] & 1)) ? 1 : .5), fx = Math.ceil(cx) - 1, fy = Math.ceil(cy) - 1;
+                    if (xmasOn && w.partAt({ x, y }) && FLOOR_PIECES[k]) { const fp = FLOOR_PIECES[k], base = w.S(cx, cy), im = wallArt(fp.f), li = wallArt(fp.lights), X0 = Math.round(base[0]) - fp.ox, Y0 = Math.round(base[1]) - fp.oy;
+                        w.sprites.push({ depth: cx + cy - .5, ftx: fx, fty: fy, draw: () => { for (let j = 0; j < im.h; j++) for (let i = 0; i < im.w; i++) { const q = (j * im.w + i) * 4, lit = li.rgba[q + 3] > 0, src = lit ? li.rgba : im.rgba; if (!src[q + 3]) continue; const X = X0 + i, Y = Y0 + j, c = [src[q], src[q + 1], src[q + 2]]; layer.set(X, Y, c); if (X >= 0 && Y >= 0 && X < bw && Y < bh) { const v = ((c[0] << 16) | (c[1] << 8) | c[2]) + 1; w.keep[Y * bw + X] = lit ? v : 0; w.glowing[Y * bw + X] = lit ? v : 0; } } } }); }
                 }
                 else if (FLOOR_PIECES[k]) {
                     if (k === "xmastree" && xmasOn) w.treeGlows.push(w.S(x + .25, y + .25));

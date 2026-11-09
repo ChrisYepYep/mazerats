@@ -33,6 +33,8 @@
     /* The Leet Show's poster stand: four tiles, its own picture each way round (render/hw3.js) */
     ROWS.leetstand = { def: 4, min: 4, max: 4, flip: false, part: () => [] };
     ROWS.leetstand2 = { def: 2, min: 2, max: 2, flip: false, part: () => [] };
+    /* the two-tile Christmas tree (9 Nov 2026): stands across both, either way round */
+    ROWS.xmasfir2 = { def: 2, min: 2, max: 2, flip: false, part: () => [] };
     const SINGLES = {
         plant: ["hw_plant_a_0_0_0"], statue: ["hw_statue_a_0_0_0"], fountain: ["hw_fountain_a_0_0_0"],
         plant_palm: [], plant_orange: [], plant_bonsai: [], plant_roses: [], plant_cactus: [], plant_bay: [], plant_sunflower: [], barstool: [], rarecase: [], arcade_ff: [], arcade_pura: [], arcade_guess: [], arcade_odd: [], arcade_scout: [], arcade_quiz: [], tablelamp: [], xmastree: [], xmaslantern: [], xmassmalltree: [], xmasdrinks: [], xmasduck: [], snowman: [], gift1: [], xmasfir: [], gift5: [], gift6: [], gift7: [], gift8: [], gift9: [], gift10: [], gift11: [], gift2: [], gift3: [], gift4: [], mark_scuff: [], mark_tile: [], mark_arrow: [], shelf: ["hw_shelf_a_0_4_0"], cabinet: ["hw_closet1_a_0_2_0"], water: ["hw_watermatic_a_0_4_0"],
@@ -66,7 +68,7 @@
         if (ROWS[p.k]) return parts(p).map(q => [q.x, q.y]);
         /* an arrow tile is one of the floor's big squares, which start on even tiles */
         if (p.k === "mark_arrow") { const x = p.x - (p.x & 1), y = p.y - (p.y & 1); return [[x, y], [x + 1, y], [x, y + 1], [x + 1, y + 1]]; }
-        if (p.k === "fountain" || p.k === "statue") return [[p.x, p.y], [p.x + 1, p.y], [p.x, p.y + 1], [p.x + 1, p.y + 1]];
+        if (p.k === "fountain" || p.k === "statue" || p.k === "xmasfir4") return [[p.x, p.y], [p.x + 1, p.y], [p.x, p.y + 1], [p.x + 1, p.y + 1]];
         return [[p.x, p.y]];
     }
     /* A maze's name for its door: the archive's with its glyphs and decoration off ("*ÕMaze EmpireÕ*" is Maze Empire's door), as render/hw.js's clean() has it */
@@ -75,7 +77,7 @@
     /* What changes at Christmas, read from the same data the renderer goes by (9 Nov scan, build 2): render/hw3.js's XMAS_K props
        are only drawn under a "+x" light, every wall item whose wall-items.js entry has xmas likewise (i_swag was missing from the
        old hand list), a window shows snow, a statue becomes the giant tree, and the level's garlands are baked in */
-    const XMAS_K = new Set(["xmastree", "xmaslantern", "xmassmalltree", "xmasdrinks", "xmasduck", "snowman", "gift1", "gift2", "gift3", "gift4", "gift5", "gift6", "gift7", "gift8", "gift9", "gift10", "gift11", "xmasfir"]);
+    const XMAS_K = new Set(["xmastree", "xmaslantern", "xmassmalltree", "xmasdrinks", "xmasduck", "snowman", "gift1", "gift2", "gift3", "gift4", "gift5", "gift6", "gift7", "gift8", "gift9", "gift10", "gift11", "xmasfir", "xmasfir2", "xmasfir4"]);
     let wallDefs = null;      // looked up the first time it's asked: on the page wall-items.js loads after this file
     const wallDef = k => { if (!wallDefs) { const L = typeof module !== "undefined" && module.exports ? require("./wall-items.js") : root.WALL_ITEMS; if (!L) return null; wallDefs = new Map(L.map(i => [i.id, i])); } return wallDefs.get(k) || null; };
     const xmasWallItem = k => k === "i_window" || !!(wallDef(k) || {}).xmas;
