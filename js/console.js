@@ -633,7 +633,7 @@ document.addEventListener("DOMContentLoaded", () => {
        came while they were away, met on their way back in). */
     const SOUND_VOLUME = 0.5;
     // ?v=2: the louder files, past anything the browser kept of the quiet ones.
-    const SOUNDS = { sent: "assets/sounds/console-sent.wav?v=2", notice: "assets/sounds/console-notice.wav?v=2" };
+    const SOUNDS = { sent: "/assets/sounds/console-sent.wav?v=2", notice: "/assets/sounds/console-notice.wav?v=2" };
     const soundEls = {};
     let soundWaiting = null;
     function playSound(name) {
@@ -1189,8 +1189,8 @@ if (typeof renderPrivacySections === "function") {
     const NOTICE_POLL_MS = 60 * 1000;
     const NOTICE_RECHECK_MS = 15 * 1000;
     const NOTICE_RECHECK_OUT_MS = 10 * 60 * 1000;
-    const ICON = "assets/img/console-icon.png";
-    const ICON_ALERT = "assets/img/console-icon-alert.gif";
+    const ICON = "/assets/img/console-icon.png";
+    const ICON_ALERT = "/assets/img/console-icon-alert.gif";
     const noticeTextEl = document.getElementById("console-notice-text");
     const noticeCountEl = document.getElementById("console-notice-count");
     // Back and Next (5 Oct 2026, the owner's), at the foot as the list's

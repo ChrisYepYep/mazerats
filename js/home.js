@@ -4210,7 +4210,7 @@ document.addEventListener("DOMContentLoaded", () => {
     function timelineEntryHtml(entry, index) {
         const date = formatMazeDate(entry.when);
         const medal = entry.ecSeason
-            ? `<img class="timeline-medal" src="assets/img/ec/ec-badge-${entry.ecSeason}.png" alt="Event Creators season ${entry.ecSeason === "s1" ? "one" : "two"}">`
+            ? `<img class="timeline-medal" src="/assets/img/ec/ec-badge-${entry.ecSeason}.png" alt="Event Creators season ${entry.ecSeason === "s1" ? "one" : "two"}">`
             : "";
         return `
             <li class="timeline-entry timeline-entry-${entry.kind}">
@@ -9283,7 +9283,7 @@ document.addEventListener("DOMContentLoaded", () => {
            reduced it to one of the two seasons or nothing. */
         const ecSeason = isEventItem ? (n.ecSeason || "") : "";
         if (ecSeason) {
-            modalEcBadge.src = `assets/img/ec/ec-badge-${ecSeason}.png`;
+            modalEcBadge.src = `/assets/img/ec/ec-badge-${ecSeason}.png`;
             /* The alt keeps the whole phrase on one line, which is what a
                screen reader wants — and it carries the season on a phone,
                where the label beside the medal is abbreviated. */

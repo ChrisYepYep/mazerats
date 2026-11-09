@@ -458,6 +458,7 @@
            no use for one, and a maze's furni list on a bad FurniIndex
            afternoon was a hundred snapshots of the whole page for one
            report and a count. */
+        function anyPictureShown() { var ims = document.images; for (var i = 0; i < ims.length; i++) if (ims[i].complete && ims[i].naturalWidth > 0) return true; return false; }
         function hold(kind, failure) {
             if (!seen[fingerprint(kind, failure)]) {
                 if (distinct >= PAGE_MAX || sentThisVisit() >= SESSION_MAX) return;
@@ -471,7 +472,15 @@
                cancelled "rooms" request after all. */
             var hidesThen = hides;
             setTimeout(function () {
-                try { if (!leaving && hides === hidesThen && !departing()) capture(kind, failure); } catch (x) { /* never */ }
+                try {
+                    if (leaving || hides !== hidesThen || departing()) return;
+                    /* A picture that failed on a page where no picture has loaded at all (9 Nov 2026): the visitor's browser is
+                       blocking pictures, not our pictures failing. A scraper running Chrome with pictures turned off filed six
+                       of these an hour, every picture on every page it read (console icon, maze pictures, FurniIndex icons),
+                       and a real visitor always has some picture on screen by now: the header's icons, the archive's. */
+                    if (failure.tag === "img" && !anyPictureShown()) { ignored++; return; }
+                    capture(kind, failure);
+                } catch (x) { /* never */ }
             }, LEAVE_GRACE_MS);
         }
 

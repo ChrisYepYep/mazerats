@@ -1657,7 +1657,7 @@ document.addEventListener("DOMContentLoaded", async () => {
            the value reaches a filename, so it is not taken on trust. */
         const ecSeason = ["s1", "s2"].includes(event.ecSeason) ? event.ecSeason : "";
         if (ecSeason) {
-            ecBadgeEl.src = `assets/img/ec/ec-badge-${ecSeason}.png`;
+            ecBadgeEl.src = `/assets/img/ec/ec-badge-${ecSeason}.png`;
             // Spelled out and abbreviated, exactly as js/home.js sets them —
             // see there for why both are written and the CSS chooses.
             ecBadgeEl.alt = EC_SEASON_NAMES[ecSeason];
