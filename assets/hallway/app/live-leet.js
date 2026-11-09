@@ -37,7 +37,7 @@
     const ask = () => { if (document.hidden) return; fetch("/.netlify/functions/leet-schedule", { headers: { Accept: "application/json" } }).then(r => r.ok ? r.json() : null).then(j => { if (!j) return; const was = JSON.stringify(feed); feed = j; if (JSON.stringify(feed) !== was && window.HallwayLive) HallwayLive.wake(); }).catch(() => { /* the typed times stand */ }); };
     ask(); setInterval(ask, 5 * 60000);
     const LIVE = window.HallwayLive, SF = window.StampFont; if (!LIVE || !SF) return;
-    const SLIP = [0xf3, 0xe7, 0xc7], RIM = [0xd9, 0xc4, 0x9a], DK = [0xb4, 0x9c, 0x6e], INK = [112, 12, 14];
+    const SLIP = [0xf3, 0xe7, 0xc7], RIM = [0xd9, 0xc4, 0x9a], DK = [0xb4, 0x9c, 0x6e], INK = [112, 12, 14], SHEEN = [0xef, 0xe1, 0xbd];   // SHEEN: the light streaks across the paper on his narrow stand (9 Nov 2026), paper too
 
     /* a picture's slip, as it is drawn on screen (flipped already where it is), once per picture and way round */
     const slips = new Map(), imgs = new Map();
@@ -47,7 +47,7 @@
         const im = img(f); if (!im.complete || !im.naturalWidth) return null;
         const c = document.createElement("canvas"); c.width = im.naturalWidth; c.height = im.naturalHeight; const g = c.getContext("2d", { willReadFrequently: true });
         if (flip) { g.translate(c.width, 0); g.scale(-1, 1); } g.drawImage(im, 0, 0);
-        const s = SF.findSlip(g.getImageData(0, 0, c.width, c.height).data, c.width, c.height, SLIP); slips.set(key, s); return s;
+        const s = SF.findSlip(g.getImageData(0, 0, c.width, c.height).data, c.width, c.height, [SLIP, SHEEN]); slips.set(key, s); return s;
     }
     /* the Leet Show's posters on this floor: where each picture goes, which way round, and who stands where to see what's in front of it */
     function posters(l) {
@@ -111,7 +111,7 @@
                 const rim = at(x, cc[0] - 1); if (!rim || ![0, 1, 2].every(k => Math.abs(best.p[k] / SLIP[k] - rim[k] / RIM[k]) < .07)) continue;
                 usual.set(x, best.p); shown++; }
             if (shown < s.cols.size * .3) continue;                                // the poster isn't there to be seen
-            for (const [x, y] of SF.onSlip(s, ln)) { const u = usual.get(x), p = at(x, y); if (!u || !p) continue; /* the slip, or its rim top or bottom (letters stand upright, so their edges can reach the rim), in this light */ const paper = near(p, u) || near(p, u.map((v, k) => v * RIM[k] / SLIP[k])) || near(p, u.map((v, k) => v * DK[k] / SLIP[k])); if (!paper) continue; px.push(x, y, `rgb(${Math.round(p[0] * INK[0] / SLIP[0])},${Math.round(p[1] * INK[1] / SLIP[1])},${Math.round(p[2] * INK[2] / SLIP[2])})`); }
+            for (const [x, y] of SF.onSlip(s, ln)) { const u = usual.get(x), p = at(x, y); if (!u || !p) continue; /* the slip, or its rim top or bottom (letters stand upright, so their edges can reach the rim), in this light */ const paper = near(p, u) || near(p, u.map((v, k) => v * RIM[k] / SLIP[k])) || near(p, u.map((v, k) => v * DK[k] / SLIP[k])) || near(p, u.map((v, k) => v * SHEEN[k] / SLIP[k])); if (!paper) continue; px.push(x, y, `rgb(${Math.round(p[0] * INK[0] / SLIP[0])},${Math.round(p[1] * INK[1] / SLIP[1])},${Math.round(p[2] * INK[2] / SLIP[2])})`); }
             put(c, ox, oy, z, P, px);
         }
     } });

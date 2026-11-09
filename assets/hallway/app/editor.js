@@ -195,17 +195,28 @@ function wallStands(l, X, Y, axis) {
     return false;
 }
 function wallAt(px, py, l, full) {
-    for (const dz of heightsOf(l)) for (let h = 0; h <= WALL; h += 4) {
-        const [fx, fy] = pxToTile(px, py + h, levelZ(l) + dz * HEIGHT), X = Math.floor(fx), Y = Math.floor(fy);
-        /* a point h up a wall: walk back to the wall's floor line */
-        if (hasFloor(l, X, Y) && heightAt(l, X, Y) === dz) {
-            const backOpen = !hasFloor(l, X, Y - 1) && fy - Y < .5 && wallStands(l, X, Y - 1, "x"), leftOpen = !hasFloor(l, X - 1, Y) && fx - X < .5 && wallStands(l, X - 1, Y, "y");
-            if (backOpen && (full || (!isNone(l, "x", Y, X) && (h <= HALF_WALL || !isHalf(l, "x", Y, X))))) return { axis: "x", at: X, line: Y };
-            if (leftOpen && (full || (!isNone(l, "y", X, Y) && (h <= HALF_WALL || !isHalf(l, "y", X, Y))))) return { axis: "y", at: Y + 1, line: X };
-            if (fy - Y < .5 && isDrop(l, "x", Y, X) && h <= retaining(l, "x", Y, X).H && (full || !isNone(l, "x", Y, X))) return { axis: "x", at: X, line: Y, drop: true };
-            if (fx - X < .5 && isDrop(l, "y", X, Y) && h <= retaining(l, "y", X, Y).H && (full || !isNone(l, "y", X, Y))) return { axis: "y", at: Y + 1, line: X, drop: true };
+    /* walking down from the point, the first wall met is the furthest back: where walls step forward a cell at a time, a point on a nearer
+       wall's face also lies over the floor in front of the wall behind it. The nearest wall that reaches the point is the one you see, so
+       keep looking and take the last found (9 Nov 2026, his: garlands couldn't be laid on short walls; the click went to the wall behind) */
+    for (const dz of heightsOf(l)) { let found = null;
+        for (let h = 0; h <= WALL; h += 4) {
+            const [fx, fy] = pxToTile(px, py + h, levelZ(l) + dz * HEIGHT), X = Math.floor(fx), Y = Math.floor(fy);
+            /* a point h up a wall: walk back to the wall's floor line */
+            /* a tile already answered keeps its first answer, as before (its corner picks the wall by where the point first crosses it) */
+            if (found && found.tile === X + "," + Y) continue;
+            const was = found;
+            if (hasFloor(l, X, Y) && heightAt(l, X, Y) === dz) {
+                const backOpen = !hasFloor(l, X, Y - 1) && fy - Y < .5 && wallStands(l, X, Y - 1, "x"), leftOpen = !hasFloor(l, X - 1, Y) && fx - X < .5 && wallStands(l, X - 1, Y, "y");
+                if (backOpen && (full || (!isNone(l, "x", Y, X) && (h <= HALF_WALL || !isHalf(l, "x", Y, X))))) found = { axis: "x", at: X, line: Y, tile: X + "," + Y };
+                else if (leftOpen && (full || (!isNone(l, "y", X, Y) && (h <= HALF_WALL || !isHalf(l, "y", X, Y))))) found = { axis: "y", at: Y + 1, line: X, tile: X + "," + Y };
+                else if (fy - Y < .5 && isDrop(l, "x", Y, X) && h <= retaining(l, "x", Y, X).H && (full || !isNone(l, "x", Y, X))) found = { axis: "x", at: X, line: Y, drop: true, tile: X + "," + Y };
+                else if (fx - X < .5 && isDrop(l, "y", X, Y) && h <= retaining(l, "y", X, Y).H && (full || !isNone(l, "y", X, Y))) found = { axis: "y", at: Y + 1, line: X, drop: true, tile: X + "," + Y };
+            }
+            /* only a wall in front takes over: another line nearer the viewer, or the other way round where walls step; further along the same wall, the first tile stays */
+            if (was && found !== was) { const ax = found.axis, ln = found.line, X2 = ax === "x" ? found.at : ln, Y2 = ax === "x" ? ln : found.at - 1, drawn = !isNone(l, ax, ln, ax === "x" ? X2 : Y2) && (h <= HALF_WALL || !isHalf(l, ax, ln, ax === "x" ? X2 : Y2));
+                if ((ax === was.axis && ln <= was.line) || !drawn) found = was; }   // and a wall not drawn (none, or a half wall below the point) hides nothing
         }
-    }
+        if (found) { delete found.tile; return found; } }
     return null;
 }
 /* the flights that go through a top-left wall: "side" straight on, "sideturn" turning at a landing. A "sideturn" is a "turn" mirrored, x for y. */
@@ -251,6 +262,11 @@ function stairWallAt(px, py, l) {
 /* for things that hang on a wall: a real wall, or else a stairwell's */
 function hangWallAt(px, py, l) {
     const r = wallAt(px, py, l), inOpening = r && map.stairs.some(s => s.low === l.id && (thruLeft(s) ? r.axis === "y" && s.x === r.line && r.at > s.a && r.at <= s.b : r.axis === "x" && s.y === r.line && r.at >= s.a && r.at < s.b));
+    return r && !inOpening ? r : stairWallAt(px, py, l) || r;
+}
+/* for garlands and festoons: any wall, hidden ones too, or a stairwell's, which the renderer hangs them on under the floor above (9 Nov 2026, his) */
+function garlandWallAt(px, py, l) {
+    const r = wallAt(px, py, l, true), inOpening = r && map.stairs.some(s => s.low === l.id && (thruLeft(s) ? r.axis === "y" && s.x === r.line && r.at > s.a && r.at <= s.b : r.axis === "x" && s.y === r.line && r.at >= s.a && r.at < s.b));
     return r && !inOpening ? r : stairWallAt(px, py, l) || r;
 }
 /* a height that clears the steps or landing under it, and stays on the wall */
@@ -1619,7 +1635,7 @@ function sortByDifficulty() {
 
 /* ---------- select and move ---------- */
 let selected = null;            // { type, l, o }
-const TALL = { leetstand: [48, 112], leetstand2: [32, 122], barstool: [9, 24], plant_palm: [16, 74], plant_orange: [12, 48], plant_bonsai: [16, 32], plant_roses: [8, 36], plant_cactus: [12, 52], plant_bay: [24, 64], plant_sunflower: [9, 46], archway: [17, 118], mark_arrow: [17, 10], arcade_ff: [16, 56], arcade_pura: [16, 56], arcade_guess: [16, 56], arcade_odd: [16, 56], arcade_scout: [16, 56], arcade_quiz: [16, 56], tablelamp: [8, 22], xmastree: [20, 72], xmassmalltree: [14, 30], snowman: [14, 34], xmaslantern: [10, 24], xmasdrinks: [12, 18], xmasduck: [10, 16], gift1: [12, 20], gift2: [12, 20], gift3: [12, 20], gift4: [12, 20], trophy: [28, 84], rarecase: [15, 62], mark_scuff: [14, 12], mark_tile: [14, 12], rope: [14, 36], pillartall: [12, 150], smtable: [13, 24], ballpost: [13, 28], ero_stone: [16, 40], ero_walnut: [16, 40], ero_evergreen: [16, 40], ero_flower: [16, 40], lamp: [12, 54], statue: [26, 105], pillar: [12, 110], plant: [11, 50], ero: [16, 40], fountain: [26, 34], shelf: [22, 62], cabinet: [32, 82], water: [12, 44], chair: [11, 28], table: [16, 22], sofa: [34, 28] };
+const TALL = { leetstand: [48, 112], leetstand2: [32, 116], barstool: [9, 24], plant_palm: [16, 74], plant_orange: [12, 48], plant_bonsai: [16, 32], plant_roses: [8, 36], plant_cactus: [12, 52], plant_bay: [24, 64], plant_sunflower: [9, 46], archway: [17, 118], mark_arrow: [17, 10], arcade_ff: [16, 56], arcade_pura: [16, 56], arcade_guess: [16, 56], arcade_odd: [16, 56], arcade_scout: [16, 56], arcade_quiz: [16, 56], tablelamp: [8, 22], xmastree: [20, 72], xmassmalltree: [14, 30], snowman: [14, 34], xmaslantern: [10, 24], xmasdrinks: [12, 18], xmasduck: [10, 16], gift1: [12, 20], gift2: [12, 20], gift3: [12, 20], gift4: [12, 20], trophy: [28, 84], rarecase: [15, 62], mark_scuff: [14, 12], mark_tile: [14, 12], rope: [14, 36], pillartall: [12, 150], smtable: [13, 24], ballpost: [13, 28], ero_stone: [16, 40], ero_walnut: [16, 40], ero_evergreen: [16, 40], ero_flower: [16, 40], lamp: [12, 54], statue: [26, 105], pillar: [12, 110], plant: [11, 50], ero: [16, 40], fountain: [26, 34], shelf: [22, 62], cabinet: [32, 82], water: [12, 44], chair: [11, 28], table: [16, 22], sofa: [34, 28] };
 function pickIn(l, px, py) {
     const [fx, fy] = tileIn(l, px, py), X = Math.floor(fx), Y = Math.floor(fy);
     /* upright things first, front-most first, by what you can actually see of them */
@@ -2248,9 +2264,9 @@ canvas.addEventListener("pointerdown", e => {
     if (tool === "halfwall" || tool === "nowall" || tool === "addwall") { drag = { kind: "halfwall" }; halfBrush(drag, px, py); return; }
     if (tool === "swag") { drag = { kind: "swag" }; swagBrush(drag, px, py); return; }
     /* not on a drop (a step between floor heights): there's no wall there to hang it from, and it floated a whole wall up (9 Nov scan, renderer finding 2) */
-    if (tool === "garland" || tool === "garland2" || tool === "festoon") { const w = wallAt(px, py, level, true); if (w && w.drop) { flash("That's a step, not a wall: hang it on a wall."); return; } }
-    if (tool === "garland" || tool === "garland2") { const w = wallAt(px, py, level, true); if (!w) return; const t = wallTile(w); if (tool === "garland2") { snapshot(); const g = { axis: w.axis, line: w.line, a: t, b: t + 2 }; (level.garlands = level.garlands || []).push(g); changed(); select({ type: "garland", l: level, o: g }); return; } drag = { kind: "garland", axis: w.axis, line: w.line, t0: t }; window.HallwayGarland.draft = { l: level, axis: w.axis, line: w.line, a: t, b: t + 1 }; paint(); return; }
-    if (tool === "festoon") { const w = wallAt(px, py, level, true); if (!w) return; const t = wallTile(w); drag = { kind: "festoon", axis: w.axis, line: w.line, t0: t, t1: t }; window.HallwayFestoon.draft = { l: level, axis: w.axis, line: w.line, a: t, b: t + 1, h: 118, colour: lastFestoon.colour, twinkle: lastFestoon.twinkle }; paint(); return; }
+    if (tool === "garland" || tool === "garland2" || tool === "festoon") { const w = garlandWallAt(px, py, level); if (w && w.drop) { flash("That's a step, not a wall: hang it on a wall."); return; } }
+    if (tool === "garland" || tool === "garland2") { const w = garlandWallAt(px, py, level); if (!w) return; const t = wallTile(w); if (tool === "garland2") { snapshot(); const g = { axis: w.axis, line: w.line, a: t, b: t + 2 }; (level.garlands = level.garlands || []).push(g); changed(); select({ type: "garland", l: level, o: g }); return; } drag = { kind: "garland", axis: w.axis, line: w.line, t0: t }; window.HallwayGarland.draft = { l: level, axis: w.axis, line: w.line, a: t, b: t + 1 }; paint(); return; }
+    if (tool === "festoon") { const w = garlandWallAt(px, py, level); if (!w) return; const t = wallTile(w); drag = { kind: "festoon", axis: w.axis, line: w.line, t0: t, t1: t }; window.HallwayFestoon.draft = { l: level, axis: w.axis, line: w.line, a: t, b: t + 1, h: 118, colour: lastFestoon.colour, twinkle: lastFestoon.twinkle }; paint(); return; }
     if (tool === "steps") {
         const f = tileIn(level, px, py), edge = heightEdgeAt(level, f[0], f[1]);
         if (!edge) { flash("Steps go where two heights meet. Set a floor's height first, with Floor height."); return; }
@@ -2278,8 +2294,8 @@ canvas.addEventListener("pointermove", e => {
     if (drag && drag.kind === "rubout") { rubOut(drag, px, py); return; }
     if (drag && drag.kind === "halfwall") { halfBrush(drag, px, py); return; }
     if (drag && drag.kind === "swag") { swagBrush(drag, px, py); return; }
-    if (drag && drag.kind === "garland") { const w = wallAt(px, py, level, true); if (w && !w.drop && w.axis === drag.axis && w.line === drag.line) { const t1 = wallTile(w), dr = window.HallwayGarland.draft; dr.a = Math.min(drag.t0, t1); dr.b = Math.max(drag.t0, t1) + 1; paint(); } return; }
-    if (drag && drag.kind === "festoon") { const w = wallAt(px, py, level, true); if (w && !w.drop && w.axis === drag.axis && w.line === drag.line) { drag.t1 = wallTile(w); const dr = window.HallwayFestoon.draft; dr.a = Math.min(drag.t0, drag.t1); dr.b = Math.max(drag.t0, drag.t1) + 1; paint(); } return; }
+    if (drag && drag.kind === "garland") { const w = garlandWallAt(px, py, level); if (w && !w.drop && w.axis === drag.axis && w.line === drag.line) { const t1 = wallTile(w), dr = window.HallwayGarland.draft; dr.a = Math.min(drag.t0, t1); dr.b = Math.max(drag.t0, t1) + 1; paint(); } return; }
+    if (drag && drag.kind === "festoon") { const w = garlandWallAt(px, py, level); if (w && !w.drop && w.axis === drag.axis && w.line === drag.line) { drag.t1 = wallTile(w); const dr = window.HallwayFestoon.draft; dr.a = Math.min(drag.t0, drag.t1); dr.b = Math.max(drag.t0, drag.t1) + 1; paint(); } return; }
     if (drag && drag.kind === "edgebrush") { edgeBrush(drag, px, py); return; }
     if (drag && drag.kind === "move") { moveSelected(drag, px, py); return; }
     if (!drag && (tool === "select" || tool === "walk")) {
