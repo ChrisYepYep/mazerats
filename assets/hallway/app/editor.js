@@ -2406,8 +2406,11 @@ canvas.addEventListener("pointerup", e => {
                 if (!hasFloor(level, x, y)) continue;
                 let stuck = false; for (let a = x; a < x + 2 && !stuck; a++) for (let b = y; b < y + 2 && !stuck; b++) if (heightLocked(level, a, b)) stuck = true;
                 if (stuck && heightBrush) { locked = true; continue; }
-                if (heightAt(level, x, y) === heightBrush) continue;
-                (level.rise = level.rise || {})[cellKey(x, y)] = heightBrush; changedAny = true;
+                const k = cellKey(x, y), rise = (level.rise && level.rise[k]) || 0, lifted = !!(level.floorLift && level.floorLift[k]);
+                if (heightAt(level, x, y) === heightBrush && (!lifted || rise === heightBrush)) continue;
+                /* floor and walls together, to exactly the height set: a floor-only lift left on the cell was added on top, so it
+                   wouldn't come down (9 Nov 2026, his: "it raises them, but won't lower") */
+                (level.rise = level.rise || {})[k] = heightBrush; if (lifted) delete level.floorLift[k]; changedAny = true;
             }
             tidyHeights(level);
             if (!changedAny) { undoStack.pop(); flash(locked ? "Stairs and the lift have to stay level with the floor round them." : "That floor's already at that height."); paint(); return; }
