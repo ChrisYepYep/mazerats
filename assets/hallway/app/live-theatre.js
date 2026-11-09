@@ -85,7 +85,7 @@
         if (ctx) return true; const AC = window.AudioContext || window.webkitAudioContext; if (!AC) return false;
         ctx = new AC({ latencyHint: "playback" });
         /* through the curtain and down the tunnel: the top taken off, a little body kept */
-        mute = ctx.createBiquadFilter(); mute.type = "lowpass"; mute.frequency.value = 900; mute.Q.value = .5;
+        mute = ctx.createBiquadFilter(); mute.type = "lowpass"; mute.frequency.value = 1400; mute.Q.value = .5;
         out = ctx.createGain(); out.gain.value = 0; mute.connect(out); out.connect(ctx.destination);
         return true;
     }
@@ -116,7 +116,8 @@
         if (!nextEvent) nextEvent = now + 8000 + Math.random() * 10000;
         else if (now > nextEvent) { const ready = EVENTS.filter(e => bufs[e[0]]); if (ready.length) { const e = ready[Math.floor(Math.random() * ready.length)], v = play(e[0], e[1] * (.6 + Math.random() * .4), 1.5, Math.random() * Math.max(0, bufs[e[0]].duration - 12)); if (v) { const len = Math.min(bufs[e[0]].duration, 6 + Math.random() * 10); setTimeout(() => fadeOut(v, 2.5), len * 1000); } } nextEvent = now + 20000 + Math.random() * 35000; }
     }
-    function apply() { if (!ctx) return; const t = ctx.currentTime, g = .22 * wanted * volume(); out.gain.cancelScheduledValues(t); out.gain.setTargetAtTime(g, t, .8); if (wanted <= 0 && bed && performance.now() > nextBed - 1) { /* keep it, silent, so it picks up where it was */ } }
+    function apply() { if (!ctx) return; const t = ctx.currentTime, g = .6 * wanted * volume();   /* louder than at first, and the music dips under it, so it is heard (9 Nov 2026, his: he couldn't hear it) */
+        if (window.HallwayAudio && HallwayAudio.duck) HallwayAudio.duck(wanted); out.gain.cancelScheduledValues(t); out.gain.setTargetAtTime(g, t, .8); if (wanted <= 0 && bed && performance.now() > nextBed - 1) { /* keep it, silent, so it picks up where it was */ } }
     setInterval(() => { try { tick(); } catch (e) { /* never in the way of the walk */ } }, 400);
     window.HallwayTheatre = { bulbsOf, get level() { return wanted; } };
 })();

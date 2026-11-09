@@ -503,6 +503,7 @@
 
     /* ---------- the live player ---------- */
     let eng = null, timer = 0, order = [], orderAt = 0, playing = false, voice = null, orderXmas = null;
+    let duckAmt = 0; const ducked = () => 1 - .5 * duckAmt;
     /* carols only at Christmas, shuffled in with the rest then (8 Nov 2026, his: "Christmas should also play the normal soundtrack, shuffled in with christmas music") */
     const xmasNow = () => !!window.hallwayXmas, inSeason = i => !TRACKS[i].xmas || xmasNow();
     const api = {
@@ -512,9 +513,11 @@
         get playing() { return playing; },
         get current() { return eng && !voice ? eng.idx : -1; },
         volume: .8,
+        /* something nearby wants to be heard over the music (the Theatredrome, 9 Nov 2026, his: he couldn't hear it): 0 to 1, the music dipping by up to half */
+        duck(d) { d = Math.max(0, Math.min(1, +d || 0)); if (Math.abs(d - duckAmt) < .02) return; duckAmt = d; if (eng && playing && !voice) { const t = eng.ctx.currentTime; eng.master.gain.cancelScheduledValues(t); eng.master.gain.setTargetAtTime(api.volume * .62 * ducked(), t, .9); } },
         get position() { if (!eng || !playing || voice) return null; const b = eng.active.find(x => x.i === eng.idx && x.stopAt === null); return b ? { at: Math.max(0, eng.ctx.currentTime - b.t0), of: b.end - b.t0 } : null; },
         resume() { if (eng && playing && eng.ctx.state !== "running") eng.ctx.resume().catch(() => {}); },
-        setVolume(v) { api.volume = v; if (voice) voice.setVolume(v); if (eng && playing && !voice) { const t = eng.ctx.currentTime; eng.master.gain.cancelScheduledValues(t); eng.master.gain.setTargetAtTime(v * .62, t, .1); } },
+        setVolume(v) { api.volume = v; if (voice) voice.setVolume(v); if (eng && playing && !voice) { const t = eng.ctx.currentTime; eng.master.gain.cancelScheduledValues(t); eng.master.gain.setTargetAtTime(v * .62 * ducked(), t, .1); } },
         /* voice: { start(volume), stop(), setVolume(v) }. It plays only while the music's on; the player's own place in the round is kept for when it gives back */
         takeOver(v) { if (voice === v) return; if (voice && playing) voice.stop(); voice = v; if (playing) { fadeOutTracks(); v.start(api.volume); } changed(); },
         giveBack(v) { if (voice !== v) return; voice = null; if (playing) { v.stop(); playing = false; api.start(); } changed(); },
@@ -526,7 +529,7 @@
             if (eng.ctx.state === "suspended") eng.ctx.resume();
             const t = eng.ctx.currentTime;
             for (const b of eng.active) if (b.stopAt !== null && b.stopAt > t) { for (const g of [b.g.gain, b.wetG.gain]) { g.cancelScheduledValues(t); g.setValueAtTime(g.value, t); g.linearRampToValueAtTime(0, t + .25); } b.stopAt = t + .25; }
-            eng.master.gain.cancelScheduledValues(t); eng.master.gain.setTargetAtTime(api.volume * .62, t, .8);
+            eng.master.gain.cancelScheduledValues(t); eng.master.gain.setTargetAtTime(api.volume * .62 * ducked(), t, .8);
             playing = true;
             if (!eng.active.some(b => b.stopAt === null)) startBus(eng, i === undefined || !inSeason(i) ? nextIndex() : i, t + .05, 3, undefined, 2);
             if (!timer) timer = setInterval(tick, 500);
