@@ -14,14 +14,16 @@ const N = (a, b, c = 0) => { const s = Math.sin(a * 12.9898 + b * 78.233 + c * 3
 /* the outline, from the top (u = 0) to the lowest tier (u = 1), as a share of R: a narrow spire, sides that swell, a rounded foot */
 const ENVELOPE = u => { if (u <= 0) return 0; const s = Math.pow(u, .96) * (1 + .08 * Math.sin(Math.PI * u)); return s * (u > .9 ? 1 - .45 * Math.pow((u - .9) / .1, 2) * .2 : 1); };
 function grow(o) {
-    const { Ht, R, seed = 1 } = o, W2 = Math.ceil(R * 2.9 + 60), H2 = Ht + 150, ox = W2 >> 1, oy = Ht + 40;
+    /* S: the size of the tree's build against the giant one's, for a small tree: its trunk, its bare foot and the gaps between its tiers
+       shrink with it, or the trunk shows all the way up (9 Nov 2026, his: small trees). 1 for the giant tree, which stays as it was */
+    const { Ht, R, seed = 1 } = o, S = o.scale || 1, W2 = Math.ceil(R * 2.9 + 60), H2 = Ht + 150, ox = W2 >> 1, oy = Ht + 40;
     const SZ = W2 * H2, px = new Float32Array(SZ * 4), owner = new Int8Array(SZ), depth = new Float32Array(SZ).fill(-1e9), tone = new Float32Array(SZ), wood = new Int8Array(SZ);
     let rnd = seed * 9301 + 49297; const rand = () => { rnd = (rnd * 9301 + 49297) % 233280; return rnd / 233280; };
     const scr = (x, y, z) => [ox + (x - y), oy + (x + y) / 2 - z], near = (x, y) => x + y;
     const plot = (x, y, z, k, isWood) => { if (z < .5) z = .5; const p = scr(x, y, z), X = Math.round(p[0]), Y = Math.round(p[1]); if (X < 0 || Y < 0 || X >= W2 || Y >= H2) return; const i = Y * W2 + X, d = near(x, y); if (d < depth[i]) return; depth[i] = d; owner[i] = 1; tone[i] = k; wood[i] = isWood ? 1 : 0; };
-    const LX = -.6, LY = .2, LZ = .77, H0 = 20, uOf = h => (Ht - h) / (Ht - H0), rOf = h => R * ENVELOPE(uOf(h));
+    const LX = -.6, LY = .2, LZ = .77, H0 = 20 * S, uOf = h => (Ht - h) / (Ht - H0), rOf = h => R * ENVELOPE(uOf(h));
     const trunkTop = Ht - 20;
-    for (let z = 0; z < trunkTop; z += .5) { const w = Math.max(1, 5.5 * (1 - z / Ht)); for (let a = 0; a < 6.3; a += .25) plot(Math.cos(a) * w, Math.sin(a) * w, z, .3 + .55 * Math.max(0, Math.cos(a) * LX + Math.sin(a) * LY), true); }
+    for (let z = 0; z < trunkTop; z += .5) { const w = Math.max(1, 5.5 * S * (1 - z / Ht)); for (let a = 0; a < 6.3; a += .25) plot(Math.cos(a) * w, Math.sin(a) * w, z, .3 + .55 * Math.max(0, Math.cos(a) * LX + Math.sin(a) * LY), true); }
     /* a needle tuft: needles fan out above and to the sides of the twig, a few below; the ones above take the light */
     const tuft = (x, y, z, dx, dy, dz, out, len, n) => {
         const sx = -dy, sy = dx; /* sideways across the twig, level */
@@ -55,17 +57,17 @@ function grow(o) {
        Each whorl's boughs differ a lot in length, and one in six is short, so the outline goes in and out */
     let w = 0;
     for (let h = H0; h < Ht - 4; w++) {
-        const u = uOf(h), r = rOf(h); h += 6 + 11 * u;
+        const u = uOf(h), r = rOf(h); h += (6 + 11 * u) * S;
         if (r < 1.5) continue;
         const n = Math.max(r < 8 ? 3 : 5, Math.round(6.283 * r / (16 + 10 * u))), turn = w * 2.39996, droop = .62 + .3 * u, wid = 6 + 8 * u;
         /* no two tiers alike, and no tree grows evenly all round: some tiers reach further, and one side is fuller than the other */
         const tier = 1 + (N(w, 3, 1) - .5) * .12 * Math.min(1, u * 3);
         for (let b = 0; b < n; b++) {
             const a = turn + b * 6.283 / n + (rand() - .5) * .5, short = rand() < .1, lean = 1 + .07 * Math.sin(a + .9) + .05 * Math.sin(2 * a + w * .8), L = r * tier * lean * (short ? .7 + rand() * .12 : .86 + rand() * .26);
-            bough(h - (6 + 11 * u), a, L, droop * (.85 + rand() * .3), wid, false);
+            bough(h - ((6 + 11 * u) * S), a, L, droop * (.85 + rand() * .3), wid, false);
         }
         /* inner boughs between the whorls, so a gap shows dark needles further in, never the room behind */
-        if (u > .12) for (let b = 0; b < Math.ceil(n * .6); b++) { const a = turn + 1.2 + b * 6.283 / Math.ceil(n * .6) + (rand() - .5) * .6; bough(h - (6 + 11 * u) * .5, a, r * (.42 + rand() * .2), droop, wid * .7, true); }
+        if (u > .12) for (let b = 0; b < Math.ceil(n * .6); b++) { const a = turn + 1.2 + b * 6.283 / Math.ceil(n * .6) + (rand() - .5) * .6; bough(h - ((6 + 11 * u) * S) * .5, a, r * (.42 + rand() * .2), droop, wid * .7, true); }
     }
     /* the leader: the trunk's top, needled up to the star, so the tree comes to a fine point */
     for (let h = Ht - 30; h < Ht - 1; h += .7) { const k = (Ht - h) / 30; for (let b = 0; b < 3; b++) { const a = rand() * 6.283; tuft(0, 0, h, Math.cos(a), Math.sin(a), .5, .9, 1 + 4 * k, 2); } }
