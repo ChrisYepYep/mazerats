@@ -2536,6 +2536,18 @@ function walkGraph(startKey) {
     const solids = new Map(map.levels.map(l => [l, solid(l)])), holeSets = new Map(map.levels.map(l => [l, holes(l)])), M = stairLevels();
     const free = (l, x, y) => hasFloor(l, x, y) && !solids.get(l).has(x + "," + y) && !holeSets.get(l).some(h => inRect(h, x, y)) && !(M.slots.get(l) && M.slots.get(l).has(x + "," + y));
     const stands = (l, x, y) => l.tiles ? l.tiles.has(x + "," + y) && !(l.stair && l.stair.low && solids.get(l.stair.low) && solids.get(l.stair.low).has(x + "," + y)) : (free(l, x, y) || nodeKey(l, x, y) === startKey);
+    /* the tiles taken only by low things (under 40 tall), which a diagonal step may brush past */
+    const lows = new Map(map.levels.map(l => { const low = new Set(), tall = new Set();
+        for (const p of (l.props || [])) { const h = TALL[p.k] ? TALL[p.k][1] : 999, into = p.k !== "archway" && h < 40 ? low : tall; for (const t of Parts.tiles(p)) into.add(t[0] + "," + t[1]); }
+        for (const t of (l.teles || [])) tall.add(t.x + "," + t.y);
+        if (window.hallwayXmas) for (const p of (l.props || [])) if (p.k === "statue") treeKeepOut(p, (X, Y) => tall.add(X + "," + Y));
+        for (const k of tall) low.delete(k); return [l, low]; }));
+    /* the tile beside a diagonal step: 2 free to walk, 1 a low thing on level floor, 0 a wall, a drop, the stair's side or something tall */
+    const past = (l, x, y, X, Y) => {
+        if (stands(l, X, Y)) return l.tiles || canStep(l, x, y, X, Y) ? 2 : 0;
+        if (l.tiles || !hasFloor(l, X, Y) || !lows.get(l).has(X + "," + Y) || holeSets.get(l).some(h => inRect(h, X, Y)) || (M.slots.get(l) && M.slots.get(l).has(X + "," + Y))) return 0;
+        return Math.abs(nodeZ(l, x, y) - nodeZ(l, X, Y)) <= 1 ? 1 : 0;
+    };
     return (l, x, y) => {
         const out = [];
         for (const { dx, dy } of STEPS) {
@@ -2543,8 +2555,15 @@ function walkGraph(startKey) {
             if (!stands(l, nx, ny)) continue;
             /* a drop can't be walked over, only the steps */
             if (!l.tiles && !canStep(l, x, y, nx, ny)) continue;
-            /* corners may be cut past one obstacle, but not squeezed between two */
-            if (dx && dy && !stands(l, x + dx, y) && !stands(l, x, y + dy)) continue;
+            if (dx && dy) {
+                /* no diagonal from one step to the next: on a staircase the walk goes straight down the flight, not slantwise
+                   across the treads (9 Nov 2026, his: "the vast majority of the stairs are walked diagonally"). Landings are level, so free. */
+                if (Math.abs(nodeZ(l, x, y) - nodeZ(l, nx, ny)) > 1) continue;
+                /* a corner may be cut past one low thing (a chair, a table, a rope), never past a wall, a drop, a pillar or anything
+                   tall, where the Habbo slipped behind it mid-step (9 Nov, his); and never squeezed between two */
+                const a = past(l, x, y, x + dx, y), b = past(l, x, y, x, y + dy);
+                if (!a || !b || (a === 1 && b === 1)) continue;
+            }
             out.push({ l, x: nx, y: ny, dx, dy });
         }
         for (const n of (M.links.get(nodeKey(l, x, y)) || [])) if (stands(n.l, n.x, n.y) && !(n.l.stair && n.l.stair.lift && !liftOpen(n.l.stair.lift)) && !(n.l.stair && n.l.stair.door && !doorIsOpen(n.l.stair.door))) out.push(n);
