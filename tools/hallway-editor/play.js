@@ -134,6 +134,9 @@
     /* ---------- the controls: the site's own buttons, floating on the hallway ---------- */
     function controls() {
         const bar = document.createElement("div"); bar.id = "playBar"; let fullSoon = 0;
+        /* On a phone the card is a bar along the bottom, in reach of a thumb: Leave, the camera, the music and Menu; zooming is by pinching
+           (10 Nov 2026, his pick of the mock-ups: "menu option D", the zoom buttons swapped for a camera toggle). play.css lays it out. */
+        const phone = matchMedia("(max-width: 700px), (max-height: 520px)");
         /* In groups (8 Nov 2026, his: "it's got quite a few buttons now, and feels very messy/unorganised"): Leave, then the view (zoom and full screen),
            then the music, and everything else under Menu. Hunts and Scraps join Menu through HallwayBar.menuItem (live-hunts.js). */
         /* A wooden card in the top left, the Hallway's mark at its head and a labelled row for each kind of thing (9 Nov 2026, his: "the menu buttons in
@@ -143,7 +146,7 @@
         let into = bar; const group = (name, label) => { const r = document.createElement("div"); r.className = "play-row"; r.dataset.row = name; if (label) { const l = document.createElement("span"); l.className = "play-label"; l.textContent = label; r.appendChild(l); } const g = document.createElement("span"); g.className = "play-group"; g.setAttribute("role", "group"); g.setAttribute("aria-label", name); r.appendChild(g); bar.appendChild(r); into = g; return g; };
         const add = (label, title, fn) => { const b = document.createElement("button"); b.type = "button"; b.className = "mr-btn"; b.textContent = label; b.title = title; if (!label || label.length < 2) b.setAttribute("aria-label", title); /* the words on it are its name; only icon buttons need one (10 Nov scan, live 14) */ b.addEventListener("click", fn); into.appendChild(b); return b; };
         const click = id => { const e = document.getElementById(id); if (e) e.click(); };
-        group("Leave"); add("Leave the Hallway", "Back to the archive", () => window.hallwayTell("leave")).classList.add("play-wide");
+        group("Leave"); const leaveBtn = add("Leave the Hallway", "Back to the archive", () => window.hallwayTell("leave")); leaveBtn.classList.add("play-wide");
         group("View", "View"); add("-", "Zoom out", () => click("zoomOut")); add("+", "Zoom in", () => click("zoomIn"));
         /* full screen: the page asks for it itself (its frame allows it), and F does the same */
         const canFull = !!(document.documentElement.requestFullscreen && document.fullscreenEnabled !== false);
@@ -170,7 +173,9 @@
             /* opens as a drawer from under the card's foot, the width of the card inside its border (9 Nov 2026, his: "a card that pops out from under the
                bottom of the menu card", as the archive's own Menu tab slides out from its window) */
             const btn = add(label, title, e => { e.stopPropagation(); const show = menu.hidden || !menu.classList.contains("is-open"); shutMenus(); if (!show) return; fill(menu, () => { shutMenus(); });
-                const r = bar.getBoundingClientRect(); menu.style.left = (r.left + 12) + "px"; menu.style.top = (r.bottom - 16) + "px"; menu.style.width = (r.width - 24) + "px"; menu.style.maxHeight = Math.max(120, innerHeight - r.bottom - 10) + "px";
+                const r = bar.getBoundingClientRect();
+                if (phone.matches) { menu.classList.add("is-up"); menu.style.left = "8px"; menu.style.width = (innerWidth - 16) + "px"; menu.style.top = "auto"; menu.style.bottom = (innerHeight - r.top - 2) + "px"; menu.style.maxHeight = Math.max(120, r.top - 16) + "px"; }      // up from the bar
+                else { menu.classList.remove("is-up"); menu.style.bottom = ""; menu.style.left = (r.left + 12) + "px"; menu.style.top = (r.bottom - 16) + "px"; menu.style.width = (r.width - 24) + "px"; menu.style.maxHeight = Math.max(120, innerHeight - r.bottom - 10) + "px"; }
                 clearTimeout(menu.shutting); menu.hidden = false; void menu.offsetWidth; menu.classList.add("is-open"); btn.setAttribute("aria-expanded", "true"); if (!e.detail) { const first = menu.querySelector("button"); if (first) first.focus(); } });
             btn.classList.add("play-drop");
             btn.setAttribute("aria-haspopup", "true"); btn.setAttribute("aria-expanded", "false"); menu.btn = btn; document.body.appendChild(menu);
@@ -203,7 +208,9 @@
         group("Camera", "Camera");
         /* two words, the one in use lit (9 Nov 2026, his: "Follow" and "Manual"); C still swaps them */
         const camFollow = add("Follow", "The camera follows you (C)", () => { if (!following()) click("follow"); paintCam(); }), camManual = add("Manual", "You move the camera yourself (C)", () => { if (following()) click("follow"); paintCam(); });
-        const paintCam = () => { const on = following(); for (const [b, lit] of [[camFollow, on], [camManual, !on]]) { b.setAttribute("aria-pressed", String(lit)); b.classList.toggle("is-on", lit); } };
+        /* on a phone one button says which it is and swaps it */
+        const camToggle = add("Follow", "Camera: follows you, or you move it yourself (C)", () => { click("follow"); paintCam(); }); camToggle.classList.add("play-camtoggle");
+        const paintCam = () => { const on = following(); for (const [b, lit] of [[camFollow, on], [camManual, !on]]) { b.setAttribute("aria-pressed", String(lit)); b.classList.toggle("is-on", lit); } camToggle.textContent = on ? "Follow" : "Manual"; camToggle.title = on ? "The camera follows you: tap to move it yourself" : "You move the camera: tap to have it follow you"; };
         paintCam(); setInterval(paintCam, 500);
         group("More");
         dropdown("Menu", "Time of day, screensaver, your Habbo and more", (menu, done) => {
@@ -215,11 +222,9 @@
             item(menu, "Your Habbo", "Choose your Habbo", () => { done(); picker(); });
             if (extra.length) { sep(menu); for (const x of extra) item(menu, x.label, x.title, () => { done(); x.fn(); }); }
         });
-        /* On a phone the card folds to its mark, Menu and More: the rest covered half the screen (10 Nov scan, live 3). More opens it out, Less folds it */
-        const narrow = matchMedia("(max-width: 700px), (max-height: 520px)"), fold = add("More", "Show the rest of the card", () => setFold(!bar.classList.contains("is-folded")));
-        fold.classList.add("play-fold");
-        const setFold = on => { bar.classList.toggle("is-folded", on); fold.textContent = on ? "More" : "Less"; fold.title = on ? "Show the rest of the card" : "Fold the card away"; fold.setAttribute("aria-expanded", String(!on)); };
-        setFold(narrow.matches); narrow.addEventListener("change", () => setFold(narrow.matches));
+        /* the bar's own words: "Leave" for "Leave the Hallway", and any drawer open shuts when it turns from card to bar or back */
+        const phoneWords = () => { leaveBtn.textContent = phone.matches ? "Leave" : "Leave the Hallway"; bar.classList.toggle("is-phone", phone.matches); };
+        phoneWords(); phone.addEventListener("change", () => { phoneWords(); shutMenus(); });
         document.addEventListener("click", e => { if (!menus.some(m => m.contains(e.target))) shutMenus(); });
         /* Escape shuts a drawer however it was opened, and gives the focus back to its button (10 Nov scan, live 10) */
         document.addEventListener("keydown", e => { if (e.key !== "Escape") return; const open = menus.find(m => m.classList.contains("is-open")); if (!open) return; e.preventDefault(); shutMenus(); if (open.btn) open.btn.focus(); });
@@ -235,7 +240,7 @@
         const paintCheats = () => { cheatBox.textContent = ""; for (const w in CHEATS) if (cheatOn[w]) { const s = document.createElement("button"); s.type = "button"; s.className = "mr-btn"; s.textContent = "Cheat Activated: " + CHEATS[w][0]; s.title = "Click to turn this cheat off";
                 /* clicking the plate turns the cheat off (9 Nov 2026, his) */
                 s.addEventListener("click", e => { e.stopPropagation(); cheatOn[w] = false; CHEATS[w][1](false); typed = ""; paintCheats(); }); cheatBox.appendChild(s); }
-            const r = bar.getBoundingClientRect(); cheatBox.style.left = Math.round(r.right + 8) + "px"; cheatBox.hidden = !cheatBox.childElementCount; };
+            const r = bar.getBoundingClientRect(); cheatBox.style.left = (phone.matches ? 10 : Math.round(r.right + 8)) + "px"; cheatBox.hidden = !cheatBox.childElementCount; };
         addEventListener("resize", () => { if (!cheatBox.hidden) paintCheats(); }); cheatBox.hidden = true;
         document.addEventListener("keydown", e => {
             if (e.ctrlKey || e.metaKey || e.altKey || e.key.length !== 1) return;

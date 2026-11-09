@@ -244,17 +244,36 @@ body.hw-screensaver .hw-clue { visibility: hidden; }
 #playCheats .mr-btn:hover, #playCheats .mr-btn:focus-visible { color: #fff3d0; background: linear-gradient(#4c3520, #2c1c0e); outline: none; }
 body.hw-screensaver #playCheats { opacity: 0; pointer-events: none; transition: opacity .6s; }
 
-/* the card folded on a phone (10 Nov scan, live 3): its mark smaller, and only Menu and More; More is only offered where it folds */
-#playBar .play-fold { display: none; }
-@media (max-width: 700px), (max-height: 520px) {
-    #playBar .play-fold { display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto; min-width: 52px; }
-    #playBar.is-folded .play-row:not([data-row="More"]) { display: none; }
-    #playBar.is-folded { width: 172px; padding: 16px 16px 26px; gap: 5px; }
-    #playBar.is-folded .hw-card-logo { width: 132px; height: auto; margin: -4px auto 0; }
-    /* the drawer rows a finger can hit (live 15) */
-    .play-menu button { min-height: 40px; }
-}
+
 /* the name box on a phone (10 Nov scan, live 16): Go matches the box beside it, and the close has a finger-sized target */
 @media (pointer: coarse) { #playPicker .mr-close { min-width: 38px; min-height: 38px; } #playPicker form button { font-size: 16px; } }
 /* the map shows where the keyboard is when it has it (10 Nov scan, live 21) */
 #view:focus-visible { outline: 2px solid rgba(217, 168, 78, .7); outline-offset: -2px; }
+
+/* On a phone the card is a bar along the bottom (10 Nov 2026, his pick: "menu option D"): Leave, the camera as one Follow / Manual toggle, the
+   music and Menu, in the card's oak and brass, big enough for a thumb. No mark, no labels, no zoom (pinch for that); Menu's drawer opens upwards. */
+#playBar .play-camtoggle { display: none; }
+@media (max-width: 700px), (max-height: 520px) {
+    #playBar { top: auto; bottom: 0; left: 0; right: 0; width: auto; flex-direction: row; align-items: center; justify-content: space-between; gap: 6px;
+        padding: 7px 8px calc(7px + env(safe-area-inset-bottom)); border: 0; border-image: none; border-top: 2px solid #b98432;
+        background: linear-gradient(rgba(255, 236, 196, .06), rgba(0, 0, 0, .25)), linear-gradient(90deg, #22140a, #2e1c0f 50%, #22140a);
+        box-shadow: inset 0 1px 0 #1a0f07, inset 0 2px 0 rgba(229, 180, 92, .25), 0 -6px 16px rgba(0, 0, 0, .55); filter: none; }
+    #playBar .hw-card-logo, #playBar .play-label, #playBar .play-row[data-row="View"] { display: none; }
+    #playBar .play-row { flex: 1 1 0; min-width: 0; gap: 0; min-height: 0; }
+    #playBar .play-row .play-group, #playBar .play-row > .mr-btn { flex: 1; }
+    #playBar .play-row[data-row="Camera"] .mr-btn:not(.play-camtoggle) { display: none; }
+    #playBar .play-camtoggle { display: inline-flex; }
+    #playBar .mr-btn { width: 100%; height: 42px; min-height: 42px; padding: 0 4px; font-size: 9px; justify-content: center; align-items: center; border-radius: 4px; }
+    #playBar .play-group > .mr-btn { border-radius: 4px; }
+    .play-menu.is-up { border-top: 1px solid #000; border-bottom: 0; border-radius: 4px 4px 0 0; padding: 12px 8px 18px; transform: translateY(14px); clip-path: inset(0 0 14px 0);
+        box-shadow: inset 0 -12px 10px -8px rgba(0, 0, 0, .55), inset 0 3px 0 #d9a84e, inset 0 4px 0 #6a420e, 0 -10px 22px rgba(0, 0, 0, .55); }
+    .play-menu.is-up.is-open { transform: none; clip-path: inset(-40px 0 0 0); }
+    .play-menu.is-up::before, .play-menu.is-up::after { bottom: auto; top: 7px; }
+    #playBar .play-row[data-row="Music"] { flex: 1.7 1 0; }
+    #playBar .play-row[data-row="Music"] .play-group { display: flex; gap: 3px; }
+    #playBar .play-row[data-row="Music"] .mr-btn { flex: 1 1 0; }
+    /* the drawers open upwards here, so their arrows point up, and down once open */
+    #playBar .play-drop::after { transform: rotate(180deg); margin-left: 4px; }
+    #playBar .play-drop[aria-expanded="true"]::after { transform: none; }
+    .play-menu button { min-height: 40px; }      /* rows a finger can hit (10 Nov scan, live 15) */
+}
