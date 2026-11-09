@@ -157,9 +157,9 @@
             const onlyBasement = window.FurniParts.basementTiles(map), failingX = [...onlyBasement].filter(k => xmasTiles.has(k));
             const DRAW = [...MOODS, "failing", ...(hasXmas ? MOODS.map(m => m + "+x") : []), ...(failingX.length ? ["failing+x"] : [])];
             while (workers.length < POOL) freshWorker();
-            const tiles = {}, lift = {};
+            const tiles = {}, lift = {}, sent = new Map();      // each picture by its name, to send again if another publish tidied it away meanwhile
             const send = async (blob) => {
-                const buf = await blob.arrayBuffer(), hash = await sha(buf);
+                const buf = await blob.arrayBuffer(), hash = await sha(buf); sent.set(hash, blob);
                 if (!known.has(hash)) {
                     let s = ""; const b = new Uint8Array(buf); for (let i = 0; i < b.length; i += 8192) s += String.fromCharCode.apply(null, b.subarray(i, i + 8192));
                     const r = await write({ method: "POST", body: JSON.stringify({ action: "tile", hash, png: btoa(s) }) });
@@ -198,7 +198,10 @@
                 for (let f = 0; f < 6; f++) { publishing.at++; const a = await ask(idle(), { type: "lift", way, slide: f / 5 }); lift[encodeURIComponent(way).replace(/%/g, "_") + "-" + f + ".png"] = await send(await pngOf(a.w, a.h, a.d)); }
                 publishing.at++;
             }
-            const r = await write({ method: "POST", body: JSON.stringify({ action: "publish", map, base, manifest: { tile: 512, moods: MOODS, tiles, lift } }) });
+            const publishNow = () => write({ method: "POST", body: JSON.stringify({ action: "publish", map, base, manifest: { tile: 512, moods: MOODS, tiles, lift } }) });
+            let r = await publishNow();
+            /* (10 Nov scan, server finding 9) a picture this publish counted as already there was tidied away by another publish meanwhile: sent again, once */
+            if (r.status === 400) { const why = String((await r.clone().json().catch(() => ({}))).error || ""), m = /A picture is missing: ([a-f0-9]{20})/.exec(why); if (m && sent.has(m[1])) { for (const [h, b] of sent) { known.delete(h); await send(b); } r = await publishNow(); } }
             if (r.status === 409) throw new Error("This map has been saved from somewhere else since you opened it, so nothing was published. Reload to see that copy.");
             if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || "The site wouldn't take it: " + r.status);
             publishing = { running: false, at: 0, of: 0, error: null };

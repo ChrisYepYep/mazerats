@@ -56,7 +56,15 @@ exports.handler = async (event) => {
         if (q.what === "live" || q.what === "map") {
             let key = q.what === "live" ? "manifest" : "map";
             /* The map belonging to the version the page was told about, else to the version that's live. Maps from before they were kept by version are under "map". */
-            if (q.what === "map") { let v = /^[a-f0-9]{16}$/.test(q.v || "") ? q.v : null; if (!v) { const man = await store.get("manifest", { type: "json" }); v = man && man.mapVersion; } if (v) { const t = await store.get("map/" + v, { type: "text" }); if (t) return reply(200, t, { "Cache-Control": "public, max-age=0, must-revalidate" }); } }
+            /* (10 Nov scan, server findings 8 and 17) the version asked for, kept for good since it's named by its contents; one tidied away since
+               then gives the version that's live rather than the pre-version "map", which is only for a store that has no manifest at all */
+            if (q.what === "map") {
+                const asked = /^[a-f0-9]{16}$/.test(q.v || "") ? q.v : null;
+                if (asked) { const t = await store.get("map/" + asked, { type: "text" }); if (t) return reply(200, t, { "Cache-Control": "public, max-age=31536000, immutable", "Netlify-Vary": "query=what|v" }); }
+                const man = await store.get("manifest", { type: "json" });
+                if (man && man.mapVersion) { const t = await store.get("map/" + man.mapVersion, { type: "text" }); if (t) return reply(200, t, { "Cache-Control": "public, max-age=0, must-revalidate" }); }
+                if (man) return reply(404, { error: "Nothing published here yet" });
+            }
             const text = await store.get(key, { type: "text" });
             if (!text) return reply(404, { error: "Nothing published here yet" });
             return reply(200, text, { "Cache-Control": "public, max-age=0, must-revalidate" });
@@ -115,11 +123,15 @@ exports.handler = async (event) => {
         try {
             const recent = (await store.get("recent", { type: "json" }).catch(() => null)) || [], now = [{ version, tiles: named }, ...recent.filter(r => r && r.version !== version)].slice(0, 3);
             await store.set("recent", JSON.stringify(now));
-            const keep = new Set(now.flatMap(r => r.tiles || [])), gone = [...have].filter(h => !keep.has(h)), until = Date.now() + 4000;
+            /* (10 Nov scan, server finding 9) another publish may have gone live while this one ran: whatever is live now, and every publish
+               in `recent` as it stands now, keeps its pictures and its map, not only what this publish read at the start */
+            const liveNow = await store.get("manifest", { type: "json" }).catch(() => null), recentNow = (await store.get("recent", { type: "json" }).catch(() => null)) || [];
+            const keepAll = [...now, ...recentNow.filter(Boolean), ...(liveNow && liveNow.tiles ? [{ version: liveNow.mapVersion, tiles: [...Object.values(liveNow.tiles), ...Object.values(liveNow.lift || {})] }] : [])];
+            const keep = new Set(keepAll.flatMap(r => r.tiles || [])), gone = [...have].filter(h => !keep.has(h)), until = Date.now() + 4000;
             /* ...except a picture that came in the last FRESH_MS: another tab or admin may be sending it for a publish of its own, not yet in `recent` */
             const fresh = async h => { try { const md = await store.getMetadata("tile/" + h); const at = md && md.metadata && Number(md.metadata.at); return !!at && Date.now() - at < FRESH_MS; } catch (e) { return true; } };
             for (let i = 0; i < gone.length && Date.now() < until; i += 12) await Promise.all(gone.slice(i, i + 12).map(async h => { if (!(await fresh(h))) await store.delete("tile/" + h); }));
-            const { blobs: maps } = await store.list({ prefix: "map/" }), keepMaps = new Set(now.map(r => "map/" + r.version));
+            const { blobs: maps } = await store.list({ prefix: "map/" }), keepMaps = new Set(keepAll.filter(r => r.version).map(r => "map/" + r.version));
             await Promise.all(maps.filter(b => !keepMaps.has(b.key)).slice(0, 12).map(b => store.delete(b.key)));
         } catch (e) { console.error("hallway tidy-up", e); }
         return reply(200, { published: true, version, publishedAt });

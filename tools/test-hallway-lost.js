@@ -3,7 +3,7 @@
    node tools/test-hallway-lost.js */
 const Module = require("module"), path = require("path"), assert = require("assert");
 process.env.SESSION_SECRET = "test-secret-only";
-const store = { hallway_lost: [], hallway_lost_open: [], hallway_lost_seen: [], hallway_lost_visitors: [], hallway_lost_caps: [] }, players = { p1: { nick: "Ratty" }, p2: { nick: "Zed" }, p3: { nick: "" } };
+const store = { settings: [{ _id: "site", hallwayState: "live" }], hallway_lost: [], hallway_lost_open: [], hallway_lost_seen: [], hallway_lost_visitors: [], hallway_lost_caps: [] }, players = { p1: { nick: "Ratty" }, p2: { nick: "Zed" }, p3: { nick: "" } };
 let me = { id: "p1" }, refuse = null, clock = Date.UTC(2026, 10, 9, 12, 0, 0), banned = new Set(), net = "netA";
 /* floor everywhere from 0,0 to 19,19 (cells are 2x2); on Ground a table at 12,12..12,13 with a chair on every side and a wall of floor's end above it,
    as G 96,-8 was (9 Nov scan): its spot can never be dealt */
@@ -26,7 +26,7 @@ const coll = name => ({
     async createIndex() {}, collectionName: name
 });
 const fakes = {
-    "./_db": { getDb: async () => ({ collection: n => n === "players" ? { findOne: async q => players[q.id] || null } : coll(n) }), ensureUniqueIndex: async () => {} },
+    "./_db": { getDb: async () => ({ collection: n => n === "players" ? { findOne: async q => players[q.id] || null, find: q => ({ toArray: async () => Object.entries(players).filter(([id]) => !q.id || !q.id.$in || q.id.$in.includes(id)).map(([id, p]) => ({ id, ...p })) }) } : coll(n) }), ensureUniqueIndex: async () => {} },
     "./_player": { playerFrom: () => me, sessionRevoked: () => false },
     "./_bans": { writeRefusal: async () => refuse, netHashFor: () => net, withoutBanned: async (db, lists) => lists.map(l => l.filter(r => !banned.has(r.id) && players[r.id] && players[r.id].nick)) },
     "./_publicid": { publicLists: async (db, lists) => lists.map(l => l.map(r => ({ ...r, id: "pub-" + r.id, avatar: null }))) },
@@ -44,7 +44,10 @@ const findIt = async (o, extra = {}) => call("POST", { act: "found", k: o.k, at:
     assert.equal(pointsFor(0, 0), pointsFor(20, 0), "nothing counts as quicker than MIN_SECS"); assert.equal(pointsFor(0, 0), 1430);
     assert.equal(pointsFor(900, 3), 100, "at the limit with every clue: just the finding");
     assert.equal(pointsFor(2000, 0), 0, "too late: nothing");
-    assert.equal(spotsOf(MAP).length, 2, "Basement spots never count, nor a boxed-in one"); assert.ok(!spotsOf(MAP).some(s => s.x === 12 && s.y === 12), "a spot under a table with chairs all round is never dealt");
+    /* (10 Nov 2026, his) a spot under a table can be picked up from a chair beside it you can sit on, by sitOn's own rule: at 12,12 the chair at 11,12 is got into through the chair at 11,11 from the free 10,11 */
+    assert.equal(spotsOf(MAP).length, 3, "Basement spots never count; one boxed in by chairs counts from a chair"); assert.ok(spotsOf(MAP).some(s => s.x === 12 && s.y === 12), "a spot with a chair beside it you can sit on is dealt");
+    { const walled = []; for (let x = 15; x <= 17; x++) for (let y = 15; y <= 17; y++) if (x !== 16 || y !== 16) walled.push({ k: "plant", x, y }); const M2 = { levels: [{ id: "g", name: "Ground", k: 0, cells: CELLS, props: [{ k: "table", x: 16, y: 16 }, ...walled] }], lostSpots: [{ level: "g", x: 16, y: 16 }] }; assert.equal(spotsOf(M2).length, 0, "a spot walled in by things nobody sits on is never dealt"); }
+    assert.equal(spotsOf(null).length, 0, "no map to read: nothing dealt, never the old fixed spots");
     const bigCells = []; for (let x = 20; x < 80; x++) for (let y = -10; y < 30; y++) bigCells.push(x + "," + y);
     assert.equal(spotsOf({ levels: [{ id: "g", name: "Ground", k: 0, cells: bigCells }] }).length > 0, true, "the first spots, by floor name, still work");
     assert.ok(!fn._for.spotsOf({ levels: [{ id: "g", name: "Ground", k: 0, cells: bigCells }] }).some(s => s.x === 96 && s.y === -8), "G 96,-8 is out of the first spots");
@@ -70,10 +73,13 @@ const findIt = async (o, extra = {}) => call("POST", { act: "found", k: o.k, at:
     clock += 25e3; r = await findIt(sw2); assert.equal(r.body.secs, 125, "the clock never started again");
     /* cancel: leaving ends it, no points */
     r = await call("POST", { act: "start" }); const c = r.body; await call("POST", { act: "cancel" }); r = await findIt(c); assert.equal(r.status, 409, "cancelled");
+    /* (10 Nov scan, server finding 4) start again after a cancel: the same search, on its own clock, not a fresh roll */
+    clock += 30e3; r = await call("POST", { act: "start" }); assert.equal(r.body.k, c.k, "same thing"); assert.equal(r.body.spot.x, c.spot.x, "same spot"); assert.equal(r.body.resumed, true); assert.ok(r.body.left <= c.left - 30e3, "same clock");
+    clock += 5e3; r = await findIt(c); assert.equal(r.status, 200, "taken up again, it can be found"); assert.ok(r.body.secs >= 35);
     /* too late */
     r = await call("POST", { act: "start" }); const late = r.body; clock += 1000e3; r = await findIt(late); assert.equal(r.body.late, true); assert.equal(r.body.points, 0, "past the limit pays nothing");
     /* skip: a thing never goes where it doesn't suit */
-    MAP.lostSpots[0].skip = THINGS.map(t => t.k); fn._for.resetSpots(); for (let i = 0; i < 8; i++) { r = await call("POST", { act: "start" }); assert.equal(r.body.spot.level, "f1", "skipped everywhere on Ground"); await call("POST", { act: "cancel" }); } MAP.lostSpots[0].skip = []; fn._for.resetSpots();
+    MAP.lostSpots[0].skip = MAP.lostSpots[3].skip = THINGS.map(t => t.k); fn._for.resetSpots(); for (let i = 0; i < 8; i++) { r = await call("POST", { act: "start" }); assert.equal(r.body.spot.level, "f1", "skipped everywhere on Ground"); await call("POST", { act: "cancel" }); } MAP.lostSpots[0].skip = MAP.lostSpots[3].skip = []; fn._for.resetSpots();
     /* after its time's up, a start is a new search */
     r = await call("POST", { act: "start" }); const old = r.body; clock += 1000e3; r = await call("POST", { act: "start" }); assert.ok(!r.body.resumed, "an expired search isn't handed back"); assert.equal(r.body.left, 900e3); r = await call("POST", { act: "swap" }); assert.equal(r.status, 200); clock += 1000e3; r = await call("POST", { act: "swap" }); assert.equal(r.status, 409, "no swapping an expired search"); await call("POST", { act: "cancel" }); void old;
     /* Visitors */
@@ -98,6 +104,8 @@ const findIt = async (o, extra = {}) => call("POST", { act: "found", k: o.k, at:
     store.hallway_lost_visitors.length = 0; store.hallway_lost_visitors.push(...keep);
     /* the board: players and visitors, banned players off, visitor's own row */
     me = { id: "p2" }; r = await call("POST", { act: "start" }); clock += 25e3; await findIt(r.body);
+    /* (10 Nov scan, server finding 12) a renamed player is on the board under the name they have now */
+    { const was = players.p1.nick; players.p1.nick = "Renamed"; r = await call("GET"); assert.ok(r.body.rows.some(x => x.name === "Renamed"), "the board uses today's nickname"); assert.ok(!r.body.rows.some(x => x.name === was), "not the old one"); players.p1.nick = was; }
     me = null; r = await call("GET", undefined, {}, { v: v1 }); assert.ok(r.body.rows.some(x => x.name === vn && x.visitor && x.id === null), "visitors on the board, with no id"); assert.equal(r.body.me.name, vn, "a visitor's own row (the old ?v= still works)");
     r = await call("GET", undefined, { "x-hallway-visitor": v1 }); assert.equal(r.body.me && r.body.me.name, vn, "the token in its header (9 Nov scan, finding 11)");
     assert.ok(r.body.rows.filter(x => !x.visitor).every(x => /^pub-/.test(x.id)), "public ids only");
@@ -118,5 +126,7 @@ const findIt = async (o, extra = {}) => call("POST", { act: "found", k: o.k, at:
     r = await call("POST", { act: "found", k: "<b>", at: { level: "g", x: 1, y: 1 } }); assert.equal(r.status, 400, "bad ids refused");
     r = await call("POST", { act: "start" }, { origin: "https://evil.test" }); assert.equal(r.status, 403, "other sites refused");
     r = await call("POST", { act: "nonsense" }); assert.equal(r.status, 400);
+    /* (10 Nov scan, server finding 7) closed: no searches */
+    { store.settings[0].hallwayState = "maintenance"; require("../netlify/functions/_hallway-open")._reset(); const r2 = await call("POST", { act: "start" }); assert.equal(r2.status, 403, "closed: refused"); store.settings[0].hallwayState = "live"; require("../netlify/functions/_hallway-open")._reset(); }
     Date.now = realNow; console.log("hallway-lost: all good (" + THINGS.length + " things, first find " + first + ")");
 })().catch(e => { console.error(e); process.exit(1); });

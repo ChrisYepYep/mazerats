@@ -26,7 +26,10 @@ const { encodePng } = require("../png-encode.js");
 
 const PORT = Number(process.env.PORT) || 8778;
 const MAP = process.env.HALLWAY_MAP || path.join(__dirname, "map.json");     // HALLWAY_MAP: a copy to open instead, for a test editor beside his own
-const HISTORY = path.join(__dirname, ".history");
+/* (10 Nov scan, server findings 5 and 6) a test map keeps its own history, so its saves never push the real map's backups out; it must exist; and it can't publish */
+const TEST_MAP = !!process.env.HALLWAY_MAP;
+if (TEST_MAP && !fs.existsSync(MAP)) { console.error("HALLWAY_MAP: there's no file at " + MAP); process.exit(1); }
+const HISTORY = TEST_MAP ? path.join(path.dirname(MAP), ".history-" + path.basename(MAP, ".json")) : path.join(__dirname, ".history");
 const KEEP = 40, TILE = 512, CACHE_MAX = 900;
 const THREADS = Math.max(2, Math.min(6, os.cpus().length - 1));
 const TYPES = { ".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8", ".json": "application/json; charset=utf-8", ".png": "image/png", ".ttf": "font/ttf", ".woff2": "font/woff2" };
@@ -127,8 +130,9 @@ http.createServer(async (req, res) => {
     if (req.method === "POST" && origin && new URL(origin).host !== req.headers.host) { res.writeHead(403); return res.end("Not from here"); }
     try {
         if (url.pathname === "/api/map" && req.method === "GET") {
+            let text; try { text = fs.readFileSync(MAP, "utf8"); } catch (e) { return json(res, 500, { error: "The map file couldn't be read." }); }
             res.writeHead(200, { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" });
-            return fs.createReadStream(MAP).pipe(res);
+            return res.end(text);
         }
         if (url.pathname === "/api/map" && req.method === "POST") {
             const map = JSON.parse(await body(req));
@@ -151,6 +155,7 @@ http.createServer(async (req, res) => {
         /* Publish: its own process, since it draws the whole map four times over */
         if (url.pathname === "/api/publish") {
             if (req.method === "GET") return json(res, 200, publishing);
+            if (TEST_MAP && req.method === "POST") return json(res, 403, { error: "This is a test editor (HALLWAY_MAP): it doesn't publish." });
             if (publishing.running) return json(res, 409, { error: "Already publishing." });
             publishing = { running: true, at: 0, of: 0, error: null };
             const child = require("child_process").fork(path.join(__dirname, "publish.js"), [], { silent: true });

@@ -11,7 +11,7 @@ const col = {
     async findOneAndUpdate() { return null; }, async insertOne() {}
 };
 const fakes = {
-    "./_db": { getDb: async () => ({ collection: n => n === "players" ? { findOne: async () => ({}) } : col }), ensureUniqueIndex: async () => {} },
+    "./_db": { getDb: async () => ({ collection: n => n === "players" ? { findOne: async () => ({}) } : n === "settings" ? { findOne: async () => ({ hallwayState: "live" }) } : col }), ensureUniqueIndex: async () => {} },
     "./_player": { playerFrom: () => ({ id: "p1" }), sessionRevoked: () => false },
     "./_bans": { writeRefusal: async () => null },
     "./_hallway-map": { publishedMap: async () => MAP },

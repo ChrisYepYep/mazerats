@@ -17,7 +17,8 @@
     const pointsFor = (secs, hints) => { const s = Math.max(MIN_SECS, secs); if (s * 1000 > LIMIT_MS + 20e3) return 0; return Math.round((100 + 900 * Math.max(0, 1 - Math.min(s * 1000, LIMIT_MS) / LIMIT_MS)) / 10) * 10 + 150 * Math.max(0, 3 - (hints | 0)); };
     const visitor = () => { try { return localStorage.getItem(VISITOR) || undefined; } catch (e) { return undefined; } };
     /* every search goes through the server on the site, signed in or not; the editor on its own has no server, so it chooses for itself */
-    const lostPost = body => { if (!PLAY) return Promise.resolve(null); return fetch(LOSTFN, { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json", Accept: "application/json" }, body: JSON.stringify({ ...body, v: visitor() }) }).then(r => r.json().catch(() => ({})).then(j => r.ok ? j : { error: j.error || "status " + r.status, status: r.status, noSwaps: !!j.noSwaps })).catch(() => ({ error: "offline" })); };
+    const adminHeader = () => { try { const t = localStorage.getItem("mazerats_admin_token"); return t ? { "x-admin-token": t } : {}; } catch (e) { return {}; } };      // an admin walking it before it opens still saves (10 Nov scan, server finding 7)
+    const lostPost = body => { if (!PLAY) return Promise.resolve(null); return fetch(LOSTFN, { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json", Accept: "application/json", ...adminHeader() }, body: JSON.stringify({ ...body, v: visitor() }) }).then(r => r.json().catch(() => ({})).then(j => r.ok ? j : { error: j.error || "status " + r.status, status: r.status, noSwaps: !!j.noSwaps })).catch(() => ({ error: "offline" })); };
     /* "ask for a different one": a few times a search, on the same clock, as the server allows (9 Nov scan, finding 2) */
     const MAX_SWAPS = 2;
     let carryPts = 0;
@@ -47,7 +48,8 @@
     function showsAt(spot, thing) { const im = thingImg(thing.f); if (!im.complete || !im.naturalWidth) return null; const z = LIVE.nodeZ(spot.l, spot.x, spot.y) || 0, p = LIVE.mapPoint(spot.x + .5, spot.y + .5, z), x0 = Math.round(p[0]) - 16, y0 = Math.round(p[1]) - 50, count = () => { const d = vg.getImageData(0, 0, 33, 56).data; let n = 0; for (let i = 3; i < d.length; i += 4) if (d[i] > 127) n++; return n; };
         vg.clearRect(0, 0, 33, 56); vg.drawImage(im, 16 - (im.naturalWidth >> 1), 50 - im.naturalHeight + 3); const all = count(); if (!all) return null; LIVE.as({ x: spot.x, y: spot.y, z, l: spot.l, dir: 2, frame: 0, st: null, under: underFurni(spot) }, () => LIVE.cutInFront(vg, x0, y0)); return count() / all; }
     const shuffled = list => { const o = [...list]; for (let i = o.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [o[i], o[j]] = [o[j], o[i]]; } return o; };
-    const saveRound = () => { try { if (round) localStorage.setItem(ROUND, "1"); else localStorage.removeItem(ROUND); } catch (e) { /* this visit only */ } };
+    /* per tab (10 Nov scan, server finding 13): a second Hallway tab read it and cancelled the first tab's search */
+    const saveRound = () => { try { if (round) sessionStorage.setItem(ROUND, "1"); else sessionStorage.removeItem(ROUND); } catch (e) { /* this visit only */ } };
     /* the editor on its own: a thing you haven't found, at a spot that suits it */
     function chooseHere(notK) { const sp = mapSpots().filter(canPickUp), have = new Set(((prog() && prog().get().lost) || {}).shelf || []), all = (things || []).filter(t => t.k !== notK), fresh = all.filter(t => !have.has(t.k)); for (const t of shuffled(fresh.length ? fresh : all)) { const fit = sp.filter(s => !s.skip.includes(t.k)); if (fit.length) return { thing: t, spot: fit[Math.floor(Math.random() * fit.length)] }; } return null; }
     /* a search from the server's answer */
@@ -55,13 +57,15 @@
     let myName = null;
     async function newSearch(swap) {
         let pick;
-        if (PLAY) { const r = await lostPost({ act: swap ? "swap" : "start" }); if (!r || r.error) { if (r && r.noSwaps && round) { round.swapsLeft = 0; return "noswaps"; } return r && r.status === 429 ? "busy" : null; } pick = fromServer(r); }
+        if (PLAY) { const r = await lostPost({ act: swap ? "swap" : "start" }); if (!r || r.error) { if (r && r.noSwaps && round) { round.swapsLeft = 0; return "noswaps"; } return r && r.status === 429 ? "busy" : null; } pick = fromServer(r);
+            /* a thing this page's list doesn't know (the two lists drifted apart): swapped for one it does, on the same clock (10 Nov scan, server finding 21) */
+            if (!pick && r.swapsLeft > 0) { const r2 = await lostPost({ act: "swap" }); if (r2 && !r2.error) pick = fromServer(r2); } }
         else { const was = swap && wanted(); if (was && was.swapsLeft === 0) return "noswaps"; const c = chooseHere(was && was.thing.k); if (c) pick = { ...c, hints: 0, t0: was ? was.t0 : Date.now(), swapsLeft: was ? (was.swapsLeft === undefined ? MAX_SWAPS : was.swapsLeft) - 1 : MAX_SWAPS }; }
         if (!pick) return null; round = pick; saveRound(); window.hwTrack(swap ? "hallway_lost_swap" : "hallway_lost_start"); thingImg(pick.thing.f); tick(); LIVE.wake(); return pick;
     }
     /* coming back: a search you left has ended (his: go back to hustle). What you were carrying you still have. */
     function restore() { let polls = 0; const wait = setInterval(() => { if (!LIVE.map) { if (++polls > 600) clearInterval(wait); return; } clearInterval(wait);
-        try { if (localStorage.getItem(ROUND)) { localStorage.removeItem(ROUND); lostPost({ act: "cancel" }); } const c = localStorage.getItem(CARRY), t = c && things.find(q => q.k === c); if (t) { setCarry(t); carryPts = +localStorage.getItem(CARRY + "-pts") || 0; } } catch (e) { /* start afresh */ } tick(); }, 200); }
+        try { if (sessionStorage.getItem(ROUND)) { sessionStorage.removeItem(ROUND); lostPost({ act: "cancel" }); } try { localStorage.removeItem(ROUND); } catch (e) { /* the old shared flag */ } const c = localStorage.getItem(CARRY), t = c && things.find(q => q.k === c); if (t) { setCarry(t); carryPts = +localStorage.getItem(CARRY + "-pts") || 0; } } catch (e) { /* start afresh */ } tick(); }, 200); }
     /* leaving: the search ends on the server too */
     addEventListener("pagehide", () => { if (!round || !PLAY) return; try { const b = new Blob([JSON.stringify({ act: "cancel", v: visitor() })], { type: "application/json" }); navigator.sendBeacon(LOSTFN, b); } catch (e) { /* it ends when they next start one */ } });
     function setCarry(t) { carrying = t; window.HallwayCarry.item = t ? thingImg(t.f) : null; try { if (t) localStorage.setItem(CARRY, t.k); else localStorage.removeItem(CARRY); } catch (e) { /* only this visit */ } LIVE.wake(); }
@@ -124,7 +128,13 @@
     function pick() {
         const t = showing(); if (!t || t === preview) return; const secs = Math.round((Date.now() - (t.t0 || Date.now())) / 1000); carryPts = pointsFor(secs, t.hints); round = null; saveRound(); setCarry(t.thing); window.hwTrack("hallway_lost_found");
         say("You", "Got it! That's the " + nice(t.thing.name) + ".", false); flash("+" + carryPts + " points", fmt(secs * 1000) + " to find" + (t.hints ? ", " + t.hints + (t.hints === 1 ? " clue" : " clues") : ", no clues"));
-        lostPost({ act: "found", k: t.thing.k, at: { level: t.spot.l.id, x: t.spot.x, y: t.spot.y } }).then(r => { if (r && typeof r.points === "number") { carryPts = r.points; saveCarryPts(); tick(); } });
+        lostPost({ act: "found", k: t.thing.k, at: { level: t.spot.l.id, x: t.spot.x, y: t.spot.y } }).then(r => {
+            /* the server's word on it: counted, capped for today, or not counted at all (10 Nov scan, server finding 14: the page banked its own figure regardless) */
+            if (!r) return;
+            if (r.capped) { carryPts = 0; flash("Today's limit reached", "This one won't go on the board"); }
+            else if (r.error && r.error !== "offline") { carryPts = 0; flash("Not counted", "The search had ended"); }
+            else if (typeof r.points === "number") carryPts = r.points;
+            saveCarryPts(); tick(); });
         saveCarryPts(); tick();
     }
     const saveCarryPts = () => { try { if (carrying) localStorage.setItem(CARRY + "-pts", String(carryPts)); else localStorage.removeItem(CARRY + "-pts"); } catch (e) { /* this visit */ } };

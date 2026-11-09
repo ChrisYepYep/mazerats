@@ -704,7 +704,7 @@ let version = null, artTimer = 0, versionSeq = 0, lastReport = null, lastVersion
 const LIGHTS_UP = k => k === "lamp" || k === "tablelamp" || k === "rarecase" || k === "statue" || k === "xmastree" || /^xmasfir/.test(k);
 function dirtyRegion(oldText, newText) {
     let a, b; try { a = JSON.parse(oldText); b = JSON.parse(newText); } catch (e) { return null; }
-    const rest = m => JSON.stringify({ ...m.map, levels: undefined, rooms: undefined }) + JSON.stringify([m.liftOpen, m.cut]);
+    const rest = m => JSON.stringify({ ...m.map, levels: undefined, rooms: undefined, lostSpots: undefined, hustle: undefined }) + JSON.stringify([m.liftOpen, m.cut]);      // the Lost Property spots and his seat are drawn live, not in the pictures
     if (rest(a) !== rest(b) || a.map.levels.length !== b.map.levels.length) return null;
     const LISTS = ["props", "wallItems", "garlands", "medals"], boxes = [];
     for (let i = 0; i < a.map.levels.length; i++) {
@@ -2763,19 +2763,17 @@ function lostSpotReachable(l, x, y) {
     /* or from a seat beside it you can sit on (9 Nov 2026, his: "if a user can sit on a chair next to the hidden spot, the item can be picked up from there") */
     return AROUND.some(([i, j]) => seatReachable(l, x + i, y + j, reached, free));
 }
-/* a seat you can get into: from a reached tile beside it, or along a row of seats from one that is (sitOn steps seat to seat) */
+/* Where you can sit down on a seat from, as sitOn does it (10 Nov scan, server finding 1: the checks allowed any side and any chain of seats,
+   sitOn only these): its front, its two front diagonals and its two sides, never over its back; or through one seat beside it, from any of
+   that seat's four sides. _hallway-map.js seatEntries is the same rule for the server. */
+function seatEntries(u) {
+    const d = STEP_OF(seatFacing(u.p)), direct = [[u.x + d.dx, u.y + d.dy], ...(d.dx ? [[u.x + d.dx, u.y - 1], [u.x + d.dx, u.y + 1], [u.x, u.y - 1], [u.x, u.y + 1]] : [[u.x - 1, u.y + d.dy], [u.x + 1, u.y + d.dy], [u.x - 1, u.y], [u.x + 1, u.y]])], via = [];
+    for (const q of [[u.x - 1, u.y], [u.x + 1, u.y], [u.x, u.y - 1], [u.x, u.y + 1]]) if (seatOnTile(u.l, q[0], q[1])) via.push(...[[q[0] - 1, q[1]], [q[0] + 1, q[1]], [q[0], q[1] - 1], [q[0], q[1] + 1]]);
+    return { direct, via };
+}
 function seatReachable(l, X, Y, reached, free) {
-    if (!seatOnTile(l, X, Y)) return false;
-    const seen = new Set([X + "," + Y]), todo = [[X, Y]];
-    while (todo.length) {
-        const [a, b] = todo.pop();
-        for (const [i, j] of [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [-1, -1], [1, -1], [-1, 1]]) {
-            const p = a + i, q = b + j, k = p + "," + q; if (seen.has(k)) continue; seen.add(k);
-            if (free(p, q) && reached.has(nodeKey(l, p, q))) return true;
-            if (!i || !j) { if (seatOnTile(l, p, q)) todo.push([p, q]); }
-        }
-    }
-    return false;
+    const u = seatOnTile(l, X, Y); if (!u) return false; const e = seatEntries(u);
+    return [...e.direct, ...e.via].some(([p, q]) => free(p, q) && reached.has(nodeKey(l, p, q)));
 }
 /* the seats beside a Lost Property spot under furniture with no free tile beside it: live-lost.js sits you on one to pick it up */
 function lostSeatsBeside(l, x, y) { const reached = reachAll(), so = solid(l), hs = holes(l), sl = stairLevels().slots.get(l), free = (X, Y) => hasFloor(l, X, Y) && !so.has(X + "," + Y) && !hs.some(h => inRect(h, X, Y)) && !(sl && sl.has(X + "," + Y));
@@ -3251,9 +3249,7 @@ function sitOn(u, then) {     // then: once seated (live-lost.js picks a thing u
         return true;
     }
     /* come at it from the front if you can, else from either side, never over its back */
-    const front = [u.x + d.dx, u.y + d.dy], sides = d.dx ? [[u.x, u.y - 1], [u.x, u.y + 1]] : [[u.x - 1, u.y], [u.x + 1, u.y]];
-    const diag = d.dx ? [[u.x + d.dx, u.y - 1], [u.x + d.dx, u.y + 1]] : [[u.x - 1, u.y + d.dy], [u.x + 1, u.y + d.dy]];
-    const r = routeToOneOf(u.l, [front], s.l, s.x, s.y) || routeToOneOf(u.l, [...diag, ...sides], s.l, s.x, s.y);
+    const ent = seatEntries(u), r = routeToOneOf(u.l, [ent.direct[0]], s.l, s.x, s.y) || routeToOneOf(u.l, ent.direct.slice(1), s.l, s.x, s.y);      // the front first, then its diagonals and sides
     if (!r) {
         const seated = (x, y) => (u.l.props || []).some(p => isSeat(p.k) && Parts.tiles(p).some(t => t[0] === x && t[1] === y));
         for (const q of [[u.x - 1, u.y], [u.x + 1, u.y], [u.x, u.y - 1], [u.x, u.y + 1]]) {
@@ -3616,7 +3612,9 @@ function runChecks() {
     for (const c of cut.slice(0, 8)) card(`A door on ${c.lv.name} can't be reached from the entrance, on foot or by lift. Show it.`, "err", () => { level = c.lv; buildLevels(); const a = P(c.tx, c.ty, levelZ(c.lv)); cam.x = a[0]; cam.y = a[1]; setTool("select"); select({ type: "door", l: c.lv, o: c.d }); });
     if (cut.length > 8) card(`And ${cut.length - 8} more doors can't be reached.`, "err");
     /* a Lost Property spot nobody can get to, or under furniture with no free tile beside it that anyone can get to, can only end in a miss (9 Nov scan, content finding 1) */
-    { const stuck = []; for (const s of (map.lostSpots || [])) { const lv = byId(s.level); if (lv && lv.k >= 0 && !lostSpotReachable(lv, s.x, s.y)) stuck.push({ lv, s }); }
+    /* each spot nobody can get to is marked in the map (noReach), so the server never deals it even if he publishes anyway: it can't walk the
+       map itself (10 Nov scan, server finding 10) */
+    { const stuck = []; for (const s of (map.lostSpots || [])) { const lv = byId(s.level), bad = !!(lv && lv.k >= 0 && !lostSpotReachable(lv, s.x, s.y)); if (bad) stuck.push({ lv, s }); if (bad) s.noReach = true; else delete s.noReach; }
       for (const c of stuck.slice(0, 8)) card(`A Lost Property spot on ${c.lv.name} at ${c.s.x}, ${c.s.y} can't be picked up: nobody can reach it, or a free tile next to it. Move or remove it in the Lost Property tab. Show it.`, "err", () => { level = c.lv; buildLevels(); const a = P(c.s.x + .5, c.s.y + .5, nodeZ(c.lv, c.s.x, c.s.y) || levelZ(c.lv)); cam.x = a[0]; cam.y = a[1] - 20; clampCam(); paint(); });
       if (stuck.length > 8) card(`And ${stuck.length - 8} more Lost Property spots can't be picked up.`, "err"); }
     /* lamps and wall items whose wall has gone: the renderer leaves them out (render/hw3.js report.lost), so they're never seen. One click

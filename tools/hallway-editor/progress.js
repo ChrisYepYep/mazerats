@@ -19,7 +19,8 @@
     let state = readLocal(), signedIn = false, ready = null;
     const listeners = new Set(), tell = () => { for (const f of listeners) { try { f(state); } catch (e) { console.error(e); } } };
     async function post(part) {
-        const r = await fetch(FN, { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json", Accept: "application/json" }, body: JSON.stringify(part) });
+        const adminHeader = () => { try { const t = localStorage.getItem("mazerats_admin_token"); return t ? { "x-admin-token": t } : {}; } catch (e) { return {}; } };      // an admin walking it before it opens still saves (10 Nov scan, server finding 7)
+        const r = await fetch(FN, { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json", Accept: "application/json", ...adminHeader() }, body: JSON.stringify(part) });
         if (!r.ok) throw new Error("hallway progress: " + r.status);
         return r.json();
     }

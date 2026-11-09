@@ -3,15 +3,21 @@
    Kept for a minute per warm instance; null if there's nothing published or it can't be read. */
 const { blobStore } = require("./_blobs");
 let cache = null;
+/* (10 Nov scan, server findings 2 and 3) When nothing has been published from the Warren the page walks the copy deployed with the site
+   (assets/hallway/map.json, publish.js), so that is the map here too. A failed read is never kept: it was cached for a minute, and
+   with no map the hunts took every clue at once and Lost Property dealt the old fixed spots. null now means "can't be read just now". */
+const fs = require("fs"), path = require("path");
+function staticMap() { for (const p of [path.join(__dirname, "../../assets/hallway/map.json"), path.join(process.cwd(), "assets/hallway/map.json")]) { try { return JSON.parse(fs.readFileSync(p, "utf8")); } catch (e) { /* not here */ } } return null; }
 async function publishedMap() {
     if (cache && Date.now() - cache.at < 60e3) return cache.map;
     let map = null;
     try {
         const store = blobStore("hallway"), man = await store.get("manifest", { type: "json" });
-        const text = (man && man.mapVersion && await store.get("map/" + man.mapVersion, { type: "text" })) || await store.get("map", { type: "text" });
+        const text = man && man.mapVersion ? await store.get("map/" + man.mapVersion, { type: "text" }) : man ? await store.get("map", { type: "text" }) : null;
         if (text) map = JSON.parse(text);
-    } catch (e) { console.error("hallway map: couldn't read the published map", e); }
-    cache = { at: Date.now(), map };
+        else if (!man) map = staticMap();                       // never published from the Warren: the deployed copy
+    } catch (e) { console.error("hallway map: couldn't read the published map", e); return null; }
+    if (map) cache = { at: Date.now(), map };
     return map;
 }
 
@@ -69,16 +75,17 @@ function pickUpFrom(map, l, x, y, free) {
     /* boxed in by furniture: from a seat beside it you can get into, sitting down (9 Nov 2026, his; editor.js seatReachable) */
     return AROUND.map(([i, j]) => [x + i, y + j]).filter(t => seatReachable(l, t[0], t[1], f));
 }
-const SEATS = new Set(["chair", "sofa", "barstool"]);
-const seatOn = (l, x, y) => (l.props || []).some(p => p && SEATS.has(p.k) && (() => { try { return Parts.tiles(p); } catch (e) { return [[p.x, p.y]]; } })().some(t => t[0] === x && t[1] === y));
+/* Where someone can sit down on a seat from: editor.js seatEntries, the same rule as its sitOn (10 Nov scan, server finding 1): the seat's front,
+   front diagonals and sides, never over its back; or through one seat beside it, from that seat's four sides. */
+const SEATS = new Set(["chair", "sofa", "barstool"]), DIRS = [[0, -1], [1, -1], [1, 0], [1, 1], [0, 1], [-1, 1], [-1, 0], [-1, -1]];
+const tilesOf = p => { try { return Parts.tiles(p); } catch (e) { return [[p.x, p.y]]; } };
+const seatAt = (l, x, y) => (l.props || []).find(p => p && SEATS.has(p.k) && tilesOf(p).some(t => t[0] === x && t[1] === y)) || null;
+const facing = p => { const r = Parts.rotOf(p); return p.k === "sofa" ? (r ? 2 : 4) : [2, 4, 6, 0][r]; };
 function seatReachable(l, X, Y, f) {
-    if (!seatOn(l, X, Y)) return false;
-    const seen = new Set([X + "," + Y]), todo = [[X, Y]];
-    while (todo.length) {
-        const [a, b] = todo.pop();
-        for (const [i, j] of AROUND) { const p = a + i, q = b + j, k = p + "," + q; if (seen.has(k)) continue; seen.add(k); if (f(p, q)) return true; if ((!i || !j) && seatOn(l, p, q)) todo.push([p, q]); }
-    }
-    return false;
+    const p = seatAt(l, X, Y); if (!p) return false; const [dx, dy] = DIRS[facing(p)];
+    const direct = [[X + dx, Y + dy], ...(dx ? [[X + dx, Y - 1], [X + dx, Y + 1], [X, Y - 1], [X, Y + 1]] : [[X - 1, Y + dy], [X + 1, Y + dy], [X - 1, Y], [X + 1, Y]])], via = [];
+    for (const q of [[X - 1, Y], [X + 1, Y], [X, Y - 1], [X, Y + 1]]) if (seatAt(l, q[0], q[1])) via.push([q[0] - 1, q[1]], [q[0] + 1, q[1]], [q[0], q[1] - 1], [q[0], q[1] + 1]);
+    return [...direct, ...via].some(([a, b]) => f(a, b));
 }
 
 module.exports = { publishedMap, standableOn, pickUpFrom, _reset: () => { cache = null; } };

@@ -128,8 +128,12 @@ function mergeInto(doc, clean, map, now = Date.now()) {
        way). Clues found before 8 Nov have no time in: they're given this save's, so the next clue is timed from now rather than never. */
     const defs = huntsOf(map);
     for (const [id, h] of Object.entries(clean.hunts)) {
-        const n = defs ? defs.get(id) : undefined;
-        if (defs && n === undefined) continue;                       // not a hunt on the map
+        /* (10 Nov scan, server findings 2 and 18) with the map unreadable just now, nothing new is taken: it used to keep every clue sent, in
+           any order, and the first save once the map was back finished the hunt with a place and the key */
+        if (!defs) continue;
+        const n = defs.get(id);
+        if (n === undefined) continue;                       // not a hunt on the map
+        if (!rawHunts[id] && Object.keys(next.hunts).length >= 100) continue;
         const old = rawHunts[id] || { found: [], done: false }, found = ids(old.found).filter(k => CLUE.test(k)), at = { ...(old.at || {}) };
         for (const k of found) if (typeof at[k] !== "number") at[k] = now;
         if (n !== undefined) {
@@ -212,6 +216,10 @@ async function handler(event) {
         return json(400, { error: "Invalid request body" });
     }
     if (!body || typeof body !== "object" || Array.isArray(body)) return json(400, { error: "Invalid request body" });
+    /* only while the Hallway is open, or for an admin walking it before then (10 Nov scan, server finding 7: _hallway-open.js) */
+    const open = await require("./_hallway-open").hallwayOpen(db, event);
+    if (open === null) return json(503, { error: "Couldn't save just now" });
+    if (!open) return json(403, { error: "The Hallway isn't open yet" });
     const refusal = await writeRefusal(db, event, player.id);
     if (refusal) return refusal;
 

@@ -31,9 +31,10 @@ async function call(url, opts = {}) {
 /* ---- the calendar ---- */
 /* a wall-clock time in a time zone, as a moment: guess it's UTC, see what the zone's clock says then, and correct (twice, for the hour a
    clock change moves) */
+const FMTS = new Map();
 function zoned(y, mo, d, h, mi, s, tz) {
     const want = Date.UTC(y, mo - 1, d, h, mi, s); let t = want;
-    let fmt; try { fmt = new Intl.DateTimeFormat("en-GB", { timeZone: tz, hourCycle: "h23", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit" }); } catch (e) { return want; }
+    let fmt = FMTS.get(tz); if (!fmt) { try { fmt = new Intl.DateTimeFormat("en-GB", { timeZone: tz, hourCycle: "h23", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit" }); } catch (e) { return want; } FMTS.set(tz, fmt); }      // one per zone (10 Nov scan, server finding 15)
     for (let i = 0; i < 3; i++) { const p = Object.fromEntries(fmt.formatToParts(new Date(t)).map(x => [x.type, x.value])); const seen = Date.UTC(+p.year, +p.month - 1, +p.day, +p.hour, +p.minute, +p.second); if (seen === want) break; t += want - seen; }
     return t;
 }
@@ -74,7 +75,10 @@ function starts(ev, from, to) {
     const until = rr.UNTIL ? when(rr.UNTIL, {}) : Infinity, count = rr.COUNT ? +rr.COUNT : Infinity, step = Math.max(1, +(rr.INTERVAL || 1));
     const days = rr.BYDAY ? rr.BYDAY.split(",").map(c => DAYCODE[c.slice(-2)]).filter(v => v !== undefined) : null;
     let n = 0; const base = Date.UTC(+m[1], +m[2] - 1, +m[3]);
-    for (let k = 0; k < 2000; k++) {
+    /* (10 Nov scan, server finding 15) from near now, not from the series' first day: a series begun more than 2000 days ago never reached today.
+       A COUNT has to be counted from the start; otherwise the walk starts at the last whole run of INTERVAL days or weeks before `from` */
+    const span = rr.FREQ === "WEEKLY" ? 7 * step : step, k0 = rr.COUNT ? 0 : Math.max(0, Math.floor((from - len - base) / 86400000 / span) * span - span);
+    for (let k = k0; k < k0 + 2000; k++) {
         const day = new Date(base + k * 86400000), y = day.getUTCFullYear(), mo = day.getUTCMonth() + 1, d = day.getUTCDate(), wd = day.getUTCDay();
         let hit;
         if (rr.FREQ === "DAILY") hit = k % step === 0;
@@ -116,7 +120,8 @@ async function handler(event) {
         const times = schedule(cal, now), on = times.find(t => Date.parse(t.start) <= now && now < Date.parse(t.end));
         return cachedJson(event, { ok: true, channel: LOGIN, times: times.filter(t => Date.parse(t.end) > now), live: live ? { since: null, title: on ? on.title : "" } : null, vacation: null }, ONE);
     } catch (e) {
-        return cachedJson(event, { ok: false, reason: "twitch unreachable", channel: LOGIN, times: [], live: null }, { cache: false });
+        /* kept at the edge briefly too, so while Twitch is down every open Hallway isn't asking it every minute (10 Nov scan, server finding 16) */
+        return cachedJson(event, { ok: false, reason: "twitch unreachable", channel: LOGIN, times: [], live: null }, { cdn: "public, s-maxage=30", vary: "_" });
     }
 }
 

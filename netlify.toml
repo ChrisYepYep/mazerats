@@ -149,7 +149,9 @@
   # _hallway-map.js works out where someone can stand to pick up a Lost
   # Property thing with the editor's own furniture footprints. Without them
   # hallway-lost and hallway-progress fail to load.
-  included_files = ["tools/hallway-editor/furni-parts.js", "tools/hallway-editor/wall-items.js","netlify/functions/_furnidata.json", "netlify/functions/_furni-api-map.json", "netlify/functions/_habbo-names.json", "netlify/functions/_furni-catalogue-seed.json", "netlify/functions/_furni-legacy.json", "netlify/functions/_furni-mirror.json", "js/featured-days.js", "js/dead-ends.js", "js/article-text.js", "js/guide-text.js", "home.html"]
+  # assets/hallway/map.json (10 Nov 2026): the map they read until one is published
+  # from the Warren, as the page walks it then (_hallway-map.js staticMap).
+  included_files = ["tools/hallway-editor/furni-parts.js", "tools/hallway-editor/wall-items.js", "assets/hallway/map.json","netlify/functions/_furnidata.json", "netlify/functions/_furni-api-map.json", "netlify/functions/_habbo-names.json", "netlify/functions/_furni-catalogue-seed.json", "netlify/functions/_furni-legacy.json", "netlify/functions/_furni-mirror.json", "js/featured-days.js", "js/dead-ends.js", "js/article-text.js", "js/guide-text.js", "home.html"]
 
 # The live site's speed on a phone (2 Nov 2026), for the Warren's Speed card.
 # Wakes every five minutes and nearly always does nothing: Google's PageSpeed
