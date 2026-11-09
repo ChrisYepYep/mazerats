@@ -738,7 +738,8 @@ const portalArt = (phase = 0) => portalMemo.get(phase) || (portalMemo.set(phase,
        mouldings run on from each other. It stops at the outside of its two jambs, with a black end to the moulding. Beside it, and above it, is just the wall.
        lo and hi are the surround's outer columns; the stub columns are the jamb that comes from the alcove piece. */
     const surround = (frame, raw, wall, lo, hi, stub) => {
-        const o = { w: frame.w, h: frame.h + WALL_ADD, rgba: Buffer.alloc(frame.w * (frame.h + WALL_ADD) * 4) };
+        /* archRow: each column's first row of the surround itself (-1: just wall), so a garland can tell how much wall is left above the arch */
+        const o = { w: frame.w, h: frame.h + WALL_ADD, rgba: Buffer.alloc(frame.w * (frame.h + WALL_ADD) * 4), archRow: new Int16Array(frame.w).fill(-1) };
         const shift = wall === SEAMX ? phase * 16 : -phase * 16, base = wall === SEAMX ? 0 : 10, sx = x => x < base || x >= base + 128 ? x : base + (((x - base + shift) % 128) + 128) % 128;
         /* the piece is drawn on the wall's slant: a column further along is half as far up or down */
         const copyWall = (r, x) => { if (!wall) return; const X = sx(x), R = r + (wall === SEAMX ? (X - x) / 2 : -(X - x) / 2); if (X < wall.w && R >= 0 && R < wall.h) wall.rgba.copy(o.rgba, (r * o.w + x) * 4, (R * wall.w + X) * 4, (R * wall.w + X + 1) * 4); };
@@ -747,6 +748,7 @@ const portalArt = (phase = 0) => portalMemo.get(phase) || (portalMemo.set(phase,
             const src = stub(x) ? raw : frame; let top = -1;
             for (let j = 0; j < src.h; j++) if (src.rgba[(j * src.w + x) * 4 + 3] >= 128) { top = j; break; }
             if (top < 0) continue;
+            o.archRow[x] = top + WALL_ADD;
             for (let r = 0; r < o.h; r++) {
                 const sy = r - WALL_ADD;
                 if (sy < top) copyWall(r, x);
@@ -758,6 +760,17 @@ const portalArt = (phase = 0) => portalMemo.get(phase) || (portalMemo.set(phase,
     /* free: the arch alone, no wall round it, for the freestanding archway */
     return { y: { alcove: tallPiece(eY, false), arch: surround(mY, eY, SEAMY, 28, 120, x => x >= 104), free: surround(mY, eY, null, 28, 120, x => x >= 104) }, x: { alcove: tallPiece(eX, true), arch: surround(mX, eX, SEAMX, 17, 110, x => x <= 36), free: surround(mX, eX, null, 17, 110, x => x <= 36) } };
 })()), portalMemo.get(phase));
+/* how high the entrance's arch reaches over tile k (0-7) of its stretch: the top of its surround there, above the floor (-Infinity: only wall
+   over that tile). The wall goes on above it, so a garland can hang across there (9 Nov 2026, his: the run stopped dead at the EXIT arch) */
+function portalArchTop(axis, at, k, T) {
+    const ph = ((at % 8) + 8) % 8, art = portalArt(ph)[axis].arch; let best = -Infinity;
+    for (let i = 0; i < art.w; i++) {
+        const r = art.archRow[i]; if (r < 0) continue;
+        if (axis === "x" ? (i < 0 || i >= 128 || Math.floor(i / 16) !== k) : (i < 10 || i >= 138 || Math.floor((138 - i) / 16) !== k)) continue;
+        best = Math.max(best, T - r + (axis === "x" ? i / 2 : (138 - i) / 2));
+    }
+    return best;
+}
 function drawPortal(w, axis, line, at, part, theatre) {
     const b = w.b, T = w.wallTop, ph = ((at % 8) + 8) % 8, art = theatre ? theatreArt(ph, axis, part, T) : portalArt(ph)[axis][part];
     const p = axis === "x" ? w.S(at, line) : w.S(line, at), x0 = axis === "x" ? p[0] : p[0] - 138;
@@ -1517,8 +1530,9 @@ function build(cfg) {
     const furniX = new Int16Array(bw * bh), furniY = new Int16Array(bw * bh), furniC = new Int32Array(bw * bh), furniRun = new Uint8Array(bw * bh), NO_FURNI = -32768;
     /* what hangs on a wall (pictures, posters, garlands): never wallpaper, whatever is done to its colour afterwards, so the wall going up
        under a floor above never copies it upwards (9 Nov 2026, his: the Leet Show poster's top showed again above it under a ledge) */
-    const itemPx = new Uint8Array(bw * bh);
-    const wallOwner = new Uint16Array(bw * bh), stairPx = new Uint8Array(bw * bh), railUnder = new Map();
+    const itemPx = new Uint8Array(bw * bh), itemUnder = new Map();
+    /* stairPatch: which stairwell (1 + its index in the floor's parts) drew a stair pixel, so the wall going up under a floor above can tell a flight behind it from one in front */
+    const wallOwner = new Uint16Array(bw * bh), stairPx = new Uint8Array(bw * bh), stairPatch = new Uint16Array(bw * bh), railUnder = new Map();
     const mask = new Uint8Array(bw * bh), zb = new Int16Array(bw * bh), fc = new Int32Array(bw * bh), done = new Uint8Array(bw * bh);
     const gx = oxx - view[0], gy = oyy - view[1];
     const w = {
@@ -1946,12 +1960,45 @@ function build(cfg) {
                a raised floor above (as the "fill" further down draws it), so the garland climbs where the wall does. */
             if (xmasOn) for (const { g, t } of (P.gar || [])) {
                 if (!garlandMemo.has(g)) {
-                    const topOf = tt => { const X = g.axis === "x" ? tt : g.line, Y = g.axis === "x" ? g.line : tt, key = g.axis + "|" + g.line + "|" + tt, Q = tileOf.get(X + "," + Y); if (!Q || noneSet.has(key)) return null;
-                        const own = Q.z - (Q.floorLift || 0) + (halfSet.has(key) ? 48 : w.wallTop); if (halfSet.has(key) || !aboveLv) return own;
-                        const A = g.axis === "x" ? [X, Y - 1] : [X - 1, Y], cell = (x, y) => Math.floor(x / 2) + "," + Math.floor(y / 2), cov = aboveCells.has(cell(A[0], A[1])) ? A : aboveCells.has(cell(X, Y)) ? [X, Y] : null;
-                        /* under a floor above, the top is that floor's underside, higher or lower than a wall's own (a lowered floor above hangs lower) */ return cov ? aboveLv.src.k * Z1 + (((aboveLv.src.rise || {})[cell(cov[0], cov[1])]) || 0) - 13 : own; };
+                    const cell = (x, y) => Math.floor(x / 2) + "," + Math.floor(y / 2), EDGE = 13;
+                    /* the floor above's height over tile tt of this wall, where it covers it (null: open above, or a half wall) */
+                    const upAt = tt => { const X = g.axis === "x" ? tt : g.line, Y = g.axis === "x" ? g.line : tt, key = g.axis + "|" + g.line + "|" + tt; if (!aboveLv || halfSet.has(key)) return null;
+                        const A = g.axis === "x" ? [X, Y - 1] : [X - 1, Y], cov = aboveCells.has(cell(A[0], A[1])) ? A : aboveCells.has(cell(X, Y)) ? [X, Y] : null;
+                        return cov ? aboveLv.src.k * Z1 + (((aboveLv.src.rise || {})[cell(cov[0], cov[1])]) || 0) : null; };
+                    /* the entrance's stretch has no wall of its own, but the arch's piece is wall above the arch: room enough there for the garland
+                       and its baubles (they hang GAR_HANG under its top), and it carries on across (9 Nov 2026, his) */
+                    const GAR_HANG = 18, archOver = (X, Y) => { for (const q of (lv.portals || [])) { if (q.theatre || q.axis !== g.axis || q.line !== g.line) continue; const k = (g.axis === "x" ? X : Y) - q.at; if (k >= 0 && k < 8) return portalArchTop(q.axis, q.at, k, w.wallTop); } return null; };
+                    const topOf = tt => { const X = g.axis === "x" ? tt : g.line, Y = g.axis === "x" ? g.line : tt, key = g.axis + "|" + g.line + "|" + tt, Q = tileOf.get(X + "," + Y); if (!Q) return null;
+                        /* only where a wall is drawn: not along a drop between floor heights, where the rope would float a whole wall up, unseen (9 Nov scan, renderer 2) */
+                        if (!(g.axis === "x" ? backWall(X, Y) : sideWall(X, Y))) return null;
+                        const arch = noneSet.has(key) ? archOver(X, Y) : null; if (noneSet.has(key) && arch === null) return null;
+                        const own = Q.z - (Q.floorLift || 0) + (halfSet.has(key) ? 48 : w.wallTop), up = upAt(tt);
+                        /* under a floor above, the top is that floor's underside, higher or lower than a wall's own (a lowered floor above hangs lower) */
+                        const top = up !== null ? up - EDGE : own;
+                        return arch !== null && top - (arch + Q.z) < GAR_HANG ? null : top; };
                     const tops = []; for (let tt = g.a; tt < g.b; tt++) tops.push(topOf(tt));
-                    garlandMemo.set(g, new Map(Garland.pixels(g, tops, (x, y, z) => { const zs = w.z; w.z = z; const s = w.S(x, y); w.z = zs; return s; }, cfg.map && cfg.map.baubles).map(q => [q.t, q.px])));
+                    /* Where the floor above changes height, its edge doesn't step: it slopes, down a flight of small steps or as the moulding's wedge
+                       into the lower part (as drawn below, "small steps" and "uneven"), so the rope's height at each join is taken from that slope,
+                       not from the lower of the two tiles, or it dropped a tile early and hung well under the edge (9 Nov 2026, his: "garlands still
+                       aren't following the top edge of walls properly when the floor is raised") */
+                    const under = tt => tt >= g.a && tt < g.b && tops[tt - g.a] !== null && upAt(tt) !== null ? upAt(tt) - EDGE : null;
+                    const edges = []; for (let e = 0; e <= tops.length; e++) {
+                        const p = g.a + e, a = under(p - 1), b = under(p); if (a === null && b === null) { edges.push(null); continue; }
+                        let r = a === null ? b : b === null ? a : Math.min(a, b);
+                        for (let J = p - 4; J <= p + 4; J++) {
+                            const l = under(J - 1), h = under(J); if (l === null || h === null || l === h) continue;
+                            const hi = Math.max(l, h), lo = Math.min(l, h), t = l < h ? J - p : p - J; if (t < 0) continue;
+                            const st = ((aboveLv.src && aboveLv.src.steps) || []).find(s => s.axis === g.axis && s.b === g.line && s.line === J);
+                            let v;
+                            if (st) { const reach = Math.round((hi - lo) / STEP_R) * STEP_D, rate = STEP_R / STEP_D, LIP = 6; v = t < reach ? Math.min(hi, hi + LIP - t * rate) : Math.max(lo, lo + LIP - (t - reach) * rate); }
+                            else { const Lt = Math.min(48, Math.max(24, (hi - lo) * 3)) / 16; v = t < Lt ? lo + (hi - lo) * (1 - t / Lt) : lo; }
+                            r = Math.max(r, v);
+                        }
+                        /* never above an open-topped wall's own top beside it */
+                        for (const tt of [p - 1, p]) if (under(tt) === null && tt >= g.a && tt < g.b && tops[tt - g.a] !== null) r = Math.min(r, tops[tt - g.a]);
+                        edges.push(r);
+                    }
+                    garlandMemo.set(g, new Map(Garland.pixels(g, tops, (x, y, z) => { const zs = w.z; w.z = z; const s = w.S(x, y); w.z = zs; return s; }, cfg.map && cfg.map.baubles, edges).map(q => [q.t, q.px])));
                 }
                 const px = garlandMemo.get(g).get(t); if (!px) continue;
                 const at = t + .5; if (!(g.axis === "x" ? inReach(at, P.y0, 340) : inReach(P.x0, at, 340))) continue;
@@ -2051,8 +2098,8 @@ function build(cfg) {
                 w.z = zs;
             }
             for (const f of (P.sf || [])) {
-                const was = layer.set, own = Object.prototype.hasOwnProperty.call(layer, "set");
-                layer.set = function (x, y, c) { was.call(layer, x, y, c); if (x >= 0 && y >= 0 && x < bw && y < bh) { const p = (y * bw + x) * 4; if (layer.d[p] === c[0] && layer.d[p + 1] === c[1] && layer.d[p + 2] === c[2]) stairPx[y * bw + x] = 1; } };
+                const was = layer.set, own = Object.prototype.hasOwnProperty.call(layer, "set"), sp = lv.patches.indexOf(P) + 1;
+                layer.set = function (x, y, c) { was.call(layer, x, y, c); if (x >= 0 && y >= 0 && x < bw && y < bh) { const p = (y * bw + x) * 4; if (layer.d[p] === c[0] && layer.d[p + 1] === c[1] && layer.d[p + 2] === c[2]) { stairPx[y * bw + x] = 1; stairPatch[y * bw + x] = sp; } } };
                 const mine = () => { if (own) layer.set = was; else delete layer.set; };
                 if (!f.landing) {
                     flight(w, f);
@@ -2144,9 +2191,15 @@ function build(cfg) {
             later.length = 0;
         }
         w.z = lowest; later.forEach(drawSprite);
+        /* furniture a wall has since been drawn over isn't in front of anything any more: a window (which stops at any furniture) took a rope
+           barrier standing behind its wall for one in front, and showed the wallpaper through its glass in the rope's shape (9 Nov scan, content 8) */
+        for (let i = 0; i < furniX.length; i++) if (furniX[i] !== NO_FURNI) { const p = i * 4; if (((layer.d[p] << 16) | (layer.d[p + 1] << 8) | layer.d[p + 2]) !== furniC[i]) furniX[i] = NO_FURNI; }
+        /* the plain wallpaper each hung thing covers, so the wall going up under a floor above can still copy it from there (9 Nov scan, renderer 1:
+           with garland pixels skipped, it copied from two or three repeats down, where the damask and the stripes' dither don't line up) */
+        itemUnder.clear();
         const paintedAfter = new Set(); w.afterAll.sort((a, c) => a.depth - c.depth).forEach(s => {
             const own = Object.prototype.hasOwnProperty.call(layer, "set"), was = layer.set, mine = new Set();
-            layer.set = function (x, y, c) { if (x >= 0 && y >= 0 && x < bw && y < bh) { const i = y * bw + x; if ((furniX[i] !== NO_FURNI && !mine.has(i) && (!s.axis || (s.axis === "y" ? furniX[i] >= s.line + s.out : furniY[i] >= s.line + s.out))) || (mask[i] === 1 && zb[i] > s.zHere)) return; mine.add(i); itemPx[i] = 1; paintedAfter.add(i); was.call(layer, x, y, c); furniX[i] = s.tx; furniY[i] = s.ty; furniRun[i] = 0; const p = i * 4; furniC[i] = (layer.d[p] << 16) | (layer.d[p + 1] << 8) | layer.d[p + 2]; } };
+            layer.set = function (x, y, c) { if (x >= 0 && y >= 0 && x < bw && y < bh) { const i = y * bw + x; if ((furniX[i] !== NO_FURNI && !mine.has(i) && (!s.axis || (s.axis === "y" ? furniX[i] >= s.line + s.out : furniY[i] >= s.line + s.out))) || (mask[i] === 1 && zb[i] > s.zHere)) return; if (!itemPx[i] && furniX[i] === NO_FURNI && !stairPx[i] && !lampPx.has(i)) { const p = i * 4; itemUnder.set(i, [layer.d[p], layer.d[p + 1], layer.d[p + 2]]); } mine.add(i); itemPx[i] = 1; paintedAfter.add(i); was.call(layer, x, y, c); furniX[i] = s.tx; furniY[i] = s.ty; furniRun[i] = 0; const p = i * 4; furniC[i] = (layer.d[p] << 16) | (layer.d[p + 1] << 8) | layer.d[p + 2]; } };
             w.z = s.zHere; s.draw();
             if (own) layer.set = was; else delete layer.set;
         });
@@ -2160,9 +2213,14 @@ function build(cfg) {
         if (aboveLv && !lv.closed) {
             const upSet = new Set(); for (const q of aboveLv.patches) if (!q.notch) for (let X = q.x0; X < q.x1; X++) for (let Y = q.y0; Y < q.y1; Y++) upSet.add(X + "," + Y);
             const upBase = aboveLv.src.k * Z1, upRise = (X, Y) => (aboveLv.src.rise && aboveLv.src.rise[Math.floor(X / 2) + "," + Math.floor(Y / 2)]) || 0, REPEAT = 18, EDGE_ROWS = 13, CAP_ROWS = 24, WALL_REPEAT = 64, WOOD_ROWS = 46;
-            const fill = (sx, y0, y1, yMax, dir, wallAtTile, line, floorZ) => {
+            const fill = (sx, y0, y1, yMax, dir, wallAtTile, line, floorZ, edge) => {
                 if (sx < 0 || sx >= bw) return;
-                const plain = (X, Y) => { const n = Y * bw + X; return !stairPx[n] && !itemPx[n] && (furniX[n] === NO_FURNI || railUnder.has(n)) && !lampPx.has(n); };
+                /* a hung thing's pixel counts as the wallpaper it covers (itemUnder) */
+                const plain = (X, Y) => { const n = Y * bw + X; return !stairPx[n] && (itemPx[n] ? itemUnder.has(n) || railUnder.has(n) : furniX[n] === NO_FURNI || railUnder.has(n)) && !lampPx.has(n); };
+                /* a flight whose stairwell lies wholly behind this wall's line is behind the wall, so the wall covers it here: the F2-to-F3 stair's
+                   landing and steps showed through as a long streak along the Twister wall (9 Nov scan, content 9) */
+                const stairBehind = i => { const Q = stairPatch[i] && lv.patches[stairPatch[i] - 1]; return !!Q && (dir > 0 ? Q.y1 <= line : Q.x1 <= line) && (edge === null || (dir > 0 ? Q.x1 !== edge : Q.y1 !== edge)); };
+                /* (edge: this tile's first column, and the tile it starts at: a stairwell that ends right there is beside it, and shares that column, so the stair stays) */
                 /* the next repeat down has the same wallpaper, as long as it's still wallpaper and not the wood or the floor below it */
                 /* only from the wall that owns most of this column below: where two walls meet at a corner, rows of the other one sat in it and were copied up as a column of little triangles (8 Nov, his, Floor 2 by Kn0ck Kn0ck v0.0) */
                 const owners = new Map(); for (let y = Math.max(0, y1 + 1); y <= yMax && y < bh; y++) { const n = y * bw + sx; if (plain(sx, y)) owners.set(wallOwner[n], (owners.get(wallOwner[n]) || 0) + 1); }
@@ -2170,11 +2228,11 @@ function build(cfg) {
                 const down = (X, Y, last) => { if (X < 0 || X >= bw) return -1; while (Y >= 0 && Y < bh && Y <= last) { if (plain(X, Y) && (X !== sx || home < 0 || wallOwner[Y * bw + X] === home)) return Y * bw + X; Y += REPEAT; } return -1; };
                 for (let y = Math.max(0, y0); y <= y1 && y < bh; y++) {
                     let yy = y; while (yy <= y1) yy += REPEAT;
-                    const i = y * bw + sx; if (furniX[i] !== NO_FURNI || lampPx.has(i) || stairPx[i] || itemPx[i]) continue;
+                    const i = y * bw + sx; if (furniX[i] !== NO_FURNI || lampPx.has(i) || (stairPx[i] && !stairBehind(i)) || itemPx[i]) continue;
                     let j = down(sx, yy, yMax);
                     for (let n = 1; j < 0 && n <= 4; n++) for (const s of [1, -1]) { if (j >= 0 || !wallAtTile(s * n * 4)) continue; const X2 = sx + s * dir * n * WALL_REPEAT; if (X2 < 0 || X2 >= bw) continue; j = down(X2, yy + s * n * WALL_REPEAT / 2, yMax + s * n * WALL_REPEAT / 2); }
                     if (j < 0) { const art = stairWallPx(w, dir < 0, line, sx, y, yMax + WOOD_ROWS - y, floorZ); if (art) { const b2 = i * 4; layer.d[b2] = art[0]; layer.d[b2 + 1] = art[1]; layer.d[b2 + 2] = art[2]; } continue; }
-                    const a = j * 4, b2 = i * 4, under = railUnder.get(j), from = under || [layer.d[a], layer.d[a + 1], layer.d[a + 2]]; if (from[0] === VOID[0] && from[1] === VOID[1] && from[2] === VOID[2]) continue;
+                    const a = j * 4, b2 = i * 4, under = railUnder.get(j) || itemUnder.get(j), from = under || [layer.d[a], layer.d[a + 1], layer.d[a + 2]]; if (from[0] === VOID[0] && from[1] === VOID[1] && from[2] === VOID[2]) continue;
                     layer.d[b2] = from[0]; layer.d[b2 + 1] = from[1]; layer.d[b2 + 2] = from[2];
                     if (wallTag) { wallTag[i] = wallTag[j]; wallC[i] = wallC[j]; }
                 }
@@ -2183,11 +2241,11 @@ function build(cfg) {
                 const [X, Y] = key.split(",").map(Number), f = Q.z;
                 if (backWall(X, Y) && !noneSet.has("x|" + Y + "|" + X) && !halfSet.has("x|" + Y + "|" + X) && (upSet.has(X + "," + (Y - 1)) || upSet.has(X + "," + Y))) {
                     const zUp = upBase + upRise(X, upSet.has(X + "," + (Y - 1)) ? Y - 1 : Y);
-                    for (let u = 0; u < 16; u++) { const sx = (X - Y) * 16 + u + gx, base8 = Math.round((X + u / 16 + Y) * 8) + gy; fill(sx, base8 - zUp + EDGE_ROWS, base8 - (f + Z1) + CAP_ROWS - 1, base8 - f - WOOD_ROWS, 1, n => backWall(X + n, Y), Y, f); }
+                    for (let u = 0; u < 16; u++) { const sx = (X - Y) * 16 + u + gx, base8 = Math.round((X + u / 16 + Y) * 8) + gy; fill(sx, base8 - zUp + EDGE_ROWS, base8 - (f + Z1) + CAP_ROWS - 1, base8 - f - WOOD_ROWS, 1, n => backWall(X + n, Y), Y, f, u === 0 ? X : null); }
                 }
                 if (sideWall(X, Y) && !noneSet.has("y|" + X + "|" + Y) && !halfSet.has("y|" + X + "|" + Y) && (upSet.has((X - 1) + "," + Y) || upSet.has(X + "," + Y))) {
                     const zUp = upBase + upRise(upSet.has((X - 1) + "," + Y) ? X - 1 : X, Y);
-                    for (let u = 0; u < 16; u++) { const sx = (X - Y) * 16 - u + gx, base8 = Math.round((X + Y + u / 16) * 8) + gy; fill(sx, base8 - zUp + EDGE_ROWS, base8 - (f + Z1) + CAP_ROWS - 1, base8 - f - WOOD_ROWS, -1, n => sideWall(X, Y + n), X, f); }
+                    for (let u = 0; u < 16; u++) { const sx = (X - Y) * 16 - u + gx, base8 = Math.round((X + Y + u / 16) * 8) + gy; fill(sx, base8 - zUp + EDGE_ROWS, base8 - (f + Z1) + CAP_ROWS - 1, base8 - f - WOOD_ROWS, -1, n => sideWall(X, Y + n), X, f, u === 0 ? Y : null); }
                 }
             }
         }
@@ -2382,8 +2440,10 @@ function build(cfg) {
                 if (sx < 0 || sx >= bw || y < 0 || y >= bh) continue;
                 const i = y * bw + sx; if (isVoid(i) || furniX[i] !== NO_FURNI || itemPx[i]) continue;
                 /* from the plain wallpaper a repeat or more further down: never a picture or poster hung there (9 Nov 2026, his: the Leet Show poster's top showed again above it) */
-                let yy = y; while (yy <= y1) yy += REPEAT; while (yy < bh && (itemPx[yy * bw + sx] || furniX[yy * bw + sx] !== NO_FURNI || lampPx.has(yy * bw + sx))) yy += REPEAT; if (yy >= bh) continue;
-                const j = yy * bw + sx; if (isVoid(j)) continue;
+                /* ...or the wallpaper a garland or a picture covers there, as the fill above takes it (9 Nov scan, renderer 1) */
+                let yy = y; while (yy <= y1) yy += REPEAT; while (yy < bh && (itemPx[yy * bw + sx] ? !itemUnder.has(yy * bw + sx) : furniX[yy * bw + sx] !== NO_FURNI) || (yy < bh && lampPx.has(yy * bw + sx))) yy += REPEAT; if (yy >= bh) continue;
+                const j = yy * bw + sx, under = itemPx[j] && itemUnder.get(j); if (!under && isVoid(j)) continue;
+                if (under) { layer.d[i * 4] = under[0]; layer.d[i * 4 + 1] = under[1]; layer.d[i * 4 + 2] = under[2]; continue; }
                 layer.d[i * 4] = layer.d[j * 4]; layer.d[i * 4 + 1] = layer.d[j * 4 + 1]; layer.d[i * 4 + 2] = layer.d[j * 4 + 2];
             }
             delete lv.noCap;

@@ -50,9 +50,11 @@ function tile(up, back, start) {
 }
 /* where the rope hangs at each join along the run, from each tile's wall top (null: no wall there): never above the wall either side of
    it, and where the top steps, a climb of at most 16 a tile on the higher side, so the garland stays on the wall all the way up */
-function joins(tops) {
+/* edges (optional): the height at a join where the drawing knows better than either tile's top, as under a floor above whose edge slopes
+   from one height to the next (hw3.js works it out from the drawn edge); the climb limit still holds */
+function joins(tops, edges) {
     const n = tops.length, E = [];
-    for (let e = 0; e <= n; e++) { const a = e > 0 ? tops[e - 1] : null, b = e < n ? tops[e] : null; E.push(a === null ? b : b === null ? a : Math.min(a, b)); }
+    for (let e = 0; e <= n; e++) { const a = e > 0 ? tops[e - 1] : null, b = e < n ? tops[e] : null; let v = a === null ? b : b === null ? a : Math.min(a, b); if (v !== null && edges && edges[e] !== null && edges[e] !== undefined) v = edges[e]; E.push(v); }
     const CLIMB = 16; for (let e = 0; e <= n; e++) if (E[e] !== null) for (let j = 0; j <= n; j++) if (E[j] !== null) E[e] = Math.min(E[e], E[j] + CLIMB * Math.abs(e - j));
     return E;
 }
@@ -62,9 +64,9 @@ function joins(tops) {
 const DOWN = 3;
 const along = (g, t) => g.axis === "x" ? [t + .5, g.line] : [g.line, t + .5];
 /* the whole garland's pixels: tops[i] is tile g.a + i's wall top; screen(x, y, z) is where a map point goes on screen; baubles: the colours
-   chosen (map.baubles). Out: [{ t, px: [[X, Y, [r, g, b]], ...] }], a tile at a time, so each can be drawn in its own turn. */
-function pixels(g, tops, screen, baubles) {
-    const E = joins(tops), use = (baubles || Object.keys(BAUB)).filter(n => BAUB[n]), names = use.length ? use : Object.keys(BAUB), out = []; let n = 0;
+   chosen (map.baubles); edges: see joins(). Out: [{ t, px: [[X, Y, [r, g, b]], ...] }], a tile at a time, so each can be drawn in its own turn. */
+function pixels(g, tops, screen, baubles, edges) {
+    const E = joins(tops, edges), use = (baubles || Object.keys(BAUB)).filter(n => BAUB[n]), names = use.length ? use : Object.keys(BAUB), out = []; let n = 0;
     for (let t = g.a; t < g.b; t++) {
         const i = t - g.a; if (tops[i] === null || E[i] === null || E[i + 1] === null) continue;
         /* is this the first tile of a stretch, or the last (the run's ends, and either side of a gap with no wall) */
