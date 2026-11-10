@@ -20,10 +20,28 @@
         }
         return null;
     }
+    /* A game with music of its own: the Hallway's soundtrack stops while its window is open, and comes back when it's closed (10 Nov 2026,
+       his: "when a game opens and its soundtrack starts playing, make sure the hallway's soundtrack stops"). Guess the Maze and Odd One
+       Out have none, so the Hallway's plays on. If the music's been started or stopped by hand meanwhile, that's left as it is. */
+    const SCORED = { ff: "#ff-overlay", pura: "#pura-overlay" };
+    let hush = null;
+    function hushFor(id, host) {
+        const A = window.HallwayAudio, sel = SCORED[id]; if (!A || !sel || !A.playing || hush) return;
+        A.stop(); let seen = false, waits = 0;
+        const done = () => { clearInterval(hush.t); const mine = hush; hush = null; if (!mine.touched && !A.playing) A.start(); };
+        const was = A.onChange; hush = { touched: false, t: 0 };
+        /* the music switched on by hand while the game's up: theirs now, so nothing more to bring back */
+        A.onChange = function () { if (hush && A.playing) hush.touched = true; if (was) was.apply(this, arguments); };
+        hush.t = setInterval(() => {
+            let open = false; try { const el = host.document.querySelector(sel); open = !!el && el.classList.contains("open"); } catch (e) { open = false; }
+            if (open) seen = true;
+            if ((seen && !open) || (!seen && ++waits > 20)) { A.onChange = was; done(); }      // closed again; or it never opened (10 seconds)
+        }, 500);
+    }
     function play(p) {
         const id = p.k.slice(7), [name, path] = GAMES[id]; window.hwTrack("hallway_arcade_" + id);
         if (!window.HALLWAY_PLAY) { if (window.HallwayWindow) HallwayWindow.open(name, "On the site this cabinet opens " + name + " (" + path + ")."); return; }
-        try { const host = window.parent !== window ? window.parent : null; if (host && typeof host.openSiteLinkInPlace === "function" && host.openSiteLinkInPlace(path)) return; if (host) { host.location.href = path; return; } } catch (e) { /* not the site around it */ }
+        try { const host = window.parent !== window ? window.parent : null; if (host && typeof host.openSiteLinkInPlace === "function" && host.openSiteLinkInPlace(path)) { hushFor(id, host); return; } if (host) { host.location.href = path; return; } } catch (e) { /* not the site around it */ }
         window.open(path, "_blank", "noopener");
     }
     LIVE.onClick((px, py) => {
@@ -33,5 +51,5 @@
         if (Math.round(w.x) === h.free[0] && Math.round(w.y) === h.free[1] && !w.walking) { play(h.p); return true; }
         return !!LIVE.walkTo(LIVE.floor, h.free[0], h.free[1], () => play(h.p));
     });
-    window.HallwayArcade = { GAMES, cabinets, hit };
+    window.HallwayArcade = { GAMES, cabinets, hit, play, get hushed() { return !!hush; } };
 })();
