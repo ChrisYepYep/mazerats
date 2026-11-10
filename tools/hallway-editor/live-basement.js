@@ -143,7 +143,9 @@
     LIVE.add({ active: () => !!B_.t0 && performance.now() - B_.t0 < 30000 && !!LIVE.walker && !(window.HallwayScreensaver && HallwayScreensaver.on),
         under(c, ox, oy, now) { const T = (now - B_.t0) / 1000; c.save(); const m = moodAt(T); if (m) LIVE.forceMood(m); drawDust(c, ox, oy, now, false); c.restore();
             /* the Habbo stops dead when the door goes */
-            const w = LIVE.walker; if (T > 4.1 && T < 7.5 && !B_.froze && w) { B_.froze = true; w.pts = (w.pts || []).slice(0, 1); w.then = null; w.busy = true; } if (T >= 7.5 && B_.froze && w && w.busy) { w.busy = false; }
+            const w = LIVE.walker; if (T > 4.1 && T < 7.5 && !B_.froze && w) { B_.froze = true; w.pts = (w.pts || []).slice(0, 1); w.then = null; w.busy = true;
+                /* and let go by a timer too: with the tab hidden through the rest of the scare this layer never draws again, and the Habbo stayed frozen (10 Nov scan b, live 8) */
+                const t0 = B_.t0; setTimeout(() => { if (B_.t0 === t0 && B_.froze && w.busy) w.busy = false; }, Math.max(0, (7.5 - T) * 1000) + 50); } if (T >= 7.5 && B_.froze && w && w.busy) { w.busy = false; }
             const cv = c.canvas; if (T > 4.1 && T < 5.1) { const k = Math.pow(5.1 - T, 2) * 14; cv.style.transform = `translate(${Math.sin(T * 71) * k}px,${Math.cos(T * 93) * k}px)`; B_.shook = cv; } else if (B_.shook) { cv.style.transform = ""; B_.shook = null; } },
         over(c, ox, oy, now) { const T = (now - B_.t0) / 1000, W2 = c.canvas.width, H2 = c.canvas.height;
             if (T > 3.6 && T < 4.1) { c.fillStyle = "#000"; c.fillRect(0, 0, W2, H2); return; }

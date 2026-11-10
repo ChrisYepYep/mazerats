@@ -31,7 +31,7 @@
        And furniture in front hides them (his: "the lights clip in front of the pillar"): each bulb is cut as if something stood on the
        floor tile in front of it, the way the rats are, worked out once per map and kept as a mask. */
     const PERIOD = 4.2, WAVES = 2, reduced = matchMedia("(prefers-reduced-motion: reduce)");
-    const maskMemo = new Map(); let maskMap = null, maskAt = 0;
+    const maskMemo = new Map(); let maskMap = null, maskAt = 0, maskLoads = -1;
     const cut = document.createElement("canvas"); cut.width = 33; cut.height = 56; const cg = cut.getContext("2d", { willReadFrequently: true });
     /* which of a bulb's 7 by 7 pixels (its halo included) still show past the furniture in front of it */
     function maskOf(t, X, Y, z) {
@@ -54,7 +54,8 @@
         under(c, ox, oy, now) {
             const h = here(), v = LIVE.view(), t0 = now / 1000;
             /* furniture can be moved in the editor: look again every couple of seconds there, once on the walking page */
-            if (LIVE.map !== maskMap || (!window.HALLWAY_PLAY && now - maskAt > 2000)) { maskMemo.clear(); maskMap = LIVE.map; maskAt = now; }
+            /* and again once more furniture pictures have loaded: cut before they were in, nothing was cut (10 Nov scan b, live 6) */
+            if (LIVE.map !== maskMap || LIVE.pieceLoads !== maskLoads || (!window.HALLWAY_PLAY && now - maskAt > 2000)) { maskMemo.clear(); maskMap = LIVE.map; maskAt = now; maskLoads = LIVE.pieceLoads; }
             c.save(); c.translate(ox, oy); c.scale(LIVE.zoom, LIVE.zoom);
             for (const t of theatres()) {
                 if (t.l !== h) continue;

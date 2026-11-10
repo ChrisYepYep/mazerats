@@ -354,11 +354,11 @@
         const facts = mazeFacts(maze), slug = maze.slug || facts.name, a = map && map.rooms && map.rooms.assign && map.rooms.assign[slug], L = layouts(map);
         const size = (a && a.size) || window.RoomStarter.sizeFor(facts.pictures.length), list = L[size], n = a && a.layout !== undefined ? a.layout : hash(hashText(slug), 7) % list.length;
         const [w, h] = size.split("x").map(Number), base = list[n] || list[0];
-        return { room: { w, h, floor: base.floor, items: base.items, exitAt: base.exitAt }, facts, size, layout: n };
+        return { room: { w, h, floor: base.floor, walls: base.walls, items: base.items, exitAt: base.exitAt }, facts, size, layout: n };      // its walls too: Staff walls never showed (10 Nov scan b, rooms 2)
     }
     const hashText = s => { let h = 0; for (const ch of String(s)) h = Math.imul(h, 31) + ch.charCodeAt(0) | 0; return h >>> 0; };
     let archive = null;
-    const mazes = () => archive || (archive = fetch((window.HALLWAY_PLAY || window.HALLWAY_EDIT) ? "/.netlify/functions/rooms" : "/api/archive").then(r => { if (!r.ok) throw new Error("archive " + r.status); return r.json(); }).then(j => { const list = j.rooms || j; if (!Array.isArray(list)) throw new Error("no list"); return list; }).catch(() => { archive = null; return []; }));
+    const mazes = () => archive || (archive = fetch((window.HALLWAY_PLAY || window.HALLWAY_EDIT) ? "/.netlify/functions/rooms" : "/api/archive").then(r => { if (!r.ok) throw new Error("archive " + r.status); return r.json(); }).then(j => { const list = j.rooms || j; if (!Array.isArray(list)) throw new Error("no list"); return list; }).catch(() => { archive = null; const none = []; none.failed = true; return none; }));      // marked, so a door can say the archive didn't answer (10 Nov scan b, rooms 10)
 
     /* ---------- the book: what opens when you walk up to the ledger or an album ---------- */
     const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text !== undefined) e.textContent = text; return e; };
@@ -372,10 +372,12 @@
         bar.appendChild(el("h2", "", p.label || title)); x.type = "button"; x.setAttribute("aria-label", "Close"); close.src = "art/rooms/modal_topclose_x.png"; close.alt = ""; x.appendChild(close); bar.appendChild(x);
         i.alt = p.label || ""; frame.appendChild(i); win.append(bar, frame); back.appendChild(win); host.appendChild(back);
         const shut = () => { back.remove(); document.removeEventListener("keydown", key, true); if (onClose) onClose(); };
-        const key = e => { if (back.hidden) return; e.stopImmediatePropagation(); if (e.key === "Escape") shut(); };      // not until it's showing
+        /* Esc works while the photo is still loading too, and a photo that never comes shuts after 10 seconds, so the room is never stuck (10 Nov scan b, rooms 11) */
+        const key = e => { if (back.hidden) { if (e.key === "Escape") { e.stopImmediatePropagation(); shut(); } return; } e.stopImmediatePropagation(); if (e.key === "Escape") shut(); };
+        const slow = setTimeout(() => { if (back.hidden && back.isConnected) shut(); }, 10000);
         document.addEventListener("keydown", key, true);
         x.addEventListener("click", shut); back.addEventListener("click", e => { if (e.target === back) shut(); });
-        i.onload = () => { i.width = Math.max(1, Math.floor(i.naturalWidth / 2)); i.height = Math.max(1, Math.floor(i.naturalHeight / 2)); back.hidden = false; };
+        i.onload = () => { clearTimeout(slow); i.width = Math.max(1, Math.floor(i.naturalWidth / 2)); i.height = Math.max(1, Math.floor(i.naturalHeight / 2)); back.hidden = false; };
         i.onerror = shut; i.src = p.url;
         return shut;
     }
@@ -450,8 +452,10 @@
         const ex = exitTiles(r, edge), start = ex[0], solidNow = solidSet(r), past = d => edge === "y" ? [start[0], start[1] - d] : [start[0] - d, start[1]], inward = !solidNow.has(past(2) + "") ? past(2) : past(1);
         const w = { x: start[0], y: start[1], dir: edge === "y" ? 0 : 6, frame: 0, walking: false, pts: [], then: null, last: 0 };
         let hover = null, dead = false, bookOpen = null, raf = 0, moved = false;
-        const zoomNow = () => Math.max(1, Math.min(opts.zoom(), Math.floor(Math.min(host.clientWidth / s.w, host.clientHeight / s.h)) || 1));      // no looking around in a room, so it's never bigger than the stage
-        const place = () => { const z = zoomNow(), W = host.clientWidth, H = host.clientHeight; c.width = W; c.height = H; const v = { z, x: Math.round((W - s.w * z) / 2), y: Math.round((H - s.h * z) / 2) }; placeLabel(v); return v; };
+        /* on a phone the play bar lies over the bottom of the stage: the room is fitted and centred above it (10 Nov scan b, rooms 13) */
+        const barH = () => { const b = document.getElementById("playBar"); if (!b || !b.offsetParent) return 0; const cs = getComputedStyle(b); const r = b.getBoundingClientRect(); return cs.position !== "static" && r.width > innerWidth * .6 && r.bottom >= innerHeight - 2 ? b.offsetHeight : 0; };
+        const zoomNow = () => Math.max(1, Math.min(opts.zoom(), Math.floor(Math.min(host.clientWidth / s.w, (host.clientHeight - barH()) / s.h)) || 1));      // no looking around in a room, so it's never bigger than the stage
+        const place = () => { const z = zoomNow(), W = host.clientWidth, H = host.clientHeight; c.width = W; c.height = H; const v = { z, x: Math.round((W - s.w * z) / 2), y: Math.round((H - barH() - s.h * z) / 2) }; placeLabel(v); return v; };
         let view = place();
         const paint = now => { if (dead) return; view = (c.width !== host.clientWidth || c.height !== host.clientHeight || view.z !== zoomNow()) ? place() : view; bx.clearRect(0, 0, s.w, s.h); paintRoom(bx, r, { facts, walker: w, hover, edges: [edge], now }); ctx.imageSmoothingEnabled = false; ctx.fillStyle = "#000"; ctx.fillRect(0, 0, c.width, c.height); ctx.drawImage(buf, view.x, view.y, s.w * view.z, s.h * view.z); };
         const loop = now => { if (dead) return; if (w.walking) step(now); paint(now); raf = requestAnimationFrame(loop); };

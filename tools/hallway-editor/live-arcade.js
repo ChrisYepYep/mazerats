@@ -15,7 +15,7 @@
         for (const p of cabinets(l).sort((a, b) => (b.x + b.y) - (a.x + a.y))) {
             const fp = FP[p.k]; if (!fp) continue;
             const free = fronts(p).find(([x, y]) => LIVE.tileFree(l)(x, y)), z = (free && LIVE.nodeZ(l, free[0], free[1])) || 0, a = LIVE.mapPoint(p.x + .25, p.y + .25, z);
-            const x0 = (p.rot || 0) & 1 ? a[0] + fp.ox - fp.w : a[0] - fp.ox, y0 = a[1] - fp.oy;
+            const x0 = (p.rot || 0) & 1 ? a[0] + fp.ox - fp.w + 1 : a[0] - fp.ox, y0 = a[1] - fp.oy;
             if (px >= x0 + 2 && px <= x0 + fp.w - 2 && py >= y0 + 2 && py <= y0 + fp.h - 4) return { p, free };
         }
         return null;
@@ -24,18 +24,24 @@
        his: "when a game opens and its soundtrack starts playing, make sure the hallway's soundtrack stops"). Guess the Maze and Odd One
        Out have none, so the Hallway's plays on. If the music's been started or stopped by hand meanwhile, that's left as it is. */
     const SCORED = { ff: "#ff-overlay", pura: "#pura-overlay" };
+    /* (10 Nov scan b, live 2 and 3) it watches every scored game's window, and ends only when none is open: a second game opened over the
+       first keeps it hushed; it waits up to 30 seconds for a slow first open; and the music comes back only if it's still meant to be on (Mute
+       pressed meanwhile keeps it off) */
     let hush = null;
+    const musicWanted = () => { try { return localStorage.getItem("hallway-music") !== "0"; } catch (e) { return true; } };
     function hushFor(id, host) {
-        const A = window.HallwayAudio, sel = SCORED[id]; if (!A || !sel || !A.playing || hush) return;
-        A.stop(); let seen = false, waits = 0;
-        const done = () => { clearInterval(hush.t); const mine = hush; hush = null; if (!mine.touched && !A.playing) A.start(); };
-        const was = A.onChange; hush = { touched: false, t: 0 };
+        const A = window.HallwayAudio, sel = SCORED[id]; if (!A || !sel) return;
+        if (hush) { hush.waits = 0; return; }                                       // already hushed: give the new one time to open too
+        if (!A.playing) return;
+        A.stop();
+        const was = A.onChange; hush = { touched: false, t: 0, seen: false, waits: 0 };
+        const done = () => { clearInterval(hush.t); const mine = hush; hush = null; A.onChange = was; if (!mine.touched && !A.playing && musicWanted()) A.start(); };
         /* the music switched on by hand while the game's up: theirs now, so nothing more to bring back */
         A.onChange = function () { if (hush && A.playing) hush.touched = true; if (was) was.apply(this, arguments); };
         hush.t = setInterval(() => {
-            let open = false; try { const el = host.document.querySelector(sel); open = !!el && el.classList.contains("open"); } catch (e) { open = false; }
-            if (open) seen = true;
-            if ((seen && !open) || (!seen && ++waits > 20)) { A.onChange = was; done(); }      // closed again; or it never opened (10 seconds)
+            let open = false; try { open = Object.values(SCORED).some(s => { const el = host.document.querySelector(s); return !!el && el.classList.contains("open"); }); } catch (e) { open = false; }
+            if (open) { hush.seen = true; hush.waits = 0; }
+            if ((hush.seen && !open) || (!hush.seen && ++hush.waits > 60)) done();      // all closed again; or it never opened (30 seconds)
         }, 500);
     }
     function play(p) {
@@ -83,9 +89,9 @@
         im.src = "art/wall/i_arcade_" + id + ".png"; return null;
     }
     /* where a cabinet's picture sits on the map, as hw3.js draws it */
-    const placeOf = (l, p) => { const fp = (window.FLOOR_PIECES || {})[p.k]; if (!fp) return null; const z = LIVE.nodeZ(l, p.x, p.y) || 0, a = LIVE.mapPoint(p.x + .25, p.y + .25, z), flip = !!((p.rot || 0) & 1); return { fp, z, flip, x0: flip ? a[0] + fp.ox - fp.w : a[0] - fp.ox, y0: a[1] - fp.oy }; };
+    const placeOf = (l, p) => { const fp = (window.FLOOR_PIECES || {})[p.k]; if (!fp) return null; const z = LIVE.nodeZ(l, p.x, p.y) || 0, a = LIVE.mapPoint(p.x + .25, p.y + .25, z), flip = !!((p.rot || 0) & 1); return { fp, z, flip, x0: flip ? a[0] + fp.ox - fp.w + 1 : a[0] - fp.ox, y0: a[1] - fp.oy }; };      // turned: one pixel right, as hw3 mirrors it (10 Nov scan b, live 4)
     /* which screen pixels still show past what stands in front of the cabinet: worked out once per place, looked at again now and then in the editor */
-    const cutMemo = new Map(); let cutMap = null, cutAt = 0;
+    const cutMemo = new Map(); let cutMap = null, cutAt = 0, cutLoads = -1;
     const cutCv = document.createElement("canvas"); cutCv.width = 33; cutCv.height = 56; const cutG = cutCv.getContext("2d", { willReadFrequently: true });
     function shown(l, p, sc, at) {
         const key = l.id + "|" + p.k + "|" + p.x + "," + p.y + "," + (p.rot || 0); if (cutMemo.has(key)) return cutMemo.get(key);
@@ -96,12 +102,16 @@
     }
     const hereL = () => LIVE.floor || (LIVE.editorApi && LIVE.editorApi().level);
     const onScreen = (at, v) => at && !(at.x0 > v.x1 || at.x0 + 33 < v.x0 || at.y0 > v.y1 || at.y0 + 57 < v.y0);
+    /* only while a cabinet on this floor is on screen. A still layer, woken once per frame of the loop: as an every-frame layer it kept the
+       whole map repainting 70-odd times a second for a picture that changes every 300ms (10 Nov scan b, live 5); and not while a game's open */
+    const anyOn = () => { if (reduced.matches || hush) return false; const l = hereL(); if (!l) return false; const v = LIVE.view(); return cabinets(l).some(p => onScreen(placeOf(l, p), v)); };
+    setInterval(() => { if (!document.hidden && anyOn()) LIVE.wake(); }, FRAME_MS);
     LIVE.add({
-        /* only while a cabinet on this floor is on screen; paint() wakes it when the camera brings one into view */
-        active: () => { if (reduced.matches) return false; const l = hereL(); if (!l) return false; const v = LIVE.view(); return cabinets(l).some(p => onScreen(placeOf(l, p), v)); },
+        still: true,
         under(c, ox, oy, now) {
+            if (reduced.matches) return;
             const l = hereL(); if (!l) return; const v = LIVE.view();
-            if (LIVE.map !== cutMap || (!window.HALLWAY_PLAY && now - cutAt > 2000)) { cutMemo.clear(); cutMap = LIVE.map; cutAt = now; }
+            if (LIVE.map !== cutMap || LIVE.pieceLoads !== cutLoads || (!window.HALLWAY_PLAY && now - cutAt > 2000)) { cutMemo.clear(); cutMap = LIVE.map; cutAt = now; cutLoads = LIVE.pieceLoads; }      // again once furniture pictures arrive (10 Nov scan b, live 6)
             c.save(); c.translate(ox, oy); c.scale(LIVE.zoom, LIVE.zoom);
             for (const p of cabinets(l)) {
                 const id = p.k.slice(7), at = placeOf(l, p), sc = screenOf(id); if (!at || !sc || !onScreen(at, v)) continue;

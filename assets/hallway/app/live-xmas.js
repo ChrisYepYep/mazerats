@@ -5,6 +5,7 @@
     const worn = () => { try { if (/[?&]xmas=1/.test(location.search)) return true; const p = window.parent !== window ? window.parent : window; return !!(p.SkinWear && p.SkinWear.current && /^xmas$|christmas/i.test(String(p.SkinWear.current() || ""))); } catch (e) { return false; } };
     let tries = 0; const again = setInterval(() => { if (!window.HALLWAY_PLAY) { clearInterval(again); return; } if (worn() && !window.hallwayXmas) { window.hallwayXmas = true; if (window.HallwayLive) HallwayLive.wake(); } if (++tries > 8) clearInterval(again); }, 800);
     const LIVE = window.HallwayLive; if (!LIVE) return;
+    const reducedX = matchMedia("(prefers-reduced-motion: reduce)");      // the lights and snow stay still for those who ask (10 Nov scan b, live 12)
     /* Snow falling outside the windows (9 Nov 2026, his: "snowfall is appearing as if it's inside the window frame, it should be behind it to
        appear outside, and doesn't always fall properly"). It falls in the view's own upright picture, as render/hw3.js lays the view out,
        and shows only where the view does: never on the frame, its bars or rails (the frame's own pixels, render/hall-window.js), never over
@@ -28,7 +29,7 @@
     }
     /* read back each frame (cut and tinted), so kept where reading is cheap (9 Nov scan, page finding 4) */
     const snowCv = document.createElement("canvas"), sg = snowCv.getContext("2d", { willReadFrequently: true });
-    LIVE.add({ active: () => !!window.hallwayXmas && windows().length > 0,
+    LIVE.add({ active: () => !!window.hallwayXmas && !reducedX.matches && windows().length > 0,
         under(c, ox, oy, now) { const t = now / 1000;
             for (const { q, z, l } of windows()) {
                 const V = viewOf(q, z), [bx0, by0, bx1, by1] = V.box, w = bx1 - bx0, h = by1 - by0; if (w <= 0 || h <= 0) continue;
@@ -121,7 +122,8 @@
         c.restore();
     }
     LIVE.add({ still: true, under: drawFestoons });
-    LIVE.add({ active: () => !!window.hallwayXmas && runsOn(LIVE.floor).some(f => f.twinkle), under() { } });
+    /* a twinkling string: woken ten times a second, not every frame, and not under reduced motion (10 Nov scan b, live 11 and 12) */
+    setInterval(() => { if (!document.hidden && window.hallwayXmas && !reducedX.matches && runsOn(LIVE.floor).some(f => f.twinkle)) LIVE.wake(); }, 100);
     /* ---------- garlands: l.garlands = [{ axis, line, a, b, baubles }] ----------
        Baked into the Christmas tiles by render/hw3.js (9 Nov 2026, his: they weren't hidden by walls and furniture in front, and sat a tile
        to the left). Here only the one being laid is drawn, from the same pixels (render/garland.js), and a click finds a tile of one. */
@@ -151,6 +153,7 @@
 (function () {
     "use strict";
     const LIVE = window.HallwayLive; if (!LIVE) return;
+    const reducedX = matchMedia("(prefers-reduced-motion: reduce)");
     const FP = k => (window.FLOOR_PIECES || {})[k] || null;
     const floorNow = () => window.HALLWAY_PLAY ? LIVE.floor : (LIVE.editorApi && LIVE.editorApi().level) || LIVE.floor;
     /* each tree on the floor shown: its picture's place and the tile its foot is on, as render/hw3.js puts it */
@@ -224,6 +227,6 @@
     }
     LIVE.add({ still: true, under: draw });
     /* about eleven times a second while a tree is on screen and the tab is in view */
-    setInterval(() => { if (document.hidden || !window.hallwayXmas) return; const v = LIVE.view(); if (trees().some(tr => onScreen(tr, v))) LIVE.wake(); }, 90);
+    setInterval(() => { if (document.hidden || !window.hallwayXmas || reducedX.matches) return; const v = LIVE.view(); if (trees().some(tr => onScreen(tr, v))) LIVE.wake(); }, 90);
 })();
 

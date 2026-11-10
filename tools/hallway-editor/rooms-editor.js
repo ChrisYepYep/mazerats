@@ -41,6 +41,35 @@
         ]]
     ];
     const Z_MAX = 120, KEEP = "hallway-rooms-view";
+    /* one layout's problems. Out here, so the hallway's Problems tab can ask about every layout, not only the one on screen (10 Nov scan b, rooms 8) */
+    function problemsOf(V, r, size) {
+        const solid = V.solidSet(r), msgs = [];
+        for (const e of ["x", "y"]) for (const t of V.arrowTiles(r, e)) if (solid.has(t[0] + "," + t[1])) msgs.push("Something stands on a way in.");
+        if (!SPECIAL[size]) {
+            if (!r.items.some(i => i.k === "ledger")) msgs.push("No ledger, so nowhere to read about the maze.");
+            if (!r.items.some(i => i.k === "album")) msgs.push("No album, so the pictures can't all be seen.");
+        }
+        /* can you get to it? */
+        const way = [...V.arrowTiles(r, "x"), ...V.arrowTiles(r, "y")].find(t => !solid.has(t[0] + "," + t[1]));
+        if (way) {
+            const reach = (x, y) => (x === way[0] && y === way[1]) || !!V.route(r, way, [x, y]), free = (x, y) => x >= 0 && y >= 0 && x < r.w && y < r.h && !solid.has(x + "," + y);
+            for (const it of r.items) {
+                if (it.k !== "ledger" && it.k !== "album" && it.k !== "frame") continue;
+                const out = [], f = V.footprint(it);
+                if (it.k === "frame") { const t = Math.floor(it.at); for (const a of [t, t - 1, t + 1]) for (const d of [0, 1]) out.push(it.wall === "l" ? [d, a] : [a, d]); }
+                else if (f) for (let x = f[0] - 1; x <= f[0] + f[2]; x++) for (let y = f[1] - 1; y <= f[1] + f[3]; y++) out.push([x, y]);
+                if (!out.some(q => free(q[0], q[1]) && reach(q[0], q[1]))) msgs.push(it.k === "frame" ? "A picture has nowhere to stand in front of it. It opens from across the room." : "The " + it.k + " can't be walked up to.");
+            }
+        }
+        const slots = r.items.filter(q => q.k === "frame").map(q => q.slot); if (new Set(slots).size !== slots.length) msgs.push("Two pictures on the wall show the same picture.");
+        return [...new Set(msgs)];
+    }
+    /* every layout's: [{ size, n, name, msgs }] */
+    function allProblems(map) {
+        const V = window.RoomView; if (!V || !window.RoomStarter) return []; const L = V.layouts(map), out = [];
+        for (const size of Object.keys(L)) L[size].forEach((lay, n) => { const [w, h] = size.split("x").map(Number), msgs = problemsOf(V, { w, h, floor: lay.floor, walls: lay.walls, items: lay.items, exitAt: lay.exitAt }, size); if (msgs.length) out.push({ size, n, name: sizeName(size) + ", layout " + (n + 1), msgs }); });
+        return out;
+    }
     let host = null;
     function open(api) {
         if (host) return;
@@ -197,8 +226,8 @@
             right.appendChild(el("p", "re-hint", V.isWall(sel) ? (isDoor(sel) ? "Drag it along the wall or onto the other wall." : "Drag it along the wall or onto the other wall. Ctrl-drag moves it up or down.") : "Drag it to move it, or use the arrow keys to nudge it." + (turns ? " R turns it." : "") + (V.isRug(sel) ? "" : " Ctrl-drag raises it.")));
             const num = (label, key, min, max, step, fallback) => {
                 const row = el("label", "re-lab"), i = el("input"); i.type = "text"; i.inputMode = "numeric"; i.autocomplete = "off"; i.value = sel[key] === undefined ? fallback : sel[key]; let begun = false;
-                const apply = () => { if (i.value.trim() === "" || !Number.isFinite(Number(i.value))) return; const v = Math.max(min, Math.min(max, Math.round(Number(i.value)))); if (!V.isWall(sel) && (key === "n" || key === "len" || key === "w" || key === "h") && !fits(roomNow(), { ...sel, [key]: v }, sel)) { say("There isn't room for that here."); return; } say(""); if (!begun) { begun = true; editingNoCommit(); } if (key === "z" && !v) delete sel.z; else sel[key] = v; api.changed(); paintSoon(); syncUndo(); };
-                i.addEventListener("input", apply);
+                const apply = () => { if (i.value.trim() === "" || !Number.isFinite(Number(i.value))) return; const v = Math.max(min, Math.min(max, Math.round(Number(i.value)))); if (key === "z" && !v && sel.z && !V.isWall(sel) && !fits(roomNow(), (({ z, ...o }) => o)(sel), sel)) { say("There's something under it, so it can't go down to the floor."); i.value = sel.z; return; } if (!V.isWall(sel) && (key === "n" || key === "len" || key === "w" || key === "h") && !fits(roomNow(), { ...sel, [key]: v }, sel)) { say("There isn't room for that here."); return; } say(""); if (!begun) { begun = true; editingNoCommit(); } if (key === "z" && !v) delete sel.z; else sel[key] = v; api.changed(); paintSoon(); syncUndo(); };
+                i.addEventListener("change", apply);      // not every keystroke: typing 10 went through 1, clamped (10 Nov scan b, rooms 12)
                 i.addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); i.blur(); } if (e.key === "ArrowUp" || e.key === "ArrowDown") { e.preventDefault(); i.value = Math.max(min, Math.min(max, (Number(i.value) || 0) + (e.key === "ArrowUp" ? 1 : -1) * (e.shiftKey ? 10 : step || 1))); apply(); } });
                 i.addEventListener("blur", () => { begun = false; i.value = sel && sel[key] !== undefined ? sel[key] : fallback === undefined ? "" : fallback; checks(); });
                 row.append(el("span", "", label), i); right.appendChild(row); panelFields.push({ i, key, fallback }); if (key === "z") heightBox = i;
@@ -244,7 +273,7 @@
                 const R0 = api.map().rooms, chosen = mazes.filter(m => R0 && R0.assign && R0.assign[m.slug] && R0.assign[m.slug].chosen), rest = mazes.length - chosen.length;
                 if (!rest) { say("You've chosen a layout for every maze."); return; }
                 if (!window.confirm(`Deal a new layout to the ${rest} maze${rest === 1 ? "" : "s"} you haven't chosen one for?` + (chosen.length ? ` The ${chosen.length} you chose keep theirs.` : ""))) return;
-                before(); const R = own(); for (const m of mazes) { const a = V.roomFor(api.map(), m), was = R.assign[m.slug]; if (was && was.chosen) continue; R.assign[m.slug] = { size: (was && was.size) || a.size, layout: Math.floor(Math.random() * 3) }; } commit(); panel();
+                before(); const R = own(); for (const m of mazes) { const a = V.roomFor(api.map(), m), was = R.assign[m.slug]; if (was && was.chosen) continue; R.assign[m.slug] = { layout: Math.floor(Math.random() * 3) }; /* the layout only: the size goes on following its pictures (10 Nov scan b, rooms 5) */ } commit(); panel();
             });
             right.appendChild(again);
             if (mazesState !== "ready") { right.appendChild(el("p", "re-help", mazesState === "loading" ? "Loading the mazes…" : "No mazes came back. Is the archive reachable?")); return; }
@@ -265,25 +294,8 @@
         /* things in the layouts the rooms no longer draw (the retired plaques): not seen, so they can't be clicked away (10 Nov scan, rooms 18) */
         const strays = () => { const out = []; const L = V.layouts(api.map()); for (const s of Object.keys(L)) L[s].forEach((lay, k) => { for (const it of lay.items) if (!V.isWall(it) && !V.isRug(it) && !V.footprint(it)) out.push([s, k, it]); }); return out; };
         function checks() {
-            issues.textContent = ""; const r = roomNow(), solid = V.solidSet(r), msgs = [];
-            for (const e of ["x", "y"]) for (const t of V.arrowTiles(r, e)) if (solid.has(t[0] + "," + t[1])) msgs.push("Something stands on a way in.");
-            if (!SPECIAL[size]) {
-                if (!r.items.some(i => i.k === "ledger")) msgs.push("No ledger, so nowhere to read about the maze.");
-                if (!r.items.some(i => i.k === "album")) msgs.push("No album, so the pictures can't all be seen.");
-            }
-            /* can you get to it? */
-            const way = [...V.arrowTiles(r, "x"), ...V.arrowTiles(r, "y")].find(t => !solid.has(t[0] + "," + t[1]));
-            if (way) {
-                const reach = (x, y) => (x === way[0] && y === way[1]) || !!V.route(r, way, [x, y]), free = (x, y) => x >= 0 && y >= 0 && x < r.w && y < r.h && !solid.has(x + "," + y);
-                for (const it of r.items) {
-                    if (it.k !== "ledger" && it.k !== "album" && it.k !== "frame") continue;
-                    const out = [], f = V.footprint(it);
-                    if (it.k === "frame") { const t = Math.floor(it.at); for (const a of [t, t - 1, t + 1]) for (const d of [0, 1]) out.push(it.wall === "l" ? [d, a] : [a, d]); }
-                    else if (f) for (let x = f[0] - 1; x <= f[0] + f[2]; x++) for (let y = f[1] - 1; y <= f[1] + f[3]; y++) out.push([x, y]);
-                    if (!out.some(q => free(q[0], q[1]) && reach(q[0], q[1]))) msgs.push(it.k === "frame" ? "A picture has nowhere to stand in front of it. It opens from across the room." : "The " + it.k + " can't be walked up to.");
-                }
-            }
-            const slots = r.items.filter(q => q.k === "frame").map(q => q.slot); if (new Set(slots).size !== slots.length) msgs.push("Two pictures on the wall show the same picture.");
+            issues.textContent = ""; const r = roomNow(), msgs = [];
+            msgs.push(...problemsOf(V, r, size));
             for (const m of [...new Set(msgs)]) issues.appendChild(el("p", "", m));
             const st = V.indexOf && V.indexOf() ? strays() : [];
             if (st.length) {
@@ -346,7 +358,7 @@
 
         /* ---------- Ctrl and the mouse: how high. Only what you're placing, carrying or dragging (10 Nov scan, rooms 3) ---------- */
         function ctrlMove(e) {
-            if (!e.ctrlKey && !e.metaKey) { endLift(); ctrlY = null; ctrlSpare = 0; lockTile = null; return false; }
+            if (!e.ctrlKey && !e.metaKey) { endLift(); ctrlY = null; ctrlSpare = 0; lockTile = null; ctrlArmed = false; return false; }
             const dragged = drag && drag.kind === "move" && !isDoor(drag.it) ? drag.it : null, held = carry && !isDoor(carry.item) ? carry.item : null, placing = tool && !drag && !V.isWall(tool);
             if (!dragged && !held && !placing) return false;
             if (ctrlY === null) { ctrlY = e.clientY; ctrlFrom = [e.clientX, e.clientY]; ctrlArmed = false; lockTile = mouse && !V.isWall((dragged || held || tool)) ? V.tileAt(roomNow(), mouse[0], mouse[1]) : null; return true; }
@@ -359,12 +371,18 @@
             ctrlSpare += (ctrlY - e.clientY) / zoom; ctrlY = e.clientY;
             const steps = Math.trunc(ctrlSpare); if (!steps) return true;
             ctrlSpare -= steps;
+            const it = dragged ? dragged : held;
+            /* a window and a rug have no height: nothing to begin, so no empty undo step and no lost Redo (10 Nov scan b, rooms 7) */
+            if (it && ((V.isWall(it) && it.k === "window") || V.isRug(it))) return true;
             if (dragged) beginDrag();
-            const it = dragged ? drag.it : held;
-            if (it && V.isWall(it)) { if (it.k !== "window") { const fromUp = held ? heldUpNow(it) : it.up || 0; it.up = clampUp(it, fromUp + steps); if (held) carry.upKept = it.up; say("Height on the wall: " + it.up); panelValues(); } }
-            else if (it) { if (V.isRug(it)) return true; const v = Math.max(0, Math.min(Z_MAX, (it.z || 0) + steps)); if (v) it.z = v; else delete it.z; say("Height: " + v); panelValues(); }
+            let changedNow = false;
+            if (it && V.isWall(it)) { const fromUp = held ? heldUpNow(it) : it.up || 0, to = clampUp(it, fromUp + steps); changedNow = to !== (it.up || 0); it.up = to; if (held) carry.upKept = it.up; say("Height on the wall: " + it.up); panelValues(); }
+            else if (it) { const v = Math.max(0, Math.min(Z_MAX, (it.z || 0) + steps));
+                /* not down onto something standing under it (10 Nov scan b, rooms 6) */
+                if (!v && it.z && dragged && !fits(roomNow(), (({ z, ...o }) => o)(it), it)) { say("There's something under it, so it can't go down to the floor."); return true; }
+                changedNow = v !== (it.z || 0); if (v) it.z = v; else delete it.z; say("Height: " + v); panelValues(); }
             else { placeZ = Math.max(0, Math.min(Z_MAX, placeZ + steps)); say("Height: " + placeZ); }
-            if (dragged) drag.moved = true;
+            if (dragged && changedNow) drag.moved = true;
             return true;
         }
         const heldUpNow = it => carry && carry.upKept !== undefined ? carry.upKept : it.up || 0;
@@ -453,6 +471,7 @@
             }
             paintSoon();
         });
+        c.addEventListener("pointermove", e => { if (!drag) return; if (drag.px0 === undefined) { drag.px0 = e.clientX; drag.py0 = e.clientY; } else if (Math.abs(e.clientX - drag.px0) + Math.abs(e.clientY - drag.py0) > 4) drag.far = true; });
         c.addEventListener("pointerup", e => {
             if (panning) { panning = null; c.style.cursor = "default"; return; }
             if (!drag) return; const d = drag; drag = null; ctrlY = null; ctrlSpare = 0; lockTile = null;
@@ -461,7 +480,7 @@
             if (d.moved) { commit(); panel(); say(""); return; }
             if (d.began && api.unsnapshot) api.unsnapshot();      // begun, but nothing changed: no empty step left behind
             /* Ctrl-click, no movement: delete it, as in the hallway */
-            if (d.ctrlAtStart && (e.ctrlKey || e.metaKey)) { sel = d.it; removeSel(); }
+            if (d.ctrlAtStart && (e.ctrlKey || e.metaKey) && !d.far) { sel = d.it; removeSel(); }      // only a click: a Ctrl-drag that raised nothing deleted it (10 Nov scan b, rooms 3)
             syncUndo();
         });
         c.addEventListener("pointerleave", () => { if (!drag && !carry) { mouse = null; stWhere.textContent = ""; stWhat.textContent = ""; paintSoon(); } });
@@ -506,7 +525,8 @@
             if (e.target && /INPUT|SELECT|TEXTAREA/.test(e.target.tagName)) { keepFromEditor(e); return; }
             e.stopPropagation(); if (e.key === " " || e.key === "Alt") e.preventDefault();
             if (e.key === "Shift") { const was = shiftAlone; shiftAlone = false; if (was) turnHeld(); }
-            if (e.key === "Control" || e.key === "Meta") { endLift(); ctrlY = null; ctrlSpare = 0; lockTile = null; if (!carry && !tool) say(""); if (sel) panel(); paintSoon(); }
+            if (e.key === "Control" || e.key === "Meta") { endLift(); ctrlY = null; ctrlSpare = 0; lockTile = null; ctrlArmed = false;      // (10 Nov scan b, rooms 15)
+                if (!carry && !tool) say(""); if (sel) panel(); paintSoon(); }
         };
         addEventListener("keydown", keys, true); addEventListener("keyup", keysUp, true); addEventListener("resize", paintSoon);
 
@@ -526,5 +546,5 @@
         });
         window.__rooms = { get sel() { return sel; }, get tool() { return tool; }, layout, get carry() { return carry; }, get placeZ() { return placeZ; }, get view() { return view; }, get zoom() { return zoom; }, roomNow, pick, GROUPS, get size() { return size; }, get n() { return n; } };
     }
-    window.RoomsEditor = { open };
+    window.RoomsEditor = { open, allProblems };
 })();

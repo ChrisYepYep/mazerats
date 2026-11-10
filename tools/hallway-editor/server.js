@@ -92,7 +92,7 @@ function spawn() {
 }
 for (let i = 0; i < THREADS; i++) spawn();
 /* squares only drawn ahead never take the last 6 threads: those stay free for what the page asks for, so asking never waits behind them */
-const aheadOnly = j => !!j.entry && !j.entry.waiters.length, AHEAD_MAX = Math.max(1, THREADS - 6);
+const aheadOnly = j => !!j.entry && !j.entry.waiters.length, AHEAD_MAX = Math.max(0, THREADS - 6);      // none with 6 threads or fewer (10 Nov scan b, server 6)
 function pump() {
     for (const t of pool) {
         if (t.job) continue;
@@ -105,7 +105,8 @@ function pump() {
         }
         if (!job) return;
         const ver = versions.get(job.v);
-        if (!ver) { job.done(null, "That map has gone."); continue; }
+        /* this thread still takes the next one: `continue` left it idle till the next pump (10 Nov scan b, server 2) */
+        if (!ver) { job.done(null, "That map has gone."); return pump(); }
         t.job = job;
         const msg = { id: job.id, v: job.v, x: job.x, y: job.y, w: job.w, h: job.h, names, liftOpen: ver.liftOpen, cut: ver.cut, light: job.light };
         if (!t.known.has(job.v)) { msg.mapText = ver.text; t.known.add(job.v); }
@@ -134,7 +135,8 @@ function queueJob(key, rect, v, waiter) {
     const entry = { waiters: waiter ? [waiter] : [], ahead: !waiter };
     const job = { id: nextId++, v, ...rect,
         drop: () => { if (key && drawing.get(key) === entry) drawing.delete(key); },
-        gone: () => entry.waiters.length ? entry.waiters.every(w => w.gone()) : !(entry.ahead && v === warmV),
+        /* wanted while anyone waits for it, or while it's on the newest list drawn ahead (a request that joined it and left doesn't drop it: 10 Nov scan b, server 4) */
+        gone: () => entry.waiters.every(w => w.gone()) && !(entry.ahead && v === warmV),
         done: (buf, err) => {
             if (key) drawing.delete(key);
             if (buf && key) { cache.set(key, buf); while (cache.size > CACHE_MAX) cache.delete(cache.keys().next().value); }

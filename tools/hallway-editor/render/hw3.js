@@ -654,11 +654,11 @@ function flightRails(w, o, paint) {
             const th = 2 * Math.PI * i / PITCH, cs = Math.cos(th), sn = Math.sin(th), a = axisAt(i), front = cs > 0 ? 1 : 0;
             const cx = a[0] - Nx * RC * sn, cy = a[1] - Ny * RC * sn, dd = dBot - i / 16;
             for (let v = -2; v <= 2; v++) for (let u = -2; u <= 2; u++) {
-                const X = Math.round(cx + u), Y = Math.round(cy + v), ex = X - cx, ey = Y - cy, r = Math.hypot(ex, ey), rag = ((((X * 2654435761) ^ (Y * 40503)) >>> 0) % 100) / 100; if (r > TUBE + .25 + (rag > .7 ? .7 : 0)) continue;
+                const X = Math.round(cx + u), Y = Math.round(cy + v), ex = X - cx, ey = Y - cy, r = Math.hypot(ex, ey), WX = X - w.ox, WY = Y - w.oy, rag = ((((WX * 2654435761) ^ (WY * 40503)) >>> 0) % 100) / 100; if (r > TUBE + .25 + (rag > .7 ? .7 : 0)) continue;
                 /* behind the rail, only where it comes out past its edges */
                 if (!front) { const across = (X - a[0]) * Nx + (Y - a[1]) * Ny; if (Math.abs(across) < RAILH) continue; }
                 /* lit from above and the left; the side away from you darker; a little needle texture */
-                const lit = -(ex * Nx + ey * Ny) / TUBE * .55 - ex / TUBE * .25 + (front ? cs * .45 : -.6), n = ((X * 73856093) ^ (Y * 19349663)) & 7;
+                const lit = -(ex * Nx + ey * Ny) / TUBE * .55 - ex / TUBE * .25 + (front ? cs * .45 : -.6), n = (((X - w.ox) * 73856093) ^ ((Y - w.oy) * 19349663)) & 7;
                 const col = !front ? (n < 2 ? GAR.lo : GAR.dk) : lit > .6 ? (n < 2 ? GAR.hi : n < 5 ? GAR.m1 : GAR.m2) : lit > .2 ? (n < 2 ? GAR.m1 : n < 5 ? GAR.m2 : GAR.lo) : lit > -.15 ? (n < 3 ? GAR.m2 : GAR.lo) : (n < 3 ? GAR.lo : GAR.dk);
                 mark(X, Y, { col, front, rank: lit, c, d: dd, z: zB + i + RAIL + (Y < a[1] ? 2 : 0) });
             }
@@ -677,7 +677,6 @@ function flightRails(w, o, paint) {
                 for (const [p, q, col] of [[0, -2, [224, 53, 42]], [-1, -2, [255, 138, 120]], [1, -2, [168, 31, 22]], [0, -3, [224, 53, 42]]]) put(top[0] + p, top[1] + q, col, c, dd, zz + 1); }
             else { put(top[0], top[1] - 1, [224, 53, 42], c, dd, zz); put(top[0] - 1, top[1] - 1, [255, 138, 120], c, dd, zz); }
             const B = BULB[t % BULB.length]; put(bot[0], bot[1] - 1, [20, 30, 20], c, dd, zz); put(bot[0], bot[1], [255, 246, 220], c, dd, zz); put(bot[0] - 1, bot[1], B, c, dd, zz); put(bot[0] + 1, bot[1], B, c, dd, zz); put(bot[0], bot[1] + 1, B, c, dd, zz);
-            if (w.lamps) w.garBulbs = (w.garBulbs || []).concat([[bot[0], bot[1], B]]);
         }
     };
     if (o.garland) { if (o.far !== false) coil(c0 + .3); if (o.near !== false) coil(c1 - .3); }
@@ -844,7 +843,8 @@ function drawPortal(w, axis, line, at, part, theatre) {
         b.set(x0 + i, p[1] - T + j, [art.rgba[q], art.rgba[q + 1], art.rgba[q + 2]]);
         if (art.glow && art.glow[j * art.w + i] && w.glowing) { const X = x0 + i, Y = p[1] - T + j; if (X >= 0 && Y >= 0 && X < b.w && Y < b.h) w.glowing[Y * b.w + X] = ((art.rgba[q] << 16) | (art.rgba[q + 1] << 8) | art.rgba[q + 2]) + 1; }
     }
-    if (theatre && part === "alcove" && w.lamps) { const tx = axis === "x" ? at + 4 : line + .4, ty = axis === "x" ? line + .4 : at + 4, lp = w.S(tx, ty); w.lamps.push({ free: true, tx, ty, lz: w.z, x: lp[0], y: lp[1] - 6, colour: "#ffb860" }); }
+    /* not a tunnel ("tunnel"): it has no lamp (10 Nov scan b, renderer 2) */
+    if (theatre === true && part === "alcove" && w.lamps) { const tx = axis === "x" ? at + 4 : line + .4, ty = axis === "x" ? line + .4 : at + 4, lp = w.S(tx, ty); w.lamps.push({ free: true, tx, ty, lz: w.z, x: lp[0], y: lp[1] - 6, colour: "#ffb860" }); }
 }
 
 /* ---- a plain tunnel (10 Nov 2026, his: "a plain version of the entrance portal where the tiles inside the tunnel are walkable", the way
@@ -858,8 +858,10 @@ function tunnelArt(phase, axis, part) {
     const o = { w: src.w, h: src.h, rgba: Buffer.from(src.rgba) }, Wd = o.w;
     const i0 = axis === "y" ? 42 : 33, i1 = axis === "y" ? 105 : 96, slope = axis === "y" ? -.5 : .5, cx = (i0 + i1) / 2, cj = 103, rowOf = i => Math.round(cj + slope * (i - cx));
     const P = 8, S0 = Math.round(cx - 40);
+    /* the opening's own edge (its dark outline and rounded top corners) stays as it is: within 2px of the see-through opening (10 Nov scan b, renderer 5) */
+    const clear = (i, j) => i < 0 || j < 0 || i >= Wd || j >= src.h || src.rgba[(j * Wd + i) * 4 + 3] < 128, nearOpening = (i, j) => { for (let v = -2; v <= 2; v++) for (let u = -2; u <= 2; u++) if (Math.abs(u) + Math.abs(v) <= 2 && clear(i + u, j + v) && j + v > rowOf(i) - 14) return true; return false; };
     for (let i = Math.round(cx - 30); i <= Math.round(cx + 30); i++) { const sc = S0 + ((i - S0) % P), dj = Math.round((i - sc) * slope);
-        for (let j = rowOf(i) - 14; j <= rowOf(i) + 8; j++) { const q = (j * Wd + i) * 4, p = ((j - dj) * Wd + sc) * 4; if (q < 0 || p < 0 || o.rgba[q + 3] < 128) continue; for (let k = 0; k < 4; k++) o.rgba[q + k] = src.rgba[p + k]; } }
+        for (let j = rowOf(i) - 14; j <= rowOf(i) + 8; j++) { const q = (j * Wd + i) * 4, p = ((j - dj) * Wd + sc) * 4; if (q < 0 || p < 0 || o.rgba[q + 3] < 128 || nearOpening(i, j)) continue; for (let k = 0; k < 4; k++) o.rgba[q + k] = src.rgba[p + k]; } }
     tunnelMemo.set(key, o); return o;
 }
 
@@ -1585,7 +1587,7 @@ function fromMap(map, names) {
                 ? real2.filter(q => q.y0 === d.line && q.x0 < d.at + 2 && q.x1 > d.at).sort((m, n) => n.x0 - m.x0)[0]
                 : real2.filter(q => q.x0 === d.line && q.y0 < d.at && q.y1 > d.at - 2).sort((m, n) => n.y0 - m.y0)[0]) || onWall(d.axis, d.at, d.line);
             report.doors++;
-            if (!P) { report.lost.push("door " + d.axis + d.at); continue; }
+            if (!P) { report.lost.push("door " + d.axis + d.at + " on " + l.id); continue; }
             const name = d.spare ? null : (d.name || nameList[ni++] || null);
             if (name) report.named++;
             P.dn.push({ d: [d.axis, d.at], name, sign: d.sign, kind: d.kind });
@@ -1600,11 +1602,12 @@ function fromMap(map, names) {
     for (const q of (map.lifts || (map.lift ? [map.lift] : []))) {
         const li2 = byId(q.level); if (!li2) continue;
         const P = li2.patches.find(r => !r.notch && r.y0 === q.y && q.x >= r.x0 && q.x < r.x1);
-        if (P) { (P.liftList = P.liftList || []).push(q.x); } else report.lost.push("lift " + q.x);
+        if (P) { (P.liftList = P.liftList || []).push(q.x); } else report.lost.push("lift at " + q.x + " on " + q.level);
     }
     if (map.entrance) { const q = map.entrance, li3 = byId(q.level); if (li3) { (li3.portals = li3.portals || []).push(q); } }
-    for (const q of (map.theatres || [])) { const li4 = byId(q.level); if (li4) { (li4.portals = li4.portals || []).push({ ...q, theatre: true }); (li4.theatres = li4.theatres || []).push(q); } }
-    for (const q of (map.tunnels || [])) { const li5 = byId(q.level); if (li5) (li5.portals = li5.portals || []).push({ ...q, tunnel: true }); }
+    const portalOk = q => !!q && (q.axis === "x" || q.axis === "y") && Number.isFinite(q.line) && Number.isFinite(q.at);      // (10 Nov scan b, renderer 6)
+    for (const q of (Array.isArray(map.theatres) ? map.theatres : []).filter(portalOk)) { const li4 = byId(q.level); if (li4) { (li4.portals = li4.portals || []).push({ ...q, theatre: true }); (li4.theatres = li4.theatres || []).push(q); } }
+    for (const q of (Array.isArray(map.tunnels) ? map.tunnels : []).filter(portalOk)) { const li5 = byId(q.level); if (li5) (li5.portals = li5.portals || []).push({ ...q, tunnel: true }); }
     const li = null;
     if (li) { const P = li.patches.find(q => !q.notch && q.y0 === map.lift.y && map.lift.x >= q.x0 && map.lift.x < q.x1); if (P) P.lift = map.lift.x; else report.lost.push("lift"); }
     seq.report = report;
@@ -2046,7 +2049,7 @@ function build(cfg) {
             for (let X = P.x0; X <= P.x1; X++) { const open = X < P.x1 && !has.has(X + "," + (P.y0 - 1)) && !holes.has(X + "," + (P.y0 - 1)) && !P.noBack && (P.notch || !airBelow(X, P.y0 - 1) || doorEdge("x", X, P.y0) || shown("x", P.y0, X)); if (open && run === null) run = X; if (!open && run !== null) { tagged(() => H.wallRunX(w, run, X, P.y0, { ...cornerEnd(backWall(X, P.y0, P.z), sideWall(X, P.y0 - 1), zAt(X, P.y0 - 1), P.z), noStart: backWall(run - 1, P.y0, P.z), col: colOf("x", P.y0), ...halfOf("x", P.y0) })); run = null; } }
             run = null;
             for (let Y = P.y0; Y <= P.y1; Y++) { const open = Y < P.y1 && !has.has((P.x0 - 1) + "," + Y) && !holes.has((P.x0 - 1) + "," + Y) && (P.notch || !airBelow(P.x0 - 1, Y) || doorEdge("y", P.x0, Y) || shown("y", P.x0, Y)); if (open && run === null) run = Y; if (!open && run !== null) { tagged(() => H.wallRunY(w, P.x0, run, Y, { ...cornerEnd(sideWall(P.x0, Y, P.z), backWall(P.x0 - 1, Y), zAt(P.x0 - 1, Y), P.z), noStart: sideWall(P.x0, run - 1, P.z), col: colOf("y", P.x0), ...halfOf("y", P.x0) })); run = null; } }
-            for (const q of (lv.portals || [])) { if (tileOf.get(q.axis === "x" ? q.at + "," + q.line : q.line + "," + q.at) === P) { drawPortal(w, q.axis, q.line, q.at, "alcove", q.tunnel ? "tunnel" : q.theatre); drawPortal(w, q.axis, q.line, q.at, "arch", q.tunnel ? "tunnel" : q.theatre); } }
+            for (const q of (lv.portals || [])) { if (tileOf.get(q.axis === "x" ? q.at + "," + q.line : q.line + "," + q.at) === P && (q.axis === "x" ? P.y0 === q.line : P.x0 === q.line) /* on its wall, never over a floor (10 Nov scan b, renderer 7) */) { drawPortal(w, q.axis, q.line, q.at, "alcove", q.tunnel ? "tunnel" : q.theatre); drawPortal(w, q.axis, q.line, q.at, "arch", q.tunnel ? "tunnel" : q.theatre); } }
             w.z = P.z;
             /* A wall running alongside small steps climbs with them, panelling, paper and cap together, so it flows from the lower floor's wall into the higher one's instead of jumping.
                Each column of it moves up by how far the steps have climbed there; the steps, drawn after, cover what's left at its foot. */
@@ -2287,7 +2290,7 @@ function build(cfg) {
         /* the top of a handrail coming up the stairs stands above this floor, so it's in this floor's picture */
         for (const q of levels) if (q !== lv) for (const P of q.patches) if (P.notch && P.upLv === lv) for (const f of (P.sf || [])) {
             if (!f.axis || f.tiled) continue; const zUp = P.z + Z1;
-            (lv.later = lv.later || []).push({ furni: true, afterFloors: true, depth: f.c0 + f.dTop + 1, tx: f.axis === "y" ? f.c0 : Math.floor(f.dTop), ty: f.axis === "y" ? Math.floor(f.dTop) : f.c0, rect: f.axis === "y" ? { x0: f.c0, x1: f.c1, y0: Math.floor(f.dTop), y1: Math.floor(f.dTop) + 2 } : { x0: Math.floor(f.dTop), x1: Math.floor(f.dTop) + 2, y0: f.c0, y1: f.c1 }, draw: () => flightRails(w, railsFor(f, q.patches), (x, y, col, c, d, z) => { if (z > zUp && seesRail(c, d, z)) layer.set(x, y, col); }) });
+            (lv.later = lv.later || []).push({ furni: true, afterFloors: true, depth: f.c0 + f.dTop + 1, tx: f.axis === "y" ? f.c0 : Math.floor(f.dTop), ty: f.axis === "y" ? Math.floor(f.dTop) : f.c0, rect: f.axis === "y" ? { x0: f.c0, x1: f.c1, y0: Math.floor(f.dTop), y1: Math.floor(f.dTop) + 2 } : { x0: Math.floor(f.dTop), x1: Math.floor(f.dTop) + 2, y0: f.c0, y1: f.c1 }, draw: () => flightRails(w, (ro => xmasOn ? ro : { ...ro, garland: false })(railsFor(f, q.patches)), (x, y, col, c, d, z) => { if (z > zUp && seesRail(c, d, z)) layer.set(x, y, col); }) });      // its garland only at Christmas (10 Nov scan b, renderer 1)
         }
         /* The stair rails go in the one queue before anything is drawn: a stairwell can be drawn from that queue itself, and what's added to it by then is never reached */
         for (const P of drawList) if (P.notch && P.upLv && (!P.raised || raisedLater.includes(P))) {
@@ -2342,8 +2345,11 @@ function build(cfg) {
         itemUnder.clear();
         /* a garland hangs over whatever else is on its wall: a window, a poster, a picture (10 Nov 2026, his: "garlands get hidden by windows and
            other wall items"). Each of its tiles goes after the last thing hung on the same wall, still before anything nearer the room */
-        { const lastOn = new Map(); for (const s of w.afterAll) if (!s.garland && (s.hang || s.axis)) { const k = s.hang || s.axis + s.line; lastOn.set(k, Math.max(lastOn.get(k) ?? -Infinity, s.depth)); }
-          for (const s of w.afterAll) if (s.garland && lastOn.has(s.axis + s.line)) s.depth = Math.max(s.depth, lastOn.get(s.axis + s.line) + .001); }
+        /* only things within 6 tiles of it along the wall: everything on the wall made the order depend on what each square happened to reach,
+           so neighbouring squares disagreed at a corner (10 Nov scan b, renderer 4) */
+        { const onWall = new Map(), along = s => s.axis === "x" || (s.hang && s.hang[0] === "x") ? s.tx : s.ty;
+          for (const s of w.afterAll) if (!s.garland && (s.hang || s.axis)) { const k = s.hang || s.axis + s.line; if (!onWall.has(k)) onWall.set(k, []); onWall.get(k).push([along(s), s.depth]); }
+          for (const s of w.afterAll) if (s.garland && onWall.has(s.axis + s.line)) { const a = along(s); for (const [b, d] of onWall.get(s.axis + s.line)) if (Math.abs(b - a) <= 6 && d + .001 > s.depth) s.depth = d + .001; } }
         /* the lifts' call plates, over the wall of their own line that was drawn after them; never over furniture or a nearer wall */
         for (let k = 0; k < w.plates.length; k += 4) { const X = w.plates[k], Y = w.plates[k + 1]; if (X < 0 || Y < 0 || X >= bw || Y >= bh) continue; const i = Y * bw + X; if (furniX[i] !== NO_FURNI) continue; const o = wallOwner[i], Q = o && lv.patches[o - 1]; if (Q && Q.y0 !== w.plates[k + 3]) continue; const c = w.plates[k + 2], p = i * 4; layer.d[p] = c >> 16; layer.d[p + 1] = (c >> 8) & 255; layer.d[p + 2] = c & 255; }
         const paintedAfter = new Set(); w.afterAll.sort((a, c) => a.depth - c.depth).forEach(s => {

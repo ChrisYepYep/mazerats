@@ -26,5 +26,7 @@
         box.appendChild(btn("New scrap", () => edit(m => { m.scraps = m.scraps || []; m.scraps.push({ id: "s" + Date.now().toString(36), text: "", level: null }); })));
     }
     window.HallwayHuntsEditor = { fill };
+    /* an undo or redo swaps the whole map: the tab is filled again from the new one, or its next edit went into the old map and was lost (10 Nov scan b, rooms 1) */
+    let mapWas = null; setInterval(() => { if (box && LIVE.map && LIVE.map !== mapWas) { const first = mapWas === null; mapWas = LIVE.map; if (!first) fill(); } }, 300);
     const wait = setInterval(() => { box = document.getElementById("huntsBox"); if (box && LIVE.map) { clearInterval(wait); fill(); } }, 400);
 })();

@@ -97,7 +97,7 @@
             }
         }
     }
-    LIVE.add({ active: () => !screensaver.on && sunAmount() > 0 && dustWindows().length > 0, over: drawDust });
+    LIVE.add({ active: () => !screensaver.on && !matchMedia("(prefers-reduced-motion: reduce)").matches && sunAmount() > 0 && dustWindows().length > 0, over: drawDust });      // still under reduced motion (10 Nov scan b, live 12)
 
     /* ---------- the screensaver: a minute idle, the camera glides along a floor's paths, on the player's own map and inside its limits. Any input ends it ---------- */
     const IDLE_MS = window.HALLWAY_IDLE_MS || 60000, SPEED = 13, EASE = 1.6, FADE = 1.6, MAX_LEN = 2100;

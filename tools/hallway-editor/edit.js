@@ -125,7 +125,8 @@
             if (!w.maps.has(v)) { w.maps.add(v); await ask(w, { type: "map", v, text: ver.text }); }
             /* with the same margin as Publish (9 Nov scan, renderer 4: without it tile 4,1 lost a stair-rail stub that's drawn from the square beside it) */
             const a = await ask(w, { type: "tile", v, x: tx * 512, y: ty * 512, w: 512, h: 512, light: m, liftOpen: ver.liftOpen, cut: ver.cut, names, pad: 96 });
-            if (a.needMap) { w.maps.delete(v); return new Response("", { status: 503 }); }
+            /* the thread has forgotten this map (it keeps 4): tell it again and ask once more, as Publish does (10 Nov scan b, server 3) */
+            if (a.needMap) { await ask(w, { type: "map", v, text: ver.text }); const b = await ask(w, { type: "tile", v, x: tx * 512, y: ty * 512, w: 512, h: 512, light: m, liftOpen: ver.liftOpen, cut: ver.cut, names, pad: 96 }); if (b.needMap) { w.maps.delete(v); return new Response("", { status: 503 }); } return new Response(await pngOf(b.w, b.h, b.d), { status: 200, headers: { "Content-Type": "image/png" } }); }
             return new Response(await pngOf(a.w, a.h, a.d), { status: 200, headers: { "Content-Type": "image/png" } });
         }
         if (p === "/api/lift") { await startWorkers(); const a = await ask(idle(), { type: "lift", way: q.searchParams.get("way") || "oxblood", slide: Number(q.searchParams.get("slide")) || 0 }); return new Response(await pngOf(a.w, a.h, a.d)); }

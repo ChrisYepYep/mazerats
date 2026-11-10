@@ -413,7 +413,7 @@ function entranceBlock(l, axis, line, a) {
             if ((l.doors || []).some(d => on(d) && (axis === "x" ? d.at < t + 1 && d.at + 2 > t : d.at - 2 < t + 1 && d.at > t))) return { tile: t, why: "there's a door in the way" };
             /* wall lights and pictures only clash with the arch itself, not the plain wall at each end */
             if (i > 0 && i < 7 && [...(l.lamps || []), ...(l.wallItems || [])].some(q => { const p = axis === "x" ? q.at : q.at - 1; return on(q) && p >= t - .5 && p < t + 1.5; })) return { tile: t, why: "there's a wall light or picture in the way" };
-            if (wallTaken({ axis, at: axis === "x" ? t : t + 1, line }, l)) return { tile: t, why: "there's a lift or stairs in the way" };
+            if (wallTaken({ axis, at: axis === "x" ? t : t + 1, line }, l)) return { tile: t, why: "there's a lift, stairs, a tunnel or another entrance in the way" };
             const state = wallState(l, axis, line, t); if (state !== "full") return { tile: t, why: state === "none" ? "the wall's been taken away here" : "the wall's cut to half height here" };
             const e = doorEdge(l, axis, line, t);
             if (!e || e.kind !== "wall") return { tile: t, why: "there's no full wall here" };
@@ -657,7 +657,8 @@ function rememberDraft() { try { localStorage.setItem("hallway-draft", JSON.stri
 const closePicker = () => { if (window.ColourPicker && ColourPicker.isOpen()) ColourPicker.close(true); };
 const syncLight = () => { const e = $("light"); if (e) e.value = map.light || "sconces"; };
 const stopWalkForChange = () => { if (tool === "walk") { setTool("select"); flash("Stopped walking: the map changed."); } };
-function restore(text) { stopWalkForChange(); closePicker(); carry = null; const id = level && level.id; setTimeout(() => { try { showMapInfo(); } catch (e) { /* the Map tab follows Undo and Redo (10 Nov scan, editor 21) */ } }, 0); select(null); map = JSON.parse(text); level = byId(id) || map.levels[0]; buildLevels(); syncLight(); changed(); }
+function restore(text) { stopWalkForChange(); closePicker(); carry = null; roomFloors = null; doorFrames.clear();      /* the door-swing floors follow the undo (10 Nov scan b, rooms 17) */
+    const id = level && level.id; setTimeout(() => { try { showMapInfo(); } catch (e) { /* the Map tab follows Undo and Redo (10 Nov scan, editor 21) */ } }, 0); select(null); map = JSON.parse(text); level = byId(id) || map.levels[0]; buildLevels(); syncLight(); changed(); }
 function undo() { if (!undoStack.length) return; redoStack.push(JSON.stringify(map)); restore(undoStack.pop()); }
 function redo() { if (!redoStack.length) return; undoStack.push(JSON.stringify(map)); restore(redoStack.pop()); }
 function syncButtons() { $("undo").disabled = !undoStack.length; $("redo").disabled = !redoStack.length; $("save").disabled = !dirty; $("save").classList.toggle("attention", dirty); }
@@ -804,14 +805,16 @@ function moodTile(mood, tx, ty) {
     const k = mood + "|" + tx + "," + ty, t = moodTiles.get(k);
     if (t && t.v === version) return t;
     if (!moodInflight.has(k) && moodInflight.size < CONCURRENT && version && !tileWaiting(k)) {
-        const v = version, ctl = new AbortController(); moodInflight.set(k, ctl);
+        const v = version, ctl = new AbortController(); ctl.v = v; moodInflight.set(k, ctl);
         (async () => {
             try {
                 const r = await fetch(`/api/tile?v=${v}&tx=${tx}&ty=${ty}&m=${encodeURIComponent(mood)}`, { signal: ctl.signal });
+                /* the editor's server restarted and forgot this map: tell it again, as loadTile does (10 Nov scan b, server 1) */
+                if (r.status === 404 && !window.HALLWAY_PLAY) { if (v === version) { version = null; setTimeout(newVersion, 400); } return; }
                 if (!r.ok) { tileFailed(k); return; }
                 const img = await createImageBitmap(await r.blob()); tileWaits.delete(k);
                 if (v === version) { const old = moodTiles.get(k); if (old && old.img.close) old.img.close(); moodTiles.set(k, { img, v }); tileGen++; paint(); } else if (img.close) img.close();
-            } catch (e) { if (e.name !== "AbortError") tileFailed(k); /* the view asks again, in a while */ } finally { moodInflight.delete(k); }
+            } catch (e) { if (e.name !== "AbortError") tileFailed(k); /* the view asks again, in a while */ } finally { if (moodInflight.get(k) === ctl) moodInflight.delete(k); }
         })();
     }
     /* the last version of it until the new one's in; or, just after Christmas is turned on or off, the same square the other way (10 Nov scan, editor 7) */
@@ -920,7 +923,7 @@ async function newVersion() {
         const o = await r.json();
         if (seq !== versionSeq) return;
         lastReport = o.report; runChecks();
-        if (o.v !== version) { const was = version; keepUntouched(was, o.v, was && lastVersionText ? dirtyRegion(lastVersionText, text) : null); for (const c of inflight.values()) c.abort(); inflight.clear(); version = o.v; }
+        if (o.v !== version) { const was = version; keepUntouched(was, o.v, was && lastVersionText ? dirtyRegion(lastVersionText, text) : null); for (const c of inflight.values()) c.abort(); inflight.clear(); for (const [k, c] of moodInflight) if (c.v !== o.v) { c.abort(); moodInflight.delete(k); } version = o.v; }      // old time-of-day requests too (10 Nov scan b, editor 7)
         lastVersionText = text;
         if (live && live.ending) live.finalV = o.v;
         pump(); paint();
@@ -1146,13 +1149,14 @@ document.addEventListener("visibilitychange", wakeLive);
 /* the floor you're really on: stairs belong to neither end until you step off them, so they keep the last floor; a lift or door counts as the floor it's on */
 let floorIn = null; const floorWatchers = new Set();
 function noteFloor() {
-    const st = walker && walker.l.stair, f = !walker ? null : !st ? walker.l : (st.lift || st.door || st.entrance || st.lost) ? st.low || floorIn : floorIn;
+    const st = walker && walker.l.stair, f = !walker ? null : !st ? walker.l : (st.lift || st.door || st.entrance || st.lost || st.tunnel) ? st.low || floorIn : floorIn;
     if (f === floorIn) return; const was = floorIn; floorIn = f; for (const w of floorWatchers) { try { w(f, was); } catch (err) { console.error(err); } }
 }
 /* how long since anyone did anything */
 let lastActive = performance.now(); const markActive = () => { lastActive = performance.now(); };
 for (const ev of ["pointerdown", "keydown", "wheel", "touchstart"]) document.addEventListener(ev, markActive, { capture: true, passive: true });
 window.HallwayLive = {
+    get pieceLoads() { return pieceLoads; },
     add(l) { liveLayers.add(l); wakeLive(); return () => liveLayers.delete(l); }, wake() { wakeLive(); if (map) paint(); },
     onFloor(f) { floorWatchers.add(f); return () => floorWatchers.delete(f); }, get floor() { return floorIn; },
     get idleFor() { return performance.now() - lastActive; }, get tileGen() { return tileGen; }, get walker() { return walker; }, get map() { return map; },
@@ -1476,7 +1480,8 @@ const pieceOf = p => {
     const f = p.k === "rarecase" && p.rare && fp.opts && fp.opts[p.rare] ? fp.opts[p.rare].f : fp.f;
     return { fp, f, dx, dy, flip, up: p.k === "tablelamp" ? 0 : (p.z || 0), lights: fp.lights || null };
 };
-const floorPiece = k => (window.FLOOR_PIECES || {})[k] || null, pieceImgs = new Map(), pieceImg = f => { if (!pieceImgs.has(f)) { const i = new Image(); i.onload = () => paint(); i.src = "art/wall/" + f; pieceImgs.set(f, i); } return pieceImgs.get(f); };
+let pieceLoads = 0;      // furniture pictures loaded so far: a live layer's cut worked out before one arrived is worked out again (10 Nov scan b, live 6)
+const floorPiece = k => (window.FLOOR_PIECES || {})[k] || null, pieceImgs = new Map(), pieceImg = f => { if (!pieceImgs.has(f)) { const i = new Image(); i.onload = () => { pieceLoads++; paint(); }; i.src = "art/wall/" + f; pieceImgs.set(f, i); } return pieceImgs.get(f); };
 const ropeCache = new Map();
 function ropeArt(l, p) {
     const row = Parts.tiles(p), key = [l.id, p.x, p.y, row.length, p.rot || 0, p.noCard ? 1 : 0, tileZ(l, row[0][0], row[0][1]), tileZ(l, row[row.length - 1][0], row[row.length - 1][1])].join("|");
@@ -1486,7 +1491,7 @@ function ropeArt(l, p) {
 }
 /* where the entrance was refused: the 8 tiles it wanted, and the tile that stopped it */
 function drawEntranceBlock() {
-    const b = lastEntranceBlock; if (!b || b.l !== level || (tool !== "entrance" && tool !== "theatre" && tool !== "tunnel" && !(drag && selected && selected.type === "entrance"))) return;
+    const b = lastEntranceBlock; if (!b || b.l !== level || (tool !== "entrance" && tool !== "theatre" && tool !== "tunnel" && !(drag && selected && (selected.type === "entrance" || selected.type === "tunnel")))) return;
     const ox = Math.round(canvas.width / 2 - cam.x * zoom), oy = Math.round(canvas.height / 2 - cam.y * zoom), z = levelZ(level), seg = (t0, t1, col, w) => { const pa = b.axis === "x" ? P(t0, b.line, z) : P(b.line, t0, z), pb = b.axis === "x" ? P(t1, b.line, z) : P(b.line, t1, z); ctx.strokeStyle = col; ctx.lineWidth = w; ctx.beginPath(); ctx.moveTo(ox + pa[0] * zoom, oy + pa[1] * zoom); ctx.lineTo(ox + pb[0] * zoom, oy + pb[1] * zoom); ctx.stroke(); };
     ctx.save(); seg(b.a, b.a + 8, "rgba(255,255,255,.6)", 2); seg(b.tile, b.tile + 1, "#ff3b30", 5); ctx.restore();
 }
@@ -1632,10 +1637,13 @@ function act(px, py) {
     if (tool === "del") { deleteAt(px, py); return; }
 }
 /* the lift and stair openings take up their stretch of wall */
+let portalSelf = null;
 function wallTaken(w, l) {
     const level = l || window.__active();
     if (w.axis === "x" && map.lifts.some(q => q.level === level.id && q.y === w.line && w.at > q.x - 3 && w.at < q.x + 5)) return true;
     if (map.entrance && map.entrance.level === level.id && map.entrance.axis === w.axis && map.entrance.line === w.line && w.at > map.entrance.at - 1 && w.at <= map.entrance.at + 8) return true;
+    /* tunnels and the Theatredrome too: doors, wall cuts and other entrances went inside them (10 Nov scan b, editor 4). The one being dragged doesn't count */
+    for (const q of [...(map.tunnels || []), ...(map.theatres || [])]) if (q && q !== portalSelf && q.level === level.id && q.axis === w.axis && q.line === w.line && w.at > q.at - 1 && w.at <= q.at + 8) return true;
     return map.stairs.some(s => s.low === level.id && (thruLeft(s) ? w.axis === "y" && s.x === w.line && w.at > s.a - 2 && w.at < s.b + 2 : w.axis === "x" && s.y === w.line && w.at > s.a - 3 && w.at < s.b + 1));
 }
 function stairOK(up, r) {
@@ -1996,12 +2004,14 @@ function select(hit) {
     else if (hit.type === "lift") say("Drag it along a back wall to move it. In the hallway, double-click a lift to open it, then walk in.");
     else if (hit.type === "entrance") say("Where Habbos arrive, and where they leave by walking back in. Drag it along a wall to move it.");
     else if (hit.type === "tunnel") {
-        say("A tunnel Habbos can walk into. Walk to its back and you come out of the tunnel it leads to.");
+        say("A tunnel Habbos can walk into. Walk to its back and you come out of the tunnel it leads to. Drag it along a wall to move it.");
         const q = hit.o, f = document.createElement("label"); f.className = "field"; const n = document.createElement("span"); n.className = "f-label"; n.textContent = "Leads to";
         const c = document.createElement("span"); c.className = "f-ctl"; const sel = document.createElement("select"); sel.setAttribute("aria-label", "Where the tunnel leads");
         const opt = (v, t) => { const o = document.createElement("option"); o.value = v; o.textContent = t; sel.appendChild(o); };
         opt("", "Nowhere (it's a dead end)");
         (map.tunnels || []).forEach((t, i) => { if (t !== q) opt(t.id, "The tunnel on " + ((byId(t.level) || {}).name || "?") + ", " + (t.axis === "x" ? "back" : "side") + " wall at " + t.at); });
+        /* one it led to that's gone shows as gone, not as a blank (10 Nov scan b, rooms 4) */
+        if (q.to && !(map.tunnels || []).some(t => t.id === q.to)) opt(q.to, "A tunnel that isn't there any more");
         sel.value = q.to || "";
         sel.addEventListener("change", () => { snapshot(); const list = map.tunnels || [];
             /* a link goes both ways: whatever either end was linked to before lets go */
@@ -2260,12 +2270,13 @@ function moveSelected(d, px, py) {
             if (d.moved) { requestArt(); paint(); }
             return;
         }
-        if (s.type === "entrance") {
+        if (s.type === "entrance" || s.type === "tunnel") {
+            portalSelf = s.type === "tunnel" ? o : null;      // a tunnel drags like the entrance (10 Nov scan b, editor 8)
             /* over any wall you can see, top floor first; a floor or wall in the way stops the search, as with doors */
             let fit = null, said = null;
             for (const lv of [...map.levels].sort((a, c) => c.k - a.k)) {
                 const w2 = wallAt(px, py, lv);
-                if (w2 && !w2.drop) { const at = entranceAt(lv, w2); if (at !== null) fit = { lv, w: w2, at }; else said = lastEntranceBlock; break; }
+                if (w2 && !w2.drop) { let at = entranceAt(lv, w2); if (at !== null && s.type === "tunnel" && !entranceTiles({ at }).some(t => w2.axis === "x" ? hasFloor(lv, t, w2.line) : hasFloor(lv, w2.line, t))) at = null; if (at !== null) fit = { lv, w: w2, at }; else said = lastEntranceBlock; break; }
                 const f = tileIn(lv, px, py); if (hasFloor(lv, Math.floor(f[0]), Math.floor(f[1]))) break;
             }
             if (fit) {
@@ -2275,8 +2286,8 @@ function moveSelected(d, px, py) {
                 o.axis = fit.w.axis; o.line = fit.w.line; o.at = fit.at;
                 const now = JSON.stringify(o); if (now !== before && !d.moved) { d.moved = true; undoStack.push(d.before); if (undoStack.length > 80) undoStack.shift(); redoStack.length = 0; syncButtons(); }
                 if (d.moved) requestArt();
-            } else if (said) { lastEntranceBlock = said; flash("The entrance won't fit here: " + said.why + ". It's marked in red."); }
-            paint(); return;
+            } else if (said) { lastEntranceBlock = said; flash((s.type === "tunnel" ? "The tunnel" : "The entrance") + " won't fit here: " + said.why + ". It's marked in red."); }
+            portalSelf = null; paint(); return;
         }
         const w = s.type === "lamp" || s.type === "wallitem" ? hangWallAt(px, py, l) : wallAt(px, py, l); if (!w || (w.drop && !(s.type === "lamp" && lampFits(l, w)))) return;
         if (s.type === "lamp" && isHalf(l, w.axis, w.line, wallTile(w))) return;
@@ -2338,7 +2349,7 @@ function drawSelection() {
     else if (s.type === "door") { if (o.axis === "x") line(o.at, o.line, o.at + 2, o.line, z, c, 4); else line(o.line, o.at, o.line, o.at - 2, z, c, 4); }
     else if (s.type === "lamp") { if (o.axis === "x") line(o.at - .5, o.line, o.at + .5, o.line, z, c, 4); else line(o.line, o.at - .5, o.line, o.at + .5, z, c, 4); }
     else if (s.type === "lift") line(o.x, o.y, o.x + 3, o.y, z, c, 4);
-    else if (s.type === "entrance") { if (o.axis === "x") line(o.at, o.line, o.at + 8, o.line, z, c, 4); else line(o.line, o.at, o.line, o.at + 8, z, c, 4); }
+    else if (s.type === "entrance" || s.type === "tunnel") { if (o.axis === "x") line(o.at, o.line, o.at + 8, o.line, z, c, 4); else line(o.line, o.at, o.line, o.at + 8, z, c, 4); }
     else if (s.type === "wall") {
         if (o.axis === "x") line(o.a, o.line, o.b, o.line, z, c, 2); else line(o.line, o.a, o.line, o.b, z, c, 2);
         if (s.tile !== undefined) { if (o.axis === "x") line(s.tile, o.line, s.tile + 1, o.line, tileZ(s.l, s.tile, o.line), "#4fd1ff", 5); else line(o.line, s.tile, o.line, s.tile + 1, tileZ(s.l, o.line, s.tile), "#4fd1ff", 5); }
@@ -2878,6 +2889,11 @@ function reachAll() {
     if (reachMemo && reachMemo.map === map && reachMemo.at === lastChangeAt) return reachMemo.set;
     const [l, x, y] = liftTile(), reached = graphFrom(l, x, y), fronts = map.lifts.map(q => [byId(q.level), q.x + 1, q.y]).filter(f => f[0]);
     if (fronts.some(f => reached.has(nodeKey(f[0], f[1], f[2])))) for (const f of fronts) if (!reached.has(nodeKey(f[0], f[1], f[2]))) for (const k of graphFrom(f[0], f[1], f[2]).keys()) if (!reached.has(k)) reached.set(k, 0);
+    /* through tunnels: the back of one reached means the back of the one it leads to is too (10 Nov scan b, editor 6), and on until nothing new */
+    const rooms = stairLevels().list, backOf = q => { const S = rooms.find(r => r.stair && r.stair.tunnel === q); if (!S) return null; const m = entranceTiles(q)[1]; return q.axis === "x" ? [S, m, q.line - 2] : [S, q.line - 2, m]; };
+    for (let more = true, n = 0; more && n < 20; n++) { more = false;
+        for (const q of (map.tunnels || [])) { const to = q.to && map.tunnels.find(t => t.id === q.to), a = backOf(q), b = to && backOf(to); if (!a || !b || !reached.has(nodeKey(a[0], a[1], a[2])) || reached.has(nodeKey(b[0], b[1], b[2]))) continue;
+            for (const k of graphFrom(b[0], b[1], b[2]).keys()) if (!reached.has(k)) reached.set(k, 0); more = true; } }
     reachMemo = { map, at: lastChangeAt, set: reached }; return reached;
 }
 /* A Lost Property spot is fine if a Habbo can get to it, or, under furniture, to a free tile next to it, as live-lost.js picks it up */
@@ -3009,7 +3025,8 @@ setInterval(() => {
     if (room && room.tunnel && !walker.walking && !walker.busy) {
         const q = room.tunnel, to = q.to && (map.tunnels || []).find(t => t.id === q.to), deep = (q.axis === "x" ? walker.y : walker.x) === q.line - 2;
         if (to && deep && !walker.arriving) { throughTunnel(to); return; }
-        if (to && !deep && !walker.arriving && !walker.leaving) { walker.leaving = true; const m = entranceTiles(q)[1], t = q.axis === "x" ? [m, q.line - 2] : [q.line - 2, m], p = graphFrom(walker.l, walker.x, walker.y, [walker.l, t[0], t[1]]); if (p) followRoute(p, null, () => { walker.leaving = false; }); }
+        /* on to the back; re-asked whenever you stand still in it, so a click inside it can't leave you parked there (10 Nov scan b, live 10) */
+        if (to && !deep && !walker.arriving) { const m = entranceTiles(q)[1], t = q.axis === "x" ? [m, q.line - 2] : [q.line - 2, m], p = graphFrom(walker.l, walker.x, walker.y, [walker.l, t[0], t[1]]); if (p) followRoute(p, null, null); }
         return;
     }
     if (!room || (!room.lift && !room.entrance)) { walker.arriving = false; walker.asked = false; walker.leaving = false; return; }
@@ -3224,7 +3241,7 @@ async function enterDoor(low, d) {
     const maze = d.to ? null : list.find(m => FurniParts.mazeName(m.name) === FurniParts.mazeName(d.name)), target = d.to ? doorTarget(d) : null;
     if (walker !== me) return;
     const backOut = () => { const f = doorFront(d), free = q => !(low.props || []).some(p => Parts.tiles(p).some(t => t[0] === q[0] && t[1] === q[1])), t = f.find(q => free(q) && (d.axis === "x" ? q[0] === me.x : q[1] === me.y)) || f.find(free) || f[0]; me.l = low; me.x = t[0]; me.y = t[1]; me.z = tileZ(low, t[0], t[1]); me.st = null; me.dir = d.axis === "x" ? 4 : 2; me.busy = false; };
-    if (!maze && !target) { flash(d.to ? "This door doesn't lead anywhere just now." : "This door's maze isn't in the archive."); backOut(); setDoor(d, false); paint(); return; }
+    if (!maze && !target) { flash(d.to ? "This door doesn't lead anywhere just now." : list.failed ? "Couldn't reach the archive. Try the door again." : "This door's maze isn't in the archive."); backOut(); setDoor(d, false); paint(); return; }
     const { room, facts } = target || RoomView.roomFor(map, maze), stage = $("stage");
     const dissolve = from => { const shot = document.createElement("canvas"); shot.width = from.width; shot.height = from.height; shot.getContext("2d").drawImage(from, 0, 0); shot.style.cssText = "position:absolute;left:0;top:0;z-index:24;pointer-events:none;transition:opacity .7s ease;opacity:1;width:" + from.clientWidth + "px;height:" + from.clientHeight + "px"; stage.appendChild(shot); return () => { shot.getBoundingClientRect(); shot.style.opacity = 0; setTimeout(() => shot.remove(), 750); }; };
     const go = dissolve(canvas);
@@ -3305,16 +3322,23 @@ async function rideTo(from, to) {
 }
 /* through a tunnel: a quick fade, and you're at the back of the one it leads to, walking out of it onto its floor (10 Nov 2026) */
 function throughTunnel(to) {
-    const list = stairLevels().list, S = list.find(r => r.stair && r.stair.tunnel === to), low = byId(to.level); if (!S || !low) return;
-    const m = entranceTiles(to)[1], ix = to.axis === "x" ? m : to.line - 2, iy = to.axis === "x" ? to.line - 2 : m, fx = to.axis === "x" ? m : to.line, fy = to.axis === "x" ? to.line : m;
-    walker.busy = true; walker.leaving = false;
+    const list = stairLevels().list, S = list.find(r => r.stair && r.stair.tunnel === to), low = byId(to.level);
+    const m = entranceTiles(to)[1], ix = to.axis === "x" ? m : to.line - 2, iy = to.axis === "x" ? to.line - 2 : m;
+    /* out by whichever tile in front of it is free; if none is (or its floor's gone), you stay where you are and are told, rather than being
+       thrown back and forth (10 Nov scan b, editor 2 and 3) */
+    const out = S && low ? routeToOneOf(low, entranceTiles(to).map(t => to.axis === "x" ? [t, to.line] : [to.line, t]), S, ix, iy) : null;
+    if (!out) { walker.arriving = true; flash(S && low ? "The way out of the tunnel it leads to is blocked." : "The tunnel it leads to has nowhere to come out."); return; }
+    const me = walker; walker.busy = true; walker.leaving = false;
     canvas.style.transition = "opacity .25s"; canvas.style.opacity = "0";
+    /* if you stop walking during the fade, the map comes back and nothing moves (10 Nov scan b, editor 1) */
+    const back = () => { canvas.style.opacity = "1"; canvas.style.transition = ""; };
     setTimeout(() => {
+        if (walker !== me) { back(); return; }
         walker.l = S; walker.x = ix; walker.y = iy; walker.z = nodeZ(S, ix, iy); walker.pts = []; walker.walking = false; walker.st = null; walker.dir = to.axis === "x" ? 2 : 4; walker.arriving = true;
         if (level !== low) { level = low; buildLevels(); }
         const a = P(ix + .5, iy + .5, walker.z + 40); cam.x = a[0]; cam.y = a[1]; clampCam(); paint();
         canvas.style.opacity = "1";
-        setTimeout(() => { canvas.style.transition = ""; walker.busy = false; const p = graphFrom(S, ix, iy, [low, fx, fy]); if (p) followRoute(p, null, () => { walker.arriving = false; }); else walker.arriving = false; }, 260);
+        setTimeout(() => { canvas.style.transition = ""; if (walker !== me) return; walker.busy = false; const o = routeToOneOf(low, entranceTiles(to).map(t => to.axis === "x" ? [t, to.line] : [to.line, t]), S, ix, iy); if (o) followRoute(o.path, null, () => { walker.arriving = false; }); }, 260);
     }, 260);
 }
 function leaveHallway() {
@@ -3734,6 +3758,25 @@ function runChecks() {
     const blank = map.levels.reduce((n, l) => n + (l.doors || []).filter(d => !d.spare && !d.name).length, 0);
     if (blank) card(`${blank} doors have no maze. Make them spare, or give them one.`, "");
     if (!map.entrance) card("There's no entrance yet: Habbos arrive by it. It's in the library, under On walls.", "err");
+    /* tunnels (10 Nov scan b, editor 9 and rooms 4): on a floor that's gone, with no floor in front, leading to one that isn't there, or with
+       every tile in front of it taken */
+    { const rooms = stairLevels().list, show = (lv, q) => () => { level = lv; buildLevels(); const m = entranceTiles(q)[1], a = P(q.axis === "x" ? m : q.line, q.axis === "x" ? q.line : m, levelZ(lv) + 40); cam.x = a[0]; cam.y = a[1]; setTool("select"); select({ type: "tunnel", l: lv, o: q }); paint(); };
+      for (const q of (map.tunnels || [])) {
+          const lv = byId(q.level); if (!lv) { card("A tunnel is on a floor that's been deleted.", "err"); continue; }
+          if (!rooms.some(r => r.stair && r.stair.tunnel === q)) { card(`A tunnel on ${lv.name} has no floor in front of it, so nobody can go in. Show it.`, "err", show(lv, q)); continue; }
+          if (q.to && !(map.tunnels || []).some(t => t.id === q.to)) card(`A tunnel on ${lv.name} leads to a tunnel that isn't there any more. Show it.`, "err", show(lv, q));
+          else if (!q.to) card(`A tunnel on ${lv.name} doesn't lead anywhere yet. Show it.`, "", show(lv, q));
+          const so = solid(lv); if (entranceTiles(q).every(t => { const x = q.axis === "x" ? t : q.line, y = q.axis === "x" ? q.line : t; return !hasFloor(lv, x, y) || so.has(x + "," + y); })) card(`Every tile in front of a tunnel on ${lv.name} is taken, so nobody can come out of it. Show it.`, "err", show(lv, q));
+      } }
+    /* every room layout's problems, not only the one on screen in Rooms (10 Nov scan b, rooms 8) */
+    { const rp = window.RoomsEditor && RoomsEditor.allProblems ? RoomsEditor.allProblems(map) : [];
+      if (rp.length) card(`${rp.length} room layout${rp.length === 1 ? " has" : "s have"} problems: ${rp.slice(0, 3).map(p => p.name + " (" + p.msgs[0].replace(/\.$/, "").toLowerCase() + ")").join("; ")}${rp.length > 3 ? ", and more" : ""}. Open Rooms.`, "err", () => { if ($("roomsBtn")) $("roomsBtn").click(); }); }
+    /* a hunt nobody can finish (10 Nov scan b, rooms 9): no clues, or a clue with no spot picked */
+    for (const h of (map.hunts || [])) {
+        const clues = h.clues || [], bad = clues.findIndex(c => !c.level || !byId(c.level) || ((c.art || "note") === "none" ? c.px === undefined || c.py === undefined : c.x === undefined || c.y === undefined));
+        if (!clues.length) card(`The hunt "${h.name || "?"}" has no clues, so it can't be finished.`, "err");
+        else if (bad >= 0) card(`Clue ${bad + 1} of the hunt "${h.name || "?"}" has no spot picked, so the hunt can't be finished. It's in the Hunts tab.`, "err");
+    }
     /* floor past the map's edges, floor nobody can walk onto and a floor with no stairs to it aren't problems (9 Nov 2026, his): no cards for them */
     const reached = reachAll();
     const cut = [];
@@ -3781,7 +3824,9 @@ function runChecks() {
         }
         if (gone.length) card(`${gone.length} wall ${gone.length === 1 ? "thing is" : "things are"} on a wall that isn't there any more, so ${gone.length === 1 ? "it's" : "they're"} never drawn: ${gone.map(g => g.what + " on " + g.lv.name).join(", ")}. Remove ${gone.length === 1 ? "it" : "them"}.`, "err", () => {
             snapshot(); for (const g of gone) { const i = g.list.indexOf(g.q); if (i >= 0) g.list.splice(i, 1); } lastReport.lost = other; changed(); runChecks(); flash(gone.length + " removed. Undo puts them back."); });
-        if (other.length) card(`${other.length} things couldn't be placed: ${other.slice(0, 4).join(", ")}`, "err");
+        /* with its floor's name, and "thing" for one (10 Nov scan b, rooms 14) */
+        const said = other.map(t => t.replace(/ on (\S+)$/,(m0, id) => " on " + ((byId(id) || {}).name || id)));
+        if (other.length) card(`${other.length} ${other.length === 1 ? "thing" : "things"} couldn't be placed: ${said.slice(0, 4).join(", ")}`, "err");
     }
     $("probBadge").textContent = problems || ""; lastProblems = problems;
 }
@@ -3896,7 +3941,10 @@ function buildUI() {
         if (old) { old.width = canvas.width; old.height = canvas.height; old.getContext("2d").drawImage(canvas, 0, 0); old.style.cssText = "position:absolute;left:" + canvas.offsetLeft + "px;top:" + canvas.offsetTop + "px;z-index:24;pointer-events:none;opacity:1;transition:opacity .9s ease;width:" + canvas.clientWidth + "px;height:" + canvas.clientHeight + "px"; stage.appendChild(old); }
         timeMode = e.target.value; localStorage.setItem("hallway-time", timeMode); paint();
         if (!old) return; const t0 = performance.now();
-        const fade = () => { if (moodInflight.size && performance.now() - t0 < 1500) { setTimeout(fade, 60); return; } paint(); old.getBoundingClientRect(); old.style.opacity = 0; setTimeout(() => old.remove(), 950); };
+        /* waits for the squares on screen in the new light, the plain ones too: they aren't drawn under a time of day any more, so switching
+           to the map's own light went black for a moment (10 Nov scan b, editor 5) */
+        const ready = () => { if (!map || !map.rect) return true; const [x0, x1, y0, y1] = visibleTiles(), r = map.rect; for (let ty = Math.max(y0, Math.floor(r.y / TILE)); ty <= Math.min(y1, Math.floor((r.y + r.h) / TILE)); ty++) for (let tx = Math.max(x0, Math.floor(r.x / TILE)); tx <= Math.min(x1, Math.floor((r.x + r.w) / TILE)); tx++) if (!shownFresh(tx, ty)) return false; return true; };
+        const fade = () => { if (!ready() && performance.now() - t0 < 4000) { setTimeout(fade, 60); return; } paint(); old.getBoundingClientRect(); old.style.opacity = 0; setTimeout(() => old.remove(), 950); };
         setTimeout(fade, 60);
     });
     $("light").addEventListener("change", e => { snapshot(); map.light = e.target.value; changed(); });
@@ -3949,6 +3997,9 @@ function buildUI() {
         map.stairs = map.stairs.filter(s => s.low !== gone.id && s.up !== gone.id);
         map.lifts = map.lifts.filter(q => q.level !== gone.id);
         if (map.entrance && map.entrance.level === gone.id) delete map.entrance;
+        /* its tunnels and Theatredrome go too, and a tunnel that led to one of them leads nowhere now (10 Nov scan b, editor 3) */
+        if (map.tunnels) { const ids = new Set(map.tunnels.filter(q => q.level === gone.id).map(q => q.id)); map.tunnels = map.tunnels.filter(q => q.level !== gone.id); for (const q of map.tunnels) if (ids.has(q.to)) delete q.to; if (!map.tunnels.length) delete map.tunnels; }
+        if (map.theatres) { map.theatres = map.theatres.filter(q => q.level !== gone.id); if (!map.theatres.length) delete map.theatres; }
         level = map.levels.find(l => l.k === gone.k + (gone.k < 0 ? 1 : -1)) || map.levels.find(l => l.k === 0) || map.levels[0];
         select(null); buildLevels(); changed(); flash(gone.name + " deleted. Undo brings it back.");
     });
