@@ -99,6 +99,24 @@ const shade = (c, k) => c && [Math.min(255, Math.round(c[0] * k)), Math.min(255,
    the floor's half-tile lines do (8 Nov: "it looks more like a grid overlayed on top of the normal floor, rather than the small tiles
    seen in the real hallways"). */
 const SMALL_TILE = (() => { const im = piece("entry_lower_right"), out = []; for (let j = 0; j < 8; j++) for (let i = 0; i < 16; i++) { const q = ((36 + j) * im.w + 60 + i) * 4; out.push([im.rgba[q], im.rgba[q + 1], im.rgba[q + 2]]); } return out; })();
+/* Where small squares cover part of one of the floor's big tiles (2 x 2 half-tile cells), what's left of the big tile takes their shape
+   (10 Nov 2026, his): along a new edge it gets the big tile's own edge, copied from the tile's matching edge at the same place along it:
+   the groove and highlight on a far edge, the lowlight on a near one. Inside, the tile is untouched. One, two or three cells covered alike. */
+const SMALL_FAR = 3, SMALL_NEAR = 14;
+function morphed(lv, X, Y, base) {
+    const sm = lv.smalls; if (!sm || !sm.length) return base;
+    const set = lv.smallSet || (lv.smallSet = (() => { const s = new Set(); for (const r of sm) for (let x = r.x0; x < r.x1; x++) for (let y = r.y0; y < r.y1; y++) s.add(x + "," + y); return s; })());
+    const cov = (x, y) => set.has(x + "," + y); if (cov(X, Y)) return base;
+    const ox = m4(X) % 2, oy = m4(Y) % 2;      // 0: the big tile's far half on that axis, 1: its near half
+    const fa = ox === 1 && cov(X - 1, Y), na = ox === 0 && cov(X + 1, Y), fb = oy === 1 && cov(X, Y - 1), nb = oy === 0 && cov(X, Y + 1);
+    if (!fa && !na && !fb && !nb) return base;
+    return (dx, dy) => {
+        const a = (dx + 2 * dy) / 2, b = (2 * dy - dx) / 2;
+        const sa = fa && a < SMALL_FAR ? -1 : na && a >= SMALL_NEAR ? 1 : 0, sb = fb && b < SMALL_FAR ? -1 : nb && b >= SMALL_NEAR ? 1 : 0;
+        if (!sa && !sb) return base(dx, dy);
+        return modPx(plain, false, 2 + m4(X + sa), 2 + m4(Y + sb), dx, dy) || base(dx, dy);
+    };
+}
 function smallAt(list, X, Y, dx, dy, base) {
     const a = Math.floor(X * 16 + (dx + 2 * dy) / 2), b = Math.floor(Y * 16 + (2 * dy - dx) / 2), TX = Math.floor(a / 16), TY = Math.floor(b / 16);
     if (!list.some(r => TX >= r.x0 && TX < r.x1 && TY >= r.y0 && TY < r.y1)) return null;
@@ -2163,7 +2181,8 @@ function build(cfg) {
                 const fsx = (X - Y) * 16 + gx, fsy = (X + Y) * 8 + gy - zf;
                 if (fsx < -34 || fsx > bw + 34 || fsy < -18 || fsy > bh + 2) continue;
                 let smp;
-                const plainS = (wayOf(cfg.single || lv.way) || {}).planks ? (dx, dy) => plankAt(X, Y, dx, dy) : (dx, dy) => modPx(plain, false, 2 + m4(X), 2 + m4(Y), dx, dy);
+                const plainS0 = (wayOf(cfg.single || lv.way) || {}).planks ? (dx, dy) => plankAt(X, Y, dx, dy) : (dx, dy) => modPx(plain, false, 2 + m4(X), 2 + m4(Y), dx, dy);
+                const plainS = (wayOf(cfg.single || lv.way) || {}).planks ? plainS0 : morphed(lv, X, Y, plainS0);
                 const med = (P.medal && [{ x: P.medal[0], y: P.medal[1] }] || lv.medals || []).find(m => X >= m.x && X < m.x + 4 && Y >= m.y && Y < m.y + 4);
                 if (med) { const ma = X - med.x, mb = Y - med.y; smp = (dx, dy) => modPx(crossPc, false, 2 + ma, 2 + mb, dx, dy); }
                 else if (lv.rugs && lv.rugs.length) { const XX = X, YY = Y, F = lv.rugF || (lv.rugF = rugField(lv.rugs)); smp = (dx, dy) => rugFieldAt(F, XX, YY, dx, dy) || plainS(dx, dy); }
