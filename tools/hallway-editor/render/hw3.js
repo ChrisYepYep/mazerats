@@ -833,7 +833,7 @@ function portalArchTop(axis, at, k, T) {
     return best;
 }
 function drawPortal(w, axis, line, at, part, theatre) {
-    const b = w.b, T = w.wallTop, ph = ((at % 8) + 8) % 8, art = theatre ? theatreArt(ph, axis, part, T) : portalArt(ph)[axis][part];
+    const b = w.b, T = w.wallTop, ph = ((at % 8) + 8) % 8, art = theatre === "tunnel" ? tunnelArt(ph, axis, part) : theatre ? theatreArt(ph, axis, part, T) : portalArt(ph)[axis][part];
     const p = axis === "x" ? w.S(at, line) : w.S(line, at), x0 = axis === "x" ? p[0] : p[0] - 138;
     /* the wall carries straight on either side, so its pieces' end posts aren't wanted */
     const i0 = axis === "x" ? 0 : 10, i1 = axis === "x" ? 128 : 138;
@@ -845,6 +845,22 @@ function drawPortal(w, axis, line, at, part, theatre) {
         if (art.glow && art.glow[j * art.w + i] && w.glowing) { const X = x0 + i, Y = p[1] - T + j; if (X >= 0 && Y >= 0 && X < b.w && Y < b.h) w.glowing[Y * b.w + X] = ((art.rgba[q] << 16) | (art.rgba[q + 1] << 8) | art.rgba[q + 2]) + 1; }
     }
     if (theatre && part === "alcove" && w.lamps) { const tx = axis === "x" ? at + 4 : line + .4, ty = axis === "x" ? line + .4 : at + 4, lp = w.S(tx, ty); w.lamps.push({ free: true, tx, ty, lz: w.z, x: lp[0], y: lp[1] - 6, colour: "#ffb860" }); }
+}
+
+/* ---- a plain tunnel (10 Nov 2026, his: "a plain version of the entrance portal where the tiles inside the tunnel are walkable", the way
+   into the Events Gallery). The entrance's own two pieces, the EXIT plaque and its vents taken off the beam over the opening: each column of
+   the band they sat in refilled from the plain beam at its left end, a groove repeat (8 columns) along and down the beam's slant, so the
+   grooves carry straight on. Walked through in the editor (editor.js, "tunnels"). map.tunnels: [{ id, level, axis, line, at, to }]. */
+const tunnelMemo = new Map();
+function tunnelArt(phase, axis, part) {
+    const src = portalArt(phase)[axis][part]; if (part !== "arch") return src;
+    const key = phase + axis; if (tunnelMemo.has(key)) return tunnelMemo.get(key);
+    const o = { w: src.w, h: src.h, rgba: Buffer.from(src.rgba) }, Wd = o.w;
+    const i0 = axis === "y" ? 42 : 33, i1 = axis === "y" ? 105 : 96, slope = axis === "y" ? -.5 : .5, cx = (i0 + i1) / 2, cj = 103, rowOf = i => Math.round(cj + slope * (i - cx));
+    const P = 8, S0 = Math.round(cx - 40);
+    for (let i = Math.round(cx - 30); i <= Math.round(cx + 30); i++) { const sc = S0 + ((i - S0) % P), dj = Math.round((i - sc) * slope);
+        for (let j = rowOf(i) - 14; j <= rowOf(i) + 8; j++) { const q = (j * Wd + i) * 4, p = ((j - dj) * Wd + sc) * 4; if (q < 0 || p < 0 || o.rgba[q + 3] < 128) continue; for (let k = 0; k < 4; k++) o.rgba[q + k] = src.rgba[p + k]; } }
+    tunnelMemo.set(key, o); return o;
 }
 
 /* ---- the Theatredrome entrance (8 Nov 2026, the owner's: "Using the entrance portal as a base, make a version of that which is just a
@@ -1588,12 +1604,21 @@ function fromMap(map, names) {
     }
     if (map.entrance) { const q = map.entrance, li3 = byId(q.level); if (li3) { (li3.portals = li3.portals || []).push(q); } }
     for (const q of (map.theatres || [])) { const li4 = byId(q.level); if (li4) { (li4.portals = li4.portals || []).push({ ...q, theatre: true }); (li4.theatres = li4.theatres || []).push(q); } }
+    for (const q of (map.tunnels || [])) { const li5 = byId(q.level); if (li5) (li5.portals = li5.portals || []).push({ ...q, tunnel: true }); }
     const li = null;
     if (li) { const P = li.patches.find(q => !q.notch && q.y0 === map.lift.y && map.lift.x >= q.x0 && map.lift.x < q.x1); if (P) P.lift = map.lift.x; else report.lost.push("lift"); }
     seq.report = report;
     return seq;
 }
 
+/* tile lookups by number rather than by an "x,y" string: the line-of-sight checks ask them for every pixel (10 Nov 2026, editor speed).
+   Whole tiles only; anything else, or off the grid, asks the string table as before */
+function gridOf(table, x0, y0, x1, y1) {
+    const W = x1 - x0, cells = new Array(Math.max(0, W * (y1 - y0))).fill(undefined);
+    for (const [k, v] of table instanceof Map ? table : [...table].map(k => [k, true])) { const c = k.indexOf(","), X = +k.slice(0, c), Y = +k.slice(c + 1); if (X >= x0 && X < x1 && Y >= y0 && Y < y1) cells[(Y - y0) * W + X - x0] = v; }
+    const isMap = table instanceof Map;
+    return (X, Y) => (X >= x0 && X < x1 && Y >= y0 && Y < y1 && (X | 0) === X && (Y | 0) === Y) ? cells[(Y - y0) * W + X - x0] : (isMap ? table.get(X + "," + Y) : (table.has(X + "," + Y) || undefined));
+}
 function build(cfg) {
     cfg = cfg || {};
     const names = cfg.names || H.names2();
@@ -1672,9 +1697,12 @@ function build(cfg) {
         const airBelow = (X, Y) => !!belowCells && belowCells.has(Math.floor(X / 2) + "," + Math.floor(Y / 2)) && !(aboveCells && aboveCells.has(Math.floor(X / 2) + "," + Math.floor(Y / 2)));
         /* does the wall carry on along this line at this tile? Then the run before it has no end post. */
         const tileOf = new Map(); for (const Q of lv.patches) for (let X = Q.x0; X < Q.x1; X++) for (let Y = Q.y0; Y < Q.y1; Y++) tileOf.set(X + "," + Y, Q);
+        let gx0 = 1e9, gy0 = 1e9, gx1 = -1e9, gy1 = -1e9; for (const Q of [...lv.patches, ...(lv.holes || [])]) { gx0 = Math.min(gx0, Q.x0 - 2); gy0 = Math.min(gy0, Q.y0 - 2); gx1 = Math.max(gx1, Q.x1 + 2); gy1 = Math.max(gy1, Q.y1 + 2); }
+        if (gx0 > gx1) { gx0 = gy0 = 0; gx1 = gy1 = 0; }
+        const tileAt = gridOf(tileOf, gx0, gy0, gx1, gy1), hasAt = gridOf(has, gx0, gy0, gx1, gy1), holeAt = gridOf(holes, gx0, gy0, gx1, gy1);
         const shownWalls = new Set((lv.src && lv.src.showWalls) || []), shown = (axis, line, t) => shownWalls.has(axis + "|" + line + "|" + t);
-        const backWall = (X, Y, z) => { const Q = tileOf.get(X + "," + Y); return !!Q && (z === undefined || Q.z === z) && Q.y0 === Y && !has.has(X + "," + (Y - 1)) && !holes.has(X + "," + (Y - 1)) && !Q.noBack && (Q.notch || !airBelow(X, Y - 1) || doorEdge("x", X, Y) || shown("x", Y, X)); };
-        const sideWall = (X, Y, z) => { const Q = tileOf.get(X + "," + Y); return !!Q && (z === undefined || Q.z === z) && Q.x0 === X && !has.has((X - 1) + "," + Y) && !holes.has((X - 1) + "," + Y) && (Q.notch || !airBelow(X - 1, Y) || doorEdge("y", X, Y) || shown("y", X, Y)); };
+        const backWall = (X, Y, z) => { const Q = tileAt(X, Y); return !!Q && (z === undefined || Q.z === z) && Q.y0 === Y && !hasAt(X, Y - 1) && !holeAt(X, Y - 1) && !Q.noBack && (Q.notch || !airBelow(X, Y - 1) || doorEdge("x", X, Y) || shown("x", Y, X)); };
+        const sideWall = (X, Y, z) => { const Q = tileAt(X, Y); return !!Q && (z === undefined || Q.z === z) && Q.x0 === X && !hasAt(X - 1, Y) && !holeAt(X - 1, Y) && (Q.notch || !airBelow(X - 1, Y) || doorEdge("y", X, Y) || shown("y", X, Y)); };
         layer.d.fill(0); for (let i = 0; i < layer.d.length; i += 4) { layer.d[i] = VOID[0]; layer.d[i + 1] = VOID[1]; layer.d[i + 2] = VOID[2]; layer.d[i + 3] = 255; }
         mask.fill(0); w.glowAbove = new Map(); w.keep.fill(0); w.glowing.fill(0); w.footShadows = []; w.tints = []; w.sunWins = []; w.afterAll = []; w.plates = []; w.garPx = new Set(); w.treeGlows = []; w.bigTrees = []; w.treePx = []; w.treeAll = [];
         w.lamps = [];
@@ -1765,7 +1793,7 @@ function build(cfg) {
             if (own) layer.set = was; else delete layer.set;
         };
         /* small steps: a flight on the lower floor, climbing away from you */
-        const zAt = (X, Y) => { const Q = tileOf.get(X + "," + Y); return Q ? Q.z : null; };
+        const zAt = (X, Y) => { const Q = tileAt(X, Y); return Q ? Q.z : null; };
         for (const st of ((lv.src && lv.src.steps) || [])) {
             const alongY = st.axis === "y", back = alongY ? zAt(st.a, st.line - 1) : zAt(st.line - 1, st.a), near = alongY ? zAt(st.a, st.line) : zAt(st.line, st.a), toYou = st.dir === "front";
             if (back === null || near === null) continue;
@@ -1784,7 +1812,7 @@ function build(cfg) {
         const seesRail = (x, y, z) => {
             let t = 0, px = Math.floor(x), py = Math.floor(y); const reach = (Z1 + 64) / 16;
             while (t < reach) {
-                const tx = px + 1 - x, ty = py + 1 - y, nt = Math.min(tx, ty) + 1e-6, X = Math.floor(x + nt), Y = Math.floor(y + nt), zz = z + nt * 16, Q = tileOf.get(X + "," + Y);
+                const tx = px + 1 - x, ty = py + 1 - y, nt = Math.min(tx, ty) + 1e-6, X = Math.floor(x + nt), Y = Math.floor(y + nt), zz = z + nt * 16, Q = tileAt(X, Y);
                 if (Q && !Q.notch) { if (zz <= Q.z) return false; if ((Y > py && backWall(X, Y) && zz <= Q.z + Z1 + 4) || (X > px && sideWall(X, Y) && zz <= Q.z + Z1 + 4)) return false; }      // a rail's pixels stand a little off the point tested
                 t = nt; px = X; py = Y;
             }
@@ -1793,9 +1821,9 @@ function build(cfg) {
         /* Following the line of sight towards you from a point: higher on it is nearer. Is there a floor at or above it on the way? */
         const highestFloor = uneven ? Math.max(...lv.patches.filter(q => !q.notch).map(q => q.z)) : 0;
         const coveredByFloor = (x, y, z) => {
-            let t = 0, px = Math.floor(x), py = Math.floor(y); const Q0 = tileOf.get(px + "," + py); if (Q0 && !Q0.notch && z < Q0.z - .5) return true;
+            let t = 0, px = Math.floor(x), py = Math.floor(y); const Q0 = tileAt(px, py); if (Q0 && !Q0.notch && z < Q0.z - .5) return true;
             while (z + t * 16 <= highestFloor) {
-                const tx = px + 1 - x, ty = py + 1 - y, nt = Math.min(tx, ty) + 1e-6, X = Math.floor(x + nt), Y = Math.floor(y + nt), Q = tileOf.get(X + "," + Y);
+                const tx = px + 1 - x, ty = py + 1 - y, nt = Math.min(tx, ty) + 1e-6, X = Math.floor(x + nt), Y = Math.floor(y + nt), Q = tileAt(X, Y);
                 if (Q && !Q.notch && z + nt * 16 < Q.z - .5) return true;
                 t = nt; px = X; py = Y; if (t > 40) break;
             }
@@ -2018,7 +2046,7 @@ function build(cfg) {
             for (let X = P.x0; X <= P.x1; X++) { const open = X < P.x1 && !has.has(X + "," + (P.y0 - 1)) && !holes.has(X + "," + (P.y0 - 1)) && !P.noBack && (P.notch || !airBelow(X, P.y0 - 1) || doorEdge("x", X, P.y0) || shown("x", P.y0, X)); if (open && run === null) run = X; if (!open && run !== null) { tagged(() => H.wallRunX(w, run, X, P.y0, { ...cornerEnd(backWall(X, P.y0, P.z), sideWall(X, P.y0 - 1), zAt(X, P.y0 - 1), P.z), noStart: backWall(run - 1, P.y0, P.z), col: colOf("x", P.y0), ...halfOf("x", P.y0) })); run = null; } }
             run = null;
             for (let Y = P.y0; Y <= P.y1; Y++) { const open = Y < P.y1 && !has.has((P.x0 - 1) + "," + Y) && !holes.has((P.x0 - 1) + "," + Y) && (P.notch || !airBelow(P.x0 - 1, Y) || doorEdge("y", P.x0, Y) || shown("y", P.x0, Y)); if (open && run === null) run = Y; if (!open && run !== null) { tagged(() => H.wallRunY(w, P.x0, run, Y, { ...cornerEnd(sideWall(P.x0, Y, P.z), backWall(P.x0 - 1, Y), zAt(P.x0 - 1, Y), P.z), noStart: sideWall(P.x0, run - 1, P.z), col: colOf("y", P.x0), ...halfOf("y", P.x0) })); run = null; } }
-            for (const q of (lv.portals || [])) { if (tileOf.get(q.axis === "x" ? q.at + "," + q.line : q.line + "," + q.at) === P) { drawPortal(w, q.axis, q.line, q.at, "alcove", q.theatre); drawPortal(w, q.axis, q.line, q.at, "arch", q.theatre); } }
+            for (const q of (lv.portals || [])) { if (tileOf.get(q.axis === "x" ? q.at + "," + q.line : q.line + "," + q.at) === P) { drawPortal(w, q.axis, q.line, q.at, "alcove", q.tunnel ? "tunnel" : q.theatre); drawPortal(w, q.axis, q.line, q.at, "arch", q.tunnel ? "tunnel" : q.theatre); } }
             w.z = P.z;
             /* A wall running alongside small steps climbs with them, panelling, paper and cap together, so it flows from the lower floor's wall into the higher one's instead of jumping.
                Each column of it moves up by how far the steps have climbed there; the steps, drawn after, cover what's left at its foot. */
@@ -2028,7 +2056,7 @@ function build(cfg) {
                 const hi = toYou ? nearZ : backZ, lo = toYou ? backZ : nearZ; if (hi <= lo || P.z !== lo || (cut !== null && hi > cut)) continue;
                 /* the walls climb only by what their own floors' walls differ by: a floor raised with "raise the floor only" keeps its walls
                    where they were, so steps up onto it leave the wall level (10 Nov 2026, his: the walls still slanted at the steps) */
-                const wallZ = (X, Y) => { const Q = tileOf.get(X + "," + Y); return Q ? Q.z - (Q.floorLift || 0) : null; }, wBack = alongY ? wallZ(st.a, st.line - 1) : wallZ(st.line - 1, st.a), wNear = alongY ? wallZ(st.a, st.line) : wallZ(st.line, st.a);
+                const wallZ = (X, Y) => { const Q = tileAt(X, Y); return Q ? Q.z - (Q.floorLift || 0) : null; }, wBack = alongY ? wallZ(st.a, st.line - 1) : wallZ(st.line - 1, st.a), wNear = alongY ? wallZ(st.a, st.line) : wallZ(st.line, st.a);
                 const wallRise = (toYou ? wNear : wBack) - (toYou ? wBack : wNear), share = Math.max(0, Math.min(1, wallRise / (hi - lo))); if (share <= 0) continue;
                 const reach = Math.round((hi - lo) / STEP_R) * STEP_D, from = toYou ? st.line - reach : st.line, rate = STEP_R / STEP_D, d0 = alongY ? P.y0 : P.x0, d1 = alongY ? P.y1 : P.x1;
                 for (let k = 0; k <= Math.ceil(reach * 16); k++) {
@@ -2082,7 +2110,7 @@ function build(cfg) {
                     /* the entrance's stretch has no wall of its own, but the arch's piece is wall above the arch: room enough there for the garland
                        and its baubles (they hang GAR_HANG under its top), and it carries on across (9 Nov 2026, his) */
                     const GAR_HANG = 18, archOver = (X, Y) => { for (const q of (lv.portals || [])) { if (q.theatre || q.axis !== g.axis || q.line !== g.line) continue; const k = (g.axis === "x" ? X : Y) - q.at; if (k >= 0 && k < 8) return portalArchTop(q.axis, q.at, k, w.wallTop); } return null; };
-                    const topOf = tt => { const X = g.axis === "x" ? tt : g.line, Y = g.axis === "x" ? g.line : tt, key = g.axis + "|" + g.line + "|" + tt, Q = tileOf.get(X + "," + Y); if (!Q) return null;
+                    const topOf = tt => { const X = g.axis === "x" ? tt : g.line, Y = g.axis === "x" ? g.line : tt, key = g.axis + "|" + g.line + "|" + tt, Q = tileAt(X, Y); if (!Q) return null;
                         /* only where a wall is drawn: not along a drop between floor heights, where the rope would float a whole wall up, unseen (9 Nov scan, renderer 2) */
                         if (!(g.axis === "x" ? backWall(X, Y) : sideWall(X, Y))) return null;
                         const arch = noneSet.has(key) ? archOver(X, Y) : null; if (noneSet.has(key) && arch === null) return null;
@@ -2385,7 +2413,7 @@ function build(cfg) {
                 /* tile by tile along the ray, so it costs next to nothing */
                 let t = 0, px = Math.floor(x), py = Math.floor(y); const reachT = (Z1 + 64) / 16;
                 while (t < reachT) {
-                    const tx = px + 1 - x, ty = py + 1 - y, nt = Math.min(tx, ty) + 1e-6, X = Math.floor(x + nt), Y = Math.floor(y + nt), zz = z + nt * 16, Q = tileOf.get(X + "," + Y);
+                    const tx = px + 1 - x, ty = py + 1 - y, nt = Math.min(tx, ty) + 1e-6, X = Math.floor(x + nt), Y = Math.floor(y + nt), zz = z + nt * 16, Q = tileAt(X, Y);
                     if (Q && !Q.notch) { if (zz <= Q.z) return true; const tallAt = (axis, line, t2) => { const k = axis + "|" + line + "|" + t2; return noneSet.has(k) ? 0 : halfSet.has(k) ? HALF_WALL : Z1; }; if ((Y > py && backWall(X, Y) && zz <= Q.z + tallAt("x", Y, X)) || (X > px && sideWall(X, Y) && zz <= Q.z + tallAt("y", X, Y))) return true; }
                     t = nt; px = X; py = Y;
                 }
@@ -2429,7 +2457,7 @@ function build(cfg) {
         if (uneven) {
             const inB = (x, y) => x >= 0 && y >= 0 && x < bw && y < bh, gone = (X, Y) => !has.has(X + "," + Y) && !holes.has(X + "," + Y);
             const stepsThere = (axis, line, at) => ((lv.src && lv.src.steps) || []).some(st => st.axis === axis && st.b === line && Math.abs(at - st.line) <= 8);
-            const inSight = (x, y, z) => { let t = 0, px = Math.floor(x), py = Math.floor(y); while (t < 8) { const tx = px + 1 - x, ty = py + 1 - y, nt = Math.min(tx, ty) + 1e-6, X = Math.floor(x + nt), Y = Math.floor(y + nt), Q = tileOf.get(X + "," + Y); if (Q && !Q.notch && z + nt * 16 < Q.z) return false; t = nt; px = X; py = Y; } return true; };
+            const inSight = (x, y, z) => { let t = 0, px = Math.floor(x), py = Math.floor(y); while (t < 8) { const tx = px + 1 - x, ty = py + 1 - y, nt = Math.min(tx, ty) + 1e-6, X = Math.floor(x + nt), Y = Math.floor(y + nt), Q = tileAt(X, Y); if (Q && !Q.notch && z + nt * 16 < Q.z) return false; t = nt; px = X; py = Y; } return true; };
             /* one edge, one junction: along +1 on screen from the junction into the lower floor, or -1 */
             const wedge = (axis, line, at, dir, lo, hi) => {
                 const drop = hi - lo, L = Math.min(48, Math.max(24, drop * 3));      // a big drop is steep, or the slope hides tiles you can walk on
@@ -2479,9 +2507,12 @@ function build(cfg) {
             /* a light with its own colour: as strong as the mood's lights, in that colour */
             if (c && l.colour) { const q = hex(l.colour.replace(/^#/, "")), top = Math.max(q[0], q[1], q[2], 1), power = Math.max(...c); c = q.map(v => v / top * power * (l.sign ? .42 : 1)); }
             return c && !l.dead ? { ...l, c } : null; }).filter(Boolean);
+        /* the lamps that can reach each 16px column, in their own order, so every pixel isn't checked against every lamp on the floor (10 Nov
+           2026, editor speed): the same lamps in the same order as before, so the light comes out identical */
+        const LB = 16, lampCols = new Map(), nearLamps = x => { const b = Math.floor(x / LB); let s = lampCols.get(b); if (!s) { const a = b * LB; s = lamps.filter(l => l.x - a <= 340 + LB && a - l.x <= 340); lampCols.set(b, s); } return s; };
         const lightAt = (x, y, isFloor, zv) => {
             const L = [M.amb[0], M.amb[1], M.amb[2]], top = [0, 0, 0], rest = [0, 0, 0];
-            for (const l of lamps) {
+            for (const l of nearLamps(x)) {
                 const dxs = x - l.x; if (dxs > 340 || dxs < -340) continue;
                 let d;
                 if (isFloor) {

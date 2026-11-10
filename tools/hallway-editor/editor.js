@@ -56,7 +56,7 @@ const EDGE_STYLES = [["wood", "Dark oak rail"], ["gold", "Gold rail"]];
 const WALL_ITEMS = window.WALL_ITEMS || [], WALL_GROUPS = [["painting", "Hallway paintings"], ["custom", "More paintings"], ["window", "Windows"], ["hotel", "The old hotel"], ["leet", "The Leet Show"], ["tell", "Wear and tear"]];
 const TOOLS = [
     ["Floors", [["floor", "Paint floor", T_ + "floor.png"], ["erase", "Remove floor", ICON.erase], ["rug", "Rug", T_ + "rug.png"], ["smallfloor", "Small squares floor", ICON.smallfloor], ["mark_arrow", "Arrow tile (links to another)", ICON.arrow], ["medal", "Carpet crest", T_ + "crest.png"], ["height", "Floor height", ICON.raise], ["floorlift", "Raise the floor only (walls stay)", ICON.raise], ["steps", "Small steps", T_ + "stair.png"]]],
-    ["On walls", [["door", "Door", T_ + "door.png"], ["halfwall", "Half wall", ICON.halfwall], ["nowall", "No wall", ICON.nowall], ["addwall", "Show wall", ICON.addwall], ["sconce", "Wall light", T_ + "sconce.png"], ["globelight", "Globe wall light", "art/sconce-globe-y.png"], ["entrance", "Entrance", H_ + "entry_upper_right_mask.png"], ["theatre", "Theatredrome entrance (for show)", H_ + "entry_upper_right_mask.png"], ["lift", "Lift", T_ + "lift.png"], ["stair", "Stairs: straight", T_ + "stair.png"], ["turn", "Stairs: turning", T_ + "turn.png"], ["side", "Stairs: left wall", T_ + "side.png"], ["sideturn", "Stairs: left wall, turning", T_ + "sideturn.png"]]],
+    ["On walls", [["door", "Door", T_ + "door.png"], ["halfwall", "Half wall", ICON.halfwall], ["nowall", "No wall", ICON.nowall], ["addwall", "Show wall", ICON.addwall], ["sconce", "Wall light", T_ + "sconce.png"], ["globelight", "Globe wall light", "art/sconce-globe-y.png"], ["entrance", "Entrance", H_ + "entry_upper_right_mask.png"], ["theatre", "Theatredrome entrance (for show)", H_ + "entry_upper_right_mask.png"], ["tunnel", "Tunnel (walk through it)", H_ + "entry_upper_right_mask.png"], ["lift", "Lift", T_ + "lift.png"], ["stair", "Stairs: straight", T_ + "stair.png"], ["turn", "Stairs: turning", T_ + "turn.png"], ["side", "Stairs: left wall", T_ + "side.png"], ["sideturn", "Stairs: left wall, turning", T_ + "sideturn.png"]]],
     ["Furniture", [["sofa", "Sofa", T_ + "sofa.png"], ["chair", "Chair", H_ + "hw_chair_a_0_2_0.png"], ["barstool", "Arcade stool", "art/wall/i_barstool.png"], ["leetstand", "Poster stand: The Leet Show", "art/wall/i_leetstand.png"], ["leetstand2", "Poster stand, narrow: The Leet Show", "art/wall/i_leetstand2.png"], ["table", "Table", T_ + "table.png"], ["smtable", "Small round table", H_ + "hw_smtble_a_0_0_0.png"], ["ballpost", "Ball post", H_ + "pillar0_a_0_0_0.png"], ["rope", "Rope barrier", T_ + "rope.png"], ["archway", "Archway (drag it out)", H_ + "entry_upper_right_mask.png"], ["lamp", "Floor lamp", T_ + "lamp.png"], ["plant", "Plant", H_ + "hw_plant_a_0_0_0.png"], ["plant_palm", "Palm, terracotta pot", "art/wall/i_plant_palm.png"], ["plant_orange", "Orange tree, brass pot", "art/wall/i_plant_orange.png"], ["plant_bonsai", "Bonsai, walnut pot", "art/wall/i_plant_bonsai.png"], ["plant_roses", "Roses in a vase", "art/wall/i_plant_roses.png"], ["plant_cactus", "Cactus, terracotta pot", "art/wall/i_plant_cactus.png"], ["plant_bay", "Clipped bay, brass pot", "art/wall/i_plant_bay.png"], ["plant_sunflower", "Sunflower in a vase", "art/wall/i_plant_sunflower.png"], ["ero", "Planter", T_ + "planter.png"], ...PLANTERS.map(([k, name]) => [k, name, T_ + "planter-" + k.slice(4) + ".png"]), ["pillar", "Pillar", H_ + "pillar1_a_0_0_0.png"], ["pillartall", "Tall pillar", T_ + "pillartall.png"], ["statue", "Statue", H_ + "hw_statue_a_0_0_0.png"], ["fountain", "Fountain", H_ + "hw_fountain_a_0_0_0.png"], ["shelf", "Bookcase", H_ + "hw_shelf_a_0_4_0.png"], ["cabinet", "Cabinet", H_ + "hw_closet1_a_0_2_0.png"], ["water", "Water cooler", H_ + "hw_watermatic_a_0_4_0.png"], ["tablelamp", "Globe table lamp", "art/wall/i_tablelamp.png"], ["rarecase", "Rare in a glass case", "art/wall/i_rarecase.png"], ["trophy", "Old trophy cabinet", "art/wall/i_trophy.png"], ["mark_scuff", "Floor scuffs", "art/wall/i_mark_scuff.png"], ["mark_tile", "Lifted floor tile", "art/wall/i_mark_tile.png"]]],
     ...WALL_GROUPS.map(([kind, title]) => [title, WALL_ITEMS.filter(i => i.kind === kind).map(i => ["wi:" + i.id, i.name, "art/wall/" + i.y.layers[0].f])]),
     ["Games", [["arcade_ff", "Arcade: Fallin' Furni", "art/wall/i_arcade_ff.png"], ["arcade_pura", "Arcade: Pura Panic", "art/wall/i_arcade_pura.png"], ["arcade_guess", "Arcade: Guess the Maze", "art/wall/i_arcade_guess.png"], ["arcade_odd", "Arcade: Odd One Out", "art/wall/i_arcade_odd.png"], ["arcade_scout", "Arcade: green (no game yet)", "art/wall/i_arcade_scout.png"], ["arcade_quiz", "Arcade: purple (no game yet)", "art/wall/i_arcade_quiz.png"]]],
@@ -102,6 +102,7 @@ const HINTS = {
     globelight: "Click a wall to hang a small globe light, or a pillar's face to fix one there. Hold B for the faces turned away from you. Click the same face again to take it off. Hold Ctrl and move the mouse up or down to change the height.",
     sconce: "Click a top wall to hang a wall light. It lights the wall and floor around it. Hold Ctrl and move the mouse up or down to change the height.",
     lift: "Click a back wall to add a lift. Put in as many as you like: each one can take you to any other.",
+    tunnel: "Click a wall to put a tunnel there: Habbos can walk into it. A second tunnel links to the first, and walking to the back of one brings you out of the other. Choose where each leads in Select and move. Clicking one again takes it away.",
     entrance: "Click a wall to put the entrance there. There's one: Habbos arrive through it, and walking back in leaves the hallway.",
     stair: "Click a back wall: a straight flight, cut into the wall, up to the next floor.",
     turn: "Click a back wall: a flight up to a landing, turning left inside the wall.",
@@ -869,7 +870,7 @@ function drawLiveSign() {
     if (!live) return;
     if (live.ending && live.finalV && version === live.finalV) {
         const [x0, x1, y0, y1] = visibleTiles(); let ready = true;
-        for (let ty = y0; ty <= y1 && ready; ty++) for (let tx = x0; tx <= x1; tx++) { const t = tiles.get(tx + "," + ty); if (!freshTile(t)) { ready = false; break; } }
+        for (let ty = y0; ty <= y1 && ready; ty++) for (let tx = x0; tx <= x1; tx++) { if (!shownFresh(tx, ty)) { ready = false; break; } }
         if (ready) { live = null; return; }
     }
     liveFetch();
@@ -938,8 +939,9 @@ function nextTiles() {
     const [x0, x1, y0, y1] = visibleTiles(), out = [], seen = new Set();
     const add = (tx, ty, near) => { const k = tx + "," + ty; if (seen.has(k)) return; seen.add(k); const t = tiles.get(k); if (freshTile(t) || inflight.has(k) || tileWaiting(k)) return; out.push({ tx, ty, k, d: near ? -1e6 + Math.hypot(tx * TILE - cam.x, ty * TILE - cam.y) : Math.hypot(tx * TILE - cam.x, ty * TILE - cam.y) }); };
     for (let ty = y0; ty <= y1; ty++) for (let tx = x0; tx <= x1; tx++) add(tx, ty, true);
-    if (moodNow() && window.HALLWAY_PLAY) return [];                     // a time of day has its own pictures, so the plain ones would be fetched for nothing
-    if (moodNow()) return out.sort((p, q) => p.d - q.d);                 // walking through the moods: only what's on screen, so they get drawn first
+    /* a time of day has its own pictures, so the plain ones would be drawn for nothing: in the editor too, where they took half the drawing
+       threads from the squares you were looking at (10 Nov 2026, editor speed) */
+    if (moodNow()) return [];
     const r = map.rect;
     for (let ty = Math.floor(r.y / TILE); ty <= Math.floor((r.y + r.h) / TILE); ty++) for (let tx = Math.floor(r.x / TILE); tx <= Math.floor((r.x + r.w) / TILE); tx++) add(tx, ty, false);
     return out.sort((p, q) => p.d - q.d);
@@ -951,7 +953,7 @@ function firstDrawBar() {
     if (firstDrawn || window.HALLWAY_PLAY || !map || !map.rect) return;
     /* the squares on screen: with a time of day on, those are all it draws */
     const [x0, x1, y0, y1] = visibleTiles(), r = map.rect; let all = 0, done = 0;
-    for (let ty = Math.max(y0, Math.floor(r.y / TILE)); ty <= Math.min(y1, Math.floor((r.y + r.h) / TILE)); ty++) for (let tx = Math.max(x0, Math.floor(r.x / TILE)); tx <= Math.min(x1, Math.floor((r.x + r.w) / TILE)); tx++) { all++; const t = tiles.get(tx + "," + ty); if (freshTile(t)) done++; }
+    for (let ty = Math.max(y0, Math.floor(r.y / TILE)); ty <= Math.min(y1, Math.floor((r.y + r.h) / TILE)); ty++) for (let tx = Math.max(x0, Math.floor(r.x / TILE)); tx <= Math.min(x1, Math.floor((r.x + r.w) / TILE)); tx++) { all++; if (shownFresh(tx, ty)) done++; }
     if (!loadBar) { loadBar = document.createElement("div"); loadBar.className = "first-draw"; loadBar.setAttribute("role", "progressbar"); loadBar.setAttribute("aria-label", "Drawing the map"); loadBar.innerHTML = '<span class="fd-text">Drawing the map</span><span class="fd-track"><span class="fd-fill"></span></span><span class="fd-num"></span>'; $("stage").appendChild(loadBar); }
     if (!version) { all = Math.max(1, all); done = 0; }                       // still starting up: shown, at nothing yet
     const pc = all ? Math.round(100 * done / all) : 100;
@@ -966,11 +968,42 @@ function pump() {
         if (inflight.size >= CONCURRENT) break;
         loadTile(n);
     }
-    setStatus(want.length || inflight.size ? `Drawing, ${want.length + inflight.size - Math.min(want.length, CONCURRENT)} squares to go` : "Up to date");
+    warmAhead(want);
+    /* with a time of day showing, what's counted is its squares on screen */
+    let left = want.length + inflight.size - Math.min(want.length, CONCURRENT);
+    if (moodNow() && map.rect) { const [x0, x1, y0, y1] = visibleTiles(), r = map.rect; left = 0; for (let ty = Math.max(y0, Math.floor(r.y / TILE)); ty <= Math.min(y1, Math.floor((r.y + r.h) / TILE)); ty++) for (let tx = Math.max(x0, Math.floor(r.x / TILE)); tx <= Math.min(x1, Math.floor((r.x + r.w) / TILE)); tx++) if (!shownFresh(tx, ty)) left++; }
+    setStatus(left ? `Drawing, ${left} squares to go` : "Up to date");
+}
+/* The page can only ask for 6 squares at once, and the editor's server has more threads than that: so it's told which squares come next and
+   draws them ahead, and asking for one then finds it drawn or on its way (10 Nov 2026, his: "improve speed in the editor"). Told once per map
+   version, and again only when the list has new squares in it (the view moved) */
+let warmedFor = "", warmed = new Set();
+function warmAhead(want) {
+    /* not until the first screenful is in: the threads starting up all at once slowed that */
+    if (window.HALLWAY_PLAY || !version || !firstDrawn) return;
+    const md = moodNow(), x = xmasNow() ? "+x" : "", tag = version + x;
+    if (warmedFor !== tag) { warmedFor = tag; warmed = new Set(); }
+    let list = want.map(n => ({ tx: n.tx, ty: n.ty, k: n.k, m: x }));
+    if (md) {
+        /* what's on screen, in the time of day showing and the one it's fading to, nearest first; then the rest of the map in the one showing */
+        const [x0, x1, y0, y1] = visibleTiles(), r = map.rect || { x: 0, y: 0, w: 0, h: 0 }, near = [], far = [];
+        for (const mood of md.f > 0 && md.b !== md.a ? [md.a, md.b] : [md.a]) for (let ty = y0; ty <= y1; ty++) for (let tx = x0; tx <= x1; tx++) near.push({ tx, ty, m: mood + x, d: Math.hypot((tx + .5) * TILE - cam.x, (ty + .5) * TILE - cam.y) });
+        for (let ty = Math.floor(r.y / TILE); ty <= Math.floor((r.y + r.h) / TILE); ty++) for (let tx = Math.floor(r.x / TILE); tx <= Math.floor((r.x + r.w) / TILE); tx++) far.push({ tx, ty, m: md.a + x, d: 1e6 + Math.hypot((tx + .5) * TILE - cam.x, (ty + .5) * TILE - cam.y) });
+        list = [...near, ...far].sort((p, q) => p.d - q.d).map(n => ({ ...n, k: n.m + "|" + n.tx + "," + n.ty })).filter(n => { const t = moodTiles.get(n.k); return !(t && t.v === version) && !moodInflight.has(n.k); });
+    }
+    const next = list.filter(n => !inflight.has(n.k) && !warmed.has(n.k)).slice(0, 24);
+    if (!next.length) return;
+    for (const n of next) warmed.add(n.k);
+    fetch("/api/warm", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ v: version, tiles: next.map(n => [n.tx, n.ty, n.m]) }) }).catch(() => {});
 }
 /* a square is current only if it was drawn for this version of the map and for the Christmas setting now (10 Nov 2026, his: banister
    garlands partly showing with Christmas off: a square still being drawn when Christmas was switched off landed afterwards and was kept) */
 const xmasNow = () => !!window.hallwayXmas;
+/* is the square showing now (the time of day's, or the plain one) drawn for this version of the map? */
+function shownFresh(tx, ty) {
+    const m = moodNow(); if (!m) return freshTile(tiles.get(tx + "," + ty));
+    const t = moodTiles.get((xmasNow() ? m.a + "+x" : m.a) + "|" + tx + "," + ty); return !!t && t.v === version;
+}
 const freshTile = t => !!t && t.v === version && t.x === xmasNow();
 async function loadTile(n) {
     const v = version, xm = xmasNow(), ctl = new AbortController();
@@ -1453,7 +1486,7 @@ function ropeArt(l, p) {
 }
 /* where the entrance was refused: the 8 tiles it wanted, and the tile that stopped it */
 function drawEntranceBlock() {
-    const b = lastEntranceBlock; if (!b || b.l !== level || (tool !== "entrance" && tool !== "theatre" && !(drag && selected && selected.type === "entrance"))) return;
+    const b = lastEntranceBlock; if (!b || b.l !== level || (tool !== "entrance" && tool !== "theatre" && tool !== "tunnel" && !(drag && selected && selected.type === "entrance"))) return;
     const ox = Math.round(canvas.width / 2 - cam.x * zoom), oy = Math.round(canvas.height / 2 - cam.y * zoom), z = levelZ(level), seg = (t0, t1, col, w) => { const pa = b.axis === "x" ? P(t0, b.line, z) : P(b.line, t0, z), pb = b.axis === "x" ? P(t1, b.line, z) : P(b.line, t1, z); ctx.strokeStyle = col; ctx.lineWidth = w; ctx.beginPath(); ctx.moveTo(ox + pa[0] * zoom, oy + pa[1] * zoom); ctx.lineTo(ox + pb[0] * zoom, oy + pb[1] * zoom); ctx.stroke(); };
     ctx.save(); seg(b.a, b.a + 8, "rgba(255,255,255,.6)", 2); seg(b.tile, b.tile + 1, "#ff3b30", 5); ctx.restore();
 }
@@ -1553,6 +1586,19 @@ function act(px, py) {
         const clash = [...list, ...(map.entrance ? [map.entrance] : [])].some(q => q.level === level.id && q.axis === w.axis && q.line === w.line && Math.abs(q.at - at) < 8);
         if (clash) { flash("There's an entrance there already."); return; }
         place(() => { (map.theatres = map.theatres || []).push({ level: level.id, axis: w.axis, line: w.line, at }); });
+        return;
+    }
+    /* a plain tunnel, walked into (10 Nov 2026, his: the way into the Events Gallery). Clicking one again takes it away */
+    if (tool === "tunnel") {
+        if (!w || w.drop) return;
+        const list = map.tunnels || [], here = list.findIndex(q => q.level === level.id && q.axis === w.axis && q.line === w.line && wallTile(w) >= q.at && wallTile(w) < q.at + 8);
+        if (here >= 0) { const gone = list[here]; place(() => { for (const q of list) if (q.to === gone.id) delete q.to; map.tunnels.splice(here, 1); if (!map.tunnels.length) delete map.tunnels; }); flash("Tunnel taken away."); return; }
+        const at = entranceAt(level, w); if (at === null) { flash("It won't fit here: " + lastEntranceBlock.why + ". It's marked in red."); paint(); return; }
+        const clash = [...list, ...(map.theatres || []), ...(map.entrance ? [map.entrance] : [])].some(q => q.level === level.id && q.axis === w.axis && q.line === w.line && Math.abs(q.at - at) < 8);
+        if (clash) { flash("There's an entrance or a tunnel there already."); return; }
+        const alone = list.filter(q => !q.to), mate = alone.length === 1 ? alone[0] : null, id = "t" + Date.now().toString(36);
+        place(() => { const q = { id, level: level.id, axis: w.axis, line: w.line, at }; if (mate) { q.to = mate.id; mate.to = id; } (map.tunnels = map.tunnels || []).push(q); });
+        if (mate) flash("Linked to the tunnel on " + ((byId(mate.level) || {}).name || "another floor") + ": walk to the back of one and you come out of the other.");
         return;
     }
     if (tool === "entrance") {
@@ -1802,6 +1848,8 @@ function pickIn(l, px, py) {
         const lq = w.axis === "x" && map.lifts.find(q => q.level === l.id && w.line === q.y && w.at >= q.x - 1 && w.at < q.x + 4);
         if (lq) return { type: "lift", l, o: lq };
         if (map.entrance && map.entrance.level === l.id && map.entrance.axis === w.axis && map.entrance.line === w.line && wallTile(w) >= map.entrance.at && wallTile(w) < map.entrance.at + 8) return { type: "entrance", l, o: map.entrance };
+        const tun = (map.tunnels || []).find(q => q.level === l.id && q.axis === w.axis && q.line === w.line && wallTile(w) >= q.at && wallTile(w) < q.at + 8);
+        if (tun) return { type: "tunnel", l, o: tun };
         const st = map.stairs.find(s => s.low === l.id && (thruLeft(s) ? w.axis === "y" && s.x === w.line && w.at > s.a && w.at <= s.b : w.axis === "x" && s.y === w.line && w.at >= s.a && w.at < s.b));
         if (st) return { type: "stair", l, o: st };
         if (wallPaint) return { type: "wall", l, o: wallStretch(l, w), tile: wallTile(w) };
@@ -1879,7 +1927,7 @@ function signHandles(b) {
     return h;
 }
 function handleAt(b, px, py) { const r = Math.max(5, 7 / zoom), h = signHandles(b); for (const k of Object.keys(h)) if (Math.abs(px - h[k][0]) <= r && Math.abs(py - h[k][1]) <= r) return k; return null; }
-const TYPE_NAMES = { garland: "Garland", festoon: "Festoon lights", entrance: "Entrance", wallitem: "On the wall", steps: "Small steps", wall: "Wall", sign: "Maze sign", prop: "Furniture", tele: "Imperial Teleport", door: "Door", lamp: "Wall light", lift: "Lift", stair: "Stairs", medal: "Carpet crest", rug: "Rug" };
+const TYPE_NAMES = { tunnel: "Tunnel", garland: "Garland", festoon: "Festoon lights", entrance: "Entrance", wallitem: "On the wall", steps: "Small steps", wall: "Wall", sign: "Maze sign", prop: "Furniture", tele: "Imperial Teleport", door: "Door", lamp: "Wall light", lift: "Lift", stair: "Stairs", medal: "Carpet crest", rug: "Rug" };
 const PROP_NAMES = { leetstand: "Poster stand: The Leet Show", leetstand2: "Poster stand, narrow: The Leet Show", barstool: "Arcade stool", plant_palm: "Palm, terracotta pot", plant_orange: "Orange tree, brass pot", plant_bonsai: "Bonsai, walnut pot", plant_roses: "Roses in a vase", plant_cactus: "Cactus, terracotta pot", plant_bay: "Clipped bay, brass pot", plant_sunflower: "Sunflower in a vase", archway: "Archway", mark_arrow: "Arrow tile", arcade_ff: "Arcade: Fallin' Furni", arcade_pura: "Arcade: Pura Panic", arcade_guess: "Arcade: Guess the Maze", arcade_odd: "Arcade: Odd One Out", arcade_scout: "Arcade: green (no game yet)", arcade_quiz: "Arcade: purple (no game yet)", tablelamp: "Globe table lamp", xmastree: "Christmas tree", xmassmalltree: "Small tree", snowman: "Snowman", xmaslantern: "Lantern", xmasdrinks: "Christmas drinks", xmasduck: "Christmas duck", gift1: "Gift", gift2: "Gift", gift3: "Gift", gift4: "Gift", xmasfir: "Christmas tree, our own, 1 tile", xmasfir2: "Christmas tree, our own, 2 tiles", xmasfir4: "Christmas tree, our own, 4 tiles", gift5: "Present, red", gift6: "Present, lime", gift7: "Present, purple", gift8: "Present, orange", gift9: "Present, yellow", gift10: "Present, pink", gift11: "Present, silver", trophy: "Old trophy cabinet", rarecase: "Rare in a glass case", mark_scuff: "Floor scuffs", mark_tile: "Lifted floor tile", rope: "Rope barrier", pillartall: "Tall pillar", smtable: "Small round table", ballpost: "Ball post", ero_stone: "Stone planter", ero_walnut: "Walnut planter", ero_evergreen: "Evergreen planter", ero_flower: "Flower planter", sofa: "Sofa", chair: "Chair", table: "Table", lamp: "Floor lamp", plant: "Plant", ero: "Planter", pillar: "Pillar", statue: "Statue", fountain: "Fountain", shelf: "Bookcase", cabinet: "Cabinet", water: "Water cooler" };
 const THUMB_FOR = { sign: "door", door: "door", lamp: "sconce", lift: "lift", medal: "medal", rug: "rug", tele: "tele" };
 function thumbFor(hit) {
@@ -1947,6 +1995,21 @@ function select(hit) {
         if (hit.o.style !== "small") { const f = document.createElement("label"); f.className = "field"; const n = document.createElement("span"); n.className = "f-label"; n.textContent = "Cut corners"; const c = document.createElement("span"); c.className = "f-ctl"; const t = document.createElement("input"); t.type = "checkbox"; t.checked = !!hit.o.chamfer; t.addEventListener("change", () => { snapshot(); if (t.checked) hit.o.chamfer = true; else delete hit.o.chamfer; changed(); }); c.appendChild(t); f.append(n, c); box.appendChild(f); } }
     else if (hit.type === "lift") say("Drag it along a back wall to move it. In the hallway, double-click a lift to open it, then walk in.");
     else if (hit.type === "entrance") say("Where Habbos arrive, and where they leave by walking back in. Drag it along a wall to move it.");
+    else if (hit.type === "tunnel") {
+        say("A tunnel Habbos can walk into. Walk to its back and you come out of the tunnel it leads to.");
+        const q = hit.o, f = document.createElement("label"); f.className = "field"; const n = document.createElement("span"); n.className = "f-label"; n.textContent = "Leads to";
+        const c = document.createElement("span"); c.className = "f-ctl"; const sel = document.createElement("select"); sel.setAttribute("aria-label", "Where the tunnel leads");
+        const opt = (v, t) => { const o = document.createElement("option"); o.value = v; o.textContent = t; sel.appendChild(o); };
+        opt("", "Nowhere (it's a dead end)");
+        (map.tunnels || []).forEach((t, i) => { if (t !== q) opt(t.id, "The tunnel on " + ((byId(t.level) || {}).name || "?") + ", " + (t.axis === "x" ? "back" : "side") + " wall at " + t.at); });
+        sel.value = q.to || "";
+        sel.addEventListener("change", () => { snapshot(); const list = map.tunnels || [];
+            /* a link goes both ways: whatever either end was linked to before lets go */
+            for (const t of list) if (t.to === q.id) delete t.to; if (q.to) { const was = list.find(t => t.id === q.to); if (was) delete was.to; }
+            if (sel.value) { const to = list.find(t => t.id === sel.value); if (to) { for (const t of list) if (t.to === to.id) delete t.to; q.to = to.id; to.to = q.id; } } else delete q.to;
+            changed(); select(hit); });
+        c.appendChild(sel); f.append(n, c); box.appendChild(f);
+    }
     else if (hit.type === "wall") wallPanel(box, hit);
     else if (hit.type === "wallitem" && hit.o.k === "i_window") {
         say("Window. Drag it along the wall. Drag a square to change its width, top or bottom.");
@@ -2092,6 +2155,7 @@ function mazePicker(box, door) {
 }
 function deleteSelected() {
     const s = selected; if (!s) return;
+    if (s.type === "tunnel") { const list = map.tunnels || [], i = list.indexOf(s.o); if (i < 0) return; snapshot(); for (const t of list) if (t.to === s.o.id) delete t.to; list.splice(i, 1); if (!list.length) delete map.tunnels; select(null); buildLevels(); changed(); return; }
     if (s.type === "sign") { flash(s.o.kind ? "A staircase always has its sign." : "A door always has its sign. Make the door spare to take it away."); return; }
     const lists = { garland: s.l.garlands, festoon: s.l.festoons, lift: map.lifts, wallitem: s.l.wallItems, steps: s.l.steps, prop: s.l.props, tele: s.l.teles, door: s.l.doors, lamp: s.l.lamps, medal: s.l.medals, rug: s.l.rugs, stair: map.stairs };
     const list = lists[s.type], i = list ? list.indexOf(s.o) : -1;
@@ -2329,7 +2393,7 @@ function drawRubbed() {
     if (!rubbed.length) return;
     if (rubbedSince !== null && version !== rubbedSince) {
         const [x0, x1, y0, y1] = visibleTiles(); let ready = true;
-        for (let ty = y0; ty <= y1 && ready; ty++) for (let tx = x0; tx <= x1; tx++) { const t = tiles.get(tx + "," + ty); if (!freshTile(t)) { ready = false; break; } }
+        for (let ty = y0; ty <= y1 && ready; ty++) for (let tx = x0; tx <= x1; tx++) { if (!shownFresh(tx, ty)) { ready = false; break; } }
         if (ready) { rubbed = []; rubbedSince = null; return; }
     }
     for (const q of rubbed) quad(q.X, q.Y, q.X + 1, q.Y + 1, tileZ(q.l, q.X, q.Y), "rgba(168,128,84,.92)", null);
@@ -2471,7 +2535,7 @@ canvas.addEventListener("pointermove", e => {
     if (drag && drag.kind === "rect" && brushTool(tool) && e.ctrlKey) return;
     if (drag && drag.kind === "rect") { const b = tool === "floor" ? paintTile(px, py) : tileIn(level, px, py); if (!hiddenTile(b)) drag.rect = snapRect(drag.a, b); paint(); return; }      // over a floor X hides: the rectangle stays as it was
     if (level && tool !== "pan" && tool !== "walk" && tool !== "edges") {
-        const wallTool = ["entrance", "theatre", "door", "sconce", "globelight", "lift", "stair", "turn", "side", "sideturn", "halfwall", "nowall", "addwall", "swag", "festoon", "garland", "garland2"].includes(tool) || tool === "del" || isWallItemTool(tool);
+        const wallTool = ["entrance", "theatre", "tunnel", "door", "sconce", "globelight", "lift", "stair", "turn", "side", "sideturn", "halfwall", "nowall", "addwall", "swag", "festoon", "garland", "garland2"].includes(tool) || tool === "del" || isWallItemTool(tool);
         const [fx, fy] = tileIn(level, px, py);
         if (isWallItemTool(tool)) hoverPx = [px, py];
         const onFloor = hasFloor(level, Math.floor(fx), Math.floor(fy));
@@ -2622,7 +2686,7 @@ function solid(l) {
 let stairMemo = null;
 const nodeZ = (l, x, y) => l.tiles ? l.tiles.get(x + "," + y) : tileZ(l, x, y) + stepLift(l, x, y);
 function stairLevels() {
-    const memoKey = JSON.stringify([map.stairs, map.lifts, map.entrance, map.levels.map(l => [(l.doors || []).map(d => [d.axis, d.at, d.line, !!d.spare, !!d.to]), (l.wallItems || []).filter(q => q.k === "i_desk").map(q => [q.axis, q.at, q.line])])]);
+    const memoKey = JSON.stringify([map.stairs, map.lifts, map.entrance, map.tunnels, map.levels.map(l => [(l.doors || []).map(d => [d.axis, d.at, d.line, !!d.spare, !!d.to]), (l.wallItems || []).filter(q => q.k === "i_desk").map(q => [q.axis, q.at, q.line])])]);
     if (stairMemo && stairMemo.cs === cellSets && stairMemo.stairs === map.stairs && stairMemo.json === memoKey) return stairMemo;
     const out = [], links = new Map(), slots = new Map(), byName = new Map();
     const link = (a, ax, ay, c, cx, cy) => {
@@ -2678,6 +2742,14 @@ function stairLevels() {
         for (const t of entranceTiles(e)) for (let d = 1; d <= 2; d++) { list.push(e.axis === "x" ? [t, e.line - d] : [e.line - d, t]); if (d === 1) joins.push(e.axis === "x" ? [t, e.line - 1, t, e.line] : [e.line - 1, t, e.line, t]); }
         addRoom(S, low, list, joins);
     }
+    /* the inside of each tunnel, three tiles across and two deep, walked onto from the floor in front (10 Nov 2026) */
+    (map.tunnels || []).forEach((q, i) => {
+        const low = byId(q.level); if (!low) return;
+        const S = { id: "TN" + i, name: "Tunnel", k: low.k, tiles: new Map(), stair: { low, up: null, tunnel: q } }, list = [], joins = [];
+        for (const t of entranceTiles(q)) for (let d = 1; d <= 2; d++) { list.push(q.axis === "x" ? [t, q.line - d] : [q.line - d, t]); if (d === 1) joins.push(q.axis === "x" ? [t, q.line - 1, t, q.line] : [q.line - 1, t, q.line, t]); }
+        /* only where there's floor in front to come in from */
+        if (joins.some(j => hasFloor(low, j[2], j[3]))) addRoom(S, low, list, joins.filter(j => hasFloor(low, j[2], j[3])));
+    });
     /* behind every maze's door: two tiles wide, deep enough for the wall beside it to hide you, the first of its room's floor. No slots: the floor behind a wall isn't taken */
     for (const low of map.levels) (low.doors || []).forEach((d, i) => {
         if (d.spare && !d.to) return;
@@ -2933,6 +3005,13 @@ setInterval(() => {
     }
     const room = walker.l.stair;
     if (!walker.busy && !$("liftPanel").hidden && (walker.walking || !room || !room.lift)) { hideLiftPanel(); walker.asked = false; }
+    /* in a tunnel: at its back, out of the one it leads to; walked into but not to the back, on to the back (as the entrance does) */
+    if (room && room.tunnel && !walker.walking && !walker.busy) {
+        const q = room.tunnel, to = q.to && (map.tunnels || []).find(t => t.id === q.to), deep = (q.axis === "x" ? walker.y : walker.x) === q.line - 2;
+        if (to && deep && !walker.arriving) { throughTunnel(to); return; }
+        if (to && !deep && !walker.arriving && !walker.leaving) { walker.leaving = true; const m = entranceTiles(q)[1], t = q.axis === "x" ? [m, q.line - 2] : [q.line - 2, m], p = graphFrom(walker.l, walker.x, walker.y, [walker.l, t[0], t[1]]); if (p) followRoute(p, null, () => { walker.leaving = false; }); }
+        return;
+    }
     if (!room || (!room.lift && !room.entrance)) { walker.arriving = false; walker.asked = false; walker.leaving = false; return; }
     if (walker.walking || walker.busy) return;
     if (room.lift && !walker.asked && !walker.arriving) { walker.asked = true; showLiftPanel(room.lift); }
@@ -3223,6 +3302,20 @@ async function rideTo(from, to) {
     if (!alive()) return;
     me.busy = false;
     const path = graphFrom(S, x, y, [l, x, to.y]); if (path) followRoute(path, null, null);
+}
+/* through a tunnel: a quick fade, and you're at the back of the one it leads to, walking out of it onto its floor (10 Nov 2026) */
+function throughTunnel(to) {
+    const list = stairLevels().list, S = list.find(r => r.stair && r.stair.tunnel === to), low = byId(to.level); if (!S || !low) return;
+    const m = entranceTiles(to)[1], ix = to.axis === "x" ? m : to.line - 2, iy = to.axis === "x" ? to.line - 2 : m, fx = to.axis === "x" ? m : to.line, fy = to.axis === "x" ? to.line : m;
+    walker.busy = true; walker.leaving = false;
+    canvas.style.transition = "opacity .25s"; canvas.style.opacity = "0";
+    setTimeout(() => {
+        walker.l = S; walker.x = ix; walker.y = iy; walker.z = nodeZ(S, ix, iy); walker.pts = []; walker.walking = false; walker.st = null; walker.dir = to.axis === "x" ? 2 : 4; walker.arriving = true;
+        if (level !== low) { level = low; buildLevels(); }
+        const a = P(ix + .5, iy + .5, walker.z + 40); cam.x = a[0]; cam.y = a[1]; clampCam(); paint();
+        canvas.style.opacity = "1";
+        setTimeout(() => { canvas.style.transition = ""; walker.busy = false; const p = graphFrom(S, ix, iy, [low, fx, fy]); if (p) followRoute(p, null, () => { walker.arriving = false; }); else walker.arriving = false; }, 260);
+    }, 260);
 }
 function leaveHallway() {
     if (!walker || walker.busy) return; walker.busy = true;

@@ -31,7 +31,9 @@ const TEST_MAP = !!process.env.HALLWAY_MAP;
 if (TEST_MAP && !fs.existsSync(MAP)) { console.error("HALLWAY_MAP: there's no file at " + MAP); process.exit(1); }
 const HISTORY = TEST_MAP ? path.join(path.dirname(MAP), ".history-" + path.basename(MAP, ".json")) : path.join(__dirname, ".history");
 const KEEP = 40, TILE = 512, CACHE_MAX = 900;
-const THREADS = Math.max(2, Math.min(6, os.cpus().length - 1));
+/* (10 Nov 2026, editor speed) up to 12 threads, leaving a few cores for the page and everything else. The page can only ask for 6 squares at
+   once, so it says which it wants next (/api/warm) and the other threads draw those ahead */
+const THREADS = Math.max(2, Math.min(12, os.cpus().length - 4));
 const TYPES = { ".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8", ".json": "application/json; charset=utf-8", ".png": "image/png", ".ttf": "font/ttf", ".woff2": "font/woff2" };
 
 /* his globe lamp picture: when it's saved, every picture of the map has to be redrawn */
@@ -89,11 +91,18 @@ function spawn() {
     pool.push(t);
 }
 for (let i = 0; i < THREADS; i++) spawn();
+/* squares only drawn ahead never take the last 6 threads: those stay free for what the page asks for, so asking never waits behind them */
+const aheadOnly = j => !!j.entry && !j.entry.waiters.length, AHEAD_MAX = Math.max(1, THREADS - 6);
 function pump() {
     for (const t of pool) {
         if (t.job) continue;
-        let job;
-        while ((job = queue.shift()) && job.gone()) { /* nobody is waiting for it now */ }
+        let job = null, ahead = pool.filter(p => p.job && aheadOnly(p.job)).length;
+        for (let i = 0; i < queue.length; i++) {
+            const q = queue[i];
+            if (q.gone()) { queue.splice(i--, 1); if (q.drop) q.drop(); continue; }     // nobody is waiting for it now
+            if (aheadOnly(q) && ahead >= AHEAD_MAX) continue;
+            job = q; queue.splice(i, 1); break;
+        }
         if (!job) return;
         const ver = versions.get(job.v);
         if (!ver) { job.done(null, "That map has gone."); continue; }
@@ -112,11 +121,31 @@ function draw(res, key, rect, v) {
     if (key && cache.has(key)) return send(cache.get(key));
     let closed = false;
     res.on("close", () => { closed = true; });
-    queue.push({ id: nextId++, v, ...rect, gone: () => closed, done: (buf, err) => {
-        if (buf && key) { cache.set(key, buf); while (cache.size > CACHE_MAX) cache.delete(cache.keys().next().value); }
-        send(buf, err);
-    } });
+    /* already being drawn, or waiting to be (drawn ahead): wait for that one, and if it's still waiting, it goes first */
+    const same = key && drawing.get(key);
+    if (same) { same.waiters.push({ send, gone: () => closed }); const at = queue.indexOf(same.job); if (at > 0) { queue.splice(at, 1); queue.unshift(same.job); } return; }
+    queueJob(key, rect, v, { send, gone: () => closed });
     pump();
+}
+/* one drawing, for whoever's waiting for it; a square drawn ahead has nobody yet, and is wanted as long as its map is the newest asked ahead for */
+const drawing = new Map();      // key -> { job, waiters }
+let warmV = null;
+function queueJob(key, rect, v, waiter) {
+    const entry = { waiters: waiter ? [waiter] : [], ahead: !waiter };
+    const job = { id: nextId++, v, ...rect,
+        drop: () => { if (key && drawing.get(key) === entry) drawing.delete(key); },
+        gone: () => entry.waiters.length ? entry.waiters.every(w => w.gone()) : !(entry.ahead && v === warmV),
+        done: (buf, err) => {
+            if (key) drawing.delete(key);
+            if (buf && key) { cache.set(key, buf); while (cache.size > CACHE_MAX) cache.delete(cache.keys().next().value); }
+            for (const w of entry.waiters) w.send(buf, err);
+        } };
+    entry.job = job; job.entry = entry;
+    if (key) drawing.set(key, entry);
+    /* asked for: ahead of everything only drawn ahead */
+    const firstAhead = waiter ? queue.findIndex(q => q.entry && !q.entry.waiters.length) : -1;
+    if (firstAhead >= 0) queue.splice(firstAhead, 0, job); else queue.push(job);
+    return job;
 }
 
 function body(req) { return new Promise((ok, no) => { const c = []; req.on("data", d => c.push(d)); req.on("end", () => ok(Buffer.concat(c).toString("utf8"))); req.on("error", no); }); }
@@ -195,6 +224,20 @@ http.createServer(async (req, res) => {
             }
             res.writeHead(200, { "Content-Type": "image/png", "Cache-Control": "no-store", "X-Anchor": cx + "," + cy });
             return res.end(encodePng(bw, bh, b.d));
+        }
+        /* the squares the page will ask for next, drawn ahead on the threads it can't reach (it only asks 6 at a time). A newer map's list
+           replaces an older one's: the older squares still waiting are let go */
+        if (url.pathname === "/api/warm" && req.method === "POST") {
+            const o = JSON.parse(await body(req)), v = String(o.v || "");
+            if (!versions.has(v) || !Array.isArray(o.tiles)) return json(res, 404, { error: "No such map" });
+            warmV = v; let n = 0;
+            for (const t of o.tiles.slice(0, 64)) {
+                const tx = Number(t[0]), ty = Number(t[1]), w = String(t[2] || ""), m = w === "+x" || W.LIGHTS[w.replace("+x", "")] ? w : undefined; if (!Number.isInteger(tx) || !Number.isInteger(ty)) continue;
+                const key = `${v}|${tx}|${ty}|${m || ""}`; if (cache.has(key) || drawing.has(key)) continue;
+                queueJob(key, { x: tx * TILE, y: ty * TILE, w: TILE, h: TILE, light: m }, v, null); n++;
+            }
+            pump();
+            return json(res, 200, { queued: n, threads: THREADS });
         }
         if (url.pathname === "/api/tile") {
             const v = url.searchParams.get("v"), tx = Number(url.searchParams.get("tx")), ty = Number(url.searchParams.get("ty"));
