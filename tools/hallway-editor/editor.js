@@ -869,7 +869,7 @@ function drawLiveSign() {
     if (!live) return;
     if (live.ending && live.finalV && version === live.finalV) {
         const [x0, x1, y0, y1] = visibleTiles(); let ready = true;
-        for (let ty = y0; ty <= y1 && ready; ty++) for (let tx = x0; tx <= x1; tx++) { const t = tiles.get(tx + "," + ty); if (!t || t.v !== version) { ready = false; break; } }
+        for (let ty = y0; ty <= y1 && ready; ty++) for (let tx = x0; tx <= x1; tx++) { const t = tiles.get(tx + "," + ty); if (!freshTile(t)) { ready = false; break; } }
         if (ready) { live = null; return; }
     }
     liveFetch();
@@ -936,7 +936,7 @@ setInterval(() => { if (map && tileWaits.size && !document.hidden) paint(); }, 2
 function nextTiles() {
     /* what's on screen first, then the rest of the map, so panning finds it ready */
     const [x0, x1, y0, y1] = visibleTiles(), out = [], seen = new Set();
-    const add = (tx, ty, near) => { const k = tx + "," + ty; if (seen.has(k)) return; seen.add(k); const t = tiles.get(k); if ((t && t.v === version) || inflight.has(k) || tileWaiting(k)) return; out.push({ tx, ty, k, d: near ? -1e6 + Math.hypot(tx * TILE - cam.x, ty * TILE - cam.y) : Math.hypot(tx * TILE - cam.x, ty * TILE - cam.y) }); };
+    const add = (tx, ty, near) => { const k = tx + "," + ty; if (seen.has(k)) return; seen.add(k); const t = tiles.get(k); if (freshTile(t) || inflight.has(k) || tileWaiting(k)) return; out.push({ tx, ty, k, d: near ? -1e6 + Math.hypot(tx * TILE - cam.x, ty * TILE - cam.y) : Math.hypot(tx * TILE - cam.x, ty * TILE - cam.y) }); };
     for (let ty = y0; ty <= y1; ty++) for (let tx = x0; tx <= x1; tx++) add(tx, ty, true);
     if (moodNow() && window.HALLWAY_PLAY) return [];                     // a time of day has its own pictures, so the plain ones would be fetched for nothing
     if (moodNow()) return out.sort((p, q) => p.d - q.d);                 // walking through the moods: only what's on screen, so they get drawn first
@@ -951,7 +951,7 @@ function firstDrawBar() {
     if (firstDrawn || window.HALLWAY_PLAY || !map || !map.rect) return;
     /* the squares on screen: with a time of day on, those are all it draws */
     const [x0, x1, y0, y1] = visibleTiles(), r = map.rect; let all = 0, done = 0;
-    for (let ty = Math.max(y0, Math.floor(r.y / TILE)); ty <= Math.min(y1, Math.floor((r.y + r.h) / TILE)); ty++) for (let tx = Math.max(x0, Math.floor(r.x / TILE)); tx <= Math.min(x1, Math.floor((r.x + r.w) / TILE)); tx++) { all++; const t = tiles.get(tx + "," + ty); if (t && t.v === version) done++; }
+    for (let ty = Math.max(y0, Math.floor(r.y / TILE)); ty <= Math.min(y1, Math.floor((r.y + r.h) / TILE)); ty++) for (let tx = Math.max(x0, Math.floor(r.x / TILE)); tx <= Math.min(x1, Math.floor((r.x + r.w) / TILE)); tx++) { all++; const t = tiles.get(tx + "," + ty); if (freshTile(t)) done++; }
     if (!loadBar) { loadBar = document.createElement("div"); loadBar.className = "first-draw"; loadBar.setAttribute("role", "progressbar"); loadBar.setAttribute("aria-label", "Drawing the map"); loadBar.innerHTML = '<span class="fd-text">Drawing the map</span><span class="fd-track"><span class="fd-fill"></span></span><span class="fd-num"></span>'; $("stage").appendChild(loadBar); }
     if (!version) { all = Math.max(1, all); done = 0; }                       // still starting up: shown, at nothing yet
     const pc = all ? Math.round(100 * done / all) : 100;
@@ -968,19 +968,23 @@ function pump() {
     }
     setStatus(want.length || inflight.size ? `Drawing, ${want.length + inflight.size - Math.min(want.length, CONCURRENT)} squares to go` : "Up to date");
 }
+/* a square is current only if it was drawn for this version of the map and for the Christmas setting now (10 Nov 2026, his: banister
+   garlands partly showing with Christmas off: a square still being drawn when Christmas was switched off landed afterwards and was kept) */
+const xmasNow = () => !!window.hallwayXmas;
+const freshTile = t => !!t && t.v === version && t.x === xmasNow();
 async function loadTile(n) {
-    const v = version, ctl = new AbortController();
+    const v = version, xm = xmasNow(), ctl = new AbortController();
     inflight.set(n.k, ctl);
     try {
-        const r = await fetch(`/api/tile?v=${v}&tx=${n.tx}&ty=${n.ty}${window.hallwayXmas ? "&m=%2Bx" : ""}`, { signal: ctl.signal });
+        const r = await fetch(`/api/tile?v=${v}&tx=${n.tx}&ty=${n.ty}${xm ? "&m=%2Bx" : ""}`, { signal: ctl.signal });
         /* the server's been restarted and has forgotten this version of the map: tell it again, once, and carry on */
         if (r.status === 404) { if (window.HALLWAY_PLAY) { tileFailed(n.k); return; } if (v === version) { version = null; setTimeout(newVersion, 400); } return; }
         if (!r.ok) throw new Error("tile " + r.status);
         const img = await createImageBitmap(await r.blob());
         tileWaits.delete(n.k);
-        if (v === version) {
+        if (v === version && xm === xmasNow()) {
             const old = tiles.get(n.k); if (old && old.img.close) old.img.close();
-            tiles.set(n.k, { img, v }); tileGen++;
+            tiles.set(n.k, { img, v, x: xm }); tileGen++;
             firstDrawBar(); paint();
         } else if (img.close) img.close();
     } catch (e) {
@@ -2325,7 +2329,7 @@ function drawRubbed() {
     if (!rubbed.length) return;
     if (rubbedSince !== null && version !== rubbedSince) {
         const [x0, x1, y0, y1] = visibleTiles(); let ready = true;
-        for (let ty = y0; ty <= y1 && ready; ty++) for (let tx = x0; tx <= x1; tx++) { const t = tiles.get(tx + "," + ty); if (!t || t.v !== version) { ready = false; break; } }
+        for (let ty = y0; ty <= y1 && ready; ty++) for (let tx = x0; tx <= x1; tx++) { const t = tiles.get(tx + "," + ty); if (!freshTile(t)) { ready = false; break; } }
         if (ready) { rubbed = []; rubbedSince = null; return; }
     }
     for (const q of rubbed) quad(q.X, q.Y, q.X + 1, q.Y + 1, tileZ(q.l, q.X, q.Y), "rgba(168,128,84,.92)", null);
