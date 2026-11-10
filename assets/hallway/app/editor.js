@@ -122,7 +122,11 @@ const heightAt = (l, x, y) => ((l.rise && l.rise[cellKey(x, y)]) || 0) + ((l.flo
 /* the height a cell's walls stand at: its rise alone, not the lift that raises only its floor (render/hw3.js patchesByHeight) */
 const wallHeightAt = (l, x, y) => (l.rise && l.rise[cellKey(x, y)]) || 0;
 const tileZ = (l, x, y) => levelZ(l) + heightAt(l, x, y) + (landingOf(l, x, y) ? LANDING : 0);
-const allHeights = l => { if (!l.rise) return [0]; return [...new Set([0, ...Object.values(l.rise)])].sort((a, c) => c - a); };
+/* every height a floor stands at: its rise and its floor-only lift together, as heightAt has them (10 Nov 2026: lifted floor was missing,
+   so it was picked through and X couldn't cut at it) */
+const allHeights = l => { if (!l.rise && !l.floorLift) return [0]; const R = l.rise || {}, F = l.floorLift || {}, s = new Set([0]); for (const c of l.cells) s.add((R[c] || 0) + (F[c] || 0)); return [...s].sort((a, c) => c - a); };
+/* tileIn's answer for a floor hidden by X: no tile at all */
+const hiddenTile = t => t[0] <= -1e5;
 const heightsOf = l => { const all = allHeights(l); return seeCut !== null && l === level ? all.filter(h => h <= seeCut) : all; };
 const seeHidden = (l, h) => seeCut !== null && l === level && h > seeCut;
 /* the older form: whole levels of 32px */
@@ -591,7 +595,7 @@ function drawEdgeGhost() {
 let heightBrush = 16, ctrlLast = null, ctrlSpare = 0, heightHold = null;
 const brushTool = t => t === "height" || t === "floor" || t === "floorlift", brushes = { height: 16, floor: 0, floorlift: 8 };
 /* with the Paint floor tool, a tile off the floor is judged on the height being painted, so the ghost stays under the mouse */
-const paintTile = (px, py) => { const a = tileIn(level, px, py); return hasFloor(level, Math.floor(a[0]), Math.floor(a[1])) ? a : pxToTile(px, py, levelZ(level) + heightBrush); };
+const paintTile = (px, py) => { const a = tileIn(level, px, py); if (hiddenTile(a)) return a; return hasFloor(level, Math.floor(a[0]), Math.floor(a[1])) ? a : pxToTile(px, py, levelZ(level) + heightBrush); };
 function setBrush(v) {
     heightBrush = Math.max(-MAX_RISE, Math.min(MAX_RISE, Math.round(v / STEP_R) * STEP_R));
     if (brushTool(tool)) brushes[tool] = heightBrush;
@@ -891,7 +895,9 @@ function setCut(v) {
     if (v !== null) flash("See-through: floors above " + (v > 0 ? "+" : "") + v + " are hidden. Scroll to change, let go of X to bring them back.");
 }
 function seeThroughDown() {
-    if (tool === "walk" || !level || !level.rise || !lastMouse) return;
+    if (tool === "walk" || !level) return;
+    if (!lastMouse) { flash("Point at a floor, then hold X to see through what's above it."); return; }
+    if (allHeights(level).length < 2) { flash("Nothing to see through: " + level.name + " is all one height."); return; }
     const f = tileIn(level, lastMouse[0], lastMouse[1]), h = hasFloor(level, Math.floor(f[0]), Math.floor(f[1])) ? heightAt(level, Math.floor(f[0]), Math.floor(f[1])) : allHeights(level)[0], all = allHeights(level), below = all.filter(q => q < h);
     setCut(below.length ? below[0] : h);
 }
@@ -2403,7 +2409,10 @@ canvas.addEventListener("pointerdown", e => {
         drag = { kind: "laysteps", edge, st: { axis: edge.axis, line: edge.line, dir: edge.dir, a: edge.t, b: edge.t + 1 } }; paint(); return;
     }
     if (tool === "floor" || tool === "erase" || tool === "rug" || tool === "smallfloor" || tool === "height" || tool === "floorlift") {
-        const a = tool === "floor" ? paintTile(px, py) : tileIn(level, px, py), zr = hasFloor(level, Math.floor(a[0]), Math.floor(a[1])) ? tileZ(level, Math.floor(a[0]), Math.floor(a[1])) : levelZ(level) + (tool === "floor" ? heightBrush : 0);
+        const a = tool === "floor" ? paintTile(px, py) : tileIn(level, px, py);
+        /* a floor X is hiding: nothing to start on (10 Nov 2026: the drag ran out to a million tiles away and the page locked up) */
+        if (hiddenTile(a)) { flash("That floor is hidden while X is held. Let go of X, or scroll to show it."); return; }
+        const zr = hasFloor(level, Math.floor(a[0]), Math.floor(a[1])) ? tileZ(level, Math.floor(a[0]), Math.floor(a[1])) : levelZ(level) + (tool === "floor" ? heightBrush : 0);
         drag = { kind: "rect", a, z: zr, rect: snapRect(a, a) }; paint(); return;
     }
     if (Parts.ROWS[tool]) {
@@ -2456,7 +2465,7 @@ canvas.addEventListener("pointermove", e => {
         drag.st.a = Math.min(drag.edge.t, t); drag.st.b = Math.max(drag.edge.t, t) + 1; paint(); return;
     }
     if (drag && drag.kind === "rect" && brushTool(tool) && e.ctrlKey) return;
-    if (drag && drag.kind === "rect") { drag.rect = snapRect(drag.a, tool === "floor" ? paintTile(px, py) : tileIn(level, px, py)); paint(); return; }
+    if (drag && drag.kind === "rect") { const b = tool === "floor" ? paintTile(px, py) : tileIn(level, px, py); if (!hiddenTile(b)) drag.rect = snapRect(drag.a, b); paint(); return; }      // over a floor X hides: the rectangle stays as it was
     if (level && tool !== "pan" && tool !== "walk" && tool !== "edges") {
         const wallTool = ["entrance", "theatre", "door", "sconce", "globelight", "lift", "stair", "turn", "side", "sideturn", "halfwall", "nowall", "addwall", "swag", "festoon", "garland", "garland2"].includes(tool) || tool === "del" || isWallItemTool(tool);
         const [fx, fy] = tileIn(level, px, py);
@@ -2532,7 +2541,15 @@ canvas.addEventListener("pointerup", e => {
             changed(); return;
         }
         /* laid, and that is all: it used to fall through into the floor loop below, which took the floor away (8 Nov) */
-        if (tool === "smallfloor") { if (r.x1 - r.x0 >= 1 && r.y1 - r.y0 >= 1) { level.rugs = [...(level.rugs || []), { ...r, style: "small" }]; changed(); return; } undoStack.pop(); paint(); return; }
+        /* only on the floor at the height the drag began on, never over a higher or lower one beside it (10 Nov 2026, his): row runs of
+           that floor inside the rectangle, joined downwards where they line up */
+        if (tool === "smallfloor") {
+            const on = (x, y) => hasFloor(level, x, y) && tileZ(level, x, y) === d.z && !seeHidden(level, heightAt(level, x, y)), pieces = [];
+            for (let y = r.y0; y < r.y1; y++) { let s = -1; for (let x = r.x0; x <= r.x1; x++) { if (x < r.x1 && on(x, y)) { if (s < 0) s = x; continue; } if (s < 0) continue;
+                const up = pieces.find(q => q.x0 === s && q.x1 === x && q.y1 === y); if (up) up.y1 = y + 1; else pieces.push({ x0: s, x1: x, y0: y, y1: y + 1, style: "small" }); s = -1; } }
+            if (!pieces.length) { undoStack.pop(); flash("The small squares go on the floor you start the drag on."); paint(); return; }
+            level.rugs = [...(level.rugs || []), ...pieces]; changed(); return;
+        }
         if (tool === "rug") { if (r.x1 - r.x0 >= 2 && r.y1 - r.y0 >= 2) level.rugs = [...(level.rugs || []), { ...r, alongY: r.y1 - r.y0 > r.x1 - r.x0 }]; else { undoStack.pop(); flash("Rugs need to be at least 2 tiles each way."); paint(); return; } }
         else for (let x = r.x0; x < r.x1; x += 2) for (let y = r.y0; y < r.y1; y += 2) {
             const k = (x / 2) + "," + (y / 2);
@@ -3578,7 +3595,7 @@ function buildLevels() {
     colourRow(fc, "Own colour", () => level.colour || null, v => { const l = level; if (v) l.colour = v; else delete l.colour; $("way").disabled = !!l.colour; }, "#7a2230", "None, using the list");
     $("delLevel").disabled = level.k === 0;
 }
-function setFloor(l) { if (l === level) return; level = l; hover = null; buildLevels(); paint(); flash("Working on " + l.name); }
+function setFloor(l) { if (l === level) return; setCut(null); level = l; hover = null;      /* X's cut was the old floor's heights */ buildLevels(); paint(); flash("Working on " + l.name); }
 function stepFloor(d) {
     const list = [...map.levels].sort((a, c) => a.k - c.k), i = list.indexOf(level), n = list[i + d];
     if (n) setFloor(n);
