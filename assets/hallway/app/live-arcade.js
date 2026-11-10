@@ -51,5 +51,66 @@
         if (Math.round(w.x) === h.free[0] && Math.round(w.y) === h.free[1] && !w.walking) { play(h.p); return true; }
         return !!LIVE.walkTo(LIVE.floor, h.free[0], h.free[1], () => play(h.p));
     });
+    /* ---------- ATTRACT MODE (10 Nov 2026, his pick of the mock-ups): while nobody plays, each cabinet's little screen runs a loop of its
+       game, 8 frames, one every 300ms. Fallin' Furni: furni falling past the sky onto a strip of floor; Pura Panic: modules dropping onto a
+       stack; Guess the Maze: a question mark that blinks; Odd One Out: four squares, the odd one flashing. The screen is found in the cabinet's
+       own picture (its screen colour, and everything inside its black edge), mirrored when it's turned; furniture in front still hides it.
+       Each cabinet starts at its own place in the loop, so a row of them doesn't flicker in step. */
+    const SCR = { ff: "244935", pura: "43323a", guess: "43463c", odd: "434b43" }, FRAME_MS = 300, NF = 8, reduced = matchMedia("(prefers-reduced-motion: reduce)");
+    const hx = h => [parseInt(h.slice(0, 2), 16), parseInt(h.slice(2, 4), 16), parseInt(h.slice(4, 6), 16)];
+    const LOOPS = {
+        ff: (u, v, f) => { if (v >= 8) return "e8c890"; for (const [cx, off] of [[1, 0], [5, 4]]) { const cy = (f + off) % 9 - 1; if ((u === cx || u === cx + 1) && v === cy) return "f4b300"; if ((u === cx || u === cx + 1) && v === cy + 1) return "c0392b"; } return v < 2 ? "a8dcf8" : "7cc4ec"; },
+        pura: (u, v, f) => { const C = ["f2c21b", "3b7fe0", "52b34a", "e8452c"]; for (const [x, y, c] of [[0, 9, 0], [1, 9, 0], [2, 9, 1], [3, 9, 1], [4, 9, 2], [5, 9, 3], [6, 9, 3], [0, 8, 2], [1, 8, 1], [5, 8, 0], [6, 8, 0]]) if (u === x && v === y) return C[c];
+            const fy = Math.min(7, f), fx = 2 + (f > 4 ? 1 : 0); if ((u === fx || u === fx + 1) && v === fy) return C[(f >> 2) % 4]; return (u + v) % 2 ? "5a5f68" : "50555e"; },
+        guess: (u, v, f) => { const Q = ["#####", "....#", "..###", "..#..", ".....", "..#.."], r = Q[v - 2], ch = r && r[u - 1]; if (f % 4 < 3 && ch === "#") return "ffe8a8"; return v % 2 ? "3a2a1c" : "43301e"; },
+        odd: (u, v, f) => { const sq = [[1, 2], [4, 2], [1, 6], [4, 6]]; for (let i = 0; i < 4; i++) { const [x, y] = sq[i]; if (u >= x && u <= x + 1 && v >= y && v <= y + 1) return i === 2 && f % 2 ? "e87840" : "78bed6"; } return "2a3a40"; }
+    };
+    const screens = {};
+    /* a cabinet's screen, from its picture: { w, pts: [{ x, y, u, v }] }, or null while the picture loads */
+    function screenOf(id) {
+        if (id in screens) return screens[id]; screens[id] = null;
+        const im = new Image(); im.onload = () => {
+            const c = document.createElement("canvas"); c.width = im.width; c.height = im.height; const g = c.getContext("2d", { willReadFrequently: true }); g.drawImage(im, 0, 0);
+            const d = g.getImageData(0, 0, im.width, im.height).data, W = im.width, at = (x, y) => (y * W + x) * 4, want = hx(SCR[id]);
+            let seed = null; for (let y = 0; y < im.height && !seed; y++) for (let x = 0; x < W; x++) { const q = at(x, y); if (d[q + 3] > 200 && d[q] === want[0] && d[q + 1] === want[1] && d[q + 2] === want[2]) { seed = [x, y]; break; } }
+            if (!seed) return;
+            const ok = (x, y) => { if (x < 14 || x > 24 || y < 14 || y > 27) return false; const q = at(x, y); return d[q + 3] > 200 && !(d[q] < 20 && d[q + 1] < 20 && d[q + 2] < 20); };
+            const seen = new Set([seed + ""]), st = [seed]; while (st.length) { const [x, y] = st.pop(); for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { const k = [x + dx, y + dy]; if (!seen.has(k + "") && ok(k[0], k[1])) { seen.add(k + ""); st.push(k); } } }
+            const pts = [...seen].map(k => k.split(",").map(Number)), top = {}; for (const [x, y] of pts) top[x] = Math.min(top[x] === undefined ? 99 : top[x], y);
+            const x0 = Math.min(...pts.map(p => p[0])); screens[id] = { w: W, pts: pts.map(([x, y]) => ({ x, y, u: x - x0, v: y - top[x] })) };
+            if (LIVE.wake) LIVE.wake();
+        };
+        im.src = "art/wall/i_arcade_" + id + ".png"; return null;
+    }
+    /* where a cabinet's picture sits on the map, as hw3.js draws it */
+    const placeOf = (l, p) => { const fp = (window.FLOOR_PIECES || {})[p.k]; if (!fp) return null; const z = LIVE.nodeZ(l, p.x, p.y) || 0, a = LIVE.mapPoint(p.x + .25, p.y + .25, z), flip = !!((p.rot || 0) & 1); return { fp, z, flip, x0: flip ? a[0] + fp.ox - fp.w : a[0] - fp.ox, y0: a[1] - fp.oy }; };
+    /* which screen pixels still show past what stands in front of the cabinet: worked out once per place, looked at again now and then in the editor */
+    const cutMemo = new Map(); let cutMap = null, cutAt = 0;
+    const cutCv = document.createElement("canvas"); cutCv.width = 33; cutCv.height = 56; const cutG = cutCv.getContext("2d", { willReadFrequently: true });
+    function shown(l, p, sc, at) {
+        const key = l.id + "|" + p.k + "|" + p.x + "," + p.y + "," + (p.rot || 0); if (cutMemo.has(key)) return cutMemo.get(key);
+        cutG.clearRect(0, 0, 33, 56); cutG.fillStyle = "#fff"; for (const q of sc.pts) { const x = at.flip ? sc.w - 1 - q.x : q.x; if (q.y < 56) cutG.fillRect(x, q.y, 1, 1); }
+        LIVE.as({ x: p.x, y: p.y, z: at.z, l, dir: 2, frame: 0, st: null }, () => LIVE.cutInFront(cutG, Math.round(at.x0), Math.round(at.y0)));
+        const d = cutG.getImageData(0, 0, 33, 56).data, keep = sc.pts.map(q => { const x = at.flip ? sc.w - 1 - q.x : q.x; return q.y < 56 && d[(q.y * 33 + x) * 4 + 3] > 128; });
+        cutMemo.set(key, keep); return keep;
+    }
+    const hereL = () => LIVE.floor || (LIVE.editorApi && LIVE.editorApi().level);
+    const onScreen = (at, v) => at && !(at.x0 > v.x1 || at.x0 + 33 < v.x0 || at.y0 > v.y1 || at.y0 + 57 < v.y0);
+    LIVE.add({
+        /* only while a cabinet on this floor is on screen; paint() wakes it when the camera brings one into view */
+        active: () => { if (reduced.matches) return false; const l = hereL(); if (!l) return false; const v = LIVE.view(); return cabinets(l).some(p => onScreen(placeOf(l, p), v)); },
+        under(c, ox, oy, now) {
+            const l = hereL(); if (!l) return; const v = LIVE.view();
+            if (LIVE.map !== cutMap || (!window.HALLWAY_PLAY && now - cutAt > 2000)) { cutMemo.clear(); cutMap = LIVE.map; cutAt = now; }
+            c.save(); c.translate(ox, oy); c.scale(LIVE.zoom, LIVE.zoom);
+            for (const p of cabinets(l)) {
+                const id = p.k.slice(7), at = placeOf(l, p), sc = screenOf(id); if (!at || !sc || !onScreen(at, v)) continue;
+                const keep = shown(l, p, sc, at), f = (Math.floor(now / FRAME_MS) + ((p.x * 7 + p.y * 3) & 7)) % NF;
+                sc.pts.forEach((q, i) => { if (!keep[i]) return; const x = at.flip ? sc.w - 1 - q.x : q.x; c.fillStyle = "#" + LOOPS[id](q.u, q.v, f); c.fillRect(Math.round(at.x0) + x, Math.round(at.y0) + q.y, 1, 1); });
+            }
+            c.restore();
+        }
+    });
+
     window.HallwayArcade = { GAMES, cabinets, hit, play, get hushed() { return !!hush; } };
 })();
