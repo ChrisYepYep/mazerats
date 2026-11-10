@@ -2008,11 +2008,15 @@ function build(cfg) {
                 const alongY = st.axis === "y"; if (st.a !== (alongY ? P.x0 : P.y0)) continue;
                 const backZ = alongY ? zAt(st.a, st.line - 1) : zAt(st.line - 1, st.a), nearZ = alongY ? zAt(st.a, st.line) : zAt(st.line, st.a), toYou = st.dir === "front"; if (backZ === null || nearZ === null) continue;
                 const hi = toYou ? nearZ : backZ, lo = toYou ? backZ : nearZ; if (hi <= lo || P.z !== lo || (cut !== null && hi > cut)) continue;
+                /* the walls climb only by what their own floors' walls differ by: a floor raised with "raise the floor only" keeps its walls
+                   where they were, so steps up onto it leave the wall level (10 Nov 2026, his: the walls still slanted at the steps) */
+                const wallZ = (X, Y) => { const Q = tileOf.get(X + "," + Y); return Q ? Q.z - (Q.floorLift || 0) : null; }, wBack = alongY ? wallZ(st.a, st.line - 1) : wallZ(st.line - 1, st.a), wNear = alongY ? wallZ(st.a, st.line) : wallZ(st.line, st.a);
+                const wallRise = (toYou ? wNear : wBack) - (toYou ? wBack : wNear), share = Math.max(0, Math.min(1, wallRise / (hi - lo))); if (share <= 0) continue;
                 const reach = Math.round((hi - lo) / STEP_R) * STEP_D, from = toYou ? st.line - reach : st.line, rate = STEP_R / STEP_D, d0 = alongY ? P.y0 : P.x0, d1 = alongY ? P.y1 : P.x1;
                 for (let k = 0; k <= Math.ceil(reach * 16); k++) {
                     const d = from + k / 16; if (d < d0 || d >= d1) continue;
-                    const lift = Math.round(toYou ? (d - from) * rate : (hi - lo) - (d - from) * rate); if (lift <= 0) continue;
-                    const sx = Math.round((alongY ? st.a - d : d - st.a) * 16) + gx, foot = Math.round((d + st.a) * 8) + gy - lo; if (sx < 0 || sx >= bw) continue;
+                    const lift = Math.round(share * (toYou ? (d - from) * rate : (hi - lo) - (d - from) * rate)); if (lift <= 0) continue;
+                    const sx = Math.round((alongY ? st.a - d : d - st.a) * 16) + gx, foot = Math.round((d + st.a) * 8) + gy - zWalls; if (sx < 0 || sx >= bw) continue;
                     for (let y = Math.max(lift, foot - Z1 - 20); y <= Math.min(bh - 1, foot + 2); y++) {
                         const i = y * bw + sx; if (wallOwner[i] !== ownerId) continue;
                         const j = (y - lift) * bw + sx;
