@@ -321,6 +321,20 @@ html[data-game-front="scout"] #rr-overlay { z-index: 92; }
 }
 .pura-dim[hidden] { display: none; }
 
+/* The frame in Pura Panic's own crimson (10 Nov 2026, his): the red of its
+   arcade cabinet in the Hallway, a step darker. The console's yellow art
+   redrawn shade for shade (assets/img/console/pura/); the title and the
+   close box's cross pale, to read on it. Its own colour whatever the site's
+   theme or skin; "lights off" still turns it grey, below. */
+.pura-console:not(.is-dark) .console-frame { background: #a31225; box-shadow: 2px 2px 0 0 rgba(0, 0, 0, 0.3); }
+.pura-console:not(.is-dark) .console-border { border-color: transparent; border-image-source: url('../assets/img/console/pura/cnsl-frame-border.png'); }
+.pura-console:not(.is-dark) .console-top-pattern::before,
+.pura-console:not(.is-dark) .console-top-pattern::after { background-image: url('../assets/img/console/pura/cnsl-top-pattern.png'); }
+.pura-console:not(.is-dark) .console-close-btn { border: none; background-color: transparent; background-image: url('../assets/img/console/pura/cnsl-top-x-close.png'); }
+.pura-console:not(.is-dark) .console-title { color: #ffdfe3; text-shadow: none; }
+.pura-console:not(.is-dark) .console-frame::before { border-color: rgba(0, 0, 0, 0.45) transparent transparent rgba(0, 0, 0, 0.45); }
+.pura-console:not(.is-dark) .console-frame::after { border-color: transparent rgba(255, 255, 255, 0.3) rgba(255, 255, 255, 0.3) transparent; }
+
 /* The frame in deep grey. The screen inside keeps its own colours. */
 .pura-console.is-dark .console-frame { background: #242424; box-shadow: 2px 2px 0 0 rgba(0, 0, 0, 0.5); }
 .pura-console.is-dark .console-border { border-image-source: url('../assets/img/console/dark/cnsl-frame-border.png'); }
