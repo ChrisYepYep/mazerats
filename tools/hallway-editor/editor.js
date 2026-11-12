@@ -2133,6 +2133,7 @@ function select(hit) {
                 me.link = o.id; o.link = me.id; changed(); select(hit); flash("Linked."); }; });
             if (partner) { b("Show its partner", () => { level = partner.l; buildLevels(); const q = P(partner.p.x + 1, partner.p.y + 1, tileZ(partner.l, partner.p.x, partner.p.y)); cam.x = q[0]; cam.y = q[1]; select({ type: "prop", l: partner.l, o: partner.p }); paint(); }); b("Unlink", () => { snapshot(); delete partner.p.link; delete me.link; changed(); select(hit); }); }
             box.appendChild(row); }
+        if (window.GalleryExhibits && GalleryExhibits.inspect) GalleryExhibits.inspect(hit, box);
         if (hit.type === "prop" && (floorPiece(hit.o.k) || {}).opts) { const fp = floorPiece(hit.o.k), f = document.createElement("label"); f.className = "field"; const n = document.createElement("span"); n.className = "f-label"; n.textContent = fp.optLabel || "What's inside"; const sel = document.createElement("select"); sel.className = "f-ctl"; for (const [k, v] of Object.entries((fp && fp.opts) || {}).sort((a, c) => a[1].name.localeCompare(c[1].name))) { const o = document.createElement("option"); o.value = k; o.textContent = v.name; sel.appendChild(o); } sel.value = hit.o.rare || (fp && fp.rare0) || ""; sel.addEventListener("change", () => { snapshot(); hit.o.rare = sel.value; changed(); }); f.append(n, sel); box.appendChild(f); }
         if (hit.type === "prop" && hit.o.k === "rope") { const f = document.createElement("label"); f.className = "field"; const n = document.createElement("span"); n.className = "f-label"; n.textContent = "Comes off at night"; const c = document.createElement("span"); c.className = "f-ctl"; const t = document.createElement("input"); t.type = "checkbox"; t.checked = !!hit.o.night; t.addEventListener("change", () => { snapshot(); if (t.checked) hit.o.night = true; else delete hit.o.night; changed(); }); c.appendChild(t); f.append(n, c); box.appendChild(f); }
         if (hit.type === "prop" && hit.o.k === "rope") {
@@ -2167,7 +2168,7 @@ function select(hit) {
 }
 function showTab(name) {
     document.querySelectorAll(".tab").forEach(t => { const on = t.dataset.tab === name; t.classList.toggle("active", on); t.setAttribute("aria-selected", String(on)); });
-    for (const n of ["inspect", "floors", "map", "music", "hunts", "lost", "problems"]) if ($("tab-" + n)) $("tab-" + n).hidden = n !== name;
+    for (const n of ["inspect", "floors", "map", "music", "hunts", "lost", "exhibits", "problems"]) if ($("tab-" + n)) $("tab-" + n).hidden = n !== name;
 }
 /* which maze every door has: chosen ones first, the rest A to Z through what's left, as the drawing does */
 function doorNames() {

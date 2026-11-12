@@ -16,7 +16,7 @@ const W = require("./render/hw3.js"), { encodePng } = require("../png-encode.js"
 const HERE = __dirname, SITE = path.join(HERE, "..", ".."), OUT = path.join(SITE, "assets", "hallway");
 const MOODS = ["day", "dusk", "night", "dawn"], TILE = 512;
 /* what the page needs of the editor: its code, its look and its art, and not the tools that made them */
-const APP = ["editor.js", "editor.css", "hallway-audio.js", "progress.js", "lift-sounds.js", "furni-parts.js", "wall-items.js", "colour-picker.js", "play.js", "play.css", "live-moving.js", "live-basement.js", "live-lost.js", "live-arcade.js", "live-arrows.js", "live-theatre.js", "stamp-font.js", "live-leet.js", "live-hunts.js", "live-xmas.js", "live-xmas-early.js", "hunts-editor.js", "lost-editor.js", "edit.js", "render/edge-items.js", "render/rope-barrier.js", "render/garland.js", "ideas/iso3d.js", "render/hall-window.js", "rooms.css", "room-starter.js", "room-view.js", "rooms-editor.js"];
+const APP = ["editor.js", "editor.css", "hallway-audio.js", "progress.js", "lift-sounds.js", "furni-parts.js", "wall-items.js", "colour-picker.js", "play.js", "play.css", "live-moving.js", "live-basement.js", "live-lost.js", "live-arcade.js", "live-arrows.js", "live-theatre.js", "stamp-font.js", "live-leet.js", "live-gallery.js", "live-hunts.js", "live-xmas.js", "live-xmas-early.js", "hunts-editor.js", "lost-editor.js", "edit.js", "render/edge-items.js", "render/rope-barrier.js", "render/garland.js", "ideas/iso3d.js", "render/hall-window.js", "rooms.css", "room-starter.js", "room-view.js", "rooms-editor.js"];
 
 /* art/'s scratch pictures stay at home (9 Nov scan, build 5): make-renderer.js's isScratch says which */
 const { isScratch } = require("./make-renderer.js");

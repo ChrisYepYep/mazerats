@@ -196,6 +196,16 @@ http.createServer(async (req, res) => {
             child.on("exit", code => { publishing = { running: false, at: 0, of: 0, error: code ? (errors.trim().split("\n").pop() || "It stopped.") : null }; });
             return json(res, 200, publishing);
         }
+        /* the Events Gallery's exhibits (12 Nov 2026): the site's public events, as visitors see them (no hidden or admin-only ones), and
+           their pictures; read from the live site, nothing is ever written there */
+        if (url.pathname === "/api/events") {
+            return https.get("https://mazerats.net/.netlify/functions/events", { timeout: 15000 }, up => { const a = []; up.on("data", d => a.push(d)); up.on("end", () => { res.writeHead(up.statusCode, { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-cache" }); res.end(Buffer.concat(a)); }); }).on("error", e => json(res, 502, { error: String(e.message) }));
+        }
+        if (url.pathname === "/api/eventimg") {
+            const u = url.searchParams.get("u") || "";
+            if (!/^\/(\.netlify\/functions\/image\?|assets\/)/.test(u)) return json(res, 400, { error: "not a picture of the site's" });
+            return https.get("https://mazerats.net" + u, { timeout: 15000 }, up => { const a = []; up.on("data", d => a.push(d)); up.on("end", () => { res.writeHead(up.statusCode, { "Content-Type": up.headers["content-type"] || "image/png", "Cache-Control": "max-age=86400" }); res.end(Buffer.concat(a)); }); }).on("error", e => json(res, 502, { error: String(e.message) }));
+        }
         if (url.pathname === "/api/archive") {
             /* the rooms' mazes, read from the live archive; nothing is ever written there */
             return https.get("https://mazerats.net/.netlify/functions/rooms", { timeout: 15000 }, up => { const a = []; up.on("data", d => a.push(d)); up.on("end", () => { res.writeHead(up.statusCode, { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-cache" }); res.end(Buffer.concat(a)); }); }).on("error", e => json(res, 502, { error: String(e.message) }));
