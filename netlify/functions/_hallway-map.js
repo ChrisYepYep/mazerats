@@ -85,10 +85,10 @@ function pickUpFrom(map, l, x, y, free) {
 }
 /* Where someone can sit down on a seat from: editor.js seatEntries, the same rule as its sitOn (10 Nov scan, server finding 1): the seat's front,
    front diagonals and sides, never over its back; or through one seat beside it, from that seat's four sides. */
-const SEATS = new Set(["chair", "sofa", "barstool"]), DIRS = [[0, -1], [1, -1], [1, 0], [1, 1], [0, 1], [-1, 1], [-1, 0], [-1, -1]];
+const SEATS = new Set(["chair", "sofa", "barstool", "ghsofa", "ghchair"]), DIRS = [[0, -1], [1, -1], [1, 0], [1, 1], [0, 1], [-1, 1], [-1, 0], [-1, -1]];
 const tilesOf = p => { try { return Parts.tiles(p); } catch (e) { return [[p.x, p.y]]; } };
 const seatAt = (l, x, y) => (l.props || []).find(p => p && SEATS.has(p.k) && tilesOf(p).some(t => t[0] === x && t[1] === y)) || null;
-const facing = p => { const r = Parts.rotOf(p); return p.k === "sofa" ? (r ? 2 : 4) : [2, 4, 6, 0][r]; };
+const facing = p => { const r = Parts.rotOf(p); return p.k === "sofa" || p.k === "ghsofa" || p.k === "ghchair" ? (r ? 2 : 4) : [2, 4, 6, 0][r]; };
 function seatReachable(l, X, Y, f) {
     const p = seatAt(l, X, Y); if (!p) return false; const [dx, dy] = DIRS[facing(p)];
     const direct = [[X + dx, Y + dy], ...(dx ? [[X + dx, Y - 1], [X + dx, Y + 1], [X, Y - 1], [X, Y + 1]] : [[X - 1, Y + dy], [X + 1, Y + dy], [X - 1, Y], [X + 1, Y]])], via = [];

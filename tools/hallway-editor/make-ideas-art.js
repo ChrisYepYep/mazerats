@@ -194,7 +194,7 @@ add("rathole", "Rat hole", "tell", (c, a) => L.put(c, A5.hole("x"), a[0], a[1]),
   fs.writeFileSync(indexFile, JSON.stringify(index)); console.log("staff lights:", Object.entries(li).map(([k, l]) => k + (l.floor ? " (floor)" : "")).join(", ")); }
 
 /* ---- the list: the i_ entries replace themselves, the rest stay as make-wall-items.js made them ---- */
-let old = []; try { delete require.cache[require.resolve(LIST)]; old = require(LIST).filter(i => !String(i.id).startsWith("i_")); } catch (e) { throw new Error("wall-items.js: " + e.message); }
+let old = []; try { delete require.cache[require.resolve(LIST)]; old = require(LIST).filter(i => !String(i.id).startsWith("i_")); for (const [k, v] of Object.entries(require(LIST).floor || {})) if (String(v.f).startsWith("g_") && !FLOOR[k]) FLOOR[k] = v;      // make-gallery-art.js's pieces stay } catch (e) { throw new Error("wall-items.js: " + e.message); }
 const FL = JSON.stringify(FLOOR);
 fs.writeFileSync(LIST, `/* made by make-wall-items.js and make-ideas-art.js */\n(function () { const L = ${JSON.stringify([...old, ...items])}, F = ${FL}; if (typeof module !== "undefined") { module.exports = L; L.floor = F; } else { window.WALL_ITEMS = L; window.FLOOR_PIECES = F; } })();\n`);
 console.log(items.length, "wall pieces,", Object.keys(FLOOR).length, "floor pieces:", items.map(i => i.id + " " + i.y.w + "x" + i.y.h + " h" + i.h).join(", "));

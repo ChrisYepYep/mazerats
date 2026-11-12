@@ -205,7 +205,7 @@ function giltTrio(real) {
 }
 
 /* ---- out ---- */
-fs.mkdirSync(OUT, { recursive: true }); for (const f of fs.readdirSync(OUT)) if (!f.startsWith("i_")) fs.rmSync(path.join(OUT, f));   // i_* are make-ideas-art.js's
+fs.mkdirSync(OUT, { recursive: true }); for (const f of fs.readdirSync(OUT)) if (!f.startsWith("i_") && !f.startsWith("g_")) fs.rmSync(path.join(OUT, f));   // i_* are make-ideas-art.js's, g_* make-gallery-art.js's
 const items = [];
 const centred = (f, w, h, flip) => ({ w, h, layers: [{ f, x: -(w >> 1), y: -(h >> 1), flip: flip ? 1 : 0 }] });
 function add(id, name, kind, art) {
@@ -221,7 +221,7 @@ for (const s of SCENES) {
     add("p_" + s.id, s.name, "custom", hang(c.quantise(s.pal, s.amount), s.frame));
 }
 add("p_gilt_trio", "Little gilt pictures", "custom", giltTrio(pntg));
-let kept = [], keptFloor = {}; try { const was = require(path.join(__dirname, "wall-items.js")); kept = was.filter(i => String(i.id).startsWith("i_")); keptFloor = was.floor || {}; } catch (e) { /* first run */ }
+let kept = [], keptFloor = {}; try { const was = require(path.join(__dirname, "wall-items.js")); kept = was.filter(i => /^[ig]_/.test(String(i.id))); keptFloor = was.floor || {}; } catch (e) { /* first run */ }
 const list = [...items.map(({ _art, ...i }) => i), ...kept];
 fs.writeFileSync(path.join(__dirname, "wall-items.js"), `/* made by make-wall-items.js and make-ideas-art.js */\n(function () { const L = ${JSON.stringify(list)}, F = ${JSON.stringify(keptFloor)}; if (typeof module !== "undefined") { module.exports = L; L.floor = F; } else { window.WALL_ITEMS = L; window.FLOOR_PIECES = F; } })();\n`);
 console.log(items.length, "items:", items.map(i => i.name + " " + i._art.w + "x" + i._art.h).join(", "));

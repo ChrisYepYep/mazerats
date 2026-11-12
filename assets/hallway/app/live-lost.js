@@ -26,7 +26,7 @@
     if (PLAY && window.HallwayProgress) HallwayProgress.load();
     fetch("art/ideas/lost.json").then(r => r.json()).then(j => { things = j.filter(t => t && t.name && t.name.trim()); restore(); }).catch(() => { things = []; });
     let round = null, carrying = null;
-    const KIND_OF = k => k === "sofa" ? "sofa" : k === "chair" ? "chair" : /table/.test(k) ? "table" : /^ero/.test(k) ? "planter" : null;
+    const KIND_OF = k => k === "sofa" || k === "ghsofa" ? "sofa" : k === "chair" || k === "ghchair" ? "chair" : /table/.test(k) ? "table" : /^ero/.test(k) ? "planter" : null;
     const tilesOf = p => window.FurniParts && FurniParts.tiles ? FurniParts.tiles(p) : [[p.x, p.y]];
     function kindAt(l, x, y) { let best = null, bd = 9; for (const p of (l.props || [])) { const kind = KIND_OF(p.k); if (!kind) continue; for (const [tx, ty] of tilesOf(p)) { const d = Math.max(Math.abs(tx - x), Math.abs(ty - y)); if (d <= 1 && (d < bd || (d === bd && best === "planter" && kind !== "planter"))) { bd = d; best = kind; } } } return best; }
     /* the spots, as the editor's Lost Property tab saves them in the map: { level, x, y, skip } (skip: the things that don't show well there) */
@@ -91,8 +91,8 @@
     /* ---------- hustle, sitting where he's been put (map.hustle: { level, x, y }, a chair or sofa tile). Before he's been put anywhere,
        the seat nearest the Lost Property desk. His look is saved in art/npc/hustle, so it never changes ---------- */
     const SEAT_LIFT = 3;
-    const seatAt = (l, x, y) => (l.props || []).find(p => (p.k === "chair" || p.k === "sofa" || p.k === "barstool") && tilesOf(p).some(t => t[0] === x && t[1] === y)) || null;
-    const facing = p => { const r = window.FurniParts ? FurniParts.rotOf(p) : (p.rot || 0); return p.k === "sofa" ? (r ? 2 : 4) : [2, 4, 6, 0][r & 3]; };
+    const seatAt = (l, x, y) => (l.props || []).find(p => (p.k === "chair" || p.k === "sofa" || p.k === "barstool" || p.k === "ghsofa" || p.k === "ghchair") && tilesOf(p).some(t => t[0] === x && t[1] === y)) || null;
+    const facing = p => { const r = window.FurniParts ? FurniParts.rotOf(p) : (p.rot || 0); return p.k === "sofa" || p.k === "ghsofa" || p.k === "ghchair" ? (r ? 2 : 4) : [2, 4, 6, 0][r & 3]; };
     let seatKey = "", seatWas = null;
     function hustleSeat() {
         const map = LIVE.map; if (!map) return null; const h = map.hustle, key = JSON.stringify(h || null) + map.levels.map(l => (l.props || []).length + "/" + (l.wallItems || []).length).join();
