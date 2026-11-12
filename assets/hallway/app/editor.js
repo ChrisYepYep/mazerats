@@ -3899,6 +3899,19 @@ function runChecks() {
         const said = other.map(t => t.replace(/ on (\S+)$/,(m0, id) => " on " + ((byId(id) || {}).name || id)));
         if (other.length) card(`${other.length} ${other.length === 1 ? "thing" : "things"} couldn't be placed: ${said.slice(0, 4).join(", ")}`, "err");
     }
+    /* the other map too (12 Nov 2026, the Events Gallery): its way in and out, and the exhibits, wherever you are */
+    { const G = root && root.gallery, here = mapNow === "hallway" ? root : G, there = mapNow === "hallway" ? G : root, nameThere = PLACE_NAME[otherPlace()];
+      if (G && (G.levels || []).length) {
+          const links = (there.tunnels || []).filter(t => t.to && findTunnel(t.to)), toHere = links.filter(t => (here.tunnels || []).some(u => u.id === t.to));
+          if (!toHere.length) card(mapNow === "hallway" ? "The Events Gallery has no tunnel to the Hallways, so nobody can get in. Link a tunnel there to one here." : "No tunnel in the Hallways leads here, so nobody can get in. Link one.", "err");
+          const dead = (there.tunnels || []).filter(t => t.to && !findTunnel(t.to)).length; if (dead) card(`${dead} tunnel${dead === 1 ? "" : "s"} in ${nameThere} lead${dead === 1 ? "s" : ""} to one that isn't there any more. Switch to it to see.`, "err");
+          const E = window.GalleryExhibits, seen = new Map(), go = (lv, q, wall) => () => { if (mapNow !== "gallery") setPlace("gallery"); level = lv; buildLevels(); const a = wall ? wallItemCentre(lv, q) : P(q.x + .5, q.y + .5, tileZ(lv, q.x, q.y)); cam.x = a[0]; cam.y = a[1]; setTool("select"); select(wall ? { type: "wallitem", l: lv, o: q } : { type: "prop", l: lv, o: q }); paint(); };
+          for (const lv of G.levels) {
+              for (const q of lv.wallItems || []) if (/^g_frame_/.test(q.k)) { if (!q.ev) card(`A frame on ${lv.name} in the Events Gallery has no event yet. Show it.`, "", go(lv, q, true)); else { if (seen.has(q.ev)) card(`${(E && E.eventOf(q.ev) || {}).title || q.ev} is hung twice. Show it.`, "", go(lv, q, true)); seen.set(q.ev, q); } }
+              for (const p of lv.props || []) if (p.k === "gh_placard" && !p.ev) card(`A placard on ${lv.name} in the Events Gallery has no event, so it opens nothing. Show it.`, "", go(lv, p, false));
+          }
+          if (E && E.events.length) for (const [k, q] of seen) if (!E.eventOf(k)) card(`An exhibit is for an event that isn't on the site any more (${k}). Show it.`, "err", go(G.levels.find(l => (l.wallItems || []).includes(q)), q, true));
+      } }
     $("probBadge").textContent = problems || ""; lastProblems = problems;
 }
 

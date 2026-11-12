@@ -10,7 +10,9 @@
     const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text !== undefined) e.textContent = text; return e; };
     const img = (() => { const m = new Map(); return src => { let i = m.get(src); if (!i) { i = new Image(); i.onload = () => LIVE.wake(); i.src = src; m.set(src, i); } return i; }; })();
     const NOTE = "art/ideas/scrap.png", KEY = "art/wall/i_key.png", KEY_ANCHOR = [8, 8], cv = document.createElement("canvas"); cv.width = 33; cv.height = 56; const g = cv.getContext("2d", { willReadFrequently: true });
-    const scraps = () => (LIVE.map && LIVE.map.scraps) || [], hunts = () => (LIVE.map && LIVE.map.hunts) || [], levelOf = id => LIVE.map.levels.find(l => l.id === id);
+    /* both maps' (12 Nov 2026, the Events Gallery): a hunt's clues may lead through to the gallery */
+    const rootNow = () => LIVE.root || LIVE.map, both = k => { const r = rootNow(); return r ? [...(r[k] || []), ...((r.gallery && r.gallery[k]) || [])] : []; };
+    const scraps = () => both("scraps"), hunts = () => both("hunts"), levelOf = id => both("levels").find(l => l.id === id);
     /* one hunt under way at a time; how long it's taken and how many hints, this browser's */
     const NOW_KEY = "hallway-hunt-now", localOf = id => { try { return JSON.parse(localStorage.getItem("hallway-hunt-" + id) || "null") || { start: Date.now(), hints: 0 }; } catch (e) { return { start: Date.now(), hints: 0 }; } }, keepLocal = (id, v) => { try { localStorage.setItem("hallway-hunt-" + id, JSON.stringify(v)); } catch (e) { /* only this visit */ } };
     let current = null, panel = null, hintShown = false; try { current = localStorage.getItem(NOW_KEY); } catch (e) { /* none */ }

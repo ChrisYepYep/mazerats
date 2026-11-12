@@ -27,7 +27,7 @@
             events = unpack(d).filter(e => e && (e.slug || e.id) && e.title).map(e => ({ key: e.slug || e.id, id: e.id, title: String(e.title), date: e.date || "", status: e.status || "", thumb: e.thumb || "" }))
                 .sort((a, b) => String(b.date).localeCompare(String(a.date)));
             byKey = new Map(); for (const e of events) { byKey.set(e.key, e); if (e.id) byKey.set(e.id, e); }
-            LIVE.wake(); if (Exhibits.onEvents) Exhibits.onEvents();
+            LIVE.wake(); if (Exhibits.onEvents) Exhibits.onEvents(); if (!PLAY && typeof window.checksSoon === "function") window.checksSoon();
             return events;
         }).catch(() => { asked = null; return []; });
         return asked;
@@ -165,7 +165,7 @@
 
     /* ---- the editor's Exhibits tab, and the event pick on a selected frame or placard ---- */
     const Exhibits = window.GalleryExhibits = { load, get events() { return events; }, eventOf, onEvents: null };
-    if (PLAY) { load(); return; }
+    if (PLAY) { load(); if (LIVE.onPlace) LIVE.onPlace(p => { if (p === "gallery" && window.hwTrack) window.hwTrack("hallway_gallery_enter"); }); return; }
     const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text !== undefined) e.textContent = text; return e; };
     const btn = (t, fn, cls) => { const b = el("button", "btn small " + (cls || ""), t); b.type = "button"; b.addEventListener("click", fn); return b; };
     const api = () => LIVE.editorApi();
