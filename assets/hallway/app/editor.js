@@ -3797,6 +3797,10 @@ function showMapInfo() {
     { const lt = $("leetTimes"), lm = $("leetMins"), ls = map.leetShow || {}, two = n => String(n).padStart(2, "0"), local = iso => { const d = new Date(iso); return d.getFullYear() + "-" + two(d.getMonth() + 1) + "-" + two(d.getDate()) + " " + two(d.getHours()) + ":" + two(d.getMinutes()); };
       if (lt && document.activeElement !== lt) lt.value = (ls.times || []).map(local).join("\n"); if (lm && document.activeElement !== lm) lm.value = ls.mins || 180;
       const nx = $("leetNext"); if (nx && window.LeetShow) { const t = LeetShow.lines(map, Date.now()); nx.textContent = "The posters say: " + t.join(" "); } }
+    /* the Events Gallery's own colours (12 Nov 2026): render/hw3.js draws the Game Hall style from them */
+    { const sec = $("galleryLook"), box = $("galleryColours"); if (sec && box) { sec.hidden = mapNow !== "gallery"; box.textContent = "";
+        if (mapNow === "gallery") for (const [k, label, def] of [["wall", "Walls", "35574a"], ["dado", "Wood panelling", "4e321e"], ["floor", "Stone floor", "c2ae86"], ["rug", "Rugs", "4e3020"], ["thread", "Rugs' thread", "d8bc84"]])
+            colourRow(box, label, () => (map.gh && map.gh[k]) ? "#" + map.gh[k] : null, v => { if (v) (map.gh = map.gh || {})[k] = v.replace(/^#/, ""); else if (map.gh) { delete map.gh[k]; if (!Object.keys(map.gh).length) delete map.gh; } }, "#" + def, "As drawn"); } }
     const r = map.rect, pw = 1440 / 2, ph = 774 / 2;
     $("mapInfo").textContent = `${(r.w / pw).toFixed(1)} pages wide, ${(r.h / ph).toFixed(1)} tall, at 2x.`;
 }

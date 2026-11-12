@@ -1544,6 +1544,7 @@ function rugFieldAt(F, X, Y, dx, dy) {
         const d = Math.max(da, db);
         if (d < r) r = d;
     }
+    if (GHP) return ghRugPx(r, X, Y, dx, dy);
     /* the corners: cut ones move the edge in, square ones have the rosette */
     let cn = F.cornerNear.get(key); if (!cn) { cn = F.corners.filter(c => Math.abs(c.A - TX * 16) < 48 && Math.abs(c.B - TY * 16) < 48); F.cornerNear.set(key, cn); }
     for (const c of cn) {
@@ -2172,7 +2173,7 @@ function framed(alcove, arch, dx, dy, flip) {
 }
 const portalMemo = new Map();
 /* phase: how many tiles along the wall's 8-tile repeat the entrance stands, so the wallpaper beside the arch still runs true */
-const portalArt = (phase = 0) => portalMemo.get(phase) || (portalMemo.set(phase, (() => {
+const portalArt = (phase = 0) => portalMemo.get(STYLE + phase) || (portalMemo.set(STYLE + phase, (() => {
     const REG_HALL = require("../art/regs.json").hall, reg = n => REG_HALL[n] || [0, 0], eY = piece("entry_upper_right"), eX = piece("entry_upper_left"), m = piece("entry_upper_right_mask"), m2 = piece("entry_upper_left_mask"), rE = reg("entry_upper_right"), rM = reg("entry_upper_right_mask"), rE2 = reg("entry_upper_left"), rM2 = reg("entry_upper_left_mask");
     const mY = framed(eY, m, rE[0] - rM[0], rE[1] - rM[1], false), mX = framed(eX, m2, rE2[0] - rM2[0], rE2[1] - rM2[1], false);
     /* The doorway surround, whole and at its real height, standing on the floor: the arch and the jamb that the client draws in the alcove piece, whose
@@ -2200,7 +2201,7 @@ const portalArt = (phase = 0) => portalMemo.get(phase) || (portalMemo.set(phase,
     };
     /* free: the arch alone, no wall round it, for the freestanding archway */
     return { y: { alcove: tallPiece(eY, false), arch: surround(mY, eY, SEAMY, 28, 120, x => x >= 104), free: surround(mY, eY, null, 28, 120, x => x >= 104) }, x: { alcove: tallPiece(eX, true), arch: surround(mX, eX, SEAMX, 17, 110, x => x <= 36), free: surround(mX, eX, null, 17, 110, x => x <= 36) } };
-})()), portalMemo.get(phase));
+})()), portalMemo.get(STYLE + phase));
 /* how high the entrance's arch reaches over tile k (0-7) of its stretch: the top of its surround there, above the floor (-Infinity: only wall
    over that tile). The wall goes on above it, so a garland can hang across there (9 Nov 2026, his: the run stopped dead at the EXIT arch) */
 function portalArchTop(axis, at, k, T) {
@@ -2213,7 +2214,7 @@ function portalArchTop(axis, at, k, T) {
     return best;
 }
 function drawPortal(w, axis, line, at, part, theatre) {
-    const b = w.b, T = w.wallTop, ph = ((at % 8) + 8) % 8, art = theatre === "tunnel" ? tunnelArt(ph, axis, part) : theatre ? theatreArt(ph, axis, part, T) : portalArt(ph)[axis][part];
+    const b = w.b, T = w.wallTop, ph = ((at % 8) + 8) % 8, art = theatre === "tunnel" ? (GHP ? doorArt(ph, axis, part) : tunnelArt(ph, axis, part)) : theatre ? theatreArt(ph, axis, part, T) : portalArt(ph)[axis][part];
     const p = axis === "x" ? w.S(at, line) : w.S(line, at), x0 = axis === "x" ? p[0] : p[0] - 138;
     /* the wall carries straight on either side, so its pieces' end posts aren't wanted */
     const i0 = axis === "x" ? 0 : 10, i1 = axis === "x" ? 128 : 138;
@@ -2235,7 +2236,7 @@ function drawPortal(w, axis, line, at, part, theatre) {
 const tunnelMemo = new Map();
 function tunnelArt(phase, axis, part) {
     const src = portalArt(phase)[axis][part]; if (part !== "arch") return src;
-    const key = phase + axis; if (tunnelMemo.has(key)) return tunnelMemo.get(key);
+    const key = STYLE + phase + axis; if (tunnelMemo.has(key)) return tunnelMemo.get(key);
     const o = { w: src.w, h: src.h, rgba: Buffer.from(src.rgba) }, Wd = o.w;
     const i0 = axis === "y" ? 42 : 33, i1 = axis === "y" ? 105 : 96, slope = axis === "y" ? -.5 : .5, cx = (i0 + i1) / 2, cj = 103, rowOf = i => Math.round(cj + slope * (i - cx));
     const P = 8, S0 = Math.round(cx - 40);
@@ -2270,7 +2271,7 @@ function theatreCarpetAt(list, X, Y, dx, dy) {
 const THEATRE_FONT = { T: ["###", ".#.", ".#.", ".#.", ".#."], H: ["#.#", "#.#", "###", "#.#", "#.#"], E: ["###", "#..", "##.", "#..", "###"], A: [".#.", "#.#", "###", "#.#", "#.#"], R: ["##.", "#.#", "##.", "#.#", "#.#"], D: ["##.", "#.#", "#.#", "#.#", "##."], O: [".#.", "#.#", "#.#", "#.#", ".#."], M: ["#.#", "###", "###", "#.#", "#.#"] };
 const theatreMemo = new Map();
 function theatreArt(phase, axis, part, T) {
-    const key = phase + axis + part + T; if (theatreMemo.has(key)) return theatreMemo.get(key);
+    const key = STYLE + phase + axis + part + T; if (theatreMemo.has(key)) return theatreMemo.get(key);
     const src = portalArt(phase)[axis][part], o = { w: src.w, h: src.h, rgba: Buffer.from(src.rgba) }, W = o.w, H = o.h, at = (i, j) => (j * W + i) * 4, glow = o.glow = new Uint8Array(W * H);
     const put = (i, j, c) => { if (i < 0 || j < 0 || i >= W || j >= H) return; const q = at(i, j); if (o.rgba[q + 3] < 128) return; o.rgba[q] = c[0]; o.rgba[q + 1] = c[1]; o.rgba[q + 2] = c[2]; };
     const isFloor = (i, j) => { const q = at(i, j); if (src.rgba[q + 3] < 128) return false; const r = src.rgba[q], g = src.rgba[q + 1], b = src.rgba[q + 2], l = r * .3 + g * .59 + b * .11; return l > 95 && r > g && g > b && r - b > 40; };
@@ -2416,7 +2417,7 @@ function theatreArt(phase, axis, part, T) {
 const ARCH = { a0: 17, aA: 40, aB: 94, a1: 111, plainAt: 41, depth: 4 };
 const archMemo = new Map();
 function archwayArt(axis, n, wallA, wallB) {
-    const key = axis + n + (wallA ? "A" : "") + (wallB ? "B" : ""); if (archMemo.has(key)) return archMemo.get(key);
+    const key = STYLE + axis + n + (wallA ? "A" : "") + (wallB ? "B" : ""); if (archMemo.has(key)) return archMemo.get(key);
     const src = portalArt(0)[axis].free, SW = src.w, SH = src.h, colOf = a => axis === "x" ? a : 138 - a;
     const W = n * 16, postA = wallA ? 0 : ARCH.aA - ARCH.a0, postB = wallB ? 0 : ARCH.a1 - ARCH.aB, mid = W - postA - postB, natMid = ARCH.aB - ARCH.aA;
     /* which of the piece's columns goes at each column along the archway */
@@ -2541,7 +2542,7 @@ const DOOR_WALL = 80, WALL_CAP = 13;
 const FLOOR_EDGE = ["000000", "af6947", "925030", "925030", "7d4122", "7d4122", "712f16", "000000", "5a1a06", "450e00", "450e00", "000000"].map(hex);
 const railMemo = new Map();
 function railRow(im, i) {
-    const key = (im === TALLX ? "x" : im === TALLY ? "y" : im === SEAMX ? "sx" : "sy") + i; if (railMemo.has(key)) return railMemo.get(key);
+    const key = STYLE + (im === TALLX ? "x" : im === TALLY ? "y" : im === SEAMX ? "sx" : "sy") + i; if (railMemo.has(key)) return railMemo.get(key);
     let r = firstRow(im, i) + WALL_CAP + 8;
     for (; r < im.h; r++) { const q = (r * im.w + i) * 4; if (im.rgba[q + 3] >= 128 && !im.rgba[q] && !im.rgba[q + 1] && !im.rgba[q + 2]) break; }
     railMemo.set(key, r - 3); return r - 3;
@@ -2578,7 +2579,7 @@ function tallPiece(im, right, top) {
     }
     return o;
 }
-const TALLX = tallPiece(piece("wall_upper_right_basic"), true), TALLY = tallPiece(piece("wall_upper_left_basic"), false);
+let TALLX = tallPiece(piece("wall_upper_right_basic"), true), TALLY = tallPiece(piece("wall_upper_left_basic"), false);
 /* The piece's first columns are cut on a slant for the corner it would start in, which leaves a notch in the wall's top every
    8 tiles. Along the wall everything repeats 64 across and 32 down, so those columns are redrawn from further along it. A wall's
    true start still uses the client's own slanted cut. */
@@ -2598,7 +2599,129 @@ function seamless(im, right) {
     }
     return o;
 }
-const SEAMX = seamless(TALLX, true), SEAMY = seamless(TALLY, false);
+let SEAMX = seamless(TALLX, true), SEAMY = seamless(TALLY, false);
+
+/* ---- the Game Hall style (12 Nov 2026, the Events Gallery: his, from the Habbo Origins Game Hall lobby, in green) ----
+   A map with style "gamehall" (its colours in map.gh) is drawn with the Hallway's own wall pieces made over row by row, so every wall, end
+   post, stair wall and doorway keeps its exact shape: the wallpaper becomes one flat paint with a lighter tone picked out 1 in 4 along the
+   wall's slope (the far wall a shade darker); the wainscot becomes the lobby's ribbed walnut dado, a moulded rail along its top and a plain
+   skirting board at its foot; the cap is walnut. The floor is stone tiles with a grout line, rugs are Habbo's own woven pile with a dark edge
+   and a single cream thread, and a tunnel is a walnut doorway. None of it applies to the Hallways, which are drawn exactly as before. */
+let STYLE = "", GHP = null;
+const HW_PIECES = { tallX: TALLX, tallY: TALLY, seamX: SEAMX, seamY: SEAMY };
+const ghHex = h => hex(String(h || "").replace(/^#/, ""));
+const ghMix = (a, b, t) => [0, 1, 2].map(i => Math.round(a[i] + (b[i] - a[i]) * t));
+/* a colour of the style's own, never one recolour() would take for the Hallway's and re-hue */
+const ghSafe = c => { const v = [...c]; while (GROUPS.has((v[0] << 16) | (v[1] << 8) | v[2])) v[2] = v[2] > 0 ? v[2] - 1 : 1; return v; };
+function ghStyleOf(map) {
+    if (!map || map.style !== "gamehall") return null;
+    const g = map.gh || {};
+    return { wall: g.wall || "35574a", dado: g.dado || "4e321e", floor: g.floor || "c2ae86", rug: g.rug || "4e3020", thread: g.thread || "d8bc84" };
+}
+function ghPalette(s) {
+    const K = [0, 0, 0], W = ghHex(s.wall), D0 = ghHex(s.dado), F0 = ghHex(s.floor), R0 = ghHex(s.rug), WH = [255, 244, 220];
+    const p = {
+        wallR: [W, ghMix(W, WH, .1)], wallL: [ghMix(W, K, .2), ghMix(W, K, .12)],
+        F: D0, D: ghMix(D0, K, .25), RL: ghMix(D0, WH, .3), lip: ghMix(D0, WH, .42), under: ghMix(D0, K, .45),
+        floor: F0, grout: ghMix(F0, K, .1), floorShade: ghMix(F0, K, .2),
+        rugFill: R0, rugWeave: ghMix(R0, WH, .07), rugBorder: ghMix(R0, K, .22), rugEdge: ghMix(R0, K, .45), thread: ghHex(s.thread),
+        gilt: hex("d8a648")
+    };
+    for (const k of Object.keys(p)) p[k] = Array.isArray(p[k][0]) ? p[k].map(ghSafe) : ghSafe(p[k]);
+    return p;
+}
+/* one wall piece made over: column by column, the rows above its wallpaper are the cap, the wallpaper's rows the paint, and below it the
+   rail, the black line under the rail, the dado down to the black line at the floor, and what the floor hides */
+function ghWall(im, right, pal) {
+    const o = { w: im.w, h: im.h, rgba: Buffer.from(im.rgba) }, paint = right ? pal.wallR : pal.wallL;
+    const at = (x, r) => { const q = (r * im.w + x) * 4; return im.rgba[q + 3] < 128 ? null : (im.rgba[q] << 16) | (im.rgba[q + 1] << 8) | im.rgba[q + 2]; };
+    const put = (x, r, c) => { const q = (r * o.w + x) * 4; o.rgba[q] = c[0]; o.rgba[q + 1] = c[1]; o.rgba[q + 2] = c[2]; };
+    const isPaper = c => { const g = GROUPS.get(c); return g === "paperA" || g === "paperB"; };
+    for (let x = 0; x < im.w; x++) {
+        let p0 = -1, p1 = -1;
+        for (let r = 0; r < im.h; r++) { const c = at(x, r); if (c !== null && isPaper(c)) { if (p0 < 0) p0 = r; p1 = r; } }
+        const blacks = []; if (p1 >= 0) for (let r = p1 + 1; r < im.h; r++) if (at(x, r) === 0) blacks.push(r);
+        const b1 = blacks[0] === undefined ? 1e9 : blacks[0], b2 = blacks[1] === undefined ? 1e9 : blacks[1];
+        for (let r = 0; r < im.h; r++) {
+            const c = at(x, r); if (c === null || c === 0) continue;
+            const L = ((c >> 16) * .3 + ((c >> 8) & 255) * .59 + (c & 255) * .11);
+            if (p0 < 0 || r < p0) { put(x, r, L > 150 ? pal.lip : L > 95 ? pal.RL : L > 60 ? pal.F : pal.D); continue; }          // the cap, and end posts
+            if (r <= p1) { const lit = right ? ((x + 2 * r) & 3) === 3 : ((x * 3 + r * 2) & 3) === 0; put(x, r, paint[lit ? 1 : 0]); continue; }
+            if (r < b1) { put(x, r, r === p1 + 1 ? pal.lip : pal.RL); continue; }                                                   // the rail
+            if (r < b2) {                                                                                                             // the dado
+                const z = b2 - 1 - r, top = b2 - 1 - b1 - 1;
+                put(x, r, z >= top ? ghMix(pal.D, [0, 0, 0], .35) : z < 4 ? ghMix(pal.F, pal.D, .35) : z < 5 ? ghMix(pal.RL, pal.F, .3) : z < 6 ? ghMix(pal.D, [0, 0, 0], .3) : (x & 1) ? pal.F : pal.D);
+                continue;
+            }
+            put(x, r, pal.under);                                                                                                     // what the floor covers
+        }
+    }
+    return o;
+}
+const ghMemo = new Map();
+function ghPieces(s) {
+    const key = JSON.stringify(s); if (ghMemo.has(key)) return ghMemo.get(key);
+    const pal = ghPalette(s), tallX = ghWall(HW_PIECES.tallX, true, pal), tallY = ghWall(HW_PIECES.tallY, false, pal);
+    const out = { key: "gh:" + key, pal, tallX, tallY, seamX: seamless(tallX, true), seamY: seamless(tallY, false) };
+    ghMemo.set(key, out); return out;
+}
+/* the style for one build: the Hallway's pieces, or the Game Hall's made from them */
+function useStyle(map) {
+    const s = ghStyleOf(map), P = s ? ghPieces(s) : HW_PIECES;
+    GHP = s ? P : null; STYLE = s ? P.key : "";
+    TALLX = P.tallX; TALLY = P.tallY; SEAMX = P.seamX; SEAMY = P.seamY;
+}
+/* the stone floor: 32 x 16 tiles with a grout line on each tile's far edges, a soft shadow where it meets a wall */
+function ghStoneAt(X, Y, dx, dy, hasTile) {
+    const pal = GHP.pal, u = (dx + 2 * dy) / 2, v = (2 * dy - dx) / 2;
+    if (u < 1.1 || v < 1.1) return pal.grout;
+    if ((v < 2.6 && hasTile && !hasTile(X, Y - 1)) || (u < 2.6 && hasTile && !hasTile(X - 1, Y))) return pal.floorShade;
+    return pal.floor;
+}
+/* a rug, by its distance in from its edge: a dark edge, the border, one cream thread, the border, then the pile woven in pairs of pixels */
+function ghRugPx(r, X, Y, dx, dy) {
+    const pal = GHP.pal;
+    if (r < 1.2) return pal.rugEdge; if (r < 2.2) return pal.rugBorder; if (r < 3.2) return pal.thread; if (r < 4.6) return pal.rugBorder;
+    const sx = (X - Y) * 16 + dx, sy = (X + Y) * 8 + dy;
+    return (((sx >> 1) + sy) & 1) ? pal.rugWeave : pal.rugFill;
+}
+/* The tunnel as a doorway: the opening is the entrance's own (its rounded top corners and all, so the walkable inside lines up), framed in a
+   walnut architrave that follows it round: from the opening out, a dark line, a gilt bead, the walnut face, its lit lip, a dark outer edge.
+   Past the frame, the Game Hall wall. Inside, the entrance's alcove made over in the style's colours, in shadow. */
+const doorMemo = new Map();
+function doorArt(phase, axis, part) {
+    const key = STYLE + phase + axis + part; if (doorMemo.has(key)) return doorMemo.get(key);
+    const pal = GHP.pal, src = portalArt(phase)[axis][part], o = { w: src.w, h: src.h, rgba: Buffer.from(src.rgba) };
+    const put = (i, j, c) => { const q = (j * o.w + i) * 4; o.rgba[q] = c[0]; o.rgba[q + 1] = c[1]; o.rgba[q + 2] = c[2]; o.rgba[q + 3] = 255; };
+    if (part === "alcove") {
+        for (let j = 0; j < o.h; j++) for (let i = 0; i < o.w; i++) {
+            const q = (j * o.w + i) * 4; if (o.rgba[q + 3] < 128) continue; const c = (o.rgba[q] << 16) | (o.rgba[q + 1] << 8) | o.rgba[q + 2]; if (!c) continue;
+            const g = GROUPS.get(c), L = (o.rgba[q] * .3 + o.rgba[q + 1] * .59 + o.rgba[q + 2] * .11);
+            const base = g === "paperA" || g === "paperB" ? pal.wallL[0] : g === "wood" ? (L > 90 ? pal.RL : L > 55 ? pal.F : pal.D) : (L > 150 ? pal.floor : pal.grout);
+            put(i, j, ghMix(base, [8, 6, 6], .5));
+        }
+    } else {
+        /* the opening: the see-through region that reaches the bottom of the piece in its middle */
+        const W = o.w, Hh = o.h, open = new Uint8Array(W * Hh), see = (i, j) => src.rgba[(j * W + i) * 4 + 3] < 128;
+        const seedI = axis === "x" ? 68 : 70, stack = []; for (let j = Hh - 1; j >= 0; j--) if (see(seedI, j)) { stack.push([seedI, j]); break; }
+        while (stack.length) { const [i, j] = stack.pop(); if (i < 0 || j < 0 || i >= W || j >= Hh || open[j * W + i] || !see(i, j)) continue; open[j * W + i] = 1; stack.push([i + 1, j], [i - 1, j], [i, j + 1], [i, j - 1]); }
+        /* how far each pixel is from the opening, up to the frame's width */
+        const FW = 8, dist = new Float32Array(W * Hh).fill(99);
+        for (let j = 0; j < Hh; j++) for (let i = 0; i < W; i++) { if (open[j * W + i] || see(i, j)) continue; let best = 99;
+            for (let v = -FW; v <= FW && best > 0; v++) for (let u = -FW; u <= FW; u++) { const I = i + u, J = j + v; if (I < 0 || J < 0 || I >= W || J >= Hh || !open[J * W + I]) continue; const d = Math.hypot(u, v); if (d < best) best = d; }
+            dist[j * W + i] = best; }
+        /* the wall where the entrance's own surround was, and the frame */
+        const wall = axis === "x" ? SEAMX : SEAMY, shift = axis === "x" ? phase * 16 : -phase * 16, base = axis === "x" ? 0 : 10, sx = x => x < base || x >= base + 128 ? x : base + (((x - base + shift) % 128) + 128) % 128;
+        const wallPx = (j, i) => { const X = sx(i), R = j + (axis === "x" ? (X - i) / 2 : -(X - i) / 2); if (X >= wall.w || R < 0 || R >= wall.h) return null; const q = (R * wall.w + X) * 4; return wall.rgba[q + 3] < 128 ? null : [wall.rgba[q], wall.rgba[q + 1], wall.rgba[q + 2]]; };
+        for (let j = 0; j < Hh; j++) for (let i = 0; i < W; i++) {
+            if (open[j * W + i] || see(i, j)) continue;
+            const d = dist[j * W + i];
+            if (d <= FW) { put(i, j, d < 1.5 ? [0, 0, 0] : d < 2.5 ? pal.gilt : d < 5.5 ? pal.F : d < 7 ? pal.lip : ghMix(pal.D, [0, 0, 0], .5)); continue; }
+            const c = wallPx(j, i); if (c) put(i, j, c);
+        }
+    }
+    doorMemo.set(key, o); return o;
+}
 
 /* The lift. Every part of the surround is a box standing out from the wall, drawn with its
    front, its side and its top, and black round every shape, so it sits in the hall as solidly
@@ -3005,6 +3128,7 @@ function gridOf(table, x0, y0, x1, y1) {
 }
 function build(cfg) {
     cfg = cfg || {};
+    useStyle(cfg.map);
     const names = cfg.names || H.names2();
     const levels = cfg.map ? fromMap(cfg.map, names) : plan();
     /* A to Z along the walking order */
@@ -3593,8 +3717,8 @@ function build(cfg) {
                 const fsx = (X - Y) * 16 + gx, fsy = (X + Y) * 8 + gy - zf;
                 if (fsx < -34 || fsx > bw + 34 || fsy < -18 || fsy > bh + 2) continue;
                 let smp;
-                const plainS0 = (wayOf(cfg.single || lv.way) || {}).planks ? (dx, dy) => plankAt(X, Y, dx, dy) : (dx, dy) => modPx(plain, false, 2 + m4(X), 2 + m4(Y), dx, dy);
-                const plainS = (wayOf(cfg.single || lv.way) || {}).planks ? plainS0 : morphed(lv, X, Y, plainS0);
+                const plainS0 = GHP ? (dx, dy) => ghStoneAt(X, Y, dx, dy, (a, b) => has.has(a + "," + b)) : (wayOf(cfg.single || lv.way) || {}).planks ? (dx, dy) => plankAt(X, Y, dx, dy) : (dx, dy) => modPx(plain, false, 2 + m4(X), 2 + m4(Y), dx, dy);
+                const plainS = GHP || (wayOf(cfg.single || lv.way) || {}).planks ? plainS0 : morphed(lv, X, Y, plainS0);
                 const med = (P.medal && [{ x: P.medal[0], y: P.medal[1] }] || lv.medals || []).find(m => X >= m.x && X < m.x + 4 && Y >= m.y && Y < m.y + 4);
                 if (med) { const ma = X - med.x, mb = Y - med.y; smp = (dx, dy) => modPx(crossPc, false, 2 + ma, 2 + mb, dx, dy); }
                 else if (lv.rugs && lv.rugs.length) { const XX = X, YY = Y, F = lv.rugF || (lv.rugF = rugField(lv.rugs)); smp = (dx, dy) => rugFieldAt(F, XX, YY, dx, dy) || plainS(dx, dy); }
