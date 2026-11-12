@@ -19,7 +19,7 @@
        HallwayAudio.setVolume(0..1)
        HallwayAudio.onChange = fn   called when the track changes
        HallwayAudio.setPlace("gallery" | "hallway")   the Events Gallery has its own music: hand over to it, or back
-       HallwayAudio.renderPreview(seconds, [i, j, ...]) -> an AudioBuffer with handovers spaced evenly, for checking */
+       HallwayAudio.renderPreview(seconds, [i, j, ...], sampleRate, { noRecord }) -> an AudioBuffer with handovers spaced evenly, for checking */
 (function () {
     "use strict";
     const LOOKAHEAD = 2.2, HANDOVER_LEAD = 30, ROOT_MIN = 44, ROOT_MAX = 55;
@@ -117,6 +117,55 @@
           chords: [[0, 3, 7, 10, 14], [-7, -4, 0, 3, 7], [-4, 0, 3, 7], [-5, -1, 2, 5]], b: [[3, 7, 10, 14], [-4, 0, 3, 7], [2, 5, 8, 12], [-5, -1, 2, 5]] }
     ];
     TRACKS.push(...GALLERY);
+    /* ---------- ten more for the Hallway (12 Nov 2026, the owner's: "add 10 new chilled lofi jazz tracks to the normal hallway soundtrack") ----------
+       The chords by name, as semitones above the key's root: in a major key, then in a minor one */
+    const MAJ = { I: [0, 7, 11, 14, 16], ii: [2, 9, 12, 16, 17], iii: [-8, -1, 2, 7], IV: [-7, 0, 4, 7, 9], iv6: [-7, 0, 3, 9], V: [-5, 2, 5, 9, 12], V7b9: [-5, -1, 5, 8],
+        vi: [-3, 4, 7, 11, 12], II7: [2, 9, 12, 18], VI7: [-3, 4, 7, 13], bVII: [-2, 5, 8, 12, 14] };
+    const MIN = { i: [0, 7, 10, 14, 15], iv: [5, 12, 15, 19], iv9: [5, 8, 12, 15, 19], bVI: [-4, 3, 7, 12], bIII: [3, 10, 14, 19], bVII: [-2, 5, 8, 12, 14], v: [-5, 2, 5, 10],
+        V7: [-5, -1, 2, 5], ii0: [2, 5, 8, 12], bII: [1, 5, 8, 12] };
+    const MORE = [
+        /* late in the lobby: a lazy head-nod beat with the kick a little early, electric piano, a soft keys line wandering over it */
+        { name: "Check-In at Midnight", root: 50, mode: "min", bpm: 76, swing: .12, every: 1, mins: 3.8, lead: "keys", leadVel: .05, tune: "walk", density: .42, pad: 850, padVel: .018, top: 4200,
+          comp: "stab", compAt: [0, 2.5], bass: "boom", drums: "boom", kick: [0, 1.75, 2.5], snare: [1, 3], hat: .45, form: "AABA",
+          chords: [MIN.i, MIN.iv, MIN.bVII, MIN.bVI], b: [MIN.bIII, MIN.bVI, MIN.ii0, MIN.V7] },
+        /* slow, two bars a chord: brushes, a felt piano, the electric piano echoing; the minor four that makes lofi sigh */
+        { name: "Do Not Disturb", root: 49, mode: "maj", bpm: 68, swing: .1, every: 2, mins: 4.4, lead: "felt", tune: "sparse", density: .5, pad: 900, padVel: .024, top: 3400, room: 1.3,
+          comp: "stab", compAt: [0, 3], bass: "soft", drums: "brush", form: "AB", echo: { beats: .75, back: .3, send: .25 },
+          chords: [MAJ.I, MAJ.IV, MAJ.vi, MAJ.iv6], b: [MAJ.ii, MAJ.V, MAJ.iii, MAJ.VI7] },
+        /* a lofi bossa in a major key: nylon guitar, the soft kit, vibes humming a tune */
+        { name: "Coat Check", gain: 1.12, root: 47, mode: "maj", bpm: 90, swing: 0, every: 1, mins: 3.6, lead: "vibes", leadVel: .05, tune: "motif", density: .45, pad: 1000, padVel: .01, top: 5200,
+          comp: "guitar", bass: "bossa", drums: "soft", form: "AAB",
+          chords: [MAJ.I, MAJ.II7, MAJ.ii, MAJ.V7b9], b: [MAJ.IV, MAJ.iv6, MAJ.iii, MAJ.VI7] },
+        /* jazz hip-hop, swung hard: a kick that skips, walking bass, comping chords and a muted horn */
+        { name: "The Ice Machine", root: 53, mode: "min", bpm: 84, swing: .18, every: 1, mins: 3.7, lead: "horn", leadVel: .026, tune: "motif", density: .45, pad: 800, padVel: .01, top: 4600,
+          comp: "charleston", bass: "walk", drums: "boom", kick: [0, 2.25, 2.75], snare: [1, 3], hat: .6, form: "AABA",
+          chords: [MIN.i, MIN.iv9, MIN.bVII, MIN.bIII], b: [MIN.bVI, MIN.bII, MIN.v, MIN.V7] },
+        /* off-beat chords and a bell: a little bouncy, a little sleepy */
+        { name: "Housekeeping", gain: 1.25, root: 46, mode: "maj", bpm: 80, swing: .1, every: 1, mins: 3.9, lead: "bell", leadVel: .036, tune: "motif", density: .4, pad: 1000, padVel: .014, top: 4800,
+          comp: "stab", compAt: [.5, 2], bass: "boom", drums: "boom", kick: [0, 2.5, 3.25], snare: [1, 3], hat: .35, form: "AABB",
+          chords: [MAJ.I, MAJ.iii, MAJ.vi, MAJ.II7], b: [MAJ.IV, MAJ.V, MAJ.I, MAJ.bVII] },
+        /* rain on the glass: chords let ring, vibes now and then with an echo, brushes, long bass notes */
+        { name: "Rain on the Skylight", root: 48, mode: "min", bpm: 62, swing: .08, every: 2, mins: 4.6, lead: "vibes", leadVel: .05, tune: "sparse", density: .45, pad: 700, padVel: .026, top: 3000, room: 1.5,
+          comp: "roll", compVel: .1, bass: "long", drums: "brush", form: "AB", echo: { beats: 1, back: .35, send: .35 },
+          chords: [MIN.i, MIN.bVI, MIN.iv9, MIN.V7], b: [MIN.bIII, MIN.bVII, MIN.bVI, MIN.V7] },
+        /* the one room that isn't there: a light ride, walking bass and vibes running through two-fives */
+        { name: "Room 404", root: 52, mode: "maj", bpm: 96, swing: .16, every: 1, mins: 3.6, lead: "vibes", leadVel: .052, tune: "run", density: .45, pad: 1000, padVel: 0, top: 5400, scale: 7,
+          comp: "charleston", bass: "walk", drums: "jazz", form: "AABA",
+          chords: [MAJ.ii, MAJ.V7b9, MAJ.I, MAJ.VI7], b: [MAJ.ii, MAJ.V, MAJ.iii, MAJ.VI7] },
+        /* going up slowly: a neo-soul push on the chords, a kick on the and of one, a melodica */
+        { name: "Penthouse Lift", root: 55, mode: "min", bpm: 72, swing: .08, every: 1, mins: 4, lead: "reed", tune: "sparse", density: .45, pad: 800, padVel: .014, top: 4000,
+          comp: "stab", compAt: [0, 1.75, 3], bass: "boom", drums: "boom", kick: [0, .75, 2.5], snare: [1, 3], hat: .55, form: "AABA",
+          chords: [MIN.i, MIN.iv, MIN.v, MIN.bVI], b: [MIN.bIII, MIN.iv9, MIN.bII, MIN.V7] },
+        /* no hurry to leave: nylon guitar, brushes, a felt piano tune you could hum */
+        { name: "Late Checkout", root: 53, mode: "maj", bpm: 70, swing: .06, every: 1, mins: 4.1, lead: "felt", tune: "motif", density: .45, pad: 900, padVel: .016, top: 4400, room: 1.2,
+          comp: "guitar", bass: "soft", drums: "brush", form: "AABA",
+          chords: [MAJ.I, MAJ.vi, MAJ.ii, MAJ.V], b: [MAJ.IV, MAJ.iv6, MAJ.I, MAJ.VI7] },
+        /* the box under the desk: a music box over rippling chords in a minor key, the soft kit, an echo */
+        { name: "Lost and Found", gain: 1.2, root: 46, mode: "min", bpm: 76, swing: .06, every: 1, mins: 3.8, lead: "box", tune: "sparse", density: .5, pad: 1000, padVel: .012, top: 5000, room: 1.2,
+          comp: "arp", bass: "soft", drums: "soft", form: "AB", echo: { beats: .75, back: .35, send: .3 },
+          chords: [MIN.i, MIN.bVI, MIN.bIII, MIN.bVII], b: [MIN.iv9, MIN.bVI, MIN.ii0, MIN.V7] }
+    ];
+    TRACKS.push(...MORE);
     /* a little seeded random, so a track's bar is the same whenever it's asked for */
     function rng(seed) { let s = seed >>> 0 || 1; return () => (s = (s * 1664525 + 1013904223) >>> 0) / 4294967296; }
     /* a key signature, as the pitch class of its major key */
@@ -159,7 +208,9 @@
         rec.connect(recF); recF.connect(recG); recG.connect(top); rec.start();
         /* one noise for all the drums */
         const hit = ctx.createBuffer(1, ctx.sampleRate, ctx.sampleRate), hd = hit.getChannelData(0); for (let i = 0; i < hd.length; i++) hd[i] = r() * 2 - 1;
-        return { ctx, input, master, verb, hit, active: [], idx: -1 };
+        /* a silent output for the clock below to tick through */
+        const sink = ctx.createGain(); sink.gain.value = 0; sink.connect(ctx.destination);
+        return { ctx, input, master, verb, hit, sink, record: recG, active: [], idx: -1 };
     }
 
     /* ---------- voices: each sends to the track's bus, and some of it to the room ---------- */
@@ -168,6 +219,9 @@
         const o = ctx.createOscillator(); o.type = type; o.frequency.value = f; o.detune.value = cents || 0;
         o.start(t); o.stop(stop); return o;
     }
+    /* A note unplugs itself when its sound ends. Left plugged in, a finished note goes on being worked through until the garbage collector gets to it, and a tab in
+       the background rarely gets the idle time for that: the load built up minute by minute until the sound broke up (12 Nov 2026, his: crackling in another tab) */
+    function reap(src, out) { src.onended = () => { try { out.disconnect(); } catch (x) { /* already gone */ } }; return src; }
     function pad(e, bus, t, dur, notes, cutoff, vel) {
         const c = e.ctx, f = c.createBiquadFilter(); f.type = "lowpass"; f.Q.value = .3;
         f.frequency.setValueAtTime(cutoff * .7, t); f.frequency.linearRampToValueAtTime(cutoff, t + dur * .5); f.frequency.linearRampToValueAtTime(cutoff * .7, t + dur * 1.2);
@@ -175,7 +229,7 @@
         g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(vel, t + Math.min(.5, dur * .25)); g.gain.setValueAtTime(vel, t + dur * .9); g.gain.linearRampToValueAtTime(0, end);
         for (const n of notes) {
             const fr = midi(n);
-            osc(c, "triangle", fr, -3, t, end).connect(f);
+            reap(osc(c, "triangle", fr, -3, t, end), g).connect(f);
             const s = osc(c, "sine", fr, 3, t, end), h = c.createGain(); h.gain.value = .8; s.connect(h); h.connect(f);
         }
         f.connect(g); send(e, bus, g, .5);
@@ -183,7 +237,7 @@
     function bass(e, bus, t, n, vel, dur) {
         const c = e.ctx, g = c.createGain(), end = t + dur + .12, f = c.createBiquadFilter(); f.type = "lowpass"; f.frequency.value = 300;
         g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(vel, t + .025); g.gain.exponentialRampToValueAtTime(vel * .55, t + dur); g.gain.linearRampToValueAtTime(0, end);
-        osc(c, "sine", midi(n), 0, t, end).connect(f);
+        reap(osc(c, "sine", midi(n), 0, t, end), g).connect(f);
         const up = osc(c, "triangle", midi(n), 0, t, end), ug = c.createGain(); ug.gain.value = .3; up.connect(ug); ug.connect(f);
         f.connect(g); g.connect(bus.drum);
     }
@@ -195,7 +249,7 @@
         mod.connect(mg); mg.connect(car.frequency); f.type = "lowpass"; f.frequency.setValueAtTime(1900, t); f.frequency.exponentialRampToValueAtTime(800, t + 1);
         g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(vel, t + .007); g.gain.exponentialRampToValueAtTime(vel * .32, t + dur); g.gain.linearRampToValueAtTime(0, end);
         p.pan.value = pan; car.connect(f); f.connect(g); g.connect(p); send(e, bus, p, .35);
-        mod.start(t); car.start(t); mod.stop(end); car.stop(end);
+        mod.start(t); car.start(t); mod.stop(end); car.stop(end); reap(car, p);
     }
     function stab(e, bus, t, notes, vel, dur) { notes.forEach((n, i) => ep(e, bus, t + i * .007, n, vel, dur, (i / Math.max(1, notes.length - 1) - .5) * .5)); }
     function pluck(e, bus, t, n, vel, kind) {
@@ -205,7 +259,7 @@
         f.frequency.exponentialRampToValueAtTime(kind === "bell" ? 1400 : 520, t + 1.6);
         g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(vel, t + (kind === "felt" ? .018 : .01));
         g.gain.exponentialRampToValueAtTime(Math.max(vel * .01, .0004), end);
-        osc(c, "sine", fr, 0, t, end).connect(f);
+        reap(osc(c, "sine", fr, 0, t, end), g).connect(f);
         if (kind === "felt") { const o2 = osc(c, "sine", fr * 2, 2, t, t + 1.4), h = c.createGain(); h.gain.setValueAtTime(.22, t); h.gain.exponentialRampToValueAtTime(.002, t + 1.3); o2.connect(h); h.connect(f); }
         if (kind === "keys") {
             const m = c.createOscillator(), mg = c.createGain(), o = c.createOscillator(), og = c.createGain();
@@ -226,15 +280,15 @@
         const c = e.ctx, fr = midi(n), len = Math.max(1.4, Math.min(4.6, 2.4 + (66 - n) * .07)), end = t + len + .25;
         const g = c.createGain(), f = c.createBiquadFilter(), P = c.createStereoPanner();
         f.type = "lowpass"; f.Q.value = .4; f.frequency.setValueAtTime(Math.min(7000, fr * 7 + 900), t); f.frequency.exponentialRampToValueAtTime(Math.min(2400, fr * 2.5 + 500), t + 1.4);
-        g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(vel, t + .005); g.gain.exponentialRampToValueAtTime(vel * .28, t + .7); g.gain.exponentialRampToValueAtTime(Math.max(vel * .004, .0003), end);
+        g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(vel, t + .012); g.gain.exponentialRampToValueAtTime(vel * .28, t + .7);      // a felt hammer: soft enough not to tick g.gain.exponentialRampToValueAtTime(Math.max(vel * .004, .0003), end);
         GRAND.forEach((amp, k) => {
             if (fr * (k + 1) > 9000) return;
             const h = c.createGain(), stop = t + len / (1 + k * .55) + .1, o = osc(c, "sine", fr * (k + 1) * Math.sqrt(1 + .00032 * (k + 1) * (k + 1)), 0, t, stop);
             h.gain.setValueAtTime(amp, t); h.gain.exponentialRampToValueAtTime(amp * .002, stop); o.connect(h); h.connect(f);
-            if (k === 0) { const o2 = osc(c, "sine", fr, 1.6, t, end), h2 = c.createGain(); h2.gain.value = .5; o2.connect(h2); h2.connect(f); }      // two strings, a hair apart, so it beats
+            if (k === 0) { const o2 = reap(osc(c, "sine", fr, 1.6, t, end), P), h2 = c.createGain(); h2.gain.value = .5; o2.connect(h2); h2.connect(f); }      // two strings, a hair apart, so it beats
         });
         const s = c.createBufferSource(), hf = c.createBiquadFilter(), hg = c.createGain(); s.buffer = e.hit; hf.type = "bandpass"; hf.frequency.value = Math.min(5000, fr * 4); hf.Q.value = .8;
-        hg.gain.setValueAtTime(.5, t); hg.gain.exponentialRampToValueAtTime(.002, t + .03); s.connect(hf); hf.connect(hg); hg.connect(f); s.start(t, (t * 5.1) % .8); s.stop(t + .05);
+        hg.gain.setValueAtTime(0, t); hg.gain.linearRampToValueAtTime(.3, t + .004); hg.gain.exponentialRampToValueAtTime(.002, t + .035); s.connect(hf); hf.connect(hg); hg.connect(f); s.start(t, (t * 5.1) % .8); s.stop(t + .05);
         P.pan.value = Math.max(-.45, Math.min(.45, (n - 62) / 40)); f.connect(g); g.connect(P); send(e, bus, P, .6);
     }
     const key = (e, bus, t, n, vel, kind) => kind === "grand" ? grand(e, bus, t, n, vel) : pluck(e, bus, t, n, vel, kind);
@@ -245,7 +299,7 @@
         f.frequency.setValueAtTime(kind === "horn" ? 500 : 1000, t); f.frequency.linearRampToValueAtTime(kind === "horn" ? 1150 : 1250, t + .09); f.frequency.linearRampToValueAtTime(kind === "horn" ? 750 : 1000, t + dur);
         g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(vel, t + (kind === "horn" ? .05 : .03)); g.gain.setValueAtTime(vel * .8, t + Math.max(.06, dur - .05)); g.gain.linearRampToValueAtTime(0, end);
         lfo.frequency.value = kind === "horn" ? 4.7 : 5.6; ld.gain.setValueAtTime(0, t); ld.gain.linearRampToValueAtTime(kind === "horn" ? 7 : 3, t + Math.min(dur, .5)); lfo.connect(ld); lfo.start(t); lfo.stop(end);
-        const a = c.createOscillator(); a.type = kind === "horn" ? "sawtooth" : "square"; a.frequency.setValueAtTime(fr * (kind === "horn" ? .985 : 1), t); a.frequency.linearRampToValueAtTime(fr, t + .05); ld.connect(a.detune); a.connect(f); a.start(t); a.stop(end);
+        const a = c.createOscillator(); a.type = kind === "horn" ? "sawtooth" : "square"; a.frequency.setValueAtTime(fr * (kind === "horn" ? .985 : 1), t); a.frequency.linearRampToValueAtTime(fr, t + .05); ld.connect(a.detune); a.connect(f); a.start(t); a.stop(end); reap(a, g);
         f.connect(g); send(e, bus, g, .45);
     }
     /* a nylon-string guitar, plucked */
@@ -253,53 +307,53 @@
         const c = e.ctx, fr = midi(n), end = t + 1.1, g = c.createGain(), f = c.createBiquadFilter(), P = c.createStereoPanner();
         f.type = "lowpass"; f.frequency.setValueAtTime(2300, t); f.frequency.exponentialRampToValueAtTime(560, t + .45);
         g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(vel, t + .004); g.gain.exponentialRampToValueAtTime(Math.max(vel * .008, .0003), end);
-        osc(c, "triangle", fr, 0, t, end).connect(f); const sw = osc(c, "sawtooth", fr, 2, t, t + .5), h = c.createGain(); h.gain.setValueAtTime(.2, t); h.gain.exponentialRampToValueAtTime(.002, t + .4); sw.connect(h); h.connect(f);
+        reap(osc(c, "triangle", fr, 0, t, end), P).connect(f); const sw = osc(c, "sawtooth", fr, 2, t, t + .5), h = c.createGain(); h.gain.setValueAtTime(.2, t); h.gain.exponentialRampToValueAtTime(.002, t + .4); sw.connect(h); h.connect(f);
         P.pan.value = pan || 0; f.connect(g); g.connect(P); send(e, bus, P, .3);
     }
     /* an old organ, for the off-beats */
     function organ(e, bus, t, notes, vel, dur) {
         const c = e.ctx, end = t + dur + .06, g = c.createGain(), f = c.createBiquadFilter(); f.type = "lowpass"; f.frequency.value = 1500;
         g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(vel, t + .008); g.gain.setValueAtTime(vel, t + dur * .6); g.gain.linearRampToValueAtTime(0, end);
-        for (const n of notes) { osc(c, "sine", midi(n), 0, t, end).connect(f); const o = osc(c, "sine", midi(n) * 2, 3, t, end), h = c.createGain(); h.gain.value = .5; o.connect(h); h.connect(f); const o3 = osc(c, "sine", midi(n) * 3, 0, t, end), h3 = c.createGain(); h3.gain.value = .22; o3.connect(h3); h3.connect(f); }
+        for (const n of notes) { reap(osc(c, "sine", midi(n), 0, t, end), g).connect(f); const o = osc(c, "sine", midi(n) * 2, 3, t, end), h = c.createGain(); h.gain.value = .5; o.connect(h); h.connect(f); const o3 = osc(c, "sine", midi(n) * 3, 0, t, end), h3 = c.createGain(); h3.gain.value = .22; o3.connect(h3); h3.connect(f); }
         f.connect(g); send(e, bus, g, .25);
     }
     /* an upright bass: a soft thump and a round note that dies away */
     function upright(e, bus, t, n, vel, dur) {
         const c = e.ctx, g = c.createGain(), end = t + dur + .1, f = c.createBiquadFilter(); f.type = "lowpass"; f.frequency.setValueAtTime(620, t); f.frequency.exponentialRampToValueAtTime(240, t + .3);
         g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(vel, t + .012); g.gain.exponentialRampToValueAtTime(vel * .3, t + Math.max(.1, dur)); g.gain.linearRampToValueAtTime(0, end);
-        osc(c, "triangle", midi(n), 0, t, end).connect(f); const s2 = osc(c, "sine", midi(n), 0, t, end), h = c.createGain(); h.gain.value = .7; s2.connect(h); h.connect(f);
+        reap(osc(c, "triangle", midi(n), 0, t, end), g).connect(f); const s2 = osc(c, "sine", midi(n), 0, t, end), h = c.createGain(); h.gain.value = .7; s2.connect(h); h.connect(f);
         f.connect(g); g.connect(bus.drum);
     }
     /* dub's bass: nearly all sub */
     function sub(e, bus, t, n, vel, dur) {
         const c = e.ctx, g = c.createGain(), end = t + dur + .06; g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(vel, t + .018); g.gain.setValueAtTime(vel * .85, t + dur * .8); g.gain.linearRampToValueAtTime(0, end);
-        osc(c, "sine", midi(n), 0, t, end).connect(g); g.connect(bus.drum);
+        reap(osc(c, "sine", midi(n), 0, t, end), g).connect(g); g.connect(bus.drum);
     }
     /* ---------- drums, soft and dusty, straight onto the bus's beat path ---------- */
     function noiseHit(e, bus, t, dur, vel, type, freq, q, wetAmt) {
         const c = e.ctx, s = c.createBufferSource(), f = c.createBiquadFilter(), g = c.createGain();
         s.buffer = e.hit; f.type = type; f.frequency.value = freq; f.Q.value = q;
         g.gain.setValueAtTime(vel, t); g.gain.exponentialRampToValueAtTime(Math.max(vel * .004, .0002), t + dur);
-        s.connect(f); f.connect(g); g.connect(bus.drum); s.start(t, (t * 7.3) % .8); s.stop(t + dur + .02);
+        s.connect(f); f.connect(g); g.connect(bus.drum); s.start(t, (t * 7.3) % .8); s.stop(t + dur + .02); reap(s, g);
         if (wetAmt) { const w = c.createGain(); w.gain.value = wetAmt; g.connect(w); w.connect(bus.wet); }
     }
     function kick(e, bus, t, vel) {
         const c = e.ctx, o = c.createOscillator(), g = c.createGain();
         o.frequency.setValueAtTime(118, t); o.frequency.exponentialRampToValueAtTime(47, t + .085);
         g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(vel, t + .004); g.gain.exponentialRampToValueAtTime(.0006, t + .3);
-        o.connect(g); g.connect(bus.drum); o.start(t); o.stop(t + .32);
+        o.connect(g); g.connect(bus.drum); o.start(t); o.stop(t + .32); reap(o, g);
         /* everything else leans back from the kick */
         const d = bus.duck.gain; d.setValueAtTime(1, t); d.linearRampToValueAtTime(.74, t + .02); d.linearRampToValueAtTime(1, t + .26);
     }
     function snare(e, bus, t, vel) {
         noiseHit(e, bus, t, .17, vel * .6, "bandpass", 1650, .6, .25);
         const c = e.ctx, o = c.createOscillator(), g = c.createGain(); o.frequency.setValueAtTime(205, t); o.frequency.exponentialRampToValueAtTime(150, t + .06);
-        g.gain.setValueAtTime(vel * .38, t); g.gain.exponentialRampToValueAtTime(.0005, t + .1); o.connect(g); g.connect(bus.drum); o.start(t); o.stop(t + .12);
+        g.gain.setValueAtTime(vel * .38, t); g.gain.exponentialRampToValueAtTime(.0005, t + .1); o.connect(g); g.connect(bus.drum); o.start(t); o.stop(t + .12); reap(o, g);
     }
     /* a cross-stick */
     function rim(e, bus, t, vel, wetAmt) {
         noiseHit(e, bus, t, .045, vel * .6, "bandpass", 2100, 2.2, wetAmt || 0);
-        const c = e.ctx, o = c.createOscillator(), g = c.createGain(); o.type = "triangle"; o.frequency.value = 1050; g.gain.setValueAtTime(vel * .5, t); g.gain.exponentialRampToValueAtTime(.0004, t + .03); o.connect(g); g.connect(bus.drum); o.start(t); o.stop(t + .05);
+        const c = e.ctx, o = c.createOscillator(), g = c.createGain(); o.type = "triangle"; o.frequency.value = 1050; g.gain.setValueAtTime(vel * .5, t); g.gain.exponentialRampToValueAtTime(.0004, t + .03); o.connect(g); g.connect(bus.drum); o.start(t); o.stop(t + .05); reap(o, g);
         if (bus.echo) { const q = c.createGain(); q.gain.value = bus.echoSend; g.connect(q); q.connect(bus.echo); }
     }
     const ride = (e, bus, t, vel) => { noiseHit(e, bus, t, .34, vel, "bandpass", 3700, 1.5, .12); noiseHit(e, bus, t, .03, vel * .9, "highpass", 3000, .5, 0); };
@@ -308,11 +362,11 @@
     function brush(e, bus, t, dur, vel) {
         const c = e.ctx, s = c.createBufferSource(), f = c.createBiquadFilter(), g = c.createGain(); s.buffer = e.hit; s.loop = true; f.type = "bandpass"; f.frequency.value = 2500; f.Q.value = .5;
         g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(vel, t + dur * .4); g.gain.linearRampToValueAtTime(0, t + dur);
-        s.connect(f); f.connect(g); g.connect(bus.drum); s.start(t, (t * 3.1) % .8); s.stop(t + dur + .02);
+        s.connect(f); f.connect(g); g.connect(bus.drum); s.start(t, (t * 3.1) % .8); s.stop(t + dur + .02); reap(s, g);
     }
     function sleigh(e, bus, t, vel) {
         const c = e.ctx; noiseHit(e, bus, t, .09, vel * .7, "highpass", 7500, .7, .2);
-        for (let k = 0; k < 3; k++) { const o = c.createOscillator(), g = c.createGain(), at = t + k * .011; o.type = "sine"; o.frequency.value = 5200 + ((t * 977 + k * 1301) % 2600); g.gain.setValueAtTime(vel * .35, at); g.gain.exponentialRampToValueAtTime(.0003, at + .07); o.connect(g); g.connect(bus.drum); o.start(at); o.stop(at + .08); }
+        for (let k = 0; k < 3; k++) { const o = c.createOscillator(), g = c.createGain(), at = t + k * .011; o.type = "sine"; o.frequency.value = 5200 + ((t * 977 + k * 1301) % 2600); g.gain.setValueAtTime(vel * .35, at); g.gain.exponentialRampToValueAtTime(.0003, at + .07); o.connect(g); g.connect(bus.drum); o.start(at); o.stop(at + .08); reap(o, g); }
     }
     const hat = (e, bus, t, vel, open) => noiseHit(e, bus, t, open ? .16 : .035, vel, "highpass", 6200, .5, 0);
 
@@ -550,7 +604,17 @@
     }
 
     /* ---------- the live player ---------- */
-    let eng = null, timer = 0, order = [], orderAt = 0, playing = false, voice = null, orderXmas = null;
+    let eng = null, timer = 0, order = [], orderAt = 0, playing = false, voice = null, orderXmas = null, clockSet = false;
+    /* How far ahead notes are booked. A tab in the background has its timers held back to once a second or less, so then it books further ahead */
+    const ahead = () => typeof document !== "undefined" && document.hidden ? 5 : LOOKAHEAD;
+    /* The clock that keeps booking notes runs on the audio itself as well as on a timer: a silent half-second sound whose end calls the next tick.
+       Sound keeps time in a background tab when timers don't (12 Nov 2026) */
+    function armClock() {
+        if (!eng || clockSet) return;
+        const c = eng.ctx, s = c.createConstantSource(); s.offset.value = 0; s.connect(eng.sink);
+        s.onended = () => { clockSet = false; try { s.disconnect(); } catch (x) { /* gone */ } if (playing && !voice) { tick(); armClock(); } };
+        s.start(); s.stop(c.currentTime + .5); clockSet = true;
+    }
     let duckAmt = 0; const ducked = () => 1 - .5 * duckAmt;
     /* carols only at Christmas, shuffled in with the rest then (8 Nov 2026, his: "Christmas should also play the normal soundtrack, shuffled in with christmas music") */
     /* and each place has its own: the Hallway's in the Hallway, the gallery's in the Events Gallery (12 Nov 2026). A track out of its place is hidden from the Playlist, as carols are out of season */
@@ -591,7 +655,7 @@
             playing = true;
             if (!eng.active.some(b => b.stopAt === null)) startBus(eng, i === undefined || !inSeason(i) ? nextIndex() : i, t + .05, 3, undefined, 2);
             if (!timer) timer = setInterval(tick, 500);
-            tick(); changed();
+            armClock(); tick(); changed();
         },
         stop() {
             if (voice && playing) voice.stop();
@@ -601,16 +665,20 @@
         play(i) { if (voice) return; if (!playing) return api.start(i); handover(eng, i, true, eng.ctx.currentTime); pump(eng, eng.ctx.currentTime + LOOKAHEAD, eng.ctx.currentTime); changed(); },
         next() { if (voice) return; if (!playing) return api.start(); api.play(nextIndex()); },
         /* for checking: render a stretch offline, with the tracks handing over at even spacing. marks: when each one began. */
-        renderPreview(seconds, list, sampleRate) {
-            const c = new OfflineAudioContext(2, Math.floor((sampleRate || 44100) * seconds), sampleRate || 44100), e = build(c), marks = [];
+        renderPreview(seconds, list, sampleRate, opts) {
+            /* scheduled as the live player does, a little ahead at a time, so the graph is as big as it is live (all of it at once made every note sit in the graph from the start) */
+            const c = new OfflineAudioContext(2, Math.floor((sampleRate || 44100) * seconds), sampleRate || 44100), e = build(c), marks = [], STEP = .5;
             e.master.gain.value = .5;
+            if (opts && opts.noRecord) e.record.gain.value = 0;      // for listening for clicks: the record's own crackle would count
             startBus(e, list[0], .05, 3, undefined, 2);
-            for (let k = 1; k < list.length; k++) { const T = seconds * k / list.length; pump(e, T, 0); const b = handover(e, list[k], false, T); marks.push({ track: list[k], at: b.t0 }); }
-            pump(e, seconds, 0);
+            let k = 1;
+            const at = T => { while (k < list.length && T >= seconds * k / list.length) { const b = handover(e, list[k], false, T); marks.push({ track: list[k], at: b.t0 }); k++; } pump(e, T + LOOKAHEAD, T); };
+            at(0);
+            for (let T = STEP; T < seconds; T += STEP) { const when = T; c.suspend(when).then(() => { at(when); c.resume(); }); }
             api.lastMarks = marks;
             return c.startRendering();
         },
-        _forTests: { TRACKS, sigOf, rootFor, tuneFor }
+        _forTests: { TRACKS, sigOf, rootFor, tuneFor, engine: () => eng }
     };
     function fadeOutTracks() {
         clearInterval(timer); timer = 0;
@@ -633,7 +701,7 @@
         if (!eng || !playing) return;
         const now = eng.ctx.currentTime, cur = eng.active.find(b => b.stopAt === null);
         if (cur && cur.t0 <= now && (now >= cur.end - HANDOVER_LEAD || (!inSeason(cur.i) && !cur.outOfSeason && (cur.outOfSeason = true)))) handover(eng, nextIndex(), false, now);
-        pump(eng, now + LOOKAHEAD, now);
+        pump(eng, now + ahead(), now);
         changed();
     }
     window.HallwayAudio = api;
