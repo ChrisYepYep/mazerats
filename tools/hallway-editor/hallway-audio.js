@@ -18,6 +18,7 @@
        HallwayAudio.next()          hand over to another track
        HallwayAudio.setVolume(0..1)
        HallwayAudio.onChange = fn   called when the track changes
+       HallwayAudio.setPlace("gallery" | "hallway")   the Events Gallery has its own music: hand over to it, or back
        HallwayAudio.renderPreview(seconds, [i, j, ...]) -> an AudioBuffer with handovers spaced evenly, for checking */
 (function () {
     "use strict";
@@ -27,7 +28,7 @@
     const barLenOf = tr => 60 / tr.bpm * (tr.beats || 4);
 
     /* chords are semitones above the root, all in the track's key; b is the second section, and form says how they come round.
-       comp: what plays the chords. bass and drums: how those go. lead and tune: what plays the tune and how it moves. top: how muffled it is. room: how much of the room. */
+       comp: what plays the chords. bass and drums: how those go. lead and tune: what plays the tune and how it moves. top: how muffled it is. room: how much of the room. gain: a trim, so it sits as loud as the rest. */
     const TRACKS = [
         /* the original: a dusty head-nod beat, electric piano stabs, a felt piano tune */
         { name: "The Long Carpet", root: 50, mode: "maj", bpm: 72, swing: .1, every: 1, mins: 4.2, lead: "felt", tune: "walk", density: .5, pad: 900, padVel: .026,
@@ -95,6 +96,27 @@
           chords: [I, vi, ii, V, III7, IV, V, I] }
     ];
     TRACKS.push(...CAROLS);
+    /* ---------- the Events Gallery (12 Nov 2026, the owner's: "calm piano, some gentle jazz, a nice mixture of relaxing gallery music"): only while you're in the gallery, and there only these ----------
+       A bigger, quieter room than the Hallway: more of the room on everything, a grand piano rather than the felt one, brushes rather than a beat. */
+    const GALLERY = [
+        /* a grand piano on its own, letting its chords ring in a high white room */
+        { name: "Private View", place: "gallery", root: 53, mode: "maj", bpm: 60, swing: 0, every: 2, mins: 4.4, lead: "grand", leadVel: .14, tune: "sparse", density: .8, pad: 900, padVel: .024, top: 5200, room: 1.7,
+          comp: "roll", compVoice: "grand", compVel: .13, gain: 1.2, bass: "none", drums: "none", form: "AABA",
+          chords: [[0, 7, 11, 14, 16], [-3, 0, 4, 7, 11], [2, 5, 9, 12, 16], [-5, 0, 2, 5, 9]], b: [[-7, -3, 0, 4, 7], [-8, -5, -1, 2], [2, 5, 9, 12, 16], [-5, 0, 2, 5, 9]] },
+        /* a quiet trio: brushes, walking bass, soft electric piano chords and the piano's line over them */
+        { name: "Brushwork", place: "gallery", root: 51, mode: "maj", bpm: 84, swing: .15, every: 1, mins: 4, lead: "grand", leadVel: .075, tune: "run", density: .38, pad: 1000, padVel: .008, top: 5400, room: 1.35,
+          comp: "charleston", bass: "walk", drums: "brush", form: "AABA", scale: 7,
+          chords: [[2, 5, 9, 12, 16], [-5, -1, 2, 5, 9], [0, 7, 11, 14, 16], [-3, 0, 4, 7, 11]], b: [[-7, -3, 0, 4, 7], [-8, -5, -1, 2], [2, 5, 9, 12, 16], [-5, -1, 2, 5, 9]] },
+        /* a slow jazz waltz: vibes with the tune, a ride played softly, long upright notes */
+        { name: "Still Life", place: "gallery", root: 48, mode: "maj", bpm: 100, beats: 3, swing: .12, every: 2, mins: 3.8, lead: "vibes", leadVel: .06, tune: "motif", gain: 1.15, density: .45, pad: 1100, padVel: .012, top: 5600, room: 1.45,
+          comp: "waltz", bass: "long", drums: "waltz", form: "AABB", scale: 7,
+          chords: [[0, 7, 11, 14, 16], [-3, 0, 4, 7, 11], [2, 5, 9, 12, 16], [-5, -1, 5, 9, 16]], b: [[-7, -3, 0, 4, 7], [-8, -5, -1, 2], [2, 5, 9, 12, 16], [-5, 0, 2, 5, 9]] },
+        /* the ballad for after hours: the piano with the tune, brushes and a few long bass notes under it */
+        { name: "Late Opening", place: "gallery", root: 45, mode: "min", bpm: 64, swing: .08, every: 2, mins: 4.6, lead: "grand", leadVel: .09, tune: "motif", gain: 1.3, density: .4, pad: 850, padVel: .016, top: 4600, room: 1.6,
+          comp: "ballad", bass: "long", drums: "brush", form: "AB",
+          chords: [[0, 3, 7, 10, 14], [-7, -4, 0, 3, 7], [-4, 0, 3, 7], [-5, -1, 2, 5]], b: [[3, 7, 10, 14], [-4, 0, 3, 7], [2, 5, 8, 12], [-5, -1, 2, 5]] }
+    ];
+    TRACKS.push(...GALLERY);
     /* a little seeded random, so a track's bar is the same whenever it's asked for */
     function rng(seed) { let s = seed >>> 0 || 1; return () => (s = (s * 1664525 + 1013904223) >>> 0) / 4294967296; }
     /* a key signature, as the pitch class of its major key */
@@ -198,6 +220,24 @@
         if (kind === "bell") { const o2 = osc(c, "sine", fr * 2.76, 0, t, t + 1.6), h = c.createGain(); h.gain.setValueAtTime(.07, t); h.gain.exponentialRampToValueAtTime(.001, t + 1.5); o2.connect(h); h.connect(f); }
         f.connect(g); send(e, bus, g, kind === "bell" ? .8 : .5);
     }
+    /* the gallery's grand piano: a few slightly stretched partials, the high ones dying first, a soft hammer, and low notes ringing longer than high ones */
+    const GRAND = [1, .42, .24, .13, .07, .04];
+    function grand(e, bus, t, n, vel) {
+        const c = e.ctx, fr = midi(n), len = Math.max(1.4, Math.min(4.6, 2.4 + (66 - n) * .07)), end = t + len + .25;
+        const g = c.createGain(), f = c.createBiquadFilter(), P = c.createStereoPanner();
+        f.type = "lowpass"; f.Q.value = .4; f.frequency.setValueAtTime(Math.min(7000, fr * 7 + 900), t); f.frequency.exponentialRampToValueAtTime(Math.min(2400, fr * 2.5 + 500), t + 1.4);
+        g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(vel, t + .005); g.gain.exponentialRampToValueAtTime(vel * .28, t + .7); g.gain.exponentialRampToValueAtTime(Math.max(vel * .004, .0003), end);
+        GRAND.forEach((amp, k) => {
+            if (fr * (k + 1) > 9000) return;
+            const h = c.createGain(), stop = t + len / (1 + k * .55) + .1, o = osc(c, "sine", fr * (k + 1) * Math.sqrt(1 + .00032 * (k + 1) * (k + 1)), 0, t, stop);
+            h.gain.setValueAtTime(amp, t); h.gain.exponentialRampToValueAtTime(amp * .002, stop); o.connect(h); h.connect(f);
+            if (k === 0) { const o2 = osc(c, "sine", fr, 1.6, t, end), h2 = c.createGain(); h2.gain.value = .5; o2.connect(h2); h2.connect(f); }      // two strings, a hair apart, so it beats
+        });
+        const s = c.createBufferSource(), hf = c.createBiquadFilter(), hg = c.createGain(); s.buffer = e.hit; hf.type = "bandpass"; hf.frequency.value = Math.min(5000, fr * 4); hf.Q.value = .8;
+        hg.gain.setValueAtTime(.5, t); hg.gain.exponentialRampToValueAtTime(.002, t + .03); s.connect(hf); hf.connect(hg); hg.connect(f); s.start(t, (t * 5.1) % .8); s.stop(t + .05);
+        P.pan.value = Math.max(-.45, Math.min(.45, (n - 62) / 40)); f.connect(g); g.connect(P); send(e, bus, P, .6);
+    }
+    const key = (e, bus, t, n, vel, kind) => kind === "grand" ? grand(e, bus, t, n, vel) : pluck(e, bus, t, n, vel, kind);
     /* a held tune: a muted horn, or a melodica */
     function held(e, bus, t, n, vel, dur, kind) {
         const c = e.ctx, fr = midi(n), end = t + dur + .18, g = c.createGain(), f = c.createBiquadFilter(), lfo = c.createOscillator(), ld = c.createGain();
@@ -332,8 +372,15 @@
         },
         roll(x) {
             /* a chord let ring, its notes one after another from the bottom; a single note answers it in the second bar */
-            if (x.bar % x.tr.every === 0) x.notes.forEach((n, i) => pluck(x.e, x.bus, x.t + i * .07, n, .12, "felt"));
-            else if (x.R() < .7) pluck(x.e, x.bus, x.nudge(2), x.notes[x.notes.length - 1], .09, "felt");
+            const kind = x.tr.compVoice || "felt", v = x.tr.compVel || .12;
+            if (x.bar % x.tr.every === 0) x.notes.forEach((n, i) => key(x.e, x.bus, x.t + i * .07, n, v, kind));
+            else if (x.R() < .7) key(x.e, x.bus, x.nudge(2), x.notes[x.notes.length - 1], v * .75, kind);
+        },
+        ballad(x) {
+            /* a piano ballad's left hand: the root, then the chord laid gently on top; in the second bar, the chord again, softer, and a note of it on the and of three */
+            const { e, bus, R, nudge, notes } = x, first = x.bar % x.tr.every === 0;
+            if (first) { key(e, bus, x.t, notes[0], .095, "grand"); notes.slice(1).forEach((n, i) => key(e, bus, nudge(1) + i * .018, n, .06 + R() * .008, "grand")); }
+            else { notes.slice(1).forEach((n, i) => key(e, bus, nudge(0) + i * .022, n, .048 + R() * .006, "grand")); if (R() < .6) key(e, bus, nudge(2.5), notes[1 + Math.floor(R() * (notes.length - 1))], .05, "grand"); }
         }
     };
     /* what the bass does */
@@ -410,7 +457,7 @@
             for (let b = 0; b < 4; b += .5) shaker(e, bus, nudge(b), b % 1 ? .009 : .016);
         }
     };
-    const LEAD_VEL = { bell: .042, box: .03, horn: .03, reed: .018, vibes: .06, piano: .062, felt: .064, keys: .068 };
+    const LEAD_VEL = { bell: .042, box: .03, horn: .03, reed: .018, vibes: .06, piano: .062, felt: .064, keys: .068, grand: .065 };
     function scheduleBar(e, bus, bar) {
         if (bus.lastBar !== null && bar >= bus.lastBar) return;
         const tr = TRACKS[bus.i], beats = tr.beats || 4, spb = 60 / tr.bpm, barLen = spb * beats, t = bus.t0 + bar * barLen, root = bus.root;
@@ -445,6 +492,7 @@
                 if (tr.lead === "horn" || tr.lead === "reed") held(e, bus, at, root + s, v, dur * spb, tr.lead);
                 else if (tr.lead === "box") pluck(e, bus, at, root + s + 12, v, "bell");
                 else if (tr.lead === "piano") pluck(e, bus, at, root + s, v, "felt");
+                else if (tr.lead === "grand") grand(e, bus, at, root + s, v);
                 else pluck(e, bus, at, root + s, v, tr.lead);
             }
         }
@@ -454,7 +502,7 @@
         /* it comes up out of the muffle as well as getting louder */
         f.type = "lowpass"; f.Q.value = .3;
         f.frequency.setValueAtTime(fade > 1 ? 600 : (tr.top || 16000), t); f.frequency.exponentialRampToValueAtTime(tr.top || 16000, t + Math.max(fade * 1.6, .1));
-        g.gain.setValueAtTime(0, t); g.gain.setTargetAtTime(1, t, fade / 3);
+        g.gain.setValueAtTime(0, t); g.gain.setTargetAtTime(tr.gain || 1, t, fade / 3);
         wetG.gain.setValueAtTime(0, t); wetG.gain.setTargetAtTime(tr.room || 1, t, fade / 3);
         dry.connect(duck); duck.connect(f); drum.connect(f); f.connect(g); g.connect(e.input);
         wet.connect(wetG); wetG.connect(e.verb);
@@ -466,7 +514,7 @@
     }
     function fadeBus(e, bus, t, fade) {
         const tr = TRACKS[bus.i];
-        for (const [p, v] of [[bus.g.gain, 1], [bus.wetG.gain, tr.room || 1]]) { p.setValueAtTime(v, t); p.setTargetAtTime(0, t, fade / 3); p.setValueAtTime(0, t + fade * 1.4); }
+        for (const [p, v] of [[bus.g.gain, tr.gain || 1], [bus.wetG.gain, tr.room || 1]]) { p.setValueAtTime(v, t); p.setTargetAtTime(0, t, fade / 3); p.setValueAtTime(0, t + fade * 1.4); }
         bus.f.frequency.setValueAtTime(tr.top || 16000, t); bus.f.frequency.exponentialRampToValueAtTime(500, t + fade);
         bus.stopAt = t + fade * 1.4;
     }
@@ -505,10 +553,20 @@
     let eng = null, timer = 0, order = [], orderAt = 0, playing = false, voice = null, orderXmas = null;
     let duckAmt = 0; const ducked = () => 1 - .5 * duckAmt;
     /* carols only at Christmas, shuffled in with the rest then (8 Nov 2026, his: "Christmas should also play the normal soundtrack, shuffled in with christmas music") */
-    const xmasNow = () => !!window.hallwayXmas, inSeason = i => !TRACKS[i].xmas || xmasNow();
+    /* and each place has its own: the Hallway's in the Hallway, the gallery's in the Events Gallery (12 Nov 2026). A track out of its place is hidden from the Playlist, as carols are out of season */
+    let place = "hallway";
+    const xmasNow = () => !!window.hallwayXmas, inSeason = i => (TRACKS[i].place || "hallway") === place && (!TRACKS[i].xmas || xmasNow());
     const api = {
-        tracks: TRACKS.map(t => ({ name: t.name, minutes: t.mins, xmas: !!t.xmas })),
+        tracks: TRACKS.map(t => ({ name: t.name, minutes: t.mins, xmas: !!t.xmas, place: t.place || "hallway" })),
         inSeason,
+        get place() { return place; },
+        /* the map switch: "gallery" or "hallway". If the music's on it hands over (a bar or two) to the new place's music; if it's off, muted, hushed for an arcade game
+           or taken over, nothing plays, and the new place's music is what starts when it comes back */
+        setPlace(p) {
+            p = p === "gallery" ? "gallery" : "hallway"; if (p === place) return; place = p;
+            if (eng && playing && !voice) { const now = eng.ctx.currentTime; handover(eng, nextIndex(), true, now); pump(eng, now + LOOKAHEAD, now); }
+            changed();
+        },
         onChange: null,
         get playing() { return playing; },
         get current() { return eng && !voice ? eng.idx : -1; },
@@ -566,7 +624,7 @@
     function nextIndex() { let n = roundNext(); if (eng && n === eng.idx && TRACKS.filter((_, i) => inSeason(i)).length > 1) n = roundNext(); return n; }
     function roundNext() {
         /* a shuffled round, so every track comes up before any comes back */
-        if (orderXmas !== xmasNow()) { orderXmas = xmasNow(); order = []; orderAt = 0; }
+        if (orderXmas !== xmasNow() + place) { orderXmas = xmasNow() + place; order = []; orderAt = 0; }
         if (orderAt >= order.length) { const a = TRACKS.map((_, i) => i).filter(inSeason); for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } if (eng && a[0] === eng.idx && a.length > 1) a.push(a.shift()); order = a; orderAt = 0; }
         return order[orderAt++];
     }
