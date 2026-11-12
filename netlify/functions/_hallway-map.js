@@ -17,8 +17,16 @@ async function publishedMap() {
         if (text) map = JSON.parse(text);
         else if (!man) map = staticMap();                       // never published from the Warren: the deployed copy
     } catch (e) { console.error("hallway map: couldn't read the published map", e); return null; }
+    if (map) map = withGallery(map);
     if (map) cache = { at: Date.now(), map };
     return map;
+}
+/* The file holds two maps (12 Nov 2026): the Hallways, and the Events Gallery in its "gallery". Floor ids are never shared between
+   them, so the checks here read one list of floors, stairs, Lost Property spots and hunts from both */
+function withGallery(map) {
+    const g = map && map.gallery; if (!g || !Array.isArray(g.levels)) return map;
+    const both = k => (Array.isArray(map[k]) || Array.isArray(g[k])) ? [...(Array.isArray(map[k]) ? map[k] : []), ...(Array.isArray(g[k]) ? g[k] : [])] : undefined;
+    return { ...map, levels: [...(map.levels || []), ...g.levels], stairs: both("stairs") || [], lostSpots: both("lostSpots"), hunts: both("hunts") };
 }
 
 /* ---- where a person can stand (9 Nov scan, Hallway content finding 1) ----
@@ -88,4 +96,4 @@ function seatReachable(l, X, Y, f) {
     return [...direct, ...via].some(([a, b]) => f(a, b));
 }
 
-module.exports = { publishedMap, standableOn, pickUpFrom, _reset: () => { cache = null; } };
+module.exports = { publishedMap, standableOn, pickUpFrom, withGallery, _reset: () => { cache = null; } };

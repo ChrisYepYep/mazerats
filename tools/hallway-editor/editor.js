@@ -14,6 +14,13 @@ const isOn = id => $(id).classList.contains("on");
 function setOn(id, on) { $(id).classList.toggle("on", on); $(id).setAttribute("aria-pressed", String(on)); }
 
 let map = null, names = [], difficulty = {};
+/* Two maps in one file (12 Nov 2026, the Events Gallery): `root` is the whole file and is the Hallways' own map; `root.gallery` is the
+   Events Gallery, a whole map of its own (floors, stairs, lifts, tunnels). `map` is whichever is showing, so every tool works on it as
+   before; saving, the draft, undo and publishing take the whole file. */
+let root = null, mapNow = "hallway";
+const mapOf = p => p === "gallery" ? root && root.gallery : root;
+const otherPlace = () => mapNow === "gallery" ? "hallway" : "gallery";
+const PLACE_NAME = { hallway: "the Hallways", gallery: "the Events Gallery" };
 let level = null;               // the active level
 let tool = "pan";
 let zoom = 2, cam = { x: 300, y: 150 };
@@ -640,7 +647,7 @@ function windowHandles(l, q) { const c = wallItemCentre(l, q), W = q.w || 32, Hh
 function windowHandleAt(l, q, px, py) { const r = Math.max(5, 7 / zoom), h = windowHandles(l, q); for (const k of Object.keys(h)) if (Math.abs(px - h[k][0]) <= r && Math.abs(py - h[k][1]) <= r) return k; return null; }
 
 /* ---------- undo ---------- */
-function snapshot() { undoStack.push(JSON.stringify(map)); if (undoStack.length > 80) undoStack.shift(); redoStack.length = 0; }
+function snapshot() { undoStack.push(JSON.stringify(root)); if (undoStack.length > 80) undoStack.shift(); redoStack.length = 0; }
 function changed() {
     $("revert").hidden = false;
     dirty = true; $("dirty").hidden = false; cellSets = new Map(); lastChangeAt = performance.now();
@@ -653,14 +660,54 @@ function checksSoon() { clearTimeout(checksTimer); checksTimer = setTimeout(() =
 /* The recovery copy in this browser, with the saved map it started from, so an old one can't quietly replace newer work */
 let serverText = null, lastProblems = 0;
 const textMark = t => { let h = 0; for (let i = 0; i < t.length; i++) h = (h * 31 + t.charCodeAt(i)) | 0; return t.length + ":" + h; };
-function rememberDraft() { try { localStorage.setItem("hallway-draft", JSON.stringify(map)); if (serverText !== null) localStorage.setItem("hallway-draft-base", textMark(serverText)); } catch (e) { /* too big: the saved copy stands */ } }
+function rememberDraft() { try { localStorage.setItem("hallway-draft", JSON.stringify(root)); if (serverText !== null) localStorage.setItem("hallway-draft-base", textMark(serverText)); } catch (e) { /* too big: the saved copy stands */ } }
 const closePicker = () => { if (window.ColourPicker && ColourPicker.isOpen()) ColourPicker.close(true); };
 const syncLight = () => { const e = $("light"); if (e) e.value = map.light || "sconces"; };
 const stopWalkForChange = () => { if (tool === "walk") { setTool("select"); flash("Stopped walking: the map changed."); } };
 function restore(text) { stopWalkForChange(); closePicker(); carry = null; roomFloors = null; doorFrames.clear();      /* the door-swing floors follow the undo (10 Nov scan b, rooms 17) */
-    const id = level && level.id; setTimeout(() => { try { showMapInfo(); } catch (e) { /* the Map tab follows Undo and Redo (10 Nov scan, editor 21) */ } }, 0); select(null); map = JSON.parse(text); level = byId(id) || map.levels[0]; buildLevels(); syncLight(); changed(); }
-function undo() { if (!undoStack.length) return; redoStack.push(JSON.stringify(map)); restore(undoStack.pop()); }
-function redo() { if (!redoStack.length) return; undoStack.push(JSON.stringify(map)); restore(redoStack.pop()); }
+    const id = level && level.id; setTimeout(() => { try { showMapInfo(); } catch (e) { /* the Map tab follows Undo and Redo (10 Nov scan, editor 21) */ } }, 0); select(null); root = JSON.parse(text); if (!mapOf(mapNow)) mapNow = "hallway"; map = mapOf(mapNow); level = byId(id) || map.levels[0]; stairMemo = null; buildLevels(); syncPlace(); syncLight(); changed(); }
+function undo() { if (!undoStack.length) return; redoStack.push(JSON.stringify(root)); restore(undoStack.pop()); }
+function redo() { if (!redoStack.length) return; undoStack.push(JSON.stringify(root)); restore(redoStack.pop()); }
+/* ---------- the two maps (12 Nov 2026) ---------- */
+function fixRoot() {
+    root.stairs = root.stairs || [];
+    const g = root.gallery; if (g) { g.levels = g.levels || []; g.stairs = g.stairs || []; g.lifts = g.lifts || []; if (!g.rect) g.rect = { ...root.rect }; migrateHeights(g); }
+}
+function syncPlace() { const e = $("placeSel"); if (e) e.value = mapNow; document.body.dataset.place = mapNow; }
+const placeWatchers = new Set();
+/* the Events Gallery's first room: a plain floor in the Game Hall style, ready for its tunnel */
+function makeGallery() {
+    const id = "L" + Date.now().toString(36), cells = [];
+    for (let x = 0; x < 9; x++) for (let y = 0; y < 7; y++) cells.push(x + "," + y);
+    root.gallery = { light: root.light, rect: { ...root.rect }, style: "gamehall", stairs: [], lifts: [],
+        levels: [{ id, k: 0, name: "Gallery", way: "oxblood", style: "gamehall", cells, rugs: [], medals: [], doors: [], lamps: [], props: [], teles: [] }] };
+}
+/* Show the other map: everything drawn so far was the old map's, so it all goes, and the tools carry on in the new one. A walk carries on
+   through it (opts.walking: a tunnel brought you here) */
+function setPlace(p, opts = {}) {
+    if (p === mapNow && map === mapOf(p)) return;
+    let made = false;
+    if (p === "gallery" && !root.gallery) { if (window.HALLWAY_PLAY) return; snapshot(); makeGallery(); made = true; }
+    if (!opts.walking) stopWalkForChange();
+    mapNow = p; map = mapOf(p);
+    select(null); carry = null; hover = null; seeCut = null; roomFloors = null; doorFrames.clear(); stairMemo = null; reachMemo = null; cellSets = new Map();
+    for (const c of inflight.values()) c.abort(); inflight.clear(); for (const c of moodInflight.values()) c.abort(); moodInflight.clear();
+    tiles.clear(); moodTiles.clear(); tileWaits.clear(); version = null; lastVersionText = null;
+    level = (opts.level && map.levels.includes(opts.level) ? opts.level : null) || map.levels.find(l => l.k === 0) || map.levels[0];
+    buildLevels(); syncPlace(); syncLight(); showMapInfo();
+    if (!opts.walking) { const li = liftTile(); cam.x = (li[1] - li[2]) * 16 + 120; cam.y = (li[1] + li[2]) * 8 + 60; clampCam(); }
+    if (made) changed(); else { requestArt(true); runChecks(); paint(); }
+    if (window.HallwayAudio && HallwayAudio.setPlace) try { HallwayAudio.setPlace(p); } catch (e) { /* the music carries on as it was */ }
+    for (const f of placeWatchers) try { f(p); } catch (e) { console.error(e); }
+    if (!opts.walking && !window.HALLWAY_PLAY) flash(made ? "The Events Gallery is ready: one room to start. Put a tunnel in it, and one in the Hallways, and link them." : "Working on " + PLACE_NAME[p] + ".");
+}
+/* tunnels on either map: a tunnel's `to` is an id, and ids are never shared, so a link can go from one map to the other */
+const tunnelsOf = p => { const m = mapOf(p); return (m && m.tunnels) || []; };
+const allTunnels = () => ["hallway", "gallery"].flatMap(p => tunnelsOf(p).map(q => ({ place: p, q })));
+function findTunnel(id) { return id ? allTunnels().find(t => t.q.id === id) || null : null; }
+function unlinkTunnel(id) { for (const t of allTunnels()) if (t.q.to === id) delete t.q.to; }
+const levelIn = (p, id) => { const m = mapOf(p); return m && m.levels.find(l => l.id === id); };
+function tunnelLabel(t) { const lv = levelIn(t.place, t.q.level); return (t.place !== mapNow ? (t.place === "gallery" ? "In the Events Gallery: " : "In the Hallways: ") : "") + "the tunnel on " + ((lv && lv.name) || "?") + ", " + (t.q.axis === "x" ? "back" : "side") + " wall at " + t.q.at; }
 function syncButtons() { $("undo").disabled = !undoStack.length; $("redo").disabled = !redoStack.length; $("save").disabled = !dirty; $("save").classList.toggle("attention", dirty); }
 /* Publish: sends the saved map to the site's own folder, drawn and ready. Nobody sees it until the site is deployed. */
 async function publish() {
@@ -686,7 +733,7 @@ async function save() {
     if (window.HALLWAY_PLAY) return;
     putBack();
     setStatus("Saving...");
-    const sent = JSON.stringify(map);
+    const sent = JSON.stringify(root);
     let r = await fetch("/api/map", { method: "POST", headers: { "Content-Type": "application/json" }, body: sent });
     /* someone else has saved since this copy was opened, from another tab or machine */
     if (r.status === 409) {
@@ -695,7 +742,7 @@ async function save() {
     }
     if (!r.ok) { setStatus("Save failed"); return; }
     /* anything changed while that was on its way is still unsaved */
-    if (JSON.stringify(map) !== sent) { savedAt = Date.now(); serverText = sent; rememberDraft(); setStatus("Saved, with newer changes still to save"); syncButtons(); return; }
+    if (JSON.stringify(root) !== sent) { savedAt = Date.now(); serverText = sent; rememberDraft(); setStatus("Saved, with newer changes still to save"); syncButtons(); return; }
     serverText = sent; $("revert").hidden = true;
     dirty = false; $("dirty").hidden = true; savedAt = Date.now(); localStorage.removeItem("hallway-draft"); localStorage.removeItem("hallway-draft-base"); setStatus("Saved"); syncButtons();
 }
@@ -916,7 +963,9 @@ async function newVersion() {
            its ghost follows the mouse in the meantime (10 Nov scan, his: no ghost when moving, and moving felt slow) */
         const held = drag && drag.kind === "move" && drag.moved && (drag.hit.type === "prop" || drag.hit.type === "tele") ? drag.hit : null, heldList = held && (held.type === "prop" ? held.l.props : held.l.teles), heldAt = heldList ? heldList.indexOf(held.o) : -1;
         if (heldAt >= 0) heldList.splice(heldAt, 1);
-        let text; try { text = JSON.stringify({ map: { ...map, rooms: undefined }, liftOpen: isOn("liftOpen"), cut: seeCut !== null ? { level: level.id, z: levelZ(level) + seeCut } : undefined }); } finally { if (heldAt >= 0) heldList.splice(heldAt, 0, held.o); }
+        /* the map showing, alone: the Hallways leave the gallery out, so an edit in one never redraws the other; `place` tells the published
+           pictures which set to answer from (play.js) */
+        let text; try { text = JSON.stringify({ place: mapNow, map: { ...map, rooms: undefined, gallery: undefined }, liftOpen: isOn("liftOpen"), cut: seeCut !== null ? { level: level.id, z: levelZ(level) + seeCut } : undefined }); } finally { if (heldAt >= 0) heldList.splice(heldAt, 0, held.o); }
         if (liveNow) liveNow.sign = keep;
         const r = await fetch("/api/version", { method: "POST", headers: { "Content-Type": "application/json" }, body: text });
         if (!r.ok) throw new Error("version " + r.status);
@@ -1160,6 +1209,8 @@ window.HallwayLive = {
     add(l) { liveLayers.add(l); wakeLive(); return () => liveLayers.delete(l); }, wake() { wakeLive(); if (map) paint(); },
     onFloor(f) { floorWatchers.add(f); return () => floorWatchers.delete(f); }, get floor() { return floorIn; },
     get idleFor() { return performance.now() - lastActive; }, get tileGen() { return tileGen; }, get walker() { return walker; }, get map() { return map; },
+    /* which map is showing ("hallway" or "gallery"), the whole file, and a word when it changes (12 Nov 2026, the Events Gallery) */
+    get place() { return mapNow; }, get root() { return root; }, setPlace: (p, o) => setPlace(p, o), onPlace(f) { placeWatchers.add(f); return () => placeWatchers.delete(f); },
     mapPoint: (x, y, z) => P(x, y, z), doorName: d => doorName(d),
     /* the top of a wall at one of its tiles, as high as it stands there: null where there is no wall */
     wallTop(l, axis, line, t) { const st = wallState(l, axis, line, t); if (st === "none") return null;
@@ -1597,17 +1648,19 @@ function act(px, py) {
     if (tool === "tunnel") {
         if (!w || w.drop) return;
         const list = map.tunnels || [], here = list.findIndex(q => q.level === level.id && q.axis === w.axis && q.line === w.line && wallTile(w) >= q.at && wallTile(w) < q.at + 8);
-        if (here >= 0) { const gone = list[here]; place(() => { for (const q of list) if (q.to === gone.id) delete q.to; map.tunnels.splice(here, 1); if (!map.tunnels.length) delete map.tunnels; }); flash("Tunnel taken away."); return; }
+        if (here >= 0) { const gone = list[here]; place(() => { unlinkTunnel(gone.id); map.tunnels.splice(here, 1); if (!map.tunnels.length) delete map.tunnels; }); flash("Tunnel taken away."); return; }
         const at = entranceAt(level, w); if (at === null) { flash("It won't fit here: " + lastEntranceBlock.why + ". It's marked in red."); paint(); return; }
         const clash = [...list, ...(map.theatres || []), ...(map.entrance ? [map.entrance] : [])].some(q => q.level === level.id && q.axis === w.axis && q.line === w.line && Math.abs(q.at - at) < 8);
         if (clash) { flash("There's an entrance or a tunnel there already."); return; }
-        const alone = list.filter(q => !q.to), mate = alone.length === 1 ? alone[0] : null, id = "t" + Date.now().toString(36);
-        place(() => { const q = { id, level: level.id, axis: w.axis, line: w.line, at }; if (mate) { q.to = mate.id; mate.to = id; } (map.tunnels = map.tunnels || []).push(q); });
-        if (mate) flash("Linked to the tunnel on " + ((byId(mate.level) || {}).name || "another floor") + ": walk to the back of one and you come out of the other.");
+        /* the one tunnel anywhere (on either map) that leads nowhere yet: the new one pairs with it */
+        const alone = allTunnels().filter(t => !t.q.to), mate = alone.length === 1 ? alone[0] : null, id = "t" + Date.now().toString(36);
+        place(() => { const q = { id, level: level.id, axis: w.axis, line: w.line, at }; if (mate) { q.to = mate.q.id; mate.q.to = id; } (map.tunnels = map.tunnels || []).push(q); });
+        if (mate) flash("Linked to " + tunnelLabel(mate).replace(/^In the (.*?): the/, "the") + (mate.place !== mapNow ? " in " + PLACE_NAME[mate.place] : "") + ": walk to the back of one and you come out of the other.");
         return;
     }
     if (tool === "entrance") {
         if (!w || w.drop) return;
+        if (mapNow === "gallery") { flash("The Events Gallery has no entrance of its own: Habbos come in by a tunnel from the Hallways. Use the Tunnel tool."); return; }
         const at = entranceAt(level, w); if (at === null) { flash("The entrance won't fit here: " + lastEntranceBlock.why + ". It's marked in red."); paint(); return; }
         place(() => { map.entrance = { level: level.id, axis: w.axis, line: w.line, at }; });
         return;
@@ -2009,14 +2062,15 @@ function select(hit) {
         const c = document.createElement("span"); c.className = "f-ctl"; const sel = document.createElement("select"); sel.setAttribute("aria-label", "Where the tunnel leads");
         const opt = (v, t) => { const o = document.createElement("option"); o.value = v; o.textContent = t; sel.appendChild(o); };
         opt("", "Nowhere (it's a dead end)");
-        (map.tunnels || []).forEach((t, i) => { if (t !== q) opt(t.id, "The tunnel on " + ((byId(t.level) || {}).name || "?") + ", " + (t.axis === "x" ? "back" : "side") + " wall at " + t.at); });
+        /* the tunnels on this map, then the other map's (the way between the Hallways and the Events Gallery) */
+        for (const t of allTunnels().sort((a, b) => (a.place === mapNow ? 0 : 1) - (b.place === mapNow ? 0 : 1))) if (t.q !== q) { const s = tunnelLabel(t); opt(t.q.id, s.charAt(0).toUpperCase() + s.slice(1)); }
         /* one it led to that's gone shows as gone, not as a blank (10 Nov scan b, rooms 4) */
-        if (q.to && !(map.tunnels || []).some(t => t.id === q.to)) opt(q.to, "A tunnel that isn't there any more");
+        if (q.to && !findTunnel(q.to)) opt(q.to, "A tunnel that isn't there any more");
         sel.value = q.to || "";
-        sel.addEventListener("change", () => { snapshot(); const list = map.tunnels || [];
+        sel.addEventListener("change", () => { snapshot();
             /* a link goes both ways: whatever either end was linked to before lets go */
-            for (const t of list) if (t.to === q.id) delete t.to; if (q.to) { const was = list.find(t => t.id === q.to); if (was) delete was.to; }
-            if (sel.value) { const to = list.find(t => t.id === sel.value); if (to) { for (const t of list) if (t.to === to.id) delete t.to; q.to = to.id; to.to = q.id; } } else delete q.to;
+            unlinkTunnel(q.id); if (q.to) { const was = findTunnel(q.to); if (was) delete was.q.to; }
+            if (sel.value) { const to = findTunnel(sel.value); if (to) { unlinkTunnel(to.q.id); q.to = to.q.id; to.q.to = q.id; } } else delete q.to;
             changed(); select(hit); });
         c.appendChild(sel); f.append(n, c); box.appendChild(f);
     }
@@ -2165,7 +2219,7 @@ function mazePicker(box, door) {
 }
 function deleteSelected() {
     const s = selected; if (!s) return;
-    if (s.type === "tunnel") { const list = map.tunnels || [], i = list.indexOf(s.o); if (i < 0) return; snapshot(); for (const t of list) if (t.to === s.o.id) delete t.to; list.splice(i, 1); if (!list.length) delete map.tunnels; select(null); buildLevels(); changed(); return; }
+    if (s.type === "tunnel") { const list = map.tunnels || [], i = list.indexOf(s.o); if (i < 0) return; snapshot(); unlinkTunnel(s.o.id); list.splice(i, 1); if (!list.length) delete map.tunnels; select(null); buildLevels(); changed(); return; }
     if (s.type === "sign") { flash(s.o.kind ? "A staircase always has its sign." : "A door always has its sign. Make the door spare to take it away."); return; }
     const lists = { garland: s.l.garlands, festoon: s.l.festoons, lift: map.lifts, wallitem: s.l.wallItems, steps: s.l.steps, prop: s.l.props, tele: s.l.teles, door: s.l.doors, lamp: s.l.lamps, medal: s.l.medals, rug: s.l.rugs, stair: map.stairs };
     const list = lists[s.type], i = list ? list.indexOf(s.o) : -1;
@@ -2182,7 +2236,7 @@ function stairFits(up, r, self) {
 }
 function beginMove(hit, px, py) {
     const [fx, fy] = tileIn(hit.l, px, py);
-    const m = { kind: "move", hit, before: JSON.stringify(map), moved: false, fx, fy, orig: JSON.parse(JSON.stringify(hit.o)) };
+    const m = { kind: "move", hit, before: JSON.stringify(root), moved: false, fx, fy, orig: JSON.parse(JSON.stringify(hit.o)) };
     if (hit.type === "wallitem") { const c = wallItemCentre(hit.l, hit.o); m.grab = [c[0] - px, c[1] - py]; if (hit.o.k === "i_window") { m.winSide = windowHandleAt(hit.l, hit.o, px, py); m.px = px; m.py = py; m.win = { w: hit.o.w || 32, b: hit.o.b || 0, top: hit.o.top || 128, at: hit.o.at }; } }
     if (hit.type === "sign") {
         const b = signBox(hit.l, hit.o), side = b && handleAt(b, px, py);
@@ -2579,12 +2633,12 @@ canvas.addEventListener("pointerup", e => {
         level.steps.push({ ...d.st }); changed(); return;
     }
     if (d.kind === "move") { canvas.style.cursor = "default"; if (live) live.ending = true; if (d.moved) { if (d.hit.type === "prop" || d.hit.type === "tele") showUntilDrawn(d.hit.l, d.hit.o, d.hit.type === "tele"); changed(); select(selected); } return; }
-    if (d.kind === "edge") { if (undoStack[undoStack.length - 1] === JSON.stringify(map)) { undoStack.pop(); syncButtons(); return; } changed(); return; }
+    if (d.kind === "edge") { if (undoStack[undoStack.length - 1] === JSON.stringify(root)) { undoStack.pop(); syncButtons(); return; } changed(); return; }
     if (d.kind === "furni") { placeRot = d.run.rot || 0; placeRun(d.run); return; }
     if (d.kind === "rect") {
         const r = d.rect;
         snapshot();
-        const unchanged = () => { if (undoStack[undoStack.length - 1] !== JSON.stringify(map)) return false; undoStack.pop(); syncButtons(); paint(); return true; };
+        const unchanged = () => { if (undoStack[undoStack.length - 1] !== JSON.stringify(root)) return false; undoStack.pop(); syncButtons(); paint(); return true; };
         /* the floor alone, its walls left where they stand */
         if (tool === "floorlift") {
             let changedAny = false, locked = false;
@@ -2887,7 +2941,10 @@ function liftTile() {
 let reachMemo = null;
 function reachAll() {
     if (reachMemo && reachMemo.map === map && reachMemo.at === lastChangeAt) return reachMemo.set;
-    const [l, x, y] = liftTile(), reached = graphFrom(l, x, y), fronts = map.lifts.map(q => [byId(q.level), q.x + 1, q.y]).filter(f => f[0]);
+    const rooms0 = stairLevels().list, ins = mapNow === "gallery" ? (map.tunnels || []).filter(q => { const f = findTunnel(q.to); return f && f.place === "hallway"; }).map(q => { const S = rooms0.find(r => r.stair && r.stair.tunnel === q), m = entranceTiles(q)[1]; return S ? (q.axis === "x" ? [S, m, q.line - 2] : [S, q.line - 2, m]) : null; }).filter(Boolean) : [];
+    /* the Events Gallery is arrived at by its tunnels from the Hallways (12 Nov 2026); with none yet, from its first floor as before */
+    const [l, x, y] = ins[0] || liftTile(), reached = graphFrom(l, x, y); for (const s of ins.slice(1)) for (const k of graphFrom(s[0], s[1], s[2]).keys()) if (!reached.has(k)) reached.set(k, 0);
+    const fronts = map.lifts.map(q => [byId(q.level), q.x + 1, q.y]).filter(f => f[0]);
     if (fronts.some(f => reached.has(nodeKey(f[0], f[1], f[2])))) for (const f of fronts) if (!reached.has(nodeKey(f[0], f[1], f[2]))) for (const k of graphFrom(f[0], f[1], f[2]).keys()) if (!reached.has(k)) reached.set(k, 0);
     /* through tunnels: the back of one reached means the back of the one it leads to is too (10 Nov scan b, editor 6), and on until nothing new */
     const rooms = stairLevels().list, backOf = q => { const S = rooms.find(r => r.stair && r.stair.tunnel === q); if (!S) return null; const m = entranceTiles(q)[1]; return q.axis === "x" ? [S, m, q.line - 2] : [S, q.line - 2, m]; };
@@ -3023,8 +3080,8 @@ setInterval(() => {
     if (!walker.busy && !$("liftPanel").hidden && (walker.walking || !room || !room.lift)) { hideLiftPanel(); walker.asked = false; }
     /* in a tunnel: at its back, out of the one it leads to; walked into but not to the back, on to the back (as the entrance does) */
     if (room && room.tunnel && !walker.walking && !walker.busy) {
-        const q = room.tunnel, to = q.to && (map.tunnels || []).find(t => t.id === q.to), deep = (q.axis === "x" ? walker.y : walker.x) === q.line - 2;
-        if (to && deep && !walker.arriving) { throughTunnel(to); return; }
+        const q = room.tunnel, far = findTunnel(q.to), to = far && far.q, deep = (q.axis === "x" ? walker.y : walker.x) === q.line - 2;
+        if (to && deep && !walker.arriving) { throughTunnel(to, far.place); return; }
         /* on to the back; re-asked whenever you stand still in it, so a click inside it can't leave you parked there (10 Nov scan b, live 10) */
         if (to && !deep && !walker.arriving) { const m = entranceTiles(q)[1], t = q.axis === "x" ? [m, q.line - 2] : [q.line - 2, m], p = graphFrom(walker.l, walker.x, walker.y, [walker.l, t[0], t[1]]); if (p) followRoute(p, null, null); }
         return;
@@ -3321,12 +3378,14 @@ async function rideTo(from, to) {
     const path = graphFrom(S, x, y, [l, x, to.y]); if (path) followRoute(path, null, null);
 }
 /* through a tunnel: a quick fade, and you're at the back of the one it leads to, walking out of it onto its floor (10 Nov 2026) */
-function throughTunnel(to) {
-    const list = stairLevels().list, S = list.find(r => r.stair && r.stair.tunnel === to), low = byId(to.level);
-    const m = entranceTiles(to)[1], ix = to.axis === "x" ? m : to.line - 2, iy = to.axis === "x" ? to.line - 2 : m;
+function throughTunnel(to, where = mapNow) {
+    /* the way out is worked out on the map it's on: the other one, for a tunnel between the Hallways and the Events Gallery (12 Nov 2026) */
+    const cross = where !== mapNow, was = map, there = () => { const list = stairLevels().list, S = list.find(r => r.stair && r.stair.tunnel === to), low = byId(to.level); return { S, low }; };
+    const m = entranceTiles(to)[1], ix = to.axis === "x" ? m : to.line - 2, iy = to.axis === "x" ? to.line - 2 : m, fronts = entranceTiles(to).map(t => to.axis === "x" ? [t, to.line] : [to.line, t]);
+    let S, low, out; if (cross) { map = mapOf(where); stairMemo = null; }
+    try { ({ S, low } = there()); out = S && low ? routeToOneOf(low, fronts, S, ix, iy) : null; } finally { if (cross) { map = was; stairMemo = null; } }
     /* out by whichever tile in front of it is free; if none is (or its floor's gone), you stay where you are and are told, rather than being
        thrown back and forth (10 Nov scan b, editor 2 and 3) */
-    const out = S && low ? routeToOneOf(low, entranceTiles(to).map(t => to.axis === "x" ? [t, to.line] : [to.line, t]), S, ix, iy) : null;
     if (!out) { walker.arriving = true; flash(S && low ? "The way out of the tunnel it leads to is blocked." : "The tunnel it leads to has nowhere to come out."); return; }
     const me = walker; walker.busy = true; walker.leaving = false;
     canvas.style.transition = "opacity .25s"; canvas.style.opacity = "0";
@@ -3334,11 +3393,12 @@ function throughTunnel(to) {
     const back = () => { canvas.style.opacity = "1"; canvas.style.transition = ""; };
     setTimeout(() => {
         if (walker !== me) { back(); return; }
+        if (cross) { setPlace(where, { walking: true, level: low }); ({ S, low } = there()); if (!S || !low) { back(); walker.busy = false; return; } }
         walker.l = S; walker.x = ix; walker.y = iy; walker.z = nodeZ(S, ix, iy); walker.pts = []; walker.walking = false; walker.st = null; walker.dir = to.axis === "x" ? 2 : 4; walker.arriving = true;
         if (level !== low) { level = low; buildLevels(); }
         const a = P(ix + .5, iy + .5, walker.z + 40); cam.x = a[0]; cam.y = a[1]; clampCam(); paint();
         canvas.style.opacity = "1";
-        setTimeout(() => { canvas.style.transition = ""; if (walker !== me) return; walker.busy = false; const o = routeToOneOf(low, entranceTiles(to).map(t => to.axis === "x" ? [t, to.line] : [to.line, t]), S, ix, iy); if (o) followRoute(o.path, null, () => { walker.arriving = false; }); }, 260);
+        setTimeout(() => { canvas.style.transition = ""; if (walker !== me) return; walker.busy = false; const o = routeToOneOf(low, fronts, S, ix, iy); if (o) followRoute(o.path, null, () => { walker.arriving = false; }); }, cross ? 420 : 260);
     }, 260);
 }
 function leaveHallway() {
@@ -3750,26 +3810,28 @@ function runChecks() {
         box.appendChild(e); if (kind === "err") problems++;
     };
     const named = map.levels.reduce((n, l) => n + (l.doors || []).filter(d => !d.spare).length, 0);
-    const free = freeMazes(), known = new Set(names);
-    if (!names.length) card("The archive's maze list couldn't be read, so doors weren't checked against it.", "");
+    /* the mazes' doors are the Hallways' (12 Nov 2026: the Events Gallery has none to give) */
+    const free = mapNow === "hallway" ? freeMazes() : [], known = new Set(names);
+    if (mapNow !== "hallway") { /* nothing about mazes here */ }
+    else if (!names.length) card("The archive's maze list couldn't be read, so doors weren't checked against it.", "");
     else card(`${names.length - free.length} of ${names.length} mazes have a door`, free.length ? "err" : "ok");
     if (free.length) card(`Still need a door: ${free.slice(0, 6).join(", ")}${free.length > 6 ? `, and ${free.length - 6} more` : ""}`, "err");
     for (const lv of map.levels) for (const d of (lv.doors || [])) if (names.length && d.name && !known.has(d.name)) card(`A door on ${lv.name} is set to "${d.name}", which isn't in the archive. Show it.`, "err", () => { level = lv; buildLevels(); setTool("select"); select({ type: "door", l: lv, o: d }); });
     const blank = map.levels.reduce((n, l) => n + (l.doors || []).filter(d => !d.spare && !d.name).length, 0);
     if (blank) card(`${blank} doors have no maze. Make them spare, or give them one.`, "");
-    if (!map.entrance) card("There's no entrance yet: Habbos arrive by it. It's in the library, under On walls.", "err");
+    if (!map.entrance && mapNow === "hallway") card("There's no entrance yet: Habbos arrive by it. It's in the library, under On walls.", "err");
     /* tunnels (10 Nov scan b, editor 9 and rooms 4): on a floor that's gone, with no floor in front, leading to one that isn't there, or with
        every tile in front of it taken */
     { const rooms = stairLevels().list, show = (lv, q) => () => { level = lv; buildLevels(); const m = entranceTiles(q)[1], a = P(q.axis === "x" ? m : q.line, q.axis === "x" ? q.line : m, levelZ(lv) + 40); cam.x = a[0]; cam.y = a[1]; setTool("select"); select({ type: "tunnel", l: lv, o: q }); paint(); };
       for (const q of (map.tunnels || [])) {
           const lv = byId(q.level); if (!lv) { card("A tunnel is on a floor that's been deleted.", "err"); continue; }
           if (!rooms.some(r => r.stair && r.stair.tunnel === q)) { card(`A tunnel on ${lv.name} has no floor in front of it, so nobody can go in. Show it.`, "err", show(lv, q)); continue; }
-          if (q.to && !(map.tunnels || []).some(t => t.id === q.to)) card(`A tunnel on ${lv.name} leads to a tunnel that isn't there any more. Show it.`, "err", show(lv, q));
+          if (q.to && !findTunnel(q.to)) card(`A tunnel on ${lv.name} leads to a tunnel that isn't there any more. Show it.`, "err", show(lv, q));
           else if (!q.to) card(`A tunnel on ${lv.name} doesn't lead anywhere yet. Show it.`, "", show(lv, q));
           const so = solid(lv); if (entranceTiles(q).every(t => { const x = q.axis === "x" ? t : q.line, y = q.axis === "x" ? q.line : t; return !hasFloor(lv, x, y) || so.has(x + "," + y); })) card(`Every tile in front of a tunnel on ${lv.name} is taken, so nobody can come out of it. Show it.`, "err", show(lv, q));
       } }
     /* every room layout's problems, not only the one on screen in Rooms (10 Nov scan b, rooms 8) */
-    { const rp = window.RoomsEditor && RoomsEditor.allProblems ? RoomsEditor.allProblems(map) : [];
+    { const rp = window.RoomsEditor && RoomsEditor.allProblems && mapNow === "hallway" ? RoomsEditor.allProblems(root) : [];
       if (rp.length) card(`${rp.length} room layout${rp.length === 1 ? " has" : "s have"} problems: ${rp.slice(0, 3).map(p => p.name + " (" + p.msgs[0].replace(/\.$/, "").toLowerCase() + ")").join("; ")}${rp.length > 3 ? ", and more" : ""}. Open Rooms.`, "err", () => { if ($("roomsBtn")) $("roomsBtn").click(); }); }
     /* a hunt nobody can finish (10 Nov scan b, rooms 9): no clues, or a clue with no spot picked */
     for (const h of (map.hunts || [])) {
@@ -3804,8 +3866,9 @@ function runChecks() {
     }
     for (const c of hidden.slice(0, 8)) card(`${doorName(c.d) || "A door"} on ${c.lv.name} is ${c.share > .6 ? "mostly" : "partly"} hidden by the floor above. Show it.`, "err", () => { level = c.lv; buildLevels(); const a = P(c.d.axis === "x" ? c.d.at : c.d.line, c.d.axis === "x" ? c.d.line : c.d.at, levelZ(c.lv) + 40); cam.x = a[0]; cam.y = a[1]; setTool("select"); select({ type: "door", l: c.lv, o: c.d }); });
     if (hidden.length > 8) card(`And ${hidden.length - 8} more doors are hidden by the floor above.`, "err");
-    if (!cut.length) card("Every door can be reached from the entrance, on foot or by lift", "ok");
-    for (const c of cut.slice(0, 8)) card(`A door on ${c.lv.name} can't be reached from the entrance, on foot or by lift. Show it.`, "err", () => { level = c.lv; buildLevels(); const a = P(c.tx, c.ty, levelZ(c.lv)); cam.x = a[0]; cam.y = a[1]; setTool("select"); select({ type: "door", l: c.lv, o: c.d }); });
+    const fromWhere = mapNow === "gallery" ? "the tunnels from the Hallways" : "the entrance";
+    if (!cut.length) card("Every door can be reached from " + fromWhere + ", on foot or by lift", "ok");
+    for (const c of cut.slice(0, 8)) card(`A door on ${c.lv.name} can't be reached from ${fromWhere}, on foot or by lift. Show it.`, "err", () => { level = c.lv; buildLevels(); const a = P(c.tx, c.ty, levelZ(c.lv)); cam.x = a[0]; cam.y = a[1]; setTool("select"); select({ type: "door", l: c.lv, o: c.d }); });
     if (cut.length > 8) card(`And ${cut.length - 8} more doors can't be reached.`, "err");
     /* a Lost Property spot nobody can get to, or under furniture with no free tile beside it that anyone can get to, can only end in a miss (9 Nov scan, content finding 1) */
     /* each spot nobody can get to is marked in the map (noReach), so the server never deals it even if he publishes anyway: it can't walk the
@@ -3918,7 +3981,8 @@ function buildUI() {
     buildLibrary(); $("search").addEventListener("input", buildLibrary);
     buildMusic();
     $("walkBtn").addEventListener("click", () => setTool(tool === "walk" ? "select" : "walk"));
-    if ($("roomsBtn")) $("roomsBtn").addEventListener("click", () => window.RoomsEditor.open({ map: () => map, snapshot, undo, redo, save: () => save(), unsnapshot: () => { undoStack.pop(); syncButtons(); }, canUndo: () => undoStack.length > 0, canRedo: () => redoStack.length > 0, changed: () => { roomFloors = null; doorFrames.clear(); changed(); } }));
+    if ($("placeSel")) $("placeSel").addEventListener("change", e => { setPlace(e.target.value); e.target.blur(); });
+    if ($("roomsBtn")) $("roomsBtn").addEventListener("click", () => window.RoomsEditor.open({ map: () => root, snapshot, undo, redo, save: () => save(), unsnapshot: () => { undoStack.pop(); syncButtons(); }, canUndo: () => undoStack.length > 0, canRedo: () => redoStack.length > 0, changed: () => { roomFloors = null; doorFrames.clear(); changed(); } }));
     document.querySelectorAll(".tab").forEach(t => t.addEventListener("click", () => showTab(t.dataset.tab)));
     for (const [k, v] of Object.entries(LIGHTS)) { const o = document.createElement("option"); o.value = k; o.textContent = v; $("light").appendChild(o); }
     for (const [k, v] of Object.entries(WAYS)) { const o = document.createElement("option"); o.value = k; o.textContent = v; $("way").appendChild(o); }
@@ -3927,7 +3991,7 @@ function buildUI() {
     $("revert").addEventListener("click", async () => {
         snapshot();
         stopWalkForChange(); closePicker();
-        map = await fetch("/api/map").then(r => r.json()); map.stairs = map.stairs || []; migrateHeights(map); syncLight();
+        root = await fetch("/api/map").then(r => r.json()); fixRoot(); if (!mapOf(mapNow)) mapNow = "hallway"; map = mapOf(mapNow); stairMemo = null; syncPlace(); syncLight();
         level = map.levels.find(l => l.k === 0) || map.levels[0];
         localStorage.removeItem("hallway-draft"); dirty = false; $("dirty").hidden = true; $("revert").hidden = true;
         select(null); cellSets = new Map(); buildLevels(); showMapInfo(); runChecks(); syncButtons(); requestArt(true); paint();
@@ -3998,7 +4062,7 @@ function buildUI() {
         map.lifts = map.lifts.filter(q => q.level !== gone.id);
         if (map.entrance && map.entrance.level === gone.id) delete map.entrance;
         /* its tunnels and Theatredrome go too, and a tunnel that led to one of them leads nowhere now (10 Nov scan b, editor 3) */
-        if (map.tunnels) { const ids = new Set(map.tunnels.filter(q => q.level === gone.id).map(q => q.id)); map.tunnels = map.tunnels.filter(q => q.level !== gone.id); for (const q of map.tunnels) if (ids.has(q.to)) delete q.to; if (!map.tunnels.length) delete map.tunnels; }
+        if (map.tunnels) { const ids = new Set(map.tunnels.filter(q => q.level === gone.id).map(q => q.id)); map.tunnels = map.tunnels.filter(q => q.level !== gone.id); for (const id of ids) unlinkTunnel(id); if (!map.tunnels.length) delete map.tunnels; }
         if (map.theatres) { map.theatres = map.theatres.filter(q => q.level !== gone.id); if (!map.theatres.length) delete map.theatres; }
         level = map.levels.find(l => l.k === gone.k + (gone.k < 0 ? 1 : -1)) || map.levels.find(l => l.k === 0) || map.levels[0];
         select(null); buildLevels(); changed(); flash(gone.name + " deleted. Undo brings it back.");
@@ -4051,16 +4115,16 @@ const hallwayStart = (async function start() {
     buildUI();
     const [m, n] = await Promise.all([fetch("/api/map").then(r => { if (!r.ok) throw new Error("The map wouldn't load (" + r.status + ")"); return r.text(); }), fetch("/api/names").then(r => r.json())]);
     serverText = JSON.stringify(JSON.parse(m));
-    map = JSON.parse(m); migrateHeights(map); names = n.names || []; fontW = n.font || {}; difficulty = n.difficulty || {};
+    root = JSON.parse(m); map = root; migrateHeights(map); names = n.names || []; fontW = n.font || {}; difficulty = n.difficulty || {};
     /* unsaved work comes back on its own: a prompt here could block the page from loading */
     const draft = window.HALLWAY_PLAY ? null : localStorage.getItem("hallway-draft");
     if (draft) { try {
         const d = JSON.parse(draft), base = localStorage.getItem("hallway-draft-base"), moved = base !== textMark(serverText);
         /* The saved map has changed since this copy was made: nothing replaces it without asking */
         const use = d && d.levels && (JSON.stringify(d) !== serverText) && (!moved || window.confirm("This browser has unsaved edits, but the saved map has changed since they were made. OK brings your edits back over the saved map. Cancel throws them away and keeps the saved map."));
-        if (use) { map = d; migrateHeights(map); dirty = true; $("dirty").hidden = false; $("revert").hidden = false; } else { localStorage.removeItem("hallway-draft"); localStorage.removeItem("hallway-draft-base"); }
+        if (use) { root = d; map = root; migrateHeights(map); dirty = true; $("dirty").hidden = false; $("revert").hidden = false; } else { localStorage.removeItem("hallway-draft"); localStorage.removeItem("hallway-draft-base"); }
     } catch (e) { localStorage.removeItem("hallway-draft"); } }
-    map.stairs = map.stairs || [];
+    fixRoot();
     level = map.levels.find(l => l.k === 0) || map.levels[0];
     $("light").value = map.light || "sconces";
     const li = liftTile(); cam.x = (li[1] - li[2]) * 16 + 120; cam.y = (li[1] + li[2]) * 8 + 60;
@@ -4072,7 +4136,7 @@ const hallwayStart = (async function start() {
     if (pinned) { if (dirty) { rememberDraft(); } else { await save(); flash(`${pinned} mazes are now locked to their doors.`); } }
     buildLevels(); showMapInfo(); runChecks(); syncButtons(); setTool("select"); select(null); setZoom(zoom); resize(); requestArt(true);
     if (window.HALLWAY_PLAY) setTool("walk");
-    window.__hallway = { setDoor, doorAtPx, useDoor, doorStates, doorIsOpen, doorFront, enterDoor, get roomSession() { return roomSession; }, get walker() { return walker; }, stairWallAt, hangWallAt, furniTile, landingOf, placeable, stairWallsOf, setCut, seeThroughDown, get seeCut() { return seeCut; }, edgesNear, railsNear, cam, paint, liftAt, useLift, rideTo, showLiftPanel, liftOpen, setDoors, entranceAt, entranceTiles, useUnder, retaining, doorSpotAt, fitDoor, doorEdge: doorEdge, isNone, wallState, setBrush, flightOf, heightEdgeAt, edgeRun, canStep, isHalf, wallHolds, tileIn, nodeZ, heightAt, stepLift, wallSpot, tidyHeights, get rubbed() { return rubbed; }, sortByDifficulty, doorSpots, wallStretch, pickColour, select, get map() { return map; }, moodNow, get timeMode() { return timeMode; }, sitOn, getDrink, propUnder, avCanvas, get live() { return live; }, stairLevels, nodeZ, wallAt, pickIn, walkGraph, graphFrom, liftTile, doorNames, setDoorMaze, signBox, signHandles, handleAt, setZoom, showTab, get zoom() { return zoom; }, get level() { return level; }, camTick, camTarget, followNow, floorUnder, get hover() { return hover; }, pick, select, deleteSelected, get selected() { return selected; }, get tiles() { return tiles; }, get inflight() { return inflight; }, get version() { return version; }, paint, get map() { return map; }, get cam() { return cam; }, get walker() { return walker; }, toScreen, P, setTool, act, walkTo, stepWalk, setLevel: id => { level = byId(id); buildLevels(); paint(); } };
+    window.__hallway = { setDoor, doorAtPx, useDoor, doorStates, doorIsOpen, doorFront, enterDoor, get roomSession() { return roomSession; }, get walker() { return walker; }, stairWallAt, hangWallAt, furniTile, landingOf, placeable, stairWallsOf, setCut, seeThroughDown, get seeCut() { return seeCut; }, edgesNear, railsNear, cam, paint, liftAt, useLift, rideTo, showLiftPanel, liftOpen, setDoors, entranceAt, entranceTiles, useUnder, retaining, doorSpotAt, fitDoor, doorEdge: doorEdge, isNone, wallState, setBrush, flightOf, heightEdgeAt, edgeRun, canStep, isHalf, wallHolds, tileIn, nodeZ, heightAt, stepLift, wallSpot, tidyHeights, get rubbed() { return rubbed; }, sortByDifficulty, doorSpots, wallStretch, pickColour, select, get map() { return map; }, moodNow, get timeMode() { return timeMode; }, sitOn, getDrink, propUnder, avCanvas, get live() { return live; }, stairLevels, nodeZ, wallAt, pickIn, walkGraph, graphFrom, liftTile, doorNames, setDoorMaze, signBox, signHandles, handleAt, setZoom, showTab, get zoom() { return zoom; }, get level() { return level; }, camTick, camTarget, followNow, floorUnder, get hover() { return hover; }, pick, select, deleteSelected, get selected() { return selected; }, get tiles() { return tiles; }, get inflight() { return inflight; }, get version() { return version; }, paint, get map() { return map; }, get cam() { return cam; }, get walker() { return walker; }, toScreen, P, setTool, act, walkTo, stepWalk, setLevel: id => { level = byId(id); buildLevels(); paint(); }, setPlace, get mapNow() { return mapNow; }, get root() { return root; }, findTunnel, allTunnels, throughTunnel };
 })();
 /* A page that couldn't start says so, here and to the site around it, rather than sitting there black */
 hallwayStart.catch(e => {

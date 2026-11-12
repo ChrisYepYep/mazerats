@@ -150,13 +150,19 @@
             await startWorkers();
             if (!savedText) throw new Error("Save it first");
             const text = savedText, map = JSON.parse(text), base = await sha(baseText !== null ? baseText : text);      // one map all the way through, whatever's saved meanwhile
-            const ways = [...new Set(map.levels.map(l => l.colour ? "hex:" + l.colour : l.way))];
+            const ways = [...new Set([...map.levels, ...((map.gallery && map.gallery.levels) || [])].map(l => l.colour ? "hex:" + l.colour : l.way))];
             const known = new Set(((await (await realFetch(`${FN}?what=known`, admin())).json()).known) || []);
-            /* Christmas from the data, as publish.js has it (9 Nov scan: garlands, the giant tree and i_swag didn't count), and the
-               Basement's blackout with Christmas where the two meet, so its garlands and window snow go dark rather than vanish */
-            const hasXmas = window.FurniParts.hasXmas(map), xmasTiles = hasXmas ? window.FurniParts.xmasTiles(map) : new Set();
-            const onlyBasement = window.FurniParts.basementTiles(map), failingX = [...onlyBasement].filter(k => xmasTiles.has(k));
-            const DRAW = [...MOODS, "failing", ...(hasXmas ? MOODS.map(m => m + "+x") : []), ...(failingX.length ? ["failing+x"] : [])];
+            /* The file holds two maps (12 Nov 2026): the Hallways, and the Events Gallery in its "gallery", each drawn on its own and the
+               gallery's squares named "g:". Christmas from the data, as publish.js has it (9 Nov scan: garlands, the giant tree and i_swag
+               didn't count), and the Basement's blackout with Christmas where the two meet, so its garlands and window snow go dark rather than vanish */
+            const hallOnly = JSON.parse(text); delete hallOnly.gallery;
+            const parts = [{ which: "hallway", m: hallOnly, pre: "" }, ...(map.gallery && (map.gallery.levels || []).length ? [{ which: "gallery", m: map.gallery, pre: "g:" }] : [])];
+            for (const p of parts) {
+                p.text = JSON.stringify(p.m);
+                const hasXmas = window.FurniParts.hasXmas(p.m), xmasTiles = hasXmas ? window.FurniParts.xmasTiles(p.m) : new Set();
+                p.onlyBasement = window.FurniParts.basementTiles(p.m); p.failingX = [...p.onlyBasement].filter(k => xmasTiles.has(k)); p.xmasTiles = xmasTiles;
+                p.DRAW = [...MOODS, "failing", ...(hasXmas ? MOODS.map(m => m + "+x") : []), ...(p.failingX.length ? ["failing+x"] : [])];
+            }
             while (workers.length < POOL) freshWorker();
             const tiles = {}, lift = {}, sent = new Map();      // each picture by its name, to send again if another publish tidied it away meanwhile
             const send = async (blob) => {
@@ -170,10 +176,12 @@
                 return hash;
             };
             /* Square by square, every thread at once: each square is drawn with a margin round it, so what stands just outside it still shades it, and the result is the same picture as drawing the whole map at once (checked for day and night, 9 Nov). Small, so memory stays low */
-            const PAD = 96, v = "publish-" + Date.now(), rect = map.rect, squares = [];
-            for (let ty = Math.floor(rect.y / 512) - 1; ty <= Math.floor((rect.y + rect.h) / 512) + 1; ty++) for (let tx = Math.floor(rect.x / 512) - 1; tx <= Math.floor((rect.x + rect.w) / 512) + 1; tx++) squares.push(tx + "," + ty);
-            const jobs = [];
-            for (const light of DRAW) { const want = light === "failing" ? [...onlyBasement] : light === "failing+x" ? failingX : light.includes("+x") ? [...xmasTiles] : squares; for (const key of want) jobs.push([light, key]); }
+            const PAD = 96, v = "publish-" + Date.now(), jobs = [];
+            for (const p of parts) {
+                const rect = p.m.rect || map.rect, squares = []; p.v = v + "-" + p.which;
+                for (let ty = Math.floor(rect.y / 512) - 1; ty <= Math.floor((rect.y + rect.h) / 512) + 1; ty++) for (let tx = Math.floor(rect.x / 512) - 1; tx <= Math.floor((rect.x + rect.w) / 512) + 1; tx++) squares.push(tx + "," + ty);
+                for (const light of p.DRAW) { const want = light === "failing" ? [...p.onlyBasement] : light === "failing+x" ? p.failingX : light.includes("+x") ? [...p.xmasTiles] : squares; for (const key of want) jobs.push([light, key, p]); }
+            }
             publishing.of = jobs.length + ways.length * 6 + 1;
             const blank = d => { for (let k = 0; k < d.length; k += 4) if ((d[k] || d[k + 1] || d[k + 2]) && !(d[k] === 7 && d[k + 1] === 6 && d[k + 2] === 10)) return false; return true; };
             const solid = d => { const o = new Uint8Array(d.length); o.set(d); for (let k = 0; k < o.length; k += 4) { if (o[k] === 7 && o[k + 1] === 6 && o[k + 2] === 10) o[k] = o[k + 1] = o[k + 2] = 0; o[k + 3] = 255; } return o; };
@@ -181,19 +189,19 @@
             let next = 0;
             try {
                 await Promise.all(crew.map(async w => {
-                    await ask(w, { type: "map", v, text });
+                    for (const p of parts) await ask(w, { type: "map", v: p.v, text: p.text });
                     while (next < jobs.length) {
-                        const [light, key] = jobs[next++], [tx, ty] = key.split(",").map(Number);
-                        let a = await ask(w, { type: "tile", v, x: tx * 512, y: ty * 512, w: 512, h: 512, light, names, pad: PAD });
-                        if (a.needMap) { await ask(w, { type: "map", v, text }); a = await ask(w, { type: "tile", v, x: tx * 512, y: ty * 512, w: 512, h: 512, light, names, pad: PAD }); }
+                        const [light, key, p] = jobs[next++], [tx, ty] = key.split(",").map(Number);
+                        let a = await ask(w, { type: "tile", v: p.v, x: tx * 512, y: ty * 512, w: 512, h: 512, light, names, pad: PAD });
+                        if (a.needMap) { await ask(w, { type: "map", v: p.v, text: p.text }); a = await ask(w, { type: "tile", v: p.v, x: tx * 512, y: ty * 512, w: 512, h: 512, light, names, pad: PAD }); }
                         publishing.at++;
                         if (blank(a.d)) continue;
-                        tiles[light + "|" + key] = await send(await pngOf(512, 512, solid(a.d)));
+                        tiles[p.pre + light + "|" + key] = await send(await pngOf(512, 512, solid(a.d)));
                     }
                 }));
             } finally { for (const w of crew) retire(w); }
             /* the failing lights and Christmas only where there's something under them (failing+x goes by the failing square) */
-            for (const k of Object.keys(tiles)) { const m = /^(failing|[a-z]+\+x)\|(.*)$/.exec(k); if (!m) continue; const plain = (m[1] === "failing" ? "night" : m[1].replace("+x", "")) + "|" + m[2]; if (!tiles[plain]) delete tiles[k]; }
+            for (const k of Object.keys(tiles)) { const m = /^(g:)?(failing|[a-z]+\+x)\|(.*)$/.exec(k); if (!m) continue; const plain = (m[1] || "") + (m[2] === "failing" ? "night" : m[2].replace("+x", "")) + "|" + m[3]; if (!tiles[plain]) delete tiles[k]; }
             for (const k of Object.keys(tiles)) { if (k.includes("+x|") && tiles[k] === tiles[k.replace("+x", "")]) delete tiles[k]; }
             for (const way of ways) {
                 for (let f = 0; f < 6; f++) { publishing.at++; const a = await ask(idle(), { type: "lift", way, slide: f / 5 }); lift[encodeURIComponent(way).replace(/%/g, "_") + "-" + f + ".png"] = await send(await pngOf(a.w, a.h, a.d)); }

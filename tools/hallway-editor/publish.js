@@ -41,8 +41,11 @@ function isBlank(d) { for (let i = 0; i < d.length; i += 4) if ((d[i] || d[i + 1
 const liftFile = (way, f) => encodeURIComponent(way).replace(/%/g, "_") + "-" + f + ".png";
 
 /* one lighting set: every square of it, written to tiles/ unless a square with the same picture is there already */
-function drawLight(mapFile, light) {
-    const text = fs.readFileSync(mapFile, "utf8"), load = () => JSON.parse(text), names = W.H.names2(), tiles = {}, used = [];
+/* The file holds two maps (12 Nov 2026): the Hallways (the file itself, less its gallery) and the Events Gallery (its "gallery"), each
+   drawn on its own; the gallery's squares are named "g:" in the manifest */
+const mapPart = (text, which) => { const m = JSON.parse(text); if (which === "gallery") return m.gallery; delete m.gallery; return m; };
+function drawLight(mapFile, light, which = "hallway") {
+    const text = fs.readFileSync(mapFile, "utf8"), load = () => mapPart(text, which), names = W.H.names2(), tiles = {}, used = [], pre = which === "gallery" ? "g:" : "";
     /* the failing lights only where the Basement shows, and at Christmas only where something Christmassy is there too */
     const FP = require("./furni-parts.js"), xmasToo = light === "failing+x" ? FP.xmasTiles(load()) : null;
     const onlyBasement = light.startsWith("failing") ? new Set([...FP.basementTiles(load())].filter(k => !xmasToo || xmasToo.has(k))) : null;
@@ -55,7 +58,7 @@ function drawLight(mapFile, light) {
         const px = Buffer.from(v.d); for (let i = 0; i < px.length; i += 4) { if (px[i] === 7 && px[i + 1] === 6 && px[i + 2] === 10) px[i] = px[i + 1] = px[i + 2] = 0; px[i + 3] = 255; }
         const png = encodePng(TILE, TILE, px), hash = crypto.createHash("sha1").update(png).digest("hex").slice(0, 20), name = hash + ".png", file = path.join(OUT, "tiles", name);
         if (!fs.existsSync(file)) fs.writeFileSync(file, png);
-        used.push(name); tiles[light + "|" + tx + "," + ty] = name;
+        used.push(name); tiles[pre + light + "|" + tx + "," + ty] = name;
     }
     return { tiles, used };
 }
@@ -71,25 +74,26 @@ async function main() {
     const tiles = {}, used = new Set();
     /* Christmas from the data, not a hand list (9 Nov scan: garlands, the giant tree and i_swag didn't count). The Basement's
        blackout gets a Christmas set of its own where the two meet, so its garlands and window snow go dark rather than vanish */
-    const FP = require("./furni-parts.js"), hasXmas = FP.hasXmas(load()), xmasSq = hasXmas ? FP.xmasTiles(load()) : new Set();
-    const failingX = [...FP.basementTiles(load())].some(k => xmasSq.has(k));
-    const lights = [...MOODS, "failing", ...(hasXmas ? MOODS.map(m => m + "+x") : []), ...(failingX ? ["failing+x"] : [])], steps = lights.length + 1;
+    const FP = require("./furni-parts.js"), lightsOf = m => { const hasXmas = FP.hasXmas(m), xmasSq = hasXmas ? FP.xmasTiles(m) : new Set(), failingX = [...FP.basementTiles(m)].some(k => xmasSq.has(k));
+        return [...MOODS, "failing", ...(hasXmas ? MOODS.map(q => q + "+x") : []), ...(failingX ? ["failing+x"] : [])]; };
+    const jobs = [...lightsOf(mapPart(text, "hallway")).map(light => ({ which: "hallway", light })), ...(map.gallery && (map.gallery.levels || []).length ? lightsOf(mapPart(text, "gallery")).map(light => ({ which: "gallery", light })) : [])];
+    const lights = jobs.map(j => j.which + "|" + j.light), steps = lights.length + 1;
     /* each lighting set drawn in a thread of its own, several at once (8 Nov 2026: one after another took five minutes), each square
        written as it's drawn; the same squares, named by their contents, as before */
     let done = 0; const drawn = new Map();
-    const one = light => new Promise((res, rej) => {
-        const w = new Worker(__filename, { workerData: { mapFile, light } });
+    const one = job => new Promise((res, rej) => {
+        const light = job.which + "|" + job.light, w = new Worker(__filename, { workerData: { mapFile, light: job.light, which: job.which } });
         w.once("message", got => { drawn.set(light, got); for (const n of got.used) used.add(n); done++; console.log(`progress ${done} of ${steps}`); res(); });
-        w.once("error", rej); w.once("exit", code => { if (code) rej(new Error("Drawing " + light + " stopped (" + code + ")")); });
+        w.once("error", rej); w.once("exit", code => { if (code) rej(new Error("Drawing " + job.which + " " + job.light + " stopped (" + code + ")")); });
     });
-    const queue = [...lights], threads = Math.max(1, Math.min(queue.length, os.cpus().length - 2, 6));
+    const queue = [...jobs], threads = Math.max(1, Math.min(queue.length, os.cpus().length - 2, 6));
     await Promise.all(Array.from({ length: threads }, async () => { while (queue.length) await one(queue.shift()); }));
     /* in the same order whichever finished first, so the same map always makes the same version */
     for (const light of lights) Object.assign(tiles, drawn.get(light).tiles);
     /* Christmas keeps only what it changes; the page falls back on the plain square */
     for (const k of Object.keys(tiles)) { if (!k.includes("+x|")) continue; if (tiles[k] === tiles[k.replace("+x", "")]) delete tiles[k]; }
     /* The lift's doors, in each floor's colours */
-    const ways = new Set(map.levels.map(l => l.colour ? "hex:" + l.colour : l.way));
+    const ways = new Set([...map.levels, ...((map.gallery && map.gallery.levels) || [])].map(l => l.colour ? "hex:" + l.colour : l.way));
     for (const way of ways) for (let f = 0; f < 6; f++) {
         const slide = f / 5, bw = 180, bh = 200, ax = 40, ay = 160, b = new W.Buf(bw, bh);
         for (let i = 0; i < b.d.length; i += 4) { b.d[i] = 255; b.d[i + 1] = 0; b.d[i + 2] = 255; b.d[i + 3] = 255; }
@@ -147,6 +151,6 @@ function finish(text, tiles, app, liftNew) {
     fs.writeFileSync(path.join(OUT, "manifest.json"), JSON.stringify({ version, tile: TILE, moods: MOODS, publishedAt: new Date().toISOString(), tiles }));
     return version;
 }
-if (!isMainThread) parentPort.postMessage(drawLight(workerData.mapFile, workerData.light));
+if (!isMainThread) parentPort.postMessage(drawLight(workerData.mapFile, workerData.light, workerData.which));
 else if (require.main === module) main().catch(e => { console.error(e && e.stack || e); process.exit(1); });
 module.exports = { main, liftFile, finish };

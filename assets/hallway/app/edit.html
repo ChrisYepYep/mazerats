@@ -14,6 +14,10 @@
 <div id="app">
     <header id="top">
         <div class="brand"><span>Hallway</span></div>
+        <label class="floor-pick place-pick" title="Which map you're working on: the Hallways, or the Events Gallery the tunnels lead into">
+            <span class="dim">Map</span>
+            <select id="placeSel" aria-label="Which map you're working on"><option value="hallway">Hallways</option><option value="gallery">Events Gallery</option></select>
+        </label>
         <label class="floor-pick" title="The floor you're working on (Page Up / Page Down)">
             <span class="dim">Floor</span>
             <select id="floorSel" aria-label="The floor you're working on"></select>

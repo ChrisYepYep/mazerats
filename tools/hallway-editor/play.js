@@ -27,10 +27,12 @@
         if (p === "/api/map") return online ? realFetch(FN + "?what=map&v=" + encodeURIComponent(m.version || "")) : realFetch("../map.json", { cache: "no-cache" });
         if (p === "/api/names") return json({ names: [], font: {}, difficulty: {} });
         if (p === "/api/art") return json({ at: 0 });
-        if (p === "/api/version") return json({ v: m.version, report: {}, tile: m.tile });
+        /* the Events Gallery has its own pictures, under "g:" (12 Nov 2026): the version says which map is asked for, and the tile asks follow it */
+        if (p === "/api/version") { const g = !!(opts && typeof opts.body === "string" && opts.body.slice(0, 40).includes('"place":"gallery"')); return json({ v: (m.version || "") + (g ? "~g" : ""), report: {}, tile: m.tile }); }
         if (p === "/api/tile") {
             /* The editor's own light, when no time of day is asked for, is daylight here */
-            const plainKey = String(q.searchParams.get("m") || "day").replace("+x", "") + "|" + q.searchParams.get("tx") + "," + q.searchParams.get("ty"), wantKey = (q.searchParams.get("m") || "day") + "|" + q.searchParams.get("tx") + "," + q.searchParams.get("ty"), key = m.tiles[wantKey] ? wantKey : plainKey, name = m.tiles[key];
+            const pre = String(q.searchParams.get("v") || "").endsWith("~g") ? "g:" : "";
+            const plainKey = pre + String(q.searchParams.get("m") || "day").replace("+x", "") + "|" + q.searchParams.get("tx") + "," + q.searchParams.get("ty"), wantKey = pre + (q.searchParams.get("m") || "day") + "|" + q.searchParams.get("tx") + "," + q.searchParams.get("ty"), key = m.tiles[wantKey] ? wantKey : plainKey, name = m.tiles[key];
             if (name) {
                 const r = await realFetch(online ? FN + "?tile=" + name : "../tiles/" + name, opts); if (r.status !== 404) return r;
                 /* A publish has replaced it while this page was open. The newest list says what's there now. */
