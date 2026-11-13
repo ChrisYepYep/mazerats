@@ -1414,6 +1414,8 @@ const RUG = (() => {
     return { ramp: [hex("000000"), ...line.slice(s0, e0).filter(Boolean)], core: e0, at };
 })();
 const CHAMFER = 30;
+/* how deep the border is: the ramp after it is the rug's own stripes, which a cut corner leaves to the rug */
+const RUG_BORDER = (() => { const core = new Set(); for (let i = 0; i < 32; i++) for (let j = 0; j < 16; j++) { const c = RUG.at(68 + i, RUG.core + j); if (c) core.add((c[0] << 16) | (c[1] << 8) | c[2]); } const i = RUG.ramp.findIndex((c, k) => k > 0 && c && core.has((c[0] << 16) | (c[1] << 8) | c[2])); return i < 0 ? RUG.ramp.length : i; })();
 function rugAt(R, X, Y, dx, dy) {
     const a = Math.floor(X * 16 + (dx + 2 * dy) / 2), b = Math.floor(Y * 16 + (2 * dy - dx) / 2);
     const a0 = R.x0 * 16, a1 = R.x1 * 16, b0 = R.y0 * 16, b1 = R.y1 * 16;
@@ -1552,12 +1554,14 @@ function rugFieldAt(F, X, Y, dx, dy) {
         if (d < r) r = d;
     }
     if (GHP) return ghRugPx(r, X, Y, dx, dy);
-    /* the corners: cut ones move the edge in, square ones have the rosette */
-    let cn = F.cornerNear.get(key); if (!cn) { cn = F.corners.filter(c => Math.abs(c.A - TX * 16) < 48 && Math.abs(c.B - TY * 16) < 48); F.cornerNear.set(key, cn); }
+    /* the corners: cut ones move the edge in, square ones have the rosette. A cut runs its whole border (RUG_BORDER deep) to where it meets
+       the straight edges' border, nearer stripe winning: it stopped 12 rows in (u + v < 40), so below that the uncut corner's border came back
+       as stray light lines across the rug that ran into nothing (14 Nov 2026, his). */
+    let cn = F.cornerNear.get(key); if (!cn) { cn = F.corners.filter(c => Math.abs(c.A - TX * 16) < 80 && Math.abs(c.B - TY * 16) < 80); F.cornerNear.set(key, cn); }
     for (const c of cn) {
         const u = c.sa * (a - c.A), v = c.sb * (b - c.B); if (u < 0 || v < 0) continue;
         /* measured from the unrounded point, so the cut edge is a clean line and not every other pixel; one stripe of the border to each pixel row (a flat cut) or column (an upright one), as the straight edges have, so none is skipped (8 Nov: "distorted") */
-        if (c.cut) { if (u + v >= 40) continue; const fa = X * 16 + (dx + 2 * dy) / 2, fb = Y * 16 + (2 * dy - dx) / 2, w2 = c.sa * (fa - c.A) + c.sb * (fb - c.B) + (c.sa < 0 ? 1 : 0) + (c.sb < 0 ? 1 : 0), d = c.flat ? (w2 - 16) / 2 : (w2 - 16); if (d < 0) return null; if (d < r) r = Math.floor(d); }
+        if (c.cut) { const fa = X * 16 + (dx + 2 * dy) / 2, fb = Y * 16 + (2 * dy - dx) / 2, w2 = c.sa * (fa - c.A) + c.sb * (fb - c.B) + (c.sa < 0 ? 1 : 0) + (c.sb < 0 ? 1 : 0), d = c.flat ? (w2 - 16) / 2 : (w2 - 16); if (d < 0) return null; if (d < r && d < RUG_BORDER) r = Math.floor(d); }
         else if (!c.small && u >= 1 && v >= 1 && r >= 1) { const p = CORNER.get(u - 1, v - 1); if (p) return p; }
     }
     if (r < RUG.ramp.length) return RUG.ramp[r];
@@ -3744,17 +3748,29 @@ function build(cfg) {
         }
         /* decorative floor edges: each run stands with the furniture, on the floor it belongs to, and climbs any small steps it's on */
         if (lv.src && lv.src.edgeItems) {
-            const flightLift = (axis, across, along) => {
+            /* The flight beside a spot along a run: t, how far down the flight from its top line; rise and depth. A run along y sits beside a
+               flight climbing along y. It reaches a tread past the flight's foot, as the moulding does. */
+            const flightAt = (axis, across, along) => {
                 for (const st of (lv.src.steps || [])) {
-                    /* a run along y sits beside a flight climbing along y */
                     if (st.axis !== axis || across < st.a || across >= st.b) continue;
                     const alongY = st.axis === "y", back = alongY ? zAt(st.a, st.line - 1) : zAt(st.line - 1, st.a), near = alongY ? zAt(st.a, st.line) : zAt(st.line, st.a), toYou = st.dir === "front";
                     if (back === null || near === null) continue;
                     const rise = toYou ? near - back : back - near; if (rise <= 0) continue;
-                    const depth = rise / STEP_R * STEP_D, from = toYou ? st.line - depth : st.line, to = from + depth;
-                    if (along >= from && along <= to) return rise * (toYou ? along - from : to - along) / depth;
+                    const depth = Math.round(rise / STEP_R) * STEP_D, t = toYou ? st.line - along : along - st.line;
+                    if (t >= 0 && t <= depth + STEP_D) return { t, rise, depth, way: toYou ? -1 : 1 };
                 }
-                return 0;
+                return null;
+            };
+            /* The rail climbs along the steps' noses, the same profile as the moulding and a climbing wall's top beside them (stepEdgeZ), so the
+               two bend together: level over the top tread, down from the first step, and onto the lower floor a tread past the last. It went
+               straight from the top line to the foot, bending a step before the moulding (14 Nov 2026, his). Measured up from the lower floor. */
+            const flightLift = (axis, across, along) => { const f = flightAt(axis, across, along); return f ? stepEdgeZ(f.t, f.rise, 0, f.depth) : 0; };
+            /* A post on the slope stands on a step's nose, where the noses' line touches the tread; between two noses it would float over the
+               tread by up to a step. Moved down to the next nose, or to the floor at the foot: a post at the old foot goes to the new one. */
+            const flightPost = (axis, across, along) => {
+                const f = flightAt(axis, across, along); if (!f || f.t <= STEP_D || f.t >= f.depth + STEP_D) return along;
+                const k = Math.min(Math.round(f.depth / STEP_D) + 1, Math.floor(f.t / STEP_D) + 1);
+                return along + (k * STEP_D - f.t) * f.way;
             };
             for (const run0 of EdgeItems.runsOf(lv.src.edgeItems)) {
                 const onTile = t => run0.axis === "x" ? [t, run0.dir > 0 ? run0.line : run0.line - 1] : [run0.dir > 0 ? run0.line : run0.line - 1, t];
@@ -3777,8 +3793,8 @@ function build(cfg) {
                     const pixelsOf = () => {
                         if (px) return px;
                         const zs = w.z; w.z = zBase;
-                        const at = (fx, fy) => w.S(fx, fy), lift = liftOf(zBase);
-                        px = new Map(); for (const q of EdgeItems.pixels(run, at, lift)) { if (!px.has(q[3])) px.set(q[3], []); px.get(q[3]).push(q); }
+                        const at = (fx, fy) => w.S(fx, fy), lift = liftOf(zBase), postAt = along => { const t = onTile(Math.floor(along)); return flightPost(run0.axis === "x" ? "x" : "y", run0.axis === "x" ? t[1] : t[0], along); };
+                        px = new Map(); for (const q of EdgeItems.pixels(run, at, lift, postAt)) { if (!px.has(q[3])) px.set(q[3], []); px.get(q[3]).push(q); }
                         w.z = zs; return px;
                     };
                     /* each tile of it takes its own place among the furniture: a back edge goes behind what stands on that tile, a front edge in front of it */
@@ -5068,8 +5084,9 @@ const LOOK = {
     }
 };
 const T = 16, RAIL = 14;   // the rail's lower line, in rows up from the floor
-/* All the pixels of one run: [X, Y, colour, which tile of the run]. at(fx, fy) gives the screen spot on the run's floor; lift(along) how far the floor there has climbed. */
-function pixels(run, at, lift) {
+/* All the pixels of one run: [X, Y, colour, which tile of the run]. at(fx, fy) gives the screen spot on the run's floor; lift(along) how far the floor there has climbed;
+   postAt(along), optional, where a post meant for there should stand instead. */
+function pixels(run, at, lift, postAt) {
     const { s, axis, line, a, b, dir } = run, look = LOOK[s] || LOOK.wood, C = look.c, out = new Map(), a0 = a * T, a1 = b * T, put = (x, y, c, t) => out.set(x + "," + y, [x, y, c, t]);
     /* The floor's own spots are rounded to whole pixels, and rounding them again after adding a slope's climb makes the rail wobble. So: one spot, then the exact line from it. */
     const away = 2 / T, start = axis === "x" ? at(a, line + dir * away) : at(line + dir * away, a), sx = axis === "x" ? 1 : -1;
@@ -5086,8 +5103,11 @@ function pixels(run, at, lift) {
         put(X, Y - RAIL - 1, C[side[g]], t); put(X, Y - RAIL - 2, glint && look.grain ? C.h : C.l, t); put(X, Y - RAIL - 3, C.K, t);
         lastY = Y;
     }
-    const posts = new Set([a0 + 2, a1 - 2]);
-    for (let A = Math.ceil((a0 + 8) / 32) * 32; A < a1 - 8; A += 32) posts.add(A);
+    const posts0 = new Set([a0 + 2, a1 - 2]);
+    for (let A = Math.ceil((a0 + 8) / 32) * 32; A < a1 - 8; A += 32) posts0.add(A);
+    /* postAt(along): where a post there should really stand (on small steps, a step's nose); kept inside the run and clear of the next post */
+    const moved = [...posts0].map(c => { if (!postAt) return [c, c]; const m = Math.round(postAt((c + .5) / T) * T - .5); return [c, m >= a0 + 2 && m <= a1 - 2 ? m : c]; });
+    const posts = moved.filter(([c, m], i) => m === c || !moved.some(([c2, m2], j) => j !== i && Math.abs(m2 - m) < 8 && (m2 === c2 || j < i))).map(q => q[1]);
     for (const c of posts) {
         const [X, Y] = spot(c);
         look.post.forEach((row, h) => { for (let i = 0; i < 6; i++) if (row[i] !== ".") put(X + i - 3, Y - h, C[row[i]], Math.floor(c / T)); });

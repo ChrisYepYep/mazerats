@@ -31,8 +31,9 @@ const LOOK = {
     }
 };
 const T = 16, RAIL = 14;   // the rail's lower line, in rows up from the floor
-/* All the pixels of one run: [X, Y, colour, which tile of the run]. at(fx, fy) gives the screen spot on the run's floor; lift(along) how far the floor there has climbed. */
-function pixels(run, at, lift) {
+/* All the pixels of one run: [X, Y, colour, which tile of the run]. at(fx, fy) gives the screen spot on the run's floor; lift(along) how far the floor there has climbed;
+   postAt(along), optional, where a post meant for there should stand instead. */
+function pixels(run, at, lift, postAt) {
     const { s, axis, line, a, b, dir } = run, look = LOOK[s] || LOOK.wood, C = look.c, out = new Map(), a0 = a * T, a1 = b * T, put = (x, y, c, t) => out.set(x + "," + y, [x, y, c, t]);
     /* The floor's own spots are rounded to whole pixels, and rounding them again after adding a slope's climb makes the rail wobble. So: one spot, then the exact line from it. */
     const away = 2 / T, start = axis === "x" ? at(a, line + dir * away) : at(line + dir * away, a), sx = axis === "x" ? 1 : -1;
@@ -49,8 +50,11 @@ function pixels(run, at, lift) {
         put(X, Y - RAIL - 1, C[side[g]], t); put(X, Y - RAIL - 2, glint && look.grain ? C.h : C.l, t); put(X, Y - RAIL - 3, C.K, t);
         lastY = Y;
     }
-    const posts = new Set([a0 + 2, a1 - 2]);
-    for (let A = Math.ceil((a0 + 8) / 32) * 32; A < a1 - 8; A += 32) posts.add(A);
+    const posts0 = new Set([a0 + 2, a1 - 2]);
+    for (let A = Math.ceil((a0 + 8) / 32) * 32; A < a1 - 8; A += 32) posts0.add(A);
+    /* postAt(along): where a post there should really stand (on small steps, a step's nose); kept inside the run and clear of the next post */
+    const moved = [...posts0].map(c => { if (!postAt) return [c, c]; const m = Math.round(postAt((c + .5) / T) * T - .5); return [c, m >= a0 + 2 && m <= a1 - 2 ? m : c]; });
+    const posts = moved.filter(([c, m], i) => m === c || !moved.some(([c2, m2], j) => j !== i && Math.abs(m2 - m) < 8 && (m2 === c2 || j < i))).map(q => q[1]);
     for (const c of posts) {
         const [X, Y] = spot(c);
         look.post.forEach((row, h) => { for (let i = 0; i < 6; i++) if (row[i] !== ".") put(X + i - 3, Y - h, C[row[i]], Math.floor(c / T)); });
