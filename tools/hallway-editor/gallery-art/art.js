@@ -316,25 +316,46 @@ const ISO = { "0": [[[1, 0], [3, 0], [4, 1], [4, 5], [3, 6], [1, 6], [0, 5], [0,
     "3": [[[0, 1], [1, 0], [3, 0], [4, 1], [4, 2], [3, 3], [4, 4], [4, 5], [3, 6], [1, 6], [0, 5]], [[1, 3], [3, 3]]], "4": [[[3, 6], [3, 0], [0, 4], [4, 4]]], "5": [[[4, 0], [0, 0], [0, 3], [3, 3], [4, 4], [4, 5], [3, 6], [0, 6]]],
     "6": [[[4, 1], [3, 0], [1, 0], [0, 1], [0, 5], [1, 6], [3, 6], [4, 5], [4, 4], [3, 3], [0, 3]]], "7": [[[0, 0], [4, 0], [4, 1], [1, 6]]], "8": [[[1, 0], [3, 0], [4, 1], [4, 2], [3, 3], [1, 3], [0, 2], [0, 1], [1, 0]], [[1, 3], [0, 4], [0, 5], [1, 6], [3, 6], [4, 5], [4, 4], [3, 3]]],
     "9": [[[4, 3], [1, 3], [0, 2], [0, 1], [1, 0], [3, 0], [4, 1], [4, 5], [3, 6], [1, 6], [0, 5]]] };
-function yearSlab(year = "2026", stone = "c2ae86") {
-    const NA = 48, NB = 32, S0 = H(stone), t = X.img(NA, NB);
+/* axis "y" (14 Nov 2026, his: "Year slab: should be rotatable"): the same slab turned a quarter, 2 along x by 3 along y, the year reading up to the right */
+function yearSlab(year = "2026", stone = "c2ae86", axis = "x") {
+    const turned = axis === "y", NA = 48, NB = 32, FA = turned ? NB : NA, FB = turned ? NA : NB, S0 = H(stone), t = X.img(FA, FB);
     const sh = k => mix(S0, K, k), li = k => mix(S0, [255, 250, 235], k);
-    for (let b = 0; b < NB; b++) for (let a = 0; a < NA; a++) {
-        let col = S0; if (a === 0 || b === 0) col = li(.18); else if (a === NA - 1 || b === NB - 1) col = sh(.14);
-        const e = Math.min(a, b, NA - 1 - a, NB - 1 - b), corner = Math.min(a, NA - 1 - a) < 5 && Math.min(b, NB - 1 - b) < 5;
+    for (let b = 0; b < FB; b++) for (let a = 0; a < FA; a++) {
+        let col = S0; if (a === 0 || b === 0) col = li(.18); else if (a === FA - 1 || b === FB - 1) col = sh(.14);
+        const e = Math.min(a, b, FA - 1 - a, FB - 1 - b), corner = Math.min(a, FA - 1 - a) < 5 && Math.min(b, FB - 1 - b) < 5;
         if (e === 2 && !corner) col = (a === 2 || b === 2) ? sh(.36) : li(.2);
         if (e === 3 && !corner) col = (a === 3 || b === 3) ? li(.18) : sh(.3);
-        for (const [cx, cy] of [[3, 3], [NA - 4, 3], [3, NB - 4], [NA - 4, NB - 4]]) { const d = Math.abs(a - cx) + Math.abs(b - cy); if (d === 2) col = (a < cx || b < cy) ? sh(.36) : li(.22); else if (d < 2) col = sh(.12); }
+        for (const [cx, cy] of [[3, 3], [FA - 4, 3], [3, FB - 4], [FA - 4, FB - 4]]) { const d = Math.abs(a - cx) + Math.abs(b - cy); if (d === 2) col = (a < cx || b < cy) ? sh(.36) : li(.22); else if (d < 2) col = sh(.12); }
         X.set(t, a, b, col);
     }
-    const iso = X.floor(t), P = (a, b) => [a - b + NB, Math.floor((a + b) / 2)];
+    const iso = X.floor(t), P = (a, b) => { const A = turned ? b : a, B = turned ? NA - 1 - a : b; return [A - B + FB, Math.floor((A + B) / 2)]; };
     const XM = { 0: 0, 1: 1, 2: 2, 3: 4, 4: 5 }, YM = { 0: 0, 1: 1, 2: 3, 3: 4, 4: 5, 5: 7, 6: 8 }, ADV = 8, W = (year.length - 1) * ADV + 5, a0 = Math.round(NA / 2 - W / 2), b0 = Math.round(NB / 2 - 4);
     const cut = new Set(), seg = (p, q) => { let [x0, y0] = p; const [x1, y1] = q, dx = Math.abs(x1 - x0), dy = -Math.abs(y1 - y0), sx = x0 < x1 ? 1 : -1, sy = y0 < y1 ? 1 : -1; let e = dx + dy; for (;;) { cut.add(x0 + "," + y0); if (x0 === x1 && y0 === y1) break; const e2 = 2 * e; if (e2 >= dy) { e += dy; x0 += sx; } if (e2 <= dx) { e += dx; y0 += sy; } } };
     [...year].forEach((ch, i) => { const ax = a0 + i * ADV; for (const ln of ISO[ch] || []) for (let k = 0; k + 1 < ln.length; k++) seg(P(ax + XM[ln[k][0]], b0 + YM[ln[k][1]]), P(ax + XM[ln[k + 1][0]], b0 + YM[ln[k + 1][1]])); });
     for (const k of cut) { const [px, py] = k.split(",").map(Number); if (!cut.has(px + "," + (py + 1))) X.set(iso, px, py + 1, li(.3)); }
     for (const k of cut) { const [px, py] = k.split(",").map(Number); X.set(iso, px, py, sh(.48)); }
-    /* the slab's top corner sits at (NB, 0) in the picture */
-    return { img: iso, top: [NB, 0] };
+    /* the slab's top corner sits at (FB, 0) in the picture */
+    return { img: iso, top: [FB, 0] };
+}
+/* ---- the year as a metal plate (14 Nov 2026, his, from mock-up sheet 27): the carved slab's shapes kept as cuts, turned to brass (the globe
+   floor lamp's foot and the Leet Show narrow stand's poles) or steel. No lit lips inside, only the rim's top edges; the shine is the Hallway
+   floor tiles' own: every screen column one of three tones ---- */
+const METALS = {
+    brass: { name: "Brass", deep: "24130a", cut: "3a2110", groove: "54321a", low: "6e4524", face: ["9c6a38", "ab7a44", "bd8a50"], rim: "eed09c" },
+    steel: { name: "Steel", deep: "1e2228", cut: "323840", groove: "4a525c", low: "66707a", face: ["96a0aa", "a4aeb8", "b6bec8"], rim: "eef2f6" },
+};
+function yearPlate(year, metal = "brass", axis = "x") {
+    const s = yearSlab(year, "c2ae86", axis), im = s.img, M = METALS[metal], o = X.img(im.w, im.h);
+    const solidAt = (x, y) => { const c = X.get(im, x, y); return !!c && c[3] >= 128; };
+    const colTone = x => { let h = (x * 374761393 + 7 * 668265263) | 0; h = (h ^ (h >>> 13)) * 1274126177 | 0; const r = ((h ^ (h >>> 16)) >>> 0) / 4294967296; return r < .3 ? 0 : r < .7 ? 1 : 2; };
+    for (let y = 0; y < im.h; y++) for (let x = 0; x < im.w; x++) {
+        const c = X.get(im, x, y); if (!c || c[3] < 128) continue;
+        const L = c[0] * .3 + c[1] * .59 + c[2] * .11;
+        const top = !solidAt(x, y - 1) || (!solidAt(x - 1, y) && !solidAt(x, y - 2)), edge = top || !solidAt(x, y + 1) || !solidAt(x - 1, y) || !solidAt(x + 1, y);
+        const h = L < 100 ? M.deep : L < 130 ? M.cut : L < 160 ? M.groove : edge ? (top ? M.rim : M.low) : M.face[colTone(x)];
+        X.set(o, x, y, H(h));
+    }
+    return { img: o, top: s.top };
 }
 
-module.exports = { X, H, LOBBY, REG, PLINTHS, ITEMS, plinthWith, placard, placardPicture, PLANTS, clientPlant, BANNERS, velOf, banner, onWall, SIZES, FRAMES, frame, fitPicture, pictureLight, eggSconce, yearSlab };
+module.exports = { X, H, LOBBY, REG, PLINTHS, ITEMS, plinthWith, placard, placardPicture, PLANTS, clientPlant, BANNERS, velOf, banner, onWall, SIZES, FRAMES, frame, fitPicture, pictureLight, eggSconce, yearSlab, yearPlate, METALS };

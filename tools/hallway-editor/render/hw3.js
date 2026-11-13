@@ -494,7 +494,7 @@ const parquetAt = (x, y) => { const X = Math.floor(x), Y = Math.floor(y), fx = x
 /* A floor of thick planks, one tile wide, running along x with staggered ends: worked out per pixel from where it falls on the floor, so it runs on unbroken from tile to tile.
    Drawn in the floor's own colours, so the colourway tones them like any floor. */
 const PLANK_TONES = PARQUET.filter(c => GROUPS.get((c[0] << 16) | (c[1] << 8) | c[2]) === "parquet"), plq = t => PLANK_TONES[Math.max(0, Math.min(PLANK_TONES.length - 1, Math.round(t * (PLANK_TONES.length - 1))))];
-const stepTones = way => (wayOf(way) || {}).planks ? t => plq(t * .62) : pqAll;      // the planks sit low in the floor's range, so a step's lit edge has to as well or it glows
+const stepTones = (way, tiled = true) => GHP && tiled ? ghStepTones : (wayOf(way) || {}).planks ? t => plq(t * .62) : pqAll;      // the planks sit low in the floor's range, so a step's lit edge has to as well or it glows
 const plankHash = (a, b, c) => { let h = Math.imul(a, 73856093) ^ Math.imul(b, 19349663) ^ Math.imul(c, 83492791); h = Math.imul(h ^ (h >>> 13), 1274126177); return (h ^ (h >>> 16)) >>> 0; };
 const plankAt = (X, Y, dx, dy) => plankAtUnits(X * 32 + 2 * dy + dx, Y * 32 + 2 * dy - dx);
 const plankXY = (x, y) => plankAtUnits(Math.floor(x * 32), Math.floor(y * 32));
@@ -515,7 +515,7 @@ const STEP_R = 4, STEP_D = 6 / 16;
 /* Steps climbing towards you: the higher floor is nearer than the lower one, so each step's front faces away and only the tops show,
    nearly on top of each other. Drawn from the far step forward; the near side shows the stepped end. */
 function flightUpToYou(w, o) {
-    const { axis, c0, c1, dStart, steps, zB, carpet, way } = o, alongY = axis === "y", pq = stepTones(way), grainAt = (wayOf(way) || {}).planks ? plankXY : parquetAt;
+    const { axis, c0, c1, dStart, steps, zB, carpet, way } = o, alongY = axis === "y", pq = stepTones(way), grainAt = GHP ? ghGrain : (wayOf(way) || {}).planks ? plankXY : parquetAt;
     const scr = (c, d, z) => alongY ? [Math.round((c - d) * 16) + w.ox, Math.round((c + d) * 8) + w.oy - zB - z] : [Math.round((d - c) * 16) + w.ox, Math.round((c + d) * 8) + w.oy - zB - z];
     const [ca, cb] = carpet || [1e9, 1e9], put = (q, c) => w.b.set(q[0], q[1], c), toned = new Map();
     const rugAt = (cc, path) => { const r = Math.min(Math.floor((cc - ca) * 16), Math.floor((cb - cc) * 16 - 1e-6)), base = r < RUG.ramp.length ? RUG.ramp[r] : RUG.at(68 + (path % 32), RUG.core + (((Math.floor(cc * 16) % 16) + 16) % 16)), key = (base[0] << 16) | (base[1] << 8) | base[2]; if (!toned.has(key)) toned.set(key, carpetTone(base, way).map(v => Math.round(v))); return toned.get(key); };
@@ -539,7 +539,7 @@ function flightUpToYou(w, o) {
                 if (r === rows && k < steps - 1) break;
                 const cc = c0 + (u + r + .5) / 16, dd = d0 + (r + .5) / 16; if (cc < c0 || cc >= c1) continue;
                 const uu = Math.floor((cc - c0) * 16), end = uu === 0 || uu === wide - 1, far = r === 0, onRug = cc >= ca && cc < cb, rc = onRug && rugAt(cc, k * 6 + r);
-                const col = far && k === 0 && !onRug ? C.k : onRug ? (far ? dim(rc, .6) : rc) : far || end ? pq(.3) : r === 1 ? pq(1) : grainAt(alongY ? cc : dd, alongY ? dd : cc);
+                const col = far && k === 0 && !onRug ? (GHP ? GH_JOINT : C.k) : onRug ? (far ? dim(rc, .6) : rc) : far || end ? pq(.3) : r === 1 ? pq(1) : grainAt(alongY ? cc : dd, alongY ? dd : cc);
                 w.b.set(p[0], p[1] + r, col);
             }
         }
@@ -556,17 +556,17 @@ function stairWallPx(w, faceY, line, sx, sy, high, zFloor) {
     const s = (j * im.w + i) * 4; return im.rgba[s + 3] < 128 ? null : [im.rgba[s], im.rgba[s + 1], im.rgba[s + 2]];
 }
 function flight(w, o) {
-    const { axis, c0, c1, dTop, steps, zB, carpet, way } = o, alongY = axis === "y", pq = stepTones(way), planks = !!(wayOf(way) || {}).planks, grainAt = planks ? plankXY : parquetAt, tiled = !!o.tiled, woody = tiled || planks, R = o.rise || 8, D = o.tread || .5, dBot = dTop + steps * D, topOf = k => (k + 1) * R + (k === steps - 1 ? o.topExtra || 0 : 0), topZ = topOf(steps - 1);
+    const { axis, c0, c1, dTop, steps, zB, carpet, way } = o, alongY = axis === "y", pq = stepTones(way, !!o.tiled), planks = !!(wayOf(way) || {}).planks, grainAt = GHP && o.tiled ? ghGrain : planks ? plankXY : parquetAt, tiled = !!o.tiled, woody = tiled || planks, R = o.rise || 8, D = o.tread || .5, dBot = dTop + steps * D, topOf = k => (k + 1) * R + (k === steps - 1 ? o.topExtra || 0 : 0), topZ = topOf(steps - 1);
     const scr = (c, d, z) => alongY ? [Math.round((c - d) * 16) + w.ox, Math.round((c + d) * 8) + w.oy - zB - z] : [Math.round((d - c) * 16) + w.ox, Math.round((c + d) * 8) + w.oy - zB - z];
     const pts = [[c0, dBot, 0], [c1, dBot, 0], [c0, dTop, topZ], [c1, dTop, topZ], [c1, dTop, 0], [c0, dTop, 0]].map(q => scr(q[0], q[1], q[2]));
     const X0 = Math.max(0, Math.min(...pts.map(q => q[0])) - 2), X1 = Math.min(w.b.w - 1, Math.max(...pts.map(q => q[0])) + 2);
     const Y0 = Math.max(0, Math.min(...pts.map(q => q[1])) - 2), Y1 = Math.min(w.b.h - 1, Math.max(...pts.map(q => q[1])) + 2);
     const [ca, cb] = carpet || [1e9, 1e9], tones = new Map();
     const tone = (c, k) => { const key = (c[0] << 16 | c[1] << 8 | c[2]) + "|" + k; let v = tones.get(key); if (!v) { const t = carpetTone(c, way); v = [Math.min(255, t[0] * k) | 0, Math.min(255, t[1] * k) | 0, Math.min(255, t[2] * k) | 0]; tones.set(key, v); } return v; };
-    const wide = Math.round((c1 - c0) * 16);
+    const wide = Math.round((c1 - c0) * 16), KK = GHP && tiled ? GH_JOINT : C.k;      // the gallery's small steps: its own dark line, not black
     const skin = (cc, path, wood, k) => {
         const u = Math.floor((cc - c0) * 16);
-        if (u < 1 || u >= wide - 1) return C.k;
+        if (u < 1 || u >= wide - 1) return KK;
         if (cc >= ca && cc < cb) {
             const r = Math.min(Math.floor((cc - ca) * 16), Math.floor((cb - cc) * 16 - 1e-6));
             const base = r < RUG.ramp.length ? RUG.ramp[r] : RUG.at(68 + (path % 32), RUG.core + (((Math.floor(cc * 16) % 16) + 16) % 16));
@@ -604,7 +604,7 @@ function flight(w, o) {
         const ts = c1 - c, ds = d + ts, zs = ts * 16;
         if (o.near !== false && ts > best && ds >= dTop && ds < dBot && zs >= 0) {
             const k = Math.floor((dBot - ds) / D), top = topOf(k);
-            if (zs < top) { const gap = top - zs, wallAt = !tiled && (gap < 1 ? C.k : stairWallPx(w, alongY, c1, sx, sy, zs + zB - (o.wallFloor === undefined ? zB : o.wallFloor), o.wallFloor === undefined ? zB : o.wallFloor)); best = ts; col = wallAt || (woody ? (gap < 1 ? pq(1) : gap < 2 ? pq(0) : zs < 1 ? C.k : (Math.floor(ds * 16) >> 1) % 3 ? pq(.55) : pq(.4)) : (gap < 1 ? C.d6 : gap < 2 ? C.k : zs < 1 ? C.k : ((Math.floor(ds * 16) >> 1) % 6 === 0 ? C.d2 : C.d3))); }
+            if (zs < top) { const gap = top - zs, wallAt = !tiled && (gap < 1 ? C.k : stairWallPx(w, alongY, c1, sx, sy, zs + zB - (o.wallFloor === undefined ? zB : o.wallFloor), o.wallFloor === undefined ? zB : o.wallFloor)); best = ts; col = wallAt || (woody ? (gap < 1 ? pq(1) : gap < 2 ? pq(0) : zs < 1 ? KK : (Math.floor(ds * 16) >> 1) % 3 ? pq(.55) : pq(.4)) : (gap < 1 ? C.d6 : gap < 2 ? C.k : zs < 1 ? C.k : ((Math.floor(ds * 16) >> 1) % 6 === 0 ? C.d2 : C.d3))); }
         }
         if (col) w.b.set(sx, sy, col);
     }
@@ -1167,6 +1167,7 @@ function railRow(im, i) {
     railMemo.set(key, r - 3); return r - 3;
 }
 function shortWallColumn(b, im, i, floorRow, sx, fy, H, capped) {
+    if (GHP && !capped && H <= GH_EDGE_MAX) { ghEdgeColumn(b, sx, fy, H); return; }      // the Events Gallery: a low drop is the floor's own edge
     const top = firstRow(im, i); if (top < 0) return;
     const rail = railRow(im, i), wood = floorRow - rail + 1, edge = capped ? 0 : FLOOR_EDGE.length;
     for (let k = 0; k < H; k++) {
@@ -1290,13 +1291,36 @@ function useStyle(map) {
     GHP = s ? P : null; STYLE = s ? P.key : "";
     TALLX = P.tallX; TALLY = P.tallY; SEAMX = P.seamX; SEAMY = P.seamY;
 }
-/* the stone floor: 32 x 16 tiles with a grout line on each tile's far edges, a soft shadow where it meets a wall */
-function ghStoneAt(X, Y, dx, dy, hasTile) {
-    const pal = GHP.pal, u = (dx + 2 * dy) / 2, v = (2 * dy - dx) / 2;
-    if (u < 1.1 || v < 1.1) return pal.grout;
-    if ((v < 2.6 && hasTile && !hasTile(X, Y - 1)) || (u < 2.6 && hasTile && !hasTile(X - 1, Y))) return pal.floorShade;
-    return pal.floor;
+/* The floor (14 Nov 2026, his, from mock-up sheets 25-26, his pick B): small dark oak bricks in herringbone, so the zig-zag rows run across the
+   screen. Bricks are a quarter tile wide and half a tile long, along the room's own axes: in cells a quarter tile square, r = (i + j) mod 4
+   says which half of which brick a cell is (0, 1 the halves of one along x; 3, 2 of one along y). Each brick takes its own shade a little
+   either side of the base (he found bigger differences busy), the joints a soft darker line, and a soft shadow where the floor meets a wall.
+   Small steps and the edges of raised floor are this wood too (ghWood, ghStepTones, ghEdgeColumn). */
+const GH_WOOD = ["24160a", "4e321a", "5c3c20", "6a4628", "7c5632"].map(h => ghSafe(hex(h))), GH_BRICK = 4, GH_SHADE = .25;
+const ghTone = t => { t = Math.max(0, Math.min(4, t)); const lo = Math.floor(t), hi = Math.min(4, lo + 1); return ghSafe(ghMix(GH_WOOD[lo], GH_WOOD[hi], t - lo)); };
+const ghHash = (a, b) => { let h = (a * 374761393 + b * 668265263) | 0; h = (h ^ (h >>> 13)) * 1274126177 | 0; return ((h ^ (h >>> 16)) >>> 0) / 4294967296; };
+const GH_JOINT = ghTone(1.6);
+/* the wood at a point of the floor, in sixteenths of a tile from the map's origin */
+function ghWood(U, V, near) {
+    const w = GH_BRICK, i = Math.floor(U / w), j = Math.floor(V / w), fx = U - i * w, fy = V - j * w, r = (((i + j) % 4) + 4) % 4;
+    if ((fx < 1 && r !== 1) || (fy < 1 && r !== 3)) return GH_JOINT;
+    const alongX = r < 2, bi = alongX ? (r === 0 ? i : i - 1) : i, bj = alongX ? j : (r === 3 ? j : j - 1);
+    return ghTone(2 + (ghHash(bi * 7 + 3, bj * 13 + 1) * 2 - 1) * GH_SHADE * 2 - (near ? .8 : 0));
 }
+function ghStoneAt(X, Y, dx, dy, hasTile) {
+    const u = (dx + 2 * dy) / 2, v = (2 * dy - dx) / 2;
+    const near = (v < 2.6 && hasTile && !hasTile(X, Y - 1)) || (u < 2.6 && hasTile && !hasTile(X - 1, Y));
+    return ghWood(16 * X + u, 16 * Y + v, near);
+}
+/* small steps in the same wood: their tread grain is the floor's, the lit edge, the shade and the dark line its tones */
+const ghGrain = (x, y) => ghWood(x * 16, y * 16, false);
+const ghStepTones = k => k >= 1 ? GH_WOOD[4] : k >= .5 ? GH_WOOD[2] : k >= .4 ? GH_WOOD[1] : GH_JOINT;
+/* the edge of a floor raised a little (no taller than a step-up of 24): the bricks' own thickness, not a wall. A lit lip on top, end grain
+   down to a dark line at the lower floor (14 Nov 2026, his: "Raising floors reveals a brown edge, which doesn't match the floor") */
+function ghEdgeColumn(b, sx, fy, H) {
+    for (let k = 0; k < H; k++) { const fromTop = H - 1 - k; b.set(sx, fy - k, fromTop === 0 ? GH_WOOD[4] : k === 0 ? GH_JOINT : fromTop === 1 ? GH_WOOD[3] : ((sx >> 3) & 1) ? GH_WOOD[2] : GH_WOOD[1]); }
+}
+const GH_EDGE_MAX = 24;
 /* a rug, by its distance in from its edge: a dark edge, the border, one cream thread, the border, then the pile woven in pairs of pixels */
 function ghRugPx(r, X, Y, dx, dy) {
     const pal = GHP.pal;

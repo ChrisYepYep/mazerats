@@ -1,7 +1,7 @@
 /* The Events Gallery's pieces (12 Nov 2026), from the signed-off mock-ups' drawing code in gallery-art/.
    - the Game Hall lobby's sofa, armchair and tables, recoloured: written beside the client's pieces as gh_*.png, their registration points
      in art/regs.json, so furni-parts.js runs them like the Hallway's own sofas (any length, either way round);
-   - floor pieces (plinths with what stands on them, the placard both ways, the client's plants, the carved year slab): art/wall/g_*.png and
+   - floor pieces (plinths with what stands on them, the placard both ways, the client's plants, the year plate in brass and steel, both ways): art/wall/g_*.png and
      wall-items.js's floor list;
    - wall pieces (EVENTS banners in eight colours, frames S/M/L in gilt, modern or walnut, the picture light, the egg sconce): art/wall/g_*.png
      and wall-items.js's list, in the "gallery" group. The lights are lit after dark and count as lamps.
@@ -39,12 +39,16 @@ floorPiece("gh_placard", fromMid(A.placard("x")), { name: "Placard", pic: A.plac
 floorPiece("gh_placard_r", fromMid(A.placard("y")), { name: "Placard", pic: A.placardPicture("y") });
 /* the client's plants: their own registration points, from the tile's left corner (16 left of and 8 below its top corner) */
 for (const [k, p] of Object.entries(A.PLANTS)) { const c = A.clientPlant(k); floorPiece("plant_" + k, { img: c.img, ox: 16 + c.reg[0], oy: c.reg[1] - 4 }, { name: p.name }); }
-/* the year slab: flat, 3 tiles along x by 2 along y, its top corner on the piece's tile's top corner (a mark_ piece's point is the tile's
-   middle, 8 below it); the year an option, in the floor's own stone */
+/* the year plate (14 Nov 2026, his: a shiny metal plate, brass or steel, both in the editor, and turnable): flat, 3 tiles along x by 2 along y
+   (its _r: 2 by 3, the year reading up to the right), its top corner on the piece's tile's top corner (a mark_ piece's point is the tile's
+   middle, 8 below it); the year an option */
 { const YEARS = []; for (let y = 2024; y <= 2032; y++) YEARS.push(String(y));
-  const mk = yr => { const s = A.yearSlab(yr); return { img: s.img, ox: s.top[0], oy: s.top[1] + 8 }; };
-  const fp = floorPiece("mark_year", mk("2026"), { name: "Year slab", optLabel: "Year", rare0: "2026", flat: true });
-  fp.opts = {}; for (const yr of YEARS) { const art = mk(yr), f = "g_mark_year_" + yr + ".png"; write(OUT, f, art.img); fp.opts[yr] = { name: yr, f, ox: art.ox, oy: art.oy, w: art.img.w, h: art.img.h }; } }
+  for (const metal of Object.keys(A.METALS)) for (const axis of ["x", "y"]) {
+      const k = "mark_year" + (metal === "brass" ? "" : "_" + metal) + (axis === "y" ? "_r" : "");
+      const mk = yr => { const s = A.yearPlate(yr, metal, axis); return { img: s.img, ox: s.top[0], oy: s.top[1] + 8 }; };
+      const fp = floorPiece(k, mk("2026"), { name: "Year plate, " + A.METALS[metal].name.toLowerCase(), optLabel: "Year", rare0: "2026", flat: true });
+      fp.opts = {}; for (const yr of YEARS) { const art = mk(yr), f = "g_" + k + "_" + yr + ".png"; write(OUT, f, art.img); fp.opts[yr] = { name: yr, f, ox: art.ox, oy: art.oy, w: art.img.w, h: art.img.h }; }
+  } }
 
 /* ---- wall pieces: drawn for each way the wall runs ("x" down to the right, "y" up to the right), never mirrored, so lettering reads
    and the light falls the same way as the mock-ups'. h: the height of the piece's middle over the floor ---- */
