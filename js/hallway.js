@@ -89,7 +89,7 @@
         const c = document.createElement("canvas"); c.className = "hallway-closed-picture"; c.width = PIC_W; c.height = PIC_H; c.setAttribute("aria-hidden", "true");
         const g = c.getContext("2d"), jobs = [];
         for (let ty = Math.floor(y0 / TILE); ty <= Math.floor((y0 + PIC_H) / TILE); ty++) for (let tx = Math.floor(x0 / TILE); tx <= Math.floor((x0 + PIC_W) / TILE); tx++) {
-            const name = man.tiles["day|" + tx + "," + ty]; if (!name) continue;
+            const name = man.tiles["dusk|" + tx + "," + ty] || man.tiles["day|" + tx + "," + ty]; if (!name) continue;      // in the evening light (14 Nov 2026, his)
             jobs.push(new Promise(done => { const i = new Image(); i.onload = () => { g.drawImage(i, tx * TILE - x0, ty * TILE - y0); done(); }; i.onerror = done; i.src = online ? FN + "?tile=" + name : "/assets/hallway/tiles/" + name; }));
         }
         await Promise.all(jobs);
