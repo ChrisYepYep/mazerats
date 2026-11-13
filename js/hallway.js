@@ -75,7 +75,7 @@
 
     /* Behind a closed screen: the hallway as it's published now, whichever copy the walk would use, drawn from the same
        pictures at 3x on whole pixels and centred on the statue. So it can't go out of date, and it follows the statue if that moves. */
-    const FN = "/.netlify/functions/hallway", PIC_W = 900, PIC_H = 520, TILE = 512, STOREY = 163;
+    const FN = "/.netlify/functions/hallway", PIC_W = 300, PIC_H = 200, TILE = 512, STOREY = 163, CLOSED_WIDE = 1000;      // PIC_*: the least it draws; CLOSED_WIDE: from here on, 2x
     async function closedPicture(into, gen) {
         const read = url => fetch(url, { cache: "no-cache" }).then(r => r.ok ? r.json() : null).catch(() => null);
         const [here, there] = await Promise.all([read("/assets/hallway/manifest.json"), read(FN + "?what=live")]);
@@ -85,10 +85,13 @@
         for (const l of map.levels) for (const p of l.props || []) if (p.k === "statue") at = { x: p.x + 1, y: p.y + 1, z: l.k * STOREY + 45 };      // on 2 x 2 tiles, about 110px tall: its middle, not its feet
         if (!at && map.entrance) { const e = map.entrance, l = map.levels.find(q => q.id === e.level); at = { x: e.axis === "x" ? e.at + 4 : e.line, y: e.axis === "x" ? e.line : e.at + 4, z: ((l && l.k) || 0) * STOREY + 45 }; }
         if (!at) return;
-        const x0 = Math.round((at.x - at.y) * 16 - PIC_W / 2), y0 = Math.round((at.x + at.y) * 8 - at.z - PIC_H * .3);      // the statue a third of the way down, clear above the note (10 Nov scan, live 12: the note covered it)
-        const c = document.createElement("canvas"); c.className = "hallway-closed-picture"; c.width = PIC_W; c.height = PIC_H; c.setAttribute("aria-hidden", "true");
+        /* 2x in a wide window, 1x in a narrow one, so about the same stretch of the hallway shows either way (14 Nov 2026, his; it was 3x
+           everywhere), the picture as big as the window needs at that size */
+        const K = innerWidth >= CLOSED_WIDE ? 2 : 1, PW = Math.max(PIC_W, Math.ceil(innerWidth / K) + 32), PH = Math.max(PIC_H, Math.ceil(innerHeight / K) + 32);
+        const x0 = Math.round((at.x - at.y) * 16 - PW / 2), y0 = Math.round((at.x + at.y) * 8 - at.z - PH * .3);      // the statue a third of the way down, clear above the note (10 Nov scan, live 12: the note covered it)
+        const c = document.createElement("canvas"); c.className = "hallway-closed-picture"; c.width = PW; c.height = PH; c.style.width = PW * K + "px"; c.style.height = PH * K + "px"; c.setAttribute("aria-hidden", "true");
         const g = c.getContext("2d"), jobs = [];
-        for (let ty = Math.floor(y0 / TILE); ty <= Math.floor((y0 + PIC_H) / TILE); ty++) for (let tx = Math.floor(x0 / TILE); tx <= Math.floor((x0 + PIC_W) / TILE); tx++) {
+        for (let ty = Math.floor(y0 / TILE); ty <= Math.floor((y0 + PH) / TILE); ty++) for (let tx = Math.floor(x0 / TILE); tx <= Math.floor((x0 + PW) / TILE); tx++) {
             const name = man.tiles["dusk|" + tx + "," + ty] || man.tiles["day|" + tx + "," + ty]; if (!name) continue;      // in the evening light (14 Nov 2026, his)
             jobs.push(new Promise(done => { const i = new Image(); i.onload = () => { g.drawImage(i, tx * TILE - x0, ty * TILE - y0); done(); }; i.onerror = done; i.src = online ? FN + "?tile=" + name : "/assets/hallway/tiles/" + name; }));
         }
