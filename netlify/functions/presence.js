@@ -21,6 +21,11 @@
      POST { id, leaving: true }   moved to the landing page, or closed
      GET  (Warren session)        { count, kickAt, landingState, now }
 
+   AND, ALL THE TIME (14 Nov 2026, the owner's: a live "Users: [number]" in the Warren's Controls): every open page of the site
+   checks in once a minute (js/presence-live.js) with { id, live: true }, kept apart from the countdown's rows in their own collection,
+   with the same thin record (a random tab id and when it last checked in), deleted LIVE_KEEP_S after its last check-in or at once on
+   goodbye. The Warren's GET also says `users`: tabs heard from in the last LIVE_FRESH_MS.
+
    `count` is browser tabs, not people: a visitor with the archive open in
    three tabs is three, which is what the Warren's line says (31 Oct 2026). */
 const { getDb } = require("./_db");
@@ -35,6 +40,10 @@ const json = (statusCode, data) => ({
 });
 
 const COLLECTION = "presence";
+const LIVE = "presence_live";
+/* js/presence-live.js checks in every minute, and a browser slows a background tab's timer to about once a minute too: two minutes and
+   a half without a word and a tab is counted as gone; its row is deleted a little after that */
+const LIVE_FRESH_MS = 150000, LIVE_KEEP_S = 160;
 // js/maintenance-warn.js pings this often; a tab not heard from in
 // FRESH_MS is counted as gone, and its row is deleted after KEEP_S.
 const PING_MS = 10000;
@@ -73,6 +82,12 @@ function sameOrigin(event) {
     }
 }
 
+let liveIndexed = false;
+async function ensureLiveTtl(col) {
+    if (liveIndexed) return;
+    liveIndexed = true;
+    await col.createIndex({ expires: 1 }, { expireAfterSeconds: 0 }).catch(e => { liveIndexed = false; console.error("presence: live TTL index not made", e); });
+}
 let indexed = false;
 async function ensureTtl(col) {
     if (indexed) return;
@@ -110,7 +125,9 @@ exports.handler = async (event) => {
 
         if (method === "GET") {
             const count = inMaintenance ? await col.countDocuments({ at: { $gt: new Date(Date.now() - FRESH_MS) } }) : 0;
+            const users = await db.collection(LIVE).countDocuments({ at: { $gt: new Date(Date.now() - LIVE_FRESH_MS) } });
             return json(200, {
+                users,
                 landingState: (site && site.landingState) || "enter",
                 kickAt: inMaintenance ? kickAtOf(site) : "",
                 count,
@@ -127,6 +144,15 @@ exports.handler = async (event) => {
         try { body = JSON.parse(event.body || "{}"); } catch (e) { return json(400, { error: "Invalid request body" }); }
         if (!body || typeof body !== "object" || typeof body.id !== "string" || !ID.test(body.id)) {
             return json(400, { error: "Invalid request body" });
+        }
+        /* the live count's check-ins: any time, kept apart from the countdown's */
+        if (body.live === true) {
+            const live = db.collection(LIVE);
+            if (body.leaving === true) { await live.deleteOne({ _id: body.id }); return json(200, { ok: true }); }
+            await ensureLiveTtl(live);
+            const now = Date.now();
+            await live.updateOne({ _id: body.id }, { $set: { at: new Date(now), expires: new Date(now + LIVE_KEEP_S * 1000) } }, { upsert: true });
+            return json(200, { ok: true });
         }
         if (body.leaving === true) {
             await col.deleteOne({ _id: body.id });

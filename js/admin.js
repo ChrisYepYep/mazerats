@@ -9147,6 +9147,14 @@ document.addEventListener("DOMContentLoaded", () => {
         presence.timer = setInterval(readPresence, PRESENCE_MS);
         presence.ticker = setInterval(sayPresence, 1000);
     }
+    /* "Users: [number]" (14 Nov 2026, his): how many tabs are on the site right now (js/presence-live.js, presence.js), every 15 seconds
+       while the Controls box is on screen and this tab is looked at */
+    const landingUsers = document.getElementById("landing-users");
+    async function readUsers() {
+        if (!landingUsers || !adminToken || document.visibilityState === "hidden" || !landingUsers.offsetParent) return;
+        try { const r = await Api.getPresence(adminToken); if (r && typeof r.users === "number") landingUsers.textContent = "Users: " + r.users; } catch (e) { /* tried again in 15 seconds */ }
+    }
+    if (landingUsers) { setInterval(readUsers, 15000); document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") readUsers(); }); setTimeout(readUsers, 1500); }
     async function readPresence() {
         if (!adminToken || document.visibilityState === "hidden") return;
         try {
