@@ -824,11 +824,18 @@ async function liveFetch() {
     mine.busy = false; if (live === mine) { liveFetch(); paint(); }
 }
 /* ---------- day and night ----------
-   One minute of daylight, then five of evening, night and dawn, over and over, while walking. Each mood is drawn
-   whole by the server, and the view fades from one to the next. The Time list overrides it. */
-const DAY_MS = 60000, CYCLE_MS = 360000;
-/* seconds into the cycle: [from, mood, fade-in seconds up to "from"] */
-const CYCLE = [[0, "day"], [60, "day"], [110, "dusk"], [170, "night"], [300, "night"], [340, "dawn"], [360, "day"]];
+   Ten minutes, over and over, while walking (14 Nov 2026, his): two of daylight; three of evening coming on slowly, the lights going on one
+   by one at random about the map; two of night; then the same three in reverse, dawn's lights going out one by one into the day. Each mood is
+   drawn whole by the server and the view fades from one to the next. The slow fades are drawn here: daylight dimmed towards the evening's
+   (or dawn's) own light by multiplying (the renderer's light is a multiply, so that's very nearly the evening with every lamp off), with
+   each lamp's pool cut from the lit evening's tiles and faded in on its own. The Time list overrides it. */
+const CYCLE_MS = 600000;
+/* seconds into the cycle: [from, mood]; a fade runs from one entry to the next */
+const CYCLE = [[0, "day"], [120, "day"], [300, "dusk"], [330, "night"], [420, "night"], [450, "dawn"], [600, "day"]];
+/* the fades whose lamps go on (or off) one by one: the lit mood, and how the renderer's light compares with daylight's (LIGHTS in hw3.js) */
+const LAMP_FADES = { "day>dusk": { lit: "dusk", ratio: [.52 / 1.1, .41 / 1.08, .38 / 1.04], on: true }, "dawn>day": { lit: "dawn", ratio: [.5 / 1.1, .46 / 1.08, .56 / 1.04], on: false } };
+const LAMP_FADE_S = 5;           // one lamp's own fade
+const LAMP_REACH = 135;          // how far a lamp's pool reaches, in map pixels (LIGHTS px about 100, and a soft edge past it)
 const MOOD_TINT = { day: [0, 0, 0, 0], dusk: [70, 30, 20, .3], night: [12, 16, 44, .62], dawn: [50, 36, 70, .3], sconces: [40, 28, 24, .26], failing: [14, 14, 22, .6], cold: [20, 34, 30, .42], gas: [24, 14, 10, .62] };
 const MOOD_NAME = { day: "Day", dusk: "Evening", night: "Night", dawn: "Dawn" };
 let timeMode = localStorage.getItem("hallway-time") || "cycle";
@@ -844,7 +851,10 @@ function moodNow() {
     const t = ((performance.now() - cycleStart) % CYCLE_MS) / 1000;
     for (let i = 0; i < CYCLE.length - 1; i++) {
         const [t0, m0] = CYCLE[i], [t1, m1] = CYCLE[i + 1];
-        if (t >= t0 && t < t1) return { a: m0, b: m1, f: m0 === m1 ? 0 : (t - t0) / (t1 - t0) };
+        if (t >= t0 && t < t1) {
+            const f = m0 === m1 ? 0 : (t - t0) / (t1 - t0), lamps = LAMP_FADES[m0 + ">" + m1];
+            return lamps ? { a: m0, b: m1, f, lamps, at: t - t0, span: t1 - t0 } : { a: m0, b: m1, f };
+        }
     }
     return { a: "day", b: "day", f: 0 };
 }
@@ -881,8 +891,61 @@ function preloadMap() {
     for (const mood of order) for (const [tx, ty] of cells) { if (moodInflight.size >= Math.max(1, CONCURRENT - 1)) return; const k = (window.hallwayXmas ? mood + "+x" : mood) + "|" + tx + "," + ty, t = moodTiles.get(k); if (t && t.v === version) continue; if (moodInflight.has(k) || tileWaiting(k)) continue; moodTile(mood, tx, ty); }
 }
 setInterval(preloadMap, 300);
+/* every light on the map, where its pool falls in map pixels, each with its own moment in a slow fade (random but fixed for its place) */
+let lampMemo = null;
+function lampPools() {
+    if (lampMemo && lampMemo.map === map && lampMemo.v === version) return lampMemo.list;
+    const list = [], seen = new Set(), add = (l, x, y, up) => {
+        const k = Math.round(x * 4) + "," + Math.round(y * 4) + "," + l.k; if (seen.has(k)) return; seen.add(k);
+        const p = P(x, y, tileZ(l, Math.floor(x), Math.floor(y)) + up); let h = (Math.round(x * 4) * 374761393 + Math.round(y * 4) * 668265263 + l.k * 97) | 0;
+        h = (h ^ (h >>> 13)) * 1274126177 | 0; list.push({ x: p[0], y: p[1], r: ((h ^ (h >>> 16)) >>> 0) / 4294967296 });
+    };
+    for (const l of (map && map.levels) || []) {
+        for (const q of (l.lamps || [])) { if (q.axis === "x") add(l, q.at, q.line + 1, 40); else add(l, q.line + 1, q.at, 40); }
+        for (const p of (l.props || [])) if (p.k === "lamp" || p.k === "tablelamp" || (p.lights && p.lights.length)) add(l, p.x + .5, p.y + .5, 30);
+        for (const it of (l.wallItems || [])) { const def = wallItemOf(it.k); if (def && def.lit) { if (it.axis === "x") add(l, it.at, it.line + 1, 40); else add(l, it.line + 1, it.at, 40); } }
+    }
+    lampMemo = { map, v: version, list }; return list;
+}
+const smooth = f => f * f * (3 - 2 * f);
+let litCanvas = null, maskCanvas = null;
+/* a slow fade with its lamps: daylight dimmed to the lit mood's light, then each lamp's pool of the lit mood over it, as far on as it is */
+function drawLampFade(m, ox, oy, x0, x1, y0, y1) {
+    const L = m.lamps, g = L.on ? smooth(m.f) : 1 - smooth(m.f), S = TILE * zoom;
+    let any = false;
+    for (let ty = y0; ty <= y1; ty++) for (let tx = x0; tx <= x1; tx++) {
+        const d = moodTile("day", tx, ty) || moodTile(L.lit, tx, ty), X = ox + tx * S, Y = oy + ty * S;
+        if (!d) { const t = tiles.get(tx + "," + ty); if (t) ctx.drawImage(t.img, X, Y, S, S); continue; }
+        ctx.drawImage(d.img, X, Y, S, S); any = true;
+    }
+    if (!any) return;
+    ctx.save(); ctx.globalCompositeOperation = "multiply";
+    ctx.fillStyle = "rgb(" + L.ratio.map(r => Math.round(255 * (1 + (r - 1) * g))).join(",") + ")"; ctx.fillRect(0, 0, canvas.width, canvas.height); ctx.restore();
+    /* how far on each lamp is: going on, each at its own moment through the middle of the fade; going off, the same backwards */
+    const pools = lampPools(), fadeF = LAMP_FADE_S / m.span, on = [];
+    for (const q of pools) {
+        const at = L.on ? .15 + .75 * q.r : .05 + .7 * q.r, k = L.on ? (m.f - at) / fadeF : 1 - (m.f - at) / fadeF, a = Math.max(0, Math.min(1, k));
+        if (a > 0) on.push([q, a]);
+    }
+    if (!on.length) return;
+    const W = canvas.width, H = canvas.height;
+    if (!litCanvas || litCanvas.width !== W || litCanvas.height !== H) { litCanvas = document.createElement("canvas"); litCanvas.width = W; litCanvas.height = H; maskCanvas = document.createElement("canvas"); maskCanvas.width = W; maskCanvas.height = H; }
+    const lc = litCanvas.getContext("2d"), mc = maskCanvas.getContext("2d"); lc.imageSmoothingEnabled = false;
+    lc.globalCompositeOperation = "source-over"; lc.clearRect(0, 0, W, H);
+    for (let ty = y0; ty <= y1; ty++) for (let tx = x0; tx <= x1; tx++) { const t = moodTile(L.lit, tx, ty); if (t) lc.drawImage(t.img, ox + tx * S, oy + ty * S, S, S); }
+    mc.globalCompositeOperation = "source-over"; mc.clearRect(0, 0, W, H); mc.globalCompositeOperation = "lighter";
+    const R = LAMP_REACH * zoom;
+    for (const [q, a] of on) {
+        const cx = ox + q.x * zoom, cy = oy + q.y * zoom; if (cx < -R || cy < -R || cx > W + R || cy > H + R) continue;
+        const gr = mc.createRadialGradient(cx, cy, R * .35, cx, cy, R); gr.addColorStop(0, "rgba(0,0,0," + a + ")"); gr.addColorStop(1, "rgba(0,0,0,0)");
+        mc.fillStyle = gr; mc.fillRect(cx - R, cy - R, 2 * R, 2 * R);
+    }
+    lc.globalCompositeOperation = "destination-in"; lc.drawImage(maskCanvas, 0, 0);
+    ctx.drawImage(litCanvas, 0, 0);
+}
 function drawMoods(ox, oy, x0, x1, y0, y1) {
     const m = moodNow(); if (!m) return false;
+    if (m.lamps) { drawLampFade(m, ox, oy, x0, x1, y0, y1); const name = m.f < .5 ? m.a : m.b; if ($("timeNow").textContent !== MOOD_NAME[name]) $("timeNow").textContent = MOOD_NAME[name]; return true; }
     for (let ty = y0; ty <= y1; ty++) for (let tx = x0; tx <= x1; tx++) {
         const a = moodTile(m.a, tx, ty), b = m.f > 0 ? moodTile(m.b, tx, ty) : null, X = ox + tx * TILE * zoom, Y = oy + ty * TILE * zoom, S = TILE * zoom;
         /* what a mood hasn't got yet is shown in whichever has */
