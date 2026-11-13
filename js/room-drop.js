@@ -395,6 +395,27 @@
         return true;
     }
 
+    /* CAN THE PLAYER STILL USE THIS POWER-UP (14 Nov 2026, the scan's M2/L4)?
+       The ones that are SAT IN (the love potion's Rainbow Pod, `sit`) are a
+       seat like any other: canUse. The machines are used from any tile
+       beside them (fetchPower in js/fallinfurni.js walks to the front, or
+       else the nearest side), so one free floor tile beside it that the
+       player's part of the room holds is enough - standing there needs no
+       step past a corner, so the corner rule does not come into it. */
+    function canUsePower(pu, reachable, blocked) {
+        if (pu.sit) return canUse(pu, reachable, blocked);
+        for (const t of Furni.tilesOf(pu)) {
+            for (const d of Path.DIRS) {
+                const nx = t.x + d.dx, ny = t.y + d.dy;
+                if (!Path.inside(nx, ny) || Furni.covers(pu, nx, ny)) continue;
+                const nk = key(nx, ny);
+                if (blocked.has(nk) || (reachable && !reachable.has(nk))) continue;
+                return true;
+            }
+        }
+        return false;
+    }
+
     /* How far a footprint sits from a tile, measured the way a walk is: the
        longer of the two axes, since a diagonal step covers both at once. */
     function distanceFrom(probe, tile) {
@@ -481,7 +502,16 @@
            careful to land. `sat` is the game's own list of what has been
            taken; a seat on it is furniture now. */
         const mustReach = (f) => f.sit && f.role === "sequence" && !taken.has(f);
-        const seats = list.filter(mustReach);
+        /* AND A POWER-UP THAT HAS COME DOWN AND NOT BEEN USED YET (14 Nov
+           2026, the scan's M2). Only its own tile and the one in front were
+           kept clear, so later pieces could brick it in: the Rainbow Pod on
+           The Sports Bar was out of reach by the end of half its rounds. It
+           is owed like a seat until the page marks it `used` - and a
+           power-up being placed is asked the same of itself (L4: moved to a
+           tile the player could not get to). */
+        const owesPower = (f) => f.role === "power" && !f.used;
+        const usable = (f, r) => (f.role === "power" ? canUsePower(f, r, blocked) : canUse(f, r, blocked));
+        const seats = list.filter(f => mustReach(f) || owesPower(f));
 
         /* WHAT WAS ALREADY OUT OF REACH STAYS OUT OF REACH, and is not this
            piece's fault. The test is whether a placement makes things WORSE,
@@ -508,7 +538,7 @@
            anybody, from anywhere. That is the case the escape hatch was
            written for — a chair the level itself bricked in — and it does not
            move about with the player. */
-        const owed = avoid ? seats.filter(f => canUse(f, null, blocked)) : seats;
+        const owed = avoid ? seats.filter(f => usable(f, null)) : seats;
         let room = avoid ? standingRoom(avoid, blocked) : null;
 
         /* A PLAYER SITTING ON A CHAIR THAT SPLITS THE ROOM GETS ONE SIDE.
@@ -551,7 +581,7 @@
         if (avoid && blocked.has(key(avoid.x, avoid.y))) {
             const parts = regionsFrom(avoid, blocked);
             if (parts.length > 1) {
-                const fine = parts.filter(r => owed.every(f => canUse(f, r, blocked)));
+                const fine = parts.filter(r => owed.every(f => usable(f, r)));
                 if (fine.length) {
                     side = fine.reduce((a, b) => (b.size > a.size ? b : a));
                     const here = key(avoid.x, avoid.y);
@@ -633,7 +663,7 @@
                 }
 
                 // Everything already owed, plus this piece if it is itself one.
-                const check = mustReach(candidate) ? owed.concat([candidate]) : owed;
+                const check = mustReach(candidate) || candidate.role === "power" ? owed.concat([candidate]) : owed;
                 let ok = true;
                 if (avoid) {
                     /* NOT "can the player reach it FROM WHERE THEY ARE", but
@@ -686,14 +716,14 @@
                         const r = reachableFrom(t, blocked);
                         for (const rk of r) seenHere.add(rk);
                         if (!lastChance && nearKeys.has(tk) && r.size < floorSize - added.length - NOOK_TILES) { ok = false; break; }
-                        if (!check.every(f => canUse(f, r, blocked))) { ok = false; break; }
+                        if (!check.every(f => usable(f, r))) { ok = false; break; }
                     }
                     if (ok) {
                         // Only the ways off the chair onto their side.
                         const here = key(avoid.x, avoid.y);
                         const ways = regionsFrom(avoid, blocked).filter(r =>
                             !side || [...r].some(rk => rk !== here && side.has(rk)));
-                        ok = ways.length > 0 && ways.every(r => check.every(f => canUse(f, r, blocked)));
+                        ok = ways.length > 0 && ways.every(r => check.every(f => usable(f, r)));
                     }
                 } else {
                     // No player to measure from — the old local test is all
@@ -739,10 +769,16 @@
         const spots = spotsFor(others, entry, meta, playerTile, 0, sat, false, keep, closed);
         if (!spots.length) return null;
         const blocked = wallsOf(others);
+        if (closed) for (const k of closed) blocked.add(k);
+        /* A front tile that is free floor AND one the player can walk to
+           (14 Nov 2026): every spot here can be used from SOME side (spotsFor
+           asks that of a power-up now), and the front is the side preferred. */
+        const reach = playerTile ? reachableFrom(playerTile, blocked) : null;
         const frontFree = (s) => {
             const f = powerupFront({ x: s.x, y: s.y, facing: pu.facing });
             const k = key(f.x, f.y);
-            return Iso.has(f.x, f.y) && !blocked.has(k) && !(closed && closed.has(k)) ? 0 : 1;
+            if (!Iso.has(f.x, f.y) || blocked.has(k)) return 1;
+            return !reach || reach.has(k) ? 0 : 1;
         };
         const far = (s) => Math.max(Math.abs(s.x - pu.x), Math.abs(s.y - pu.y));
         const best = spots.slice().sort((a, b) => frontFree(a) - frontFree(b) || far(a) - far(b))[0];

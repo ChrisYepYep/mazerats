@@ -352,8 +352,20 @@ body.fe-on > *:not(.fe-app):not(script):not(link):not(style) { display: none !im
 /* Narrower windows: the words off the top bar's buttons, a slimmer panel. */
 @media (max-width: 1280px) {
     .fe-app { grid-template-columns: 84px 1fr 300px; }
-    .fe-brand small, .fe-danger button span, .fe-top #ff-level-new span { display: none; }
     .fe-meta #ff-level-name { width: 130px; }
+    /* The FF badge alone says whose editor it is. */
+    .fe-brand span { display: none; }
+}
+/* The words come off sooner than the panel slims (14 Nov 2026): between
+   1281 and about 1600px the top bar's buttons overlapped each other and the
+   Name label (Reorder over Name, Delete under New, Unpublish under Play). */
+@media (max-width: 1600px) {
+    .fe-brand small, .fe-danger button span, .fe-top #ff-level-new span { display: none; }
+}
+@media (max-width: 1400px) {
+    .fe-meta #ff-level-name { width: 130px; }
+    .fe-app #ff-level-list { min-width: 160px; }
+    .fe-top #ff-level-reorder span { display: none; }
 }
 
 /* ---- REORDER: every level in a list under its button, dragged into place

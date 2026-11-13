@@ -2293,7 +2293,11 @@ main.ff-page { width: 100%; }
     display: flex;
     justify-content: center;
     pointer-events: none;
-    z-index: 4;
+    /* Over the room and the HUD (1), UNDER the pause cover and the round-end
+       screen (3) and the loader and count-in (4): it showed over the pause
+       menu (14 Nov 2026, the scan's M1). The page also takes it down while
+       paused or loading (syncBobbaPop). */
+    z-index: 2;
 }
 .ff-bobbapop[hidden] { display: none; }
 .ff-bobbapop-text {

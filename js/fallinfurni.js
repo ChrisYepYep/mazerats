@@ -518,9 +518,13 @@
         syncBobbaPop(now);
         dirty = true;
     }
+    /* Not over the pause menu, and not through a Restart (14 Nov 2026, the
+       scan's M1): the tick that keeps this in step returns early while the
+       game is paused or a room is loading, so setPaused and beginLevel ask
+       it too, and paused or loading it is down. */
     let bobbaShown = false;
     function syncBobbaPop(now) {
-        const on = stuckNow(now);
+        const on = !paused && !loading && stuckNow(now);
         if (on === bobbaShown) return;
         bobbaShown = on;
         const el = document.getElementById("ff-bobbapop");
@@ -899,6 +903,9 @@
     function grantPower(p, now) {
         const def = POWERS()[p.kind] || {};
         power.had.add(p.kind);
+        /* Used: the drop rules stop keeping a way to it open (spotsFor's
+           owesPower in js/room-drop.js). */
+        if (p.furni) p.furni.used = true;
         power.carry = { item: def.carry, until: now + (def.ms || 3000) };
         if (p.kind === "coffee") {
             power.until.coffee = now + def.ms;
@@ -1342,20 +1349,29 @@
          depth  where the sitter sorts, facing the viewer, in place of the
                 rule above: a piece whose seat itself is shifted forward
                 (the Norja armchair's button, the divan's bolster)
+         away   for a seat facing AWAY (0 or 6), which otherwise keeps the
+                standing key so a backrest covers the sitter: the sitter sorts
+                at least this far in front of the seat's FAR tile. A backless
+                seat has nothing to do the covering, and the divan's cushion
+                (its far tile + 500) hid the lower half of a sitter on that
+                tile (14 Nov 2026, the scan's M3). +501 puts them on the
+                cushion there, and on the near tile the standing key, which
+                is already over the cushion and still under the bolster (+50,
+                +60 off that tile), wins as it did before.
        Keyed by the class without its colour (*N). */
     const SEAT_FIT = {
         gothic_chair: { lift: 8 },
         asian_gothic_chair: { lift: 8 },
         barchair_silo2: { lift: 5, over: true, depth: SIT_DEPTH },
         soft_sofachair_norja2: { depth: SIT_DEPTH },
-        romantique_divan: { depth: 1100 },
+        romantique_divan: { depth: 1100, away: 501 },
         gothic_sofa: { depth: SIT_NEAR }, asian_gothic_sofa: { depth: SIT_NEAR },
         sheji_cnsofa: { depth: SIT_NEAR },
         pillow: { lift: -8 }, dmg_pillow: { lift: -8 },
         picnic_pillow: { lift: -8 }, picnic_pillow_blu: { lift: -8 }, picnic_pillow_yel: { lift: -8 },
         hc_arab_pllw: { lift: -8 }, hc_arab_pllw2: { lift: -8 }, arabian_pllw: { lift: -8 }
     };
-    const NO_FIT = { lift: 0, over: false, depth: 0 };
+    const NO_FIT = { lift: 0, over: false, depth: 0, away: 0 };
     function seatFit(seat) {
         const base = String((seat && seat.className) || "").replace(/\*\d+$/, "");
         const long = Boolean(seat && (seat.w > 1 || seat.h > 1));
@@ -1518,8 +1534,13 @@
         const tile = state.pos;
         const fit = at.seat ? seatFit(at.seat) : NO_FIT;
         const forward = at.action === "sit" && (fit.over || at.dir === 2 || at.dir === 4);
+        // Facing away on a seat with nothing behind the sitter (SEAT_FIT away).
+        const stand = Furni.tileDepth(tile.x, tile.y) * 1000 + 500;
+        const away = at.action === "sit" && !forward && fit.away
+            ? Math.max(stand, (Math.min(...Furni.tilesOf(at.seat).map(t => Furni.tileDepth(t.x, t.y))) + fit.away) * 1000)
+            : 0;
         pieces.push({
-            key: Furni.tileDepth(tile.x, tile.y) * 1000 + (forward ? (fit.depth || SIT_NEAR) * 1000 : 500),
+            key: forward ? Furni.tileDepth(tile.x, tile.y) * 1000 + (fit.depth || SIT_NEAR) * 1000 : away || stand,
             draw: () => {
                 /* With the mug in hand while the coffee lasts — and the plain
                    figure until the mug's images have arrived, rather than
@@ -1832,6 +1853,7 @@
         paused = want;
         freezeChanged();
         syncPause();
+        syncBobbaPop(gameNow());
         // The tune from the next room while the room is covered.
         Sound.muffle(paused);
         /* Coming back, the round has to be REDRAWN before the next frame:
@@ -2433,7 +2455,7 @@
         /* UNSTUCK: the walk that was waiting carries on, from the moment the
            doormat let go (or now, after a stall). */
         if (!state.stepFrom && state.path.length && !stuckNow(now)) {
-            const free = running ? game.stuckUntil || 0 : 0;
+            const free = running && Number.isFinite(game.stuckUntil) ? game.stuckUntil : 0;
             beginStep(free && free <= now && now - free <= STEP_CATCHUP_MS ? free : now);
         }
 
@@ -4240,7 +4262,7 @@
         const $ = (id) => document.getElementById(id);
         const css = document.createElement("link");
         css.rel = "stylesheet";
-        css.href = "css/ff-editor.css?v=2";
+        css.href = "css/ff-editor.css?v=3";
         document.head.appendChild(css);
 
         shell = document.createElement("div");
@@ -4964,10 +4986,21 @@
                    with nothing standing on it to be any use. */
                 const f = frontOf(p);
                 const usable = Iso.has(f.x, f.y) && !blocked.has(Iso.key(f.x, f.y));
-                say = `On ${p.x}, ${p.y}` + (usable
-                    ? `: players stand on ${f.x}, ${f.y} (green), kept clear of falling furni.`
-                    : `: the tile in front (${f.x}, ${f.y}) is not free floor, so players will use whichever side is nearest. Pick another tile.`);
-                warn = !usable;
+                /* ANOTHER POWER-UP IN THE WAY (14 Nov 2026, the scan's M2):
+                   Level 48's potion faced the ice cream machine, so its
+                   "front" was the machine's own tile. Only decor was asked
+                   about; the other power-ups are now too - their tiles, and
+                   the tiles in front of them. */
+                const clash = (L.powerups || []).find(o => o !== p &&
+                    ((o.x === f.x && o.y === f.y) || (frontOf(o).x === f.x && frontOf(o).y === f.y) ||
+                     (frontOf(o).x === p.x && frontOf(o).y === p.y)));
+                const clashName = clash ? ((POWERS()[clash.kind] || {}).name || "another power-up").toLowerCase() : "";
+                say = `On ${p.x}, ${p.y}` + (!usable
+                    ? `: the tile in front (${f.x}, ${f.y}) is not free floor, so players will use whichever side is nearest. Pick another tile.`
+                    : clash
+                        ? `: it is in the way of the ${clashName} (its tile or the tile in front of it). Pick another tile, or turn one of them.`
+                        : `: players stand on ${f.x}, ${f.y} (green), kept clear of falling furni.`);
+                warn = !usable || Boolean(clash);
             }
             q("at").textContent = say;
             q("at").classList.toggle("is-warn", warn);
@@ -7372,6 +7405,58 @@
         return !run || run.levels.findIndex(hasMat) === run.index ? ["bobba"] : [];
     }
 
+    /* THE TIP NEVER CROSSES THE FIGURE (14 Nov 2026, the scan's L7: Level
+       5's start tile put "Avoid Bobba Doormats…" straight across it). The
+       tip sits at its usual 66% unless that covers the figure on its start
+       tile; then just under the figure's feet, or else just over its head -
+       the first of those that is clear of the figure and the count's numeral
+       and inside the stage. */
+    function placeCountinTip(tipEl, numEl) {
+        tipEl.style.top = "";
+        const host = tipEl.offsetParent;
+        if (tipEl.hidden || !canvas || !host) return;
+        const cr = canvas.getBoundingClientRect();
+        const hr = host.getBoundingClientRect();
+        if (!cr.width || !hr.height) return;
+        const k = cr.width / canvas.width;
+        const at = avatarAt(gameNow());
+        const sz = avatarSizing();
+        const sp = avatarSprite(state.figure, at.dir, at.action, at.frame);
+        const iw = sp && sp.ready && sp.img ? sp.img.naturalWidth : FIGURE_W;
+        const ih = sp && sp.ready && sp.img ? sp.img.naturalHeight : FIGURE_H;
+        const fig = {
+            left: cr.left + (at.sx - iw * sz.scale / 2) * k,
+            right: cr.left + (at.sx + iw * sz.scale / 2) * k,
+            top: cr.top + (at.sy - ih * sz.scale + sz.footPad) * k,
+            bottom: cr.top + (at.sy + sz.footPad) * k
+        };
+        /* Layout sizes, not the box on screen: the tip and the numeral are
+           mid-animation (scaled) as this runs, and the homepage window may
+           scale the whole stage (s). */
+        const s = hr.height / host.offsetHeight || 1;
+        const tipH = tipEl.offsetHeight * s;
+        const tipW = Math.max(0, ...[...tipEl.children].map(c => c.offsetWidth)) * s;
+        const mid = hr.left + hr.width / 2;
+        const left = mid - tipW / 2, right = mid + tipW / 2;
+        const num = numEl && numEl.offsetHeight ? {
+            left: mid - numEl.offsetWidth * s / 2, right: mid + numEl.offsetWidth * s / 2,
+            top: hr.top + hr.height / 2 - numEl.offsetHeight * s / 2,
+            bottom: hr.top + hr.height / 2 + numEl.offsetHeight * s / 2
+        } : null;
+        const PAD = 6 * s;
+        const hits = (top, box) => box && top < box.bottom + PAD && top + tipH > box.top - PAD &&
+            left < box.right + PAD && right > box.left - PAD;
+        const fits = (top) => top >= hr.top + PAD && top + tipH <= hr.bottom - PAD;
+        const usual = hr.top + hr.height * 0.66;
+        if (!hits(usual, fig)) return;
+        for (const top of [fig.bottom + PAD, fig.top - PAD - tipH]) {
+            if (fits(top) && !hits(top, fig) && !hits(top, num)) {
+                tipEl.style.top = `${Math.round((top - hr.top) / s)}px`;
+                return;
+            }
+        }
+    }
+
     function countIn(callout) {
         const root = document.getElementById("ff-countin");
         const n = document.getElementById("ff-countin-n");
@@ -7417,6 +7502,7 @@
             let i = 0;
             root.hidden = false;
             if (tipEl) tipEl.hidden = !tip;
+            if (tipEl && tip) placeCountinTip(tipEl, n);
             /* HELD WHILE THE TAB IS HIDDEN (30 Sept 2026). The count ran on
                timers, which carry on in a background tab, so switching away
                on "3" came back to a round already under way. A beat that
@@ -7540,6 +7626,8 @@
         syncPickers();
         state.furni = game.renderList();
         refreshBlocked();
+        // The last round's "Oh Bobba!" goes with it (see syncBobbaPop).
+        syncBobbaPop(gameNow());
         dirty = true;
         /* THE ROOM TAKES THE KEYS AS IT OPENS (10 Oct 2026). The arrows are
            listened for on the canvas, and nothing ever put the focus there:
@@ -7672,6 +7760,8 @@
        practiceFrom. Without it a run starts at the first level, as ever. */
     async function startRound(opts) {
         const from = opts && Number.isInteger(opts.from) ? opts.from : null;
+        // See ONE RUN STARTING AT A TIME, below.
+        if (!Editor && (startingRun || loading)) return;
         hideRoundEnd();
         hideRunEndPanel();
         resetHud();
@@ -7703,6 +7793,18 @@
             return;
         }
 
+        /* ONE RUN STARTING AT A TIME (14 Nov 2026, the scan's L5). Two starts
+           at once - an input event and a form submit together - each opened a
+           room loader's freeze span, and the game clock read about -2s for the
+           first seconds of the round. A start while one is already on its way,
+           or while a room is loading, is ignored. */
+        if (startingRun || loading) return;
+        startingRun = true;
+        try { await startRun(from); } finally { startingRun = false; }
+    }
+    let startingRun = false;
+
+    async function startRun(from) {
         /* Already loaded by `prepare` at page load, so this does not touch the
            network — the room behind the title screen IS the first level. Only
            a reload that somehow raced it falls back to fetching here. */

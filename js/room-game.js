@@ -49,6 +49,7 @@
     const WRONG_SEAT_PENALTY_S = 3;     // sitting out of order
     const DECOY_PENALTY_S = 2;          // sitting on a decoy
     const STUCK_MS = 3000;              // stuck on a Bobba Doormat (poi)
+    const STUCK_MESSAGE = "Oh Bobba! Stuck for 3 seconds!";
 
     /* ---- POINTS, and what they are for.
 
@@ -189,8 +190,9 @@
                 this.lastScore = 0;
                 this.speed = 0;
                 this.freezes = [];
-                this.stuckUntil = 0;
+                this.stuckUntil = -Infinity;
                 this.stuckCount = 0;
+                this.stuckSaid = null;
                 this.message = "Watch where they land.";
                 this.endedBecause = "";
                 /* NOTHING FALLS YET, and nothing starts timing yet.
@@ -309,6 +311,7 @@
                    the next piece has to leave a route to, and the drop rules
                    have no way of knowing which those are. */
                 let changed = this.round.tick(now, playerTile, this.sat);
+                this.unstick(now);
 
                 /* BEFORE the clock, so that a round finishing on the same tick
                    its time runs out is a win. The player did everything asked;
@@ -364,18 +367,35 @@
 
             /* STUCK on it: the page holds the figure until stuckUntil. Costs
                the three seconds and nothing else - the owner's call. Counted,
-               for the round's summary. Returns false while already stuck. */
-            stuckUntil: 0,
+               for the round's summary. Returns false while already stuck.
+
+               -Infinity, not 0, before the first stick (14 Nov 2026): the game
+               clock can read below zero for a moment (two loads' freeze spans
+               at once), and `now < 0` held the figure with no mat anywhere.
+
+               THE LINE GOES WHEN THE STICK DOES (14 Nov 2026): "Oh Bobba!"
+               used to stay the HUD message until the next seat. What it said
+               before goes back once the three seconds are up (unstick, from
+               tick), unless something else has been said since. */
+            stuckUntil: -Infinity,
             stuckCount: 0,
+            stuckSaid: null,
             stick(now) {
                 if (this.state !== RUNNING) return false;
                 if (now < this.stuckUntil) return false;
                 this.stuckUntil = now + STUCK_MS;
                 this.stuckCount++;
-                this.message = "Oh Bobba! Stuck for 3 seconds!";
+                if (this.message !== STUCK_MESSAGE) this.stuckSaid = this.message;
+                this.message = STUCK_MESSAGE;
                 return true;
             },
             isStuck(now) { return this.state === RUNNING && now < this.stuckUntil; },
+            unstick(now) {
+                if (this.message !== STUCK_MESSAGE || now < this.stuckUntil) return false;
+                this.message = this.stuckSaid || "";
+                this.stuckSaid = null;
+                return true;
+            },
 
             /* The avatar finished a step onto this tile. Returns a short word
                for what happened, so the page can react without re-deriving it:

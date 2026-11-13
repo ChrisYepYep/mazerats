@@ -1419,7 +1419,7 @@
                                 <select id="ff-item-role" class="ff-select" aria-label="Role">
                                     <option value="sequence">Sequence seat</option>
                                     <option value="decoy">Decoy seat</option>
-                                    <option value="poi">Poi — instant fail</option>
+                                    <option value="poi">Poi: Bobba Doormat (stuck 3s)</option>
                                     <option value="obstacle">Obstacle</option>
                                 </select>
                                 <input id="ff-item-count" class="ff-select ff-narrow" type="number"
@@ -1474,7 +1474,7 @@
                              player. A block per kind, built by
                              buildPowerPanel in js/fallinfurni.js. -->
                         <h3>Power-ups</h3>
-                        <p class="ff-hint">Each drops on its tile at that point in the round, and players double-click it to use it, once a round. Players stand on the green tile in front of it; nothing falls on either tile. If its tile is in use or would block a seat, it waits until it is clear.</p>
+                        <p class="ff-hint">Each drops on its tile at that point in the round, and players double-click it to use it, once a round. Players stand on the green tile in front of it; nothing falls on either tile. If its tile is in use or would block a seat, it moves to the nearest tile the player can use it from.</p>
                         <div id="ff-powerups"></div>
                         <div class="ff-btn-row">
                             <button type="button" id="ff-export">Copy JSON</button>
@@ -1769,7 +1769,7 @@
          the console reads PrivacyContent for its privacy page. -->
     <script src="js/api.js?v=5"></script>
     <script src="js/event-status.js?v=2"></script>
-    <script src="js/privacy-content.js?v=7"></script>
+    <script src="js/privacy-content.js?v=8"></script>
     <script src="js/palette-wear.js?v=2"></script>
     <script src="js/skin-wear.js?v=1"></script>
     <script src="js/site.js?v=4"></script>
@@ -1814,6 +1814,6 @@
     <script src="js/fallinfurni.js"></script>
     <!-- The two-minute warning before Maintenance moves this page to the landing page (30 Oct 2026). -->
     <script src="js/maintenance-warn.js?v=3"></script>
-    <script src="/js/presence-live.js?v=1" defer></script>
+    <script src="/js/presence-live.js?v=2" defer></script>
 </body>
 </html>
