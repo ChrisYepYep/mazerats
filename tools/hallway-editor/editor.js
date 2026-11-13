@@ -2893,7 +2893,8 @@ function stairLevels() {
     });
     if (map.entrance && byId(map.entrance.level)) {
         const e = map.entrance, low = byId(e.level), S = { id: "EN", name: "Entrance", k: low.k, tiles: new Map(), stair: { low, up: null, entrance: true } }, list = [], joins = [];
-        for (const t of entranceTiles(e)) for (let d = 1; d <= 2; d++) { list.push(e.axis === "x" ? [t, e.line - d] : [e.line - d, t]); if (d === 1) joins.push(e.axis === "x" ? [t, e.line - 1, t, e.line] : [e.line - 1, t, e.line, t]); }
+        /* three deep: you arrive from the third row, out of sight until Go (14 Nov 2026, his); you still leave on reaching the second */
+        for (const t of entranceTiles(e)) for (let d = 1; d <= 3; d++) { list.push(e.axis === "x" ? [t, e.line - d] : [e.line - d, t]); if (d === 1) joins.push(e.axis === "x" ? [t, e.line - 1, t, e.line] : [e.line - 1, t, e.line, t]); }
         addRoom(S, low, list, joins);
     }
     /* the inside of each tunnel, three tiles across and two deep, walked onto from the floor in front (10 Nov 2026) */
@@ -3612,7 +3613,7 @@ function startWalk() {
     walker = { l, x, y, z: nodeZ(l, x, y), pts: [], t: 0, dir: 4, frame: 0, walking: false, st: null };
     /* arrive through the entrance: start inside the arch and walk out */
     if (map.entrance && l === byId(map.entrance.level)) {
-        const S = stairLevels().list.find(q => q.stair.entrance), e = map.entrance, m = entranceTiles(e)[1], ix = e.axis === "x" ? m : e.line - 2, iy = e.axis === "x" ? e.line - 2 : m;
+        const S = stairLevels().list.find(q => q.stair.entrance), e = map.entrance, m = entranceTiles(e)[1], ix = e.axis === "x" ? m : e.line - 3, iy = e.axis === "x" ? e.line - 3 : m;
         if (S) { walker.l = S; walker.x = ix; walker.y = iy; walker.z = nodeZ(S, ix, iy); walker.arriving = true; const path = graphFrom(S, ix, iy, [l, x, y]); if (path) { const me = walker, go = () => { if (walker === me && walker.arriving) followRoute(path, null, null); }, gate = window.HALLWAY_PLAY ? (window.hallwayArrivalGate = window.hallwayArrivalGate || { held: true, go: null }) : null; if (gate && gate.held) gate.go = go; else setTimeout(go, 200); } }      /* on the site, held until the picker is done (play.js hallwayArrivalGate) */
     }
     cam.x = (x - y) * 16; cam.y = (x + y) * 8 - levelZ(l) - 60;
