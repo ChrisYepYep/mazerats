@@ -20,7 +20,7 @@ const isScratch = rel => /alignment/i.test(rel.split("/").pop()) || SCRATCH.has(
    every thread). Found by drawing the whole real map in every light with the file reads logged: render/hw.js's hall/ pieces,
    regs.json and fontdump.html, render/hw2.js's av/ and tele/, render/hw3.js's wall/, render/floor-lamps.js's lamps/. A file
    it reads that isn't here stops the Warren's editor with "No such file", so a new folder the renderer reads goes in here */
-const RENDERER_ART = ["hall", "wall", "tele", "av", "lamps", "lift", "regs.json", "fontdump.html"];      // lift/: his lift corrections (14 Nov 2026)
+const RENDERER_ART = ["hall", "wall", "tele", "av", "lamps", "lift", "signs", "regs.json", "fontdump.html"];      // lift/: his lift corrections; signs/: his sign poles (14 Nov 2026; left out at first, so the browser drew the old arm)
 function listArt(dir, base = "") {
     const out = [];
     for (const e of fs.readdirSync(path.join(dir, base), { withFileTypes: true })) {
