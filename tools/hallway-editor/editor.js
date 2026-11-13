@@ -3378,6 +3378,9 @@ async function enterDoor(low, d) {
             const S = stairLevels().list.find(q => q.stair.door === d), col = d.axis === "x" ? me.x : me.y, out = doorFront(d).find(q => d.axis === "x" ? q[0] === col : q[1] === col) || doorFront(d)[0], sx = d.axis === "x" ? col : d.line - DOOR_DEEP, sy = d.axis === "x" ? d.line - DOOR_DEEP : col;
             me.l = S; me.st = S.stair; me.x = sx; me.y = sy; me.z = nodeZ(S, sx, sy); me.dir = d.axis === "x" ? 4 : 2; me.busy = false; level = low; buildLevels();
             const path = graphFrom(S, sx, sy, [low, out[0], out[1]]) || doorFront(d).map(q => graphFrom(S, sx, sy, [low, q[0], q[1]])).find(Boolean);
+            /* a bookcase is already standing open as you come back out of the room: left to swing open as you walked, you went through its shelves
+               (14 Nov 2026, his: "work on the clipping ... when an avatar leaves the bookcase door"); it swings shut once you're clear of it */
+            if (d.kind === "book") { const q = doorStates.get(d) || { p: 0, to: 0 }; q.p = 1; q.to = 1; q.hold = 0; q.goIn = false; q.autoIn = false; doorStates.set(d, q); }
             if (path) { me.leavingDoor = true; setDoor(d, true, 8000); followRoute(path, null, () => { me.leavingDoor = false; setDoor(d, false); }); } else { backOut(); setDoor(d, false); }
             const a = P(me.x + .5, me.y + .5, me.z); cam.x = a[0]; cam.y = a[1] - 40; clampCam(); paint(); fade();
         }
