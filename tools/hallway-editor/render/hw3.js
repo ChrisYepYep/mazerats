@@ -55,13 +55,20 @@ const CORNER = (() => {
     let a0 = 1e9, b0 = 1e9; for (let a = 0; a < 128; a++) for (let b = 0; b < 128; b++) if (isRug(at(a, b))) { if (a < a0) a0 = a; if (b < b0) b0 = b; }
     /* the rug's own stripes and fill, which the patch leaves to the rug */
     const plainCols = new Set(); for (let i = 0; i < 32; i++) for (let j = 0; j < 16; j++) { const c = RUG.at(68 + i, RUG.core + j); if (c) plainCols.add((c[0] << 16) | (c[1] << 8) | c[2]); }
-    const px = []; for (let v = 0; v < N; v++) for (let u = 0; u < N; u++) { const c = at(a0 + u, b0 + v); px.push(c && isRug(c) && !plainCols.has((c[0] << 16) | (c[1] << 8) | c[2]) ? c : null); }
+    /* inside the border, the client's mat is one flat colour where ours has its woven stripes: that fill is left to the rug too, or each
+       corner laid a flat square over the stripes, and on a rug 4 tiles across the two at an end met and blanked its middle (14 Nov 2026, his) */
+    const num = c => (c[0] << 16) | (c[1] << 8) | c[2], coreAt = RUG.ramp.findIndex(c => c && plainCols.has(num(c))), fillC = at(a0 + N - 1, b0 + N - 1);
+    const px = []; for (let v = 0; v < N; v++) for (let u = 0; u < N; u++) { const c = at(a0 + u, b0 + v); px.push(c && isRug(c) && !plainCols.has(num(c)) && !(coreAt > 0 && fillC && Math.min(u, v) + 1 >= coreAt && num(c) === num(fillC)) ? c : null); }
     return { N, get: (u, v) => u >= 0 && v >= 0 && u < N && v < N ? px[v * N + u] : null };
 })();
 /* the convex corners of a joined shape: where it is, which way is in, and whether it's cut */
+/* small: the rug is 2 or 3 tiles across there, too narrow for the rosette (14 Nov 2026, his: "for rug sections that are 2 or 3 tiles wide,
+   we need to use the simpler pattern we used to have"), so that corner is the plain border turning, as before the rosettes came in */
 function rugCorners(set, cut) {
     const out = [], has = (x, y) => set.has(x + "," + y);
-    for (const k of set) { const [X, Y] = k.split(",").map(Number), c = cut.has(k);
+    const run = (X, Y, dx, dy) => { let n = 0; while (n < 4 && has(X + dx * n, Y + dy * n)) n++; return n; };
+    const push = (o, X, Y) => { o.small = Math.min(run(X, Y, o.sa, 0), run(X, Y, 0, o.sb)) <= 3; out.push(o); };
+    for (const k of set) { const [X, Y] = k.split(",").map(Number), c = cut.has(k), out = { push: o => push(o, X, Y) };
         if (!has(X - 1, Y) && !has(X, Y - 1)) out.push({ A: X * 16, B: Y * 16, sa: 1, sb: 1, flat: true, cut: c });
         if (!has(X + 1, Y) && !has(X, Y - 1)) out.push({ A: X * 16 + 15, B: Y * 16, sa: -1, sb: 1, flat: false, cut: c });
         if (!has(X + 1, Y) && !has(X, Y + 1)) out.push({ A: X * 16 + 15, B: Y * 16 + 15, sa: -1, sb: -1, flat: true, cut: c });
@@ -170,7 +177,7 @@ function rugFieldAt(F, X, Y, dx, dy) {
         const u = c.sa * (a - c.A), v = c.sb * (b - c.B); if (u < 0 || v < 0) continue;
         /* measured from the unrounded point, so the cut edge is a clean line and not every other pixel; one stripe of the border to each pixel row (a flat cut) or column (an upright one), as the straight edges have, so none is skipped (8 Nov: "distorted") */
         if (c.cut) { if (u + v >= 40) continue; const fa = X * 16 + (dx + 2 * dy) / 2, fb = Y * 16 + (2 * dy - dx) / 2, w2 = c.sa * (fa - c.A) + c.sb * (fb - c.B) + (c.sa < 0 ? 1 : 0) + (c.sb < 0 ? 1 : 0), d = c.flat ? (w2 - 16) / 2 : (w2 - 16); if (d < 0) return null; if (d < r) r = Math.floor(d); }
-        else if (u >= 1 && v >= 1 && r >= 1) { const p = CORNER.get(u - 1, v - 1); if (p) return p; }
+        else if (!c.small && u >= 1 && v >= 1 && r >= 1) { const p = CORNER.get(u - 1, v - 1); if (p) return p; }
     }
     if (r < RUG.ramp.length) return RUG.ramp[r];
     return F.along.get(key) ? RUG.at(68 + (((b % 32) + 32) % 32), RUG.core + (((a % 16) + 16) % 16)) : RUG.at(68 + (((a % 32) + 32) % 32), RUG.core + (((b % 16) + 16) % 16));
@@ -1955,13 +1962,21 @@ function build(cfg) {
     const out = new Buf(bw, bh, "000000"), layer = new Buf(bw, bh, "07060a");
     /* a door, or a bookcase hiding one: closed it's a still picture wider than the opening, the page draws it opening */
     const BKX = 0, BKY = 3;                     // its back on the wall's foot (8 Nov: 6 had its front there and its back in the wall)
-    const doorOrBook = (w, x, y, o, it) => { const fp = it && it.kind === "book" && FLOOR_PIECES.bookdoor; if (!fp) return H.door(w, x, y, o); const flip = !o.mapY, s = flip ? w.S(x - .5, y) : w.S(x, y - 2.5), im = wallArt(fp.f), a0 = Math.round(s[0]), a1 = Math.round(s[1]); for (let j = 0; j < im.h; j++) for (let i = 0; i < im.w; i++) { const q = (j * im.w + i) * 4; if (im.rgba[q + 3] < 128) continue; const sx = a0 - fp.ox + i + BKX, X = flip ? 2 * a0 - sx - 1 : sx, Y = a1 - fp.oy + j - BKY, c = [im.rgba[q], im.rgba[q + 1], im.rgba[q + 2]]; layer.set(X, Y, c); if (X >= 0 && Y >= 0 && X < bw && Y < bh) w.keep[Y * bw + X] = ((c[0] << 16) | (c[1] << 8) | c[2]) + 1; } };
+    /* a door's pixels, by the wall line it stands in: the next part of the floor along that wall draws its own stretch of the wall after the door
+       went on, and painted over the door's edge where the door straddles the join (14 Nov 2026, his: the Huts with Friends door's left side) */
+    const doorPx = new Map(), doorOrBook = (w, x, y, o, it) => { const key = o.mapY ? "y|" + x : "x|" + y, own = Object.prototype.hasOwnProperty.call(layer, "set"), was = layer.set;
+        layer.set = function (X, Y, c) { const r = was.call(layer, X, Y, c); if (r !== false && X >= 0 && Y >= 0 && X < bw && Y < bh) doorPx.set(Y * bw + X, key); return r; };
+        try { doorOrBook0(w, x, y, o, it); } finally { if (own) layer.set = was; else delete layer.set; } };
+    const doorOrBook0 = (w, x, y, o, it) => { const fp = it && it.kind === "book" && FLOOR_PIECES.bookdoor; if (!fp) return H.door(w, x, y, o); const flip = !o.mapY, s = flip ? w.S(x - .5, y) : w.S(x, y - 2.5), im = wallArt(fp.f), a0 = Math.round(s[0]), a1 = Math.round(s[1]); for (let j = 0; j < im.h; j++) for (let i = 0; i < im.w; i++) { const q = (j * im.w + i) * 4; if (im.rgba[q + 3] < 128) continue; const sx = a0 - fp.ox + i + BKX, X = flip ? 2 * a0 - sx - 1 : sx, Y = a1 - fp.oy + j - BKY, c = [im.rgba[q], im.rgba[q + 1], im.rgba[q + 2]]; layer.set(X, Y, c); if (X >= 0 && Y >= 0 && X < bw && Y < bh) w.keep[Y * bw + X] = ((c[0] << 16) | (c[1] << 8) | c[2]) + 1; } };
     /* a tint or see-through pixel of a new piece: remembered with what's under it now, and worked out after the colouring, on whatever colour the wall ends up. If something's gone over it by then, it's dropped */
     const pieceTint = (X, Y, c, A) => { if (X < 0 || Y < 0 || X >= bw || Y >= bh || furniX[Y * bw + X] !== NO_FURNI) return; const p = (Y * bw + X) * 4; w.tints.push([X, Y, c, A, (layer.d[p] << 16) | (layer.d[p + 1] << 8) | layer.d[p + 2]]); };
     const furniX = new Int16Array(bw * bh), furniY = new Int16Array(bw * bh), furniC = new Int32Array(bw * bh), furniRun = new Uint8Array(bw * bh), NO_FURNI = -32768;
     /* what hangs on a wall (pictures, posters, garlands): never wallpaper, whatever is done to its colour afterwards, so the wall going up
        under a floor above never copies it upwards (9 Nov 2026, his: the Leet Show poster's top showed again above it under a ledge) */
     const itemPx = new Uint8Array(bw * bh), itemUnder = new Map();
+    /* an entrance's or tunnel's surround as drawn in its wall: not wallpaper for the wall-top tidy to copy up (its wainscot and beam came up
+       over a tunnel as a strip of dado, 14 Nov 2026, his), and not to be painted over by it */
+    const portalPx = new Uint8Array(bw * bh); let portalOn = false;
     /* stairPatch: which stairwell (1 + its index in the floor's parts) drew a stair pixel, so the wall going up under a floor above can tell a flight behind it from one in front */
     const wallOwner = new Uint16Array(bw * bh), stairPx = new Uint8Array(bw * bh), stairPatch = new Uint16Array(bw * bh), railUnder = new Map();
     const mask = new Uint8Array(bw * bh), zb = new Int16Array(bw * bh), fc = new Int32Array(bw * bh), done = new Uint8Array(bw * bh);
@@ -2017,7 +2032,7 @@ function build(cfg) {
         wallOwner.fill(0);
         const signs = [], pushSign = signs.push.bind(signs); let signPatch = null;
         signs.push = o => pushSign({ ...o, wallZ: signPatch ? signPatch.z : w.z, wallLine: signPatch ? (o.alongY ? signPatch.x0 : signPatch.y0) : null });
-        furniX.fill(NO_FURNI); itemPx.fill(0); stairPx.fill(0); railUnder.clear();
+        furniX.fill(NO_FURNI); itemPx.fill(0); portalPx.fill(0); stairPx.fill(0); railUnder.clear(); doorPx.clear();
         const drawSprite = s => {
             if (!s.furni) return s.draw();
             const own = Object.prototype.hasOwnProperty.call(layer, "set"), was = layer.set;
@@ -2045,7 +2060,7 @@ function build(cfg) {
         const tagged = draw => {
             if (!wallTag) return draw();
             const was = layer.set;
-            layer.set = function (x, y, c) { was.call(layer, x, y, c); if (x >= 0 && y >= 0 && x < bw && y < bh) { wallTag[y * bw + x] = curWall; wallC[y * bw + x] = (c[0] << 16) | (c[1] << 8) | c[2]; } };
+            layer.set = function (x, y, c) { if (was.call(layer, x, y, c) === false) return false; if (x >= 0 && y >= 0 && x < bw && y < bh) { wallTag[y * bw + x] = curWall; wallC[y * bw + x] = (c[0] << 16) | (c[1] << 8) | c[2]; } };
             draw();
             layer.set = function (x, y, c) { was.call(layer, x, y, c); if (x >= 0 && y >= 0 && x < bw && y < bh) wallTag[y * bw + x] = 0; };
         };
@@ -2303,11 +2318,15 @@ function build(cfg) {
             };
             for (const run0 of EdgeItems.runsOf(lv.src.edgeItems)) {
                 const onTile = t => run0.axis === "x" ? [t, run0.dir > 0 ? run0.line : run0.line - 1] : [run0.dir > 0 ? run0.line : run0.line - 1, t];
-                /* a raised part draws in its own turn, so a run stops where a raised part does */
+                /* A run stops only where the floor under it stops, or jumps to another height with no small steps between: there each side ends
+                   in its own post. Where small steps join two parts of the floor it's one rail climbing them, so it was laid out as two, with two
+                   posts side by side at the join (14 Nov 2026, his). Each tile still takes its own place among the furniture. */
+                const liftOf = zBase => along => { const t = onTile(Math.floor(along)), z = zAt(t[0], t[1]); return (z === null ? 0 : z - zBase) + flightLift(run0.axis === "x" ? "x" : "y", run0.axis === "x" ? t[1] : t[0], along); };
+                const jumps = t => { const L = liftOf(0); return Math.abs(L(t - .02) - L(t + .02)) > 1; };
                 const pieces = []; let a = null, prev = null;
                 for (let t = run0.a; t <= run0.b; t++) {
                     const q = t < run0.b ? tileOf.get(onTile(t).join(",")) : null;
-                    if (a !== null && (!q || (prev !== q && ((prev && prev.raised) || q.raised)))) { pieces.push({ ...run0, a, b: t }); a = null; }
+                    if (a !== null && (!q || (prev !== q && ((prev && prev.raised) || q.raised) && jumps(t)))) { pieces.push({ ...run0, a, b: t }); a = null; }
                     if (a === null && q) a = t;
                     prev = q;
                 }
@@ -2318,7 +2337,7 @@ function build(cfg) {
                     const pixelsOf = () => {
                         if (px) return px;
                         const zs = w.z; w.z = zBase;
-                        const at = (fx, fy) => w.S(fx, fy), lift = along => { const t = onTile(Math.floor(along)), z = zAt(t[0], t[1]); return (z === null ? 0 : z - zBase) + flightLift(run.axis === "x" ? "x" : "y", run.axis === "x" ? t[1] : t[0], along); };
+                        const at = (fx, fy) => w.S(fx, fy), lift = liftOf(zBase);
                         px = new Map(); for (const q of EdgeItems.pixels(run, at, lift)) { if (!px.has(q[3])) px.set(q[3], []); px.get(q[3]).push(q); }
                         w.z = zs; return px;
                     };
@@ -2430,37 +2449,62 @@ function build(cfg) {
                 const raw = Buf.prototype.set, zUp = P.z + Z1;
                 layer.set = function (x, y, c) {
                     const rx = x - gx, ry = y - gy + zUp;
-                    if (up.tileSet.has(Math.floor((rx + 2 * ry) / 32) + "," + Math.floor((2 * ry - rx) / 32))) return;
+                    if (up.tileSet.has(Math.floor((rx + 2 * ry) / 32) + "," + Math.floor((2 * ry - rx) / 32))) return;      // not false: under the floor above it still counts as this wall's (the wall-top tidy reads it)
                     raw.call(layer, x, y, c);
                 };
             } else if (P.raised) {
                 const raw = Buf.prototype.set, patches = lv.patches;
                 layer.set = function (x, y, c) {
-                    if (x >= 0 && y >= 0 && x < bw && y < bh) { const o = wallOwner[y * bw + x]; if (o) { const Q = patches[o - 1]; if (!Q.raised && !Q.notch && (P.x1 <= Q.x0 && P.y0 < Q.y1 || P.y1 <= Q.y0 && P.x0 < Q.x1)) return; } }
+                    if (x >= 0 && y >= 0 && x < bw && y < bh) { const o = wallOwner[y * bw + x]; if (o) { const Q = patches[o - 1]; if (!Q.raised && !Q.notch && (P.x1 <= Q.x0 && P.y0 < Q.y1 || P.y1 <= Q.y0 && P.x0 < Q.x1)) return false; } }
                     raw.call(layer, x, y, c);
                 };
             } else delete layer.set;
-            /* note a lower part's walls as they go on */
+            /* note a lower part's walls as they go on: only pixels really painted. A pixel refused above (a lower part's wall in front) still belongs to whatever is there, or the wall climbing small steps lifted that other wall's cap
+               with its own columns, a light wedge in the Events Gallery (14 Nov 2026, his) */
             const beforeWalls = Object.prototype.hasOwnProperty.call(layer, "set") ? layer.set : null, ownerId = lv.patches.indexOf(P) + 1;
-            if (ownerId) { const was = layer.set; layer.set = function (x, y, c) { was.call(layer, x, y, c); if (x >= 0 && y >= 0 && x < bw && y < bh) { wallOwner[y * bw + x] = ownerId; stairPx[y * bw + x] = 0; } }; }
+            if (ownerId) { const was = layer.set; layer.set = function (x, y, c) { if (was.call(layer, x, y, c) === false) return false; if (x >= 0 && y >= 0 && x < bw && y < bh) { wallOwner[y * bw + x] = ownerId; stairPx[y * bw + x] = 0; } }; }
+            /* every pixel of this part's walls as drawn, painted or refused (a nearer wall in front): a wall climbing small steps is lifted from
+               these, so what a nearer wall hid at its foot still comes up with it, and goes on only where nothing nearer is (14 Nov 2026, his) */
+            const drawn = ownerId && ((lv.src && lv.src.steps) || []).some(st => st.a === (st.axis === "y" ? P.x0 : P.y0)) ? new Map() : null;
+            /* a door already standing in the wall line being drawn stays in front of it */
+            let wallKey = null; { const was = layer.set; layer.set = function (x, y, c) { if (wallKey && x >= 0 && y >= 0 && x < bw && y < bh && doorPx.get(y * bw + x) === wallKey) return false; const r = was.call(layer, x, y, c); if (portalOn && r !== false && x >= 0 && y >= 0 && x < bw && y < bh) portalPx[y * bw + x] = 1; return r; }; }
+            if (drawn) { const was = layer.set; layer.set = function (x, y, c) { if (x >= 0 && y >= 0 && x < bw && y < bh) drawn.set(y * bw + x, [(c[0] << 16) | (c[1] << 8) | c[2], curWall]); return was.call(layer, x, y, c); }; }
             /* walls wherever nothing lies behind, at the height its walls stand at (its lift is the floor's alone) */
             const zWalls = P.z - (P.floorLift || 0); w.z = zWalls;
             /* a floor lowered with "raise the floor only" keeps its walls where they stood, which left a gap between them and the floor
                (14 Nov 2026, his: "Walls with a lowered floor show black areas, and the tunnel doesn't align"): so walls and doorways are drawn
                where they stand, then again at the floor below their foot only, so the panelling reaches down to the floor and the skirting sits on it */
+            /* Where a wall carries straight on along its line at another height (the next part's floor is higher or lower), the two runs
+               don't each end in a post (14 Nov 2026, his, the Events Gallery: posts left notches in the cap of a wall climbing small steps,
+               and a lowered floor's wall stopped dead beside its neighbour). Joined by small steps, or standing at one height, the wall is
+               one wall: no post either side. Otherwise the lower runs into the higher, which keeps only the part of its post above the lower,
+               as round a corner (cornerEnd). Says nothing (an empty object) where no wall carries on. start: the run's first tile is `at`,
+               the other wall's last is at - 1; end: the run stops before `at`, the other wall's first tile. */
+            const lineEnd = (axis, line, at, start) => {
+                const t = start ? at - 1 : at, X = axis === "x" ? t : line, Y = axis === "x" ? line : t;
+                if (!(axis === "x" ? backWall(X, Y) : sideWall(X, Y)) || (axis === "x" ? backWall(X, Y, P.z) : sideWall(X, Y, P.z))) return {};
+                const Q = tileAt(X, Y), other = Q.z - (Q.floorLift || 0), mine = P.z - (P.floorLift || 0);
+                const joined = other === mine || ((lv.src && lv.src.steps) || []).some(st => st.axis === axis && st.a === line && st.line === at);
+                if (start) return { noStart: joined || mine < other };
+                return joined || mine < other ? { noEnd: true } : { noEnd: false, endKeep: mine - other + 14 };
+            };
             /* portals: "all", or "arch"; the inside goes where the wall stands and again at the floor, so it reaches both */
             const wallsAt = (z, portals = "all") => { w.z = z;
                 let run = null;
-                for (let X = P.x0; X <= P.x1; X++) { const open = X < P.x1 && !has.has(X + "," + (P.y0 - 1)) && !holes.has(X + "," + (P.y0 - 1)) && !P.noBack && (P.notch || !airBelow(X, P.y0 - 1) || doorEdge("x", X, P.y0) || shown("x", P.y0, X)); if (open && run === null) run = X; if (!open && run !== null) { tagged(() => H.wallRunX(w, run, X, P.y0, { ...cornerEnd(backWall(X, P.y0, P.z), sideWall(X, P.y0 - 1), zAt(X, P.y0 - 1), P.z), noStart: backWall(run - 1, P.y0, P.z), col: colOf("x", P.y0), ...halfOf("x", P.y0) })); run = null; } }
+                for (let X = P.x0; X <= P.x1; X++) { const open = X < P.x1 && !has.has(X + "," + (P.y0 - 1)) && !holes.has(X + "," + (P.y0 - 1)) && !P.noBack && (P.notch || !airBelow(X, P.y0 - 1) || doorEdge("x", X, P.y0) || shown("x", P.y0, X)); if (open && run === null) run = X; if (!open && run !== null) { const r0 = run, X1 = X; wallKey = "x|" + P.y0; tagged(() => H.wallRunX(w, r0, X1, P.y0, { ...cornerEnd(backWall(X1, P.y0, P.z), sideWall(X1, P.y0 - 1), zAt(X1, P.y0 - 1), P.z), ...lineEnd("x", P.y0, X1, false), noStart: backWall(r0 - 1, P.y0, P.z) || lineEnd("x", P.y0, r0, true).noStart, col: colOf("x", P.y0), ...halfOf("x", P.y0) })); run = null; } }
                 run = null;
-                for (let Y = P.y0; Y <= P.y1; Y++) { const open = Y < P.y1 && !has.has((P.x0 - 1) + "," + Y) && !holes.has((P.x0 - 1) + "," + Y) && (P.notch || !airBelow(P.x0 - 1, Y) || doorEdge("y", P.x0, Y) || shown("y", P.x0, Y)); if (open && run === null) run = Y; if (!open && run !== null) { tagged(() => H.wallRunY(w, P.x0, run, Y, { ...cornerEnd(sideWall(P.x0, Y, P.z), backWall(P.x0 - 1, Y), zAt(P.x0 - 1, Y), P.z), noStart: sideWall(P.x0, run - 1, P.z), col: colOf("y", P.x0), ...halfOf("y", P.x0) })); run = null; } }
+                for (let Y = P.y0; Y <= P.y1; Y++) { const open = Y < P.y1 && !has.has((P.x0 - 1) + "," + Y) && !holes.has((P.x0 - 1) + "," + Y) && (P.notch || !airBelow(P.x0 - 1, Y) || doorEdge("y", P.x0, Y) || shown("y", P.x0, Y)); if (open && run === null) run = Y; if (!open && run !== null) { const r0 = run, Y1 = Y; wallKey = "y|" + P.x0; tagged(() => H.wallRunY(w, P.x0, r0, Y1, { ...cornerEnd(sideWall(P.x0, Y1, P.z), backWall(P.x0 - 1, Y1), zAt(P.x0 - 1, Y1), P.z), ...lineEnd("y", P.x0, Y1, false), noStart: sideWall(P.x0, r0 - 1, P.z) || lineEnd("y", P.x0, r0, true).noStart, col: colOf("y", P.x0), ...halfOf("y", P.x0) })); run = null; } }
+                wallKey = null; portalOn = true;
                 if (portals) for (const q of (lv.portals || [])) { if (tileOf.get(q.axis === "x" ? q.at + "," + q.line : q.line + "," + q.at) === P && (q.axis === "x" ? P.y0 === q.line : P.x0 === q.line) /* on its wall, never over a floor (10 Nov scan b, renderer 7) */) { if (portals !== "arch") { const zs = w.z; drawPortal(w, q.axis, q.line, q.at, "alcove", q.tunnel ? "tunnel" : q.theatre); if (P.z !== zs) { w.z = P.z; drawPortal(w, q.axis, q.line, q.at, "alcove", q.tunnel ? "tunnel" : q.theatre); w.z = zs; } } drawPortal(w, q.axis, q.line, q.at, "arch", q.tunnel ? "tunnel" : q.theatre); } }
+                portalOn = false;
             };
             wallsAt(zWalls);
+            /* the pixels of the lowered floor's second drawing (its panelling's foot and skirting, down at the floor) */
+            const lowCopy = new Set();
             if ((P.floorLift || 0) < 0) {
                 const o0 = (w.z = zWalls, w.S(P.x0, P.y0)), foot = x => o0[1] + Math.abs(x - o0[0]) / 2 - 24;
                 const under = Object.prototype.hasOwnProperty.call(layer, "set") ? layer.set : null;
-                layer.set = function (x, y, c) { if (y < foot(x)) return; if (under) under.call(layer, x, y, c); else Buf.prototype.set.call(layer, x, y, c); };
+                layer.set = function (x, y, c) { if (y < foot(x)) return false; const r = under ? under.call(layer, x, y, c) : Buf.prototype.set.call(layer, x, y, c); if (r !== false && x >= 0 && y >= 0 && x < bw && y < bh) lowCopy.add(y * bw + x); return r; };
                 wallsAt(P.z, "arch");
                 if (under) layer.set = under; else delete layer.set;
             }
@@ -2474,7 +2518,11 @@ function build(cfg) {
                 /* the walls climb only by what their own floors' walls differ by: a floor raised with "raise the floor only" keeps its walls
                    where they were, so steps up onto it leave the wall level (10 Nov 2026, his: the walls still slanted at the steps) */
                 const wallZ = (X, Y) => { const Q = tileAt(X, Y); return Q ? Q.z - (Q.floorLift || 0) : null; }, wBack = alongY ? wallZ(st.a, st.line - 1) : wallZ(st.line - 1, st.a), wNear = alongY ? wallZ(st.a, st.line) : wallZ(st.line, st.a);
-                const wallRise = (toYou ? wNear : wBack) - (toYou ? wBack : wNear), share = Math.max(0, Math.min(1, wallRise / (hi - lo))); if (share <= 0) continue;
+                const wallRise = (toYou ? wNear : wBack) - (toYou ? wBack : wNear), share = Math.max(0, Math.min(1, wallRise / (hi - lo)));
+                /* A lowered floor's skirting, drawn again down at its floor, climbs the steps up to the next floor's skirting too, though its wall
+                   stands level: it stepped up at the top of the flight instead (14 Nov 2026, his, the Events Gallery). copyAll: how much more it
+                   climbs than the wall does, at the top. */
+                const copyAll = (P.floorLift || 0) < 0 && lowCopy.size ? Math.max(0, Math.min(hi - lo, -P.floorLift + share * (hi - lo)) - share * (hi - lo)) : 0; if (share <= 0 && copyAll <= 0) continue;
                 const reach = Math.round((hi - lo) / STEP_R) * STEP_D, from = toYou ? st.line - reach : st.line, rate = STEP_R / STEP_D, d0 = alongY ? P.y0 : P.x0, d1 = alongY ? P.y1 : P.x1;
                 /* The wall's own lines already fall a row every 2 columns; rounding the climb separately added steps of its own on top, so the
                    rail, the dado and the cap wobbled up the flight (13 Nov 2026, his, the Events Gallery). The two are rounded together instead,
@@ -2489,17 +2537,28 @@ function build(cfg) {
                 const cols = [];
                 for (let k = 0; k <= Math.ceil(reach * 16); k++) {
                     const d = from + k / 16; if (d < d0 || d >= d1) continue;
-                    const exact = span > 0 ? share * (hi - lo) * Math.max(0, Math.min(1, (toYou ? d - foot0 : foot0 - d) / span)) : 0; if (exact <= 0) continue;
+                    const frac = span > 0 ? Math.max(0, Math.min(1, (toYou ? d - foot0 : foot0 - d) / span)) : 0, exact = share * (hi - lo) * frac, exactC = copyAll * frac; if (exact <= 0 && exactC <= 0) continue;
                     const sx = Math.round((alongY ? st.a - d : d - st.a) * 16) + gx, foot = Math.round((d + st.a) * 8) + gy - zWalls; if (sx < 0 || sx >= bw) continue;
-                    let low = null; for (let y = Math.min(bh - 1, foot + 4); y >= Math.max(0, foot - 8); y--) if (wallOwner[y * bw + sx] === ownerId) { low = y; break; }
-                    cols.push({ d, exact, sx, foot, low });
+                    let low = null; for (let y = Math.min(bh - 1, foot + 4); y >= Math.max(0, foot - 8); y--) if (drawn ? drawn.has(y * bw + sx) : wallOwner[y * bw + sx] === ownerId) { low = y; break; }
+                    cols.push({ d, exact, exactC, sx, foot, low });
                 }
                 const known = cols.filter(c => c.low !== null), phase = known.length ? Math.max(...known.map(c => c.low - 8 * c.d)) : null;
+                for (const { exactC, sx, foot } of cols) {
+                    const liftC = Math.round(exactC); if (liftC <= 0) continue;
+                    for (let y = Math.max(liftC, foot - 40); y <= Math.min(bh - 1, foot - P.floorLift + 4); y++) {
+                        const i = y * bw + sx; if (!lowCopy.has(i)) continue;
+                        const j = (y - liftC) * bw + sx; lowCopy.add(j);
+                        layer.d[j * 4] = layer.d[i * 4]; layer.d[j * 4 + 1] = layer.d[i * 4 + 1]; layer.d[j * 4 + 2] = layer.d[i * 4 + 2];
+                        wallOwner[j] = ownerId; if (wallTag) { wallTag[j] = wallTag[i]; wallC[j] = wallC[i]; } if (drawn && drawn.has(i)) drawn.set(j, drawn.get(i));
+                    }
+                }
                 for (const { d, exact, sx, foot, low } of cols) {
+                    if (exact <= 0) continue;
                     const lift = phase === null || low === null ? Math.round(exact) : low - Math.round(8 * d + phase - .5 + 1e-6 - exact); if (lift <= 0) continue;
                     for (let y = Math.max(lift, foot - Z1 - 20); y <= Math.min(bh - 1, foot + 2); y++) {
-                        const i = y * bw + sx; if (wallOwner[i] !== ownerId) continue;
+                        const i = y * bw + sx, q = drawn && drawn.get(i); if (drawn ? !q : wallOwner[i] !== ownerId) continue;
                         const j = (y - lift) * bw + sx;
+                        if (q) { const ok = layer.set(sx, y - lift, [q[0] >> 16, (q[0] >> 8) & 255, q[0] & 255]) !== false; drawn.set(j, q); if (ok && wallTag) { wallTag[j] = q[1]; wallC[j] = q[0]; } continue; }
                         layer.d[j * 4] = layer.d[i * 4]; layer.d[j * 4 + 1] = layer.d[i * 4 + 1]; layer.d[j * 4 + 2] = layer.d[i * 4 + 2];
                         wallOwner[j] = ownerId; if (wallTag) { wallTag[j] = wallTag[i]; wallC[j] = wallC[i]; }
                     }
@@ -2814,7 +2873,7 @@ function build(cfg) {
             const fill = (sx, y0, y1, yMax, dir, wallAtTile, line, floorZ, edge) => {
                 if (sx < 0 || sx >= bw) return;
                 /* a hung thing's pixel counts as the wallpaper it covers (itemUnder) */
-                const plain = (X, Y) => { const n = Y * bw + X; return !stairPx[n] && (itemPx[n] ? itemUnder.has(n) || railUnder.has(n) : furniX[n] === NO_FURNI || railUnder.has(n)) && !lampPx.has(n); };
+                const plain = (X, Y) => { const n = Y * bw + X; return !stairPx[n] && !portalPx[n] && (itemPx[n] ? itemUnder.has(n) || railUnder.has(n) : furniX[n] === NO_FURNI || railUnder.has(n)) && !lampPx.has(n); };
                 /* a flight whose stairwell lies wholly behind this wall's line is behind the wall, so the wall covers it here: the F2-to-F3 stair's
                    landing and steps showed through as a long streak along the Twister wall (9 Nov scan, content 9) */
                 const stairBehind = i => { const Q = stairPatch[i] && lv.patches[stairPatch[i] - 1]; return !!Q && (dir > 0 ? Q.y1 <= line : Q.x1 <= line) && (edge === null || (dir > 0 ? Q.x1 !== edge : Q.y1 !== edge)); };
@@ -2835,17 +2894,34 @@ function build(cfg) {
                     if (wallTag) { wallTag[i] = wallTag[j]; wallC[i] = wallC[j]; }
                 }
             };
+            /* Where the floor above changes height along its open edge, its moulding slopes from the higher edge down over the start of the
+               lower (the "uneven" wedge, drawn with that floor): under the slope the wall goes on up to the slope's underside, not to the lower
+               floor's, or its own cap showed in the gap (14 Nov 2026, his, the Events Gallery). Same sums as wedge(); -Infinity where there's none.
+               axis "x": the upper floor's row is `line` (a y), pos runs along x; "y": its column is `line`, pos runs along y. */
+            const upZs = new Map(), upTile = (X, Y) => { const k = X + "," + Y; if (!upZs.has(k)) { const T = upSet.has(k) ? aboveLv.patches.find(q => !q.notch && X >= q.x0 && X < q.x1 && Y >= q.y0 && Y < q.y1) : null; upZs.set(k, T ? T.z : null); } return upZs.get(k); };
+            const upWedge = (axis, line, pos) => {
+                let best = -Infinity; const at = (t, k) => axis === "x" ? upTile(t, k) : upTile(k, t), gone = t => axis === "x" ? !upSet.has(t + "," + (line + 1)) : !upSet.has((line + 1) + "," + t);
+                for (let J = Math.floor(pos) - 3; J <= Math.floor(pos) + 4; J++) {
+                    const a = at(J - 1, line), b = at(J, line); if (a === null || b === null || a === b || !gone(J - 1) || !gone(J)) continue;
+                    if (((aboveLv.src && aboveLv.src.steps) || []).some(st => st.axis === axis && st.b === line + 1 && Math.abs(J - st.line) <= 8)) continue;
+                    const lo = Math.min(a, b), drop = Math.abs(a - b), L = Math.min(48, Math.max(24, drop * 3)), n = Math.round(a < b ? (J - pos) * 16 - .5 : (pos - J) * 16 - .5);
+                    if (n >= 0 && n < L) best = Math.max(best, lo + Math.round(drop * (1 - (n + .5) / L)));
+                }
+                return best;
+            };
             for (const [key, Q] of tileOf) {
                 /* where the wall stands, not the floor: "raise the floor only" lifts the floor and leaves the wall, so measuring from the floor left
                    a strip of the wall's cap under the floor above (14 Nov 2026, his) */
                 const [X, Y] = key.split(",").map(Number), f = Q.z - (Q.floorLift || 0);
-                if (backWall(X, Y) && !noneSet.has("x|" + Y + "|" + X) && !halfSet.has("x|" + Y + "|" + X) && (upSet.has(X + "," + (Y - 1)) || upSet.has(X + "," + Y))) {
-                    const zUp = upBase + upRise(X, upSet.has(X + "," + (Y - 1)) ? Y - 1 : Y);
-                    for (let u = 0; u < 16; u++) { const sx = (X - Y) * 16 + u + gx, base8 = Math.round((X + u / 16 + Y) * 8) + gy; fill(sx, base8 - zUp + EDGE_ROWS, base8 - (f + Z1) + CAP_ROWS - 1, base8 - f - WOOD_ROWS, 1, n => backWall(X + n, Y), Y, f, u === 0 ? X : null); }
+                /* over an entrance or a tunnel too: its stretch is no ordinary wall, but the wall goes on up above its arch to the floor over it, and left
+                   empty there it showed black and the far wall behind (14 Nov 2026, his) */
+                if (backWall(X, Y) && (!noneSet.has("x|" + Y + "|" + X) || portalTiles.has("x|" + Y + "|" + X)) && !halfSet.has("x|" + Y + "|" + X) && (upSet.has(X + "," + (Y - 1)) || upSet.has(X + "," + Y))) {
+                    const Yu = upSet.has(X + "," + (Y - 1)) ? Y - 1 : Y, zUp = upBase + upRise(X, Yu);
+                    for (let u = 0; u < 16; u++) { const sx = (X - Y) * 16 + u + gx, base8 = Math.round((X + u / 16 + Y) * 8) + gy; fill(sx, base8 - Math.max(zUp, upWedge("x", Yu, X + (u + .5) / 16)) + EDGE_ROWS, base8 - (f + Z1) + CAP_ROWS - 1, base8 - f - WOOD_ROWS, 1, n => backWall(X + n, Y), Y, f, u === 0 ? X : null); }
                 }
-                if (sideWall(X, Y) && !noneSet.has("y|" + X + "|" + Y) && !halfSet.has("y|" + X + "|" + Y) && (upSet.has((X - 1) + "," + Y) || upSet.has(X + "," + Y))) {
-                    const zUp = upBase + upRise(upSet.has((X - 1) + "," + Y) ? X - 1 : X, Y);
-                    for (let u = 0; u < 16; u++) { const sx = (X - Y) * 16 - u + gx, base8 = Math.round((X + Y + u / 16) * 8) + gy; fill(sx, base8 - zUp + EDGE_ROWS, base8 - (f + Z1) + CAP_ROWS - 1, base8 - f - WOOD_ROWS, -1, n => sideWall(X, Y + n), X, f, u === 0 ? Y : null); }
+                if (sideWall(X, Y) && (!noneSet.has("y|" + X + "|" + Y) || portalTiles.has("y|" + X + "|" + Y)) && !halfSet.has("y|" + X + "|" + Y) && (upSet.has((X - 1) + "," + Y) || upSet.has(X + "," + Y))) {
+                    const Xu = upSet.has((X - 1) + "," + Y) ? X - 1 : X, zUp = upBase + upRise(Xu, Y);
+                    for (let u = 0; u < 16; u++) { const sx = (X - Y) * 16 - u + gx, base8 = Math.round((X + Y + u / 16) * 8) + gy; fill(sx, base8 - Math.max(zUp, upWedge("y", Xu, Y + (u + .5) / 16)) + EDGE_ROWS, base8 - (f + Z1) + CAP_ROWS - 1, base8 - f - WOOD_ROWS, -1, n => sideWall(X, Y + n), X, f, u === 0 ? Y : null); }
                 }
             }
         }
@@ -2910,6 +2986,10 @@ function build(cfg) {
             /* one edge, one junction: along +1 on screen from the junction into the lower floor, or -1 */
             const wedge = (axis, line, at, dir, lo, hi) => {
                 const drop = hi - lo, L = Math.min(48, Math.max(24, drop * 3));      // a big drop is steep, or the slope hides tiles you can walk on
+                /* the higher floor's first column shares its pixels with the lower tile, whose moulding hung on there below the higher one's: cleared to the same depth as the higher floor's */
+                { const u = dir > 0 ? -1 : 0, sx = (axis === "x" ? (at - line) : (line - at)) * 16 + u + gx, base = ((axis === "x" ? at + line : line + at) * 8) + gy - lo + (axis === "x" ? Math.floor(u / 2) : -Math.ceil(u / 2));
+                  const edgeC = new Set(FLOOR_EDGE.map(c => (c[0] << 16) | (c[1] << 8) | c[2]));
+                  for (let y = base + 1 - drop + FLOOR_EDGE.length; y <= base + FLOOR_EDGE.length; y++) { if (!inB(sx, y)) continue; const i = y * bw + sx, q = i * 4; if (furniX[i] !== NO_FURNI || !edgeC.has((layer.d[q] << 16) | (layer.d[q + 1] << 8) | layer.d[q + 2])) continue; layer.d[q] = VOID[0]; layer.d[q + 1] = VOID[1]; layer.d[q + 2] = VOID[2]; } }
                 for (let n = 0; n < L; n++) {
                     /* n pixels along from the junction: u is the screen column from the point (at, line) */
                     const u = dir > 0 ? n : -1 - n, along = axis === "x" ? (u + .5) / 16 : -(u + .5) / 16;
@@ -2920,7 +3000,10 @@ function build(cfg) {
                     const top = base + 1 - Math.round(drop * (1 - (n + .5) / L));
                     for (let d = 0, y = top; y <= base + FLOOR_EDGE.length; d++, y++) {
                         if (!inB(sx, y)) continue; const i = y * bw + sx; if (furniX[i] !== NO_FURNI || !inSight(X, Y, (X + Y) * 8 + gy - y)) continue;
-                        const under = y - base - 1, c = d < 8 ? FLOOR_EDGE[d] : FLOOR_EDGE[under >= 8 ? under : 9], q = i * 4;   /* the moulding on top, then the plain dark of its underside down to the lower floor's own edge */ layer.d[q] = c[0]; layer.d[q + 1] = c[1]; layer.d[q + 2] = c[2];
+                        /* the whole moulding, as deep as on either floor, then nothing down to the lower floor's own edge, so what's below shows,
+                           as beside small steps. Its old plain dark underside hung below the higher floor's moulding at the junction, a notch
+                           under the edge (14 Nov 2026, his, the Events Gallery) */
+                        const q = i * 4; if (d < FLOOR_EDGE.length) { const c = FLOOR_EDGE[d]; layer.d[q] = c[0]; layer.d[q + 1] = c[1]; layer.d[q + 2] = c[2]; } else { layer.d[q] = VOID[0]; layer.d[q + 1] = VOID[1]; layer.d[q + 2] = VOID[2]; }
                     }
                 }
             };
@@ -3062,7 +3145,7 @@ function build(cfg) {
         };
         /* a sign takes the room's light like the wall it hangs on, but its name stays just readable in the dark */
         const SIGN_MIN_LIGHT = .32;
-        const onWall = (z, line, alongY, paint, out = 0) => { layer.set = function (x, y, c) { if (x >= 0 && y >= 0 && x < bw && y < bh && covered(x, y, z, line, alongY, out)) return; const L = lightAt(x, y, false, z), keep = SIGN_MIN_LIGHT; Buf.prototype.set.call(layer, x, y, [Math.min(255, c[0] * Math.max(keep, L[0] * dim)), Math.min(255, c[1] * Math.max(keep, L[1] * dim)), Math.min(255, c[2] * Math.max(keep, L[2] * dim))]); }; paint(); delete layer.set; };
+        const signPx = new Set(), onWall = (z, line, alongY, paint, out = 0) => { layer.set = function (x, y, c) { if (x >= 0 && y >= 0 && x < bw && y < bh && covered(x, y, z, line, alongY, out)) return; if (x >= 0 && y >= 0 && x < bw && y < bh) signPx.add(y * bw + x); const L = lightAt(x, y, false, z), keep = SIGN_MIN_LIGHT; Buf.prototype.set.call(layer, x, y, [Math.min(255, c[0] * Math.max(keep, L[0] * dim)), Math.min(255, c[1] * Math.max(keep, L[1] * dim)), Math.min(255, c[2] * Math.max(keep, L[2] * dim))]); }; paint(); delete layer.set; };
         /* the garlands as lit, to put back over the door signs on their walls: the garland hangs in front of a maze's name plate (10 Nov 2026, his) */
         const garLit = [...w.garPx].map(i => [i, layer.d[i * 4], layer.d[i * 4 + 1], layer.d[i * 4 + 2]]);
         if (!cfg.noSigns) for (const s of signs) if (!lv.closed) {
@@ -3079,10 +3162,11 @@ function build(cfg) {
             const REPEAT = 18, isVoid = i => { const p = i * 4; return layer.d[p] === VOID[0] && layer.d[p + 1] === VOID[1] && layer.d[p + 2] === VOID[2]; };
             for (const [sx, y0, y1] of lv.noCap) for (let y = y0; y <= y1; y++) {
                 if (sx < 0 || sx >= bw || y < 0 || y >= bh) continue;
-                const i = y * bw + sx; if (isVoid(i) || furniX[i] !== NO_FURNI || itemPx[i]) continue;
+                const i = y * bw + sx; if (isVoid(i) || furniX[i] !== NO_FURNI || itemPx[i] || portalPx[i] || signPx.has(i)) continue;
                 /* from the plain wallpaper a repeat or more further down: never a picture or poster hung there (9 Nov 2026, his: the Leet Show poster's top showed again above it) */
-                /* ...or the wallpaper a garland or a picture covers there, as the fill above takes it (9 Nov scan, renderer 1) */
-                let yy = y; while (yy <= y1) yy += REPEAT; while (yy < bh && (itemPx[yy * bw + sx] ? !itemUnder.has(yy * bw + sx) : furniX[yy * bw + sx] !== NO_FURNI) || (yy < bh && lampPx.has(yy * bw + sx))) yy += REPEAT; if (yy >= bh) continue;
+                /* ...or the wallpaper a garland or a picture covers there, as the fill above takes it (9 Nov scan, renderer 1); never a door's
+                   sign or a stair plaque either, drawn just before this: the Floor 2 plaque's bracket showed again above it (14 Nov 2026, his) */
+                let yy = y; while (yy <= y1) yy += REPEAT; while (yy < bh && (itemPx[yy * bw + sx] ? !itemUnder.has(yy * bw + sx) : furniX[yy * bw + sx] !== NO_FURNI) || (yy < bh && (lampPx.has(yy * bw + sx) || signPx.has(yy * bw + sx) || portalPx[yy * bw + sx]))) yy += REPEAT; if (yy >= bh) continue;
                 const j = yy * bw + sx, under = itemPx[j] && itemUnder.get(j); if (!under && isVoid(j)) continue;
                 if (under) { layer.d[i * 4] = under[0]; layer.d[i * 4 + 1] = under[1]; layer.d[i * 4 + 2] = under[2]; continue; }
                 layer.d[i * 4] = layer.d[j * 4]; layer.d[i * 4 + 1] = layer.d[j * 4 + 1]; layer.d[i * 4 + 2] = layer.d[j * 4 + 2];
