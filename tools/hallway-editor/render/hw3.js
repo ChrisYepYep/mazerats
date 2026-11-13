@@ -833,7 +833,7 @@ function portalArchTop(axis, at, k, T) {
     return best;
 }
 function drawPortal(w, axis, line, at, part, theatre) {
-    const b = w.b, T = w.wallTop, ph = ((at % 8) + 8) % 8, art = theatre === "tunnel" ? (GHP ? doorArt(ph, axis, part) : tunnelArt(ph, axis, part)) : theatre ? theatreArt(ph, axis, part, T) : portalArt(ph)[axis][part];
+    const b = w.b, T = w.wallTop, ph = ((at % 8) + 8) % 8, art = theatre === "tunnel" ? tunnelArt(ph, axis, part)      /* the original tunnel in the Events Gallery too, the gallery's own wall and dado round it (14 Nov 2026, his) */ : theatre ? theatreArt(ph, axis, part, T) : portalArt(ph)[axis][part];
     const p = axis === "x" ? w.S(at, line) : w.S(line, at), x0 = axis === "x" ? p[0] : p[0] - 138;
     /* the wall carries straight on either side, so its pieces' end posts aren't wanted */
     const i0 = axis === "x" ? 0 : 10, i1 = axis === "x" ? 128 : 138;
@@ -1347,44 +1347,7 @@ function ghRugPx(r, X, Y, dx, dy) {
     const sx = (X - Y) * 16 + dx, sy = (X + Y) * 8 + dy;
     return (((sx >> 1) + sy) & 1) ? pal.rugWeave : pal.rugFill;
 }
-/* The tunnel as a doorway: the opening is the entrance's own (its rounded top corners and all, so the walkable inside lines up), framed in a
-   walnut architrave that follows it round: from the opening out, a dark line, a gilt bead, the walnut face, its lit lip, a dark outer edge.
-   Past the frame, the Game Hall wall. Inside, the entrance's alcove made over in the style's colours, in shadow. */
-const doorMemo = new Map();
-function doorArt(phase, axis, part) {
-    const key = STYLE + phase + axis + part; if (doorMemo.has(key)) return doorMemo.get(key);
-    const pal = GHP.pal, src = portalArt(phase)[axis][part], o = { w: src.w, h: src.h, rgba: Buffer.from(src.rgba) };
-    const put = (i, j, c) => { const q = (j * o.w + i) * 4; o.rgba[q] = c[0]; o.rgba[q + 1] = c[1]; o.rgba[q + 2] = c[2]; o.rgba[q + 3] = 255; };
-    if (part === "alcove") {
-        for (let j = 0; j < o.h; j++) for (let i = 0; i < o.w; i++) {
-            const q = (j * o.w + i) * 4; if (o.rgba[q + 3] < 128) continue; const c = (o.rgba[q] << 16) | (o.rgba[q + 1] << 8) | o.rgba[q + 2];
-            const g = GROUPS.get(c), L = (o.rgba[q] * .3 + o.rgba[q + 1] * .59 + o.rgba[q + 2] * .11);
-            /* a plain recess (14 Nov 2026, his: the tunnel "is broken"): the entrance's alcove had a banister and steps in it; now it's all one
-               shadow, the wall's paint above going to the floor's wood below */
-            put(i, j, ghMix(ghMix(pal.wallL[0], GH_WOOD[1], j / o.h), [8, 6, 6], .62 + .14 * (1 - j / o.h)));      // one shadow, wall going to floor, darker further up and in
-        }
-    } else {
-        /* the opening: the see-through region that reaches the bottom of the piece in its middle */
-        const W = o.w, Hh = o.h, open = new Uint8Array(W * Hh), see = (i, j) => src.rgba[(j * W + i) * 4 + 3] < 128;
-        const seedI = axis === "x" ? 68 : 70, stack = []; for (let j = Hh - 1; j >= 0; j--) if (see(seedI, j)) { stack.push([seedI, j]); break; }
-        while (stack.length) { const [i, j] = stack.pop(); if (i < 0 || j < 0 || i >= W || j >= Hh || open[j * W + i] || !see(i, j)) continue; open[j * W + i] = 1; stack.push([i + 1, j], [i - 1, j], [i, j + 1], [i, j - 1]); }
-        /* how far each pixel is from the opening, up to the frame's width */
-        const FW = 8, dist = new Float32Array(W * Hh).fill(99);
-        for (let j = 0; j < Hh; j++) for (let i = 0; i < W; i++) { if (open[j * W + i] || see(i, j)) continue; let best = 99;
-            for (let v = -FW; v <= FW && best > 0; v++) for (let u = -FW; u <= FW; u++) { const I = i + u, J = j + v; if (I < 0 || J < 0 || I >= W || J >= Hh || !open[J * W + I]) continue; const d = Math.hypot(u, v); if (d < best) best = d; }
-            dist[j * W + i] = best; }
-        /* the wall where the entrance's own surround was, and the frame */
-        const wall = axis === "x" ? SEAMX : SEAMY, shift = axis === "x" ? phase * 16 : -phase * 16, base = axis === "x" ? 0 : 10, sx = x => x < base || x >= base + 128 ? x : base + (((x - base + shift) % 128) + 128) % 128;
-        const wallPx = (j, i) => { const X = sx(i), R = j + (axis === "x" ? (X - i) / 2 : -(X - i) / 2); if (X >= wall.w || R < 0 || R >= wall.h) return null; const q = (R * wall.w + X) * 4; return wall.rgba[q + 3] < 128 ? null : [wall.rgba[q], wall.rgba[q + 1], wall.rgba[q + 2]]; };
-        for (let j = 0; j < Hh; j++) for (let i = 0; i < W; i++) {
-            if (open[j * W + i] || see(i, j)) continue;
-            const d = dist[j * W + i];
-            if (d <= FW) { put(i, j, d < 1.5 ? [0, 0, 0] : d < 2.5 ? pal.D : d < 5.5 ? pal.F : d < 7 ? pal.lip : ghMix(pal.D, [0, 0, 0], .5)); continue; }
-            const c = wallPx(j, i); if (c) put(i, j, c);
-        }
-    }
-    doorMemo.set(key, o); return o;
-}
+/* (The gallery's own walnut-doorway tunnel was dropped 14 Nov 2026 for the original tunnel, his call: the gallery's wall and dado run round it.) */
 
 /* The lift. Every part of the surround is a box standing out from the wall, drawn with its
    front, its side and its top, and black round every shape, so it sits in the hall as solidly
