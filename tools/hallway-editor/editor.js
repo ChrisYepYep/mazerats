@@ -1210,6 +1210,10 @@ function drawSelector() {
 function resize() {
     const r = $("stage").getBoundingClientRect();
     canvas.width = Math.max(100, Math.round(r.width)); canvas.height = Math.max(100, Math.round(r.height));
+    /* shown at exactly its own size: left at 100% of a stage a fraction of a pixel wider or narrower, the browser squeezed it by that fraction,
+       dropping or doubling a column somewhere, and as the view moved that column swept across fine detail (14 Nov 2026, his: the screensaver's
+       planters and plants flickering) */
+    canvas.style.width = canvas.width + "px"; canvas.style.height = canvas.height + "px";
     if (map) { clampCam(); if (tool === "walk" && walker && following()) followNow(); }
     paint();
 }
