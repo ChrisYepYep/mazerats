@@ -89,10 +89,13 @@
         for (const { q, z } of dustWindows()) {
             const W = q.w || 52, b = q.b || 0, top = q.top || 78, start = q.at - W / 32, n = Math.max(10, Math.min(46, Math.round(W * (top - b) / 110))), seed = q.at * 3 + q.line;
             for (let i = 0; i < n; i++) {
-                const wy = hash(i, seed) * W, wz = b + hash(i + 40, seed) * (top - b), far = wz / -SUN[2], k = hash(i + 80, seed) * far, ph = i * 1.3 + seed;
-                const mx = k * SUN[0] + Math.sin(t * .19 + ph) * 4, my = wy + k * SUN[1] + Math.cos(t * .23 + ph) * 4, mz = wz + k * SUN[2] + Math.sin(t * .13 + ph) * 3;
+                /* each mote drifts down the beam at its own pace and sways as it goes, fading in and out at the beam's ends (14 Nov 2026, his: "the dust
+                   specks ... don't appear to be moving, because it's so slow": they only swayed 4px over half a minute) */
+                const wy = hash(i, seed) * W, wz = b + hash(i + 40, seed) * (top - b), far = wz / -SUN[2], ph = i * 1.3 + seed, pace = 1.6 + hash(i + 120, seed) * 2.4;
+                const k = ((hash(i + 80, seed) * far + t * pace) % far + far) % far, ends = Math.min(1, Math.min(k, far - k) / 10);
+                const mx = k * SUN[0] + Math.sin(t * .55 + ph) * 5, my = wy + k * SUN[1] + Math.cos(t * .68 + ph) * 5, mz = wz + k * SUN[2] + Math.sin(t * .42 + ph) * 4;
                 const A = (q.axis === "y" ? LIVE.mapPoint(q.line + mx / 16, start + my / 16, z + Math.max(1, mz)) : LIVE.mapPoint(start + my / 16, q.line + mx / 16, z + Math.max(1, mz))), X = A[0], Y = A[1] - 6;
-                const al = (.42 + Math.sin(t * .7 + ph) * .16) * sun, x0 = Math.floor(X), y0 = Math.floor(Y), fx = X - x0, fy = Y - y0;
+                const al = (.42 + Math.sin(t * 1.4 + ph) * .16) * sun * ends, x0 = Math.floor(X), y0 = Math.floor(Y), fx = X - x0, fy = Y - y0;
                 for (const [dx, dy, w] of [[0, 0, (1 - fx) * (1 - fy)], [1, 0, fx * (1 - fy)], [0, 1, (1 - fx) * fy], [1, 1, fx * fy]]) { c.fillStyle = `rgba(255,240,200,${al * w})`; c.fillRect(x0 + dx, y0 + dy, 1, 1); }
             }
         }
@@ -100,7 +103,7 @@
     LIVE.add({ active: () => !screensaver.on && !matchMedia("(prefers-reduced-motion: reduce)").matches && sunAmount() > 0 && dustWindows().length > 0, over: drawDust });      // still under reduced motion (10 Nov scan b, live 12)
 
     /* ---------- the screensaver: a minute idle, the camera glides along a floor's paths, on the player's own map and inside its limits. Any input ends it ---------- */
-    const IDLE_MS = window.HALLWAY_IDLE_MS || 60000, SPEED = 13, EASE = 1.6, FADE = 1.6, MAX_LEN = 2100;
+    const IDLE_MS = window.HALLWAY_IDLE_MS || 60000, SPEED = 13, EASE = 1.6, FADE = 1.6, MAX_LEN = 2100, SS_ZOOM = 2, ZOOM_S = 1.5;
     const routes = new Map();
     /* the furthest apart two tiles can be, keeping off the walls */
     function floorRoute(l) {
@@ -124,7 +127,7 @@
         const floors = map.levels.filter(l => l.k >= 0 && l.cells && l.cells.length).map(l => ({ l, r: floorRoute(l) })).filter(f => f.r.len > 400); if (!floors.length) return false;
         /* the floor you're on, from the point on its path nearest where you were looking, going whichever way has further to go */
         const cam = LIVE.cam; let i = Math.max(0, floors.findIndex(f => f.l === LIVE.floor)), r = floors[i].r, best = 0, bd = 1e12; r.pts.forEach((p, k) => { const d = (p[0] - cam.x) ** 2 + (p[1] - cam.y) ** 2; if (d < bd) { bd = d; best = k; } });
-        Object.assign(screensaver, { on: true, floors, i, d: r.seg[best], dir: r.seg[best] > r.len / 2 ? -1 : 1, cam: { x: cam.x, y: cam.y }, phase: "move", t0: performance.now(), last: performance.now(), was: { cam }, fade: 0, dim: 0 });
+        Object.assign(screensaver, { on: true, floors, i, d: r.seg[best], dir: r.seg[best] > r.len / 2 ? -1 : 1, cam: { x: cam.x, y: cam.y }, phase: "move", t0: performance.now(), last: performance.now(), was: { cam, zoom: LIVE.zoom }, fade: 0, dim: 0, qBase: null, qVec: null, prevCam: null, vel: null });
         /* the music plays on (8 Nov 2026, his: it should keep playing when the screensaver starts) */
         LIVE.holdCamera(true); document.body.classList.add("hw-screensaver");
         if (!screensaver.title) { const t = screensaver.title = document.createElement("div"); t.className = "hw-ss-title"; t.setAttribute("aria-hidden", "true"); /* the Hallway's own card, and under it the way out on a little brass-edged plate to match (9 Nov 2026, his) */
@@ -138,7 +141,23 @@
     }
     function ssEnd() {
         if (!screensaver.on) return; screensaver.on = false; cancelAnimationFrame(screensaver.raf); document.body.classList.remove("hw-screensaver"); if (screensaver.title) screensaver.title.classList.remove("on"); LIVE.forceMood(null); const w = screensaver.was;
+        if (w.zoom && LIVE.zoomRaw) LIVE.zoomRaw(w.zoom);      /* your own zoom back */
         LIVE.camera(w.cam.x, w.cam.y); LIVE.holdCamera(false); LIVE.markActive(); LIVE.wake();
+    }
+    const STEPS = [[2, 1], [2, -1], [-2, 1], [-2, -1], [1, 0], [-1, 0], [0, 1], [0, -1]];
+    function stepped(s, z) {
+        const c = s.cam, prev = s.prevCam || c; s.prevCam = { x: c.x, y: c.y };
+        const v = s.vel = s.vel ? { x: s.vel.x * .92 + (c.x - prev.x) * .08, y: s.vel.y * .92 + (c.y - prev.y) * .08 } : { x: c.x - prev.x, y: c.y - prev.y }, vx = v.x, vy = v.y, sp = Math.hypot(vx, vy);      // smoothed, so a wobble in a turn doesn't flip it to and fro
+        let vec = s.qVec;
+        if (sp > 1e-4) { let best = -2; for (const q of STEPS) { const cos = (q[0] * vx + q[1] * vy) / (Math.hypot(q[0], q[1]) * sp); if (cos > best) { best = cos; vec = q; } } }
+        if (!vec) vec = STEPS[0];
+        const dev = { x: c.x * z, y: c.y * z };
+        if (!s.qBase || vec !== s.qVec) s.qBase = { x: Math.round(dev.x), y: Math.round(dev.y) };
+        s.qVec = vec;
+        const L2 = vec[0] * vec[0] + vec[1] * vec[1], n = Math.round(((dev.x - s.qBase.x) * vec[0] + (dev.y - s.qBase.y) * vec[1]) / L2), px = s.qBase.x + n * vec[0], py = s.qBase.y + n * vec[1];
+        /* drifted off its line (a curve): start again from where it is */
+        if (Math.hypot(dev.x - px, dev.y - py) > 1.5) { s.qBase = { x: Math.round(dev.x), y: Math.round(dev.y) }; return { x: s.qBase.x / z, y: s.qBase.y / z }; }
+        return { x: px / z, y: py / z };
     }
     function ssTick(now) {
         if (!screensaver.on) return; screensaver.raf = requestAnimationFrame(ssTick);
@@ -155,7 +174,14 @@
             screensaver.fade = Math.max(0, 1 - t / FADE); screensaver.d += SPEED * dt; if (t >= FADE) screensaver.phase = "move";
         }
         /* the camera follows a point on the path on a soft spring, so no turn is ever sudden; from where you were looking, it eases in */
-        const p = along(r, screensaver.d), k = 1 - Math.exp(-dt / EASE); let mx = (p[0] - screensaver.cam.x) * k, my = (p[1] - screensaver.cam.y) * k; const sp = Math.hypot(mx, my), cap = SPEED * 1.6 * dt; if (sp > cap) { mx *= cap / sp; my *= cap / sp; } screensaver.cam.x += mx; screensaver.cam.y += my; LIVE.camera(screensaver.cam.x, screensaver.cam.y); const real = LIVE.cam; screensaver.stuck = Math.hypot(real.x - screensaver.cam.x, real.y - screensaver.cam.y) > 2; screensaver.cam = { x: real.x, y: real.y };
+        const p = along(r, screensaver.d), k = 1 - Math.exp(-dt / EASE); let mx = (p[0] - screensaver.cam.x) * k, my = (p[1] - screensaver.cam.y) * k; const sp = Math.hypot(mx, my), cap = SPEED * 1.6 * dt; if (sp > cap) { mx *= cap / sp; my *= cap / sp; } screensaver.cam.x += mx; screensaver.cam.y += my; /* always at 2x (14 Nov 2026, his), eased into from wherever you were */
+        if (LIVE.zoomRaw && LIVE.zoom !== SS_ZOOM) { const z = LIVE.zoom, st = dt / ZOOM_S; LIVE.zoomRaw(Math.abs(SS_ZOOM - z) <= st ? SS_ZOOM : z + Math.sign(SS_ZOOM - z) * st); }
+        /* Shown in whole steps along the way it's going: across and down rounded separately made the picture wobble a pixel as it went (his:
+           "flicker", most on the planters' leaves). The step is whichever of two across and one down (the floor's slant), straight across or straight
+           up or down is nearest the direction of travel, counted from a base point that moves only when that direction changes. Its own place keeps the fraction: dropping it every frame was what
+           left a slow glide stuck in a stutter (his: "slows to a stutter and doesn't seem to recover") */
+        const shown = LIVE.zoom === SS_ZOOM ? stepped(screensaver, LIVE.zoom) : screensaver.cam;
+        LIVE.camera(shown.x, shown.y); const real = LIVE.cam; screensaver.stuck = Math.hypot(real.x - shown.x, real.y - shown.y) > 2; if (screensaver.stuck) screensaver.cam = { x: real.x, y: real.y };
         /* the time of day stays as it was (9 Nov 2026, his): a time you chose holds, and the day and night cycle runs on from where it was.
            The tiles about to show are asked for now, in the light they'll be in, so nothing arrives late */
         const md = LIVE.mood(), moods = md ? [...new Set([md.a, md.b])] : [];

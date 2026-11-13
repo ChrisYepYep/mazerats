@@ -54,13 +54,17 @@
     /* ---------- whose Habbo walks ----------
        A signed-in player whose Habbo is linked walks as it. Anyone else types their Origins name and picks the hotel, as Fallin' Furni asks, or walks as a guest.
        The art comes through the site's function: the page needs to read its pixels, and Habbo's imaging service doesn't allow that from here. */
-    const GUEST = "hr-145-1061.hd-180-1014.ch-220-1204.lg-280-1200.sh-300-1314", KEY = "hallway-avatar", HOTELS = ["COM", "ES", "BR"];
+    /* the guest: the classic standard Habbo, black hair and a yellow top, as Fallin' Furni's default (14 Nov 2026, his) */
+    const GUEST = "hd-180-1.ch-210-66.lg-270-82.sh-290-80.hr-100-61", KEY = "hallway-avatar", HOTELS = ["COM", "ES", "BR"];
     let figure = GUEST, linkedName = null, pickedNow = false;
     const remembered = () => { try { return JSON.parse(localStorage.getItem(KEY) || "null"); } catch (e) { return null; } };
     window.hallwayAvatarSrc = n => {
         const m = /^s-(\d)-(std|wlk|sit)(-crr|-drk)?-(\d)$/.exec(n); if (!m) return "art/av/" + n + ".png";
         return FN + "?" + new URLSearchParams({ av: figure, d: m[1], a: m[2], h: (m[3] || "").slice(1), f: m[4] }).toString();
     };
+    /* nobody walks in from the entrance until the picker is done with: Go, a guest, or closing it (14 Nov 2026, his: "don't have the avatar walk in until Go has been pressed") */
+    const gate = window.hallwayArrivalGate = window.hallwayArrivalGate || { held: true, go: null };
+    function letIn() { if (!gate.held) return; gate.held = false; const go = gate.go; gate.go = null; if (go) setTimeout(go, 200); }
     function wear(f) { if (f === figure) return; figure = f; if (window.hallwayAvatarChanged) window.hallwayAvatarChanged(); }
     async function lookUp(name, hotel) {
         const r = await realFetch("/.netlify/functions/room-figure?name=" + encodeURIComponent(name) + "&hotel=" + encodeURIComponent(hotel)), d = await r.json().catch(() => ({}));
@@ -100,7 +104,7 @@
         /* the whole card as one picture (his pick, 9 Nov 2026: dark oak, brass borders, the round rat crest, raised brass letters) */
         const mark = document.createElement("img"); mark.src = "/assets/img/hallway-plaque-420.png"; mark.srcset = "/assets/img/hallway-plaque-420.png 1x, /assets/img/hallway-plaque-420@2x.png 2x"; mark.width = 420; mark.height = 248; mark.alt = "Maze Rats Hallway"; mark.addEventListener("error", () => card.remove()); card.appendChild(mark);
         form.append(row, say, guest, notes); frame.appendChild(form); win.append(tbar, frame); back.append(card, win); document.body.appendChild(back); input.focus();
-        const done = () => { document.removeEventListener("keydown", keys, true); back.remove(); if (opener && opener.focus) opener.focus(); if (onDone) onDone(); };
+        const done = () => { document.removeEventListener("keydown", keys, true); back.remove(); if (opener && opener.focus) opener.focus(); letIn(); if (onDone) onDone(); };
         const keys = e => {
             if (e.key === "Escape") { e.stopPropagation(); done(); return; }
             if (e.key !== "Tab") return;
@@ -122,14 +126,14 @@
         const mine = await signedInHabbo(), was = remembered();
         if (mine) linkedName = mine.name;
         /* Picked while that was being looked up: the pick stands, and stands next time too */
-        if (pickedNow) { if (mine && was) try { localStorage.setItem(KEY, JSON.stringify({ ...was, overLinked: mine.name })); } catch (e) { /* private mode */ } return; }
+        if (pickedNow) { if (mine && was) try { localStorage.setItem(KEY, JSON.stringify({ ...was, overLinked: mine.name })); } catch (e) { /* private mode */ } if (!document.getElementById("playPicker")) letIn(); return; }
         if (mine) {
             /* Your linked Habbo, unless you chose someone else while signed in as it */
             /* and the splash still shows, your Habbo filled in, so you see what the Hallway is before walking in (9 Nov 2026, his) */
             if (was && was.overLinked === mine.name) { wear(was.figure || GUEST); picker(null, was.guest ? null : was); return; }
             wear(mine.figure); picker(null, mine); return;
         }
-        if (was && was.figure) { wear(was.figure); return; } if (was && was.guest) return;
+        if (was && was.figure) { wear(was.figure); letIn(); return; } if (was && was.guest) { letIn(); return; }
         picker();
     }
 

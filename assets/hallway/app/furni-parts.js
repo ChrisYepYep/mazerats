@@ -41,7 +41,7 @@
     ROWS.ghoval = { def: 2, min: 2, max: 2, flip: true, part: i => [i === 0 ? "gh_tablea_a_0_6_0" : "gh_table_a_0_6_0"] };
     const SINGLES = {
         ghchair: ["gh_chair_a_0_4_0"], ghlowtable: ["gh_sofatable_a_0_4_0"], gh_plinth_marble: [], gh_plinth_black: [], gh_plinth_column: [], gh_placard: [],
-        plant_yukka: [], plant_fruittree: [], plant_bigcactus: [], plant_minibonsai: [], plant_pineapple: [], mark_year: [],
+        plant_yukka: [], plant_fruittree: [], plant_bigcactus: [], plant_minibonsai: [], plant_pineapple: [], mark_year: [], mark_year_steel: [],
         plant: ["hw_plant_a_0_0_0"], statue: ["hw_statue_a_0_0_0"], fountain: ["hw_fountain_a_0_0_0"],
         plant_palm: [], plant_orange: [], plant_bonsai: [], plant_roses: [], plant_cactus: [], plant_bay: [], plant_sunflower: [], barstool: [], rarecase: [], arcade_ff: [], arcade_pura: [], arcade_guess: [], arcade_odd: [], arcade_scout: [], arcade_quiz: [], tablelamp: [], xmastree: [], xmaslantern: [], xmassmalltree: [], xmasdrinks: [], xmasduck: [], snowman: [], gift1: [], xmasfir: [], gift5: [], gift6: [], gift7: [], gift8: [], gift9: [], gift10: [], gift11: [], gift2: [], gift3: [], gift4: [], mark_scuff: [], mark_tile: [], mark_arrow: [], shelf: ["hw_shelf_a_0_4_0"], cabinet: ["hw_closet1_a_0_2_0"], water: ["hw_watermatic_a_0_4_0"],
         pillar: ["pillar1_a_0_0_0"], pillartall: ["pillar1_a_0_0_0"], smtable: ["hw_smtble_a_0_0_0"], ballpost: ["pillar0_a_0_0_0"]
@@ -51,7 +51,7 @@
 
     /* the pieces drawn from one picture that the renderer never mirrors look the same every way round: one turn, so R and Shift say so rather than
        writing a turn that changes nothing (10 Nov scan, editor 14). The two-tile tree does turn: it lies along x or y */
-    const SAME_ROUND = k => k.startsWith("plant_") || k.startsWith("gh_plinth_") || k === "mark_year" || /^gift\d+$/.test(k) || (k.startsWith("xmas") && k !== "xmasfir2") || k === "snowman";
+    const SAME_ROUND = k => k.startsWith("plant_") || k.startsWith("gh_plinth_") || /^gift\d+$/.test(k) || (k.startsWith("xmas") && k !== "xmasfir2") || k === "snowman";
     const turns = k => k === "chair" || k === "mark_arrow" || k === "barstool" ? 4 : (k === "mark_scuff" || k === "mark_tile" || k === "lamp" || k === "tablelamp" || k === "pillar" || k === "pillartall" || k === "smtable" || k === "ballpost" || SAME_ROUND(k)) ? 1 : 2;
     const rotOf = p => { const t = turns(p.k); return (((p.rot || 0) % t) + t) % t; };
     const lengthOf = p => { const r = ROWS[p.k]; return r ? (r.max ? r.max : Math.max(r.min, p.len || r.def)) : 1; };

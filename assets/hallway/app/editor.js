@@ -28,7 +28,7 @@ let dirty = false, savedAt = 0;
 const undoStack = [], redoStack = [];
 let hover = null, drag = null, spaceHeld = false;
 /* Wall lights and wall items hang at a set height, in steps of 4; hold Ctrl and move the mouse up or down to change it */
-const wallH = { lamp: 106, item: 100 }, WALL_STEP = 4, WALL_RANGE = { lamp: [44, 136], item: [20, 146] };
+const wallH = { lamp: 106, item: 100 }, itemHeights = {}, WALL_STEP = 4, WALL_RANGE = { lamp: [44, 136], item: [20, 146] };
 const wallHeightKind = t => t === "sconce" || t === "globelight" ? "lamp" : isWallItemTool(t) ? "item" : null;
 let wallCtrlLast = null, wallCtrlSpare = 0, ctrlNow = false, lampCtrlLast = null;
 const snapWall = (h, kind) => Math.max(WALL_RANGE[kind][0], Math.min(WALL_RANGE[kind][1], Math.round(h / WALL_STEP) * WALL_STEP));
@@ -65,7 +65,7 @@ const TOOLS = [
     ["Floors", [["floor", "Paint floor", T_ + "floor.png"], ["erase", "Remove floor", ICON.erase], ["rug", "Rug", T_ + "rug.png"], ["smallfloor", "Small squares floor", ICON.smallfloor], ["mark_arrow", "Arrow tile (links to another)", ICON.arrow], ["medal", "Carpet crest", T_ + "crest.png"], ["height", "Floor height", ICON.raise], ["floorlift", "Raise the floor only (walls stay)", ICON.raise], ["steps", "Small steps", T_ + "stair.png"]]],
     ["On walls", [["door", "Door", T_ + "door.png"], ["halfwall", "Half wall", ICON.halfwall], ["nowall", "No wall", ICON.nowall], ["addwall", "Show wall", ICON.addwall], ["sconce", "Wall light", T_ + "sconce.png"], ["globelight", "Globe wall light", "art/sconce-globe-y.png"], ["entrance", "Entrance", H_ + "entry_upper_right_mask.png"], ["theatre", "Theatredrome entrance (for show)", H_ + "entry_upper_right_mask.png"], ["tunnel", "Tunnel (walk through it)", H_ + "entry_upper_right_mask.png"], ["lift", "Lift", T_ + "lift.png"], ["stair", "Stairs: straight", T_ + "stair.png"], ["turn", "Stairs: turning", T_ + "turn.png"], ["side", "Stairs: left wall", T_ + "side.png"], ["sideturn", "Stairs: left wall, turning", T_ + "sideturn.png"]]],
     ["Furniture", [["sofa", "Sofa", T_ + "sofa.png"], ["chair", "Chair", H_ + "hw_chair_a_0_2_0.png"], ["barstool", "Arcade stool", "art/wall/i_barstool.png"], ["leetstand", "Poster stand: The Leet Show", "art/wall/i_leetstand.png"], ["leetstand2", "Poster stand, narrow: The Leet Show", "art/wall/i_leetstand2.png"], ["table", "Table", T_ + "table.png"], ["smtable", "Small round table", H_ + "hw_smtble_a_0_0_0.png"], ["ballpost", "Ball post", H_ + "pillar0_a_0_0_0.png"], ["rope", "Rope barrier", T_ + "rope.png"], ["archway", "Archway (drag it out)", H_ + "entry_upper_right_mask.png"], ["lamp", "Floor lamp", T_ + "lamp.png"], ["plant", "Plant", H_ + "hw_plant_a_0_0_0.png"], ["plant_palm", "Palm, terracotta pot", "art/wall/i_plant_palm.png"], ["plant_orange", "Orange tree, brass pot", "art/wall/i_plant_orange.png"], ["plant_bonsai", "Bonsai, walnut pot", "art/wall/i_plant_bonsai.png"], ["plant_roses", "Roses in a vase", "art/wall/i_plant_roses.png"], ["plant_cactus", "Cactus, terracotta pot", "art/wall/i_plant_cactus.png"], ["plant_bay", "Clipped bay, brass pot", "art/wall/i_plant_bay.png"], ["plant_sunflower", "Sunflower in a vase", "art/wall/i_plant_sunflower.png"], ["ero", "Planter", T_ + "planter.png"], ...PLANTERS.map(([k, name]) => [k, name, T_ + "planter-" + k.slice(4) + ".png"]), ["pillar", "Pillar", H_ + "pillar1_a_0_0_0.png"], ["pillartall", "Tall pillar", T_ + "pillartall.png"], ["statue", "Statue", H_ + "hw_statue_a_0_0_0.png"], ["fountain", "Fountain", H_ + "hw_fountain_a_0_0_0.png"], ["shelf", "Bookcase", H_ + "hw_shelf_a_0_4_0.png"], ["cabinet", "Cabinet", H_ + "hw_closet1_a_0_2_0.png"], ["water", "Water cooler", H_ + "hw_watermatic_a_0_4_0.png"], ["tablelamp", "Globe table lamp", "art/wall/i_tablelamp.png"], ["rarecase", "Rare in a glass case", "art/wall/i_rarecase.png"], ["trophy", "Old trophy cabinet", "art/wall/i_trophy.png"], ["mark_scuff", "Floor scuffs", "art/wall/i_mark_scuff.png"], ["mark_tile", "Lifted floor tile", "art/wall/i_mark_tile.png"]]],
-    ["Events Gallery", [["ghsofa", "Lobby sofa (drag it out)", H_ + "gh_sofab_a_0_4_0.png"], ["ghchair", "Lobby armchair", H_ + "gh_chair_a_0_4_0.png"], ["ghlowtable", "Lobby low table", H_ + "gh_sofatable_a_0_4_0.png"], ["ghoval", "Lobby oval table", H_ + "gh_table_a_0_6_0.png"], ["gh_plinth_marble", "Marble plinth", "art/wall/g_gh_plinth_marble_meiping.png"], ["gh_plinth_black", "Black plinth", "art/wall/g_gh_plinth_black_cup.png"], ["gh_plinth_column", "Fluted column", "art/wall/g_gh_plinth_column_celadon.png"], ["gh_placard", "Placard", "art/wall/g_gh_placard.png"], ["mark_year", "Year slab (3 x 2)", "art/wall/g_mark_year.png"], ["plant_yukka", "Yukka palm", "art/wall/g_plant_yukka.png"], ["plant_fruittree", "Fruit tree", "art/wall/g_plant_fruittree.png"], ["plant_bigcactus", "Big cactus", "art/wall/g_plant_bigcactus.png"], ["plant_minibonsai", "Bonsai, small", "art/wall/g_plant_minibonsai.png"], ["plant_pineapple", "Pineapple plant", "art/wall/g_plant_pineapple.png"]]],
+    ["Events Gallery", [["ghsofa", "Lobby sofa (drag it out)", H_ + "gh_sofab_a_0_4_0.png"], ["ghchair", "Lobby armchair", H_ + "gh_chair_a_0_4_0.png"], ["ghlowtable", "Lobby low table", H_ + "gh_sofatable_a_0_4_0.png"], ["ghoval", "Lobby oval table", H_ + "gh_table_a_0_6_0.png"], ["gh_plinth_marble", "Marble plinth", "art/wall/g_gh_plinth_marble_meiping.png"], ["gh_plinth_black", "Black plinth", "art/wall/g_gh_plinth_black_cup.png"], ["gh_plinth_column", "Fluted column", "art/wall/g_gh_plinth_column_celadon.png"], ["gh_placard", "Placard", "art/wall/g_gh_placard.png"], ["mark_year", "Year plate, brass (R turns it)", "art/wall/g_mark_year.png"], ["mark_year_steel", "Year plate, steel (R turns it)", "art/wall/g_mark_year_steel.png"], ["plant_yukka", "Yukka palm", "art/wall/g_plant_yukka.png"], ["plant_fruittree", "Fruit tree", "art/wall/g_plant_fruittree.png"], ["plant_bigcactus", "Big cactus", "art/wall/g_plant_bigcactus.png"], ["plant_minibonsai", "Bonsai, small", "art/wall/g_plant_minibonsai.png"], ["plant_pineapple", "Pineapple plant", "art/wall/g_plant_pineapple.png"]]],
     ...WALL_GROUPS.map(([kind, title]) => [title, WALL_ITEMS.filter(i => i.kind === kind).map(i => ["wi:" + i.id, i.name, "art/wall/" + i.y.layers[0].f])]),
     ["Games", [["arcade_ff", "Arcade: Fallin' Furni", "art/wall/i_arcade_ff.png"], ["arcade_pura", "Arcade: Pura Panic", "art/wall/i_arcade_pura.png"], ["arcade_guess", "Arcade: Guess the Maze", "art/wall/i_arcade_guess.png"], ["arcade_odd", "Arcade: Odd One Out", "art/wall/i_arcade_odd.png"], ["arcade_scout", "Arcade: green (no game yet)", "art/wall/i_arcade_scout.png"], ["arcade_quiz", "Arcade: purple (no game yet)", "art/wall/i_arcade_quiz.png"]]],
     ["Christmas", [["garland", "Garland (drag along a wall)", "art/wall/i_swag.png"], ["garland2", "Garland, two tiles", "art/wall/i_swag.png"], ["festoon", "Festoon lights (drag along a wall)", "art/wall/i_festoon.png"], ["xmastree", "Christmas tree", "art/wall/i_xmastree.png"], ["xmasfir", "Christmas tree, our own, 1 tile", "art/wall/i_xmasfir.png"], ["xmasfir2", "Christmas tree, our own, 2 tiles", "art/wall/i_xmasfir2.png"], ["xmasfir4", "Christmas tree, our own, 4 tiles", "art/wall/i_xmasfir4.png"], ["xmassmalltree", "Small tree", "art/wall/i_xmassmalltree.png"], ["snowman", "Snowman", "art/wall/i_snowman.png"], ["xmaslantern", "Lantern", "art/wall/i_xmaslantern.png"], ["xmasdrinks", "Christmas drinks", "art/wall/i_xmasdrinks.png"], ["xmasduck", "Christmas duck", "art/wall/i_xmasduck.png"], ["gift1", "Gift", "art/wall/i_gift1.png"], ["gift2", "Gift, blue", "art/wall/i_gift2.png"], ["gift3", "Gift, green", "art/wall/i_gift3.png"], ["gift4", "Gift, gold", "art/wall/i_gift4.png"], ["gift5", "Present, red", "art/wall/i_gift5.png"], ["gift6", "Present, lime", "art/wall/i_gift6.png"], ["gift7", "Present, purple", "art/wall/i_gift7.png"], ["gift8", "Present, orange", "art/wall/i_gift8.png"], ["gift9", "Present, yellow", "art/wall/i_gift9.png"], ["gift10", "Present, pink", "art/wall/i_gift10.png"], ["gift11", "Present, silver", "art/wall/i_gift11.png"], ...WALL_ITEMS.filter(i => i.kind === "xmas").map(i => ["wi:" + i.id, i.name, "art/wall/" + i.y.layers[0].f])]],
@@ -109,7 +109,7 @@ const HINTS = {
     door: "Click a top wall to add a door. It takes the next maze without one. To change it, select the door and use its Maze list.",
     globelight: "Click a wall to hang a small globe light, or a pillar's face to fix one there. Hold B for the faces turned away from you. Click the same face again to take it off. Hold Ctrl and move the mouse up or down to change the height.",
     sconce: "Click a top wall to hang a wall light. It lights the wall and floor around it. Hold Ctrl and move the mouse up or down to change the height.",
-    lift: "Click a back wall to add a lift. Put in as many as you like: each one can take you to any other.",
+    lift: "Click a wall to add a lift, a back wall or a left one. Put in as many as you like: each one can take you to any other.",
     tunnel: "Click a wall to put a tunnel there: Habbos can walk into it. A second tunnel links to the first, and walking to the back of one brings you out of the other. Choose where each leads in Select and move. Clicking one again takes it away.",
     entrance: "Click a wall to put the entrance there. There's one: Habbos arrive through it, and walking back in leaves the hallway.",
     stair: "Click a back wall: a straight flight, cut into the wall, up to the next floor.",
@@ -128,6 +128,14 @@ const levelZ = l => l.k * Z1;
    client's own short flights are 4px a step, 6px deep. */
 const HEIGHT = 1, STEP_R = 4, STEP_D = 6 / 16, MAX_RISE = 64;
 const heightAt = (l, x, y) => ((l.rise && l.rise[cellKey(x, y)]) || 0) + ((l.floorLift && l.floorLift[cellKey(x, y)]) || 0);
+/* A lift on a back wall is { level, x, y }: x its first tile along the wall, y the wall's line. On a left wall (13 Nov 2026, his: "Lifts can't
+   be placed on all walls") it is { level, axis: "y", x, y }: x the wall's line, y its first tile along it, the back wall's lift mirrored.
+   liftPt gives a tile by the back wall's terms: a tiles along from its first, b out from the wall (negative: into the cabin). */
+const liftLeft = q => q.axis === "y", liftAxis = q => liftLeft(q) ? "y" : "x", liftLine = q => liftLeft(q) ? q.x : q.y, liftAlong = q => liftLeft(q) ? q.y : q.x;
+const liftPt = (q, a, b) => liftLeft(q) ? [q.x + b, q.y + a] : [q.x + a, q.y + b];
+const liftLocal = (q, x, y) => liftLeft(q) ? [y - q.y, x - q.x] : [x - q.x, y - q.y];
+/* the floor in front of it that has to stay level: 3 tiles out, from a tile before it to past its call plate */
+const liftFront = q => { const a = liftPt(q, -1, 0), b = liftPt(q, 5, 3); return { x0: Math.min(a[0], b[0]), x1: Math.max(a[0], b[0]), y0: Math.min(a[1], b[1]), y1: Math.max(a[1], b[1]) }; };
 /* the height a cell's walls stand at: its rise alone, not the lift that raises only its floor (render/hw3.js patchesByHeight) */
 const wallHeightAt = (l, x, y) => (l.rise && l.rise[cellKey(x, y)]) || 0;
 const tileZ = (l, x, y) => levelZ(l) + heightAt(l, x, y) + (landingOf(l, x, y) ? LANDING : 0);
@@ -142,6 +150,8 @@ const seeHidden = (l, h) => seeCut !== null && l === level && h > seeCut;
 function migrateHeights(m) {
     if (m.lift) { m.lifts = m.lifts || [m.lift]; delete m.lift; } m.lifts = m.lifts || [];
     for (const l of m.levels) delete l.teles;                   // Imperial Teleports are gone: lifts do that now
+    /* windows used to be placed looking at the lawn whatever you chose, so every one showed the same: once, those go to "whatever's behind it" (14 Nov 2026) */
+    if (!m.winViews) { for (const l of m.levels) for (const it of (l.wallItems || [])) if (it.k === "i_window" && it.view === "lawn") delete it.view; m.winViews = 1; }
     for (const l of m.levels) if (l.edgeItems) { for (const q of l.edgeItems) q.s = { brass: "gold", iron: "gold", bronze: "gold", banister: "wood", rope: "wood" }[q.s] || q.s; l.edgeItems = l.edgeItems.filter(q => EDGE_STYLES.some(e => e[0] === q.s)); if (!l.edgeItems.length) delete l.edgeItems; }   // edge planters became furniture
     for (const l of m.levels) if (l.wallItems) { l.wallItems = l.wallItems.filter(q => (window.WALL_ITEMS || []).some(i => i.id === q.k)); if (!l.wallItems.length) delete l.wallItems; }   // the player wall items went
     for (const l of m.levels) if (l.halfWalls) { const out = new Set(l.halfTiles || []); for (const k of l.halfWalls) { const [a, n, c] = k.split("|"); out.add(a + "|" + n + "|" + (+c * 2)); out.add(a + "|" + n + "|" + (+c * 2 + 1)); } delete l.halfWalls; l.halfTiles = [...out]; }
@@ -333,7 +343,7 @@ function holes(l) {
 const inRect = (r, x, y) => x >= r.x0 && x < r.x1 && y >= r.y0 && y < r.y1;
 function heightLocked(l, x, y) {
     if (holes(l).some(r => inRect(r, x, y))) return true;
-    if (map.lifts.some(q => q.level === l.id && y >= q.y && y < q.y + 3 && x >= q.x - 1 && x < q.x + 5)) return true;
+    if (map.lifts.some(q => { if (q.level !== l.id) return false; const [a, b] = liftLocal(q, x, y); return b >= 0 && b < 3 && a >= -1 && a < 5; })) return true;
     if (map.entrance && map.entrance.level === l.id) { const e = map.entrance, along = e.axis === "x" ? x : y, away = e.axis === "x" ? y : x; if (along >= e.at - 1 && along < e.at + 9 && away >= e.line && away < e.line + 3) return true; }
     for (const st of map.stairs) {
         if (st.low === l.id) { if (thruLeft(st) ? x >= st.x && x < st.x + 3 && y >= st.a - 1 && y < st.b + 1 : y >= st.y && y < st.y + 3 && x >= st.a - 1 && x < st.b + 1) return true; }
@@ -365,7 +375,7 @@ function pruneOffFloor(l) {
     keep("medals", q => hasFloor(l, q.x + 2, q.y + 2));
     keep("rugs", r => { for (let x = r.x0; x < r.x1; x++) for (let y = r.y0; y < r.y1; y++) if (hasFloor(l, x, y)) return true; return false; });
     for (const name of ["halfTiles", "noWalls", "showWalls"]) keep(name, k => { const [axis, line, t] = k.split("|"); return axis === "x" ? hasFloor(l, +t, +line) : hasFloor(l, +line, +t); });
-    map.lifts = map.lifts.filter(q => { if (q.level !== l.id) return true; for (let t = q.x; t < q.x + 3; t++) if (!hasFloor(l, t, q.y)) return false; return true; });
+    map.lifts = map.lifts.filter(q => { if (q.level !== l.id) return true; for (let t = 0; t < 3; t++) if (!hasFloor(l, ...liftPt(q, t, 0))) return false; return true; });
     const e = map.entrance; if (e && e.level === l.id) for (let t = e.at; t < e.at + 8; t++) if (!(e.axis === "x" ? hasFloor(l, t, e.line) : hasFloor(l, e.line, t))) { delete map.entrance; flash("The entrance went with that floor. Place a new one."); break; }
 }
 /* the edge between two heights nearest the mouse, on any side of a tile: where steps can go */
@@ -628,9 +638,28 @@ function stepGhost(st) {
     const zl = level === null ? 0 : (st.dir === "front" ? (st.axis === "y" ? tileZ(level, st.a, st.line - 1) : tileZ(level, st.line - 1, st.a)) : (st.axis === "y" ? tileZ(level, st.a, st.line) : tileZ(level, st.line, st.a)));
     if (st.axis === "y") quad(st.a, f.from, st.b, f.to, zl, "rgba(79,209,255,.35)", "#4fd1ff"); else quad(f.from, st.a, f.to, st.b, zl, "rgba(79,209,255,.35)", "#4fd1ff");
 }
+/* Laying steps round a corner in one drag (13 Nov 2026, his: "small steps now need the ability to be drawn around corners too"): carried
+   past the end of the edge the drag started on, onto an edge that turns from that end with the same two heights, the first run goes to the
+   corner and a second one runs from the corner along the new edge to the mouse. The renderer joins them with a corner piece. */
+function stepsRoundCorner(l, edge, run, f) {
+    const e2 = heightEdgeAt(l, f[0], f[1]); if (!e2 || e2.axis === edge.axis) return null;
+    const sides = (axis, line, t) => axis === "y" ? [heightAt(l, t, line - 1), heightAt(l, t, line)] : [heightAt(l, line - 1, t), heightAt(l, line, t)];
+    const h1 = sides(edge.axis, edge.line, edge.t), h2 = sides(e2.axis, e2.line, e2.t), hi1 = Math.max(...h1), lo1 = Math.min(...h1);
+    if (hi1 !== Math.max(...h2) || lo1 !== Math.min(...h2)) return null;
+    const run2 = edgeRun(l, e2.axis, e2.line, e2.t);
+    /* the corner: an end of the first edge's run, which the new edge's run starts or ends at */
+    for (const end of [run.b, run.a]) {
+        if (e2.line !== end) continue;
+        const at = run2.a === edge.line ? "a" : run2.b === edge.line ? "b" : null; if (!at) continue;
+        const first = { axis: edge.axis, line: edge.line, dir: edge.dir, a: end === run.b ? Math.min(edge.t, run.b - 1) : run.a, b: end === run.b ? run.b : Math.max(edge.t, run.a) + 1 };
+        const t = Math.max(run2.a, Math.min(run2.b - 1, e2.t)), st = { axis: e2.axis, line: e2.line, dir: e2.dir, a: at === "a" ? run2.a : t, b: at === "a" ? t + 1 : run2.b };
+        return { first, st };
+    }
+    return null;
+}
 function drawStepGhost() {
     if (tool !== "steps") return;
-    if (drag && drag.kind === "laysteps") { stepGhost(drag.st); return; }
+    if (drag && drag.kind === "laysteps") { if (drag.st2) { stepGhost(drag.st2.first); stepGhost(drag.st2.st); } else stepGhost(drag.st); return; }
     if (hover && hover.edge) stepGhost({ axis: hover.edge.axis, line: hover.edge.line, dir: hover.edge.dir, a: hover.edge.t, b: hover.edge.t + 1 });
 }
 const stepsDrop = (l, axis, line, t) => { const e = doorEdge(l, axis, line, t); return !!e && e.kind === "drop"; };
@@ -824,11 +853,18 @@ async function liveFetch() {
     mine.busy = false; if (live === mine) { liveFetch(); paint(); }
 }
 /* ---------- day and night ----------
-   One minute of daylight, then five of evening, night and dawn, over and over, while walking. Each mood is drawn
-   whole by the server, and the view fades from one to the next. The Time list overrides it. */
-const DAY_MS = 60000, CYCLE_MS = 360000;
-/* seconds into the cycle: [from, mood, fade-in seconds up to "from"] */
-const CYCLE = [[0, "day"], [60, "day"], [110, "dusk"], [170, "night"], [300, "night"], [340, "dawn"], [360, "day"]];
+   Ten minutes, over and over, while walking (14 Nov 2026, his): two of daylight; three of evening coming on slowly, the lights going on one
+   by one at random about the map; two of night; then the same three in reverse, dawn's lights going out one by one into the day. Each mood is
+   drawn whole by the server and the view fades from one to the next. The slow fades are drawn here: daylight dimmed towards the evening's
+   (or dawn's) own light by multiplying (the renderer's light is a multiply, so that's very nearly the evening with every lamp off), with
+   each lamp's pool cut from the lit evening's tiles and faded in on its own. The Time list overrides it. */
+const CYCLE_MS = 600000;
+/* seconds into the cycle: [from, mood]; a fade runs from one entry to the next */
+const CYCLE = [[0, "day"], [120, "day"], [300, "dusk"], [330, "night"], [420, "night"], [450, "dawn"], [600, "day"]];
+/* the fades whose lamps go on (or off) one by one: the lit mood, and how the renderer's light compares with daylight's (LIGHTS in hw3.js) */
+const LAMP_FADES = { "day>dusk": { lit: "dusk", ratio: [.52 / 1.1, .41 / 1.08, .38 / 1.04], on: true }, "dawn>day": { lit: "dawn", ratio: [.5 / 1.1, .46 / 1.08, .56 / 1.04], on: false } };
+const LAMP_FADE_S = 5;           // one lamp's own fade
+const LAMP_REACH = 135;          // how far a lamp's pool reaches, in map pixels (LIGHTS px about 100, and a soft edge past it)
 const MOOD_TINT = { day: [0, 0, 0, 0], dusk: [70, 30, 20, .3], night: [12, 16, 44, .62], dawn: [50, 36, 70, .3], sconces: [40, 28, 24, .26], failing: [14, 14, 22, .6], cold: [20, 34, 30, .42], gas: [24, 14, 10, .62] };
 const MOOD_NAME = { day: "Day", dusk: "Evening", night: "Night", dawn: "Dawn" };
 let timeMode = localStorage.getItem("hallway-time") || "cycle";
@@ -844,7 +880,10 @@ function moodNow() {
     const t = ((performance.now() - cycleStart) % CYCLE_MS) / 1000;
     for (let i = 0; i < CYCLE.length - 1; i++) {
         const [t0, m0] = CYCLE[i], [t1, m1] = CYCLE[i + 1];
-        if (t >= t0 && t < t1) return { a: m0, b: m1, f: m0 === m1 ? 0 : (t - t0) / (t1 - t0) };
+        if (t >= t0 && t < t1) {
+            const f = m0 === m1 ? 0 : (t - t0) / (t1 - t0), lamps = LAMP_FADES[m0 + ">" + m1];
+            return lamps ? { a: m0, b: m1, f, lamps, at: t - t0, span: t1 - t0 } : { a: m0, b: m1, f };
+        }
     }
     return { a: "day", b: "day", f: 0 };
 }
@@ -881,8 +920,61 @@ function preloadMap() {
     for (const mood of order) for (const [tx, ty] of cells) { if (moodInflight.size >= Math.max(1, CONCURRENT - 1)) return; const k = (window.hallwayXmas ? mood + "+x" : mood) + "|" + tx + "," + ty, t = moodTiles.get(k); if (t && t.v === version) continue; if (moodInflight.has(k) || tileWaiting(k)) continue; moodTile(mood, tx, ty); }
 }
 setInterval(preloadMap, 300);
+/* every light on the map, where its pool falls in map pixels, each with its own moment in a slow fade (random but fixed for its place) */
+let lampMemo = null;
+function lampPools() {
+    if (lampMemo && lampMemo.map === map && lampMemo.v === version) return lampMemo.list;
+    const list = [], seen = new Set(), add = (l, x, y, up) => {
+        const k = Math.round(x * 4) + "," + Math.round(y * 4) + "," + l.k; if (seen.has(k)) return; seen.add(k);
+        const p = P(x, y, tileZ(l, Math.floor(x), Math.floor(y)) + up); let h = (Math.round(x * 4) * 374761393 + Math.round(y * 4) * 668265263 + l.k * 97) | 0;
+        h = (h ^ (h >>> 13)) * 1274126177 | 0; list.push({ x: p[0], y: p[1], r: ((h ^ (h >>> 16)) >>> 0) / 4294967296 });
+    };
+    for (const l of (map && map.levels) || []) {
+        for (const q of (l.lamps || [])) { if (q.axis === "x") add(l, q.at, q.line + 1, 40); else add(l, q.line + 1, q.at, 40); }
+        for (const p of (l.props || [])) if (p.k === "lamp" || p.k === "tablelamp" || (p.lights && p.lights.length)) add(l, p.x + .5, p.y + .5, 30);
+        for (const it of (l.wallItems || [])) { const def = wallItemOf(it.k); if (def && def.lit) { if (it.axis === "x") add(l, it.at, it.line + 1, 40); else add(l, it.line + 1, it.at, 40); } }
+    }
+    lampMemo = { map, v: version, list }; return list;
+}
+const smooth = f => f * f * (3 - 2 * f);
+let litCanvas = null, maskCanvas = null;
+/* a slow fade with its lamps: daylight dimmed to the lit mood's light, then each lamp's pool of the lit mood over it, as far on as it is */
+function drawLampFade(m, ox, oy, x0, x1, y0, y1) {
+    const L = m.lamps, g = L.on ? smooth(m.f) : 1 - smooth(m.f), S = TILE * zoom;
+    let any = false;
+    for (let ty = y0; ty <= y1; ty++) for (let tx = x0; tx <= x1; tx++) {
+        const d = moodTile("day", tx, ty) || moodTile(L.lit, tx, ty), X = ox + tx * S, Y = oy + ty * S;
+        if (!d) { const t = tiles.get(tx + "," + ty); if (t) ctx.drawImage(t.img, X, Y, S, S); continue; }
+        ctx.drawImage(d.img, X, Y, S, S); any = true;
+    }
+    if (!any) return;
+    ctx.save(); ctx.globalCompositeOperation = "multiply";
+    ctx.fillStyle = "rgb(" + L.ratio.map(r => Math.round(255 * (1 + (r - 1) * g))).join(",") + ")"; ctx.fillRect(0, 0, canvas.width, canvas.height); ctx.restore();
+    /* how far on each lamp is: going on, each at its own moment through the middle of the fade; going off, the same backwards */
+    const pools = lampPools(), fadeF = LAMP_FADE_S / m.span, on = [];
+    for (const q of pools) {
+        const at = L.on ? .15 + .75 * q.r : .05 + .7 * q.r, k = L.on ? (m.f - at) / fadeF : 1 - (m.f - at) / fadeF, a = Math.max(0, Math.min(1, k));
+        if (a > 0) on.push([q, a]);
+    }
+    if (!on.length) return;
+    const W = canvas.width, H = canvas.height;
+    if (!litCanvas || litCanvas.width !== W || litCanvas.height !== H) { litCanvas = document.createElement("canvas"); litCanvas.width = W; litCanvas.height = H; maskCanvas = document.createElement("canvas"); maskCanvas.width = W; maskCanvas.height = H; }
+    const lc = litCanvas.getContext("2d"), mc = maskCanvas.getContext("2d"); lc.imageSmoothingEnabled = false;
+    lc.globalCompositeOperation = "source-over"; lc.clearRect(0, 0, W, H);
+    for (let ty = y0; ty <= y1; ty++) for (let tx = x0; tx <= x1; tx++) { const t = moodTile(L.lit, tx, ty); if (t) lc.drawImage(t.img, ox + tx * S, oy + ty * S, S, S); }
+    mc.globalCompositeOperation = "source-over"; mc.clearRect(0, 0, W, H); mc.globalCompositeOperation = "lighter";
+    const R = LAMP_REACH * zoom;
+    for (const [q, a] of on) {
+        const cx = ox + q.x * zoom, cy = oy + q.y * zoom; if (cx < -R || cy < -R || cx > W + R || cy > H + R) continue;
+        const gr = mc.createRadialGradient(cx, cy, R * .35, cx, cy, R); gr.addColorStop(0, "rgba(0,0,0," + a + ")"); gr.addColorStop(1, "rgba(0,0,0,0)");
+        mc.fillStyle = gr; mc.fillRect(cx - R, cy - R, 2 * R, 2 * R);
+    }
+    lc.globalCompositeOperation = "destination-in"; lc.drawImage(maskCanvas, 0, 0);
+    ctx.drawImage(litCanvas, 0, 0);
+}
 function drawMoods(ox, oy, x0, x1, y0, y1) {
     const m = moodNow(); if (!m) return false;
+    if (m.lamps) { drawLampFade(m, ox, oy, x0, x1, y0, y1); const name = m.f < .5 ? m.a : m.b; if ($("timeNow").textContent !== MOOD_NAME[name]) $("timeNow").textContent = MOOD_NAME[name]; return true; }
     for (let ty = y0; ty <= y1; ty++) for (let tx = x0; tx <= x1; tx++) {
         const a = moodTile(m.a, tx, ty), b = m.f > 0 ? moodTile(m.b, tx, ty) : null, X = ox + tx * TILE * zoom, Y = oy + ty * TILE * zoom, S = TILE * zoom;
         /* what a mood hasn't got yet is shown in whichever has */
@@ -1228,7 +1320,7 @@ window.HallwayLive = {
     tileFree(l) { const so = solid(l), hs = holes(l), sl = stairLevels().slots.get(l); return (x, y) => hasFloor(l, x, y) && !so.has(x + "," + y) && !hs.some(h => inRect(h, x, y)) && !(sl && sl.has(x + "," + y)); },
     nodeZ: (l, x, y) => nodeZ(l, x, y), mood: () => moodNow(), forceMood(m) { moodForced = m; }, loadMood: (m, x, y) => { const tx = Math.floor(x / TILE), ty = Math.floor(y / TILE); moodTile(m, tx, ty); },
     view() { const hw = canvas.width / zoom / 2, hh = canvas.height / zoom / 2; return { x0: cam.x - hw, x1: cam.x + hw, y0: cam.y - hh, y1: cam.y + hh, w: canvas.width, h: canvas.height }; },
-    camera(x, y) { cam.x = x; cam.y = y; clampCam(); }, get cam() { return { x: cam.x, y: cam.y }; }, holdCamera(on) { camHeld = on; if (!on) followNow(); }, setZoom: z => setZoom(z, canvas.width / 2, canvas.height / 2),
+    camera(x, y) { cam.x = x; cam.y = y; clampCam(); }, get cam() { return { x: cam.x, y: cam.y }; }, holdCamera(on) { camHeld = on; if (!on) followNow(); }, setZoom: z => setZoom(z, canvas.width / 2, canvas.height / 2), zoomRaw(z) { zoom = Math.max(1, Math.min(4, z)); const zr = Math.round(zoom * 100) / 100; $("zoomVal").textContent = zr + "x"; $("zoomOut").disabled = zoom <= 1; $("zoomIn").disabled = zoom >= 4; clampCam(); paint(); },      /* the screensaver's smooth zoom: no recentring, it moves the camera itself */
     realNight: () => realNight(), enterRoom(target, axis) { if (!walker || roomSession) return false; const me = walker; me.busy = true; me.pts = []; me.walking = false; roomSession = RoomView.enter($("stage"), { room: target.room, facts: target.facts, edge: axis === "x" ? "y" : "x", zoom: () => zoom, wheel: d => setZoom(zoom + (d < 0 ? 1 : -1)), onLeave: () => { roomSession.close(); roomSession = null; me.busy = false; paint(); } }); return true; },
     editorApi: () => ({ lostSpotReachable: (l, x, y) => lostSpotReachable(l, x, y), lostSeatsBeside: (l, x, y) => lostSeatsBeside(l, x, y), snapshot, changed, setTool, paint, flash: t => flash(t), setFloor: l => setFloor(l), toPx: (cx, cy) => toPx(cx, cy), tileAt(cx, cy) { const [px, py] = toPx(cx, cy), u = floorUnder(px, py); return u ? { level: u[0].stair ? u[0].stair.low.id : u[0].id, x: u[1], y: u[2] } : null; }, get tool() { return tool; }, pickOnce(f) { pickNext = f || null; if (f) flash("Click the spot on the map. Esc cancels."); }, get level() { return level; } }),
     onClick(f) { liveClicks.add(f); return () => liveClicks.delete(f); }, cheats: () => cheats,
@@ -1307,7 +1399,8 @@ function setTool(t) {
     if ($("liftPanel")) hideLiftPanel(); liftDoors.clear(); doorStates.clear(); if (roomSession) { roomSession.close(); roomSession = null; }
     if ($("heightBar")) $("heightBar").hidden = !brushTool(t);
     if (brushTool(t)) setBrush(brushes[t]);
-    if (isWallItemTool(t)) { const d0 = wallItemOf(t.slice(3)); wallH.item = (d0 && d0.h) || 100; }
+    /* the height last chosen for this piece, not its own every time the tool is picked (14 Nov 2026, his: banners "default back to the top of the wall") */
+    if (isWallItemTool(t)) { const d0 = wallItemOf(t.slice(3)); wallH.item = itemHeights[t.slice(3)] || (d0 && d0.h) || 100; }
     if (RAISE(t)) tableLampZ = null;
     if (t !== "walk") walker = null; else startWalk();
     document.querySelectorAll("[data-tool]").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.tool === t)));
@@ -1323,7 +1416,7 @@ function snapRect(a, b) {
     if (tool === "rug" || tool === "smallfloor") return { x0: Math.floor(x0), x1: Math.floor(x1) + 1, y0: Math.floor(y0), y1: Math.floor(y1) + 1 };
     return { x0: Math.floor(x0 / 2) * 2, x1: (Math.floor(x1 / 2) + 1) * 2, y0: Math.floor(y0 / 2) * 2, y1: (Math.floor(y1 / 2) + 1) * 2 };
 }
-const FURNI = ["ghsofa", "ghchair", "ghlowtable", "ghoval", "gh_plinth_marble", "gh_plinth_black", "gh_plinth_column", "gh_placard", "mark_year", "plant_yukka", "plant_fruittree", "plant_bigcactus", "plant_minibonsai", "plant_pineapple", "leetstand", "leetstand2", "barstool", "plant_palm", "plant_orange", "plant_bonsai", "plant_roses", "plant_cactus", "plant_bay", "plant_sunflower", "archway", "mark_arrow", "arcade_ff", "arcade_pura", "arcade_guess", "arcade_odd", "arcade_scout", "arcade_quiz", "tablelamp", "xmastree", "xmassmalltree", "snowman", "xmaslantern", "xmasdrinks", "xmasduck", "xmasfir", "xmasfir2", "xmasfir4", "gift1", "gift2", "gift3", "gift4", "gift5", "gift6", "gift7", "gift8", "gift9", "gift10", "gift11", "sofa", "chair", "table", "smtable", "ballpost", "rope", "lamp", "plant", "ero", "ero_stone", "ero_walnut", "ero_evergreen", "ero_flower", "pillar", "pillartall", "statue", "fountain", "shelf", "cabinet", "water", "rarecase", "trophy", "mark_scuff", "mark_tile"];
+const FURNI = ["ghsofa", "ghchair", "ghlowtable", "ghoval", "gh_plinth_marble", "gh_plinth_black", "gh_plinth_column", "gh_placard", "mark_year", "mark_year_steel", "plant_yukka", "plant_fruittree", "plant_bigcactus", "plant_minibonsai", "plant_pineapple", "leetstand", "leetstand2", "barstool", "plant_palm", "plant_orange", "plant_bonsai", "plant_roses", "plant_cactus", "plant_bay", "plant_sunflower", "archway", "mark_arrow", "arcade_ff", "arcade_pura", "arcade_guess", "arcade_odd", "arcade_scout", "arcade_quiz", "tablelamp", "xmastree", "xmassmalltree", "snowman", "xmaslantern", "xmasdrinks", "xmasduck", "xmasfir", "xmasfir2", "xmasfir4", "gift1", "gift2", "gift3", "gift4", "gift5", "gift6", "gift7", "gift8", "gift9", "gift10", "gift11", "sofa", "chair", "table", "smtable", "ballpost", "rope", "lamp", "plant", "ero", "ero_stone", "ero_walnut", "ero_evergreen", "ero_flower", "pillar", "pillartall", "statue", "fountain", "shelf", "cabinet", "water", "rarecase", "trophy", "mark_scuff", "mark_tile"];
 const Parts = window.FurniParts;
 let placeRot = 0;                // which way round the next piece goes, set with R
 const fits = (l, p) => Parts.tiles(p).every(t => placeable(l, t[0], t[1]));       // every tile it stands on: the two-by-two ones too (10 Nov scan)
@@ -1469,10 +1562,16 @@ function pillarFaceAt(l, px, py) {
     }
     return null;
 }
-function liftFits(l, x, y, self) {
-    if (map.lifts.some(q => q !== self && q.level === l.id && q.y === y && Math.abs(q.x - x) < 6)) return false;
-    if ((l.doors || []).some(d => d.axis === "x" && d.line === y && d.at < x + 3 && d.at + 2 > x)) return false;
-    for (let t = x; t < x + 3; t++) if (!hasFloor(l, t, y) || wallState(l, "x", y, t) !== "full") return false;
+/* q: the lift as it would be, on a back wall or a left one */
+function liftFits(l, q, self) {
+    const axis = liftAxis(q), line = liftLine(q), at = liftAlong(q);
+    if (map.lifts.some(r => r !== self && r.level === l.id && liftAxis(r) === axis && liftLine(r) === line && Math.abs(liftAlong(r) - at) < 6)) return false;
+    /* round a corner, a back wall's lift and a left wall's mustn't share the floor in front of them */
+    const F = liftFront(q); if (map.lifts.some(r => { if (r === self || r.level !== l.id || liftAxis(r) === axis) return false; const G = liftFront(r); return G.x0 < F.x1 && G.x1 > F.x0 && G.y0 < F.y1 && G.y1 > F.y0; })) return false;
+    if ((l.doors || []).some(d => d.axis === axis && d.line === line && (axis === "x" ? d.at < at + 3 && d.at + 2 > at : d.at - 2 < at + 3 && d.at > at))) return false;
+    for (let t = 0; t < 3; t++) if (!hasFloor(l, ...liftPt(q, t, 0)) || hasFloor(l, ...liftPt(q, t, -1)) || wallState(l, axis, line, at + t) !== "full") return false;
+    /* nor in the entrance, a tunnel or a flight of stairs: a left wall is where side stairs come down */
+    for (let t = 0; t < 3; t++) if (wallTaken({ axis, at: axis === "x" ? at + t : at + t + 1, line }, l, true)) return false;
     return true;
 }
 function drawLampArt(l, q, alpha) {
@@ -1625,15 +1724,14 @@ function act(px, py) {
         });
         return;
     }
-    if (isWallItemTool(tool)) { if (w) { const q = wallSpot(w, level, px, py); place(() => (level.wallItems = level.wallItems || []).push({ k: tool.slice(3), axis: w.axis, at: (() => { const t = { k: tool.slice(3), at: q.at, axis: w.axis }; snapWallItem(t); return t.at; })(), line: w.line, h: stairH(w, w.stair ? q.h : (() => { const d0 = wallItemOf(tool.slice(3)); return d0 && d0.locked ? d0.h : wallH.item; })()), ...(tool === "wi:i_window" ? { w: 32, b: 0, top: 128, view: "lawn" } : {}) })); } return; }
+    if (isWallItemTool(tool)) { if (w) { const q = wallSpot(w, level, px, py); place(() => (level.wallItems = level.wallItems || []).push({ k: tool.slice(3), axis: w.axis, at: (() => { const t = { k: tool.slice(3), at: q.at, axis: w.axis }; snapWallItem(t); return t.at; })(), line: w.line, h: stairH(w, w.stair ? q.h : (() => { const d0 = wallItemOf(tool.slice(3)); return d0 && d0.locked ? d0.h : wallH.item; })()), ...(tool === "wi:i_window" ? { w: 32, b: 0, top: 128 } : {}) })); } return; }
     if (tool === "sconce") { if (w) place(() => (level.lamps = level.lamps || []).push({ axis: w.axis, at: w.at + .5, line: w.line, ...lampField(lampHeight(level, w, px, py)) })); return; }
     if (tool === "globelight") { if (w) place(() => (level.lamps = level.lamps || []).push({ axis: w.axis, at: w.at + .5, line: w.line, style: "globe", ...lampField(lampHeight(level, w, px, py)) })); return; }
     if (tool === "lift") {
         if (!w) return;
-        if (w.axis !== "x") { flash("Lifts go on back walls: the ones facing down and to the left."); return; }
-        const x = Math.floor(w.at / 2) * 2;
-        if (!liftFits(level, x, w.line)) { flash("A lift needs 3 tiles of full wall, clear of doors and other lifts."); return; }
-        place(() => map.lifts.push({ level: level.id, x, y: w.line }));
+        const t = Math.floor(wallTile(w) / 2) * 2, q = w.axis === "y" ? { level: level.id, axis: "y", x: w.line, y: t } : { level: level.id, x: t, y: w.line };
+        if (!liftFits(level, q)) { flash("A lift needs 3 tiles of full wall, clear of doors and other lifts."); return; }
+        place(() => map.lifts.push(q));
         return;
     }
     /* a Theatredrome entrance: the entrance's look, for show only (render/hw3.js theatreArt). Clicking one again takes it away */
@@ -1694,9 +1792,11 @@ function act(px, py) {
 }
 /* the lift and stair openings take up their stretch of wall */
 let portalSelf = null;
-function wallTaken(w, l) {
+function wallTaken(w, l, notLifts) {
     const level = l || window.__active();
-    if (w.axis === "x" && map.lifts.some(q => q.level === level.id && q.y === w.line && w.at > q.x - 3 && w.at < q.x + 5)) return true;
+    /* notLifts: liftFits asking about everything else */
+    if (!notLifts && w.axis === "x" && map.lifts.some(q => !liftLeft(q) && q.level === level.id && q.y === w.line && w.at > q.x - 3 && w.at < q.x + 5)) return true;
+    if (!notLifts && w.axis === "y" && map.lifts.some(q => liftLeft(q) && q.level === level.id && q.x === w.line && w.at > q.y - 2 && w.at < q.y + 7)) return true;      // its at is a tile on: a door's is past its second tile
     if (map.entrance && map.entrance.level === level.id && map.entrance.axis === w.axis && map.entrance.line === w.line && w.at > map.entrance.at - 1 && w.at <= map.entrance.at + 8) return true;
     /* tunnels and the Theatredrome too: doors, wall cuts and other entrances went inside them (10 Nov scan b, editor 4). The one being dragged doesn't count */
     for (const q of [...(map.tunnels || []), ...(map.theatres || [])]) if (q && q !== portalSelf && q.level === level.id && q.axis === w.axis && q.line === w.line && w.at > q.at - 1 && w.at <= q.at + 8) return true;
@@ -1869,7 +1969,7 @@ function sortByDifficulty() {
 
 /* ---------- select and move ---------- */
 let selected = null;            // { type, l, o }
-const TALL = { ghsofa: [16, 30], ghchair: [16, 30], ghlowtable: [16, 16], ghoval: [16, 22], gh_plinth_marble: [16, 70], gh_plinth_black: [16, 70], gh_plinth_column: [14, 70], gh_placard: [10, 40], mark_year: [24, 12], plant_yukka: [20, 72], plant_fruittree: [12, 46], plant_bigcactus: [12, 50], plant_minibonsai: [16, 30], plant_pineapple: [14, 44], leetstand: [48, 112], leetstand2: [32, 116], barstool: [9, 24], plant_palm: [16, 74], plant_orange: [12, 48], plant_bonsai: [16, 32], plant_roses: [8, 36], plant_cactus: [12, 52], plant_bay: [24, 64], plant_sunflower: [9, 46], archway: [17, 118], mark_arrow: [17, 10], arcade_ff: [16, 56], arcade_pura: [16, 56], arcade_guess: [16, 56], arcade_odd: [16, 56], arcade_scout: [16, 56], arcade_quiz: [16, 56], tablelamp: [8, 22], xmastree: [20, 72], xmassmalltree: [14, 30], snowman: [14, 34], xmaslantern: [10, 24], xmasdrinks: [12, 18], xmasduck: [10, 16], gift1: [12, 20], gift2: [12, 20], gift3: [12, 20], gift4: [12, 20], xmasfir: [20, 76], xmasfir2: [30, 112], xmasfir4: [40, 150], gift5: [16, 30], gift6: [16, 30], gift7: [16, 30], gift8: [16, 30], gift9: [16, 30], gift10: [16, 30], gift11: [16, 30], trophy: [28, 84], rarecase: [15, 62], mark_scuff: [14, 12], mark_tile: [14, 12], rope: [14, 36], pillartall: [12, 150], smtable: [13, 24], ballpost: [13, 28], ero_stone: [16, 40], ero_walnut: [16, 40], ero_evergreen: [16, 40], ero_flower: [16, 40], lamp: [12, 54], statue: [26, 105], pillar: [12, 110], plant: [11, 50], ero: [16, 40], fountain: [26, 34], shelf: [22, 62], cabinet: [32, 82], water: [12, 44], chair: [11, 28], table: [16, 22], sofa: [34, 28] };
+const TALL = { ghsofa: [16, 30], ghchair: [16, 30], ghlowtable: [16, 16], ghoval: [16, 22], gh_plinth_marble: [16, 70], gh_plinth_black: [16, 70], gh_plinth_column: [14, 70], gh_placard: [10, 40], mark_year: [24, 12], mark_year_steel: [24, 12], plant_yukka: [20, 72], plant_fruittree: [12, 46], plant_bigcactus: [12, 50], plant_minibonsai: [16, 30], plant_pineapple: [14, 44], leetstand: [48, 112], leetstand2: [32, 116], barstool: [9, 24], plant_palm: [16, 74], plant_orange: [12, 48], plant_bonsai: [16, 32], plant_roses: [8, 36], plant_cactus: [12, 52], plant_bay: [24, 64], plant_sunflower: [9, 46], archway: [17, 118], mark_arrow: [17, 10], arcade_ff: [16, 56], arcade_pura: [16, 56], arcade_guess: [16, 56], arcade_odd: [16, 56], arcade_scout: [16, 56], arcade_quiz: [16, 56], tablelamp: [8, 22], xmastree: [20, 72], xmassmalltree: [14, 30], snowman: [14, 34], xmaslantern: [10, 24], xmasdrinks: [12, 18], xmasduck: [10, 16], gift1: [12, 20], gift2: [12, 20], gift3: [12, 20], gift4: [12, 20], xmasfir: [20, 76], xmasfir2: [30, 112], xmasfir4: [40, 150], gift5: [16, 30], gift6: [16, 30], gift7: [16, 30], gift8: [16, 30], gift9: [16, 30], gift10: [16, 30], gift11: [16, 30], trophy: [28, 84], rarecase: [15, 62], mark_scuff: [14, 12], mark_tile: [14, 12], rope: [14, 36], pillartall: [12, 150], smtable: [13, 24], ballpost: [13, 28], ero_stone: [16, 40], ero_walnut: [16, 40], ero_evergreen: [16, 40], ero_flower: [16, 40], lamp: [12, 54], statue: [26, 105], pillar: [12, 110], plant: [11, 50], ero: [16, 40], fountain: [26, 34], shelf: [22, 62], cabinet: [32, 82], water: [12, 44], chair: [11, 28], table: [16, 22], sofa: [34, 28] };
 function pickIn(l, px, py) {
     const [fx, fy] = tileIn(l, px, py), X = Math.floor(fx), Y = Math.floor(fy);
     /* upright things first, front-most first, by what you can actually see of them */
@@ -1909,7 +2009,7 @@ function pickIn(l, px, py) {
         if (d) return { type: "door", l, o: d };
         const c = (l.lamps || []).find(q => q.axis === w.axis && q.line === w.line && Math.abs(q.at - w.at) < 1.5);
         if (c) return { type: "lamp", l, o: c };
-        const lq = w.axis === "x" && map.lifts.find(q => q.level === l.id && w.line === q.y && w.at >= q.x - 1 && w.at < q.x + 4);
+        const lq = map.lifts.find(q => q.level === l.id && liftAxis(q) === w.axis && w.line === liftLine(q) && wallTile(w) >= liftAlong(q) - 1 && wallTile(w) < liftAlong(q) + 4);
         if (lq) return { type: "lift", l, o: lq };
         if (map.entrance && map.entrance.level === l.id && map.entrance.axis === w.axis && map.entrance.line === w.line && wallTile(w) >= map.entrance.at && wallTile(w) < map.entrance.at + 8) return { type: "entrance", l, o: map.entrance };
         const tun = (map.tunnels || []).find(q => q.level === l.id && q.axis === w.axis && q.line === w.line && wallTile(w) >= q.at && wallTile(w) < q.at + 8);
@@ -1965,7 +2065,7 @@ function plaqueBox(l, d) {
 }
 const stairSignX = st => st.kind === "turn" ? st.b + 6 : (st.signX || st.a - 2);      // a plaque reaches left, so beside a turning flight it stands clear of the steps
 function signBox(l, d) {
-    if (d.kind) return thruLeft(d) ? null : plaqueBox(l, d);
+    if (d.kind) return thruLeft(d) || d.noSign ? null : plaqueBox(l, d);
     const name = doorName(d); if (!name) return null;
     const g = d.sign || {}, lines = g.w ? wrapPx(name, g.w - SIGN_PAD * 2) : wrapChars(name, 14);
     const tw = Math.max(...lines.map(textW)), W = Math.max(tw + SIGN_PAD * 2, 40, g.w || 0), H = Math.max(lines.length * SIGN_LH + 9, g.h || 0);
@@ -1992,7 +2092,7 @@ function signHandles(b) {
 }
 function handleAt(b, px, py) { const r = Math.max(5, 7 / zoom), h = signHandles(b); for (const k of Object.keys(h)) if (Math.abs(px - h[k][0]) <= r && Math.abs(py - h[k][1]) <= r) return k; return null; }
 const TYPE_NAMES = { tunnel: "Tunnel", garland: "Garland", festoon: "Festoon lights", entrance: "Entrance", wallitem: "On the wall", steps: "Small steps", wall: "Wall", sign: "Maze sign", prop: "Furniture", tele: "Imperial Teleport", door: "Door", lamp: "Wall light", lift: "Lift", stair: "Stairs", medal: "Carpet crest", rug: "Rug" };
-const PROP_NAMES = { ghsofa: "Lobby sofa", ghchair: "Lobby armchair", ghlowtable: "Lobby low table", ghoval: "Lobby oval table", gh_plinth_marble: "Marble plinth", gh_plinth_black: "Black plinth", gh_plinth_column: "Fluted column", gh_placard: "Placard", mark_year: "Year slab", plant_yukka: "Yukka palm", plant_fruittree: "Fruit tree", plant_bigcactus: "Big cactus", plant_minibonsai: "Bonsai, small", plant_pineapple: "Pineapple plant", leetstand: "Poster stand: The Leet Show", leetstand2: "Poster stand, narrow: The Leet Show", barstool: "Arcade stool", plant_palm: "Palm, terracotta pot", plant_orange: "Orange tree, brass pot", plant_bonsai: "Bonsai, walnut pot", plant_roses: "Roses in a vase", plant_cactus: "Cactus, terracotta pot", plant_bay: "Clipped bay, brass pot", plant_sunflower: "Sunflower in a vase", archway: "Archway", mark_arrow: "Arrow tile", arcade_ff: "Arcade: Fallin' Furni", arcade_pura: "Arcade: Pura Panic", arcade_guess: "Arcade: Guess the Maze", arcade_odd: "Arcade: Odd One Out", arcade_scout: "Arcade: green (no game yet)", arcade_quiz: "Arcade: purple (no game yet)", tablelamp: "Globe table lamp", xmastree: "Christmas tree", xmassmalltree: "Small tree", snowman: "Snowman", xmaslantern: "Lantern", xmasdrinks: "Christmas drinks", xmasduck: "Christmas duck", gift1: "Gift", gift2: "Gift", gift3: "Gift", gift4: "Gift", xmasfir: "Christmas tree, our own, 1 tile", xmasfir2: "Christmas tree, our own, 2 tiles", xmasfir4: "Christmas tree, our own, 4 tiles", gift5: "Present, red", gift6: "Present, lime", gift7: "Present, purple", gift8: "Present, orange", gift9: "Present, yellow", gift10: "Present, pink", gift11: "Present, silver", trophy: "Old trophy cabinet", rarecase: "Rare in a glass case", mark_scuff: "Floor scuffs", mark_tile: "Lifted floor tile", rope: "Rope barrier", pillartall: "Tall pillar", smtable: "Small round table", ballpost: "Ball post", ero_stone: "Stone planter", ero_walnut: "Walnut planter", ero_evergreen: "Evergreen planter", ero_flower: "Flower planter", sofa: "Sofa", chair: "Chair", table: "Table", lamp: "Floor lamp", plant: "Plant", ero: "Planter", pillar: "Pillar", statue: "Statue", fountain: "Fountain", shelf: "Bookcase", cabinet: "Cabinet", water: "Water cooler" };
+const PROP_NAMES = { ghsofa: "Lobby sofa", ghchair: "Lobby armchair", ghlowtable: "Lobby low table", ghoval: "Lobby oval table", gh_plinth_marble: "Marble plinth", gh_plinth_black: "Black plinth", gh_plinth_column: "Fluted column", gh_placard: "Placard", mark_year: "Year plate, brass", mark_year_steel: "Year plate, steel", plant_yukka: "Yukka palm", plant_fruittree: "Fruit tree", plant_bigcactus: "Big cactus", plant_minibonsai: "Bonsai, small", plant_pineapple: "Pineapple plant", leetstand: "Poster stand: The Leet Show", leetstand2: "Poster stand, narrow: The Leet Show", barstool: "Arcade stool", plant_palm: "Palm, terracotta pot", plant_orange: "Orange tree, brass pot", plant_bonsai: "Bonsai, walnut pot", plant_roses: "Roses in a vase", plant_cactus: "Cactus, terracotta pot", plant_bay: "Clipped bay, brass pot", plant_sunflower: "Sunflower in a vase", archway: "Archway", mark_arrow: "Arrow tile", arcade_ff: "Arcade: Fallin' Furni", arcade_pura: "Arcade: Pura Panic", arcade_guess: "Arcade: Guess the Maze", arcade_odd: "Arcade: Odd One Out", arcade_scout: "Arcade: green (no game yet)", arcade_quiz: "Arcade: purple (no game yet)", tablelamp: "Globe table lamp", xmastree: "Christmas tree", xmassmalltree: "Small tree", snowman: "Snowman", xmaslantern: "Lantern", xmasdrinks: "Christmas drinks", xmasduck: "Christmas duck", gift1: "Gift", gift2: "Gift", gift3: "Gift", gift4: "Gift", xmasfir: "Christmas tree, our own, 1 tile", xmasfir2: "Christmas tree, our own, 2 tiles", xmasfir4: "Christmas tree, our own, 4 tiles", gift5: "Present, red", gift6: "Present, lime", gift7: "Present, purple", gift8: "Present, orange", gift9: "Present, yellow", gift10: "Present, pink", gift11: "Present, silver", trophy: "Old trophy cabinet", rarecase: "Rare in a glass case", mark_scuff: "Floor scuffs", mark_tile: "Lifted floor tile", rope: "Rope barrier", pillartall: "Tall pillar", smtable: "Small round table", ballpost: "Ball post", ero_stone: "Stone planter", ero_walnut: "Walnut planter", ero_evergreen: "Evergreen planter", ero_flower: "Flower planter", sofa: "Sofa", chair: "Chair", table: "Table", lamp: "Floor lamp", plant: "Plant", ero: "Planter", pillar: "Pillar", statue: "Statue", fountain: "Fountain", shelf: "Bookcase", cabinet: "Cabinet", water: "Water cooler" };
 const THUMB_FOR = { sign: "door", door: "door", lamp: "sconce", lift: "lift", medal: "medal", rug: "rug", tele: "tele" };
 function thumbFor(hit) {
     if (hit.type === "wallitem") { const def = wallItemOf(hit.o.k); return def ? "art/wall/" + def.y.layers[0].f : null; }
@@ -2052,12 +2152,14 @@ function select(hit) {
         btn("Reset size and place", () => { snapshot(); delete hit.o.sign; changed(); select(hit); });
     } else if (hit.type === "stair") { say((hit.o.kind === "turn" ? "Turning at a landing" : hit.o.kind === "side" ? "Through a top-left wall" : hit.o.kind === "sideturn" ? "Through a top-left wall, turning at a landing" : "Straight") + ". Drag along the wall to move.");
         /* the garland wound round its banisters at Christmas (9 Nov 2026, his); it sat in the furniture branch, so it never showed (his) */
+        /* its sign, on or off (14 Nov 2026, his) */
+        if (hit.type === "stair" && !thruLeft(hit.o)) { const st = hit.o, f = document.createElement("label"); f.className = "field"; const n = document.createElement("span"); n.className = "f-label"; n.textContent = "Sign"; const cb = document.createElement("input"); cb.type = "checkbox"; cb.checked = !st.noSign; cb.addEventListener("change", () => { snapshot(); if (cb.checked) delete st.noSign; else st.noSign = true; buildLevels(); changed(); }); f.append(n, cb); box.appendChild(f); }
         if (hit.type === "stair") { const st = hit.o, f = document.createElement("label"); f.className = "field"; const n = document.createElement("span"); n.className = "f-label"; n.textContent = "Garland round the banisters"; const cb = document.createElement("input"); cb.type = "checkbox"; cb.checked = !!st.garland; cb.addEventListener("change", () => { snapshot(); if (cb.checked) st.garland = true; else delete st.garland; changed(); }); f.append(n, cb); box.appendChild(f); const p = document.createElement("p"); p.className = "hint"; p.textContent = "Shows at Christmas only."; box.appendChild(p); }
     }
     else if (hit.type === "rug") { say((hit.o.style === "small" ? "Small squares floor, " : "") + `${hit.o.x1 - hit.o.x0} by ${hit.o.y1 - hit.o.y0} tiles. Drag it to move, or drag an edge to resize.`);
         /* a rug's corners: square with the client's rosette, or cut a tile across */
         if (hit.o.style !== "small") { const f = document.createElement("label"); f.className = "field"; const n = document.createElement("span"); n.className = "f-label"; n.textContent = "Cut corners"; const c = document.createElement("span"); c.className = "f-ctl"; const t = document.createElement("input"); t.type = "checkbox"; t.checked = !!hit.o.chamfer; t.addEventListener("change", () => { snapshot(); if (t.checked) hit.o.chamfer = true; else delete hit.o.chamfer; changed(); }); c.appendChild(t); f.append(n, c); box.appendChild(f); } }
-    else if (hit.type === "lift") say("Drag it along a back wall to move it. In the hallway, double-click a lift to open it, then walk in.");
+    else if (hit.type === "lift") say("Drag it along a wall to move it, back or left. In the hallway, double-click a lift to open it, then walk in.");
     else if (hit.type === "entrance") say("Where Habbos arrive, and where they leave by walking back in. Drag it along a wall to move it.");
     else if (hit.type === "tunnel") {
         say("A tunnel Habbos can walk into. Walk to its back and you come out of the tunnel it leads to. Drag it along a wall to move it.");
@@ -2081,8 +2183,8 @@ function select(hit) {
     else if (hit.type === "wallitem" && hit.o.k === "i_window") {
         say("Window. Drag it along the wall. Drag a square to change its width, top or bottom.");
         const f = document.createElement("label"); f.className = "field"; const n = document.createElement("span"); n.className = "f-label"; n.textContent = "Looks out on"; const c = document.createElement("span"); c.className = "f-ctl"; const t = document.createElement("select");
-        for (const [v, name] of [["lawn", "The lawn"], ["road", "The road"], ["maze", "The hedge maze"], ["park", "The car park"]]) { const op = document.createElement("option"); op.value = v; op.textContent = name; t.appendChild(op); }
-        t.value = hit.o.view || "lawn"; t.addEventListener("change", () => { snapshot(); hit.o.view = t.value; changed(); }); c.appendChild(t); f.append(n, c); box.appendChild(f);
+        for (const [v, name] of [["", "Whatever's behind it (changes along the wall)"], ["lawn", "The lawn"], ["road", "The road"], ["maze", "The hedge maze"], ["park", "The car park"]]) { const op = document.createElement("option"); op.value = v; op.textContent = name; t.appendChild(op); }
+        t.value = hit.o.view || ""; t.addEventListener("change", () => { snapshot(); if (t.value) hit.o.view = t.value; else delete hit.o.view; changed(); }); c.appendChild(t); f.append(n, c); box.appendChild(f);
     }
     else if (hit.type === "steps") {
         const fl = flightOf(hit.l, hit.o);
@@ -2162,7 +2264,7 @@ function select(hit) {
     if (hit.type === "lamp" || (hit.type === "prop" && (hit.o.k === "lamp" || hit.o.k === "tablelamp" || ((hit.o.k === "pillar" || hit.o.k === "pillartall") && hit.o.lights)))) {
         colourRow(box, "Light colour", () => hit.o.colour || null, v => { if (v) hit.o.colour = v; else delete hit.o.colour; }, "#ffd98a", "The mood's own");
     }
-    if (hit.type !== "sign" && hit.type !== "wall" && hit.type !== "entrance") btn("Delete", deleteSelected, "ghost danger");
+    if ((hit.type !== "sign" || hit.o.kind) && hit.type !== "wall" && hit.type !== "entrance") btn("Delete", deleteSelected, "ghost danger");
     box.appendChild(row);
     paint();
 }
@@ -2224,7 +2326,9 @@ function mazePicker(box, door) {
 function deleteSelected() {
     const s = selected; if (!s) return;
     if (s.type === "tunnel") { const list = map.tunnels || [], i = list.indexOf(s.o); if (i < 0) return; snapshot(); unlinkTunnel(s.o.id); list.splice(i, 1); if (!list.length) delete map.tunnels; select(null); buildLevels(); changed(); return; }
-    if (s.type === "sign") { flash(s.o.kind ? "A staircase always has its sign." : "A door always has its sign. Make the door spare to take it away."); return; }
+    /* a staircase's sign goes off rather than away: select the staircase and tick Sign to have it back (14 Nov 2026, his) */
+    if (s.type === "sign" && s.o.kind) { snapshot(); s.o.noSign = true; select(null); buildLevels(); changed(); flash("Sign removed. Select the staircase and tick Sign to put it back."); return; }
+    if (s.type === "sign") { flash("A door always has its sign. Make the door spare to take it away."); return; }
     const lists = { garland: s.l.garlands, festoon: s.l.festoons, lift: map.lifts, wallitem: s.l.wallItems, steps: s.l.steps, prop: s.l.props, tele: s.l.teles, door: s.l.doors, lamp: s.l.lamps, medal: s.l.medals, rug: s.l.rugs, stair: map.stairs };
     const list = lists[s.type], i = list ? list.indexOf(s.o) : -1;
     if (i < 0) { flash(s.type === "entrance" ? "The hallway always has an entrance. Drag it to move it." : "That can't be deleted."); return; }
@@ -2350,7 +2454,7 @@ function moveSelected(d, px, py) {
         const w = s.type === "lamp" || s.type === "wallitem" ? hangWallAt(px, py, l) : wallAt(px, py, l); if (!w || (w.drop && !(s.type === "lamp" && lampFits(l, w)))) return;
         if (s.type === "lamp" && isHalf(l, w.axis, w.line, wallTile(w))) return;
         if (s.type === "lamp") { o.axis = w.axis; o.line = w.line; o.at = w.at + .5; if (ctrlNow) { const zw = wallZ(l, o), b = o.axis === "x" ? P(o.at, o.line, zw) : P(o.line, o.at, zw); const h = snapWall(b[1] - py, "lamp"); if (h === 106) delete o.h; else o.h = h; } if (w.drop) o.h = Math.min(o.h === undefined ? 106 : o.h, retaining(l, w.axis, w.line, wallTile(w)).H - 8); }
-        else if (s.type === "lift") { if (w.axis === "x") { const x = Math.floor(w.at / 2) * 2; if (liftFits(l, x, w.line, o)) { o.x = x; o.y = w.line; } } }
+        else if (s.type === "lift") { const t = Math.floor(wallTile(w) / 2) * 2, q = w.axis === "y" ? { level: o.level, axis: "y", x: w.line, y: t } : { level: o.level, x: t, y: w.line }; if (liftFits(l, q, o)) { o.x = q.x; o.y = q.y; if (q.axis) o.axis = q.axis; else delete o.axis; } }
         else if (s.type === "stair") {
             const up = byId(o.up); if (!up) return;
             const wasStair = { ...o };
@@ -2406,7 +2510,7 @@ function drawSelection() {
     }
     else if (s.type === "door") { if (o.axis === "x") line(o.at, o.line, o.at + 2, o.line, z, c, 4); else line(o.line, o.at, o.line, o.at - 2, z, c, 4); }
     else if (s.type === "lamp") { if (o.axis === "x") line(o.at - .5, o.line, o.at + .5, o.line, z, c, 4); else line(o.line, o.at - .5, o.line, o.at + .5, z, c, 4); }
-    else if (s.type === "lift") line(o.x, o.y, o.x + 3, o.y, z, c, 4);
+    else if (s.type === "lift") { const a = liftPt(o, 0, 0), b = liftPt(o, 3, 0); line(a[0], a[1], b[0], b[1], z, c, 4); }
     else if (s.type === "entrance" || s.type === "tunnel") { if (o.axis === "x") line(o.at, o.line, o.at + 8, o.line, z, c, 4); else line(o.line, o.at, o.line, o.at + 8, z, c, 4); }
     else if (s.type === "wall") {
         if (o.axis === "x") line(o.a, o.line, o.b, o.line, z, c, 2); else line(o.line, o.a, o.line, o.b, z, c, 2);
@@ -2472,7 +2576,7 @@ function walkPress(px, py) {
     if (walker && walker.busy) return;
     for (const f of liveClicks) { try { if (f(px, py)) return; } catch (err) { console.error(err); } }
     /* the open lift: a click anywhere in its doorway walks you into the cabin, not only on its floor strip (10 Nov scan, live 11) */
-    { const q = liftAt(px, py); if (q && liftOpen(q)) { const S = stairLevels().list.find(L => L.stair && L.stair.lift === q); if (S) { const s0 = walkerStart(), path = graphFrom(s0.l, s0.x, s0.y, [S, q.x, q.y - 1]); if (path) { setDoors(q, true, 20000 + path.length * MS_PER_TILE); followRoute(path, s0.here, null); return; } } } }
+    { const q = liftAt(px, py); if (q && liftOpen(q)) { const S = stairLevels().list.find(L => L.stair && L.stair.lift === q); if (S) { const s0 = walkerStart(), path = graphFrom(s0.l, s0.x, s0.y, [S, ...liftPt(q, 0, -1)]); if (path) { setDoors(q, true, 20000 + path.length * MS_PER_TILE); followRoute(path, s0.here, null); return; } } } }
     { const dd = doorAtPx(px, py); if (dd && dd.d.kind === "book" && onBook(dd.l, dd.d, px, py)) { bookDoor(dd.l, dd.d); return; } }
     const u = useUnder(px, py);
     if (u && u.p.k === "water") return;                     // it takes a double-click
@@ -2599,7 +2703,7 @@ canvas.addEventListener("pointermove", e => {
     if (drag && drag.kind === "furni") { drag.run = furniRun(drag.a, furniTile(px, py)); paint(); return; }
     if (drag && drag.kind === "laysteps") {
         const f = tileIn(level, px, py), run = edgeRun(level, drag.edge.axis, drag.edge.line, drag.edge.t), t = Math.max(run.a, Math.min(run.b - 1, Math.floor(drag.edge.axis === "y" ? f[0] : f[1])));
-        drag.st.a = Math.min(drag.edge.t, t); drag.st.b = Math.max(drag.edge.t, t) + 1; paint(); return;
+        drag.st.a = Math.min(drag.edge.t, t); drag.st.b = Math.max(drag.edge.t, t) + 1; drag.st2 = stepsRoundCorner(level, drag.edge, run, f); paint(); return;
     }
     if (drag && drag.kind === "rect" && brushTool(tool) && e.ctrlKey) return;
     if (drag && drag.kind === "rect") { const b = tool === "floor" ? paintTile(px, py) : tileIn(level, px, py); if (!hiddenTile(b)) drag.rect = snapRect(drag.a, b); paint(); return; }      // over a floor X hides: the rectangle stays as it was
@@ -2633,8 +2737,16 @@ canvas.addEventListener("pointerup", e => {
     if (d.kind === "edgebrush") { endEdgeBrush(d); return; }
     if (d.kind === "laysteps") {
         snapshot();
-        level.steps = (level.steps || []).filter(q => !(q.axis === d.st.axis && q.line === d.st.line && q.a < d.st.b && q.b > d.st.a));
-        level.steps.push({ ...d.st }); changed(); return;
+        for (const st of d.st2 ? [d.st2.first, d.st2.st] : [d.st]) {
+            level.steps = (level.steps || []).filter(q => !(q.axis === st.axis && q.line === st.line && q.a < st.b && q.b > st.a));
+            level.steps.push({ ...st });
+        }
+        /* laid end to end along one edge, two runs are one: the renderer draws them as one anyway, and one run selects and moves as one */
+        for (let i = 0; i < level.steps.length; i++) for (let j = level.steps.length - 1; j > i; j--) {
+            const p = level.steps[i], q = level.steps[j];
+            if (p.axis === q.axis && p.line === q.line && p.dir === q.dir && (p.b === q.a || q.b === p.a) && stepRise(level, p) === stepRise(level, q)) { p.a = Math.min(p.a, q.a); p.b = Math.max(p.b, q.b); level.steps.splice(j, 1); j = level.steps.length; }
+        }
+        changed(); return;
     }
     if (d.kind === "move") { canvas.style.cursor = "default"; if (live) live.ending = true; if (d.moved) { if (d.hit.type === "prop" || d.hit.type === "tele") showUntilDrawn(d.hit.l, d.hit.o, d.hit.type === "tele"); changed(); select(selected); } return; }
     if (d.kind === "edge") { if (undoStack[undoStack.length - 1] === JSON.stringify(root)) { undoStack.pop(); syncButtons(); return; } changed(); return; }
@@ -2719,7 +2831,7 @@ canvas.addEventListener("pointermove", e => {
     if (!kind || !(e.ctrlKey || e.metaKey) || drag) { wallCtrlLast = null; wallCtrlSpare = 0; return; }
     if (wallCtrlLast === null) { wallCtrlLast = e.clientY; return; }
     wallCtrlSpare += wallCtrlLast - e.clientY; wallCtrlLast = e.clientY;
-    const n = Math.trunc(wallCtrlSpare / 5); if (n) { wallCtrlSpare -= n * 5; const v = snapWall(wallH[kind] + n * WALL_STEP, kind); if (v !== wallH[kind]) { wallH[kind] = v; setStatus("Height on the wall: " + v); } paint(); }
+    const n = Math.trunc(wallCtrlSpare / 5); if (n) { wallCtrlSpare -= n * 5; const v = snapWall(wallH[kind] + n * WALL_STEP, kind); if (v !== wallH[kind]) { wallH[kind] = v; if (kind === "item" && isWallItemTool(tool)) itemHeights[tool.slice(3)] = v; setStatus("Height on the wall: " + v); } paint(); }
 });
 canvas.addEventListener("pointerleave", () => { if (!drag && hover) { hover = null; paint(); } });
 canvas.addEventListener("pointermove", e => {
@@ -2802,13 +2914,14 @@ function stairLevels() {
         const low = byId(q.level); if (!low) return;
         const S = { id: "LF" + i, name: "Lift", k: low.k, tiles: new Map(), stair: { low, up: null, lift: q } }, list = [], joins = [];
         /* from this angle the cabin runs away up and to the right, behind the door frame: only these tiles can be seen through the doorway */
-        list.push([q.x, q.y - 1], [q.x + 1, q.y - 1], [q.x, q.y - 2]);
-        joins.push([q.x, q.y - 1, q.x, q.y], [q.x + 1, q.y - 1, q.x + 1, q.y]);
+        list.push(liftPt(q, 0, -1), liftPt(q, 1, -1), liftPt(q, 0, -2));      // on a left wall the same, mirrored: away up and to the left
+        joins.push([...liftPt(q, 0, -1), ...liftPt(q, 0, 0)], [...liftPt(q, 1, -1), ...liftPt(q, 1, 0)]);
         addRoom(S, low, list, joins);
     });
     if (map.entrance && byId(map.entrance.level)) {
         const e = map.entrance, low = byId(e.level), S = { id: "EN", name: "Entrance", k: low.k, tiles: new Map(), stair: { low, up: null, entrance: true } }, list = [], joins = [];
-        for (const t of entranceTiles(e)) for (let d = 1; d <= 2; d++) { list.push(e.axis === "x" ? [t, e.line - d] : [e.line - d, t]); if (d === 1) joins.push(e.axis === "x" ? [t, e.line - 1, t, e.line] : [e.line - 1, t, e.line, t]); }
+        /* three deep: you arrive from the third row, out of sight until Go (14 Nov 2026, his); you still leave on reaching the second */
+        for (const t of entranceTiles(e)) for (let d = 1; d <= 3; d++) { list.push(e.axis === "x" ? [t, e.line - d] : [e.line - d, t]); if (d === 1) joins.push(e.axis === "x" ? [t, e.line - 1, t, e.line] : [e.line - 1, t, e.line, t]); }
         addRoom(S, low, list, joins);
     }
     /* the inside of each tunnel, three tiles across and two deep, walked onto from the floor in front (10 Nov 2026) */
@@ -2936,7 +3049,7 @@ function graphFrom(startL, sx, sy, goal) {
 function liftTile() {
     const e = map.entrance, le = e && byId(e.level);
     if (le) { const m = entranceTiles(e)[1]; return e.axis === "x" ? [le, m, e.line] : [le, e.line, m]; }
-    const q = map.lifts[0], l = q && byId(q.level); if (l) return [l, q.x + 1, q.y];
+    const q = map.lifts[0], l = q && byId(q.level); if (l) return [l, ...liftPt(q, 1, 0)];
     const g = map.levels.find(l => l.k === 0 && l.cells.length) || map.levels.find(l => l.cells.length), c = g.cells[0].split(",").map(Number); return [g, c[0] * 2, c[1] * 2];
 }
 /* Everywhere a Habbo can get to: on foot from where they arrive, and from any lift once they can walk to one, since any lift goes to all the
@@ -2948,7 +3061,7 @@ function reachAll() {
     const rooms0 = stairLevels().list, ins = mapNow === "gallery" ? (map.tunnels || []).filter(q => { const f = findTunnel(q.to); return f && f.place === "hallway"; }).map(q => { const S = rooms0.find(r => r.stair && r.stair.tunnel === q), m = entranceTiles(q)[1]; return S ? (q.axis === "x" ? [S, m, q.line - 2] : [S, q.line - 2, m]) : null; }).filter(Boolean) : [];
     /* the Events Gallery is arrived at by its tunnels from the Hallways (12 Nov 2026); with none yet, from its first floor as before */
     const [l, x, y] = ins[0] || liftTile(), reached = graphFrom(l, x, y); for (const s of ins.slice(1)) for (const k of graphFrom(s[0], s[1], s[2]).keys()) if (!reached.has(k)) reached.set(k, 0);
-    const fronts = map.lifts.map(q => [byId(q.level), q.x + 1, q.y]).filter(f => f[0]);
+    const fronts = map.lifts.map(q => [byId(q.level), ...liftPt(q, 1, 0)]).filter(f => f[0]);
     if (fronts.some(f => reached.has(nodeKey(f[0], f[1], f[2])))) for (const f of fronts) if (!reached.has(nodeKey(f[0], f[1], f[2]))) for (const k of graphFrom(f[0], f[1], f[2]).keys()) if (!reached.has(k)) reached.set(k, 0);
     /* through tunnels: the back of one reached means the back of the one it leads to is too (10 Nov scan b, editor 6), and on until nothing new */
     const rooms = stairLevels().list, backOf = q => { const S = rooms.find(r => r.stair && r.stair.tunnel === q); if (!S) return null; const m = entranceTiles(q)[1]; return q.axis === "x" ? [S, m, q.line - 2] : [S, q.line - 2, m]; };
@@ -3099,7 +3212,10 @@ function drawLifts(ox, oy) {
     for (const [q, s] of liftDoors) {
         const l = byId(q.level), way = l.colour ? "hex:" + l.colour : l.way, img = liftImg(way, Math.round(s.p * (LIFT_FRAMES - 1))); if (!img.complete || !img.naturalWidth) continue;
         const a = P(q.x, q.y, tileZ(l, q.x, q.y));
-        ctx.imageSmoothingEnabled = false; ctx.drawImage(img, ox + (a[0] - 40) * zoom, oy + (a[1] - 160) * zoom, img.naturalWidth * zoom, img.naturalHeight * zoom);
+        ctx.imageSmoothingEnabled = false;
+        /* a left wall's: the same picture mirrored, pixel for pixel as render/hw3.js mirrors it (column X goes to 2 * origin - X) */
+        if (liftLeft(q)) { ctx.save(); ctx.translate(ox + (a[0] + 1) * zoom, 0); ctx.scale(-1, 1); ctx.drawImage(img, -40 * zoom, oy + (a[1] - 160) * zoom, img.naturalWidth * zoom, img.naturalHeight * zoom); ctx.restore(); }
+        else ctx.drawImage(img, ox + (a[0] - 40) * zoom, oy + (a[1] - 160) * zoom, img.naturalWidth * zoom, img.naturalHeight * zoom);
     }
 }
 /* ---------- the maze doors ----------
@@ -3314,6 +3430,9 @@ async function enterDoor(low, d) {
             const S = stairLevels().list.find(q => q.stair.door === d), col = d.axis === "x" ? me.x : me.y, out = doorFront(d).find(q => d.axis === "x" ? q[0] === col : q[1] === col) || doorFront(d)[0], sx = d.axis === "x" ? col : d.line - DOOR_DEEP, sy = d.axis === "x" ? d.line - DOOR_DEEP : col;
             me.l = S; me.st = S.stair; me.x = sx; me.y = sy; me.z = nodeZ(S, sx, sy); me.dir = d.axis === "x" ? 4 : 2; me.busy = false; level = low; buildLevels();
             const path = graphFrom(S, sx, sy, [low, out[0], out[1]]) || doorFront(d).map(q => graphFrom(S, sx, sy, [low, q[0], q[1]])).find(Boolean);
+            /* a bookcase is already standing open as you come back out of the room: left to swing open as you walked, you went through its shelves
+               (14 Nov 2026, his: "work on the clipping ... when an avatar leaves the bookcase door"); it swings shut once you're clear of it */
+            if (d.kind === "book") { const q = doorStates.get(d) || { p: 0, to: 0 }; q.p = 1; q.to = 1; q.hold = 0; q.goIn = false; q.autoIn = false; doorStates.set(d, q); }
             if (path) { me.leavingDoor = true; setDoor(d, true, 8000); followRoute(path, null, () => { me.leavingDoor = false; setDoor(d, false); }); } else { backOut(); setDoor(d, false); }
             const a = P(me.x + .5, me.y + .5, me.z); cam.x = a[0]; cam.y = a[1] - 40; clampCam(); paint(); fade();
         }
@@ -3322,13 +3441,13 @@ async function enterDoor(low, d) {
 }
 function liftAt(px, py) {
     for (const l of [...map.levels].sort((a, c) => c.k - a.k)) {
-        for (const q of map.lifts) { if (q.level !== l.id) continue; const a = P(q.x, q.y, tileZ(l, q.x, q.y)), u = px - a[0], h = a[1] + Math.floor(u / 2) - py; if (u >= -12 && u <= 60 && h >= -4 && h <= 118) return q; }
+        for (const q of map.lifts) { if (q.level !== l.id) continue; const a = P(q.x, q.y, tileZ(l, q.x, q.y)), u = liftLeft(q) ? a[0] - px : px - a[0], h = a[1] + Math.floor(u / 2) - py; if (u >= -12 && u <= 60 && h >= -4 && h <= 118) return q; }
         const [fx, fy] = tileIn(l, px, py); if (hasFloor(l, Math.floor(fx), Math.floor(fy))) return null;
     }
     return null;
 }
 function useLift(q) {
-    const l = byId(q.level), s = walkerStart(), path = graphFrom(s.l, s.x, s.y, [l, q.x + 1, q.y]);
+    const l = byId(q.level), s = walkerStart(), path = graphFrom(s.l, s.x, s.y, [l, ...liftPt(q, 1, 0)]);
     setDoors(q, true, 20000 + (path ? path.length * MS_PER_TILE : 0));
     if (path) followRoute(path, s.here, null); else noWay("There's no way to that lift.");
 }
@@ -3359,8 +3478,8 @@ async function rideTo(from, to) {
     /* The view holds still on the closed doors, then dissolves straight into the lift you chose, doors shut. Nothing goes black and the camera never travels. */
     const shot = document.createElement("canvas"); shot.width = canvas.width; shot.height = canvas.height; shot.getContext("2d").drawImage(canvas, 0, 0);
     shot.style.cssText = "position:absolute;left:0;top:0;z-index:24;pointer-events:none;transition:opacity 1.1s ease;opacity:1;width:" + canvas.clientWidth + "px;height:" + canvas.clientHeight + "px"; canvas.parentNode.appendChild(shot);
-    const S = stairLevels().list.find(q => q.stair.lift === to), l = byId(to.level), x = to.x, y = to.y - 1;
-    me.l = S; me.x = x; me.y = y; me.z = nodeZ(S, x, y); me.dir = 4; me.pts = []; me.walking = false; me.asked = true; me.seat = null;
+    const S = stairLevels().list.find(q => q.stair.lift === to), l = byId(to.level), [x, y] = liftPt(to, 0, -1);
+    me.l = S; me.x = x; me.y = y; me.z = nodeZ(S, x, y); me.dir = liftLeft(to) ? 2 : 4;      // facing out of it me.pts = []; me.walking = false; me.asked = true; me.seat = null;
     level = l; buildLevels();
     const a = P(x + .5, y + .5, me.z); cam.x = a[0]; cam.y = a[1] - 40; clampCam(); paint();
     /* give the art there a moment to arrive, under the picture of where you were */
@@ -3379,7 +3498,7 @@ async function rideTo(from, to) {
     setDoors(to, true, 5000); await wait(1100);
     if (!alive()) return;
     me.busy = false;
-    const path = graphFrom(S, x, y, [l, x, to.y]); if (path) followRoute(path, null, null);
+    const path = graphFrom(S, x, y, [l, ...liftPt(to, 0, 0)]); if (path) followRoute(path, null, null);
 }
 /* through a tunnel: a quick fade, and you're at the back of the one it leads to, walking out of it onto its floor (10 Nov 2026) */
 function throughTunnel(to, where = mapNow) {
@@ -3521,8 +3640,8 @@ function startWalk() {
     walker = { l, x, y, z: nodeZ(l, x, y), pts: [], t: 0, dir: 4, frame: 0, walking: false, st: null };
     /* arrive through the entrance: start inside the arch and walk out */
     if (map.entrance && l === byId(map.entrance.level)) {
-        const S = stairLevels().list.find(q => q.stair.entrance), e = map.entrance, m = entranceTiles(e)[1], ix = e.axis === "x" ? m : e.line - 2, iy = e.axis === "x" ? e.line - 2 : m;
-        if (S) { walker.l = S; walker.x = ix; walker.y = iy; walker.z = nodeZ(S, ix, iy); walker.arriving = true; const path = graphFrom(S, ix, iy, [l, x, y]); if (path) setTimeout(() => { if (walker && walker.arriving) followRoute(path, null, null); }, 200); }
+        const S = stairLevels().list.find(q => q.stair.entrance), e = map.entrance, m = entranceTiles(e)[1], ix = e.axis === "x" ? m : e.line - 3, iy = e.axis === "x" ? e.line - 3 : m;
+        if (S) { walker.l = S; walker.x = ix; walker.y = iy; walker.z = nodeZ(S, ix, iy); walker.arriving = true; const path = graphFrom(S, ix, iy, [l, x, y]); if (path) { const me = walker, go = () => { if (walker === me && walker.arriving) followRoute(path, null, null); }, gate = window.HALLWAY_PLAY ? (window.hallwayArrivalGate = window.hallwayArrivalGate || { held: true, go: null }) : null; if (gate && gate.held) gate.go = go; else setTimeout(go, 200); } }      /* on the site, held until the picker is done (play.js hallwayArrivalGate) */
     }
     cam.x = (x - y) * 16; cam.y = (x + y) * 8 - levelZ(l) - 60;
     /* on the site, the hallway opens on its statue (or its Christmas tree), wherever you come in */
@@ -3696,7 +3815,7 @@ function cutInFront(c, x0, y0, soft) {
     /* in a lift: its doors are in front of you, as far as they've closed */
     const inLift = walker.l.stair && walker.l.stair.lift;
     if (inLift) {
-        const st = liftDoors.get(inLift), slid = Math.round((st ? st.p : 0) * 24), o = P(inLift.x, inLift.y, tileZ(l, inLift.x, inLift.y)), leaf = (u0, u1) => { if (u1 > u0) cutPoly(c, [[o[0] + u0, o[1] + Math.floor(u0 / 2) + 1], [o[0] + u1, o[1] + Math.floor(u1 / 2) + 1], [o[0] + u1, o[1] + Math.floor(u1 / 2) - 76], [o[0] + u0, o[1] + Math.floor(u0 / 2) - 76]]); };
+        const st = liftDoors.get(inLift), slid = Math.round((st ? st.p : 0) * 24), o = P(inLift.x, inLift.y, tileZ(l, inLift.x, inLift.y)), mx = liftLeft(inLift) ? u => o[0] + 1 - u : u => o[0] + u, leaf = (u0, u1) => { if (u1 > u0) cutPoly(c, [[mx(u0), o[1] + Math.floor(u0 / 2) + 1], [mx(u1), o[1] + Math.floor(u1 / 2) + 1], [mx(u1), o[1] + Math.floor(u1 / 2) - 76], [mx(u0), o[1] + Math.floor(u0 / 2) - 76]]); };
         leaf(0, 24 - slid); leaf(24 + slid, 48);
     }
     /* behind the counter: it's in front of you */
@@ -3704,7 +3823,7 @@ function cutInFront(c, x0, y0, soft) {
     /* walls on this floor that stand nearer than the Habbo */
     const below = map.levels.find(q => q.k === l.k - 1);
     const open = (X, Y, axis) => !hasFloor(l, X, Y) && wallStands(l, X, Y, axis);
-    const inDoor = lostNow ? null : doorNow, inOpening = (X, Y, axis) => (lostNow && lostNow.axis === axis && lostNow.line === (axis === "x" ? Y : X) && (axis === "x" ? X : Y) >= lostNow.o && (axis === "x" ? X : Y) < lostNow.o + 6) || (inDoor && inDoor.axis === axis && inDoor.line === (axis === "x" ? Y : X) && doorFront(inDoor).some(t => axis === "x" ? t[0] === X : t[1] === Y)) || (axis === "x" && map.lifts.some(q => q.level === l.id && q.y === Y && X >= q.x && X < q.x + 3)) || (map.entrance && map.entrance.level === l.id && map.entrance.axis === axis && map.entrance.line === (axis === "x" ? Y : X) && entranceTiles(map.entrance).includes(axis === "x" ? X : Y)) || map.stairs.some(s => s.low === l.id && (thruLeft(s) ? axis === "y" && s.x === X && Y >= s.a && Y < s.b : axis === "x" && s.y === Y && X >= s.a && X < s.b));
+    const inDoor = lostNow ? null : doorNow, inOpening = (X, Y, axis) => (lostNow && lostNow.axis === axis && lostNow.line === (axis === "x" ? Y : X) && (axis === "x" ? X : Y) >= lostNow.o && (axis === "x" ? X : Y) < lostNow.o + 6) || (inDoor && inDoor.axis === axis && inDoor.line === (axis === "x" ? Y : X) && doorFront(inDoor).some(t => axis === "x" ? t[0] === X : t[1] === Y)) || (map.lifts.some(q => q.level === l.id && liftAxis(q) === axis && (axis === "x" ? q.y === Y && X >= q.x && X < q.x + 3 : q.x === X && Y >= q.y && Y < q.y + 3))) || (map.entrance && map.entrance.level === l.id && map.entrance.axis === axis && map.entrance.line === (axis === "x" ? Y : X) && entranceTiles(map.entrance).includes(axis === "x" ? X : Y)) || map.stairs.some(s => s.low === l.id && (thruLeft(s) ? axis === "y" && s.x === X && Y >= s.a && Y < s.b : axis === "x" && s.y === Y && X >= s.a && X < s.b));
     const R = 14, tx = Math.floor(ax), ty = Math.floor(ay);
     for (let X = tx - R; X <= tx + R; X++) for (let Y = ty - R; Y <= ty + R; Y++) {
         if (!hasFloor(l, X, Y) || pastDoor(X, Y)) continue;

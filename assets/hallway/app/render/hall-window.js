@@ -28,7 +28,16 @@ const SUN = [1, .34, -.92];
 function litByWindow(W, b, top, wy, wz) { if (wy < 1 || wy > W - 1 || wz < b + 2 || wz > top - 2) return false; const bars = barsOf(W); for (let i = 1; i <= bars; i++) if (Math.abs(wy - W * i / (bars + 1)) < 1.3) return false; for (const z of railsOf(b, top)) if (Math.abs(wz - z) < 1.3) return false; return true; }
 /* which part of the grounds each window looks on: centres in the hotel view's picture */
 const PLACES = { lawn: [640, 350], road: [480, 400], maze: [560, 430], park: [340, 320] };
-const api = { art, SUN, litByWindow, PLACES };
+/* a window with no view picked (14 Nov 2026, his: "All windows show the same view outside") looks out at the part of the grounds behind
+   where it stands: its place on the screen picks the middle of what it shows, so windows side by side show neighbouring parts of one view,
+   and windows far apart different ones. Kept inside the picture (720 x 498), right of the hotel itself (its orange front filled the glass), and
+   low enough to take in the grounds as well as the skyline */
+const placeFor = (sx, sy, wide, tall) => {
+    const W = 720, H = 498, x0 = Math.max(wide / 2 + 10, 310), x1 = W - wide / 2 - 10, y0 = Math.max(tall / 2, 290), y1 = Math.min(H - tall / 2, 380);      // right of the hotel: skyline, lawn, car park, road, maze
+    const span = x1 - x0, x = x0 + (((Math.round(sx * .45) % span) + span) % span), ys = y1 - y0, y = y0 + (((Math.round(sy * .25) % Math.max(1, ys)) + ys) % Math.max(1, ys));
+    return [Math.round(x), Math.round(y)];
+};
+const api = { art, SUN, litByWindow, PLACES, placeFor };
 /* in node, and in the page as window.HallWindow: the window snow falls only where the view shows past this frame */
 if (typeof module !== "undefined" && module.exports) module.exports = api;
 if (typeof window !== "undefined") window.HallWindow = api;
