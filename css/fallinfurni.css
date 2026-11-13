@@ -2281,6 +2281,37 @@ main.ff-page { width: 100%; }
 /* No dimming under it, so a dark halo keeps it readable on a light floor. */
 .ff-lifepop .ff-countin-n { text-shadow: 3px 3px 0 rgba(10, 7, 4, 0.85), 0 0 14px rgba(10, 7, 4, 0.7); }
 
+/* ---- STUCK ON A BOBBA DOORMAT (13 Nov 2026; see bobbaPop in
+   js/fallinfurni.js): the count-in tip's face and size, in the readout's
+   danger red, held over the upper room for the three seconds. Takes no
+   clicks, so the player can line up the next walk while they wait. */
+.ff-bobbapop {
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 30%;
+    display: flex;
+    justify-content: center;
+    pointer-events: none;
+    z-index: 4;
+}
+.ff-bobbapop[hidden] { display: none; }
+.ff-bobbapop-text {
+    font-family: "Silkscreen", "Pixelify Sans", monospace;
+    font-size: 16px;
+    line-height: 1;
+    color: #ff6b6b;
+    text-shadow: 2px 2px 0 rgba(10, 7, 4, 0.9), 0 0 10px rgba(10, 7, 4, 0.7);
+    animation: ff-bobbapop 260ms steps(5, end);
+}
+@keyframes ff-bobbapop {
+    0%   { transform: scale(1.4); opacity: 0; }
+    100% { transform: scale(1); opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+    .ff-bobbapop-text { animation: none; }
+}
+
 /* ---- THE COFFEE'S INTRODUCTION (25 Oct 2026), under the count: in the
    count's face at twice its 8px cell, the same hard shadow, with the hand
    item's own mug doubled beside it. Placed in the lower part of the room so
@@ -2306,8 +2337,18 @@ main.ff-page { width: 100%; }
 .ff-countin-tip p { display: flex; align-items: center; gap: 10px; margin: 0; }
 /* The hand item doubled, from its own pixel size. */
 .ff-countin-tip img { zoom: 2; image-rendering: pixelated; filter: drop-shadow(1px 1px 0 rgba(10, 7, 4, 0.9)); }
-/* A badge (the brain freeze's 10px snowflake) trebled, to stand as tall as a hand item. */
+/* A badge (an 11px panel icon) trebled, to stand as tall as a hand item. */
 .ff-countin-tip img.is-badge { zoom: 3; }
+/* Its own count-in art (POWERUPS.tipBadge, the 17px outlined snowflake), doubled like a hand item. */
+.ff-countin-tip img.is-tip-badge { zoom: 2; }
+/* The Bobba Doormat's skull: Volter's own U+00AA at three times its 9px cell,
+   so the bitmap scales by a whole number, as tall as a doubled hand item. */
+.ff-countin-skull {
+    font-family: 'Volter Goldfish', 'Pixelify Sans', monospace;
+    font-size: 27px;
+    line-height: 1;
+    color: var(--parchment);
+}
 @keyframes ff-countin-tip {
     from { opacity: 0; transform: translateY(6px); }
 }

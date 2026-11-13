@@ -17,8 +17,11 @@
      sequence   the seats that count. Sit on them in landing order.
      decoy      a seat that is not in the sequence. Sitting on it costs time,
                 not the round — it is a mistake you can walk off.
-     poi        the auto-kick chair from the original. Sitting on it ends the
-                round then and there.
+     poi        the Bobba Doormat (13 Nov 2026; until then the original's
+                auto-kick chair, which ended the round). Step on it - at the
+                end of a walk or on the way through - and the figure is stuck
+                for STUCK_MS. That is the whole cost: the clock keeps running,
+                no points, no streak, no life.
      obstacle   not a seat at all. It blocks, and that is its whole job.
 
    ----------------------------------------------------------------------
@@ -28,8 +31,8 @@
    values below for why the streak is the part that matters. It does not end
    the round: that would make a game about a sequence you cannot see into a
    game about luck, and the original's own failure state was elimination by
-   being too slow, not by being wrong. The clock is the enemy; poi is the only
-   instant loss.
+   being too slow, not by being wrong. The clock is the enemy, and nothing
+   but the clock loses a round.
 
    ----------------------------------------------------------------------
    What counts as sitting
@@ -45,6 +48,7 @@
 
     const WRONG_SEAT_PENALTY_S = 3;     // sitting out of order
     const DECOY_PENALTY_S = 2;          // sitting on a decoy
+    const STUCK_MS = 3000;              // stuck on a Bobba Doormat (poi)
 
     /* ---- POINTS, and what they are for.
 
@@ -185,6 +189,8 @@
                 this.lastScore = 0;
                 this.speed = 0;
                 this.freezes = [];
+                this.stuckUntil = 0;
+                this.stuckCount = 0;
                 this.message = "Watch where they land.";
                 this.endedBecause = "";
                 /* NOTHING FALLS YET, and nothing starts timing yet.
@@ -345,6 +351,32 @@
                 this.message = "Restarted.";
             },
 
+            /* A BOBBA DOORMAT UNDERFOOT (13 Nov 2026): the landed poi piece
+               covering this tile, or null. One still in the air is not there
+               yet. */
+            trapAt(tile) {
+                if (this.state !== RUNNING || !tile || !this.round) return null;
+                for (const f of this.round.placed) {
+                    if (f.role === "poi" && Furni.covers(f, tile.x, tile.y)) return f;
+                }
+                return null;
+            },
+
+            /* STUCK on it: the page holds the figure until stuckUntil. Costs
+               the three seconds and nothing else - the owner's call. Counted,
+               for the round's summary. Returns false while already stuck. */
+            stuckUntil: 0,
+            stuckCount: 0,
+            stick(now) {
+                if (this.state !== RUNNING) return false;
+                if (now < this.stuckUntil) return false;
+                this.stuckUntil = now + STUCK_MS;
+                this.stuckCount++;
+                this.message = "Oh Bobba! Stuck for 3 seconds!";
+                return true;
+            },
+            isStuck(now) { return this.state === RUNNING && now < this.stuckUntil; },
+
             /* The avatar finished a step onto this tile. Returns a short word
                for what happened, so the page can react without re-deriving it:
                null, "sat", "wrong", "decoy", "poi", "won". */
@@ -354,13 +386,8 @@
                 if (!seat) return null;
                 if (this.sat.includes(seat)) return null;   // already counted
 
-                if (seat.role === "poi") {
-                    this.state = LOST;
-                    this.endedAt = now;
-                    this.endedBecause = "poi";
-                    this.message = "That was the wrong chair entirely.";
-                    return "poi";
-                }
+                // A poi that happens to be a seat sticks you like the mat does.
+                if (seat.role === "poi") return this.stick(now) ? "poi" : null;
 
                 /* A POWER-UP SEAT — the love potion's Rainbow Pod (25 Oct
                    2026): sitting in it is the point, not a mistake. Nothing
@@ -690,6 +717,6 @@
         createGame, createRun,
         IDLE, RUNNING, WON, LOST, WRONG_SEAT_PENALTY_S, DECOY_PENALTY_S,
         SEAT_POINTS, STREAK_STEP, STREAK_MAX, WRONG_SEAT_POINTS, DECOY_POINTS, FINISH_BONUS,
-        STARTING_LIVES, LIFE_EVERY, LIFE_BONUS
+        STARTING_LIVES, LIFE_EVERY, LIFE_BONUS, STUCK_MS
     };
 })();

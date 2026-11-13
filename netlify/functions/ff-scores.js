@@ -449,7 +449,8 @@ function floorMsFor(level) {
    WHAT CHANGED: it used to count every scheduled drop as a scoring seat.
    Two thirds of the pieces in the published levels are sequence seats and the
    rest cannot pay anything at all — an obstacle is never sat on, a decoy is
-   -5, and a poi ENDS THE ROUND (see the seat branches in js/room-game.js).
+   -5, and a poi (the Bobba Doormat since 13 Nov 2026) only holds the player
+   for three seconds (see the seat branches in js/room-game.js).
    Counting them as ten points plus a streak step put the ceiling at nearly
    twice what the board's best real run had scored, which is enough room for a
    crafted request to take first place and look ordinary doing it.

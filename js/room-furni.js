@@ -346,8 +346,27 @@
             const facing = mirror ? MIRROR_OF(dir) : dir;
             return { dir, mirror, facing, stateKey, swap: facing === 2 || facing === 6 };
         };
-        const list = drawn.map(d => entry(d, false));
-        for (let i = drawn.length - 1; i >= 0; i--) list.push(entry(drawn[i], true));
+        /* A DIRECTION THAT IS ONLY ANOTHER DIRECTION'S PICTURE (13 Nov 2026).
+           sofa_silo2, funky_sofa_polyfon and sofa_frostframe ship members for
+           direction 4 that the client never composes (FurniOffsets has 0 and 2
+           only), and the extractor filled them from direction 0 - every part
+           borrowing 0's file (`f: "0_0"`). Dropped as that, the sofa showed its
+           BACK while the sitter faced the viewer through it. Such a direction
+           is drawn as the mirror of the one that faces the same way, and the
+           list keeps its length, so a rotation index saved in a level means
+           the same slot it always did. */
+        const borrowed = (d) => {
+            const box = byState[d];
+            return Boolean(box && box.p && box.p.length &&
+                box.p.every(p => p.f && String(p.f).split("_")[1] !== String(d)));
+        };
+        const real = (d, mirror) => {
+            if (!borrowed(d)) return entry(d, mirror);
+            const twin = drawn.find(e => e !== d && !borrowed(e) && MIRROR_OF(e) === d);
+            return twin === undefined ? entry(d, mirror) : entry(twin, !mirror);
+        };
+        const list = drawn.map(d => real(d, false));
+        for (let i = drawn.length - 1; i >= 0; i--) list.push(real(drawn[i], true));
 
         const out = { byState, list, stateKey };
         variantCache.set(key, out);

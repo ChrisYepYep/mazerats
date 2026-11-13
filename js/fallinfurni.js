@@ -480,6 +480,58 @@
     }
     function blocked(x, y) { return blockedTiles.has(Iso.key(x, y)); }
 
+    /* ---- BOBBA DOORMATS (13 Nov 2026, the owner's rework of the poi). A
+       doormat is floor: the figure walks over it, and arriving on it - the
+       end of a walk or a step on the way through - sticks them for
+       RoomGame.STUCK_MS ("Oh Bobba! Stuck for 3 seconds!"). A click plans
+       the plain shortest route, mats and all, so walking over one that is
+       already down is the player's mistake. One that FALLS onto a route
+       already being walked is not, and the route goes round it, as it does
+       round a chair (repathIfBlocked). The drop rules never let a mat land on
+       the only way to a seat (wallsOf in js/room-drop.js). */
+    function matKeys() {
+        const out = new Set();
+        for (const f of state.furni) {
+            if (f.role !== "poi") continue;
+            for (const t of Furni.tilesOf(f)) out.add(Iso.key(t.x, t.y));
+        }
+        return out;
+    }
+    // The mats there were when the walk was planned; any others are new.
+    let knownMats = new Set();
+    const stuckNow = (now) => Boolean(game && game.isStuck && game.isStuck(now));
+    // Round every mat if there is a way round, over them if not.
+    function routeAvoidingMats(goal, seat) {
+        const mats = matKeys();
+        if (mats.size) {
+            const r = Path.findPath(state.pos, goal, (x, y) => blocked(x, y) || mats.has(Iso.key(x, y)), seat);
+            if (r && r.length) return r;
+        }
+        return Path.findPath(state.pos, goal, blocked, seat);
+    }
+
+    /* "Oh Bobba!" over the room for as long as the figure is stuck, on the
+       game clock, so a pause holds it too. */
+    function bobbaPop(now) {
+        Sound.sfx("poi");
+        renderHud(now);
+        syncBobbaPop(now);
+        dirty = true;
+    }
+    let bobbaShown = false;
+    function syncBobbaPop(now) {
+        const on = stuckNow(now);
+        if (on === bobbaShown) return;
+        bobbaShown = on;
+        const el = document.getElementById("ff-bobbapop");
+        if (!el) return;
+        el.hidden = !on;
+        if (on) {
+            const n = el.firstElementChild;
+            if (n) { n.style.animation = "none"; void n.offsetWidth; n.style.animation = ""; }
+        }
+    }
+
     /* Which way a seat faces, in the same eight-direction compass the figure
        uses. A furni's rotation resolves to a client DIRECTION (see
        RoomFurni.variantAt) and Habbo numbers furni directions and avatar
@@ -512,8 +564,11 @@
                wait first, which is a worse thing to be looking at than the
                problem it was solving. */
             const facing = seat ? seatFacing(seat) : null;
+            // Raised or lowered to the seat's own height (SEAT_FIT).
+            const lift = seat ? seatFit(seat).lift * (Iso.TILE_H / 32) : 0;
             return {
-                sx: c.sx, sy: c.sy,
+                sx: c.sx, sy: c.sy - lift,
+                seat,
                 action: seat ? "sit" : "std",
                 frame: 0,
                 dir: facing === null ? state.dir : facing
@@ -562,7 +617,8 @@
         const what = game.arrivedAt(state.pos, now);
         if (what) { renderHud(now); dirty = true; }
         if (what === "sat" || what === "won") Sound.sfx("seat", game.streak);
-        else if (what === "wrong" || what === "decoy" || what === "poi") Sound.sfx(what);
+        else if (what === "wrong" || what === "decoy") Sound.sfx(what);
+        else if (what === "poi") bobbaPop(now);       // a poi that is a seat
         else if (what === "power") sitOnPower(now);
     }
 
@@ -596,7 +652,9 @@
         if (!route || !route.length) return;
         state.goal = { x, y, seat: !!seat };
         state.path = route;
-        if (!state.stepFrom) beginStep(gameNow());
+        knownMats = matKeys();
+        // Stuck on a doormat, the walk waits for it to let go (advanceWalk).
+        if (!state.stepFrom && !stuckNow(gameNow())) beginStep(gameNow());
     }
 
     /* THE ROOM CHANGED WHILE YOU WERE WALKING.
@@ -621,7 +679,19 @@
        has since landed on it, you stop short rather than sitting on a chair
        you never chose. */
     function repathIfBlocked() {
+        // Doormats that have come down (or begun to) since the walk was planned.
+        const mats = matKeys();
+        const fresh = new Set([...mats].filter(k => !knownMats.has(k)));
+        knownMats = mats;
         if (!state.goal) return;
+
+        // One falling on where you were going stops you short, as a chair does.
+        if (fresh.has(Iso.key(state.goal.x, state.goal.y)) && !state.goal.seat) {
+            state.path = [];
+            state.goal = null;
+            dirty = true;
+            return;
+        }
 
         /* THE GOAL FIRST, and before the "is there anything left to walk"
            check, because on the LAST step there is not. beginStep shifts the
@@ -638,15 +708,15 @@
         }
 
         if (!state.path.length) return;
-        if (!state.path.some(s => blocked(s.x, s.y))) return;
+        const onMat = state.path.some(s => fresh.has(Iso.key(s.x, s.y)));
+        if (!onMat && !state.path.some(s => blocked(s.x, s.y))) return;
 
         /* `state.pos` is already the tile being walked INTO — beginStep moves
            it there and animates across afterwards — so it is where the figure
            will be standing whether or not a step is in flight, and that is
            where any new route starts. A step already under way is committed
            either way; it cannot be redirected mid-tile. */
-        const route = Path.findPath(
-            state.pos, { x: state.goal.x, y: state.goal.y }, blocked, state.goal.seat);
+        const route = routeAvoidingMats({ x: state.goal.x, y: state.goal.y }, state.goal.seat);
 
         if (route && route.length) {
             state.path = route;
@@ -1246,6 +1316,51 @@
     // A seated figure's place in the sort, above its tile — see the note in
     // paintScene. A seat's resting height of one, times 1000, plus the 2.
     const SIT_DEPTH = 1002;
+    /* ON A ONE-TILE SEAT, JUST IN FRONT OF ITS TILE (13 Nov 2026, the
+       owner's: "the arm rest nearer the camera doesn't layer on top of the
+       avatar ... the case for a lot of seats"). A single chair's near arm is
+       the part the client shifts FORWARD of its tile - gothic_chair's arms
+       by 303, an armchair's by 30 to 700 - and SIT_DEPTH, a whole tile
+       forward, put the figure over every one of them. Two in front of the
+       tile keeps the figure over the seat and the back (shifted 0 or less)
+       and under the arms. SIT_DEPTH stays the rule for seats more than a tile
+       long, where the second seat's own cushions are shifted a tile forward
+       too (sofa_polyfon's 1199 and 1236) and the figure has to be over them;
+       the long seats whose near end-arm is shifted further still (the gothic
+       sofas' 1303) take SIT_NEAR through SEAT_FIT. All of it checked on a
+       contact sheet of every seat the levels use, in every rotation and on
+       every tile, before and after, at 2-4x. */
+    const SIT_NEAR = 2;
+    /* SEATS THAT ARE NOT CHAIR HEIGHT. The figure's sitting picture is drawn
+       for an ordinary chair; these are measured off the same contact sheet
+       against chair_polyfon, in room pixels at 64x32 (halved in the Library).
+         lift   raises the sitter (a throne's seat is high, a floor cushion
+                low)
+         over   the sitter is drawn over the whole seat whichever way it
+                faces - a backless stool whose round top otherwise drew
+                across the sitter's lap
+         depth  where the sitter sorts, facing the viewer, in place of the
+                rule above: a piece whose seat itself is shifted forward
+                (the Norja armchair's button, the divan's bolster)
+       Keyed by the class without its colour (*N). */
+    const SEAT_FIT = {
+        gothic_chair: { lift: 8 },
+        asian_gothic_chair: { lift: 8 },
+        barchair_silo2: { lift: 5, over: true, depth: SIT_DEPTH },
+        soft_sofachair_norja2: { depth: SIT_DEPTH },
+        romantique_divan: { depth: 1100 },
+        gothic_sofa: { depth: SIT_NEAR }, asian_gothic_sofa: { depth: SIT_NEAR },
+        sheji_cnsofa: { depth: SIT_NEAR },
+        pillow: { lift: -8 }, dmg_pillow: { lift: -8 },
+        picnic_pillow: { lift: -8 }, picnic_pillow_blu: { lift: -8 }, picnic_pillow_yel: { lift: -8 },
+        hc_arab_pllw: { lift: -8 }, hc_arab_pllw2: { lift: -8 }, arabian_pllw: { lift: -8 }
+    };
+    const NO_FIT = { lift: 0, over: false, depth: 0 };
+    function seatFit(seat) {
+        const base = String((seat && seat.className) || "").replace(/\*\d+$/, "");
+        const long = Boolean(seat && (seat.w > 1 || seat.h > 1));
+        return Object.assign({}, NO_FIT, { depth: long ? SIT_DEPTH : SIT_NEAR }, SEAT_FIT[base] || {});
+    }
 
     /* A LONG PIECE WITH NO DEPTH DATA, IN STRIPS (25 Oct 2026; see `sliced`
        in js/room-furni.js). The part is cut into vertical strips, one per
@@ -1401,9 +1516,10 @@
            of the backrest. Facing away, the figure keeps the standing key,
            which put every one of those backs in front of it as it should. */
         const tile = state.pos;
-        const forward = at.action === "sit" && (at.dir === 2 || at.dir === 4);
+        const fit = at.seat ? seatFit(at.seat) : NO_FIT;
+        const forward = at.action === "sit" && (fit.over || at.dir === 2 || at.dir === 4);
         pieces.push({
-            key: Furni.tileDepth(tile.x, tile.y) * 1000 + (forward ? SIT_DEPTH * 1000 : 500),
+            key: Furni.tileDepth(tile.x, tile.y) * 1000 + (forward ? (fit.depth || SIT_NEAR) * 1000 : 500),
             draw: () => {
                 /* With the mug in hand while the coffee lasts — and the plain
                    figure until the mug's images have arrived, rather than
@@ -2282,6 +2398,9 @@
             const arrived = now - due > STEP_CATCHUP_MS ? now : due;
             state.stepFrom = null;
 
+            // On a Bobba Doormat, at the end of the walk or on the way through.
+            if (running && game.trapAt && game.trapAt(state.pos) && game.stick(arrived)) bobbaPop(arrived);
+
             /* ARRIVING AT THE TILE YOU ASKED FOR is what the game reacts to —
                not every tile crossed on the way to it.
 
@@ -2307,8 +2426,15 @@
                     acceptSeat(arrived);      // nothing here; settles immediately
                 }
             }
-            if (state.path.length) beginStep(arrived);
+            if (state.path.length && !(running && stuckNow(arrived))) beginStep(arrived);
             dirty = true;
+        }
+
+        /* UNSTUCK: the walk that was waiting carries on, from the moment the
+           doormat let go (or now, after a stall). */
+        if (!state.stepFrom && state.path.length && !stuckNow(now)) {
+            const free = running ? game.stuckUntil || 0 : 0;
+            beginStep(free && free <= now && now - free <= STEP_CATCHUP_MS ? free : now);
         }
 
         if (state.acceptAt === null) return;
@@ -2452,6 +2578,7 @@
             dirty = true;
         }
 
+        syncBobbaPop(now);
         if (state.stepFrom) dirty = true;
         /* A switched-on furni is moving too. The paint gate only knows about
            things the GAME moves — a step, a drop — so a lamp's flame held
@@ -6855,8 +6982,7 @@
            that makes a player distrust the rest of the table. */
         const won = theRun.results.filter(r => r.won).length;
         const spent = theRun.livesSpent || 0;
-        const whyLost = (w) => (w === "poi" ? "the wrong chair entirely"
-            : w === "restart" ? "restarted" : "out of time");
+        const whyLost = (w) => (w === "restart" ? "restarted" : "out of time");
         document.getElementById("ff-runend-why").textContent = quit
             ? `Quit on ${(theRun.level() || {}).name || "this level"}: ${won} ${won === 1 ? "level" : "levels"} cleared.`
             : cleared
@@ -7234,6 +7360,17 @@
         return kindsOf(lv).filter(kind =>
             !run || run.levels.findIndex(l => kindsOf(l).includes(kind)) === run.index);
     }
+    /* AND THE BOBBA DOORMAT'S (13 Nov 2026, the owner's: "Avoid Bobba
+       Doormats to avoid getting stuck!" with Volter's skull at the left), on
+       the same terms: the first level of the run that drops one. */
+    const hasMat = (lv) => ((lv && lv.zones) || []).some(z =>
+        (z.items || []).some(it => it.role === "poi" && (it.count || 0) > 0));
+    const BOBBA_TIP = "Avoid Bobba Doormats to avoid getting stuck!";
+    function hazardTips() {
+        const lv = game && game.level;
+        if (!hasMat(lv)) return [];
+        return !run || run.levels.findIndex(hasMat) === run.index ? ["bobba"] : [];
+    }
 
     function countIn(callout) {
         const root = document.getElementById("ff-countin");
@@ -7243,19 +7380,32 @@
         const beats = ["3", "2", "1", "Go"];
         if (callout) beats.unshift(callout);
         const tipEl = document.getElementById("ff-countin-tip");
-        const tips = tipEl ? powerTips() : [];
+        const tips = tipEl ? hazardTips().concat(powerTips()) : [];
         const tip = tips.length > 0;
         if (tipEl) {
             // A line each: the hand item, and what to do with it.
             tipEl.innerHTML = "";
             for (const kind of tips) {
-                const def = POWERS()[kind] || {};
                 const line = document.createElement("p");
+                if (kind === "bobba") {
+                    // U+00AA, which Volter draws as a skull (see Volter Glyphs in css/style.css).
+                    const skull = document.createElement("span");
+                    skull.className = "ff-countin-skull";
+                    skull.textContent = "\u00AA";
+                    skull.setAttribute("aria-hidden", "true");
+                    const text = document.createElement("span");
+                    text.textContent = BOBBA_TIP;
+                    line.append(skull, text);
+                    tipEl.appendChild(line);
+                    continue;
+                }
+                const def = POWERS()[kind] || {};
                 const img = document.createElement("img");
                 // The panel's badge where there is one (28 Oct 2026, the
                 // owner's: the brain freeze's snowflake, not the ice cream).
-                img.src = def.badge || def.icon || `assets/avatar/handitem-${kind}.png`;
-                if (def.badge) img.className = "is-badge";
+                img.src = def.tipBadge || def.badge || def.icon || `assets/avatar/handitem-${kind}.png`;
+                if (def.tipBadge) img.className = "is-tip-badge";
+                else if (def.badge) img.className = "is-badge";
                 img.alt = "";
                 const span = document.createElement("span");
                 span.textContent = def.tip || "";

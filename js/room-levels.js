@@ -54,7 +54,11 @@
    Two seats are special and both come from the original game:
 
        decoy   a seat that is not part of the sequence. Costs time, not the round.
-       poi     the auto-kick chair. Sitting on it ends the round immediately.
+       poi     the Bobba Doormat (13 Nov 2026; it was the auto-kick chair, which
+               ended the round). Standing on it, or walking over it, sticks
+               the player for three seconds (RoomGame.STUCK_MS) and costs
+               nothing else. Never a seat the round needs, and never on the
+               only way to one (js/room-drop.js treats it as wall).
 
    ----------------------------------------------------------------------
    Difficulty
@@ -129,7 +133,7 @@
        That is a level-building mistake rather than a crash, so this does not
        refuse it: `obstacle` is a perfectly good thing to want, and the piece
        already behaves as one. It gives the editor something to point at. */
-    const SEAT_ROLES = ["sequence", "decoy", "poi"];
+    const SEAT_ROLES = ["sequence", "decoy"];   // a poi is a doormat, which is no seat
     const needsSeat = (role) => SEAT_ROLES.includes(role);
 
     /* Every zone item whose role wants a seat and whose furni is not one.
@@ -148,7 +152,7 @@
     const ROLE_LABELS = {
         sequence: "Sequence seat",
         decoy: "Decoy seat",
-        poi: "Poi: instant fail",
+        poi: "Poi: Bobba Doormat (stuck 3s)",
         obstacle: "Obstacle"
     };
 
@@ -351,6 +355,10 @@
          badge   the panel's icon beside the seconds left, when it is not the
                  hand item: the brain freeze's snowflake (the owner's:
                  "replace this with a snow flake icon").
+         tipBadge  the same at the count-in's size, drawn for it (13 Nov 2026,
+                 the owner's: "improve the snowflake icon" at level 7's tip):
+                 a 17px outlined flake shown doubled, where the 10px panel
+                 badge had been trebled into a blur of blue and white.
          tip     said over the count-in on the first level of the run that
                  has one. */
     const POWERUPS = {
@@ -360,7 +368,7 @@
         },
         freeze: {
             name: "Brain freeze", furniName: "Ice Cream Machine", classes: ["rare_icecream*1"], anyOf: /^rare_icecream(\*\d+)?$/,
-            carry: 3, ms: 5000, badge: "assets/icons/ff-snowflake.svg",
+            carry: 3, ms: 5000, badge: "assets/icons/ff-snowflake.svg", tipBadge: "assets/icons/ff-snowflake-tip.svg",
             tip: "Grab an ice cream to freeze the clock!", does: "the clock stops for 5 seconds while furni keeps falling"
         },
         /* SAT IN, not double-clicked (the owner's: "the player must sit in

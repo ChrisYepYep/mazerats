@@ -235,6 +235,22 @@ function playRound(level, meta, seed) {
        short. `arriving` holds the step until its end; the arrival is settled
        before the tick, which is the page's order too. */
     let arriving = false;
+    let stuckTill = 0;            // held on a Bobba Doormat until then
+    /* A good player walks round a doormat rather than over it, where there
+       is a way round (the page plans plain routes; see matKeys there). */
+    const matsOf = () => {
+        const out = new Set();
+        for (const f of game.renderList()) if (f.role === "poi") for (const t of Furni.tilesOf(f)) out.add(Iso.key(t.x, t.y));
+        return out;
+    };
+    const routeTo = (goal, isBlocked) => {
+        const mats = matsOf();
+        if (mats.size) {
+            const r = Path.findPath(pos, goal, (x, y) => isBlocked(x, y) || mats.has(Iso.key(x, y)), true);
+            if (r && r.length) return r;
+        }
+        return Path.findPath(pos, goal, isBlocked, true) || [];
+    };
 
     const LIMIT = (level.rules.seconds + 30) * 1000;
     while (game.state === "running" && now < LIMIT) {
@@ -242,7 +258,8 @@ function playRound(level, meta, seed) {
             arriving = false;
             const what = game.arrivedAt(pos, stepAt);
             if (what === "wrong" || what === "decoy") wrongSeats++;
-            if (what === "poi") break;
+            // A Bobba Doormat (13 Nov 2026): stuck where it stands, as the page holds it.
+            if (game.trapAt(pos) && game.stick(stepAt)) stuckTill = stepAt + Game.STUCK_MS;
             if (game.state !== "running") break;
         }
         game.tick(now, pos);
@@ -278,11 +295,11 @@ function playRound(level, meta, seed) {
             const goalKey = Iso.key(goal.x, goal.y);
             const isBlocked = (x, y) => blocked.has(Iso.key(x, y));
             if (!target || target.x !== goal.x || target.y !== goal.y || !route.length) {
-                route = Path.findPath(pos, goal, isBlocked, true) || [];
+                route = routeTo(goal, isBlocked);
                 target = route.length || (pos.x === goal.x && pos.y === goal.y) ? goal : null;
                 if (!route.length && !(pos.x === goal.x && pos.y === goal.y)) stranded++;
-            } else if (route.some(s => Iso.key(s.x, s.y) !== goalKey && isBlocked(s.x, s.y))) {
-                route = Path.findPath(pos, goal, isBlocked, true) || [];
+            } else if (route.some(s => Iso.key(s.x, s.y) !== goalKey && (isBlocked(s.x, s.y) || matsOf().has(Iso.key(s.x, s.y))))) {
+                route = routeTo(goal, isBlocked);
                 if (!route.length) stranded++;
             }
         }
@@ -293,7 +310,7 @@ function playRound(level, meta, seed) {
             const b = game.blocked();
             if (route.some(s => b.has(Iso.key(s.x, s.y)))) route = [];
         }
-        if (route.length && now >= stepAt && !arriving) {
+        if (route.length && now >= stepAt && now >= stuckTill && !arriving) {
             const step = route.shift();
             pos = { x: step.x, y: step.y };
             stepAt = now + WALK_MS;

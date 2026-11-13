@@ -124,7 +124,22 @@
         return true;
     }
 
-    const sealsIn = (list, seat) => sealedWith(Furni.blockedTiles(list), seat);
+    /* WHAT THE DROP RULES COUNT AS WALL: everything that blocks walking, and
+       the Bobba Doormat (role "poi", 13 Nov 2026) as well. The figure can walk
+       over a doormat, and is stuck three seconds for it, so a mat on the only
+       way to a seat is a toll the player cannot avoid - the owner's rule is
+       that it never is. Measured as wall here, every guarantee below (no seat
+       cut off, no player walled in) holds with the mats left out of the way. */
+    function wallsOf(list) {
+        const out = Furni.blockedTiles(list);
+        for (const f of list) {
+            if (f.role !== "poi" || !f.stand) continue;
+            for (const t of Furni.tilesOf(f)) out.add(key(t.x, t.y));
+        }
+        return out;
+    }
+
+    const sealsIn = (list, seat) => sealedWith(wallsOf(list), seat);
 
     /* THE CORNER RULE, in one place for every flood fill below: a diagonal
        step from (x, y) by (dx, dy) is refused when BOTH tiles beside it are
@@ -317,7 +332,7 @@
        is asked again with it closed. Returns the tiles to close, or null. */
     function nookBehind(list, pu, avoid, closed, reserved) {
         if (!avoid) return null;
-        const blocked = Furni.blockedTiles(list);
+        const blocked = wallsOf(list);
         if (closed) for (const k of closed) blocked.add(k);
         const before = standingRoom(avoid, blocked);
         const near = new Set(nearRoom(avoid, blocked, NEAR_STEPS).map(t => key(t.x, t.y)));
@@ -442,7 +457,7 @@
            single drop, all of it on the frame a piece starts falling. The set
            is built here instead and the candidate's own tiles are added and
            taken away around each test. */
-        const blocked = Furni.blockedTiles(list);
+        const blocked = wallsOf(list);
         // Floor the round has closed off (see CLOSES BEHIND THEM) is not
         // floor to anybody: nobody can stand there or get off a seat onto it.
         if (closed) for (const k of closed) blocked.add(k);
@@ -610,7 +625,7 @@
                     { meta, rotation: entry.rotation, state: entry.state, role: entry.role });
 
                 const added = [];
-                if (!candidate.stand) {
+                if (!candidate.stand || candidate.role === "poi") {
                     for (const t of Furni.tilesOf(candidate)) {
                         const k = key(t.x, t.y);
                         if (!blocked.has(k)) { blocked.add(k); added.push(k); }
@@ -701,6 +716,39 @@
         return out;
     }
 
+    // Each power-up's tile and the tile in front of it, or null with none.
+    function reservedFor(list) {
+        if (!list.length) return null;
+        return new Set(list.flatMap(p => {
+            const f = powerupFront(p);
+            return [key(p.x, p.y), key(f.x, f.y)];
+        }));
+    }
+
+    /* WHERE A POWER-UP GOES WHEN ITS OWN TILE KEEPS SAYING NO (13 Nov 2026):
+       the nearest tile anywhere in the room the drop rules allow, by the same
+       spotsFor every piece answers to, so it can strand nothing. Not on another
+       power-up's tiles; a free front tile is preferred, then nearness to where
+       the builder put it. Returns { x, y, spots } or null. */
+    const POWER_MOVE_MS = 800;
+    function powerupElsewhere(others, pu, meta, rot, playerTile, sat, closed, reserved) {
+        const own = new Set([key(pu.x, pu.y), key(powerupFront(pu).x, powerupFront(pu).y)]);
+        const keep = reserved ? new Set([...reserved].filter(k => !own.has(k))) : null;
+        const entry = { className: pu.cls, rotation: rot, role: "power",
+            area: { x: 0, y: 0, w: Iso.COLS, h: Iso.ROWS } };
+        const spots = spotsFor(others, entry, meta, playerTile, 0, sat, false, keep, closed);
+        if (!spots.length) return null;
+        const blocked = wallsOf(others);
+        const frontFree = (s) => {
+            const f = powerupFront({ x: s.x, y: s.y, facing: pu.facing });
+            const k = key(f.x, f.y);
+            return Iso.has(f.x, f.y) && !blocked.has(k) && !(closed && closed.has(k)) ? 0 : 1;
+        };
+        const far = (s) => Math.max(Math.abs(s.x - pu.x), Math.abs(s.y - pu.y));
+        const best = spots.slice().sort((a, b) => frontFree(a) - frontFree(b) || far(a) - far(b))[0];
+        return { x: best.x, y: best.y, spots };
+    }
+
     /* A round in progress. `level` is already normalised; `metaFor` resolves a
        className to its furnidata record; `urlFor` to its sprite. */
     function createRound(level, opts) {
@@ -759,10 +807,7 @@
                when its moment comes, and the tile in front of it, so a chair
                never falls where the player stands to use it. Nothing in the
                queue lands on either (spotsFor's `reserved`). */
-            reserved: powerupsOf(level).length ? new Set(powerupsOf(level).flatMap(p => {
-                const f = powerupFront(p);
-                return [key(p.x, p.y), key(f.x, f.y)];
-            })) : null,
+            reserved: reservedFor(powerupsOf(level)),
             /* FLOOR CLOSED for the rest of the round: the far sides of a chair
                the player was sitting on when a piece was placed on the
                promise they would get up the other way. See CLOSES in
@@ -834,8 +879,15 @@
                    and never one of the sequence's. */
                 const seatsDown = this.landed.filter(f => f.sit && f.role === "sequence").length;
                 for (const pu of this.powerups) {
-                    if (pu.furni || now < pu.tryAt || seatsDown < pu.after) continue;
+                    /* `after` NEVER MORE THAN THE ROUND CAN GIVE (13 Nov 2026).
+                       A seat with nowhere safe to land comes off the plan, and
+                       a power-up asking for more seats than will ever land
+                       never fell at all. One seat short of the plan at most,
+                       so there is always a seat left to use it on. */
+                    const need = Math.min(pu.after || 0, Math.max(0, this.plannedSeats - 1));
+                    if (pu.furni || now < pu.tryAt || seatsDown < need) continue;
                     pu.tryAt = now + 400;
+                    if (pu.dueAt === undefined) pu.dueAt = now;
                     const meta = metaFor(pu.cls);
                     const rot = rotationFacing(pu.cls, pu.facing);
                     const fp = Furni.footprint(meta, rot, pu.cls, 0);
@@ -848,10 +900,32 @@
                     let nook = null;
                     if (!lands(puSpots)) {
                         nook = nookBehind(others, pu, playerTile, this.offLimits, this.reserved);
-                        if (!nook) continue;
-                        puSpots = spotsFor(others, entry, meta, playerTile, 0, sat, false, null,
-                            new Set([...this.offLimits, ...nook]));
-                        if (!lands(puSpots)) continue;
+                        if (nook) {
+                            puSpots = spotsFor(others, entry, meta, playerTile, 0, sat, false, null,
+                                new Set([...this.offLimits, ...nook]));
+                            if (!lands(puSpots)) nook = null;
+                        }
+                        /* ITS TILE STILL REFUSED: IT MOVES, rather than never
+                           falling (13 Nov 2026). Level 10's ice cream at (6,6)
+                           stands in a corridor of the Crypt; with the room
+                           half full it would either shut a seat off or wall
+                           the player into a pocket, so it waited, and in one
+                           round in seven it was still waiting when the round
+                           ended — a 20-second level built around a frozen
+                           clock, with no freeze. After POWER_MOVE_MS of
+                           refusals it lands on the nearest tile the drop rules
+                           DO allow, preferring one whose front tile is free
+                           floor so it can be used from the front as ever. */
+                        if (!nook) {
+                            if (now - pu.dueAt < POWER_MOVE_MS) continue;
+                            const alt = powerupElsewhere(others, pu, meta, rot, playerTile, sat,
+                                this.offLimits, this.reserved);
+                            if (!alt) continue;
+                            pu.x = alt.x; pu.y = alt.y;
+                            // What the round keeps clear follows it.
+                            this.reserved = reservedFor(this.powerups);
+                            puSpots = alt.spots;
+                        }
                     }
                     if (nook) for (const k of nook) this.offLimits.add(k);
                     if (puSpots.closes) for (const k of puSpots.closes) this.offLimits.add(k);
