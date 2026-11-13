@@ -28,7 +28,7 @@ let dirty = false, savedAt = 0;
 const undoStack = [], redoStack = [];
 let hover = null, drag = null, spaceHeld = false;
 /* Wall lights and wall items hang at a set height, in steps of 4; hold Ctrl and move the mouse up or down to change it */
-const wallH = { lamp: 106, item: 100 }, WALL_STEP = 4, WALL_RANGE = { lamp: [44, 136], item: [20, 146] };
+const wallH = { lamp: 106, item: 100 }, itemHeights = {}, WALL_STEP = 4, WALL_RANGE = { lamp: [44, 136], item: [20, 146] };
 const wallHeightKind = t => t === "sconce" || t === "globelight" ? "lamp" : isWallItemTool(t) ? "item" : null;
 let wallCtrlLast = null, wallCtrlSpare = 0, ctrlNow = false, lampCtrlLast = null;
 const snapWall = (h, kind) => Math.max(WALL_RANGE[kind][0], Math.min(WALL_RANGE[kind][1], Math.round(h / WALL_STEP) * WALL_STEP));
@@ -1370,7 +1370,8 @@ function setTool(t) {
     if ($("liftPanel")) hideLiftPanel(); liftDoors.clear(); doorStates.clear(); if (roomSession) { roomSession.close(); roomSession = null; }
     if ($("heightBar")) $("heightBar").hidden = !brushTool(t);
     if (brushTool(t)) setBrush(brushes[t]);
-    if (isWallItemTool(t)) { const d0 = wallItemOf(t.slice(3)); wallH.item = (d0 && d0.h) || 100; }
+    /* the height last chosen for this piece, not its own every time the tool is picked (14 Nov 2026, his: banners "default back to the top of the wall") */
+    if (isWallItemTool(t)) { const d0 = wallItemOf(t.slice(3)); wallH.item = itemHeights[t.slice(3)] || (d0 && d0.h) || 100; }
     if (RAISE(t)) tableLampZ = null;
     if (t !== "walk") walker = null; else startWalk();
     document.querySelectorAll("[data-tool]").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.tool === t)));
@@ -2782,7 +2783,7 @@ canvas.addEventListener("pointermove", e => {
     if (!kind || !(e.ctrlKey || e.metaKey) || drag) { wallCtrlLast = null; wallCtrlSpare = 0; return; }
     if (wallCtrlLast === null) { wallCtrlLast = e.clientY; return; }
     wallCtrlSpare += wallCtrlLast - e.clientY; wallCtrlLast = e.clientY;
-    const n = Math.trunc(wallCtrlSpare / 5); if (n) { wallCtrlSpare -= n * 5; const v = snapWall(wallH[kind] + n * WALL_STEP, kind); if (v !== wallH[kind]) { wallH[kind] = v; setStatus("Height on the wall: " + v); } paint(); }
+    const n = Math.trunc(wallCtrlSpare / 5); if (n) { wallCtrlSpare -= n * 5; const v = snapWall(wallH[kind] + n * WALL_STEP, kind); if (v !== wallH[kind]) { wallH[kind] = v; if (kind === "item" && isWallItemTool(tool)) itemHeights[tool.slice(3)] = v; setStatus("Height on the wall: " + v); } paint(); }
 });
 canvas.addEventListener("pointerleave", () => { if (!drag && hover) { hover = null; paint(); } });
 canvas.addEventListener("pointermove", e => {

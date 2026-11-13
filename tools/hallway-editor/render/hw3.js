@@ -2347,7 +2347,10 @@ function build(cfg) {
                     }
                     if (litNow) { const g = def.lit.at, flip = it.axis === "x", gu = flip ? -(g[0] - g[1]) : g[0] - g[1], gv = (g[0] + g[1]) / 2 - g[2]; w.lamps.push({ x: Math.round(base0[0] + gu), y: Math.round(base0[1] + gv), tx: it.axis === "x" ? it.at : P.x0, ty: it.axis === "x" ? P.y0 : it.at, i: w.lamps.length, colour: def.lit.colour, axisY: it.axis !== "x", lz: zHere, sign: true }); }
                 };
-                if (def.tell) w.afterAll.push({ zHere: P.z, depth: (it.axis === "x" ? it.at + P.y0 : P.x0 + it.at) + .35, tx: it.axis === "x" ? Math.floor(it.at) : P.x0, ty: it.axis === "x" ? P.y0 : Math.floor(it.at), draw: one, axis: it.axis, line: it.axis === "x" ? P.y0 : P.x0, out: def.out || 0 }); else if (onDrop) (P.raised ? w.sprites : (lv.later = lv.later || [])).push({ depth: (it.axis === "x" ? it.at + P.y0 : P.x0 + it.at) + .35, tx: it.axis === "x" ? Math.floor(it.at) : P.x0, ty: it.axis === "x" ? P.y0 : Math.floor(it.at), draw: one }); else one();
+                /* the Events Gallery's pieces go on after every wall, as the Hallway's own pictures do: drawn with their own part's walls, the next
+                   part's wall (a floor height changes there, so it's a part of its own) painted over them (14 Nov 2026, his: "A lot of wall items in
+                   the events gallery are getting clipped by the wall piece next to them") */
+                if (def.tell || def.kind === "gallery") w.afterAll.push({ zHere: def.tell ? P.z : zHere, depth: (it.axis === "x" ? it.at + P.y0 : P.x0 + it.at) + .35, tx: it.axis === "x" ? Math.floor(it.at) : P.x0, ty: it.axis === "x" ? P.y0 : Math.floor(it.at), draw: one, axis: it.axis, line: it.axis === "x" ? P.y0 : P.x0, out: def.out || 0 }); else if (onDrop) (P.raised ? w.sprites : (lv.later = lv.later || [])).push({ depth: (it.axis === "x" ? it.at + P.y0 : P.x0 + it.at) + .35, tx: it.axis === "x" ? Math.floor(it.at) : P.x0, ty: it.axis === "x" ? P.y0 : Math.floor(it.at), draw: one }); else one();
             }
             for (const [axis, at2, lc, style, lampHigh] of (P.l || [])) {
                 if (!(axis === "x" ? inReach(at2, P.y0, 340) : inReach(P.x0, at2, 340))) continue;
