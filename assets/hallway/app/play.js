@@ -54,8 +54,9 @@
     /* ---------- whose Habbo walks ----------
        A signed-in player whose Habbo is linked walks as it. Anyone else types their Origins name and picks the hotel, as Fallin' Furni asks, or walks as a guest.
        The art comes through the site's function: the page needs to read its pixels, and Habbo's imaging service doesn't allow that from here. */
-    /* the guest: the classic standard Habbo, black hair and a yellow top, as Fallin' Furni's default (14 Nov 2026, his) */
-    const GUEST = "hd-180-1.ch-210-66.lg-270-82.sh-290-80.hr-100-61", KEY = "hallway-avatar", HOTELS = ["COM", "ES", "BR"];
+    /* the guest: the classic standard Habbo, black hair and a yellow top (14 Nov 2026, his). In today's habbo.com codes: Fallin' Furni's old-style
+       default drew an open shirt and odd hair through habbo.com's imaging, so black hair 105 (his pick from a sheet), the plain T-shirt 3030 in yellow 1410, blue jeans */
+    const GUEST = "hd-180-1.hr-105-61.ch-3030-1410.lg-270-82.sh-290-80", KEY = "hallway-avatar", HOTELS = ["COM", "ES", "BR"];
     let figure = GUEST, linkedName = null, pickedNow = false;
     const remembered = () => { try { return JSON.parse(localStorage.getItem(KEY) || "null"); } catch (e) { return null; } };
     window.hallwayAvatarSrc = n => {
