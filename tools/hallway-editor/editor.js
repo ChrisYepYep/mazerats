@@ -150,6 +150,8 @@ const seeHidden = (l, h) => seeCut !== null && l === level && h > seeCut;
 function migrateHeights(m) {
     if (m.lift) { m.lifts = m.lifts || [m.lift]; delete m.lift; } m.lifts = m.lifts || [];
     for (const l of m.levels) delete l.teles;                   // Imperial Teleports are gone: lifts do that now
+    /* windows used to be placed looking at the lawn whatever you chose, so every one showed the same: once, those go to "whatever's behind it" (14 Nov 2026) */
+    if (!m.winViews) { for (const l of m.levels) for (const it of (l.wallItems || [])) if (it.k === "i_window" && it.view === "lawn") delete it.view; m.winViews = 1; }
     for (const l of m.levels) if (l.edgeItems) { for (const q of l.edgeItems) q.s = { brass: "gold", iron: "gold", bronze: "gold", banister: "wood", rope: "wood" }[q.s] || q.s; l.edgeItems = l.edgeItems.filter(q => EDGE_STYLES.some(e => e[0] === q.s)); if (!l.edgeItems.length) delete l.edgeItems; }   // edge planters became furniture
     for (const l of m.levels) if (l.wallItems) { l.wallItems = l.wallItems.filter(q => (window.WALL_ITEMS || []).some(i => i.id === q.k)); if (!l.wallItems.length) delete l.wallItems; }   // the player wall items went
     for (const l of m.levels) if (l.halfWalls) { const out = new Set(l.halfTiles || []); for (const k of l.halfWalls) { const [a, n, c] = k.split("|"); out.add(a + "|" + n + "|" + (+c * 2)); out.add(a + "|" + n + "|" + (+c * 2 + 1)); } delete l.halfWalls; l.halfTiles = [...out]; }
@@ -1703,7 +1705,7 @@ function act(px, py) {
         });
         return;
     }
-    if (isWallItemTool(tool)) { if (w) { const q = wallSpot(w, level, px, py); place(() => (level.wallItems = level.wallItems || []).push({ k: tool.slice(3), axis: w.axis, at: (() => { const t = { k: tool.slice(3), at: q.at, axis: w.axis }; snapWallItem(t); return t.at; })(), line: w.line, h: stairH(w, w.stair ? q.h : (() => { const d0 = wallItemOf(tool.slice(3)); return d0 && d0.locked ? d0.h : wallH.item; })()), ...(tool === "wi:i_window" ? { w: 32, b: 0, top: 128, view: "lawn" } : {}) })); } return; }
+    if (isWallItemTool(tool)) { if (w) { const q = wallSpot(w, level, px, py); place(() => (level.wallItems = level.wallItems || []).push({ k: tool.slice(3), axis: w.axis, at: (() => { const t = { k: tool.slice(3), at: q.at, axis: w.axis }; snapWallItem(t); return t.at; })(), line: w.line, h: stairH(w, w.stair ? q.h : (() => { const d0 = wallItemOf(tool.slice(3)); return d0 && d0.locked ? d0.h : wallH.item; })()), ...(tool === "wi:i_window" ? { w: 32, b: 0, top: 128 } : {}) })); } return; }
     if (tool === "sconce") { if (w) place(() => (level.lamps = level.lamps || []).push({ axis: w.axis, at: w.at + .5, line: w.line, ...lampField(lampHeight(level, w, px, py)) })); return; }
     if (tool === "globelight") { if (w) place(() => (level.lamps = level.lamps || []).push({ axis: w.axis, at: w.at + .5, line: w.line, style: "globe", ...lampField(lampHeight(level, w, px, py)) })); return; }
     if (tool === "lift") {
@@ -2162,8 +2164,8 @@ function select(hit) {
     else if (hit.type === "wallitem" && hit.o.k === "i_window") {
         say("Window. Drag it along the wall. Drag a square to change its width, top or bottom.");
         const f = document.createElement("label"); f.className = "field"; const n = document.createElement("span"); n.className = "f-label"; n.textContent = "Looks out on"; const c = document.createElement("span"); c.className = "f-ctl"; const t = document.createElement("select");
-        for (const [v, name] of [["lawn", "The lawn"], ["road", "The road"], ["maze", "The hedge maze"], ["park", "The car park"]]) { const op = document.createElement("option"); op.value = v; op.textContent = name; t.appendChild(op); }
-        t.value = hit.o.view || "lawn"; t.addEventListener("change", () => { snapshot(); hit.o.view = t.value; changed(); }); c.appendChild(t); f.append(n, c); box.appendChild(f);
+        for (const [v, name] of [["", "Whatever's behind it (changes along the wall)"], ["lawn", "The lawn"], ["road", "The road"], ["maze", "The hedge maze"], ["park", "The car park"]]) { const op = document.createElement("option"); op.value = v; op.textContent = name; t.appendChild(op); }
+        t.value = hit.o.view || ""; t.addEventListener("change", () => { snapshot(); if (t.value) hit.o.view = t.value; else delete hit.o.view; changed(); }); c.appendChild(t); f.append(n, c); box.appendChild(f);
     }
     else if (hit.type === "steps") {
         const fl = flightOf(hit.l, hit.o);
