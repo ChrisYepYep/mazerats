@@ -1392,6 +1392,19 @@ function doorArt(phase, axis, part) {
    as the client's own furniture. Open, the opening looks into a lit iso cabin. */
 function lift(w, x, y, o) {
     o = o || {};
+    /* On a left wall (13 Nov 2026, his: "Lifts can't be placed on all walls"): the back wall's lift mirrored. A map point (X, Y) mirrors to
+       (Y, X), which on screen is x mirrored about the map's origin, so it is drawn as the lift at (y, x) with every pixel's x mirrored: x is
+       the wall's line here, y the first tile along it. Its light and its call plate's pixels are mirrored the same way */
+    if (o.left) {
+        const b0 = w.b, M = X => 2 * w.ox - X, wm = Object.create(w);
+        /* a side face's half-pixel x (put(u1, h, t + .5)) lands, by Buf.set's index sums, as the blue and alpha of one pixel and the red of
+           the next to the right; mirrored, those two pixels swap sides, so it's laid channel by channel or the posts' edges came out purple */
+        wm.b = { set: (X, Y, c) => { const m = M(X); if (Number.isInteger(m)) return b0.set(m, Y, c); if (m !== Math.floor(m) + .5 || Y < 0 || Y >= b0.h || !b0.d) return;
+            const j = m + .5; if (j >= 0 && j < b0.w) { const q = b0.get(j, Y); b0.set(j, Y, [q[0], q[1], c[0]]); b0.d[(Y * b0.w + j) * 4 + 3] = c[1]; } if (j >= 1 && j <= b0.w) { const q = b0.get(j - 1, Y); b0.set(j - 1, Y, [c[2], q[1], q[2]]); } } };
+        wm.lamps = { push: q => w.lamps.push({ ...q, tx: q.ty, ty: q.tx, x: M(q.x) }) };
+        wm.plates = w.plates ? { push: (X, Y, c, line) => w.plates.push(M(X), Y, c, "y" + line) } : null;
+        return lift(wm, y, x, { ...o, left: false });
+    }
     const b = w.b, DW = 48, DH = 76, cab = 3;
     const O = w.S(x, y);
     /* a point: u along the wall, h up it, v out from it toward you */
@@ -1770,8 +1783,9 @@ function fromMap(map, names) {
     }
     for (const q of (map.lifts || (map.lift ? [map.lift] : []))) {
         const li2 = byId(q.level); if (!li2) continue;
-        const P = li2.patches.find(r => !r.notch && r.y0 === q.y && q.x >= r.x0 && q.x < r.x1);
-        if (P) { (P.liftList = P.liftList || []).push(q.x); } else report.lost.push("lift at " + q.x + " on " + q.level);
+        /* a lift on a left wall (axis "y", 13 Nov 2026): x is the wall's line and y the first of its tiles along it */
+        const left = q.axis === "y", P = left ? li2.patches.find(r => !r.notch && r.x0 === q.x && q.y >= r.y0 && q.y < r.y1) : li2.patches.find(r => !r.notch && r.y0 === q.y && q.x >= r.x0 && q.x < r.x1);
+        if (P) { (P.liftList = P.liftList || []).push(left ? { left: true, x: q.x, y: q.y } : q.x); } else report.lost.push("lift at " + q.x + (left ? "," + q.y : "") + " on " + q.level);
     }
     if (map.entrance) { const q = map.entrance, li3 = byId(q.level); if (li3) { (li3.portals = li3.portals || []).push(q); } }
     const portalOk = q => !!q && (q.axis === "x" || q.axis === "y") && Number.isFinite(q.line) && Number.isFinite(q.at);      // (10 Nov scan b, renderer 6)
@@ -2016,7 +2030,7 @@ function build(cfg) {
                     const hasDoor = doorsOn.some(d => d.axis === axis && d.line === line && (axis === "x" ? d.at < b && d.at + 2 > a : d.at - 2 < b && d.at > a)), H = hasDoor ? Math.max(drop, DOOR_WALL) : drop;
                     const col = colOf(axis, line), capped = H > drop, state = t => { const k = axis + "|" + line + "|" + t; return noWall.has(k) ? "none" : lowWall.has(k) ? "half" : "full"; };
                     const onP = tileOf.get(axis === "x" ? a + "," + line : line + "," + a);
-                    const liftBy = axis === "x" ? ((cfg.map && cfg.map.lifts) || []).filter(q => lv.src && q.level === lv.src.id && q.y === line && q.x < b + 1 && q.x + 4 > a).map(q => q.x + q.y - .4) : [];
+                    const liftBy = ((cfg.map && cfg.map.lifts) || []).filter(q => lv.src && q.level === lv.src.id && (axis === "x" ? q.axis !== "y" && q.y === line && q.x < b + 1 && q.x + 4 > a : q.axis === "y" && q.x === line && q.y < b + 1 && q.y + 4 > a)).map(q => q.x + q.y - .4);
                     (lv.later = lv.later || []).push({ withFloor: true, depth: Math.min((axis === "x" ? a + line : line + a) - .2, ...liftBy), tx: axis === "x" ? a : line, ty: axis === "x" ? line : a, draw: () => tagged(() => {
                         const zs = w.z; w.z = zr;
                         /* However the order comes out, a floor nearer on the line of sight covers this wall: a part of the same height diagonally in front of the one above it mustn't get its corner painted over */
@@ -2449,7 +2463,7 @@ function build(cfg) {
             }
             for (const fl of (P.fl || [])) flightY(w, fl[1], fl[2], fl[3], fl[4], fl[5]);
             if (P.lift !== undefined) lift(w, P.lift, P.y0, { open: cfg.liftOpen });
-            for (const lx of (P.liftList || [])) { const zl = P.z, ly = P.y0; (P.raised ? w.sprites : (lv.later = lv.later || [])).push({ depth: lx + ly - .3, tx: lx, ty: ly, draw: () => { const zs = w.z; w.z = zl; lift(w, lx, ly, { open: cfg.liftOpen }); w.z = zs; } }); }
+            for (const lq of (P.liftList || [])) { const zl = P.z, left = typeof lq === "object", lx = left ? lq.x : lq, ly = left ? lq.y : P.y0; (P.raised ? w.sprites : (lv.later = lv.later || [])).push({ depth: lx + ly - .3, tx: lx, ty: ly, draw: () => { const zs = w.z; w.z = zl; lift(w, lx, ly, left ? { open: cfg.liftOpen, left: true } : { open: cfg.liftOpen }); w.z = zs; } }); }
             /* main flights */
             for (const fl of (P.flights || [])) { flightY(w, fl[1], fl[2], fl[3], fl[4], fl[5]); if (fl[6]) signs.push({ s: w.WY(fl[2], fl[3] + 3.5, 0, 22), name: fl[6], alongY: true }); }
             if (P.side) {
@@ -2537,7 +2551,7 @@ function build(cfg) {
           for (const s of w.afterAll) if (!s.garland && (s.hang || s.axis)) { const k = s.hang || s.axis + s.line; if (!onWall.has(k)) onWall.set(k, []); onWall.get(k).push([along(s), s.depth]); }
           for (const s of w.afterAll) if (s.garland && onWall.has(s.axis + s.line)) { const a = along(s); for (const [b, d] of onWall.get(s.axis + s.line)) if (Math.abs(b - a) <= 6 && d + .001 > s.depth) s.depth = d + .001; } }
         /* the lifts' call plates, over the wall of their own line that was drawn after them; never over furniture or a nearer wall */
-        for (let k = 0; k < w.plates.length; k += 4) { const X = w.plates[k], Y = w.plates[k + 1]; if (X < 0 || Y < 0 || X >= bw || Y >= bh) continue; const i = Y * bw + X; if (furniX[i] !== NO_FURNI) continue; const o = wallOwner[i], Q = o && lv.patches[o - 1]; if (Q && Q.y0 !== w.plates[k + 3]) continue; const c = w.plates[k + 2], p = i * 4; layer.d[p] = c >> 16; layer.d[p + 1] = (c >> 8) & 255; layer.d[p + 2] = c & 255; }
+        for (let k = 0; k < w.plates.length; k += 4) { const X = w.plates[k], Y = w.plates[k + 1]; if (X < 0 || Y < 0 || X >= bw || Y >= bh) continue; const i = Y * bw + X; if (furniX[i] !== NO_FURNI) continue; const o = wallOwner[i], Q = o && lv.patches[o - 1]; const pl = w.plates[k + 3]; if (Q && (typeof pl === "string" ? Q.x0 !== +pl.slice(1) : Q.y0 !== pl)) continue; const c = w.plates[k + 2], p = i * 4; layer.d[p] = c >> 16; layer.d[p + 1] = (c >> 8) & 255; layer.d[p + 2] = c & 255; }
         const paintedAfter = new Set(); w.afterAll.sort((a, c) => a.depth - c.depth).forEach(s => {
             /* a pixel refused (furniture or a floor in front) keeps its own marks: the pieces' drawing marks w.keep and w.glowing after every set,
                so a sofa in front of a window was left unlit and washed out (14 Nov 2026, his pictures: a window, and the Lost Property sign) */
