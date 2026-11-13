@@ -1338,10 +1338,12 @@ function doorArt(phase, axis, part) {
     const put = (i, j, c) => { const q = (j * o.w + i) * 4; o.rgba[q] = c[0]; o.rgba[q + 1] = c[1]; o.rgba[q + 2] = c[2]; o.rgba[q + 3] = 255; };
     if (part === "alcove") {
         for (let j = 0; j < o.h; j++) for (let i = 0; i < o.w; i++) {
-            const q = (j * o.w + i) * 4; if (o.rgba[q + 3] < 128) continue; const c = (o.rgba[q] << 16) | (o.rgba[q + 1] << 8) | o.rgba[q + 2]; if (!c) continue;
+            const q = (j * o.w + i) * 4; if (o.rgba[q + 3] < 128) continue; const c = (o.rgba[q] << 16) | (o.rgba[q + 1] << 8) | o.rgba[q + 2];
             const g = GROUPS.get(c), L = (o.rgba[q] * .3 + o.rgba[q + 1] * .59 + o.rgba[q + 2] * .11);
-            const base = g === "paperA" || g === "paperB" ? pal.wallL[0] : g === "wood" ? (L > 90 ? pal.RL : L > 55 ? pal.F : pal.D) : (L > 150 ? pal.floor : pal.grout);
-            put(i, j, ghMix(base, [8, 6, 6], .5));
+            /* a plain recess (14 Nov 2026, his: the tunnel "is broken"): the entrance's alcove had a banister and steps in it; now its walls are
+               the gallery's paint in shadow and its floor the herringbone, darker the further in */
+            const floorish = !(g === "paperA" || g === "paperB" || g === "wood") && L > 120;
+            put(i, j, floorish ? ghMix(ghWood(i * 2, j * 4, false), [8, 6, 6], .45) : ghMix(pal.wallL[0], [8, 6, 6], .55 + .15 * (1 - j / o.h)));
         }
     } else {
         /* the opening: the see-through region that reaches the bottom of the piece in its middle */
@@ -1359,7 +1361,7 @@ function doorArt(phase, axis, part) {
         for (let j = 0; j < Hh; j++) for (let i = 0; i < W; i++) {
             if (open[j * W + i] || see(i, j)) continue;
             const d = dist[j * W + i];
-            if (d <= FW) { put(i, j, d < 1.5 ? [0, 0, 0] : d < 2.5 ? pal.gilt : d < 5.5 ? pal.F : d < 7 ? pal.lip : ghMix(pal.D, [0, 0, 0], .5)); continue; }
+            if (d <= FW) { put(i, j, d < 1.5 ? [0, 0, 0] : d < 2.5 ? pal.D : d < 5.5 ? pal.F : d < 7 ? pal.lip : ghMix(pal.D, [0, 0, 0], .5)); continue; }
             const c = wallPx(j, i); if (c) put(i, j, c);
         }
     }
@@ -2193,11 +2195,24 @@ function build(cfg) {
             if (ownerId) { const was = layer.set; layer.set = function (x, y, c) { was.call(layer, x, y, c); if (x >= 0 && y >= 0 && x < bw && y < bh) { wallOwner[y * bw + x] = ownerId; stairPx[y * bw + x] = 0; } }; }
             /* walls wherever nothing lies behind, at the height its walls stand at (its lift is the floor's alone) */
             const zWalls = P.z - (P.floorLift || 0); w.z = zWalls;
-            let run = null;
-            for (let X = P.x0; X <= P.x1; X++) { const open = X < P.x1 && !has.has(X + "," + (P.y0 - 1)) && !holes.has(X + "," + (P.y0 - 1)) && !P.noBack && (P.notch || !airBelow(X, P.y0 - 1) || doorEdge("x", X, P.y0) || shown("x", P.y0, X)); if (open && run === null) run = X; if (!open && run !== null) { tagged(() => H.wallRunX(w, run, X, P.y0, { ...cornerEnd(backWall(X, P.y0, P.z), sideWall(X, P.y0 - 1), zAt(X, P.y0 - 1), P.z), noStart: backWall(run - 1, P.y0, P.z), col: colOf("x", P.y0), ...halfOf("x", P.y0) })); run = null; } }
-            run = null;
-            for (let Y = P.y0; Y <= P.y1; Y++) { const open = Y < P.y1 && !has.has((P.x0 - 1) + "," + Y) && !holes.has((P.x0 - 1) + "," + Y) && (P.notch || !airBelow(P.x0 - 1, Y) || doorEdge("y", P.x0, Y) || shown("y", P.x0, Y)); if (open && run === null) run = Y; if (!open && run !== null) { tagged(() => H.wallRunY(w, P.x0, run, Y, { ...cornerEnd(sideWall(P.x0, Y, P.z), backWall(P.x0 - 1, Y), zAt(P.x0 - 1, Y), P.z), noStart: sideWall(P.x0, run - 1, P.z), col: colOf("y", P.x0), ...halfOf("y", P.x0) })); run = null; } }
-            for (const q of (lv.portals || [])) { if (tileOf.get(q.axis === "x" ? q.at + "," + q.line : q.line + "," + q.at) === P && (q.axis === "x" ? P.y0 === q.line : P.x0 === q.line) /* on its wall, never over a floor (10 Nov scan b, renderer 7) */) { drawPortal(w, q.axis, q.line, q.at, "alcove", q.tunnel ? "tunnel" : q.theatre); drawPortal(w, q.axis, q.line, q.at, "arch", q.tunnel ? "tunnel" : q.theatre); } }
+            /* a floor lowered with "raise the floor only" keeps its walls where they stood, which left a gap between them and the floor
+               (14 Nov 2026, his: "Walls with a lowered floor show black areas, and the tunnel doesn't align"): so walls and doorways are drawn
+               where they stand, then again at the floor below their foot only, so the panelling reaches down to the floor and the skirting sits on it */
+            const wallsAt = z => { w.z = z;
+                let run = null;
+                for (let X = P.x0; X <= P.x1; X++) { const open = X < P.x1 && !has.has(X + "," + (P.y0 - 1)) && !holes.has(X + "," + (P.y0 - 1)) && !P.noBack && (P.notch || !airBelow(X, P.y0 - 1) || doorEdge("x", X, P.y0) || shown("x", P.y0, X)); if (open && run === null) run = X; if (!open && run !== null) { tagged(() => H.wallRunX(w, run, X, P.y0, { ...cornerEnd(backWall(X, P.y0, P.z), sideWall(X, P.y0 - 1), zAt(X, P.y0 - 1), P.z), noStart: backWall(run - 1, P.y0, P.z), col: colOf("x", P.y0), ...halfOf("x", P.y0) })); run = null; } }
+                run = null;
+                for (let Y = P.y0; Y <= P.y1; Y++) { const open = Y < P.y1 && !has.has((P.x0 - 1) + "," + Y) && !holes.has((P.x0 - 1) + "," + Y) && (P.notch || !airBelow(P.x0 - 1, Y) || doorEdge("y", P.x0, Y) || shown("y", P.x0, Y)); if (open && run === null) run = Y; if (!open && run !== null) { tagged(() => H.wallRunY(w, P.x0, run, Y, { ...cornerEnd(sideWall(P.x0, Y, P.z), backWall(P.x0 - 1, Y), zAt(P.x0 - 1, Y), P.z), noStart: sideWall(P.x0, run - 1, P.z), col: colOf("y", P.x0), ...halfOf("y", P.x0) })); run = null; } }
+                for (const q of (lv.portals || [])) { if (tileOf.get(q.axis === "x" ? q.at + "," + q.line : q.line + "," + q.at) === P && (q.axis === "x" ? P.y0 === q.line : P.x0 === q.line) /* on its wall, never over a floor (10 Nov scan b, renderer 7) */) { drawPortal(w, q.axis, q.line, q.at, "alcove", q.tunnel ? "tunnel" : q.theatre); drawPortal(w, q.axis, q.line, q.at, "arch", q.tunnel ? "tunnel" : q.theatre); } }
+            };
+            wallsAt(zWalls);
+            if ((P.floorLift || 0) < 0) {
+                const o0 = (w.z = zWalls, w.S(P.x0, P.y0)), foot = x => o0[1] + Math.abs(x - o0[0]) / 2 - 12;
+                const under = Object.prototype.hasOwnProperty.call(layer, "set") ? layer.set : null;
+                layer.set = function (x, y, c) { if (y < foot(x)) return; if (under) under.call(layer, x, y, c); else Buf.prototype.set.call(layer, x, y, c); };
+                wallsAt(P.z);
+                if (under) layer.set = under; else delete layer.set;
+            }
             w.z = P.z;
             /* A wall running alongside small steps climbs with them, panelling, paper and cap together, so it flows from the lower floor's wall into the higher one's instead of jumping.
                Each column of it moves up by how far the steps have climbed there; the steps, drawn after, cover what's left at its foot. */
