@@ -39,7 +39,9 @@
     LIVE.add({ still: true, under: (c, ox, oy) => { drawFlat(c, ox, oy, false); drawRopes(c, ox, oy, false); }, over: (c, ox, oy) => { drawFlat(c, ox, oy, true); drawRopes(c, ox, oy, true); } });
 
     /* ---------- the night rope: the poles are in the picture, the rope is drawn here by the Hallway's own time; the Time list can't open it ---------- */
-    function drawRopes(c, ox, oy, nearer) {
+    /* (14 Nov 2026) the night rope is in the pictures now, rope and all (render/hw3.js), so it is covered by what stands nearer; nothing is drawn here */
+    function drawRopes() { return; }
+    function drawRopesLive(c, ox, oy, nearer) {
         const w = LIVE.walker, l = LIVE.floor || (!window.HALLWAY_PLAY && LIVE.editorApi().level); if (!l || !l.props) return; if (!w && nearer) return; const R = window.RopeBarrier; if (!R) return; const night = LIVE.realNight();
         for (const p of l.props) { if (p.k !== "rope" || !p.night) continue; if (w && (p.x + p.y > w.x + w.y) !== nearer) continue; const at = (fx, fy) => { const q = LIVE.mapPoint(fx, fy, LIVE.nodeZ(l, Math.floor(fx), Math.floor(fy)) || 0); return [Math.round(q[0]), Math.round(q[1])]; }, art = R.pixels({ x: p.x, y: p.y, len: p.len, rot: p.rot, noCard: p.noCard, part: night ? "hanging" : "rope" }, at);
             c.save(); c.translate(ox, oy); c.scale(LIVE.zoom, LIVE.zoom); for (const [X, Y, col] of art.list) { c.fillStyle = "rgb(" + col + ")"; c.fillRect(X, Y, 1, 1); } c.restore(); }

@@ -3800,7 +3800,11 @@ function build(cfg) {
                 }
                 else if (k === "rope") {
                     /* each tile of it takes its own place in the queue, so what stands nearer on another tile still covers it */
-                    const row = Parts.parts({ k, x, y, len: p[4], rot: p[5] }), art = RopeBarrier.pixels({ x, y, len: row.length, rot: p[5], noCard: p[10], part: p[11] ? "poles" : undefined }, (fx, fy) => { w.partAt({ x: Math.floor(fx), y: Math.floor(fy) }); return w.S(fx, fy); });
+                    /* a night rope (p[11]) is drawn here too (14 Nov 2026, his: it was painted live over the finished picture, so a newel post nearer the
+                       eye couldn't cover it): strung across in the day and evening pictures, unhooked and hanging from its pole in the night ones. It now
+                       goes by the picture's light rather than the Hallway's own clock, his call */
+                    const at = (fx, fy) => { w.partAt({ x: Math.floor(fx), y: Math.floor(fy) }); return w.S(fx, fy); }, nightNow = Mname === "night" || Mname === "failing", o0 = { x, y, rot: p[5], noCard: p[10] };
+                    const row = Parts.parts({ k, x, y, len: p[4], rot: p[5] }), art = p[11] && nightNow ? (() => { const a1 = RopeBarrier.pixels({ ...o0, len: row.length, part: "poles" }, at), a2 = RopeBarrier.pixels({ ...o0, len: row.length, part: "hanging" }, at); return { list: [...a1.list, ...a2.list], feet: a1.feet }; })() : RopeBarrier.pixels({ ...o0, len: row.length }, at);
                     row.forEach((q, t) => {
                         if (!w.partAt(q)) return;
                         const foot = art.feet.find(f => f[2] === t), z = w.z, mine = art.list.filter(a => a[3] === t);
