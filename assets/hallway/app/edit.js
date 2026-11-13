@@ -182,7 +182,7 @@
                 for (let ty = Math.floor(rect.y / 512) - 1; ty <= Math.floor((rect.y + rect.h) / 512) + 1; ty++) for (let tx = Math.floor(rect.x / 512) - 1; tx <= Math.floor((rect.x + rect.w) / 512) + 1; tx++) squares.push(tx + "," + ty);
                 for (const light of p.DRAW) { const want = light === "failing" ? [...p.onlyBasement] : light === "failing+x" ? p.failingX : light.includes("+x") ? [...p.xmasTiles] : squares; for (const key of want) jobs.push([light, key, p]); }
             }
-            publishing.of = jobs.length + ways.length * 6 + 1;
+            publishing.of = jobs.length + ways.length * 7;      // each colourway counts its six lift frames and one more (14 Nov scan: it read "21 of 19")
             const blank = d => { for (let k = 0; k < d.length; k += 4) if ((d[k] || d[k + 1] || d[k + 2]) && !(d[k] === 7 && d[k + 1] === 6 && d[k + 2] === 10)) return false; return true; };
             const solid = d => { const o = new Uint8Array(d.length); o.set(d); for (let k = 0; k < o.length; k += 4) { if (o[k] === 7 && o[k + 1] === 6 && o[k + 2] === 10) o[k] = o[k + 1] = o[k + 2] = 0; o[k + 3] = 255; } return o; };
             const crew = []; for (let n = 0; n < POOL; n++) crew.push(freshWorker());
@@ -201,7 +201,8 @@
                 }));
             } finally { for (const w of crew) retire(w); }
             /* the failing lights and Christmas only where there's something under them (failing+x goes by the failing square) */
-            for (const k of Object.keys(tiles)) { const m = /^(g:)?(failing|[a-z]+\+x)\|(.*)$/.exec(k); if (!m) continue; const plain = (m[1] || "") + (m[2] === "failing" ? "night" : m[2].replace("+x", "")) + "|" + m[3]; if (!tiles[plain]) delete tiles[k]; }
+            /* the plain failing squares first, then the +x ones, so a failing+x square never outlives the failing one it goes by (14 Nov scan) */
+            for (const xmasPass of [false, true]) for (const k of Object.keys(tiles)) { const m = /^(g:)?(failing|[a-z]+\+x)\|(.*)$/.exec(k); if (!m || m[2].endsWith("+x") !== xmasPass) continue; const plain = (m[1] || "") + (m[2] === "failing" ? "night" : m[2].replace("+x", "")) + "|" + m[3]; if (!tiles[plain]) delete tiles[k]; }
             for (const k of Object.keys(tiles)) { if (k.includes("+x|") && tiles[k] === tiles[k.replace("+x", "")]) delete tiles[k]; }
             for (const way of ways) {
                 for (let f = 0; f < 6; f++) { publishing.at++; const a = await ask(idle(), { type: "lift", way, slide: f / 5 }); lift[encodeURIComponent(way).replace(/%/g, "_") + "-" + f + ".png"] = await send(await pngOf(a.w, a.h, a.d)); }

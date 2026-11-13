@@ -57,9 +57,10 @@
     /* the Hallway's own mark (9 Nov 2026, his pick "G3": script Maze Rats tucked into a gold HALLWAY), on its loader and closed screens */
     const logo = (w = 240) => { const i = document.createElement("img"); i.className = "hallway-logo"; i.src = "/assets/img/hallway-logo-" + w + ".png"; i.srcset = "/assets/img/hallway-logo-" + w + ".png 1x, /assets/img/hallway-logo-" + w + "@2x.png 2x"; i.width = w; i.height = w === 420 ? 245 : 140; i.alt = "Maze Rats Hallway"; i.decoding = "async"; i.addEventListener("error", () => i.remove()); return i; };
     function note(title, words) {
-        const n = document.createElement("div"); n.className = "modal hallway-note"; n.setAttribute("role", "status");
+        /* a window over the page that has to be answered, so a screen reader is told so and the keyboard starts on it (14 Nov scan) */
+        const n = document.createElement("div"); n.className = "modal hallway-note"; n.setAttribute("role", "dialog"); n.setAttribute("aria-modal", "true"); n.setAttribute("aria-labelledby", "hallway-note-title");
         const bar = document.createElement("div"); bar.className = "chrome-titlebar";
-        const h = document.createElement("h2"); h.textContent = title;
+        const h = document.createElement("h2"); h.id = "hallway-note-title"; h.textContent = title;
         bar.append(h);      // no close: this window can't be closed, only left by its button (10 Nov 2026, his)
         const frame = document.createElement("div"); frame.className = "chrome-frame";
         const body = document.createElement("div"); body.className = "hallway-note-body";
@@ -99,14 +100,22 @@
         /* Only for the opening that asked: closed and opened again quickly, the same stage is reused, and a late picture
            from the first time stacked on the second's, the faded hallway showing through twice as strong (9 Nov scan, finding 3) */
         if (gen !== openGen || !into.isConnected) return;
-        for (const old of into.querySelectorAll(".hallway-closed-picture")) old.remove();
+        const olds = into.querySelectorAll(".hallway-closed-picture"); if (olds.length) c.classList.add("is-in");      // redrawn for a new size: straight in, no dip to dark and back
+        for (const old of olds) old.remove();
         into.prepend(c); void c.offsetWidth; c.classList.add("is-in");
     }
     /* the Hallway's card on its oak plaque above, as the screensaver has it, and the window under it, the two together in the middle and scrolling
        if the screen is short, so nothing is cut off (10 Nov 2026, his: the disclaimer was half hidden) */
     function closedScreen(title, words) { stage.classList.add("is-closed"); const stack = document.createElement("div"); stack.className = "hallway-closed-stack";
         const card = document.createElement("img"); card.className = "hallway-closed-plaque"; card.src = "/assets/img/hallway-plaque-420.png"; card.srcset = "/assets/img/hallway-plaque-420.png 1x, /assets/img/hallway-plaque-420@2x.png 2x"; card.width = 420; card.height = 248; card.alt = "Maze Rats Hallway"; card.addEventListener("error", () => card.replaceWith(logo()));
-        stack.append(card, note(title, words)); stage.appendChild(stack); closedPicture(stage, openGen).catch(() => { /* the plain dark is fine */ }); }
+        stack.append(card, note(title, words)); stage.appendChild(stack); closedPicture(stage, openGen).catch(() => { /* the plain dark is fine */ });
+        /* the keyboard on its one button, and Escape leaves as it does (14 Nov scan) */
+        const back = stack.querySelector(".hallway-note .guess-btn"); if (back) { try { back.focus({ preventScroll: true }); } catch (e) { /* no focus to give */ } } }
+    /* Escape on a closed screen goes back to the archive, as its button does; while walking, the frame has the keyboard and its own Escape */
+    addEventListener("keydown", e => { if (e.key === "Escape" && opened && stage && stage.classList.contains("is-closed") && !e.defaultPrevented) { e.preventDefault(); close(); } });
+    /* turned or resized, the faded hallway behind a closed screen is drawn again at the new size (and 1x or 2x), replacing the old one (14 Nov scan) */
+    let closedResize = 0;
+    addEventListener("resize", () => { clearTimeout(closedResize); closedResize = setTimeout(() => { if (opened && stage && stage.classList.contains("is-closed")) closedPicture(stage, openGen).catch(() => { /* keeps the old one */ }); }, 250); });
 
     function build(instant) {
         openGen++;

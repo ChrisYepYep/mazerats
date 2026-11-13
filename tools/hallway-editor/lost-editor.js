@@ -45,7 +45,10 @@
         for (let tries = 0; tries < 20; tries++) { let missing = 0; for (const t of th) { const f = LOST().showsAt(sp, t); if (f === null) missing++; else out.set(t.k, f); } if (!missing) break; await new Promise(r => setTimeout(r, 150)); }
         return out;
     }
-    async function autoSkip(s) { const f = await measure(s); s.skip = things().filter(t => f.has(t.k) && !suits(f.get(t.k))).map(t => t.k); if (keyOf(s) === selKey) { fits = f; fitsFor = selKey; detail(); } rows(); }
+    /* the ticks for a place, worked out BEFORE the edit that uses them, so the spot and its ticks are one undo step and land in the map that's
+       showing then (14 Nov scan: written after an await, outside any snapshot, an undo meanwhile left the redo copy with no ticks for good) */
+    async function skipsAt(s) { const f = await measure(s); return { f, skip: things().filter(t => f.has(t.k) && !suits(f.get(t.k))).map(t => t.k) }; }
+    const showFits = (key, f) => { if (key === selKey) { fits = f; fitsFor = selKey; detail(); } rows(); };
 
     /* ---------- the parts of the tab, made once ---------- */
     let box = null; const ui = {};
@@ -55,7 +58,8 @@
         hr.append(btn("Sit him on a seat", sitHustle), ui.showHustle = btn("Show me", () => { const h = LOST().hustleSeat(); if (h) go(h.l, h.x, h.y); }));
         hs.append(el("h4", "", "hustle"), ui.hustle, hr);
         const sp = el("div", "lp-sec"); ui.count = el("h4", ""); ui.mode = el("p", "hint");
-        const ar = el("div", "btn-row"); ui.add = btn("Add or remove spots", () => setAdding(!adding)); ui.all = btn("Show all floors", () => { showAll = !showAll; ui.all.classList.toggle("primary", showAll); ui.all.setAttribute("aria-pressed", String(showAll)); LIVE.wake(); }); ui.all.setAttribute("aria-pressed", "false"); ar.append(ui.add, ui.all, btn("Re-tick them all", async () => { api().snapshot(); for (const s of list()) await autoSkip(s); api().changed(); rows(); detail(); }));
+        const ar = el("div", "btn-row"); ui.add = btn("Add or remove spots", () => setAdding(!adding)); ui.all = btn("Show all floors", () => { showAll = !showAll; ui.all.classList.toggle("primary", showAll); ui.all.setAttribute("aria-pressed", String(showAll)); LIVE.wake(); }); ui.all.setAttribute("aria-pressed", "false"); ar.append(ui.add, ui.all, btn("Re-tick them all", async () => { const got = new Map(); for (const s of shown()) got.set(keyOf(s), await skipsAt(s));
+            edit(() => { for (const s of list()) { const g = got.get(keyOf(s)); if (g) s.skip = g.skip; } }); const g = selKey && got.get(selKey); if (g) showFits(selKey, g.f); else rows(); detail(); }));
         ui.list = el("div", "lp-spots"); sp.append(ui.count, ui.mode, ar, ui.list);
         const dt = el("div", "lp-sec lp-detail"); ui.title = el("h4", ""); ui.empty = el("p", "hint", "Pick a spot in the list above, or click its marker on the map.");
         ui.body = el("div", "lp-body"); ui.now = el("div", "lp-now"); ui.nowImg = el("img"); ui.nowImg.alt = ""; const nw = el("div", "lp-now-words"); ui.nowName = el("b", ""); ui.nowPct = el("span", ""); const can = el("label", "lp-can"); ui.can = el("input"); ui.can.type = "checkbox"; ui.can.addEventListener("change", () => { const t = things()[at]; if (t) toggle(t); }); can.append(ui.can, document.createTextNode(" Can be hidden here")); nw.append(ui.nowName, ui.nowPct, can); ui.now.append(ui.nowImg, nw);
@@ -114,7 +118,9 @@
         else { const key = keyOf(hit), had = shown().find(s => keyOf(s) === key);
             if (had) { removeSpot(had); flash("Spot taken away."); }
             else if (!reachable(l, hit.x, hit.y)) flash(STUCK);
-            else { const s = { level: hit.level, x: hit.x, y: hit.y, skip: [] }; edit(() => list().push(s)); selKey = key; fitsFor = null; fits = new Map(); show(); rows(); detail(); autoSkip(s).then(() => api().changed()); } }
+            else { const s0 = { level: hit.level, x: hit.x, y: hit.y, skip: [] };
+                skipsAt(s0).then(({ f, skip }) => { if (shown().some(q => keyOf(q) === key)) return;      // put there meanwhile (a second click)
+                    edit(() => list().push({ ...s0, skip })); selKey = key; fitsFor = null; fits = new Map(); show(); showFits(key, f); }); } }
         arm(); }); }
     document.addEventListener("keydown", e => {
         if (adding && e.key === "Escape") { setAdding(false); return; }
@@ -137,8 +143,10 @@
             e.stopImmediatePropagation(); e.preventDefault(); pick(keyOf(s), true); drag = { key: keyOf(s), x0: e.clientX, y0: e.clientY, moved: false, to: null }; try { view.setPointerCapture(e.pointerId); } catch (err) { /* fine */ } }, true);
         view.addEventListener("pointermove", e => { if (!drag) return; e.stopImmediatePropagation(); if (!drag.moved && Math.hypot(e.clientX - drag.x0, e.clientY - drag.y0) < 5) return; drag.moved = true; view.style.cursor = "grabbing"; drag.to = dropAt(e.clientX, e.clientY, drag.key); LIVE.wake(); }, true);
         const end = e => { if (!drag) return; e.stopImmediatePropagation(); const d = drag; drag = null; view.style.cursor = ""; LIVE.wake(); if (!d.moved || !d.to) return; if (!d.to.ok) { flash(d.to.why); return; } if (keyOf(d.to) === d.key) return;
-            let moved = null; edit(() => { const s = list().find(q => keyOf(q) === d.key); if (s) { s.level = d.to.level; s.x = d.to.x; s.y = d.to.y; moved = s; } }); if (!moved) return;
-            selKey = keyOf(moved); fitsFor = null; fits = new Map(); rowsSig = ""; stripFor = null; rows(); detail(); show(); autoSkip(moved).then(() => api().changed()); flash("Moved to " + name(moved) + ". Its ticks were worked out again for there."); };
+            const to = d.to; skipsAt({ level: to.level, x: to.x, y: to.y }).then(({ f, skip }) => {
+                let moved = null; if (shown().some(q => keyOf(q) === keyOf(to))) return;      // taken meanwhile
+                edit(() => { const s = list().find(q => keyOf(q) === d.key); if (s) { s.level = to.level; s.x = to.x; s.y = to.y; s.skip = skip; moved = s; } }); if (!moved) return;
+                selKey = keyOf(moved); fitsFor = null; fits = new Map(); rowsSig = ""; stripFor = null; show(); showFits(selKey, f); flash("Moved to " + name(moved) + ". Its ticks were worked out again for there."); }); };
         view.addEventListener("pointerup", end, true); view.addEventListener("pointercancel", end, true);
     }
     LIVE.add({ still: true, over: (c, ox, oy) => {

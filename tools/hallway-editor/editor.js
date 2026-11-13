@@ -860,7 +860,9 @@ async function liveFetch() {
    each lamp's pool cut from the lit evening's tiles and faded in on its own. The Time list overrides it. */
 const CYCLE_MS = 600000;
 /* seconds into the cycle: [from, mood]; a fade runs from one entry to the next */
-const CYCLE = [[0, "day"], [120, "day"], [300, "dusk"], [330, "night"], [420, "night"], [450, "dawn"], [600, "day"]];
+/* 2 min of day; the evening's 3 (two and a half of lamps coming on, then half a minute into night); 2 min of full night (14 Nov 2026, his:
+   it had been one and a half); the dawn's 3 (half a minute out of night, then two and a half of lamps going off) */
+const CYCLE = [[0, "day"], [120, "day"], [270, "dusk"], [300, "night"], [420, "night"], [450, "dawn"], [600, "day"]];
 /* the fades whose lamps go on (or off) one by one: the lit mood, and how the renderer's light compares with daylight's (LIGHTS in hw3.js) */
 const LAMP_FADES = { "day>dusk": { lit: "dusk", ratio: [.52 / 1.1, .41 / 1.08, .38 / 1.04], on: true }, "dawn>day": { lit: "dawn", ratio: [.5 / 1.1, .46 / 1.08, .56 / 1.04], on: false } };
 const LAMP_FADE_S = 5;           // one lamp's own fade
@@ -920,8 +922,13 @@ function preloadMap() {
     for (const mood of order) for (const [tx, ty] of cells) { if (moodInflight.size >= Math.max(1, CONCURRENT - 1)) return; const k = (window.hallwayXmas ? mood + "+x" : mood) + "|" + tx + "," + ty, t = moodTiles.get(k); if (t && t.v === version) continue; if (moodInflight.has(k) || tileWaiting(k)) continue; moodTile(mood, tx, ty); }
 }
 setInterval(preloadMap, 300);
-/* every light on the map, where its pool falls in map pixels, each with its own moment in a slow fade (random but fixed for its place) */
+/* every light on the map, where its pool falls in map pixels, each with its own moment in a slow fade (random but fixed for its place).
+   As the renderer places its lights (render/hw*.js, 14 Nov scan): a wall lamp lights the floor about 1.6 tiles out from its wall and the wall
+   round its shade 70px up, so its pool sits between the two, nearer the shade; pillar lamps on the face they're on; and the rare cases' glass and the
+   Theatredrome's alcove light too, which had come on with the evening all at once. A lift's cabin light only shows with its doors open,
+   which the view draws itself, so it has none. Every floor's, as the picture shows every floor at once. */
 let lampMemo = null;
+const PILLAR_FACE = { l: [.5, 1.1], r: [1.1, .5], bl: [-.1, .5], br: [.5, -.1] };
 function lampPools() {
     if (lampMemo && lampMemo.map === map && lampMemo.v === version) return lampMemo.list;
     const list = [], seen = new Set(), add = (l, x, y, up) => {
@@ -929,58 +936,103 @@ function lampPools() {
         const p = P(x, y, tileZ(l, Math.floor(x), Math.floor(y)) + up); let h = (Math.round(x * 4) * 374761393 + Math.round(y * 4) * 668265263 + l.k * 97) | 0;
         h = (h ^ (h >>> 13)) * 1274126177 | 0; list.push({ x: p[0], y: p[1], r: ((h ^ (h >>> 16)) >>> 0) / 4294967296 });
     };
+    const WALL_OUT = .3, WALL_UP = 62;      // measured 14 Nov against the lit evening with every lamp on: nearer its shade than the floor pool matches best
+    const onWall = (l, q, up) => { if (q.axis === "x") add(l, q.at, q.line + WALL_OUT, up); else add(l, q.line + WALL_OUT, q.at, up); };
     for (const l of (map && map.levels) || []) {
-        for (const q of (l.lamps || [])) { if (q.axis === "x") add(l, q.at, q.line + 1, 40); else add(l, q.line + 1, q.at, 40); }
-        for (const p of (l.props || [])) if (p.k === "lamp" || p.k === "tablelamp" || (p.lights && p.lights.length)) add(l, p.x + .5, p.y + .5, 30);
-        for (const it of (l.wallItems || [])) { const def = wallItemOf(it.k); if (def && def.lit) { if (it.axis === "x") add(l, it.at, it.line + 1, 40); else add(l, it.line + 1, it.at, 40); } }
+        for (const q of (l.lamps || [])) onWall(l, q, WALL_UP);
+        for (const p of (l.props || [])) {
+            if (p.k === "lamp" || p.k === "tablelamp" || p.k === "rarecase") add(l, p.x + .5, p.y + .5, 30);
+            else if ((p.k === "pillar" || p.k === "pillartall") && p.lights) for (const f of p.lights) { const o = PILLAR_FACE[f] || [.5, .5]; add(l, p.x + o[0], p.y + o[1], 40); }
+            else if (p.lights && p.lights.length) add(l, p.x + .5, p.y + .5, 30);
+        }
+        for (const it of (l.wallItems || [])) { const def = wallItemOf(it.k); if (def && def.lit) onWall(l, it, WALL_UP); }
     }
+    for (const t of (map && map.theatres) || []) { const l = byId(t.level); if (l) { if (t.axis === "x") add(l, t.at + 4, t.line + .4, 6); else add(l, t.line + .4, t.at + 4, 6); } }
     lampMemo = { map, v: version, list }; return list;
 }
 const smooth = f => f * f * (3 - 2 * f);
-let litCanvas = null, maskCanvas = null;
-/* a slow fade with its lamps: daylight dimmed to the lit mood's light, then each lamp's pool of the lit mood over it, as far on as it is */
+/* where a square goes on the screen, in whole pixels: at a zoom between whole steps (the screensaver's ease) each edge is rounded on its own,
+   so neighbours always meet with no seam or doubled column (14 Nov scan); at a whole zoom it's exactly tx * S */
+const tileBox = (t, S) => { const a = Math.round(t * S); return [a, Math.round((t + 1) * S) - a]; };
+/* A slow fade with its lamps: daylight dimmed to the lit mood's light, then each lamp's pool of the lit mood over it, as far on as it is.
+   The daylight squares and the dimming go straight onto the view each paint, as before (both cheap there). The costly part, the lit mood
+   cut to the lamps' pools, is kept square by square (14 Nov scan: rebuilt whole every paint, the fade cost about five normal frames) and
+   put together again only where a lamp's brightness has moved on a step, in the part of the square its pool covers. A pan just draws the
+   kept squares somewhere else. */
+/* how far on a lamp is, in 64ths: drawn exactly as before at each step, and a pool fading over its 5 s is never more than half a 64th off
+   (a level of brightness at most). Rebuilding at every frame's exact brightness cost twice as much (measured 14 Nov: 3-5 ms a paint
+   against 5-17, where the old way took 9-15 and a plain day 1.4) */
+const LAMP_STEPS = 64;
+const lampSquares = new Map(); let lampMask = null;
+function dropLampSquares() { if (lampSquares.size || lampMask) { lampSquares.clear(); lampMask = null; } }
+function lampsByTile(pools) {
+    if (pools.byTile) return pools.byTile;
+    const by = new Map(), reach = LAMP_REACH + 2;
+    pools.forEach((q, i) => { for (let ty = Math.floor((q.y - reach) / TILE); ty <= Math.floor((q.y + reach) / TILE); ty++) for (let tx = Math.floor((q.x - reach) / TILE); tx <= Math.floor((q.x + reach) / TILE); tx++) { const k = tx + "," + ty; if (!by.has(k)) by.set(k, []); by.get(k).push(i); } });
+    return (pools.byTile = by);
+}
+/* Drawn in memory, not on the graphics card (willReadFrequently): a kept square is then sent to the card once per change and drawn from
+   there. A card-side canvas drawn into the view costs a round trip every paint, about 0.8 ms a square (measured 14 Nov: 9 squares 7.6 ms
+   against 0.3 ms) */
+const memCanvas = (w, h, opts) => { const c = document.createElement("canvas"); c.width = w; c.height = h; c.getContext("2d", { willReadFrequently: true, ...opts }); return c; };
 function drawLampFade(m, ox, oy, x0, x1, y0, y1) {
-    const L = m.lamps, g = L.on ? smooth(m.f) : 1 - smooth(m.f), S = TILE * zoom;
+    const L = m.lamps, g = L.on ? smooth(m.f) : 1 - smooth(m.f), S = TILE * zoom, R = LAMP_REACH * zoom;
     let any = false;
     for (let ty = y0; ty <= y1; ty++) for (let tx = x0; tx <= x1; tx++) {
-        const d = moodTile("day", tx, ty) || moodTile(L.lit, tx, ty), X = ox + tx * S, Y = oy + ty * S;
-        if (!d) { const t = tiles.get(tx + "," + ty); if (t) ctx.drawImage(t.img, X, Y, S, S); continue; }
-        ctx.drawImage(d.img, X, Y, S, S); any = true;
+        const d = moodTile("day", tx, ty) || moodTile(L.lit, tx, ty), [bx, W] = tileBox(tx, S), [by, H] = tileBox(ty, S);
+        if (!d) { const t = tiles.get(tx + "," + ty); if (t) ctx.drawImage(t.img, ox + bx, oy + by, W, H); continue; }
+        ctx.drawImage(d.img, ox + bx, oy + by, W, H); any = true;
     }
     if (!any) return;
     ctx.save(); ctx.globalCompositeOperation = "multiply";
     ctx.fillStyle = "rgb(" + L.ratio.map(r => Math.round(255 * (1 + (r - 1) * g))).join(",") + ")"; ctx.fillRect(0, 0, canvas.width, canvas.height); ctx.restore();
     /* how far on each lamp is: going on, each at its own moment through the middle of the fade; going off, the same backwards */
-    const pools = lampPools(), fadeF = LAMP_FADE_S / m.span, on = [];
-    for (const q of pools) {
-        const at = L.on ? .15 + .75 * q.r : .05 + .7 * q.r, k = L.on ? (m.f - at) / fadeF : 1 - (m.f - at) / fadeF, a = Math.max(0, Math.min(1, k));
-        if (a > 0) on.push([q, a]);
+    const pools = lampPools(), byTile = lampsByTile(pools), fadeF = LAMP_FADE_S / m.span, step = new Float64Array(pools.length);
+    pools.forEach((q, i) => { const at = L.on ? .15 + .75 * q.r : .05 + .7 * q.r, k = L.on ? (m.f - at) / fadeF : 1 - (m.f - at) / fadeF; step[i] = Math.round(Math.max(0, Math.min(1, k)) * LAMP_STEPS) / LAMP_STEPS; });
+    const keep = new Set();
+    for (let ty = y0; ty <= y1; ty++) for (let tx = x0; tx <= x1; tx++) {
+        const key = tx + "," + ty, lit = moodTile(L.lit, tx, ty); if (!lit) continue;
+        const on = (byTile.get(key) || []).filter(i => step[i] > 0); if (!on.length) continue;
+        keep.add(key);
+        const [bx, bw] = tileBox(tx, S), [by, bh] = tileBox(ty, S);
+        let e = lampSquares.get(key), rect = null;
+        if (!e || e.lit !== lit.img || e.pools !== pools || e.bw !== bw || e.bh !== bh || e.bx !== bx || e.by !== by || e.zoom !== zoom) {
+            if (!e || e.bw !== bw || e.bh !== bh) { e = { cv: memCanvas(bw, bh) }; lampSquares.set(key, e); }
+            Object.assign(e, { lit: lit.img, pools, bw, bh, bx, by, zoom, steps: new Map() }); rect = [0, 0, bw, bh];
+        } else {
+            /* only the lamps that moved on (or went out): the part of the square their pools cover */
+            let rx0 = Infinity, ry0 = Infinity, rx1 = -Infinity, ry1 = -Infinity; const grow = i => { const q = pools[i], cx = q.x * zoom - bx, cy = q.y * zoom - by; rx0 = Math.min(rx0, cx - R); ry0 = Math.min(ry0, cy - R); rx1 = Math.max(rx1, cx + R); ry1 = Math.max(ry1, cy + R); };
+            for (const i of on) if (e.steps.get(i) !== step[i]) grow(i);
+            for (const i of e.steps.keys()) if (step[i] <= 0) grow(i);
+            if (rx1 > rx0) { const a = Math.max(0, Math.floor(rx0)), b = Math.max(0, Math.floor(ry0)), c = Math.min(bw, Math.ceil(rx1)), dd = Math.min(bh, Math.ceil(ry1)); if (c > a && dd > b) rect = [a, b, c - a, dd - b]; }
+        }
+        if (rect) {
+            const n = Math.max(bw, bh); if (!lampMask || lampMask.width < n) lampMask = memCanvas(n, n);
+            const gx = e.cv.getContext("2d", { willReadFrequently: true }), mc = lampMask.getContext("2d", { willReadFrequently: true }); gx.imageSmoothingEnabled = false;
+            /* the lit mood's square, kept only as far as the pools reach: each a soft disc, as bright as its lamp is on, added together */
+            gx.save(); gx.beginPath(); gx.rect(rect[0], rect[1], rect[2], rect[3]); gx.clip(); gx.clearRect(rect[0], rect[1], rect[2], rect[3]); gx.drawImage(lit.img, 0, 0, bw, bh);
+            mc.save(); mc.beginPath(); mc.rect(rect[0], rect[1], rect[2], rect[3]); mc.clip(); mc.clearRect(rect[0], rect[1], rect[2], rect[3]); mc.globalCompositeOperation = "lighter";
+            for (const i of on) { const q = pools[i], a = step[i], cx = q.x * zoom - bx, cy = q.y * zoom - by, gr = mc.createRadialGradient(cx, cy, R * .35, cx, cy, R); gr.addColorStop(0, "rgba(0,0,0," + a + ")"); gr.addColorStop(1, "rgba(0,0,0,0)"); mc.fillStyle = gr; mc.fillRect(cx - R, cy - R, 2 * R, 2 * R); }
+            mc.restore();
+            gx.globalCompositeOperation = "destination-in"; gx.drawImage(lampMask, 0, 0); gx.restore();
+            e.steps = new Map(on.map(i => [i, step[i]]));
+        }
+        ctx.drawImage(e.cv, ox + bx, oy + by);
     }
-    if (!on.length) return;
-    const W = canvas.width, H = canvas.height;
-    if (!litCanvas || litCanvas.width !== W || litCanvas.height !== H) { litCanvas = document.createElement("canvas"); litCanvas.width = W; litCanvas.height = H; maskCanvas = document.createElement("canvas"); maskCanvas.width = W; maskCanvas.height = H; }
-    const lc = litCanvas.getContext("2d"), mc = maskCanvas.getContext("2d"); lc.imageSmoothingEnabled = false;
-    lc.globalCompositeOperation = "source-over"; lc.clearRect(0, 0, W, H);
-    for (let ty = y0; ty <= y1; ty++) for (let tx = x0; tx <= x1; tx++) { const t = moodTile(L.lit, tx, ty); if (t) lc.drawImage(t.img, ox + tx * S, oy + ty * S, S, S); }
-    mc.globalCompositeOperation = "source-over"; mc.clearRect(0, 0, W, H); mc.globalCompositeOperation = "lighter";
-    const R = LAMP_REACH * zoom;
-    for (const [q, a] of on) {
-        const cx = ox + q.x * zoom, cy = oy + q.y * zoom; if (cx < -R || cy < -R || cx > W + R || cy > H + R) continue;
-        const gr = mc.createRadialGradient(cx, cy, R * .35, cx, cy, R); gr.addColorStop(0, "rgba(0,0,0," + a + ")"); gr.addColorStop(1, "rgba(0,0,0,0)");
-        mc.fillStyle = gr; mc.fillRect(cx - R, cy - R, 2 * R, 2 * R);
-    }
-    lc.globalCompositeOperation = "destination-in"; lc.drawImage(maskCanvas, 0, 0);
-    ctx.drawImage(litCanvas, 0, 0);
+    /* what's gone off the screen, or has no lamp on, is let go */
+    for (const k of lampSquares.keys()) if (!keep.has(k)) lampSquares.delete(k);
 }
 function drawMoods(ox, oy, x0, x1, y0, y1) {
-    const m = moodNow(); if (!m) return false;
+    const m = moodNow(); if (!m) { dropLampSquares(); return false; }
     if (m.lamps) { drawLampFade(m, ox, oy, x0, x1, y0, y1); const name = m.f < .5 ? m.a : m.b; if ($("timeNow").textContent !== MOOD_NAME[name]) $("timeNow").textContent = MOOD_NAME[name]; return true; }
+    dropLampSquares();      // no lamp fade: its kept squares go
+    const S = TILE * zoom;
     for (let ty = y0; ty <= y1; ty++) for (let tx = x0; tx <= x1; tx++) {
-        const a = moodTile(m.a, tx, ty), b = m.f > 0 ? moodTile(m.b, tx, ty) : null, X = ox + tx * TILE * zoom, Y = oy + ty * TILE * zoom, S = TILE * zoom;
+        const a = moodTile(m.a, tx, ty), b = m.f > 0 ? moodTile(m.b, tx, ty) : null, [bx, W] = tileBox(tx, S), [by, H] = tileBox(ty, S), X = ox + bx, Y = oy + by;
         /* what a mood hasn't got yet is shown in whichever has */
-        const under = a || b; if (!under) { const t = tiles.get(tx + "," + ty); if (t) ctx.drawImage(t.img, X, Y, S, S); continue; }
-        ctx.drawImage(under.img, X, Y, S, S);
-        if (a && b && m.f > 0) { ctx.globalAlpha = m.f; ctx.drawImage(b.img, X, Y, S, S); ctx.globalAlpha = 1; }
+        const under = a || b; if (!under) { const t = tiles.get(tx + "," + ty); if (t) ctx.drawImage(t.img, X, Y, W, H); continue; }
+        ctx.drawImage(under.img, X, Y, W, H);
+        if (a && b && m.f > 0) { ctx.globalAlpha = m.f; ctx.drawImage(b.img, X, Y, W, H); ctx.globalAlpha = 1; }
     }
     /* the name of the time of day, in the status bar */
     const name = m.f < .5 ? m.a : m.b; if ($("timeNow").textContent !== MOOD_NAME[name]) $("timeNow").textContent = MOOD_NAME[name];
@@ -1260,9 +1312,10 @@ function paint() {
     const [x0, x1, y0, y1] = visibleTiles();
     if (!drawMoods(ox, oy, x0, x1, y0, y1)) {
         if ($("timeNow").textContent) $("timeNow").textContent = "";
+        const S = TILE * zoom;
         for (let ty = y0; ty <= y1; ty++) for (let tx = x0; tx <= x1; tx++) {
-            const t = tiles.get(tx + "," + ty);
-            if (t) ctx.drawImage(t.img, ox + tx * TILE * zoom, oy + ty * TILE * zoom, TILE * zoom, TILE * zoom);
+            const t = tiles.get(tx + "," + ty); if (!t) continue;
+            const [bx, W] = tileBox(tx, S), [by, H] = tileBox(ty, S); ctx.drawImage(t.img, ox + bx, oy + by, W, H);
         }
     }
     drawLiveSign();
@@ -1324,7 +1377,7 @@ window.HallwayLive = {
     tileFree(l) { const so = solid(l), hs = holes(l), sl = stairLevels().slots.get(l); return (x, y) => hasFloor(l, x, y) && !so.has(x + "," + y) && !hs.some(h => inRect(h, x, y)) && !(sl && sl.has(x + "," + y)); },
     nodeZ: (l, x, y) => nodeZ(l, x, y), mood: () => moodNow(), forceMood(m) { moodForced = m; }, loadMood: (m, x, y) => { const tx = Math.floor(x / TILE), ty = Math.floor(y / TILE); moodTile(m, tx, ty); },
     view() { const hw = canvas.width / zoom / 2, hh = canvas.height / zoom / 2; return { x0: cam.x - hw, x1: cam.x + hw, y0: cam.y - hh, y1: cam.y + hh, w: canvas.width, h: canvas.height }; },
-    camera(x, y) { cam.x = x; cam.y = y; clampCam(); }, get cam() { return { x: cam.x, y: cam.y }; }, holdCamera(on) { camHeld = on; if (!on) followNow(); }, setZoom: z => setZoom(z, canvas.width / 2, canvas.height / 2), zoomRaw(z) { zoom = Math.max(1, Math.min(4, z)); const zr = Math.round(zoom * 100) / 100; $("zoomVal").textContent = zr + "x"; $("zoomOut").disabled = zoom <= 1; $("zoomIn").disabled = zoom >= 4; clampCam(); paint(); },      /* the screensaver's smooth zoom: no recentring, it moves the camera itself */
+    camera(x, y) { cam.x = x; cam.y = y; clampCam(); }, get cam() { return { x: cam.x, y: cam.y }; }, holdCamera(on) { camHeld = on; if (!on) followNow(); }, setZoom: z => setZoom(z, canvas.width / 2, canvas.height / 2), zoomRaw(z) { zoom = Math.max(1, Math.min(4, z)); $("zoomVal").textContent = Math.round(zoom) + "x";      /* whole steps only, mid-ease too (14 Nov scan: it read 1.33x) */ $("zoomOut").disabled = zoom <= 1; $("zoomIn").disabled = zoom >= 4; clampCam(); paint(); },      /* the screensaver's smooth zoom: no recentring, it moves the camera itself */
     realNight: () => realNight(), enterRoom(target, axis) { if (!walker || roomSession) return false; const me = walker; me.busy = true; me.pts = []; me.walking = false; roomSession = RoomView.enter($("stage"), { room: target.room, facts: target.facts, edge: axis === "x" ? "y" : "x", zoom: () => zoom, wheel: d => setZoom(zoom + (d < 0 ? 1 : -1)), onLeave: () => { roomSession.close(); roomSession = null; me.busy = false; paint(); } }); return true; },
     editorApi: () => ({ lostSpotReachable: (l, x, y) => lostSpotReachable(l, x, y), lostSeatsBeside: (l, x, y) => lostSeatsBeside(l, x, y), snapshot, changed, setTool, paint, flash: t => flash(t), setFloor: l => setFloor(l), toPx: (cx, cy) => toPx(cx, cy), tileAt(cx, cy) { const [px, py] = toPx(cx, cy), u = floorUnder(px, py); return u ? { level: u[0].stair ? u[0].stair.low.id : u[0].id, x: u[1], y: u[2] } : null; }, get tool() { return tool; }, pickOnce(f) { pickNext = f || null; if (f) flash("Click the spot on the map. Esc cancels."); }, get level() { return level; } }),
     onClick(f) { liveClicks.add(f); return () => liveClicks.delete(f); }, cheats: () => cheats,
@@ -3483,7 +3536,7 @@ async function rideTo(from, to) {
     const shot = document.createElement("canvas"); shot.width = canvas.width; shot.height = canvas.height; shot.getContext("2d").drawImage(canvas, 0, 0);
     shot.style.cssText = "position:absolute;left:0;top:0;z-index:24;pointer-events:none;transition:opacity 1.1s ease;opacity:1;width:" + canvas.clientWidth + "px;height:" + canvas.clientHeight + "px"; canvas.parentNode.appendChild(shot);
     const S = stairLevels().list.find(q => q.stair.lift === to), l = byId(to.level), [x, y] = liftPt(to, 0, -1);
-    me.l = S; me.x = x; me.y = y; me.z = nodeZ(S, x, y); me.dir = liftLeft(to) ? 2 : 4;      // facing out of it me.pts = []; me.walking = false; me.asked = true; me.seat = null;
+    me.l = S; me.x = x; me.y = y; me.z = nodeZ(S, x, y); me.dir = liftLeft(to) ? 2 : 4; me.pts = []; me.walking = false; me.asked = true; me.seat = null;      // facing out of it
     level = l; buildLevels();
     const a = P(x + .5, y + .5, me.z); cam.x = a[0]; cam.y = a[1] - 40; clampCam(); paint();
     /* give the art there a moment to arrive, under the picture of where you were */
@@ -3712,7 +3765,7 @@ function avatarImg(n) {
     }
     return i;
 }
-window.hallwayAvatarChanged = () => { avatarWas = { ...avatarImgs }; for (const k in avatarImgs) delete avatarImgs[k]; preloadAvatar(); paint(); };
+window.hallwayAvatarChanged = () => { avatarWas = { ...avatarImgs }; for (const k in avatarImgs) delete avatarImgs[k]; preloadAvatar(); paint(); if (roomSession && roomSession.repaint) roomSession.repaint(); };      // a room only paints when asked
 function preloadAvatar() { if (window.HALLWAY_PLAY) { for (let d = 0; d < 8; d++) { avatarImg(`s-${d}-std-0`); avatarImg(`s-${d}-sit-0`); for (let f = 0; f < 4; f++) avatarImg(`s-${d}-wlk-${f}`); } return; } for (let d = 0; d < 8; d++) { for (const a of ["std", "std-crr", "std-drk", "sit", "sit-crr", "sit-drk"]) avatarImg(`s-${d}-${a}-0`); for (let f = 0; f < 4; f++) { avatarImg(`s-${d}-wlk-${f}`); avatarImg(`s-${d}-wlk-crr-${f}`); } } }
 
 /* ---------- what stands in front of the Habbo ----------
@@ -4177,6 +4230,7 @@ function buildUI() {
     $("zoomIn").addEventListener("click", () => setZoom(zoom + 1)); $("zoomOut").addEventListener("click", () => setZoom(zoom - 1));
     $("edgesBtn").addEventListener("click", () => setTool("edges"));
     if (window.HALLWAY_EDIT) $("whole").hidden = true;      // the local server draws it, and nothing here can
+    if (window.HALLWAY_EDIT) $("publish").title = "Draw the saved map and put it on the site. It's live as soon as it finishes.";      // in the Warren there's no deploy (14 Nov scan)
     $("whole").addEventListener("click", () => { if (version) window.open("/api/whole?v=" + version, "_blank"); });
     const keysBox = $("keys");
     const closeKeys = () => { keysBox.hidden = true; $("help").focus(); };

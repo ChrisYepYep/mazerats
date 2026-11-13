@@ -104,7 +104,7 @@
     /* ---- painting: the picture's colours in the mount's own light, cut by what stands in front ---- */
     const peek = document.createElement("canvas"), pk = peek.getContext("2d", { willReadFrequently: true });
     function readBack(view, X0, Y0, w, h) { if (peek.width < w || peek.height < h) { peek.width = Math.max(peek.width, w); peek.height = Math.max(peek.height, h); } pk.clearRect(0, 0, w, h); pk.drawImage(view, X0, Y0, w, h, 0, 0, w, h); return pk.getImageData(0, 0, w, h).data; }
-    const made = new Map(); let madeFor = null; const AGAIN_MS = 1000;
+    const made = new Map(); let madeFor = null;
     const median = a => { if (!a.length) return 1; const s = a.slice().sort((x, y) => x - y); return s[s.length >> 1]; };
     function make(E, m, pic, c, ox, oy, z) {
         const W = c.canvas.width, H = c.canvas.height, X0 = Math.max(0, Math.floor(ox + E.x0 * z)), Y0 = Math.max(0, Math.floor(oy + E.y0 * z)), X1 = Math.min(W, Math.ceil(ox + (E.x0 + m.w) * z)), Y1 = Math.min(H, Math.ceil(oy + (E.y0 + m.h) * z));
@@ -131,20 +131,25 @@
     const allHere = () => { const m = LIVE.map; if (!m || LIVE.place !== "gallery") return []; const out = []; for (const l of m.levels) for (const E of exhibits(l)) out.push(E); return out; };
     LIVE.add({ still: true, under(c, ox, oy, now) {
         const list = allHere(); if (!list.length) return; load();
-        const z = LIVE.zoom, v = LIVE.view(), md = LIVE.mood(), view = [ox, oy, z, c.canvas.width, c.canvas.height, md ? md.a + "|" + md.b + "|" + (+md.f || 0).toFixed(2) : "-", LIVE.tileGen, !!window.hallwayXmas].join(",");
+        /* Read back only when what's under it can have changed: the zoom, the time of day, a square arriving, Christmas. Not the camera: the
+           light on a mount is the same wherever it sits on the screen, so a pan just draws the same picture somewhere else (14 Nov scan: it read
+           the screen back every frame while the view moved). Half off the screen, what shows of it counts too, in map pixels. */
+        const z = LIVE.zoom, v = LIVE.view(), md = LIVE.mood(), W = c.canvas.width, H = c.canvas.height, view = [z, md ? md.a + "|" + md.b + "|" + (+md.f || 0).toFixed(2) : "-", LIVE.tileGen, !!window.hallwayXmas].join(",");
         if (madeFor !== LIVE.map) { made.clear(); madeFor = LIVE.map; }
         for (const E of list) {
             const m = E.map(); if (!m || !m.pts.length) continue;
             if (E.x0 > v.x1 || E.x0 + m.w < v.x0 || E.y0 > v.y1 || E.y0 + m.h < v.y0) continue;
             const ev = eventOf(E.ev); if (!ev) continue; const pic = picOf(ev, m.pw, m.ph); if (!pic) continue;
-            const sig = view + "|" + E.ev, was = made.get(E.key);
-            let cv = was && was.sig === sig && now - was.at < AGAIN_MS ? was.cv : null;
+            const whole = ox + E.x0 * z >= 0 && oy + E.y0 * z >= 0 && ox + (E.x0 + m.w) * z <= W && oy + (E.y0 + m.h) * z <= H;
+            const part = whole ? "all" : [Math.max(0, Math.floor(-ox / z - E.x0)), Math.max(0, Math.floor(-oy / z - E.y0)), Math.min(m.w, Math.ceil((W - ox) / z - E.x0)), Math.min(m.h, Math.ceil((H - oy) / z - E.y0))].join(",");
+            const sig = view + "|" + part + "|" + E.ev, was = made.get(E.key);
+            let cv = was && was.sig === sig ? was.cv : null;
             if (!cv) { cv = make(E, m, pic, c, ox, oy, z); made.set(E.key, { sig, at: now, cv }); if (made.size > 120) made.clear(); }
             if (!cv) continue;
             c.save(); c.imageSmoothingEnabled = false; c.translate(ox, oy); c.scale(z, z); c.drawImage(cv, E.x0, E.y0); c.restore();
         }
     } });
-    setInterval(() => { if (!document.hidden && allHere().length) LIVE.wake(); }, 1500);
+    /* no timer to wake it: the events, their pictures and the mounts' art each wake the view as they arrive, and the time of day repaints itself */
 
     /* ---- a placard's click: walk up to it, then the event's own window ---- */
     const fronts = p => (p.rot || 0) & 1 ? [[p.x + 1, p.y], [p.x, p.y + 1], [p.x, p.y - 1], [p.x - 1, p.y]] : [[p.x, p.y + 1], [p.x + 1, p.y], [p.x - 1, p.y], [p.x, p.y - 1]];

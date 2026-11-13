@@ -1961,6 +1961,14 @@ const STEP_LIP = STEP_R;
 const stepEdgeZ = (t, hi, lo, reach) => { const rate = STEP_R / STEP_D; return t < reach ? Math.min(hi, hi + STEP_LIP - t * rate) : Math.max(lo, lo + STEP_LIP - (t - reach) * rate); };
 /* Steps climbing towards you: the higher floor is nearer than the lower one, so each step's front faces away and only the tops show,
    nearly on top of each other. Drawn from the far step forward; the near side shows the stepped end. */
+/* The stepped end of steps climbing towards you, where it shows: the side of the steps in the wood's vertical grain with the dark line at its
+   foot, as the end of steps climbing away is, not one flat tone, which read as a grainless wedge on the floor (14 Nov scan, renderer 2). Its
+   top edge is left to the treads' own strips, which go over it: a lit row there showed as a dotted line along long flights (G x114).
+   zz: how far above its foot; d: how far along the way the steps climb */
+const frontEndTone = (pq, gap, zz, d, KK) => zz < 1 ? KK : (Math.floor(d * 16) >> 1) % 3 ? pq(.55) : pq(.4);
+/* ...and only where the floor beyond that end is lower than the point: up against a higher floor (the Ground's y34 run ends at a raised square)
+   the end is inside it, and drawing it laid a wedge and a sawtooth of rug over that floor. beyond: that floor's height, or null where there's none */
+const endHidden = (beyond, zB, zz) => beyond !== null && beyond !== undefined && beyond > zB && beyond >= zB + zz;
 function flightUpToYou(w, o) {
     const { axis, c0, c1, dStart, steps, zB, carpet, way } = o, alongY = axis === "y", pq = stepTones(way), grainAt = GHP ? ghGrain : (wayOf(way) || {}).planks ? plankXY : parquetAt;
     const scr = (c, d, z) => alongY ? [Math.round((c - d) * 16) + w.ox, Math.round((c + d) * 8) + w.oy - zB - z] : [Math.round((d - c) * 16) + w.ox, Math.round((c + d) * 8) + w.oy - zB - z];
@@ -1975,7 +1983,7 @@ function flightUpToYou(w, o) {
     const X0 = Math.max(0, Math.min(...pts.map(q => q[0])) - 2), X1 = Math.min(w.b.w - 1, Math.max(...pts.map(q => q[0])) + 2), Y0 = Math.max(0, Math.min(...pts.map(q => q[1])) - 2), Y1 = Math.min(w.b.h - 1, Math.max(...pts.map(q => q[1])) + 2);
     for (let sy = Y0; sy <= Y1; sy++) for (let sx = X0; sx <= X1; sx++) {
         const A = (sx + .5 - w.ox) / 16, B = (sy + .5 - w.oy + zB) / 8, x0 = (A + B) / 2, y0 = (B - A) / 2, c = alongY ? x0 : y0, d = alongY ? y0 : x0, tz = c1 - c, zz = tz * 16, dd = d + tz, k = Math.floor((dd - dStart) / STEP_D);
-        if (o.near !== false && zz >= 0 && k >= 0 && k < steps && zz <= (k + 1) * STEP_R && (!o.vis || o.vis(x0 + tz, y0 + tz, zB + zz))) w.b.set(sx, sy, pq(.42));
+        if (o.near !== false && zz >= 0 && k >= 0 && k < steps && zz <= (k + 1) * STEP_R && (!o.vis || o.vis(x0 + tz, y0 + tz, zB + zz)) && !(o.endZ && endHidden(o.endZ(dd), zB, zz))) w.b.set(sx, sy, frontEndTone(pq, (k + 1) * STEP_R - zz, zz, dd, GHP ? GH_JOINT : C.k));
     }
     for (let k = 0; k < steps; k++) {
         const d0 = dStart + k * STEP_D, z = (k + 1) * STEP_R, rows = k === steps - 1 ? 6 : 2;
@@ -2081,7 +2089,7 @@ function stepGroup(w, o) {
     const dim = (c, k) => [c[0] * k | 0, c[1] * k | 0, c[2] * k | 0];
     const colour = h => {
         const r = h.r, cc = cOf(r, h.X, h.Y), u = Math.floor((cc - r.c0) * 16), wide = Math.round((r.c1 - r.c0) * 16), end0 = !r.j0 && u < 1, end1 = !r.j1 && !r.cover1 && u >= wide - 1;
-        if (h.kind === "near") { if (!r.back) return pq(.42); const gap = h.top - h.z; return gap < 1 ? pq(1) : gap < 2 ? pq(0) : h.z < 1 ? KK : (Math.floor(dOf(r, h.X, h.Y) * 16) >> 1) % 3 ? pq(.55) : pq(.4); }
+        if (h.kind === "near") { if (!r.back) return frontEndTone(pq, h.top - h.z, h.z, dOf(r, h.X, h.Y), KK); const gap = h.top - h.z; return gap < 1 ? pq(1) : gap < 2 ? pq(0) : h.z < 1 ? KK : (Math.floor(dOf(r, h.X, h.Y) * 16) >> 1) % 3 ? pq(.55) : pq(.4); }
         if (h.kind === "riser") {
             if (end0 || end1) return KK;
             const shade = h.h >= R - 1 ? .42 : h.h < 1 ? .5 : .66;
@@ -2127,7 +2135,7 @@ function stepGroup(w, o) {
             const t = r.c1 - (r.alongY ? x0 : y0); if (t <= best || t < 0) continue;
             const X = x0 + t, Y = y0 + t, s = sOf(r, X, Y), zs = t * 16;
             if (r.back) { if (s < 0 || s >= reach) continue; const ts = (steps - Math.floor(s / D)) * R; if (zs >= ts) continue; best = t; hit = { kind: "near", X, Y, z: zs, top: ts, r }; }
-            else { const kk = Math.floor((reach - s) / D), bx = endBox(r); if (kk < 0 || kk >= steps || zs > (kk + 1) * R || sx < bx[0] || sx > bx[1] || sy < bx[2] || sy > bx[3]) continue; best = t; hit = { kind: "near", X, Y, z: zs, r }; }
+            else { const kk = Math.floor((reach - s) / D), bx = endBox(r); if (kk < 0 || kk >= steps || zs > (kk + 1) * R || sx < bx[0] || sx > bx[1] || sy < bx[2] || sy > bx[3] || (r.endZ && endHidden(r.endZ(dOf(r, X, Y)), zB, zs))) continue; best = t; hit = { kind: "near", X, Y, z: zs, top: (kk + 1) * R, r }; }
         }
         /* Steps climbing towards you show only a strip of each tread, laid exactly as flightUpToYou() lays them (two rows a step, more on the top
            one), so a run that meets another matches one that doesn't, row for row. The strips go over that end. */
@@ -2413,8 +2421,12 @@ function tunnelArt(phase, axis, part) {
        top edge, its dark underside and the frame's sides; not its gold lettering touches, which belong to the THEATREDROME board (14 Nov 2026, his) */
     let patch = null; try { patch = wallArt("i_theatre_arch_patch.png"); } catch (e) { patch = null; }
     if (patch) { const ref = portalArt(3).x.arch;
+        /* ...nor the dark ink his patch has under one of those touches (two pixels below the "A" at 92,111): it is the lettering's shadow, and on a
+           tunnel, with no board, it was a stray dark dot on the arch's right half (14 Nov scan, renderer 10). His file is left as it is */
+        const goldAt = (a2, b) => { if (b < 0) return false; const q = (b * patch.w + a2) * 4; return patch.rgba[q + 3] >= 128 && patch.rgba[q] > 200 && patch.rgba[q + 1] > 140 && patch.rgba[q + 2] < 140; };
         for (let b = 0; b < patch.h; b++) for (let a2 = 0; a2 < patch.w; a2++) { const p = (b * patch.w + a2) * 4; if (patch.rgba[p + 3] < 128) continue;
             const pr = patch.rgba[p], pg = patch.rgba[p + 1], pb = patch.rgba[p + 2]; if (pr > 200 && pg > 140 && pb < 140) continue;      // the lettering's gold
+            if (goldAt(a2, b - 1) || goldAt(a2, b - 2)) continue;
             const i = axis === "x" ? a2 : 136 - a2, j = axis === "x" ? b : b + 1; if (i < 0 || j < 0 || i >= Wd || j >= src.h) continue;
             const r0 = (b * ref.w + a2) * 4, h0 = (j * Wd + i) * 4; if (ref.rgba[r0 + 3] < 128 || src.rgba[h0 + 3] < 128 || ref.rgba[r0] !== src.rgba[h0] || ref.rgba[r0 + 1] !== src.rgba[h0 + 1] || ref.rgba[r0 + 2] !== src.rgba[h0 + 2]) continue;
             o.rgba[h0] = pr; o.rgba[h0 + 1] = pg; o.rgba[h0 + 2] = pb; } }
@@ -3397,7 +3409,11 @@ function build(cfg) {
     const master = cfg.clip ? null : null;
     const cl = cfg.clip;                 // [cx, cy, w, h] in world px around at(); limits the work
     const at = (x, y, z) => [Math.round((x - y) * 16) + oxx, Math.round((x + y) * 8) + oyy - (z || 0)];
-    const view = cl ? (() => { const c = at(cl[0], cl[1], cl[2]); return [c[0] - (cl[3] >> 1) - 40, c[1] - (cl[4] >> 1) - 40, c[0] + (cl[3] >> 1) + 40, c[1] + (cl[4] >> 1) + 40]; })() : [0, 0, pw, ph];
+    /* BELOW: more room under the clip than over it. A wall seen at the bottom of a tile has its foot up to a storey further down, and the
+       wall climbing small steps and the wall-top tidy read that foot as drawn: where it fell outside the picture they guessed instead, so the
+       wallpaper by the F3 steps (85,-34) came out a column or two different in the editor's tiles and the published ones (14 Nov scan, renderer 6) */
+    const BELOW = 64;
+    const view = cl ? (() => { const c = at(cl[0], cl[1], cl[2]); return [c[0] - (cl[3] >> 1) - 40, c[1] - (cl[4] >> 1) - 40, c[0] + (cl[3] >> 1) + 40, c[1] + (cl[4] >> 1) + 40 + BELOW]; })() : [0, 0, pw, ph];
     const bw = view[2] - view[0], bh = view[3] - view[1];
     const out = new Buf(bw, bh, "000000"), layer = new Buf(bw, bh, "07060a");
     /* a door, or a bookcase hiding one: closed it's a still picture wider than the opening, the page draws it opening */
@@ -3629,13 +3645,15 @@ function build(cfg) {
             }
         }
         const onR = (X, Y) => (lv.rugs || []).some(r => X >= r.x0 && X < r.x1 && Y >= r.y0 && Y < r.y1), stepWay = cfg.single || lv.way;
-        const pieceOf = r => { let a0 = null, a1 = null; for (let t = r.a; t < r.b; t++) if (r.alongY ? onR(t, r.line) || onR(t, r.line - 1) : onR(r.line, t) || onR(r.line - 1, t)) { if (a0 === null) a0 = t; a1 = t + 1; } return { alongY: r.alongY, line: r.line, c0: r.a, c1: r.b, back: !r.toYou, j0: r.j0, j1: r.j1, x0: r.x0, x1: r.x1, noNear: !!r.noNear, cover1: !!r.cover1, carpet: a0 === null ? null : [a0, a1], src: r }; };
+        /* the floor's height just past a run's near end, at a point d along the way it climbs (for steps climbing towards you: their end is only seen where that floor is lower) */
+        const endZOf = r => d => { const D = Math.floor(d + 1e-9), Q = r.alongY ? tileAt(r.b, D) : tileAt(D, r.b); return Q && !Q.notch ? Q.z : null; };
+        const pieceOf = r => { let a0 = null, a1 = null; for (let t = r.a; t < r.b; t++) if (r.alongY ? onR(t, r.line) || onR(t, r.line - 1) : onR(r.line, t) || onR(r.line - 1, t)) { if (a0 === null) a0 = t; a1 = t + 1; } return { alongY: r.alongY, line: r.line, c0: r.a, c1: r.b, back: !r.toYou, j0: r.j0, j1: r.j1, x0: r.x0, x1: r.x1, noNear: !!r.noNear, cover1: !!r.cover1, carpet: a0 === null ? null : [a0, a1], endZ: r.toYou ? endZOf(r) : null, src: r }; };
         const hidden = r => { if (r.hidden === undefined) { const reach = Math.round((r.hi - r.lo) / STEP_R) * STEP_D; r.hidden = behindWall(r.alongY, r.a, r.b, r.toYou ? r.line - reach : r.line, r.toYou ? r.line : r.line + reach, r.lo, Math.round((r.hi - r.lo) / STEP_R)); } return r.hidden; };
         const groups = new Map();      // each group of joined runs, drawn as one surface
         for (const g of new Set(groupOf.values())) { const pieces = [...g].map(pieceOf), byRun = new Map(pieces.map(q => [q.src, q])); const cs = corners.filter(k => g.has(k.ry)).map(k => ({ ...k, rx: byRun.get(k.rx), ry: byRun.get(k.ry) })); const G = { runs: pieces, corners: cs, vis: [...g].some(hidden) ? stepSeen : null }; for (const r of g) groups.set(r, G); }
         for (const r of runs) {
             const { alongY, toYou, hi, lo } = r, st = { line: r.line, a: r.a, b: r.b }, carpet = pieceOf(r).carpet;
-            const count = Math.round((hi - lo) / STEP_R), reach = count * STEP_D, f = { axis: alongY ? "y" : "x", c0: st.a, c1: st.b, dTop: st.line, dStart: st.line - reach, steps: count, rise: STEP_R, tread: STEP_D, zB: lo, carpet, way: stepWay, tiled: true, vis: hidden(r) ? stepSeen : null, near: r.noNear ? false : undefined, cover1: !!r.cover1 };
+            const count = Math.round((hi - lo) / STEP_R), reach = count * STEP_D, f = { axis: alongY ? "y" : "x", c0: st.a, c1: st.b, dTop: st.line, dStart: st.line - reach, steps: count, rise: STEP_R, tread: STEP_D, zB: lo, carpet, way: stepWay, tiled: true, vis: hidden(r) ? stepSeen : null, near: r.noNear ? false : undefined, cover1: !!r.cover1, endZ: toYou ? endZOf(r) : null };
             const along = toYou ? Math.floor(st.line - reach) : st.line;
             const d0 = toYou ? Math.floor(st.line - reach) : st.line, d1 = toYou ? st.line : Math.ceil(st.line + reach);
             const G = groups.get(r), sOf = (X, Y) => { const d = alongY ? Y : X; return toYou ? st.line - d : d - st.line; };
@@ -4112,7 +4130,7 @@ function build(cfg) {
             for (const it of (P.wi || [])) {
                 const def = WALL_ITEM.get(it.k); if (!def) continue;
                 if (def.xmas && !xmasOn) continue;
-                if (it.k === "i_window") { const zw = P.z, wide = it.w || 52, b0 = it.b || 0, top0 = it.top || 78, flip = it.axis === "x", one = () => { const zs = w.z; w.z = zw; const start = it.at - wide / 32, s0 = flip ? w.S(start, it.line) : w.S(it.line, start); w.z = zs; const a0 = Math.round(s0[0]), a1 = Math.round(s0[1]) - 6, view = wallArt("i_view_" + (xmasOn && cfg.light ? "snow_" : "") + (Mname === "day" ? "day" : Mname === "night" || Mname === "failing" ? "night" : Mname === "dawn" ? "dawn" : "dusk") + ".png"), H2 = top0 - b0, place = HallWindow.PLACES[it.view] || HallWindow.placeFor(a0, a1, wide, H2), offx = place[0] - wide / 2, offy = place[1] - H2 / 2, Y0 = a1 + wide / 2 - top0;
+                if (it.k === "i_window") { const zw = P.z, wide = it.w || 52, b0 = it.b || 0, top0 = it.top || 78, flip = it.axis === "x", one = () => { const zs = w.z; w.z = zw; const start = it.at - wide / 32, s0 = flip ? w.S(start, it.line) : w.S(it.line, start); w.z = zs; const a0 = Math.round(s0[0]), a1 = Math.round(s0[1]) - 6, view = wallArt("i_view_" + (xmasOn && cfg.light ? "snow_" : "") + (Mname === "day" ? "day" : Mname === "night" || Mname === "failing" ? "night" : Mname === "dawn" ? "dawn" : "dusk") + ".png"), H2 = top0 - b0, place = HallWindow.PLACES[it.view] || HallWindow.placeFor(a0 - w.ox, a1 - w.oy, wide, H2), offx = place[0] - wide / 2, offy = place[1] - H2 / 2, Y0 = a1 + wide / 2 - top0;
                         /* looking out: the picture stays upright, only its outline follows the wall */
                         for (let u = 0; u < wide; u++) { for (let v = 0; v < H2; v++) { const sxm = a0 - wide + u, sy = Y0 - Math.floor(u / 2) + v, X = flip ? 2 * a0 - sxm - 1 : sxm, sxv = Math.max(0, Math.min(view.w - 1, Math.round(u + offx))), syv = Math.max(0, Math.min(view.h - 1, Math.round(sy - Y0 + offy))), q = (syv * view.w + sxv) * 4; let c = [view.rgba[q], view.rgba[q + 1], view.rgba[q + 2]]; c = c.map((n, k) => n * .88 + [200, 225, 240][k] * .12); const slant = u - (H2 - v) * .34; for (const [o, sw] of [[.2, 7], [.34, 3], [.72, 5]]) { const x0 = wide * o; if (slant >= x0 && slant < x0 + sw) { c = c.map(n => n * .8 + 255 * .2); break; } } c = c.map(n => Math.round(Math.min(255, n))); layer.set(X, sy, c); if (X >= 0 && sy >= 0 && X < bw && sy < bh) { const n = ((c[0] << 16) | (c[1] << 8) | c[2]) + 1; w.keep[sy * bw + X] = n; w.glowing[sy * bw + X] = n; } } }
                         const fr = HallWindow.art(wide, b0, top0); for (let j = 0; j < fr.h; j++) for (let i = 0; i < fr.w; i++) { const q = (j * fr.w + i) * 4; if (fr.rgba[q + 3] < 128) continue; const sx = a0 - fr.ox + i, X = flip ? 2 * a0 - sx - 1 : sx, Y = a1 - fr.oy + j, c = [fr.rgba[q], fr.rgba[q + 1], fr.rgba[q + 2]]; layer.set(X, Y, c); if (X >= 0 && Y >= 0 && X < bw && Y < bh) { w.keep[Y * bw + X] = ((c[0] << 16) | (c[1] << 8) | c[2]) + 1; if (w.glowing[Y * bw + X]) w.glowing[Y * bw + X] = 0; } }
@@ -4355,7 +4373,10 @@ function build(cfg) {
                 /* only from the wall that owns most of this column below: where two walls meet at a corner, rows of the other one sat in it and were copied up as a column of little triangles (8 Nov, his, Floor 2 by Kn0ck Kn0ck v0.0) */
                 const owners = new Map(); for (let y = Math.max(0, y1 + 1); y <= yMax && y < bh; y++) { const n = y * bw + sx; if (plain(sx, y)) owners.set(wallOwner[n], (owners.get(wallOwner[n]) || 0) + 1); }
                 let home = -1, most = 0; for (const [k, v] of owners) if (v > most) { most = v; home = k; }
-                const down = (X, Y, last) => { if (X < 0 || X >= bw) return -1; while (Y >= 0 && Y < bh && Y <= last) { if (plain(X, Y) && (X !== sx || home < 0 || wallOwner[Y * bw + X] === home)) return Y * bw + X; Y += REPEAT; } return -1; };
+                /* never an empty pixel: a stairwell's wall is cleared where the floor above stands in front of it, and taking that emptiness left the
+                   wall's cap showing at the ends of the Events Gallery's stair opening, tan stubs under the slab's edge (14 Nov scan, renderer 8) */
+                const blank = n => layer.d[n * 4] === VOID[0] && layer.d[n * 4 + 1] === VOID[1] && layer.d[n * 4 + 2] === VOID[2];
+                const down = (X, Y, last) => { if (X < 0 || X >= bw) return -1; while (Y >= 0 && Y < bh && Y <= last) { if (plain(X, Y) && !blank(Y * bw + X) && (X !== sx || home < 0 || wallOwner[Y * bw + X] === home)) return Y * bw + X; Y += REPEAT; } return -1; };
                 for (let y = Math.max(0, y0); y <= y1 && y < bh; y++) {
                     let yy = y; while (yy <= y1) yy += REPEAT;
                     const i = y * bw + sx; if (furniX[i] !== NO_FURNI || lampPx.has(i) || (stairPx[i] && !stairBehind(i)) || itemPx[i]) continue;
@@ -4390,7 +4411,10 @@ function build(cfg) {
                    empty there it showed black and the far wall behind (14 Nov 2026, his) */
                 if (backWall(X, Y) && (!noneSet.has("x|" + Y + "|" + X) || portalTiles.has("x|" + Y + "|" + X)) && !halfSet.has("x|" + Y + "|" + X) && (upSet.has(X + "," + (Y - 1)) || upSet.has(X + "," + Y))) {
                     const Yu = upSet.has(X + "," + (Y - 1)) ? Y - 1 : Y, zUp = upBase + upRise(X, Yu);
-                    for (let u = 0; u < 16; u++) { const sx = (X - Y) * 16 + u + gx, base8 = Math.round((X + u / 16 + Y) * 8) + gy; fill(sx, base8 - Math.max(zUp, upWedge("x", Yu, X + (u + .5) / 16)) + EDGE_ROWS, base8 - (f + Z1) + CAP_ROWS - 1, base8 - f - WOOD_ROWS, 1, n => backWall(X + n, Y), Y, f, u === 0 ? X : null); }
+                    /* at an outer corner the corner's own column is the end of this wall and the start of neither, so it went unfilled: a black
+                       line down the corner under the floor above, stopping where the wall's own art began (14 Nov scan, renderer 7, F3 by andrejs) */
+                    const uEnd = !backWall(X + 1, Y) && sideWall(X + 1, Y - 1) ? 17 : 16;
+                    for (let u = 0; u < uEnd; u++) { const sx = (X - Y) * 16 + u + gx, base8 = Math.round((X + u / 16 + Y) * 8) + gy; fill(sx, base8 - Math.max(zUp, upWedge("x", Yu, X + (u + .5) / 16)) + EDGE_ROWS, base8 - (f + Z1) + CAP_ROWS - 1, base8 - f - WOOD_ROWS, 1, n => backWall(X + n, Y), Y, f, u === 0 ? X : null); }
                 }
                 if (sideWall(X, Y) && (!noneSet.has("y|" + X + "|" + Y) || portalTiles.has("y|" + X + "|" + Y)) && !halfSet.has("y|" + X + "|" + Y) && (upSet.has((X - 1) + "," + Y) || upSet.has(X + "," + Y))) {
                     const Xu = upSet.has((X - 1) + "," + Y) ? X - 1 : X, zUp = upBase + upRise(Xu, Y);
@@ -5464,7 +5488,9 @@ const PLACES = { lawn: [640, 350], road: [480, 400], maze: [560, 430], park: [34
 /* a window with no view picked (14 Nov 2026, his: "All windows show the same view outside") looks out at the part of the grounds behind
    where it stands: its place on the screen picks the middle of what it shows, so windows side by side show neighbouring parts of one view,
    and windows far apart different ones. Kept inside the picture (720 x 498), right of the hotel itself (its orange front filled the glass), and
-   low enough to take in the grounds as well as the skyline */
+   low enough to take in the grounds as well as the skyline.
+   sx, sy are the map's own screen position (w.S less the buffer origin w.ox, w.oy), never pixels in the clipped buffer: those moved with the
+   render tile, so the editor's and the published tiles showed different views, split down tile seams (14 Nov scan, renderer 1) */
 const placeFor = (sx, sy, wide, tall) => {
     const W = 720, H = 498, x0 = Math.max(wide / 2 + 10, 310), x1 = W - wide / 2 - 10, y0 = Math.max(tall / 2, 290), y1 = Math.min(H - tall / 2, 380);      // right of the hotel: skyline, lawn, car park, road, maze
     const span = x1 - x0, x = x0 + (((Math.round(sx * .45) % span) + span) % span), ys = y1 - y0, y = y0 + (((Math.round(sy * .25) % Math.max(1, ys)) + ys) % Math.max(1, ys));

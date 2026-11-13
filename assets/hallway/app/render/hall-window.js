@@ -31,7 +31,9 @@ const PLACES = { lawn: [640, 350], road: [480, 400], maze: [560, 430], park: [34
 /* a window with no view picked (14 Nov 2026, his: "All windows show the same view outside") looks out at the part of the grounds behind
    where it stands: its place on the screen picks the middle of what it shows, so windows side by side show neighbouring parts of one view,
    and windows far apart different ones. Kept inside the picture (720 x 498), right of the hotel itself (its orange front filled the glass), and
-   low enough to take in the grounds as well as the skyline */
+   low enough to take in the grounds as well as the skyline.
+   sx, sy are the map's own screen position (w.S less the buffer origin w.ox, w.oy), never pixels in the clipped buffer: those moved with the
+   render tile, so the editor's and the published tiles showed different views, split down tile seams (14 Nov scan, renderer 1) */
 const placeFor = (sx, sy, wide, tall) => {
     const W = 720, H = 498, x0 = Math.max(wide / 2 + 10, 310), x1 = W - wide / 2 - 10, y0 = Math.max(tall / 2, 290), y1 = Math.min(H - tall / 2, 380);      // right of the hotel: skyline, lawn, car park, road, maze
     const span = x1 - x0, x = x0 + (((Math.round(sx * .45) % span) + span) % span), ys = y1 - y0, y = y0 + (((Math.round(sy * .25) % Math.max(1, ys)) + ys) % Math.max(1, ys));

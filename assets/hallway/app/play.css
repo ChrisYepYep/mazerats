@@ -32,6 +32,16 @@ html, body { background: #000; overflow: hidden; }
 #playPicker .hw-logo-card { margin: auto 0 10px; width: 420px; max-width: 100%; filter: drop-shadow(0 10px 22px rgba(0, 0, 0, .65)); }
 #playPicker .hw-logo-card img { display: block; width: 100%; height: auto; pointer-events: none; user-select: none; }
 #playPicker .hw-logo-card + .mr-window { margin: 0 auto auto; }
+/* a short screen (a phone turned sideways, 740 x 360): the card at half size beside the window rather than above it, and the window scrolling
+   inside itself if it must, so Go, the guest button and the notes are all in view without hunting below the fold (14 Nov scan) */
+@media (max-height: 480px) {
+    #playPicker { flex-direction: row; justify-content: center; align-items: center; gap: 14px; padding: 8px; }
+    #playPicker .hw-logo-card { flex: none; width: 210px; margin: 0; }
+    #playPicker .hw-logo-card + .mr-window { margin: 0; }
+    #playPicker .mr-window { max-height: calc(100vh - 16px); max-height: calc(100dvh - 16px); display: flex; flex-direction: column; }
+    #playPicker .mr-frame { min-height: 0; overflow: auto; }
+}
+@media (max-height: 480px) and (max-width: 599px) { #playPicker .hw-logo-card { display: none; } }
 /* the bar in groups, each a strip of joined buttons (8 Nov 2026) */
 #playBar .play-group { display: inline-flex; gap: 2px; }
 #playBar .play-group > .mr-btn { border-radius: 0; }

@@ -126,7 +126,11 @@
         });
     }
     async function chooseAvatar() {
-        const mine = await signedInHabbo(), was = remembered();
+        /* Habbo's lookup gets 4 seconds; after that nobody waits on it with an empty hallway: the visitor carries on as if signed out (the
+           remembered Habbo, or the picker), and the linked Habbo is filled in when it does answer (14 Nov scan) */
+        const asking = signedInHabbo(), SLOW = {}, first = await Promise.race([asking, new Promise(r => setTimeout(() => r(SLOW), 4000))]);
+        if (first === SLOW) { lateAvatar(asking); return; }
+        const mine = first, was = remembered();
         if (mine) linkedName = mine.name;
         /* Picked while that was being looked up: the pick stands, and stands next time too */
         if (pickedNow) { if (mine && was) try { localStorage.setItem(KEY, JSON.stringify({ ...was, overLinked: mine.name })); } catch (e) { /* private mode */ } if (!document.getElementById("playPicker")) letIn(); return; }
@@ -138,6 +142,20 @@
         }
         if (was && was.figure) { wear(was.figure); letIn(); return; } if (was && was.guest) { letIn(); return; }
         picker();
+    }
+    async function lateAvatar(asking) {
+        const was = remembered();
+        if (!pickedNow) { if (was && was.figure) { wear(was.figure); letIn(); } else if (was && was.guest) letIn(); else picker(); }
+        const mine = await asking; if (!mine) return;
+        linkedName = mine.name;
+        if (pickedNow || (was && was.overLinked === mine.name)) return;      // chosen meanwhile, or chosen over this Habbo before: that stands
+        const box = document.getElementById("playPicker");
+        if (box) {
+            const input = box.querySelector("#playName"), sel = box.querySelector("select"), say = box.querySelector(".say");
+            if (input && (!input.value.trim() || (was && input.value === was.name))) { input.value = mine.name; if (sel && HOTELS.includes(mine.hotel)) sel.value = mine.hotel; if (say) say.textContent = "Signed in as " + mine.name + ". Go, or pick someone else."; }
+            else return;      // typing someone else: leave it be
+        }
+        wear(mine.figure);
     }
 
     /* ---------- the controls: the site's own buttons, floating on the hallway ---------- */

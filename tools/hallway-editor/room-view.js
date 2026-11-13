@@ -9,7 +9,9 @@
     const BOOK_ROTA = ["oxblood", "navy", "plum", "ochre", "teal", "green", "black"];
     let index = null, ready = null;
     const imgs = new Map();
-    const img = n => { let i = imgs.get(n); if (!i) { i = new Image(); i.onload = () => RoomView.onArt && RoomView.onArt(); i.src = ART + n + ".png"; imgs.set(n, i); } return i; };
+    /* a picture arriving repaints whatever shows rooms: the Rooms editor (onArt) and a room being walked, which no longer repaints every frame */
+    const artWatchers = new Set(), artArrived = () => { if (RoomView.onArt) RoomView.onArt(); for (const f of artWatchers) f(); };
+    const img = n => { let i = imgs.get(n); if (!i) { i = new Image(); i.onload = artArrived; i.src = ART + n + ".png"; imgs.set(n, i); } return i; };
     const load = () => ready || (ready = fetch(ART + "index.json").then(r => r.json()).then(async j => {
         index = j;
         const names = [...Object.keys(j.sprites), "lamp", "lampglow", "rug-round", "slate", "window-l", "window-r"];
@@ -118,7 +120,7 @@
         return { name: String(m.name || "").trim(), m, slots, pictures: [...wall.filter(w => !all.some(a => a.url === w.url)), ...all] };
     }
     const wallPics = new Map();
-    function wallPic(url) { let i = wallPics.get(url); if (!i) { i = new Image(); i.onload = () => RoomView.onArt && RoomView.onArt(); i.src = url; wallPics.set(url, i); } return i; }
+    function wallPic(url) { let i = wallPics.get(url); if (!i) { i = new Image(); i.onload = artArrived; i.src = url; wallPics.set(url, i); } return i; }
     /* The albums a maze needs: a stretch of pictures to each table it has */
     function albumsOf(r, facts) {
         const tables = r.items.filter(it => it.k === "album"); if (!facts || !tables.length) return new Map();
@@ -132,7 +134,7 @@
     /* a turned piece is the client's own mirrored about its tile, as the game does it */
     function spriteAt(ctx, name, r, x, y, z, flip) { const s = index.sprites[name], p = scr(r, x, y, z || 0), ax = flip ? s.w - s.ax - 32 : s.ax; mirrored(ctx, img(name), p[0] - 16 - ax, p[1] + 8 - s.ay, flip); }
     const hallImgs = new Map();
-    const hallImg = n => { let i = hallImgs.get(n); if (!i) { i = new Image(); i.onload = () => RoomView.onArt && RoomView.onArt(); i.src = n; hallImgs.set(n, i); } return i; };
+    const hallImg = n => { let i = hallImgs.get(n); if (!i) { i = new Image(); i.onload = artArrived; i.src = n; hallImgs.set(n, i); } return i; };
     const TALL_BY = 64;
     function drawHall(ctx, r, it) {
         if (it.p === "trophy") { const fp = window.FLOOR_PIECES && window.FLOOR_PIECES.trophy, i = hallImg("art/wall/i_trophy.png"), m = scr(r, it.x + .25, it.y + .25); if (fp && i.complete && i.naturalWidth) ctx.drawImage(i, m[0] - fp.ox, m[1] - fp.oy); return; }
@@ -214,7 +216,7 @@
         for (const it of r.items) { if (it.k === "sconce") { const p = it.wall === "l" ? scr(r, .6, it.at) : scr(r, it.at, .6); glow(p[0], p[1], 60, "rgba(90,78,56,1)"); } if (it.k === "lamp" || (it.k === "hall" && it.p === "lamp")) { const p = scr(r, it.x + .5, it.y + .5); glow(p[0], p[1] - 6, 90, "rgba(96,84,60,1)"); } if (it.k === "window") { const p = it.wall === "l" ? scr(r, 1.6, it.at + 1) : scr(r, it.at + 1, 1.6); glow(p[0], p[1], 64, "rgba(30,62,56,1)"); } }
         lightMaps.set(key, c); return c;
     }
-    const AVATAR = n => { const k = window.hallwayAvatarSrc ? window.hallwayAvatarSrc(n) : "art/av/" + n + ".png"; let i = imgs.get(k); if (!i) { i = new Image(); i.onload = () => RoomView.onArt && RoomView.onArt(); i.src = k; imgs.set(k, i); } return i; };
+    const AVATAR = n => { const k = window.hallwayAvatarSrc ? window.hallwayAvatarSrc(n) : "art/av/" + n + ".png"; let i = imgs.get(k); if (!i) { i = new Image(); i.onload = artArrived; i.src = k; imgs.set(k, i); } return i; };
     /* behind-first: a thing is behind another when it ends before the other starts, on either axis */
     function ordered(list) {
         const n = list.length, after = list.map(() => []), need = new Array(n).fill(0);
@@ -458,7 +460,12 @@
         const place = () => { const z = zoomNow(), W = host.clientWidth, H = host.clientHeight; c.width = W; c.height = H; const v = { z, x: Math.round((W - s.w * z) / 2), y: Math.round((H - barH() - s.h * z) / 2) }; placeLabel(v); return v; };
         let view = place();
         const paint = now => { if (dead) return; view = (c.width !== host.clientWidth || c.height !== host.clientHeight || view.z !== zoomNow()) ? place() : view; bx.clearRect(0, 0, s.w, s.h); paintRoom(bx, r, { facts, walker: w, hover, edges: [edge], now }); ctx.imageSmoothingEnabled = false; ctx.fillStyle = "#000"; ctx.fillRect(0, 0, c.width, c.height); ctx.drawImage(buf, view.x, view.y, s.w * view.z, s.h * view.z); };
-        const loop = now => { if (dead) return; if (w.walking) step(now); paint(now); raf = requestAnimationFrame(loop); };
+        /* Frames only while you walk; otherwise one paint when something changes (the hover tile, the size, a picture arriving, the zoom).
+           Nothing in a room moves by itself, so standing still costs nothing (14 Nov scan: it painted the whole room every frame) */
+        const loop = now => { raf = 0; if (dead) return; if (w.walking) step(now); paint(now); if (w.walking) raf = requestAnimationFrame(loop); };
+        const wake = () => { if (!dead && !raf) raf = requestAnimationFrame(loop); };
+        artWatchers.add(wake); addEventListener("resize", wake);
+        const sized = window.ResizeObserver ? new ResizeObserver(wake) : null; if (sized) sized.observe(host);
         const step = now => {
             const dt = Math.min(200, now - w.last); w.last = now; let budget = dt / MS_PER_TILE;
             while (budget > 0 && w.pts.length) {
@@ -472,7 +479,7 @@
             if (!w.pts.length) { w.walking = false; const t = w.then; w.then = null; if (t) t(); else arrived(); }
         };
         const arrived = () => { if (moved && ex.some(t => t[0] === w.x && t[1] === w.y) && opts.onLeave) { const f = opts.onLeave; opts.onLeave = null; f(); } };
-        const go = (to, then) => { const from = [Math.round(w.x), Math.round(w.y)], p = route(r, from, to); if (!p) return false; if (!p.length) { w.pts = []; w.then = null; w.walking = false; w.x = from[0]; w.y = from[1]; if (then) then(); else arrived(); return true; } w.pts = p; w.then = then || null; if (!w.walking) { w.walking = true; w.last = performance.now(); } return true; };
+        const go = (to, then) => { const from = [Math.round(w.x), Math.round(w.y)], p = route(r, from, to); if (!p) return false; if (!p.length) { w.pts = []; w.then = null; w.walking = false; w.x = from[0]; w.y = from[1]; if (then) then(); else arrived(); wake(); return true; } w.pts = p; w.then = then || null; if (!w.walking) { w.walking = true; w.last = performance.now(); } wake(); return true; };
         const toPx = e => { const b = c.getBoundingClientRect(); return [(e.clientX - b.left - view.x) / view.z, (e.clientY - b.top - view.y) / view.z]; };
         /* walk up to a thing: the nearest free tile touching it, then it opens */
         const spots = it => {
@@ -499,19 +506,30 @@
         /* a staff door (a wall picture, i_staffdoor) is a way out, as the arrow is */
         const isExitDoor = it => !!it && it.k === "painting" && it.id === "i_staffdoor";
         const usable = it => it && (it.k === "ledger" || (it.k === "album" && albumsOf(r, facts).has(it)) || (it.k === "frame" && facts.slots[it.slot]) || isExitDoor(it));
-        c.addEventListener("pointermove", e => { const p = toPx(e), t = tileAt(r, p[0], p[1]), it = itemAt(r, p[0], p[1]); c.style.cursor = usable(it) ? "pointer" : "default"; hover = !usable(it) && t[0] >= 0 && t[1] >= 0 && t[0] < r.w && t[1] < r.h && !solidSet(r).has(t[0] + "," + t[1]) ? t : null; });
-        c.addEventListener("pointerleave", () => { hover = null; });
-        c.addEventListener("wheel", e => { e.preventDefault(); if (opts.wheel) opts.wheel(e.deltaY); }, { passive: false });
+        c.addEventListener("pointermove", e => { const p = toPx(e), t = tileAt(r, p[0], p[1]), it = itemAt(r, p[0], p[1]); c.style.cursor = usable(it) ? "pointer" : "default"; const was = hover; hover = !usable(it) && t[0] >= 0 && t[1] >= 0 && t[0] < r.w && t[1] < r.h && !solidSet(r).has(t[0] + "," + t[1]) ? t : null; if (String(was) !== String(hover)) wake(); });
+        c.addEventListener("pointerleave", () => { if (hover) { hover = null; wake(); } });
+        c.addEventListener("wheel", e => { e.preventDefault(); if (opts.wheel) opts.wheel(e.deltaY); wake(); }, { passive: false });
         c.addEventListener("click", e => {
             if (bookOpen) return; const p = toPx(e), it = itemAt(r, p[0], p[1]);
             if (usable(it)) { useIt(it); return; }
             const t = tileAt(r, p[0], p[1]); if (t[0] < 0 || t[1] < 0 || t[0] >= r.w || t[1] >= r.h) return; go(t);
         });
+        /* the keyboard's way out (14 Nov scan): Escape or Backspace walks you to the arrow, as clicking it does; a book, the picker or a drawer
+           open over the room keeps its own Escape */
+        const leaveByKey = () => {
+            if (dead || bookOpen || !opts.onLeave) return;
+            const at = [Math.round(w.x), Math.round(w.y)];
+            if (!w.walking && ex.some(t => t[0] === at[0] && t[1] === at[1])) { const f = opts.onLeave; opts.onLeave = null; f(); return; }
+            moved = true; for (const t of ex) if (go(t)) return;
+        };
+        const keys = e => { if ((e.key !== "Escape" && e.key !== "Backspace") || e.defaultPrevented || e.ctrlKey || e.metaKey || e.altKey) return; const at = e.target; if (at && at.closest && at.closest("input, textarea, select, [contenteditable]")) return; if (bookOpen || document.querySelector("#playPicker, .rb-back")) return; e.preventDefault(); leaveByKey(); };
+        addEventListener("keydown", keys);
         raf = requestAnimationFrame(loop);
         go(inward);
         return {
             canvas: c,
-            close() { dead = true; cancelAnimationFrame(raf); if (bookOpen) bookOpen(); c.remove(); label.remove(); },
+            close() { dead = true; cancelAnimationFrame(raf); artWatchers.delete(wake); removeEventListener("resize", wake); removeEventListener("keydown", keys); if (sized) sized.disconnect(); if (bookOpen) bookOpen(); c.remove(); label.remove(); },
+            repaint: wake, leave: leaveByKey,
             state: () => ({ x: w.x, y: w.y, walking: w.walking, book: !!bookOpen, room: r, facts: { name: facts.name, pictures: facts.pictures.length }, view }),
             test: { go, useIt, toPx }
         };
