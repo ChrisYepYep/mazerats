@@ -72,7 +72,7 @@ for (const [style, F] of Object.entries(A.FRAMES)) for (const size of ["S", "M",
     const [pw, ph] = A.SIZES[size];
     wallPiece("frame_" + style + "_" + size, F.name + " frame, " + { S: "small", M: "medium", L: "large" }[size], 80, way => A.frame(style, size, way), { frame: { style, size, pw, ph, pad: F.pad } });
 }
-wallPiece("piclight", "Picture light", 116, (way, lit) => A.pictureLightOn(way, lit), { lit: "#ffe4a0", glowUp: -6, lift: -4 });   // lift: its hood stands out from the wall, so it reads 4 lower in its middle column than the flat one did; up 4, the hood clears the frame as before
+wallPiece("piclight", "Picture light", 116, (way, lit) => A.pictureLightOn(way, lit), { lit: "#ffe4a0", glowUp: -6, lift: -8 });   // lift: its hood stands out from the wall, so it reads 4 lower in its middle column than the flat one did; up 4, the hood clears the frame as before
 wallPiece("eggsconce", "Egg wall light", 78, (way, lit) => { const s = A.eggSconce(lit); return way === "x" ? s : X.flipX(s); }, { lit: "#ffd9a0" });
 
 /* ---- the list: the g_ entries replace themselves, everything else stays ---- */

@@ -1252,6 +1252,29 @@ function ghPalette(s) {
 }
 /* one wall piece made over: column by column, the rows above its wallpaper are the cap, the wallpaper's rows the paint, and below it the
    rail, the black line under the rail, the dado down to the black line at the floor, and what the floor hides */
+/* the dado below the rail, z rows up from the black line at the floor, top its highest row (13 Nov 2026, his: "a bit more depth for the wooden
+   effect at the bottom", the Hallway's own wainscot as the model): ribs four columns wide like the Hallway's, each a dark groove, a lit edge
+   on the side the light comes from, a face and a shaded edge; a soft shadow under the rail; and a taller skirting whose moulded cap stands
+   out from the ribs: a dark joint, its lit top, its rounded front, the shadow it throws, then the board, darkest at the floor */
+function ghDado(pal, x, z, top) {
+    const T = pal.dado || (pal.dado = (() => { const K = [0, 0, 0], m = (a, b, t) => ghSafe(ghMix(a, b, t)); return {
+        rail0: m(pal.D, K, .5), rail1: m(pal.D, K, .25),
+        groove: m(pal.D, K, .3), edge: m(pal.F, pal.RL, .5), face: pal.F, side: m(pal.F, pal.D, .55),
+        joint: m(pal.D, K, .45), capTop: pal.lip, capFront: pal.RL, capShadow: m(pal.D, K, .2),
+        boardTop: m(pal.F, pal.RL, .25), board: pal.F, boardLow: m(pal.F, pal.D, .5), floorLine: m(pal.D, K, .35)
+    }; })());
+    if (z >= top) return T.rail0;                                     // the shadow right under the rail
+    if (z === 0) return T.floorLine;
+    if (z <= 2) return T.boardLow;
+    if (z === 3) return T.board;
+    if (z === 4) return T.boardTop;
+    if (z === 5) return T.capShadow;
+    if (z === 6) return T.capFront;
+    if (z === 7) return T.capTop;
+    if (z === 8) return T.joint;
+    const k = x & 3, rib = k === 0 ? T.groove : k === 1 ? T.edge : k === 2 ? T.face : T.side;
+    return z === top - 1 ? (k === 0 ? T.rail0 : T.rail1) : rib;      // the rail's shadow fading onto the ribs' tops
+}
 function ghWall(im, right, pal) {
     const o = { w: im.w, h: im.h, rgba: Buffer.from(im.rgba) }, paint = right ? pal.wallR : pal.wallL;
     const at = (x, r) => { const q = (r * im.w + x) * 4; return im.rgba[q + 3] < 128 ? null : (im.rgba[q] << 16) | (im.rgba[q + 1] << 8) | im.rgba[q + 2]; };
@@ -1268,11 +1291,7 @@ function ghWall(im, right, pal) {
             if (p0 < 0 || r < p0) { put(x, r, L > 150 ? pal.lip : L > 95 ? pal.RL : L > 60 ? pal.F : pal.D); continue; }          // the cap, and end posts
             if (r <= p1) { const lit = right ? ((x + 2 * r) & 3) === 3 : ((x * 3 + r * 2) & 3) === 0; put(x, r, paint[lit ? 1 : 0]); continue; }
             if (r < b1) { put(x, r, r === p1 + 1 ? pal.lip : pal.RL); continue; }                                                   // the rail
-            if (r < b2) {                                                                                                             // the dado
-                const z = b2 - 1 - r, top = b2 - 1 - b1 - 1;
-                put(x, r, z >= top ? ghMix(pal.D, [0, 0, 0], .35) : z < 4 ? ghMix(pal.F, pal.D, .35) : z < 5 ? ghMix(pal.RL, pal.F, .3) : z < 6 ? ghMix(pal.D, [0, 0, 0], .3) : (x & 1) ? pal.F : pal.D);
-                continue;
-            }
+            if (r < b2) { put(x, r, ghDado(pal, x, b2 - 1 - r, b2 - 1 - b1 - 1)); continue; }                                       // the dado
             put(x, r, pal.under);                                                                                                     // what the floor covers
         }
     }
