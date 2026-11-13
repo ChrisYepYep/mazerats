@@ -89,10 +89,13 @@
         for (const { q, z } of dustWindows()) {
             const W = q.w || 52, b = q.b || 0, top = q.top || 78, start = q.at - W / 32, n = Math.max(10, Math.min(46, Math.round(W * (top - b) / 110))), seed = q.at * 3 + q.line;
             for (let i = 0; i < n; i++) {
-                const wy = hash(i, seed) * W, wz = b + hash(i + 40, seed) * (top - b), far = wz / -SUN[2], k = hash(i + 80, seed) * far, ph = i * 1.3 + seed;
-                const mx = k * SUN[0] + Math.sin(t * .19 + ph) * 4, my = wy + k * SUN[1] + Math.cos(t * .23 + ph) * 4, mz = wz + k * SUN[2] + Math.sin(t * .13 + ph) * 3;
+                /* each mote drifts down the beam at its own pace and sways as it goes, fading in and out at the beam's ends (14 Nov 2026, his: "the dust
+                   specks ... don't appear to be moving, because it's so slow": they only swayed 4px over half a minute) */
+                const wy = hash(i, seed) * W, wz = b + hash(i + 40, seed) * (top - b), far = wz / -SUN[2], ph = i * 1.3 + seed, pace = 1.6 + hash(i + 120, seed) * 2.4;
+                const k = ((hash(i + 80, seed) * far + t * pace) % far + far) % far, ends = Math.min(1, Math.min(k, far - k) / 10);
+                const mx = k * SUN[0] + Math.sin(t * .55 + ph) * 5, my = wy + k * SUN[1] + Math.cos(t * .68 + ph) * 5, mz = wz + k * SUN[2] + Math.sin(t * .42 + ph) * 4;
                 const A = (q.axis === "y" ? LIVE.mapPoint(q.line + mx / 16, start + my / 16, z + Math.max(1, mz)) : LIVE.mapPoint(start + my / 16, q.line + mx / 16, z + Math.max(1, mz))), X = A[0], Y = A[1] - 6;
-                const al = (.42 + Math.sin(t * .7 + ph) * .16) * sun, x0 = Math.floor(X), y0 = Math.floor(Y), fx = X - x0, fy = Y - y0;
+                const al = (.42 + Math.sin(t * 1.4 + ph) * .16) * sun * ends, x0 = Math.floor(X), y0 = Math.floor(Y), fx = X - x0, fy = Y - y0;
                 for (const [dx, dy, w] of [[0, 0, (1 - fx) * (1 - fy)], [1, 0, fx * (1 - fy)], [0, 1, (1 - fx) * fy], [1, 1, fx * fy]]) { c.fillStyle = `rgba(255,240,200,${al * w})`; c.fillRect(x0 + dx, y0 + dy, 1, 1); }
             }
         }
