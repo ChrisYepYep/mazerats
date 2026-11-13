@@ -60,16 +60,19 @@ function pixels(p, at) {
     const clasp = (from, sign, t) => {
         const R = [from[0] + sign * 3, from[1] - ATTACH], Qx = from[0] + sign * END, Q = [Qx, Math.round(yAt(Qx))];
         const L = Math.hypot(Q[0] - R[0], Q[1] - R[1]) || 1, ux = (Q[0] - R[0]) / L, uy = (Q[1] - R[1]) / L;
-        const seg = (s0, s1, r, shade) => {
+        /* flat: cut square at the rope end instead of rounded, so the sleeve stops where the rope starts */
+        const seg = (s0, s1, r, shade, flat) => {
             const x0 = Math.floor(R[0] + ux * s0), x1 = Math.floor(R[0] + ux * s1), y0 = Math.floor(R[1] + uy * s0), y1 = Math.floor(R[1] + uy * s1);
             for (let y = Math.min(y0, y1) - 4; y <= Math.max(y0, y1) + 4; y++) for (let x = Math.min(x0, x1) - 4; x <= Math.max(x0, x1) + 4; x++) {
-                const dx = x - R[0], dy = y - R[1], s = Math.max(s0, Math.min(s1, dx * ux + dy * uy)), nx = dx - ux * s, ny = dy - uy * s, d = Math.hypot(nx, ny);
-                if (d <= r + .5) put(x, y, shade(d, ny, r), t);
+                const dx = x - R[0], dy = y - R[1], raw = dx * ux + dy * uy, s = Math.max(s0, Math.min(s1, raw)), nx = dx - ux * s, ny = dy - uy * s, d = Math.hypot(nx, ny);
+                if (flat && raw > s1 + .5) continue;
+                if (d <= r + .5) put(x, y, flat && raw > s1 - .4 ? G.K : shade(d, ny, r), t);
             }
         };
+        /* the sleeve: 3px of metal round the rope's end (his: 4.5 then 3 read too long), rounded at the hook, cut square where the rope goes in */
         const sleeveAt = Math.max(0, L - 3);
         seg(0, sleeveAt, 1.2, (d, ny) => d > .85 ? G.K : ny < 0 ? G.h : G.l);
-        seg(sleeveAt, L, 2, (d, ny, r) => d > r - .5 ? G.K : ny < -.4 ? G.W : ny < .4 ? G.l : G.d);
+        seg(sleeveAt, L, 2, (d, ny, r) => d > r - .5 ? G.K : ny < -.4 ? G.W : ny < .4 ? G.l : G.d, true);
         for (let y = -2; y <= 2; y++) for (let x = -2; x <= 2; x++) { const d = Math.hypot(x, y); if (d <= 2.4) put(R[0] + x, R[1] + y, d > 1.4 ? G.K : y < 0 ? G.W : G.l, t); }
         for (let s = 0; s <= L - 2; s += .4) put(Math.round(R[0] + ux * s), Math.round(R[1] + uy * s), s > 1 && s < L - 3 ? G.h : G.l, t);
     };

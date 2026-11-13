@@ -59,7 +59,7 @@ function wallPiece(id, name, h, ways, o = {}) {
     const def = { id: "g_" + id, name, kind: "gallery", tell: false, h };
     for (const way of ["x", "y"]) {
         const im = ways(way, false), f = "g_" + id + "_" + way + ".png"; write(OUT, f, im);
-        const layer = { f, x: -(im.w >> 1), y: -midRow(im), flip: 0 };
+        const layer = { f, x: -(im.w >> 1), y: -midRow(im) + (o.lift || 0), flip: 0 };
         if (o.lit) { const li = ways(way, true), fl = "g_" + id + "_" + way + "_lit.png"; write(OUT, fl, li); layer.litF = fl; }
         def[way] = { w: im.w, h: im.h, layers: [layer] };
     }
@@ -67,12 +67,12 @@ function wallPiece(id, name, h, ways, o = {}) {
     if (o.frame) def.frame = o.frame;
     items.push(def); return def;
 }
-for (const [id, name, hex] of A.BANNERS) { const flat = A.banner(A.velOf(hex)); wallPiece("banner_" + id, "EVENTS banner: " + name.toLowerCase(), 104, way => A.onWall(flat, way)); }
+for (const [id, name, hex] of A.BANNERS) { const flat = A.banner(A.velOf(hex)); wallPiece("banner_" + id, "EVENTS banner: " + name.toLowerCase(), 104, way => A.bannerOn(flat, way)); }
 for (const [style, F] of Object.entries(A.FRAMES)) for (const size of ["S", "M", "L"]) {
     const [pw, ph] = A.SIZES[size];
     wallPiece("frame_" + style + "_" + size, F.name + " frame, " + { S: "small", M: "medium", L: "large" }[size], 80, way => A.frame(style, size, way), { frame: { style, size, pw, ph, pad: F.pad } });
 }
-wallPiece("piclight", "Picture light", 116, (way, lit) => X.wall(A.pictureLight(lit), way), { lit: "#ffe4a0", glowUp: -6 });
+wallPiece("piclight", "Picture light", 116, (way, lit) => A.pictureLightOn(way, lit), { lit: "#ffe4a0", glowUp: -6, lift: -4 });   // lift: its hood stands out from the wall, so it reads 4 lower in its middle column than the flat one did; up 4, the hood clears the frame as before
 wallPiece("eggsconce", "Egg wall light", 78, (way, lit) => { const s = A.eggSconce(lit); return way === "x" ? s : X.flipX(s); }, { lit: "#ffd9a0" });
 
 /* ---- the list: the g_ entries replace themselves, everything else stays ---- */
