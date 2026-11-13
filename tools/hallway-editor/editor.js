@@ -3611,7 +3611,7 @@ function startWalk() {
     /* arrive through the entrance: start inside the arch and walk out */
     if (map.entrance && l === byId(map.entrance.level)) {
         const S = stairLevels().list.find(q => q.stair.entrance), e = map.entrance, m = entranceTiles(e)[1], ix = e.axis === "x" ? m : e.line - 2, iy = e.axis === "x" ? e.line - 2 : m;
-        if (S) { walker.l = S; walker.x = ix; walker.y = iy; walker.z = nodeZ(S, ix, iy); walker.arriving = true; const path = graphFrom(S, ix, iy, [l, x, y]); if (path) setTimeout(() => { if (walker && walker.arriving) followRoute(path, null, null); }, 200); }
+        if (S) { walker.l = S; walker.x = ix; walker.y = iy; walker.z = nodeZ(S, ix, iy); walker.arriving = true; const path = graphFrom(S, ix, iy, [l, x, y]); if (path) { const me = walker, go = () => { if (walker === me && walker.arriving) followRoute(path, null, null); }, gate = window.HALLWAY_PLAY ? (window.hallwayArrivalGate = window.hallwayArrivalGate || { held: true, go: null }) : null; if (gate && gate.held) gate.go = go; else setTimeout(go, 200); } }      /* on the site, held until the picker is done (play.js hallwayArrivalGate) */
     }
     cam.x = (x - y) * 16; cam.y = (x + y) * 8 - levelZ(l) - 60;
     /* on the site, the hallway opens on its statue (or its Christmas tree), wherever you come in */
