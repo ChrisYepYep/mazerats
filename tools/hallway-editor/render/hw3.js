@@ -1359,10 +1359,9 @@ function doorArt(phase, axis, part) {
         for (let j = 0; j < o.h; j++) for (let i = 0; i < o.w; i++) {
             const q = (j * o.w + i) * 4; if (o.rgba[q + 3] < 128) continue; const c = (o.rgba[q] << 16) | (o.rgba[q + 1] << 8) | o.rgba[q + 2];
             const g = GROUPS.get(c), L = (o.rgba[q] * .3 + o.rgba[q + 1] * .59 + o.rgba[q + 2] * .11);
-            /* a plain recess (14 Nov 2026, his: the tunnel "is broken"): the entrance's alcove had a banister and steps in it; now its walls are
-               the gallery's paint in shadow and its floor the herringbone, darker the further in */
-            const floorish = !(g === "paperA" || g === "paperB" || g === "wood") && L > 120;
-            put(i, j, floorish ? ghMix(ghWood(i * 2, j * 4, false), [8, 6, 6], .45) : ghMix(pal.wallL[0], [8, 6, 6], .55 + .15 * (1 - j / o.h)));
+            /* a plain recess (14 Nov 2026, his: the tunnel "is broken"): the entrance's alcove had a banister and steps in it; now it's all one
+               shadow, the wall's paint above going to the floor's wood below */
+            put(i, j, ghMix(ghMix(pal.wallL[0], GH_WOOD[1], j / o.h), [8, 6, 6], .62 + .14 * (1 - j / o.h)));      // one shadow, wall going to floor, darker further up and in
         }
     } else {
         /* the opening: the see-through region that reaches the bottom of the piece in its middle */
@@ -2241,7 +2240,7 @@ function build(cfg) {
             };
             wallsAt(zWalls);
             if ((P.floorLift || 0) < 0) {
-                const o0 = (w.z = zWalls, w.S(P.x0, P.y0)), foot = x => o0[1] + Math.abs(x - o0[0]) / 2 - 12;
+                const o0 = (w.z = zWalls, w.S(P.x0, P.y0)), foot = x => o0[1] + Math.abs(x - o0[0]) / 2 - 24;
                 const under = Object.prototype.hasOwnProperty.call(layer, "set") ? layer.set : null;
                 layer.set = function (x, y, c) { if (y < foot(x)) return; if (under) under.call(layer, x, y, c); else Buf.prototype.set.call(layer, x, y, c); };
                 wallsAt(P.z);
