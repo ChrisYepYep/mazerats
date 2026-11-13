@@ -2565,7 +2565,9 @@ function build(cfg) {
                 }
             };
             for (const [key, Q] of tileOf) {
-                const [X, Y] = key.split(",").map(Number), f = Q.z;
+                /* where the wall stands, not the floor: "raise the floor only" lifts the floor and leaves the wall, so measuring from the floor left
+                   a strip of the wall's cap under the floor above (14 Nov 2026, his) */
+                const [X, Y] = key.split(",").map(Number), f = Q.z - (Q.floorLift || 0);
                 if (backWall(X, Y) && !noneSet.has("x|" + Y + "|" + X) && !halfSet.has("x|" + Y + "|" + X) && (upSet.has(X + "," + (Y - 1)) || upSet.has(X + "," + Y))) {
                     const zUp = upBase + upRise(X, upSet.has(X + "," + (Y - 1)) ? Y - 1 : Y);
                     for (let u = 0; u < 16; u++) { const sx = (X - Y) * 16 + u + gx, base8 = Math.round((X + u / 16 + Y) * 8) + gy; fill(sx, base8 - zUp + EDGE_ROWS, base8 - (f + Z1) + CAP_ROWS - 1, base8 - f - WOOD_ROWS, 1, n => backWall(X + n, Y), Y, f, u === 0 ? X : null); }
