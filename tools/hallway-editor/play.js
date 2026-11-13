@@ -54,12 +54,14 @@
     /* ---------- whose Habbo walks ----------
        A signed-in player whose Habbo is linked walks as it. Anyone else types their Origins name and picks the hotel, as Fallin' Furni asks, or walks as a guest.
        The art comes through the site's function: the page needs to read its pixels, and Habbo's imaging service doesn't allow that from here. */
-    /* the guest: the classic standard Habbo, black hair and a yellow top (14 Nov 2026, his). In today's habbo.com codes: Fallin' Furni's old-style
-       default drew an open shirt and odd hair through habbo.com's imaging, so black hair 105 (his pick), the long-sleeved yellow top 3215 (1410) and full-length jeans 280 (270 drew shorts standing still) */
-    const GUEST = "hd-180-1.hr-105-61.ch-3215-1410.lg-280-82.sh-290-80", KEY = "hallway-avatar", HOTELS = ["COM", "ES", "BR"];
+    /* the guest: the classic standard Habbo, black hair and a long-sleeved yellow top (14 Nov 2026, his pick: the Origins Habbo Figma's look) */
+    const GUEST = "hr-105-1035.hd-180-1026.ch-210-1301.lg-285-1223.sh-290-1247", KEY = "hallway-avatar", HOTELS = ["COM", "ES", "BR"];
     let figure = GUEST, linkedName = null, pickedNow = false;
     const remembered = () => { try { return JSON.parse(localStorage.getItem(KEY) || "null"); } catch (e) { return null; } };
+    /* the guest is drawn from our own frames (art/guest, 14 Nov 2026): his pick, the Origins Habbo Figma. habbo.com's imaging draws its plain
+       long-sleeved top (ch-210) with no body at this size, so the frames were made once with the body of the plain T-shirt (ch-3030) */
     window.hallwayAvatarSrc = n => {
+        if (figure === GUEST && /^s-\d-(std|wlk|sit)(-crr|-drk)?-\d$/.test(n)) return "art/guest/" + n + ".png";
         const m = /^s-(\d)-(std|wlk|sit)(-crr|-drk)?-(\d)$/.exec(n); if (!m) return "art/av/" + n + ".png";
         return FN + "?" + new URLSearchParams({ av: figure, d: m[1], a: m[2], h: (m[3] || "").slice(1), f: m[4] }).toString();
     };
