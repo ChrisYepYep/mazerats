@@ -565,6 +565,13 @@ const plankAtUnits = (xu, yu) => {
 const STAIR_TOP = 3;
 /* The client's own short flights: each step 4px tall and 6px deep. */
 const STEP_R = 4, STEP_D = 6 / 16;
+/* The open edge's moulding (and a drop wall's top, and a garland on it) where it slopes down beside small steps: t tiles down the flight from
+   its top line, reach the flight's depth. The flight's top tread is level with the floor above, so its first step down is a tread in; the
+   moulding runs along the steps' noses (STEP_LIP = one rise over the line through the risers' feet) and starts down at that first step. It
+   sat 2px higher, which kept it level half a tread past the top step and ran it as far past the bottom: the slope began in front of the
+   steps (14 Nov 2026, his). The steps draw no end line under it (cover1), or their corners stood over it. */
+const STEP_LIP = STEP_R;
+const stepEdgeZ = (t, hi, lo, reach) => { const rate = STEP_R / STEP_D; return t < reach ? Math.min(hi, hi + STEP_LIP - t * rate) : Math.max(lo, lo + STEP_LIP - (t - reach) * rate); };
 /* Steps climbing towards you: the higher floor is nearer than the lower one, so each step's front faces away and only the tops show,
    nearly on top of each other. Drawn from the far step forward; the near side shows the stepped end. */
 function flightUpToYou(w, o) {
@@ -591,7 +598,7 @@ function flightUpToYou(w, o) {
             for (let r = 0; r <= rows; r++) {
                 if (r === rows && k < steps - 1) break;
                 const cc = c0 + (u + r + .5) / 16, dd = d0 + (r + .5) / 16; if (cc < c0 || cc >= c1) continue;
-                const uu = Math.floor((cc - c0) * 16), end = uu === 0 || uu === wide - 1, far = r === 0, onRug = cc >= ca && cc < cb, rc = onRug && rugAt(cc, k * 6 + r);
+                const uu = Math.floor((cc - c0) * 16), end = uu === 0 || (uu === wide - 1 && !o.cover1), far = r === 0, onRug = cc >= ca && cc < cb, rc = onRug && rugAt(cc, k * 6 + r);
                 const col = far && k === 0 && !onRug ? (GHP ? GH_JOINT : C.k) : onRug ? (far ? dim(rc, .6) : rc) : far || end ? pq(.3) : r === 1 ? pq(1) : grainAt(alongY ? cc : dd, alongY ? dd : cc);
                 if (!o.vis || o.vis(alongY ? cc : dd, alongY ? dd : cc, zB + z)) w.b.set(p[0], p[1] + r, col);
             }
@@ -619,7 +626,7 @@ function flight(w, o) {
     const wide = Math.round((c1 - c0) * 16), KK = GHP && tiled ? GH_JOINT : C.k;      // the gallery's small steps: its own dark line, not black
     const skin = (cc, path, wood, k) => {
         const u = Math.floor((cc - c0) * 16);
-        if (u < 1 || u >= wide - 1) return KK;
+        if (u < 1 || (u >= wide - 1 && !o.cover1)) return KK;      // cover1: a moulding climbing the flight is that end's line
         if (cc >= ca && cc < cb) {
             const r = Math.min(Math.floor((cc - ca) * 16), Math.floor((cb - cc) * 16 - 1e-6));
             const base = r < RUG.ramp.length ? RUG.ramp[r] : RUG.at(68 + (path % 32), RUG.core + (((Math.floor(cc * 16) % 16) + 16) % 16));
@@ -686,7 +693,7 @@ function stepGroup(w, o) {
     const toned = new Map(), rugTone = base => { const key = (base[0] << 16) | (base[1] << 8) | base[2]; if (!toned.has(key)) toned.set(key, carpetTone(base, way).map(v => Math.round(v))); return toned.get(key); };
     const dim = (c, k) => [c[0] * k | 0, c[1] * k | 0, c[2] * k | 0];
     const colour = h => {
-        const r = h.r, cc = cOf(r, h.X, h.Y), u = Math.floor((cc - r.c0) * 16), wide = Math.round((r.c1 - r.c0) * 16), end0 = !r.j0 && u < 1, end1 = !r.j1 && u >= wide - 1;
+        const r = h.r, cc = cOf(r, h.X, h.Y), u = Math.floor((cc - r.c0) * 16), wide = Math.round((r.c1 - r.c0) * 16), end0 = !r.j0 && u < 1, end1 = !r.j1 && !r.cover1 && u >= wide - 1;
         if (h.kind === "near") { if (!r.back) return pq(.42); const gap = h.top - h.z; return gap < 1 ? pq(1) : gap < 2 ? pq(0) : h.z < 1 ? KK : (Math.floor(dOf(r, h.X, h.Y) * 16) >> 1) % 3 ? pq(.55) : pq(.4); }
         if (h.kind === "riser") {
             if (end0 || end1) return KK;
@@ -702,7 +709,7 @@ function stepGroup(w, o) {
             return depth < 1 ? pq(1) : depth >= deep ? pq(.35) : grainAt(h.X, h.Y);
         }
         const row = h.row, far = row === 0, rug = onRug(r, cc), rc = rug && rugTone(rugBase(r, cc, h.k * 6 + row));
-        const end = (!r.j0 && u === 0) || (!r.j1 && u === wide - 1);
+        const end = (!r.j0 && u === 0) || (!r.j1 && !r.cover1 && u === wide - 1);
         return far && h.k === 0 && !rug ? KK : rug ? (far ? dim(rc, .6) : rc) : far || end ? pq(.3) : row === 1 ? pq(1) : grainAt(h.X, h.Y);
     };
     const scr = (X, Y, z) => [Math.round((X - Y) * 16) + w.ox, Math.round((X + Y) * 8) + w.oy - zB - z], B0 = o.box;
@@ -2210,6 +2217,12 @@ function build(cfg) {
             /* only where that wall is really drawn, full height: not where it's half or none, nor where other steps cross that line instead */
             const wallAxis = r.alongY ? "y" : "x", crossed = d => ((lv.src && lv.src.steps) || []).some(st => st.axis !== wallAxis && st.dir !== "front" && st.line === r.b && d >= st.a && d < st.b);
             for (let d = d0; d < d1 && !r.noNear; d++) { const Q = r.alongY ? tileAt(r.b, d) : tileAt(d, r.b), B = r.alongY ? tileAt(r.b - 1, d) : tileAt(d, r.b - 1), k = wallAxis + "|" + r.b + "|" + d; if (uneven && Q && B && !Q.notch && !B.notch && Q.z < B.z && !noneSet.has(k) && !halfSet.has(k) && !crossed(d)) r.noNear = true; }
+            /* a run that comes out at an open edge: the floor's moulding slopes down over that end (the last pass below, the same test) */
+            let open = true; for (let d = d0; d < d1 && open; d++) { const k = r.alongY ? r.b + "," + d : d + "," + r.b; if (has.has(k) || holes.has(k)) open = false; }
+            /* Either way that end is covered by a moulding that climbs the flight, so the steps draw no end line there: it was a column of black
+               (each tread's and riser's last pixel) one row up from the edge, so it stood over the moulding as a stepped black line, the steps' side
+               showing over the floor edge (14 Nov 2026, his, the Ground: the top step's corner over the moulding, a jagged line over a climbing wall). */
+            r.cover1 = !!r.noNear || open;
         }
         /* Runs meeting at a corner, same heights: an outer corner (the raised floor's corner sticks out between them) gets a corner piece in the
            square beyond both ends; an inner one (both start from the corner and overlap there) needs nothing more than knowing they meet. */
@@ -2229,13 +2242,13 @@ function build(cfg) {
             }
         }
         const onR = (X, Y) => (lv.rugs || []).some(r => X >= r.x0 && X < r.x1 && Y >= r.y0 && Y < r.y1), stepWay = cfg.single || lv.way;
-        const pieceOf = r => { let a0 = null, a1 = null; for (let t = r.a; t < r.b; t++) if (r.alongY ? onR(t, r.line) || onR(t, r.line - 1) : onR(r.line, t) || onR(r.line - 1, t)) { if (a0 === null) a0 = t; a1 = t + 1; } return { alongY: r.alongY, line: r.line, c0: r.a, c1: r.b, back: !r.toYou, j0: r.j0, j1: r.j1, x0: r.x0, x1: r.x1, noNear: !!r.noNear, carpet: a0 === null ? null : [a0, a1], src: r }; };
+        const pieceOf = r => { let a0 = null, a1 = null; for (let t = r.a; t < r.b; t++) if (r.alongY ? onR(t, r.line) || onR(t, r.line - 1) : onR(r.line, t) || onR(r.line - 1, t)) { if (a0 === null) a0 = t; a1 = t + 1; } return { alongY: r.alongY, line: r.line, c0: r.a, c1: r.b, back: !r.toYou, j0: r.j0, j1: r.j1, x0: r.x0, x1: r.x1, noNear: !!r.noNear, cover1: !!r.cover1, carpet: a0 === null ? null : [a0, a1], src: r }; };
         const hidden = r => { if (r.hidden === undefined) { const reach = Math.round((r.hi - r.lo) / STEP_R) * STEP_D; r.hidden = behindWall(r.alongY, r.a, r.b, r.toYou ? r.line - reach : r.line, r.toYou ? r.line : r.line + reach, r.lo, Math.round((r.hi - r.lo) / STEP_R)); } return r.hidden; };
         const groups = new Map();      // each group of joined runs, drawn as one surface
         for (const g of new Set(groupOf.values())) { const pieces = [...g].map(pieceOf), byRun = new Map(pieces.map(q => [q.src, q])); const cs = corners.filter(k => g.has(k.ry)).map(k => ({ ...k, rx: byRun.get(k.rx), ry: byRun.get(k.ry) })); const G = { runs: pieces, corners: cs, vis: [...g].some(hidden) ? stepSeen : null }; for (const r of g) groups.set(r, G); }
         for (const r of runs) {
             const { alongY, toYou, hi, lo } = r, st = { line: r.line, a: r.a, b: r.b }, carpet = pieceOf(r).carpet;
-            const count = Math.round((hi - lo) / STEP_R), reach = count * STEP_D, f = { axis: alongY ? "y" : "x", c0: st.a, c1: st.b, dTop: st.line, dStart: st.line - reach, steps: count, rise: STEP_R, tread: STEP_D, zB: lo, carpet, way: stepWay, tiled: true, vis: hidden(r) ? stepSeen : null, near: r.noNear ? false : undefined };
+            const count = Math.round((hi - lo) / STEP_R), reach = count * STEP_D, f = { axis: alongY ? "y" : "x", c0: st.a, c1: st.b, dTop: st.line, dStart: st.line - reach, steps: count, rise: STEP_R, tread: STEP_D, zB: lo, carpet, way: stepWay, tiled: true, vis: hidden(r) ? stepSeen : null, near: r.noNear ? false : undefined, cover1: !!r.cover1 };
             const along = toYou ? Math.floor(st.line - reach) : st.line;
             const d0 = toYou ? Math.floor(st.line - reach) : st.line, d1 = toYou ? st.line : Math.ceil(st.line + reach);
             const G = groups.get(r), sOf = (X, Y) => { const d = alongY ? Y : X; return toYou ? st.line - d : d - st.line; };
@@ -2282,12 +2295,12 @@ function build(cfg) {
                its top down the flight with the moulding on it, the way an open edge's moulding slopes down beside small steps (13 Nov 2026, his:
                it stayed a square block there). The same profile as that slope, so the two read alike. axis/line: the wall's; at: along it. */
             const stepSlope = (axis, line, at) => {
-                let top = null; const rate = STEP_R / STEP_D, LIP = 6;
+                let top = null;
                 for (const r of runs) {
                     if (r.alongY !== (axis === "y") || r.b !== line) continue;
                     const reach = Math.round((r.hi - r.lo) / STEP_R) * STEP_D, t = r.toYou ? r.line - at : at - r.line;
-                    if (t < 0 || t > reach + LIP / rate) continue;
-                    const z = t < reach ? Math.min(r.hi, r.hi + LIP - t * rate) : Math.max(r.lo, r.lo + LIP - (t - reach) * rate);
+                    if (t < 0 || t > reach + STEP_LIP / (STEP_R / STEP_D)) continue;
+                    const z = stepEdgeZ(t, r.hi, r.lo, reach);
                     if (top === null || z > top) top = z;
                 }
                 return top;
@@ -2675,7 +2688,7 @@ function build(cfg) {
                             const hi = Math.max(l, h), lo = Math.min(l, h), t = l < h ? J - p : p - J; if (t < 0) continue;
                             const st = ((aboveLv.src && aboveLv.src.steps) || []).find(s => s.axis === g.axis && s.b === g.line && s.line === J);
                             let v;
-                            if (st) { const reach = Math.round((hi - lo) / STEP_R) * STEP_D, rate = STEP_R / STEP_D, LIP = 6; v = t < reach ? Math.min(hi, hi + LIP - t * rate) : Math.max(lo, lo + LIP - (t - reach) * rate); }
+                            if (st) v = stepEdgeZ(t, hi, lo, Math.round((hi - lo) / STEP_R) * STEP_D);
                             else { const Lt = Math.min(48, Math.max(24, (hi - lo) * 3)) / 16; v = t < Lt ? lo + (hi - lo) * (1 - t / Lt) : lo; }
                             r = Math.max(r, v);
                         }
@@ -3003,10 +3016,9 @@ function build(cfg) {
                 const pt = d => alongY ? [C2, d] : [d, C2], tileBeyond = d => alongY ? [C2, d] : [d, C2], tileOn = d => alongY ? [C2 - 1, d] : [d, C2 - 1];
                 let clear = true; for (let d = Math.floor(from); d < Math.ceil(to); d++) { const q = tileBeyond(d); if (!open(q[0], q[1])) clear = false; }
                 if (!clear) continue;
-                const rate = STEP_R / STEP_D, LIP = 6;
                 /* height along the edge, distance down the flight from its top */
-                const zDown = t => t < reach ? Math.min(hi, hi + LIP - t * rate) : Math.max(lo, lo + LIP - (t - reach) * rate);
-                const t1 = reach + LIP / rate;
+                const zDown = t => stepEdgeZ(t, hi, lo, reach);
+                const t1 = reach + STEP_LIP / (STEP_R / STEP_D);
                 for (let k = -3; k <= Math.ceil(t1 * 16); k++) {
                     const t = k / 16, d = toYou ? to - t : from + t, [X, Y] = pt(d), sx = Math.round((X - Y) * 16) + gx, rowAt = z => Math.round((X + Y) * 8) + gy - z;
                     const top = rowAt(Math.round(zDown(t))) + 1, bottom = rowAt(lo) + FLOOR_EDGE.length;
