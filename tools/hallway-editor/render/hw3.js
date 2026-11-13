@@ -476,17 +476,21 @@ function customSign(it, mirrored) {
     const outlined = draw => { const seen = new Map(), mark = (x, y, c) => { if (x >= -CW && y >= 0 && x < 2 * CW && y < CH) seen.set(y * 4 * CW + (x + CW), c); }; draw(mark); const has = (x, y) => seen.has(y * 4 * CW + (x + CW));
         for (const k of seen.keys()) { const x = (k % (4 * CW)) - CW, y = Math.floor(k / (4 * CW)); for (const [p, q] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) if (!has(x + p, y + q)) cv.set(x + p, y + q, C.k); }
         for (const [k, c] of seen) cv.set((k % (4 * CW)) - CW, Math.floor(k / (4 * CW)), c); };
-    const armH = h + Hd + 8, len = Wd + off + 2;
-    outlined(mark => {
-        for (let t = -6; t <= 6; t++) for (const u of [-1, 0, 1]) mark(ax + u, ay - armH - t + Math.floor(u / 2), u < 0 ? BR[3] : u ? BR[1] : BR[2]);
-        for (let u = 0; u <= len; u++) { const y = ay - armH + Math.floor(u / 2); mark(ax - u, y, IRON[2]); mark(ax - u, y - 1, IRON[3]); }
-        for (let a = 0; a < 44; a++) { const th = a / 44 * Math.PI * 1.5, r = 6 * (1 - a / 66); mark(Math.round(ax - 9 + Math.cos(th) * r), Math.round(ay - armH + 9 - Math.sin(th) * r), IRON[2]); }
-        const e = [ax - len, ay - armH + Math.floor(len / 2) - 1]; for (const [p, q] of [[0, 0], [-1, 0], [1, 0], [0, -1], [0, 1]]) mark(e[0] + p, e[1] + q, BR[3]);
-    });
-    for (const sc of [6, Wd - 7]) { const top = at(sc, Hd), armY = ay - armH + Math.floor((ax - top[0]) / 2) + 1; for (let y = armY; y < top[1]; y++) cv.set(top[0], y, (y - armY) % 3 === 2 ? BR[0] : BR[2]); }
+    /* his pole (14 Nov 2026), as on the stair signs, sitting on this board's top edge (a one-line sign is lower than a stair sign's 30) */
+    const pole = stairPoleArt();
+    if (!pole) {
+        const armH = h + Hd + 8, len = Wd + off + 2;
+        outlined(mark => {
+            for (let t = -6; t <= 6; t++) for (const u of [-1, 0, 1]) mark(ax + u, ay - armH - t + Math.floor(u / 2), u < 0 ? BR[3] : u ? BR[1] : BR[2]);
+            for (let u = 0; u <= len; u++) { const y = ay - armH + Math.floor(u / 2); mark(ax - u, y, IRON[2]); mark(ax - u, y - 1, IRON[3]); }
+            for (let a = 0; a < 44; a++) { const th = a / 44 * Math.PI * 1.5, r = 6 * (1 - a / 66); mark(Math.round(ax - 9 + Math.cos(th) * r), Math.round(ay - armH + 9 - Math.sin(th) * r), IRON[2]); }
+            const e = [ax - len, ay - armH + Math.floor(len / 2) - 1]; for (const [p, q] of [[0, 0], [-1, 0], [1, 0], [0, -1], [0, 1]]) mark(e[0] + p, e[1] + q, BR[3]);
+        });
+        for (const sc of [6, Wd - 7]) { const top = at(sc, Hd), armY = ay - armH + Math.floor((ax - top[0]) / 2) + 1; for (let y = armY; y < top[1]; y++) cv.set(top[0], y, (y - armY) % 3 === 2 ? BR[0] : BR[2]); }
+    }
     outlined(mark => {
         const set = (s2, t, c) => { const q = at(s2, t); mark(q[0], q[1], c); };
-        for (let d = 1; d <= 2; d++) { for (let s2 = 0; s2 < Wd; s2++) { const q = at(s2, Hd - 1); mark(q[0] - d, q[1] - Math.ceil(d / 2), WD[5]); } for (let t = 0; t < Hd; t++) { const q = at(0, t); mark(q[0] - d, q[1] - Math.ceil(d / 2), WD[1]); } }
+        for (let d = 1; d <= 2; d++) { for (let s2 = 0; s2 < Wd; s2++) { const q = at(s2, Hd - 1); mark(q[0] - d, q[1] - Math.ceil(d / 2), pole ? POLE_EDGE : WD[5]); } for (let t = 0; t < Hd; t++) { const q = at(0, t); mark(q[0] - d, q[1] - Math.ceil(d / 2), WD[1]); } }
         for (let s2 = 0; s2 < Wd; s2++) for (let t = 0; t < Hd; t++) { const r = Math.min(s2, Wd - 1 - s2, t, Hd - 1 - t); set(s2, t, r === 0 ? BR[t > Hd / 2 ? 3 : 1] : r === 1 ? BR[0] : WD[(s2 + (t >> 1)) % 9 ? 1 : 2]); }
     });
     /* the words and the arrow, read from the free end in, cut into the wood */
@@ -500,6 +504,7 @@ function customSign(it, mirrored) {
         for (const ch of row) { const g = H.VOL.vb[ch] || H.VOL.vb[" "]; for (const [dt, c] of [[-1, cut], [0, ink]]) g.rows.forEach((r, j) => { for (let i = 0; i < r.length; i++) if (r[i] === "1") put(U + i, floor + 10 - j + dt, c); }); U += g.w; }
         if (same && arrow === "right") arrowAt(U + GAP, floor);
     });
+    if (pole) drawStairPole(cv, ax, ay + (29 - Hd), Wd, pole);      // over the sign, as his picture has it
     return { w: CW, h: CH, rgba: b.d, ax, ay };
 }
 const customSignMemo = new Map();
