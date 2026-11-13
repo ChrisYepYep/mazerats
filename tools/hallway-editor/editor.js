@@ -636,9 +636,28 @@ function stepGhost(st) {
     const zl = level === null ? 0 : (st.dir === "front" ? (st.axis === "y" ? tileZ(level, st.a, st.line - 1) : tileZ(level, st.line - 1, st.a)) : (st.axis === "y" ? tileZ(level, st.a, st.line) : tileZ(level, st.line, st.a)));
     if (st.axis === "y") quad(st.a, f.from, st.b, f.to, zl, "rgba(79,209,255,.35)", "#4fd1ff"); else quad(f.from, st.a, f.to, st.b, zl, "rgba(79,209,255,.35)", "#4fd1ff");
 }
+/* Laying steps round a corner in one drag (13 Nov 2026, his: "small steps now need the ability to be drawn around corners too"): carried
+   past the end of the edge the drag started on, onto an edge that turns from that end with the same two heights, the first run goes to the
+   corner and a second one runs from the corner along the new edge to the mouse. The renderer joins them with a corner piece. */
+function stepsRoundCorner(l, edge, run, f) {
+    const e2 = heightEdgeAt(l, f[0], f[1]); if (!e2 || e2.axis === edge.axis) return null;
+    const sides = (axis, line, t) => axis === "y" ? [heightAt(l, t, line - 1), heightAt(l, t, line)] : [heightAt(l, line - 1, t), heightAt(l, line, t)];
+    const h1 = sides(edge.axis, edge.line, edge.t), h2 = sides(e2.axis, e2.line, e2.t), hi1 = Math.max(...h1), lo1 = Math.min(...h1);
+    if (hi1 !== Math.max(...h2) || lo1 !== Math.min(...h2)) return null;
+    const run2 = edgeRun(l, e2.axis, e2.line, e2.t);
+    /* the corner: an end of the first edge's run, which the new edge's run starts or ends at */
+    for (const end of [run.b, run.a]) {
+        if (e2.line !== end) continue;
+        const at = run2.a === edge.line ? "a" : run2.b === edge.line ? "b" : null; if (!at) continue;
+        const first = { axis: edge.axis, line: edge.line, dir: edge.dir, a: end === run.b ? Math.min(edge.t, run.b - 1) : run.a, b: end === run.b ? run.b : Math.max(edge.t, run.a) + 1 };
+        const t = Math.max(run2.a, Math.min(run2.b - 1, e2.t)), st = { axis: e2.axis, line: e2.line, dir: e2.dir, a: at === "a" ? run2.a : t, b: at === "a" ? t + 1 : run2.b };
+        return { first, st };
+    }
+    return null;
+}
 function drawStepGhost() {
     if (tool !== "steps") return;
-    if (drag && drag.kind === "laysteps") { stepGhost(drag.st); return; }
+    if (drag && drag.kind === "laysteps") { if (drag.st2) { stepGhost(drag.st2.first); stepGhost(drag.st2.st); } else stepGhost(drag.st); return; }
     if (hover && hover.edge) stepGhost({ axis: hover.edge.axis, line: hover.edge.line, dir: hover.edge.dir, a: hover.edge.t, b: hover.edge.t + 1 });
 }
 const stepsDrop = (l, axis, line, t) => { const e = doorEdge(l, axis, line, t); return !!e && e.kind === "drop"; };
@@ -2682,7 +2701,7 @@ canvas.addEventListener("pointermove", e => {
     if (drag && drag.kind === "furni") { drag.run = furniRun(drag.a, furniTile(px, py)); paint(); return; }
     if (drag && drag.kind === "laysteps") {
         const f = tileIn(level, px, py), run = edgeRun(level, drag.edge.axis, drag.edge.line, drag.edge.t), t = Math.max(run.a, Math.min(run.b - 1, Math.floor(drag.edge.axis === "y" ? f[0] : f[1])));
-        drag.st.a = Math.min(drag.edge.t, t); drag.st.b = Math.max(drag.edge.t, t) + 1; paint(); return;
+        drag.st.a = Math.min(drag.edge.t, t); drag.st.b = Math.max(drag.edge.t, t) + 1; drag.st2 = stepsRoundCorner(level, drag.edge, run, f); paint(); return;
     }
     if (drag && drag.kind === "rect" && brushTool(tool) && e.ctrlKey) return;
     if (drag && drag.kind === "rect") { const b = tool === "floor" ? paintTile(px, py) : tileIn(level, px, py); if (!hiddenTile(b)) drag.rect = snapRect(drag.a, b); paint(); return; }      // over a floor X hides: the rectangle stays as it was
@@ -2716,8 +2735,16 @@ canvas.addEventListener("pointerup", e => {
     if (d.kind === "edgebrush") { endEdgeBrush(d); return; }
     if (d.kind === "laysteps") {
         snapshot();
-        level.steps = (level.steps || []).filter(q => !(q.axis === d.st.axis && q.line === d.st.line && q.a < d.st.b && q.b > d.st.a));
-        level.steps.push({ ...d.st }); changed(); return;
+        for (const st of d.st2 ? [d.st2.first, d.st2.st] : [d.st]) {
+            level.steps = (level.steps || []).filter(q => !(q.axis === st.axis && q.line === st.line && q.a < st.b && q.b > st.a));
+            level.steps.push({ ...st });
+        }
+        /* laid end to end along one edge, two runs are one: the renderer draws them as one anyway, and one run selects and moves as one */
+        for (let i = 0; i < level.steps.length; i++) for (let j = level.steps.length - 1; j > i; j--) {
+            const p = level.steps[i], q = level.steps[j];
+            if (p.axis === q.axis && p.line === q.line && p.dir === q.dir && (p.b === q.a || q.b === p.a) && stepRise(level, p) === stepRise(level, q)) { p.a = Math.min(p.a, q.a); p.b = Math.max(p.b, q.b); level.steps.splice(j, 1); j = level.steps.length; }
+        }
+        changed(); return;
     }
     if (d.kind === "move") { canvas.style.cursor = "default"; if (live) live.ending = true; if (d.moved) { if (d.hit.type === "prop" || d.hit.type === "tele") showUntilDrawn(d.hit.l, d.hit.o, d.hit.type === "tele"); changed(); select(selected); } return; }
     if (d.kind === "edge") { if (undoStack[undoStack.length - 1] === JSON.stringify(root)) { undoStack.pop(); syncButtons(); return; } changed(); return; }

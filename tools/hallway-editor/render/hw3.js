@@ -528,7 +528,7 @@ function flightUpToYou(w, o) {
     const X0 = Math.max(0, Math.min(...pts.map(q => q[0])) - 2), X1 = Math.min(w.b.w - 1, Math.max(...pts.map(q => q[0])) + 2), Y0 = Math.max(0, Math.min(...pts.map(q => q[1])) - 2), Y1 = Math.min(w.b.h - 1, Math.max(...pts.map(q => q[1])) + 2);
     for (let sy = Y0; sy <= Y1; sy++) for (let sx = X0; sx <= X1; sx++) {
         const A = (sx + .5 - w.ox) / 16, B = (sy + .5 - w.oy + zB) / 8, x0 = (A + B) / 2, y0 = (B - A) / 2, c = alongY ? x0 : y0, d = alongY ? y0 : x0, tz = c1 - c, zz = tz * 16, dd = d + tz, k = Math.floor((dd - dStart) / STEP_D);
-        if (zz >= 0 && k >= 0 && k < steps && zz <= (k + 1) * STEP_R && (!o.vis || o.vis(x0 + tz, y0 + tz, zB + zz))) w.b.set(sx, sy, pq(.42));
+        if (o.near !== false && zz >= 0 && k >= 0 && k < steps && zz <= (k + 1) * STEP_R && (!o.vis || o.vis(x0 + tz, y0 + tz, zB + zz))) w.b.set(sx, sy, pq(.42));
     }
     for (let k = 0; k < steps; k++) {
         const d0 = dStart + k * STEP_D, z = (k + 1) * STEP_R, rows = k === steps - 1 ? 6 : 2;
@@ -641,19 +641,21 @@ function stepGroup(w, o) {
             if (onRug(r, cc)) return tone(rugBase(r, cc, h.k * 16 + Math.floor(h.h)), shade);
             return h.h >= R - 1 ? pq(0) : h.h < 1 ? pq(.15) : (u >> 1) % 3 ? pq(.42) : pq(.3);
         }
-        const depth = ((steps - h.k) * D - h.s) * 16;
-        if (r.back) {
+        if (h.kind === "tread") {
+            const depth = ((steps - h.k) * D - h.s) * 16;
             if (end0 || end1) return KK;
             const deep = D * 16 - 1, shade = depth < 1 ? 1.5 : depth >= deep ? .55 : 1.12;
             if (onRug(r, cc)) return tone(rugBase(r, cc, h.k * 16 + 8 + Math.floor(depth)), shade);
             return depth < 1 ? pq(1) : depth >= deep ? pq(.35) : grainAt(h.X, h.Y);
         }
-        const row = Math.floor(depth), far = row === 0, rug = onRug(r, cc), rc = rug && rugTone(rugBase(r, cc, h.k * 6 + row));
+        const row = h.row, far = row === 0, rug = onRug(r, cc), rc = rug && rugTone(rugBase(r, cc, h.k * 6 + row));
         const end = (!r.j0 && u === 0) || (!r.j1 && u === wide - 1);
         return far && h.k === 0 && !rug ? KK : rug ? (far ? dim(rc, .6) : rc) : far || end ? pq(.3) : row === 1 ? pq(1) : grainAt(h.X, h.Y);
     };
     const scr = (X, Y, z) => [Math.round((X - Y) * 16) + w.ox, Math.round((X + Y) * 8) + w.oy - zB - z], B0 = o.box;
     const pts = []; for (const X of [B0.x0, B0.x1]) for (const Y of [B0.y0, B0.y1]) for (const z of [0, top]) pts.push(scr(X, Y, z));
+    /* the stepped end of steps climbing towards you is filled within the same bounds flightUpToYou() fills it in */
+    const endBox = r => { if (!r.endBox) { const P = (d, z) => r.alongY ? scr(r.c1, d, z) : scr(d, r.c1, z), q = [P(r.line - reach, 0), P(r.line, top), P(r.line, 0)]; r.endBox = [Math.min(...q.map(v => v[0])) - 2, Math.max(...q.map(v => v[0])) + 2, Math.min(...q.map(v => v[1])) - 2, Math.max(...q.map(v => v[1])) + 2]; } return r.endBox; };
     const SX0 = Math.max(0, Math.min(...pts.map(q => q[0])) - 2), SX1 = Math.min(w.b.w - 1, Math.max(...pts.map(q => q[0])) + 2), SY0 = Math.max(0, Math.min(...pts.map(q => q[1])) - 2), SY1 = Math.min(w.b.h - 1, Math.max(...pts.map(q => q[1])) + 2);
     for (let sy = SY0; sy <= SY1; sy++) for (let sx = SX0; sx <= SX1; sx++) {
         const A = (sx + .5 - w.ox) / 16, B = (sy + .5 - w.oy + zB) / 8, x0 = (A + B) / 2, y0 = (B - A) / 2;
@@ -661,7 +663,7 @@ function stepGroup(w, o) {
         for (let k = 0; k < steps; k++) {
             /* the tread */
             const tt = (k + 1) * R / 16;
-            if (tt > best) { const X = x0 + tt, Y = y0 + tt, q = at(X, Y); if (q && q.s >= 0 && Math.floor(q.s / D) === steps - 1 - k) { best = tt; hit = { kind: "tread", k, X, Y, s: q.s, r: q.gov }; } }
+            if (tt > best) { const X = x0 + tt, Y = y0 + tt, q = at(X, Y); if (q && q.gov.back && q.s >= 0 && Math.floor(q.s / D) === steps - 1 - k) { best = tt; hit = { kind: "tread", k, X, Y, s: q.s, r: q.gov }; } }
             /* the risers facing you, round any outer corner too */
             const e = (steps - k) * D;
             for (const r of runs) {
@@ -674,20 +676,27 @@ function stepGroup(w, o) {
         }
         /* the end facing you, where a run doesn't join another */
         for (const r of runs) {
-            if (r.j1) continue;
+            if (r.j1 || r.noNear) continue;
             const t = r.c1 - (r.alongY ? x0 : y0); if (t <= best || t < 0) continue;
-            const X = x0 + t, Y = y0 + t, s = sOf(r, X, Y); if (s < 0 || s >= reach) continue;
-            const ts = (steps - Math.floor(s / D)) * R, zs = t * 16; if (r.back ? zs >= ts : zs > ts) continue;
-            best = t; hit = { kind: "near", X, Y, z: zs, top: ts, r };
+            const X = x0 + t, Y = y0 + t, s = sOf(r, X, Y), zs = t * 16;
+            if (r.back) { if (s < 0 || s >= reach) continue; const ts = (steps - Math.floor(s / D)) * R; if (zs >= ts) continue; best = t; hit = { kind: "near", X, Y, z: zs, top: ts, r }; }
+            else { const kk = Math.floor((reach - s) / D), bx = endBox(r); if (kk < 0 || kk >= steps || zs > (kk + 1) * R || sx < bx[0] || sx > bx[1] || sy < bx[2] || sy > bx[3]) continue; best = t; hit = { kind: "near", X, Y, z: zs, r }; }
+        }
+        /* Steps climbing towards you show only a strip of each tread, laid exactly as flightUpToYou() lays them (two rows a step, more on the top
+           one), so a run that meets another matches one that doesn't, row for row. The strips go over that end. */
+        for (let k = 0; k < steps; k++) {
+            const tt = (k + 1) * R / 16, rows = k === steps - 1 ? 6 : 1;
+            for (const r of runs) {
+                if (r.back || (tt <= best && !(hit && hit.kind === "near" && !hit.r.back))) continue;
+                const d0 = r.line - reach + k * D, m = r.alongY ? sx - w.ox : w.ox - sx, row = sy - w.oy + zB + (k + 1) * R - Math.round((32 * d0 + m) / 2);
+                if (row < 0 || row > rows) continue;
+                const cc = d0 + (m + row + .5) / 16, dd = d0 + (row + .5) / 16, X = r.alongY ? cc : dd, Y = r.alongY ? dd : cc, q = at(X, Y);
+                if (!q || q.gov !== r || !(q.s < 0 ? k === steps - 1 : Math.floor(q.s / D) === steps - 1 - k)) continue;
+                best = tt; hit = { kind: "strip", k, row, X, Y, r };
+            }
         }
         if (!hit || !o.only(hit.X, hit.Y)) continue;
         if (o.vis && !o.vis(hit.X, hit.Y, zB + best * 16)) continue;
-        /* A tread climbing towards you takes its colour from the point flightUpToYou()'s strips put on this pixel, so a run that meets another
-           matches one that doesn't, row for row */
-        if (hit.kind === "tread" && !hit.r.back) {
-            const r = hit.r, d0 = r.line - reach + hit.k * D, m = sx - w.ox, z = (hit.k + 1) * R, row = sy - w.oy + zB + z - Math.round((32 * d0 + (r.alongY ? m : -m)) / 2);
-            if (row >= 0 && row <= (hit.k === steps - 1 ? 6 : 1)) { const cc = d0 + ((r.alongY ? m : -m) + row + .5) / 16, dd = d0 + (row + .5) / 16; hit.X = r.alongY ? cc : dd; hit.Y = r.alongY ? dd : cc; hit.s = r.line - dd; }
-        }
         w.b.set(sx, sy, colour(hit));
     }
 }
@@ -2070,7 +2079,16 @@ function build(cfg) {
             let t = 0, px = Math.floor(x), py = Math.floor(y); const reachT = (Z1 + 64) / 16, tall = (axis, line, t2) => { const k = axis + "|" + line + "|" + t2; return noneSet.has(k) ? 0 : halfSet.has(k) ? HALF_WALL : Z1; };
             while (t < reachT) {
                 const tx = px + 1 - x, ty = py + 1 - y, nt = Math.min(tx, ty) + 1e-6, X = Math.floor(x + nt), Y = Math.floor(y + nt), zz = z + nt * 16, Q = tileAt(X, Y);
-                if (Q && !Q.notch) { const foot = Q.z - (Q.floorLift || 0); if ((Y > py && backWall(X, Y) && zz <= foot + tall("x", Y, X)) || (X > px && sideWall(X, Y) && zz <= foot + tall("y", X, Y))) return false; }
+                /* Up to w.wallTop over its foot the wall is surely there; its cap, above that, only where it has really been painted (wallOwner):
+                   where a floor above cuts the wall down, a step dropped behind the cap's height left a hole */
+                if (Q && !Q.notch) {
+                    const foot = Q.z - (Q.floorLift || 0), hit = (Y > py && backWall(X, Y)) ? tall("x", Y, X) : (X > px && sideWall(X, Y)) ? tall("y", X, Y) : 0;
+                    if (hit && zz <= foot + hit) {
+                        if (hit < w.wallTop || zz <= foot + w.wallTop - WALL_CAP) return false;
+                        const sx = Math.round((x - y) * 16) + gx, sy = Math.round((x + y) * 8) + gy - z;
+                        if (sx >= 0 && sy >= 0 && sx < bw && sy < bh && wallOwner[sy * bw + sx]) return false;
+                    }
+                }
                 t = nt; px = X; py = Y;
             }
             return true;
@@ -2092,6 +2110,13 @@ function build(cfg) {
                 p.a = Math.min(p.a, q.a); p.b = Math.max(p.b, q.b); runs.splice(j, 1); merged = true;
             }
         }
+        /* a run that comes out at a drop to a lower floor: the wall standing there climbs the flight and is its side, so the steps draw no end of their own */
+        for (const r of runs) {
+            const reach = Math.round((r.hi - r.lo) / STEP_R) * STEP_D, d0 = Math.floor(r.toYou ? r.line - reach : r.line), d1 = Math.ceil(r.toYou ? r.line : r.line + reach);
+            /* only where that wall is really drawn, full height: not where it's half or none, nor where other steps cross that line instead */
+            const wallAxis = r.alongY ? "y" : "x", crossed = d => ((lv.src && lv.src.steps) || []).some(st => st.axis !== wallAxis && st.dir !== "front" && st.line === r.b && d >= st.a && d < st.b);
+            for (let d = d0; d < d1 && !r.noNear; d++) { const Q = r.alongY ? tileAt(r.b, d) : tileAt(d, r.b), B = r.alongY ? tileAt(r.b - 1, d) : tileAt(d, r.b - 1), k = wallAxis + "|" + r.b + "|" + d; if (uneven && Q && B && !Q.notch && !B.notch && Q.z < B.z && !noneSet.has(k) && !halfSet.has(k) && !crossed(d)) r.noNear = true; }
+        }
         /* Runs meeting at a corner, same heights: an outer corner (the raised floor's corner sticks out between them) gets a corner piece in the
            square beyond both ends; an inner one (both start from the corner and overlap there) needs nothing more than knowing they meet. */
         const corners = [], groupOf = new Map(), join = (p, q) => { const g = groupOf.get(p), h = groupOf.get(q); if (g && h) { if (g !== h) for (const r of h) { g.add(r); groupOf.set(r, g); } } else if (g) { g.add(q); groupOf.set(q, g); } else if (h) { h.add(p); groupOf.set(p, h); } else { const n = new Set([p, q]); groupOf.set(p, n); groupOf.set(q, n); } };
@@ -2110,12 +2135,12 @@ function build(cfg) {
             }
         }
         const onR = (X, Y) => (lv.rugs || []).some(r => X >= r.x0 && X < r.x1 && Y >= r.y0 && Y < r.y1), stepWay = cfg.single || lv.way;
-        const pieceOf = r => { let a0 = null, a1 = null; for (let t = r.a; t < r.b; t++) if (r.alongY ? onR(t, r.line) || onR(t, r.line - 1) : onR(r.line, t) || onR(r.line - 1, t)) { if (a0 === null) a0 = t; a1 = t + 1; } return { alongY: r.alongY, line: r.line, c0: r.a, c1: r.b, back: !r.toYou, j0: r.j0, j1: r.j1, x0: r.x0, x1: r.x1, carpet: a0 === null ? null : [a0, a1], src: r }; };
+        const pieceOf = r => { let a0 = null, a1 = null; for (let t = r.a; t < r.b; t++) if (r.alongY ? onR(t, r.line) || onR(t, r.line - 1) : onR(r.line, t) || onR(r.line - 1, t)) { if (a0 === null) a0 = t; a1 = t + 1; } return { alongY: r.alongY, line: r.line, c0: r.a, c1: r.b, back: !r.toYou, j0: r.j0, j1: r.j1, x0: r.x0, x1: r.x1, noNear: !!r.noNear, carpet: a0 === null ? null : [a0, a1], src: r }; };
         const groups = new Map();      // each group of joined runs, drawn as one surface
         for (const g of new Set(groupOf.values())) { const pieces = [...g].map(pieceOf), byRun = new Map(pieces.map(q => [q.src, q])); const cs = corners.filter(k => g.has(k.ry)).map(k => ({ ...k, rx: byRun.get(k.rx), ry: byRun.get(k.ry) })); const G = { runs: pieces, corners: cs }; for (const r of g) groups.set(r, G); }
         for (const r of runs) {
             const { alongY, toYou, hi, lo } = r, st = { line: r.line, a: r.a, b: r.b }, carpet = pieceOf(r).carpet;
-            const count = Math.round((hi - lo) / STEP_R), reach = count * STEP_D, f = { axis: alongY ? "y" : "x", c0: st.a, c1: st.b, dTop: st.line, dStart: st.line - reach, steps: count, rise: STEP_R, tread: STEP_D, zB: lo, carpet, way: stepWay, tiled: true, vis: stepSeen };
+            const count = Math.round((hi - lo) / STEP_R), reach = count * STEP_D, f = { axis: alongY ? "y" : "x", c0: st.a, c1: st.b, dTop: st.line, dStart: st.line - reach, steps: count, rise: STEP_R, tread: STEP_D, zB: lo, carpet, way: stepWay, tiled: true, vis: stepSeen, near: r.noNear ? false : undefined };
             const along = toYou ? Math.floor(st.line - reach) : st.line;
             const d0 = toYou ? Math.floor(st.line - reach) : st.line, d1 = toYou ? st.line : Math.ceil(st.line + reach);
             const G = groups.get(r), sOf = (X, Y) => { const d = alongY ? Y : X; return toYou ? st.line - d : d - st.line; };
@@ -2158,6 +2183,20 @@ function build(cfg) {
         if (uneven) {
             const T = w.wallTop, stepsOn = (axis, line, t) => ((lv.src && lv.src.steps) || []).some(st => st.axis !== axis && st.dir !== "front" && st.line === line && t >= st.a && t < st.b);
             const doorsOn = (lv.src && lv.src.doors) || [], noWall = new Set((lv.src && lv.src.noWalls) || []), lowWall = new Set((lv.src && lv.src.halfTiles) || []);
+            /* Small steps that run out to the edge of their floor where a lower floor lies beyond: the wall standing on that lower floor takes
+               its top down the flight with the moulding on it, the way an open edge's moulding slopes down beside small steps (13 Nov 2026, his:
+               it stayed a square block there). The same profile as that slope, so the two read alike. axis/line: the wall's; at: along it. */
+            const stepSlope = (axis, line, at) => {
+                let top = null; const rate = STEP_R / STEP_D, LIP = 6;
+                for (const r of runs) {
+                    if (r.alongY !== (axis === "y") || r.b !== line) continue;
+                    const reach = Math.round((r.hi - r.lo) / STEP_R) * STEP_D, t = r.toYou ? r.line - at : at - r.line;
+                    if (t < 0 || t > reach + LIP / rate) continue;
+                    const z = t < reach ? Math.min(r.hi, r.hi + LIP - t * rate) : Math.max(r.lo, r.lo + LIP - (t - reach) * rate);
+                    if (top === null || z > top) top = z;
+                }
+                return top;
+            };
             const tiled = axis => { const out = new Map(); for (const [key, Q] of tileOf) { if (Q.notch) continue; const [X, Y] = key.split(",").map(Number), B = tileOf.get(axis === "x" ? X + "," + (Y - 1) : (X - 1) + "," + Y); if (!B || B.notch || B.z <= Q.z) continue; const line = axis === "x" ? Y : X, t = axis === "x" ? X : Y; if (stepsOn(axis, line, t)) continue; if (!out.has(line)) out.set(line, []); out.get(line).push({ t, z: Q.z, top: B.z }); } return out; };
             for (const axis of ["x", "y"]) for (const [line, list] of tiled(axis)) {
                 list.sort((p, q) => p.t - q.t);
@@ -2169,7 +2208,9 @@ function build(cfg) {
                     const col = colOf(axis, line), capped = H > drop, state = t => { const k = axis + "|" + line + "|" + t; return noWall.has(k) ? "none" : lowWall.has(k) ? "half" : "full"; };
                     const onP = tileOf.get(axis === "x" ? a + "," + line : line + "," + a);
                     const liftBy = ((cfg.map && cfg.map.lifts) || []).filter(q => lv.src && q.level === lv.src.id && (axis === "x" ? q.axis !== "y" && q.y === line && q.x < b + 1 && q.x + 4 > a : q.axis === "y" && q.x === line && q.y < b + 1 && q.y + 4 > a)).map(q => q.x + q.y - .4);
-                    (lv.later = lv.later || []).push({ withFloor: true, depth: Math.min((axis === "x" ? a + line : line + a) - .2, ...liftBy), tx: axis === "x" ? a : line, ty: axis === "x" ? line : a, draw: () => tagged(() => {
+                    /* a wall that climbs small steps beside it stands in front of them: it goes after them, or their treads cover its moulding */
+                    let sloped = false; for (let t = a; t < b && !sloped; t++) for (let u = 0; u < 16 && !sloped; u += 3) if (stepSlope(axis, line, t + (u + .5) / 16) !== null) sloped = true;
+                    (lv.later = lv.later || []).push({ withFloor: true, depth: Math.min((axis === "x" ? a + line : line + a) - .2, ...liftBy), tx: axis === "x" ? a : line, ty: axis === "x" ? line : a, ...(sloped ? { rect: axis === "x" ? { x0: a, x1: b, y0: line, y1: line + 1 } : { x0: line, x1: line + 1, y0: a, y1: b } } : {}), draw: () => tagged(() => {
                         const zs = w.z; w.z = zr;
                         /* However the order comes out, a floor nearer on the line of sight covers this wall: a part of the same height diagonally in front of the one above it mustn't get its corner painted over */
                         const under = Object.prototype.hasOwnProperty.call(layer, "set") ? layer.set : null;
@@ -2183,16 +2224,19 @@ function build(cfg) {
                             for (let u = 0; u < 16; u++) {
                                 const at = axis === "x" ? t * 16 + u : t * 16 + 1 + u; if (col) col(at);
                                 const low = st === "half";
+                                /* where small steps come down to this wall from the floor above it, its top comes down with them */
+                                const slope = !low && !capped ? stepSlope(axis, line, t + (u + .5) / 16) : null, Hc = slope === null ? H : Math.max(1, Math.round(slope - zr));
+                                const plain = (im, i, fr, sx, fy) => GHP && !capped && H <= GH_EDGE_MAX ? ghEdgeColumn(layer, sx, fy, Hc) : shortWallColumn(layer, im, i, fr, sx, fy, Hc, capped);
                                 if (axis === "x") {
                                     const m = Math.floor(at / 128) * 8, i2 = ((at % 128) + 128) % 128, p = w.S(m, line), raw = at < a * 16 + 24;
                                     if (low) halfWallColumn(layer, LOWX, lowX(at), p[0] + i2, p[1] + Math.floor(i2 / 2) - H, H);
                                     else if (raw && capped) { const q = w.S(a, line), r = at - a * 16; shortWallColumn(layer, TALLX, r, T + Math.floor(r / 2), q[0] + r, q[1] + Math.floor(r / 2), H, capped); }
-                                    else shortWallColumn(layer, SEAMX, i2, T + Math.floor(i2 / 2), p[0] + i2, p[1] + Math.floor(i2 / 2), H, capped);
+                                    else plain(SEAMX, i2, T + Math.floor(i2 / 2), p[0] + i2, p[1] + Math.floor(i2 / 2));
                                 } else {
                                     const m = Math.floor((at - 1) / 128) * 8, d = at - m * 16, i2 = 138 - d, p = w.S(line, m), raw = at <= a * 16 + 24;
                                     if (low) halfWallColumn(layer, LOWY, lowY(at), p[0] - 138 + i2, p[1] + Math.floor(d / 2) - H, H);
                                     else if (raw && capped) { const q = w.S(line, a), r = at - a * 16; shortWallColumn(layer, TALLY, 138 - r, T + Math.floor(r / 2), q[0] - r, q[1] + Math.floor(r / 2), H, capped); }
-                                    else shortWallColumn(layer, SEAMY, i2, T + Math.floor(d / 2), p[0] - 138 + i2, p[1] + Math.floor(d / 2), H, capped);
+                                    else plain(SEAMY, i2, T + Math.floor(d / 2), p[0] - 138 + i2, p[1] + Math.floor(d / 2));
                                 }
                             }
                         }
@@ -2397,10 +2441,27 @@ function build(cfg) {
                 const wallZ = (X, Y) => { const Q = tileAt(X, Y); return Q ? Q.z - (Q.floorLift || 0) : null; }, wBack = alongY ? wallZ(st.a, st.line - 1) : wallZ(st.line - 1, st.a), wNear = alongY ? wallZ(st.a, st.line) : wallZ(st.line, st.a);
                 const wallRise = (toYou ? wNear : wBack) - (toYou ? wBack : wNear), share = Math.max(0, Math.min(1, wallRise / (hi - lo))); if (share <= 0) continue;
                 const reach = Math.round((hi - lo) / STEP_R) * STEP_D, from = toYou ? st.line - reach : st.line, rate = STEP_R / STEP_D, d0 = alongY ? P.y0 : P.x0, d1 = alongY ? P.y1 : P.x1;
+                /* The wall's own lines already fall a row every 2 columns; rounding the climb separately added steps of its own on top, so the
+                   rail, the dado and the cap wobbled up the flight (13 Nov 2026, his, the Events Gallery). The two are rounded together instead,
+                   so the climbing line is one even staircase: each column's own row is read from the wall's foot as drawn, and the phase of the
+                   wall's 2:1 line from the highest of them (a column's foot is floor(8d + phase)). */
+                /* Where the wall turns a corner part way down the flight, its climb ends there, so its rail and dado meet the next wall's
+                   at the corner (13 Nov 2026, his): one straight climb from the top of the flight, or the corner, to the foot, or the corner. */
+                const onWall = X => alongY ? sideWall(st.a, X) : backWall(X, st.a);
+                let ws = Math.floor(from), we = Math.ceil(from + reach);
+                for (let X = Math.floor(from); X < Math.ceil(from + reach); X++) if (!onWall(X)) { if (X + .5 < from + reach / 2) ws = X + 1; else { we = X; break; } }
+                const top = toYou ? Math.min(from + reach, we) : Math.max(from, ws), foot0 = toYou ? Math.max(from, ws) : Math.min(from + reach, we), span = Math.abs(top - foot0);
+                const cols = [];
                 for (let k = 0; k <= Math.ceil(reach * 16); k++) {
                     const d = from + k / 16; if (d < d0 || d >= d1) continue;
-                    const lift = Math.round(share * (toYou ? (d - from) * rate : (hi - lo) - (d - from) * rate)); if (lift <= 0) continue;
+                    const exact = span > 0 ? share * (hi - lo) * Math.max(0, Math.min(1, (toYou ? d - foot0 : foot0 - d) / span)) : 0; if (exact <= 0) continue;
                     const sx = Math.round((alongY ? st.a - d : d - st.a) * 16) + gx, foot = Math.round((d + st.a) * 8) + gy - zWalls; if (sx < 0 || sx >= bw) continue;
+                    let low = null; for (let y = Math.min(bh - 1, foot + 4); y >= Math.max(0, foot - 8); y--) if (wallOwner[y * bw + sx] === ownerId) { low = y; break; }
+                    cols.push({ d, exact, sx, foot, low });
+                }
+                const known = cols.filter(c => c.low !== null), phase = known.length ? Math.max(...known.map(c => c.low - 8 * c.d)) : null;
+                for (const { d, exact, sx, foot, low } of cols) {
+                    const lift = phase === null || low === null ? Math.round(exact) : low - Math.round(8 * d + phase - .5 + 1e-6 - exact); if (lift <= 0) continue;
                     for (let y = Math.max(lift, foot - Z1 - 20); y <= Math.min(bh - 1, foot + 2); y++) {
                         const i = y * bw + sx; if (wallOwner[i] !== ownerId) continue;
                         const j = (y - lift) * bw + sx;
