@@ -1460,7 +1460,38 @@ function ghRugPx(r, X, Y, dx, dy) {
 /* The lift. Every part of the surround is a box standing out from the wall, drawn with its
    front, its side and its top, and black round every shape, so it sits in the hall as solidly
    as the client's own furniture. Open, the opening looks into a lit iso cabin. */
+/* His corrections to the lift (14 Nov 2026, art/lift/lift-closed-x.png, edited from my export of the closed lift with the map point (0,0)
+   at pixel (25,116); the left wall's is that one mirrored). Worked out once against the code's own drawing of it shut: the pixels he took away
+   are never drawn (the wall behind shows), the ones he changed or added are drawn in his colours last, whatever state the doors are in,
+   since all of them are on the surround and the call plate. The server's door frames and the Warren's renderer draw through here too. */
+const LIFT_AT = [25, 116];
+let liftEdit;
+function liftEditOf() {
+    if (liftEdit !== undefined) return liftEdit; liftEdit = null;
+    let his; try { his = H_readPng(require("path").join(__dirname, "../art/lift/lift-closed-x.png")); } catch (e) { return null; }
+    const draw = bg => { const b = new Buf(400, 400, bg), ox = 200, oy = 260, w = { b, ox, oy, z: 0, S: (x, y) => [ox + (x - y) * 16, oy + (x + y) * 8], lamps: [], plates: null }; liftBody(w, 0, 0, {}); return b; };
+    const A = draw("ff00ff"), B = draw("00ffff"), skip = new Set(), put = [];
+    const mine = (X, Y) => { const p = (Y * 400 + X) * 4; return A.d[p] === B.d[p] && A.d[p + 1] === B.d[p + 1] && A.d[p + 2] === B.d[p + 2] ? [A.d[p], A.d[p + 1], A.d[p + 2]] : null; };
+    for (let j = 0; j < his.h; j++) for (let i = 0; i < his.w; i++) {
+        const dx = i - LIFT_AT[0], dy = j - LIFT_AT[1], X = 200 + dx, Y = 260 + dy, was = X >= 0 && Y >= 0 && X < 400 && Y < 400 ? mine(X, Y) : null, q = (j * his.w + i) * 4, now = his.rgba[q + 3] >= 128 ? [his.rgba[q], his.rgba[q + 1], his.rgba[q + 2]] : null;
+        if (was && !now) skip.add(dx + "," + dy);
+        else if (now && (!was || was[0] !== now[0] || was[1] !== now[1] || was[2] !== now[2])) { skip.add(dx + "," + dy); put.push([dx, dy, now]); }
+    }
+    return (liftEdit = { skip, put });
+}
 function lift(w, x, y, o) {
+    o = o || {};
+    if (o.left) return liftBody(w, x, y, o);
+    const E = liftEditOf(); if (!E) return liftBody(w, x, y, o);
+    const O = w.S(x, y), key = (X, Y) => (X - O[0]) + "," + (Y - O[1]), b0 = w.b, wm = Object.create(w);
+    wm.b = Object.create(b0); wm.b.set = function (X, Y, c) { if (!E.skip.has(key(X, Y))) b0.set(X, Y, c); };
+    if (w.plates) wm.plates = { push: (X, Y, c, line) => { if (!E.skip.has(key(X, Y))) w.plates.push(X, Y, c, line); } };
+    liftBody(wm, x, y, o);
+    const line = o.line === undefined ? y : o.line;
+    /* the call plate's pixels go on again once every wall is in, as liftBody's own do */
+    for (const [dx, dy, c] of E.put) { const X = O[0] + dx, Y = O[1] + dy; b0.set(X, Y, c); if (w.plates && dx >= 58) w.plates.push(X, Y, (c[0] << 16) | (c[1] << 8) | c[2], line); }
+}
+function liftBody(w, x, y, o) {
     o = o || {};
     /* On a left wall (13 Nov 2026, his: "Lifts can't be placed on all walls"): the back wall's lift mirrored. A map point (X, Y) mirrors to
        (Y, X), which on screen is x mirrored about the map's origin, so it is drawn as the lift at (y, x) with every pixel's x mirrored: x is
