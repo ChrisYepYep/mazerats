@@ -178,11 +178,16 @@ async function isOpen(db) {
 /* Where a score stands on the board as players see it: one more than the
    rows ahead of it, less any the board hides (banned players, see
    _bans.js), so "you're 3rd" matches the third row shown. */
+/* COUNTED, NOT FETCHED, FAR DOWN THE BOARD (14 Nov 2026, the bug scan): every row ahead was read, with no limit, on every board open and
+   every game filed, so a place near the bottom of a big board was thousands of rows for one number. The rows ahead are counted first,
+   on the board's index; only when there are PLACE_EXACT or fewer are they read to take off the hidden ones. Further down, the place is
+   the count alone, out by the few banned or nickname-less players ahead, which nobody reading "you're 612th" can tell. */
+const PLACE_EXACT = 500;
 async function placeOf(db, scores, best) {
-    const ahead = await scores.find(
-        { $or: [{ score: { $gt: best.score } }, { score: best.score, pieces: { $lt: best.pieces } }] },
-        { projection: { _id: 0, playerId: 1 } }
-    ).toArray();
+    const filter = { $or: [{ score: { $gt: best.score } }, { score: best.score, pieces: { $lt: best.pieces } }] };
+    const n = await scores.countDocuments(filter);
+    if (n > PLACE_EXACT) return 1 + n;
+    const ahead = await scores.find(filter, { projection: { _id: 0, playerId: 1, name: 1 } }).limit(PLACE_EXACT + 1).toArray();
     return 1 + (await shown(db, ahead)).length;
 }
 
@@ -207,6 +212,8 @@ const RESUME_WINDOW_MS = 24 * 60 * 60 * 1000;
 async function continueRun(db, event, player) {
     let body;
     try { body = JSON.parse(event.body || "{}"); } catch { return json(400, { error: "Body is not JSON" }); }
+    // null parses too (14 Nov 2026, the bug scan): a 400, not a throw.
+    if (!body || typeof body !== "object") return json(400, { error: "Body is not JSON" });
     const c = readRun(String(body.run || ""), null, { ignoreExpiration: true });
     if (!c) return json(200, { token: null, reason: "unknown" });
     if (c.sub && (!player || !runIsPlayers(c, player))) return json(200, { token: null, reason: "someone-else" });
@@ -252,6 +259,7 @@ async function continueRun(db, event, player) {
 async function renewRun(db, event, player) {
     let body;
     try { body = JSON.parse(event.body || "{}"); } catch { return json(400, { error: "Body is not JSON" }); }
+    if (!body || typeof body !== "object") return json(400, { error: "Body is not JSON" });
     // Another account than the one signed in: null, as at every save.
     const c = readRun(String(body.run || ""), player, { ignoreExpiration: true });
     if (!c) return json(200, { token: null, reason: "unknown" });

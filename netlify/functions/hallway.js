@@ -18,24 +18,47 @@ const crypto = require("crypto");
 const { blobStore } = require("./_blobs.js");
 const auth = require("./_auth.js");
 const { SECURITY_HEADERS } = require("./_headers");
+const { keyOf } = require("./_ratelimit");
 
 const STORE = "hallway", MAX_MAP = 4 * 1024 * 1024, MAX_TILE = 3 * 1024 * 1024, HASH = /^[a-f0-9]{20}$/, FRESH_MS = 10 * 60e3;
 const reply = (statusCode, body, extra) => ({ statusCode, headers: { ...SECURITY_HEADERS, "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store", ...(extra || {}) }, body: typeof body === "string" ? body : JSON.stringify(body) });
 const FIGURE = /^[a-z]{2}-\d+(-\d+)*(\.[a-z]{2}-\d+(-\d+)*)*$/;
 const USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36";
 const WATER = 1;      // the clear glass, as tools/hallway-editor/fetch-avatar.js
-async function avatarFrame(q) {
+/* Held in (14 Nov 2026, the bug scan): each figure nobody had asked for before missed the edge's copy and was an ask of Habbo, limited
+   only by the pictures' budget of 600 a minute, and too many of those could get the site's addresses blocked by Habbo's firewall, which
+   habbo.js and habbo-outline.js depend on too. So a network gets AV_PER_NET frames a minute from Habbo on each warm instance (counted
+   in memory by the rate limit's daily network code, nothing stored), the last AV_KEEP frames are kept here and answered without
+   asking again, and a refusal from Habbo (a 403 from its firewall) is never asked twice: only a 5xx is tried again. */
+const AV_PER_NET = 120, AV_KEEP = 300;
+const avByNet = new Map(), avKept = new Map();
+function avRoom(event) {
+    const key = keyOf(event);
+    if (!key) return true;
+    const minute = Math.floor(Date.now() / 60000), seen = avByNet.get(key), n = seen && seen.minute === minute ? seen.n + 1 : 1;
+    if (n > AV_PER_NET) return false;
+    if (avByNet.size >= 5000) { for (const [k, v] of avByNet) if (v.minute !== minute) avByNet.delete(k); if (avByNet.size >= 5000) avByNet.clear(); }
+    avByNet.set(key, { minute, n });
+    return true;
+}
+const avReply = b => ({ statusCode: 200, isBase64Encoded: true, headers: { ...SECURITY_HEADERS, "Content-Type": "image/png", "Cache-Control": "public, max-age=604800", "Netlify-Vary": "query=av|d|a|h|f" }, body: b.toString("base64") });
+async function avatarFrame(q, event) {
     const figure = String(q.av || ""), d = String(q.d), a = String(q.a), f = String(q.f || "0"), h = String(q.h || "");
     if (figure.length > 240 || !FIGURE.test(figure) || !/^[0-7]$/.test(d) || !/^(std|wlk|sit)$/.test(a) || !/^[0-3]$/.test(f) || !/^(|crr|drk)$/.test(h)) return reply(400, { error: "Bad figure" });
     const action = a === "wlk" ? "wlk" : a === "sit" ? "sit" : "std", item = h ? "," + h + "=" + WATER : "";
     const url = "https://www.habbo.com/habbo-imaging/avatarimage?" + new URLSearchParams({ figure, size: "s", direction: d, head_direction: d, action: action + item, frame: f, gesture: "sml" });
+    const kept = avKept.get(url);
+    if (kept) { avKept.delete(url); avKept.set(url, kept); return avReply(kept); }    // the newest at the end, so the oldest goes first
+    if (!avRoom(event)) return reply(429, { error: "Too many figures just now. Wait a moment and try again.", reason: "rate-limit" }, { "Retry-After": "60" });
     const ctl = new AbortController(), t = setTimeout(() => ctl.abort(), 7000);
     try {
-        /* As the site's other asks of Habbo: its firewall answers a bare request with an error page. One more try on a bad answer. */
-        let r = await fetch(url, { signal: ctl.signal, headers: { "User-Agent": USER_AGENT, Accept: "image/png,image/*" } }); if (!r.ok && r.status !== 404) r = await fetch(url, { signal: ctl.signal, headers: { "User-Agent": USER_AGENT, Accept: "image/png,image/*" } });
+        /* As the site's other asks of Habbo: its firewall answers a bare request with an error page. One more try, on a 5xx only. */
+        let r = await fetch(url, { signal: ctl.signal, headers: { "User-Agent": USER_AGENT, Accept: "image/png,image/*" } }); if (r.status >= 500) r = await fetch(url, { signal: ctl.signal, headers: { "User-Agent": USER_AGENT, Accept: "image/png,image/*" } });
         if (!r.ok) return reply(502, { error: "Habbo isn't answering" });
         const b = Buffer.from(await r.arrayBuffer()); if (b.length < 8 || b.length > 200000 || b.readUInt32BE(0) !== 0x89504e47) return reply(502, { error: "Habbo isn't answering" });
-        return { statusCode: 200, isBase64Encoded: true, headers: { ...SECURITY_HEADERS, "Content-Type": "image/png", "Cache-Control": "public, max-age=604800", "Netlify-Vary": "query=av|d|a|h|f" }, body: b.toString("base64") };
+        // A small figure is a couple of kilobytes; anything far bigger isn't kept, so the memory stays small.
+        if (b.length <= 20000) { avKept.set(url, b); if (avKept.size > AV_KEEP) avKept.delete(avKept.keys().next().value); }
+        return avReply(b);
     } catch (e) { return reply(502, { error: "Habbo isn't answering" }); } finally { clearTimeout(t); }
 }
 const sha = t => crypto.createHash("sha1").update(t).digest("hex").slice(0, 20);
@@ -43,10 +66,10 @@ const sha = t => crypto.createHash("sha1").update(t).digest("hex").slice(0, 20);
 const readDraft = async store => { try { return await store.get("draft", { type: "text", consistency: "strong" }); } catch (e) { return store.get("draft", { type: "text" }); } };
 const looksLikeMap = m => m && typeof m === "object" && Array.isArray(m.levels) && m.levels.length > 0 && m.levels.length < 40;
 
-exports.handler = async (event) => {
+async function handle(event) {
     const store = blobStore(STORE), q = event.queryStringParameters || {};
     if (event.httpMethod === "GET") {
-        if (q.av !== undefined) return avatarFrame(q);
+        if (q.av !== undefined) return avatarFrame(q, event);
         if (q.tile !== undefined) {
             if (!HASH.test(q.tile)) return reply(400, { error: "Bad picture name" });
             const data = await store.get("tile/" + q.tile, { type: "arrayBuffer" });
@@ -137,5 +160,16 @@ exports.handler = async (event) => {
         return reply(200, { published: true, version, publishedAt });
     }
     return reply(400, { error: "No such action" });
+}
+/* A Blobs or database hiccup is a 503 to try again (14 Nov 2026, the bug scan), as every other admin function answers, not Netlify's
+   bare 502 with its error text: the Warren editor gets JSON it can read, and the walking page falls back to the deployed copy. */
+exports.handler = async (event) => {
+    try {
+        return await handle(event);
+    } catch (e) {
+        if (auth.isAuthUnavailable && auth.isAuthUnavailable(e)) return auth.AUTH_UNAVAILABLE;
+        console.error("hallway", e);
+        return reply(503, { error: "The Hallway's store can't be read just now" });
+    }
 };
 exports.handler = require("./_errors").withErrorReporting("hallway", exports.handler);

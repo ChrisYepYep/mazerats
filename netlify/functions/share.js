@@ -30,6 +30,7 @@ const fs = require("fs");
 const path = require("path");
 const { getDb } = require("./_db");
 const { policyFor } = require("./_csp");
+const { headersFor } = require("./_headers");
 const { KEPT_QUERY, withoutJunk, junkRedirect } = require("./_query");
 // Who may read past the address book with ?fresh (3 Oct 2026; see FRESH_ADDRESSES_MS).
 const { hasAccount } = require("./_auth");
@@ -762,6 +763,12 @@ async function addressesOf(db, kind, maxAge) {
 }
 
 exports.handler = async (event) => {
+    /* GET and HEAD only (14 Nov 2026, the bug scan): these are pages, and a POST to /maze/<name> was neither kept at the edge nor
+       counted by the rate limit, so each one was a database read with nothing to stop it. */
+    const method = String(event.httpMethod || "GET").toUpperCase();
+    if (method !== "GET" && method !== "HEAD") {
+        return { statusCode: 405, headers: headersFor("text/plain; charset=utf-8", { Allow: "GET, HEAD", "Cache-Control": "no-store" }), body: "Method not allowed" };
+    }
     const clean = junkFree(event);
     if (clean) return clean;
     const origin = originOf();

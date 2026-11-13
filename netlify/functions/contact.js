@@ -378,7 +378,8 @@ async function manage(event, messages) {
             // And the Discord name, handle and the handle they typed (5 Oct
             // 2026): the Warren shows the other roles nicknames only.
             : { _id: 0, net: 0, ip: 0, "from.id": 0, "from.name": 0, "from.username": 0, discord: 0 };
-        // The newest 500: the list had no bound at all (5 Oct 2026, the bug scan).
+        // The newest 500: the list had no bound at all (5 Oct 2026, the bug scan). The Warren says so
+        // when it is full (14 Nov 2026; CONTACT_SHOWN in js/admin.js), so keep the two the same.
         const all = await messages.find({}, { projection }).sort({ createdAt: -1 }).limit(500).toArray();
         return json(200, all);
     }

@@ -134,7 +134,8 @@ const PRIVACY_SECTIONS = [
             "We also log which parts of the site get used, like which mazes are opened. No IP address or account is attached, just a random ID that's gone when you close the tab. These logs are deleted after 60 days.",
             "If your browser sends \"Do Not Track\" or Global Privacy Control, none of that is logged. Bots and search engine crawlers aren't logged either.",
             "If something breaks in your browser, it sends us an error report: what went wrong, the page (with anything you typed taken out), your browser and device type, window size, the country you're in and the last few buttons clicked. No IP address, account or name. Reports are deleted once an error hasn't happened for 90 days. They're sent with Do Not Track on, but not with Global Privacy Control.",
-            "While a page of the site is open, it tells us it's still there about once a minute, using a random ID made for that tab, so we can see how many people are on the site right now. When the site is about to go down for maintenance, it does this every few seconds instead, so we know when everyone has left. Nothing else is sent, no IP address or account is attached, and each ID is deleted a few minutes after its last message.",
+            "While a page of the site is open, it tells us it's still there, using a random ID made for that tab, so we can see how many people are on the site right now. That's about once a minute while you're looking at it, and again when you come back to the tab. In a tab in the background it's every few minutes, and it stops after half an hour. It isn't sent at all if your browser sends Do Not Track or Global Privacy Control, or from bots. Nothing else is sent, no IP address or account is attached, and each ID is deleted a few minutes after its last message.",
+            "When the site is about to go down for maintenance, an open page also tells us it's still there every few seconds until it's moved to the landing page, so we know when everyone has left. That one is sent whatever your browser's privacy settings, only for those last couple of minutes, and keeps nothing but the same kind of random ID.",
             "To stop anyone flooding the site, we count each connection's requests using a scrambled code that changes daily. A few Pura Panic steps (motto codes, new Guest Rat numbers, game starts) are counted by the network code instead. The counts are deleted within a couple of hours.",
             "Sign-in attempts on the admin panel are logged for 90 days with the IP address, browser and name typed (scrambled if it isn't an admin's name). Admins who sign in get a cookie for 180 days so other people's wrong guesses can't lock them out."
         ]
@@ -197,7 +198,7 @@ const PRIVACY_SECTIONS = [
         heading: "Who runs this site.",
         points: [
             "Maze Rats is run by ChrisYepYep, who is responsible for everything in this policy.",
-            "Last updated: 14 November 2026."
+            "Last updated: 13 November 2026."
         ]
     }
 ];

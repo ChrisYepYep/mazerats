@@ -132,7 +132,10 @@ for (const page of fs.readdirSync(OUT).filter(n => /\.html$/i.test(n))) {
         const man = JSON.parse(fs.readFileSync(manifestFile, "utf8"));
         for (const name of new Set(Object.values(man.tiles || {}))) if (!fs.existsSync(path.join(HW, "tiles", name))) problems.push(`assets/hallway/manifest.json names tiles/${name}, which is not in dist/`);
         const map = JSON.parse(fs.readFileSync(path.join(HW, "map.json"), "utf8"));
-        for (const way of new Set((map.levels || []).map(l => (l.colour ? "hex:" + l.colour : l.way)))) for (let f = 0; f < 6; f++) { const file = encodeURIComponent(way).replace(/%/g, "_") + "-" + f + ".png"; if (!fs.existsSync(path.join(HW, "lift", file))) problems.push(`assets/hallway/lift/${file} is not in dist/`); }
+        /* the Events Gallery's floors too (14 Nov 2026, the bug scan): publish.js makes their lifts from the same file, and a floor of
+           its own colour there is a lift picture no Hallway floor uses */
+        const floors = [...(map.levels || []), ...((map.gallery && map.gallery.levels) || [])];
+        for (const way of new Set(floors.map(l => (l.colour ? "hex:" + l.colour : l.way)))) for (let f = 0; f < 6; f++) { const file = encodeURIComponent(way).replace(/%/g, "_") + "-" + f + ".png"; if (!fs.existsSync(path.join(HW, "lift", file))) problems.push(`assets/hallway/lift/${file} is not in dist/`); }
         const workerFile = path.join(HW, "app", "renderer-worker.js");
         if (!fs.existsSync(workerFile)) problems.push("assets/hallway/app/renderer-worker.js is not in dist/");
         else { const art = /const ART_FILES = (\[.*?\]);\r?\n/.exec(fs.readFileSync(workerFile, "utf8")); if (!art) problems.push("assets/hallway/app/renderer-worker.js has no ART_FILES list"); else for (const f of JSON.parse(art[1])) if (!fs.existsSync(path.join(HW, "app", "art", f))) problems.push(`assets/hallway/app/art/${f} is not in dist/`); }

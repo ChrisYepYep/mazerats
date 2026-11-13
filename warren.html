@@ -257,8 +257,9 @@
                                     <button type="button" class="btn-enter-mini" data-state="enter">Live</button>
                                 </div>
                                 <p class="ctl-status" id="landing-toggle-status" style="display:none;"></p>
-                                <!-- How many are on the site right now (14 Nov 2026, his): js/presence-live.js on every page, read by js/admin.js (watchUsers) -->
-                                <p class="ctl-status ctl-users" id="landing-users" title="Open tabs on the site right now, each counted once; updated every 15 seconds.">Users: …</p>
+                                <!-- How many are on the site right now (14 Nov 2026, his): js/presence-live.js on every page, read by js/admin.js (readUsers).
+                                     Hidden while the switch is on Maint., when the countdown line below is the count to watch (14 Nov 2026, the bug scan). -->
+                                <p class="ctl-status ctl-users" id="landing-users" title="Open tabs on any public page of the site right now, the landing page and admins' own tabs included. Each tab counts once; a tab in the background for over half an hour, or with Do Not Track on, isn't counted. Updated every 15 seconds; hidden during Maintenance, when the countdown line counts instead.">Users: …</p>
                                 <!-- The switch-against-launch-date warning
                                      (1 Oct 2026), on its own line for the
                                      same reason as Fallin' Furni's (in Games):
@@ -1642,7 +1643,7 @@
          their section is first opened (2 Nov 2026, WIZARD_FILES and
          RECOLOUR_FILES there): most visits open neither. -->
     <script src="js/admin-address.js?v=3"></script>
-    <script src="js/admin.js?v=8"></script>
+    <script src="js/admin.js?v=9"></script>
     <script src="js/dead-ends.js?v=3"></script>
     <script src="js/admin-dead-ends.js?v=4"></script>
     <!-- The Guides panel's text format (the maze list and the formatting bar

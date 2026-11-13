@@ -136,6 +136,8 @@ document.addEventListener("DOMContentLoaded", () => {
     const adminRailEl = document.getElementById("admin-rail");
     const adminSessionUserEl = document.getElementById("admin-session-user");
     const landingToggleEl = document.getElementById("landing-toggle");
+    // Its "Users: N" line (14 Nov 2026), up here because sign-in reads it straight away (see readUsers).
+    const landingUsers = document.getElementById("landing-users");
     /* The landing buttons only — NOT every .btn-enter-mini on the page. The
        Fallin' Furni switch below borrows the same class for the same look, and
        a bare class selector would have swept it into the landing toggle's
@@ -2542,6 +2544,8 @@ document.addEventListener("DOMContentLoaded", () => {
             adminSessionUserEl.title = ROLE_LABELS[currentUserRole] || "Admin";
         }
         landingToggleEl.style.display = "flex";
+        // Signed in onto Controls: its "Users" line read now that the card is shown (see readUsers).
+        readUsers();
         if (launchAtEl) launchAtEl.style.display = "flex";
         if (ffLaunchAtEl) ffLaunchAtEl.style.display = "flex";
         if (ffToggleEl) ffToggleEl.style.display = "block";
@@ -8431,6 +8435,7 @@ document.addEventListener("DOMContentLoaded", () => {
        list too (for the Ban/Unban buttons) and would otherwise paint "No
        messages yet." straight over the failure a moment after it appeared. */
     let contactMessagesFailed = "";
+    const CONTACT_SHOWN = 500;   // contact.js's limit
 
     function renderContactMessagesList() {
         if (contactMessagesFailed) {
@@ -8513,6 +8518,14 @@ document.addEventListener("DOMContentLoaded", () => {
             row.appendChild(actions);
             contactMessagesListEl.appendChild(row);
         });
+        /* The cap said (14 Nov 2026, the bug scan): contact.js sends the newest CONTACT_SHOWN only, so an older message couldn't be seen
+           at all, with nothing to say there was one. */
+        if (workingContactMessages.length >= CONTACT_SHOWN) {
+            const capped = document.createElement("p");
+            capped.className = "admin-empty";
+            capped.textContent = `These are the newest ${CONTACT_SHOWN}. Older messages are kept but not shown; delete some of these to see them.`;
+            contactMessagesListEl.appendChild(capped);
+        }
     }
 
     async function deleteContactMessage(id) {
@@ -9132,6 +9145,7 @@ document.addEventListener("DOMContentLoaded", () => {
     let presenceSkew = 0;
     const presenceNow = () => Date.now() + presenceSkew;
     function watchPresence() {
+        sayUsersShown();
         if (!landingPresence) return;
         if (currentLandingState !== "maintenance") {
             clearInterval(presence.timer); clearInterval(presence.ticker);
@@ -9148,11 +9162,32 @@ document.addEventListener("DOMContentLoaded", () => {
         presence.ticker = setInterval(sayPresence, 1000);
     }
     /* "Users: [number]" (14 Nov 2026, his): how many tabs are on the site right now (js/presence-live.js, presence.js), every 15 seconds
-       while the Controls box is on screen and this tab is looked at */
-    const landingUsers = document.getElementById("landing-users");
+       while the Controls box is on screen and this tab is looked at, and at once when Controls is opened (showPanel; the bug scan: the
+       Warren opens on Mazes, so it said "Users: …" for up to 15 seconds). A failed read says "–" rather than leave an old number up as if
+       it were live, and a refused session signs out, as readPresence does. Past presence.js's ceiling it says "3000+".
+
+       Hidden while the switch is on Maint. (the bug scan): it counts every public page, the landing page and admins' own tabs
+       included, so once the countdown was over it went on saying "Users: 6" beside "no other tabs open on the site". The countdown
+       line is the count that matters then. See sayUsersShown, called from watchPresence. */
     async function readUsers() {
         if (!landingUsers || !adminToken || document.visibilityState === "hidden" || !landingUsers.offsetParent) return;
-        try { const r = await Api.getPresence(adminToken); if (r && typeof r.users === "number") landingUsers.textContent = "Users: " + r.users; } catch (e) { /* tried again in 15 seconds */ }
+        const tokenUsed = adminToken;
+        try {
+            const r = await Api.getPresence(tokenUsed);
+            if (!r || typeof r.users !== "number") throw new Error("no count");
+            landingUsers.textContent = "Users: " + (r.usersCapped ? (r.usersCap || r.users) + "+" : r.users);
+        } catch (err) {
+            if (err && err.status === 401) { lockOutFor(tokenUsed); return; }
+            landingUsers.textContent = "Users: –";
+        }
+    }
+    function sayUsersShown() {
+        if (!landingUsers) return;
+        const hide = currentLandingState === "maintenance";
+        const wasHidden = landingUsers.style.display === "none";
+        landingUsers.style.display = hide ? "none" : "";
+        // Out of Maint. again: the number from before it is old, so it is read now.
+        if (wasHidden && !hide) { landingUsers.textContent = "Users: …"; readUsers(); }
     }
     if (landingUsers) { setInterval(readUsers, 15000); document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") readUsers(); }); setTimeout(readUsers, 1500); }
     async function readPresence() {
@@ -10218,6 +10253,8 @@ document.addEventListener("DOMContentLoaded", () => {
            warnings worked out again against the clock. */
         if (name === "control") {
             rereadSwitches();
+            // "Users: N" now, not at the next 15-second read (14 Nov 2026, the bug scan).
+            readUsers();
             if (landingMismatchEl) sayLandingMismatch();
             if (ffMismatchEl) sayFfMismatch();
             // "On now" / "From …" against the clock as it is now.

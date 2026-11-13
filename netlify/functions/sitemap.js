@@ -71,6 +71,12 @@ function url(loc, when, priority) {
 }
 
 exports.handler = async (event) => {
+    /* GET and HEAD only (14 Nov 2026, the bug scan): the edge never keeps a POST, and the rate limit leaves the sitemap alone, so a
+       POST (or OPTIONS) read every room, event and guide each time, as often as anybody liked. */
+    const method = String((event && event.httpMethod) || "GET").toUpperCase();
+    if (method !== "GET" && method !== "HEAD") {
+        return { statusCode: 405, headers: headersFor("text/plain; charset=utf-8", { Allow: "GET, HEAD", "Cache-Control": "no-store" }), body: "Method not allowed" };
+    }
     /* The sitemap reads no parameter at all, and on this rewrite the edge keys
        on the whole address whatever Netlify-Vary says (measured 4 Nov 2026), so
        /sitemap.xml?x=<anything new> was a read of every room, event and guide.

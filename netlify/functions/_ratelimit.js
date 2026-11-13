@@ -108,6 +108,10 @@ const EXEMPT = new Set(["settings", "share", "sitemap"]);
    what could otherwise be a way past the cache with no limit. */
 function exempt(name, event) {
     if (!EXEMPT.has(name)) return false;
+    /* GET and HEAD only (14 Nov 2026, the bug scan): the edge keeps those, never a POST, so a POST to /sitemap.xml or /maze/<name>
+       went past the cache and this limit both. Anything else is counted, as a write. */
+    const method = String((event && event.httpMethod) || "GET").toUpperCase();
+    if (method !== "GET" && method !== "HEAD") return false;
     if (name !== "share") return true;      // the sitemap reads none: always the redirect
     const asked = Object.keys((event && event.queryStringParameters) || {});
     return !asked.length || asked.some(k => !KEPT_QUERY.has(k));
@@ -351,4 +355,6 @@ function _setDbForTests(db) {
     localCounts.clear();
 }
 
-module.exports = { checkRateLimit, refusedSince, budgetOf, LIMITS, MEDIA, COLLECTION, _setDbForTests };
+/* keyOf is shared with presence.js (14 Nov 2026, the bug scan), which caps new live-count tabs per network by the same daily code, in
+   memory only, so nothing more is kept about anybody. */
+module.exports = { checkRateLimit, refusedSince, budgetOf, keyOf, LIMITS, MEDIA, COLLECTION, _setDbForTests };

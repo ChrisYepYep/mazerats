@@ -44,6 +44,29 @@ function sameOrigin(event) {
     try { return new URL(origin).host === host; } catch (e) { return false; }
 }
 
+/* ONE LINE PER RUN (14 Nov 2026, the bug scan): a script could play a throwaway line to learn the pieces, then start again from the
+   first piece with the same run token and be dealt a second line knowing them all. A stamp proves "these placements were dealt", not
+   "this is the only line this run has had". So this instance remembers the placements each run was last dealt on, and a log that
+   isn't the same game (one placement differing from what was dealt before) is refused. A log that is shorter (an answer that crossed
+   a newer one) or longer (the game going on) is fine, as long as it agrees as far as both go. Memory only, as the rest of this function
+   (no database): a warm instance's, capped, so it is a hurdle rather than a wall, and everything the finish checks still holds. */
+const lines = new Map();    // rid -> [placement as text, ...], newest runs at the end
+const LINES_MAX = 3000;
+function sameLine(rid, log) {
+    const was = lines.get(rid);
+    if (!was) return true;
+    const upTo = Math.min(was.length, log.length);
+    for (let i = 0; i < upTo; i++) if (was[i] !== JSON.stringify(log[i])) return false;
+    return true;
+}
+function rememberLine(rid, log) {
+    const was = lines.get(rid);
+    if (was && was.length >= log.length) return;
+    lines.delete(rid);
+    lines.set(rid, log.map(p => JSON.stringify(p)));
+    if (lines.size > LINES_MAX) lines.delete(lines.keys().next().value);
+}
+
 exports.handler = async (event) => {
     if (event.httpMethod !== "POST") return json(405, { error: "Method not allowed" });
     if (!sameOrigin(event)) return json(403, { error: "Forbidden" });
@@ -64,8 +87,10 @@ exports.handler = async (event) => {
     const early = log.length * PIECE_MIN_MS - (Date.now() - claims.t);
     if (early > 0) return json(200, { wait: Math.min(early, 60 * 1000) });
 
+    if (!sameLine(claims.rid, log)) return json(400, { error: "That isn't the game these pieces were dealt for" });
     const checked = checkLog(claims, log, body.stamp);
     if (checked.error) return json(400, { error: checked.error });
+    rememberLine(claims.rid, log);
 
     const upTo = checked.result.over ? log.length : Math.min(log.length + WINDOW, MAX_PIECES);
     const from = Math.min(Math.max(0, Number.isInteger(body.from) ? body.from : 0), upTo);
