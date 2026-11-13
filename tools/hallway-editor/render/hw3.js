@@ -2075,23 +2075,26 @@ function build(cfg) {
         /* Only a wall can stand between small steps and you that the order of drawing doesn't already settle: steps on a floor behind a wall (a
            corridor running off behind it) were drawn over that wall (13 Nov 2026, his, the Events Gallery). Along the line of sight from the point,
            is there a wall of this floor in front of it? */
-        const stepSeen = (x, y, z) => {
-            let t = 0, px = Math.floor(x), py = Math.floor(y); const reachT = (Z1 + 64) / 16, tall = (axis, line, t2) => { const k = axis + "|" + line + "|" + t2; return noneSet.has(k) ? 0 : halfSet.has(k) ? HALF_WALL : Z1; };
+        /* below: how far under the wall's top a point must be to count, so a flight is only taken for one behind a wall when some of it is well hidden */
+        const stepSeen = (x, y, z, below = 0) => {
+            /* Only the walls close in front, 8 tiles at most: on the Ground, wide carpeted flights end right at the top line of the tall wall ten
+               tiles beyond a drop, and that wall is drawn cut down there, so the sums hid steps that show and left black holes in their place. */
+            let t = 0, px = Math.floor(x), py = Math.floor(y); const reachT = 8, tall = (axis, line, t2) => { const k = axis + "|" + line + "|" + t2; return noneSet.has(k) ? 0 : halfSet.has(k) ? HALF_WALL : Z1; };
             while (t < reachT) {
                 const tx = px + 1 - x, ty = py + 1 - y, nt = Math.min(tx, ty) + 1e-6, X = Math.floor(x + nt), Y = Math.floor(y + nt), zz = z + nt * 16, Q = tileAt(X, Y);
-                /* Up to w.wallTop over its foot the wall is surely there; its cap, above that, only where it has really been painted (wallOwner):
-                   where a floor above cuts the wall down, a step dropped behind the cap's height left a hole */
                 if (Q && !Q.notch) {
-                    const foot = Q.z - (Q.floorLift || 0), hit = (Y > py && backWall(X, Y)) ? tall("x", Y, X) : (X > px && sideWall(X, Y)) ? tall("y", X, Y) : 0;
-                    if (hit && zz <= foot + hit) {
-                        if (hit < w.wallTop || zz <= foot + w.wallTop - WALL_CAP) return false;
-                        const sx = Math.round((x - y) * 16) + gx, sy = Math.round((x + y) * 8) + gy - z;
-                        if (sx >= 0 && sy >= 0 && sx < bw && sy < bh && wallOwner[sy * bw + sx]) return false;
-                    }
+                    const foot = Q.z - (Q.floorLift || 0) - below, top = (Y > py && backWall(X, Y)) ? tall("x", Y, X) : (X > px && sideWall(X, Y)) ? tall("y", X, Y) : 0;
+                    if (top && zz <= foot + top) return false;
                 }
                 t = nt; px = X; py = Y;
             }
             return true;
+        };
+        /* A flight is cut by a wall in front only when part of it is well behind that wall. Steps whose ends just meet a wall's top line from far
+           back (the Ground's wide carpeted flights over the Hallway's tall left wall) lost their end faces to sums a row or two out, leaving holes. */
+        const behindWall = (alongY, c0, c1, dA, dB, lo, count) => {
+            for (let c = c0 + .25; c < c1; c += .5) for (let d = dA + .1; d < dB; d += .2) { const X = alongY ? c : d, Y = alongY ? d : c; for (const z of [lo, lo + count * STEP_R]) if (!stepSeen(X, Y, z, 24)) return true; }
+            return false;
         };
         /* the runs as drawn: runs along one edge that touch or overlap, with the same heights either side, are one run */
         const runs = [];
@@ -2136,16 +2139,17 @@ function build(cfg) {
         }
         const onR = (X, Y) => (lv.rugs || []).some(r => X >= r.x0 && X < r.x1 && Y >= r.y0 && Y < r.y1), stepWay = cfg.single || lv.way;
         const pieceOf = r => { let a0 = null, a1 = null; for (let t = r.a; t < r.b; t++) if (r.alongY ? onR(t, r.line) || onR(t, r.line - 1) : onR(r.line, t) || onR(r.line - 1, t)) { if (a0 === null) a0 = t; a1 = t + 1; } return { alongY: r.alongY, line: r.line, c0: r.a, c1: r.b, back: !r.toYou, j0: r.j0, j1: r.j1, x0: r.x0, x1: r.x1, noNear: !!r.noNear, carpet: a0 === null ? null : [a0, a1], src: r }; };
+        const hidden = r => { if (r.hidden === undefined) { const reach = Math.round((r.hi - r.lo) / STEP_R) * STEP_D; r.hidden = behindWall(r.alongY, r.a, r.b, r.toYou ? r.line - reach : r.line, r.toYou ? r.line : r.line + reach, r.lo, Math.round((r.hi - r.lo) / STEP_R)); } return r.hidden; };
         const groups = new Map();      // each group of joined runs, drawn as one surface
-        for (const g of new Set(groupOf.values())) { const pieces = [...g].map(pieceOf), byRun = new Map(pieces.map(q => [q.src, q])); const cs = corners.filter(k => g.has(k.ry)).map(k => ({ ...k, rx: byRun.get(k.rx), ry: byRun.get(k.ry) })); const G = { runs: pieces, corners: cs }; for (const r of g) groups.set(r, G); }
+        for (const g of new Set(groupOf.values())) { const pieces = [...g].map(pieceOf), byRun = new Map(pieces.map(q => [q.src, q])); const cs = corners.filter(k => g.has(k.ry)).map(k => ({ ...k, rx: byRun.get(k.rx), ry: byRun.get(k.ry) })); const G = { runs: pieces, corners: cs, vis: [...g].some(hidden) ? stepSeen : null }; for (const r of g) groups.set(r, G); }
         for (const r of runs) {
             const { alongY, toYou, hi, lo } = r, st = { line: r.line, a: r.a, b: r.b }, carpet = pieceOf(r).carpet;
-            const count = Math.round((hi - lo) / STEP_R), reach = count * STEP_D, f = { axis: alongY ? "y" : "x", c0: st.a, c1: st.b, dTop: st.line, dStart: st.line - reach, steps: count, rise: STEP_R, tread: STEP_D, zB: lo, carpet, way: stepWay, tiled: true, vis: stepSeen, near: r.noNear ? false : undefined };
+            const count = Math.round((hi - lo) / STEP_R), reach = count * STEP_D, f = { axis: alongY ? "y" : "x", c0: st.a, c1: st.b, dTop: st.line, dStart: st.line - reach, steps: count, rise: STEP_R, tread: STEP_D, zB: lo, carpet, way: stepWay, tiled: true, vis: hidden(r) ? stepSeen : null, near: r.noNear ? false : undefined };
             const along = toYou ? Math.floor(st.line - reach) : st.line;
             const d0 = toYou ? Math.floor(st.line - reach) : st.line, d1 = toYou ? st.line : Math.ceil(st.line + reach);
             const G = groups.get(r), sOf = (X, Y) => { const d = alongY ? Y : X; return toYou ? st.line - d : d - st.line; };
             const dA = toYou ? st.line - reach : st.line, dB = toYou ? st.line : st.line + reach;
-            const draw = G ? () => stepGroup(w, { runs: G.runs, corners: G.corners, steps: count, zB: lo, way: stepWay, vis: stepSeen, box: alongY ? { x0: st.a, x1: st.b, y0: dA, y1: dB } : { x0: dA, x1: dB, y0: st.a, y1: st.b },
+            const draw = G ? () => stepGroup(w, { runs: G.runs, corners: G.corners, steps: count, zB: lo, way: stepWay, vis: G.vis, box: alongY ? { x0: st.a, x1: st.b, y0: dA, y1: dB } : { x0: dA, x1: dB, y0: st.a, y1: st.b },
                 only: (X, Y) => { const c = alongY ? X : Y, s = sOf(X, Y); return c >= st.a - 1e-6 && c <= st.b + 1e-6 && s >= -1e-6 && s <= reach + 1e-6; } }) : () => toYou ? flightUpToYou(w, f) : flight(w, f);
             /* only if it's all on that one part: a flight across two has to wait for both, or the second paints over it */
             (lv.later = lv.later || []).push({ withFloor: true, depth: along + st.a + .5, tx: alongY ? st.a : along, ty: alongY ? along : st.a, rect: alongY ? { x0: st.a, x1: st.b, y0: d0, y1: d1 } : { x0: d0, x1: d1, y0: st.a, y1: st.b }, draw: () => litAsFloor((hi + lo) / 2, draw) });
@@ -2155,7 +2159,7 @@ function build(cfg) {
             const G = groups.get(k.ry), count = Math.round((k.hi - k.lo) / STEP_R), reach = count * STEP_D;
             const xa = Math.min(k.X, k.X + k.sx * reach), xb = Math.max(k.X, k.X + k.sx * reach), ya = Math.min(k.Y, k.Y + k.sy * reach), yb = Math.max(k.Y, k.Y + k.sy * reach);
             const TX = k.X + (k.sx > 0 ? 0 : -1), TY = k.Y + (k.sy > 0 ? 0 : -1);
-            (lv.later = lv.later || []).push({ withFloor: true, depth: TX + TY + .5, tx: TX, ty: TY, rect: { x0: Math.floor(xa), x1: Math.ceil(xb), y0: Math.floor(ya), y1: Math.ceil(yb) }, draw: () => litAsFloor((k.hi + k.lo) / 2, () => stepGroup(w, { runs: G.runs, corners: G.corners, steps: count, zB: k.lo, way: stepWay, vis: stepSeen, box: { x0: xa, x1: xb, y0: ya, y1: yb },
+            (lv.later = lv.later || []).push({ withFloor: true, depth: TX + TY + .5, tx: TX, ty: TY, rect: { x0: Math.floor(xa), x1: Math.ceil(xb), y0: Math.floor(ya), y1: Math.ceil(yb) }, draw: () => litAsFloor((k.hi + k.lo) / 2, () => stepGroup(w, { runs: G.runs, corners: G.corners, steps: count, zB: k.lo, way: stepWay, vis: G.vis, box: { x0: xa, x1: xb, y0: ya, y1: yb },
                 only: (X, Y) => X >= xa - 1e-6 && X <= xb + 1e-6 && Y >= ya - 1e-6 && Y <= yb + 1e-6 })) });
         }
         /* A stair's rail is in front of everything but what stands between it and you: this floor's own parts and walls, on the line of sight */
@@ -2739,6 +2743,9 @@ function build(cfg) {
         /* furniture a wall has since been drawn over isn't in front of anything any more: a window (which stops at any furniture) took a rope
            barrier standing behind its wall for one in front, and showed the wallpaper through its glass in the rope's shape (9 Nov scan, content 8) */
         for (let i = 0; i < furniX.length; i++) if (furniX[i] !== NO_FURNI) { const p = i * 4; if (((layer.d[p] << 16) | (layer.d[p + 1] << 8) | layer.d[p + 2]) !== furniC[i]) furniX[i] = NO_FURNI; }
+        /* likewise floor a wall has since been drawn over: a floor raised behind a wall (raise the floor only, the Events Gallery's basement)
+           still counted as in front of the wall, and cut the lamp, picture and banner hung on it (13 Nov 2026) */
+        for (let i = 0; i < mask.length; i++) if (mask[i]) { const p = i * 4; if (((layer.d[p] << 16) | (layer.d[p + 1] << 8) | layer.d[p + 2]) !== fc[i]) mask[i] = 0; }
         /* the plain wallpaper each hung thing covers, so the wall going up under a floor above can still copy it from there (9 Nov scan, renderer 1:
            with garland pixels skipped, it copied from two or three repeats down, where the damask and the stripes' dither don't line up) */
         itemUnder.clear();
