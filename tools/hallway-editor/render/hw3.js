@@ -2321,14 +2321,20 @@ function build(cfg) {
                     const onP = tileOf.get(axis === "x" ? a + "," + line : line + "," + a);
                     const liftBy = ((cfg.map && cfg.map.lifts) || []).filter(q => lv.src && q.level === lv.src.id && (axis === "x" ? q.axis !== "y" && q.y === line && q.x < b + 1 && q.x + 4 > a : q.axis === "y" && q.x === line && q.y < b + 1 && q.y + 4 > a)).map(q => q.x + q.y - .4);
                     /* a wall that climbs small steps beside it stands in front of them: it goes after them, or their treads cover its moulding */
-                    let sloped = false; for (let t = a; t < b && !sloped; t++) for (let u = 0; u < 16 && !sloped; u += 3) if (stepSlope(axis, line, t + (u + .5) / 16) !== null) sloped = true;
-                    (lv.later = lv.later || []).push({ withFloor: true, depth: Math.min((axis === "x" ? a + line : line + a) - .2, ...liftBy), tx: axis === "x" ? a : line, ty: axis === "x" ? line : a, ...(sloped ? { rect: axis === "x" ? { x0: a, x1: b, y0: line, y1: line + 1 } : { x0: line, x1: line + 1, y0: a, y1: b } } : {}), draw: () => tagged(() => {
+                    let sloped = false, sa = Infinity, sb = -Infinity; for (let t = a; t < b; t++) for (let u = 0; u < 16; u += 3) if (stepSlope(axis, line, t + (u + .5) / 16) !== null) { sloped = true; sa = Math.min(sa, t); sb = Math.max(sb, t + 1); }
+                    /* Its sloped stretch stands over the floor behind it, the part the flight stands on, so that stretch is drawn on its own after
+                       that part (over): going down with the rest of the wall, before that floor when the order had to be broken, the floor's edge
+                       painted over the top of the slope and showed as a light triangle of tiles between the moulding and the wall below (14 Nov 2026,
+                       his, the Ground's y34 flight by x122). The level rest of the wall keeps its place, or a flight beside its end lost its corner. */
+                    for (const part of sloped ? ["level", "slope"] : ["all"]) (lv.later = lv.later || []).push({ withFloor: true, depth: Math.min((axis === "x" ? a + line : line + a) - .2, ...liftBy), tx: axis === "x" ? a : line, ty: axis === "x" ? line : a, ...(sloped ? { rect: axis === "x" ? { x0: a, x1: b, y0: line, y1: line + 1 } : { x0: line, x1: line + 1, y0: a, y1: b } } : {}), ...(part === "slope" ? { over: axis === "x" ? { x0: sa, x1: sb, y0: line - 1, y1: line } : { x0: line - 1, x1: line, y0: sa, y1: sb } } : {}), draw: () => tagged(() => {
                         const zs = w.z; w.z = zr;
                         /* However the order comes out, a floor nearer on the line of sight covers this wall: a part of the same height diagonally in front of the one above it mustn't get its corner painted over */
                         const under = Object.prototype.hasOwnProperty.call(layer, "set") ? layer.set : null;
                         layer.set = function (x, y, c) {
                             const d = (x - gx) / 16, X = axis === "x" ? line + d : line, Y = axis === "x" ? line : line - d, z = (X + Y) * 8 + gy - y;
                             if (coveredByFloor(X, Y, z)) return;
+                            /* going down after its floor now, it would cover a railing or furniture already drawn there: they stay on top, as when it went first */
+                            if (part === "slope" && x >= 0 && y >= 0 && x < bw && y < bh) { const i = y * bw + x, p = i * 4; if (furniX[i] !== NO_FURNI && ((layer.d[p] << 16) | (layer.d[p + 1] << 8) | layer.d[p + 2]) === furniC[i]) return; }
                             if (under) under.call(layer, x, y, c); else Buf.prototype.set.call(layer, x, y, c);
                         };
                         for (let t = a; t < b; t++) {
@@ -2338,6 +2344,7 @@ function build(cfg) {
                                 const low = st === "half";
                                 /* where small steps come down to this wall from the floor above it, its top comes down with them */
                                 const slope = !low && !capped ? stepSlope(axis, line, t + (u + .5) / 16) : null, Hc = slope === null ? H : Math.max(1, Math.round(slope - zr));
+                                if (part === "level" ? slope !== null : part === "slope" && slope === null) continue;
                                 const plain = (im, i, fr, sx, fy) => GHP && !capped && H <= GH_EDGE_MAX ? ghEdgeColumn(layer, sx, fy, Hc) : shortWallColumn(layer, im, i, fr, sx, fy, Hc, capped);
                                 if (axis === "x") {
                                     const m = Math.floor(at / 128) * 8, i2 = ((at % 128) + 128) % 128, p = w.S(m, line), raw = at < a * 16 + 24;
@@ -2353,7 +2360,7 @@ function build(cfg) {
                             }
                         }
                         /* its far end, finished like any wall's */
-                        if (state(b - 1) !== "none" && (capped || state(b - 1) === "half")) {
+                        if (part !== "slope" && state(b - 1) !== "none" && (capped || state(b - 1) === "half")) {
                             if (col) col(axis === "x" ? b * 16 - 1 : b * 16);
                             const low = state(b - 1) === "half";
                             if (axis === "x") { const q = w.S(b, line); for (let k = 0; k < (low ? 6 : 10); k++) { if (low) halfWallColumn(layer, LOWX, 128 + k, q[0] + k, q[1] + Math.floor(k / 2) - H, H); else shortWallColumn(layer, TALLX, 128 + k, T + Math.floor((128 + k) / 2), q[0] + k, q[1] + Math.floor(k / 2), H, capped); } }
@@ -2895,10 +2902,13 @@ function build(cfg) {
             for (let i = 0; i < nodes.length; i++) for (let j = 0; j < nodes.length; j++) {
                 if (i === j) continue; const A = nodes[i], B = nodes[j];
                 if (A.P && B.P) { if (i < j) before(A, B); continue; }      // the parts keep the order already worked out for them
-                if (A.P && B.q) { if (B.q.afterFloors) { before(A, B); continue; } const R = B.q.rect || B.foot; if (R && R.x0 < A.P.x1 && R.x1 > A.P.x0 && R.y0 < A.P.y1 && R.y1 > A.P.y0) before(A, B); continue; }
+                if (A.P && B.q) { if (B.q.afterFloors) { before(A, B); continue; } const R = B.q.rect || B.foot, O = B.q.over; if ((R && R.x0 < A.P.x1 && R.x1 > A.P.x0 && R.y0 < A.P.y1 && R.y1 > A.P.y0) || (O && O.x0 < A.P.x1 && O.x1 > A.P.x0 && O.y0 < A.P.y1 && O.y1 > A.P.y0)) before(A, B); continue; }
                 if (A.q && B.P) { if (A.q.afterFloors) continue; const R = A.q.rect || A.foot; if (R && !(R.x0 < B.P.x1 && R.x1 > B.P.x0 && R.y0 < B.P.y1 && R.y1 > B.P.y0) && patchBehind(R, B.P) && !A.q.withFloor) before(A, B); continue; }
                 if (A.foot && B.foot && sees(A.foot, B.foot) && !sees(B.foot, A.foot)) before(A, B);
             }
+            /* a sloped drop wall still goes down as early as it may: straight after the last floor it stands over, so the railings and
+               furniture beside it stay on top of it as they always were */
+            for (const n of nodes) if (n.q && n.q.over) { let k = -Infinity; for (const A of nodes) if (A.P && A.then.includes(n)) k = Math.max(k, A.key); if (k > -Infinity) n.key = Math.min(n.key, k + .02); }
             for (let left = nodes.length; left > 0; left--) {
                 let pick = null, stuck = null;
                 for (const n of nodes) { if (n.done) continue; if (n.q && !n.onFloors && (!stuck || n.key < stuck.key)) stuck = n;      /* when things can only be ordered by breaking a rule, break it for a thing whose floor is down, never for the floors themselves */ if (n.wait <= 0 && (!pick || n.key < pick.key)) pick = n; }
