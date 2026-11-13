@@ -1334,6 +1334,29 @@ function ghPalette(s) {
 }
 /* one wall piece made over: column by column, the rows above its wallpaper are the cap, the wallpaper's rows the paint, and below it the
    rail, the black line under the rail, the dado down to the black line at the floor, and what the floor hides */
+/* the dado below the rail, z rows up from the black line at the floor, top its highest row (13 Nov 2026, his: "a bit more depth for the wooden
+   effect at the bottom", the Hallway's own wainscot as the model): ribs four columns wide like the Hallway's, each a dark groove, a lit edge
+   on the side the light comes from, a face and a shaded edge; a soft shadow under the rail; and a taller skirting whose moulded cap stands
+   out from the ribs: a dark joint, its lit top, its rounded front, the shadow it throws, then the board, darkest at the floor */
+function ghDado(pal, x, z, top) {
+    const T = pal.dado || (pal.dado = (() => { const K = [0, 0, 0], m = (a, b, t) => ghSafe(ghMix(a, b, t)); return {
+        rail0: m(pal.D, K, .5), rail1: m(pal.D, K, .25),
+        groove: m(pal.D, K, .3), edge: m(pal.F, pal.RL, .5), face: pal.F, side: m(pal.F, pal.D, .55),
+        joint: m(pal.D, K, .45), capTop: pal.lip, capFront: pal.RL, capShadow: m(pal.D, K, .2),
+        boardTop: m(pal.F, pal.RL, .25), board: pal.F, boardLow: m(pal.F, pal.D, .5), floorLine: m(pal.D, K, .35)
+    }; })());
+    if (z >= top) return T.rail0;                                     // the shadow right under the rail
+    if (z === 0) return T.floorLine;
+    if (z <= 2) return T.boardLow;
+    if (z === 3) return T.board;
+    if (z === 4) return T.boardTop;
+    if (z === 5) return T.capShadow;
+    if (z === 6) return T.capFront;
+    if (z === 7) return T.capTop;
+    if (z === 8) return T.joint;
+    const k = x & 3, rib = k === 0 ? T.groove : k === 1 ? T.edge : k === 2 ? T.face : T.side;
+    return z === top - 1 ? (k === 0 ? T.rail0 : T.rail1) : rib;      // the rail's shadow fading onto the ribs' tops
+}
 function ghWall(im, right, pal) {
     const o = { w: im.w, h: im.h, rgba: Buffer.from(im.rgba) }, paint = right ? pal.wallR : pal.wallL;
     const at = (x, r) => { const q = (r * im.w + x) * 4; return im.rgba[q + 3] < 128 ? null : (im.rgba[q] << 16) | (im.rgba[q + 1] << 8) | im.rgba[q + 2]; };
@@ -1350,11 +1373,7 @@ function ghWall(im, right, pal) {
             if (p0 < 0 || r < p0) { put(x, r, L > 150 ? pal.lip : L > 95 ? pal.RL : L > 60 ? pal.F : pal.D); continue; }          // the cap, and end posts
             if (r <= p1) { const lit = right ? ((x + 2 * r) & 3) === 3 : ((x * 3 + r * 2) & 3) === 0; put(x, r, paint[lit ? 1 : 0]); continue; }
             if (r < b1) { put(x, r, r === p1 + 1 ? pal.lip : pal.RL); continue; }                                                   // the rail
-            if (r < b2) {                                                                                                             // the dado
-                const z = b2 - 1 - r, top = b2 - 1 - b1 - 1;
-                put(x, r, z >= top ? ghMix(pal.D, [0, 0, 0], .35) : z < 4 ? ghMix(pal.F, pal.D, .35) : z < 5 ? ghMix(pal.RL, pal.F, .3) : z < 6 ? ghMix(pal.D, [0, 0, 0], .3) : (x & 1) ? pal.F : pal.D);
-                continue;
-            }
+            if (r < b2) { put(x, r, ghDado(pal, x, b2 - 1 - r, b2 - 1 - b1 - 1)); continue; }                                       // the dado
             put(x, r, pal.under);                                                                                                     // what the floor covers
         }
     }
@@ -1455,6 +1474,19 @@ function doorArt(phase, axis, part) {
    as the client's own furniture. Open, the opening looks into a lit iso cabin. */
 function lift(w, x, y, o) {
     o = o || {};
+    /* On a left wall (13 Nov 2026, his: "Lifts can't be placed on all walls"): the back wall's lift mirrored. A map point (X, Y) mirrors to
+       (Y, X), which on screen is x mirrored about the map's origin, so it is drawn as the lift at (y, x) with every pixel's x mirrored: x is
+       the wall's line here, y the first tile along it. Its light and its call plate's pixels are mirrored the same way */
+    if (o.left) {
+        const b0 = w.b, M = X => 2 * w.ox - X, wm = Object.create(w);
+        /* a side face's half-pixel x (put(u1, h, t + .5)) lands, by Buf.set's index sums, as the blue and alpha of one pixel and the red of
+           the next to the right; mirrored, those two pixels swap sides, so it's laid channel by channel or the posts' edges came out purple */
+        wm.b = { set: (X, Y, c) => { const m = M(X); if (Number.isInteger(m)) return b0.set(m, Y, c); if (m !== Math.floor(m) + .5 || Y < 0 || Y >= b0.h || !b0.d) return;
+            const j = m + .5; if (j >= 0 && j < b0.w) { const q = b0.get(j, Y); b0.set(j, Y, [q[0], q[1], c[0]]); b0.d[(Y * b0.w + j) * 4 + 3] = c[1]; } if (j >= 1 && j <= b0.w) { const q = b0.get(j - 1, Y); b0.set(j - 1, Y, [c[2], q[1], q[2]]); } } };
+        wm.lamps = { push: q => w.lamps.push({ ...q, tx: q.ty, ty: q.tx, x: M(q.x) }) };
+        wm.plates = w.plates ? { push: (X, Y, c, line) => w.plates.push(M(X), Y, c, "y" + line) } : null;
+        return lift(wm, y, x, { ...o, left: false });
+    }
     const b = w.b, DW = 48, DH = 76, cab = 3;
     const O = w.S(x, y);
     /* a point: u along the wall, h up it, v out from it toward you */
@@ -1694,7 +1726,8 @@ function cutStairs(byId, STAIRS) {
             punch(up, { x0: st.a, x1: st.b, y0: st.y - 10, y1: st.y });
             const carpet = !known ? [st.a + 1, st.b - 1] : span(st.a, st.b, x => onRug(low, x, st.y) || onRug(low, x, st.y - 1) || onRug(up, x, st.y - 11) || onRug(up, x, st.y - 10));
             low.patches.push({ x0: st.a, x1: st.b, y0: st.y - 10, y1: st.y, z: st.z, notch: true, upLv: up, sf: [{ axis: "y", c0: st.a, c1: st.b, dTop: st.y - 10, steps: 20, garland: !!st.garland, zB: st.z, carpet, way, topExtra: STAIR_TOP }] });
-            (low.stairSigns = low.stairSigns || []).push({ x: st.signX || st.a - 2, y: st.y, z: st.z, name: st.label, sign: st.sign, mid: (st.a + st.b) / 2 });
+            /* st.noSign: his to switch off in the editor (14 Nov 2026) */
+            if (!st.noSign) (low.stairSigns = low.stairSigns || []).push({ x: st.signX || st.a - 2, y: st.y, z: st.z, name: st.label, sign: st.sign, mid: (st.a + st.b) / 2 });
         } else if (st.kind === "turn") {
             punch(up, { x0: st.a, x1: st.b, y0: st.y - 10, y1: st.y });
             punch(up, { x0: st.a - 4, x1: st.a, y0: st.y - 10, y1: st.y - 6 });
@@ -1705,7 +1738,7 @@ function cutStairs(byId, STAIRS) {
                 { landing: { x0: st.a, x1: st.b, y0: Y - 10, y1: Y - 6, z: st.z + 96, rug: turnRug } },
                 { axis: "y", c0: st.a, c1: st.b, dTop: Y - 6, steps: 12, garland: !!st.garland, zB: st.z, carpet, way, landRun: 4 }
             ] });
-            (low.stairSigns = low.stairSigns || []).push({ x: st.b + 6, y: st.y, z: st.z, name: st.label, sign: st.sign, mid: (st.a + st.b) / 2 });
+            if (!st.noSign) (low.stairSigns = low.stairSigns || []).push({ x: st.b + 6, y: st.y, z: st.z, name: st.label, sign: st.sign, mid: (st.a + st.b) / 2 });
         } else if (st.kind === "sideturn") {
             /* the turning flight mirrored: up -x through a top-left wall to a landing, then -y into the floor above */
             punch(up, { x0: st.x - 10, x1: st.x, y0: st.a, y1: st.b });
@@ -1832,8 +1865,9 @@ function fromMap(map, names) {
     }
     for (const q of (map.lifts || (map.lift ? [map.lift] : []))) {
         const li2 = byId(q.level); if (!li2) continue;
-        const P = li2.patches.find(r => !r.notch && r.y0 === q.y && q.x >= r.x0 && q.x < r.x1);
-        if (P) { (P.liftList = P.liftList || []).push(q.x); } else report.lost.push("lift at " + q.x + " on " + q.level);
+        /* a lift on a left wall (axis "y", 13 Nov 2026): x is the wall's line and y the first of its tiles along it */
+        const left = q.axis === "y", P = left ? li2.patches.find(r => !r.notch && r.x0 === q.x && q.y >= r.y0 && q.y < r.y1) : li2.patches.find(r => !r.notch && r.y0 === q.y && q.x >= r.x0 && q.x < r.x1);
+        if (P) { (P.liftList = P.liftList || []).push(left ? { left: true, x: q.x, y: q.y } : q.x); } else report.lost.push("lift at " + q.x + (left ? "," + q.y : "") + " on " + q.level);
     }
     if (map.entrance) { const q = map.entrance, li3 = byId(q.level); if (li3) { (li3.portals = li3.portals || []).push(q); } }
     const portalOk = q => !!q && (q.axis === "x" || q.axis === "y") && Number.isFinite(q.line) && Number.isFinite(q.at);      // (10 Nov scan b, renderer 6)
@@ -2134,7 +2168,7 @@ function build(cfg) {
                     const hasDoor = doorsOn.some(d => d.axis === axis && d.line === line && (axis === "x" ? d.at < b && d.at + 2 > a : d.at - 2 < b && d.at > a)), H = hasDoor ? Math.max(drop, DOOR_WALL) : drop;
                     const col = colOf(axis, line), capped = H > drop, state = t => { const k = axis + "|" + line + "|" + t; return noWall.has(k) ? "none" : lowWall.has(k) ? "half" : "full"; };
                     const onP = tileOf.get(axis === "x" ? a + "," + line : line + "," + a);
-                    const liftBy = axis === "x" ? ((cfg.map && cfg.map.lifts) || []).filter(q => lv.src && q.level === lv.src.id && q.y === line && q.x < b + 1 && q.x + 4 > a).map(q => q.x + q.y - .4) : [];
+                    const liftBy = ((cfg.map && cfg.map.lifts) || []).filter(q => lv.src && q.level === lv.src.id && (axis === "x" ? q.axis !== "y" && q.y === line && q.x < b + 1 && q.x + 4 > a : q.axis === "y" && q.x === line && q.y < b + 1 && q.y + 4 > a)).map(q => q.x + q.y - .4);
                     (lv.later = lv.later || []).push({ withFloor: true, depth: Math.min((axis === "x" ? a + line : line + a) - .2, ...liftBy), tx: axis === "x" ? a : line, ty: axis === "x" ? line : a, draw: () => tagged(() => {
                         const zs = w.z; w.z = zr;
                         /* However the order comes out, a floor nearer on the line of sight covers this wall: a part of the same height diagonally in front of the one above it mustn't get its corner painted over */
@@ -2567,7 +2601,7 @@ function build(cfg) {
             }
             for (const fl of (P.fl || [])) flightY(w, fl[1], fl[2], fl[3], fl[4], fl[5]);
             if (P.lift !== undefined) lift(w, P.lift, P.y0, { open: cfg.liftOpen });
-            for (const lx of (P.liftList || [])) { const zl = P.z, ly = P.y0; (P.raised ? w.sprites : (lv.later = lv.later || [])).push({ depth: lx + ly - .3, tx: lx, ty: ly, draw: () => { const zs = w.z; w.z = zl; lift(w, lx, ly, { open: cfg.liftOpen }); w.z = zs; } }); }
+            for (const lq of (P.liftList || [])) { const zl = P.z, left = typeof lq === "object", lx = left ? lq.x : lq, ly = left ? lq.y : P.y0; (P.raised ? w.sprites : (lv.later = lv.later || [])).push({ depth: lx + ly - .3, tx: lx, ty: ly, draw: () => { const zs = w.z; w.z = zl; lift(w, lx, ly, left ? { open: cfg.liftOpen, left: true } : { open: cfg.liftOpen }); w.z = zs; } }); }
             /* main flights */
             for (const fl of (P.flights || [])) { flightY(w, fl[1], fl[2], fl[3], fl[4], fl[5]); if (fl[6]) signs.push({ s: w.WY(fl[2], fl[3] + 3.5, 0, 22), name: fl[6], alongY: true }); }
             if (P.side) {
@@ -2655,7 +2689,7 @@ function build(cfg) {
           for (const s of w.afterAll) if (!s.garland && (s.hang || s.axis)) { const k = s.hang || s.axis + s.line; if (!onWall.has(k)) onWall.set(k, []); onWall.get(k).push([along(s), s.depth]); }
           for (const s of w.afterAll) if (s.garland && onWall.has(s.axis + s.line)) { const a = along(s); for (const [b, d] of onWall.get(s.axis + s.line)) if (Math.abs(b - a) <= 6 && d + .001 > s.depth) s.depth = d + .001; } }
         /* the lifts' call plates, over the wall of their own line that was drawn after them; never over furniture or a nearer wall */
-        for (let k = 0; k < w.plates.length; k += 4) { const X = w.plates[k], Y = w.plates[k + 1]; if (X < 0 || Y < 0 || X >= bw || Y >= bh) continue; const i = Y * bw + X; if (furniX[i] !== NO_FURNI) continue; const o = wallOwner[i], Q = o && lv.patches[o - 1]; if (Q && Q.y0 !== w.plates[k + 3]) continue; const c = w.plates[k + 2], p = i * 4; layer.d[p] = c >> 16; layer.d[p + 1] = (c >> 8) & 255; layer.d[p + 2] = c & 255; }
+        for (let k = 0; k < w.plates.length; k += 4) { const X = w.plates[k], Y = w.plates[k + 1]; if (X < 0 || Y < 0 || X >= bw || Y >= bh) continue; const i = Y * bw + X; if (furniX[i] !== NO_FURNI) continue; const o = wallOwner[i], Q = o && lv.patches[o - 1]; const pl = w.plates[k + 3]; if (Q && (typeof pl === "string" ? Q.x0 !== +pl.slice(1) : Q.y0 !== pl)) continue; const c = w.plates[k + 2], p = i * 4; layer.d[p] = c >> 16; layer.d[p + 1] = (c >> 8) & 255; layer.d[p + 2] = c & 255; }
         const paintedAfter = new Set(); w.afterAll.sort((a, c) => a.depth - c.depth).forEach(s => {
             /* a pixel refused (furniture or a floor in front) keeps its own marks: the pieces' drawing marks w.keep and w.glowing after every set,
                so a sofa in front of a window was left unlit and washed out (14 Nov 2026, his pictures: a window, and the Lost Property sign) */
@@ -2703,7 +2737,9 @@ function build(cfg) {
                 }
             };
             for (const [key, Q] of tileOf) {
-                const [X, Y] = key.split(",").map(Number), f = Q.z;
+                /* where the wall stands, not the floor: "raise the floor only" lifts the floor and leaves the wall, so measuring from the floor left
+                   a strip of the wall's cap under the floor above (14 Nov 2026, his) */
+                const [X, Y] = key.split(",").map(Number), f = Q.z - (Q.floorLift || 0);
                 if (backWall(X, Y) && !noneSet.has("x|" + Y + "|" + X) && !halfSet.has("x|" + Y + "|" + X) && (upSet.has(X + "," + (Y - 1)) || upSet.has(X + "," + Y))) {
                     const zUp = upBase + upRise(X, upSet.has(X + "," + (Y - 1)) ? Y - 1 : Y);
                     for (let u = 0; u < 16; u++) { const sx = (X - Y) * 16 + u + gx, base8 = Math.round((X + u / 16 + Y) * 8) + gy; fill(sx, base8 - zUp + EDGE_ROWS, base8 - (f + Z1) + CAP_ROWS - 1, base8 - f - WOOD_ROWS, 1, n => backWall(X + n, Y), Y, f, u === 0 ? X : null); }

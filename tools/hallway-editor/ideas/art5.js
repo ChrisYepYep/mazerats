@@ -158,6 +158,8 @@ function bite(c, a, u0, bites) {
 
 /* ---- 23: the bookcase door, thinner, turned properly in 3D ---- */
 let bookAt = null;
+/* its wood, darkest first: a walnut brown (his, 13 Nov: the hallway bookcases' orange was "too orange, make it more brown") */
+const BOOK_WOOD = [[46, 20, 8], [102, 50, 22], [122, 64, 32], [140, 80, 44], [170, 106, 62]];
 function bookDoor() {
     const P = name => L.loadPng(H + "art/rooms/" + name + ".png"), n = 3, parts = []; for (let i = 0; i < n; i++) { const k = i === 0 ? 27 : i === n - 1 ? 19 : 26 - ((i - 1) % 7); parts.push([P("shelf" + k), -i * 16 - 16 + (k === 19 ? -2 : 0), i * 8 + 16 - 74]); }
     let x0 = 1e9, x1 = -1e9, y0 = 1e9, y1 = -1e9; for (const [im, x, y] of parts) { x0 = Math.min(x0, x); x1 = Math.max(x1, x + im.w); y0 = Math.min(y0, y); y1 = Math.max(y1, y + im.h); }
@@ -183,7 +185,7 @@ function bookDoor() {
         const X0 = S(F(0))[0], X1 = S(F(Wd))[0], k0 = 1 + .16 * Math.min(1, a0 / 1.2);
         for (let X = Math.round(X0); X <= Math.round(X1); X++) { const d = Math.min(Wd - 1e-3, Math.max(0, (X - X0) / (sn + cs))), c = SIDE + Math.floor(d), b0 = base(c), Yb = S(F(d))[1]; for (let r = 0; r < Hh; r++) { const sy = b0 - Hh + 1 + r; if (sy < 0) continue; const p = (sy * CW + c) * 4; if (!src[p + 3]) continue; put(X, Yb - Hh + 1 + r, Math.min(255, src[p] * k0), Math.min(255, src[p + 1] * k0), Math.min(255, src[p + 2] * k0)); } }
         /* the top */
-        const tq = [S(F(-2), Hh), S(F(Wd + 3), Hh), S(Bk(Wd + 3), Hh), S(Bk(-2), Hh)]; polyFill(tq, (x, y) => { const m = mod(x + y * 2, 9); if (m === 0) put(x, y, 160, 75, 37); else put(x, y, 195, 98, 51); });
+        const tq = [S(F(-2), Hh), S(F(Wd + 3), Hh), S(Bk(Wd + 3), Hh), S(Bk(-2), Hh)]; polyFill(tq, (x, y) => { const m = mod(x + y * 2, 9); const c = BOOK_WOOD[m === 0 ? 3 : 4]; put(x, y, c[0], c[1], c[2]); });
         /* the book: side, top, then spine, all from the same three directions as the door */
         { const K0 = [4, 14, 26], P0 = d => { const f = F(d); return [f[0] + nn[0] * pull, f[1] + nn[1] * pull]; }, Q0 = d => F(d), z1 = BTOP, z0 = BTOP - BH, tone = (arr, k = 1) => arr.map(v => Math.min(255, v * k));
           const fill = (poly, col) => polyFill(poly, (x, y) => put(x, y, col[0], col[1], col[2]));
@@ -195,7 +197,7 @@ function bookDoor() {
         /* the wood, in the hallway bookcase's colours: the Rooms shelves it's made from are a much darker oak */
         for (let i = 0; i < Cw * Ch; i++) { if (!door[i]) continue; const q = i * 4, r = out[q], g = out[q + 1], b = out[q + 2]; if (!(r >= g && g >= b && r - b > 8)) continue;
             const mx = Math.max(r, g, b), mn = Math.min(r, g, b), sat = (mx - mn) / Math.max(1, mx), l = r * .3 + g * .59 + b * .11; if (sat < .4 || l > 62) continue;
-            const c = l < 18 ? [51, 0, 0] : l < 29 ? [126, 37, 10] : l < 38 ? [148, 56, 23] : l < 48 ? [160, 75, 37] : [195, 98, 51]; out[q] = c[0]; out[q + 1] = c[1]; out[q + 2] = c[2]; }
+            const c = BOOK_WOOD[l < 18 ? 0 : l < 29 ? 1 : l < 38 ? 2 : l < 48 ? 3 : 4]; out[q] = c[0]; out[q + 1] = c[1]; out[q + 2] = c[2]; }
         /* a black line round the whole door, like every sprite */
         const edge = []; for (let y = 1; y < Ch - 1; y++) for (let x = 1; x < Cw - 1; x++) if (door[y * Cw + x] && (!door[y * Cw + x - 1] || !door[y * Cw + x + 1] || !door[(y - 1) * Cw + x] || !door[(y + 1) * Cw + x])) edge.push((y * Cw + x) * 4);
         for (const q of edge) { out[q] = 0; out[q + 1] = 0; out[q + 2] = 0; out[q + 3] = 255; }
@@ -420,4 +422,4 @@ function hole(axis) {
     return { w, h, ox: 1 + (W >> 1), oy: Bot + rise(W >> 1), rgba };
 }
 
-module.exports = { setSignMirror, stoneAt, fbm, FIRE, SIGN_GREEN, SIGN_LIT, SIGN_WHITE, desk, bell, signOut, key, peel, PEELS, ghost, damp, bite, bookDoor, passage, staffRoom, lights, hotelItems, hallWindow, garland, hole, setW, mulW, stamp, BZ };
+module.exports = { BOOK_WOOD, setSignMirror, stoneAt, fbm, FIRE, SIGN_GREEN, SIGN_LIT, SIGN_WHITE, desk, bell, signOut, key, peel, PEELS, ghost, damp, bite, bookDoor, passage, staffRoom, lights, hotelItems, hallWindow, garland, hole, setW, mulW, stamp, BZ };

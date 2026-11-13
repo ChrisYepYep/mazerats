@@ -190,7 +190,7 @@ function card(axis, pic) {
     const o = X.img(64, 100), ax = 32, ay = 76, P = P0(ax, ay - 8), { cw, ch } = CARD, cwd = cardWorld(axis), W = cwd.W;
     const S = (s, t, n) => { const p = P(...W(s, t, n)); return [Math.round(p[0]), Math.round(p[1])]; };
     const quad = (a, b, c, d, col) => X.poly(o, [a, b, c, d], col), line = (a, b, col) => X.line(o, a[0], a[1], b[0], b[1], col);
-    quad(S(0, 0, 1), S(cw, 0, 1), S(cw, ch, 1), S(0, ch, 1), PWD[3]);
+    quad(S(0, 0, 1), S(cw, 0, 1), S(cw, ch, 1), S(0, ch, 1), PWD[1]);   // the card's back, seen as its edge: wood, not a second dark line
     quad(S(0, 0, 1), S(cw, 0, 1), S(cw, 0, 0), S(0, 0, 0), PGD[3]);
     quad(S(0, 0, 0), S(cw, 0, 0), S(cw, ch, 0), S(0, ch, 0), H("f4ecd8"));
     const pw = pic ? pic.w : 6, ph = pic ? pic.h : 5;
@@ -202,12 +202,14 @@ function card(axis, pic) {
     return { o, ax, ay };
 }
 const LAMP = (() => { const p = X.load(path.join(__dirname, "..", "art", "lamps", "globe-lamp.png")), b = X.bounds(p); return X.crop(p, b.x0, b.y0, 15, b.h); })();
+/* (13 Nov 2026, his: "the outline is too thick, especially around the base") the lamp's foot and post bring their own 1px line, so only the
+   card gets one; outlining the whole lot again had doubled it round the foot and down the post */
 function placard(axis = "x", pic) {
     const c = card(axis, pic), o = X.img(64, 100), ax = 32, ay = 76;
     const foot = X.crop(LAMP, 0, 19, 15, 10), post = X.crop(LAMP, 0, 13, 15, 1), fx = ax - 7, fy = ay - 5;
     for (let y = fy - 1; y >= ay - 26; y--) X.blit(o, post, fx, y);
-    X.blit(o, foot, fx, fy); X.blit(o, c.o, 0, 0);
-    const out = outline(o), bb = X.bounds(out); return { img: X.crop(out, bb.x0, bb.y0, bb.w, bb.h), ax: ax + 1 - bb.x0, ay: ay + 1 - bb.y0 };
+    X.blit(o, foot, fx, fy); X.blit(o, outline(c.o), -1, -1);
+    const bb = X.bounds(o); return { img: X.crop(o, bb.x0, bb.y0, bb.w, bb.h), ax: ax - bb.x0, ay: ay - bb.y0 };
 }
 /* where the picture's corners land on screen, relative to the tile's middle: the live layer paints the event's picture there */
 function placardPicture(axis) {
@@ -240,8 +242,7 @@ function banner(vel, word = "EVENTS") {
         if (y > notch - 2.2) c = (x & 1) ? GOLD[2] : GOLD[4];
         X.set(o, x, y, c);
     }
-    for (let x = 0; x < w + 8; x++) { X.set(o, x, 2, GOLD[1]); X.set(o, x, 3, GOLD[3]); X.set(o, x, 4, GOLD[5]); }
-    for (const fx of [1, w + 6]) { X.ellipse(o, fx, 3, 2, 2.2, GOLD[2]); X.set(o, fx - 1, 2, GOLD[0]); }
+    /* the pole and its finials are drawn in the room's space when it goes on a wall (bannerOn) */
     for (let i = 0; i < 4; i++) { const lx = 6 + i * (w - 6) / 3; X.rect(o, lx, 4, 3, 3, vel[3]); X.set(o, lx, 4, vel[2]); }
     X.ellipse(o, mid - .5, 15, 5, 5, GOLD[4]); X.ellipse(o, mid - .5, 15, 4, 4, GOLD[2]); X.ellipse(o, mid - .5, 15, 2.6, 2.6, light ? H("3a2410") : vel[2]); X.set(o, mid - 2, 14, GOLD[1]); X.set(o, mid + 1, 14, GOLD[1]); X.set(o, mid - .5, 16, GOLD[1]);
     [...word].forEach((ch, i) => text(o, ch, Math.round(mid - textW(ch) / 2), 25 + i * 9.5, INK[0], INK[1], INK[2]));
@@ -249,6 +250,32 @@ function banner(vel, word = "EVENTS") {
 }
 /* turned onto a wall: "x" runs down to the right, "y" up to the right */
 const onWall = (flat, way) => outline(X.wall(flat, way));
+/* (13 Nov 2026, his: "the pole ... looks a bit 2D and flat") the banner turned onto the wall, then its pole in the room's own 2:1 space: a
+   round brass rod standing off the wall on two brackets, the banner's loops round it, a ball finial at each end. Nearest wins (x + y + z);
+   the wall point under the banner's middle stays the picture's middle column */
+function bannerOn(flat, way) {
+    const M = 6, sh = X.wall(flat, way), o = X.img(sh.w + M * 2, sh.h + M * 2), depth = new Float32Array(o.w * o.h).fill(-1e9), L = flat.w - 1;
+    X.blit(o, sh, M, M);
+    /* the flat picture's (u, v) is the wall's (u, n 0, z -v); the room's x, y */
+    const world = (u, n, z) => way === "x" ? [u, n, z] : [n, L - u, z];
+    const put = (u, n, z, c) => { const p = world(u, n, z), sx = Math.floor(M + p[0] - p[1] + (way === "x" ? 0 : L)), sy = Math.floor(M + (p[0] + p[1]) / 2 - z), d = p[0] + p[1] + p[2]; if (!X.inb(o, sx, sy)) return; const i = sy * o.w + sx; if (d < depth[i]) return; depth[i] = d; X.set(o, sx, sy, c); };
+    const tone = (nu, nn, nz) => { const N = way === "x" ? [nu, nn, nz] : [nn, -nu, nz], l = N[2] * .6 + N[1] * .45 + N[0] * .1; return l > .7 ? GOLD[1] : l > .45 ? GOLD[2] : l > .2 ? GOLD[3] : l > -.1 ? GOLD[4] : GOLD[5]; };
+    const ZP = -3, NP = 1.2, RP = 1;
+    /* brackets: a little plate on the wall and a rod out to the pole */
+    for (const ub of [3.5, L - 3.5]) {
+        for (let u = ub - 1; u <= ub + 1; u += .2) for (let z = ZP - 1.5; z <= ZP + 1.5; z += .2) put(u, 0, z, GOLD[4]);
+        for (let n = 0; n <= NP; n += .1) for (let a = 0; a < Math.PI * 2; a += .4) put(ub + Math.cos(a) * .6, n, ZP + Math.sin(a) * .6, tone(Math.cos(a), 0, Math.sin(a)));
+    }
+    /* the rod */
+    for (let u = 1; u <= L - 1; u += .2) for (let a = 0; a < Math.PI * 2; a += .15) { const cn = Math.cos(a), cz = Math.sin(a); put(u, NP + cn * RP, ZP + cz * RP, tone(0, cn, cz)); }
+    /* the cloth's loops wrapped over the front of it (the flat picture's tabs, at the same places) */
+    { const w = flat.w - 8; for (let i = 0; i < 4; i++) { const lx = Math.round(6 + i * (w - 6) / 3), c0 = X.get(flat, lx, 4), c1 = X.get(flat, lx + 1, 5); if (!c0 || !c1) continue;
+        for (let u = lx; u <= lx + 2.8; u += .2) for (let a = -Math.PI * .6; a <= Math.PI * .5; a += .1) { const cn = Math.cos(a), cz = Math.sin(a); put(u, NP + cn * (RP + .45), ZP + cz * (RP + .45), cz > .5 ? c0.slice(0, 3) : c1.slice(0, 3)); } } }
+    /* finials */
+    for (const uf of [0, L]) for (let a = 0; a < Math.PI; a += .12) for (let b = 0; b < Math.PI * 2; b += .12) { const R = 2.2, nu = Math.sin(a) * Math.cos(b), nn = Math.sin(a) * Math.sin(b), nz = Math.cos(a); put(uf + nu * R, NP + nn * R, ZP + nz * R, tone(nu, nn, nz)); }
+    const out = outline(o), bb = X.bounds(out), mid = M + 1 + (flat.w >> 1), half = Math.max(mid - bb.x0, bb.x0 + bb.w - mid);
+    return X.crop(out, mid - half, bb.y0, half * 2, bb.h);
+}
 function hangFrame(face, way, edge) {
     const sh = X.wall(face, way), o = X.img(sh.w + 1, sh.h + 1), s = way === "x" ? 1 : -1, fx = way === "x" ? 0 : 1;
     const sil = X.img(sh.w, sh.h); for (let i = 0; i < sh.w * sh.h; i++) if (sh.d[i * 4 + 3]) { sil.d[i * 4] = edge[0]; sil.d[i * 4 + 1] = edge[1]; sil.d[i * 4 + 2] = edge[2]; sil.d[i * 4 + 3] = 255; }
@@ -263,45 +290,84 @@ function fitPicture(src, w, h) {
 }
 /* frames: the picture's size inside each, and the moulding's width each side */
 const SIZES = { S: [36, 20], M: [48, 26], L: [64, 34] };
+/* (13 Nov 2026, his: "improve frames for events images") each moulding is drawn ring by ring from the outside in, as four mitred lengths:
+   a ring's top and left lengths face the light (upper left), its bottom and right ones away, and the corners join on the diagonal like a real
+   frame's. A ring is [lit, shaded] (a cove is shaded on top, lit underneath); grain runs along each length in straight streaks, never dots */
+function moulding(art, pad, rings, o = {}) {
+    const w = art.w + pad * 2, h = art.h + pad * 2, im = X.img(w, h);
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+        const dT = y, dL = x, dB = h - 1 - y, dR = w - 1 - x, e = Math.min(dT, dL, dB, dR); if (e >= pad) continue;
+        /* which length of the frame this pixel is on; on a mitre the upper or left length wins, so the corners' diagonals go the same way */
+        const side = dT === e && dT <= dR ? "T" : dL === e && dL <= dB ? "L" : dB === e ? "B" : "R", lit = side === "T" || side === "L";
+        let c = rings[e][lit ? 0 : 1];
+        if (o.grain && o.grain[e]) { const along = side === "T" || side === "B" ? x : y, across = side === "T" || side === "B" ? y : x, k = ((across * 37 + (side === "T" || side === "L" ? 0 : 11)) % 13 + 13) % 13, seg = Math.floor((along + k * 3) / 9), hsh = (seg * 7 + across * 5 + k) % 5; if (hsh === 0 && (along + k) % 9 < 5) c = o.grain[e]; }
+        X.set(im, x, y, c);
+    }
+    if (o.corner) for (const [cx, cy] of [[0, 0], [w - o.corner.length, 0], [0, h - o.corner.length], [w - o.corner.length, h - o.corner.length]]) o.corner.forEach((row, j) => [...row].forEach((ch, i) => { if (o.cornerPal[ch]) X.set(im, cx + i, cy + j, o.cornerPal[ch]); }));
+    X.blit(im, art, pad, pad); return im;
+}
 const FRAMES = {
+    /* gilt: a beaded outer lip, a shadowed cove, a bright inner ridge, a dark sight edge; square corner blocks with a raised boss */
     gilt: { name: "Gilt", pad: 6, draw(art) {
-        const B = { hi: GOLD[0], b0: GOLD[1], b1: GOLD[2], b2: GOLD[3], b3: GOLD[4], b4: GOLD[5], b5: H("4a2c0a") };
-        const w = art.w + 12, h = art.h + 12, o = X.img(w, h);
-        for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
-            const e = Math.min(x, y, w - 1 - x, h - 1 - y); if (e > 5) continue;
-            const lit = (y === e && x >= e && x <= w - 1 - e) || (x === e && y >= e && y <= h - 1 - e);
-            let c = e === 0 ? (lit ? B.b1 : B.b3) : e === 1 ? (lit ? B.b0 : B.b2) : e === 2 ? ((x + y) % 4 < 2 ? B.b1 : B.b3) : e === 3 ? (lit ? B.b2 : B.b4) : e === 4 ? B.b4 : B.b5;
-            if (e === 2 && ((x + y) % 4 === 0)) c = B.hi;
-            X.set(o, x, y, c);
-        }
-        for (const [cx, cy] of [[2.5, 2.5], [w - 3.5, 2.5], [2.5, h - 3.5], [w - 3.5, h - 3.5]]) { X.ellipse(o, cx, cy, 2.4, 2.4, B.b3); X.set(o, cx - .5, cy - .5, B.hi); X.set(o, cx + .5, cy + .5, B.b1); }
-        X.blit(o, art, 6, 6); return { face: o, edge: B.b4 };
+        const G = { hi: GOLD[0], b0: GOLD[1], b1: GOLD[2], b2: GOLD[3], b3: GOLD[4], b4: GOLD[5], b5: H("4a2c0a") };
+        const face = moulding(art, 6, [[G.b2, G.b3], [G.hi, G.b2], [G.b1, G.b3], [G.b3, G.b1], [G.b0, G.b3], [G.b5, G.b5]], {
+            corner: ["bbbbbb", "bhhhhd", "bhcccd", "bhcxcd", "bhccdd", "bddddd"].map(r => r), cornerPal: { b: G.b3, h: G.b0, c: G.b1, x: G.hi, d: G.b4 } });
+        return { face, edge: G.b4 };
     } },
+    /* modern: a slim black moulding, then a white mount with a bevelled cut round the picture */
     modern: { name: "Modern", pad: 6, draw(art) {
-        const w = art.w + 12, h = art.h + 12, o = X.img(w, h);
-        for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) { const e = Math.min(x, y, w - 1 - x, h - 1 - y); X.set(o, x, y, e < 2 ? (y === e || x === e ? H("4a4a52") : H("26262c")) : e === 5 ? H("cfc8b8") : H("f4f0e6")); }
-        X.blit(o, art, 6, 6); return { face: o, edge: H("141418") };
+        const face = moulding(art, 6, [[H("55555e"), H("1e1e24")], [H("3a3a42"), H("2a2a30")], [H("f6f2e8"), H("f6f2e8")], [H("f4f0e6"), H("f4f0e6")], [H("eee8dc"), H("eee8dc")], [H("cfc8b8"), H("ffffff")]]);
+        return { face, edge: H("141418") };
     } },
+    /* walnut: a rounded lip, a flat run of grain, a step down and a gold slip */
     walnut: { name: "Walnut", pad: 5, draw(art) {
-        const WD = ramp(["9a6a42", "7e5434", "664229", "4e311e", "38220f"]);
-        const w = art.w + 10, h = art.h + 10, o = X.img(w, h);
-        for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) { const e = Math.min(x, y, w - 1 - x, h - 1 - y); if (e > 4) continue; const lit = y === e || x === e; X.set(o, x, y, e === 4 ? GOLD[2] : e === 3 ? WD[4] : lit ? WD[e === 0 ? 1 : 0] : WD[e === 0 ? 3 : 2]); if (e === 1 && (x * 5 + y * 3) % 11 === 0) X.set(o, x, y, WD[3]); }
-        X.blit(o, art, 5, 5); return { face: o, edge: WD[4] };
+        const WD = ramp(["a8764a", "8a5e3a", "6e4a2c", "56381f", "3e2614", "2a180c"]);
+        const face = moulding(art, 5, [[WD[2], WD[4]], [WD[0], WD[3]], [WD[1], WD[2]], [WD[4], WD[2]], [GOLD[1], GOLD[4]]], { grain: { 1: WD[1], 2: WD[2] } });
+        return { face, edge: WD[5] };
     } }
 };
 /* an empty frame: a dark mount where the picture goes, which the live layer paints the event's picture into */
 const MOUNT = H("3a3028");
 function frame(style, size, way, art) { const [pw, ph] = SIZES[size], pic = art ? fitPicture(art, pw, ph) : X.img(pw, ph, MOUNT), f = FRAMES[style].draw(pic); return hangFrame(f.face, way, f.edge); }
 
-/* ---- the brass picture light: plate, arm, a long shade, its underside glowing ---- */
-const PB = { hi: H("fff6d8"), b0: H("fbe3a2"), b1: H("f0c878"), b2: H("dca654"), b4: H("8a5a1c") };
-function pictureLight(lit) {
-    const w = 40, h = 12, o = X.img(w, h), cx = w / 2;
-    X.rect(o, cx - 3, 0, 6, 4, K); X.rect(o, cx - 2, 1, 4, 2, PB.b2); X.set(o, cx - 2, 1, PB.hi);
-    X.rect(o, cx - 1, 4, 2, 3, PB.b4); X.set(o, cx - 1, 4, PB.b1);
-    for (let x = 4; x < w - 4; x++) { X.set(o, x, 6, K); X.set(o, x, 7, PB.b0); X.set(o, x, 8, PB.b2); X.set(o, x, 9, PB.b4); X.set(o, x, 10, lit ? H("fffbe8") : H("c8b890")); X.set(o, x, 11, K); }
-    for (const x of [3, w - 4]) for (let y = 6; y < 12; y++) X.set(o, x, y, K);
-    return o;
+/* ---- the brass picture light (13 Nov 2026, his: "looks a bit 2D, should appear to be hanging on the wall properly, isometric"): built in the
+   room's own 2:1 space for each way a wall runs. A back plate on the wall, an arm out and down from it, and a long hood standing off the
+   wall over the picture: a quarter-round of brass, its top catching the light, its front falling into shadow, its lip glowing when lit.
+   Painted point by point, nearest wins (nearer = larger x + y + z), then a 1px line round it. The wall point under the plate's middle is
+   the picture's middle column, so it hangs where the flat one did ---- */
+const PB = { hi: H("fff6d8"), b0: H("fbe3a2"), b1: H("f0c878"), b2: H("dca654"), b3: H("b88234"), b4: H("8a5a1c"), b5: H("5c370c") };
+function pictureLightOn(way, lit) {
+    const L = 30, OUT = 5, RISE = 2.6, ZH = 0, ZP = 8, W = 72, Hh = 48, o = X.img(W, Hh), depth = new Float32Array(W * Hh).fill(-1e9), kind = new Uint8Array(W * Hh);
+    /* u along the wall (0..L), n out of it, z up; the room's x, y, z */
+    const world = (u, n, z) => way === "x" ? [u, n, z] : [n, L - u, z];
+    const P = P0(0, 30);
+    const S = (u, n, z) => { const p = world(u, n, z); return P(...p); };
+    const shift = (() => { const m = S(L / 2, 0, ZP + 2); return [W / 2 - m[0], 0]; })();
+    let tag = 0; const put = (u, n, z, c) => { const p = world(u, n, z), sp = P(...p), x = Math.floor(sp[0] + shift[0]), y = Math.floor(sp[1] + shift[1]), d = p[0] + p[1] + p[2]; if (!X.inb(o, x, y)) return; const i = y * W + x; if (d < depth[i]) return; depth[i] = d; kind[i] = tag; X.set(o, x, y, c); };
+    /* a surface's tone from its normal, in the room's axes: lit from above and from the left face's side (+y), the right face's (+x) darkest */
+    const tone = (nx, ny, nz) => { const N = way === "x" ? [nx, ny, nz] : [ny, -nx, nz], l = N[2] * .8 + N[1] * .45 + N[0] * .1; return l > .75 ? PB.b1 : l > .55 ? PB.b2 : l > .35 ? PB.b3 : PB.b4; };
+    const st = .2;
+    /* the back plate: a little rounded-off block on the wall */
+    for (let u = L / 2 - 1.5; u <= L / 2 + 1.5; u += st) for (let z = ZP; z <= ZP + 4; z += st) put(u, 1, z, tone(0, 1, 0));
+    for (let u = L / 2 - 1.5; u <= L / 2 + 1.5; u += st) for (let n = 0; n <= 1; n += st) put(u, n, ZP + 4, PB.b0);
+    for (let n = 0; n <= 1; n += st) for (let z = ZP; z <= ZP + 4; z += st) put(L / 2 + 1.5, n, z, tone(1, 0, 0));
+    /* the arm: a round rod from the plate out and down to the hood's back */
+    const A0 = [L / 2, 1, ZP + 2], A1 = [L / 2, OUT - RISE * .6, ZH + RISE - .3];
+    for (let t = 0; t <= 1; t += .02) { const c = [A0[0] + (A1[0] - A0[0]) * t, A0[1] + (A1[1] - A0[1]) * t, A0[2] + (A1[2] - A0[2]) * t]; for (let a = 0; a < Math.PI * 2; a += .3) { const r = .5, du = Math.cos(a) * r, dz = Math.sin(a) * r; put(c[0] + du, c[1], c[2] + dz, du < 0 ? PB.b1 : PB.b4); } }
+    /* the hood: a quarter-round from its top at the back (n = OUT - RISE) down to its lip at the front (n = OUT), closed at the ends */
+    const R = RISE, n0 = OUT - R;
+    for (let u = 0; u <= L; u += st) for (let th = 0; th <= Math.PI / 2 + .001; th += .04) {
+        const n = n0 + Math.sin(th) * R, z = ZH + Math.cos(th) * R, lip = th > Math.PI / 2 - .2;
+        tag = 1; put(u, n, z, tone(0, Math.sin(th), Math.cos(th))); tag = 0;
+    }
+    for (let n = n0 - .6; n <= n0; n += st) for (let u = 0; u <= L; u += st) put(u, n, ZH + R, PB.b2);
+    for (const u of [0, L]) for (let n = n0 - .6; n <= OUT; n += st) for (let z = ZH; z <= ZH + R; z += st) if ((n - n0) <= 0 || (n - n0) ** 2 + (z - ZH) ** 2 <= R * R) put(u, n, z, tone(u ? 1 : -1, 0, 0));
+    /* straight lines along the hood, a pixel each per column: a glint on its crown, and its lip, dark, or glowing when lit */
+    for (let x = 0; x < W; x++) { let y0 = -1, y1 = -1; for (let y = 0; y < Hh; y++) if (kind[y * W + x]) { if (y0 < 0) y0 = y; y1 = y; } if (y0 < 0 || y1 - y0 < 3) continue; X.set(o, x, y0 + 1, PB.b0); X.set(o, x, y1, lit ? H("fffbe8") : PB.b5); }
+    const out = outline(o), bb = X.bounds(out);
+    /* keep the plate's wall point on the middle column: crop evenly round it */
+    const mid = W / 2 + 1, half = Math.max(mid - bb.x0, bb.x0 + bb.w - mid);
+    return X.crop(out, mid - half, bb.y0, half * 2, bb.h);
 }
 /* ---- the Game Hall's egg sconce, as drawn for a wall running down to the right; lit, its glass brighter ---- */
 function eggSconce(lit) {
@@ -358,4 +424,4 @@ function yearPlate(year, metal = "brass", axis = "x") {
     return { img: o, top: s.top };
 }
 
-module.exports = { X, H, LOBBY, REG, PLINTHS, ITEMS, plinthWith, placard, placardPicture, PLANTS, clientPlant, BANNERS, velOf, banner, onWall, SIZES, FRAMES, frame, fitPicture, pictureLight, eggSconce, yearSlab, yearPlate, METALS };
+module.exports = { X, H, LOBBY, REG, PLINTHS, ITEMS, plinthWith, placard, placardPicture, PLANTS, clientPlant, BANNERS, velOf, banner, onWall, bannerOn, SIZES, FRAMES, frame, fitPicture, pictureLightOn, eggSconce, yearSlab, yearPlate, METALS };

@@ -47,39 +47,38 @@ const noise = (x, y) => { const s = Math.sin(x * 12.9898 + y * 78.233) * 43758.5
 const soft = (x, y) => { const xi = Math.floor(x), yi = Math.floor(y), f = t => t * t * (3 - 2 * t), u = f(x - xi), v = f(y - yi); return (noise(xi, yi) * (1 - u) + noise(xi + 1, yi) * u) * (1 - v) + (noise(xi, yi + 1) * (1 - u) + noise(xi + 1, yi + 1) * u) * v; };
 const fbm = (x, y) => soft(x, y) * .55 + soft(x * 2.1, y * 2.1) * .3 + soft(x * 4.3, y * 4.3) * .15;
 
-/* the three frames, each from a real one: rings from the outside in */
-const FRAMES = {
-    /* the stormy seas frame, with its carved bosses */
-    carved: { rings: ["000000", "975624", "975624", "67390d", "000000"], carve: ["975624", "67390d"], boss: "975624", bossDark: "331804" },
-    /* the glass panel's stepped wood */
-    stepped: { rings: ["2d2010", "b39a7b", "9c774b", "644b2d", "2d2010"] },
-    /* the little gilt frames */
-    gilt: { rings: ["000000", "dc823a", "000000"], dots: ["f2ce62", "dc823a"] },
-};
-/* frame + picture, flat, then slanted down to the right as an x wall sees it */
-function hang(pic, frameName) {
-    const F = FRAMES[frameName], n = F.rings.length, boss = F.boss ? 1 : 0, W = pic.w + n * 2 + boss * 2, H = pic.h + n * 2 + boss * 2, flat = new Array(W * H).fill(null);
-    const set = (x, y, c) => { if (x >= 0 && y >= 0 && x < W && y < H) flat[y * W + x] = hex(c); };
-    for (let r = 0; r < n; r++) {
-        const x0 = boss + r, y0 = boss + r, x1 = W - 1 - boss - r, y1 = H - 1 - boss - r;
-        const col = i => { if (F.dots && r === 1) return F.dots[(i >> 1) & 1]; if (F.carve && r === 2) return F.carve[(i >> 1) & 1]; return F.rings[r]; };
-        for (let x = x0; x <= x1; x++) { set(x, y0, col(x)); set(x, y1, col(x)); }
-        for (let y = y0; y <= y1; y++) { set(x0, y, col(y)); set(x1, y, col(y)); }
-    }
-    for (let y = 0; y < pic.h; y++) for (let x = 0; x < pic.w; x++) flat[(y + boss + n) * W + x + boss + n] = pic.at(x, y);
-    if (F.boss) for (const [cx, cy] of [[3, 3], [W - 4, 3], [3, H - 4], [W - 4, H - 4]]) {
-        for (let y = -3; y <= 3; y++) for (let x = -3; x <= 3; x++) { const d = x * x + y * y; if (d <= 10) set(cx + x, cy + y, d > 5 ? "000000" : d === 0 ? "c98a4a" : (x + y) > 0 ? F.bossDark : F.boss); }
-    }
+/* the frame: every painting wears the Stormy seas' own (his, 13 Nov 2026: "the same style frame as the Stormy seas painting ... fix all the
+   hallway paintings"). Its carved wood is read from the client's hw_painting1 and stood flat (the client slants it a step every two columns,
+   the step falling on odd columns), then cut nine ways: the corners as they are, the long sides' plain runs repeated, and the carved knot
+   halfway down each side kept in the middle. The painting goes where the stormy sea was, and it's slanted back the client's way */
+const STORM = (() => {
+    const im = member("hw_painting1_a_0_4_0", PAL1), W = 58, H = 36, flat = [];
+    for (let r = 0; r < H; r++) for (let x = 0; x < W; x++) { const y = r - 2 + ((x + 1) >> 1), q = (y * im.w + x) * 4; flat.push(y >= 0 && y < im.h && x < im.w && im.rgba[q + 3] >= 128 ? [im.rgba[q], im.rgba[q + 1], im.rgba[q + 2]] : null); }
+    /* the picture inside it: 46 x 23 from column 5, row 7 */
+    return { W, H, at: (x, r) => flat[r * W + x], PX: 5, PY: 7, PW: 46, PH: 23 };
+})();
+function hang(pic) {
+    const S = STORM, W = pic.w + (S.W - S.PW), H = pic.h + (S.H - S.PH);
+    if (pic.w % 2 || pic.w > S.PW + 8 || pic.h < 10) throw new Error("painting size " + pic.w + "x" + pic.h + " doesn't fit the stormy frame");
+    /* columns: 8 at the left and 9 at the right as they are; between, the left half counts from the left and the right half from the right */
+    const col = x => x < 8 ? x : x >= W - 9 ? x - W + S.W : x < W / 2 ? Math.min(x, 48) : Math.max(8, x + S.W - W);
+    /* rows: 9 at the top and 8 at the bottom as they are; between, the side knots (rows 16 to 21) in the middle and the plain row 22 round them */
+    const mid = H - 17, k0 = 9 + ((mid - 6) >> 1), row = r => r < 9 ? r : r >= H - 8 ? r - H + S.H : r >= k0 && r < k0 + 6 ? 16 + r - k0 : 22;
     const oh = H + (W >> 1) + 1, rgba = Buffer.alloc(W * oh * 4);
-    for (let x = 0; x < W; x++) for (let y = 0; y < H; y++) { const c = flat[y * W + x]; if (!c) continue; const q = ((y + (x >> 1)) * W + x) * 4; rgba[q] = c[0]; rgba[q + 1] = c[1]; rgba[q + 2] = c[2]; rgba[q + 3] = 255; }
-    return { w: W, h: oh, rgba };
+    for (let x = 0; x < W; x++) for (let r = 0; r < H; r++) {
+        const inPic = x >= S.PX && x < S.PX + pic.w && r >= S.PY && r < S.PY + pic.h, c = inPic ? pic.at(x - S.PX, r - S.PY) : S.at(col(x), row(r));
+        if (!c) continue; const q = ((r + ((x + 1) >> 1)) * W + x) * 4; rgba[q] = c[0]; rgba[q + 1] = c[1]; rgba[q + 2] = c[2]; rgba[q + 3] = 255;
+    }
+    /* trim the empty rows the slant leaves at the top */
+    let top = 0; while (top < oh && ![...Array(W).keys()].some(x => rgba[(top * W + x) * 4 + 3])) top++;
+    return { w: W, h: oh - top, rgba: rgba.subarray(top * W * 4) };
 }
 
 /* ---- the paintings ---- */
 const SCENES = [];
-const scene = (id, name, frame, w, h, pal, draw, amount) => SCENES.push({ id, name, frame, w, h, pal, draw, amount });
+const scene = (id, name, w, h, pal, draw, amount) => SCENES.push({ id, name, w, h, pal, draw, amount });
 
-scene("calm_seas", "Calm seas at sunset", "carved", 44, 26, ["1b2a3a", "2f4a5c", "54707c", "8a8f86", "c9a77a", "e2b064", "d9703f", "9c3f33", "5e2a33", "000000", "f4e0a6"], c => {
+scene("calm_seas", "Calm seas at sunset", 44, 26, ["1b2a3a", "2f4a5c", "54707c", "8a8f86", "c9a77a", "e2b064", "d9703f", "9c3f33", "5e2a33", "000000", "f4e0a6"], c => {
     const sea = 16;
     c.fill((x, y) => mix(hex("5e2a33"), mix(hex("d9703f"), hex("f0c070"), (y - 8) / 8), y / 9), 0, 0, 44, sea);
     c.ell(30, sea, 6, 6, hex("f4e0a6"));
@@ -91,7 +90,7 @@ scene("calm_seas", "Calm seas at sunset", "carved", 44, 26, ["1b2a3a", "2f4a5c",
     c.poly([[11, 9], [15, 8], [15, 16], [11, 16]], hex("c9a77a")); c.poly([[16, 8], [19, 10], [19, 16], [16, 16]], hex("c9a77a"));
 }, 22);
 
-scene("moonlit_maze", "Moonlit maze", "carved", 44, 26, ["0d1626", "1a2a44", "33486a", "6f83a0", "f0ecd0", "0e2a1c", "1c4630", "2f6a44", "4f8d5d", "1a1d1c"], c => {
+scene("moonlit_maze", "Moonlit maze", 44, 26, ["0d1626", "1a2a44", "33486a", "6f83a0", "f0ecd0", "0e2a1c", "1c4630", "2f6a44", "4f8d5d", "1a1d1c"], c => {
     const hz = 11;
     c.fill((x, y) => mix(hex("0d1626"), hex("33486a"), y / hz), 0, 0, 44, hz);
     c.ell(34, 5, 3.5, 3.5, hex("f0ecd0")); for (const [x, y] of [[5, 2], [11, 5], [18, 2], [24, 6], [41, 8], [28, 1]]) c.px(x, y, hex("f0ecd0"));
@@ -111,7 +110,7 @@ scene("moonlit_maze", "Moonlit maze", "carved", 44, 26, ["0d1626", "1a2a44", "33
     });
 }, 16);
 
-scene("gentleman_rat", "The founder", "carved", 26, 34, ["1a1010", "33201a", "553226", "7a5a44", "9a9088", "c8c0b4", "e8a0a0", "7a1f1f", "b03030", "000000", "e8d8a0", "2a1810"], c => {
+scene("gentleman_rat", "The founder", 26, 34, ["1a1010", "33201a", "553226", "7a5a44", "9a9088", "c8c0b4", "e8a0a0", "7a1f1f", "b03030", "000000", "e8d8a0", "2a1810"], c => {
     c.fill((x, y) => mix(hex("553226"), hex("1a1010"), Math.hypot(x - 13, y - 13) / 19));
     /* the coat */
     c.poly([[2, 34], [5, 24], [10, 21], [17, 21], [22, 25], [24, 34]], (x, y) => mix(hex("b03030"), hex("7a1f1f"), (x - 6) / 14));
@@ -129,7 +128,7 @@ scene("gentleman_rat", "The founder", "carved", 26, 34, ["1a1010", "33201a", "55
     c.line(17, 18, 11, 19, hex("1a1010")); c.line(17, 19, 12, 21, hex("1a1010")); c.line(21, 19, 25, 21, hex("c8c0b4"));
 }, 14);
 
-scene("golden_key", "The golden key", "stepped", 26, 34, ["241014", "3e1a1e", "5e2a2c", "7c3c38", "5a3a10", "9a6a1c", "dca63a", "f6e08a", "000000"], c => {
+scene("golden_key", "The golden key", 26, 34, ["241014", "3e1a1e", "5e2a2c", "7c3c38", "5a3a10", "9a6a1c", "dca63a", "f6e08a", "000000"], c => {
     c.fill((x, y) => mix(hex("5e2a2c"), hex("241014"), Math.hypot(x - 13, y - 14) / 20 + (fbm(x * .4, y * .4) - .5) * .4));
     const G = (x, y) => mix(hex("f6e08a"), hex("dca63a"), (x + y - 12) / 30);
     /* bow, stem and bit, standing upright */
@@ -140,7 +139,7 @@ scene("golden_key", "The golden key", "stepped", 26, 34, ["241014", "3e1a1e", "5
     c.px(9, 5, hex("f6e08a")); c.px(10, 4, hex("f6e08a"));
 }, 16);
 
-scene("maze_plan", "Plan of the maze", "stepped", 34, 26, ["e8d8ac", "d0b880", "b09660", "8a6a3c", "5a3a1c", "2a1810", "a02020"], c => {
+scene("maze_plan", "Plan of the maze", 34, 26, ["e8d8ac", "d0b880", "b09660", "8a6a3c", "5a3a1c", "2a1810", "a02020"], c => {
     c.fill((x, y) => mix(hex("e8d8ac"), hex("b09660"), Math.max(Math.abs(x - 17) / 17, Math.abs(y - 13) / 13) ** 3 + (fbm(x * .3, y * .3) - .5) * .35));
     const L = hex("2a1810"), M = ["11111110111111111", "10000010000000001", "10111010111111101", "10100010100000101", "10101110101110101", "10100000101000101", "10111111101011101", "10000000001000001", "11111101111111111"];
     M.forEach((r, j) => [...r].forEach((v, i) => { if (v === "1") { c.px(1 + i * 2 - 0, 4 + j * 2, L); if (r[i + 1] === "1") c.px(2 + i * 2, 4 + j * 2, L); if (M[j + 1] && M[j + 1][i] === "1") c.px(1 + i * 2, 5 + j * 2, L); } }));
@@ -149,7 +148,7 @@ scene("maze_plan", "Plan of the maze", "stepped", 34, 26, ["e8d8ac", "d0b880", "
     c.rect(4, 1, 26, 1, hex("5a3a1c"));
 }, 12);
 
-scene("autumn_wood", "Autumn wood", "gilt", 30, 22, ["f0d890", "e0a050", "c86a2a", "9c3f20", "6a2a1a", "3a1c14", "6a7a3a", "3e4a22", "20180f"], c => {
+scene("autumn_wood", "Autumn wood", 30, 22, ["f0d890", "e0a050", "c86a2a", "9c3f20", "6a2a1a", "3a1c14", "6a7a3a", "3e4a22", "20180f"], c => {
     c.fill((x, y) => mix(hex("f0d890"), hex("e0a050"), y / 15), 0, 0, 30, 16);
     c.fill((x, y) => mix(hex("6a7a3a"), hex("3e4a22"), (y - 15) / 7 + (soft(x * .3, y) - .5) * .6), 0, 15, 30, 22);
     for (const [x, b, w] of [[5, 17, 6], [24, 18, 7], [14, 16, 5]]) {
@@ -160,7 +159,7 @@ scene("autumn_wood", "Autumn wood", "gilt", 30, 22, ["f0d890", "e0a050", "c86a2a
     c.poly([[12, 22], [19, 22], [16, 15], [15, 15]], hex("c86a2a"));
 }, 14);
 
-scene("still_life", "Flowers in a blue jug", "gilt", 22, 28, ["1e1a22", "322a34", "4a3e44", "2f5d80", "6a9cbc", "c8e0ea", "b02a30", "e06060", "f2ce62", "3e6a3a", "1f3a20"], c => {
+scene("still_life", "Flowers in a blue jug", 22, 28, ["1e1a22", "322a34", "4a3e44", "2f5d80", "6a9cbc", "c8e0ea", "b02a30", "e06060", "f2ce62", "3e6a3a", "1f3a20"], c => {
     c.fill((x, y) => mix(hex("4a3e44"), hex("1e1a22"), Math.hypot(x - 11, y - 11) / 17));
     c.rect(0, 23, 22, 5, hex("322a34"));
     for (const [x0, y0, x1, y1] of [[11, 18, 6, 9], [11, 18, 11, 6], [11, 18, 16, 8], [11, 18, 4, 13], [11, 18, 18, 13]]) c.line(x0, y0, x1, y1, hex("3e6a3a"));
@@ -170,7 +169,7 @@ scene("still_life", "Flowers in a blue jug", "gilt", 22, 28, ["1e1a22", "322a34"
     c.px(9, 19, hex("c8e0ea")); c.px(9, 20, hex("c8e0ea")); c.rect(7, 25, 8, 1, hex("1e1a22"));
 }, 10);
 
-scene("old_mountains", "Mountains at dawn", "stepped", 40, 22, ["6a7fa0", "9fb0c0", "e0c8b0", "f0a890", "ffffff", "4a5a70", "2e3c50", "1c3a2c", "2c5a40"], c => {
+scene("old_mountains", "Mountains at dawn", 40, 22, ["6a7fa0", "9fb0c0", "e0c8b0", "f0a890", "ffffff", "4a5a70", "2e3c50", "1c3a2c", "2c5a40"], c => {
     c.fill((x, y) => mix(hex("6a7fa0"), hex("f0a890"), y / 13));
     const ridge = (x, base, amp, f) => base - amp * Math.abs(Math.sin(x * f) + Math.sin(x * f * 2.3 + 1) * .4);
     c.fill((x, y) => { const r = ridge(x, 16, 11, .13); if (y < r) return null; return y < r + 3 ? hex("ffffff") : x % 7 < 3 + (y % 2) ? hex("4a5a70") : hex("6a7fa0"); });
@@ -218,7 +217,7 @@ add("h_painting2", "Glass panel", "painting", member("hw_painting2_a_0_4_0", PAL
 add("h_pntg", "Little gilt frames", "painting", pntg);
 for (const s of SCENES) {
     const c = new Canvas(s.w, s.h); s.draw(c);
-    add("p_" + s.id, s.name, "custom", hang(c.quantise(s.pal, s.amount), s.frame));
+    add("p_" + s.id, s.name, "custom", hang(c.quantise(s.pal, s.amount)));
 }
 add("p_gilt_trio", "Little gilt pictures", "custom", giltTrio(pntg));
 let kept = [], keptFloor = {}; try { const was = require(path.join(__dirname, "wall-items.js")); kept = was.filter(i => /^[ig]_/.test(String(i.id))); keptFloor = was.floor || {}; } catch (e) { /* first run */ }

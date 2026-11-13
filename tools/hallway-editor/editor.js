@@ -109,7 +109,7 @@ const HINTS = {
     door: "Click a top wall to add a door. It takes the next maze without one. To change it, select the door and use its Maze list.",
     globelight: "Click a wall to hang a small globe light, or a pillar's face to fix one there. Hold B for the faces turned away from you. Click the same face again to take it off. Hold Ctrl and move the mouse up or down to change the height.",
     sconce: "Click a top wall to hang a wall light. It lights the wall and floor around it. Hold Ctrl and move the mouse up or down to change the height.",
-    lift: "Click a back wall to add a lift. Put in as many as you like: each one can take you to any other.",
+    lift: "Click a wall to add a lift, a back wall or a left one. Put in as many as you like: each one can take you to any other.",
     tunnel: "Click a wall to put a tunnel there: Habbos can walk into it. A second tunnel links to the first, and walking to the back of one brings you out of the other. Choose where each leads in Select and move. Clicking one again takes it away.",
     entrance: "Click a wall to put the entrance there. There's one: Habbos arrive through it, and walking back in leaves the hallway.",
     stair: "Click a back wall: a straight flight, cut into the wall, up to the next floor.",
@@ -128,6 +128,14 @@ const levelZ = l => l.k * Z1;
    client's own short flights are 4px a step, 6px deep. */
 const HEIGHT = 1, STEP_R = 4, STEP_D = 6 / 16, MAX_RISE = 64;
 const heightAt = (l, x, y) => ((l.rise && l.rise[cellKey(x, y)]) || 0) + ((l.floorLift && l.floorLift[cellKey(x, y)]) || 0);
+/* A lift on a back wall is { level, x, y }: x its first tile along the wall, y the wall's line. On a left wall (13 Nov 2026, his: "Lifts can't
+   be placed on all walls") it is { level, axis: "y", x, y }: x the wall's line, y its first tile along it, the back wall's lift mirrored.
+   liftPt gives a tile by the back wall's terms: a tiles along from its first, b out from the wall (negative: into the cabin). */
+const liftLeft = q => q.axis === "y", liftAxis = q => liftLeft(q) ? "y" : "x", liftLine = q => liftLeft(q) ? q.x : q.y, liftAlong = q => liftLeft(q) ? q.y : q.x;
+const liftPt = (q, a, b) => liftLeft(q) ? [q.x + b, q.y + a] : [q.x + a, q.y + b];
+const liftLocal = (q, x, y) => liftLeft(q) ? [y - q.y, x - q.x] : [x - q.x, y - q.y];
+/* the floor in front of it that has to stay level: 3 tiles out, from a tile before it to past its call plate */
+const liftFront = q => { const a = liftPt(q, -1, 0), b = liftPt(q, 5, 3); return { x0: Math.min(a[0], b[0]), x1: Math.max(a[0], b[0]), y0: Math.min(a[1], b[1]), y1: Math.max(a[1], b[1]) }; };
 /* the height a cell's walls stand at: its rise alone, not the lift that raises only its floor (render/hw3.js patchesByHeight) */
 const wallHeightAt = (l, x, y) => (l.rise && l.rise[cellKey(x, y)]) || 0;
 const tileZ = (l, x, y) => levelZ(l) + heightAt(l, x, y) + (landingOf(l, x, y) ? LANDING : 0);
@@ -333,7 +341,7 @@ function holes(l) {
 const inRect = (r, x, y) => x >= r.x0 && x < r.x1 && y >= r.y0 && y < r.y1;
 function heightLocked(l, x, y) {
     if (holes(l).some(r => inRect(r, x, y))) return true;
-    if (map.lifts.some(q => q.level === l.id && y >= q.y && y < q.y + 3 && x >= q.x - 1 && x < q.x + 5)) return true;
+    if (map.lifts.some(q => { if (q.level !== l.id) return false; const [a, b] = liftLocal(q, x, y); return b >= 0 && b < 3 && a >= -1 && a < 5; })) return true;
     if (map.entrance && map.entrance.level === l.id) { const e = map.entrance, along = e.axis === "x" ? x : y, away = e.axis === "x" ? y : x; if (along >= e.at - 1 && along < e.at + 9 && away >= e.line && away < e.line + 3) return true; }
     for (const st of map.stairs) {
         if (st.low === l.id) { if (thruLeft(st) ? x >= st.x && x < st.x + 3 && y >= st.a - 1 && y < st.b + 1 : y >= st.y && y < st.y + 3 && x >= st.a - 1 && x < st.b + 1) return true; }
@@ -365,7 +373,7 @@ function pruneOffFloor(l) {
     keep("medals", q => hasFloor(l, q.x + 2, q.y + 2));
     keep("rugs", r => { for (let x = r.x0; x < r.x1; x++) for (let y = r.y0; y < r.y1; y++) if (hasFloor(l, x, y)) return true; return false; });
     for (const name of ["halfTiles", "noWalls", "showWalls"]) keep(name, k => { const [axis, line, t] = k.split("|"); return axis === "x" ? hasFloor(l, +t, +line) : hasFloor(l, +line, +t); });
-    map.lifts = map.lifts.filter(q => { if (q.level !== l.id) return true; for (let t = q.x; t < q.x + 3; t++) if (!hasFloor(l, t, q.y)) return false; return true; });
+    map.lifts = map.lifts.filter(q => { if (q.level !== l.id) return true; for (let t = 0; t < 3; t++) if (!hasFloor(l, ...liftPt(q, t, 0))) return false; return true; });
     const e = map.entrance; if (e && e.level === l.id) for (let t = e.at; t < e.at + 8; t++) if (!(e.axis === "x" ? hasFloor(l, t, e.line) : hasFloor(l, e.line, t))) { delete map.entrance; flash("The entrance went with that floor. Place a new one."); break; }
 }
 /* the edge between two heights nearest the mouse, on any side of a tile: where steps can go */
@@ -1533,10 +1541,16 @@ function pillarFaceAt(l, px, py) {
     }
     return null;
 }
-function liftFits(l, x, y, self) {
-    if (map.lifts.some(q => q !== self && q.level === l.id && q.y === y && Math.abs(q.x - x) < 6)) return false;
-    if ((l.doors || []).some(d => d.axis === "x" && d.line === y && d.at < x + 3 && d.at + 2 > x)) return false;
-    for (let t = x; t < x + 3; t++) if (!hasFloor(l, t, y) || wallState(l, "x", y, t) !== "full") return false;
+/* q: the lift as it would be, on a back wall or a left one */
+function liftFits(l, q, self) {
+    const axis = liftAxis(q), line = liftLine(q), at = liftAlong(q);
+    if (map.lifts.some(r => r !== self && r.level === l.id && liftAxis(r) === axis && liftLine(r) === line && Math.abs(liftAlong(r) - at) < 6)) return false;
+    /* round a corner, a back wall's lift and a left wall's mustn't share the floor in front of them */
+    const F = liftFront(q); if (map.lifts.some(r => { if (r === self || r.level !== l.id || liftAxis(r) === axis) return false; const G = liftFront(r); return G.x0 < F.x1 && G.x1 > F.x0 && G.y0 < F.y1 && G.y1 > F.y0; })) return false;
+    if ((l.doors || []).some(d => d.axis === axis && d.line === line && (axis === "x" ? d.at < at + 3 && d.at + 2 > at : d.at - 2 < at + 3 && d.at > at))) return false;
+    for (let t = 0; t < 3; t++) if (!hasFloor(l, ...liftPt(q, t, 0)) || hasFloor(l, ...liftPt(q, t, -1)) || wallState(l, axis, line, at + t) !== "full") return false;
+    /* nor in the entrance, a tunnel or a flight of stairs: a left wall is where side stairs come down */
+    for (let t = 0; t < 3; t++) if (wallTaken({ axis, at: axis === "x" ? at + t : at + t + 1, line }, l, true)) return false;
     return true;
 }
 function drawLampArt(l, q, alpha) {
@@ -1694,10 +1708,9 @@ function act(px, py) {
     if (tool === "globelight") { if (w) place(() => (level.lamps = level.lamps || []).push({ axis: w.axis, at: w.at + .5, line: w.line, style: "globe", ...lampField(lampHeight(level, w, px, py)) })); return; }
     if (tool === "lift") {
         if (!w) return;
-        if (w.axis !== "x") { flash("Lifts go on back walls: the ones facing down and to the left."); return; }
-        const x = Math.floor(w.at / 2) * 2;
-        if (!liftFits(level, x, w.line)) { flash("A lift needs 3 tiles of full wall, clear of doors and other lifts."); return; }
-        place(() => map.lifts.push({ level: level.id, x, y: w.line }));
+        const t = Math.floor(wallTile(w) / 2) * 2, q = w.axis === "y" ? { level: level.id, axis: "y", x: w.line, y: t } : { level: level.id, x: t, y: w.line };
+        if (!liftFits(level, q)) { flash("A lift needs 3 tiles of full wall, clear of doors and other lifts."); return; }
+        place(() => map.lifts.push(q));
         return;
     }
     /* a Theatredrome entrance: the entrance's look, for show only (render/hw3.js theatreArt). Clicking one again takes it away */
@@ -1758,9 +1771,11 @@ function act(px, py) {
 }
 /* the lift and stair openings take up their stretch of wall */
 let portalSelf = null;
-function wallTaken(w, l) {
+function wallTaken(w, l, notLifts) {
     const level = l || window.__active();
-    if (w.axis === "x" && map.lifts.some(q => q.level === level.id && q.y === w.line && w.at > q.x - 3 && w.at < q.x + 5)) return true;
+    /* notLifts: liftFits asking about everything else */
+    if (!notLifts && w.axis === "x" && map.lifts.some(q => !liftLeft(q) && q.level === level.id && q.y === w.line && w.at > q.x - 3 && w.at < q.x + 5)) return true;
+    if (!notLifts && w.axis === "y" && map.lifts.some(q => liftLeft(q) && q.level === level.id && q.x === w.line && w.at > q.y - 2 && w.at < q.y + 7)) return true;      // its at is a tile on: a door's is past its second tile
     if (map.entrance && map.entrance.level === level.id && map.entrance.axis === w.axis && map.entrance.line === w.line && w.at > map.entrance.at - 1 && w.at <= map.entrance.at + 8) return true;
     /* tunnels and the Theatredrome too: doors, wall cuts and other entrances went inside them (10 Nov scan b, editor 4). The one being dragged doesn't count */
     for (const q of [...(map.tunnels || []), ...(map.theatres || [])]) if (q && q !== portalSelf && q.level === level.id && q.axis === w.axis && q.line === w.line && w.at > q.at - 1 && w.at <= q.at + 8) return true;
@@ -1973,7 +1988,7 @@ function pickIn(l, px, py) {
         if (d) return { type: "door", l, o: d };
         const c = (l.lamps || []).find(q => q.axis === w.axis && q.line === w.line && Math.abs(q.at - w.at) < 1.5);
         if (c) return { type: "lamp", l, o: c };
-        const lq = w.axis === "x" && map.lifts.find(q => q.level === l.id && w.line === q.y && w.at >= q.x - 1 && w.at < q.x + 4);
+        const lq = map.lifts.find(q => q.level === l.id && liftAxis(q) === w.axis && w.line === liftLine(q) && wallTile(w) >= liftAlong(q) - 1 && wallTile(w) < liftAlong(q) + 4);
         if (lq) return { type: "lift", l, o: lq };
         if (map.entrance && map.entrance.level === l.id && map.entrance.axis === w.axis && map.entrance.line === w.line && wallTile(w) >= map.entrance.at && wallTile(w) < map.entrance.at + 8) return { type: "entrance", l, o: map.entrance };
         const tun = (map.tunnels || []).find(q => q.level === l.id && q.axis === w.axis && q.line === w.line && wallTile(w) >= q.at && wallTile(w) < q.at + 8);
@@ -2029,7 +2044,7 @@ function plaqueBox(l, d) {
 }
 const stairSignX = st => st.kind === "turn" ? st.b + 6 : (st.signX || st.a - 2);      // a plaque reaches left, so beside a turning flight it stands clear of the steps
 function signBox(l, d) {
-    if (d.kind) return thruLeft(d) ? null : plaqueBox(l, d);
+    if (d.kind) return thruLeft(d) || d.noSign ? null : plaqueBox(l, d);
     const name = doorName(d); if (!name) return null;
     const g = d.sign || {}, lines = g.w ? wrapPx(name, g.w - SIGN_PAD * 2) : wrapChars(name, 14);
     const tw = Math.max(...lines.map(textW)), W = Math.max(tw + SIGN_PAD * 2, 40, g.w || 0), H = Math.max(lines.length * SIGN_LH + 9, g.h || 0);
@@ -2116,12 +2131,14 @@ function select(hit) {
         btn("Reset size and place", () => { snapshot(); delete hit.o.sign; changed(); select(hit); });
     } else if (hit.type === "stair") { say((hit.o.kind === "turn" ? "Turning at a landing" : hit.o.kind === "side" ? "Through a top-left wall" : hit.o.kind === "sideturn" ? "Through a top-left wall, turning at a landing" : "Straight") + ". Drag along the wall to move.");
         /* the garland wound round its banisters at Christmas (9 Nov 2026, his); it sat in the furniture branch, so it never showed (his) */
+        /* its sign, on or off (14 Nov 2026, his) */
+        if (hit.type === "stair" && !thruLeft(hit.o)) { const st = hit.o, f = document.createElement("label"); f.className = "field"; const n = document.createElement("span"); n.className = "f-label"; n.textContent = "Sign"; const cb = document.createElement("input"); cb.type = "checkbox"; cb.checked = !st.noSign; cb.addEventListener("change", () => { snapshot(); if (cb.checked) delete st.noSign; else st.noSign = true; buildLevels(); changed(); }); f.append(n, cb); box.appendChild(f); }
         if (hit.type === "stair") { const st = hit.o, f = document.createElement("label"); f.className = "field"; const n = document.createElement("span"); n.className = "f-label"; n.textContent = "Garland round the banisters"; const cb = document.createElement("input"); cb.type = "checkbox"; cb.checked = !!st.garland; cb.addEventListener("change", () => { snapshot(); if (cb.checked) st.garland = true; else delete st.garland; changed(); }); f.append(n, cb); box.appendChild(f); const p = document.createElement("p"); p.className = "hint"; p.textContent = "Shows at Christmas only."; box.appendChild(p); }
     }
     else if (hit.type === "rug") { say((hit.o.style === "small" ? "Small squares floor, " : "") + `${hit.o.x1 - hit.o.x0} by ${hit.o.y1 - hit.o.y0} tiles. Drag it to move, or drag an edge to resize.`);
         /* a rug's corners: square with the client's rosette, or cut a tile across */
         if (hit.o.style !== "small") { const f = document.createElement("label"); f.className = "field"; const n = document.createElement("span"); n.className = "f-label"; n.textContent = "Cut corners"; const c = document.createElement("span"); c.className = "f-ctl"; const t = document.createElement("input"); t.type = "checkbox"; t.checked = !!hit.o.chamfer; t.addEventListener("change", () => { snapshot(); if (t.checked) hit.o.chamfer = true; else delete hit.o.chamfer; changed(); }); c.appendChild(t); f.append(n, c); box.appendChild(f); } }
-    else if (hit.type === "lift") say("Drag it along a back wall to move it. In the hallway, double-click a lift to open it, then walk in.");
+    else if (hit.type === "lift") say("Drag it along a wall to move it, back or left. In the hallway, double-click a lift to open it, then walk in.");
     else if (hit.type === "entrance") say("Where Habbos arrive, and where they leave by walking back in. Drag it along a wall to move it.");
     else if (hit.type === "tunnel") {
         say("A tunnel Habbos can walk into. Walk to its back and you come out of the tunnel it leads to. Drag it along a wall to move it.");
@@ -2226,7 +2243,7 @@ function select(hit) {
     if (hit.type === "lamp" || (hit.type === "prop" && (hit.o.k === "lamp" || hit.o.k === "tablelamp" || ((hit.o.k === "pillar" || hit.o.k === "pillartall") && hit.o.lights)))) {
         colourRow(box, "Light colour", () => hit.o.colour || null, v => { if (v) hit.o.colour = v; else delete hit.o.colour; }, "#ffd98a", "The mood's own");
     }
-    if (hit.type !== "sign" && hit.type !== "wall" && hit.type !== "entrance") btn("Delete", deleteSelected, "ghost danger");
+    if ((hit.type !== "sign" || hit.o.kind) && hit.type !== "wall" && hit.type !== "entrance") btn("Delete", deleteSelected, "ghost danger");
     box.appendChild(row);
     paint();
 }
@@ -2288,7 +2305,9 @@ function mazePicker(box, door) {
 function deleteSelected() {
     const s = selected; if (!s) return;
     if (s.type === "tunnel") { const list = map.tunnels || [], i = list.indexOf(s.o); if (i < 0) return; snapshot(); unlinkTunnel(s.o.id); list.splice(i, 1); if (!list.length) delete map.tunnels; select(null); buildLevels(); changed(); return; }
-    if (s.type === "sign") { flash(s.o.kind ? "A staircase always has its sign." : "A door always has its sign. Make the door spare to take it away."); return; }
+    /* a staircase's sign goes off rather than away: select the staircase and tick Sign to have it back (14 Nov 2026, his) */
+    if (s.type === "sign" && s.o.kind) { snapshot(); s.o.noSign = true; select(null); buildLevels(); changed(); flash("Sign removed. Select the staircase and tick Sign to put it back."); return; }
+    if (s.type === "sign") { flash("A door always has its sign. Make the door spare to take it away."); return; }
     const lists = { garland: s.l.garlands, festoon: s.l.festoons, lift: map.lifts, wallitem: s.l.wallItems, steps: s.l.steps, prop: s.l.props, tele: s.l.teles, door: s.l.doors, lamp: s.l.lamps, medal: s.l.medals, rug: s.l.rugs, stair: map.stairs };
     const list = lists[s.type], i = list ? list.indexOf(s.o) : -1;
     if (i < 0) { flash(s.type === "entrance" ? "The hallway always has an entrance. Drag it to move it." : "That can't be deleted."); return; }
@@ -2414,7 +2433,7 @@ function moveSelected(d, px, py) {
         const w = s.type === "lamp" || s.type === "wallitem" ? hangWallAt(px, py, l) : wallAt(px, py, l); if (!w || (w.drop && !(s.type === "lamp" && lampFits(l, w)))) return;
         if (s.type === "lamp" && isHalf(l, w.axis, w.line, wallTile(w))) return;
         if (s.type === "lamp") { o.axis = w.axis; o.line = w.line; o.at = w.at + .5; if (ctrlNow) { const zw = wallZ(l, o), b = o.axis === "x" ? P(o.at, o.line, zw) : P(o.line, o.at, zw); const h = snapWall(b[1] - py, "lamp"); if (h === 106) delete o.h; else o.h = h; } if (w.drop) o.h = Math.min(o.h === undefined ? 106 : o.h, retaining(l, w.axis, w.line, wallTile(w)).H - 8); }
-        else if (s.type === "lift") { if (w.axis === "x") { const x = Math.floor(w.at / 2) * 2; if (liftFits(l, x, w.line, o)) { o.x = x; o.y = w.line; } } }
+        else if (s.type === "lift") { const t = Math.floor(wallTile(w) / 2) * 2, q = w.axis === "y" ? { level: o.level, axis: "y", x: w.line, y: t } : { level: o.level, x: t, y: w.line }; if (liftFits(l, q, o)) { o.x = q.x; o.y = q.y; if (q.axis) o.axis = q.axis; else delete o.axis; } }
         else if (s.type === "stair") {
             const up = byId(o.up); if (!up) return;
             const wasStair = { ...o };
@@ -2470,7 +2489,7 @@ function drawSelection() {
     }
     else if (s.type === "door") { if (o.axis === "x") line(o.at, o.line, o.at + 2, o.line, z, c, 4); else line(o.line, o.at, o.line, o.at - 2, z, c, 4); }
     else if (s.type === "lamp") { if (o.axis === "x") line(o.at - .5, o.line, o.at + .5, o.line, z, c, 4); else line(o.line, o.at - .5, o.line, o.at + .5, z, c, 4); }
-    else if (s.type === "lift") line(o.x, o.y, o.x + 3, o.y, z, c, 4);
+    else if (s.type === "lift") { const a = liftPt(o, 0, 0), b = liftPt(o, 3, 0); line(a[0], a[1], b[0], b[1], z, c, 4); }
     else if (s.type === "entrance" || s.type === "tunnel") { if (o.axis === "x") line(o.at, o.line, o.at + 8, o.line, z, c, 4); else line(o.line, o.at, o.line, o.at + 8, z, c, 4); }
     else if (s.type === "wall") {
         if (o.axis === "x") line(o.a, o.line, o.b, o.line, z, c, 2); else line(o.line, o.a, o.line, o.b, z, c, 2);
@@ -2536,7 +2555,7 @@ function walkPress(px, py) {
     if (walker && walker.busy) return;
     for (const f of liveClicks) { try { if (f(px, py)) return; } catch (err) { console.error(err); } }
     /* the open lift: a click anywhere in its doorway walks you into the cabin, not only on its floor strip (10 Nov scan, live 11) */
-    { const q = liftAt(px, py); if (q && liftOpen(q)) { const S = stairLevels().list.find(L => L.stair && L.stair.lift === q); if (S) { const s0 = walkerStart(), path = graphFrom(s0.l, s0.x, s0.y, [S, q.x, q.y - 1]); if (path) { setDoors(q, true, 20000 + path.length * MS_PER_TILE); followRoute(path, s0.here, null); return; } } } }
+    { const q = liftAt(px, py); if (q && liftOpen(q)) { const S = stairLevels().list.find(L => L.stair && L.stair.lift === q); if (S) { const s0 = walkerStart(), path = graphFrom(s0.l, s0.x, s0.y, [S, ...liftPt(q, 0, -1)]); if (path) { setDoors(q, true, 20000 + path.length * MS_PER_TILE); followRoute(path, s0.here, null); return; } } } }
     { const dd = doorAtPx(px, py); if (dd && dd.d.kind === "book" && onBook(dd.l, dd.d, px, py)) { bookDoor(dd.l, dd.d); return; } }
     const u = useUnder(px, py);
     if (u && u.p.k === "water") return;                     // it takes a double-click
@@ -2866,8 +2885,8 @@ function stairLevels() {
         const low = byId(q.level); if (!low) return;
         const S = { id: "LF" + i, name: "Lift", k: low.k, tiles: new Map(), stair: { low, up: null, lift: q } }, list = [], joins = [];
         /* from this angle the cabin runs away up and to the right, behind the door frame: only these tiles can be seen through the doorway */
-        list.push([q.x, q.y - 1], [q.x + 1, q.y - 1], [q.x, q.y - 2]);
-        joins.push([q.x, q.y - 1, q.x, q.y], [q.x + 1, q.y - 1, q.x + 1, q.y]);
+        list.push(liftPt(q, 0, -1), liftPt(q, 1, -1), liftPt(q, 0, -2));      // on a left wall the same, mirrored: away up and to the left
+        joins.push([...liftPt(q, 0, -1), ...liftPt(q, 0, 0)], [...liftPt(q, 1, -1), ...liftPt(q, 1, 0)]);
         addRoom(S, low, list, joins);
     });
     if (map.entrance && byId(map.entrance.level)) {
@@ -3000,7 +3019,7 @@ function graphFrom(startL, sx, sy, goal) {
 function liftTile() {
     const e = map.entrance, le = e && byId(e.level);
     if (le) { const m = entranceTiles(e)[1]; return e.axis === "x" ? [le, m, e.line] : [le, e.line, m]; }
-    const q = map.lifts[0], l = q && byId(q.level); if (l) return [l, q.x + 1, q.y];
+    const q = map.lifts[0], l = q && byId(q.level); if (l) return [l, ...liftPt(q, 1, 0)];
     const g = map.levels.find(l => l.k === 0 && l.cells.length) || map.levels.find(l => l.cells.length), c = g.cells[0].split(",").map(Number); return [g, c[0] * 2, c[1] * 2];
 }
 /* Everywhere a Habbo can get to: on foot from where they arrive, and from any lift once they can walk to one, since any lift goes to all the
@@ -3012,7 +3031,7 @@ function reachAll() {
     const rooms0 = stairLevels().list, ins = mapNow === "gallery" ? (map.tunnels || []).filter(q => { const f = findTunnel(q.to); return f && f.place === "hallway"; }).map(q => { const S = rooms0.find(r => r.stair && r.stair.tunnel === q), m = entranceTiles(q)[1]; return S ? (q.axis === "x" ? [S, m, q.line - 2] : [S, q.line - 2, m]) : null; }).filter(Boolean) : [];
     /* the Events Gallery is arrived at by its tunnels from the Hallways (12 Nov 2026); with none yet, from its first floor as before */
     const [l, x, y] = ins[0] || liftTile(), reached = graphFrom(l, x, y); for (const s of ins.slice(1)) for (const k of graphFrom(s[0], s[1], s[2]).keys()) if (!reached.has(k)) reached.set(k, 0);
-    const fronts = map.lifts.map(q => [byId(q.level), q.x + 1, q.y]).filter(f => f[0]);
+    const fronts = map.lifts.map(q => [byId(q.level), ...liftPt(q, 1, 0)]).filter(f => f[0]);
     if (fronts.some(f => reached.has(nodeKey(f[0], f[1], f[2])))) for (const f of fronts) if (!reached.has(nodeKey(f[0], f[1], f[2]))) for (const k of graphFrom(f[0], f[1], f[2]).keys()) if (!reached.has(k)) reached.set(k, 0);
     /* through tunnels: the back of one reached means the back of the one it leads to is too (10 Nov scan b, editor 6), and on until nothing new */
     const rooms = stairLevels().list, backOf = q => { const S = rooms.find(r => r.stair && r.stair.tunnel === q); if (!S) return null; const m = entranceTiles(q)[1]; return q.axis === "x" ? [S, m, q.line - 2] : [S, q.line - 2, m]; };
@@ -3163,7 +3182,10 @@ function drawLifts(ox, oy) {
     for (const [q, s] of liftDoors) {
         const l = byId(q.level), way = l.colour ? "hex:" + l.colour : l.way, img = liftImg(way, Math.round(s.p * (LIFT_FRAMES - 1))); if (!img.complete || !img.naturalWidth) continue;
         const a = P(q.x, q.y, tileZ(l, q.x, q.y));
-        ctx.imageSmoothingEnabled = false; ctx.drawImage(img, ox + (a[0] - 40) * zoom, oy + (a[1] - 160) * zoom, img.naturalWidth * zoom, img.naturalHeight * zoom);
+        ctx.imageSmoothingEnabled = false;
+        /* a left wall's: the same picture mirrored, pixel for pixel as render/hw3.js mirrors it (column X goes to 2 * origin - X) */
+        if (liftLeft(q)) { ctx.save(); ctx.translate(ox + (a[0] + 1) * zoom, 0); ctx.scale(-1, 1); ctx.drawImage(img, -40 * zoom, oy + (a[1] - 160) * zoom, img.naturalWidth * zoom, img.naturalHeight * zoom); ctx.restore(); }
+        else ctx.drawImage(img, ox + (a[0] - 40) * zoom, oy + (a[1] - 160) * zoom, img.naturalWidth * zoom, img.naturalHeight * zoom);
     }
 }
 /* ---------- the maze doors ----------
@@ -3378,6 +3400,9 @@ async function enterDoor(low, d) {
             const S = stairLevels().list.find(q => q.stair.door === d), col = d.axis === "x" ? me.x : me.y, out = doorFront(d).find(q => d.axis === "x" ? q[0] === col : q[1] === col) || doorFront(d)[0], sx = d.axis === "x" ? col : d.line - DOOR_DEEP, sy = d.axis === "x" ? d.line - DOOR_DEEP : col;
             me.l = S; me.st = S.stair; me.x = sx; me.y = sy; me.z = nodeZ(S, sx, sy); me.dir = d.axis === "x" ? 4 : 2; me.busy = false; level = low; buildLevels();
             const path = graphFrom(S, sx, sy, [low, out[0], out[1]]) || doorFront(d).map(q => graphFrom(S, sx, sy, [low, q[0], q[1]])).find(Boolean);
+            /* a bookcase is already standing open as you come back out of the room: left to swing open as you walked, you went through its shelves
+               (14 Nov 2026, his: "work on the clipping ... when an avatar leaves the bookcase door"); it swings shut once you're clear of it */
+            if (d.kind === "book") { const q = doorStates.get(d) || { p: 0, to: 0 }; q.p = 1; q.to = 1; q.hold = 0; q.goIn = false; q.autoIn = false; doorStates.set(d, q); }
             if (path) { me.leavingDoor = true; setDoor(d, true, 8000); followRoute(path, null, () => { me.leavingDoor = false; setDoor(d, false); }); } else { backOut(); setDoor(d, false); }
             const a = P(me.x + .5, me.y + .5, me.z); cam.x = a[0]; cam.y = a[1] - 40; clampCam(); paint(); fade();
         }
@@ -3386,13 +3411,13 @@ async function enterDoor(low, d) {
 }
 function liftAt(px, py) {
     for (const l of [...map.levels].sort((a, c) => c.k - a.k)) {
-        for (const q of map.lifts) { if (q.level !== l.id) continue; const a = P(q.x, q.y, tileZ(l, q.x, q.y)), u = px - a[0], h = a[1] + Math.floor(u / 2) - py; if (u >= -12 && u <= 60 && h >= -4 && h <= 118) return q; }
+        for (const q of map.lifts) { if (q.level !== l.id) continue; const a = P(q.x, q.y, tileZ(l, q.x, q.y)), u = liftLeft(q) ? a[0] - px : px - a[0], h = a[1] + Math.floor(u / 2) - py; if (u >= -12 && u <= 60 && h >= -4 && h <= 118) return q; }
         const [fx, fy] = tileIn(l, px, py); if (hasFloor(l, Math.floor(fx), Math.floor(fy))) return null;
     }
     return null;
 }
 function useLift(q) {
-    const l = byId(q.level), s = walkerStart(), path = graphFrom(s.l, s.x, s.y, [l, q.x + 1, q.y]);
+    const l = byId(q.level), s = walkerStart(), path = graphFrom(s.l, s.x, s.y, [l, ...liftPt(q, 1, 0)]);
     setDoors(q, true, 20000 + (path ? path.length * MS_PER_TILE : 0));
     if (path) followRoute(path, s.here, null); else noWay("There's no way to that lift.");
 }
@@ -3423,8 +3448,8 @@ async function rideTo(from, to) {
     /* The view holds still on the closed doors, then dissolves straight into the lift you chose, doors shut. Nothing goes black and the camera never travels. */
     const shot = document.createElement("canvas"); shot.width = canvas.width; shot.height = canvas.height; shot.getContext("2d").drawImage(canvas, 0, 0);
     shot.style.cssText = "position:absolute;left:0;top:0;z-index:24;pointer-events:none;transition:opacity 1.1s ease;opacity:1;width:" + canvas.clientWidth + "px;height:" + canvas.clientHeight + "px"; canvas.parentNode.appendChild(shot);
-    const S = stairLevels().list.find(q => q.stair.lift === to), l = byId(to.level), x = to.x, y = to.y - 1;
-    me.l = S; me.x = x; me.y = y; me.z = nodeZ(S, x, y); me.dir = 4; me.pts = []; me.walking = false; me.asked = true; me.seat = null;
+    const S = stairLevels().list.find(q => q.stair.lift === to), l = byId(to.level), [x, y] = liftPt(to, 0, -1);
+    me.l = S; me.x = x; me.y = y; me.z = nodeZ(S, x, y); me.dir = liftLeft(to) ? 2 : 4;      // facing out of it me.pts = []; me.walking = false; me.asked = true; me.seat = null;
     level = l; buildLevels();
     const a = P(x + .5, y + .5, me.z); cam.x = a[0]; cam.y = a[1] - 40; clampCam(); paint();
     /* give the art there a moment to arrive, under the picture of where you were */
@@ -3443,7 +3468,7 @@ async function rideTo(from, to) {
     setDoors(to, true, 5000); await wait(1100);
     if (!alive()) return;
     me.busy = false;
-    const path = graphFrom(S, x, y, [l, x, to.y]); if (path) followRoute(path, null, null);
+    const path = graphFrom(S, x, y, [l, ...liftPt(to, 0, 0)]); if (path) followRoute(path, null, null);
 }
 /* through a tunnel: a quick fade, and you're at the back of the one it leads to, walking out of it onto its floor (10 Nov 2026) */
 function throughTunnel(to, where = mapNow) {
@@ -3760,7 +3785,7 @@ function cutInFront(c, x0, y0, soft) {
     /* in a lift: its doors are in front of you, as far as they've closed */
     const inLift = walker.l.stair && walker.l.stair.lift;
     if (inLift) {
-        const st = liftDoors.get(inLift), slid = Math.round((st ? st.p : 0) * 24), o = P(inLift.x, inLift.y, tileZ(l, inLift.x, inLift.y)), leaf = (u0, u1) => { if (u1 > u0) cutPoly(c, [[o[0] + u0, o[1] + Math.floor(u0 / 2) + 1], [o[0] + u1, o[1] + Math.floor(u1 / 2) + 1], [o[0] + u1, o[1] + Math.floor(u1 / 2) - 76], [o[0] + u0, o[1] + Math.floor(u0 / 2) - 76]]); };
+        const st = liftDoors.get(inLift), slid = Math.round((st ? st.p : 0) * 24), o = P(inLift.x, inLift.y, tileZ(l, inLift.x, inLift.y)), mx = liftLeft(inLift) ? u => o[0] + 1 - u : u => o[0] + u, leaf = (u0, u1) => { if (u1 > u0) cutPoly(c, [[mx(u0), o[1] + Math.floor(u0 / 2) + 1], [mx(u1), o[1] + Math.floor(u1 / 2) + 1], [mx(u1), o[1] + Math.floor(u1 / 2) - 76], [mx(u0), o[1] + Math.floor(u0 / 2) - 76]]); };
         leaf(0, 24 - slid); leaf(24 + slid, 48);
     }
     /* behind the counter: it's in front of you */
@@ -3768,7 +3793,7 @@ function cutInFront(c, x0, y0, soft) {
     /* walls on this floor that stand nearer than the Habbo */
     const below = map.levels.find(q => q.k === l.k - 1);
     const open = (X, Y, axis) => !hasFloor(l, X, Y) && wallStands(l, X, Y, axis);
-    const inDoor = lostNow ? null : doorNow, inOpening = (X, Y, axis) => (lostNow && lostNow.axis === axis && lostNow.line === (axis === "x" ? Y : X) && (axis === "x" ? X : Y) >= lostNow.o && (axis === "x" ? X : Y) < lostNow.o + 6) || (inDoor && inDoor.axis === axis && inDoor.line === (axis === "x" ? Y : X) && doorFront(inDoor).some(t => axis === "x" ? t[0] === X : t[1] === Y)) || (axis === "x" && map.lifts.some(q => q.level === l.id && q.y === Y && X >= q.x && X < q.x + 3)) || (map.entrance && map.entrance.level === l.id && map.entrance.axis === axis && map.entrance.line === (axis === "x" ? Y : X) && entranceTiles(map.entrance).includes(axis === "x" ? X : Y)) || map.stairs.some(s => s.low === l.id && (thruLeft(s) ? axis === "y" && s.x === X && Y >= s.a && Y < s.b : axis === "x" && s.y === Y && X >= s.a && X < s.b));
+    const inDoor = lostNow ? null : doorNow, inOpening = (X, Y, axis) => (lostNow && lostNow.axis === axis && lostNow.line === (axis === "x" ? Y : X) && (axis === "x" ? X : Y) >= lostNow.o && (axis === "x" ? X : Y) < lostNow.o + 6) || (inDoor && inDoor.axis === axis && inDoor.line === (axis === "x" ? Y : X) && doorFront(inDoor).some(t => axis === "x" ? t[0] === X : t[1] === Y)) || (map.lifts.some(q => q.level === l.id && liftAxis(q) === axis && (axis === "x" ? q.y === Y && X >= q.x && X < q.x + 3 : q.x === X && Y >= q.y && Y < q.y + 3))) || (map.entrance && map.entrance.level === l.id && map.entrance.axis === axis && map.entrance.line === (axis === "x" ? Y : X) && entranceTiles(map.entrance).includes(axis === "x" ? X : Y)) || map.stairs.some(s => s.low === l.id && (thruLeft(s) ? axis === "y" && s.x === X && Y >= s.a && Y < s.b : axis === "x" && s.y === Y && X >= s.a && X < s.b));
     const R = 14, tx = Math.floor(ax), ty = Math.floor(ay);
     for (let X = tx - R; X <= tx + R; X++) for (let Y = ty - R; Y <= ty + R; Y++) {
         if (!hasFloor(l, X, Y) || pastDoor(X, Y)) continue;
