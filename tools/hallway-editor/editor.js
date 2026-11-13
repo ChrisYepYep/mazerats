@@ -2029,7 +2029,7 @@ function plaqueBox(l, d) {
 }
 const stairSignX = st => st.kind === "turn" ? st.b + 6 : (st.signX || st.a - 2);      // a plaque reaches left, so beside a turning flight it stands clear of the steps
 function signBox(l, d) {
-    if (d.kind) return thruLeft(d) ? null : plaqueBox(l, d);
+    if (d.kind) return thruLeft(d) || d.noSign ? null : plaqueBox(l, d);
     const name = doorName(d); if (!name) return null;
     const g = d.sign || {}, lines = g.w ? wrapPx(name, g.w - SIGN_PAD * 2) : wrapChars(name, 14);
     const tw = Math.max(...lines.map(textW)), W = Math.max(tw + SIGN_PAD * 2, 40, g.w || 0), H = Math.max(lines.length * SIGN_LH + 9, g.h || 0);
@@ -2116,6 +2116,8 @@ function select(hit) {
         btn("Reset size and place", () => { snapshot(); delete hit.o.sign; changed(); select(hit); });
     } else if (hit.type === "stair") { say((hit.o.kind === "turn" ? "Turning at a landing" : hit.o.kind === "side" ? "Through a top-left wall" : hit.o.kind === "sideturn" ? "Through a top-left wall, turning at a landing" : "Straight") + ". Drag along the wall to move.");
         /* the garland wound round its banisters at Christmas (9 Nov 2026, his); it sat in the furniture branch, so it never showed (his) */
+        /* its sign, on or off (14 Nov 2026, his) */
+        if (hit.type === "stair" && !thruLeft(hit.o)) { const st = hit.o, f = document.createElement("label"); f.className = "field"; const n = document.createElement("span"); n.className = "f-label"; n.textContent = "Sign"; const cb = document.createElement("input"); cb.type = "checkbox"; cb.checked = !st.noSign; cb.addEventListener("change", () => { snapshot(); if (cb.checked) delete st.noSign; else st.noSign = true; buildLevels(); changed(); }); f.append(n, cb); box.appendChild(f); }
         if (hit.type === "stair") { const st = hit.o, f = document.createElement("label"); f.className = "field"; const n = document.createElement("span"); n.className = "f-label"; n.textContent = "Garland round the banisters"; const cb = document.createElement("input"); cb.type = "checkbox"; cb.checked = !!st.garland; cb.addEventListener("change", () => { snapshot(); if (cb.checked) st.garland = true; else delete st.garland; changed(); }); f.append(n, cb); box.appendChild(f); const p = document.createElement("p"); p.className = "hint"; p.textContent = "Shows at Christmas only."; box.appendChild(p); }
     }
     else if (hit.type === "rug") { say((hit.o.style === "small" ? "Small squares floor, " : "") + `${hit.o.x1 - hit.o.x0} by ${hit.o.y1 - hit.o.y0} tiles. Drag it to move, or drag an edge to resize.`);
@@ -2226,7 +2228,7 @@ function select(hit) {
     if (hit.type === "lamp" || (hit.type === "prop" && (hit.o.k === "lamp" || hit.o.k === "tablelamp" || ((hit.o.k === "pillar" || hit.o.k === "pillartall") && hit.o.lights)))) {
         colourRow(box, "Light colour", () => hit.o.colour || null, v => { if (v) hit.o.colour = v; else delete hit.o.colour; }, "#ffd98a", "The mood's own");
     }
-    if (hit.type !== "sign" && hit.type !== "wall" && hit.type !== "entrance") btn("Delete", deleteSelected, "ghost danger");
+    if ((hit.type !== "sign" || hit.o.kind) && hit.type !== "wall" && hit.type !== "entrance") btn("Delete", deleteSelected, "ghost danger");
     box.appendChild(row);
     paint();
 }
@@ -2288,7 +2290,9 @@ function mazePicker(box, door) {
 function deleteSelected() {
     const s = selected; if (!s) return;
     if (s.type === "tunnel") { const list = map.tunnels || [], i = list.indexOf(s.o); if (i < 0) return; snapshot(); unlinkTunnel(s.o.id); list.splice(i, 1); if (!list.length) delete map.tunnels; select(null); buildLevels(); changed(); return; }
-    if (s.type === "sign") { flash(s.o.kind ? "A staircase always has its sign." : "A door always has its sign. Make the door spare to take it away."); return; }
+    /* a staircase's sign goes off rather than away: select the staircase and tick Sign to have it back (14 Nov 2026, his) */
+    if (s.type === "sign" && s.o.kind) { snapshot(); s.o.noSign = true; select(null); buildLevels(); changed(); flash("Sign removed. Select the staircase and tick Sign to put it back."); return; }
+    if (s.type === "sign") { flash("A door always has its sign. Make the door spare to take it away."); return; }
     const lists = { garland: s.l.garlands, festoon: s.l.festoons, lift: map.lifts, wallitem: s.l.wallItems, steps: s.l.steps, prop: s.l.props, tele: s.l.teles, door: s.l.doors, lamp: s.l.lamps, medal: s.l.medals, rug: s.l.rugs, stair: map.stairs };
     const list = lists[s.type], i = list ? list.indexOf(s.o) : -1;
     if (i < 0) { flash(s.type === "entrance" ? "The hallway always has an entrance. Drag it to move it." : "That can't be deleted."); return; }

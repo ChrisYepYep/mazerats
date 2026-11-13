@@ -1631,7 +1631,8 @@ function cutStairs(byId, STAIRS) {
             punch(up, { x0: st.a, x1: st.b, y0: st.y - 10, y1: st.y });
             const carpet = !known ? [st.a + 1, st.b - 1] : span(st.a, st.b, x => onRug(low, x, st.y) || onRug(low, x, st.y - 1) || onRug(up, x, st.y - 11) || onRug(up, x, st.y - 10));
             low.patches.push({ x0: st.a, x1: st.b, y0: st.y - 10, y1: st.y, z: st.z, notch: true, upLv: up, sf: [{ axis: "y", c0: st.a, c1: st.b, dTop: st.y - 10, steps: 20, garland: !!st.garland, zB: st.z, carpet, way, topExtra: STAIR_TOP }] });
-            (low.stairSigns = low.stairSigns || []).push({ x: st.signX || st.a - 2, y: st.y, z: st.z, name: st.label, sign: st.sign, mid: (st.a + st.b) / 2 });
+            /* st.noSign: his to switch off in the editor (14 Nov 2026) */
+            if (!st.noSign) (low.stairSigns = low.stairSigns || []).push({ x: st.signX || st.a - 2, y: st.y, z: st.z, name: st.label, sign: st.sign, mid: (st.a + st.b) / 2 });
         } else if (st.kind === "turn") {
             punch(up, { x0: st.a, x1: st.b, y0: st.y - 10, y1: st.y });
             punch(up, { x0: st.a - 4, x1: st.a, y0: st.y - 10, y1: st.y - 6 });
@@ -1642,7 +1643,7 @@ function cutStairs(byId, STAIRS) {
                 { landing: { x0: st.a, x1: st.b, y0: Y - 10, y1: Y - 6, z: st.z + 96, rug: turnRug } },
                 { axis: "y", c0: st.a, c1: st.b, dTop: Y - 6, steps: 12, garland: !!st.garland, zB: st.z, carpet, way, landRun: 4 }
             ] });
-            (low.stairSigns = low.stairSigns || []).push({ x: st.b + 6, y: st.y, z: st.z, name: st.label, sign: st.sign, mid: (st.a + st.b) / 2 });
+            if (!st.noSign) (low.stairSigns = low.stairSigns || []).push({ x: st.b + 6, y: st.y, z: st.z, name: st.label, sign: st.sign, mid: (st.a + st.b) / 2 });
         } else if (st.kind === "sideturn") {
             /* the turning flight mirrored: up -x through a top-left wall to a landing, then -y into the floor above */
             punch(up, { x0: st.x - 10, x1: st.x, y0: st.a, y1: st.b });
