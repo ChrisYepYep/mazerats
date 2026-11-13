@@ -1477,14 +1477,34 @@ function liftEditOf() {
         if (was && !now) skip.add(dx + "," + dy);
         else if (now && (!was || was[0] !== now[0] || was[1] !== now[1] || was[2] !== now[2])) { skip.add(dx + "," + dy); put.push([dx, dy, now]); }
     }
-    return (liftEdit = { skip, put });
+    /* then drawn through the same filter lift() uses, and whatever still differs from his picture (pixels that only got their colour from a
+       half-pixel write the filter now drops) is put right too, until they match exactly */
+    const E = { skip, put };
+    for (let pass = 0; pass < 10; pass++) {
+        const draw2 = bg => { const b = new Buf(400, 400, bg), ox = 200, oy = 260, w = { b, ox, oy, z: 0, S: (x, y) => [ox + (x - y) * 16, oy + (x + y) * 8], lamps: [], plates: null }; liftFiltered(w, 0, 0, {}, E); return b; };
+        const A2 = draw2("ff00ff"), B2 = draw2("00ffff"); let n = 0;
+        for (let j = 0; j < his.h; j++) for (let i = 0; i < his.w; i++) {
+            const dx = i - LIFT_AT[0], dy = j - LIFT_AT[1], X = 200 + dx, Y = 200 + 60 + dy, p = (Y * 400 + X) * 4, q = (j * his.w + i) * 4;
+            const got = A2.d[p] === B2.d[p] && A2.d[p + 1] === B2.d[p + 1] && A2.d[p + 2] === B2.d[p + 2] ? [A2.d[p], A2.d[p + 1], A2.d[p + 2]] : null, now = his.rgba[q + 3] >= 128 ? [his.rgba[q], his.rgba[q + 1], his.rgba[q + 2]] : null;
+            if (!now && got) { skip.add(dx + "," + dy); n++; }
+            else if (now && (!got || got[0] !== now[0] || got[1] !== now[1] || got[2] !== now[2])) { skip.add(dx + "," + dy); put.push([dx, dy, now]); n++; }
+        }
+        if (!n) break;
+    }
+    return (liftEdit = E);
 }
 function lift(w, x, y, o) {
     o = o || {};
     if (o.left) return liftBody(w, x, y, o);
     const E = liftEditOf(); if (!E) return liftBody(w, x, y, o);
+    liftFiltered(w, x, y, o, E);
+}
+/* the lift drawn with his edits: his removed and changed pixels held back from the code's drawing, then his own colours laid last */
+function liftFiltered(w, x, y, o, E) {
     const O = w.S(x, y), key = (X, Y) => (X - O[0]) + "," + (Y - O[1]), b0 = w.b, wm = Object.create(w);
-    wm.b = Object.create(b0); wm.b.set = function (X, Y, c) { if (!E.skip.has(key(X, Y))) b0.set(X, Y, c); };
+    /* a side face is laid at half pixels (put(u1, h, t + .5)), which Buf.set splits across the pixel and the one to its right: such a write is
+       dropped if either of those is one he changed, or its colour bled back into his cleaned edges (14 Nov 2026, his: "random green pixels") */
+    wm.b = Object.create(b0); wm.b.set = function (X, Y, c) { if (Number.isInteger(X) ? E.skip.has(key(X, Y)) : E.skip.has(key(Math.floor(X), Y)) || E.skip.has(key(Math.ceil(X), Y))) return; b0.set(X, Y, c); };
     if (w.plates) wm.plates = { push: (X, Y, c, line) => { if (!E.skip.has(key(X, Y))) w.plates.push(X, Y, c, line); } };
     liftBody(wm, x, y, o);
     const line = o.line === undefined ? y : o.line;
