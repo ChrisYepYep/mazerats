@@ -841,7 +841,15 @@ function drawPortal(w, axis, line, at, part, theatre) {
         const q = (j * art.w + i) * 4; if (art.rgba[q + 3] < 128) continue;
         /* solid black in the arch only ever hid the avatar in the client: it isn't drawn */
         if (part === "arch" && !art.rgba[q] && !art.rgba[q + 1] && !art.rgba[q + 2] && (i < 8 || i > art.w - 8)) continue;
-        b.set(x0 + i, p[1] - T + j, [art.rgba[q], art.rgba[q + 1], art.rgba[q + 2]]);
+        let c = [art.rgba[q], art.rgba[q + 1], art.rgba[q + 2]];
+        /* the Events Gallery's tunnel floor is its own herringbone, shaded as the tunnel's parquet was (14 Nov 2026, his: "Floor is bugged") */
+        const grp = GROUPS.get((c[0] << 16) | (c[1] << 8) | c[2]);
+        if (GHP && theatre === "tunnel" && part === "alcove" && (grp === "parquet" || (grp === undefined && (c[0] || c[1] || c[2]) && c[0] > c[2] && c[0] * .3 + c[1] * .59 + c[2] * .11 < 95))) {
+            const rx = x0 + i - w.ox, ry = p[1] - T + j - w.oy + w.z, fx = (rx + 2 * ry) / 32, fy = (2 * ry - rx) / 32, deep = axis === "x" ? line - fy : line - fx, across = (axis === "x" ? fx : fy) - at - 2, k = Math.max(.42, Math.min(.95, .95 - .13 * deep)),      /* darker the further in, not the parquet's own stripes and joints */ wd = ghWood(fx * 16, fy * 16, false);
+            /* only where it is the tunnel's floor: its inner walls share the parquet's colours, but they lie outside its footprint on the floor */
+            if (across > -.4 && across < 4.4 && deep > -1.5 && deep < 4.6) c = [Math.round(wd[0] * k), Math.round(wd[1] * k), Math.round(wd[2] * k)];
+        }
+        b.set(x0 + i, p[1] - T + j, c);
         if (art.glow && art.glow[j * art.w + i] && w.glowing) { const X = x0 + i, Y = p[1] - T + j; if (X >= 0 && Y >= 0 && X < b.w && Y < b.h) w.glowing[Y * b.w + X] = ((art.rgba[q] << 16) | (art.rgba[q + 1] << 8) | art.rgba[q + 2]) + 1; }
     }
     /* not a tunnel ("tunnel"): it has no lamp (10 Nov scan b, renderer 2) */
@@ -863,6 +871,15 @@ function tunnelArt(phase, axis, part) {
     const clear = (i, j) => i < 0 || j < 0 || i >= Wd || j >= src.h || src.rgba[(j * Wd + i) * 4 + 3] < 128, nearOpening = (i, j) => { for (let v = -2; v <= 2; v++) for (let u = -2; u <= 2; u++) if (Math.abs(u) + Math.abs(v) <= 2 && clear(i + u, j + v) && j + v > rowOf(i) - 14) return true; return false; };
     for (let i = Math.round(cx - 30); i <= Math.round(cx + 30); i++) { const sc = S0 + ((i - S0) % P), dj = Math.round((i - sc) * slope);
         for (let j = rowOf(i) - 14; j <= rowOf(i) + 8; j++) { const q = (j * Wd + i) * 4, p = ((j - dj) * Wd + sc) * 4; if (q < 0 || p < 0 || o.rgba[q + 3] < 128 || nearOpening(i, j)) continue; for (let k = 0; k < 4; k++) o.rgba[q + k] = src.rgba[p + k]; } }
+    /* his shading on the frame and the bar over the opening, from the Theatredrome's (art/theatre-arch-patch.png, as theatreArt lays it): the bar's lit
+       top edge, its dark underside and the frame's sides; not its gold lettering touches, which belong to the THEATREDROME board (14 Nov 2026, his) */
+    let patch = null; try { patch = wallArt("i_theatre_arch_patch.png"); } catch (e) { patch = null; }
+    if (patch) { const ref = portalArt(3).x.arch;
+        for (let b = 0; b < patch.h; b++) for (let a2 = 0; a2 < patch.w; a2++) { const p = (b * patch.w + a2) * 4; if (patch.rgba[p + 3] < 128) continue;
+            const pr = patch.rgba[p], pg = patch.rgba[p + 1], pb = patch.rgba[p + 2]; if (pr > 200 && pg > 140 && pb < 140) continue;      // the lettering's gold
+            const i = axis === "x" ? a2 : 136 - a2, j = axis === "x" ? b : b + 1; if (i < 0 || j < 0 || i >= Wd || j >= src.h) continue;
+            const r0 = (b * ref.w + a2) * 4, h0 = (j * Wd + i) * 4; if (ref.rgba[r0 + 3] < 128 || src.rgba[h0 + 3] < 128 || ref.rgba[r0] !== src.rgba[h0] || ref.rgba[r0 + 1] !== src.rgba[h0 + 1] || ref.rgba[r0 + 2] !== src.rgba[h0 + 2]) continue;
+            o.rgba[h0] = pr; o.rgba[h0 + 1] = pg; o.rgba[h0 + 2] = pb; } }
     tunnelMemo.set(key, o); return o;
 }
 
@@ -2194,19 +2211,20 @@ function build(cfg) {
             /* a floor lowered with "raise the floor only" keeps its walls where they stood, which left a gap between them and the floor
                (14 Nov 2026, his: "Walls with a lowered floor show black areas, and the tunnel doesn't align"): so walls and doorways are drawn
                where they stand, then again at the floor below their foot only, so the panelling reaches down to the floor and the skirting sits on it */
-            const wallsAt = z => { w.z = z;
+            /* portals: "all", or "arch"; the inside goes where the wall stands and again at the floor, so it reaches both */
+            const wallsAt = (z, portals = "all") => { w.z = z;
                 let run = null;
                 for (let X = P.x0; X <= P.x1; X++) { const open = X < P.x1 && !has.has(X + "," + (P.y0 - 1)) && !holes.has(X + "," + (P.y0 - 1)) && !P.noBack && (P.notch || !airBelow(X, P.y0 - 1) || doorEdge("x", X, P.y0) || shown("x", P.y0, X)); if (open && run === null) run = X; if (!open && run !== null) { tagged(() => H.wallRunX(w, run, X, P.y0, { ...cornerEnd(backWall(X, P.y0, P.z), sideWall(X, P.y0 - 1), zAt(X, P.y0 - 1), P.z), noStart: backWall(run - 1, P.y0, P.z), col: colOf("x", P.y0), ...halfOf("x", P.y0) })); run = null; } }
                 run = null;
                 for (let Y = P.y0; Y <= P.y1; Y++) { const open = Y < P.y1 && !has.has((P.x0 - 1) + "," + Y) && !holes.has((P.x0 - 1) + "," + Y) && (P.notch || !airBelow(P.x0 - 1, Y) || doorEdge("y", P.x0, Y) || shown("y", P.x0, Y)); if (open && run === null) run = Y; if (!open && run !== null) { tagged(() => H.wallRunY(w, P.x0, run, Y, { ...cornerEnd(sideWall(P.x0, Y, P.z), backWall(P.x0 - 1, Y), zAt(P.x0 - 1, Y), P.z), noStart: sideWall(P.x0, run - 1, P.z), col: colOf("y", P.x0), ...halfOf("y", P.x0) })); run = null; } }
-                for (const q of (lv.portals || [])) { if (tileOf.get(q.axis === "x" ? q.at + "," + q.line : q.line + "," + q.at) === P && (q.axis === "x" ? P.y0 === q.line : P.x0 === q.line) /* on its wall, never over a floor (10 Nov scan b, renderer 7) */) { drawPortal(w, q.axis, q.line, q.at, "alcove", q.tunnel ? "tunnel" : q.theatre); drawPortal(w, q.axis, q.line, q.at, "arch", q.tunnel ? "tunnel" : q.theatre); } }
+                if (portals) for (const q of (lv.portals || [])) { if (tileOf.get(q.axis === "x" ? q.at + "," + q.line : q.line + "," + q.at) === P && (q.axis === "x" ? P.y0 === q.line : P.x0 === q.line) /* on its wall, never over a floor (10 Nov scan b, renderer 7) */) { if (portals !== "arch") { const zs = w.z; drawPortal(w, q.axis, q.line, q.at, "alcove", q.tunnel ? "tunnel" : q.theatre); if (P.z !== zs) { w.z = P.z; drawPortal(w, q.axis, q.line, q.at, "alcove", q.tunnel ? "tunnel" : q.theatre); w.z = zs; } } drawPortal(w, q.axis, q.line, q.at, "arch", q.tunnel ? "tunnel" : q.theatre); } }
             };
             wallsAt(zWalls);
             if ((P.floorLift || 0) < 0) {
                 const o0 = (w.z = zWalls, w.S(P.x0, P.y0)), foot = x => o0[1] + Math.abs(x - o0[0]) / 2 - 24;
                 const under = Object.prototype.hasOwnProperty.call(layer, "set") ? layer.set : null;
                 layer.set = function (x, y, c) { if (y < foot(x)) return; if (under) under.call(layer, x, y, c); else Buf.prototype.set.call(layer, x, y, c); };
-                wallsAt(P.z);
+                wallsAt(P.z, "arch");
                 if (under) layer.set = under; else delete layer.set;
             }
             w.z = P.z;
