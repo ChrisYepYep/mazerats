@@ -362,6 +362,41 @@ function plaqueWidth(name) {
     const words = String(name).split(" "), tw = words.reduce((a, t) => a + H.textW(t, "vb"), 0) + (words.length - 1) * PLAQUE.wordGap;
     return Math.max(50, tw + 2 * (PLAQUE.frame + PLAQUE.pad));
 }
+/* His pole for the stair signs (14 Nov 2026). Worked out once: where his Floor 2 sign sits against the code's own board (matched pixel for
+   pixel), so each of his pole's pixels is known from the wall point. Stretched for other widths the way he drew The Basement's: the wall end
+   (plate, curl, near hook) stays, the far end (hook, ball) moves out along the rod's 2:1 slope by an even number of columns, and the rod between
+   repeats its own two-column step */
+const POLE_REF = "Floor 2", POLE_SPLIT = [14, 49], POLE_EDGE = hex("5c3c30");
+let stairPole;
+function stairPoleArt() {
+    if (stairPole !== undefined) return stairPole; stairPole = null;
+    let pole, sign; const P = require("path");
+    try { pole = H_readPng(P.join(__dirname, "../art/signs/stair-sign-floor-2-pole.png")); sign = H_readPng(P.join(__dirname, "../art/signs/stair-sign-floor-2.png")); } catch (e) { return null; }
+    const draw = bg => { const b = new Buf(400, 400, bg); stairPlaque(b, 300, 300, POLE_REF, { boardOnly: true }); return b; };
+    const A = draw("ff00ff"), B = draw("00ffff"), mine = (X, Y) => { if (X < 0 || Y < 0 || X >= 400 || Y >= 400) return null; const p = (Y * 400 + X) * 4; return A.d[p] === B.d[p] && A.d[p + 1] === B.d[p + 1] && A.d[p + 2] === B.d[p + 2] ? [A.d[p], A.d[p + 1], A.d[p + 2]] : null; };
+    const solid = (im, i, j) => im.rgba[(j * im.w + i) * 4 + 3] >= 128, col = (im, i, j) => { const q = (j * im.w + i) * 4; return [im.rgba[q], im.rgba[q + 1], im.rgba[q + 2]]; };
+    let best = null;
+    for (let oy = 120; oy <= 330; oy++) for (let ox = 120; ox <= 330; ox++) {
+        let hit = 0, n = 0;
+        for (let j = 0; j < sign.h; j += 2) for (let i = 0; i < sign.w; i += 2) { if (!solid(sign, i, j) || solid(pole, i, j)) continue; n++; const m = mine(i + ox, j + oy), c = col(sign, i, j); if (m && m[0] === c[0] && m[1] === c[1] && m[2] === c[2]) hit++; }
+        if (n && (!best || hit > best.hit)) best = { hit, ox, oy };
+    }
+    if (!best) return null;
+    const px = [];
+    for (let j = 0; j < pole.h; j++) for (let i = 0; i < pole.w; i++) if (solid(pole, i, j)) px.push([i, j, col(pole, i, j)]);
+    return (stairPole = { px, dx: best.ox - 300, dy: best.oy - 300, wRef: plaqueWidth(POLE_REF) });
+}
+function drawStairPole(b, ax, ay, Wd, P) {
+    /* the far end moves out by an even number of columns (so the rod keeps its step), keeping the ball 3 or 4 pixels past the board, as on his Floor 2 */
+    const diff = Wd - P.wRef, D = diff - (diff & 1), [m0, m1] = POLE_SPLIT, put = (i, j, c) => b.set(ax + P.dx + i, ay + P.dy + j, c);
+    for (const [i, j, c] of P.px) {
+        if (i > m1) put(i, j, c);                                      // the wall end
+        else if (i < m0) put(i - D, j + D / 2, c);                     // the far end, moved out along the rod
+    }
+    /* the rod between, each column from his: the same step two columns along, one row higher */
+    const cols = new Map(); for (const [i, j, c] of P.px) if (i >= m0 && i <= m1) { if (!cols.has(i)) cols.set(i, []); cols.get(i).push([j, c]); }
+    for (let t = m0 - D; t <= m1; t++) { let src = t, lift = 0; while (src < m0) { src += 2; lift++; } for (const [j, c] of cols.get(src) || []) put(t, j + lift, c); }
+}
 function stairPlaque(b, ax, ay, name, o) {
     o = o || {};
     const BR = ["7a4a14", "b47a22", "ddaa63", "f2be70", "ffe7a8"].map(hex), WD = ["240a02", "3a1508", "4c1c0c", "5a2410", "7a3a1a", "925030"].map(hex), IRON = ["121016", "26222c", "3c3744", "5a5462"].map(hex);
@@ -374,21 +409,26 @@ function stairPlaque(b, ax, ay, name, o) {
         for (const i of seen.keys()) { const x = i % b.w, y = (i / b.w) | 0; for (const [p, q] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) if (!seen.has((y + q) * b.w + x + p)) b.set(x + p, y + q, C.k); }
         for (const [i, c] of seen) b.set(i % b.w, (i / b.w) | 0, c);
     };
-    /* the arm, level with the wall's slope going out, a little scroll under it, and a brass plate on the wall */
-    const armH = h + Hd + 8, len = Wd + off + 2;
-    outlined(mark => {
-        for (let t = -6; t <= 6; t++) for (const u of [-1, 0, 1]) mark(ax + u, ay - armH - t + Math.floor(u / 2), u < 0 ? BR[3] : u ? BR[1] : BR[2]);
-        for (let u = 0; u <= len; u++) { const y = ay - armH + Math.floor(u / 2); mark(ax - u, y, IRON[2]); mark(ax - u, y - 1, IRON[3]); }
-        for (let a = 0; a < 44; a++) { const th = a / 44 * Math.PI * 1.5, r = 6 * (1 - a / 66); mark(Math.round(ax - 9 + Math.cos(th) * r), Math.round(ay - armH + 9 - Math.sin(th) * r), IRON[2]); }
-        const e = [ax - len, ay - armH + Math.floor(len / 2) - 1]; for (const [p, q] of [[0, 0], [-1, 0], [1, 0], [0, -1], [0, 1]]) mark(e[0] + p, e[1] + q, BR[3]);
-    });
-    /* two chains */
-    for (const sc of [6, Wd - 7]) { const top = at(sc, Hd), armY = ay - armH + Math.floor((ax - top[0]) / 2) + 1; for (let y = armY; y < top[1]; y++) b.set(top[0], y, (y - armY) % 3 === 2 ? BR[0] : BR[2]); }
+    /* his pole (14 Nov 2026, art/signs/stair-sign-floor-2-pole.png): one rod on the sign, a hook at each end, a ball tip, drawn over the sign
+       after it; the code's own arm and chains only if his picture is missing */
+    const pole = o.boardOnly ? null : stairPoleArt();
+    if (!pole && !o.boardOnly) {
+        /* the arm, level with the wall's slope going out, a little scroll under it, and a brass plate on the wall */
+        const armH = h + Hd + 8, len = Wd + off + 2;
+        outlined(mark => {
+            for (let t = -6; t <= 6; t++) for (const u of [-1, 0, 1]) mark(ax + u, ay - armH - t + Math.floor(u / 2), u < 0 ? BR[3] : u ? BR[1] : BR[2]);
+            for (let u = 0; u <= len; u++) { const y = ay - armH + Math.floor(u / 2); mark(ax - u, y, IRON[2]); mark(ax - u, y - 1, IRON[3]); }
+            for (let a = 0; a < 44; a++) { const th = a / 44 * Math.PI * 1.5, r = 6 * (1 - a / 66); mark(Math.round(ax - 9 + Math.cos(th) * r), Math.round(ay - armH + 9 - Math.sin(th) * r), IRON[2]); }
+            const e = [ax - len, ay - armH + Math.floor(len / 2) - 1]; for (const [p, q] of [[0, 0], [-1, 0], [1, 0], [0, -1], [0, 1]]) mark(e[0] + p, e[1] + q, BR[3]);
+        });
+        /* two chains */
+        for (const sc of [6, Wd - 7]) { const top = at(sc, Hd), armY = ay - armH + Math.floor((ax - top[0]) / 2) + 1; for (let y = armY; y < top[1]; y++) b.set(top[0], y, (y - armY) % 3 === 2 ? BR[0] : BR[2]); }
+    }
     /* the plaque, with its top edge and outer end showing */
     outlined(mark => {
         const set = (s, t, c) => { const q = at(s, t); mark(q[0], q[1], c); };
         for (let d = 1; d <= 2; d++) {
-            for (let s = 0; s < Wd; s++) { const q = at(s, Hd - 1); mark(q[0] - d, q[1] - Math.ceil(d / 2), WD[5]); }
+            for (let s = 0; s < Wd; s++) { const q = at(s, Hd - 1); mark(q[0] - d, q[1] - Math.ceil(d / 2), pole ? POLE_EDGE : WD[5]); }      // his darker top edge under his rod
             for (let t = 0; t < Hd; t++) { const q = at(0, t); mark(q[0] - d, q[1] - Math.ceil(d / 2), WD[1]); }
         }
         for (let s = 0; s < Wd; s++) for (let t = 0; t < Hd; t++) { const r = Math.min(s, Wd - 1 - s, t, Hd - 1 - t); set(s, t, r === 0 ? BR[t > Hd / 2 ? 3 : 1] : r === 1 ? BR[0] : WD[(s + (t >> 1)) % 9 ? 1 : 2]); }
@@ -408,6 +448,7 @@ function stairPlaque(b, ax, ay, name, o) {
         }
         U += wordGap;
     }
+    if (pole) drawStairPole(b, ax, ay, Wd, pole);
 }
 
 /* ---- a sign with your own words (8 Nov 2026, the owner's: "a custom placeable version of the lost property sign, where i can type the
