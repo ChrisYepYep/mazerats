@@ -870,7 +870,16 @@ const LAMP_REACH = 135;          // how far a lamp's pool reaches, in map pixels
 const MOOD_TINT = { day: [0, 0, 0, 0], dusk: [70, 30, 20, .3], night: [12, 16, 44, .62], dawn: [50, 36, 70, .3], sconces: [40, 28, 24, .26], failing: [14, 14, 22, .6], cold: [20, 34, 30, .42], gas: [24, 14, 10, .62] };
 const MOOD_NAME = { day: "Day", dusk: "Evening", night: "Night", dawn: "Dawn" };
 let timeMode = localStorage.getItem("hallway-time") || "cycle";
-const cycleStart = performance.now();
+let cycleStart = performance.now();
+/* the screensaver brings the evening on (14 Nov 2026, his: "if it's daytime, the evening transition should start after 5s"): in full day on
+   the cycle, the clock is moved on to that many seconds before the evening's fade starts. True if it did */
+function eveningIn(secs) {
+    if (moodForced || timeMode !== "cycle") return false;
+    const t = ((performance.now() - cycleStart) % CYCLE_MS) / 1000, start = CYCLE.find(([, m], i) => m === "day" && CYCLE[i + 1] && CYCLE[i + 1][1] === "dusk");
+    if (!start || t >= start[0] || t < 0) return false;
+    if (start[0] - t <= secs) return true;
+    cycleStart = performance.now() - (start[0] - secs) * 1000; return true;
+}
 const moodTiles = new Map(), moodInflight = new Map();
 let moodForced = null;
 /* the Hallway's own time, whatever the Time list says: night-only things go by this */
@@ -1375,7 +1384,7 @@ window.HallwayLive = {
     /* where a wall item's picture goes on the map, and a piece's picture and where it's drawn from (live-leet.js) */
     wallItemRect: (l, q) => wallItemRect(l, q), pieceOf: p => pieceOf(p), tileZ: (l, x, y) => tileZ(l, x, y),
     tileFree(l) { const so = solid(l), hs = holes(l), sl = stairLevels().slots.get(l); return (x, y) => hasFloor(l, x, y) && !so.has(x + "," + y) && !hs.some(h => inRect(h, x, y)) && !(sl && sl.has(x + "," + y)); },
-    nodeZ: (l, x, y) => nodeZ(l, x, y), mood: () => moodNow(), forceMood(m) { moodForced = m; }, loadMood: (m, x, y) => { const tx = Math.floor(x / TILE), ty = Math.floor(y / TILE); moodTile(m, tx, ty); },
+    nodeZ: (l, x, y) => nodeZ(l, x, y), mood: () => moodNow(), eveningIn: s => eveningIn(s), forceMood(m) { moodForced = m; }, loadMood: (m, x, y) => { const tx = Math.floor(x / TILE), ty = Math.floor(y / TILE); moodTile(m, tx, ty); },
     view() { const hw = canvas.width / zoom / 2, hh = canvas.height / zoom / 2; return { x0: cam.x - hw, x1: cam.x + hw, y0: cam.y - hh, y1: cam.y + hh, w: canvas.width, h: canvas.height }; },
     camera(x, y) { cam.x = x; cam.y = y; clampCam(); }, get cam() { return { x: cam.x, y: cam.y }; }, holdCamera(on) { camHeld = on; if (!on) followNow(); }, setZoom: z => setZoom(z, canvas.width / 2, canvas.height / 2), zoomRaw(z) { zoom = Math.max(1, Math.min(4, z)); $("zoomVal").textContent = Math.round(zoom) + "x";      /* whole steps only, mid-ease too (14 Nov scan: it read 1.33x) */ $("zoomOut").disabled = zoom <= 1; $("zoomIn").disabled = zoom >= 4; clampCam(); paint(); },      /* the screensaver's smooth zoom: no recentring, it moves the camera itself */
     realNight: () => realNight(), enterRoom(target, axis) { if (!walker || roomSession) return false; const me = walker; me.busy = true; me.pts = []; me.walking = false; roomSession = RoomView.enter($("stage"), { room: target.room, facts: target.facts, edge: axis === "x" ? "y" : "x", zoom: () => zoom, wheel: d => setZoom(zoom + (d < 0 ? 1 : -1)), onLeave: () => { roomSession.close(); roomSession = null; me.busy = false; paint(); } }); return true; },

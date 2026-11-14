@@ -128,7 +128,9 @@
         /* the bounce (dvdTick): zoomed to 2x where you were looking, then off in one of the four slanted ways */
         const cam = LIVE.cam, z0 = LIVE.zoom || 1;
         Object.assign(screensaver, { on: true, floors: [], i: 0, cam: { x: cam.x, y: cam.y }, phase: "zoom", z0, zoomS: Math.abs(SS_ZOOM - z0) < .01 ? .01 : ZOOM_IN_S, t0: performance.now(), last: performance.now(), was: { cam, zoom: LIVE.zoom }, fade: 0, dim: 0,
-            dx: Math.random() < .5 ? -1 : 1, dy: Math.random() < .5 ? -1 : 1, X: 0, Y: 0, acc: 0 });
+            dir: { x: Math.random() < .5 ? -1 : 1, y: Math.random() < .5 ? -1 : 1 }, pos: { x: cam.x, y: cam.y }, vel: { x: 0, y: 0 }, turn: { x: null, y: null }, base: null, X: 0, Y: 0 });
+        /* daytime: the evening comes on five seconds in (14 Nov 2026, his) */
+        if (LIVE.eveningIn) LIVE.eveningIn(5);
         /* the music plays on (8 Nov 2026, his: it should keep playing when the screensaver starts) */
         LIVE.holdCamera(true); document.body.classList.add("hw-screensaver");
         if (!screensaver.title) { const t = screensaver.title = document.createElement("div"); t.className = "hw-ss-title"; t.setAttribute("aria-hidden", "true"); /* the Hallway's own card, and under it the way out on a little brass-edged plate to match (9 Nov 2026, his) */
@@ -150,7 +152,7 @@
        meets, as the DVD logo does: no easing, no slowing (his: "it slows right down to a stutter"). At 2x it moves in whole steps of exactly
        two screen pixels across and one down, counted in screen pixels, so every line in the picture moves together and nothing shimmers (the
        flicker was across and down rounding at different moments). First it zooms to 2x where you were, slowly, easing in and out. */
-    const DVD_SPEED = 44, ZOOM_IN_S = 4;          // screen pixels across a second, at 2x; how long the zoom takes
+    const DVD_SPEED = 34, ZOOM_IN_S = 4;          // screen pixels across a second, at 2x; how long the zoom takes
     const smooth = t => t <= 0 ? 0 : t >= 1 ? 1 : t * t * (3 - 2 * t);
     function dvdBounds(z) {
         const r = LIVE.map && LIVE.map.rect, v = LIVE.view(), hw = (v.x1 - v.x0) / 2, hh = (v.y1 - v.y0) / 2; if (!r) return null;
@@ -158,29 +160,41 @@
         if (b.x1 < b.x0) b.x0 = b.x1 = Math.round((r.x + r.w / 2) * z); if (b.y1 < b.y0) b.y0 = b.y1 = Math.round((r.y + r.h / 2) * z);
         return b;
     }
+    /* Moving from the first frame, while it zooms (14 Nov 2026, his: "the camera movement should start at the same time that zoom starts"). A side
+       met swings that half of the way round over TURN_S rather than flipping, timed so the swing's turning point is the side itself (his:
+       "the bounce is good, but make it smoother"). On the straight, at 2x, it's shown in whole steps of two across and one down from where the
+       straight began, so lines still move together; only mid-swing and mid-zoom does each way round on its own. */
+    const TURN_S = 1.4;
     function dvdTick(now) {
         if (!screensaver.on) return; screensaver.raf = requestAnimationFrame(dvdTick);
         const s = screensaver, dt = Math.min(.1, (now - s.last) / 1000); s.last = now; s.dim = Math.min(1, s.dim + dt / 2.5);
-        if (s.phase === "zoom") {
-            const k = smooth((now - s.t0) / 1000 / s.zoomS), z = s.z0 + (SS_ZOOM - s.z0) * k;
-            if (LIVE.zoomRaw && LIVE.zoom !== z) LIVE.zoomRaw(k >= 1 ? SS_ZOOM : z);
-            LIVE.camera(s.cam.x, s.cam.y);
-            if (k >= 1) { const c = LIVE.cam; s.X = Math.round(c.x * SS_ZOOM); s.Y = Math.round(c.y * SS_ZOOM); s.acc = 0; s.phase = "move"; }
-        } else {
-            const b = dvdBounds(SS_ZOOM); if (!b) return;
-            /* each step is two across and one down (or up); a side met turns that half of the way round */
-            s.acc += DVD_SPEED / 2 * dt; let n = Math.floor(s.acc); s.acc -= n; if (n > 8) n = 8;
-            const lockX = b.x0 === b.x1, lockY = b.y0 === b.y1;
-            if (lockX) s.X = b.x0; if (lockY) s.Y = b.y0;
-            for (; n > 0; n--) {
-                if (!lockX) { if (s.X + 2 * s.dx > b.x1 || s.X + 2 * s.dx < b.x0) s.dx = -s.dx; s.X = Math.max(b.x0, Math.min(b.x1, s.X + 2 * s.dx)); }
-                if (!lockY) { if (s.Y + s.dy > b.y1 || s.Y + s.dy < b.y0) s.dy = -s.dy; s.Y = Math.max(b.y0, Math.min(b.y1, s.Y + s.dy)); }
-            }
-            LIVE.camera(s.X / SS_ZOOM, s.Y / SS_ZOOM);
-            /* the tiles about to show, asked for ahead of time in the light they'll be in */
-            if (Math.floor(now / 500) !== s.asked) { s.asked = Math.floor(now / 500); const md = LIVE.mood(), moods = md ? [...new Set([md.a, md.b])] : [], v = LIVE.view(), hw = (v.x1 - v.x0) / 2, hh = (v.y1 - v.y0) / 2, ax = s.X / SS_ZOOM + s.dx * 160, ay = s.Y / SS_ZOOM + s.dy * 80;
-                for (let y = ay - hh; y <= ay + hh + 512; y += 512) for (let x = ax - hw; x <= ax + hw + 512; x += 512) for (const m of moods) LIVE.loadMood(m, x, y); }
+        /* the zoom, eased in and out */
+        let z = LIVE.zoom;
+        if (s.phase === "zoom") { const k = smooth((now - s.t0) / 1000 / s.zoomS); z = k >= 1 ? SS_ZOOM : s.z0 + (SS_ZOOM - s.z0) * k; if (LIVE.zoomRaw && LIVE.zoom !== z) LIVE.zoomRaw(z); if (k >= 1) s.phase = "move"; }
+        const bd = dvdBounds(z); if (!bd) return;
+        const b = { x0: bd.x0 / z, x1: bd.x1 / z, y0: bd.y0 / z, y1: bd.y1 / z }, V = DVD_SPEED / SS_ZOOM;      // in map pixels
+        /* each way: its speed (a turn eases it from one sign to the other), and whether to start turning: when the swing that's left would
+           just reach the side */
+        for (const ax of ["x", "y"]) {
+            const lo = ax === "x" ? b.x0 : b.y0, hi = ax === "x" ? b.x1 : b.y1, sp = ax === "x" ? V : V / 2, T = s.turn[ax];
+            if (hi - lo < 1) { s.pos[ax] = (lo + hi) / 2; s.vel[ax] = 0; s.turn[ax] = null; continue; }
+            if (T) { const u = (now - T.t0) / 1000 / TURN_S; if (u >= 1) { s.turn[ax] = null; s.dir[ax] = -s.dir[ax]; s.vel[ax] = s.dir[ax] * sp; s.base = null; } else s.vel[ax] = s.dir[ax] * sp * Math.cos(Math.PI * u); }
+            else { s.vel[ax] = s.dir[ax] * sp; const room = s.dir[ax] > 0 ? hi - s.pos[ax] : s.pos[ax] - lo; if (room <= sp * TURN_S / Math.PI) s.turn[ax] = { t0: now }; }
+            s.pos[ax] = Math.max(lo, Math.min(hi, s.pos[ax] + s.vel[ax] * dt));
         }
+        /* shown: in locked steps on the straight at 2x, else to the nearest screen pixel each way */
+        let X, Y;
+        if (s.phase === "move" && !s.turn.x && !s.turn.y && z === SS_ZOOM) {
+            const DX = s.pos.x * z, DY = s.pos.y * z;
+            if (!s.base) s.base = { x: Math.round(DX), y: Math.round(DY), dx: s.dir.x, dy: s.dir.y };
+            const n = Math.max(0, Math.floor(Math.abs(DX - s.base.x) / 2));
+            X = s.base.x + 2 * n * s.base.dx; Y = s.base.y + n * s.base.dy;
+            if (Math.abs(Y - DY) > 2) { s.base = { x: Math.round(DX), y: Math.round(DY), dx: s.dir.x, dy: s.dir.y }; X = s.base.x; Y = s.base.y; }
+        } else { s.base = null; X = Math.round(s.pos.x * z); Y = Math.round(s.pos.y * z); }
+        s.X = X; s.Y = Y; LIVE.camera(X / z, Y / z);
+        /* the tiles about to show, asked for ahead of time in the light they'll be in */
+        if (Math.floor(now / 500) !== s.asked) { s.asked = Math.floor(now / 500); const md = LIVE.mood(), moods = md ? [...new Set([md.a, md.b])] : [], v = LIVE.view(), hw = (v.x1 - v.x0) / 2, hh = (v.y1 - v.y0) / 2, ax = s.pos.x + s.dir.x * 160, ay = s.pos.y + s.dir.y * 80;
+            for (let y = ay - hh; y <= ay + hh + 512; y += 512) for (let x = ax - hw; x <= ax + hw + 512; x += 512) for (const m of moods) LIVE.loadMood(m, x, y); }
     }
     LIVE.add({ active: () => screensaver.on, over(c) { const W = c.canvas.width, Hh = c.canvas.height, dim = .38 * (screensaver.dim || 0), f = screensaver.fade || 0; c.fillStyle = `rgba(0,0,0,${dim + (1 - dim) * f})`; c.fillRect(0, 0, W, Hh); } });
     setInterval(() => { if (!screensaver.on && !document.hidden && LIVE.walker && LIVE.idleFor > IDLE_MS && !LIVE.busy) ssStart(); }, 1000);
@@ -190,5 +204,5 @@
     for (const ev of ["pointerdown", "mousedown", "keydown", "touchstart"]) window.addEventListener(ev, stop, { capture: true, passive: false });
     window.addEventListener("wheel", e => { if (screensaver.on) { e.preventDefault(); e.stopPropagation(); } }, { capture: true, passive: false });
     let lastMove = null; window.addEventListener("pointermove", e => { const was = lastMove; lastMove = [e.clientX, e.clientY]; if (!was || Math.hypot(e.clientX - was[0], e.clientY - was[1]) < 3) return; if (!screensaver.on) LIVE.markActive(); }, { capture: true, passive: true });
-    window.HallwayScreensaver = { start: ssStart, stop: ssEnd, get on() { return screensaver.on; }, get state() { const f = screensaver.floors && screensaver.floors[screensaver.i]; return { phase: screensaver.phase, X: screensaver.X, Y: screensaver.Y, dx: screensaver.dx, dy: screensaver.dy, zoom: LIVE.zoom, floor: f && f.l.name }; } };
+    window.HallwayScreensaver = { start: ssStart, stop: ssEnd, get on() { return screensaver.on; }, get state() { const f = screensaver.floors && screensaver.floors[screensaver.i]; return { phase: screensaver.phase, X: screensaver.X, Y: screensaver.Y, dx: screensaver.dir && screensaver.dir.x, dy: screensaver.dir && screensaver.dir.y, turning: !!(screensaver.turn && (screensaver.turn.x || screensaver.turn.y)), zoom: LIVE.zoom, mood: JSON.stringify(LIVE.mood()), floor: f && f.l.name }; } };
 })();
