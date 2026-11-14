@@ -1461,13 +1461,22 @@ function screenCorners() {
     let a0 = 1e9, a1 = -1, b0 = 1e9;
     for (let y = 0; y < im.h; y++) for (let x = 0; x < im.w; x++) if (isRug(pp(x, y))) { const s = x - 128, t = 2 * y; const a = Math.round((t + s) / 2), b = Math.round((t - s) / 2); a0 = Math.min(a0, a); a1 = Math.max(a1, a); b0 = Math.min(b0, b); }
     /* our own plain corners, on a rug eight tiles square */
-    const F = rugField([{ x0: 0, x1: 8, y0: 0, y1: 8 }]); for (const c of F.corners) c.small = true;
+    const F = rugField([{ x0: 0, x1: 8, y0: 0, y1: 8 }]); for (const c of F.corners) c.small = true; F.plainEdges = true;
     const ours = (SX, SY) => rugFieldAt(F, 0, 0, SX, SY);
     /* the piece's fill: every colour in the middle of its rug, which ours has its own weave for */
     const ramp = new Set(RUG.ramp.filter(Boolean).map(num)), fill = new Set(); for (let y = 56; y < 76; y++) for (let x = 108; x < 148; x++) { const c = pp(x, y); if (isRug(c)) fill.add(num(c)); }
     const plainCols = new Set(); for (let i = 0; i < 32; i++) for (let j = 0; j < 16; j++) { const c = RUG.at(68 + i, RUG.core + j); if (c) plainCols.add(num(c)); }
     const kinds = {};
-    for (const c of F.corners) {
+    /* a piece pixel worth taking: its medallion and its border's turn, not its flat fill or the rug's own stripes */
+    const take = c => c && isRug(c) && !plainCols.has(num(c)) && !fill.has(num(c));
+    /* the top and bottom corners first, against our plain border: their two edges then become the straight edges everywhere (edgeAt), and
+       the two side corners are fitted against those, so the four agree to the pixel (fitted against the plain border, a side corner sat a
+       stripe off one of its edges) */
+    const F2 = rugField([{ x0: 0, x1: 8, y0: 0, y1: 8 }]); for (const c of F2.corners) c.small = true;
+    for (const pass of [0, 1]) for (const c of F.corners) {
+        if ((c.sa === c.sb) !== (pass === 0)) continue;
+        if (pass === 1) SCORNER = { kinds, pp, take, edge: c => !!c && !wood.has(num(c)) };
+        const ref = pass === 0 ? ours : (SX, SY) => rugFieldAt(F2, 0, 0, SX, SY);
         const A = c.A, B = c.B, key = c.sa + "," + c.sb, k = c.sa === c.sb ? c.sa : c.sb;
         /* where the piece's matching corner lands, worked out from the two coordinate systems; then the best fit a few pixels either way */
         const est = c.sa === 1 && c.sb === 1 ? [128 + a0 - b0 - (A - B), (a0 + b0 - 2 - A - B) / 2]
@@ -1479,17 +1488,17 @@ function screenCorners() {
         for (let oy = Math.floor(est[1]) - 4; oy <= Math.ceil(est[1]) + 4; oy++) for (let ox = est[0] - 4; ox <= est[0] + 4; ox++) {
             let hit = 0;
             for (let dy = -40; dy <= 40; dy++) for (let dx = -80; dx <= 80; dx++) {
-                const SX = Math.round(CX) + dx, SY = Math.round(CY) + dy, o = ours(SX, SY); if (!o || !ramp.has(num(o))) continue;
+                const SX = Math.round(CX) + dx, SY = Math.round(CY) + dy, o = ref(SX, SY); if (!o || !ramp.has(num(o))) continue;
                 const p = pp(k * SX + ox, k * SY + oy); if (p && num(p) === num(o)) hit++;
             }
             if (!best || hit > best.hit) best = { hit, ox, oy };
         }
         kinds[key] = { k, ox: best.ox, oy: best.oy, A, B, fit: best.hit };
     }
-    /* a piece pixel worth taking: its medallion and its border's turn, not its flat fill or the rug's own stripes */
-    const take = c => c && isRug(c) && !plainCols.has(num(c)) && !fill.has(num(c));
-    return (SCORNER = { kinds, pp, take });
+    return (SCORNER = { kinds, pp, take, edge: c => !!c && !wood.has(num(c)) });
 }
+/* how far in from a corner (in rug units, each way) the piece's own pixels are used: the medallion and the dip it puts in the dark band */
+const ROSETTE_ZONE = 40;
 /* the rosette's pixel at screen (SX, SY) for corner c, or null */
 function rosetteAt(c, SX, SY) {
     const S = screenCorners(), K = S.kinds[c.sa + "," + c.sb]; if (!K) return null;
@@ -1532,7 +1541,12 @@ function rugField(rugs) {
         for (const k of seen) along.set(k, v);
     }
     const cut = new Set(); for (const r of rugs) if (r.chamfer) for (let X = r.x0; X < r.x1; X++) for (let Y = r.y0; Y < r.y1; Y++) cut.add(X + "," + Y);
-    return { set, along, near: new Map(), corners: rugCorners(set, cut), cornerNear: new Map() };
+    /* plain corners (14 Nov 2026, his): a rug with plainCorners gives every corner of the joined shape it's part of the plain turn, no medallion */
+    const plain = new Set();
+    for (const r of rugs) if (r.plainCorners) { const q = [r.x0 + "," + r.y0]; if (plain.has(q[0])) continue; plain.add(q[0]);
+        while (q.length) { const [X, Y] = q.pop().split(",").map(Number); for (const n of [(X + 1) + "," + Y, (X - 1) + "," + Y, X + "," + (Y + 1), X + "," + (Y - 1)]) if (set.has(n) && !plain.has(n)) { plain.add(n); q.push(n); } } }
+    const corners = rugCorners(set, cut); for (const c of corners) if (plain.has(Math.floor(c.A / 16) + "," + Math.floor(c.B / 16))) c.small = true;
+    return { set, along, near: new Map(), corners, cornerNear: new Map() };
 }
 /* ---- the small-squares floor (8 Nov 2026): the floor inside the entrance's tunnel, laid where you drag it, as a rug is. The hallway's own
    wood, cut into squares half a tile across, each with a dark groove along its far edges and a light one along its near edges, as the
@@ -1600,26 +1614,43 @@ function rugFieldAt(F, X, Y, dx, dy) {
         for (let i = TX - R; i <= TX + R; i++) for (let j = TY - R; j <= TY + R; j++) if (!F.set.has(i + "," + j)) near.push(i * 16, j * 16);
         F.near.set(key, near);
     }
-    let r = 1e9;
+    /* the nearest edge too, which side of the rug it is and where (side: 0 = low a, 1 = high a, 2 = low b, 3 = high b; at: its first rug unit) */
+    let r = 1e9, side = -1, at = 0;
     for (let n = 0; n < near.length; n += 2) {
         const ax = near[n], by = near[n + 1];
         const da = a < ax ? ax - a - 1 : a >= ax + 16 ? a - ax - 16 : 0, db = b < by ? by - b - 1 : b >= by + 16 ? b - by - 16 : 0;
         const d = Math.max(da, db);
-        if (d < r) r = d;
+        if (d < r) { r = d; if (da >= db) { side = a < ax ? 1 : 0; at = a < ax ? ax - 1 : ax + 16; } else { side = b < by ? 3 : 2; at = b < by ? by - 1 : by + 16; } }
     }
     if (GHP) return ghRugPx(r, X, Y, dx, dy);
     /* the corners: cut ones move the edge in, square ones have the rosette. A cut runs its whole border (RUG_BORDER deep) to where it meets
        the straight edges' border, nearer stripe winning: it stopped 12 rows in (u + v < 40), so below that the uncut corner's border came back
        as stray light lines across the rug that ran into nothing (14 Nov 2026, his). */
     let cn = F.cornerNear.get(key); if (!cn) { cn = F.corners.filter(c => Math.abs(c.A - TX * 16) < 80 && Math.abs(c.B - TY * 16) < 80); F.cornerNear.set(key, cn); }
+    let cutHere = false;
     for (const c of cn) {
         const u = c.sa * (a - c.A), v = c.sb * (b - c.B); if (u < 0 || v < 0) continue;
+        if (c.cut) cutHere = true;
         /* measured from the unrounded point, so the cut edge is a clean line and not every other pixel; one stripe of the border to each pixel row (a flat cut) or column (an upright one), as the straight edges have, so none is skipped (8 Nov: "distorted") */
         if (c.cut) { const fa = X * 16 + (dx + 2 * dy) / 2, fb = Y * 16 + (2 * dy - dx) / 2, w2 = c.sa * (fa - c.A) + c.sb * (fb - c.B) + (c.sa < 0 ? 1 : 0) + (c.sb < 0 ? 1 : 0), d = c.flat ? (w2 - 16) / 2 : (w2 - 16); if (d < 0) return null; if (d < r && d < RUG_BORDER) r = Math.floor(d); }
-        else if (!c.small && u >= 1 && v >= 1 && u <= CORNER.N && v <= CORNER.N && r >= 1) { const p = rosetteAt(c, (X - Y) * 16 + dx, (X + Y) * 8 + dy); if (p) return p; }
+        else if (!c.small && u >= 1 && v >= 1 && u <= ROSETTE_ZONE && v <= ROSETTE_ZONE && r >= 1) { const p = rosetteAt(c, (X - Y) * 16 + dx, (X + Y) * 8 + dy); if (p) return p; }
     }
-    if (r < RUG.ramp.length) return RUG.ramp[r];
+    if (r < RUG.ramp.length) return (!F.plainEdges && !cutHere && side >= 0 && edgeAt(side, at, a, b, (X - Y) * 16 + dx, (X + Y) * 8 + dy)) || RUG.ramp[r];
     return F.along.get(key) ? RUG.at(68 + (((b % 32) + 32) % 32), RUG.core + (((a % 16) + 16) % 16)) : RUG.at(68 + (((a % 32) + 32) % 32), RUG.core + (((b % 16) + 16) % 16));
+}
+/* A straight edge's border, copied from the client's own rug in screen pixels (14 Nov 2026, his: "the thickness of the lines not matching
+   the straight rug sprites ... amend the straight rug sprites too"). The border as a list of colours by distance from the edge can't match
+   the client's art on all four sides under any rounding (tried: a fifth to a quarter of each side's pixels came out a stripe off), and the
+   medallions are the client's pixels, so their lines and the straight ones never quite met. So each straight edge is the same piece the
+   corners come from: a low-a or low-b edge is the stretch three tiles along from that piece's top corner, a high one the same turned half
+   round, slid to the pixel along the edge two units at a time, which moves no stripe. */
+function edgeAt(side, at, a, b, SX, SY) {
+    const S = screenCorners(), K = S.kinds[side === 0 || side === 2 ? "1,1" : "-1,-1"]; if (!K) return null;
+    const lo = side === 0 || side === 2, onA = side < 2, along = onA ? b : a, base = (onA ? K.B : K.A) + (lo ? 48 : -48);
+    const t = base + ((((along - base) % 2) + 2) % 2);
+    const da = onA ? (lo ? K.A : K.A) - at : t - a, db = onA ? t - b : K.B - at;
+    const p = S.pp(K.k * (SX + da - db) + K.ox, K.k * (SY + (da + db) / 2) + K.oy);
+    return p && S.edge(p) ? p : null;
 }
 
 /* ---- muted colourways: group -> [hue, sat x, light x] ---- */
