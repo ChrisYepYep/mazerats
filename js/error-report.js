@@ -458,7 +458,9 @@
            no use for one, and a maze's furni list on a bad FurniIndex
            afternoon was a hundred snapshots of the whole page for one
            report and a count. */
-        function anyPictureShown() { var ims = document.images; for (var i = 0; i < ims.length; i++) if (ims[i].complete && ims[i].naturalWidth > 0) return true; return false; }
+        /* Only a picture that came over the network counts (14 Nov 2026): home.html has inline data: pictures, which a browser with
+           pictures turned off still shows, so the scraper below passed this test on every page and filed ~1,000 reports a week. */
+        function anyPictureShown() { var ims = document.images; for (var i = 0; i < ims.length; i++) { var s = ims[i].currentSrc || ims[i].src || ""; if (/^https?:/i.test(s) && ims[i].complete && ims[i].naturalWidth > 0) return true; } return false; }
         function hold(kind, failure) {
             if (!seen[fingerprint(kind, failure)]) {
                 if (distinct >= PAGE_MAX || sentThisVisit() >= SESSION_MAX) return;
@@ -482,6 +484,24 @@
                     capture(kind, failure);
                 } catch (x) { /* never */ }
             }, LEAVE_GRACE_MS);
+        }
+
+        /* Several calls failing at the same moment are one dropped connection, not several faults (14 Nov 2026): a visitor's blip
+           a second after loading filed six rows at once (settings, guides, articles, discord-auth, whats-new, dead-ends). Failures
+           within half a second of the first are gathered; three or more different calls go in as one "Connection dropped". */
+        var netBatch = null, NET_BATCH_MS = 500, NET_BATCH_MIN = 3;
+        function holdNetwork(failure) {
+            if (netBatch) { netBatch.push(failure); return; }
+            netBatch = [failure];
+            setTimeout(function () {
+                var b = netBatch; netBatch = null;
+                try {
+                    var calls = []; b.forEach(function (f) { var k = f.fn || f.source; if (calls.indexOf(k) < 0) calls.push(k); });
+                    if (calls.length < NET_BATCH_MIN) { b.forEach(function (f) { hold("fetch", f); }); return; }
+                    hold("fetch", { message: "Connection dropped: " + calls.length + " calls failed at once", source: "(several calls)", method: b[0].method, status: 0, ms: b[0].ms,
+                        context: { calls: calls.slice(0, 12).join(", "), detail: b[0].context && b[0].context.detail } });
+                } catch (x) { /* never */ }
+            }, NET_BATCH_MS);
         }
 
         function onScriptError(e) {
@@ -937,7 +957,7 @@
                                    address a window had moved on to, whether
                                    the tab was still visible or online, and
                                    crumbs from after it. See hold(). */
-                                hold("fetch", failure);
+                                holdNetwork(failure);
                             } catch (x) { /* never */ }
                         });
                     }
