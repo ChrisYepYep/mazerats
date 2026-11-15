@@ -39,7 +39,8 @@ const load0 = Module._load; Module._load = function (req, parent, ...r) { if (fa
 const realNow = Date.now; Date.now = () => clock;
 const fn = require(path.join(__dirname, "..", "netlify", "functions", "hallway-lost.js")), { pointsFor, spotsOf, THINGS, visitorName } = fn._for;
 const call = async (method, body, headers = {}, qs) => { const r = await fn.handler({ httpMethod: method, headers: { host: "x.test", ...headers }, queryStringParameters: qs || {}, body: body === undefined ? undefined : JSON.stringify(body) }); return { status: r.statusCode, body: JSON.parse(r.body) }; };
-const findIt = async (o, extra = {}) => call("POST", { act: "found", k: o.k, at: { level: o.spot.level, x: o.spot.x, y: o.spot.y }, ...extra });
+/* the desk is shut for a search's first two minutes (15 Nov 2026): a find waits for it, as a player coming back would */
+const findIt = async (o, extra = {}) => { const open = (store.hallway_lost_open || []).find(r => r.k === o.k && r.t0 && (!me || r.playerId === me.id)); if (open && clock < open.t0 + 120e3) clock = open.t0 + 120e3; return call("POST", { act: "found", k: o.k, at: { level: o.spot.level, x: o.spot.x, y: o.spot.y }, ...extra }); };
 (async () => {
     assert.equal(pointsFor(0, 0), pointsFor(20, 0), "nothing counts as quicker than MIN_SECS"); assert.equal(pointsFor(0, 0), 1430);
     assert.equal(pointsFor(900, 3), 100, "at the limit with every clue: just the finding");
@@ -56,6 +57,8 @@ const findIt = async (o, extra = {}) => call("POST", { act: "found", k: o.k, at:
     /* the server picks */
     r = await call("POST", { act: "start" }); assert.equal(r.status, 200); const o1 = r.body; assert.ok(THINGS.some(t => t.k === o1.k), "a real thing"); assert.ok(["g", "f1"].includes(o1.spot.level), "at a real spot"); assert.equal(o1.left, 900e3); assert.equal(o1.v, undefined, "a nicknamed player needs no visitor token");
     r = await call("POST", { act: "found", k: o1.k, at: { level: o1.spot.level, x: o1.spot.x + 1, y: o1.spot.y } }); assert.equal(r.status, 409, "not where it was put");
+    /* (15 Nov 2026) the desk is closed for the first two minutes: refused with how long to wait, and the search kept */
+    clock += 60e3; r = await call("POST", { act: "found", k: o1.k, at: { level: o1.spot.level, x: o1.spot.x, y: o1.spot.y } }); assert.equal(r.status, 409); assert.equal(r.body.closed, true, "desk closed"); assert.equal(r.body.wait, 60e3, "a minute to wait"); assert.ok(store.hallway_lost_open.find(x => x.k === o1.k), "the search is still open"); clock -= 60e3;
     clock += 300e3; r = await call("POST", { act: "hint" }); assert.equal(r.body.hints, 1); clock += 60e3;
     r = await findIt(o1); assert.equal(r.status, 200); assert.equal(r.body.secs, 360); assert.equal(r.body.points, pointsFor(360, 1), "clues counted here");
     const first = r.body.points;
@@ -89,7 +92,7 @@ const findIt = async (o, extra = {}) => call("POST", { act: "found", k: o.k, at:
     /* Visitors */
     me = null; r = await call("POST", { act: "hint" }); assert.equal(r.status, 409, "a visitor with no token has nothing open");
     r = await call("POST", { act: "start" }); assert.equal(r.status, 200); const v1 = r.body.v; assert.ok(v1, "a visitor gets a token"); assert.match(r.body.name, /^Visitor \d{3}$/);
-    const vn = r.body.name; clock += 40e3; r = await call("POST", { act: "found", k: r.body.k, at: r.body.spot, v: v1 }); assert.ok(r.body.points > 0);
+    const vn = r.body.name; clock += 130e3; r = await call("POST", { act: "found", k: r.body.k, at: r.body.spot, v: v1 }); assert.ok(r.body.points > 0);
     r = await call("POST", { act: "start", v: v1 }); assert.equal(r.body.v, undefined, "a visitor keeps their token"); assert.equal(r.body.name, vn);
     r = await call("POST", { act: "start", v: v1.slice(0, -2) + "xx" }); assert.ok(r.body.v && r.body.name !== vn, "a forged token is a new visitor");
     const nums = store.hallway_lost_visitors.map(x => x.n); assert.ok(nums.every(n => n >= 1 && n < 1000), "three digits");
@@ -124,7 +127,8 @@ const findIt = async (o, extra = {}) => call("POST", { act: "found", k: o.k, at:
     /* a signed-in player with no nickname plays as a Visitor */
     me = { id: "p3" }; net = "netC"; r = await call("POST", { act: "start" }); assert.match(r.body.name, /^Visitor/); assert.ok(r.body.v);
     /* the day's cap */
-    me = { id: "p1" }; clock += 864e5; let capped = false; for (let i = 0; i < 25; i++) { r = await call("POST", { act: "start" }); clock += 30e3; r = await findIt(r.body); if (r.body.capped) capped = true; }
+    /* an hour into a fresh UTC day: 25 finds two minutes apart (the closed desk) mustn't run past midnight, where the cap starts again */
+    me = { id: "p1" }; clock = Math.ceil(clock / 864e5) * 864e5 + 3600e3; let capped = false; for (let i = 0; i < 25; i++) { r = await call("POST", { act: "start" }); clock += 30e3; r = await findIt(r.body); if (r.body.capped) capped = true; }
     assert.ok(capped, "past the day's cap a find doesn't go on the board");
     refuse = { statusCode: 403, body: JSON.stringify({ error: "banned" }) }; r = await call("POST", { act: "start" }); assert.equal(r.status, 403, "banned refused"); refuse = null;
     r = await call("POST", { act: "found", k: "<b>", at: { level: "g", x: 1, y: 1 } }); assert.equal(r.status, 400, "bad ids refused");

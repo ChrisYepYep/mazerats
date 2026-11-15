@@ -67,7 +67,7 @@
     }
     /* coming back: a search you left has ended (his: go back to hustle). What you were carrying you still have. */
     function restore() { let polls = 0; const wait = setInterval(() => { if (!LIVE.map) { if (++polls > 600) clearInterval(wait); return; } clearInterval(wait);
-        try { if (sessionStorage.getItem(ROUND)) { sessionStorage.removeItem(ROUND); lostPost({ act: "cancel" }); } try { localStorage.removeItem(ROUND); } catch (e) { /* the old shared flag */ } const c = localStorage.getItem(CARRY), t = c && things.find(q => q.k === c); if (t) { setCarry(t); carryPts = +localStorage.getItem(CARRY + "-pts") || 0; } } catch (e) { /* start afresh */ } tick(); }, 200); }
+        try { if (sessionStorage.getItem(ROUND)) { sessionStorage.removeItem(ROUND); lostPost({ act: "cancel" }); } try { localStorage.removeItem(ROUND); } catch (e) { /* the old shared flag */ } const c = localStorage.getItem(CARRY), t = c && things.find(q => q.k === c); if (t) { setCarry(t); carryPts = +localStorage.getItem(CARRY + "-pts") || 0; try { const m = JSON.parse(localStorage.getItem(CARRY + "-at") || "null"); carryMeta = m && m.k === t.k && m.at && m.t0 ? m : null; } catch (e) { carryMeta = null; } } } catch (e) { /* start afresh */ } tick(); }, 200); }
     /* leaving: the search ends on the server too */
     addEventListener("pagehide", () => { if (!round || !PLAY) return; try { const b = new Blob([JSON.stringify({ act: "cancel", v: visitor() })], { type: "application/json" }); navigator.sendBeacon(LOSTFN, b); } catch (e) { /* it ends when they next start one */ } });
     function setCarry(t) { carrying = t; window.HallwayCarry.item = t ? thingImg(t.f) : null; try { if (t) localStorage.setItem(CARRY, t.k); else localStorage.removeItem(CARRY); } catch (e) { /* only this visit */ } LIVE.wake(); }
@@ -126,20 +126,18 @@
     let layerErrors = 0; const safe = fn => (c, ox, oy) => { try { fn(c, ox, oy); } catch (e) { if (++layerErrors <= 3) console.error("Lost Property:", e); } };
     LIVE.add({ under: safe((c, ox, oy) => { drawThing(c, ox, oy, false); drawHustle(c, ox, oy, false); }), over: safe((c, ox, oy) => { drawThing(c, ox, oy, true); drawHustle(c, ox, oy, true); placeBubbles(); }), still: true });
 
-    /* ---------- picking it up: the server says what it's worth ---------- */
+    /* ---------- picking it up. On the site the find goes to the server at the DESK, not here (15 Nov 2026): the desk is shut for a search's first
+       two minutes (HANDIN_MIN_SECS in hallway-lost.js, the owner's, not announced), so the server can only hold to that if the find is posted
+       there. What's carried keeps what the desk will need: the thing, where it was, and when its search began. The points shown till then are
+       the page's own reckoning; the desk's answer replaces them ---------- */
     function pick() {
-        const t = showing(); if (!t || t === preview) return; const secs = Math.round((Date.now() - (t.t0 || Date.now())) / 1000); carryPts = pointsFor(secs, t.hints); round = null; saveRound(); setCarry(t.thing); window.hwTrack("hallway_lost_found");
-        say("You", "Got it! That's the " + nice(t.thing.name) + ".", false); flash("+" + carryPts + " points", fmt(secs * 1000) + " to find" + (t.hints ? ", " + t.hints + (t.hints === 1 ? " clue" : " clues") : ", no clues"));
-        lostPost({ act: "found", k: t.thing.k, at: { level: t.spot.l.id, x: t.spot.x, y: t.spot.y } }).then(r => {
-            /* the server's word on it: counted, capped for today, or not counted at all (10 Nov scan, server finding 14: the page banked its own figure regardless) */
-            if (!r) return;
-            if (r.capped) { carryPts = 0; flash("Today's limit reached", "This one won't go on the board"); }
-            else if (r.error && r.error !== "offline") { carryPts = 0; flash("Not counted", "The search had ended"); }
-            else if (typeof r.points === "number") carryPts = r.points;
-            saveCarryPts(); tick(); });
+        const t = showing(); if (!t || t === preview) return; const secs = Math.round((Date.now() - (t.t0 || Date.now())) / 1000); carryPts = pointsFor(PLAY ? Math.max(secs, 120) : secs, t.hints); round = null; saveRound();      // no hand-in before two minutes, so never more than that pays
+        carryMeta = { k: t.thing.k, at: { level: t.spot.l.id, x: t.spot.x, y: t.spot.y }, t0: t.t0 || Date.now(), hints: t.hints | 0 }; setCarry(t.thing); window.hwTrack("hallway_lost_found");
+        say("You", "Got it! That's the " + nice(t.thing.name) + ".", false); flash("Found it!", fmt(secs * 1000) + " to find" + (t.hints ? ", " + t.hints + (t.hints === 1 ? " clue" : " clues") : ", no clues") + ". Hand it in at the desk.");
         saveCarryPts(); tick();
     }
-    const saveCarryPts = () => { try { if (carrying) localStorage.setItem(CARRY + "-pts", String(carryPts)); else localStorage.removeItem(CARRY + "-pts"); } catch (e) { /* this visit */ } };
+    let carryMeta = null;
+    const saveCarryPts = () => { try { if (carrying) { localStorage.setItem(CARRY + "-pts", String(carryPts)); if (carryMeta) localStorage.setItem(CARRY + "-at", JSON.stringify(carryMeta)); } else { localStorage.removeItem(CARRY + "-pts"); localStorage.removeItem(CARRY + "-at"); } } catch (e) { /* this visit */ } };
 
     LIVE.onClick((px, py) => {
         const t = showing(); if (t && t !== preview && t.thing) { const q = where(t), hw = (t.thing.w >> 1) + 3; if (Math.abs(px - q.X) <= hw && py <= q.Y + 5 && py >= q.Y - t.thing.h - 4) { const w = LIVE.walker, from = reachFrom(t.spot).sort((a, b) => Math.hypot(a[0] - w.x, a[1] - w.y) - Math.hypot(b[0] - w.x, b[1] - w.y)); if (!w.walking && w.l === t.spot.l && from.some(([x, y]) => Math.round(w.x) === x && Math.round(w.y) === y)) { pick(); return true; } for (const [x, y] of from) if (LIVE.walkTo(t.spot.l, x, y, pick)) return true;
@@ -150,7 +148,7 @@
         /* hustle: walk up to him */
         if (onHustle(px, py)) { if (repliesBox || busy) return true; talked = false; if (byHustle()) { talk(); return true; } const s = hustleSeat(), w = LIVE.walker, near = nextTo(s).sort((a, b) => Math.hypot(a[0] - w.x, a[1] - w.y) - Math.hypot(b[0] - w.x, b[1] - w.y)); for (const [x, y] of near) if (LIVE.walkTo(s.l, x, y, () => talk())) return true; return true; }
         /* the desk: hand in what you're carrying; otherwise its book, your record */
-        const desk = deskAt(px, py); if (desk) { if (!carrying) { ledger(); return true; } if (standingAt(desk)) { handIn(desk); return true; } const f = desk.front; if (LIVE.walkTo(desk.l, f[0], f[1], () => handIn(desk))) return true; return false; }
+        const desk = deskAt(px, py); if (desk) { if (!carrying) { ledger(); return true; } if (standingAt(desk)) { handIn(desk, true); return true; } const f = desk.front; if (LIVE.walkTo(desk.l, f[0], f[1], () => handIn(desk, true))) return true; return false; }
         return false;
     });
     function desks(only) { const map = LIVE.map, out = []; if (!map) return out; const def = (window.WALL_ITEMS || []).find(i => i.id === "i_desk"); if (!def) return out; for (const l of (only ? [only] : map.levels)) for (const q of (l.wallItems || [])) { if (q.k !== "i_desk") continue; const o = Math.round(q.at - def.snapAt), tile = (back, along) => q.axis === "y" ? [q.line - back, o + along] : [o + along, q.line - back]; out.push({ l, q, o, front: tile(-0, 1), fronts: [0, 1, 2, 3, 4].map(k => tile(0, k)) }); } return out; }
@@ -161,12 +159,35 @@
     }
     const standingAt = d => { const w = LIVE.walker; return !!w && !w.walking && d.fronts.some(t => t[0] === Math.round(w.x) && t[1] === Math.round(w.y)) && w.l === d.l; };
     /* handing it in: the bell, the book, the points banked */
-    function handIn() {
-        if (!carrying) return; ding(); const p = prog(), st = p && p.get(), lost = (st && st.lost) || { shelf: [] }, total = (lost.streak || 0) + 1, got = carrying, pts = carryPts || 0;
+    /* the desk shut (15 Nov 2026, the owner's words): once per visit to the desk, or again when it's clicked */
+    const HANDIN_MIN_MS = 120e3;
+    let shutNote = null, shutShown = false, handing = false;
+    function deskClosed(wait) {
+        if (shutNote && shutNote.isConnected) return; shutShown = true;
+        shutNote = flash("The Lost Property desk is currently closed.", "Come back in " + fmt(wait) + ".", "is-note");
+    }
+    async function handIn(desk, clicked) {
+        if (!carrying || handing) return;
+        let pts = carryPts || 0, note = null;
+        /* on the site: the desk is shut for the search's first two minutes, and then the server counts it. A thing carried from before this (no
+           carryMeta) was counted when it was picked up, the old way, and is just handed in */
+        if (PLAY && carryMeta) {
+            const wait = HANDIN_MIN_MS - (Date.now() - carryMeta.t0);
+            if (wait > 0) { if (clicked || !shutShown) deskClosed(wait); return; }
+            handing = true; const r = await lostPost({ act: "found", k: carryMeta.k, at: carryMeta.at }).finally(() => { handing = false; });
+            if (!carrying) return;
+            if (r && r.closed) { deskClosed(r.wait || 1000); return; }
+            if (r && r.error === "offline") { flash("Can't reach Lost Property", "Hold on to it and try the desk again in a moment."); return; }
+            if (r && r.capped) { pts = 0; note = ["Today's limit reached", "Handed in, but this one won't go on the board"]; }
+            else if (r && r.error) { pts = 0; note = ["Not counted", "Handed in, but its search had ended"]; }
+            else if (r && r.late) { pts = 0; note = ["Not counted", "Handed in, but its search had run out of time"]; }
+            else if (r && typeof r.points === "number") pts = r.points;
+        }
+        ding(); const p = prog(), st = p && p.get(), lost = (st && st.lost) || { shelf: [] }, total = (lost.streak || 0) + 1, got = carrying;
         if (p) p.save({ lost: { day: today(), streak: total, shelf: [...new Set([...(lost.shelf || []), got.k])], points: (lost.points || 0) + pts, best: Math.max(lost.best || 0, pts), missed: lost.missed || 0 } });
-        carryPts = 0; saveCarryPts(); setCarry(null); window.hwTrack("hallway_lost_handed");
+        carryPts = 0; carryMeta = null; setCarry(null); saveCarryPts(); window.hwTrack("hallway_lost_handed");
         say("You", "Here's the " + nice(got.name) + ", for Lost Property.");
-        flash(pts ? "+" + pts + " points" : "Handed in", "The " + nice(got.name) + " is back in Lost Property. That's " + total + " you've brought back."); tick();
+        if (note) flash(note[0], note[1]); else flash(pts ? "+" + pts + " points" : "Handed in", "The " + nice(got.name) + " is back in Lost Property. That's " + total + " you've brought back."); tick();
     }
 
     /* ---------- speech bubbles, as the game's: white, rounded, the speaker's name first, the newest at the bottom, the old ones pushed up.
@@ -223,6 +244,7 @@
         if (near && !talked && !busy) talk();
         if (!near && w.walking && (repliesBox || bubbles.some(q => q.chat))) { closeReplies(); dropChat(); }
         if (!near && !w.walking) { const s = hustleSeat(); if (!s || Math.abs(s.x - w.x) + Math.abs(s.y - w.y) > 3 || s.l !== w.l) talked = false; }
+        if (w.walking) shutShown = false;      // the closed desk speaks again on the next visit
         if (carrying && !w.walking) { const d = desks(w.l).find(standingAt); if (d) handIn(d); }
     }, 300);
 
@@ -244,7 +266,7 @@
     }
     setInterval(() => { if (!document.hidden) tick(); }, 1000);
     /* a moment's note in the middle of the screen: the points for a find, or time running out */
-    function flash(title, sub) { const stage = document.getElementById("stage") || document.body, f = document.createElement("div"); f.className = "hw-lost-flash"; f.setAttribute("role", "status"); const b = document.createElement("b"), s = document.createElement("span"); b.textContent = title; s.textContent = sub || ""; f.append(b, s); stage.appendChild(f); setTimeout(() => f.classList.add("out"), 3200); setTimeout(() => f.remove(), 3800); }
+    function flash(title, sub, cls) { const stage = document.getElementById("stage") || document.body, f = document.createElement("div"); f.className = "hw-lost-flash" + (cls ? " " + cls : ""); f.setAttribute("role", "status"); const b = document.createElement("b"), s = document.createElement("span"); b.textContent = title; s.textContent = sub || ""; f.append(b, s); stage.appendChild(f); setTimeout(() => f.classList.add("out"), 3200); setTimeout(() => f.remove(), 3800); return f; }
 
     /* ---------- the Lost Property window: the search on now, your record, every thing there is to find, and this week's best ---------- */
     function ledger() {

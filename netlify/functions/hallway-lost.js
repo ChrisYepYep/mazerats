@@ -20,7 +20,11 @@
                                 409 { noSwaps: true }.
    POST {act: "hint", v?}       a clue was asked for: counted here. { hints }
    POST {act: "found", k, at: {level, x, y}, v?}
-                                you picked it up. Only the thing this search
+                                you handed it in at the desk (posted at the
+                                desk since 15 Nov 2026, not on picking it up).
+                                Not in the search's first HANDIN_MIN_SECS:
+                                409 { closed: true, wait: ms }, the search
+                                kept open. Only the thing this search
                                 was sent for, only at the spot this function
                                 put it, only once; the points are worked out
                                 here from its own clock and its own count of
@@ -43,10 +47,10 @@
    and swaps are few), see the spot before the clock starts, skip the
    clue count (clues are counted here), find
    something it wasn't sent for, or put more than DAY_CAP finds a day on the
-   board. It CAN post a find a second after the start: MIN_SECS only means
-   anything quicker scores as MIN_SECS (15 Nov scan, finding 7, left for the
-   owner: a floor of the walk from hustle to the spot would close it, but the
-   "fast" and "travel" cheats would then score nothing).
+   board. Since 15 Nov 2026 it can't post a find in a search's first two
+   minutes (HANDIN_MIN_SECS, the owner's answer to the scan's finding 7):
+   the desk is closed until then, which the page tells the player only if
+   they get there early.
 
    POINTS: 100 for finding it at all, up to 900 more for speed (all of it at
    once, none at the 15-minute limit), and 150 for each of the three clues you
@@ -69,6 +73,7 @@ const COLLECTION = "hallway_lost";
 const LIMIT_SECS = 15 * 60;
 const GRACE_SECS = 20;          // the page's clock and this one can differ by a few seconds
 const MIN_SECS = 20;
+const HANDIN_MIN_SECS = 120;    // the desk takes nothing in a search's first two minutes (15 Nov 2026, the owner's)
 const DAY_CAP = 20;
 const TOP = 20;
 const MAX_BODY = 2048;
@@ -365,7 +370,11 @@ async function handler(event) {
         const open = await opens.findOne({ playerId: id, k });
         if (!open || !open.t0 || open.cancelled) return json(409, { error: "No search open for that" });
         if (!sameSpot(open.spot, at)) return json(409, { error: "That isn't where it was" });
-        const gone = await opens.findOneAndDelete({ playerId: id, k, t0: open.t0 });
+        /* the desk is shut for the first HANDIN_MIN_SECS of a search (15 Nov 2026, the owner's, not announced): the search stays open and the
+           page says when to come back. A script posting the moment it starts gets nothing until then. */
+        const wait = HANDIN_MIN_SECS * 1000 - (now - open.t0);
+        if (wait > 0) return json(409, { error: "The desk is closed", closed: true, wait });
+        const gone =await opens.findOneAndDelete({ playerId: id, k, t0: open.t0 });
         const o = gone && (gone.value !== undefined ? gone.value : gone);
         if (!o) return json(409, { error: "No search open for that" });
         await seenCol.updateOne({ playerId: id }, { $addToSet: { ks: k }, $set: { at: new Date(now) } }, { upsert: true });
