@@ -4,7 +4,10 @@
     "use strict";
     const LIVE = window.HallwayLive; if (!LIVE) return;
     const muted = () => { try { return localStorage.getItem("hallway-music") === "0"; } catch (e) { return false; } };
-    let AC = null; const ac = () => { if (!AC) { const C = window.AudioContext || window.webkitAudioContext; if (!C) return null; AC = new C(); } if (AC.state !== "running") AC.resume().catch(() => {}); return AC; };
+    let AC = null, acUsed = 0; const ac = () => { if (!AC) { const C = window.AudioContext || window.webkitAudioContext; if (!C) return null; AC = new C(); } acUsed = Math.max(acUsed, performance.now()); if (AC.state !== "running") AC.resume().catch(() => {}); return AC; };
+    /* with nothing playing for a few seconds (no music down here, no scare, no click), the sound engine rests: it ran on for the rest of the
+       visit after Mute or leaving the Basement (15 Nov scan, live L9) */
+    setInterval(() => { if (AC && AC.state === "running" && !eerie && !B_.scoreOn && performance.now() - acUsed > 4000) AC.suspend().catch(() => {}); }, 2000);
     /* the panel's own small noises: a felt click on a button, a key in a lock */
     function tick(kind) {
         if (muted()) return; const A = ac(); if (!A) return; const t = A.currentTime + .005, g = A.createGain(), o = A.createOscillator(); g.connect(A.destination);
@@ -64,6 +67,13 @@
         hit(27, YB, 29, 23, "Open the doors", () => doorBtn(true)); hit(W - 56, YB, 29, 23, "Close the doors", () => doorBtn(false));
         box.insertBefore(wrap, box.firstChild);
     }
+    /* Escape is "Stay here" when no ride is under way, as everything else that opens goes on Escape (15 Nov scan, live L13); a window or
+       drawer over it goes first */
+    document.addEventListener("keydown", e => {
+        if (e.key !== "Escape" || e.defaultPrevented || !P.on) return; const box = document.getElementById("liftPanel"), w = LIVE.walker;
+        if (!box || box.hidden || (w && w.busy) || P.target !== P.floor || document.querySelector(".hw-sheet, #playPicker, .play-menu.is-open")) return;
+        const stay = document.getElementById("liftStay"); if (stay) { e.preventDefault(); stay.click(); }
+    });
     window.HallwayLiftPanel = {
         show(here, api) { build(); P.here = here; P.api = api; const l = LIVE.map.levels.find(q => q.id === here.level); P.floor = P.target = P.shown = l ? l.k : 0; P.turned = false; P.doors = 0; document.getElementById("liftPanel").classList.add("plate"); P.on = true; cancelAnimationFrame(P.raf); P.raf = requestAnimationFrame(loop); },
         hide() { P.on = false; cancelAnimationFrame(P.raf); },
@@ -84,7 +94,7 @@
     };
     let eerie = null;
     const eerieOn = volume => { if (eerie) return; const A = ac(); if (!A) return; const g = A.createGain(), v = volume === undefined ? .8 : volume; g.gain.setValueAtTime(0, A.currentTime); g.gain.linearRampToValueAtTime(v, A.currentTime + 4); g.connect(A.destination); const e = eerie = { g, n: 0, A, timer: 0 }, CHUNK = 36, go = at => { if (eerie !== e) return; EERIE(A, g, at, CHUNK, e.n++); e.timer = setTimeout(() => go(at + CHUNK), Math.max(100, (at + CHUNK - A.currentTime - 6) * 1000)); }; go(A.currentTime + .05); };
-    const eerieOff = () => { if (!eerie) return; const e = eerie; eerie = null; clearTimeout(e.timer); e.g.gain.cancelScheduledValues(e.A.currentTime); e.g.gain.setTargetAtTime(0, e.A.currentTime, .6); setTimeout(() => e.g.disconnect(), 4000); };
+    const eerieOff = () => { if (!eerie) return; const e = eerie; eerie = null; clearTimeout(e.timer); acUsed = performance.now() + 4000; /* its fade out first */ e.g.gain.cancelScheduledValues(e.A.currentTime); e.g.gain.setTargetAtTime(0, e.A.currentTime, .6); setTimeout(() => e.g.disconnect(), 4000); };
     /* to the music player this is just another voice: it keeps the player's place, and takes the volume and Mute with it */
     let wantEerie = false, volumeNow = .8, resumeEerie = 0;
     const VOICE = { start(v) { wantEerie = true; volumeNow = v; if (!B_.scoreOn) eerieOn(v); }, stop() { wantEerie = false; clearTimeout(resumeEerie); eerieOff(); }, setVolume(v) { volumeNow = v; if (eerie) eerie.g.gain.setTargetAtTime(v, eerie.A.currentTime, .1); } };
@@ -139,13 +149,19 @@
         if (!muted()) { const A = ac(); if (A) { eerieOff(); B_.scoreOn = true; const g = A.createGain(); g.gain.value = 1; g.connect(A.destination); B_.scoreOut = g; SCORE(A, g, A.currentTime + .03); clearTimeout(resumeEerie); resumeEerie = setTimeout(() => { B_.scoreOn = false; if (wantEerie) eerieOn(volumeNow); }, 16500); } }
         return true;
     }
-    function scareStop() { const was = B_.t0; B_.t0 = 0; B_.dust = null; LIVE.forceMood(null); const cv = document.querySelector("#liveCanvasShake"); if (cv) cv.removeAttribute("id"); if (B_.shook) { B_.shook.style.transform = ""; B_.shook = null; } clearTimeout(resumeEerie); if (B_.scoreOut && B_.scoreOn) { const A = ac(); B_.scoreOut.gain.setTargetAtTime(0, A.currentTime, .4); } B_.scoreOn = false; const w = LIVE.walker; if (w && B_.froze) { w.busy = false; } B_.froze = false; return !!was; }
+    function scareStop() { const was = B_.t0; B_.t0 = 0; B_.dust = null; LIVE.forceMood(null); const cv = document.querySelector("#liveCanvasShake"); if (cv) cv.removeAttribute("id"); if (B_.shook) { B_.shook.style.transform = ""; B_.shook = null; } clearTimeout(resumeEerie); if (B_.scoreOut && B_.scoreOn) { const A = ac(); B_.scoreOut.gain.setTargetAtTime(0, A.currentTime, .4); } B_.scoreOn = false; const w = LIVE.walker; if (w && B_.froze) letGo(w); B_.froze = false; return !!was; }
+    const letGo = w => { if (B_.held && w && w.busy) w.busy = false; B_.held = false; };
+    /* back to a tab that was hidden through the end of the scare: no shake left, and the light where the scare leaves it */
+    document.addEventListener("visibilitychange", () => { if (document.hidden || !B_.t0) return; const T = (performance.now() - B_.t0) / 1000; if (T >= 5.1 && B_.shook) { B_.shook.style.transform = ""; B_.shook = null; } if (T >= 30) LIVE.forceMood(moodAt(30)); LIVE.wake(); });
     LIVE.add({ active: () => !!B_.t0 && performance.now() - B_.t0 < 30000 && !!LIVE.walker && !(window.HallwayScreensaver && HallwayScreensaver.on),
         under(c, ox, oy, now) { const T = (now - B_.t0) / 1000; c.save(); const m = moodAt(T); if (m) LIVE.forceMood(m); drawDust(c, ox, oy, now, false); c.restore();
             /* the Habbo stops dead when the door goes */
-            const w = LIVE.walker; if (T > 4.1 && T < 7.5 && !B_.froze && w) { B_.froze = true; w.pts = (w.pts || []).slice(0, 1); w.then = null; w.busy = true;
-                /* and let go by a timer too: with the tab hidden through the rest of the scare this layer never draws again, and the Habbo stayed frozen (10 Nov scan b, live 8) */
-                const t0 = B_.t0; setTimeout(() => { if (B_.t0 === t0 && B_.froze && w.busy) w.busy = false; }, Math.max(0, (7.5 - T) * 1000) + 50); } if (T >= 7.5 && B_.froze && w && w.busy) { w.busy = false; }
+            /* only what the scare itself held is let go: a lift ride already under way keeps its own hold until its doors open (15 Nov scan,
+               live L11: the scare's let-go walked you out through shut doors) */
+            const w = LIVE.walker; if (T > 4.1 && T < 7.5 && !B_.froze && w) { B_.froze = true; B_.held = !w.busy; if (B_.held) { w.pts = (w.pts || []).slice(0, 1); w.then = null; w.busy = true; }
+                /* and let go by a timer too: with the tab hidden through the rest of the scare this layer never draws again, and the Habbo stayed frozen (10 Nov scan b, live 8);
+                   the shake and the light are put to their end there too, or they stayed a few pixels off and at the first "lights out" (15 Nov scan, live L10) */
+                const t0 = B_.t0; setTimeout(() => { if (B_.t0 !== t0) return; letGo(w); if (B_.shook) { B_.shook.style.transform = ""; B_.shook = null; } if (document.hidden) LIVE.forceMood(moodAt(30)); }, Math.max(0, (7.5 - T) * 1000) + 50); } if (T >= 7.5 && B_.froze && w) letGo(w);
             const cv = c.canvas; if (T > 4.1 && T < 5.1) { const k = Math.pow(5.1 - T, 2) * 14; cv.style.transform = `translate(${Math.sin(T * 71) * k}px,${Math.cos(T * 93) * k}px)`; B_.shook = cv; } else if (B_.shook) { cv.style.transform = ""; B_.shook = null; } },
         over(c, ox, oy, now) { const T = (now - B_.t0) / 1000, W2 = c.canvas.width, H2 = c.canvas.height;
             if (T > 3.6 && T < 4.1) { c.fillStyle = "#000"; c.fillRect(0, 0, W2, H2); return; }

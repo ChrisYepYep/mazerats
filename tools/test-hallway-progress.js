@@ -32,11 +32,13 @@ const call = async (method, body, headers = {}) => { const r = await handler({ h
     r = await call("POST", { lost: { day: "2026-11-07", streak: 3, shelf: ["duck"] } }); assert.equal(r.body.lost.streak, 3);
     r = await call("POST", { lost: { day: "2026-11-05", streak: 1, shelf: ["coin"] } }); assert.equal(r.body.lost.day, "2026-11-07", "an older day can't win"); assert.equal(r.body.lost.streak, 3); assert.deepStrictEqual(r.body.lost.shelf, ["duck", "coin"], "but what it found still counts");
     /* hunts, checked against the map */
-    r = await call("POST", { hunts: { keys: { found: ["c0", "c1", "c2"], done: true } } }); assert.deepStrictEqual(r.body.hunts.keys, { found: ["c0"], done: false }, "a whole hunt at once: one clue a save (9 Nov scan, finding 4)");
+    r = await call("POST", { hunts: { keys: { found: ["c0", "c1", "c2"], done: true } } }); assert.deepStrictEqual(r.body.hunts.keys, { found: [], done: false }, "a whole hunt at once: nothing yet, clue 0 waits MIN_CLUE_MS from the hunt's first save (15 Nov scan)");
+    clock += 3e3; r = await call("POST", { hunts: { keys: { found: ["c0", "c1", "c2"] } } }); assert.deepStrictEqual(r.body.hunts.keys.found, [], "not 3 s after");
+    clock += 5e3; r = await call("POST", { hunts: { keys: { found: ["c0", "c1", "c2"] } } }); assert.deepStrictEqual(r.body.hunts.keys.found, ["c0"], "8 s after: clue 0, one clue a save (9 Nov scan, finding 4)");
     clock += 3e3; r = await call("POST", { hunts: { keys: { found: ["c0", "c1", "c2"] } } }); assert.deepStrictEqual(r.body.hunts.keys.found, ["c0"], "and not sooner than MIN_CLUE_MS after the one before");
     r = await call("POST", { hunts: { nope: { found: ["c0"], done: true } } }); assert.ok(!("nope" in r.body.hunts), "only hunts on the map");
     me = { id: "p9" }; r = await call("POST", { hunts: { keys: { found: ["c1", "c2"], done: true } } }); assert.deepStrictEqual(r.body.hunts.keys.found, [], "clues only in order");
-    r = await call("POST", { hunts: { keys: { found: ["c0"] } } }); clock += 9e3; r = await call("POST", { hunts: { keys: { found: ["c0", "c1"] } } }); clock += 9e3; r = await call("POST", { hunts: { keys: { found: ["c0", "c1", "c2", "c7"], done: true } } });
+    r = await call("POST", { hunts: { keys: { found: ["c0"] } } }); clock += 9e3; r = await call("POST", { hunts: { keys: { found: ["c0", "c1"] } } }); clock += 9e3; r = await call("POST", { hunts: { keys: { found: ["c0", "c1"] } } }); clock += 9e3; r = await call("POST", { hunts: { keys: { found: ["c0", "c1", "c2", "c7"], done: true } } });
     assert.deepStrictEqual(r.body.hunts.keys, { found: ["c0", "c1", "c2"], done: true, place: 1 }, "played through: finished, first"); assert.equal(r.body.key, true, "the key comes with it");
     r = await call("POST", { hunts: { keys: { found: [], done: false } } }); assert.equal(r.body.hunts.keys.done, true, "a hunt can't be un-finished");
     me = { id: "p1" }; clock += 60e3; r = await call("POST", { scraps: ["later"] }); assert.deepStrictEqual(r.body.hunts.keys, { found: ["c0"], done: false }, "a save that doesn't send the hunt takes nothing for it");
@@ -55,7 +57,17 @@ const call = async (method, body, headers = {}) => { const r = await handler({ h
     me = { id: "p1" };
     r = await call("POST", { scraps: ["b"], key: false }); assert.equal(r.body.key, true, "the key can't be lost");
     MAP = null; r = await call("POST", { hunts: { quick: { found: ["c0", "c1"], done: true } } }); assert.equal(r.body.hunts.quick, undefined, "no map to read just now: nothing new is taken (10 Nov scan, server finding 2)"); MAP = { levels: [{ id: "g", k: 0 }], hunts: [{ id: "keys", clues: [{}, {}, {}] }, { id: "quick", clues: [{}, {}] }] };
-    clock += 30e3; r = await call("POST", {}); assert.equal(r.body.hunts.quick, undefined, "and nothing finishes when it's back"); r = await call("POST", { hunts: { quick: { found: ["c0", "c1"] } } }); assert.deepStrictEqual(r.body.hunts.quick.found, ["c0"], "once it is, one clue a save as ever");
+    clock += 30e3; r = await call("POST", {}); assert.equal(r.body.hunts.quick, undefined, "and nothing finishes when it's back"); r = await call("POST", { hunts: { quick: { found: ["c0", "c1"] } } }); assert.deepStrictEqual(r.body.hunts.quick.found, [], "once it is, its clock starts"); clock += 8e3; r = await call("POST", { hunts: { quick: { found: ["c0", "c1"] } } }); assert.deepStrictEqual(r.body.hunts.quick.found, ["c0"], "and one clue a save as ever");
+    /* (15 Nov scan) the walk between two clues on tiles of one floor: 30 tiles apart is (30 - 2) x 500 ms = 14 s, not 8; another floor, or a
+       clue on the wall, is MIN_CLUE_MS; 100 tiles is held to 24 s so progress.js's catch-up always gets it in */
+    MAP.hunts.push({ id: "walk", clues: [{ level: "g", x: 0, y: 0, art: "note" }, { level: "g", x: 30, y: 5, art: "key" }, { level: "f1", x: 30, y: 5, art: "note" }, { level: "f1", px: 10, py: 10, art: "none" }, { level: "f1", x: 130, y: 5, art: "note" }, { level: "f1", x: 30, y: 5, art: "note" }] });
+    me = { id: "walker" }; const step = async (ms, want, why) => { clock += ms; r = await call("POST", { hunts: { walk: { found: ["c0", "c1", "c2", "c3", "c4", "c5"] } } }); assert.deepStrictEqual(r.body.hunts.walk.found, want, why); };
+    await step(0, [], "first save: nothing"); await step(8e3, ["c0"], "c0 at 8 s");
+    await step(13.9e3, ["c0"], "c1 is 30 tiles off: not at 13.9 s"); await step(0.1e3, ["c0", "c1"], "but at 14 s");
+    await step(8e3, ["c0", "c1", "c2"], "another floor: 8 s"); await step(8e3, ["c0", "c1", "c2", "c3"], "a clue on the wall: 8 s");
+    await step(8e3, ["c0", "c1", "c2", "c3", "c4"], "from the wall clue to a tile: 8 s");
+    await step(23.9e3, ["c0", "c1", "c2", "c3", "c4"], "100 tiles: not at 23.9 s"); await step(0.1e3, ["c0", "c1", "c2", "c3", "c4", "c5"], "held to 24 s");
+    assert.equal(r.body.hunts.walk.done, true, "and it finishes"); me = { id: "p1" };
     r = await call("POST", { scraps: ["<script>", 5, "ok"], hunts: { "a.b": { found: [] }, $set: { found: [] } }, lost: { day: "nonsense", streak: 2 } }); assert.ok(r.body.scraps.includes("ok")); assert.ok(!r.body.scraps.includes("<script>"), "bad ids dropped"); assert.ok(!("a.b" in r.body.hunts) && !("$set" in r.body.hunts), "bad hunt ids dropped"); assert.equal(r.body.lost.day, "2026-11-07");
     r = await call("POST", {}, { origin: "https://evil.test" }); assert.equal(r.status, 403, "other sites refused");
     refuse = { statusCode: 403, body: JSON.stringify({ error: "banned" }) }; r = await call("POST", { scraps: ["z"] }); assert.equal(r.status, 403, "bans stop writes"); r = await call("GET"); assert.equal(r.status, 200, "bans don't stop reads"); assert.ok(!r.body.scraps.includes("z")); refuse = null;

@@ -35,9 +35,10 @@ const runTimers = async () => { const due = timers.filter(t => t.f && t.at <= cl
 
 (async () => {
     const P = win.HallwayProgress; await P.load(); for (let i = 0; i < 20; i++) await settle();
-    assert.deepStrictEqual(docs.get("p1").hunts.keys.found, ["c0"], "the first save takes one clue");
+    assert.deepStrictEqual(docs.get("p1").hunts.keys.found, [], "the first save starts the hunt's clock (15 Nov scan: clue 0 waits MIN_CLUE_MS from it)");
     assert.ok(ls.has("hallway-progress"), "what's still to go stays in the browser meanwhile");
     assert.equal(P.get().hunts.keys.done, true, "the page still shows it found");
+    clock += 9000; await runTimers(); assert.deepStrictEqual(docs.get("p1").hunts.keys.found, ["c0"], "sent again: clue 0");
     clock += 9000; await runTimers(); assert.deepStrictEqual(docs.get("p1").hunts.keys.found, ["c0", "c1"], "sent again: the next clue");
     clock += 9000; await runTimers(); assert.equal(docs.get("p1").hunts.keys.done, true, "and then it's finished on the server");
     assert.ok(!ls.has("hallway-progress"), "caught up: the browser's copy is done with");
@@ -46,7 +47,15 @@ const runTimers = async () => { const due = timers.filter(t => t.f && t.at <= cl
     MAP.hunts.push({ id: "two", clues: [{}, {}] });
     P.save({ hunts: { two: { found: ["c0"] } } }); for (let i = 0; i < 20; i++) await settle(); clock += 3000;
     P.save({ hunts: { two: { found: ["c0", "c1"], done: true } } }); for (let i = 0; i < 20; i++) await settle();
-    assert.deepStrictEqual(docs.get("p1").hunts.two.found, ["c0"], "too soon for the second");
+    assert.deepStrictEqual(docs.get("p1").hunts.two.found, [], "too soon for either");
+    clock += 9000; await runTimers(); assert.deepStrictEqual(docs.get("p1").hunts.two.found, ["c0"], "the catch-up takes clue 0");
     clock += 9000; await runTimers(); assert.equal(docs.get("p1").hunts.two.done, true, "sent again, it finishes");
+    /* (15 Nov scan) two clues 40 tiles apart on one floor, found by a real walker 20 s apart: the second waits the walk (19 s), and lands
+       on the first catch-up after it */
+    MAP.hunts.push({ id: "far", clues: [{ level: "g", x: 0, y: 0, art: "note" }, { level: "g", x: 40, y: 0, art: "note" }] });
+    P.save({ hunts: { far: { found: [] } } }); for (let i = 0; i < 20; i++) await settle(); clock += 10000;
+    P.save({ hunts: { far: { found: ["c0"] } } }); for (let i = 0; i < 20; i++) await settle(); assert.deepStrictEqual(docs.get("p1").hunts.far.found, ["c0"], "an empty save when the hunt was picked: clue 0 goes in at once");
+    clock += 20000; P.save({ hunts: { far: { found: ["c0", "c1"], done: true } } }); for (let i = 0; i < 20; i++) await settle();
+    assert.equal(docs.get("p1").hunts.far.done, true, "a real walk is never held up");
     Date.now = realNow; console.log("hallway progress (page): all good");
 })().catch(e => { console.error(e); process.exit(1); });

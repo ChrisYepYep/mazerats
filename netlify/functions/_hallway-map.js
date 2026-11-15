@@ -39,7 +39,7 @@ const inRect = (r, x, y) => x >= r.x0 && x < r.x1 && y >= r.y0 && y < r.y1;
 /* the holes the stairs up to this floor cut in it: editor.js holes() */
 function holesOf(map, l) {
     const out = [];
-    for (const st of (map.stairs || [])) {
+    for (const st of (Array.isArray(map.stairs) ? map.stairs : [])) {
         if (!st || st.up !== l.id) continue;
         if (st.kind === "straight") out.push({ x0: st.a, x1: st.b, y0: st.y - 10, y1: st.y });
         else if (st.kind === "turn") { out.push({ x0: st.a, x1: st.b, y0: st.y - 10, y1: st.y }); out.push({ x0: st.a - 4, x1: st.a, y0: st.y - 10, y1: st.y - 6 }); }
@@ -51,7 +51,7 @@ function holesOf(map, l) {
 /* the flights going up from this floor take its tiles: editor.js stairLevels() slots */
 function flightsOf(map, l) {
     const out = [];
-    for (const st of (map.stairs || [])) {
+    for (const st of (Array.isArray(map.stairs) ? map.stairs : [])) {
         if (!st || st.low !== l.id) continue;
         if (st.kind === "side") out.push({ x0: st.x - 10, x1: st.x, y0: st.a, y1: st.b });
         else if (st.kind === "sideturn") out.push({ x0: st.x - 10, x1: st.x, y0: st.a, y1: st.b }, { x0: st.x - 10, x1: st.x - 6, y0: st.a - 4, y1: st.a });
@@ -62,14 +62,14 @@ function flightsOf(map, l) {
 }
 function standableOn(map, l) {
     const cells = new Set(Array.isArray(l.cells) ? l.cells : []), solid = new Set(), add = (x, y) => solid.add(x + "," + y);
-    for (const p of (l.props || [])) {
+    for (const p of (Array.isArray(l.props) ? l.props : [])) {      // a floor whose props isn't a list threw (15 Nov scan, finding 9)
         if (!p || typeof p.k !== "string" || p.k.startsWith("mark_")) continue;
         let ts; try { ts = Parts.tiles(p); } catch (e) { ts = [[p.x, p.y]]; }
         if (p.k === "archway" && ts.length) ts = [ts[0], ts[ts.length - 1]];
         for (const t of ts) add(t[0], t[1]);
         if (p.k === "statue") { const n = Math.max(0, Math.min(6, p.treeOut || 0)); for (let x = p.x - n; x < p.x + 2 + n; x++) for (let y = p.y - n; y < p.y + 2 + n; y++) add(x, y); }
     }
-    for (const t of (l.teles || [])) if (t) add(t.x, t.y);
+    for (const t of (Array.isArray(l.teles) ? l.teles : [])) if (t) add(t.x, t.y);
     const rects = [...holesOf(map, l), ...flightsOf(map, l)];
     return (x, y) => cells.has(Math.floor(x / 2) + "," + Math.floor(y / 2)) && !solid.has(x + "," + y) && !rects.some(r => inRect(r, x, y));
 }
@@ -87,7 +87,7 @@ function pickUpFrom(map, l, x, y, free) {
    front diagonals and sides, never over its back; or through one seat beside it, from that seat's four sides. */
 const SEATS = new Set(["chair", "sofa", "barstool", "ghsofa", "ghchair"]), DIRS = [[0, -1], [1, -1], [1, 0], [1, 1], [0, 1], [-1, 1], [-1, 0], [-1, -1]];
 const tilesOf = p => { try { return Parts.tiles(p); } catch (e) { return [[p.x, p.y]]; } };
-const seatAt = (l, x, y) => (l.props || []).find(p => p && SEATS.has(p.k) && tilesOf(p).some(t => t[0] === x && t[1] === y)) || null;
+const seatAt = (l, x, y) => (Array.isArray(l.props) ? l.props : []).find(p => p && SEATS.has(p.k) && tilesOf(p).some(t => t[0] === x && t[1] === y)) || null;
 const facing = p => { const r = Parts.rotOf(p); return p.k === "sofa" || p.k === "ghsofa" || p.k === "ghchair" ? (r ? 2 : 4) : [2, 4, 6, 0][r]; };
 function seatReachable(l, X, Y, f) {
     const p = seatAt(l, X, Y); if (!p) return false; const [dx, dy] = DIRS[facing(p)];

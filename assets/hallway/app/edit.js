@@ -130,7 +130,10 @@
             return new Response(await pngOf(a.w, a.h, a.d), { status: 200, headers: { "Content-Type": "image/png" } });
         }
         if (p === "/api/lift") { await startWorkers(); const a = await ask(idle(), { type: "lift", way: q.searchParams.get("way") || "oxblood", slide: Number(q.searchParams.get("slide")) || 0 }); return new Response(await pngOf(a.w, a.h, a.d)); }
-        if (p === "/api/sign") { await startWorkers(); const a = await ask(idle(), { type: "sign", q: Object.fromEntries(q.searchParams) }); return new Response(await pngOf(a.w, a.h, a.d), { headers: { "X-Anchor": a.cx + "," + a.cy } }); }
+        if (p === "/api/sign") {
+            /* capped as the local server caps them (15 Nov scan, editor 6): a huge size would hang the drawing thread */
+            const sq = Object.fromEntries(q.searchParams); for (const [k, hi] of [["w", 400], ["h", 200]]) if (sq[k] !== undefined) sq[k] = String(Math.max(0, Math.min(hi, Math.round(Number(sq[k]) || 0)))); if (sq.name) sq.name = sq.name.slice(0, 120);
+            await startWorkers(); const a = await ask(idle(), { type: "sign", q: sq });return new Response(await pngOf(a.w, a.h, a.d), { headers: { "X-Anchor": a.cx + "," + a.cy } }); }
         if (p === "/api/publish") {
             if (method === "GET") return json(publishing);
             if (publishing.running) return json({ error: "Already publishing." }, 409);

@@ -124,7 +124,8 @@
     /* The albums a maze needs: a stretch of pictures to each table it has */
     function albumsOf(r, facts) {
         const tables = r.items.filter(it => it.k === "album"); if (!facts || !tables.length) return new Map();
-        const pics = facts.pictures, wanted = Math.min(tables.length, Math.max(1, Math.ceil(pics.length / 25))), each = Math.ceil(pics.length / wanted) || 1, out = new Map();
+        const pics = facts.pictures; if (!pics.length) return new Map();      // no album that opens blank (15 Nov scan, rooms 20)
+        const wanted = Math.min(tables.length, Math.max(1, Math.ceil(pics.length / 25))), each = Math.ceil(pics.length / wanted) || 1, out = new Map();
         for (let i = 0; i < wanted; i++) out.set(tables[i], { n: i, from: i * each, pics: pics.slice(i * each, (i + 1) * each), colour: BOOK_ROTA[(hash(facts.name.length, i) + i) % BOOK_ROTA.length] });
         return out;
     }
@@ -360,7 +361,14 @@
     }
     const hashText = s => { let h = 0; for (const ch of String(s)) h = Math.imul(h, 31) + ch.charCodeAt(0) | 0; return h >>> 0; };
     let archive = null;
-    const mazes = () => archive || (archive = fetch((window.HALLWAY_PLAY || window.HALLWAY_EDIT) ? "/.netlify/functions/rooms" : "/api/archive").then(r => { if (!r.ok) throw new Error("archive " + r.status); return r.json(); }).then(j => { const list = j.rooms || j; if (!Array.isArray(list)) throw new Error("no list"); return list; }).catch(() => { archive = null; const none = []; none.failed = true; return none; }));      // marked, so a door can say the archive didn't answer (10 Nov scan b, rooms 10)
+    /* given up at 8 seconds, so a slow archive ends in the same "Couldn't reach" as a dead one (15 Nov scan, rooms 7) */
+    const mazes = () => archive || (archive = (() => {
+        const ab = window.AbortController ? new AbortController() : null, t = ab ? setTimeout(() => ab.abort(), 8000) : 0;
+        return fetch((window.HALLWAY_PLAY || window.HALLWAY_EDIT) ? "/.netlify/functions/rooms?rooms=1" : "/api/archive", ab ? { signal: ab.signal } : undefined)
+            .then(r => { if (!r.ok) throw new Error("archive " + r.status); return r.json(); })
+            .then(j => { clearTimeout(t); const list = j.rooms || j; if (!Array.isArray(list)) throw new Error("no list"); return list; })
+            .catch(() => { clearTimeout(t); archive = null; const none = []; none.failed = true; return none; });
+    })());      // marked, so a door can say the archive didn't answer (10 Nov scan b, rooms 10)
 
     /* ---------- the book: what opens when you walk up to the ledger or an album ---------- */
     const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text !== undefined) e.textContent = text; return e; };
@@ -373,13 +381,19 @@
         back.setAttribute("role", "dialog"); back.setAttribute("aria-label", p.label || title); back.hidden = true;
         bar.appendChild(el("h2", "", p.label || title)); x.type = "button"; x.setAttribute("aria-label", "Close"); close.src = "art/rooms/modal_topclose_x.png"; close.alt = ""; x.appendChild(close); bar.appendChild(x);
         i.alt = p.label || ""; frame.appendChild(i); win.append(bar, frame); back.appendChild(win); host.appendChild(back);
-        const shut = () => { back.remove(); document.removeEventListener("keydown", key, true); if (onClose) onClose(); };
+        const shut = () => { back.remove(); document.removeEventListener("keydown", key, true); removeEventListener("resize", fitPic); if (onClose) onClose(); };
+        /* half size, but never wider or taller than the screen: on a phone it opened 986 px wide with its X off the edge (15 Nov scan, rooms 3).
+           The window round it takes 24 + 15 a side, and its title bar 16 more */
+        const fitPic = () => { if (!i.naturalWidth) return; const w0 = Math.max(1, Math.floor(i.naturalWidth / 2)), h0 = Math.max(1, Math.floor(i.naturalHeight / 2)), k = Math.min(1, (innerWidth - 80) / w0, (innerHeight - 96) / h0); i.width = Math.max(1, Math.floor(w0 * Math.max(.05, k))); i.height = Math.max(1, Math.floor(h0 * Math.max(.05, k))); };
+        addEventListener("resize", fitPic);
+        /* no Escape on a phone: a tap on the picture shuts it */
+        if (matchMedia("(pointer: coarse)").matches) i.addEventListener("click", shut);
         /* Esc works while the photo is still loading too, and a photo that never comes shuts after 10 seconds, so the room is never stuck (10 Nov scan b, rooms 11) */
         const key = e => { if (back.hidden) { if (e.key === "Escape") { e.stopImmediatePropagation(); shut(); } return; } e.stopImmediatePropagation(); if (e.key === "Escape") shut(); };
         const slow = setTimeout(() => { if (back.hidden && back.isConnected) shut(); }, 10000);
         document.addEventListener("keydown", key, true);
         x.addEventListener("click", shut); back.addEventListener("click", e => { if (e.target === back) shut(); });
-        i.onload = () => { clearTimeout(slow); i.width = Math.max(1, Math.floor(i.naturalWidth / 2)); i.height = Math.max(1, Math.floor(i.naturalHeight / 2)); back.hidden = false; };
+        i.onload = () => { clearTimeout(slow); fitPic(); back.hidden = false; };
         i.onerror = shut; i.src = p.url;
         return shut;
     }
@@ -417,7 +431,7 @@
             paint(); return shut;
         }
         /* The ledger: its facts, its write-up, and the entrance and finish opposite. Whatever doesn't fit carries on over the page, measured, so none of it is ever cut off */
-        const m = facts.m, rows = [["Status", m.status], ["Difficulty", String(m.difficulty || "").replace(/-/g, " ")], ["Hotel", m.hotel], ["Archived", m.added], ["Pictures", facts.pictures.length], ["Type", (m.tags || []).map(t => String(t).toLowerCase()).join(", ")]];
+        const m = facts.m, rows = [["Status", m.status], ["Difficulty", String(m.difficulty || "").replace(/-/g, " ")], ["Hotel", m.hotel], ["Archived", m.added], ["Pictures", facts.pictures.length], ["Type", (Array.isArray(m.tags) ? m.tags : []).map(t => String(t).toLowerCase()).join(", ")]];
         const head = b => { b.appendChild(el("h2", "", facts.name)); b.appendChild(el("p", "rb-by", "Built by " + (m.creator || "unknown"))); const dl = el("dl"); for (const [k, v] of rows) if (v !== undefined && v !== "" && v !== null) { dl.appendChild(el("dt", "", k)); dl.appendChild(el("dd", "", String(v))); } b.appendChild(dl); };
         const lead = clean(m.description), more = clean(m.details), text = more && lead && !more.startsWith(lead.slice(0, 30)) ? lead + "\n\n" + more : (more || lead);
         const pics = []; if (m.entrance && m.entrance.image) pics.push({ url: picUrl(m.entrance.image), label: "The entrance" }); if (m.finish && m.finish.image) pics.push({ url: picUrl(m.finish.image), label: "The finish" }); if (!pics.length && facts.pictures[0]) pics.push(facts.pictures[0]);
@@ -447,7 +461,13 @@
         const r = opts.room, facts = opts.facts, edge = opts.edge, c = document.createElement("canvas"); c.className = "room-view"; host.appendChild(c);
         /* whose room this is, in the dark to its left */
         const label = el("div", "room-label"), nameLine = el("div", "", facts.name), ownerLine = el("div", "room-owner", String(facts.m.creator || "")); label.append(nameLine, ownerLine); host.appendChild(label);
-        const placeLabel = v => { const room = v.x, room2 = v.y + s0h(v) / 2, roomy = room >= 216; label.classList.toggle("is-tight", !roomy); label.style.left = roomy ? (room - 16) + "px" : ""; label.style.top = roomy ? room2 + "px" : ""; };
+        /* no room at its left: the top left corner, but under the controls' card where the card is there (a narrower window hid the name
+           behind it), and only as wide as the dark beside the room, so it stays left of the room (15 Nov scan, rooms 4) */
+        const cardBelow = () => { const b = document.getElementById("playBar"); if (!b || getComputedStyle(b).display === "none") return 0; const q = b.getBoundingClientRect(), h = host.getBoundingClientRect(); return q.width && q.top < innerHeight / 2 && q.left < 60 && q.bottom < innerHeight - 40 ? Math.round(q.bottom - h.top + 12) : 0; };
+        const placeLabel = v => {
+            const room = v.x, room2 = v.y + s0h(v) / 2, roomy = room >= 216; label.classList.toggle("is-tight", !roomy); label.style.left = roomy ? (room - 16) + "px" : ""; label.style.top = roomy ? room2 + "px" : "";
+            const under = roomy ? 0 : cardBelow(); if (under) label.style.top = under + "px"; label.style.maxWidth = !roomy && under && room - 24 >= 96 ? (room - 24) + "px" : "";
+        };
         const s0h = v => sizeOf(r).h * v.z;
         const ctx = c.getContext("2d"), s = sizeOf(r), buf = document.createElement("canvas"); buf.width = s.w; buf.height = s.h; const bx = buf.getContext("2d");
         /* you come in over the arrow and stop just past it, or on it if something stands there */
@@ -455,9 +475,11 @@
         const w = { x: start[0], y: start[1], dir: edge === "y" ? 0 : 6, frame: 0, walking: false, pts: [], then: null, last: 0 };
         let hover = null, dead = false, bookOpen = null, raf = 0, moved = false;
         /* on a phone the play bar lies over the bottom of the stage: the room is fitted and centred above it (10 Nov scan b, rooms 13) */
-        const barH = () => { const b = document.getElementById("playBar"); if (!b || !b.offsetParent) return 0; const cs = getComputedStyle(b); const r = b.getBoundingClientRect(); return cs.position !== "static" && r.width > innerWidth * .6 && r.bottom >= innerHeight - 2 ? b.offsetHeight : 0; };
-        const zoomNow = () => Math.max(1, Math.min(opts.zoom(), Math.floor(Math.min(host.clientWidth / s.w, (host.clientHeight - barH()) / s.h)) || 1));      // no looking around in a room, so it's never bigger than the stage
-        const place = () => { const z = zoomNow(), W = host.clientWidth, H = host.clientHeight; c.width = W; c.height = H; const v = { z, x: Math.round((W - s.w * z) / 2), y: Math.round((H - barH() - s.h * z) / 2) }; placeLabel(v); return v; };
+        /* not offsetParent: the bar is position: fixed, whose offsetParent is always null, so this was always 0 (15 Nov scan, rooms 2) */
+        const barH = () => { const b = document.getElementById("playBar"); if (!b) return 0; const cs = getComputedStyle(b); if (cs.display === "none" || cs.visibility === "hidden") return 0; const r = b.getBoundingClientRect(); return cs.position !== "static" && r.width > innerWidth * .6 && r.bottom >= innerHeight - 2 ? b.offsetHeight : 0; };
+        const fitZoom = () => Math.max(1, Math.floor(Math.min(host.clientWidth / s.w, (host.clientHeight - barH()) / s.h)) || 1);
+        const zoomNow = () => Math.max(1, Math.min(opts.zoom(), fitZoom()));      // no looking around in a room, so it's never bigger than the stage
+        const place = () => { const z = zoomNow(), W = host.clientWidth, H = host.clientHeight; c.width = W; c.height = H; const room = H - barH(), v = { z, x: Math.round((W - s.w * z) / 2), y: s.h * z > room ? Math.round(room - (s.h - MARGIN) * z) : Math.round((room - s.h * z) / 2) }; placeLabel(v); return v; };      // too tall even at 1x (a phone on its side): the dark above the walls goes first, never the floor's near corner (15 Nov scan, rooms 2)
         let view = place();
         const paint = now => { if (dead) return; view = (c.width !== host.clientWidth || c.height !== host.clientHeight || view.z !== zoomNow()) ? place() : view; bx.clearRect(0, 0, s.w, s.h); paintRoom(bx, r, { facts, walker: w, hover, edges: [edge], now }); ctx.imageSmoothingEnabled = false; ctx.fillStyle = "#000"; ctx.fillRect(0, 0, c.width, c.height); ctx.drawImage(buf, view.x, view.y, s.w * view.z, s.h * view.z); };
         /* Frames only while you walk; otherwise one paint when something changes (the hover tile, the size, a picture arriving, the zoom).
@@ -508,7 +530,7 @@
         const usable = it => it && (it.k === "ledger" || (it.k === "album" && albumsOf(r, facts).has(it)) || (it.k === "frame" && facts.slots[it.slot]) || isExitDoor(it));
         c.addEventListener("pointermove", e => { const p = toPx(e), t = tileAt(r, p[0], p[1]), it = itemAt(r, p[0], p[1]); c.style.cursor = usable(it) ? "pointer" : "default"; const was = hover; hover = !usable(it) && t[0] >= 0 && t[1] >= 0 && t[0] < r.w && t[1] < r.h && !solidSet(r).has(t[0] + "," + t[1]) ? t : null; if (String(was) !== String(hover)) wake(); });
         c.addEventListener("pointerleave", () => { if (hover) { hover = null; wake(); } });
-        c.addEventListener("wheel", e => { e.preventDefault(); if (opts.wheel) opts.wheel(e.deltaY); wake(); }, { passive: false });
+        c.addEventListener("wheel", e => { e.preventDefault(); if (opts.wheel) opts.wheel(e.deltaY, fitZoom()); wake(); }, { passive: false });
         c.addEventListener("click", e => {
             if (bookOpen) return; const p = toPx(e), it = itemAt(r, p[0], p[1]);
             if (usable(it)) { useIt(it); return; }

@@ -78,13 +78,17 @@
 
     /* ---------- the clue on screen ---------- */
     function closePanel() { if (panel) { panel.remove(); panel = null; } }
+    /* Escape shuts the clue card, as it does everything else that opens (15 Nov scan, live L13); a window or drawer over it goes first */
+    document.addEventListener("keydown", e => { if (e.key !== "Escape" || e.defaultPrevented || !panel || document.querySelector(".hw-sheet, #playPicker, .play-menu.is-open")) return; e.preventDefault(); closePanel(); });
     function showPanel() {
         closePanel(); const h = huntNow(); if (!h) return; const i = clueNow(h); if (i < 0) return; const c = h.clues[i], box = panel = el("div", "mr-window hw-clue"), bar = el("div", "mr-titlebar"), frame = el("div", "mr-frame hw-sheet-body"), x = el("button", "mr-close"), xi = el("img"); x.type = "button"; x.setAttribute("aria-label", "Close"); xi.src = "art/rooms/modal_topclose_x.png"; xi.alt = ""; x.appendChild(xi); x.addEventListener("click", closePanel); bar.append(el("h2", "", h.name), x); box.append(bar, frame);
         const lvl = levelOf(c.level); frame.appendChild(el("small", "", "Clue " + (i + 1) + " of " + h.clues.length + (lvl ? " - " + lvl.name : ""))); frame.appendChild(el("h4", "", c.title || "")); frame.appendChild(el("p", "", c.words || ""));
         if (hintShown && c.hint) frame.appendChild(el("p", "hint", c.hint)); else if (c.hint) { const b = el("button", "mr-btn", "Hint (+5 mins)"); b.type = "button"; b.addEventListener("click", () => { const l = localOf(h.id); l.hints = (l.hints || 0) + 1; keepLocal(h.id, l); hintShown = true; showPanel(); }); frame.appendChild(b); }
         box.addEventListener("pointerdown", e => e.stopPropagation()); (document.getElementById("stage") || document.body).appendChild(box);
     }
-    function start(h) { current = h.id; try { localStorage.setItem(NOW_KEY, h.id); } catch (e) { /* only this visit */ } const l = localOf(h.id); keepLocal(h.id, l); hintShown = false; showPanel(); }
+    function start(h) { current = h.id; try { localStorage.setItem(NOW_KEY, h.id); } catch (e) { /* only this visit */ } const l = localOf(h.id); keepLocal(h.id, l); hintShown = false; showPanel();
+        /* told to the server as it's picked, so its clock for the first clue (8 s from the hunt's first save) starts now, not at the first find (15 Nov scan, server) */
+        const p = prog(); if (p && p.get()) { const st = (p.get().hunts || {})[h.id] || {}; if (!st.done) p.save({ hunts: { [h.id]: { found: st.found || [] } }, key: p.get().key }); } }
     function board() {
         const list = hunts(), b = el("div", "hunts"); if (!list.length) b.appendChild(el("p", "", "Nothing's pinned up just now.")); let w = null;
         for (const h of list) { const row = el("button", "h"); row.type = "button"; row.append(el("b", "", h.name), el("span", "", doneOf(h) ? "Found" : (h.clues || []).length + " clues")); row.addEventListener("click", () => { if (w) w.shut(); if (doneOf(h)) return; start(h); }); b.appendChild(row); }

@@ -37,10 +37,17 @@
             ["Maze's picture", { k: "frame", w: 34, h: 26, up: 34, slot: 0 }, null], ["Window", { k: "window" }, R_ + "window-r.png"], ["Wall light", { k: "sconce", up: 70 }, "art/sconce-x.png"], ["Globe wall light", { k: "sconce", style: "globe", up: 70 }, "art/sconce-globe-x.png"],
             /* the staff door: walking up to it takes you back out, as the arrow does */
             ["Staff door (a way out)", { k: "painting", id: "i_staffdoor", up: ((window.WALL_ITEMS || []).find(i => i.id === "i_staffdoor") || { h: 40 }).h }, "art/wall/i_staffdoor.png"],
-            ...(window.WALL_ITEMS || []).filter(i => !i.tell).map(i => [i.name, { k: "painting", id: i.id, up: i.locked ? i.h : 62 }, "art/wall/" + i.x.layers[0].f])
+            /* not the gallery's exhibit frames: only the gallery paints an event into them, so in a room they'd be an empty mount (15 Nov scan, rooms 13) */
+            ...(window.WALL_ITEMS || []).filter(i => !i.tell && !/^g_frame_/.test(i.id)).map(i => [i.name, { k: "painting", id: i.id, up: i.locked ? i.h : 62 }, "art/wall/" + i.x.layers[0].f])
         ]]
     ];
     const Z_MAX = 120, KEEP = "hallway-rooms-view";
+    /* where a picture's frame can hang on its wall and stay whole (see fitFrame below) */
+    function frameBoundsIn(r, it) {
+        const W = (it.w || 34) + 6, Hh = (it.h || 26) + 6, q = W / 4, left = it.wall === "l", len = left ? r.h : r.w, half = Math.min(len / 2, (W / 2 + 2) / 16);
+        const upLo = Math.max(6, Math.ceil(left ? 2 - q : 2 + q)), upHi = Math.max(upLo, Math.min(90, Math.floor(112 - 6 - Hh - (left ? q : -q))));
+        return { atLo: half, atHi: len - half, upLo, upHi };
+    }
     /* one layout's problems. Out here, so the hallway's Problems tab can ask about every layout, not only the one on screen (10 Nov scan b, rooms 8) */
     function problemsOf(V, r, size) {
         const solid = V.solidSet(r), msgs = [];
@@ -62,6 +69,7 @@
             }
         }
         const slots = r.items.filter(q => q.k === "frame").map(q => q.slot); if (new Set(slots).size !== slots.length) msgs.push("Two pictures on the wall show the same picture.");
+        for (const it of r.items) if (it.k === "frame" && it.wall) { const b = frameBoundsIn(r, it); if (it.at < b.atLo - .05 || it.at > b.atHi + .05 || (it.up || 0) < b.upLo || (it.up || 0) > b.upHi) msgs.push("A picture hangs past the end or the top of its wall."); }
         return [...new Set(msgs)];
     }
     /* every layout's: [{ size, n, name, msgs }] */
@@ -164,7 +172,7 @@
             if (q.k === "rugRound" || q.k === "lamp") return null;
             q.flip = !q.flip; if (!q.flip) delete q.flip; return q;
         }
-        const otherWall = q0 => { const q = { ...q0 }; q.wall = q.wall === "l" ? "r" : "l"; const r = roomNow(), len = q.wall === "l" ? r.h : r.w; if (q.at !== undefined) q.at = Math.min(len - .5, q.at); return q; };
+        const otherWall = q0 => { const q = { ...q0 }; q.wall = q.wall === "l" ? "r" : "l"; const r = roomNow(), len = q.wall === "l" ? r.h : r.w; if (q.at !== undefined) q.at = Math.min(len - .5, q.at); fitFrame(q); return q; };
         const turnCount = q => q.k === "hall" ? P.turns(q.p) : q.k === "chair4" || q.k === "chair6" ? 4 : (q.k === "rugRound" || q.k === "lamp" || V.isWall(q)) ? 1 : 2;
         const withTurns = q => { if (V.isWall(q)) return q; let o = q; for (let i = 0; i < placeTurn; i++) o = turned(o) || o; return o; };
         const applyTo = (it, q) => { for (const k of Object.keys(it)) delete it[k]; Object.assign(it, q); };
@@ -191,10 +199,15 @@
         }
         /* is the mouse over a wall face (behind the floor's back edges)? A wall thing's ghost shows only there (10 Nov scan, rooms 23) */
         const overWall = (r, p) => { const t = V.tileAt(r, p[0], p[1]); return !inRoom(r, t) && (t[0] < 0 || t[1] < 0) && t[0] < r.w && t[1] < r.h; };
-        const clampUp = (it, up) => { const lo = it.k === "frame" ? 6 : 16, hi = it.k === "frame" ? 90 : 96; return Math.max(lo, Math.min(hi, up)); };
+        /* a picture's frame is kept whole on its own wall: off the back corner and the wall's end by half its width (and its shadow), and
+           under the wall's top. room-view draws a frame on the slant from its left edge, so on the left wall it sits a quarter of its width
+           higher than on the right (15 Nov scan, rooms 12: a frame could hang round the corner, into the dark or above the wall) */
+        const frameBounds = it => frameBoundsIn(roomNow(), it);
+        const fitFrame = it => { if (it.k !== "frame" || !it.wall) return; const b = frameBounds(it); if (it.at !== undefined) it.at = Math.round(Math.max(b.atLo, Math.min(b.atHi, it.at)) * 10) / 10; if (it.up !== undefined) it.up = Math.max(b.upLo, Math.min(b.upHi, it.up)); };
+        const clampUp = (it, up) => { if (it.k === "frame" && it.wall) { const b = frameBounds(it); return Math.max(b.upLo, Math.min(b.upHi, up)); } const lo = it.k === "frame" ? 6 : 16, hi = it.k === "frame" ? 90 : 96; return Math.max(lo, Math.min(hi, up)); };
         /* a staff door stands on the floor whatever height the mouse is at */
         const doorUp = () => ((window.WALL_ITEMS || []).find(i => i.id === "i_staffdoor") || { h: 40 }).h;
-        const hang = (it, w) => { it.wall = w.wall; it.at = w.at; if (isDoor(it)) { it.up = doorUp(); return; } if (it.k !== "window") it.up = clampUp(it, it.k === "frame" ? w.up - it.h / 2 : w.up); };
+        const hang = (it, w) => { it.wall = w.wall; it.at = w.at; if (isDoor(it)) { it.up = doorUp(); return; } if (it.k !== "window") it.up = clampUp(it, it.k === "frame" ? w.up - it.h / 2 : w.up); fitFrame(it); };
         /* what's being placed or carried, put where the mouse is */
         function heldAt(base, p, r) {
             const q = { ...base };
@@ -226,7 +239,7 @@
             right.appendChild(el("p", "re-hint", V.isWall(sel) ? (isDoor(sel) ? "Drag it along the wall or onto the other wall." : "Drag it along the wall or onto the other wall. Ctrl-drag moves it up or down.") : "Drag it to move it, or use the arrow keys to nudge it." + (turns ? " R turns it." : "") + (V.isRug(sel) ? "" : " Ctrl-drag raises it.")));
             const num = (label, key, min, max, step, fallback) => {
                 const row = el("label", "re-lab"), i = el("input"); i.type = "text"; i.inputMode = "numeric"; i.autocomplete = "off"; i.value = sel[key] === undefined ? fallback : sel[key]; let begun = false;
-                const apply = () => { if (i.value.trim() === "" || !Number.isFinite(Number(i.value))) return; const v = Math.max(min, Math.min(max, Math.round(Number(i.value)))); if (key === "z" && !v && sel.z && !V.isWall(sel) && !fits(roomNow(), (({ z, ...o }) => o)(sel), sel)) { say("There's something under it, so it can't go down to the floor."); i.value = sel.z; return; } if (!V.isWall(sel) && (key === "n" || key === "len" || key === "w" || key === "h") && !fits(roomNow(), { ...sel, [key]: v }, sel)) { say("There isn't room for that here."); return; } say(""); if (!begun) { begun = true; editingNoCommit(); } if (key === "z" && !v) delete sel.z; else sel[key] = v; api.changed(); paintSoon(); syncUndo(); };
+                const apply = () => { if (i.value.trim() === "" || !Number.isFinite(Number(i.value))) return; const v = Math.max(min, Math.min(max, Math.round(Number(i.value)))); if (key === "z" && !v && sel.z && !V.isWall(sel) && !fits(roomNow(), (({ z, ...o }) => o)(sel), sel)) { say("There's something under it, so it can't go down to the floor."); i.value = sel.z; return; } if (!V.isWall(sel) && (key === "n" || key === "len" || key === "w" || key === "h") && !fits(roomNow(), { ...sel, [key]: v }, sel)) { say("There isn't room for that here."); return; } say(""); if (!begun) { begun = true; editingNoCommit(); } if (key === "z" && !v) delete sel.z; else sel[key] = v; if (sel.k === "frame") { fitFrame(sel); if (key !== "up") panelValues(); } api.changed(); paintSoon(); syncUndo(); };
                 i.addEventListener("change", apply);      // not every keystroke: typing 10 went through 1, clamped (10 Nov scan b, rooms 12)
                 i.addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); i.blur(); } if (e.key === "ArrowUp" || e.key === "ArrowDown") { e.preventDefault(); i.value = Math.max(min, Math.min(max, (Number(i.value) || 0) + (e.key === "ArrowUp" ? 1 : -1) * (e.shiftKey ? 10 : step || 1))); apply(); } });
                 i.addEventListener("blur", () => { begun = false; i.value = sel && sel[key] !== undefined ? sel[key] : fallback === undefined ? "" : fallback; checks(); });

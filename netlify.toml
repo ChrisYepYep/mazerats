@@ -1034,6 +1034,15 @@
     Cache-Control = "public, max-age=0, must-revalidate"
     X-Robots-Tag = "noindex"
 
+# The Hallway's pixel-font table (15 Nov 2026 scan): the renderer reads it by this name, but it's data, not a page.
+# tools/build-dist.js ships only the table, and it's served as plain text that can run nothing.
+[[headers]]
+  for = "/assets/hallway/app/art/fontdump.html"
+  [headers.values]
+    Content-Type = "text/plain; charset=utf-8"
+    Content-Security-Policy = "sandbox; default-src 'none'"
+    X-Content-Type-Options = "nosniff"
+
 [[headers]]
   for = "/assets/hallway/*.json"
   [headers.values]

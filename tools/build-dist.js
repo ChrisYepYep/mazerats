@@ -33,7 +33,8 @@ const fs = require("fs");
 const path = require("path");
 
 const ROOT = path.resolve(__dirname, "..");
-const OUT = path.join(ROOT, "dist");
+// BUILD_DIST_OUT: somewhere else to build into, to try the build without touching dist/ (15 Nov 2026)
+const OUT = process.env.BUILD_DIST_OUT ? path.resolve(process.env.BUILD_DIST_OUT) : path.join(ROOT, "dist");
 
 // Everything a visitor's browser may load.
 const PUBLIC = [
@@ -58,8 +59,12 @@ const SKIP = new Set([
     "js/rat-race-epic.js", "js/dungeon.js",
     // what a Hallway publish (tools/hallway-editor/publish.js) builds beside the live
     // app/ and lift/ and swaps in, should one have stopped part way (9 Nov 2026)
-    "assets/hallway/app.new", "assets/hallway/app.old", "assets/hallway/lift.new", "assets/hallway/lift.old"
+    "assets/hallway/app.new", "assets/hallway/app.old", "assets/hallway/lift.new", "assets/hallway/lift.old",
+    // the page that measured the Hallway's pixel font (15 Nov 2026 scan): a working page with a script in it, published as a page.
+    // The Warren editor's renderer reads the glyph table in it by that name (render/hw.js), so only that table ships, below.
+    "assets/hallway/app/art/fontdump.html"
 ]);
+const FONT_TABLE = "assets/hallway/app/art/fontdump.html";
 
 const problems = [];
 for (const name of fs.readdirSync(ROOT)) {
@@ -90,6 +95,13 @@ for (const name of PUBLIC) {
             return true;
         }
     });
+}
+/* The font table on its own: just the <pre id="o"> that render/hw.js reads, with no page round it and no script, under the name the
+   renderer asks for (netlify.toml serves it as plain text). */
+if (fs.existsSync(path.join(ROOT, FONT_TABLE))) {
+    const m = /<pre id="o">[\s\S]*?<\/pre>/.exec(fs.readFileSync(path.join(ROOT, FONT_TABLE), "latin1"));
+    if (!m) problems.push(`${FONT_TABLE} has no <pre id="o"> font table`);
+    else { fs.writeFileSync(path.join(OUT, FONT_TABLE), m[0] + "\n", "latin1"); files++; }
 }
 /* Every redirect in netlify.toml that rewrites to a static file must find it
    in dist/, or /home, /warren and the rest 404 on the live site while working

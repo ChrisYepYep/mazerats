@@ -20,8 +20,12 @@
         noise = buf;
         return true;
     }
+    /* the engine rests a few seconds after its last sound ends, as the music's does: it ran on for the rest of the visit (15 Nov scan, live L9).
+       start() wakes it again */
+    let until = 0, restT = 0;
+    function rest(end) { until = Math.max(until, end); clearTimeout(restT); restT = setTimeout(() => { if (ctx && ctx.state === "running" && ctx.currentTime >= until) ctx.suspend().catch(() => {}); }, Math.max(0, until - ctx.currentTime + 3.4) * 1000); }
     function hush(at, peak, attack, hold, release) {
-        const g = ctx.createGain(); g.gain.setValueAtTime(0, at); g.gain.linearRampToValueAtTime(peak, at + attack); g.gain.setValueAtTime(peak, at + attack + hold); g.gain.linearRampToValueAtTime(0, at + attack + hold + release); g.connect(out); return g;
+        rest(at + attack + hold + release + .1); const g = ctx.createGain(); g.gain.setValueAtTime(0, at); g.gain.linearRampToValueAtTime(peak, at + attack); g.gain.setValueAtTime(peak, at + attack + hold); g.gain.linearRampToValueAtTime(0, at + attack + hold + release); g.connect(out); return g;
     }
     function felt(at, dur, from, to, peak) {
         const s = ctx.createBufferSource(); s.buffer = noise; s.loop = true;

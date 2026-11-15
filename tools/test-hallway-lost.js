@@ -82,6 +82,10 @@ const findIt = async (o, extra = {}) => call("POST", { act: "found", k: o.k, at:
     MAP.lostSpots[0].skip = MAP.lostSpots[3].skip = THINGS.map(t => t.k); fn._for.resetSpots(); for (let i = 0; i < 8; i++) { r = await call("POST", { act: "start" }); assert.equal(r.body.spot.level, "f1", "skipped everywhere on Ground"); await call("POST", { act: "cancel" }); } MAP.lostSpots[0].skip = MAP.lostSpots[3].skip = []; fn._for.resetSpots();
     /* after its time's up, a start is a new search */
     r = await call("POST", { act: "start" }); const old = r.body; clock += 1000e3; r = await call("POST", { act: "start" }); assert.ok(!r.body.resumed, "an expired search isn't handed back"); assert.equal(r.body.left, 900e3); r = await call("POST", { act: "swap" }); assert.equal(r.status, 200); clock += 1000e3; r = await call("POST", { act: "swap" }); assert.equal(r.status, 409, "no swapping an expired search"); await call("POST", { act: "cancel" }); void old;
+    /* (15 Nov scan, server finding 1) leave mid-search, come back after the 15 minutes: the new search isn't born cancelled */
+    clock += 16 * 60e3; r = await call("POST", { act: "start" }); assert.ok(!r.body.resumed, "a new search"); assert.ok(!store.hallway_lost_open.find(o => o.playerId === "p1").cancelled, "not marked cancelled");
+    clock += 30e3; r = await call("POST", { act: "swap" }); assert.equal(r.status, 200, "it can be swapped"); const swapped = r.body;
+    clock += 30e3; r = await findIt(swapped); assert.equal(r.status, 200, "and its first find counts"); assert.ok(r.body.points > 0);
     /* Visitors */
     me = null; r = await call("POST", { act: "hint" }); assert.equal(r.status, 409, "a visitor with no token has nothing open");
     r = await call("POST", { act: "start" }); assert.equal(r.status, 200); const v1 = r.body.v; assert.ok(v1, "a visitor gets a token"); assert.match(r.body.name, /^Visitor \d{3}$/);

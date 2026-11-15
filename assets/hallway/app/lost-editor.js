@@ -24,7 +24,9 @@
     const edit = fn => { const a = api(); a.snapshot(); fn(LIVE.map); a.changed(); };
     const keyOf = s => s.level + "|" + s.x + "|" + s.y;
     /* the map's spots in the new shape; the first ones are converted the first time anything changes */
-    const oldSpots = () => LOST().OLD_SPOTS.map(([name, x, y]) => { const l = LIVE.map.levels.find(q => q.name === name); return l ? { level: l.id, x, y, skip: [] } : null; }).filter(Boolean);
+    /* the old fixed spots were the Hallways' only: the Events Gallery starts from none (15 Nov scan, editor 10: its own "Floor 1" picked up four) */
+    const onGallery = () => { const H = window.__hallway; return !!(H && H.root && H.root.gallery && H.root.gallery === LIVE.map); };
+    const oldSpots = () => onGallery() ? [] : LOST().OLD_SPOTS.map(([name, x, y]) => { const l = LIVE.map.levels.find(q => q.name === name); return l ? { level: l.id, x, y, skip: [] } : null; }).filter(Boolean);
     function list() { const map = LIVE.map; if (!map.lostSpots) map.lostSpots = oldSpots(); return map.lostSpots; }
     const shown = () => LIVE.map.lostSpots || oldSpots();
     const sel = () => selKey ? shown().find(s => keyOf(s) === selKey) || null : null;       // found again each time, so undo can't leave it pointing at nothing

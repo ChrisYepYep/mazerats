@@ -101,8 +101,30 @@ function cleanBody(body) {
     return out;
 }
 
-/* The hunts on the published map: id -> how many clues. null when the map can't be read. */
-const huntsOf = map => map && Array.isArray(map.levels) ? new Map((Array.isArray(map.hunts) ? map.hunts : []).filter(h => h && typeof h.id === "string" && Array.isArray(h.clues) && h.clues.length).map(h => [h.id, h.clues.length])) : null;
+/* The hunts on the published map: id -> its clues. null when the map can't be read. */
+const huntsOf = map => map && Array.isArray(map.levels) ? new Map((Array.isArray(map.hunts) ? map.hunts : []).filter(h => h && typeof h.id === "string" && Array.isArray(h.clues) && h.clues.length).map(h => [h.id, h.clues])) : null;
+
+/* HOW LONG BEFORE THE NEXT CLUE (15 Nov scan, server finding on the hunts: a script posting every clue 8 s apart finished a five-clue hunt,
+   with a place and the key, in 32 seconds, the first clue with no wait at all). The server has the map, so:
+   - clue n is taken only once the walk from clue n-1 could have been made: the tiles between them (the longer of across and down, as a
+     Habbo walks diagonally at the same speed), less one at each end for picking it up from beside it, at MS_PER_TILE, the walk's own speed
+     (editor.js). Never less than MIN_CLUE_MS. Only between two clues lying on tiles of the same floor: a clue that's clicked on the wall
+     can be clicked from anywhere on its floor, and a change of floor can be a lift, so those count MIN_CLUE_MS alone.
+   - the wait is held to WALK_CAP_MS at most, so progress.js's catch-up (a try every 9 s, three that don't move and it waits for the next
+     visit) always gets an honest player's clue in; a clue posted early is never lost, only taken a little later.
+   - clue 0 is taken MIN_CLUE_MS after the server first heard of the hunt from this player (`started`, the hunt's first save). Not the walk
+     from the entrance the scan suggested: the hunts board opens from the menu wherever you are, so nobody has to start from there. The
+     page saving an empty `found` when a hunt is picked (live-hunts.js) starts that clock without the player noticing; until it does,
+     clue 0 goes in on progress.js's first catch-up, 9 s after it was found.
+   A player using the page's "fast" or "travel" cheats has their clues taken on this clock, not theirs. */
+const MS_PER_TILE = 500, WALK_CAP_MS = 24000;
+const tileOf = c => c && typeof c === "object" && typeof c.level === "string" && c.art !== "none" && Number.isFinite(c.x) && Number.isFinite(c.y) ? c : null;
+function clueWaitMs(clues, i) {
+    if (!i) return MIN_CLUE_MS;
+    const a = tileOf(clues[i - 1]), b = tileOf(clues[i]);
+    const walk = a && b && a.level === b.level ? Math.max(0, Math.max(Math.abs(a.x - b.x), Math.abs(a.y - b.y)) - 2) * MS_PER_TILE : 0;
+    return Math.max(MIN_CLUE_MS, Math.min(WALK_CAP_MS, walk));
+}
 
 /* The update for what's been sent: each part can only move forwards. */
 function mergeInto(doc, clean, map, now = Date.now()) {
@@ -131,24 +153,25 @@ function mergeInto(doc, clean, map, now = Date.now()) {
         /* (10 Nov scan, server findings 2 and 18) with the map unreadable just now, nothing new is taken: it used to keep every clue sent, in
            any order, and the first save once the map was back finished the hunt with a place and the key */
         if (!defs) continue;
-        const n = defs.get(id);
-        if (n === undefined) continue;                       // not a hunt on the map
+        const clues = defs.get(id);
+        if (clues === undefined) continue;                   // not a hunt on the map
+        const n = clues.length;
         if (!rawHunts[id] && Object.keys(next.hunts).length >= 100) continue;
         const old = rawHunts[id] || { found: [], done: false }, found = ids(old.found).filter(k => CLUE.test(k)), at = { ...(old.at || {}) };
         for (const k of found) if (typeof at[k] !== "number") at[k] = now;
-        if (n !== undefined) {
-            for (let i = 0; i < n; i++) {
-                const k = "c" + i; if (found.includes(k)) continue; if (!h.found.includes(k)) break;
-                const prev = i ? at["c" + (i - 1)] : undefined; if (typeof prev === "number" && now - prev < MIN_CLUE_MS) break;
-                found.push(k); at[k] = now; break;                      // one a save
-            }
-        } else for (const k of h.found) if (CLUE.test(k) && !found.includes(k)) { found.push(k); at[k] = now; }
-        next.hunts[id] = { found: found.slice(0, MAX_LIST), done: old.done === true, at };
+        /* when the server first heard of this hunt from this player: clue 0's clock (a row from before 15 Nov starts it now) */
+        const started = typeof old.started === "number" ? old.started : now;
+        for (let i = 0; i < n; i++) {
+            const k = "c" + i; if (found.includes(k)) continue; if (!h.found.includes(k)) break;
+            const prev = i ? at["c" + (i - 1)] : started; if (typeof prev === "number" && now - prev < clueWaitMs(clues, i)) break;
+            found.push(k); at[k] = now; break;                      // one a save
+        }
+        next.hunts[id] = { found: found.slice(0, MAX_LIST), done: old.done === true, at, started };
         if (old.place) next.hunts[id].place = old.place;
     }
     /* finished: every clue in (each was timed as it came, above). A row saved before the times, not in this save, gets its times now */
     for (const [id, h] of Object.entries(next.hunts)) {
-        if (h.done) continue; const n = defs && defs.get(id); if (!n) continue;
+        if (h.done) continue; const n = defs && defs.get(id) ? defs.get(id).length : 0; if (!n) continue;
         const raw = clean.hunts[id] ? h : rawHunts[id] || h, at = { ...(raw.at || {}) }, found = ids(raw.found);
         for (const k of found) if (CLUE.test(k) && typeof at[k] !== "number") at[k] = now;
         if (!Array.from({ length: n }, (_, i) => "c" + i).every(k => found.includes(k))) { if (!clean.hunts[id] && raw.at === undefined && found.length) next.hunts[id] = { ...raw, found, at }; continue; }

@@ -31,6 +31,7 @@ const TEST_MAP = !!process.env.HALLWAY_MAP;
 if (TEST_MAP && !fs.existsSync(MAP)) { console.error("HALLWAY_MAP: there's no file at " + MAP); process.exit(1); }
 const HISTORY = TEST_MAP ? path.join(path.dirname(MAP), ".history-" + path.basename(MAP, ".json")) : path.join(__dirname, ".history");
 const KEEP = 40, TILE = 512, CACHE_MAX = 900;
+const SIGN_MAX = { w: 400, h: 200 }, WHOLE_MAX = 12000;     // the biggest sign the editor makes; the whole-map picture's longest side
 /* (10 Nov 2026, editor speed) up to 12 threads, leaving a few cores for the page and everything else. The page can only ask for 6 squares at
    once, so it says which it wants next (/api/warm) and the other threads draw those ahead */
 const THREADS = Math.max(2, Math.min(12, os.cpus().length - 4));
@@ -81,7 +82,9 @@ function spawn() {
     t.worker.on("message", m => {
         const job = t.job; t.job = null;
         if (job && m.id === job.id) {
-            if (m.needMap) { t.known.delete(job.v); queue.unshift(job); }
+            /* the thread forgot the map: sent once more, and if it asks again the square fails rather than bouncing for ever (15 Nov scan, editor 17) */
+            if (m.needMap && !job.retried) { job.retried = true; t.known.delete(job.v); queue.unshift(job); }
+            else if (m.needMap) job.done(null, "That map couldn't be drawn.");
             else if (m.error) { console.error(m.error); job.done(null, m.error); }
             else job.done(Buffer.from(m.png));
         }
@@ -150,7 +153,14 @@ function queueJob(key, rect, v, waiter) {
     return job;
 }
 
-function body(req) { return new Promise((ok, no) => { const c = []; req.on("data", d => c.push(d)); req.on("end", () => ok(Buffer.concat(c).toString("utf8"))); req.on("error", no); }); }
+/* at most 8 MB (the map is about 0.2 MB): anything bigger is refused, not held in memory (15 Nov scan, editor 17) */
+const BODY_MAX = 8 * 1024 * 1024;
+class TooBig extends Error {}
+function body(req, max = BODY_MAX) { return new Promise((ok, no) => { const c = []; let n = 0, over = false; req.on("data", d => { n += d.length; if (n > max) { if (!over) { over = true; c.length = 0; no(new TooBig("That's too big to send (over " + Math.round(max / 1048576) + " MB).")); } return; } c.push(d); }); req.on("end", () => ok(Buffer.concat(c).toString("utf8"))); req.on("error", no); }); }
+/* the saved file's mark: the page sends it back with a save, so a save from another tab since it opened is caught (15 Nov scan, editor 1) */
+const markOf = text => crypto.createHash("sha1").update(text).digest("hex").slice(0, 20);
+const fileMark = () => { try { return markOf(fs.readFileSync(MAP)); } catch (e) { return null; } };
+const isRect = r => !!r && typeof r === "object" && ["x", "y", "w", "h"].every(k => Number.isFinite(r[k])) && r.w > 0 && r.h > 0;
 function json(res, code, o) { res.writeHead(code, { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" }); res.end(JSON.stringify(o)); }
 
 http.createServer(async (req, res) => {
@@ -161,21 +171,30 @@ http.createServer(async (req, res) => {
     if (req.method === "POST" && origin && new URL(origin).host !== req.headers.host) { res.writeHead(403); return res.end("Not from here"); }
     try {
         if (url.pathname === "/api/map" && req.method === "GET") {
-            let text; try { text = fs.readFileSync(MAP, "utf8"); } catch (e) { return json(res, 500, { error: "The map file couldn't be read." }); }
-            res.writeHead(200, { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" });
+            let text; try { text = fs.readFileSync(MAP); } catch (e) { return json(res, 500, { error: "The map file couldn't be read." }); }
+            res.writeHead(200, { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store", "X-Map-Mark": markOf(text) });
             return res.end(text);
         }
         if (url.pathname === "/api/map" && req.method === "POST") {
             const map = JSON.parse(await body(req));
-            if (!map || !Array.isArray(map.levels)) return json(res, 400, { error: "Not a map." });
+            /* a map with at least one floor and its rectangle (15 Nov scan, editor 17: {"levels":[]} was saved as a 13-byte map) */
+            if (!map || !Array.isArray(map.levels) || !map.levels.length || !isRect(map.rect)) return json(res, 400, { error: "That isn't a whole map (it needs at least one floor and its edges), so it wasn't saved." });
+            /* saved from another tab since this one read it: asked about, not overwritten (?force=1 is the answer "replace it") */
+            const base = req.headers["x-map-base"], now = fileMark();
+            if (base && now && base !== now && url.searchParams.get("force") !== "1") return json(res, 409, { error: "This map has been saved from another tab or window since this one opened it.", mark: now });
             fs.mkdirSync(HISTORY, { recursive: true });
             if (fs.existsSync(MAP)) fs.copyFileSync(MAP, path.join(HISTORY, `map-${new Date().toISOString().replace(/[:.]/g, "-")}.json`));
             const old = fs.readdirSync(HISTORY).sort(); while (old.length > KEEP) fs.unlinkSync(path.join(HISTORY, old.shift()));
-            fs.writeFileSync(MAP, JSON.stringify(map));
-            return json(res, 200, { saved: true, at: Date.now() });
+            /* written beside it and swapped in, so a crash part way never leaves half a map (15 Nov scan, editor 17) */
+            const out = JSON.stringify(map), tmp = MAP + ".saving";
+            fs.writeFileSync(tmp, out);
+            try { fs.renameSync(tmp, MAP); } catch (e) { fs.writeFileSync(MAP, out); try { fs.unlinkSync(tmp); } catch (e2) { /* left beside it */ } }      // the file held open by something else: written in place, as before
+            return json(res, 200, { saved: true, at: Date.now(), mark: markOf(out) });
         }
         if (url.pathname === "/api/version" && req.method === "POST") {
-            const o = JSON.parse(await body(req)), text = JSON.stringify(o.map);
+            const o = JSON.parse(await body(req));
+            if (!o || !o.map || typeof o.map !== "object" || !Array.isArray(o.map.levels)) return json(res, 400, { error: "No map to draw." });
+            const text = JSON.stringify(o.map);
             const v = crypto.createHash("sha1").update(text + (o.liftOpen ? "1" : "0") + names.length + artAt + JSON.stringify(o.cut || 0)).digest("hex").slice(0, 16);
             if (!versions.has(v)) { versions.set(v, { text, liftOpen: !!o.liftOpen, cut: o.cut || null }); while (versions.size > 14) { const oldV = versions.keys().next().value; versions.delete(oldV); for (const k of cache.keys()) if (k.startsWith(oldV + "|")) cache.delete(k); } }
             let report = null;
@@ -223,7 +242,8 @@ http.createServer(async (req, res) => {
         }
         if (url.pathname === "/api/sign") {
             /* one sign on a see-through picture, for showing it live while it's dragged. Small enough to draw right here. */
-            const q = url.searchParams, sw = Number(q.get("w")) || 0, sh = Number(q.get("h")) || 0, name = q.get("name") || "";
+            /* sizes capped (15 Nov scan, editor 6: w=40000 locked this server up at 9 GB); SIGN_MAX matches the editor's own limit */
+            const q = url.searchParams, clampTo = (v, hi) => Math.max(0, Math.min(hi, Math.round(Number(v) || 0))), sw = clampTo(q.get("w"), SIGN_MAX.w), sh = clampTo(q.get("h"), SIGN_MAX.h), name = (q.get("name") || "").slice(0, 120);
             const bw = Math.max(sw, 240) + 40, bh = (bw >> 1) + Math.max(sh, 100) + 60, cx = bw >> 1, cy = bh - (bw >> 2) - 20;
             const b = new W.Buf(bw, bh);
             for (let i = 0; i < b.d.length; i += 4) { b.d[i] = 255; b.d[i + 1] = 0; b.d[i + 2] = 255; b.d[i + 3] = 255; }
@@ -261,13 +281,15 @@ http.createServer(async (req, res) => {
             const v = url.searchParams.get("v"), ver = versions.get(v);
             if (!ver) { res.writeHead(404); return res.end("No such map"); }
             const r = JSON.parse(ver.text).rect;
+            /* a rectangle too big to draw in memory is refused, not tried (15 Nov scan, editor 6) */
+            if (!isRect(r) || r.w > WHOLE_MAX || r.h > WHOLE_MAX) { res.writeHead(413); return res.end("The map's edges are too far apart to draw as one picture."); }
             return draw(res, null, { x: Math.round(r.x), y: Math.round(r.y), w: Math.round(r.w) & ~1, h: Math.round(r.h) & ~1 }, v);
         }
         if (url.pathname === "/api/preview" && req.method === "POST") {
             const name = String(url.searchParams.get("name") || "preview").replace(/[^a-z0-9-]/gi, "");
             const dir = path.join(__dirname, "previews"); fs.mkdirSync(dir, { recursive: true });
-            const c = []; for await (const d of req) c.push(d);
-            fs.writeFileSync(path.join(dir, name + ".wav"), Buffer.concat(c));
+            const c = []; let n = 0; for await (const d of req) { n += d.length; if (n > 200 * 1048576) return json(res, 413, { error: "Too big." }); c.push(d); }      // a few minutes of sound at most
+            fs.writeFileSync(path.join(dir, (name || "preview") + ".wav"), Buffer.concat(c));
             return json(res, 200, { saved: name });
         }
         if (url.pathname === "/api/names") { const font = {}; for (const ch in W.H.VOL.vb) font[ch] = W.H.VOL.vb[ch].w; return json(res, 200, { names, from: namesFrom, font, difficulty }); }
@@ -277,7 +299,12 @@ http.createServer(async (req, res) => {
         res.writeHead(200, { "Content-Type": TYPES[path.extname(file)] || "application/octet-stream", "Cache-Control": "no-cache" });
         fs.createReadStream(file).pipe(res);
     } catch (e) {
+        if (e instanceof TooBig) { if (!res.headersSent) json(res, 413, { error: e.message }); return; }
         console.error(e);
         if (!res.headersSent) json(res, 500, { error: String(e && e.message || e) });
     }
+}).on("error", e => {
+    /* one plain line, not a stack (15 Nov scan, editor 17) */
+    console.error(e.code === "EADDRINUSE" ? `Port ${PORT} is already in use: the editor is probably running already. Open http://localhost:${PORT}/ or close the other one first.` : "The editor's server couldn't start: " + (e.message || e));
+    process.exit(1);
 }).listen(PORT, "127.0.0.1", () => console.log(`Hallway editor: http://localhost:${PORT}/  (${THREADS} drawing threads)`));

@@ -39,6 +39,7 @@
             <button id="follow" class="toggle on" type="button" aria-pressed="true" title="While walking, the camera stays on your Habbo, and glides back if you drag it away (C)">Camera follows</button>
         </div>
         <div class="spacer"></div>
+        <div class="top-end">
         <div class="group zoom">
             <button id="zoomOut" class="icon-btn" type="button" aria-label="Zoom out" title="Zoom out (−)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M5 12h14"/></svg></button>
             <span id="zoomVal" class="zoom-val" aria-live="polite">2x</span>
@@ -50,6 +51,7 @@
         <button id="roomsBtn" class="btn" type="button" title="The rooms behind the doors: their layouts, and which maze has which">Rooms</button>
         <button id="publish" class="btn" type="button" title="Send the saved map to the site's folder, drawn and ready. Nobody sees it until you deploy.">Publish</button>
         <button id="walkBtn" class="btn primary" type="button" title="Walk the map as your Habbo (W)"><svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M7 4v16l13-8z"/></svg><span id="walkLabel">Walk it</span></button>
+        </div>
     </header>
 
     <aside id="left">
@@ -154,6 +156,7 @@
         <span id="st-where"></span><span id="st-hover" class="hov"></span>
         <span class="spacer"></span>
         <span id="st-draw"></span>
+        <span id="st-save" class="save-state" role="status"></span>
     </footer>
 </div>
 <div id="toast" class="toast" role="status" aria-live="polite"></div>

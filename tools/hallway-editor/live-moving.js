@@ -100,7 +100,11 @@
             }
         }
     }
-    LIVE.add({ active: () => !screensaver.on && !matchMedia("(prefers-reduced-motion: reduce)").matches && sunAmount() > 0 && dustWindows().length > 0, over: drawDust });      // still under reduced motion (10 Nov scan b, live 12)
+    /* still under reduced motion (10 Nov scan b, live 12). A still layer woken 16 times a second, as the cabinets are: as an every-frame layer it
+       had the whole map repainted every frame by a window in daylight, for motes that drift a pixel or two a second (15 Nov scan, live M9) */
+    const dustOn = () => !screensaver.on && !matchMedia("(prefers-reduced-motion: reduce)").matches && sunAmount() > 0 && dustWindows().length > 0;
+    LIVE.add({ still: true, active: dustOn, over: drawDust });
+    setInterval(() => { if (!document.hidden && dustOn()) LIVE.wake(); }, 62);
 
     /* ---------- the screensaver: a minute idle, it zooms to 2x and bounces round the map like the DVD logo (dvdTick). Any input ends it ---------- */
     const IDLE_MS = window.HALLWAY_IDLE_MS || 60000, SPEED = 13, EASE = 1.6, FADE = 1.6, MAX_LEN = 2100, SS_ZOOM = 2, ZOOM_S = 1.5;
@@ -122,6 +126,8 @@
     const along = (r, d) => { let lo = 0, hi = r.seg.length - 1; while (hi - lo > 1) { const m = (lo + hi) >> 1; if (r.seg[m] <= d) lo = m; else hi = m; } const k = (d - r.seg[lo]) / Math.max(1e-6, r.seg[hi] - r.seg[lo]), a = r.pts[lo], b = r.pts[hi]; return [a[0] + (b[0] - a[0]) * k, a[1] + (b[1] - a[1]) * k]; };
     function ssStart() {
         const map = LIVE.map; if (!map || screensaver.on || !LIVE.walker) return false;
+        /* never inside a maze room (15 Nov scan, rooms R5): the Menu says so itself (play.js) */
+        if (window.__hallway && __hallway.roomSession) return false;
         /* not from the Basement: it has no route of its own, and gliding off to Ground from there is wrong */
         if (LIVE.floor && LIVE.floor.k < 0) return false;
         if (!map.rect) return false;
@@ -133,6 +139,9 @@
         if (LIVE.eveningIn) LIVE.eveningIn(5);
         /* the music plays on (8 Nov 2026, his: it should keep playing when the screensaver starts) */
         LIVE.holdCamera(true); document.body.classList.add("hw-screensaver");
+        /* asked for reduced motion: the dimmed view as it stands with the plaque, nothing zooming or gliding, and no repaint every frame
+           (15 Nov scan, live M5) */
+        if (stillSS.matches) { screensaver.phase = "still"; screensaver.dim = 1; }
         if (!screensaver.title) { const t = screensaver.title = document.createElement("div"); t.className = "hw-ss-title"; t.setAttribute("aria-hidden", "true"); /* the Hallway's own card, and under it the way out on a little brass-edged plate to match (9 Nov 2026, his) */
             const big = document.createElement("img"), small = document.createElement("div"); big.className = "hw-ss-card"; big.src = "/assets/img/hallway-plaque-420.png"; big.srcset = "/assets/img/hallway-plaque-420.png 1x, /assets/img/hallway-plaque-420@2x.png 2x"; big.width = 420; big.height = 248; big.alt = ""; big.addEventListener("error", () => { const t2 = document.createElement("div"); t2.className = "hw-ss-name"; t2.textContent = "Maze Rats Hallway"; big.replaceWith(t2); });
             /* the way out: a slim plate in the card's own oak, brass and raised brass capitals (9 Nov 2026, his: the pixel lettering looked grim) */
@@ -140,8 +149,9 @@
             small.className = "hw-ss-plate"; const plate = document.createElement("img"); const pb = "/assets/img/hallway-plate-" + (tap ? "tap" : "key"); plate.src = pb + ".png"; plate.srcset = pb + ".png 1x, " + pb + "@2x.png 2x"; plate.alt = words; plate.width = tap ? 393 : 599; plate.height = 56;
             plate.addEventListener("error", () => { small.className = "hw-ss-hint"; small.textContent = words; }); small.appendChild(plate); t.append(big, small); (document.getElementById("stage") || document.body).appendChild(t); }
         screensaver.title.classList.remove("on"); void screensaver.title.offsetWidth; screensaver.title.classList.add("on");
-        LIVE.wake(); screensaver.raf = requestAnimationFrame(dvdTick); return true;
+        LIVE.wake(); if (screensaver.phase !== "still") screensaver.raf = requestAnimationFrame(dvdTick); return true;
     }
+    const stillSS = matchMedia("(prefers-reduced-motion: reduce)");
     function ssEnd() {
         if (!screensaver.on) return; screensaver.on = false; cancelAnimationFrame(screensaver.raf); document.body.classList.remove("hw-screensaver"); if (screensaver.title) screensaver.title.classList.remove("on"); LIVE.forceMood(null); const w = screensaver.was;
         if (w.zoom && LIVE.zoomRaw) LIVE.zoomRaw(w.zoom);      /* your own zoom back */
@@ -196,8 +206,10 @@
         if (Math.floor(now / 500) !== s.asked) { s.asked = Math.floor(now / 500); const md = LIVE.mood(), moods = md ? [...new Set([md.a, md.b])] : [], v = LIVE.view(), hw = (v.x1 - v.x0) / 2, hh = (v.y1 - v.y0) / 2, ax = s.pos.x + s.dir.x * 160, ay = s.pos.y + s.dir.y * 80;
             for (let y = ay - hh; y <= ay + hh + 512; y += 512) for (let x = ax - hw; x <= ax + hw + 512; x += 512) for (const m of moods) LIVE.loadMood(m, x, y); }
     }
-    LIVE.add({ active: () => screensaver.on, over(c) { const W = c.canvas.width, Hh = c.canvas.height, dim = .38 * (screensaver.dim || 0), f = screensaver.fade || 0; c.fillStyle = `rgba(0,0,0,${dim + (1 - dim) * f})`; c.fillRect(0, 0, W, Hh); } });
-    setInterval(() => { if (!screensaver.on && !document.hidden && LIVE.walker && LIVE.idleFor > IDLE_MS && !LIVE.busy) ssStart(); }, 1000);
+    /* the dimming: every frame while it moves; held still (reduced motion), only when something else paints */
+    LIVE.add({ active: () => screensaver.on, get still() { return screensaver.phase === "still"; }, over(c) { const W = c.canvas.width, Hh = c.canvas.height, dim = .38 * (screensaver.dim || 0), f = screensaver.fade || 0; c.fillStyle = `rgba(0,0,0,${dim + (1 - dim) * f})`; c.fillRect(0, 0, W, Hh); } });
+    /* not on its own under reduced motion; from the Menu it's the still view (15 Nov scan, live M5) */
+    setInterval(() => { if (!screensaver.on && !document.hidden && !stillSS.matches && LIVE.walker && LIVE.idleFor > IDLE_MS && !LIVE.busy) ssStart(); }, 1000);
     /* the tap that ends it goes no further, so it doesn't send you walking */
     const stop = e => { if (!screensaver.on) return; e.stopImmediatePropagation(); if (e.cancelable) e.preventDefault(); ssEnd(); };
     /* only a click, a tap or a key ends it: moving the mouse or the wheel doesn't */

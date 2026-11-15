@@ -47,10 +47,14 @@
     const boardOf = t => { const f = front(t), z = LIVE.nodeZ(t.l, f[0], f[1]) || 0, p = t.q.axis === "x" ? LIVE.mapPoint(t.q.at, t.q.line, z) : LIVE.mapPoint(t.q.line, t.q.at, z); return { z, x0: t.q.axis === "x" ? p[0] : p[0] - 138, y0: p[1] - T }; };
     const inView = (b, v) => !(b.x0 > v.x1 || b.x0 + 140 < v.x0 || b.y0 > v.y1 || b.y0 + 160 < v.y0);
     const here = () => LIVE.floor || (LIVE.editorApi && LIVE.editorApi().level);
+    /* only while a theatre on this floor is on screen (9 Nov scan, page finding 1: it kept the whole of Floor 1 repainting every frame,
+       wherever you stood). A still layer woken 12 times a second, as the cabinets are: the chase is a slow swell, and as an every-frame layer
+       it had the whole map repainted every frame while you stood by the Theatredrome (15 Nov scan, live M9) */
+    const chaseOn = () => { if (reduced.matches) return false; const h = here(); if (!h) return false; const ts = theatres().filter(t => t.l === h); if (!ts.length) return false; const v = LIVE.view(); return ts.some(t => inView(boardOf(t), v)); };
+    setInterval(() => { if (!document.hidden && chaseOn()) LIVE.wake(); }, 83);
     LIVE.add({
-        /* only while a theatre on this floor is on screen (9 Nov scan, page finding 1: it kept the whole of Floor 1 repainting every frame,
-           wherever you stood); paint() wakes it again when the camera brings one into view */
-        active: () => { if (reduced.matches) return false; const h = here(); if (!h) return false; const ts = theatres().filter(t => t.l === h); if (!ts.length) return false; const v = LIVE.view(); return ts.some(t => inView(boardOf(t), v)); },
+        still: true,
+        active: chaseOn,
         under(c, ox, oy, now) {
             const h = here(), v = LIVE.view(), t0 = now / 1000;
             /* furniture can be moved in the editor: look again every couple of seconds there, once on the walking page */
@@ -79,7 +83,7 @@
 
     /* ---------- the ambience ---------- */
     const BED = ["murmur1.mp3", "murmur2.mp3"], EVENTS = [["tuning1.mp3", .9], ["tuning2.mp3", .8], ["applause1.ogg", .7], ["laugh1.ogg", .55]], NEAR = 9;
-    let ctx = null, out = null, mute = null, bufs = {}, loading = false, bed = null, nextBed = 0, nextEvent = 0, wanted = 0;
+    let ctx = null, out = null, mute = null, bufs = {}, loading = false, bed = null, nextBed = 0, nextEvent = 0, wanted = 0, quietSince = 0;
     const quiet = () => { try { if (window.HALLWAY_PLAY && localStorage.getItem("hallway-music") === "0") return true; } catch (e) { /* sounds on */ } return !!(window.HallwayScreensaver && HallwayScreensaver.on) || document.hidden; };
     const volume = () => (window.HallwayAudio && typeof HallwayAudio.volume === "number" ? HallwayAudio.volume : .8);
     function setup() {
@@ -109,8 +113,12 @@
         if (wanted > 0 && !ctx) { if (!setup()) return; }
         if (!ctx) return; if (wanted > 0) { load(); if (ctx.state === "suspended") ctx.resume().catch(() => {}); }
         apply();
-        if (wanted <= 0) return;
         const now = performance.now();
+        /* out of earshot (or muted) for a few seconds: the bed stops and the sound engine rests, rather than looping silently for the rest of
+           the visit (15 Nov scan, live L9); coming back starts a fresh stretch */
+        if (wanted > 0) quietSince = 0; else if (!quietSince) quietSince = now;
+        else if (now - quietSince > 4000 && ctx.state === "running") { if (bed) { try { bed.s.stop(); } catch (e) { /* stopped */ } bed = null; } nextBed = 0; nextEvent = 0; ctx.suspend().catch(() => {}); }
+        if (wanted <= 0) return;
         /* the bed: a random stretch of a random recording, crossfading to the next */
         if (now > nextBed && BED.some(f => bufs[f])) { const f = BED.filter(x => bufs[x])[Math.floor(Math.random() * BED.filter(x => bufs[x]).length)], from = Math.random() * Math.max(0, bufs[f].duration - 40), was = bed; bed = play(f, 1, 6, from, 1); fadeOut(was, 6); nextBed = now + 24000 + Math.random() * 22000; }
         /* now and then, something from the house */

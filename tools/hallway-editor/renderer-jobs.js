@@ -14,7 +14,9 @@ function lift(way, slide) {
     return { w: bw, h: bh, d: b.d };
 }
 function sign(q) {
-    const sw = Number(q.w) || 0, sh = Number(q.h) || 0, name = q.name || "", bw = Math.max(sw, 240) + 40, bh = (bw >> 1) + Math.max(sh, 100) + 60, cx = bw >> 1, cy = bh - (bw >> 2) - 20, b = new W.Buf(bw, bh);
+    /* the job's own limits, whatever the page sent (15 Nov 2026): a sign up to 400 x 200 (the renderer's longest board, hw3.js SIGN_MAX_W), its name up to 120 letters */
+    const clampN = (v, hi) => { const n = Math.round(Number(v)); return Number.isFinite(n) ? Math.max(0, Math.min(hi, n)) : 0; };
+    const sw = clampN(q.w, 400), sh = clampN(q.h, 200), name = [...String(q.name == null ? "" : q.name)].slice(0, 120).join(""), bw = Math.max(sw, 240) + 40, bh = (bw >> 1) + Math.max(sh, 100) + 60, cx = bw >> 1, cy = bh - (bw >> 2) - 20, b = new W.Buf(bw, bh);
     for (let i = 0; i < b.d.length; i += 4) { b.d[i] = 255; b.d[i + 1] = 0; b.d[i + 2] = 255; b.d[i + 3] = 255; }
     if (q.stair) W.stairPlaque(b, cx, cy, name);
     else W.signIso(b, cx, cy, name, { alongY: q.y === "1", max: 14, w: sw || undefined, h: sh || undefined, way: q.way });

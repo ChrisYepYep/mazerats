@@ -9,13 +9,52 @@
     catch (e) { const mem = new Map(); try { Object.defineProperty(window, "localStorage", { value: { getItem: k => (mem.has(k) ? mem.get(k) : null), setItem: (k, v) => { mem.set(k, String(v)); }, removeItem: k => { mem.delete(k); } } }); } catch (e2) { /* nothing more to try */ } }
     const realFetch = window.fetch.bind(window);
     const FN = "/.netlify/functions/hallway";
-    let online = false;
+    let online = false, fellBack = false;
     /* The copy published from the Warren is the map, once there is one: a local publish carries code, and never hides it */
-    const readManifest = () => Promise.all([
-        realFetch("../manifest.json", { cache: "no-cache" }).then(r => r.json()).catch(() => ({ tiles: {} })),
-        realFetch(FN + "?what=live").then(r => r.ok ? r.json() : null).catch(() => null)
+    const readHere = () => realFetch("../manifest.json", { cache: "no-cache" }).then(r => r.json()).catch(() => ({ tiles: {} }));
+    const readManifest = () => fellBack ? readHere() : Promise.all([
+        readHere(),
+        /* 5 s at most: a function that hangs is treated as down, and the deployed copy is walked (15 Nov scan, server 4) */
+        realFetch(FN + "?what=live", AbortSignal.timeout ? { signal: AbortSignal.timeout(5000) } : undefined).then(r => r.ok ? r.json() : null).catch(() => null)
     ]).then(([here, there]) => { online = !!(there && there.online); if (online) window.hallwayOnlineLift = there.lift || {}; return online ? there : here; });
     let manifest = readManifest();
+    /* The Warren's copy named a map that isn't there (two publishes overlapping can lose it) or the function's down: the deployed copy
+       (assets/hallway: map.json, manifest.json, tiles/, lift/) is walked instead, its own pictures with it, rather than stopping at "The map
+       wouldn't load" (15 Nov scan, server 3) */
+    async function onlineMap(m) {
+        try { const r = await realFetch(FN + "?what=map&v=" + encodeURIComponent(m.version || ""), AbortSignal.timeout ? { signal: AbortSignal.timeout(10000) } : undefined); if (r.ok) return r; } catch (e) { /* falls back */ }
+        fellBack = true; online = false; manifest = readHere();
+        return realFetch("../map.json", { cache: "no-cache" });
+    }
+    /* One back-off for all the pictures (15 Nov scan, live M1): a failure in a row of three, and every picture waits on one shared timer,
+       doubling from 2 s to a minute, with one asked for when it runs out to see if they're back. Each square and time of day had backed
+       off on its own, so a tab asked about twelve times a second for as long as they failed. Waiting here, not failing, keeps the page's
+       few slots full, so it stops asking for more; and when they're back the waiting ones go at once. */
+    let tileBad = 0, tileWait = 0, tileHold = 0, tileProbing = false, tilesOk = 0, toldNoTiles = false, noTilesWin = null;
+    const pause = (ms, signal) => new Promise((res, rej) => { if (signal && signal.aborted) { rej(new DOMException("Aborted", "AbortError")); return; } const t = setTimeout(res, Math.max(50, ms)); if (signal) signal.addEventListener("abort", () => { clearTimeout(t); rej(new DOMException("Aborted", "AbortError")); }, { once: true }); });
+    const tileFail = () => { tileBad++; if (tileBad >= 3 && performance.now() >= tileHold) { tileWait = tileWait ? Math.min(60000, tileWait * 2) : 2000; tileHold = performance.now() + tileWait; noTiles(); } };
+    /* While they're failing, a request that fails waits its turn and tries again, rather than handing the failure back: the page's own
+       per-square back-off then never piles up, and the pictures come in as soon as one gets through */
+    async function tileNet(url, opts) {
+        const signal = opts && opts.signal;
+        for (;;) {
+            while (tileBad >= 3 && (tileProbing || performance.now() < tileHold)) await pause(tileProbing ? 250 : tileHold - performance.now(), signal);
+            const probe = tileBad >= 3; if (probe) tileProbing = true;
+            let r;
+            try { r = await realFetch(url, opts); }
+            catch (e) { if (probe) tileProbing = false; if (e.name === "AbortError") throw e; tileFail(); if (tileBad >= 3) continue; throw e; }
+            if (probe) tileProbing = false;
+            if (r.ok) { tileBad = 0; tileWait = 0; tilesOk++; toldNoTiles = false; if (noTilesWin) { if (noTilesWin.back.isConnected) noTilesWin.shut(); noTilesWin = null; } return r; }      // back: the notice goes
+            tileFail(); if (r.status === 404 || tileBad < 3) return r;      // a 404 is the caller's to look into (a newer publish)
+        }
+    }
+    window.hallwayTilesHeld = () => tileBad >= 3;
+    /* and the visitor is told, once each time it happens, in the Hallway's own window; on the site, if not one picture has come at all,
+       the site says the hallway wouldn't open (whenDrawn) */
+    function noTiles() {
+        if (toldNoTiles || !tilesOk) return; toldNoTiles = true;
+        setTimeout(() => { if (tileBad >= 3 && window.HallwayWindow) noTilesWin = HallwayWindow.open("The Hallway", "<p>The Hallway's pictures aren't loading just now. It keeps trying, and they'll come in as soon as they can.</p>"); }, 0);
+    }
     const json = o => new Response(JSON.stringify(o), { status: 200, headers: { "Content-Type": "application/json" } });
     /* A square with nothing on it: one black pixel, so the page doesn't keep asking */
     let blank = null, tilesRead = 0;
@@ -24,7 +63,7 @@
         const u = typeof url === "string" ? url : url.url;
         if (!u.startsWith("/api/")) return realFetch(url, opts);
         const m = await manifest, q = new URL(u, location.href), p = q.pathname;
-        if (p === "/api/map") return online ? realFetch(FN + "?what=map&v=" + encodeURIComponent(m.version || "")) : realFetch("../map.json", { cache: "no-cache" });
+        if (p === "/api/map") return online ? onlineMap(m) : realFetch("../map.json", { cache: "no-cache" });
         if (p === "/api/names") return json({ names: [], font: {}, difficulty: {} });
         if (p === "/api/art") return json({ at: 0 });
         /* the Events Gallery has its own pictures, under "g:" (12 Nov 2026): the version says which map is asked for, and the tile asks follow it */
@@ -34,11 +73,13 @@
             const pre = String(q.searchParams.get("v") || "").endsWith("~g") ? "g:" : "";
             const plainKey = pre + String(q.searchParams.get("m") || "day").replace("+x", "") + "|" + q.searchParams.get("tx") + "," + q.searchParams.get("ty"), wantKey = pre + (q.searchParams.get("m") || "day") + "|" + q.searchParams.get("tx") + "," + q.searchParams.get("ty"), key = m.tiles[wantKey] ? wantKey : plainKey, name = m.tiles[key];
             if (name) {
-                const r = await realFetch(online ? FN + "?tile=" + name : "../tiles/" + name, opts); if (r.status !== 404) return r;
+                let r = await tileNet(online ? FN + "?tile=" + name : "../tiles/" + name, opts); if (r.status !== 404) return r;
+                /* the deployed copy's 404 may be a cached one from before a deploy: asked once more past the cache (15 Nov scan, server 5) */
+                if (!online) { r = await tileNet("../tiles/" + name, { ...(opts || {}), cache: "reload" }); if (r.status !== 404) return r; }
                 /* A publish has replaced it while this page was open. The newest list says what's there now. */
                 if (!tilesRead || Date.now() - tilesRead > 30000) { tilesRead = Date.now(); manifest = readManifest(); }
                 const m2 = await manifest, name2 = m2.tiles[key];
-                if (name2 && name2 !== name) return realFetch(online ? FN + "?tile=" + name2 : "../tiles/" + name2, opts);
+                if (name2 && name2 !== name) return tileNet(online ? FN + "?tile=" + name2 : "../tiles/" + name2, opts);
                 return r;
             }
             return new Response(await blankTile(), { status: 200, headers: { "Content-Type": "image/png" } });
@@ -56,7 +97,9 @@
        The art comes through the site's function: the page needs to read its pixels, and Habbo's imaging service doesn't allow that from here. */
     /* the guest: the classic standard Habbo, black hair and a long-sleeved yellow top (14 Nov 2026, his pick: the Origins Habbo Figma's look) */
     const GUEST = "hr-105-1035.hd-180-1026.ch-210-1301.lg-285-1223.sh-290-1247", KEY = "hallway-avatar", HOTELS = ["COM", "ES", "BR"];
-    let figure = GUEST, linkedName = null, pickedNow = false;
+    let figure = GUEST, linkedName = null, linkedHotel = null, pickedNow = false;
+    /* the linked Habbo itself (by name, any case, and hotel), not someone else */
+    const sameHabbo = o => !!o && !o.guest && !!linkedName && String(o.name || "").toLowerCase() === linkedName.toLowerCase() && (!linkedHotel || !o.hotel || o.hotel === linkedHotel);
     const remembered = () => { try { return JSON.parse(localStorage.getItem(KEY) || "null"); } catch (e) { return null; } };
     /* the guest is drawn from our own frames (art/guest, 14 Nov 2026): his pick, the Origins Habbo Figma. habbo.com's imaging draws its plain
        long-sleeved top (ch-210) with no body at this size, so the frames were made once with the body of the plain T-shirt (ch-3030) */
@@ -73,6 +116,8 @@
         const r = await realFetch("/.netlify/functions/room-figure?name=" + encodeURIComponent(name) + "&hotel=" + encodeURIComponent(hotel)), d = await r.json().catch(() => ({}));
         if (r.ok && d.figureString) return { name: d.name || name, hotel, figure: d.figureString };
         if (r.status === 404 || r.status === 400 || r.ok) throw new Error("No Origins Habbo by that name on " + hotel + ".");
+        /* the site asking you to slow down isn't Habbo being down: its own words (15 Nov scan, rooms 9) */
+        if (r.status === 429) throw new Error(typeof d.error === "string" && d.error ? d.error : "Too many lookups just now - give it a minute.");
         throw new Error("Habbo isn't answering just now. Try again in a moment.");
     }
     async function signedInHabbo() {
@@ -98,7 +143,8 @@
         const say = document.createElement("p"); say.className = "say"; say.setAttribute("role", "status");
         const guest = document.createElement("button"); guest.type = "button"; guest.className = "mr-btn guest"; guest.textContent = "Walk in as a guest";
         const was = pre || remembered(); if (was) { input.value = was.name || ""; if (HOTELS.includes(was.hotel)) sel.value = was.hotel; }
-        if (pre) say.textContent = "Signed in as " + pre.name + ". Go, or pick someone else.";
+        /* signed in as one Habbo, walking as another: both said (15 Nov scan, live L4: it read "Signed in as" the other one) */
+        if (pre) say.textContent = linkedName && !sameHabbo(pre) ? "Signed in as " + linkedName + ". Walking as " + pre.name + "." : "Signed in as " + pre.name + ". Go, or pick someone else.";
         /* under it all, set apart below a rule and quieter than the picker: what the Hallway is, what the username is for, and the fan-site line (9 Nov 2026, his words) */
         const notes = document.createElement("div"); notes.className = "notes";
         for (const [t, cls] of [["Maze Rats Hallway is a single player experience, any Habbos you see around the hallways are non-playable characters designed for ambient game mechanics.", ""], ["Your Habbo Origins username is only used to show your Habbo's look, and is only remembered on this device.", ""], ["Maze Rats is independent and not affiliated with, sponsored, supported, or endorsed by Sulake Oy or its affiliates. Any Habbo trademarks or intellectual property used here are done so in accordance with the Habbo Fan Site Policy.", "legal"]]) { const p = document.createElement("p"); p.textContent = t; if (cls) p.className = cls; notes.appendChild(p); }
@@ -115,14 +161,17 @@
             if (e.shiftKey && i <= 0) { e.preventDefault(); all[all.length - 1].focus(); } else if (!e.shiftKey && (i === all.length - 1 || i < 0)) { e.preventDefault(); all[0].focus(); }
         };
         document.addEventListener("keydown", keys, true);
-        const keep = o => { pickedNow = true; try { localStorage.setItem(KEY, JSON.stringify(linkedName ? { ...o, overLinked: linkedName } : o)); } catch (e) { /* private mode */ } };
+        /* "chosen over the linked Habbo" only when it is someone else: Go on your own linked Habbo had pinned that day's look over the fresh one
+           from Habbo on every later visit (15 Nov scan, live L5) */
+        const keep = o => { pickedNow = true; try { localStorage.setItem(KEY, JSON.stringify(linkedName && !sameHabbo(o) ? { ...o, overLinked: linkedName } : o)); } catch (e) { /* private mode */ } };
         x.addEventListener("click", done); back.addEventListener("click", e => { if (e.target === back) done(); });
         guest.addEventListener("click", () => { keep({ guest: true }); wear(GUEST); done(); });
         form.addEventListener("submit", async ev => {
             ev.preventDefault(); const name = input.value.trim(); if (!name) { say.textContent = "Type your Habbo Origins username, or walk in as a guest."; return; }
             go.disabled = true; say.textContent = "Looking up...";
-            try { const f = await lookUp(name, sel.value); keep(f); wear(f.figure); done(); }
-            catch (e) { say.textContent = e.message; go.disabled = false; }
+            /* an answer arriving after the picker was shut, or a guest chosen, changes nothing (15 Nov scan, rooms 10) */
+            try { const f = await lookUp(name, sel.value); if (!back.isConnected) return; keep(f); wear(f.figure); done(); }
+            catch (e) { if (!back.isConnected) return; say.textContent = e.message; go.disabled = false; }
         });
     }
     async function chooseAvatar() {
@@ -131,13 +180,13 @@
         const asking = signedInHabbo(), SLOW = {}, first = await Promise.race([asking, new Promise(r => setTimeout(() => r(SLOW), 4000))]);
         if (first === SLOW) { lateAvatar(asking); return; }
         const mine = first, was = remembered();
-        if (mine) linkedName = mine.name;
-        /* Picked while that was being looked up: the pick stands, and stands next time too */
-        if (pickedNow) { if (mine && was) try { localStorage.setItem(KEY, JSON.stringify({ ...was, overLinked: mine.name })); } catch (e) { /* private mode */ } if (!document.getElementById("playPicker")) letIn(); return; }
+        if (mine) { linkedName = mine.name; linkedHotel = mine.hotel || null; }
+        /* Picked while that was being looked up: the pick stands, and stands next time too (marked as chosen over the linked one only if it's someone else) */
+        if (pickedNow) { if (mine && was && !sameHabbo(was)) try { localStorage.setItem(KEY, JSON.stringify({ ...was, overLinked: mine.name })); } catch (e) { /* private mode */ } if (!document.getElementById("playPicker")) letIn(); return; }
         if (mine) {
             /* Your linked Habbo, unless you chose someone else while signed in as it */
             /* and the splash still shows, your Habbo filled in, so you see what the Hallway is before walking in (9 Nov 2026, his) */
-            if (was && was.overLinked === mine.name) { wear(was.figure || GUEST); picker(null, was.guest ? null : was); return; }
+            if (was && was.overLinked === mine.name && !sameHabbo(was)) { wear(was.figure || GUEST); picker(null, was.guest ? null : was); return; }
             wear(mine.figure); picker(null, mine); return;
         }
         if (was && was.figure) { wear(was.figure); letIn(); return; } if (was && was.guest) { letIn(); return; }
@@ -147,8 +196,8 @@
         const was = remembered();
         if (!pickedNow) { if (was && was.figure) { wear(was.figure); letIn(); } else if (was && was.guest) letIn(); else picker(); }
         const mine = await asking; if (!mine) return;
-        linkedName = mine.name;
-        if (pickedNow || (was && was.overLinked === mine.name)) return;      // chosen meanwhile, or chosen over this Habbo before: that stands
+        linkedName = mine.name; linkedHotel = mine.hotel || null;
+        if (pickedNow || (was && was.overLinked === mine.name && !sameHabbo(was))) return;      // chosen meanwhile, or chosen over this Habbo before: that stands
         const box = document.getElementById("playPicker");
         if (box) {
             const input = box.querySelector("#playName"), sel = box.querySelector("select"), say = box.querySelector(".say");
@@ -245,7 +294,12 @@
             const sel = document.getElementById("timeMode");
             if (sel) { head(menu, "Time of day"); for (const [value, name] of [["cycle", "Day and night cycle"], ["day", "Day"], ["dusk", "Evening"], ["night", "Night"], ["dawn", "Dawn"]]) row(menu, name, sel.value === value, () => { sel.value = value; sel.dispatchEvent(new Event("change")); done(); }); sep(menu); }
             /* the screensaver whenever you like, not only after a minute's quiet (8 Nov 2026, his). Any click or key ends it, as ever */
-            item(menu, "Screensaver", "Start the screensaver", () => { done(); const S = window.HallwayScreensaver; if (!S || S.on) return; if (!S.start() && window.HallwayWindow) HallwayWindow.open("Screensaver", "<p>Not from down here. Head back upstairs first.</p>"); });
+            item(menu, "Screensaver", "Start the screensaver", () => { done(); const S = window.HallwayScreensaver; if (!S || S.on) return;
+                /* not over the lift's plate, which stayed on top of it (15 Nov scan, live L3) */
+                const lift = document.getElementById("liftPanel"); if (lift && !lift.hidden) { if (window.HallwayWindow) HallwayWindow.open("Screensaver", "<p>Not just now. Step out of the lift first.</p>"); return; }
+                /* not over a maze room: it bounced round the hidden hallway and covered the room (15 Nov scan, rooms 5) */
+                if (window.__hallway && window.__hallway.roomSession) { if (window.HallwayWindow) HallwayWindow.open("Screensaver", "<p>Not while you're in a room.</p>"); return; }
+                if (!S.start() && window.HallwayWindow) HallwayWindow.open("Screensaver", "<p>Not from down here. Head back upstairs first.</p>"); });
             item(menu, "Your Habbo", "Choose your Habbo", () => { done(); picker(); });
             if (extra.length) { sep(menu); for (const x of extra) item(menu, x.label, x.title, () => { done(); x.fn(); }); }
         });
@@ -286,7 +340,12 @@
             told();
             let seen = false;
             try { if (v && v.width > 2) { px.drawImage(v, v.width >> 1, v.height >> 1, 1, 1, 0, 0, 1, 1); const d = px.getImageData(0, 0, 1, 1).data; seen = d[0] + d[1] + d[2] > 0 && !(d[0] === 11 && d[1] === 12 && d[2] === 15); } } catch (e) { seen = true; }
-            if (seen || performance.now() - started > 8000) window.hallwayTell("ready"); else setTimeout(look, 120);
+            /* after 8 s it's ready whatever, unless the pictures are failing and not one has come: then up to 15 s, and if still none the
+               site says the hallway wouldn't open; on its own page the Hallway's window says so (15 Nov scan, live M1: a black map, no word) */
+            const late = performance.now() - started, failing = !tilesOk && tileBad > 0;
+            if (seen || (late > 8000 && !failing)) window.hallwayTell("ready");
+            else if (late > 15000) { if (parent !== window) window.hallwayTell("failed"); else { toldNoTiles = true; if (window.HallwayWindow) noTilesWin = HallwayWindow.open("The Hallway", "<p>The Hallway's pictures aren't loading just now. It keeps trying, and they'll come in as soon as they can.</p>"); } }
+            else setTimeout(look, 120);
         };
         look();
     }

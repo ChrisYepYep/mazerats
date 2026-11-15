@@ -442,8 +442,13 @@ async function handle(event) {
            each request, by anybody adding a random parameter. Nothing else
            changes this answer, so nothing else makes a new copy. Same idea
            as share.js's VARY and daily-scores.js's BOARD_VARY. */
+        /* ?rooms=1 (15 Nov 2026, Hallway scan rooms 18): the same public
+           records with no furni, for the Hallway, which draws a maze's room
+           from its facts and pictures and never shows a furni list. The furni
+           is most of this answer. Keyed at the edge on `rooms` too. */
+        if (params.rooms === "1") all.forEach(r => { delete r.furni; });
         const res = cachedJson(event, await packRecords(all));
-        res.headers = { ...res.headers, "Netlify-Vary": "query=full" };
+        res.headers = { ...res.headers, "Netlify-Vary": "query=full|rooms" };
         return res;
     }
 

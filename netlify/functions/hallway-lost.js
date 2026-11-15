@@ -41,9 +41,12 @@
    draw it, so a script could read the spot and post a find. What it can't do
    is choose an easy thing (a swap or a fresh start doesn't restart the clock,
    and swaps are few), see the spot before the clock starts, skip the
-   clue count (clues are counted here), finish quicker than MIN_SECS, find
+   clue count (clues are counted here), find
    something it wasn't sent for, or put more than DAY_CAP finds a day on the
-   board.
+   board. It CAN post a find a second after the start: MIN_SECS only means
+   anything quicker scores as MIN_SECS (15 Nov scan, finding 7, left for the
+   owner: a floor of the walk from hustle to the spot would close it, but the
+   "fast" and "travel" cheats would then score nothing).
 
    POINTS: 100 for finding it at all, up to 900 more for speed (all of it at
    once, none at the 15-minute limit), and 150 for each of the three clues you
@@ -108,7 +111,7 @@ function pointsFor(secs, hints) {
 const OLD_SPOTS = [["Ground", 58, 46], ["Ground", 75, 15], ["Ground", 83, 15], ["Ground", 91, 15], ["Floor 1", 71, -10], ["Floor 1", 151, -16], ["Floor 2", 60, -21], ["Ground", 94, -7], ["Ground", 73, 3], ["Ground", 86, 3], ["Floor 1", 36, -1], ["Floor 2", 20, 15], ["Floor 2", 26, 5], ["Floor 2", 26, 8], ["Ground", 78, 2], ["Ground", 67, 0], ["Floor 1", 83, -12], ["Ground", 71, 4], ["Ground", 74, 15], ["Ground", 82, 15], ["Ground", 84, 5], ["Ground", 58, 38]];
 function spotsOf(map) {
     if (!map) return [];                // no map to be read just now: nothing is dealt (10 Nov scan, server finding 3), never the old fixed spots
-    const levels = map && Array.isArray(map.levels) ? map.levels : [], out = [], frees = new Map();
+    const levels = map && Array.isArray(map.levels) ? map.levels.filter(q => q && typeof q === "object") : [], out = [], frees = new Map();      // a null floor threw on every start (15 Nov scan, finding 9)
     const list = map && Array.isArray(map.lostSpots) ? map.lostSpots : OLD_SPOTS;
     for (const s of list) {
         const raw = Array.isArray(s) ? { name: s[0], x: s[1], y: s[2] } : s;
@@ -151,12 +154,14 @@ function readVisitor(token) {
     } catch (e) { return null; }
 }
 const visitorName = n => "Visitor " + String(n).padStart(n < 1000 ? 3 : 4, "0");
+const OPEN_TTL_DAYS = 2;
+let capsIndex = false, tidyIndexes = false;
 async function newVisitor(db, event) {
     const net = netHashFor(event), hour = Math.floor(Date.now() / 3600000);
     if (net) {
         try {
             const caps = db.collection(COLLECTION + "_caps");
-            await caps.createIndex({ at: 1 }, { expireAfterSeconds: 2 * 3600 }).catch(() => {});
+            if (!capsIndex) { capsIndex = true; await caps.createIndex({ at: 1 }, { expireAfterSeconds: 2 * 3600 }).catch(() => {}); }      // once per warm instance, not every new Visitor (15 Nov scan, finding 10)
             const r = await caps.findOneAndUpdate({ _id: net + ":" + hour }, { $inc: { n: 1 }, $setOnInsert: { at: new Date(hour * 3600000) } }, { upsert: true, returnDocument: "after" });
             const doc = r && r.value !== undefined ? r.value : r;
             if (doc && doc.n > NEW_PER_HOUR) return "busy";
@@ -310,6 +315,13 @@ async function handler(event) {
         await ensureUniqueIndex(col, ["playerId", "week"]);
         await ensureUniqueIndex(seenCol, ["playerId"]);
     } catch (e) { console.error("hallway-lost: unique index unavailable", e); return json(503, { error: "Couldn't save just now" }); }
+    /* (15 Nov scan, server finding 10) rows nobody tidied: an open search goes OPEN_TTL_DAYS after its start, and what a player has found
+       VISITOR_IDLE_DAYS after their last find, as a Visitor's number does. Once per warm instance. */
+    if (!tidyIndexes) {
+        tidyIndexes = true;
+        await opens.createIndex({ at: 1 }, { expireAfterSeconds: OPEN_TTL_DAYS * 86400 }).catch(e => console.error("hallway-lost: open searches' TTL index", e));
+        await seenCol.createIndex({ at: 1 }, { expireAfterSeconds: VISITOR_IDLE_DAYS * 86400 }).catch(e => console.error("hallway-lost: seen TTL index", e));
+    }
 
     try {
         /* (9 Nov scan, finding 2) Re-rolling was free: start and swap each put a new thing at a new spot on a new clock, so a script could
@@ -329,7 +341,9 @@ async function handler(event) {
             const pick = choose(await liveSpots(), new Set((seenRow && seenRow.ks) || []), was && was.k);
             if (!pick) return json(503, { error: "Nothing to find just now" });
             const spot = { level: pick.spot.level, name: pick.spot.name, x: pick.spot.x, y: pick.spot.y };
-            const row = act === "swap" ? { k: pick.k, spot, t0: live.t0, hints: 0, swaps: (live.swaps || 0) + 1 } : { k: pick.k, spot, t0: now, hints: 0, swaps: 0 };
+            /* a fresh start clears the last search's `cancelled` (15 Nov scan, server finding 1: leave mid-search, come back after the 15
+               minutes, and the new search was born cancelled, so its first find was refused); `at` is the row's date for its TTL (finding 10) */
+            const row = act === "swap" ? { k: pick.k, spot, t0: live.t0, hints: 0, swaps: (live.swaps || 0) + 1 } : { k: pick.k, spot, t0: now, hints: 0, swaps: 0, cancelled: 0, at: new Date(now) };
             /* a swap only lands on the search it was asked of: two at once can't both spend the same swap */
             const f = act === "swap" ? { playerId: id, t0: live.t0, swaps: live.swaps ? live.swaps : { $in: [0, null] } } : { playerId: id };
             const r = await opens.updateOne(f, { $set: { playerId: id, ...row } }, { upsert: act === "start" });
@@ -354,7 +368,7 @@ async function handler(event) {
         const gone = await opens.findOneAndDelete({ playerId: id, k, t0: open.t0 });
         const o = gone && (gone.value !== undefined ? gone.value : gone);
         if (!o) return json(409, { error: "No search open for that" });
-        await seenCol.updateOne({ playerId: id }, { $addToSet: { ks: k } }, { upsert: true });
+        await seenCol.updateOne({ playerId: id }, { $addToSet: { ks: k }, $set: { at: new Date(now) } }, { upsert: true });
         const secs = Math.round((now - o.t0) / 1000), points = pointsFor(secs, o.hints);
         if (!points) return json(200, { points: 0, secs, late: true, week: wk.week });
         const today = new Date(now).toISOString().slice(0, 10), was = await col.findOne({ playerId: id, week: wk.week }, { projection: { _id: 0, day: 1, dayFinds: 1 } });

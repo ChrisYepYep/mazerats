@@ -19,17 +19,22 @@
     const MOUNT = [0x3a, 0x30, 0x28], CARD = [0x6a, 0x5a, 0x48];
 
     /* ---- the events ---- */
-    let events = [], byKey = new Map(), asked = null;
+    let events = [], byKey = new Map(), asked = null, failedAt = 0;
     const unpack = d => Array.isArray(d) ? d : d && Array.isArray(d.rooms) ? d.rooms : [];
-    function load() {
+    /* an answer that isn't OK is a failure like a dropped one, and asked again: once every 30 seconds while you're in the gallery, or when
+       you next come in. A 500 at load kept every exhibit dark for the whole visit (15 Nov scan, rooms 6) */
+    const RETRY_MS = 30000;
+    function load(now) {
         if (asked) return asked;
-        asked = fetch(EV_URL, { headers: { Accept: "application/json" } }).then(r => r.ok ? r.json() : []).then(d => {
+        if (!now && failedAt && Date.now() - failedAt < RETRY_MS) return Promise.resolve(events);
+        asked = fetch(EV_URL, { headers: { Accept: "application/json" } }).then(r => { if (!r.ok) throw new Error("events " + r.status); return r.json(); }).then(d => {
+            failedAt = 0;
             events = unpack(d).filter(e => e && (e.slug || e.id) && e.title).map(e => ({ key: e.slug || e.id, id: e.id, title: String(e.title), date: e.date || "", status: e.status || "", thumb: e.thumb || "" }))
                 .sort((a, b) => String(b.date).localeCompare(String(a.date)));
             byKey = new Map(); for (const e of events) { byKey.set(e.key, e); if (e.id) byKey.set(e.id, e); }
             LIVE.wake(); if (Exhibits.onEvents) Exhibits.onEvents(); if (!PLAY && typeof window.checksSoon === "function") window.checksSoon();
             return events;
-        }).catch(() => { asked = null; return []; });
+        }).catch(() => { asked = null; failedAt = Date.now(); setTimeout(() => { if (LIVE.place === "gallery") load(); }, RETRY_MS + 50); return events; });
         return asked;
     }
     const eventOf = k => k ? byKey.get(k) || null : null;
@@ -196,6 +201,8 @@
         for (const l of m.levels) for (const q of l.wallItems || []) if (q.k === pending.k && !q.ev && !pending.before.has(frameKey(l, q))) return finish(l, q);
         if (api().tool !== "wi:" + pending.k) { pending = null; render(); }
     }, 200);
+    /* a Hang still waiting when you switch to the Hallways is dropped, tool and all: it hung an empty exhibit frame there (15 Nov scan, rooms 14) */
+    if (LIVE.onPlace) LIVE.onPlace(p => { if (p === "gallery" || !pending) return; const k = pending.k; pending = null; if (api().tool === "wi:" + k) api().setTool("select"); render(); });
     function hang(ev) {
         if (LIVE.place !== "gallery") { LIVE.setPlace("gallery"); }
         const k = "g_frame_" + style + "_" + size; pending = { ev: ev.key, k, before: framesNow() };
@@ -207,7 +214,7 @@
         box.appendChild(el("p", "hint", "The site's events (the ones visitors see) not yet in the Events Gallery, newest first. Pick the frame, then Hang one and click a wall: its picture light and placard go in front of it. The picture is painted in live from the event's own."));
         box.append(fieldSel("Frame", STYLES, style, v => { style = v; localStorage.setItem("gallery-frame", v); }), fieldSel("Size", SIZES, size, v => { size = v; localStorage.setItem("gallery-size", v); }));
         { const f = el("label", "field"), n = el("span", "f-label", "Picture light"), c = el("span", "f-ctl"), t = el("input"); t.type = "checkbox"; t.checked = withLight; t.addEventListener("change", () => { withLight = t.checked; localStorage.setItem("gallery-light", withLight ? "1" : "0"); }); c.appendChild(t); f.append(n, c); box.appendChild(f); }
-        if (!events.length) { box.appendChild(el("p", "hint", asked ? "Fetching the events…" : "Couldn't fetch the events.")); if (!asked) box.appendChild(btn("Try again", () => { load().then(render); })); return; }
+        if (!events.length) { box.appendChild(el("p", "hint", asked ? "Fetching the events…" : "Couldn't fetch the events.")); if (!asked) box.appendChild(btn("Try again", () => { load(true).then(render); })); return; }
         const done = hung(), left = events.filter(e => !done.has(e.key));
         if (pending) { const ev = eventOf(pending.ev); box.appendChild(el("p", "hint", "Hanging " + (ev ? ev.title : pending.ev) + ": click a wall.")); }
         if (!left.length) box.appendChild(el("p", "hint", "Every event is hung."));

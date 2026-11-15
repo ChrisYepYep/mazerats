@@ -1452,6 +1452,7 @@ const CORNER = (() => {
    from floor_mat_upper_end, the bottom and left corners and the bottom two edges from floor_mat_lower_end, which draws exactly those. Where
    each sits is found once, by laying it over our own plain corner and taking the place where the most of its border stripes land on ours. */
 let SCORNER;
+const SEARCH_CORNERS = false;
 function screenCorners() {
     if (SCORNER) return SCORNER;
     const wood = new Set(); for (let i = 0; i < plain.rgba.length; i += 4) if (plain.rgba[i + 3] > 128) wood.add((plain.rgba[i] << 16) | (plain.rgba[i + 1] << 8) | plain.rgba[i + 2]);
@@ -1484,8 +1485,10 @@ function screenCorners() {
            across the whole piece (14 Nov 2026): worked out from the lower piece's own extent, its corners came out a tile inward */
         const est = { "1,1": [128, 16], "-1,1": [94, 2], "-1,-1": [127, -15], "1,-1": [161, -1] }[key];
         const CX = A - B, CY = (A + B) / 2;
-        let best = null;
-        for (let oy = est[1] - 3; oy <= est[1] + 3; oy++) for (let ox = est[0] - 3; ox <= est[0] + 3; ox++) {
+        /* pinned where the search put them on 14 Nov (his signed-off look): the 15 Nov fix to the straight edges' tie-break moved the
+           right-hand medallion's best fit 3 px, so the search no longer runs (SEARCH_CORNERS = true to run it again) */
+        let best = SEARCH_CORNERS ? null : { hit: -1, ox: est[0], oy: est[1] };
+        if (SEARCH_CORNERS) for (let oy = est[1] - 3; oy <= est[1] + 3; oy++) for (let ox = est[0] - 3; ox <= est[0] + 3; ox++) {
             let hit = 0;
             for (let dy = -40; dy <= 40; dy++) for (let dx = -80; dx <= 80; dx++) {
                 const SX = Math.round(CX) + dx, SY = Math.round(CY) + dy, o = ref(SX, SY); if (!o || !ramp.has(num(o))) continue;
@@ -1546,7 +1549,12 @@ function rugField(rugs) {
     for (const r of rugs) if (r.plainCorners) { const q = [r.x0 + "," + r.y0]; if (plain.has(q[0])) continue; plain.add(q[0]);
         while (q.length) { const [X, Y] = q.pop().split(",").map(Number); for (const n of [(X + 1) + "," + Y, (X - 1) + "," + Y, X + "," + (Y + 1), X + "," + (Y - 1)]) if (set.has(n) && !plain.has(n)) { plain.add(n); q.push(n); } } }
     const corners = rugCorners(set, cut); for (const c of corners) if (plain.has(Math.floor(c.A / 16) + "," + Math.floor(c.B / 16))) c.small = true;
-    return { set, along, near: new Map(), corners, cornerNear: new Map() };
+    /* a joined shape with a cut corner keeps the border by distance (the ramp) all the way round: the cut's border is the ramp, and the
+       client-copied straight edges switched to it partway along each edge, a kink in the stripes (15 Nov 2026 scan) */
+    const cutShape = new Set();
+    for (const k0 of cut) { if (cutShape.has(k0)) continue; const q = [k0]; cutShape.add(k0);
+        while (q.length) { const [X, Y] = q.pop().split(",").map(Number); for (const n of [(X + 1) + "," + Y, (X - 1) + "," + Y, X + "," + (Y + 1), X + "," + (Y - 1)]) if (set.has(n) && !cutShape.has(n)) { cutShape.add(n); q.push(n); } } }
+    return { set, along, near: new Map(), corners, cornerNear: new Map(), cutShape };
 }
 /* ---- the small-squares floor (8 Nov 2026): the floor inside the entrance's tunnel, laid where you drag it, as a rug is. The hallway's own
    wood, cut into squares half a tile across, each with a dark groove along its far edges and a light one along its near edges, as the
@@ -1604,6 +1612,17 @@ function arrowAt(list, X, Y, dx, dy, base) {
     }
     return null;
 }
+/* whether the field inside the border, in this tile's row or column of the shape, is under NARROW_FIELD units across */
+const NARROW_FIELD = 24, RUG_FIELD = new Set(RUG.ramp.slice(RUG_BORDER).filter(Boolean).map(c => (c[0] << 16) | (c[1] << 8) | c[2]));
+function rugNarrow(F, TX, TY, key) {
+    const m = F.span || (F.span = new Map()); let v = m.get(key);
+    if (v === undefined) {
+        let x0 = TX, x1 = TX, y0 = TY, y1 = TY; while (F.set.has((x0 - 1) + "," + TY) && TX - x0 < 4) x0--; while (F.set.has((x1 + 1) + "," + TY) && x1 - TX < 4) x1++;
+        while (F.set.has(TX + "," + (y0 - 1)) && TY - y0 < 4) y0--; while (F.set.has(TX + "," + (y1 + 1)) && y1 - TY < 4) y1++;
+        v = Math.min((x1 - x0 + 1) * 16, (y1 - y0 + 1) * 16) - 2 * RUG_BORDER < NARROW_FIELD; m.set(key, v);
+    }
+    return v;
+}
 function rugFieldAt(F, X, Y, dx, dy) {
     const a = Math.floor(X * 16 + (dx + 2 * dy) / 2), b = Math.floor(Y * 16 + (2 * dy - dx) / 2);
     const TX = Math.floor(a / 16), TY = Math.floor(b / 16), key = TX + "," + TY;
@@ -1615,27 +1634,38 @@ function rugFieldAt(F, X, Y, dx, dy) {
         F.near.set(key, near);
     }
     /* the nearest edge too, which side of the rug it is and where (side: 0 = low a, 1 = high a, 2 = low b, 3 = high b; at: its first rug unit) */
-    let r = 1e9, side = -1, at = 0;
+    /* A tile straight across (outside on one axis only) wins a tie with one diagonally across: on the row where the two are the same
+       distance, the diagonal one, met first, gave the pixel to the other edge, and the border kinked once per tile along the bottom-left
+       and top-right edges (15 Nov 2026 scan). A straight tile's side is the axis it's outside on. */
+    let r = 1e9, side = -1, at = 0, straightWon = false;
     for (let n = 0; n < near.length; n += 2) {
         const ax = near[n], by = near[n + 1];
+        const outA = a < ax || a >= ax + 16, outB = b < by || b >= by + 16, straight = outA !== outB;
         const da = a < ax ? ax - a - 1 : a >= ax + 16 ? a - ax - 16 : 0, db = b < by ? by - b - 1 : b >= by + 16 ? b - by - 16 : 0;
         const d = Math.max(da, db);
-        if (d < r) { r = d; if (da >= db) { side = a < ax ? 1 : 0; at = a < ax ? ax - 1 : ax + 16; } else { side = b < by ? 3 : 2; at = b < by ? by - 1 : by + 16; } }
+        if (d < r || (d === r && straight && !straightWon)) { r = d; straightWon = straight; if (straight ? outA : da >= db) { side = a < ax ? 1 : 0; at = a < ax ? ax - 1 : ax + 16; } else { side = b < by ? 3 : 2; at = b < by ? by - 1 : by + 16; } }
     }
     if (GHP) return ghRugPx(r, X, Y, dx, dy);
     /* the corners: cut ones move the edge in, square ones have the rosette. A cut runs its whole border (RUG_BORDER deep) to where it meets
        the straight edges' border, nearer stripe winning: it stopped 12 rows in (u + v < 40), so below that the uncut corner's border came back
        as stray light lines across the rug that ran into nothing (14 Nov 2026, his). */
     let cn = F.cornerNear.get(key); if (!cn) { cn = F.corners.filter(c => Math.abs(c.A - TX * 16) < 80 && Math.abs(c.B - TY * 16) < 80); F.cornerNear.set(key, cn); }
-    let cutHere = false;
     for (const c of cn) {
         const u = c.sa * (a - c.A), v = c.sb * (b - c.B); if (u < 0 || v < 0) continue;
-        if (c.cut) cutHere = true;
         /* measured from the unrounded point, so the cut edge is a clean line and not every other pixel; one stripe of the border to each pixel row (a flat cut) or column (an upright one), as the straight edges have, so none is skipped (8 Nov: "distorted") */
         if (c.cut) { const fa = X * 16 + (dx + 2 * dy) / 2, fb = Y * 16 + (2 * dy - dx) / 2, w2 = c.sa * (fa - c.A) + c.sb * (fb - c.B) + (c.sa < 0 ? 1 : 0) + (c.sb < 0 ? 1 : 0), d = c.flat ? (w2 - 16) / 2 : (w2 - 16); if (d < 0) return null; if (d < r && d < RUG_BORDER) r = Math.floor(d); }
-        else if (!c.small && u >= 1 && v >= 1 && u <= ROSETTE_ZONE && v <= ROSETTE_ZONE && Math.abs(u - v) <= ROSETTE_HALF && r >= 1) { const p = rosetteAt(c, (X - Y) * 16 + dx, (X + Y) * 8 + dy); if (p) return p; }
+        /* the band either side of the corner's middle line is measured from the unrounded point: on the left and right corners the
+           rounded a + b is one less on every other pixel, so the band's last row came half medallion, half edge, a speckle (15 Nov 2026) */
+        else if (!c.small && u >= 1 && v >= 1 && u <= ROSETTE_ZONE && v <= ROSETTE_ZONE && Math.abs(c.sa * (X * 16 + (dx + 2 * dy) / 2 - c.A) - c.sb * (Y * 16 + (2 * dy - dx) / 2 - c.B)) <= ROSETTE_HALF && r >= 1) { const p = rosetteAt(c, (X - Y) * 16 + dx, (X + Y) * 8 + dy); if (p) return p; }
     }
-    if (r < RUG.ramp.length) return (!F.plainEdges && !cutHere && side >= 0 && edgeAt(side, at, a, b, (X - Y) * 16 + dx, (X + Y) * 8 + dy)) || RUG.ramp[r];
+    /* a narrow rug's middle (15 Nov 2026 scan): where the field inside the border is under NARROW_FIELD units across, the field's
+       dither came out as a lone dotted line down a 3-wide rug, and a ragged scrap between a 4 x 4 rug's medallions; there the border's
+       own inner band carries on across instead */
+    const narrow = r < RUG.ramp.length && rugNarrow(F, TX, TY, key);
+    if (narrow && r >= RUG_BORDER) return RUG.ramp[RUG_BORDER - 1];
+    if (r < RUG.ramp.length) { const p = (!F.plainEdges && !(F.cutShape && F.cutShape.has(key)) && side >= 0 && edgeAt(side, at, a, b, (X - Y) * 16 + dx, (X + Y) * 8 + dy)) || RUG.ramp[r];
+        /* the field's first dots, which the client's edge starts a row early here and there, go too, or they're left alone in the band */
+        return narrow && r >= RUG_BORDER - 2 && RUG_FIELD.has((p[0] << 16) | (p[1] << 8) | p[2]) ? RUG.ramp[RUG_BORDER - 1] : p; }
     return F.along.get(key) ? RUG.at(68 + (((b % 32) + 32) % 32), RUG.core + (((a % 16) + 16) % 16)) : RUG.at(68 + (((a % 32) + 32) % 32), RUG.core + (((b % 16) + 16) % 16));
 }
 /* A straight edge's border, copied from the client's own rug in screen pixels (14 Nov 2026, his: "the thickness of the lines not matching
@@ -1739,12 +1769,64 @@ const LIGHTS = {
     gas: { label: "Gaslight", amb: [.16, .13, .12], lamp: i => i % 3 === 2 ? null : [1.25, .68, .28], tiles: 6.5, px: 92, p: 1.35 }
 };
 
+/* ---- letters the signs' font hasn't got (15 Nov 2026 scan, renderer 7) ----
+   The font is plain ASCII: "café → 2" came out as "caf" and a gap, on a board sized for the whole text. Each sign's words go through
+   signText first: an accented letter is drawn as its plain one (é as e), a few others as their usual spelling (ß as ss, curly quotes as
+   straight ones, a long dash as -), an arrow as an arrow (the custom sign's own arrow for left and right, turned for up and down, the
+   stair sign's diagonal one for the slanted ones), and anything else as "?". Invisible joiners and variation marks are dropped. */
+const SIGN_FOLD = { "ß": "ss", "æ": "ae", "Æ": "AE", "œ": "oe", "Œ": "OE", "ø": "o", "Ø": "O", "ł": "l", "Ł": "L", "đ": "d", "Đ": "D", "ð": "d", "Ð": "D", "þ": "th", "Þ": "Th", "ı": "i",
+    "‘": "'", "’": "'", "‚": ",", "“": "\"", "”": "\"", "„": "\"", "‐": "-", "‑": "-", "‒": "-", "–": "-", "—": "-", "―": "-", "−": "-", "…": "...",
+    "×": "x", "÷": "/", "·": ".", "•": ".", "«": "<<", "»": ">>", "‹": "<", "›": ">", "¡": "!", "¿": "?", " ": " ", " ": " ", " ": " ", "\t": " ", "€": "E", "£": "L", "°": "o", "№": "No" };
+const SIGN_ARROW_CH = { right: "", left: "", up: "", down: "", upRight: "", upLeft: "", downRight: "", downLeft: "" };
+const SIGN_ARROWS_IN = { "→": "right", "⇒": "right", "➔": "right", "➜": "right", "➡": "right", "⟶": "right", "⇨": "right", "▶": "right", "►": "right",
+    "←": "left", "⇐": "left", "⬅": "left", "⟵": "left", "⇦": "left", "◀": "left", "◄": "left", "↑": "up", "⇑": "up", "⬆": "up", "↓": "down", "⇓": "down", "⬇": "down",
+    "↗": "upRight", "⬈": "upRight", "↖": "upLeft", "⬉": "upLeft", "↘": "downRight", "⬊": "downRight", "↙": "downLeft", "⬋": "downLeft" };
+let signGlyphs = null;
+function signArrowGlyphs() {
+    if (signGlyphs) return signGlyphs;
+    /* a glyph as the font has them: rows top down, its foot on row 10, one blank column before it */
+    const glyph = (rows, top) => { const w = rows[0].length, out = []; for (let j = 0; j < 16; j++) { const r = rows[j - top]; out.push("0" + (r ? r.replace(/\./g, "0") : "0".repeat(w)) + "0"); } return { w: w + 2, rows: out }; };
+    const flipX = rows => rows.map(r => [...r].reverse().join("")), flipY = rows => [...rows].reverse(), turn = rows => rows[0].split("").map((_, i) => rows.map(r => r[i]).reverse().join(""));      // turn: a quarter turn clockwise
+    const R = SIGN_ARROW, D = ARROW;
+    signGlyphs = {
+        [SIGN_ARROW_CH.right]: glyph(R, 4), [SIGN_ARROW_CH.left]: glyph(flipX(R), 4), [SIGN_ARROW_CH.down]: glyph(turn(R), 2), [SIGN_ARROW_CH.up]: glyph(flipY(turn(R)), 2),
+        [SIGN_ARROW_CH.upRight]: glyph(D, 2), [SIGN_ARROW_CH.upLeft]: glyph(flipX(D), 2), [SIGN_ARROW_CH.downRight]: glyph(flipY(D), 2), [SIGN_ARROW_CH.downLeft]: glyph(flipX(flipY(D)), 2)
+    };
+    return signGlyphs;
+}
+function signText(s, f) {
+    const V = H.VOL[f || "vb"]; let out = "";
+    for (const ch of String(s == null ? "" : s)) {
+        if (V[ch]) { out += ch; continue; }
+        if (SIGN_ARROWS_IN[ch]) { out += SIGN_ARROW_CH[SIGN_ARROWS_IN[ch]]; continue; }
+        if (signArrowGlyphs()[ch]) { out += ch; continue; }
+        if (SIGN_FOLD[ch] !== undefined) { out += SIGN_FOLD[ch]; continue; }
+        const base = ch.normalize("NFD").replace(/[̀-ͯ᪰-᫿᷀-᷿⃐-⃿︠-︯]/g, "");
+        if (base && [...base].every(c => V[c])) { out += base; continue; }
+        if (/^[​-‏⁠-⁤︀-️\u{e0100}-\u{e01ef}­]$/u.test(ch) || /^[̀-ͯ]$/.test(ch)) continue;      // joiners, variation marks, a soft hyphen
+        out += "?";
+    }
+    return out;
+}
+const signGlyph = (ch, f) => H.VOL[f || "vb"][ch] || signArrowGlyphs()[ch] || H.VOL[f || "vb"]["?"];
+const signTW = (s, f) => { let w = 0; for (const ch of s) w += signGlyph(ch, f).w; return w; };
+/* ---- the longest a sign's board may be (15 Nov 2026 scan, renderer 8): a 40-letter sign or a 37-letter floor name made a board over 300 px
+   long, through the floor and over doors and other signs. Words that don't fit are cut, with "..." on the end; the board is never wider.
+   400, the same limit the sign job (renderer-jobs.js) and the editor put on a door sign's width, so the three agree. */
+const SIGN_MAX_W = 400;
+function fitSignText(s, maxW, f, measure) {
+    measure = measure || (t => signTW(t, f));
+    if (measure(s) <= maxW) return s;
+    const ch = [...s]; while (ch.length && measure(ch.join("").trimEnd() + "...") > maxW) ch.pop();
+    return ch.join("").trimEnd() + "...";
+}
+
 /* ---- the iso sign: letters and plate both sheared column by column ---- */
 function wrapPx(name, maxW, f) {
     const lines = []; let cur = "";
     for (const word of String(name).split(" ")) {
         const next = cur ? cur + " " + word : word;
-        if (cur && H.textW(next, f) > maxW) { lines.push(cur); cur = word; } else cur = next;
+        if (cur && signTW(next, f) > maxW) { lines.push(cur); cur = word; } else cur = next;
     }
     if (cur) lines.push(cur);
     return lines;
@@ -1759,9 +1841,10 @@ function signIso(b, cx, cy, name, o) {
        end, a little arched crest on top, a shadow on the wall, and letters cut into it. */
     o = o || {};
     const sh = o.alongY ? -1 : 1, f = o.font || "vb", pad = 12, lh = 10;
-    const lines = o.lines || (o.w ? wrapPx(name, o.w - pad * 2, f) : H.wrap(name, o.max || 17));
-    const widths = lines.map(t => H.textW(t, f));
-    const tw = Math.max(...widths), PW = Math.max(tw + pad * 2, 40, o.w || 0), PH = Math.max(lines.length * lh + 9, o.h || 0);
+    name = signText(name, f);
+    const lines = o.lines ? o.lines.map(t => signText(t, f)) : (o.w ? wrapPx(name, o.w - pad * 2, f) : H.wrap(name, o.max || 17));
+    const widths = lines.map(t => signTW(t, f));
+    const tw = Math.max(...widths), PW = Math.min(SIGN_MAX_W, Math.max(tw + pad * 2, 40, o.w || 0)), PH = Math.max(lines.length * lh + 9, o.h || 0);
     const extra = (PH - (lines.length * lh + 9)) >> 1;
     const L = -(PW >> 1), CUT = 4;
     const ink = o.hover ? hex("fff4c8") : (o.ink || hex("f6cf80")), cutInk = hex("170703");
@@ -1813,7 +1896,7 @@ function signIso(b, cx, cy, name, o) {
         let U = -(widths[li] >> 1);
         const topV = PH - 7 - li * lh - extra;
         for (const ch of ln) {
-            const g = H.VOL[f][ch] || H.VOL[f][" "];
+            const g = signGlyph(ch, f);
             g.rows.forEach((r, j) => { for (let i = 0; i < r.length; i++) if (r[i] === "1") { const col = U + i - 1, Y = cy + sh * Math.floor(col / 2) - topV + (j - 3); b.set(cx + col, Y + 1, cutInk); } });
             g.rows.forEach((r, j) => { for (let i = 0; i < r.length; i++) if (r[i] === "1") { const col = U + i - 1, Y = cy + sh * Math.floor(col / 2) - topV + (j - 3); b.set(cx + col, Y, ink); } });
             U += g.w;
@@ -1828,9 +1911,11 @@ function signIso(b, cx, cy, name, o) {
    editor.js does the same sums to know where it is. */
 const PLAQUE = { h: 66, off: 3, H: 30, frame: 2, pad: 4, textFloor: 6, arrowFloor: 16, wordGap: 4 };
 const ARROW = ["...111111", "....11111", ".....1111", "....11111", "...111.11", "..111...1", ".111.....", "111......", "11......."];
+/* a stair sign's words as it draws them: the font's letters (signText), cut to fit the longest board (SIGN_MAX_W) */
+const plaqueTW = name => { const words = String(name).split(" "); return words.reduce((a, t) => a + signTW(t, "vb"), 0) + (words.length - 1) * PLAQUE.wordGap; };
+const plaqueName = name => fitSignText(signText(name, "vb"), SIGN_MAX_W - 2 * (PLAQUE.frame + PLAQUE.pad), "vb", plaqueTW);
 function plaqueWidth(name) {
-    const words = String(name).split(" "), tw = words.reduce((a, t) => a + H.textW(t, "vb"), 0) + (words.length - 1) * PLAQUE.wordGap;
-    return Math.max(50, tw + 2 * (PLAQUE.frame + PLAQUE.pad));
+    return Math.min(SIGN_MAX_W, Math.max(50, plaqueTW(plaqueName(name)) + 2 * (PLAQUE.frame + PLAQUE.pad)));
 }
 /* His pole for the stair signs (14 Nov 2026). Worked out once: where his Floor 2 sign sits against the code's own board (matched pixel for
    pixel), so each of his pole's pixels is known from the wall point. Stretched for other widths the way he drew The Basement's: the wall end
@@ -1908,11 +1993,11 @@ function stairPlaque(b, ax, ay, name, o) {
     const a0 = (Wd - 9) >> 1;
     for (const [dt, c] of [[-1, cut], [0, ink]]) ARROW.forEach((row, j) => { for (let i = 0; i < 9; i++) if (row[i] === "1") put(a0 + i, arrowFloor + 8 - j + dt, c); });
     /* the words, on their baseline: each letter's picture has blank rows above, and its foot at row 10 */
-    const words = String(name).split(" "), tw = words.reduce((a, t) => a + H.textW(t, "vb"), 0) + (words.length - 1) * wordGap;
+    const shown = plaqueName(name), words = shown.split(" "), tw = plaqueTW(shown);
     let U = (Wd - tw) >> 1;
     for (const word of words) {
         for (const ch of word) {
-            const g = H.VOL.vb[ch] || H.VOL.vb[" "];
+            const g = signGlyph(ch, "vb");
             for (const [dt, c] of [[-1, cut], [0, ink]]) g.rows.forEach((r, j) => { for (let i = 0; i < r.length; i++) if (r[i] === "1") put(U + i, textFloor + 10 - j + dt, c); });
             U += g.w;
         }
@@ -1933,11 +2018,14 @@ const SIGN_ARROW = ["....1....", "....11...", "1111111..", "11111111.", "1111111
 const LP_SIGN_UP = 0;
 function customSign(it, mirrored) {
     const one = !!it.oneLine, arrow = it.arrow === "left" || it.arrow === "right" ? it.arrow : "", same = !!arrow && (one || !!it.arrowSame);
-    let lines = String(it.text || "Your words").split(/\n|\|/).map(t => t.trim()).filter(Boolean); if (!lines.length) lines = [" "];
+    let lines = String(it.text || "Your words").split(/\n|\|/).map(t => signText(t.trim(), "vb").trim()).filter(Boolean); if (!lines.length) lines = [" "];
     lines = one ? [lines.join(" ")] : lines.slice(0, arrow && !same ? 1 : 2);
-    const rows = arrow && !same ? [...lines, "\u0000arrow"] : lines, AW = 9, GAP = 4, pad = 6;
-    const lineW = t => t === "\u0000arrow" ? AW : H.textW(t, "vb") + (same ? AW + GAP : 0);
-    const Wd = Math.max(50, Math.max(...rows.map(lineW)) + 2 * pad), Hd = rows.length > 1 ? 30 : 18, floors = rows.length > 1 ? [17, 4] : [5];
+    const AW = 9, GAP = 4, pad = 6;
+    /* each line cut to the longest board (SIGN_MAX_W), its arrow included */
+    lines = lines.map(t => fitSignText(t, SIGN_MAX_W - 2 * pad - (same ? AW + GAP : 0), "vb"));
+    const rows = arrow && !same ? [...lines, "\u0000arrow"] : lines;
+    const lineW = t => t === "\u0000arrow" ? AW : signTW(t, "vb") + (same ? AW + GAP : 0);
+    const Wd = Math.min(SIGN_MAX_W, Math.max(50, Math.max(...rows.map(lineW)) + 2 * pad)), Hd = rows.length > 1 ? 30 : 18, floors = rows.length > 1 ? [17, 4] : [5];
     const CW = Wd + 40, CH = Hd + 110, ax = 10, ay = CH - 4, b = new Buf(CW, CH);
     for (let i = 0; i < b.d.length; i += 4) b.d[i + 3] = 0;
     const cv = { w: CW, h: CH, set: (x, y, c) => { const X = 2 * ax - x; if (X < 0 || y < 0 || X >= CW || y >= CH) return; const q = (y * CW + X) * 4; b.d[q] = c[0]; b.d[q + 1] = c[1]; b.d[q + 2] = c[2]; b.d[q + 3] = 255; }, get: (x, y) => { const X = 2 * ax - x, q = (y * CW + X) * 4; return [b.d[q], b.d[q + 1], b.d[q + 2]]; } };
@@ -1973,7 +2061,7 @@ function customSign(it, mirrored) {
         const floor = floors[n], w0 = lineW(row); let U = (Wd - w0) >> 1;
         if (row === "\u0000arrow") { arrowAt(U, floor); return; }
         if (same && arrow === "left") { arrowAt(U, floor); U += AW + GAP; }
-        for (const ch of row) { const g = H.VOL.vb[ch] || H.VOL.vb[" "]; for (const [dt, c] of [[-1, cut], [0, ink]]) g.rows.forEach((r, j) => { for (let i = 0; i < r.length; i++) if (r[i] === "1") put(U + i, floor + 10 - j + dt, c); }); U += g.w; }
+        for (const ch of row) { const g = signGlyph(ch, "vb"); for (const [dt, c] of [[-1, cut], [0, ink]]) g.rows.forEach((r, j) => { for (let i = 0; i < r.length; i++) if (r[i] === "1") put(U + i, floor + 10 - j + dt, c); }); U += g.w; }
         if (same && arrow === "right") arrowAt(U + GAP, floor);
     });
     if (pole) drawStairPole(cv, ax, ay + (29 - Hd), Wd, pole);      // over the sign, as his picture has it
@@ -2068,7 +2156,7 @@ function flightUpToYou(w, o) {
     const X0 = Math.max(0, Math.min(...pts.map(q => q[0])) - 2), X1 = Math.min(w.b.w - 1, Math.max(...pts.map(q => q[0])) + 2), Y0 = Math.max(0, Math.min(...pts.map(q => q[1])) - 2), Y1 = Math.min(w.b.h - 1, Math.max(...pts.map(q => q[1])) + 2);
     for (let sy = Y0; sy <= Y1; sy++) for (let sx = X0; sx <= X1; sx++) {
         const A = (sx + .5 - w.ox) / 16, B = (sy + .5 - w.oy + zB) / 8, x0 = (A + B) / 2, y0 = (B - A) / 2, c = alongY ? x0 : y0, d = alongY ? y0 : x0, tz = c1 - c, zz = tz * 16, dd = d + tz, k = Math.floor((dd - dStart) / STEP_D);
-        if (o.near !== false && zz >= 0 && k >= 0 && k < steps && zz <= (k + 1) * STEP_R && (!o.vis || o.vis(x0 + tz, y0 + tz, zB + zz)) && !(o.endZ && endHidden(o.endZ(dd), zB, zz))) w.b.set(sx, sy, frontEndTone(pq, (k + 1) * STEP_R - zz, zz, dd, GHP ? GH_JOINT : C.k));
+        if (o.near !== false && zz >= 0 && k >= 0 && k < steps && zz <= (k + 1) * STEP_R && (!o.vis || o.vis(x0 + tz, y0 + tz, zB + zz)) && !(o.endZ && endHidden(o.endZ(dd), zB, zz)) && !(o.rugUnder && o.rugUnder(x0, y0))) w.b.set(sx, sy, frontEndTone(pq, (k + 1) * STEP_R - zz, zz, dd, GHP ? GH_JOINT : C.k));
     }
     for (let k = 0; k < steps; k++) {
         const d0 = dStart + k * STEP_D, z = (k + 1) * STEP_R, rows = k === steps - 1 ? 6 : 2;
@@ -2220,7 +2308,7 @@ function stepGroup(w, o) {
             const t = r.c1 - (r.alongY ? x0 : y0); if (t <= best || t < 0) continue;
             const X = x0 + t, Y = y0 + t, s = sOf(r, X, Y), zs = t * 16;
             if (r.back) { if (s < 0 || s >= reach) continue; const ts = (steps - Math.floor(s / D)) * R; if (zs >= ts) continue; best = t; hit = { kind: "near", X, Y, z: zs, top: ts, r }; }
-            else { const kk = Math.floor((reach - s) / D), bx = endBox(r); if (kk < 0 || kk >= steps || zs > (kk + 1) * R || sx < bx[0] || sx > bx[1] || sy < bx[2] || sy > bx[3] || (r.endZ && endHidden(r.endZ(dOf(r, X, Y)), zB, zs))) continue; best = t; hit = { kind: "near", X, Y, z: zs, top: (kk + 1) * R, r }; }
+            else { const kk = Math.floor((reach - s) / D), bx = endBox(r); if (kk < 0 || kk >= steps || zs > (kk + 1) * R || sx < bx[0] || sx > bx[1] || sy < bx[2] || sy > bx[3] || (r.endZ && endHidden(r.endZ(dOf(r, X, Y)), zB, zs)) || (r.rugUnder && r.rugUnder(x0, y0))) continue; best = t; hit = { kind: "near", X, Y, z: zs, top: (kk + 1) * R, r }; }
         }
         /* Steps climbing towards you show only a strip of each tread, laid exactly as flightUpToYou() lays them (two rows a step, more on the top
            one), so a run that meets another matches one that doesn't, row for row. The strips go over that end. */
@@ -2988,8 +3076,12 @@ const ghGrain = (x, y) => ghWood(x * 16, y * 16, false);
 const ghStepTones = k => k >= 1 ? GH_WOOD[4] : k >= .5 ? GH_WOOD[2] : k >= .4 ? GH_WOOD[1] : GH_JOINT;
 /* the edge of a floor raised a little (no taller than a step-up of 24): the bricks' own thickness, not a wall. A lit lip on top, end grain
    down to a dark line at the lower floor (14 Nov 2026, his: "Raising floors reveals a brown edge, which doesn't match the floor") */
+/* its blocks of light and dark are 8 px wide, counted from the map (GH_OX: the build's buffer x of the map's x 0), not the buffer, so a
+   whole-map build and tiles on any grid agree; the + 8 keeps them where the published 512 px squares have always had them (15 Nov 2026 scan) */
+let GH_OX = 0;
 function ghEdgeColumn(b, sx, fy, H) {
-    for (let k = 0; k < H; k++) { const fromTop = H - 1 - k; b.set(sx, fy - k, fromTop === 0 ? GH_WOOD[4] : k === 0 ? GH_JOINT : fromTop === 1 ? GH_WOOD[3] : ((sx >> 3) & 1) ? GH_WOOD[2] : GH_WOOD[1]); }
+    const lit = ((sx - GH_OX + 8) >> 3) & 1;
+    for (let k = 0; k < H; k++) { const fromTop = H - 1 - k; b.set(sx, fy - k, fromTop === 0 ? GH_WOOD[4] : k === 0 ? GH_JOINT : fromTop === 1 ? GH_WOOD[3] : lit ? GH_WOOD[2] : GH_WOOD[1]); }
 }
 const GH_EDGE_MAX = 24;
 /* a rug, by its distance in from its edge: a dark edge, the border, one cream thread, the border, then the pile woven in pairs of pixels */
@@ -3470,8 +3562,54 @@ function gridOf(table, x0, y0, x1, y1) {
     const isMap = table instanceof Map;
     return (X, Y) => (X >= x0 && X < x1 && Y >= y0 && Y < y1 && (X | 0) === X && (Y | 0) === Y) ? cells[(Y - y0) * W + X - x0] : (isMap ? table.get(X + "," + Y) : (table.has(X + "," + Y) || undefined));
 }
+/* The whole map in one picture (publish.js, the "mood" job) is drawn as the published squares are: 512 px squares, each with a 96 px
+   margin, the same call render/worker.js and the Warren's Publish make, pasted together (15 Nov 2026 scan, renderer 2 and 3). One
+   10600 x 7700 canvas held about 3 GB and took 15 to 25 s even for one square, and its own draw order (the floors and things are ordered
+   among whatever the clip takes in) cut a planter differently from the squares. The picture now covers the map's own squares, grown a
+   square at a time on any side where something reaches the edge. at(), view and b are as before: b's (0, 0) is a square's corner. */
+const WHOLE_TILE = 512, WHOLE_PAD = 96;
+function buildWhole(cfg) {
+    const names = cfg.names || H.names2(), T = WHOLE_TILE; let meta = null;
+    const tileOf = (tx, ty) => {
+        const cx = tx * T + T / 2, cy = ty * T + T / 2, MX = (cx + 2 * cy) / 32, MY = (2 * cy - cx) / 32;
+        const world = build(Object.assign({}, cfg, { names, clip: [MX, MY, 0, T + 2 * WHOLE_PAD, T + 2 * WHOLE_PAD] })), c = world.at(MX, MY, 0);
+        const crop = world.b.crop(c[0] - T / 2, c[1] - T / 2, T, T); let blank = true;
+        for (let i = 0; i < crop.d.length; i += 4) if ((crop.d[i] || crop.d[i + 1] || crop.d[i + 2]) && !(crop.d[i] === 7 && crop.d[i + 1] === 6 && crop.d[i + 2] === 10)) { blank = false; break; }
+        if (!meta) meta = { report: world.report, avL: world.avL, doors: world.doors, base: world.view[0] + world.at(0, 0, 0)[0], baseY: world.view[1] + world.at(0, 0, 0)[1] };      // only these: a world kept alive holds its build's big arrays
+        return { d: crop.d, blank };
+    };
+    /* the squares the floors cover, with room above for walls and what stands on the top floor, and below for a storey's drop */
+    const levels = fromMap(cfg.map, names); let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+    for (const lv of levels) for (const P of lv.patches) { x0 = Math.min(x0, (P.x0 - P.y1) * 16); x1 = Math.max(x1, (P.x1 - P.y0) * 16); y0 = Math.min(y0, (P.x0 + P.y0) * 8 - P.z - 400); y1 = Math.max(y1, (P.x1 + P.y1) * 8 - P.z + 64); }
+    if (x0 === Infinity) { x0 = y0 = 0; x1 = y1 = 1; }
+    let tx0 = Math.floor(x0 / T), tx1 = Math.floor((x1 - 1) / T), ty0 = Math.floor(y0 / T), ty1 = Math.floor((y1 - 1) / T);
+    const got = new Map(), get = (tx, ty) => { const k = tx + "," + ty; if (!got.has(k)) got.set(k, tileOf(tx, ty)); return got.get(k); };
+    /* grow while a square on the edge has anything on it (at most 8 squares each way past the floors) */
+    for (let guard = 0; guard < 8; guard++) {
+        let grow = false;
+        for (let tx = tx0; tx <= tx1; tx++) for (let ty = ty0; ty <= ty1; ty++) get(tx, ty);
+        const edge = (list, f) => list.some(f);
+        const xs = []; for (let tx = tx0; tx <= tx1; tx++) xs.push(tx); const ys = []; for (let ty = ty0; ty <= ty1; ty++) ys.push(ty);
+        if (edge(ys, ty => !get(tx0, ty).blank)) { tx0--; grow = true; }
+        if (edge(ys, ty => !get(tx1, ty).blank)) { tx1++; grow = true; }
+        if (edge(xs, tx => !get(tx, ty0).blank)) { ty0--; grow = true; }
+        if (edge(xs, tx => !get(tx, ty1).blank)) { ty1++; grow = true; }
+        if (!grow) break;
+    }
+    const bw = (tx1 - tx0 + 1) * T, bh = (ty1 - ty0 + 1) * T, out = new Buf(bw, bh, "07060a");
+    for (let ty = ty0; ty <= ty1; ty++) for (let tx = tx0; tx <= tx1; tx++) {
+        const t = get(tx, ty);
+        for (let j = 0; j < T; j++) out.d.set(t.d.subarray(j * T * 4, (j + 1) * T * 4), (((ty - ty0) * T + j) * bw + (tx - tx0) * T) * 4);
+        t.d = null;
+    }
+    /* world px (map x 0 at 0) of the picture's corner, and the same view the one-canvas build would have had there */
+    const gx0 = tx0 * T, gy0 = ty0 * T, view = [meta.base + gx0, meta.baseY + gy0];
+    return { report: meta.report, b: out, view: [view[0], view[1], view[0] + bw, view[1] + bh], at: (x, y, z) => [Math.round((x - y) * 16) - gx0, Math.round((x + y) * 8) - (z || 0) - gy0], cfg, avL: meta.avL, avS: undefined, doors: meta.doors, tiles: { tx0, ty0, tx1, ty1 } };
+}
 function build(cfg) {
     cfg = cfg || {};
+    /* no clip: the whole map, square by square (cfg.oneCanvas: the old single canvas, for comparison) */
+    if (!cfg.clip && cfg.map && !cfg.avatar && !cfg.avatarS && !cfg.oneCanvas) return buildWhole(cfg);
     useStyle(cfg.map);
     const names = cfg.names || H.names2();
     const levels = cfg.map ? fromMap(cfg.map, names) : plan();
@@ -3522,6 +3660,7 @@ function build(cfg) {
     const wallOwner = new Uint16Array(bw * bh), stairPx = new Uint8Array(bw * bh), stairPatch = new Uint16Array(bw * bh), railUnder = new Map();
     const mask = new Uint8Array(bw * bh), zb = new Int16Array(bw * bh), fc = new Int32Array(bw * bh), done = new Uint8Array(bw * bh);
     const gx = oxx - view[0], gy = oyy - view[1];
+    GH_OX = gx;
     const w = {
         keep: new Int32Array(bw * bh),
         glowing: new Int32Array(bw * bh),
@@ -3732,13 +3871,15 @@ function build(cfg) {
         const onR = (X, Y) => (lv.rugs || []).some(r => X >= r.x0 && X < r.x1 && Y >= r.y0 && Y < r.y1), stepWay = cfg.single || lv.way;
         /* the floor's height just past a run's near end, at a point d along the way it climbs (for steps climbing towards you: their end is only seen where that floor is lower) */
         const endZOf = r => d => { const D = Math.floor(d + 1e-9), Q = r.alongY ? tileAt(r.b, D) : tileAt(D, r.b); return Q && !Q.notch ? Q.z : null; };
-        const pieceOf = r => { let a0 = null, a1 = null; for (let t = r.a; t < r.b; t++) if (r.alongY ? onR(t, r.line) || onR(t, r.line - 1) : onR(r.line, t) || onR(r.line - 1, t)) { if (a0 === null) a0 = t; a1 = t + 1; } return { alongY: r.alongY, line: r.line, c0: r.a, c1: r.b, back: !r.toYou, j0: r.j0, j1: r.j1, x0: r.x0, x1: r.x1, noNear: !!r.noNear, cover1: !!r.cover1, carpet: a0 === null ? null : [a0, a1], endZ: r.toYou ? endZOf(r) : null, src: r }; };
+        /* a rug on the lower floor seen past a front run's end: the end isn't drawn over it, so the rug runs cleanly up to the step (15 Nov 2026, his: "remove them", the tan teeth behind the rope posts at G (90,48) and (96,42)). X, Y: the floor point under the pixel at the run's foot */
+        const rugUnderOf = r => (X, Y) => { const TX = Math.floor(X), TY = Math.floor(Y), Q = tileAt(TX, TY); return !!Q && !Q.notch && Q.z === r.lo && onR(TX, TY); };
+        const pieceOf = r => { let a0 = null, a1 = null; for (let t = r.a; t < r.b; t++) if (r.alongY ? onR(t, r.line) || onR(t, r.line - 1) : onR(r.line, t) || onR(r.line - 1, t)) { if (a0 === null) a0 = t; a1 = t + 1; } return { alongY: r.alongY, line: r.line, c0: r.a, c1: r.b, back: !r.toYou, j0: r.j0, j1: r.j1, x0: r.x0, x1: r.x1, noNear: !!r.noNear, cover1: !!r.cover1, carpet: a0 === null ? null : [a0, a1], endZ: r.toYou ? endZOf(r) : null, rugUnder: r.toYou ? rugUnderOf(r) : null, src: r }; };
         const hidden = r => { if (r.hidden === undefined) { const reach = Math.round((r.hi - r.lo) / STEP_R) * STEP_D; r.hidden = behindWall(r.alongY, r.a, r.b, r.toYou ? r.line - reach : r.line, r.toYou ? r.line : r.line + reach, r.lo, Math.round((r.hi - r.lo) / STEP_R)); } return r.hidden; };
         const groups = new Map();      // each group of joined runs, drawn as one surface
         for (const g of new Set(groupOf.values())) { const pieces = [...g].map(pieceOf), byRun = new Map(pieces.map(q => [q.src, q])); const cs = corners.filter(k => g.has(k.ry)).map(k => ({ ...k, rx: byRun.get(k.rx), ry: byRun.get(k.ry) })); const G = { runs: pieces, corners: cs, vis: [...g].some(hidden) ? stepSeen : null }; for (const r of g) groups.set(r, G); }
         for (const r of runs) {
             const { alongY, toYou, hi, lo } = r, st = { line: r.line, a: r.a, b: r.b }, carpet = pieceOf(r).carpet;
-            const count = Math.round((hi - lo) / STEP_R), reach = count * STEP_D, f = { axis: alongY ? "y" : "x", c0: st.a, c1: st.b, dTop: st.line, dStart: st.line - reach, steps: count, rise: STEP_R, tread: STEP_D, zB: lo, carpet, way: stepWay, tiled: true, vis: hidden(r) ? stepSeen : null, near: r.noNear ? false : undefined, cover1: !!r.cover1, endZ: toYou ? endZOf(r) : null };
+            const count = Math.round((hi - lo) / STEP_R), reach = count * STEP_D, f = { axis: alongY ? "y" : "x", c0: st.a, c1: st.b, dTop: st.line, dStart: st.line - reach, steps: count, rise: STEP_R, tread: STEP_D, zB: lo, carpet, way: stepWay, tiled: true, vis: hidden(r) ? stepSeen : null, near: r.noNear ? false : undefined, cover1: !!r.cover1, endZ: toYou ? endZOf(r) : null, rugUnder: toYou ? rugUnderOf(r) : null };
             const along = toYou ? Math.floor(st.line - reach) : st.line;
             const d0 = toYou ? Math.floor(st.line - reach) : st.line, d1 = toYou ? st.line : Math.ceil(st.line + reach);
             const G = groups.get(r), sOf = (X, Y) => { const d = alongY ? Y : X; return toYou ? st.line - d : d - st.line; };
@@ -5857,7 +5998,9 @@ function lift(way, slide) {
     return { w: bw, h: bh, d: b.d };
 }
 function sign(q) {
-    const sw = Number(q.w) || 0, sh = Number(q.h) || 0, name = q.name || "", bw = Math.max(sw, 240) + 40, bh = (bw >> 1) + Math.max(sh, 100) + 60, cx = bw >> 1, cy = bh - (bw >> 2) - 20, b = new W.Buf(bw, bh);
+    /* the job's own limits, whatever the page sent (15 Nov 2026): a sign up to 400 x 200 (the renderer's longest board, hw3.js SIGN_MAX_W), its name up to 120 letters */
+    const clampN = (v, hi) => { const n = Math.round(Number(v)); return Number.isFinite(n) ? Math.max(0, Math.min(hi, n)) : 0; };
+    const sw = clampN(q.w, 400), sh = clampN(q.h, 200), name = [...String(q.name == null ? "" : q.name)].slice(0, 120).join(""), bw = Math.max(sw, 240) + 40, bh = (bw >> 1) + Math.max(sh, 100) + 60, cx = bw >> 1, cy = bh - (bw >> 2) - 20, b = new W.Buf(bw, bh);
     for (let i = 0; i < b.d.length; i += 4) { b.d[i] = 255; b.d[i + 1] = 0; b.d[i + 2] = 255; b.d[i + 3] = 255; }
     if (q.stair) W.stairPlaque(b, cx, cy, name);
     else W.signIso(b, cx, cy, name, { alongY: q.y === "1", max: 14, w: sw || undefined, h: sh || undefined, way: q.way });

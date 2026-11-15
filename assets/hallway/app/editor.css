@@ -381,6 +381,23 @@ body.hw-screensaver .hw-clue { visibility: hidden; }
     .time-pick #timeNow { display: none; }
     .time-pick select { max-width: 132px; }
 }
-@media (max-width: 1360px) { #top { overflow-x: auto; scrollbar-width: thin; } #top > * { flex-shrink: 0; } }
+/* (15 Nov scan, editor 8) With unsaved changes the bar needs about 1,730px, so at 1500, 1366 and 125% zoom Publish and Walk it went off the
+   screen. Nothing is hidden or scrolled now: where the bar doesn't fit, the right-hand buttons (zoom to Walk it) drop to a second row, kept
+   together on the right, and the map below gives up those 40px. At full width it's one row, exactly as before. */
+#app { grid-template-rows: auto 1fr 26px; }
+#top { flex-wrap: wrap; row-gap: 6px; min-height: 48px; padding-top: 4px; padding-bottom: 4px; }
+#top > * { flex-shrink: 0; }
+#top .top-end { display: flex; align-items: center; gap: inherit; margin-left: auto; }
+#top .spacer { flex: 1 0 0; min-width: 0; }
+/* below the width where it all fits with "Back to last save" showing, it's always two rows, so the map doesn't jump when an edit shows that button */
+@media (max-width: 1760px) { #top .spacer { flex-basis: 100%; height: 0; } #top { row-gap: 0; } #top .top-end { margin-top: 3px; } }
+#floorSel { max-width: 170px; text-overflow: ellipsis; }
+.time-pick select { max-width: none; }
+/* the save's own slot in the status bar: a failed save stays red until one goes through (15 Nov scan, editor 3) */
+#st-save:empty { display: none; }
+#st-save[data-state="failed"] { color: #ff8a7a; font-weight: 650; }
+#st-save[data-state="busy"] { color: var(--text-2); }
+/* the Keys box scrolls when the window is short (125% zoom) */
+.modal-box { max-height: calc(100vh - 24px); overflow-y: auto; }
 .tabs { display: grid; grid-template-columns: repeat(4, 1fr); }
 .tabs .tab { flex: none; min-width: 0; height: auto; min-height: 32px; padding: 4px 2px; white-space: normal; line-height: 1.15; }

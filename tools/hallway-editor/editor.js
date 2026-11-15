@@ -153,7 +153,15 @@ function migrateHeights(m) {
     /* windows used to be placed looking at the lawn whatever you chose, so every one showed the same: once, those go to "whatever's behind it" (14 Nov 2026) */
     if (!m.winViews) { for (const l of m.levels) for (const it of (l.wallItems || [])) if (it.k === "i_window" && it.view === "lawn") delete it.view; m.winViews = 1; }
     for (const l of m.levels) if (l.edgeItems) { for (const q of l.edgeItems) q.s = { brass: "gold", iron: "gold", bronze: "gold", banister: "wood", rope: "wood" }[q.s] || q.s; l.edgeItems = l.edgeItems.filter(q => EDGE_STYLES.some(e => e[0] === q.s)); if (!l.edgeItems.length) delete l.edgeItems; }   // edge planters became furniture
-    for (const l of m.levels) if (l.wallItems) { l.wallItems = l.wallItems.filter(q => (window.WALL_ITEMS || []).some(i => i.id === q.k)); if (!l.wallItems.length) delete l.wallItems; }   // the player wall items went
+    /* the player wall items went. A kind this editor doesn't know is never dropped (15 Nov scan, editor 2): it's kept aside in wallItemsOff,
+       listed on the Problems tab to remove, and comes back by itself if its kind does. Without the list at all the editor doesn't open (start) */
+    if (WALL_ITEMS.length) for (const l of m.levels) {
+        const known = q => WALL_ITEMS.some(i => i.id === q.k), all = [...(l.wallItems || []), ...(l.wallItemsOff || [])];
+        if (!all.length) continue;
+        const on = all.filter(known), off = all.filter(q => !known(q));
+        if (on.length) l.wallItems = on; else delete l.wallItems;
+        if (off.length) l.wallItemsOff = off; else delete l.wallItemsOff;
+    }
     for (const l of m.levels) if (l.halfWalls) { const out = new Set(l.halfTiles || []); for (const k of l.halfWalls) { const [a, n, c] = k.split("|"); out.add(a + "|" + n + "|" + (+c * 2)); out.add(a + "|" + n + "|" + (+c * 2 + 1)); } delete l.halfWalls; l.halfTiles = [...out]; }
     for (const l of m.levels) if (l.heights) { const r = {}; for (const [k, v] of Object.entries(l.heights)) if (v) r[k] = v * 32; delete l.heights; if (Object.keys(r).length) l.rise = r; }
 }
@@ -364,6 +372,7 @@ function tidyHeights(l) {
     if (l.steps) { const out = []; for (const st of l.steps) { let from = null, rise = 0; for (let t = st.a; t <= st.b; t++) { const r = t < st.b ? stepRise(l, { ...st, a: t, b: t + 1 }) : 0; if (r !== rise) { if (rise > 0) out.push({ ...st, a: from, b: t }); from = t; rise = r; } } } l.steps = out; if (!l.steps.length) delete l.steps; }
     if (l.edgeItems) { l.edgeItems = l.edgeItems.filter(q => { const on = edgeOn(q); return tileEdges(l, on[0], on[1]).some(e => sameEdge(q, e)); }); if (!l.edgeItems.length) delete l.edgeItems; }
 }
+const rugOnFloor = (l, r) => { for (let x = r.x0; x < r.x1; x++) for (let y = r.y0; y < r.y1; y++) if (hasFloor(l, x, y)) return true; return false; };
 /* after floor's been removed: everything that hung or stood on it */
 function pruneOffFloor(l) {
     const keep = (name, test) => { if (l[name]) { l[name] = l[name].filter(test); if (!l[name].length) delete l[name]; } };
@@ -374,6 +383,9 @@ function pruneOffFloor(l) {
     keep("wallItems", q => stands(q) || onStairWall(l, q));
     keep("medals", q => hasFloor(l, q.x + 2, q.y + 2));
     keep("rugs", r => { for (let x = r.x0; x < r.x1; x++) for (let y = r.y0; y < r.y1; y++) if (hasFloor(l, x, y)) return true; return false; });
+    /* garlands and festoon lights: every tile they run along still has floor, or is a stairwell's wall (15 Nov scan, editor 14) */
+    const alongOk = g => { for (let t = g.a; t < g.b; t++) if (!(g.axis === "x" ? hasFloor(l, t, g.line) : hasFloor(l, g.line, t)) && !map.stairs.some(st => st.low === l.id && stairWallsOf(st).some(s => s.axis === g.axis && s.line === g.line && t >= s.t0 && t < s.t1))) return false; return true; };
+    keep("garlands", alongOk); keep("festoons", alongOk);
     for (const name of ["halfTiles", "noWalls", "showWalls"]) keep(name, k => { const [axis, line, t] = k.split("|"); return axis === "x" ? hasFloor(l, +t, +line) : hasFloor(l, +line, +t); });
     map.lifts = map.lifts.filter(q => { if (q.level !== l.id) return true; for (let t = 0; t < 3; t++) if (!hasFloor(l, ...liftPt(q, t, 0))) return false; return true; });
     const e = map.entrance; if (e && e.level === l.id) for (let t = e.at; t < e.at + 8; t++) if (!(e.axis === "x" ? hasFloor(l, t, e.line) : hasFloor(l, e.line, t))) { delete map.entrance; flash("The entrance went with that floor. Place a new one."); break; }
@@ -438,7 +450,7 @@ function entranceBlock(l, axis, line, a) {
             if (e.z !== 0) return { tile: t, why: "this bit of floor is raised or lowered, and the entrance needs level 0" };
         }
         return null;
-    } finally { map.entrance = was; }
+    } finally { if (was === undefined) delete map.entrance; else map.entrance = was; }      // the Events Gallery has none: no "entrance: undefined" left on it (15 Nov scan, editor 22)
 }
 /* The entrance takes 8 tiles of wall. It goes as close to centred on the mouse as it can, on any tile.
    Returns the tile, or null. lastEntranceBlock says what stopped it going right under the mouse, if anything did. */
@@ -677,8 +689,13 @@ function windowHandles(l, q) { const c = wallItemCentre(l, q), W = q.w || 32, Hh
 function windowHandleAt(l, q, px, py) { const r = Math.max(5, 7 / zoom), h = windowHandles(l, q); for (const k of Object.keys(h)) if (Math.abs(px - h[k][0]) <= r && Math.abs(py - h[k][1]) <= r) return k; return null; }
 
 /* ---------- undo ---------- */
-function snapshot() { undoStack.push(JSON.stringify(root)); if (undoStack.length > 80) undoStack.shift(); redoStack.length = 0; }
+/* (15 Nov scan, editor 11) the redo list a snapshot set aside: if what follows changes nothing, the empty step goes and redo comes back */
+let parked = null;
+function snapshot() { const t = JSON.stringify(root); undoStack.push(t); if (undoStack.length > 80) undoStack.shift(); parked = { text: t, redo: redoStack.splice(0) }; }
+/* a snapshot taken for a change that didn't happen */
+function dropSnapshot() { const t = undoStack.pop(); if (parked && parked.text === t) redoStack.push(...parked.redo); parked = null; syncButtons(); }
 function changed() {
+    if (parked) { if (undoStack[undoStack.length - 1] === parked.text && JSON.stringify(root) === parked.text) { undoStack.pop(); redoStack.push(...parked.redo); } parked = null; }
     $("revert").hidden = false;
     dirty = true; $("dirty").hidden = false; cellSets = new Map(); lastChangeAt = performance.now();
     rememberDraft();
@@ -690,20 +707,52 @@ function checksSoon() { clearTimeout(checksTimer); checksTimer = setTimeout(() =
 /* The recovery copy in this browser, with the saved map it started from, so an old one can't quietly replace newer work */
 let serverText = null, lastProblems = 0;
 const textMark = t => { let h = 0; for (let i = 0; i < t.length; i++) h = (h * 31 + t.charCodeAt(i)) | 0; return t.length + ":" + h; };
-function rememberDraft() { try { localStorage.setItem("hallway-draft", JSON.stringify(root)); if (serverText !== null) localStorage.setItem("hallway-draft-base", textMark(serverText)); } catch (e) { /* too big: the saved copy stands */ } }
+/* (15 Nov scan, editor 1) one recovery copy per tab, so a save in one tab never throws away another's. A tab keeps its id over a reload
+   (sessionStorage) and says every few seconds that it's still open, so a new tab only takes over the copy of one that's closed */
+const TAB_ID = (() => { try { let id = sessionStorage.getItem("hallway-tab"); if (!id) { id = Date.now().toString(36) + Math.random().toString(36).slice(2, 7); sessionStorage.setItem("hallway-tab", id); } return id; } catch (e) { return "t" + Date.now().toString(36); } })();
+const DRAFT_KEYS = id => id === "" ? ["hallway-draft", "hallway-draft-base", "hallway-draft-at"] : ["hallway-draft:" + id, "hallway-draft-base:" + id, "hallway-draft-at:" + id];      // "" is the old one-per-browser copy
+const forgetDraft = (id = TAB_ID) => { try { for (const k of DRAFT_KEYS(id)) localStorage.removeItem(k); } catch (e) { /* storage off */ } };
+const tabAlive = () => { try { localStorage.setItem("hallway-tab-alive:" + TAB_ID, String(Date.now())); } catch (e) { /* storage off */ } };
+if (!window.HALLWAY_PLAY) { tabAlive(); setInterval(tabAlive, 4000); window.addEventListener("pagehide", () => { try { localStorage.removeItem("hallway-tab-alive:" + TAB_ID); } catch (e) { /* gone */ } }); }
+/* the recovery copy this tab should open with: its own, or else the newest one left by a tab that's closed */
+function findDraft() {
+    const read = id => { const [k, b, a] = DRAFT_KEYS(id), text = localStorage.getItem(k); return text ? { id, text, base: localStorage.getItem(b), at: +localStorage.getItem(a) || 0 } : null; };
+    const own = read(TAB_ID); if (own) return own;
+    const ids = [""]; for (let i = 0; i < localStorage.length; i++) { const k = localStorage.key(i); if (k && k.startsWith("hallway-draft:")) ids.push(k.slice(14)); }
+    const open = id => id && Date.now() - (+localStorage.getItem("hallway-tab-alive:" + id) || 0) < 12000;
+    return ids.filter(id => id !== TAB_ID && !open(id)).map(read).filter(Boolean).sort((p, q) => q.at - p.at)[0] || null;
+}
+/* with a carried piece put back where it came from, so a reload while carrying doesn't lose it (15 Nov scan, editor 20) */
+function rootText() {
+    if (!carry || !carry.from) return JSON.stringify(root);
+    const list = carry.tele ? (carry.from.teles = carry.from.teles || []) : (carry.from.props = carry.from.props || []);
+    list.push(carry.p); try { return JSON.stringify(root); } finally { list.splice(list.indexOf(carry.p), 1); }
+}
+function rememberDraft() { try { const [k, b, a] = DRAFT_KEYS(TAB_ID); localStorage.setItem(k, rootText()); if (serverText !== null) localStorage.setItem(b, textMark(serverText)); localStorage.setItem(a, String(Date.now())); } catch (e) { /* too big: the saved copy stands */ } }
 const closePicker = () => { if (window.ColourPicker && ColourPicker.isOpen()) ColourPicker.close(true); };
 const syncLight = () => { const e = $("light"); if (e) e.value = map.light || "sconces"; };
 const stopWalkForChange = () => { if (tool === "walk") { setTool("select"); flash("Stopped walking: the map changed."); } };
 function restore(text) { stopWalkForChange(); closePicker(); carry = null; roomFloors = null; doorFrames.clear();      /* the door-swing floors follow the undo (10 Nov scan b, rooms 17) */
     const id = level && level.id; setTimeout(() => { try { showMapInfo(); } catch (e) { /* the Map tab follows Undo and Redo (10 Nov scan, editor 21) */ } }, 0); select(null); root = JSON.parse(text); if (!mapOf(mapNow)) mapNow = "hallway"; map = mapOf(mapNow); level = byId(id) || map.levels[0]; stairMemo = null; buildLevels(); syncPlace(); syncLight(); changed(); }
-function undo() { if (!undoStack.length) return; redoStack.push(JSON.stringify(root)); restore(undoStack.pop()); }
-function redo() { if (!redoStack.length) return; undoStack.push(JSON.stringify(root)); restore(redoStack.pop()); }
+function undo() { if (!undoStack.length) return; parked = null; const was = JSON.stringify(root); redoStack.push(was); restore(undoStack.pop()); sayOtherMapStep(was, "Undone"); }
+function redo() { if (!redoStack.length) return; parked = null; const was = JSON.stringify(root); undoStack.push(was); restore(redoStack.pop()); sayOtherMapStep(was, "Redone"); }
 /* ---------- the two maps (12 Nov 2026) ---------- */
 function fixRoot() {
     root.stairs = root.stairs || [];
     const g = root.gallery; if (g) { g.levels = g.levels || []; g.stairs = g.stairs || []; g.lifts = g.lifts || []; if (!g.rect) g.rect = { ...root.rect }; migrateHeights(g); }
 }
 function syncPlace() { const e = $("placeSel"); if (e) e.value = mapNow; document.body.dataset.place = mapNow; }
+/* an Undo or Redo that changed only the map not showing says where it went, as the Rooms editor does for layouts (15 Nov scan, rooms 15).
+   was: the whole file's text before the step. Called by undo() and redo() */
+function sayOtherMapStep(was, word) {
+    try {
+        /* the Hallways are the file less its gallery */
+        const part = (o, p) => { if (!o) return "null"; if (p === "gallery") return JSON.stringify(o.gallery || null); const { gallery, ...rest } = o; return JSON.stringify(rest); };
+        const before = JSON.parse(was), other = mapNow === "gallery" ? "hallway" : "gallery";
+        if (part(before, mapNow) !== part(root, mapNow) || part(before, other) === part(root, other)) return;
+        flash(word + " in " + PLACE_NAME[other] + ".");
+    } catch (e) { /* nothing said */ }
+}
 const placeWatchers = new Set();
 /* the Events Gallery's first room: a plain floor in the Game Hall style, ready for its tunnel */
 function makeGallery() {
@@ -743,7 +792,7 @@ function syncButtons() { $("undo").disabled = !undoStack.length; $("redo").disab
 async function publish() {
     const b = $("publish"); if (b.disabled) return;
     if (checksTimer) { clearTimeout(checksTimer); checksTimer = 0; runChecks(); }      // a check still waiting to run counts
-    if (lastProblems && !window.confirm(`The Problems tab lists ${lastProblems} thing${lastProblems === 1 ? "" : "s"} wrong with this map. Publish it anyway?`)) return;
+    if (lastProblems && !window.confirm(`The Problems tab lists ${lastProblems} thing${lastProblems === 1 ? "" : "s"} wrong with the maps (the Hallways and the Events Gallery are published together). Publish anyway?`)) return;
     b.disabled = true;
     try {
         if (dirty) { await save(); if (dirty) throw new Error("it wouldn't save, so nothing's been published"); }
@@ -759,24 +808,46 @@ async function publish() {
     } catch (e) { flash("Couldn't publish: " + e.message); }
     b.disabled = false; b.textContent = "Publish";
 }
-async function save() {
-    if (window.HALLWAY_PLAY) return;
+/* the saved file's mark when this tab read it (the local server sends one): sent back with each save, so a save from another tab since then
+   is caught (409) rather than overwritten (15 Nov scan, editor 1). The Warren's copy has its own base check (edit.js). */
+let mapMark = null;
+const readMark = r => { mapMark = (r && r.headers && r.headers.get("X-Map-Mark")) || null; };
+let saving = null;
+function save() { if (saving) return saving; saving = save1().finally(() => { saving = null; }); return saving; }       // one at a time: a second Ctrl+S joins the first
+async function save1() {
+    if (window.HALLWAY_PLAY || !root) return;
     putBack();
-    setStatus("Saving...");
+    /* a box still being typed in has its words put in first (15 Nov scan, editor 7): its change only lands when it loses the focus */
+    const f = document.activeElement; if (f && f.matches && f.matches("input, textarea") && f !== $("search")) { f.blur(); f.focus(); }
+    markNoReach();
+    setSaveState("busy", "Saving...");
     const sent = JSON.stringify(root);
-    let r = await fetch("/api/map", { method: "POST", headers: { "Content-Type": "application/json" }, body: sent });
-    /* someone else has saved since this copy was opened, from another tab or machine */
-    if (r.status === 409) {
-        if (!window.confirm("This map has been saved from somewhere else since you opened it. Saving now replaces that with this copy. Replace it?")) { setStatus("Not saved"); flash("Not saved. Reload to get the other copy."); return; }
-        r = await fetch("/api/map?force=1", { method: "POST", headers: { "Content-Type": "application/json" }, body: sent });
+    const post = force => fetch("/api/map" + (force ? "?force=1" : ""), { method: "POST", headers: { "Content-Type": "application/json", ...(mapMark ? { "X-Map-Base": mapMark } : {}) }, body: sent });
+    const why = async r => { try { const o = await r.clone().json(); if (o && o.error) return o.error; } catch (e) { /* not words */ } return r.status === 413 ? "the map is too big to send" : "the server said " + r.status; };
+    let r = null, thrown = null;
+    try {
+        r = await post(false);
+        /* someone else has saved since this copy was opened, from another tab or machine */
+        if (r.status === 409) {
+            let said = await why(r); if (/^the server said/.test(said)) said = "This map has been saved from another tab or window since this one opened it.";
+            if (!window.confirm(said.replace(/\s*$/, " ") + "\n\nOK saves this tab's copy over it. Cancel saves nothing: then \"Back to last save\" loads the other copy (and drops this tab's changes).")) { setSaveState("failed", "Not saved: changed in another tab"); flash("Not saved. \"Back to last save\" loads the other copy; Save again replaces it with this one."); return; }
+            r = await post(true);
+        }
+    } catch (e) { r = null; thrown = e; }
+    if (!r || !r.ok) {
+        const reason = r ? await why(r) : (thrown && thrown.name === "TypeError" ? (window.HALLWAY_EDIT ? "the site isn't answering (is the connection down?)" : "the editor's server isn't answering (is its window closed?)") : String(thrown && thrown.message || thrown));
+        setSaveState("failed", "Not saved"); flash("Couldn't save: " + reason + ". Your changes are still here.");
+        return;
     }
-    if (!r.ok) { setStatus("Save failed"); return; }
+    try { const o = await r.clone().json(); if (o && o.mark) mapMark = o.mark; } catch (e) { /* the Warren's answer has no mark */ }
     /* anything changed while that was on its way is still unsaved */
-    if (JSON.stringify(root) !== sent) { savedAt = Date.now(); serverText = sent; rememberDraft(); setStatus("Saved, with newer changes still to save"); syncButtons(); return; }
+    if (JSON.stringify(root) !== sent) { savedAt = Date.now(); serverText = sent; rememberDraft(); setSaveState("ok", "Saved, with newer changes still to save"); syncButtons(); return; }
     serverText = sent; $("revert").hidden = true;
-    dirty = false; $("dirty").hidden = true; savedAt = Date.now(); localStorage.removeItem("hallway-draft"); localStorage.removeItem("hallway-draft-base"); setStatus("Saved"); syncButtons();
+    dirty = false; $("dirty").hidden = true; savedAt = Date.now(); forgetDraft(); setSaveState("ok", "Saved " + new Date().toTimeString().slice(0, 5)); syncButtons();
 }
 const setStatus = t => { $("st-draw").textContent = t; };
+/* the save's own slot, which drawing never writes over: a failed save stays failed until one goes through (15 Nov scan, editor 3) */
+function setSaveState(kind, t) { const e = $("st-save"); if (!e) return setStatus(t); e.textContent = t; e.dataset.state = kind; e.title = kind === "failed" ? "The last save didn't go through. Your changes are still here: Save (Ctrl+S) tries again." : ""; }
 
 /* ---------- art from the server, as squares ----------
    Each square is kept until a newer one replaces it, so what you've seen never goes black: after an
@@ -870,6 +941,8 @@ const LAMP_REACH = 135;          // how far a lamp's pool reaches, in map pixels
 const MOOD_TINT = { day: [0, 0, 0, 0], dusk: [70, 30, 20, .3], night: [12, 16, 44, .62], dawn: [50, 36, 70, .3], sconces: [40, 28, 24, .26], failing: [14, 14, 22, .6], cold: [20, 34, 30, .42], gas: [24, 14, 10, .62] };
 const MOOD_NAME = { day: "Day", dusk: "Evening", night: "Night", dawn: "Dawn" };
 let timeMode = localStorage.getItem("hallway-time") || "cycle";
+/* a saved name it doesn't know (one renamed or dropped one day) would leave every square black: the cycle instead (15 Nov scan, live L12) */
+if (!["cycle", "day", "dusk", "night", "dawn", "map"].includes(timeMode)) timeMode = "cycle";
 let cycleStart = performance.now();
 /* the screensaver brings the evening on (14 Nov 2026, his: "if it's daytime, the evening transition should start after 5s"): in full day on
    the cycle, the clock is moved on to that many seconds before the evening's fade starts. True if it did */
@@ -882,8 +955,10 @@ function eveningIn(secs) {
 }
 const moodTiles = new Map(), moodInflight = new Map();
 let moodForced = null;
-/* the Hallway's own time, whatever the Time list says: night-only things go by this */
-function realNight() { const t = ((performance.now() - cycleStart) % CYCLE_MS) / 1000; for (let i = 0; i < CYCLE.length - 1; i++) { const [t0, m0] = CYCLE[i], [t1, m1] = CYCLE[i + 1]; if (t >= t0 && t < t1) { const f = (t - t0) / (t1 - t0); return (f < .5 ? m0 : m1) === "night"; } } return false; }
+/* is it night, for the night-only things (the night rope's blocking, night clues): the same clock as the picture on show, so a time held
+   from the Menu wins for them too (15 Nov scan, live M3: the rope was drawn across while it let you through, and the other way about);
+   on the cycle (or the map's own light) the cycle's clock, the picture's half of a fade */
+function realNight() { if (MOOD_NAME[timeMode]) return timeMode === "night"; const t = ((performance.now() - cycleStart) % CYCLE_MS) / 1000; for (let i = 0; i < CYCLE.length - 1; i++) { const [t0, m0] = CYCLE[i], [t1, m1] = CYCLE[i + 1]; if (t >= t0 && t < t1) { const f = (t - t0) / (t1 - t0); return (f < .5 ? m0 : m1) === "night"; } } return false; }
 function moodNow() {
     if (moodForced) return moodForced;
     if (timeMode === "map") return null;
@@ -922,6 +997,7 @@ function moodTile(mood, tx, ty) {
 const MOODS_ALL = ["day", "dusk", "night", "dawn"];
 function preloadMap() {
     if (!map || !map.rect || !version || document.hidden) return; const m = moodNow(); if (!m) return;
+    if (window.hallwayTilesHeld && hallwayTilesHeld()) return;      // the pictures are failing: only what's on screen is asked for (play.js, 15 Nov scan, live M1)
     if (!window.HALLWAY_PLAY && (drag || performance.now() - lastChangeAt < 4000)) return;      // while you're placing things, what's on screen comes first
     const r = camRect() || map.rect, order = []; for (const q of [m.a, m.b]) if (!order.includes(q)) order.push(q);
     if (timeMode === "cycle") { const at = CYCLE.findIndex(c => c[1] === m.b), after = at >= 0 ? CYCLE.slice(at + 1).map(c => c[1]) : []; for (const q of after) if (!order.includes(q)) order.push(q); }
@@ -998,19 +1074,23 @@ function drawLampFade(m, ox, oy, x0, x1, y0, y1) {
     /* how far on each lamp is: going on, each at its own moment through the middle of the fade; going off, the same backwards */
     const pools = lampPools(), byTile = lampsByTile(pools), fadeF = LAMP_FADE_S / m.span, step = new Float64Array(pools.length);
     pools.forEach((q, i) => { const at = L.on ? .15 + .75 * q.r : .05 + .7 * q.r, k = L.on ? (m.f - at) / fadeF : 1 - (m.f - at) / fadeF; step[i] = Math.round(Math.max(0, Math.min(1, k)) * LAMP_STEPS) / LAMP_STEPS; });
+    /* The kept squares are made at a whole zoom: mid-way through the screensaver's ease (a new zoom every frame) they're the nearest whole
+       zoom's, drawn to size, and made again only when that whole zoom changes. Built at each frame's zoom, every square on screen was made
+       again whole every frame, 42 ms a frame against 4 (15 Nov scan, live M6). At a whole zoom nothing changes. */
+    const ZB = Number.isInteger(zoom) ? zoom : Math.max(1, Math.round(zoom)), SB = TILE * ZB, RB = LAMP_REACH * ZB;
     const keep = new Set();
     for (let ty = y0; ty <= y1; ty++) for (let tx = x0; tx <= x1; tx++) {
         const key = tx + "," + ty, lit = moodTile(L.lit, tx, ty); if (!lit) continue;
         const on = (byTile.get(key) || []).filter(i => step[i] > 0); if (!on.length) continue;
         keep.add(key);
-        const [bx, bw] = tileBox(tx, S), [by, bh] = tileBox(ty, S);
+        const [bx, bw] = tileBox(tx, SB), [by, bh] = tileBox(ty, SB), [sx, sw] = tileBox(tx, S), [sy, sh] = tileBox(ty, S);
         let e = lampSquares.get(key), rect = null;
-        if (!e || e.lit !== lit.img || e.pools !== pools || e.bw !== bw || e.bh !== bh || e.bx !== bx || e.by !== by || e.zoom !== zoom) {
+        if (!e || e.lit !== lit.img || e.pools !== pools || e.bw !== bw || e.bh !== bh || e.bx !== bx || e.by !== by || e.zoom !== ZB) {
             if (!e || e.bw !== bw || e.bh !== bh) { e = { cv: memCanvas(bw, bh) }; lampSquares.set(key, e); }
-            Object.assign(e, { lit: lit.img, pools, bw, bh, bx, by, zoom, steps: new Map() }); rect = [0, 0, bw, bh];
+            Object.assign(e, { lit: lit.img, pools, bw, bh, bx, by, zoom: ZB, steps: new Map() }); rect = [0, 0, bw, bh];
         } else {
             /* only the lamps that moved on (or went out): the part of the square their pools cover */
-            let rx0 = Infinity, ry0 = Infinity, rx1 = -Infinity, ry1 = -Infinity; const grow = i => { const q = pools[i], cx = q.x * zoom - bx, cy = q.y * zoom - by; rx0 = Math.min(rx0, cx - R); ry0 = Math.min(ry0, cy - R); rx1 = Math.max(rx1, cx + R); ry1 = Math.max(ry1, cy + R); };
+            let rx0 = Infinity, ry0 = Infinity, rx1 = -Infinity, ry1 = -Infinity; const grow = i => { const q = pools[i], cx = q.x * ZB - bx, cy = q.y * ZB - by; rx0 = Math.min(rx0, cx - RB); ry0 = Math.min(ry0, cy - RB); rx1 = Math.max(rx1, cx + RB); ry1 = Math.max(ry1, cy + RB); };
             for (const i of on) if (e.steps.get(i) !== step[i]) grow(i);
             for (const i of e.steps.keys()) if (step[i] <= 0) grow(i);
             if (rx1 > rx0) { const a = Math.max(0, Math.floor(rx0)), b = Math.max(0, Math.floor(ry0)), c = Math.min(bw, Math.ceil(rx1)), dd = Math.min(bh, Math.ceil(ry1)); if (c > a && dd > b) rect = [a, b, c - a, dd - b]; }
@@ -1021,15 +1101,24 @@ function drawLampFade(m, ox, oy, x0, x1, y0, y1) {
             /* the lit mood's square, kept only as far as the pools reach: each a soft disc, as bright as its lamp is on, added together */
             gx.save(); gx.beginPath(); gx.rect(rect[0], rect[1], rect[2], rect[3]); gx.clip(); gx.clearRect(rect[0], rect[1], rect[2], rect[3]); gx.drawImage(lit.img, 0, 0, bw, bh);
             mc.save(); mc.beginPath(); mc.rect(rect[0], rect[1], rect[2], rect[3]); mc.clip(); mc.clearRect(rect[0], rect[1], rect[2], rect[3]); mc.globalCompositeOperation = "lighter";
-            for (const i of on) { const q = pools[i], a = step[i], cx = q.x * zoom - bx, cy = q.y * zoom - by, gr = mc.createRadialGradient(cx, cy, R * .35, cx, cy, R); gr.addColorStop(0, "rgba(0,0,0," + a + ")"); gr.addColorStop(1, "rgba(0,0,0,0)"); mc.fillStyle = gr; mc.fillRect(cx - R, cy - R, 2 * R, 2 * R); }
+            for (const i of on) { const q = pools[i], a = step[i], cx = q.x * ZB - bx, cy = q.y * ZB - by, gr = mc.createRadialGradient(cx, cy, RB * .35, cx, cy, RB); gr.addColorStop(0, "rgba(0,0,0," + a + ")"); gr.addColorStop(1, "rgba(0,0,0,0)"); mc.fillStyle = gr; mc.fillRect(cx - RB, cy - RB, 2 * RB, 2 * RB); }
             mc.restore();
             gx.globalCompositeOperation = "destination-in"; gx.drawImage(lampMask, 0, 0); gx.restore();
             e.steps = new Map(on.map(i => [i, step[i]]));
         }
-        ctx.drawImage(e.cv, ox + bx, oy + by);
+        if (sw === bw && sh === bh) ctx.drawImage(e.cv, ox + sx, oy + sy); else ctx.drawImage(e.cv, ox + sx, oy + sy, sw, sh);
     }
     /* what's gone off the screen, or has no lamp on, is let go */
     for (const k of lampSquares.keys()) if (!keep.has(k)) lampSquares.delete(k);
+    /* The ends meet the plain pictures exactly: the evening's last 7% (every lamp is on by then) brings the whole lit picture in, and dawn's
+       first 5% (before the first lamp goes off) takes it out. Between the pools the lit picture is brighter than daylight dimmed, so the floor
+       there jumped by up to 81 levels as the plain picture took over (15 Nov scan, live M4) */
+    const whole = L.on ? (m.f - .93) / .07 : 1 - m.f / .05;
+    if (whole > 0) {
+        ctx.globalAlpha = Math.min(1, whole);
+        for (let ty = y0; ty <= y1; ty++) for (let tx = x0; tx <= x1; tx++) { const lit = moodTile(L.lit, tx, ty); if (!lit) continue; const [bx, W] = tileBox(tx, S), [by, H] = tileBox(ty, S); ctx.drawImage(lit.img, ox + bx, oy + by, W, H); }
+        ctx.globalAlpha = 1;
+    }
 }
 function drawMoods(ox, oy, x0, x1, y0, y1) {
     const m = moodNow(); if (!m) { dropLampSquares(); return false; }
@@ -1514,10 +1603,14 @@ const raiseZAt = (l, x, y, k, self) => k === "tablelamp" ? lampZAt(l, x, y) : ta
    placed on the floor inside the one below, and a lamp moved off its table floated) */
 const landRaised = (l, p) => { if (!RAISE(p.k)) return; const z = raiseZAt(l, p.x, p.y, p.k, p); if (z) p.z = z; else delete p.z; };
 let lampStyle = localStorage.getItem("hallway-lamp") || "hotel"; if (!LAMP_STYLES[lampStyle]) lampStyle = "hotel";
+/* the same piece, the same way round, as long and as high, on the same tile: it draws as one, so a second is never placed (15 Nov scan, editor 5) */
+const samePieceKey = p => [p.k, p.x, p.y, Parts.rotOf(p), Parts.ROWS[p.k] ? Parts.lengthOf(p) : 0, p.z || 0].join("|");
+const hasTwin = (l, p, self) => { const k = samePieceKey(p); return (l.props || []).some(q => q !== self && samePieceKey(q) === k); };
 function placeRun(run) {
     if (!run.ok) { flash("There isn't room for that here."); paint(); return; }
-    snapshot();
     const p = { k: run.k, x: run.x, y: run.y }; if (run.k === "mark_arrow") { p.x -= p.x & 1; p.y -= p.y & 1; p.id = "ar" + Date.now().toString(36); } if (run.len) p.len = run.len; if (run.rot) p.rot = run.rot; if (run.k === "lamp" && lampStyle !== "hotel") p.style = lampStyle; landRaised(level, p);
+    if (hasTwin(level, p)) { flash("There's one just like it on this tile already."); paint(); return; }
+    snapshot();
     (level.props = level.props || []).push(p);
     showUntilDrawn(level, p);
     changed();
@@ -1576,13 +1669,14 @@ function putDown() {
     if (!p || !(carry.tele ? hasFloor(level, p.x, p.y) : fits(level, p))) { flash("That doesn't fit there."); return; }
     if (!p.rot) delete p.rot;
     if (!carry.tele) landRaised(level, p);
+    if (!carry.tele && hasTwin(level, p)) { flash("There's one just like it there already."); return; }
     const list = carry.tele ? (level.teles = level.teles || []) : (level.props = level.props || []), type = carry.tele ? "tele" : "prop";
     list.push(p); carry = null; showUntilDrawn(level, p, type === "tele"); changed(); select({ type, l: level, o: p });
 }
 function putBack() {
     if (!carry) return;
     (carry.tele ? carry.from.teles : carry.from.props).push(carry.p);
-    carry = null; undoStack.pop(); changed(); syncButtons();
+    carry = null; dropSnapshot(); changed(); syncButtons();
 }
 function modClick(e, px, py) {
     const ctrl = e.ctrlKey || e.metaKey;
@@ -1770,11 +1864,12 @@ function act(px, py) {
     if (tool === "door") {
         const w = doorSpotAt(px, py, level);
         if (!w) return;
-        const list = level.doors = level.doors || [];
+        /* the floor's door list is only made inside the change, after its snapshot, so undo goes back exactly (15 Nov scan, editor 11) */
+        const lvl = level, list = lvl.doors || [], own = () => { lvl.doors = list; };
         if (doorCarry) {
             const c = doorCarry, at = fitDoor(level, w, c.o);
             if (at === null || at === undefined) { flash("Something's already on that stretch of wall."); return; }
-            place(() => { c.from.doors.splice(c.from.doors.indexOf(c.o), 1); c.o.axis = w.axis; c.o.line = w.line; c.o.at = at; list.push(c.o); });
+            place(() => { c.from.doors.splice(c.from.doors.indexOf(c.o), 1); c.o.axis = w.axis; c.o.line = w.line; c.o.at = at; own(); list.push(c.o); });
             doorCarry = null; setTool("select"); select({ type: "door", l: level, o: c.o }); flash("Door moved to " + level.name + ".");
             return;
         }
@@ -1786,7 +1881,7 @@ function act(px, py) {
         place(() => {
             const free = freeMazes(), d = { axis: w.axis, at: Math.floor(w.at), line: w.line };
             if (free.length) d.name = free[0]; else { d.spare = true; flash("Every maze has a door, so this one's spare."); }
-            list.push(d);
+            own(); list.push(d);
         });
         return;
     }
@@ -1893,7 +1988,7 @@ function pickColour(title, get, set, fallback) {
     ColourPicker.open({
         title, value: get() || fallback,
         onChange: hex => { if (!snapped) { snapshot(); snapped = true; } set(hex); clearTimeout(artSoon); artSoon = setTimeout(changed, 140); },
-        onCancel: () => { clearTimeout(artSoon); if (snapped) { set(before); undoStack.pop(); syncButtons(); changed(); } if (selected) select(selected); },
+        onCancel: () => { clearTimeout(artSoon); if (snapped) { set(before); dropSnapshot(); changed(); } if (selected) select(selected); },
         onDone: () => { clearTimeout(artSoon); if (snapped) changed(); if (selected) select(selected); buildLevels(); }
     });
 }
@@ -1908,7 +2003,7 @@ function colourRow(parent, label, get, set, fallback, unset, after) {
     const show = () => { const v = get(); chip.style.background = v || "transparent"; chip.classList.toggle("none", !v); code.textContent = v || unset; r.hidden = !v; };
     const wrap = v => { set(v); show(); if (after) after(); };
     b.addEventListener("click", () => pickColour(label, get, wrap, fallback));
-    r.addEventListener("click", () => { ColourPicker.close(); snapshot(); wrap(null); changed(); });
+    r.addEventListener("click", () => { ColourPicker.close(true); snapshot(); wrap(null); changed(); });      // another row's colour being picked is kept, as opening another row keeps it (15 Nov scan, editor 9)
     show(); parent.appendChild(f);
     return show;
 }
@@ -1942,7 +2037,7 @@ function wallPanel(box, hit) {
     rows.push(colourRow(box, "Wood panels", ...part("wood"), "#5a2f1a", "Floor's colour", refresh));
     const row = document.createElement("div"); row.className = "btn-row";
     const none = document.createElement("button"); none.type = "button"; none.className = "btn small ghost"; none.textContent = "Back to the floor's colour";
-    none.addEventListener("click", () => { ColourPicker.close(); snapshot(); const q = wallRecord(l, o); if (q) l.walls.splice(l.walls.indexOf(q), 1); if (l.walls && !l.walls.length) delete l.walls; refresh(); changed(); });
+    none.addEventListener("click", () => { ColourPicker.close(true); snapshot(); const q = wallRecord(l, o); if (q) l.walls.splice(l.walls.indexOf(q), 1); if (l.walls && !l.walls.length) delete l.walls; refresh(); changed(); });
     row.appendChild(none); box.appendChild(row);
     /* height: the tile you clicked, or the whole wall, either way at any time */
     const tiles = []; for (let t = o.a; t < o.b; t++) tiles.push(t);
@@ -2017,7 +2112,8 @@ function sortByDifficulty() {
         const toPlace = here.filter(n => !keep.has(n));
         const free = doors.filter(d => d.spare || !d.name || plan.get(d.name) !== l.k);
         for (const d of free) { delete d.name; d.spare = true; }
-        homeless.set(l, { toPlace, free });
+        /* a door that leads somewhere else (a staff corridor, the Finders' Lounge, a bookcase door) is never handed a maze (15 Nov scan, editor 18) */
+        homeless.set(l, { toPlace, free: free.filter(d => !d.to && !d.kind) });
     }
     for (const [l, { toPlace, free }] of homeless) {
         let i = 0;
@@ -2117,12 +2213,12 @@ let fontW = {};
 const textW = t => { let w = 0; for (const ch of t) w += fontW[ch] || fontW[" "] || 5; return w; };
 function wrapChars(name, max) { const lines = []; let cur = ""; for (const word of String(name).split(" ")) { if (cur && (cur + " " + word).length > max) { lines.push(cur); cur = word; } else cur = cur ? cur + " " + word : word; } if (cur) lines.push(cur); return lines; }
 function wrapPx(name, maxW) { const lines = []; let cur = ""; for (const word of String(name).split(" ")) { const next = cur ? cur + " " + word : word; if (cur && textW(next) > maxW) { lines.push(cur); cur = word; } else cur = next; } if (cur) lines.push(cur); return lines; }
-const SIGN_PAD = 12, SIGN_LH = 10, SIGN_V = 7;     // how far above the usual line a sign sits unless you've moved it
+const SIGN_PAD = 12, SIGN_LH = 10, SIGN_V = 7, SIGN_MAX = { w: 400, h: 200 };     // how far above the usual line a sign sits unless you've moved it
 /* a stair's sign: the same plaque, on the wall beside the flight (a flight through a left wall has none) */
 const stairSignName = st => st.label || (byId(st.up) ? byId(st.up).name : "Up");
 /* the hanging plaque's sums, as stairPlaque in hw3.js does them */
 const PLAQUE = { h: 66, off: 3, H: 30, arm: 8 };
-const plaqueWide = name => { const words = name.split(" "), tw = words.reduce((a, t) => a + textW(t), 0) + (words.length - 1) * 4; return Math.max(50, tw + 12); };
+const plaqueWide = name => { const words = name.split(" "), tw = words.reduce((a, t) => a + textW(t), 0) + (words.length - 1) * 4; return Math.min(400, Math.max(50, tw + 12)); };     // 400: the renderer's SIGN_MAX_W (15 Nov scan, renderer 8)
 function plaqueBox(l, d) {
     const W = plaqueWide(stairSignName(d));
     const g = d.sign || {}, u = g.u || 0, v = g.blade ? g.v || 0 : 0, base = P(stairSignX(d), d.y, levelZ(l)), ax = base[0] + u, ay = base[1] + Math.floor(u / 2) - v;
@@ -2278,7 +2374,14 @@ function select(hit) {
         if (long) { btn("Shorter", () => resizeSelected(-1)); btn("Longer", () => resizeSelected(1)); }
         /* a sign with your own words: drawn by the map from these (render/hw3.js customSign) */
         if (hit.type === "wallitem" && hit.o.k === "i_custsign") { const q = hit.o, row = (label, ctl) => { const f = document.createElement("label"); f.className = "field"; const n = document.createElement("span"); n.className = "f-label"; n.textContent = label; f.append(n, ctl); box.appendChild(f); }, set = (k, v) => { snapshot(); if (v === "" || v === false) delete q[k]; else q[k] = v; changed(); };
-          const ta = document.createElement("textarea"); ta.rows = 2; ta.className = "f-ctl"; ta.value = q.text || "Your words"; ta.setAttribute("aria-label", "What it says"); ta.addEventListener("change", () => set("text", ta.value.slice(0, 80))); row("What it says (two lines at most)", ta);
+          const ta = document.createElement("textarea"); ta.rows = 2; ta.className = "f-ctl"; ta.value = q.text || "Your words"; ta.setAttribute("aria-label", "What it says"); ta.addEventListener("change", () => {
+              /* as the sign draws it (15 Nov scan, editor 13): letters its font has, two lines at most, each trimmed, 80 letters in all, and the box shows what was kept */
+              const has = ch => !Object.keys(fontW).length ? !/[\u{10000}-\u{10FFFF}️‍]/u.test(ch) : fontW[ch] !== undefined || fontW[ch.toUpperCase()] !== undefined || fontW[ch.toLowerCase()] !== undefined;
+              const typed = ta.value, lines = typed.split(/\n|\|/).map(t => [...t].filter(ch => ch === " " || has(ch)).join("").replace(/\s+/g, " ").trim()).filter(Boolean).slice(0, 2), v = lines.join("\n").slice(0, 80);
+              if (!v) { ta.value = q.text || "Your words"; flash("A sign needs some words it can show."); return; }
+              ta.value = v; if (v !== (q.text || "")) set("text", v);
+              if ([...typed.replace(/[\s|]/g, "")].some(ch => !has(ch))) flash("Some of those letters can't be shown on a sign, so they were left out.");
+          }); row("What it says (two lines at most)", ta);
           const ar = document.createElement("select"); ar.className = "f-ctl"; for (const [v, t] of [["", "No arrow"], ["left", "Arrow pointing left"], ["right", "Arrow pointing right"]]) { const o = document.createElement("option"); o.value = v; o.textContent = t; ar.appendChild(o); } ar.value = q.arrow || ""; ar.addEventListener("change", () => { set("arrow", ar.value); select(hit); }); row("Arrow", ar);
           const box2 = (label, k) => { const c = document.createElement("input"); c.type = "checkbox"; c.checked = !!q[k]; c.addEventListener("change", () => { set(k, c.checked); select(hit); }); row(label, c); };
           box2("One line (a smaller sign)", "oneLine"); if (q.arrow && !q.oneLine) box2("Arrow on the same line as the words", "arrowSame");
@@ -2342,10 +2445,13 @@ function showTab(name) {
     for (const n of ["inspect", "floors", "map", "music", "hunts", "lost", "exhibits", "problems"]) if ($("tab-" + n)) $("tab-" + n).hidden = n !== name;
 }
 /* which maze every door has: chosen ones first, the rest A to Z through what's left, as the drawing does */
+/* every floor of both maps, the Hallways first: a maze has one door, wherever it is (15 Nov scan, editor 4: a gallery door took a maze that
+   already had its door in the Hallways) */
+const doorLevels = () => [root, root && root.gallery].filter(m => m && m.levels).flatMap(m => [...m.levels].sort((a, c) => a.k - c.k));
 function doorNames() {
-    const pinned = new Set(); for (const l of map.levels) for (const d of (l.doors || [])) if (d.name && !d.spare) pinned.add(d.name);
+    const pinned = new Set(); for (const l of doorLevels()) for (const d of (l.doors || [])) if (d.name && !d.spare) pinned.add(d.name);
     const pool = names.filter(n => !pinned.has(n)), out = new Map(); let i = 0;
-    for (const l of [...map.levels].sort((a, c) => a.k - c.k)) for (const d of [...(l.doors || [])].sort((p, q) => (p.axis === "y" ? 0 : 1) - (q.axis === "y" ? 0 : 1) || p.at - q.at)) {
+    for (const l of doorLevels()) for (const d of [...(l.doors || [])].sort((p, q) => (p.axis === "y" ? 0 : 1) - (q.axis === "y" ? 0 : 1) || p.at - q.at)) {
         out.set(d, d.spare ? null : (d.name || pool[i++] || null));
     }
     return out;
@@ -2359,7 +2465,7 @@ function pinAllMazes() {
     return n;
 }
 function freeMazes() {
-    const taken = new Set(); for (const l of map.levels) for (const d of (l.doors || [])) if (d.name && !d.spare) taken.add(d.name);
+    const taken = new Set(); for (const l of doorLevels()) for (const d of (l.doors || [])) if (d.name && !d.spare) taken.add(d.name);
     return names.filter(n => !taken.has(n));
 }
 /* spare: shut with no sign, and its maze goes back to being free. Back again: it takes the next free maze. */
@@ -2386,8 +2492,8 @@ function mazePicker(box, door) {
     const sel = document.createElement("select"); sel.setAttribute("aria-label", "The maze behind this door");
     const auto = document.createElement("option"); auto.value = ""; auto.textContent = "No maze: shut, no sign"; sel.appendChild(auto);
     const where = new Map(); for (const [d, n] of doorNames()) if (n) where.set(n, d);
-    const levelOf = d => map.levels.find(l => (l.doors || []).includes(d));
-    for (const n of names) { const o = document.createElement("option"); o.value = n; const d = where.get(n), l = d && levelOf(d); o.textContent = l ? `${n} (${l.name})` : `${n} (no door yet)`; sel.appendChild(o); }
+    const levelOf = d => doorLevels().find(l => (l.doors || []).includes(d)), here = new Set(map.levels);
+    for (const n of names) { const o = document.createElement("option"); o.value = n; const d = where.get(n), l = d && levelOf(d); o.textContent = l ? `${n} (${here.has(l) ? "" : mapNow === "hallway" ? "Events Gallery, " : "Hallways, "}${l.name})` : `${n} (no door yet)`; sel.appendChild(o); }
     sel.value = door.name || "";
     sel.addEventListener("change", () => { setDoorMaze(door, sel.value); select(selected); buildLevels(); });
     c.appendChild(sel); row.appendChild(s); row.appendChild(c); box.appendChild(row);
@@ -2440,13 +2546,13 @@ function moveSelected(d, px, py) {
                 /* a door's sign stays centred on the door, so it grows both ways and the edge follows the mouse */
                 const door = !o.kind, grow = (d.side === "r" ? dpx : -dpx) * (door ? 2 : 1);
                 const want = box.W + grow; sign.w = want;
-                const fit = Math.max(want, mins().minW); sign.w = fit;
+                const fit = Math.min(SIGN_MAX.w, Math.max(want, mins().minW)); sign.w = fit;      // and no bigger than SIGN_MAX (15 Nov scan, editor 6)
                 sign.u = door ? 0 : box.u + (d.side === "r" ? 1 : -1) * Math.floor((fit - box.W) / 2);
                 if (sign.h) sign.h = Math.max(sign.h, mins().minH);
             } else if (d.side === "t") {
-                const dy2 = Math.round(d.py - py); sign.w = sign.w || box.W; sign.h = Math.max(box.H + dy2, mins().minH); if (!o.kind) sign.u = 0;
+                const dy2 = Math.round(d.py - py); sign.w = sign.w || box.W; sign.h = Math.min(SIGN_MAX.h, Math.max(box.H + dy2, mins().minH)); if (!o.kind) sign.u = 0;
             } else {
-                const dy2 = Math.round(py - d.py); sign.w = sign.w || box.W; const fit = Math.max(box.H + dy2, mins().minH);
+                const dy2 = Math.round(py - d.py); sign.w = sign.w || box.W; const fit = Math.min(SIGN_MAX.h, Math.max(box.H + dy2, mins().minH));
                 sign.h = fit; sign.v = box.v - (fit - box.H);
             }
         }
@@ -2478,12 +2584,15 @@ function moveSelected(d, px, py) {
         return;
     }
     if (s.type === "prop" || s.type === "tele") { const nx = g.x + dx, ny = g.y + dy; if (s.type === "prop" ? fits(l, { ...o, x: nx, y: ny }) : hasFloor(l, nx, ny)) { const moved = o.x !== nx || o.y !== ny; o.x = nx; o.y = ny; if (s.type === "tele") o.flip = !hasFloor(l, nx - 1, ny); else if (moved && !ctrlNow) landRaised(l, o); } }
-    else if (s.type === "medal") { o.x = g.x + dx; o.y = g.y + dy; }
+    /* the crest and rugs stay on the floor: off it they'd stay in the map, never seen (15 Nov scan, editor 13) */
+    else if (s.type === "medal") { if (hasFloor(l, g.x + dx + 2, g.y + dy + 2)) { o.x = g.x + dx; o.y = g.y + dy; } }
     else if (s.type === "rug") {
+        const was = { x0: o.x0, x1: o.x1, y0: o.y0, y1: o.y1 };
         if (d.edge) {
             if (d.edge.l) o.x0 = Math.min(g.x0 + dx, o.x1 - 2); if (d.edge.r) o.x1 = Math.max(g.x1 + dx, o.x0 + 2);
             if (d.edge.t) o.y0 = Math.min(g.y0 + dy, o.y1 - 2); if (d.edge.b) o.y1 = Math.max(g.y1 + dy, o.y0 + 2);
         } else { o.x0 = g.x0 + dx; o.x1 = g.x1 + dx; o.y0 = g.y0 + dy; o.y1 = g.y1 + dy; }
+        if (!rugOnFloor(l, o)) Object.assign(o, was);
     } else {
         if (s.type === "door") {
             let target = null;
@@ -2541,8 +2650,8 @@ function moveSelected(d, px, py) {
 function nudgeSelected(dx, dy) {
     const s = selected; if (!s || !["prop", "tele", "medal", "rug"].includes(s.type)) return false;
     const o = s.o;
-    if (s.type === "rug") { snapshot(); o.x0 += dx; o.x1 += dx; o.y0 += dy; o.y1 += dy; }
-    else { if (s.type === "prop" ? !fits(s.l, { ...o, x: o.x + dx, y: o.y + dy }) : s.type !== "medal" && !hasFloor(s.l, o.x + dx, o.y + dy)) return true; snapshot(); o.x += dx; o.y += dy; }
+    if (s.type === "rug") { if (!rugOnFloor(s.l, { x0: o.x0 + dx, x1: o.x1 + dx, y0: o.y0 + dy, y1: o.y1 + dy })) return true; snapshot(); o.x0 += dx; o.x1 += dx; o.y0 += dy; o.y1 += dy; }
+    else { if (s.type === "prop" ? !fits(s.l, { ...o, x: o.x + dx, y: o.y + dy }) : s.type === "medal" ? !hasFloor(s.l, o.x + dx + 2, o.y + dy + 2) : !hasFloor(s.l, o.x + dx, o.y + dy)) return true; snapshot(); o.x += dx; o.y += dy; }
     changed(); return true;
 }
 function drawSelection() {
@@ -2762,11 +2871,12 @@ canvas.addEventListener("pointermove", e => {
         paint(); return;
     }
     if (drag && drag.kind === "edge") {
-        const r = map.rect;
-        if (drag.edge.l) { const x1 = r.x + r.w; r.x = Math.round(px); r.w = x1 - r.x; }
-        if (drag.edge.r) r.w = Math.round(px) - r.x;
-        if (drag.edge.t) { const y1 = r.y + r.h; r.y = Math.round(py); r.h = y1 - r.y; }
-        if (drag.edge.b) r.h = Math.round(py) - r.y;
+        /* never closer together than one screen (a page at 2x, as the Map tab counts them): past the other edge gave a negative size (15 Nov scan, editor 13) */
+        const r = map.rect, MW = 720, MH = 387;
+        if (drag.edge.l) { const x1 = r.x + r.w; r.x = Math.min(Math.round(px), x1 - MW); r.w = x1 - r.x; }
+        if (drag.edge.r) r.w = Math.max(MW, Math.round(px) - r.x);
+        if (drag.edge.t) { const y1 = r.y + r.h; r.y = Math.min(Math.round(py), y1 - MH); r.h = y1 - r.y; }
+        if (drag.edge.b) r.h = Math.max(MH, Math.round(py) - r.y);
         showMapInfo(); paint(); return;
     }
     if (drag && drag.kind === "furni") { drag.run = furniRun(drag.a, furniTile(px, py)); paint(); return; }
@@ -2790,6 +2900,21 @@ canvas.addEventListener("pointermove", e => {
         paint();
     }
 });
+/* Esc in the middle of a drag (15 Nov scan, editor 12): what it moved goes back, a rectangle or run being dragged out is dropped. The brushes,
+   which paint as they go, finish where they are, as changing tool finishes them. */
+function cancelDrag() {
+    const d = drag; if (!d) return;
+    if (["rubout", "halfwall", "swag", "edgebrush"].includes(d.kind)) { if (lastClient) canvas.dispatchEvent(new PointerEvent("pointerup", { clientX: lastClient[0], clientY: lastClient[1], bubbles: true, pointerId: 1 })); drag = null; return; }
+    drag = null;
+    if (d.kind === "garland" && window.HallwayGarland) window.HallwayGarland.draft = null;
+    if (d.kind === "festoon" && window.HallwayFestoon) window.HallwayFestoon.draft = null;
+    if (d.kind === "move") {
+        canvas.style.cursor = "default"; if (live) live.ending = true;
+        if (d.moved && undoStack[undoStack.length - 1] === d.before) { parked = null; undoStack.pop(); restore(d.before); flash("Put back where it was."); return; }
+    }
+    if (d.kind === "edge") { if (undoStack[undoStack.length - 1] === JSON.stringify(root)) dropSnapshot(); else { const pk = parked; parked = null; restore(undoStack.pop()); if (pk) redoStack.push(...pk.redo); syncButtons(); } showMapInfo(); return; }
+    paint();
+}
 canvas.addEventListener("pointerup", e => {
     if (!drag) return;
     const d = drag; drag = null;
@@ -2818,12 +2943,12 @@ canvas.addEventListener("pointerup", e => {
         changed(); return;
     }
     if (d.kind === "move") { canvas.style.cursor = "default"; if (live) live.ending = true; if (d.moved) { if (d.hit.type === "prop" || d.hit.type === "tele") showUntilDrawn(d.hit.l, d.hit.o, d.hit.type === "tele"); changed(); select(selected); } return; }
-    if (d.kind === "edge") { if (undoStack[undoStack.length - 1] === JSON.stringify(root)) { undoStack.pop(); syncButtons(); return; } changed(); return; }
+    if (d.kind === "edge") { if (undoStack[undoStack.length - 1] === JSON.stringify(root)) { dropSnapshot(); return; } changed(); return; }
     if (d.kind === "furni") { placeRot = d.run.rot || 0; placeRun(d.run); return; }
     if (d.kind === "rect") {
         const r = d.rect;
         snapshot();
-        const unchanged = () => { if (undoStack[undoStack.length - 1] !== JSON.stringify(root)) return false; undoStack.pop(); syncButtons(); paint(); return true; };
+        const unchanged = () => { if (undoStack[undoStack.length - 1] !== JSON.stringify(root)) return false; dropSnapshot(); paint(); return true; };
         /* the floor alone, its walls left where they stand */
         if (tool === "floorlift") {
             let changedAny = false, locked = false;
@@ -2837,7 +2962,7 @@ canvas.addEventListener("pointerup", e => {
                 (level.floorLift = level.floorLift || {})[k] = want; changedAny = true;
             }
             tidyHeights(level);
-            if (!changedAny) { undoStack.pop(); flash(locked ? "Stairs and the lift have to stay level with the floor round them." : "That floor's already at that height."); paint(); return; }
+            if (!changedAny) { dropSnapshot(); flash(locked ? "Stairs and the lift have to stay level with the floor round them." : "That floor's already at that height."); paint(); return; }
             if (locked) flash("Left the floor round the stairs and lift as it was, so they still meet it.");
             changed(); return;
         }
@@ -2854,7 +2979,7 @@ canvas.addEventListener("pointerup", e => {
                 (level.rise = level.rise || {})[k] = heightBrush; if (lifted) delete level.floorLift[k]; changedAny = true;
             }
             tidyHeights(level);
-            if (!changedAny) { undoStack.pop(); flash(locked ? "Stairs and the lift have to stay level with the floor round them." : "That floor's already at that height."); paint(); return; }
+            if (!changedAny) { dropSnapshot(); flash(locked ? "Stairs and the lift have to stay level with the floor round them." : "That floor's already at that height."); paint(); return; }
             if (locked) flash("Left the floor round the stairs and lift level, so they still meet it.");
             changed(); return;
         }
@@ -2865,10 +2990,10 @@ canvas.addEventListener("pointerup", e => {
             const on = (x, y) => hasFloor(level, x, y) && tileZ(level, x, y) === d.z && !seeHidden(level, heightAt(level, x, y)), pieces = [];
             for (let y = r.y0; y < r.y1; y++) { let s = -1; for (let x = r.x0; x <= r.x1; x++) { if (x < r.x1 && on(x, y)) { if (s < 0) s = x; continue; } if (s < 0) continue;
                 const up = pieces.find(q => q.x0 === s && q.x1 === x && q.y1 === y); if (up) up.y1 = y + 1; else pieces.push({ x0: s, x1: x, y0: y, y1: y + 1, style: "small" }); s = -1; } }
-            if (!pieces.length) { undoStack.pop(); flash("The small squares go on the floor you start the drag on."); paint(); return; }
+            if (!pieces.length) { dropSnapshot(); flash("The small squares go on the floor you start the drag on."); paint(); return; }
             level.rugs = [...(level.rugs || []), ...pieces]; changed(); return;
         }
-        if (tool === "rug") { if (r.x1 - r.x0 >= 2 && r.y1 - r.y0 >= 2) level.rugs = [...(level.rugs || []), { ...r, alongY: r.y1 - r.y0 > r.x1 - r.x0 }]; else { undoStack.pop(); flash("Rugs need to be at least 2 tiles each way."); paint(); return; } }
+        if (tool === "rug") { if (r.x1 - r.x0 >= 2 && r.y1 - r.y0 >= 2) level.rugs = [...(level.rugs || []), { ...r, alongY: r.y1 - r.y0 > r.x1 - r.x0 }]; else { dropSnapshot(); flash("Rugs need to be at least 2 tiles each way."); paint(); return; } }
         else for (let x = r.x0; x < r.x1; x += 2) for (let y = r.y0; y < r.y1; y += 2) {
             const k = (x / 2) + "," + (y / 2);
             if (tool === "floor") {
@@ -2911,7 +3036,14 @@ canvas.addEventListener("pointermove", e => {
 });
 canvas.addEventListener("contextmenu", e => e.preventDefault());
 canvas.addEventListener("pointercancel", () => { if (drag && drag.kind === "rubout") { const d = drag; drag = null; endRub(d); } if (drag && drag.kind === "halfwall") { const d = drag; drag = null; endHalfBrush(d); } });
-canvas.addEventListener("wheel", e => { e.preventDefault(); if (seeCut !== null) { const all = allHeights(level), i = all.indexOf(seeCut), n = Math.max(0, Math.min(all.length - 1, i + (e.deltaY > 0 ? 1 : -1))); setCut(all[n]); return; } setZoom(zoom + (e.deltaY < 0 ? 1 : -1), e.clientX, e.clientY); }, { passive: false });
+/* A zoom step per mouse notch (100 of deltaY, or 3 lines; a step once half that has added up), at most one every 150 ms: a trackpad's stream of small scrolls (and a pinch, as
+   ctrl+wheel) added up instead of each being a whole step, which threw the zoom from one end to the other (15 Nov scan, live M7) */
+let wheelSum = 0, wheelAt = 0, wheelStepAt = 0;
+canvas.addEventListener("wheel", e => { e.preventDefault(); if (seeCut !== null) { const all = allHeights(level), i = all.indexOf(seeCut), n = Math.max(0, Math.min(all.length - 1, i + (e.deltaY > 0 ? 1 : -1))); setCut(all[n]); return; }
+    const now = performance.now(), dy = e.deltaY * (e.deltaMode === 1 ? 100 / 3 : e.deltaMode === 2 ? 100 : 1);
+    if (now - wheelAt > 400 || Math.sign(dy) !== Math.sign(wheelSum)) wheelSum = 0; wheelAt = now; wheelSum += dy;
+    if (Math.abs(wheelSum) < 50 || now - wheelStepAt < 150) return;      // half a notch: a notch reads less than 100 on a scaled screen
+    const up = wheelSum < 0; wheelSum = 0; wheelStepAt = now; setZoom(zoom + (up ? 1 : -1), e.clientX, e.clientY); }, { passive: false });
 /* How far the camera may go: the map's edges (the Map edges tool), which is also as far as the published picture goes, so the view never shows past it.
    8 Nov 2026: growing it to every floor's tiles showed black beyond the edges (his: "this shouldn't be possible"). Tiles outside the edges are the map's to fix: the Problems tab names them. */
 function camRect() { return map && map.rect ? map.rect : null; }
@@ -3038,7 +3170,9 @@ function walkGraph(startKey) {
     const flights = new Map(map.levels.map(l => [l, (l.steps || []).map(st => ({ st, f: flightOf(l, st) })).filter(q => q.f)]));
     const canStepC = (l, x, y, nx, ny) => { if (Math.abs(Z(l, x, y) - Z(l, nx, ny)) <= 1) return true; return (flights.get(l) || []).some(({ st, f }) => { const lo = Math.floor(f.from) - 1, hi = Math.ceil(f.to), inBand = (X, Y) => { const across = st.axis === "y" ? X : Y, along = st.axis === "y" ? Y : X; return across >= st.a && across < st.b && along >= lo && along <= hi; }; return inBand(x, y) && inBand(nx, ny); }); };
     const free = (l, x, y) => hasFloor(l, x, y) && !solids.get(l).has(x + "," + y) && !holeSets.get(l).some(h => inRect(h, x, y)) && !(M.slots.get(l) && M.slots.get(l).has(x + "," + y));
-    const stands = (l, x, y) => l.tiles ? l.tiles.has(x + "," + y) && !(l.stair && l.stair.low && solids.get(l.stair.low) && solids.get(l.stair.low).has(x + "," + y)) : (free(l, x, y) || nodeKey(l, x, y) === startKey);
+    /* a door's way in is behind the wall: nothing on the floor (or on a terrace behind that wall) can stand on it, so the floor's props
+       don't block it. A planter behind the Hustle Maze's wall shared its tiles and the door opened onto nothing (15 Nov scan, rooms 1) */
+    const stands = (l, x, y) => l.tiles ? l.tiles.has(x + "," + y) && !(l.stair && l.stair.low && !l.stair.door && solids.get(l.stair.low) && solids.get(l.stair.low).has(x + "," + y)) : (free(l, x, y) || nodeKey(l, x, y) === startKey);
     /* the tiles taken only by low things (under 40 tall), which a diagonal step may brush past */
     const lows = new Map(map.levels.map(l => { const low = new Set(), tall = new Set();
         for (const p of (l.props || [])) { const h = TALL[p.k] ? TALL[p.k][1] : 999, into = p.k !== "archway" && h < 40 ? low : tall; for (const t of Parts.tiles(p)) into.add(t[0] + "," + t[1]); }
@@ -3076,7 +3210,7 @@ function walkGraph(startKey) {
 /* A route is measured in real distance: a straight step is 10, a diagonal 14 (it covers about 1.4 tiles).
    Counting every step as 1 made a zig-zag from wall to wall exactly as "short" as walking straight down the hall. */
 const stepCost = n => n.dx && n.dy ? 14 : 10;
-function graphFrom(startL, sx, sy, goal) {
+function graphFrom(startL, sx, sy, goal, cutOff) {
     const next = walkGraph(nodeKey(startL, sx, sy));
     /* the shortest distance to every tile, nearest first, on a little binary heap */
     const flood = (l0, x0, y0, stopAt) => {
@@ -3095,7 +3229,8 @@ function graphFrom(startL, sx, sy, goal) {
     /* how far every tile is from the goal; then walk downhill. Several routes can tie (three diagonals and
        seven straights, in any order), so keep going the way we're going, which leaves as few turns as it can. */
     const dist = flood(goal[0], goal[1], goal[2], [startL, sx, sy]);
-    if (!dist.has(nodeKey(startL, sx, sy))) return null;
+    /* no way: everything that flood reached is cut off from here too, and the caller can skip it (walkTo, 15 Nov scan, live M8) */
+    if (!dist.has(nodeKey(startL, sx, sy))) { if (cutOff) for (const k of dist.keys()) cutOff.add(k); return null; }
     const path = [{ key: nodeKey(startL, sx, sy) }];
     let l = startL, x = sx, y = sy, guard = 0, last = null;
     while (!(l === goal[0] && x === goal[1] && y === goal[2]) && guard++ < 5000) {
@@ -3176,7 +3311,8 @@ function camTarget() {
     return out;
 }
 function camTick(now) {
-    if (!following() || (drag && drag.kind === "pan")) { camRunning = false; camVel = [0, 0]; return false; }
+    /* stands down while you look round, by mouse or by finger (15 Nov scan, live L2: a finger's pan was pulled back while you walked) */
+    if (!following() || (drag && drag.kind === "pan") || (fingerDo && fingerDo.kind !== "tap")) { camRunning = false; camVel = [0, 0]; return false; }
     const dt = Math.min(100, now - camLast) / 1000; camLast = now;
     /* A smooth damp, not a plain ease: it starts from rest and speeds up before it slows down, so coming back from somewhere you dragged it
        glides instead of leaping (9 Nov 2026, his: "the snap is really quick"). The further it has to go, the longer it takes over it; close
@@ -3331,7 +3467,7 @@ function doorAtPx(px, py) {
     return null;
 }
 /* A door leads somewhere if it has a maze the archive has. The rest stay shut unless you've said they open, and then they only open: there's nothing to walk into */
-const doorTargets = { room: to => (window.RoomView ? RoomView.special(map, to.size, to.n) : null) }; window.hallwayDoorTargets = doorTargets;
+const doorTargets = { room: to => (window.RoomView ? RoomView.special(root, to.size, to.n) : null) }; window.hallwayDoorTargets = doorTargets;
 const doorTarget = d => { const go = d.to && doorTargets[d.to.kind]; return go ? go(d.to, d) : null; };
 const doorLinked = d => d.to ? !!doorTarget(d) : !d.spare && !!d.name && (!roomFloors || !roomFloors.size || roomFloors.has(FurniParts.mazeName(d.name)));
 function walkIntoDoor(d) {
@@ -3345,13 +3481,14 @@ function useDoor(l, d) {
     const s = walkerStart(), fr = doorFront(d), there = !walker.walking && s.l === l && fr.some(t => t[0] === s.x && t[1] === s.y);
     if (!there) { const r = routeToOneOf(l, fr, s.l, s.x, s.y); if (r) followRoute(r.path, s.here, () => { walker.dir = d.axis === "x" ? 0 : 6; paint(); }); else noWay("There's no way to that door."); return; }
     walker.dir = d.axis === "x" ? 0 : 6;
-    doorFloorKind(d);
+    doorFloorKind(d, true);
     if (!doorLinked(d)) {
         if (!d.opens) { if (window.LiftSounds) LiftSounds.doorLocked(); flash("It's locked."); return; }
         if (doorIsOpen(d)) setDoor(d, false); else setDoor(d, true, 6000);
         return;
     }
-    if (doorIsOpen(d)) { walkIntoDoor(d); return; }
+    /* a second double-click while the leaf is still swinging waits for it, as the first one does: it walked you through a door barely open (15 Nov scan, rooms 8) */
+    if (doorIsOpen(d)) { const st = doorStates.get(d); if (doorEase(st.p) >= .86) walkIntoDoor(d); else st.autoIn = true; return; }
     setDoor(d, true, 15000); doorStates.get(d).autoIn = true;
     if (window.RoomView) { RoomView.load(); RoomView.mazes(); }
 }
@@ -3404,9 +3541,15 @@ function doorFrame(d, l, floor, mood, frame) {
     }
     g.putImageData(im, 0, 0); m.set(key, c); return c;
 }
-let roomFloors = null;
-function doorFloorKind(d) {
-    if (window.RoomView && !roomFloors) { roomFloors = new Map(); RoomView.load().then(() => RoomView.mazes()).then(list => { for (const m of list) { const r = RoomView.roomFor(map, m); roomFloors.set(FurniParts.mazeName(m.name), r.room.floor); } doorFrames.clear(); paint(); }); }
+let roomFloors = null, roomFloorsFailed = false;
+function doorFloorKind(d, ask) {
+    /* a failed read is asked again at the next door you use (ask), not kept as "no floors" for the visit, and not asked again on every
+       frame of a door swinging (15 Nov scan, rooms 19) */
+    if (window.RoomView && !roomFloors && (!roomFloorsFailed || ask)) {
+        const got = roomFloors = new Map(); roomFloorsFailed = false;
+        const failed = () => { if (roomFloors === got) { roomFloors = null; roomFloorsFailed = true; } };
+        RoomView.load().then(() => RoomView.mazes()).then(list => { if (!list || list.failed) return failed(); if (roomFloors !== got) return; for (const m of list) { const r = RoomView.roomFor(root, m); got.set(FurniParts.mazeName(m.name), r.room.floor); } doorFrames.clear(); paint(); }).catch(failed);      // root: the rooms' layouts are kept there, not on the gallery's map (15 Nov scan, editor 15)
+    }
     if (!doorLinked(d)) return null;
     if (d.to) { const t = doorTarget(d); return (t && t.room.floor) || "slate"; }
     return (roomFloors && roomFloors.get(FurniParts.mazeName(d.name))) || "slate";
@@ -3483,17 +3626,20 @@ function drawDoorways(ox, oy) {
 }
 async function enterDoor(low, d) {
     const me = walker; if (!me || me.busy || !window.RoomView) return; me.busy = true; me.pts = []; me.walking = false;
-    let list = []; try { await RoomView.load(); list = await RoomView.mazes(); } catch (e) { list = []; }
+    /* a slow archive says so, rather than leaving you gone into a dark doorway; RoomView.mazes gives up at 8 seconds (15 Nov scan, rooms 7) */
+    const slow = setTimeout(() => { if (walker === me && me.busy && !roomSession) flash("Fetching the archive..."); }, 1500);
+    let list = []; try { await RoomView.load(); list = await RoomView.mazes(); } catch (e) { list = []; } finally { clearTimeout(slow); const t = $("toast"); if (t && t.textContent === "Fetching the archive...") t.classList.remove("show"); }
     const maze = d.to ? null : list.find(m => FurniParts.mazeName(m.name) === FurniParts.mazeName(d.name)), target = d.to ? doorTarget(d) : null;
     if (walker !== me) return;
     const backOut = () => { const f = doorFront(d), free = q => !(low.props || []).some(p => Parts.tiles(p).some(t => t[0] === q[0] && t[1] === q[1])), t = f.find(q => free(q) && (d.axis === "x" ? q[0] === me.x : q[1] === me.y)) || f.find(free) || f[0]; me.l = low; me.x = t[0]; me.y = t[1]; me.z = tileZ(low, t[0], t[1]); me.st = null; me.dir = d.axis === "x" ? 4 : 2; me.busy = false; };
     if (!maze && !target) { flash(d.to ? "This door doesn't lead anywhere just now." : list.failed ? "Couldn't reach the archive. Try the door again." : "This door's maze isn't in the archive."); backOut(); setDoor(d, false); paint(); return; }
-    const { room, facts } = target || RoomView.roomFor(map, maze), stage = $("stage");
+    const { room, facts } = target || RoomView.roomFor(root, maze), stage = $("stage");      // root holds the rooms' layouts, on either map
     const dissolve = from => { const shot = document.createElement("canvas"); shot.width = from.width; shot.height = from.height; shot.getContext("2d").drawImage(from, 0, 0); shot.style.cssText = "position:absolute;left:0;top:0;z-index:24;pointer-events:none;transition:opacity .7s ease;opacity:1;width:" + from.clientWidth + "px;height:" + from.clientHeight + "px"; stage.appendChild(shot); return () => { shot.getBoundingClientRect(); shot.style.opacity = 0; setTimeout(() => shot.remove(), 750); }; };
     const go = dissolve(canvas);
     roomSession = RoomView.enter(stage, {
         room, facts, edge: d.axis === "x" ? "y" : "x", zoom: () => zoom,
-        wheel: delta => setZoom(zoom + (delta < 0 ? 1 : -1)),
+        /* never past what the room can show (cap): a wheel up took the hallway to 3 with the room still at 2 (15 Nov scan, rooms 11) */
+        wheel: (delta, cap) => { const top = Math.max(1, cap || zoom); if (delta < 0) { if (zoom < top) setZoom(zoom + 1); } else setZoom(Math.min(zoom, top) - 1); },
         onLeave: () => {
             const fade = dissolve(roomSession.canvas); roomSession.close(); roomSession = null;
             const S = stairLevels().list.find(q => q.stair.door === d), col = d.axis === "x" ? me.x : me.y, out = doorFront(d).find(q => d.axis === "x" ? q[0] === col : q[1] === col) || doorFront(d)[0], sx = d.axis === "x" ? col : d.line - DOOR_DEEP, sy = d.axis === "x" ? d.line - DOOR_DEEP : col;
@@ -3729,8 +3875,13 @@ function walkTo(px, py) {
     if (!under) return;
     const [l, X, Y] = under;
     /* a new click mid-walk finishes the step under way first, so the feet never leave the grid */
-    const s = walkerStart(); let path = graphFrom(s.l, s.x, s.y, [l, X, Y]);
-    if (!path && !(s.l.stair && s.l.stair.lift)) for (let r = 1; r <= 3 && !path; r++) for (let a = -r; a <= r && !path; a++) for (let b = -r; b <= r && !path; b++) { if (Math.max(Math.abs(a), Math.abs(b)) === r) path = graphFrom(s.l, s.x, s.y, [l, X + a, Y + b]); }
+    /* no way to it: the nearest tile round it you can get to. A search that fails has flooded the whole area cut off from you, so the tiles
+       round it in that same area are skipped, not searched again: a search per tile flooded it 48 times over, a third of a second here and
+       over two on a phone (15 Nov scan, live M8) */
+    /* and a tile nobody can stand on (no floor, or furniture on it) can't be walked to at all, so it isn't searched either */
+    const s = walkerStart(), cut = new Set(); let path = graphFrom(s.l, s.x, s.y, [l, X, Y], cut);
+    if (!path && !(s.l.stair && s.l.stair.lift)) { const so = l.tiles ? null : solid(l), standable = (x, y) => l.tiles ? l.tiles.has(x + "," + y) : hasFloor(l, x, y) && !so.has(x + "," + y);
+        for (let r = 1; r <= 3 && !path; r++) for (let a = -r; a <= r && !path; a++) for (let b = -r; b <= r && !path; b++) { if (Math.max(Math.abs(a), Math.abs(b)) === r && standable(X + a, Y + b) && !cut.has(nodeKey(l, X + a, Y + b))) path = graphFrom(s.l, s.x, s.y, [l, X + a, Y + b], cut); } }
     if (!path) { noWay("There's no way there."); return; }
     /* the "travel" cheat (9 Nov 2026, his): straight to the tile, no walk; only where a walk could have gone, so never into a wall or furniture */
     if (cheats.travel) {
@@ -3996,9 +4147,23 @@ function showMapInfo() {
     const r = map.rect, pw = 1440 / 2, ph = 774 / 2;
     $("mapInfo").textContent = `${(r.w / pw).toFixed(1)} pages wide, ${(r.h / ph).toFixed(1)} tall, at 2x.`;
 }
-function runChecks() {
-    if (!map) return;
-    const box = $("check"); box.textContent = "";
+/* the other map, looked at as if it were showing, and everything put back after: for counting its problems and marking its Lost Property */
+function withPlace(p, fn) {
+    if (p === mapNow || !mapOf(p)) return fn();
+    const was = { map, mapNow, level, cellSets, lastReport };
+    map = mapOf(p); mapNow = p; level = map.levels.find(l => l.k === 0) || map.levels[0]; cellSets = new Map(); stairMemo = null; reachMemo = null; lastReport = null;
+    try { return fn(); } finally { ({ map, mapNow, level, cellSets, lastReport } = was); stairMemo = null; reachMemo = null; }
+}
+const lostSpotStuck = (lv, s) => !!(lv && lv.k >= 0 && !lostSpotReachable(lv, s.x, s.y));
+/* at Save: each Lost Property spot nobody can get to is marked (noReach) on both maps, so the server never deals it */
+function markNoReach() {
+    for (const p of ["hallway", "gallery"]) { const m = mapOf(p); if (!m || !(m.lostSpots || []).length) continue;
+        try { withPlace(p, () => { for (const s of m.lostSpots) { if (lostSpotStuck(byId(s.level), s)) s.noReach = true; else delete s.noReach; } }); } catch (e) { console.error(e); } }
+}
+/* only: just count, with nothing shown (the other map's, for Publish and the badge: 15 Nov scan, editor 16) */
+function runChecks(only) {
+    if (!map) return 0;
+    const box = only ? document.createElement("div") : $("check"); box.textContent = "";
     let problems = 0;
     const card = (t, kind, go) => {
         const e = document.createElement(go ? "button" : "div"); e.className = "problem " + kind; e.textContent = t;
@@ -4069,7 +4234,8 @@ function runChecks() {
     /* a Lost Property spot nobody can get to, or under furniture with no free tile beside it that anyone can get to, can only end in a miss (9 Nov scan, content finding 1) */
     /* each spot nobody can get to is marked in the map (noReach), so the server never deals it even if he publishes anyway: it can't walk the
        map itself (10 Nov scan, server finding 10) */
-    { const stuck = []; for (const s of (map.lostSpots || [])) { const lv = byId(s.level), bad = !!(lv && lv.k >= 0 && !lostSpotReachable(lv, s.x, s.y)); if (bad) stuck.push({ lv, s }); if (bad) s.noReach = true; else delete s.noReach; }
+    /* the mark itself is only written at Save (markNoReach), so this check never changes the map outside undo (15 Nov scan, editor 21) */
+    { const stuck = []; for (const s of (map.lostSpots || [])) { const lv = byId(s.level), bad = lostSpotStuck(lv, s); if (bad) stuck.push({ lv, s }); }
       for (const c of stuck.slice(0, 8)) card(`A Lost Property spot on ${c.lv.name} at ${c.s.x}, ${c.s.y} can't be picked up: nobody can reach it, or a free tile next to it. Move or remove it in the Lost Property tab. Show it.`, "err", () => { level = c.lv; buildLevels(); const a = P(c.s.x + .5, c.s.y + .5, nodeZ(c.lv, c.s.x, c.s.y) || levelZ(c.lv)); cam.x = a[0]; cam.y = a[1] - 20; clampCam(); paint(); });
       if (stuck.length > 8) card(`And ${stuck.length - 8} more Lost Property spots can't be picked up.`, "err"); }
     /* lamps and wall items whose wall has gone: the renderer leaves them out (render/hw3.js report.lost), so they're never seen. One click
@@ -4087,9 +4253,19 @@ function runChecks() {
         const said = other.map(t => t.replace(/ on (\S+)$/,(m0, id) => " on " + ((byId(id) || {}).name || id)));
         if (other.length) card(`${other.length} ${other.length === 1 ? "thing" : "things"} couldn't be placed: ${said.slice(0, 4).join(", ")}`, "err");
     }
+    /* wall pieces of a kind this editor doesn't have, kept aside rather than dropped (15 Nov scan, editor 2) */
+    { const off = map.levels.filter(lv => (lv.wallItemsOff || []).length);
+      if (off.length) { const n = off.reduce((s, lv) => s + lv.wallItemsOff.length, 0), kinds = [...new Set(off.flatMap(lv => lv.wallItemsOff.map(q => q.k)))];
+          card(`${n} wall ${n === 1 ? "piece is" : "pieces are"} of a kind the editor doesn't have (${kinds.slice(0, 4).join(", ")}${kinds.length > 4 ? ", ..." : ""}), on ${off.map(lv => lv.name).join(", ")}. ${n === 1 ? "It's" : "They're"} kept in the map but not drawn. Remove ${n === 1 ? "it" : "them"}.`, "err", () => {
+              snapshot(); for (const lv of off) delete lv.wallItemsOff; changed(); runChecks(); flash(n + " removed. Undo puts them back."); }); } }
+    /* two identical pieces on one tile draw as one, so nobody can see the second (15 Nov scan, editor 5) */
+    { const dups = [];
+      for (const lv of map.levels) { const seen = new Set(); for (const p of (lv.props || [])) { const k = samePieceKey(p); if (seen.has(k)) dups.push({ lv, p }); else seen.add(k); } }
+      for (const c of dups.slice(0, 8)) card(`Two of the same piece (${TOOL_NAMES[c.p.k] || c.p.k}) stand on one tile on ${c.lv.name}, at ${c.p.x}, ${c.p.y}. Show it.`, "err", () => { level = c.lv; buildLevels(); const a = P(c.p.x + .5, c.p.y + .5, tileZ(c.lv, c.p.x, c.p.y)); cam.x = a[0]; cam.y = a[1]; clampCam(); setTool("select"); select({ type: "prop", l: c.lv, o: c.p }); paint(); });
+      if (dups.length > 8) card(`And ${dups.length - 8} more pieces stand on top of a copy of themselves.`, "err"); }
     /* the other map too (12 Nov 2026, the Events Gallery): its way in and out, and the exhibits, wherever you are */
     { const G = root && root.gallery, here = mapNow === "hallway" ? root : G, there = mapNow === "hallway" ? G : root, nameThere = PLACE_NAME[otherPlace()];
-      if (G && (G.levels || []).length) {
+      if (!only && G && (G.levels || []).length) {      // counted once, with the map that's showing
           const links = (there.tunnels || []).filter(t => t.to && findTunnel(t.to)), toHere = links.filter(t => (here.tunnels || []).some(u => u.id === t.to));
           if (!toHere.length) card(mapNow === "hallway" ? "The Events Gallery has no tunnel to the Hallways, so nobody can get in. Link a tunnel there to one here." : "No tunnel in the Hallways leads here, so nobody can get in. Link one.", "err");
           const dead = (there.tunnels || []).filter(t => t.to && !findTunnel(t.to)).length; if (dead) card(`${dead} tunnel${dead === 1 ? "" : "s"} in ${nameThere} lead${dead === 1 ? "s" : ""} to one that isn't there any more. Switch to it to see.`, "err");
@@ -4100,7 +4276,13 @@ function runChecks() {
           }
           if (E && E.events.length) for (const [k, q] of seen) if (!E.eventOf(k)) card(`An exhibit is for an event that isn't on the site any more (${k}). Show it.`, "err", go(G.levels.find(l => (l.wallItems || []).includes(q)), q, true));
       } }
-    $("probBadge").textContent = problems || ""; lastProblems = problems;
+    if (only) return problems;
+    /* Publish sends both maps, so the other one's problems count too (15 Nov scan, editor 16) */
+    let other = 0; const op = otherPlace();
+    if (mapOf(op) && (mapOf(op).levels || []).length) { try { other = withPlace(op, () => runChecks(true)) || 0; } catch (e) { console.error(e); } }
+    if (other) card(`${PLACE_NAME[op].replace(/^t/, "T")} has ${other} problem${other === 1 ? "" : "s"} too. Switch to it to see.`, "err other", () => setPlace(op));
+    $("probBadge").textContent = problems + other || ""; lastProblems = problems + other;
+    return problems + other;
 }
 
 /* ---------- start ---------- */
@@ -4191,21 +4373,28 @@ function buildUI() {
     buildMusic();
     $("walkBtn").addEventListener("click", () => setTool(tool === "walk" ? "select" : "walk"));
     if ($("placeSel")) $("placeSel").addEventListener("change", e => { setPlace(e.target.value); e.target.blur(); });
-    if ($("roomsBtn")) $("roomsBtn").addEventListener("click", () => window.RoomsEditor.open({ map: () => root, snapshot, undo, redo, save: () => save(), unsnapshot: () => { undoStack.pop(); syncButtons(); }, canUndo: () => undoStack.length > 0, canRedo: () => redoStack.length > 0, changed: () => { roomFloors = null; doorFrames.clear(); changed(); } }));
+    if ($("roomsBtn")) $("roomsBtn").addEventListener("click", () => window.RoomsEditor.open({ map: () => root, snapshot, undo, redo, save: () => save(), unsnapshot: () => dropSnapshot(), canUndo: () => undoStack.length > 0, canRedo: () => redoStack.length > 0, changed: () => { roomFloors = null; doorFrames.clear(); changed(); } }));
     document.querySelectorAll(".tab").forEach(t => t.addEventListener("click", () => showTab(t.dataset.tab)));
     for (const [k, v] of Object.entries(LIGHTS)) { const o = document.createElement("option"); o.value = k; o.textContent = v; $("light").appendChild(o); }
     for (const [k, v] of Object.entries(WAYS)) { const o = document.createElement("option"); o.value = k; o.textContent = v; $("way").appendChild(o); }
     $("undo").addEventListener("click", undo); $("redo").addEventListener("click", redo); $("save").addEventListener("click", save);
     if ($("publish")) $("publish").addEventListener("click", publish);
+    /* the saved copy is read first: if it won't come, nothing changes and it says so (15 Nov scan, editor 19) */
     $("revert").addEventListener("click", async () => {
-        snapshot();
+        let text, got;
+        try { const r = await fetch("/api/map"); if (!r.ok) throw new Error("the server said " + r.status); got = r; text = await r.text(); JSON.parse(text); }
+        catch (e) { flash("Couldn't load the last save: " + (e && e.name === "TypeError" ? (window.HALLWAY_EDIT ? "the site isn't answering" : "the editor's server isn't answering") : (e && e.message) || e) + ". Nothing has changed."); return; }
+        putBack(); snapshot();
         stopWalkForChange(); closePicker();
-        root = await fetch("/api/map").then(r => r.json()); fixRoot(); if (!mapOf(mapNow)) mapNow = "hallway"; map = mapOf(mapNow); stairMemo = null; syncPlace(); syncLight();
+        readMark(got); serverText = JSON.stringify(JSON.parse(text));
+        root = JSON.parse(text); migrateHeights(root); fixRoot(); if (!mapOf(mapNow)) mapNow = "hallway"; map = mapOf(mapNow); stairMemo = null; roomFloors = null; doorFrames.clear(); syncPlace(); syncLight();
         level = map.levels.find(l => l.k === 0) || map.levels[0];
-        localStorage.removeItem("hallway-draft"); dirty = false; $("dirty").hidden = true; $("revert").hidden = true;
+        forgetDraft(); dirty = false; $("dirty").hidden = true; $("revert").hidden = true; setSaveState("ok", "Back to the last save");
         select(null); cellSets = new Map(); buildLevels(); showMapInfo(); runChecks(); syncButtons(); requestArt(true); paint();
     });
-    $("floorSel").addEventListener("change", e => setFloor(byId(e.target.value)));
+    /* the lists give the keys back after a pick, as the Map list does, so letters go to the tools again (15 Nov scan, editor 7) */
+    $("floorSel").addEventListener("change", e => { setFloor(byId(e.target.value)); e.target.blur(); });
+    for (const id of ["timeMode", "light", "way"]) $(id).addEventListener("change", e => e.target.blur());
     $("timeMode").value = timeMode;
     /* Changing the time of day by hand crossfades into the new light rather than jumping (9 Nov 2026, his): the view as it was is laid over
        the top and faded away once the new light's pictures for what's on screen are in (or after a second and a half at most) */
@@ -4234,7 +4423,9 @@ function buildUI() {
     $("scareOdds").addEventListener("change", e => { const v = Math.max(0, Math.min(500, Math.round(+e.target.value || 0))); snapshot(); map.scareOdds = v; changed(); });
     setBrush(heightBrush);
     $("way").addEventListener("change", e => { snapshot(); level.way = e.target.value; buildLevels(); changed(); });
-    $("lname").addEventListener("change", e => { snapshot(); level.name = e.target.value.trim() || level.name; buildLevels(); changed(); });
+    /* a floor's name: 24 letters at most (it's on the stair signs and the Floor list), and the box shows what was kept (15 Nov scan, editor 8 and 13) */
+    $("lname").maxLength = 24;
+    $("lname").addEventListener("change", e => { const v = e.target.value.replace(/\s+/g, " ").trim().slice(0, 24); if (!v || v === level.name) { e.target.value = level.name; return; } snapshot(); level.name = v; e.target.value = v; buildLevels(); changed(); });
     const toggle = (id, fn) => $(id).addEventListener("click", () => { setOn(id, !isOn(id)); fn && fn(); });
     toggle("grid", paint); toggle("liftOpen", () => requestArt(true));
     setOn("follow", localStorage.getItem("hallway-follow") !== "0");
@@ -4278,6 +4469,13 @@ function buildUI() {
         select(null); buildLevels(); changed(); flash(gone.name + " deleted. Undo brings it back.");
     });
     document.addEventListener("keydown", e => {
+        /* Ctrl+S saves from anywhere, a box being typed in too (save puts its words in first); Ctrl+Z / Y undo from a list or a button, but
+           in a text box they stay the box's own (15 Nov scan, editor 7) */
+        if (!window.HALLWAY_PLAY && (e.ctrlKey || e.metaKey) && !e.altKey && keysBox.hidden) {
+            const k = e.key.toLowerCase(), typing = e.target.matches && e.target.matches("textarea, [contenteditable], input:not([type=checkbox]):not([type=radio]):not([type=range]):not([type=button])");
+            if (k === "s") { e.preventDefault(); save(); return; }
+            if (!typing && (k === "z" || k === "y") && e.target.matches && e.target.matches("input, select")) { e.preventDefault(); if (k === "y" || e.shiftKey) redo(); else undo(); return; }
+        }
         if (e.target.matches && e.target.matches("input, select, textarea, [contenteditable]")) return;
         if (e.code === "Space" && e.target.closest && e.target.closest("button")) return;       // it presses the button
         /* The walking page: looking around, zoom and the music. The rest are the editor's. */
@@ -4295,6 +4493,11 @@ function buildUI() {
         if (mod && key === "y") { e.preventDefault(); redo(); return; }
         if (mod && key === "s") { e.preventDefault(); save(); return; }
         if (mod) return;
+        /* in the middle of a drag: Esc cancels it, and the floor and tool keys wait till the button's up (15 Nov scan, editor 12) */
+        if (drag && drag.kind !== "pan") {
+            if (e.key === "Escape") { e.preventDefault(); cancelDrag(); return; }
+            if (e.key === "PageUp" || e.key === "PageDown" || ({ v: 1, h: 1, w: 1, f: 1, e: 1, r: 1, d: 1 })[key]) { e.preventDefault(); return; }
+        }
         if ((e.key === "Delete" || e.key === "Backspace") && selected) { e.preventDefault(); deleteSelected(); return; }
         if (e.key === "Escape" && carry) { putBack(); return; }
         if (e.key === "Escape") { if (tool !== "select") setTool("select"); else if (selected) select(null); return; }
@@ -4323,17 +4526,22 @@ function buildUI() {
 }
 const hallwayStart = (async function start() {
     buildUI();
-    const [m, n] = await Promise.all([fetch("/api/map").then(r => { if (!r.ok) throw new Error("The map wouldn't load (" + r.status + ")"); return r.text(); }), fetch("/api/names").then(r => r.json())]);
+    /* the wall pictures' list didn't come (15 Nov scan, editor 2): opening the map without it would take every window, painting and sign off it */
+    if (!window.HALLWAY_PLAY && !WALL_ITEMS.length) throw new Error("The list of wall pictures (wall-items.js) didn't load, so the map wasn't opened: without it every window, painting and sign would be left off.");
+    const [m, n] = await Promise.all([fetch("/api/map").then(r => { if (!r.ok) throw new Error("The map wouldn't load (" + r.status + ")"); readMark(r); return r.text(); }), fetch("/api/names").then(r => r.json())]);
     serverText = JSON.stringify(JSON.parse(m));
     root = JSON.parse(m); map = root; migrateHeights(map); names = n.names || []; fontW = n.font || {}; difficulty = n.difficulty || {};
-    /* unsaved work comes back on its own: a prompt here could block the page from loading */
-    const draft = window.HALLWAY_PLAY ? null : localStorage.getItem("hallway-draft");
+    /* unsaved work comes back on its own: a prompt here could block the page from loading. This tab's own copy, or one a closed tab left */
+    let draft = null; try { draft = window.HALLWAY_PLAY ? null : findDraft(); } catch (e) { /* storage off */ }
     if (draft) { try {
-        const d = JSON.parse(draft), base = localStorage.getItem("hallway-draft-base"), moved = base !== textMark(serverText);
+        const d = JSON.parse(draft.text), moved = draft.base !== textMark(serverText);
         /* The saved map has changed since this copy was made: nothing replaces it without asking */
         const use = d && d.levels && (JSON.stringify(d) !== serverText) && (!moved || window.confirm("This browser has unsaved edits, but the saved map has changed since they were made. OK brings your edits back over the saved map. Cancel throws them away and keeps the saved map."));
-        if (use) { root = d; map = root; migrateHeights(map); dirty = true; $("dirty").hidden = false; $("revert").hidden = false; } else { localStorage.removeItem("hallway-draft"); localStorage.removeItem("hallway-draft-base"); }
-    } catch (e) { localStorage.removeItem("hallway-draft"); } }
+        if (use) { root = d; map = root; migrateHeights(map); dirty = true; $("dirty").hidden = false; $("revert").hidden = false; }
+        /* taken over by this tab, or thrown away: either way the old copy goes (this tab writes its own from here) */
+        if (draft.id !== TAB_ID) forgetDraft(draft.id); else if (!use) forgetDraft();
+        if (use && draft.id !== TAB_ID) { const [k, b, a] = DRAFT_KEYS(TAB_ID); try { localStorage.setItem(k, draft.text); if (draft.base) localStorage.setItem(b, draft.base); localStorage.setItem(a, String(Date.now())); } catch (e) { /* too big */ } }
+    } catch (e) { forgetDraft(draft.id); } }
     fixRoot();
     level = map.levels.find(l => l.k === 0) || map.levels[0];
     $("light").value = map.light || "sconces";

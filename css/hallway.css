@@ -101,6 +101,12 @@ html.hallway-instant #hallway-stage { transition: none; }
     overscroll-behavior: contain;
 }
 .hallway-closed-plaque { display: block; flex: none; width: 420px; max-width: 86vw; height: auto; filter: drop-shadow(0 14px 30px rgba(0, 0, 0, .7)); pointer-events: none; user-select: none; }
+/* a phone on its side (15 Nov scan, live L1): the plaque at half size beside the note, so the words and the button are in view, as the
+   picker has it */
+@media (max-height: 480px) {
+    .hallway-closed-stack { flex-direction: row; align-items: safe center; padding: 10px 14px; }
+    .hallway-closed-plaque { width: 210px; max-width: 32vw; }
+}
 .modal.hallway-note {
     position: relative;
     flex: none;

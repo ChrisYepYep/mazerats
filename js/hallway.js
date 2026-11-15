@@ -26,8 +26,8 @@
     const PATH = /^\/hallway\/?$/;
     const PLAY = "/assets/hallway/app/play.html";
     const NOTES = {
-        "coming-soon": ["Coming soon", "The hallway isn't open yet. Soon you'll be able to walk the archive, door by door."],
-        maintenance: ["Being worked on", "The hallway is closed for a little while. Back soon."]
+        "coming-soon": ["The Hallway", "The hallway isn't open yet. Soon you'll be able to walk the archive, door by door."],
+        maintenance: ["The Hallway", "The hallway is closed for a little while. Back soon."]
     };
     const LABELS = { hidden: "Hidden", "coming-soon": "Coming soon", maintenance: "Maintenance" };
     const root = document.documentElement;
@@ -78,10 +78,14 @@
        pictures at 3x on whole pixels and centred on the statue. So it can't go out of date, and it follows the statue if that moves. */
     const FN = "/.netlify/functions/hallway", PIC_W = 300, PIC_H = 200, TILE = 512, STOREY = 163, CLOSED_WIDE = 1000;      // PIC_*: the least it draws; CLOSED_WIDE: from here on, 2x
     async function closedPicture(into, gen) {
-        const read = url => fetch(url, { cache: "no-cache" }).then(r => r.ok ? r.json() : null).catch(() => null);
+        /* 5 s at most each: a function that hangs counts as down (15 Nov scan, server 4) */
+        const read = url => fetch(url, { cache: "no-cache", ...(AbortSignal.timeout ? { signal: AbortSignal.timeout(5000) } : {}) }).then(r => r.ok ? r.json() : null).catch(() => null);
         const [here, there] = await Promise.all([read("/assets/hallway/manifest.json"), read(FN + "?what=live")]);
-        const online = !!(there && there.online), man = online ? there : here; if (!man || !man.tiles) return;
-        const map = await read(online ? FN + "?what=map&v=" + encodeURIComponent(man.version || "") : "/assets/hallway/map.json"); if (!map || !Array.isArray(map.levels)) return;
+        let online = !!(there && there.online), man = online ? there : here; if (!man || !man.tiles) return;
+        let map = await read(online ? FN + "?what=map&v=" + encodeURIComponent(man.version || "") : "/assets/hallway/map.json");
+        /* the Warren's copy without its map: the deployed copy, as the walk does (play.js, 15 Nov scan, server 3) */
+        if ((!map || !Array.isArray(map.levels)) && online && here && here.tiles) { online = false; man = here; map = await read("/assets/hallway/map.json"); }
+        if (!map || !Array.isArray(map.levels)) return;
         let at = null;
         for (const l of map.levels) for (const p of l.props || []) if (p.k === "statue") at = { x: p.x + 1, y: p.y + 1, z: l.k * STOREY + 45 };      // on 2 x 2 tiles, about 110px tall: its middle, not its feet
         if (!at && map.entrance) { const e = map.entrance, l = map.levels.find(q => q.id === e.level); at = { x: e.axis === "x" ? e.at + 4 : e.line, y: e.axis === "x" ? e.line : e.at + 4, z: ((l && l.k) || 0) * STOREY + 45 }; }
@@ -206,8 +210,14 @@
         } else pushed = false;
         root.classList.remove("hallway-instant", "hallway-open");
         for (const e of document.querySelectorAll(".hallway-dev-pill")) e.remove();
+        /* a closed screen's note on its way out counts as shut for the site's focus trap, or it made the page inert again behind it and
+           the keyboard fell back to nothing (15 Nov scan, live L14) */
+        if (stage) for (const n of stage.querySelectorAll(".hallway-note")) n.classList.add("closing");
         for (const e of document.querySelectorAll("body > main, body > .fellow-fansites")) e.inert = false;
-        const spine = document.getElementById("side-spine"); if (spine) { try { spine.focus({ preventScroll: true }); } catch (e) { /* nowhere to put it */ } }
+        /* the keyboard back on the page: the spine if it's built, or the header's first link, or the page itself (15 Nov scan, live L14: it
+           was left nowhere after a closed screen, or arriving straight at /hallway before the spine was there) */
+        const spine = document.getElementById("side-spine"), main = document.querySelector("body > main"), to = (spine && spine.offsetParent !== null ? spine : null) || document.querySelector(".site-header a[href]") || main;
+        if (to) { if (to === main && !main.hasAttribute("tabindex")) main.setAttribute("tabindex", "-1"); try { to.focus({ preventScroll: true }); } catch (e) { /* nowhere to put it */ } }
         if (frame) { clearInterval(+frame.dataset.creep); clearTimeout(frame._late); clearTimeout(frame._cap); }
         removeEventListener("resize", place);
         if (headWatch) { headWatch.disconnect(); headWatch = null; }

@@ -112,6 +112,12 @@ body.hw-screensaver #playBar, body.hw-screensaver .play-menu { opacity: 0; point
 #liftPlate button { position: absolute; padding: 0; background: none !important; border: 0; box-shadow: none; cursor: pointer; }
 #liftPlate button:focus-visible { outline: 2px solid #ffd060; outline-offset: 1px; }
 @media (max-height: 620px) { #liftPlate { width: 170px; height: 360px; } }
+/* a phone on its side (15 Nov scan, live M2): the plate as tall as the space above the bottom bar (58px) leaves, its own shape kept, in the
+   middle of that space, and "Stay here" beside it, not under it and off the screen */
+@media (max-height: 480px) {
+    #liftPanel.plate { flex-direction: row; top: calc(50% - 29px); }
+    #liftPlate { height: calc(100vh - 74px); height: calc(100dvh - 74px); width: calc((100vh - 74px) * 119 / 252); width: calc((100dvh - 74px) * 119 / 252); }
+}
 
 /* the Hallway's own windows */
 .hw-sheet { z-index: 40; }

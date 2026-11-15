@@ -21,25 +21,25 @@ const post = async b => { const r = await handler({ httpMethod: "POST", headers:
 const png = () => Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47]), crypto.randomBytes(20)]), h = b => crypto.createHash("sha1").update(b).digest("hex").slice(0, 20);
 const up = p => post({ action: "tile", hash: h(p), png: p.toString("base64") });
 (async () => {
-    const map = { levels: [{ id: 1 }] };
+    const map = { levels: [{ id: "1" }] };
     /* finding 8: null tiles or lift is a 400 */
     for (const manifest of [{ tiles: null, lift: {} }, { tiles: {}, lift: null }]) { const r = await post({ action: "publish", map, manifest }); assert.equal(r.status, 400, "null " + JSON.stringify(manifest) + " is refused, not thrown"); }
     /* finding 7b: a lift-only change is a new version, and the old lift picture is kept for pages still on it */
-    const a = png(), b = png(); await up(a); await up(b);
-    const r1 = await post({ action: "publish", map, manifest: { tiles: {}, lift: { x: h(a) } } }), r2 = await post({ action: "publish", map, manifest: { tiles: {}, lift: { x: h(b) } } });
+    const a = png(), b = png(), t0 = png(); await up(a); await up(b); await up(t0);
+    const r1 = await post({ action: "publish", map, manifest: { tiles: { t: h(t0) }, lift: { x: h(a) } } }), r2 = await post({ action: "publish", map, manifest: { tiles: { t: h(t0) }, lift: { x: h(b) } } });
     assert.equal(r1.status, 200); assert.equal(r2.status, 200); assert.notEqual(r1.body.version, r2.body.version, "the lift is part of the version");
     assert.ok(mem.has("tile/" + h(a)), "the first publish's lift picture is still there");
     /* finding 7a: a picture sent for another publish, not yet published, survives this one's tidy-up while it's fresh */
     const c = png(); await up(c); clock += 60e3; const d = png(); await up(d);
-    clock += 60e3; let r = await post({ action: "publish", map: { levels: [{ id: 2 }] }, manifest: { tiles: { t: h(d) }, lift: {} } }); assert.equal(r.status, 200);
+    clock += 60e3; let r = await post({ action: "publish", map: { levels: [{ id: "2" }] }, manifest: { tiles: { t: h(d) }, lift: {} } }); assert.equal(r.status, 200);
     assert.ok(mem.has("tile/" + h(c)), "a picture sent two minutes ago, for a publish still on its way, is kept");
-    r = await post({ action: "publish", map: { levels: [{ id: 3 }] }, manifest: { tiles: { t: h(c) }, lift: {} } }); assert.equal(r.status, 200, "and that other publish then finds it");
+    r = await post({ action: "publish", map: { levels: [{ id: "3" }] }, manifest: { tiles: { t: h(c) }, lift: {} } }); assert.equal(r.status, 200, "and that other publish then finds it");
     /* ...but once it's old and unnamed it goes, as before */
     const e = png(); await up(e); clock += 11 * 60e3;
-    for (let i = 4; i < 8; i++) { r = await post({ action: "publish", map: { levels: [{ id: i }] }, manifest: { tiles: { t: h(d) }, lift: {} } }); assert.equal(r.status, 200); }
+    for (let i = 4; i < 8; i++) { r = await post({ action: "publish", map: { levels: [{ id: "L" + i }] }, manifest: { tiles: { t: h(d) }, lift: {} } }); assert.equal(r.status, 200); }
     assert.ok(!mem.has("tile/" + h(e)), "an old picture nobody names is tidied away");
     /* a picture from before tiles were timed (no metadata) is tidied as it always was */
     mem.set("tile/" + "f".repeat(20), Buffer.from("x")); meta.set("tile/" + "f".repeat(20), {});
-    r = await post({ action: "publish", map: { levels: [{ id: 9 }] }, manifest: { tiles: { t: h(d) }, lift: {} } }); assert.ok(!mem.has("tile/" + "f".repeat(20)), "untimed old pictures still go");
+    r = await post({ action: "publish", map: { levels: [{ id: "9" }] }, manifest: { tiles: { t: h(d) }, lift: {} } }); assert.ok(!mem.has("tile/" + "f".repeat(20)), "untimed old pictures still go");
     Date.now = realNow; console.log("hallway publish: all good");
 })().catch(e => { console.error(e); process.exit(1); });
