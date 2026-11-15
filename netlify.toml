@@ -1040,8 +1040,9 @@
   for = "/assets/hallway/app/art/fontdump.html"
   [headers.values]
     Content-Type = "text/plain; charset=utf-8"
-    Content-Security-Policy = "sandbox; default-src 'none'"
     X-Content-Type-Options = "nosniff"
+# (no Content-Security-Policy here: any CSP in this file overrides the one tools/build-dist.js writes, and check-share-headers fails the build.
+#  Plain text with nosniff runs nothing anyway, and build-dist ships only the glyph table.)
 
 [[headers]]
   for = "/assets/hallway/*.json"
