@@ -2851,10 +2851,13 @@
         const lives = run ? run.lives : -1;
         if (hudEls.lives && lives !== hudLast.lives) {
             hudEls.lives.hidden = lives < 0;
-            hudEls.lives.textContent = lives < 0 ? ""
-                // U+FE0E: iOS would otherwise draw the red emoji heart.
-                : lives <= 5 ? "♥︎".repeat(lives)
-                    : "♥︎×" + lives;
+            /* Each heart its own .ff-heart, drawn a little wider (15 Nov
+               2026, the owner's: the glyph read thin). */
+            // U+FE0E: iOS would otherwise draw the red emoji heart.
+            const heart = '<span class="ff-heart">♥︎</span>';
+            hudEls.lives.innerHTML = lives < 0 ? ""
+                : lives <= 5 ? heart.repeat(lives)
+                    : heart + "×" + Math.floor(lives);
             hudEls.lives.classList.toggle("is-last", lives === 1);
             hudLast.lives = lives;
         }
@@ -5699,7 +5702,7 @@
     const TIP_MAX = 40, TIP_MAX_LEN = 140;      // netlify/functions/settings.js cleanFfTips
     const DEFAULT_TIPS = () => Object.values(POWERS()).map(p => p.tip).filter(Boolean).map(text => ({ text, who: "all" })).concat([
         { text: "Sit on every seat in the order it landed.", who: "all" },
-        { text: "The wrong seat costs you 3 seconds and your streak.", who: "all" },
+        { text: "The wrong seat costs you 10 points and your streak.", who: "all" },
         { text: "Not everything that falls is a seat. Some furni is just in the way.", who: "all" },
         { text: "Click a tile to walk there.", who: "mouse" },
         { text: "Tap a tile to walk there.", who: "touch" },
@@ -5724,6 +5727,48 @@
     let savedTips;
     const tipsHere = () => (Array.isArray(savedTips) ? savedTips : DEFAULT_TIPS()).filter(tipForDevice);
     let tipsTimer = 0;
+    /* HOW TO PLAY (15 Nov 2026, the owner's). The button beside Play puts
+       .is-how on the title: the CSS slides its top half up and its tips and
+       options down, grows the card empty from the middle, then fades the
+       words in (and the reverse on the way out). Shut by Got it, X, Escape
+       or a click on the title outside the card. Wired once. */
+    function howToPlay() {
+        const title = document.getElementById("ff-title");
+        const card = document.getElementById("ff-how");
+        const open = document.getElementById("ff-how-open");
+        if (!title || !card || !open || card.dataset.wired) return;
+        card.dataset.wired = "1";
+        if (byTouch) {
+            const walk = card.querySelector('[data-how="walk"]'), grab = card.querySelector('[data-how="grab"]');
+            if (walk) walk.textContent = "Tap a tile to walk.";
+            if (grab) grab.textContent = "Double-tap a coffee or ice cream to grab it.";
+        }
+        // What slides away can't be tabbed to while the card is up.
+        const away = [title.querySelector(".ff-title-inner"), document.getElementById("ff-tips"), title.querySelector(".ff-title-opts")].filter(Boolean);
+        const isOpen = () => title.classList.contains("is-how");
+        const show = () => {
+            if (isOpen()) return;
+            title.classList.add("is-how");
+            away.forEach(el => { el.inert = true; });
+            // After the card has grown, so the focus ring doesn't ride the zoom.
+            setTimeout(() => { if (isOpen()) document.getElementById("ff-how-ok").focus({ preventScroll: true }); }, 500);
+        };
+        const hide = () => {
+            if (!isOpen()) return;
+            title.classList.remove("is-how");
+            away.forEach(el => { el.inert = false; });
+            open.focus({ preventScroll: true });
+        };
+        open.addEventListener("click", show);
+        document.getElementById("ff-how-ok").addEventListener("click", hide);
+        document.getElementById("ff-how-x").addEventListener("click", hide);
+        title.addEventListener("click", (ev) => { if (isOpen() && !card.contains(ev.target) && !open.contains(ev.target)) hide(); });
+        // Leaving the title (Play, a round starting) never leaves it open behind.
+        new MutationObserver(() => { if (title.dataset.state === "playing") hide(); }).observe(title, { attributes: true, attributeFilter: ["data-state"] });
+        if (window.EscapeLayers) EscapeLayers.register({ elements: () => (isOpen() ? [card] : []), close: hide });
+        else document.addEventListener("keydown", (ev) => { if (ev.key === "Escape" && isOpen()) { ev.preventDefault(); ev.stopPropagation(); hide(); } }, true);
+    }
+
     function startTips() {
         const el = document.getElementById("ff-tips");
         if (!el || tipsTimer || el.dataset.started) return;
@@ -5814,6 +5859,7 @@
         const el = document.getElementById("ff-title");
         if (!el) return;
         startTips();
+        howToPlay();
         if (name) el.dataset.state = name;
         const load = document.getElementById("ff-title-load");
         if (load && note !== undefined) load.textContent = note || "";
@@ -7373,7 +7419,7 @@
     function lifeBeat(n, callout) {
         n.textContent = "";
         const heart = document.createElement("span");
-        heart.className = "ff-countin-heart";
+        heart.className = "ff-countin-heart ff-heart";
         heart.textContent = "♥︎";
         n.append(heart, callout.kind === "lost" ? "-1" : "+1");
         n.classList.add(callout.kind === "lost" ? "is-life-lost" : "is-life-won");

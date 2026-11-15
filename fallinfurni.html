@@ -951,7 +951,7 @@
                          on (the love potion's Pod, sat in): the count-in's own
                          heart and "+1". See lifePop. -->
                     <div class="ff-lifepop" id="ff-lifepop" hidden aria-hidden="true">
-                        <span class="ff-countin-n is-life-won"><span class="ff-countin-heart">♥︎</span>+1</span>
+                        <span class="ff-countin-n is-life-won"><span class="ff-countin-heart ff-heart">♥︎</span>+1</span>
                     </div>
 
                     <!-- STUCK ON A BOBBA DOORMAT (13 Nov 2026): over the room for
@@ -1016,6 +1016,9 @@
                                         <option value="BR">BR</option>
                                     </select>
                                     <button type="submit" id="ff-title-play" disabled>Play</button>
+                                    <!-- HOW TO PLAY (15 Nov 2026, the owner's): opens the
+                                         card below. See howToPlay in js/fallinfurni.js. -->
+                                    <button type="button" id="ff-how-open" class="ff-how-open" aria-haspopup="dialog" aria-controls="ff-how">How to play</button>
                                 </div>
                             </form>
 
@@ -1065,6 +1068,31 @@
                                  is not the same as there being none, and is
                                  the one case a second try can fix. -->
                             <button type="button" class="ff-title-retry" id="ff-title-retry">Try again</button>
+                        </div>
+                        <!-- HOW TO PLAY (15 Nov 2026, the owner's: layout B). The
+                             title's top half slides up, its tips and options slide
+                             down, this grows empty from the middle and then its
+                             words fade in. Shut by Got it, X, Escape or a click
+                             outside it. The click/tap words are set by howToPlay. -->
+                        <div class="ff-how" id="ff-how" role="dialog" aria-modal="true" aria-labelledby="ff-how-h">
+                            <div class="ff-how-body">
+                                <button type="button" class="ff-how-x" id="ff-how-x" aria-label="Close">X</button>
+                                <h3 id="ff-how-h">How to play</h3>
+                                <ul class="ff-how-list">
+                                    <li><span class="ff-how-ic">1</span><span>Furni falls. <em>Remember the order the seats land.</em></span></li>
+                                    <li><span class="ff-how-ic">2</span><span><em>Sit on every seat in that order.</em> <span data-how="walk">Click a tile to walk.</span></span></li>
+                                    <li><span class="ff-how-ic">3</span><span>Beat the clock, or <em>lose a life.</em> You have 3.</span></li>
+                                    <li><span class="ff-how-ic">!</span><span>Wrong seat: <em>-10 points</em> and your streak is gone.</span></li>
+                                    <li><span class="ff-how-ic">!</span><span>Not everything that falls is a seat. <em>Mind the Bobba mats.</em></span></li>
+                                    <li><img class="ff-how-img is-mug" src="assets/avatar/handitem-coffee.png" alt=""><span><em>Coffee</em> walks you quicker.</span></li>
+                                    <li><img class="ff-how-img" src="assets/icons/ff-snowflake-how.svg" alt=""><span><em>Ice cream</em> freezes the clock.</span></li>
+                                    <li><span class="ff-how-ic is-heart"><span class="ff-heart">&#9829;&#xFE0E;</span></span><span><em>Rainbow Pod</em>: sit in it for an extra life.</span></li>
+                                </ul>
+                                <div class="ff-how-foot">
+                                    <span data-how="grab">Double-click a coffee or ice cream to grab it.</span>
+                                    <button type="button" class="ff-how-ok" id="ff-how-ok">Got it!</button>
+                                </div>
+                            </div>
                         </div>
                         <!-- THE TIPS TICKER, above the options (27 Oct 2026):
                              one tip at a time, a new one every six seconds.
@@ -1181,7 +1209,7 @@
                                  and puts what it has banked on the board; Quit
                                  ends it and puts nothing there. -->
                             <div class="ff-paused-more">
-                                <button type="button" id="ff-restart">Restart <span class="ff-paused-cost" id="ff-restart-cost">-1 &#9829;&#xFE0E;</span></button>
+                                <button type="button" id="ff-restart">Restart <span class="ff-paused-cost" id="ff-restart-cost">-1 <span class="ff-heart">&#9829;&#xFE0E;</span></span></button>
                                 <button type="button" id="ff-submit-quit">Submit &amp; Quit</button>
                                 <button type="button" id="ff-quit">Quit</button>
                             </div>

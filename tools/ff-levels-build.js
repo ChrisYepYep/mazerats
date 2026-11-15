@@ -260,7 +260,8 @@ function ratesFor(level) {
                    asked to remember eleven chairs.
 
    The margin is multiplicative because slack is really about MISTAKES, and a
-   long round offers more of them: a wrong seat costs three seconds and a
+   long round offers more of them: a wrong seat costs the walk back to the
+   right one (it took three seconds off too until 15 Nov 2026) and a
    fifteen-seat round has fifteen chances to buy one. A floor of ten seconds
    keeps the shortest rounds forgiving enough for three of them.
 

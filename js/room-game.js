@@ -46,8 +46,15 @@
     const Drop = window.RoomDrop;
     const Furni = window.RoomFurni;
 
-    const WRONG_SEAT_PENALTY_S = 3;     // sitting out of order
-    const DECOY_PENALTY_S = 2;          // sitting on a decoy
+    /* NO TIME OFF FOR A MISTAKE (15 Nov 2026, the owner's: "the wrong seat
+       should cost points, not -3 seconds. removing time means some levels
+       would be impossible"). A wrong seat or a decoy costs points and the
+       streak (below), never the clock: the clocks are fitted to what a good
+       player needs (tools/ff-levels-build.js), so seconds taken off could
+       leave a round that can no longer be cleared at all. Kept at 0 rather
+       than taken out, so `penalty` stays in the run log's shape. */
+    const WRONG_SEAT_PENALTY_S = 0;     // was 3
+    const DECOY_PENALTY_S = 0;          // was 2
     const STUCK_MS = 3000;              // stuck on a Bobba Doormat (poi)
     const STUCK_MESSAGE = "Oh Bobba! Stuck for 3 seconds!";
 
@@ -129,8 +136,8 @@
        worth nothing at all.
 
        One a second, paid on a round you CLEAR. Deliberately the smallest
-       thing on the board: a wrong chair costs a whole seat outright, the
-       streak it was building, and three seconds of this on top, so accuracy
+       thing on the board: a wrong chair costs a whole seat outright and the
+       streak it was building (it took three seconds too until 15 Nov 2026), so accuracy
        stays worth more than hurry — which is the right order for a game about
        remembering. But when two runs are otherwise equal, and two clean runs
        of the same levels are exactly equal with every seat and bonus
