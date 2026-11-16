@@ -9,9 +9,9 @@
          stylesheet: this is held in one hand, and the Next button sits right
          where an iPhone's home indicator is. -->
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-    <meta name="theme-color" content="#120c07">
+    <meta name="theme-color" content="#050607">
     <meta name="robots" content="noindex, nofollow">
-    <meta name="description" content="A pub-style pop culture quiz for a host to read aloud — questions and answers together, players and scores kept as you go.">
+    <meta name="description" content="A multiple-choice quiz for a host to read aloud, with lifelines, scores kept as you go and a Christmas round.">
     <!-- Added to the home screen it should open like an app rather than a
          tab, because a host holding this for an hour does not want browser
          chrome eating the screen. -->
@@ -25,7 +25,7 @@
          site does it — a "?" in the site's amber rather than the archive's
          "MZ", so a host with the quiz and the archive both open can tell the
          two tabs apart at a glance. -->
-    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' fill='%23120c07'/%3E%3Ctext x='32' y='47' font-family='Georgia, serif' font-size='44' font-weight='700' fill='%23c7a679' text-anchor='middle'%3E%3F%3C/text%3E%3C/svg%3E">
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' fill='%23050607'/%3E%3Ctext x='32' y='47' font-family='Georgia, serif' font-size='44' font-weight='700' fill='%23b8aa95' text-anchor='middle'%3E%3F%3C/text%3E%3C/svg%3E">
 
     <!-- iOS will not take an SVG here, and without a real PNG "Add to Home
          Screen" saves a blurred screenshot of the page instead — which makes
@@ -34,19 +34,10 @@
     <link rel="apple-touch-icon" href="assets/img/quiz-icon.png">
 
     <link rel="stylesheet" href="css/quiz.css">
-    <!-- Dark mode (30 Oct 2026): a visitor's own switch, the bulb in the
-         archive window's grab bar, worn over whatever palette or skin is
-         showing. Under Frost, the Christmas palette, which is already dark,
-         the same switch gives LIGHT mode instead (the owner's). Both sheets
-         are built by tools/themes.js (css/theme-dark.css on html[data-dark],
-         css/theme-frostlight.css on html[data-light]), loaded only when worn,
-         and last in the head so they follow every other. Set here, before the
-         first paint, and again whenever the palette changes under the page.
-         And when the switch is pressed in another open tab (31 Oct 2026, the
-         bug scan): the storage event, so every tab follows without a reload. -->
-    <link id="dark-css" rel="stylesheet">
-    <link id="light-css" rel="stylesheet">
-    <script>(function(){var d=document.documentElement,dk=document.getElementById("dark-css"),lt=document.getElementById("light-css"),want=false;function sheet(l,h){if(!l.getAttribute("href"))l.href=h;}function apply(){var light=want&&d.getAttribute("data-theme")==="frost",dark=want&&!light;if(dark){sheet(dk,"/css/theme-dark.css");if(!d.hasAttribute("data-dark"))d.setAttribute("data-dark","");}else if(d.hasAttribute("data-dark"))d.removeAttribute("data-dark");if(light){sheet(lt,"/css/theme-frostlight.css");if(!d.hasAttribute("data-light"))d.setAttribute("data-light","");}else if(d.hasAttribute("data-light"))d.removeAttribute("data-light");}window.__mrDarkOn=function(){return want;};window.__mrDarkIsLight=function(){return d.getAttribute("data-theme")==="frost";};window.__mrSetDark=function(v){want=!!v;apply();try{localStorage.setItem("mazerats_dark",want?"1":"0");}catch(e){}};try{want=localStorage.getItem("mazerats_dark")==="1";}catch(e){}apply();try{new MutationObserver(apply).observe(d,{attributes:true,attributeFilter:["data-theme"]});}catch(e){}addEventListener("storage",function(e){if(e.key==="mazerats_dark"||e.key===null){want=e.newValue==="1";apply();}});})();</script>
+    <!-- Always dark (16 Nov 2026, the owner's call). This page used to follow
+         the site's dark-mode bulb; it now wears the homepage's dark palette
+         whatever that switch says, so the bulb's sheets and its head script
+         are gone from here. The colours live in css/quiz.css. -->
 </head>
 <body class="qz-body">
 
@@ -59,8 +50,9 @@
         <header class="qz-hero">
             <h1>Quiz</h1>
             <p class="qz-hero-sub">
-                You read them out. The answer sits right underneath, for your
-                eyes only. Tap whoever got it and the scores keep themselves.
+                You read the question and the four answers. Tap the one they
+                go for: green if it is right, red if it is not. Even you do
+                not know until you tap.
             </p>
         </header>
 
@@ -96,6 +88,21 @@
             <p class="qz-empty" id="qz-players-empty">No players yet — add at least one to start.</p>
         </section>
 
+        <!-- The Christmas quiz. A switch of its own above the categories
+             rather than one more category among them, because it does not
+             add a subject: it changes the shape of the round, making every
+             other question a Christmas one whatever else is picked. -->
+        <section class="qz-card qz-card-xmas">
+            <label class="qz-toggle qz-toggle-bare">
+                <span>
+                    <strong>Christmas quiz</strong>
+                    <small id="qz-xmas-note">Every other question is a Christmas one.</small>
+                </span>
+                <input type="checkbox" id="qz-opt-xmas">
+                <span class="qz-switch" aria-hidden="true"></span>
+            </label>
+        </section>
+
         <section class="qz-card">
             <div class="qz-card-head">
                 <h2>Categories</h2>
@@ -121,7 +128,7 @@
                 <button type="button" data-len="40">40</button>
                 <button type="button" data-len="0">All</button>
             </div>
-            <p class="qz-note">Questions are shuffled and drawn evenly from the categories you picked.</p>
+            <p class="qz-note">Questions are shuffled and drawn evenly from the categories you picked. Each player gets three lifelines, once each: 50:50, Ask the Host and Rule Out.</p>
         </section>
 
         <button type="button" class="qz-start" id="qz-start" disabled>Start the quiz</button>
@@ -152,6 +159,16 @@
         <p class="qz-offsite">
             <a href="/">Maze Rats</a> &mdash; every maze. One place.
         </p>
+
+        <!-- Test mode (16 Nov 2026). A round played with this on does not use
+             its questions up: nothing it shows is added to the asked list,
+             so trying the quiz out costs the real quiz nothing. Small and
+             last on the page, because it is the host's own tool and not
+             part of setting a quiz up. It stays on until switched off. -->
+        <label class="qz-testmode">
+            <input type="checkbox" id="qz-opt-test">
+            <span>Test mode <small id="qz-test-note">questions are not used up</small></span>
+        </label>
     </div>
 </main>
 
@@ -180,23 +197,34 @@
              from arm's length rather than looked at. -->
         <p class="qz-question" id="qz-question"></p>
 
-        <!-- The answer. Visible by default — the host needs it in the same
-             glance as the question — with a hide-until-tapped mode for when
-             the phone gets passed around or put on the table. -->
-        <div class="qz-answer" id="qz-answer">
-            <p class="qz-answer-label">Answer</p>
-            <p class="qz-answer-text" id="qz-answer-text"></p>
-            <button type="button" class="qz-reveal" id="qz-reveal">
-                Tap to reveal the answer
-            </button>
+        <!-- The four answers. Nothing on this screen says which is right,
+             the host included: the app only tells when one is tapped, green
+             or red. That is what lets "Ask the Host" be an honest guess. -->
+        <div class="qz-opts" id="qz-opts"></div>
+
+        <!-- The wait. With Lock in first on, a tap only locks the answer in,
+             amber; Reveal is what turns it green or red. It makes no sound:
+             the music for the wait is on the soundboard below. -->
+        <div class="qz-reveal-row">
+            <button type="button" class="qz-chip" id="qz-suspense" aria-pressed="false">Lock in first</button>
+            <button type="button" class="qz-reveal-btn" id="qz-reveal" hidden>Reveal</button>
+            <button type="button" class="qz-linkbtn" id="qz-show">Nobody knows? Show it</button>
         </div>
 
+        <p class="qz-banner" id="qz-banner" hidden></p>
+
         <section class="qz-award">
-            <p class="qz-award-label">Who got it?</p>
+            <p class="qz-award-label">Players</p>
             <div class="qz-award-grid" id="qz-award-grid"></div>
-            <p class="qz-award-hint">Tap a name to give a point. Tap again to take it back.</p>
+            <p class="qz-award-hint">Tap a name to give the point, and again to take it back. The three buttons beside it are that player's lifelines.</p>
         </section>
     </div>
+
+    <!-- The soundboard. Nothing in the quiz makes a sound by itself (16 Nov
+         2026, the host's call): every cue is one of these, pressed when the
+         moment wants it. Question and Suspense are loops and run until
+         pressed again. Filled by js/quiz.js from QuizAudio.cues. -->
+    <div class="qz-sounds" data-sounds aria-label="Soundboard"></div>
 
     <footer class="qz-bottom">
         <button type="button" class="qz-nav qz-nav-prev" id="qz-prev">Back</button>
@@ -219,6 +247,7 @@
             <h2>Final scores</h2>
         </header>
         <ol class="qz-final" id="qz-final"></ol>
+        <div class="qz-sounds qz-sounds-done" data-sounds aria-label="Soundboard"></div>
         <button type="button" class="qz-start" id="qz-again">Another round, same players</button>
         <button type="button" class="qz-btn qz-btn-quiet qz-wide" id="qz-newquiz">Start a brand new quiz</button>
     </div>
@@ -244,14 +273,6 @@
         <button type="button" class="qz-mini" id="qz-menu-close">Done</button>
     </div>
 
-    <label class="qz-toggle">
-        <span>
-            <strong>Hide answers until tapped</strong>
-            <small>For when the phone gets passed around.</small>
-        </span>
-        <input type="checkbox" id="qz-opt-hide">
-        <span class="qz-switch" aria-hidden="true"></span>
-    </label>
 
     <label class="qz-toggle">
         <span>
@@ -272,12 +293,18 @@
      categories and creates the object the banks assign into. The banks
      themselves are independent and could be listed in any order. -->
 <script src="js/quiz-questions.js"></script>
-<script src="js/quiz-bank-pop.js"></script>
-<script src="js/quiz-bank-screen.js"></script>
+<script src="js/quiz-bank-movies.js"></script>
+<script src="js/quiz-bank-tv.js"></script>
 <script src="js/quiz-bank-music.js"></script>
-<script src="js/quiz-bank-world.js"></script>
-<script src="js/quiz-bank-life.js"></script>
+<script src="js/quiz-bank-food.js"></script>
+<script src="js/quiz-bank-animals.js"></script>
+<script src="js/quiz-bank-geography.js"></script>
+<script src="js/quiz-bank-science.js"></script>
 <script src="js/quiz-bank-general.js"></script>
+<script src="js/quiz-bank-pop.js"></script>
+<script src="js/quiz-bank-nostalgia.js"></script>
+<script src="js/quiz-bank-xmas.js"></script>
+<script src="js/quiz-audio.js"></script>
 <script src="js/quiz.js"></script>
     <script src="/js/presence-live.js?v=2" defer></script>
 </body>

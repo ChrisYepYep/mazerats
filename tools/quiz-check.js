@@ -4,7 +4,7 @@
  *
  * What it can prove, and what it cannot. It catches STRUCTURAL faults — a
  * question asked twice, a draft note left in an answer, an entry that is not
- * a proper pair, an id collision — and it is worth running because at a
+ * five strings, an answer sitting in its own question, an id collision — and it is worth running because at a
  * couple of thousand questions those are invisible by eye. It also catches
  * the same FACT asked twice in different words, which is the repeat a host
  * actually notices and which the exact-text check cannot see — see "the same
@@ -30,7 +30,9 @@ fs.readdirSync(JS)
     .sort()
     .forEach(f => require(path.join(JS, f)));
 
-const CATS = global.window.QUIZ_CATEGORIES;
+/* The Christmas bank is checked like a category, though the app does not list
+   it as one: the "Christmas quiz" switch draws from it. */
+const CATS = global.window.QUIZ_CATEGORIES.concat([{ id: 'xmas', label: 'Christmas (the switch)' }]);
 const BANK = global.window.QUIZ_QUESTIONS;
 
 /* Must match qid() in js/quiz.js exactly, or the collision check is checking
@@ -74,20 +76,39 @@ CATS.forEach(cat => {
     rows.forEach((row, i) => {
         const at = `[${cat.id}:${i}]`;
 
-        if (!Array.isArray(row) || row.length !== 2) {
-            problems.push(`${at} not a [question, answer] pair`);
+        if (!Array.isArray(row) || row.length !== 5) {
+            problems.push(`${at} not [question, right, wrong, wrong, wrong]`);
+            return;
+        }
+        if (row.some(x => typeof x !== 'string' || !x.trim())) {
+            problems.push(`${at} blank question or option`);
             return;
         }
         const [q, a] = row;
-        if (typeof q !== 'string' || typeof a !== 'string' || !q.trim() || !a.trim()) {
-            problems.push(`${at} blank question or answer`);
-            return;
-        }
         total++;
+
+        /* Multiple choice (16 Nov 2026). Four different options; none of them
+           a catch-all; and the right answer not sitting in the question,
+           which is the host's one hard rule. A bare number is let through
+           the last check — "How many days in a week?" may fairly hold a 7. */
+        const opts = row.slice(1).map(o => o.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim());
+        if (new Set(opts).size !== 4) { problems.push(`${at} two options are the same: ${q}`); }
+        row.slice(1).forEach(o => {
+            if (o !== o.trim()) { problems.push(`${at} option has stray whitespace: ${JSON.stringify(o)}`); }
+            if (/all of the above|none of the above/i.test(o)) { problems.push(`${at} catch-all option: ${q}`); }
+            if (o.length > 42) { problems.push(`${at} option too long to read out: ${o}`); }
+        });
+        const inQ = ' ' + q.toLowerCase().replace(/[^a-z0-9]+/g, ' ') + ' ';
+        if (opts[0].length > 3 && !/^d+$/.test(opts[0]) && inQ.includes(' ' + opts[0] + ' ')) {
+            problems.push(`${at} the answer is in the question: ${q} -> ${a}`);
+        }
 
         if (q !== q.trim()) { problems.push(`${at} question has stray whitespace: ${JSON.stringify(q)}`); }
         if (a !== a.trim()) { problems.push(`${at} answer has stray whitespace: ${JSON.stringify(a)}`); }
-        if (!/[?]$/.test(q.trim())) { problems.push(`${at} question does not end in "?": ${q}`); }
+        /* A question mark, possibly inside a closing quote ("...asks 'What's
+           up, Doc?'"), or a "Complete the saying: …" prompt, which is read
+           out as an instruction and has no question mark to end on. */
+        if (!/[?]['"’”]?$/.test(q.trim()) && !/^Complete\b/.test(q.trim())) { problems.push(`${at} question does not end in "?": ${q}`); }
 
         DRAFT.forEach(d => {
             if (d.re.test(q)) { problems.push(`${at} ${d.why} (question): ${q}`); }
@@ -118,7 +139,7 @@ CATS.forEach(cat => {
 const byAnswer = new Map();
 CATS.forEach(cat => {
     (BANK[cat.id] || []).forEach(row => {
-        if (!Array.isArray(row) || row.length !== 2) { return; }
+        if (!Array.isArray(row) || row.length !== 5) { return; }
         const key = cat.id + '|' + String(row[1]).toLowerCase().replace(/[^a-z0-9]+/g, '');
         byAnswer.set(key, (byAnswer.get(key) || 0) + 1);
     });
@@ -167,7 +188,7 @@ function overlap(a, b) {
 const entries = [];
 CATS.forEach(cat => {
     (BANK[cat.id] || []).forEach((row, i) => {
-        if (!Array.isArray(row) || row.length !== 2) { return; }
+        if (!Array.isArray(row) || row.length !== 5) { return; }
         entries.push({
             at: `[${cat.id}:${i}]`,
             q: row[0],

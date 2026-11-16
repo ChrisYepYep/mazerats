@@ -14,21 +14,33 @@
  * main stylesheet fell into.
  */
 
+/* Always dark (16 Nov 2026). These are the homepage's dark-mode colours, the
+   ones tools/themes.js writes into css/theme-dark.css: graphite surfaces at
+   hue 222, warm stone accents at hue 36. They are set here outright rather
+   than borrowed through html[data-dark], because this page is dark whatever
+   the site's bulb says. If the homepage's dark palette is retuned, retune
+   these by hand to match. */
 :root {
-    --bg-black: #120c07;
-    --bg-panel: #1d140c;
-    --bg-panel-light: #2a1c10;
-    --wood-mid: #4a3018;
-    --amber: #ab8b64;
-    --amber-bright: #c7a679;
-    --parchment: #d8cbb2;
-    --parchment-dim: #a89a84;
-    --danger: #a1462f;
-    --ok: #6f8f4f;
-    --ok-bright: #8fb368;
-    --border: rgba(201, 151, 79, 0.35);
-    --border-soft: rgba(201, 151, 79, 0.18);
+    --bg-black: #050607;
+    --bg-panel: #101216;
+    --bg-panel-light: #191c24;
+    --wood-mid: #252934;
+    --amber: #998971;
+    --amber-bright: #b8aa95;
+    --parchment: #d3cdc5;
+    --parchment-dim: #a39c91;
+    --ink: #e4e2dd;
+    --on-amber: #101115;
+    --danger: #ec434a;
+    --danger-soft: #f08a8e;
+    --ok: #3f8f58;
+    --ok-bright: #63c07f;
+    --lock: #ebcd5d;
+    --xmas: #d0545b;
+    --border: rgba(161, 137, 101, 0.35);
+    --border-soft: rgba(161, 137, 101, 0.18);
     --shadow: 0 2px 10px rgba(0, 0, 0, 0.6);
+    --glow: 0 0 18px rgba(184, 170, 149, 0.14);
 
     /* The safe areas, resolved once. On a notched iPhone these are real
        numbers; everywhere else env() falls back to 0 and the layout is
@@ -116,6 +128,7 @@ input, button { font-family: inherit; }
 .qz-card {
     background: var(--bg-panel);
     border: 1px solid var(--border-soft);
+    box-shadow: var(--glow);
     border-radius: 14px;
     padding: 16px;
     margin-bottom: 14px;
@@ -253,7 +266,7 @@ input, button { font-family: inherit; }
     padding: 12px 14px;
 }
 
-.qz-addrow input::placeholder { color: #6f6354; }
+.qz-addrow input::placeholder { color: #625e59; }
 
 .qz-addrow input:focus {
     outline: none;
@@ -322,7 +335,7 @@ input, button { font-family: inherit; }
     padding: 0;
 }
 
-.qz-players button:active { background: var(--danger); color: #fff; }
+.qz-players button:active { background: var(--danger); color: var(--on-amber); }
 
 /* ============================== categories ============================= */
 
@@ -391,8 +404,8 @@ input, button { font-family: inherit; }
 /* The reset is the one control that can bring a question back, so it reads
    as a caution rather than a peer of "All". */
 .qz-mini-warn {
-    color: #d08a76;
-    border-color: rgba(161, 70, 47, 0.5);
+    color: var(--danger-soft);
+    border-color: rgba(236, 67, 74, 0.45);
 }
 
 .qz-mini-warn[hidden] { display: none !important; }
@@ -439,24 +452,24 @@ input, button { font-family: inherit; }
 }
 
 .qz-btn-primary {
-    background: var(--amber);
+    background: var(--amber-bright);
     border-color: var(--amber-bright);
-    color: #1a1209;
+    color: var(--on-amber);
     font-weight: 800;
 }
 
 .qz-btn-quiet { background: transparent; color: var(--parchment-dim); }
-.qz-btn-danger { background: transparent; border-color: rgba(161, 70, 47, 0.6); color: #d08a76; }
+.qz-btn-danger { background: transparent; border-color: rgba(236, 67, 74, 0.5); color: var(--danger-soft); }
 .qz-wide { display: block; width: 100%; margin-top: 10px; }
 
 .qz-start {
     display: block;
     width: 100%;
     margin-top: 8px;
-    background: var(--amber);
+    background: var(--amber-bright);
     border: none;
     border-radius: 14px;
-    color: #1a1209;
+    color: var(--on-amber);
     font-family: 'Montserrat', sans-serif;
     font-size: 17px;
     font-weight: 800;
@@ -468,12 +481,31 @@ input, button { font-family: inherit; }
 
 .qz-start:disabled {
     background: var(--bg-panel-light);
-    color: #6f6354;
+    color: #625e59;
     box-shadow: none;
     cursor: default;
 }
 
-.qz-start:active:not(:disabled) { background: var(--amber-bright); }
+.qz-start:active:not(:disabled) { background: var(--ink); }
+
+/* The test-mode switch: the smallest control on the page, on purpose. */
+.qz-testmode {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    margin: 18px 0 0;
+    font-size: 12.5px;
+    color: var(--parchment-dim);
+    cursor: pointer;
+}
+
+.qz-testmode input { width: 16px; height: 16px; margin: 0; accent-color: var(--lock); }
+.qz-testmode small { font-size: inherit; opacity: 0.7; }
+.qz-testmode input:checked + span { color: var(--lock); }
+
+/* Worn by the question counter while a test round is on screen. */
+.qz-progress-text.is-test { color: var(--lock); }
 
 /* ============================== play screen ============================ */
 
@@ -574,57 +606,204 @@ input, button { font-family: inherit; }
     font-weight: 700;
     line-height: 1.28;
     letter-spacing: -0.01em;
-    color: #f0e7d5;
+    color: var(--ink);
 }
 
-/* ------------------------------- answer ------------------------------- */
+.qz-cat-pill.is-xmas {
+    color: var(--xmas);
+    border-color: rgba(208, 84, 91, 0.45);
+}
 
-.qz-answer {
-    position: relative;
-    background: rgba(111, 143, 79, 0.13);
-    border: 1px solid rgba(143, 179, 104, 0.4);
+/* ------------------------------ answers ------------------------------- */
+
+/* Four answers, one under another, each a full-width target. One column on
+   every width: they are read out top to bottom as A, B, C, D, and a 2x2 grid
+   makes "B" mean right on one phone and below on another. */
+.qz-opts {
+    display: grid;
+    gap: 9px;
+    margin-bottom: 14px;
+}
+
+.qz-opt {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    width: 100%;
+    min-height: 58px;
+    text-align: left;
+    background: var(--bg-panel);
+    border: 1px solid var(--border);
     border-radius: 14px;
-    padding: 14px 16px;
-    margin-bottom: 24px;
-}
-
-.qz-answer-label {
-    margin: 0 0 4px;
-    font-family: 'Silkscreen', monospace;
-    font-size: 9.5px;
-    letter-spacing: 0.14em;
-    text-transform: uppercase;
-    color: var(--ok-bright);
-}
-
-.qz-answer-text {
-    margin: 0;
-    font-size: 20px;
-    font-weight: 700;
-    line-height: 1.3;
-    color: #dfeccb;
-}
-
-/* The hidden state. The button covers the answer completely rather than the
-   answer being blurred — a blurred short answer is still readable at a
-   glance, and the whole point is that it isn't. */
-.qz-reveal {
-    position: absolute;
-    inset: 0;
-    border: none;
-    border-radius: 13px;
-    background: var(--bg-panel-light);
-    color: var(--amber);
-    font-family: 'Silkscreen', monospace;
-    font-size: 11px;
-    letter-spacing: 0.06em;
+    color: var(--ink);
+    font-size: 17.5px;
+    font-weight: 600;
+    line-height: 1.25;
+    padding: 10px 14px 10px 10px;
     cursor: pointer;
-    display: none;
+    transition: background 0.12s, border-color 0.12s, color 0.12s, opacity 0.12s;
 }
 
-.qz-answer.is-hidden .qz-reveal { display: block; }
+.qz-opt:active:not(:disabled) { background: var(--wood-mid); }
 
-/* ------------------------------ awarding ------------------------------ */
+.qz-opt-letter {
+    flex: 0 0 auto;
+    width: 38px;
+    height: 38px;
+    border-radius: 10px;
+    display: grid;
+    place-items: center;
+    background: var(--bg-black);
+    border: 1px solid var(--border-soft);
+    color: var(--amber-bright);
+    font-family: 'Silkscreen', monospace;
+    font-size: 15px;
+}
+
+.qz-opt-text { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; }
+
+/* A disabled button greys its text by default; these states set their own. */
+.qz-opt:disabled { cursor: default; color: var(--parchment-dim); }
+
+.qz-opt.is-right {
+    background: var(--ok);
+    border-color: var(--ok-bright);
+    color: #f1f8ea;
+    box-shadow: 0 0 22px rgba(99, 192, 127, 0.28);
+}
+
+.qz-opt.is-right .qz-opt-letter {
+    background: rgba(0, 0, 0, 0.3);
+    border-color: transparent;
+    color: #f1f8ea;
+}
+
+.qz-opt.is-wrong {
+    background: #7d1f25;
+    border-color: var(--danger);
+    color: #fbe3e4;
+}
+
+.qz-opt.is-wrong .qz-opt-letter {
+    background: rgba(0, 0, 0, 0.3);
+    border-color: transparent;
+    color: #fbe3e4;
+}
+
+/* Taken away by 50:50. Still in its place, so B stays B, but plainly out. */
+.qz-opt.is-gone {
+    opacity: 0.28;
+    border-style: dashed;
+}
+
+.qz-opt.is-gone .qz-opt-text { text-decoration: line-through; }
+
+/* Locked in, waiting on Reveal. */
+.qz-opt.is-locked {
+    background: #3a3214;
+    border-color: var(--lock);
+    color: #fbf3cf;
+    animation: qz-lock 1.25s ease-in-out infinite;
+}
+
+.qz-opt.is-locked .qz-opt-letter {
+    background: var(--lock);
+    border-color: transparent;
+    color: var(--on-amber);
+}
+
+/* 1.25s is two beats of the suspense music (96 to the minute). */
+@keyframes qz-lock {
+    0%, 100% { box-shadow: 0 0 0 rgba(235, 205, 93, 0); }
+    50% { box-shadow: 0 0 24px rgba(235, 205, 93, 0.38); }
+}
+
+.qz-reveal-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-height: 44px;
+    margin-bottom: 18px;
+}
+
+.qz-chip {
+    flex: 0 0 auto;
+    background: var(--bg-panel);
+    border: 1px solid var(--border-soft);
+    border-radius: 999px;
+    color: var(--parchment-dim);
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 0.03em;
+    padding: 10px 14px;
+    cursor: pointer;
+}
+
+.qz-chip::before {
+    content: '';
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #4a4a4a;
+    margin-right: 8px;
+}
+
+.qz-chip[aria-pressed="true"] {
+    border-color: var(--lock);
+    color: var(--lock);
+}
+
+.qz-chip[aria-pressed="true"]::before {
+    background: var(--lock);
+    box-shadow: 0 0 8px rgba(235, 205, 93, 0.7);
+}
+
+.qz-reveal-btn {
+    flex: 1 1 auto;
+    background: var(--lock);
+    border: none;
+    border-radius: 999px;
+    color: var(--on-amber);
+    font-family: 'Montserrat', sans-serif;
+    font-size: 15px;
+    font-weight: 800;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    padding: 12px 16px;
+    cursor: pointer;
+    box-shadow: 0 0 18px rgba(235, 205, 93, 0.25);
+}
+
+.qz-reveal-btn[hidden], .qz-linkbtn[hidden], .qz-banner[hidden] { display: none !important; }
+
+.qz-linkbtn {
+    margin-left: auto;
+    background: none;
+    border: none;
+    color: var(--parchment-dim);
+    font-size: 13px;
+    text-decoration: underline;
+    text-underline-offset: 3px;
+    padding: 10px 2px;
+    cursor: pointer;
+}
+
+/* With Reveal showing there is no room beside it, and no call for it. */
+.qz-reveal-btn:not([hidden]) ~ .qz-linkbtn { display: none; }
+
+.qz-banner {
+    margin: 0 0 16px;
+    background: rgba(235, 205, 93, 0.08);
+    border: 1px solid rgba(235, 205, 93, 0.35);
+    border-radius: 12px;
+    color: #f2e6b4;
+    font-size: 14px;
+    line-height: 1.4;
+    padding: 10px 12px;
+}
+
+/* ------------------------- players and lifelines ----------------------- */
 
 .qz-award-label {
     margin: 0 0 10px;
@@ -638,15 +817,20 @@ input, button { font-family: inherit; }
 
 .qz-award-grid {
     display: grid;
-    grid-template-columns: 1fr 1fr;
     gap: 8px;
 }
 
-/* One player who won't fit next to anyone gets the full width instead of
-   sitting lonely in half of it. */
-.qz-award-grid.is-single { grid-template-columns: 1fr; }
+/* One player to a row: the name, which is the point button, then that
+   player's three lifelines. A row each is what leaves room for them. */
+.qz-award-row {
+    display: flex;
+    align-items: stretch;
+    gap: 6px;
+}
 
 .qz-award-btn {
+    flex: 1 1 auto;
+    min-width: 0;
     display: flex;
     align-items: center;
     justify-content: space-between;
@@ -658,8 +842,8 @@ input, button { font-family: inherit; }
     font-size: 15px;
     font-weight: 600;
     text-align: left;
-    padding: 14px 12px;
-    min-height: 54px;
+    padding: 12px;
+    min-height: 50px;
     cursor: pointer;
     transition: background 0.1s, border-color 0.1s;
 }
@@ -683,12 +867,47 @@ input, button { font-family: inherit; }
 .qz-award-btn[aria-pressed="true"] {
     background: var(--ok);
     border-color: var(--ok-bright);
-    color: #16200c;
+    color: #f1f8ea;
 }
 
 .qz-award-btn[aria-pressed="true"] .qz-award-score {
     background: rgba(0, 0, 0, 0.28);
-    color: #e6f3d4;
+    color: #f1f8ea;
+}
+
+.qz-life {
+    flex: 0 0 auto;
+    min-width: 50px;
+    background: var(--bg-panel-light);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    color: var(--ink);
+    /* The page's own text face, not the pixel one: at this size the pixel
+       face was unreadable (the host, 16 Nov 2026). */
+    font-size: 13px;
+    font-weight: 700;
+    white-space: nowrap;
+    padding: 0 8px;
+    cursor: pointer;
+}
+
+.qz-life:disabled { cursor: default; opacity: 0.5; }
+
+/* In play on the question on screen. */
+.qz-life.is-live {
+    background: var(--lock);
+    border-color: var(--lock);
+    color: var(--on-amber);
+    box-shadow: 0 0 12px rgba(235, 205, 93, 0.35);
+}
+
+/* Spent on an earlier question: struck out, for the rest of the quiz. */
+.qz-life.is-spent {
+    opacity: 0.32;
+    background: transparent;
+    border-style: dashed;
+    color: var(--parchment-dim);
+    text-decoration: line-through;
 }
 
 .qz-award-hint {
@@ -697,14 +916,73 @@ input, button { font-family: inherit; }
     color: var(--parchment-dim);
 }
 
+/* --------------------------- setup: Christmas -------------------------- */
+
+.qz-card-xmas { padding-top: 6px; padding-bottom: 6px; }
+
+.qz-toggle.qz-toggle-bare { border-bottom: none; }
+
+/* ----------------------------- soundboard ----------------------------- */
+
+/* Four across, two rows, pinned above Back and Next: the cues are reached
+   for without looking, so they stay where the thumb left them and never
+   scroll away with the question. */
+.qz-sounds {
+    flex: 0 0 auto;
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 6px;
+    padding: 8px 12px 0;
+    border-top: 1px solid var(--border-soft);
+    background: var(--bg-panel);
+}
+
+.qz-sounds:empty { display: none; }
+
+.qz-snd {
+    min-height: 38px;
+    background: var(--bg-panel-light);
+    border: 1px solid var(--border);
+    border-radius: 9px;
+    color: var(--parchment);
+    font-size: 12.5px;
+    font-weight: 700;
+    line-height: 1.1;
+    padding: 4px 2px;
+    cursor: pointer;
+}
+
+.qz-snd:active { background: var(--wood-mid); }
+
+.qz-snd[data-snd="correct"] { border-color: rgba(99, 192, 127, 0.6); color: var(--ok-bright); }
+.qz-snd[data-snd="wrong"] { border-color: rgba(236, 67, 74, 0.6); color: var(--danger-soft); }
+
+/* A loop wears a ring in its corner so it reads as a switch, not a shot. */
+.qz-snd.is-loop::before { content: "\21BB\A0"; opacity: 0.6; }
+
+/* The loop that is running. */
+.qz-snd.is-on {
+    background: var(--lock);
+    border-color: var(--lock);
+    color: var(--on-amber);
+    box-shadow: 0 0 14px rgba(235, 205, 93, 0.35);
+}
+
+/* On the final-scores screen the board sits in the page, not pinned. */
+.qz-sounds-done {
+    border: none;
+    background: none;
+    padding: 0;
+    margin: 0 0 18px;
+}
+
 /* ------------------------------- footer ------------------------------- */
 
 .qz-bottom {
     flex: 0 0 auto;
     display: flex;
     gap: 10px;
-    padding: 10px 12px calc(var(--safe-bottom) + 10px);
-    border-top: 1px solid var(--border-soft);
+    padding: 8px 12px calc(var(--safe-bottom) + 10px);
     background: var(--bg-panel);
 }
 
@@ -728,12 +1006,12 @@ input, button { font-family: inherit; }
 
 .qz-nav-next {
     flex: 1 1 auto;
-    background: var(--amber);
+    background: var(--amber-bright);
     border-color: var(--amber-bright);
-    color: #1a1209;
+    color: var(--on-amber);
 }
 
-.qz-nav-next:active { background: var(--amber-bright); }
+.qz-nav-next:active { background: var(--ink); }
 
 /* ============================ final scores ============================= */
 
@@ -943,11 +1221,11 @@ input, button { font-family: inherit; }
 
 .qz-toggle input:checked + .qz-switch::after {
     transform: translateX(20px);
-    background: #eaf4dc;
+    background: #d8e8c6;
 }
 
 .qz-toggle input:focus-visible + .qz-switch {
-    box-shadow: 0 0 0 3px rgba(199, 166, 121, 0.3);
+    box-shadow: 0 0 0 3px rgba(184, 170, 149, 0.3);
 }
 
 .qz-menu-actions {
@@ -982,7 +1260,7 @@ input, button { font-family: inherit; }
        padding rather than a max-width. max() keeps the padding from going
        negative on a window narrower than the column, which would otherwise
        push the Back button off the left edge. */
-    .qz-top, .qz-bottom {
+    .qz-top, .qz-bottom, .qz-play > .qz-sounds {
         /* 572px, not 620px: the stage is a 620px box with 24px of padding
            inside it, so its TEXT column is 572px wide. Padding the bars to
            620 lines them up with the stage's border box and leaves the Next
