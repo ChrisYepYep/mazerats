@@ -135,7 +135,11 @@ function rosetteAt(c, SX, SY) {
 function rugCorners(set, cut) {
     const out = [], has = (x, y) => set.has(x + "," + y);
     const run = (X, Y, dx, dy) => { let n = 0; while (n < 4 && has(X + dx * n, Y + dy * n)) n++; return n; };
-    const push = (o, X, Y) => { o.small = Math.min(run(X, Y, o.sa, 0), run(X, Y, 0, o.sb)) <= 3; out.push(o); };
+    /* ...and wide enough both ways, not only long enough along its two edges (16 Nov 2026, his: "rug corner bug", Floor 1 32,26): the
+       outside corner of an L where a 2-wide run meets a 3-wide one runs on for tiles along both edges, so it was given the medallion with no
+       room across for it. A medallion needs the 4 x 4 tiles in from its corner to be all rug. */
+    const roomy = (X, Y, sa, sb) => { for (let i = 0; i < 4; i++) for (let j = 0; j < 4; j++) if (!has(X + sa * i, Y + sb * j)) return false; return true; };
+    const push = (o, X, Y) => { o.small = Math.min(run(X, Y, o.sa, 0), run(X, Y, 0, o.sb)) <= 3 || !roomy(X, Y, o.sa, o.sb); out.push(o); };
     for (const k of set) { const [X, Y] = k.split(",").map(Number), c = cut.has(k), out = { push: o => push(o, X, Y) };
         if (!has(X - 1, Y) && !has(X, Y - 1)) out.push({ A: X * 16, B: Y * 16, sa: 1, sb: 1, flat: true, cut: c });
         if (!has(X + 1, Y) && !has(X, Y - 1)) out.push({ A: X * 16 + 15, B: Y * 16, sa: -1, sb: 1, flat: false, cut: c });
@@ -265,7 +269,7 @@ function rugDepth(F, TX, TY, key, near) {
     m.set(key, v);
     return v;
 }
-function rugFieldAt(F, X, Y, dx, dy) {
+function rugFieldAt(F, X, Y, dx, dy, mirrored) {
     const a = Math.floor(X * 16 + (dx + 2 * dy) / 2), b = Math.floor(Y * 16 + (2 * dy - dx) / 2);
     const TX = Math.floor(a / 16), TY = Math.floor(b / 16), key = TX + "," + TY;
     if (!F.set.has(key)) return null;
@@ -279,13 +283,13 @@ function rugFieldAt(F, X, Y, dx, dy) {
     /* A tile straight across (outside on one axis only) wins a tie with one diagonally across: on the row where the two are the same
        distance, the diagonal one, met first, gave the pixel to the other edge, and the border kinked once per tile along the bottom-left
        and top-right edges (15 Nov 2026 scan). A straight tile's side is the axis it's outside on. */
-    let r = 1e9, side = -1, at = 0, straightWon = false;
+    let r = 1e9, side = -1, at = 0, straightWon = false, wax = 0, wby = 0;
     for (let n = 0; n < near.length; n += 2) {
         const ax = near[n], by = near[n + 1];
         const outA = a < ax || a >= ax + 16, outB = b < by || b >= by + 16, straight = outA !== outB;
         const da = a < ax ? ax - a - 1 : a >= ax + 16 ? a - ax - 16 : 0, db = b < by ? by - b - 1 : b >= by + 16 ? b - by - 16 : 0;
         const d = Math.max(da, db);
-        if (d < r || (d === r && straight && !straightWon)) { r = d; straightWon = straight; if (straight ? outA : da >= db) { side = a < ax ? 1 : 0; at = a < ax ? ax - 1 : ax + 16; } else { side = b < by ? 3 : 2; at = b < by ? by - 1 : by + 16; } }
+        if (d < r || (d === r && straight && !straightWon)) { r = d; straightWon = straight; wax = ax; wby = by; if (straight ? outA : da >= db) { side = a < ax ? 1 : 0; at = a < ax ? ax - 1 : ax + 16; } else { side = b < by ? 3 : 2; at = b < by ? by - 1 : by + 16; } }
     }
     if (GHP) return ghRugPx(r, X, Y, dx, dy);
     /* the corners: cut ones move the edge in, square ones have the rosette. A cut runs its whole border (RUG_BORDER deep) to where it meets
@@ -300,10 +304,29 @@ function rugFieldAt(F, X, Y, dx, dy) {
            rounded a + b is one less on every other pixel, so the band's last row came half medallion, half edge, a speckle (15 Nov 2026) */
         else if (!c.small && u >= 1 && v >= 1 && u <= ROSETTE_ZONE && v <= ROSETTE_ZONE && Math.abs(c.sa * (X * 16 + (dx + 2 * dy) / 2 - c.A) - c.sb * (Y * 16 + (2 * dy - dx) / 2 - c.B)) <= ROSETTE_HALF && r >= 1) { const p = rosetteAt(c, (X - Y) * 16 + dx, (X + Y) * 8 + dy); if (p) return p; }
     }
-    /* a narrow rug's border gives way to its weave (rugDepth, above) */
-    if (r < RUG.ramp.length) { const dp = rugDepth(F, TX, TY, key, near); if (dp && r >= dp[(b - TY * 16) * 16 + (a - TX * 16)]) return (F.along.get(key) ? RUG.at(68 + (((b % 32) + 32) % 32), RUG.core + (((a % 16) + 16) % 16)) : RUG.at(68 + (((a % 32) + 32) % 32), RUG.core + (((b % 16) + 16) % 16))); }
-    if (r < RUG.ramp.length) return (!F.plainEdges && !(F.cutShape && F.cutShape.has(key)) && side >= 0 && edgeAt(side, at, a, b, (X - Y) * 16 + dx, (X + Y) * 8 + dy)) || RUG.ramp[r];
-    return F.along.get(key) ? RUG.at(68 + (((b % 32) + 32) % 32), RUG.core + (((a % 16) + 16) % 16)) : RUG.at(68 + (((a % 32) + 32) % 32), RUG.core + (((b % 16) + 16) % 16));
+    /* THE FIELD IS ONE WEAVE (16 Nov 2026, his: "middle weave pattern bug" and "strange diagonal line in the weave pattern, dark line
+       through the weave pattern - this appears around the hallways"). Inside the border it was drawn two ways: the client's edge pixels and
+       the border's own colours by distance from the nearest edge for the first rows, the client's weave (RUG.at, fixed to the floor) past
+       that. The two never lined up, so a wide rug had rectangles of a different texture in its middle, and where the nearest edge changed
+       over (along a join's diagonal, or up the middle) the distance-drawn rows turned a corner: a dark diagonal line. Now everything from
+       the field's first row in is RUG.at, which has no edge to be out of step with.
+       A narrow rug's border gives way to the weave (rugDepth, above): its field starts nearer the edge. */
+    let fieldFrom = RUG_BORDER;
+    if (r < RUG_BORDER) { const dp = rugDepth(F, TX, TY, key, near); if (dp) fieldFrom = dp[(b - TY * 16) * 16 + (a - TX * 16)]; }
+    if (r >= fieldFrom) return F.along.get(key) ? RUG.at(68 + (((b % 32) + 32) % 32), RUG.core + (((a % 16) + 16) % 16)) : RUG.at(68 + (((a % 32) + 32) % 32), RUG.core + (((b % 16) + 16) % 16));
+    /* AN INSIDE CORNER IS ONE ARM MIRRORED (16 Nov 2026, his: "rug corner lines aren't aligned", Floor 1 41,24). Where the nearest floor is the
+       square diagonally across an inside corner, the two arms of the border are copied from two different pieces of the client's art, and the
+       pixel row (or column) along the corner's middle line came out a jumble of both: every stripe kinked there. The arms already mirror each
+       other about the line half a pixel before the corner's middle, so only that middle line is wrong: it takes the pixel beside it on the
+       near side (above, for a corner pointing left or right; left, for one pointing up or down), and one stripe meets the same stripe.
+       (Mirroring the whole far half was tried: away from the corner the two arms' art differs, and it made patches.) */
+    if (!mirrored && !straightWon && r < 1e9) {
+        const Ac = a < wax ? wax : wax + 16, Bc = b < wby ? wby : wby + 16, sx = (X - Y) * 16 + dx, sy = (X + Y) * 8 + dy, sxc = Ac - Bc, syc = (Ac + Bc) / 2;
+        /* (a mirrored point off the rug, or on a cut corner, gives nothing back: then this pixel is drawn as it was) */
+        const m = (a < wax) !== (b < wby) ? (sy === syc ? rugFieldAt(F, X, Y, dx, dy - 1, true) : null) : (sx === sxc ? rugFieldAt(F, X, Y, dx - 1, dy, true) : null);
+        if (m) return m;
+    }
+    return (!F.plainEdges && !(F.cutShape && F.cutShape.has(key)) && side >= 0 && edgeAt(side, at, a, b, (X - Y) * 16 + dx, (X + Y) * 8 + dy)) || RUG.ramp[r];
 }
 /* A straight edge's border, copied from the client's own rug in screen pixels (14 Nov 2026, his: "the thickness of the lines not matching
    the straight rug sprites ... amend the straight rug sprites too"). The border as a list of colours by distance from the edge can't match
@@ -784,6 +807,10 @@ const endHidden = (beyond, zB, zz) => beyond !== null && beyond !== undefined &&
    run's foot) along the line of sight to that end's plane: if it meets the wall there, below the higher floor, the wall keeps the pixel.
    side(d): the height of the floor beyond that end at d along the run, or null where there's no higher floor */
 const sideWallCovers = (side, c0, zB, cc, dd, z) => { if (!side) return false; const t = c0 - cc, zw = z + 16 * t; if (t > 0 || zw < 0) return false; const hz = side(dd + t); return hz !== null && hz !== undefined && zB + zw < hz; };
+/* ...and the run's last end (c1), the one nearer you (16 Nov 2026, his: "small steps ... are overlapping floor tiles that should be drawn over the
+   small steps", Floor 3 128,-45): a higher floor beyond that end stands in front of the treads, so a strip pixel whose line of sight towards
+   you passes under that floor's top where it starts (c1) is behind it and isn't laid. side1(d): that floor's height at d along the run, or null */
+const nearSideCovers = (side1, c1, zB, cc, dd, z) => { if (!side1) return false; const t = c1 - cc; if (t < 0) return false; const hz = side1(dd + t); return hz !== null && hz !== undefined && zB + z + 16 * t < hz; };
 function flightUpToYou(w, o) {
     const { axis, c0, c1, dStart, steps, zB, carpet, way } = o, alongY = axis === "y", pq = stepTones(way), grainAt = GHP ? ghGrain : (wayOf(way) || {}).planks ? plankXY : parquetAt;
     const scr = (c, d, z) => alongY ? [Math.round((c - d) * 16) + w.ox, Math.round((c + d) * 8) + w.oy - zB - z] : [Math.round((d - c) * 16) + w.ox, Math.round((c + d) * 8) + w.oy - zB - z];
@@ -810,7 +837,7 @@ function flightUpToYou(w, o) {
                 const cc = c0 + (u + r + .5) / 16, dd = d0 + (r + .5) / 16; if (cc < c0 || cc >= c1) continue;
                 const uu = Math.floor((cc - c0) * 16), end = uu === 0 || (uu === wide - 1 && !o.cover1), far = r === 0, onRug = cc >= ca && cc < cb, rc = onRug && rugAt(cc, k * 6 + r);
                 const col = far && k === 0 && !onRug ? (GHP ? GH_JOINT : C.k) : onRug ? (far ? dim(rc, .6) : rc) : far || end ? pq(.3) : r === 1 ? pq(1) : grainAt(alongY ? cc : dd, alongY ? dd : cc);
-                if (sideWallCovers(o.sideZ, c0, zB, cc, dd, z)) continue;
+                if (sideWallCovers(o.sideZ, c0, zB, cc, dd, z) || nearSideCovers(o.sideZ1, c1, zB, cc, dd, z)) continue;
                 if (!o.vis || o.vis(alongY ? cc : dd, alongY ? dd : cc, zB + z)) w.b.set(p[0], p[1] + r, col);
             }
         }
@@ -963,7 +990,7 @@ function stepGroup(w, o) {
                 if (row < 0 || row > rows) continue;
                 const cc = d0 + (m + row + .5) / 16, dd = d0 + (row + .5) / 16, X = r.alongY ? cc : dd, Y = r.alongY ? dd : cc, q = at(X, Y);
                 if (!q || q.gov !== r || !(q.s < 0 ? k === steps - 1 : Math.floor(q.s / D) === steps - 1 - k)) continue;
-                if (sideWallCovers(r.sideZ, r.c0, zB, cc, dd, (k + 1) * R)) continue;
+                if (sideWallCovers(r.sideZ, r.c0, zB, cc, dd, (k + 1) * R) || nearSideCovers(r.sideZ1, r.c1, zB, cc, dd, (k + 1) * R)) continue;
                 best = tt; hit = { kind: "strip", k, row, X, Y, r };
             }
         }
@@ -2518,14 +2545,16 @@ function build(cfg) {
         /* a rug on the lower floor seen past a front run's end: the end isn't drawn over it, so the rug runs cleanly up to the step (15 Nov 2026, his: "remove them", the tan teeth behind the rope posts at G (90,48) and (96,42)). X, Y: the floor point under the pixel at the run's foot */
         /* the height of a higher floor beside a front run's first end, at d along it (its drop wall stands there), else null; none where the end joins another run or turns a corner */
         const sideZOf = r => r.toYou && !r.j0 && !r.x0 ? d => { const D = Math.floor(d + 1e-9), Q = r.alongY ? tileAt(r.a - 1, D) : tileAt(D, r.a - 1); return Q && !Q.notch && Q.z > r.lo ? Q.z : null; } : null;
+        /* the same beside its last end (16 Nov 2026), where a higher floor nearer you stands past it */
+        const sideZ1Of = r => r.toYou && !r.j1 && !r.x1 ? d => { const D = Math.floor(d + 1e-9), Q = r.alongY ? tileAt(r.b, D) : tileAt(D, r.b); return Q && !Q.notch && Q.z > r.lo ? Q.z : null; } : null;
         const rugUnderOf = r => (X, Y) => { const TX = Math.floor(X), TY = Math.floor(Y), Q = tileAt(TX, TY); return !!Q && !Q.notch && Q.z === r.lo && onR(TX, TY); };
-        const pieceOf = r => { let a0 = null, a1 = null; for (let t = r.a; t < r.b; t++) if (r.alongY ? onR(t, r.line) || onR(t, r.line - 1) : onR(r.line, t) || onR(r.line - 1, t)) { if (a0 === null) a0 = t; a1 = t + 1; } return { alongY: r.alongY, line: r.line, c0: r.a, c1: r.b, back: !r.toYou, j0: r.j0, j1: r.j1, x0: r.x0, x1: r.x1, noNear: !!r.noNear, cover1: !!r.cover1, carpet: a0 === null ? null : [a0, a1], endZ: r.toYou ? endZOf(r) : null, rugUnder: r.toYou ? rugUnderOf(r) : null, sideZ: sideZOf(r), src: r }; };
+        const pieceOf = r => { let a0 = null, a1 = null; for (let t = r.a; t < r.b; t++) if (r.alongY ? onR(t, r.line) || onR(t, r.line - 1) : onR(r.line, t) || onR(r.line - 1, t)) { if (a0 === null) a0 = t; a1 = t + 1; } return { alongY: r.alongY, line: r.line, c0: r.a, c1: r.b, back: !r.toYou, j0: r.j0, j1: r.j1, x0: r.x0, x1: r.x1, noNear: !!r.noNear, cover1: !!r.cover1, carpet: a0 === null ? null : [a0, a1], endZ: r.toYou ? endZOf(r) : null, rugUnder: r.toYou ? rugUnderOf(r) : null, sideZ: sideZOf(r), sideZ1: sideZ1Of(r), src: r }; };
         const hidden = r => { if (r.hidden === undefined) { const reach = Math.round((r.hi - r.lo) / STEP_R) * STEP_D; r.hidden = behindWall(r.alongY, r.a, r.b, r.toYou ? r.line - reach : r.line, r.toYou ? r.line : r.line + reach, r.lo, Math.round((r.hi - r.lo) / STEP_R)); } return r.hidden; };
         const groups = new Map();      // each group of joined runs, drawn as one surface
         for (const g of new Set(groupOf.values())) { const pieces = [...g].map(pieceOf), byRun = new Map(pieces.map(q => [q.src, q])); const cs = corners.filter(k => g.has(k.ry)).map(k => ({ ...k, rx: byRun.get(k.rx), ry: byRun.get(k.ry) })); const G = { runs: pieces, corners: cs, vis: [...g].some(hidden) ? stepSeen : null }; for (const r of g) groups.set(r, G); }
         for (const r of runs) {
             const { alongY, toYou, hi, lo } = r, st = { line: r.line, a: r.a, b: r.b }, carpet = pieceOf(r).carpet;
-            const count = Math.round((hi - lo) / STEP_R), reach = count * STEP_D, f = { axis: alongY ? "y" : "x", c0: st.a, c1: st.b, dTop: st.line, dStart: st.line - reach, steps: count, rise: STEP_R, tread: STEP_D, zB: lo, carpet, way: stepWay, tiled: true, vis: hidden(r) ? stepSeen : null, near: r.noNear ? false : undefined, cover1: !!r.cover1, endZ: toYou ? endZOf(r) : null, rugUnder: toYou ? rugUnderOf(r) : null, sideZ: sideZOf(r) };
+            const count = Math.round((hi - lo) / STEP_R), reach = count * STEP_D, f = { axis: alongY ? "y" : "x", c0: st.a, c1: st.b, dTop: st.line, dStart: st.line - reach, steps: count, rise: STEP_R, tread: STEP_D, zB: lo, carpet, way: stepWay, tiled: true, vis: hidden(r) ? stepSeen : null, near: r.noNear ? false : undefined, cover1: !!r.cover1, endZ: toYou ? endZOf(r) : null, rugUnder: toYou ? rugUnderOf(r) : null, sideZ: sideZOf(r), sideZ1: sideZ1Of(r) };
             const along = toYou ? Math.floor(st.line - reach) : st.line;
             const d0 = toYou ? Math.floor(st.line - reach) : st.line, d1 = toYou ? st.line : Math.ceil(st.line + reach);
             const G = groups.get(r), sOf = (X, Y) => { const d = alongY ? Y : X; return toYou ? st.line - d : d - st.line; };
@@ -2895,7 +2924,11 @@ function build(cfg) {
                 const top = toYou ? Math.min(from + reach, we) : Math.max(from, ws), foot0 = toYou ? Math.max(from, ws) : Math.min(from + reach, we), span = Math.abs(top - foot0);
                 const cols = [];
                 for (let k = 0; k <= Math.ceil(reach * 16); k++) {
-                    const d = from + k / 16; if (d < d0 || d >= d1) continue;
+                    /* d1 itself too (16 Nov 2026, his: Floor 2 147,-28, "the part of the wall that is slanted along the small steps doesn't then meet
+                       up cleanly"): where the wall turns an outer corner at the patch's end, the corner's own column stands at d1, and left out it
+                       stayed down at the lower floor while the rest climbed: wallpaper down the corner to 12 rows under the dado, a pale streak in the
+                       panelling. Only this wall's own pixels are ever moved, so a column at d1 that isn't its own is left as it is. */
+                    const d = from + k / 16; if (d < d0 || d > d1) continue;
                     const frac = span > 0 ? Math.max(0, Math.min(1, (toYou ? d - foot0 : foot0 - d) / span)) : 0, exact = share * (hi - lo) * frac, exactC = copyAll * frac; if (exact <= 0 && exactC <= 0) continue;
                     const sx = Math.round((alongY ? st.a - d : d - st.a) * 16) + gx, foot = Math.round((d + st.a) * 8) + gy - zWalls; if (sx < 0 || sx >= bw) continue;
                     let low = null; for (let y = Math.min(bh - 1, foot + 4); y >= Math.max(0, foot - 8); y--) if (drawn ? drawn.has(y * bw + sx) : wallOwner[y * bw + sx] === ownerId) { low = y; break; }
