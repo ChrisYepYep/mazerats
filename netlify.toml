@@ -169,6 +169,12 @@
 [functions."video-sweep"]
   schedule = "17 * * * *"
 
+# Odd One Out's pictures cut and cached just after midnight UTC (16 Nov 2026),
+# so the day's first player doesn't wait on them; again at half past for any
+# the first wake missed. See netlify/functions/odd-warm.js.
+[functions."odd-warm"]
+  schedule = "3,30 0 * * *"
+
 # ------------------------------------------------------------ THE ADMIN PANEL
 #
 # It lives at /warren, and it used to live at /admin.
