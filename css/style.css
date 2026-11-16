@@ -16477,6 +16477,15 @@ ol.fmt-ol-wide.fmt-ol-wide { padding-left: 3.4em; }
 .wn-verb.is-note { color: #cfd9e4; border-color: #7f94a8; }
 .wn-flags { margin-left: 6px; color: var(--amber-text); }
 .wn-line { color: var(--parchment); white-space: pre-line; }
+/* The Discord box's picture picker (16 Nov 2026): the entry's pictures to pick the post's from. Spans, since it sits in the box's <p> */
+.wn-pics-head { display: block; font-weight: bold; }
+.wn-pics { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; max-height: 200px; overflow-y: auto; padding: 2px; position: relative; }
+.wn-pic { display: inline-flex; flex-direction: column; align-items: center; gap: 2px; cursor: pointer; padding: 3px; border: 2px solid transparent; border-radius: 4px; }
+.wn-pic input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+.wn-pic img { display: block; width: 72px; height: 45px; object-fit: cover; border-radius: 2px; }
+.wn-pic-label { font-size: 0.75em; }
+.wn-pic:has(input:checked) { border-color: var(--amber-text); background: rgba(0, 0, 0, 0.25); }
+.wn-pic:has(input:focus-visible) { outline: 2px solid var(--amber-text); outline-offset: 1px; }
 .wn-override {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(min(200px, 100%), 1fr));

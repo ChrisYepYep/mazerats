@@ -467,6 +467,58 @@
         return isNaN(d) ? "" : d.toLocaleDateString("en-GB", { day: "numeric", month: "short", timeZone: "UTC" });
     };
 
+    /* ---- the post's picture (16 Nov 2026, the owner's: "if an image has been added/updated, this is the image that appears on the
+       discord post. or make it so i can pick ... the image for discord") ----
+       The record's pictures, as whats-new-discord.js lists them (picturesOf there: keep the two in step), the card's own first. */
+    const pathOf = v => (typeof v === "string" ? v : v && typeof v.image === "string" ? v.image : "").trim();
+    function picturesOf(kind, record) {
+        const list = [], add = v => { const p = pathOf(v); if (p && p.length <= 600 && !list.includes(p)) list.push(p); };
+        add(record.thumb);
+        if (kind === "guide") (Array.isArray(record.sections) ? record.sections : []).forEach(s => add(s && s.image));
+        else { add(record.entrance); add(record.finish); (Array.isArray(record.gallery) ? record.gallery : []).forEach(add); (Array.isArray(record.relatedImages) ? record.relatedImages : []).forEach(add); }
+        return list;
+    }
+    // The picture its link unfurls with (tagsFor in share.js), which the post has when nothing else is picked.
+    function cardPicture(kind, record) {
+        if (kind === "guide") return pathOf(record.thumb) || pathOf((Array.isArray(record.sections) ? record.sections : []).find(s => s && pathOf(s.image)) || "");
+        const g = Array.isArray(record.gallery) ? record.gallery : [];
+        return kind === "article" ? pathOf(record.thumb) || pathOf(g[0]) : pathOf(record.thumb) || pathOf(record.entrance) || pathOf(g[0]);
+    }
+    // An entry's record and kind, or null (a news post has its banner, always).
+    function recordFor(e) {
+        if (e.article) return { kind: "article", record: e.article };
+        const target = e.post ? (e.post.kind === "note" ? e.post.target : "") : e.target;
+        const [kind, id] = [String(target || "").split(":")[0], String(target || "").slice(String(target || "").indexOf(":") + 1)];
+        const list = kind === "maze" ? rooms : kind === "event" ? events : kind === "guide" ? guides : null;
+        const record = list && list.find(r => r && String(r.id) === id);
+        return record ? { kind, record } : null;
+    }
+    /* What it starts on: the picture that changed, when the entry is about a change to one (a new thumbnail, a new or changed gallery
+       room, a new entrance shot); else the card's own. There's no record of which gallery room is new, so it's the last one, where
+       the form adds them. */
+    function changedPicture(e, kind, record) {
+        if (e.activity !== "updated" || e.post || e.article) return "";
+        const ch = Array.isArray(record.changes) ? record.changes : [];
+        const g = (Array.isArray(record.gallery) ? record.gallery : []).map(pathOf).filter(Boolean);
+        if (ch.includes("thumb") && pathOf(record.thumb)) return pathOf(record.thumb);
+        if ((ch.includes("imagery-added") || ch.includes("imagery")) && g.length) return g[g.length - 1];
+        if (ch.includes("markers")) return pathOf(record.entrance) || pathOf(record.finish);
+        return "";
+    }
+    // The picker in the confirm box: "" is the card's own picture, as the post had before there was a choice.
+    function picker(e) {
+        const found = recordFor(e); if (!found) return { html: "", start: "" };
+        const card = cardPicture(found.kind, found.record), all = picturesOf(found.kind, found.record);
+        if (!all.length) return { html: "", start: "" };
+        const changed = changedPicture(e, found.kind, found.record), start = changed && changed !== card ? changed : "";
+        /* a small copy from the image CDN for a picture of the site's own: the originals are a couple of thousand pixels across, two dozen to a maze */
+        const small = p => (/^\/(?![/\\])/.test(p) ? "/.netlify/images?" + new URLSearchParams({ url: p, w: "144", h: "90", fit: "cover" }).toString() : p);
+        const opt = (value, src, label) => `<label class="wn-pic" title="${esc(label)}"><input type="radio" name="wn-pic" value="${esc(value)}"${value === start ? " checked" : ""}><img src="${esc(small(src))}" alt="${esc(label)}" loading="lazy"><span class="wn-pic-label">${esc(label)}</span></label>`;
+        const rest = all.filter(p => p !== card).map((p, i) => opt(p, p, p === changed ? "Changed" : found.kind === "guide" ? `Picture ${i + 1}` : p === pathOf(found.record.entrance) ? "Entrance" : p === pathOf(found.record.finish) ? "Finish" : `Picture ${i + 1}`));
+        const html = `<br><br><span class="wn-pics-head">Picture for the post${start ? " (the one that changed is picked)" : ""}:</span><span class="wn-pics" role="radiogroup" aria-label="Picture for the post">${card ? opt("", card, "Card") : ""}${rest.join("")}</span>`;
+        return { html, start };
+    }
+
     /* One entry to the Discord, as the row reads: its label, name and line.
        The server reads the rest (address, picture) from the record. Asked
        first, always, and said plainly when it has gone before. */
@@ -478,7 +530,19 @@
         const again = before
             ? `<br><br><strong>It was posted on ${esc(shortDay(before.postedAt))}${before.count > 1 ? ` (${before.count} times so far)` : ""}.</strong> This posts it again.`
             : "";
-        if (!await ask(`Post this to the Maze Rats Discord?<br><br><strong>${esc(label)}: ${esc(e.name || "(untitled)")}</strong>${e.line ? `<br>${esc(e.line)}` : ""}${again}`)) return;
+        const pics = picker(e);
+        let image = pics.start;
+        const picked = ev => { if (ev.target && ev.target.name === "wn-pic") image = ev.target.value; };
+        document.addEventListener("change", picked, true);
+        let yes;
+        try {
+            const answer = ask(`Post this to the Maze Rats Discord?<br><br><strong>${esc(label)}: ${esc(e.name || "(untitled)")}</strong>${e.line ? `<br>${esc(e.line)}` : ""}${pics.html}${again}`);
+            // The picked one in view: the changed gallery room is the last of two dozen
+            setTimeout(() => { const c = document.querySelector(".wn-pics input:checked"), box = c && c.closest(".wn-pics"); if (box) box.scrollTop = c.closest(".wn-pic").offsetTop - 4; }, 0);      // .wn-pics is the pictures' offsetParent (position: relative)
+            yes = await answer;
+        }
+        finally { document.removeEventListener("change", picked, true); }
+        if (!yes) return;
         if (busy) { await tell("Still saving the last change. Try again in a moment."); return; }
         busy = true;
         // The row's button says Posting… and is off until Discord answers (30 Oct 2026).
@@ -489,7 +553,7 @@
         const wasText = was ? was.textContent : "", wasLabel = was ? was.getAttribute("aria-label") : "";
         if (was) { was.disabled = true; was.textContent = "Posting…"; was.setAttribute("aria-label", `Posting ${e.name || "(untitled)"} to Discord`); }
         try {
-            const res = await call(DISCORD_URL, "POST", { key, activity: e.activity, label, line: e.line || "", day: e.day });
+            const res = await call(DISCORD_URL, "POST", { key, activity: e.activity, label, line: e.line || "", day: e.day, ...(image ? { image } : {}) });
             if (res && res.discord) discord.set(key, res.discord);
             posting = null;
             render();

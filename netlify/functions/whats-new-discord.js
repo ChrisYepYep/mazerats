@@ -23,6 +23,8 @@
                  own text, or the automatic "what changed")
        day       the day the entry is filed under (YYYY-MM-DD), kept on the
                  row so a later day's entry for the same record is still due
+       image     optional (16 Nov 2026): the picture picked in the panel, one
+                 of the record's own (picturesOf); left out, the card's own
      The panel sends what it shows, so what goes to Discord is what the
      admin was looking at. The record itself — its name, address and
      picture — is read here, through share.js's cards, so the post carries
@@ -130,6 +132,30 @@ async function recordOf(db, kind, id) {
     return { record, slug: (hit && hit.slug) || id };
 }
 
+/* The pictures a record has, as stored (16 Nov 2026, the owner's: "make it so i can pick in the what's new warren section the image
+   for discord"). The panel lists the same ones (picturesOf in js/admin-whats-new.js) and sends the path of the one picked; only a path
+   on this list is posted, so the button can't put any other picture in the channel. Card first, then the rest in the record's order. */
+const pathOf = v => (typeof v === "string" ? v : v && typeof v.image === "string" ? v.image : "").trim();
+function picturesOf(kind, record) {
+    const list = [];
+    const add = v => { const p = pathOf(v); if (p && p.length <= 600 && !list.includes(p)) list.push(p); };
+    add(record.thumb);
+    if (kind === "guide") (Array.isArray(record.sections) ? record.sections : []).forEach(s => add(s && s.image));
+    else {
+        add(record.entrance); add(record.finish);
+        (Array.isArray(record.gallery) ? record.gallery : []).forEach(add);
+        (Array.isArray(record.relatedImages) ? record.relatedImages : []).forEach(add);
+    }
+    return list;
+}
+/* The picked picture, sized as the record's card would be; undefined for "the card's own"; { error } for one that isn't the record's */
+function chosenImage(b, kind, record, site) {
+    const want = typeof b.image === "string" ? b.image.trim() : "";
+    if (!want) return undefined;
+    if (!picturesOf(kind, record).includes(want)) return { error: "That picture isn't one of this entry's. Reload the list and pick again." };
+    return { url: kind === "guide" || kind === "article" ? cards.guideImage(site, want) : cards.previewImage(site, want) };
+}
+
 /* The Discord embed for one entry, from what the panel sent and what the
    database holds. { embed } or { error }. */
 async function build(db, col, b) {
@@ -178,7 +204,8 @@ async function build(db, col, b) {
         embed.title = tags.title.slice(0, 256);
         embed.url = tags.canonical;
         embed.description = discordText(p.text) || discordText(tags.description);
-        embed.image = { url: tags.image };
+        const pick = chosenImage(b, tk, found.record, site); if (pick && pick.error) return pick;
+        embed.image = pick || { url: tags.image };
         return { embed };
     }
 
@@ -195,7 +222,8 @@ async function build(db, col, b) {
         embed.title = cards.plainTitle(typeof wn.title === "string" && wn.title ? wn.title : tags.title).slice(0, 256);
         embed.url = tags.canonical;
         embed.description = discordText(line) || discordText(tags.description);
-        embed.image = { url: tags.image };
+        const pick = chosenImage(b, kind, found.record, site); if (pick && pick.error) return pick;
+        embed.image = pick || { url: tags.image };
         return { embed };
     }
 
@@ -209,7 +237,8 @@ async function build(db, col, b) {
     embed.url = tags.canonical;
     // The What's New line first, as on the site, then what the thing is.
     embed.description = [discordText(line), discordText(tags.description)].filter(Boolean).join("\n\n");
-    embed.image = { url: tags.image };
+    const pick = chosenImage(b, kind, found.record, site); if (pick && pick.error) return pick;
+    embed.image = pick || { url: tags.image };
     return { embed };
 }
 
@@ -343,5 +372,6 @@ exports.handler = async (event) => {
 exports.handler = require("./_errors").withErrorReporting("whats-new-discord", exports.handler);
 // For the tests.
 exports._build = build;
+exports._picturesOf = picturesOf;
 exports._heading = heading;
 exports._setSend = fn => { send = fn; };

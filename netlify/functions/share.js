@@ -891,7 +891,7 @@ exports.handler = async (event) => {
 /* A record's card as a link preview draws it, for whats-new-discord.js
    (28 Oct 2026): a What's New entry posted to Discord carries the same
    title, words and picture its link unfurls with. */
-exports.cards = { tagsFor, guideImage, originOf, plainTitle, plainGlyphs };
+exports.cards = { tagsFor, guideImage, previewImage, originOf, plainTitle, plainGlyphs };
 
 // For tools/check-share-headers.js and the local tests.
 exports._test = { withTags, PAGE_HEADERS, requestedSlug, tagsFor, fixedTags, NOINDEX_PAGES, SWITCHED, switchState, switchedPage };
