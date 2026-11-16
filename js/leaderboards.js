@@ -125,8 +125,10 @@
         if (cache[key] === "failed") delete cache[key];
     }
 
+    // Guess the Maze's rows tie on room points too (`byBase`; see ranks in
+    // js/daily.js).
     function place(list) {
-        return window.Daily && Daily.ranks ? Daily.ranks(list)
+        return window.Daily && Daily.ranks ? Daily.ranks(list, game === "guess")
             : list.map((r, i) => i + 1);
     }
 
@@ -242,6 +244,19 @@
                     : (row => daysPill(row.days));
             extra = row => `<span class="guess-board-extras">${pill(row)}${Number.isFinite(row.solved)
                 ? `<span class="guess-board-games" title="Rounds right">${row.solved} <span>right</span></span>` : ""}</span>`;
+            /* Guess the Maze's rows say the rooms found AND the misses, with
+               the day's grid on Today (16 Nov 2026, the owner's call; see
+               foundCell in js/daily.js, drawn the same way under the game).
+               The copy is for a window opened before js/daily.js arrived. */
+            if (g.key === "guess") {
+                extra = row => {
+                    const grid = range === "day" && window.Daily && Daily.roomsGrid ? Daily.roomsGrid(row.grid) : pill(row);
+                    if (window.Daily && Daily.foundCell) return Daily.foundCell(row, grid);
+                    const m = Number.isFinite(row.misses) ? ` · ${row.misses === 0 ? "no" : row.misses} <span>${row.misses === 1 ? "miss" : "misses"}</span>` : "";
+                    return `<span class="guess-board-extras has-found">${grid}${Number.isFinite(row.solved)
+                        ? `<span class="guess-board-games guess-board-found" title="Rooms found, and wrong names on the way">${row.solved} <span>found</span>${m}</span>` : ""}</span>`;
+                };
+            }
             empty = (RANGES.find(r => r.key === range) || RANGES[0]).empty;
         }
 
@@ -272,7 +287,9 @@
             ? `<button type="button" class="guess-btn boards-play" data-boards-play>Play ${esc(g.label)}</button>` : "";
 
         return `
-            <p class="guess-board-span">${esc(spanLine(g, data))}${g.ff || g.pura ? "" : ` Most rounds right first, then points${range === "day" && g.key !== "all" ? ", then the faster time" : ""}.`}</p>
+            <p class="guess-board-span">${esc(spanLine(g, data))}${g.ff || g.pura ? "" : g.key === "guess"
+                ? ` Most rooms found first, then room points (10, 6 or 3 a room), then the total with speed${range === "day" ? ", then the faster time" : ""}.`
+                : ` Most rounds right first, then points${range === "day" && g.key !== "all" ? ", then the faster time" : ""}.`}</p>
             <ol class="guess-board-list">${rowsHtml(list, isMe, empty, extra)}</ol>
             ${foot}
             ${play}`;

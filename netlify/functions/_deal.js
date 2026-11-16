@@ -176,19 +176,6 @@ function dealGuess(rooms, day, seedOf) {
     const rand = seededRandom(seedOf("guess"));
     const shuffled = pool.map(p => ({ p, k: rand() })).sort((a, b) => a.k - b.k).map(o => o.p);
 
-    const chosen = [];
-    const used = new Set();
-    for (const item of shuffled) {
-        if (chosen.length >= ROUNDS) break;
-        if (used.has(item.maze.id)) continue;
-        used.add(item.maze.id);
-        chosen.push(item);
-    }
-    for (const item of shuffled) {
-        if (chosen.length >= ROUNDS) break;
-        if (!chosen.includes(item)) chosen.push(item);
-    }
-
     /* THE TAGS GAVE THE ANSWER AWAY (31 Oct 2026, the bug scan). The decoys
        used to be any four mazes sharing SOME tag with the answer, so the
        answer was the one name sharing a tag with all four others: read off
@@ -206,11 +193,46 @@ function dealGuess(rooms, day, seedOf) {
        the answer 40% of the time) and more tags. So each is weighted by its
        pictures over its usable tags, which leaves the five names looking
        alike in what /rooms says about them. Days already dealt are stored
-       (WHY THE DEAL IS STORED, above) and keep their names. */
+       (WHY THE DEAL IS STORED, above) and keep their names.
+
+       STILL A LITTLE GUESSABLE, SO NOW EVENED OUT ROUND BY ROUND (16 Nov
+       2026, the bug scan: "the most pictures" was still right 24.7% of the
+       time, and "the oldest" about as often). Weighting alone cannot fix it:
+       a tag with only four other mazes to lend hands out the same four every
+       time, and then the likeliest-looking of the five is simply the answer.
+       So each round's five names are weighed as an outsider with /rooms
+       would weigh them — how often each maze comes up as an answer at all
+       (`answerShare`, the same first-five-mazes-from-the-pictures draw run
+       over and over from a fixed seed), over its usable tags, times the
+       chance of the other four being its decoys (`decoyOdds`) — and a round
+       is kept only as often as its least likely-looking name would have
+       been the answer (`keep`), else the next picture in the shuffle is
+       tried. The decoys are weighted by that same answer share over usable
+       tags. Measured over 7,500 rounds (leak-sim, the 16 Nov fix round):
+       "the most pictures" 24.7% -> about 22.5%, "the oldest" 24% -> 21.4%,
+       against 20% by chance; The Little Maze's share of answers 13% -> 9.5%.
+       Not quite zero, because a round put back lets a maze with many
+       pictures be offered again; a player would still need the list and a
+       script. */
     const carrying = new Map();
     live.forEach(r => new Set(tagsOf(r)).forEach(t => carrying.set(t, (carrying.get(t) || 0) + 1)));
-    const usable = r => [...new Set(tagsOf(r))].filter(t => carrying.get(t) - 1 >= GUESS_OPTIONS - 1).sort();
-    const weightOf = r => Math.max(1, (r.gallery || []).filter(g => g && g.image).length) / Math.max(1, usable(r).length);
+    const usableOf = new Map(live.map(r => [r.id, [...new Set(tagsOf(r))].filter(t => carrying.get(t) - 1 >= GUESS_OPTIONS - 1).sort()]));
+    const usable = r => usableOf.get(r.id) || [];
+    const pics = r => (r.gallery || []).filter(g => g && g.image).length;
+    const answerShare = new Map(live.map(r => [r.id, 0]));
+    {
+        // Picking pictures at random and keeping the first five mazes is a
+        // draw of five mazes without putting back, weighted by pictures —
+        // the smallest -log(u)/pictures five.
+        const rnd = seededRandom(0x5eed1e55);
+        const withPics = live.filter(r => pics(r) > 0);
+        for (let t = 0; t < 400; t++) {
+            withPics.map(r => ({ r, k: -Math.log(rnd() || 1e-12) / pics(r) }))
+                .sort((a, b) => a.k - b.k).slice(0, ROUNDS)
+                .forEach(o => answerShare.set(o.r.id, answerShare.get(o.r.id) + 1));
+        }
+    }
+    const weightOf = r => Math.max(0.5, answerShare.get(r.id)) / Math.max(1, usable(r).length);
     // `n` from `list` (in a fixed order), each kept with odds by weightOf:
     // the largest log(u)/w of a seeded u wins, a weighted draw without
     // putting back.
@@ -219,15 +241,23 @@ function dealGuess(rooms, day, seedOf) {
         return list.map(r => ({ r, k: Math.log(rand()) / weightOf(r) }))
             .sort((a, b) => b.k - a.k).slice(0, n).map(o => o.r);
     };
+    // The chance of drawing exactly `set` from `pool` that way, over every
+    // order it could come out in (four decoys: 24 orders).
+    const decoyOdds = (set, pool) => {
+        const total = pool.reduce((s, r) => s + weightOf(r), 0);
+        const orders = (left, rest) => (!left.length ? 1 : left.reduce((sum, r, j) =>
+            sum + weightOf(r) / rest * orders(left.filter((_, k) => k !== j), rest - weightOf(r)), 0));
+        return orders(set, total);
+    };
 
-    return chosen.map((pick, i) => {
-        const answer = pick.maze;
+    // One round dealt around `answer`, and whether to keep it (see above).
+    function roundFor(answer, i) {
         const others = live.filter(r => r.id !== answer.id);
         const seed = seedOf("guess:options", i, answer.id);
         const tags = usable(answer);
-        let decoys;
+        let decoys, tag = null;
         if (tags.length) {
-            const tag = tags[seed % tags.length];
+            tag = tags[seed % tags.length];
             decoys = drawn(others.filter(r => tagsOf(r).includes(tag)), GUESS_OPTIONS - 1, seed);
         } else {
             const rare = others.filter(r => !usable(r).length);
@@ -236,6 +266,47 @@ function dealGuess(rooms, day, seedOf) {
                 decoys = decoys.concat(drawn(others.filter(r => !rare.includes(r)), GUESS_OPTIONS - 1 - decoys.length, (seed ^ 0x9e3779b9) >>> 0));
             }
         }
+        let keep = 1;
+        if (tag && decoys.length === GUESS_OPTIONS - 1) {
+            const five = [answer].concat(decoys);
+            const carriers = live.filter(r => tagsOf(r).includes(tag));
+            const like = five.map(s => {
+                const u = usable(s);
+                if (!u.includes(tag)) return 0;
+                return weightOf(s) * decoyOdds(five.filter(r => r !== s), carriers.filter(r => r.id !== s.id));
+            });
+            // Kept as often as the least likely-looking of the five would
+            // be, so every name in a kept round is as good a bet as the next.
+            if (like[0] > 0) keep = Math.min(...like) / like[0];
+        }
+        return { decoys, seed, keep };
+    }
+
+    const chosen = [];
+    const used = new Set();
+    const accept = seededRandom((seedOf("guess:keep") ^ 0x27d4eb2f) >>> 0);
+    for (const item of shuffled) {
+        if (chosen.length >= ROUNDS) break;
+        if (used.has(item.maze.id)) continue;
+        const round = roundFor(item.maze, chosen.length);
+        if (accept() >= round.keep) continue;
+        used.add(item.maze.id);
+        chosen.push({ ...item, round });
+    }
+    // Past the end of the shuffle (a tiny archive): the first unused
+    // mazes, kept whatever they weigh, then any picture.
+    for (const pass of [true, false]) {
+        for (const item of shuffled) {
+            if (chosen.length >= ROUNDS) break;
+            if (pass ? used.has(item.maze.id) : chosen.some(c => c.image === item.image && c.maze === item.maze)) continue;
+            used.add(item.maze.id);
+            chosen.push({ ...item, round: roundFor(item.maze, chosen.length) });
+        }
+    }
+
+    return chosen.map((pick, i) => {
+        const answer = pick.maze;
+        const { decoys, seed } = pick.round;
         const options = shuffle([answer].concat(decoys), (seed ^ 0x85ebca6b) >>> 0).map(r => r.name);
         return {
             id: answer.id,
@@ -347,6 +418,11 @@ function imageKey() {
 function imageSig(game, day, round, tile, image, view) {
     const fields = ["deal-image", game, day, round, tile, image];
     if (view != null) fields.push("v" + view);
+    /* Odd One Out's tiles changed content on 16 Nov 2026 (only the visible
+       square, padded: THE ODD TILE IS THE VISIBLE SQUARE in deal-image.js),
+       and their old addresses are cached immutable for days, so every Odd
+       address is signed with the version too and is new. Guess's are not. */
+    if (game === "odd") fields.push("cut2");
     return crypto.createHmac("sha256", imageKey())
         .update(fields.join("\n"))
         .digest("base64url")

@@ -9,7 +9,7 @@
    completely inert until js/site.js puts that attribute on <html>. The
    classic palette is not defined here and is not affected by anything in it.
 
-   1228 rules, 1963 declarations, hues 350 (surfaces) / 212 (accents).
+   1228 rules, 1962 declarations, hues 350 (surfaces) / 212 (accents).
 */
 :root[data-theme="crimson"] {
     --bg-black: #080506;
@@ -666,6 +666,24 @@ html[data-theme="crimson"]:not([data-theme]):not([data-dark]) .chrome-nav-top .c
 
 [data-theme="crimson"] #featured-frame-list .chrome-list-row .ec-title .ec-title-name,
 [data-theme="crimson"] .opening-featured .chrome-list-row .ec-title .ec-title-name {
+    color: #ffffff;
+}
+
+html[data-theme="crimson"][data-skin][data-skin] .modal.is-ec::before {
+    background-image: url('../assets/img/crimson/ec/jade-bow.png?v=b8181c82');
+}
+
+html[data-theme="crimson"][data-skin][data-skin] .ec-title-s1 {
+    border-image-source: url('../assets/img/crimson/ec/ec-name-player-s1.png?v=7d66b85a');
+}
+
+html[data-theme="crimson"][data-skin][data-skin] .ec-title-s2 {
+    border-image-source: url('../assets/img/crimson/ec/ec-name-player-s2.png?v=ea231dac');
+}
+
+html[data-theme="crimson"][data-skin][data-skin] .chrome-list-row .ec-title .ec-title-name,
+html[data-theme="crimson"][data-skin][data-skin] #featured-frame-list .chrome-list-row .ec-title .ec-title-name,
+html[data-theme="crimson"][data-skin][data-skin] .opening-featured .chrome-list-row .ec-title .ec-title-name {
     color: #ffffff;
 }
 
@@ -3522,24 +3540,6 @@ html[data-theme="crimson"]:not([data-theme]) .guess-board-rank {
     color: var(--amber-text);
 }
 
-[data-theme="crimson"] .guess-board-cell {
-    border: 1px solid rgba(0, 0, 0, 0.45);
-    background: #4a2018;
-}
-
-[data-theme="crimson"] .guess-board-cell.is-won.g1 {
-    background: #3f5c2a;
-}
-
-[data-theme="crimson"] .guess-board-cell.is-won.g2 {
-    background: #4d5526;
-}
-
-[data-theme="crimson"] .guess-board-cell.is-won.g3,
-[data-theme="crimson"] .guess-board-cell.is-won.g4 {
-    background: #291c1e;
-}
-
 [data-theme="crimson"] .saved-toggle {
     background: transparent;
     border: 1px solid var(--border);
@@ -6241,6 +6241,40 @@ html[data-theme="crimson"][data-light] .chrome-light {
     border-color: var(--danger);
     color: #fff0ec;
     box-shadow: 0 0 8px rgba(161, 70, 47, 0.65);
+}
+
+[data-theme="crimson"] .guess-board-cell {
+    width: 7px;
+    height: 12px;
+    border-radius: 1px;
+    border: 1px solid rgba(0, 0, 0, 0.45);
+    background: #4a2018;
+}
+
+[data-theme="crimson"] .guess-board-cell.is-won.g1 {
+    background: #78b159;
+}
+
+[data-theme="crimson"] .guess-board-cell.is-won.g2 {
+    background: #fdcb58;
+}
+
+[data-theme="crimson"] .guess-board-cell.is-won.g3,
+[data-theme="crimson"] .guess-board-cell.is-won.g4 {
+    background: #f4900c;
+}
+
+[data-theme="crimson"] .guess-board-cell.is-lost {
+    background: #dd2e44;
+}
+
+[data-theme="crimson"] .guess-board-found b {
+    font-weight: 400;
+    color: var(--amber-text);
+}
+
+[data-theme="crimson"] .guess-board-found b.is-missed {
+    color: #f4900c;
 }
 
 [data-theme="crimson"] body[data-page="admin"] .admin-pill-btn.admin-pill-danger,

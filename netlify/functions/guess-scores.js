@@ -218,6 +218,15 @@ function progressView(dealRounds, moves) {
    rather than swapping places between refreshes. The page numbers them as
    a tie either way (Daily.ranks); this only keeps the order still.
 
+   THEN THE ROOM POINTS, THEN THE TOTAL (16 Nov 2026, the owner's call
+   after "I got 2 wrong but the leaderboard says 5/5"). Among players who
+   found as many rooms, the 10/6/3 room points come before the total, so a
+   day named on the first view always sits above one with misses, however
+   fast: the speed bonus (up to 36 a room) only orders players level on
+   both. Past days re-rank under the same order. The bonus itself is
+   unchanged. And every row carries `misses`, the wrong names it took
+   (MISSES), so the board can say "5 found · 2 misses".
+
    POINTS ARE THE TOTAL — base points plus the speed bonus (see _speed.js).
    The two are summed separately and added after the group, because $sum
    reads a missing field as nothing, so a row from before the bonus simply
@@ -226,6 +235,20 @@ function progressView(dealRounds, moves) {
    beside it for anything that wants the split. No time on a span's rows:
    a month of times added up says nothing a reader could use, and days that
    were never timed would count as instant. */
+/* The wrong names a day took, from its grid: a room found on view n took
+   n - 1, a room not found took all three. A row with no grid (none since
+   the grid was stored) counts none. As Mongo works it out for a span's
+   board, and missesOf for a day's row. */
+const MISSES = { $reduce: {
+    input: { $ifNull: ["$grid", []] },
+    initialValue: 0,
+    in: { $add: ["$$value", { $cond: [{ $gt: ["$$this", 0] }, { $subtract: ["$$this", 1] }, POINTS.length] }] }
+} };
+function missesOf(grid) {
+    if (!Array.isArray(grid)) return 0;
+    return grid.reduce((n, g) => n + (g > 0 ? g - 1 : POINTS.length), 0);
+}
+
 async function board(col, from, to, limit, cut, only = {}) {
     const rows = await col.aggregate([
         // afterLaunch: nothing submitted before the launch instant — see
@@ -237,6 +260,7 @@ async function board(col, from, to, limit, cut, only = {}) {
             points: { $sum: "$points" },
             bonus: { $sum: "$bonus" },
             solved: { $sum: "$solved" },
+            misses: { $sum: MISSES },
             days: { $sum: 1 },
             // Newest row wins the name, so a Discord rename shows through
             // rather than the board keeping whatever they were first called.
@@ -244,13 +268,13 @@ async function board(col, from, to, limit, cut, only = {}) {
             avatar: { $last: "$avatar" }
         } },
         { $addFields: { total: speed.TOTAL } },
-        { $sort: { solved: -1, total: -1, days: 1, _id: 1 } },
+        { $sort: { solved: -1, points: -1, total: -1, days: 1, _id: 1 } },
         { $limit: limit }
     ]).toArray();
     return rows.map(r => ({
         id: r._id, name: r.name, avatar: r.avatar,
         points: r.total, base: r.points, bonus: r.bonus || 0,
-        solved: r.solved, days: r.days
+        solved: r.solved, misses: r.misses || 0, days: r.days
     }));
 }
 
@@ -267,7 +291,7 @@ async function dayBoard(col, match, limit) {
     return col.aggregate([
         { $match: match },
         { $addFields: { total: speed.TOTAL, msOrder: { $ifNull: ["$ms", speed.NO_TIME] } } },
-        { $sort: { solved: -1, total: -1, msOrder: 1, at: 1, playerId: 1 } },
+        { $sort: { solved: -1, points: -1, total: -1, msOrder: 1, at: 1, playerId: 1 } },
         { $limit: limit }
     ]).toArray();
 }
@@ -281,6 +305,7 @@ function dayRow(r) {
         points: speed.totalOf(r), base: r.points || 0, bonus: r.bonus || 0,
         ms: Number.isFinite(r.ms) ? r.ms : null,
         solved: r.solved,
+        misses: missesOf(r.grid),
         // Older rows predate the grid being stored; an empty one
         // simply renders as no grid rather than as a wrong one.
         grid: Array.isArray(r.grid) ? r.grid : null

@@ -379,14 +379,11 @@
         const pick = body.already && Number.isInteger(body.tile)
             ? { tile: body.tile, right: body.right }
             : { tile: tileIndex, right: body.right };
-        // The next round's four pictures come with this verdict, and only
-        // now (ONE ROUND AT A TIME in js/daily.js). Its clock is running from
-        // here, so they are asked for at once rather than when the sheet is
-        // drawn and laid out; this page can't start them any sooner without
-        // handing out a round before its clock.
-        if (window.Daily.takeRound(dealt(), body.next) && Array.isArray(body.next.tiles)) {
-            body.next.tiles.forEach(t => { new Image().src = t.image; });
-        }
+        /* The next round's pictures were handed out with the deal and are
+           loaded already (THE WHOLE DAY'S PICTURES UP FRONT, below); a
+           `next` still comes with the verdict, and fills its slot only if
+           the deal somehow left it empty. */
+        window.Daily.takeRound(dealt(), body.next);
         /* The day's first verdict, given after the launch cut, on a day the
            deal marked practice (dealt at 07:59, played from 08:00): the day
            is the real one, and is carded, shared and banked as it (1 Oct
@@ -495,6 +492,9 @@
        this game tells you a pick was right, so saying the score is
        saying exactly that much. */
     function settleFocus() {
+        // Nothing to land on while the pictures are loading under the bar;
+        // holdForPictures settles it once the round is drawn.
+        if (holding) return;
         const live = liveSheet();
         if (!live) return;
         /* A round sheet is kept as { el, inner }; the intro and results
@@ -676,12 +676,15 @@
     /* What used to rewrite the one body is now which sheet is up and what
        is written on it. Each sheet is written when it comes up — the splash
        every time, a round as it is reached, the results once the day is
-       over — so a round's four pictures are asked for when that round
-       arrives, as they always were, rather than twenty at once on open. */
+       over. The pictures are not asked for by the sheets any more: all of
+       the day's are loaded up front (THE WHOLE DAY'S PICTURES UP FRONT,
+       below; 16 Nov 2026) and a round's sheet is given the loaded copies. */
     function render() {
         if (!el.deck) return;
         const rounds = dealt();
         if (builtFor !== rounds) buildRounds(rounds);
+        // The pictures start loading as soon as there is a deal, splash or not.
+        syncPictures();
         if (!rounds.length) {
             /* Reached when the day's deal could not be had — the server not
                answering, or answering with nothing to deal. A button rather
@@ -723,26 +726,246 @@
             view = "intro";
             return layout();
         }
-        /* The first four pictures are about to be on screen, so this is when
-           the speed bonus's clock starts — on the server, the first time
-           only (Daily.start). Not once a pick has been made: a clock started
-           then would time only the rounds left. No time is shown anywhere
-           in the game. */
-        if (!state.picks.length && window.Daily.start) window.Daily.start("odd", day());
+        /* Every picture from this round to the last loaded first, behind the
+           filling bar (THE WHOLE DAY'S PICTURES UP FRONT), so no round after
+           this one waits for its pictures on its own clock. */
+        if (!picturesReady()) {
+            holdForPictures();
+            return;
+        }
         view = "round";
         const sheet = roundSheets[roundNow()];
         if (sheet && rounds[roundNow()]) {
+            // A round drawn is never under a bar (a short deal's, once fetchRound has it).
+            if (!holding) Daily.waiting(el.deck, false);
             sheet.inner.innerHTML = roundHtml(rounds[roundNow()]);
             watchTiles(sheet);
             // Yesterday's round swapped for today's under a pick (see choose).
             const note = swappedNote && sheet.inner.querySelector(".odd-pick-note");
             if (note) { note.textContent = swappedNote; note.hidden = false; announce(swappedNote); swappedNote = null; }
+            /* The first four pictures are on screen now, decoded, so this is
+               when the speed bonus's clock starts — on the server, the first
+               time only (Daily.start), and after the sheet has been painted
+               (16 Nov 2026: it used to start before round 1's pictures had
+               even been asked for). Not once a pick has been made: a clock
+               started then would time only the rounds left. No time is shown
+               anywhere in the game. */
+            if (!state.picks.length && window.Daily.start) {
+                const forDay = day();
+                // Each tile's own <img> ready to paint (decode), then a frame;
+                // a tile that will not decode, or 3s, does not hold it.
+                const tiles = Array.from(sheet.inner.querySelectorAll(".odd-tile img"))
+                    .map(img => (img.decode ? img.decode().catch(() => {}) : null));
+                Promise.race([Promise.all(tiles), new Promise(r => setTimeout(r, 3000))])
+                    .then(() => afterPaint(() => window.Daily.start("odd", forDay)));
+            }
         } else if (sheet) {
-            // Not handed out yet (ONE ROUND AT A TIME in js/daily.js).
-            sheet.inner.innerHTML = `<p class="daily-note">Dealing the round…</p>`;
+            // Not handed out (a deal that came back short): the bar while
+            // it is asked for, rather than a line of text.
+            Daily.waiting(el.deck, true, "Dealing the round");
+            if (Daily.progress) Daily.progress(el.deck, 0.1, 0.9);
             fetchRound(roundNow());
         }
         layout();
+    }
+
+    /* Once what was just written has been painted: the next frame, or a
+       tenth of a second in a tab the browser is not painting. */
+    function afterPaint(run) {
+        let done = false;
+        const go = () => { if (!done) { done = true; run(); } };
+        requestAnimationFrame(() => setTimeout(go, 0));
+        setTimeout(go, 100);
+    }
+
+    /* ---------- THE WHOLE DAY'S PICTURES UP FRONT (16 Nov 2026, the owner's) ----------
+
+       The deal now carries every round's four pictures (dealReply in
+       netlify/functions/daily-scores.js) where it used to hand them out one
+       round at a time, each in the reply to the pick before. Then a round's
+       pictures were only asked for once its clock was already running: on a
+       1.5 Mbps line a new sheet slid in with four black tiles that filled
+       over one to three seconds, and the speed bonus paid for the wait (bug
+       scan, 15 Nov).
+
+       So every picture from the round in hand to the last is fetched as soon
+       as the deal is in — while the splash is being read — counted byte by
+       byte for the bar, kept as a blob and decoded before anything shows
+       it. Play, with them all in, goes straight to round 1; before then, the
+       bar fills from the bytes still arriving and round 1 comes up when they
+       have. Rounds after that switch with nothing to wait for. The clock
+       starts once round 1 is on screen (render).
+
+       A picture that fails is tried again twice (2s and 6s) behind the game,
+       not under the bar, and then let go: its tile falls back to the plain
+       address and watchTiles' "Picture unavailable", so one bad picture
+       never holds the day up. A download that stops moving for STALL_MS
+       counts as failed. */
+    const pics = new Map();            // address -> { got, total, state, obj, img, ctl, dead }
+    const PICTURE_RETRY_MS = [2000, 6000];
+    const STALL_MS = 15000;
+    const PICTURE_GUESS = 40000;       // bytes, for a picture whose length is not known yet
+    let holding = false;               // the bar is up waiting for pictures
+    let pictureWaiters = [];
+
+    // The addresses still to be shown: the round in hand and every one after.
+    function wantedPictures() {
+        if (!state || finished()) return [];
+        const rounds = dealt(), list = [];
+        for (let i = roundNow(); i < rounds.length; i++) {
+            if (rounds[i] && Array.isArray(rounds[i].tiles)) rounds[i].tiles.forEach(t => { if (t && t.image) list.push(t.image); });
+        }
+        return list;
+    }
+
+    /* Starts whatever is wanted and not yet asked for, and lets go of
+       pictures from a deal no longer in hand (a new day). */
+    function syncPictures() {
+        const rounds = dealt();
+        if (!rounds.length) return;
+        const inDeal = new Set();
+        rounds.forEach(r => { if (r && Array.isArray(r.tiles)) r.tiles.forEach(t => t && inDeal.add(t.image)); });
+        for (const [url, it] of pics) {
+            if (inDeal.has(url)) continue;
+            it.dead = true;
+            if (it.ctl) it.ctl.abort();
+            if (it.obj) URL.revokeObjectURL(it.obj);
+            pics.delete(url);
+        }
+        wantedPictures().forEach(url => { if (!pics.has(url)) loadPicture(url); });
+    }
+
+    function loadPicture(url) {
+        const it = { got: 0, total: 0, state: "loading", obj: null, img: null, ctl: null, dead: false };
+        pics.set(url, it);
+        (async () => {
+            for (let tries = 0; ; tries++) {
+                try {
+                    await fetchPicture(url, it);
+                    if (it.dead) return;
+                    it.state = "ok";
+                    break;
+                } catch (e) {
+                    if (it.dead) return;
+                    if (tries >= PICTURE_RETRY_MS.length) {
+                        it.state = "failed";
+                        break;
+                    }
+                    // The bar does not wait on its retries (see picturesReady).
+                    it.failedOnce = true;
+                    it.got = 0;
+                    notePictures();
+                    await new Promise(r => setTimeout(r, PICTURE_RETRY_MS[tries]));
+                    if (it.dead) return;
+                }
+            }
+            notePictures();
+        })();
+    }
+
+    async function fetchPicture(url, it) {
+        const ctl = new AbortController();
+        it.ctl = ctl;
+        let stall = setTimeout(() => ctl.abort(), STALL_MS);
+        const moved = () => { clearTimeout(stall); stall = setTimeout(() => ctl.abort(), STALL_MS); };
+        try {
+            const res = await fetch(url, { signal: ctl.signal, credentials: "same-origin" });
+            if (!res.ok) throw new Error("picture " + res.status);
+            const declared = Number(res.headers.get("content-length"));
+            if (declared > 0) it.total = declared;
+            moved();
+            notePictures();
+            const parts = [];
+            if (res.body && res.body.getReader) {
+                const reader = res.body.getReader();
+                for (;;) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+                    parts.push(value);
+                    it.got += value.length;
+                    moved();
+                    notePictures();
+                }
+            } else {
+                const whole = new Uint8Array(await res.arrayBuffer());
+                parts.push(whole);
+                it.got += whole.length;
+            }
+            if (!it.total || it.total < it.got) it.total = it.got;
+            const obj = URL.createObjectURL(new Blob(parts, { type: res.headers.get("content-type") || "image/jpeg" }));
+            const img = new Image();
+            img.src = obj;
+            try { await img.decode(); } catch (e) { URL.revokeObjectURL(obj); throw e; }
+            if (it.dead) { URL.revokeObjectURL(obj); return; }
+            it.obj = obj;
+            it.img = img;            // kept, so the decoded picture is kept too
+        } finally {
+            clearTimeout(stall);
+            it.ctl = null;
+        }
+    }
+
+    // The address a tile's <img> is given: the loaded copy, or the address.
+    function pictureSrc(url) {
+        const it = pics.get(url);
+        return it && it.obj ? it.obj : url;
+    }
+
+    /* Every wanted picture in — or failed at least once, whose retries go
+       on behind the game rather than holding it up: if the picture is still
+       missing when its round comes, its tile has the plain address and
+       watchTiles takes over. */
+    const settledPicture = it => Boolean(it && (it.state !== "loading" || it.failedOnce));
+    function picturesReady() {
+        return wantedPictures().every(url => settledPicture(pics.get(url)));
+    }
+
+    /* How much of what is wanted has arrived, 0 to 1, by bytes. A picture
+       whose length is not known yet counts as the average of those that
+       are (the four of a round are the same length, deal-image pads them),
+       and a finished or given-up one as whole. */
+    function pictureShare() {
+        const want = wantedPictures().map(url => pics.get(url)).filter(Boolean);
+        if (!want.length) return 1;
+        const known = want.filter(it => it.total > 0);
+        const guess = known.length ? known.reduce((s, it) => s + it.total, 0) / known.length : PICTURE_GUESS;
+        let got = 0, total = 0;
+        want.forEach(it => {
+            const size = it.total || guess;
+            total += size;
+            got += settledPicture(it) ? size : Math.min(it.got, size);
+        });
+        return total ? got / total : 1;
+    }
+
+    let barFrom = 0;                   // where the bar stood when the pictures took it over
+    function notePictures() {
+        if (holding && el.deck && Daily.progress) Daily.progress(el.deck, barFrom + (1 - barFrom) * pictureShare());
+        if (pictureWaiters.length && picturesReady()) {
+            const waiting = pictureWaiters;
+            pictureWaiters = [];
+            waiting.forEach(r => r());
+        }
+    }
+
+    /* The bar up until every wanted picture is in, then the round drawn. A
+       bar already up (the deal's, on a reopen part-way through a day) is
+       carried on from where it stands rather than started again. */
+    async function holdForPictures() {
+        Daily.waiting(el.deck, true, "Loading today's pictures");
+        if (holding) { notePictures(); return; }
+        holding = true;
+        const bar = el.deck.querySelector(":scope > .daily-wait .daily-bar.is-progress");
+        const stood = bar ? parseFloat(bar.style.getPropertyValue("--fill")) : 0;
+        barFrom = Number.isFinite(stood) ? Math.min(0.95, Math.max(0, stood)) : 0;
+        const forDay = day();
+        syncPictures();
+        await new Promise(resolve => { pictureWaiters.push(resolve); notePictures(); });
+        await (Daily.finishWaiting ? Daily.finishWaiting(el.deck) : Daily.waiting(el.deck, false));
+        holding = false;
+        if (!state || state.day !== forDay || !el.overlay.classList.contains("open")) return;
+        render();
+        settleFocus();
     }
 
     /* A round whose pictures this page does not have: round 0 before the
@@ -765,13 +988,17 @@
             if (reply && reply.day === forDay) window.Daily.mergeRounds(rounds, reply.rounds);
         }
         fetchingRound = -1;
-        if (!state || state.day !== forDay || dealt() !== rounds || roundNow() !== index || finished()) return;
+        if (!state || state.day !== forDay || dealt() !== rounds || roundNow() !== index || finished()) {
+            if (!holding) Daily.waiting(el.deck, false);
+            return;
+        }
         const sheet = roundSheets[index];
         if (rounds[index]) {
             saveState();
             render();
             settleFocus();
         } else if (sheet) {
+            Daily.waiting(el.deck, false);
             sheet.inner.innerHTML = `
                 <p class="daily-note">This round's pictures could not be had just now.</p>
                 <button type="button" class="guess-btn" data-odd-refetch>Try again</button>`;
@@ -797,7 +1024,9 @@
     function watchTiles(sheet) {
         sheet.inner.querySelectorAll(".odd-tile img").forEach(img => {
             const src = img.getAttribute("src");
-            let tries = 0;
+            // A picture the up-front load already gave up on (three tries)
+            // says so at its first failure here, rather than three more.
+            let tries = (pics.get(src) || {}).state === "failed" ? TILE_RETRY_MS.length : 0;
             img.addEventListener("load", () => markTile(img, false));
             img.addEventListener("error", () => {
                 if (!img.isConnected) return;
@@ -871,7 +1100,7 @@
         return `
                 <p class="guess-splash-eyebrow">Every day, five rounds</p>
                 <h3 class="guess-splash-title"><span>ODD ONE</span><span>OUT</span></h3>
-                <p class="guess-splash-date">${escapeHtml(longDate())}</p>
+                <p class="guess-splash-date">${escapeHtml(longDate())} (UTC)</p>
 
                 <ol class="guess-rules">
                     <li><span class="guess-rules-n" aria-hidden="true">1</span>
@@ -894,7 +1123,7 @@
     function roundHtml(round) {
         const tiles = round.tiles.map((tile, i) => `
             <button type="button" class="odd-tile" data-tile="${i}" aria-label="Picture ${i + 1}">
-                <img src="${escapeHtml(tile.image)}" alt="">
+                <img src="${escapeHtml(pictureSrc(tile.image))}" alt="">
             </button>`).join("");
 
         return `
@@ -905,7 +1134,7 @@
             <p class="daily-ask">Three of these are the same maze. Which one is not?</p>
             <div class="odd-grid">${tiles}</div>
             <p class="daily-note odd-pick-note" hidden></p>
-            <p class="daily-note">Go on the building rather than the room: the floor, the palette,
+            <p class="daily-note odd-hint">Go on the building rather than the room: the floor, the palette,
                 how densely it is furnished.</p>`;
     }
 
@@ -1135,6 +1364,76 @@
            a finished day never reached the board. Now `posted` is set only
            once the server has the day (or has refused it for good), and is
            saved with the day, so a failure is retried on the next open. */
+        fileDay();
+
+        const share = document.getElementById("odd-share");
+        if (share) {
+            share.addEventListener("click", async () => {
+                const text = shareText();
+                window.Daily.track("share", "odd");
+                // On the button, for a moment, as Guess the Maze's copyResult.
+                try {
+                    await navigator.clipboard.writeText(text);
+                    share.textContent = "Copied";
+                } catch (e) {
+                    /* Refused: the same selectable box Guess the Maze
+                       offers, so the result can still be copied by hand
+                       rather than only being told it could not be (30 Sept
+                       2026; see Daily.shareFallback). */
+                    window.Daily.shareFallback(share, text);
+                    share.textContent = "Copy this";
+                }
+                setTimeout(() => { share.textContent = "Copy result"; }, 2200);
+            });
+        }
+    }
+
+    /* A finished day that did not reach the board because the server could
+       not answer (a 503, no connection: Daily.submit's `retry`) used to sit
+       under a board saying "Nobody has finished today yet." with nothing to
+       say this day was not on it, and was only sent again when the window
+       was closed and reopened (bug scan, 15 Nov 2026). Now the card says so
+       under the points, with a button that sends it again, and sends it again once
+       by itself after UNFILED_RETRY_MS. */
+    const UNFILED_RETRY_MS = 5000;
+    let unfiledTimer = 0;
+    let unfiledAuto = "";              // the day already retried by itself once
+    function clearUnfiled() {
+        clearTimeout(unfiledTimer);
+        unfiledTimer = 0;
+        const note = document.getElementById("odd-unfiled");
+        if (note) note.remove();
+    }
+    function sayUnfiled(forDay) {
+        // In the card, where the bonus line would be: beside the board, the
+        // summary's grid has no row for it.
+        const host = document.getElementById("odd-bonus");
+        if (!host || !host.parentNode) return;
+        clearUnfiled();
+        const note = document.createElement("p");
+        note.id = "odd-unfiled";
+        note.className = "guess-board-note odd-unfiled";
+        note.setAttribute("role", "status");
+        note.textContent = "Your day hasn't reached the board yet. ";
+        const again = document.createElement("button");
+        again.type = "button";
+        again.className = "guess-btn";
+        again.textContent = "Send it again";
+        again.addEventListener("click", () => { again.disabled = true; clearUnfiled(); fileDay(); });
+        note.appendChild(again);
+        host.insertAdjacentElement("afterend", note);
+        if (unfiledAuto !== forDay) {
+            unfiledAuto = forDay;
+            unfiledTimer = setTimeout(() => {
+                unfiledTimer = 0;
+                if (!note.isConnected || !state || state.day !== forDay || state.posted) return;
+                clearUnfiled();
+                fileDay();
+            }, UNFILED_RETRY_MS);
+        }
+    }
+
+    function fileDay() {
         const host = document.getElementById("odd-boards");
         const forDay = day();
         if (!state.posted && signedIn()) {
@@ -1144,6 +1443,7 @@
                 window.Daily.submit("odd", forDay)
                     .then(res => {
                         submitting = false;
+                        if (res.ok) clearUnfiled();
                         // The filed day's base and bonus — just now, or
                         // already on file — for the line under the points.
                         const b = res.body;
@@ -1191,31 +1491,12 @@
                         }
                         const still = document.getElementById("odd-boards");
                         window.Daily.boards(still, "odd", { day: forDay, fresh: res.ok, practice: !!(state && state.practice) });
+                        // Not on the board, and worth sending again (M3).
+                        if (res.retry && state && state.day === forDay && !state.posted && still) sayUnfiled(forDay);
                     });
             }
         } else {
             window.Daily.boards(host, "odd", { day: forDay, practice: !!state.practice });
-        }
-
-        const share = document.getElementById("odd-share");
-        if (share) {
-            share.addEventListener("click", async () => {
-                const text = shareText();
-                window.Daily.track("share", "odd");
-                // On the button, for a moment, as Guess the Maze's copyResult.
-                try {
-                    await navigator.clipboard.writeText(text);
-                    share.textContent = "Copied";
-                } catch (e) {
-                    /* Refused: the same selectable box Guess the Maze
-                       offers, so the result can still be copied by hand
-                       rather than only being told it could not be (30 Sept
-                       2026; see Daily.shareFallback). */
-                    window.Daily.shareFallback(share, text);
-                    share.textContent = "Copy this";
-                }
-                setTimeout(() => { share.textContent = "Copy result"; }, 2200);
-            });
         }
     }
 
@@ -1272,7 +1553,20 @@
         /* The loading bar while the day is dealt (Daily.waiting in
            js/daily.js; 4 Oct 2026, the owner's), where a "Dealing…" line was.
            Down again once the day is drawn, or if anything below throws. */
-        if (!deal || deal.day !== day()) Daily.waiting(el.deck, true, "Dealing today's rounds");
+        /* The bar fills (16 Nov 2026, the bug scan: it slid, then vanished),
+           carrying on from the game file's download (js/daily-loader.js) and
+           stepped on as each answer below comes in.
+           A day in memory that is no longer today's and would give way to
+           today's (shouldStartToday) is not shown first either: reopened after
+           midnight, yesterday's splash stood there, "See today's results" and
+           all, until the server answered (bug scan L2). */
+        const stale = !deal || deal.day !== day() ||
+            Boolean(state && state.day !== window.Daily.today() && shouldStartToday(state));
+        const step = (v, creep) => { if (stale && Daily.progress) Daily.progress(el.deck, v, creep); };
+        if (stale) {
+            Daily.waiting(el.deck, true, "Dealing today's rounds");
+            step(0.4, 0.55);
+        }
         /* A finished day reopens on its splash at once, rather than on the
            results it was closed on until the server has answered. */
         else if (!retrying && state && finished()) { showSplash = true; settled(render); }
@@ -1281,6 +1575,7 @@
             // Who is signed in decides whose day and record are shown, so it
             // is known before anything is dealt. A failure reads as signed out.
             if (window.Account) { try { await Account.ready(); } catch (e) { /* signed out */ } }
+            step(0.55, 0.7);
             /* The check on page load could not be made at all (Account.unsure —
                a network blink, not an answer). Asked once more now, since the
                window being opened is usually well after the load, and the
@@ -1301,24 +1596,36 @@
                the note that it was sent, since the replay has to be filed like
                any other. The server's recorded picks went with the reset
                (daily-games.js), so the deal below brings none back. */
-            if (await window.Daily.claimReset("odd")) {
+            /* The deal is asked for alongside the reset's ticket rather than
+               after it (bug scan L3: three round trips in a row on open), and
+               thrown away and asked again only when a ticket was claimed —
+               the day it was asked for may be the one being taken back. */
+            const early = askDeal();
+            const claimed = await window.Daily.claimReset("odd");
+            if (claimed) {
                 try { localStorage.removeItem(STATE_KEY); } catch (e) { /* private mode */ }
                 state = null;
             }
             if (remote) takeAccountStats(await remote);
-            await refreshDay();
+            await refreshDay(claimed ? null : early);
+            step(0.8, 0.9);
             /* Not over a press made while the server was answering: "See
                today's results" on the splash standing there was undone a
                second later (4 Nov 2026, as js/guess.js). Unless what came back
                left nothing to go on to (a day given back). */
             if (!leftSplash || !state.picks.length) showSplash = state.picks.length === 0 || state.done;
-            Daily.waiting(el.deck, false);
+            /* Ended full rather than vanishing — unless the round in hand is
+               next and its pictures are still coming, when the same bar
+               carries on for them (holdForPictures). */
+            const toPictures = !showSplash && !finished() && dealt().length > 0 && !picturesReady();
+            if (stale && !toPictures) await (Daily.finishWaiting ? Daily.finishWaiting(el.deck) : Daily.waiting(el.deck, false));
+            else if (!toPictures) Daily.waiting(el.deck, false);
             /* Straight onto the right sheet — the splash, the round in hand, or
                the results — with the rest already stacked around it. Only the
                moves made while the window is open slide. */
             settled(render);
         } finally {
-            Daily.waiting(el.deck, false);
+            if (!holding) Daily.waiting(el.deck, false);
         }
     }
 
@@ -1347,13 +1654,29 @@
 
        Leaves `deal` null when the day could not be had, which render()
        turns into a message and a retry. */
-    async function refreshDay() {
+    /* The deal reply refreshDay works from: the carried day's if there is
+       one and it is still open, else the server's today. Its own function so
+       open() can ask for it before the reset's ticket has answered (L3);
+       answers the reply or null, never throws. */
+    async function askDeal() {
+        try {
+            const read = readSaved();
+            const saved = ours(read) ? read : null;
+            const carry = [state, saved].filter(ours).find(s => !shouldStartToday(s)) || null;
+            let reply = carry ? await window.Daily.deal("odd", carry.day) : null;
+            if (!reply) reply = await window.Daily.deal("odd");
+            return reply || null;
+        } catch (e) {
+            return null;
+        }
+    }
+
+    /* `asked`, when given, is askDeal() already under way (open). */
+    async function refreshDay(asked) {
         const read = readSaved();
         const saved = ours(read) ? read : null;
         const own = [state, saved].filter(ours);
-        const carry = own.find(s => !shouldStartToday(s)) || null;
-        let reply = carry ? await window.Daily.deal("odd", carry.day) : null;
-        if (!reply) reply = await window.Daily.deal("odd");
+        const reply = await (asked || askDeal());
         if (!reply) {
             deal = null;
             if (!ours(state)) state = saved && saved.day === window.Daily.today() ? saved : blankDay();

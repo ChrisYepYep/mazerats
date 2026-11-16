@@ -213,8 +213,9 @@
         const body = document.getElementById(GAMES[name].body);
         if (!body || body.querySelector(".daily-loading")) return;
         if (window.Daily && typeof Daily.waiting === "function") Daily.waiting(body, true, "Loading the game");
-        // Guess the Maze's bar fills (Daily.progress), starting with this download.
-        if (name === "guess" && window.Daily && Daily.progress) Daily.progress(body, 0.05, 0.4);
+        // Both games' bars fill (Daily.progress), starting with this download
+        // (Odd One Out's too since 16 Nov 2026: it slid, then vanished).
+        if (window.Daily && Daily.progress) Daily.progress(body, 0.05, 0.4);
     }
 
     function clearFailed(name) {

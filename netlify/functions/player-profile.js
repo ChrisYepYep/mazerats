@@ -95,7 +95,7 @@ async function totals(col, match) {
         { $group: { _id: "$playerId", points: { $sum: "$points" }, bonus: { $sum: "$bonus" }, solved: { $sum: "$solved" } } }
     ]).toArray();
     const map = new Map();
-    rows.forEach(r => { if (r._id) map.set(r._id, { solved: r.solved || 0, points: totalOf(r) }); });
+    rows.forEach(r => { if (r._id) map.set(r._id, { solved: r.solved || 0, base: r.points || 0, points: totalOf(r) }); });
     return map;
 }
 
@@ -143,15 +143,17 @@ function boardTotals(guessCol, dailyCol, launch) {
 // Two { solved, points } added together; either may be missing.
 const addUp = (a, b) => ({
     solved: ((a && a.solved) || 0) + ((b && b.solved) || 0),
+    base: ((a && a.base) || 0) + ((b && b.base) || 0),
     points: ((a && a.points) || 0) + ((b && b.points) || 0)
 });
 
 // Rounds right and the total (base points and speed bonus) from a player's
 // own rows, as totals() counts them for everybody else.
-const sumPoints = (rows) => rows.reduce((t, r) => addUp(t, { solved: r.solved || 0, points: totalOf(r) }), addUp());
+const sumPoints = (rows) => rows.reduce((t, r) => addUp(t, { solved: r.solved || 0, base: r.points || 0, points: totalOf(r) }), addUp());
 
-// Ahead on the boards: more rounds right, or as many and more points.
-const ahead = (p, mine) => p.solved > mine.solved || (p.solved === mine.solved && p.points > mine.points);
+// Ahead on the boards: more rounds right, or as many and more points. Guess the Maze's board (16 Nov 2026, the owner's) puts the room
+// points (10/6/3, without the speed bonus) between the two, so a day with misses never ranks above a perfect one: byBase.
+const ahead = (p, mine, byBase) => p.solved > mine.solved || (p.solved === mine.solved && (byBase && p.base !== mine.base ? p.base > mine.base : p.points > mine.points));
 
 /* Where `id` stands in a Map of everybody's totals, given their own `mine`
    (null if they have no rows, and so no place). Their entry in the map is
@@ -159,13 +161,13 @@ const ahead = (p, mine) => p.solved > mine.solved || (p.solved === mine.solved &
 /* `banned` is the Set of banned account ids (see bannedIds below): they are
    off every board, so they are off the count here too — ahead of nobody,
    and not among the `of`. The player's own entry is never dropped. */
-function placeIn(map, id, mine, banned = new Set()) {
+function placeIn(map, id, mine, banned = new Set(), byBase = false) {
     if (mine == null) return null;
     let above = 0, size = 0;
     map.forEach((p, k) => {
         if (k !== id && banned.has(String(k))) return;
         size++;
-        if (k !== id && ahead(p, mine)) above++;
+        if (k !== id && ahead(p, mine, byBase)) above++;
     });
     return { rank: above + 1, of: size + (map.has(id) ? 0 : 1), points: mine.points };
 }
@@ -368,7 +370,7 @@ async function figuresFor(db, id) {
     return {
         day, profile, launch, banned,
         games: {
-            guess: { ...gameStats(guessRows, day), place: placeIn(board.guess, id, myGuess, offBoard) },
+            guess: { ...gameStats(guessRows, day), place: placeIn(board.guess, id, myGuess, offBoard, true) },
             odd: { ...gameStats(oddRows, day), place: placeIn(board.odd, id, myOdd, offBoard) }
         },
         combined: placeIn(board.combined, id, myCombined, offBoard),

@@ -1103,6 +1103,22 @@ async function dealReply(db, event, game, params) {
             filed = Boolean(onFile);
             score = filedScore(onFile);
             reached = deals.reachedOf(game, row, deal.rounds.length, filed);
+            /* THE WHOLE DAY'S PICTURES UP FRONT (16 Nov 2026, the owner's).
+               Odd One Out's rounds used to be handed out one at a time (ONE
+               ROUND AT A TIME in _deal.js), so every round's four pictures
+               were downloaded after the pick before it, on that round's
+               clock: a slow line lost bonus points to its own download (bug
+               scan, 15 Nov). Now a player who may play gets all of the day's
+               pictures with the deal, the page loads them behind a filling
+               bar, and the day's clock starts only once round 1 is on screen
+               (Daily.start, sent then). He accepted the cost: someone reading
+               the network tab can study rounds before reaching them. Which
+               tile is odd still goes nowhere until a pick. A player the daily
+               games refuse (no nickname, banned) keeps the old handout. */
+            if (game === "odd" && reached < deal.rounds.length &&
+                    !(await writeRefusal(db, event, player.id, { game: true, daily: true }))) {
+                reached = deal.rounds.length;
+            }
         } catch (e) {
             // The deal is still worth sending; the page plays on from its
             // own copy of the day.

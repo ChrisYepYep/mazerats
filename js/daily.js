@@ -253,6 +253,13 @@ window.Daily = (function () {
            — without that, round 0 would go out with no clock behind it and
            the real day would be untimed. */
         if (status === 200 && body && body.practiceOver) forgetStarts(game);
+        // The filed figures for the menu (THE MENU SAYS WHAT THE BOARDS SAY,
+        // below): a day on file brings them, and a day the server read and
+        // found not on file drops them.
+        if (status === 200 && body && typeof body.day === "string") {
+            if (body.score && Number.isFinite(body.score.points)) rememberFiled(game, body.day, body.score);
+            else if (Array.isArray(body.progress)) forgetFiled(game);
+        }
         return status === 200 && body && Array.isArray(body.rounds) ? body : null;
     }
 
@@ -479,9 +486,12 @@ window.Daily = (function () {
     /* `practice` adds " (practice)" after the date (1 Oct 2026): a practice
        run pasted looked exactly like a real result, though it was on no
        board. */
+    /* `misses` (Guess the Maze only, 16 Nov 2026) adds "(2 misses)" after
+       the rooms found, so "5/5" cannot be read as flawless. */
     function shareText(o) {
+        const missed = Number.isFinite(o.misses) ? ` (${o.misses === 0 ? "no misses" : o.misses === 1 ? "1 miss" : `${o.misses} misses`})` : "";
         return `Maze Rats · ${o.game}\n` +
-            `${shareDate(o.day)}${o.practice ? " (practice)" : ""} · ${o.right}/${o.of} · ${o.points} pts${o.speed ? " incl. speed" : ""}\n` +
+            `${shareDate(o.day)}${o.practice ? " (practice)" : ""} · ${o.right}/${o.of}${missed} · ${o.points} pts${o.speed ? " incl. speed" : ""}\n` +
             `${o.grid}\n` +
             `${SHARE_SITE}/${o.path}`;
     }
@@ -519,7 +529,47 @@ window.Daily = (function () {
        what marks a day posted. */
     async function submit(game, day) {
         const { status, body } = await post(SCORES_URL, { game, day });
-        return Object.assign({ body }, filed(status, body, day));
+        const out = Object.assign({ body }, filed(status, body, day));
+        if (out.ok && body) rememberFiled(game, day, body);
+        return out;
+    }
+
+    /* THE MENU SAYS WHAT THE BOARDS SAY (16 Nov 2026, the bug scan: the side
+       menu and the opening view said "Done: 42 points" for a day every board
+       showed as 218). The total — room points plus speed bonus — is only
+       ever known from the server's answer, which the games kept in memory,
+       so the menu, which reads storage before either game has been opened,
+       had only the base points. Now the filed figures are kept here, per
+       game, for the day and the account they are for: from a finishing
+       submission's answer (submit above, and Guess the Maze's own POST) and
+       from a deal that brings the filed day back (deal above), and dropped
+       when a deal says the day is not on file (an admin's reset). `filedTotal`
+       reads them back for the menu: the total, or null when there is none to
+       say (not filed yet, a practice run, another account's day). */
+    const FILED_KEY = "mazerats_daily_filed_v1";
+    const whoKey = () => (window.Account && Account.current ? String(Account.current.publicId || Account.current.id || "") : "");
+    function readFiled() {
+        try { const v = JSON.parse(localStorage.getItem(FILED_KEY) || "null"); return v && typeof v === "object" ? v : {}; } catch (e) { return {}; }
+    }
+    function rememberFiled(game, day, score) {
+        const who = whoKey();
+        if (!who || typeof day !== "string" || !score) return;
+        const all = readFiled();
+        if (score.practice || !Number.isFinite(Number(score.points))) delete all[game];
+        else all[game] = { day, who, points: Number(score.points) || 0, bonus: Number(score.bonus) || 0 };
+        try { localStorage.setItem(FILED_KEY, JSON.stringify(all)); } catch (e) { /* the base points stand */ }
+    }
+    function forgetFiled(game) {
+        const all = readFiled();
+        if (!all[game]) return;
+        delete all[game];
+        try { localStorage.setItem(FILED_KEY, JSON.stringify(all)); } catch (e) { /* nothing to forget with */ }
+    }
+    function filedTotal(game, day) {
+        const f = readFiled()[game];
+        const who = whoKey();
+        if (!f || !who || f.who !== who || f.day !== (day || today())) return null;
+        return f.points + f.bonus;
     }
 
     /* How long after a day a finished day of it may still be filed: the
@@ -755,6 +805,42 @@ window.Daily = (function () {
     }
     const orderLine = range => `Most rounds right first, then points${range === "day" ? ", then the faster time" : ""}.`;
 
+    /* Guess the Maze's version of both (16 Nov 2026, the owner's call): the
+       rooms found AND the wrong names it took, "5 found · 2 misses", so a
+       day with misses can no longer read as a perfect one — "5 right" meant
+       named within three guesses. `misses` comes with every row of its
+       boards (MISSES in netlify/functions/guess-scores.js); a row without
+       it (an answer cached from before) shows the rooms found alone. And
+       the order line says what the board now ranks by: rooms found, then
+       the 10/6/3 room points, then the total with the speed bonus. Drawn by
+       the game's own board and by the Leaderboards window alike. */
+    const missWord = n => (n === 0 ? "no misses" : n === 1 ? "1 miss" : `${n} misses`);
+    function foundCell(row, also) {
+        if (!Number.isFinite(row.solved)) return `<span class="guess-board-extras">${also || ""}</span>`;
+        const m = Number.isFinite(row.misses) ? row.misses : null;
+        const words = `${row.solved} found${m === null ? "" : ", " + missWord(m)}`;
+        const misses = m === null ? ""
+            : ` <span aria-hidden="true">·</span> <b class="${m ? "is-missed" : "is-clean"}">${m === 0 ? "no" : m}</b> <span>${m === 1 ? "miss" : "misses"}</span>`;
+        return `<span class="guess-board-extras has-found">${also || ""}<span class="guess-board-games guess-board-found" title="${escapeHtml(words)}: rooms found, and wrong names on the way">${row.solved} <span>found</span>${misses}</span></span>`;
+    }
+    /* A Guess the Maze day as five cells beside the name, in the share
+       grid's own colours (green first view, yellow second, orange third,
+       red not found; .guess-board-cell.g1-g3 in css/style.css) — they were
+       three dark olives nobody could tell apart — each with its own title,
+       and kept at phone widths (.is-rooms). Says how each room went and
+       nothing about what was in it, as the share grid does. */
+    function roomsGrid(grid) {
+        if (!Array.isArray(grid) || !grid.length) return "";
+        const how = n => (n >= 1 && n <= 3 ? `found on view ${n}` : "not found");
+        const cells = grid.map((n, i) => {
+            const cls = n >= 1 && n <= 3 ? `is-won g${n}` : "is-lost";
+            return `<span class="guess-board-cell ${cls}" title="Room ${i + 1}: ${how(n)}"></span>`;
+        }).join("");
+        const said = grid.map((n, i) => `room ${i + 1} ${how(n)}`).join(", ");
+        return `<span class="guess-board-grid is-rooms" role="img" aria-label="${escapeHtml(said)}">${cells}</span>`;
+    }
+    const foundOrderLine = range => `Most rooms found first, then room points (10, 6 or 3 a room), then the total with speed${range === "day" ? ", then the faster time" : ""}.`;
+
     /* What a span of a game's board covers, in the Leaderboards window's words
        (spanLine in js/leaderboards.js), so a board reads the same on the
        results card and in the window: "Wednesday 4 November.", "Since Monday
@@ -827,11 +913,17 @@ window.Daily = (function () {
        rows showing the same time share a place. Rows with no time (a span's)
        are level as before.
 
+       AND ON THE ROOM POINTS for Guess the Maze (`byBase`, 16 Nov 2026): its
+       boards rank the 10/6/3 before the total (THEN THE ROOM POINTS in
+       netlify/functions/guess-scores.js), so two of its rows on the same
+       total but different room points are not level either.
+
        Published so Guess the Maze numbers its own board the same way. */
-    function ranks(list) {
+    function ranks(list, byBase) {
         const out = [];
         const secs = r => (Number.isFinite(r.ms) ? Math.floor(r.ms / 1000) : null);
-        const level = (a, b) => a.points === b.points && (a.solved == null ? null : a.solved) === (b.solved == null ? null : b.solved) && secs(a) === secs(b);
+        const level = (a, b) => a.points === b.points && (a.solved == null ? null : a.solved) === (b.solved == null ? null : b.solved) && secs(a) === secs(b)
+            && (!byBase || (a.base == null ? null : a.base) === (b.base == null ? null : b.base));
         (list || []).forEach((row, i) => {
             out.push(i > 0 && level(row, list[i - 1]) ? out[i - 1] : i + 1);
         });
@@ -1244,6 +1336,7 @@ window.Daily = (function () {
         claimReset, deal, move, afterPractice, submit, filed, fileable, start, opening, begin, takeRound, mergeRounds,
         forgetStarts, track, loadingHtml, waiting, fill, progress, finishWaiting,
         clock, scoreCell, rightCell, orderLine, spanLine, boards, ranks, isMine,
+        foundCell, foundOrderLine, roomsGrid, rememberFiled, filedTotal,
         SPEED_BONUS_MAX, bonusLine, practiceLine, bonusRule,
         shareDate, dayTotal, shareScore, shareText, shareFallback,
         streakStrip, noteRecent

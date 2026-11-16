@@ -53,11 +53,8 @@
    shape carry nothing; and the re-encode means the bytes are no longer the
    archive file's own, so a byte count cannot be matched against it either.
 
-     Odd One Out  ODD_SIDE square, a centre crop. The page shows the tile
-                  as a square (object-fit: cover, centred, then zoomed
-                  towards its top right — .odd-tile img in style.css), so
-                  serving the centre square leaves what is on screen exactly
-                  as it was; the zoom is applied to the same pixels.
+     Odd One Out  ODD_SIDE square, a centre crop, and then only the part of
+                  it a tile shows (THE ODD TILE IS THE VISIBLE SQUARE, below).
      Guess        GUESS_W x GUESS_H, 16:10, a centre crop. The archive's
                   screenshots run 1.47-1.98 wide to one high (median 1.57),
                   so 16:10 trims the least from most of them. The views are
@@ -123,6 +120,40 @@
    wider view. Where the crop falls is decided here and appears nowhere in it.
 
    ----------------------------------------------------------------------
+   THE ODD TILE IS THE VISIBLE SQUARE (16 Nov 2026)
+
+   Habbo screenshots carry the client's room panel in their bottom-left
+   corner, and it names the room, often with the maze's own tag. The page
+   used to hide it with a CSS zoom on the 450 square, but the file behind the
+   tile was the whole square, panel and all: "Open image in new tab" read
+   "...er - Empire" (bug scan, 15 Nov). Anchoring the CDN's square to the
+   right was tried and is not enough: a few screenshots are nearly square
+   (1062x886, 888x660), and the panel's tail was still in their files.
+
+   So an Odd tile is now exactly what the tile used to SHOW, and nothing
+   else: the square from 28.1% to 90.6% across and 10.5% to 73% down the
+   centre square (ODD_CUT, the old zoom of 1.6 about 75% 28%), which the
+   panel never reaches at any shape. The CDN can only crop from an edge or
+   the middle, so it is asked for a lossless PNG of the centre square, the
+   cut is made here, and it is written as a JPEG here (_jpeg.js: no chroma
+   subsampling, q80). Against today's CDN JPEG of the square that is about
+   35KB rather than 44KB a tile, and sharper (2.6dB nearer the lossless
+   frame on 40 archive pictures; scratchpad daily15/fix-odd/h1-quality.js),
+   so no picture is softer for it. The page shows it square with no zoom.
+
+   AND EVERY TILE OF A ROUND IS THE SAME LENGTH (the owner's, 16 Nov). The
+   pixel size was evened out on 28 Sept, but the byte count still followed
+   how busy a picture is: the tile furthest from the other three in size was
+   the odd one 39% of the time against a blind 25% (bug scan, 15 Nov). Each
+   tile is padded with JPEG comment segments to four bytes past the round's
+   largest (padJpeg), so all four answer the same Content-Length. That needs
+   the other three tiles' sizes, so a request makes all four (oddRound, kept
+   per container for a while: the four addresses of a round usually arrive
+   together). If a sibling could not be had, the tile is still served, padded
+   to the largest known, but not cached anywhere, so the next ask evens it
+   out properly.
+
+   ----------------------------------------------------------------------
    CACHED HARD, AND WHY THAT IS SAFE HERE
 
    The address is per game, day, round, tile and view, signed over the stored
@@ -161,6 +192,7 @@ const { headersFor } = require("./_headers");
 const { dayClosesAt, seededRandom } = require("./_daily");
 const deals = require("./_deal");
 const { decodePng, encodePng } = require("./_png");
+const { encodeJpeg } = require("./_jpeg");
 
 // The games with pictures, and how many a round has: four tiles, or one.
 const GAMES = { odd: 4, guess: 1 };
@@ -197,6 +229,12 @@ const PICTURE = {
     odd: { w: ODD_SIDE, h: ODD_SIDE, q: 80 },
     guess: { w: GUESS_W, h: GUESS_H, q: 85 }
 };
+/* The part of the Odd square a tile shows (THE ODD TILE IS THE VISIBLE
+   SQUARE): what scale(1.6) about 75% 28% left in view, as fractions of the
+   square. 281px a side at ODD_SIDE 450. */
+const ODD_CUT = { x: 0.28125, y: 0.105, side: 0.625 };
+// Past the round's largest tile, so every tile carries at least one comment.
+const PAD_MIN = 4;
 
 /* Nothing bigger than this is sent (see THE SIZE LIMIT). 4MB is 5.33MB in
    base64, leaving room for the headers under the 6MB ceiling. */
@@ -324,6 +362,7 @@ async function fetchPicture(ref, fetchImpl, game) {
         return null;
     }
     const base = siteBase();
+    if (game === "odd") return fetchOddTile(ref, fetchImpl, base, out);
     const qs = new URLSearchParams({
         url: ref, w: String(out.w), h: String(out.h), fit: "cover", fm: "jpg", q: String(out.q)
     });
@@ -338,6 +377,103 @@ async function fetchPicture(ref, fetchImpl, game) {
         console.warn(`deal-image: ${ref} came back ${got ? got.w + "x" + got.h : "at an unreadable size"}, not ${out.w}x${out.h}; it is smaller than the ${game} pictures are served at, so its size stands out`);
     }
     return picture;
+}
+
+/* An Odd One Out tile: the CDN's lossless PNG of the centre square, the
+   visible square cut out of it, written as a JPEG (THE ODD TILE IS THE
+   VISIBLE SQUARE). See-through pixels are laid on black, as the CDN's JPEG
+   did. A square that came back smaller than ODD_SIDE (WHY THESE NUMBERS) is
+   cut at the same fractions and said in the log, as before. */
+async function fetchOddTile(ref, fetchImpl, base, out) {
+    const qs = new URLSearchParams({ url: ref, w: String(out.w), h: String(out.h), fit: "cover", fm: "png" });
+    const source = await grab(`${base}/.netlify/images?${qs.toString()}`, fetchImpl, MAX_BYTES);
+    if (!source || source === "big") return null;
+    try {
+        const { width: w, height: h, data } = decodePng(source.bytes);
+        if (w !== out.w || h !== out.h) {
+            console.warn(`deal-image: ${ref} came back ${w}x${h}, not ${out.w}x${out.h}; it is smaller than the odd pictures are served at, so its size stands out`);
+        }
+        const side = Math.max(1, Math.round(Math.min(w, h) * ODD_CUT.side));
+        const x0 = Math.max(0, Math.min(w - side, Math.round(w * ODD_CUT.x)));
+        const y0 = Math.max(0, Math.min(h - side, Math.round(h * ODD_CUT.y)));
+        const cut = Buffer.alloc(side * side * 4);
+        for (let y = 0; y < side; y++) {
+            const from = ((y0 + y) * w + x0) * 4;
+            data.copy(cut, y * side * 4, from, from + side * 4);
+        }
+        for (let i = 3; i < cut.length; i += 4) {
+            const a = cut[i];
+            if (a === 255) continue;
+            cut[i - 3] = Math.round(cut[i - 3] * a / 255);
+            cut[i - 2] = Math.round(cut[i - 2] * a / 255);
+            cut[i - 1] = Math.round(cut[i - 1] * a / 255);
+            cut[i] = 255;
+        }
+        return { bytes: encodeJpeg(side, side, cut, out.q), type: "image/jpeg" };
+    } catch (e) {
+        console.error("deal-image: could not cut an odd tile from", ref, e);
+        return null;
+    }
+}
+
+/* A JPEG made exactly `target` bytes long with comment segments (COM, which
+   every decoder skips) after the JFIF header, or as it is if it is already
+   that long or longer. Each segment is 4 to 65537 bytes, so any shortfall of
+   four or more can be met exactly; PAD_MIN keeps it at least four. Pure. */
+function padJpeg(bytes, target) {
+    let need = target - bytes.length;
+    if (need < 4 || bytes[0] !== 0xff || bytes[1] !== 0xd8) return bytes;
+    // After APP0 when there is one (JFIF wants it first), else after SOI.
+    let at = 2;
+    if (bytes[2] === 0xff && bytes[3] === 0xe0) at = 4 + bytes.readUInt16BE(4);
+    const parts = [];
+    const n = Math.ceil(need / 65537);
+    for (let i = 0; i < n; i++) {
+        const size = Math.floor(need / (n - i));      // 4..65537 each
+        const seg = Buffer.alloc(size);
+        seg[0] = 0xff; seg[1] = 0xfe;
+        seg.writeUInt16BE(size - 2, 2);
+        parts.push(seg);
+        need -= size;
+    }
+    return Buffer.concat([bytes.subarray(0, at), ...parts, bytes.subarray(at)]);
+}
+
+/* The four tiles of a round, each made once per container for a while and
+   shared by the requests for its siblings (the page asks for all four at
+   once). Keyed on the stored reference, which is what the bytes depend on.
+   A tile that could not be had is not kept, so the next ask tries again. */
+const tileMemo = new Map();
+const TILE_MEMO_MAX = 40;
+const TILE_MEMO_MS = 10 * 60 * 1000;
+function oddTile(ref, fetchImpl) {
+    const hit = tileMemo.get(ref);
+    if (hit && Date.now() - hit.at < TILE_MEMO_MS) return hit.job;
+    const job = fetchPicture(ref, fetchImpl, "odd").then(p => {
+        if (!p && tileMemo.get(ref) === entry) tileMemo.delete(ref);
+        return p;
+    });
+    const entry = { job, at: Date.now() };
+    tileMemo.delete(ref);
+    tileMemo.set(ref, entry);
+    while (tileMemo.size > TILE_MEMO_MAX) tileMemo.delete(tileMemo.keys().next().value);
+    return job;
+}
+
+/* One tile of a round, padded to the round's length (THE ODD TILE IS THE
+   VISIBLE SQUARE). Answers { picture, complete }, picture null when this
+   tile itself could not be had; `complete` is whether every sibling's size
+   was known, which decides whether the answer may be cached. */
+async function oddRound(deal, round, tile, fetchImpl) {
+    const tiles = (deal.rounds[round] && deal.rounds[round].tiles) || [];
+    const made = await Promise.all(tiles.map(t => oddTile(t && t.image, fetchImpl)));
+    const mine = made[tile];
+    if (!mine) return { picture: null, complete: false };
+    const longest = Math.max(...made.filter(Boolean).map(p => p.bytes.length));
+    return {
+        picture: { bytes: padJpeg(mine.bytes, longest + PAD_MIN), type: mine.type },
+        complete: made.every(Boolean)
+    };
 }
 
 /* ---------- choosing where to cut ----------
@@ -503,9 +639,18 @@ async function serve(event, { db, fetchImpl, now }) {
         return refuse(404, "Not found");
     }
 
-    const picture = addr.view === null
-        ? await fetchPicture(ref, fetchImpl, addr.game)
-        : await fetchView(ref, fetchImpl, deal.rounds[addr.round].crop, addr.view);
+    // An Odd tile is padded to its round's length (THE ODD TILE IS THE
+    // VISIBLE SQUARE), and only cached when the whole round was measured.
+    let picture, cacheable = true;
+    if (addr.game === "odd") {
+        const made = await oddRound(deal, addr.round, addr.tile, fetchImpl);
+        picture = made.picture;
+        cacheable = made.complete;
+    } else {
+        picture = addr.view === null
+            ? await fetchPicture(ref, fetchImpl, addr.game)
+            : await fetchView(ref, fetchImpl, deal.rounds[addr.round].crop, addr.view);
+    }
     /* 502, no-store: the address was right and the picture behind it would
        not come. The games already try a failed picture again by themselves
        (watchTiles in js/oddoneout.js, prepareRound in js/guess.js), and a
@@ -515,7 +660,7 @@ async function serve(event, { db, fetchImpl, now }) {
 
     return {
         statusCode: 200,
-        headers: headersFor(picture.type, IMAGE_HEADERS),
+        headers: headersFor(picture.type, cacheable ? IMAGE_HEADERS : { "Cache-Control": "no-store" }),
         body: picture.bytes.toString("base64"),
         isBase64Encoded: true
     };
@@ -533,6 +678,8 @@ exports.cutView = cutView;
 exports.chooseCentre = chooseCentre;
 exports.REVEAL = REVEAL;
 exports.sizeOf = sizeOf;
+exports.padJpeg = padJpeg;
+exports.ODD_CUT = ODD_CUT;
 exports.PICTURE = PICTURE;
 exports.MAX_BYTES = MAX_BYTES;
 exports.AFTER_CLOSE_MS = AFTER_CLOSE_MS;

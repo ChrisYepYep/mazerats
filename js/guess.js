@@ -124,6 +124,28 @@
         return state.results.reduce((n, r) => n + pointsFor(r), 0);
     }
 
+    /* The wrong names the day took, as the boards count them (MISSES in
+       netlify/functions/guess-scores.js): a room found on view n took n - 1,
+       a room not found all three. Shown beside "5 of 5 rooms found" and in
+       the share line (16 Nov 2026), so a day with misses reads as one. */
+    function dayMisses() {
+        return state.results.reduce((n, r) => {
+            if (!r || !r.done) return n;
+            return n + (r.won ? Math.max(0, r.guesses.length - 1) : POINTS.length);
+        }, 0);
+    }
+    const missesWords = n => (n === 0 ? "no misses" : n === 1 ? "1 miss" : `${n} misses`);
+
+    /* What the results grid says to a screen reader (16 Nov 2026, the bug
+       scan): an aria-label on a plain <p> is ignored, so it was read out as
+       "orange square, green square…". */
+    function gridWords() {
+        return state.results.map((r, i) => {
+            const how = !r || !r.done ? "not played" : r.won ? `found on view ${r.guesses.length}` : "not found";
+            return `Room ${i + 1} ${how}`;
+        }).join(", ");
+    }
+
     let el = {};          // the window's shared elements, filled by mount()
     let sheets = [];      // the deck, in order: intro, 5 rooms, results
     /* The day's deal as the server handed it: { day, rounds }, each round
@@ -223,7 +245,11 @@
         const data = rounds[i];
         if (sheet && !data && unloadable[i]) return drawUnavailable(sheet);
         if (!sheet || !data || !data.img) return;
-        sheet.refs.canvas.setAttribute("aria-label", "A cropped piece of a maze room from the archive");
+        // Said as what is drawn (16 Nov 2026): once a room is over the
+        // canvas holds the whole of it, not a crop.
+        sheet.refs.canvas.setAttribute("aria-label", data.whole
+            ? "The whole room, uncropped"
+            : "A cropped piece of a maze room from the archive");
 
         const img = data.img;
         const result = state.results[i];
@@ -798,7 +824,11 @@
         retry.addEventListener("click", () => {
             retry.disabled = true;
             status.textContent = "Loading the picture again…";
-            unloadable[i] = false;
+            /* `unloadable` stays set until the load works (16 Nov 2026, the
+               bug scan): it is what tells prepareRound's success branch to
+               take this line away, and clearing it here first left "Loading
+               the picture again…" up for as long as the room was. A retry
+               that fails sets it again and puts the button back. */
             // One try from a button, no automatic ones after it: the
             // player has already waited through those once.
             prepareRound(i, PICTURE_RETRY_MS.length);
@@ -1423,7 +1453,13 @@
         if (!p) return;
         const extra = document.createElement("span");
         extra.setAttribute("data-bonus-rule", "");
-        extra.textContent = " " + Daily.bonusRule(`${POINTS[0]} on the first view, ${POINTS[1]} on the second and ${POINTS[2]} on the third`, "naming the maze");
+        /* And two facts the boards turn on (16 Nov 2026, the bug scan): room
+           points now rank before the bonus (THEN THE ROOM POINTS in
+           netlify/functions/guess-scores.js), and the clock runs while a
+           room's picture loads, since the server starts it when the room is
+           handed out (_speed.js). */
+        extra.textContent = " " + Daily.bonusRule(`${POINTS[0]} on the first view, ${POINTS[1]} on the second and ${POINTS[2]} on the third`, "naming the maze")
+            + " The boards rank room points before the bonus, and the clock includes each picture's loading time.";
         p.appendChild(extra);
     }
 
@@ -1487,8 +1523,8 @@
             <div class="guess-summary-card">
                 <p class="guess-points"><strong>${scored}</strong><span>points</span></p>
                 <p class="daily-bonus" id="guess-bonus"${bonus ? "" : " hidden"}>${escapeHtml(bonus)}</p>
-                <p class="guess-score">${solved} of ${ROUNDS} rooms found</p>
-                <p class="guess-grid" aria-label="Result grid">${state.results.map(squareFor).join("")}</p>
+                <p class="guess-score">${solved} of ${ROUNDS} rooms found · ${missesWords(dayMisses())}</p>
+                <p class="guess-grid" role="img" aria-label="${escapeHtml(gridWords())}">${state.results.map(squareFor).join("")}</p>
                 <div id="guess-streak-slot"></div>
                 <dl class="guess-stats">
                     <div><dt>Best day</dt><dd>${stats.bestDay}</dd></div>
@@ -1752,6 +1788,9 @@
         // for the line under the points.
         if (sent && body && Number.isFinite(body.points)) {
             served = { day: forDay, points: body.points, bonus: body.bonus || 0, practised: Boolean(body.practised) };
+            // And kept for the menu's "Done:" line (THE MENU SAYS WHAT THE
+            // BOARDS SAY in js/daily.js).
+            if (Daily.rememberFiled) Daily.rememberFiled("guess", forDay, body);
             if (state && state.day === forDay) drawBonus();
         }
         /* A practice run, answered and not filed: marked one if this page
@@ -1819,6 +1858,10 @@
        simply render nothing rather than five wrong squares. */
     function miniGrid(grid) {
         if (!Array.isArray(grid) || grid.length !== ROUNDS) return "";
+        // In the share grid's colours, a title a cell, at every width
+        // (Daily.roomsGrid; 16 Nov 2026). The copy below is for a page
+        // somehow without js/daily.js.
+        if (window.Daily && Daily.roomsGrid) return Daily.roomsGrid(grid);
         const cells = grid.map(n => {
             const cls = n >= 1 && n <= 4 ? `is-won g${n}` : "is-lost";
             return `<span class="guess-board-cell ${cls}"></span>`;
@@ -1849,7 +1892,7 @@
            that numbers the board beside this one, so the two columns cannot
            disagree about what a tie is. Positional numbering is the fallback
            only for a page somehow without js/daily.js. */
-        const place = window.Daily && Daily.ranks ? Daily.ranks(list) : list.map((r, i) => i + 1);
+        const place = window.Daily && Daily.ranks ? Daily.ranks(list, true) : list.map((r, i) => i + 1);
         return list.map((row, i) => `
             <li class="guess-board-row${isMine(row, mine) ? " is-me" : ""}">
                 <span class="guess-board-rank" aria-hidden="true">${place[i]}</span>
@@ -1857,7 +1900,7 @@
                     ? `<img class="guess-board-face" src="${escapeHtml(row.avatar)}" alt="" aria-hidden="true" loading="lazy">`
                     : `<span class="guess-board-face is-blank" aria-hidden="true"></span>`}
                 <span class="guess-board-name">${escapeHtml(row.name || "Someone")}</span>
-                ${window.Daily && Daily.rightCell ? Daily.rightCell(row, miniGrid(row.grid)) : miniGrid(row.grid)}
+                ${window.Daily && Daily.foundCell ? Daily.foundCell(row, miniGrid(row.grid)) : miniGrid(row.grid)}
                 ${scoreCell(row)}
             </li>`).join("");
     }
@@ -1955,7 +1998,7 @@
             ${invite}
             <div class="guess-board">
                 <div class="guess-board-ranges" role="group" aria-label="Which span the board covers">${tabs}</div>
-                <p class="guess-board-span">${escapeHtml(span)}${window.Daily && Daily.orderLine ? " " + Daily.orderLine(boardRange) : ""}</p>
+                <p class="guess-board-span">${escapeHtml(span)}${window.Daily && Daily.foundOrderLine ? " " + Daily.foundOrderLine(boardRange) : ""}</p>
                 <ol class="guess-board-list">${boardRows(list, me, range.empty)}</ol>
             </div>`;
 
@@ -2011,7 +2054,8 @@
                     clearInterval(countdownTimer);
                     return;
                 }
-                target.textContent = `Today's real rooms in ${Math.floor(left / 3600000)}h ${Math.floor((left % 3600000) / 60000)}m.`;
+                target.textContent = left < 60000 ? "Today's real rooms in under a minute."
+                    : `Today's real rooms in ${Math.floor(left / 3600000)}h ${Math.floor((left % 3600000) / 60000)}m.`;
                 return;
             }
             const ms = next - at;
@@ -2022,7 +2066,8 @@
             }
             const h = Math.floor(ms / 3600000);
             const m = Math.floor((ms % 3600000) / 60000);
-            target.textContent = `Five new rooms in ${h}h ${m}m.`;
+            // Not "0h 0m" in the last minute (16 Nov 2026, the bug scan).
+            target.textContent = ms < 60000 ? "Five new rooms in under a minute." : `Five new rooms in ${h}h ${m}m.`;
         };
         update();
         /* Ticking only while the window is open (26 Oct 2026, the bug
@@ -2046,6 +2091,7 @@
             day: state.day,
             right: state.results.filter(r => r.won).length,
             of: ROUNDS,
+            misses: dayMisses(),
             grid: state.results.map(squareFor).join(""),
             path: "guess",
             practice: Boolean(state.practice)
@@ -2809,12 +2855,16 @@
             if (!r || !r.done || !r.won) return n;
             return n + (POINTS[Math.min(r.guesses.length, POINTS.length) - 1] || 0);
         }, 0);
+        // The total the boards show, once the server has said it (16 Nov
+        // 2026; THE MENU SAYS WHAT THE BOARDS SAY in js/daily.js), else null.
+        const filed = saved.done && window.Daily && Daily.filedTotal ? Daily.filedTotal("guess", saved.day) : null;
         return {
             started: saved.results.some(r => r && r.guesses && r.guesses.length),
             done,
             total: ROUNDS,
             finished: Boolean(saved.done),
-            points
+            points,
+            boardPoints: Number.isFinite(filed) && !saved.practice ? filed : null
         };
     };
 

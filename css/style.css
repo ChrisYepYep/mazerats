@@ -15649,17 +15649,55 @@ html:not([data-theme]) .guess-board-rank { color: var(--amber-text); }
     background: #4a2018;
 }
 
-/* The same shading the pips and the shared grid use, so one player's row
-   and their own results panel cannot disagree about how a round went. */
-.guess-board-cell.is-won.g1 { background: #3f5c2a; }
-.guess-board-cell.is-won.g2 { background: #4d5526; }
+/* The share grid's own colours (16 Nov 2026, the bug scan): green first
+   view, yellow second, orange third, red not found, as 🟩🟨🟧🟥 paste. They
+   were three dark olives (#3f5c2a, #4d5526, #5a4a22) that nobody could tell
+   apart at 7px, under a comment saying they matched the share grid. */
+.guess-board-cell.is-won.g1 { background: #78b159; }
+.guess-board-cell.is-won.g2 { background: #fdcb58; }
 .guess-board-cell.is-won.g3,
-.guess-board-cell.is-won.g4 { background: #5a4a22; }
+.guess-board-cell.is-won.g4 { background: #f4900c; }
+.guess-board-cell.is-lost { background: #dd2e44; }
 
 @media (max-width: 760px) {
     /* The grid is the first thing to go when the row runs out of room —
-       the score is the point of a leaderboard, the grid is the garnish. */
+       the score is the point of a leaderboard, the grid is the garnish.
+       Except Guess the Maze's (.is-rooms, 16 Nov 2026): its grid is where
+       the misses show, so it stays, a little narrower. */
     .guess-board-grid { display: none; }
+    .guess-board-grid.is-rooms { display: inline-flex; gap: 1px; }
+    /* Not named .guess-board-cell: tools/themes.js keeps that rule's colours
+       and restates it in every theme, without this media query. */
+    .guess-board-row .guess-board-grid.is-rooms > span { width: 5px; }
+}
+
+/* "5 found · 2 misses" (Daily.foundCell): the misses in the third-view
+   orange, so a day with misses cannot pass for a clean one. */
+.guess-board-found b {
+    font-weight: 400;
+    color: var(--amber-text);
+}
+.guess-board-found b.is-missed { color: #f4900c; }
+
+/* On a phone the grid and "5 found · 2 misses" take a line of their own
+   under the name, which otherwise shrank to one letter. Selected through
+   .has-found on the cell, never .guess-board-found or .guess-board-cell:
+   tools/themes.js restates those rules in every theme without the media
+   query. */
+@media (max-width: 560px) {
+    .guess-board-row:has(.has-found),
+    .boards-board .guess-board-row:has(.has-found) {
+        grid-template-columns: 16px 27px 1fr auto;
+        row-gap: 0;
+    }
+    .guess-board-row:has(.has-found) > .guess-board-rank,
+    .guess-board-row:has(.has-found) > .guess-board-face { grid-row: 1 / 3; }
+    .guess-board-row:has(.has-found) > .has-found {
+        grid-column: 3 / 5;
+        grid-row: 2;
+        justify-content: flex-start;
+        padding-bottom: 3px;
+    }
 }
 
 /* The Leaderboards window (js/leaderboards.js) always draws the fifth
@@ -19105,8 +19143,13 @@ textarea.ctl-input.de-note {
     background-clip: content-box;
     padding: 2px;
 }
+/* Reduced motion: no sliding at all (16 Nov 2026, the Odd One Out scan; it
+   used to slide at a third of the speed). Both games' bars fill now, so a
+   still bar is only seen for the moment before the first fill, as a static
+   half-width block; a filling bar's width still moves, being the progress. */
 @media (prefers-reduced-motion: reduce) {
-    .daily-bar > span { animation-duration: 3s; }
+    .daily-bar > span { animation: none; transform: none; width: calc(50% - 2px); }
+    .daily-bar.is-progress > span { width: calc((100% - 4px) * var(--fill, 0)); transition: none; }
 }
 
 /* The window holds a frame, and the frame holds the deck — the same deck of
@@ -19315,16 +19358,17 @@ textarea.ctl-input.de-note {
        looking at a single room — find the label that does not match the
        other three.
 
-       So every tile is zoomed and held towards its top right, which is where
-       a Habbo screenshot never puts the panel. At this scale the visible
-       window is roughly the source's 28%-91% across and 10%-73% down, and
-       the panel lives below and to the left of both.
+       Every tile used to be zoomed here (scale 1.6 about 75% 28%) to keep
+       the panel out of view, but the file behind it still had the panel in
+       it, for anybody who opened the picture. Since 16 Nov 2026 the server
+       sends only the square that zoom showed — the source's 28%-91% across
+       and 10%-73% down — so the panel is not in the file at all and the
+       tile shows the picture as it is (THE ODD TILE IS THE VISIBLE SQUARE
+       in netlify/functions/deal-image.js). The same pixels as before.
 
        Every tile is cropped identically, which matters as much as the crop:
        a treatment applied to one picture and not the others would be its own
        giveaway. */
-    transform: scale(1.6);
-    transform-origin: 75% 28%;
 }
 
 .odd-tile:hover,
@@ -19337,6 +19381,18 @@ textarea.ctl-input.de-note {
    resting pointer looked every bit as chosen as the one Tab had reached.
    The site's ring. */
 .odd-tile:focus-visible { outline: 2px solid var(--amber-bright); outline-offset: 2px; }
+/* Reduced motion keeps the edge and the ring, without the lift (16 Nov 2026). */
+@media (prefers-reduced-motion: reduce) {
+    .odd-tile:hover, .odd-tile:focus-visible { transform: none; }
+}
+/* A finished day the server could not take yet (sayUnfiled in
+   js/oddoneout.js), in the card under the points, with its "Send it again". */
+.odd-unfiled { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 8px; margin: 0; }
+/* A short phone (390x700 cut the round's last line in half): the round's
+   closing hint is rule 2 on the splash already, so it goes (16 Nov 2026). */
+@media (max-width: 480px) {
+    .odd-hint { display: none; }
+}
 
 /* A picture that would not load, after js/oddoneout.js's own retries. The
    tile STAYS pickable — the round can still be played from the other three

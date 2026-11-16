@@ -3934,7 +3934,7 @@ document.addEventListener("DOMContentLoaded", () => {
         // TODAY'S GAMES, as the menu words them.
         const g = typeof window.GuessStatus === "function" ? (() => { try { return window.GuessStatus(); } catch (e) { return null; } })() : null;
         const o = typeof window.OddOneOutStatus === "function" ? (() => { try { return window.OddOneOutStatus(); } catch (e) { return null; } })() : null;
-        const gameLine = (s, idle) => !s ? idle : s.finished ? `Done today: ${s.points} points` : s.started ? `${s.done} of ${s.total} done` : "Not played today";
+        const gameLine = (s, idle, game) => !s ? idle : s.finished ? `Done today: ${dailyDonePoints(s, game)}` : s.started ? `${s.done} of ${s.total} done` : "Not played today";
         const guessArt = openingRoomPicture(OPENING_GUESS_ROOM);
         const oddArt = OPENING_ODD_ROOMS.map(openingRoomPicture).filter(Boolean);
         // Read in a try: it is declared further down this file, by the side menu.
@@ -4006,7 +4006,7 @@ document.addEventListener("DOMContentLoaded", () => {
                             <span class="opening-game-art is-guess"${guessArt ? ` style="background-image:url('${escapeHtml(imgCdn(guessArt, 240, 140, 70))}')"` : ""} aria-hidden="true"><span>?</span></span>
                             <span class="opening-game-what">
                                 <span class="opening-name">Guess the Maze <span class="side-menu-tag opening-daily">Daily</span></span>
-                                <span class="opening-sub">${escapeHtml(gameLine(g, "Today's five rooms"))}</span>
+                                <span class="opening-sub">${escapeHtml(gameLine(g, "Today's five rooms", "guess"))}</span>
                                 <button type="button" class="view-switch-btn opening-play" data-game="guess" data-track="opening" data-track-label="guess" aria-label="Play Guess the Maze">Play</button>
                             </span>
                         </div>
@@ -4014,7 +4014,7 @@ document.addEventListener("DOMContentLoaded", () => {
                             <span class="opening-game-art is-odd" aria-hidden="true">${oddArt.map(p => `<i style="background-image:url('${escapeHtml(imgCdn(p, 120, 120, 75))}')"></i>`).join("")}</span>
                             <span class="opening-game-what">
                                 <span class="opening-name">Odd One Out <span class="side-menu-tag opening-daily">Daily</span></span>
-                                <span class="opening-sub">${escapeHtml(gameLine(o, "Spot the room that doesn't belong"))}</span>
+                                <span class="opening-sub">${escapeHtml(gameLine(o, "Spot the room that doesn't belong", "odd"))}</span>
                                 <button type="button" class="view-switch-btn opening-play" data-game="odd" data-track="opening" data-track-label="odd" aria-label="Play Odd One Out">Play</button>
                             </span>
                         </div>
@@ -12491,6 +12491,22 @@ document.addEventListener("DOMContentLoaded", () => {
         return applyMenuLayout(writtenMenuEntries());
     }
 
+    /* A finished daily game's points, as the boards show them (16 Nov 2026,
+       the bug scan: the menu said "Done: 42 points" for a day every board
+       showed as 218). The total with the speed bonus once the server has
+       said it — Guess the Maze's status carries it as `boardPoints`, Odd One
+       Out's is read from Daily.filedTotal (THE MENU SAYS WHAT THE BOARDS SAY
+       in js/daily.js) — and the room points alone until then, or for a day
+       with no bonus. `game` is "guess" or "odd". Both lines, the side menu's
+       and the opening view's, are worded here. */
+    function dailyDonePoints(s, game) {
+        let total = s && Number.isFinite(s.boardPoints) ? s.boardPoints : null;
+        if (total === null && s && !("boardPoints" in s) && window.Daily && Daily.filedTotal) {
+            try { total = Daily.filedTotal(game); } catch (e) { total = null; }
+        }
+        return Number.isFinite(total) && total > s.points ? `${total} points incl. speed` : `${s.points} points`;
+    }
+
     function writtenMenuEntries() {
         const g = menuFigure(() => typeof window.GuessStatus === "function" ? window.GuessStatus() : null, null);
         // The last fortnight's worth, not the log's length — see
@@ -12643,7 +12659,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 // morning. See .side-menu-tag.
                 tag: "Daily",
                 state: menuFigure(() => !g ? "Today's five rooms"
-                    : g.finished ? `Done: ${g.points} points`
+                    : g.finished ? `Done: ${dailyDonePoints(g, "guess")}`
                         : g.started ? `${g.done} of ${g.total} rooms done`
                             : "Not played today", "Today's five rooms"),
                 /* No points badge: the line below already says "Done — N
@@ -12659,7 +12675,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 name: "Odd One Out",
                 tag: "Daily",
                 state: menuFigure(() => !o ? "Spot the room that does not belong"
-                    : o.finished ? `Done: ${o.points} points`
+                    : o.finished ? `Done: ${dailyDonePoints(o, "odd")}`
                         : o.started ? `${o.done} of ${o.total} rounds done`
                             : "Not played today", "Spot the room that does not belong"),
                 badge: "",

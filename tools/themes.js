@@ -476,7 +476,9 @@ const KEEP_SELECTORS = [
     /\.difficulty-/,              // the easy -> extreme scale
     /\[data-difficulty=/,         // the same scale, on a featured row
     /\.admin-notice/,             // a warning, in warning gold
-    /admin-pill-danger/           // and a destructive button's label
+    /admin-pill-danger/,          // and a destructive button's label
+    /\.guess-board-cell/,         // a board's grid: the share grid's green, yellow, orange, red
+    /\.guess-board-found/         // and its misses, in that orange (16 Nov 2026)
 ];
 
 // Inside :root, where a whole-rule skip would take the entire palette with it.
