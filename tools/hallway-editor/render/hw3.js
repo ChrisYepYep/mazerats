@@ -231,15 +231,38 @@ function arrowAt(list, X, Y, dx, dy, base) {
     }
     return null;
 }
-/* whether the field inside the border, in this tile's row or column of the shape, is under NARROW_FIELD units across */
-const NARROW_FIELD = 24, RUG_FIELD = new Set(RUG.ramp.slice(RUG_BORDER).filter(Boolean).map(c => (c[0] << 16) | (c[1] << 8) | c[2]));
-function rugNarrow(F, TX, TY, key) {
-    const m = F.span || (F.span = new Map()); let v = m.get(key);
-    if (v === undefined) {
-        let x0 = TX, x1 = TX, y0 = TY, y1 = TY; while (F.set.has((x0 - 1) + "," + TY) && TX - x0 < 4) x0--; while (F.set.has((x1 + 1) + "," + TY) && x1 - TX < 4) x1++;
-        while (F.set.has(TX + "," + (y0 - 1)) && TY - y0 < 4) y0--; while (F.set.has(TX + "," + (y1 + 1)) && y1 - TY < 4) y1++;
-        v = Math.min((x1 - x0 + 1) * 16, (y1 - y0 + 1) * 16) - 2 * RUG_BORDER < NARROW_FIELD; m.set(key, v);
+/* A narrow rug keeps its weave (16 Nov 2026, his: "narrow needs weave", as the client's own hall runner has it). Where the rug is too narrow
+   for the whole border (RUG_BORDER deep each side) and a field at least FIELD_MIN across, the border gives way instead: it's cut short
+   from the inside, the plain band inside the accent line going first, so a 3-wide rug is its stripes and accent line, then 12 units of
+   weave; a 2-wide one loses some inner stripes too. Before this the field went (15 Nov scan, for the lone dotted line it made down a 3-wide
+   rug), first a whole tile at a time, which left tile-shaped blocks of weave wherever narrow runs met.
+   How deep the border is at a pixel comes from how far in the rug goes there: the most any point within FIELD_WIN of it is from an edge.
+   Worked out once per tile on 16 x 16 rug units, and only for tiles with an edge near enough to matter. */
+const FIELD_MIN = 12, FIELD_WIN = 8;
+function rugDepth(F, TX, TY, key, near) {
+    const m = F.depth || (F.depth = new Map()); let v = m.get(key);
+    if (v !== undefined) return v;
+    const A0 = TX * 16, B0 = TY * 16, M = FIELD_WIN, N = 16 + 2 * M, CAP = RUG_BORDER + FIELD_MIN;
+    /* r at each point round the tile, as rugFieldAt measures it, capped where the full border fits anyway */
+    const r = new Uint8Array(N * N); let low = false;
+    for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) {
+        const a = A0 - M + i, b = B0 - M + j; let d0 = CAP;
+        for (let n = 0; n < near.length; n += 2) {
+            const ax = near[n], by = near[n + 1], da = a < ax ? ax - a - 1 : a >= ax + 16 ? a - ax - 16 : 0, db = b < by ? by - b - 1 : b >= by + 16 ? b - by - 16 : 0;
+            const d = Math.max(da, db); if (d < d0) d0 = d;
+        }
+        r[j * N + i] = d0;
     }
+    const h = new Uint8Array(N * N);
+    for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) { let o = 0; for (let t = Math.max(0, i - M); t <= Math.min(N - 1, i + M); t++) if (r[j * N + t] > o) o = r[j * N + t]; h[j * N + i] = o; }
+    v = new Uint8Array(256);
+    for (let u = 0; u < 16; u++) for (let w = 0; w < 16; w++) {
+        let o = 0; for (let t = w; t <= w + 2 * M; t++) if (h[t * N + u + M] > o) o = h[t * N + u + M];
+        /* the deepest point nearby is the middle of the rug here: leave FIELD_MIN / 2 of weave either side of it */
+        const depth = Math.max(1, Math.min(RUG_BORDER, o - FIELD_MIN / 2 + 1)); v[w * 16 + u] = depth; if (depth < RUG_BORDER) low = true;
+    }
+    if (!low) v = null;      // the whole border fits all over this tile
+    m.set(key, v);
     return v;
 }
 function rugFieldAt(F, X, Y, dx, dy) {
@@ -277,14 +300,9 @@ function rugFieldAt(F, X, Y, dx, dy) {
            rounded a + b is one less on every other pixel, so the band's last row came half medallion, half edge, a speckle (15 Nov 2026) */
         else if (!c.small && u >= 1 && v >= 1 && u <= ROSETTE_ZONE && v <= ROSETTE_ZONE && Math.abs(c.sa * (X * 16 + (dx + 2 * dy) / 2 - c.A) - c.sb * (Y * 16 + (2 * dy - dx) / 2 - c.B)) <= ROSETTE_HALF && r >= 1) { const p = rosetteAt(c, (X - Y) * 16 + dx, (X + Y) * 8 + dy); if (p) return p; }
     }
-    /* a narrow rug's middle (15 Nov 2026 scan): where the field inside the border is under NARROW_FIELD units across, the field's
-       dither came out as a lone dotted line down a 3-wide rug, and a ragged scrap between a 4 x 4 rug's medallions; there the border's
-       own inner band carries on across instead */
-    const narrow = r < RUG.ramp.length && rugNarrow(F, TX, TY, key);
-    if (narrow && r >= RUG_BORDER) return RUG.ramp[RUG_BORDER - 1];
-    if (r < RUG.ramp.length) { const p = (!F.plainEdges && !(F.cutShape && F.cutShape.has(key)) && side >= 0 && edgeAt(side, at, a, b, (X - Y) * 16 + dx, (X + Y) * 8 + dy)) || RUG.ramp[r];
-        /* the field's first dots, which the client's edge starts a row early here and there, go too, or they're left alone in the band */
-        return narrow && r >= RUG_BORDER - 2 && RUG_FIELD.has((p[0] << 16) | (p[1] << 8) | p[2]) ? RUG.ramp[RUG_BORDER - 1] : p; }
+    /* a narrow rug's border gives way to its weave (rugDepth, above) */
+    if (r < RUG.ramp.length) { const dp = rugDepth(F, TX, TY, key, near); if (dp && r >= dp[(b - TY * 16) * 16 + (a - TX * 16)]) return (F.along.get(key) ? RUG.at(68 + (((b % 32) + 32) % 32), RUG.core + (((a % 16) + 16) % 16)) : RUG.at(68 + (((a % 32) + 32) % 32), RUG.core + (((b % 16) + 16) % 16))); }
+    if (r < RUG.ramp.length) return (!F.plainEdges && !(F.cutShape && F.cutShape.has(key)) && side >= 0 && edgeAt(side, at, a, b, (X - Y) * 16 + dx, (X + Y) * 8 + dy)) || RUG.ramp[r];
     return F.along.get(key) ? RUG.at(68 + (((b % 32) + 32) % 32), RUG.core + (((a % 16) + 16) % 16)) : RUG.at(68 + (((a % 32) + 32) % 32), RUG.core + (((b % 16) + 16) % 16));
 }
 /* A straight edge's border, copied from the client's own rug in screen pixels (14 Nov 2026, his: "the thickness of the lines not matching
