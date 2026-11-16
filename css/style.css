@@ -391,8 +391,7 @@
 
    Names carry Google's version (v31 and so on) because /assets/fonts/ is
    cached for a year: a newer cut gets a new name. All four are under the
-   SIL Open Font Licence. Caveat (the Atlas's handwriting, wizard.html and
-   warren.html) is still fetched from Google. */
+   SIL Open Font Licence, as is Caveat (declared after Silkscreen). */
 @font-face {
     font-family: 'Montserrat';
     font-style: normal;
@@ -528,6 +527,26 @@
     font-weight: 700;
     font-display: swap;
     src: url('../assets/fonts/silkscreen-v6-latin-700.woff2') format('woff2');
+    unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+/* Caveat, the Atlas's handwriting (wizard.html, and the Warren's atlas
+   editor). One variable file serves both weights. Self-hosted 16 Nov 2026 so
+   no page asks Google for anything: a font fetched from Google hands it the
+   visitor's IP address. Only pages that use the family download it. */
+@font-face {
+    font-family: 'Caveat';
+    font-style: normal;
+    font-weight: 500;
+    font-display: swap;
+    src: url('../assets/fonts/caveat-v23-latin.woff2') format('woff2');
+    unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+    font-family: 'Caveat';
+    font-style: normal;
+    font-weight: 700;
+    font-display: swap;
+    src: url('../assets/fonts/caveat-v23-latin.woff2') format('woff2');
     unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
 }
 

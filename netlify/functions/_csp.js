@@ -27,8 +27,9 @@ const crypto = require("crypto");
 const POLICY = (scriptHashes) => [
     "default-src 'self'",
     `script-src 'self' ${scriptHashes.join(" ")} https://cloud.umami.is`,
-    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
-    "font-src 'self' https://fonts.gstatic.com",
+    // Every font is the site's own since 16 Nov 2026: nothing from Google.
+    "style-src 'self' 'unsafe-inline'",
+    "font-src 'self'",
     "img-src 'self' data: blob: https://www.habbo.com https://images.habbo.com https://origins.habbo.com https://api.furniindex.com https://cdn.discordapp.com",
     "connect-src 'self' https://cloud.umami.is https://gateway.umami.is",
     "frame-ancestors 'self'",

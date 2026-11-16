@@ -168,7 +168,7 @@ const PRIVACY_SECTIONS = [
             "Umami does our visitor counts, and Discord handles signing in (so Discord knows you signed in here).",
             "OriginsBot is only sent your Discord ID. Habbo Origins is only sent Habbo names, to look up profiles, check motto codes and run the profile search. Habbo's imaging service is only sent an avatar's look, to draw heads.",
             "Habbos we look up are kept for 90 days after they were last checked, for as long as an account is linked to them, or for good if they're credited in the archive.",
-            "Your browser also loads things straight from Google Fonts, Habbo (avatars and article pictures), FurniIndex (furni pictures) and Umami. Like any website, they see your IP address and browser."
+            "Your browser also loads things straight from Habbo (avatars and article pictures), FurniIndex (furni pictures) and Umami. Like any website, they see your IP address and browser."
         ]
     },
     /* _bans.js and discord-auth.js. */
@@ -198,7 +198,7 @@ const PRIVACY_SECTIONS = [
         heading: "Who runs this site.",
         points: [
             "Maze Rats is run by ChrisYepYep, who is responsible for everything in this policy.",
-            "Last updated: 13 November 2026."
+            "Last updated: 16 November 2026."
         ]
     }
 ];

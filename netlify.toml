@@ -807,10 +807,10 @@
     # that is free to undo, and it buys almost all of the protection.
     Strict-Transport-Security = "max-age=63072000; includeSubDomains"
     # Written from what the site actually loads, which is a short list:
-    # Google's font CSS and the font files it points at, the umami analytics
-    # script, Habbo's own avatar imaging service, the pictures inside a
-    # stored Habbo article, and FurniIndex's icons. Everything else is
-    # first-party.
+    # the umami analytics script, Habbo's own avatar imaging service, the
+    # pictures inside a stored Habbo article, and FurniIndex's icons.
+    # Everything else is first-party, fonts included (Google Fonts dropped
+    # 16 Nov 2026).
     #
     # cdn.discordapp.com is where a player's Discord avatar comes from. Since
     # 4 Oct 2026 no public page shows one (not the header button, not a

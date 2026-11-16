@@ -2774,21 +2774,19 @@ document.addEventListener("DOMContentLoaded", () => {
     let wizardStarted = false;
     /* The atlas letters room names in Caveat exactly as /wizard does: without
        it the editor draws the map in a fallback serif, and what you arrange is
-       meant to be what you get. It is Google's, the Warren's only outside
-       request of the kind, so it is asked for here and not on every visit.
-       Waited for, briefly: the map measures its labels once the font is in,
-       and offline it goes on without. */
+       meant to be what you get. Declared in css/style.css and served from
+       /assets/fonts/ (no longer Google's, 16 Nov 2026); a declared face only
+       downloads once something asks for it, so it is asked for here and not
+       on every visit. Waited for, briefly: the map measures its labels once
+       the font is in, and if it fails it goes on without. */
     function loadAtlasFont() {
-        if (document.getElementById("atlas-font")) return Promise.resolve();
-        return new Promise(resolve => {
-            const link = document.createElement("link");
-            link.id = "atlas-font";
-            link.rel = "stylesheet";
-            link.href = "https://fonts.googleapis.com/css2?family=Caveat:wght@500;700&display=swap";
-            link.onload = link.onerror = () => resolve();
-            setTimeout(resolve, 3000);
-            document.head.appendChild(link);
-        });
+        if (!document.fonts || !document.fonts.load) return Promise.resolve();
+        const timeout = new Promise(resolve => setTimeout(resolve, 3000));
+        const load = Promise.all([
+            document.fonts.load("500 22px Caveat"),
+            document.fonts.load("700 22px Caveat")
+        ]).catch(() => {});
+        return Promise.race([load, timeout]);
     }
     async function openWizardPanel() {
         const host = document.querySelector('.admin-panel[data-panel="wizard"]');
