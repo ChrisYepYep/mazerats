@@ -65,6 +65,13 @@ const refuse = (statusCode, body) => ({
     body
 });
 
+// A "try again" answer, as JSON so the Errors tab report carries the cause.
+const unavailable = cause => ({
+    statusCode: 503,
+    headers: headersFor("application/json; charset=utf-8", { "Cache-Control": "no-store", "Retry-After": "5" }),
+    body: JSON.stringify({ error: "Image unavailable", cause })
+});
+
 exports.handler = async (event) => {
     // Through refuse, so this answer carries the security headers too.
     if (event.httpMethod !== "GET") return refuse(405, "Method not allowed");
@@ -91,7 +98,7 @@ exports.handler = async (event) => {
         try {
             ok = await hasAccount(event);
         } catch (e) {
-            return refuse(503, "Image unavailable");
+            return unavailable("account lookup: " + String(e && e.message || e).slice(0, 160));
         }
         if (!ok) return refuse(404, "Not found");
     }
@@ -99,12 +106,23 @@ exports.handler = async (event) => {
     /* Opening the store is inside the try as well (4 Nov 2026, the bug scan):
        one that cannot be opened is the same "try again" as one that cannot be
        read, and it was a bare 502. */
+    /* One more try after a short pause (16 Nov 2026): the Warren's Errors tab
+       caught a 503 here that failed in 5ms, a Blobs blip rather than a missing
+       picture, and the visitor got a broken image for it. The 503 now says
+       which step failed and why (`cause`, read by errorFieldOf in _errors.js),
+       where the bare text left the report as "HTTP 503 from image". */
     let result;
+    const read = () => imagesStore().getWithMetadata(key, { type: "arrayBuffer" });
     try {
-        result = await imagesStore().getWithMetadata(key, { type: "arrayBuffer" });
+        try {
+            result = await read();
+        } catch (first) {
+            await new Promise(r => setTimeout(r, 150));
+            result = await read();
+        }
     } catch (e) {
         console.error("image: read failed for", key, e.message);
-        return refuse(503, "Image unavailable");
+        return unavailable("blobs read: " + String(e && e.message || e).slice(0, 160));
     }
     if (!result) return refuse(404, "Not found");
 
