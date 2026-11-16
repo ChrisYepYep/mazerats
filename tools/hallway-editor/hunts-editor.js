@@ -1,38 +1,181 @@
-/* The editor's Hunts tab: write a hunt and its clues, pick each spot on the map, write the scraps. They're saved in the map like everything else, so Publish in the Warren is what makes them live. */
+/* The editor's Hunts tab (rebuilt 16 Nov 2026, his: "it feels like it's unfinished, broken, and doesn't seem to make sense to me").
+
+   What it's for, said at the top of the tab:
+   - A hunt is a chain of clues. A player picks one from the Hunts list on the walking page; each clue's card says where to look, and it's
+     solved by clicking the right spot. Finishing any hunt gives the key, kept for good: it turns in the lift's B slot (the Basement) and
+     opens the Finders' Lounge. With no hunt published nobody can get the key, and the tab says so.
+   - Scraps are bits of paper on the floor to collect and read again from the Scraps menu. Nothing to do with the key.
+
+   How it's used:
+   - Every clue and scrap has a marker on the map while this tab is open (or the Hunt clue / Scrap tool is picked): numbered pins for the
+     open hunt's clues, a paper mark for scraps. Click a marker to open its card.
+   - Pick spot asks for a click on the map and says so until it gets one (Esc cancels). Show me takes the view there.
+   - The left panel's Hunts group: Scrap drops a scrap where you click; Hunt clue adds a clue at the click to the hunt that's open here.
+   They're saved in the map like everything else, so Publish in the Warren is what makes them live. The map's shape is unchanged:
+     map.hunts  = [{ id, name, clues: [{ title, words, hint, level, px, py, art: "note"|"key"|"none", x, y, night }] }]
+     map.scraps = [{ id, level, x, y, text }]                                                        (live-hunts.js reads them) */
 (function () {
     "use strict";
     const LIVE = window.HallwayLive; if (!LIVE || window.HALLWAY_PLAY) return;
     const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text !== undefined) e.textContent = text; return e; };
-    const api = () => LIVE.editorApi(), slug = s => String(s).replace(/[^\w ]+/g, "").trim().replace(/\s+/g, "-").slice(0, 40) || "hunt";
-    let box = null;
+    const api = () => LIVE.editorApi(), flash = t => api().flash(t), slug = s => String(s).replace(/[^\w ]+/g, "").trim().replace(/\s+/g, "-").slice(0, 40) || "hunt";
     /* the hunts live in the file itself, whichever map is showing (12 Nov 2026): a hunt's clues can lead through a tunnel into the Events Gallery */
     const fileMap = () => LIVE.root || LIVE.map, allLevels = m => [...(m.levels || []), ...((m.gallery && m.gallery.levels) || [])];
+    const levelById = id => allLevels(fileMap()).find(l => l.id === id) || null;
+    const tabOpen = () => { const p = document.getElementById("tab-hunts"); return !!p && !p.hidden; };
+    const toolOn = () => { const t = api().tool; return t === "hunt_clue" || t === "hunt_scrap"; };
+    let box = null, openId = null, selKey = null, picking = null;      // the hunt whose card is open; the marker last picked ("c:<hunt>:<i>" or "s:<id>"); what Pick spot is waiting to place
+
     const edit = fn => { const a = api(); a.snapshot(); fn(fileMap()); a.changed(); fill(); };
-    const text = (label, val, on, big) => { const f = el("label", "field"), i = el(big ? "textarea" : "input"); if (!big) i.type = "text"; else i.rows = 2; i.value = val || ""; i.setAttribute("aria-label", label); i.addEventListener("change", () => on(i.value)); f.append(el("span", "f-label", label), i); return f; };
-    const btn = (t, fn, cls) => { const b = el("button", "btn small " + (cls || ""), t); b.type = "button"; b.addEventListener("click", fn); return b; };
-    /* the next click on the map says where: its map pixel, and its tile if that's floor */
-    /* find(m): what's being placed, looked up in the map that's showing at the click (an undo meanwhile swaps the whole map); ok(hit): whether
-       the click will do, checked before the edit, so a miss is no undo step and leaves the map unchanged (14 Nov scan) */
-    const pick = (find, ok, fn) => api().pickOnce(hit => { if (!hit) return; if (ok && !ok(hit)) { api().flash("That's not a floor tile."); return; } const it = find(fileMap()); if (!it) return; edit(() => fn(it, hit)); });
-    const clueOf = (h, hi, i) => m => { const hs = m.hunts || [], H = (h.id && hs.find(q => q.id === h.id)) || hs[hi]; return (H && H.clues[i]) || null; };
-    const scrapOf = (s, i) => m => { const ss = m.scraps || []; return (s.id && ss.find(q => q.id === s.id)) || ss[i] || null; };
-    function fill() {
-        if (!box || !LIVE.map) return; const map = fileMap(), hunts = map.hunts || [], scraps = map.scraps || []; box.textContent = "";
-        box.appendChild(el("p", "hint", "Each clue is solved by clicking its spot. A note or the key lies on its tile; with no picture, click whatever's there: a bookcase, a torn corner."));
-        hunts.forEach((h, hi) => { const d = el("div", "hunt"); d.appendChild(text("Name", h.name, v => edit(() => { h.name = v; })));
-            h.clues.forEach((c, i) => { const q = el("div", "clue"); q.appendChild(el("h5", "", "Clue " + (i + 1))); q.appendChild(text("Title", c.title, v => edit(() => { c.title = v; }))); q.appendChild(text("Words", c.words, v => edit(() => { c.words = v; }), true)); q.appendChild(text("Hint", c.hint, v => edit(() => { c.hint = v; })));
-                const art = el("select", "f-ctl"); for (const [v, t] of [["note", "A note on the floor"], ["key", "The key on the floor"], ["none", "Nothing: click what's there"]]) { const o = el("option", "", t); o.value = v; art.appendChild(o); } art.value = c.art || "note"; art.addEventListener("change", () => edit(() => { c.art = art.value; })); const f = el("label", "field"); f.append(el("span", "f-label", "Solved by"), art); q.appendChild(f);
-                const nf = el("label", "field"), ni = el("input"); ni.type = "checkbox"; ni.checked = !!c.night; ni.addEventListener("change", () => edit(() => { c.night = ni.checked; })); nf.append(el("span", "f-label", "Only after dark"), ni); q.appendChild(nf);
-                const lv = allLevels(map).find(l => l.id === c.level); q.appendChild(el("p", "hint", lv ? "On " + lv.name + (c.x !== undefined ? ", tile " + c.x + ", " + c.y : "") : "No spot yet."));
-                const row = el("div", "btn-row"); row.append(btn("Pick on the map", () => pick(clueOf(h, hi, i), null, (c, s) => { c.level = s.level; c.px = s.px; c.py = s.py; if (s.x !== undefined) { c.x = s.x; c.y = s.y; } else { delete c.x; delete c.y; } })), btn("Remove clue", () => edit(() => { h.clues.splice(i, 1); }))); q.appendChild(row); d.appendChild(q); });
-            const row = el("div", "btn-row"); row.append(btn("Add a clue", () => edit(() => { h.clues.push({ title: "", words: "", hint: "", art: "note" }); })), btn("Try it", () => { api().setTool("walk"); if (window.HallwayHunts) HallwayHunts.start(h); }), btn("Remove hunt", () => edit(m => { m.hunts.splice(hi, 1); if (!m.hunts.length) delete m.hunts; }))); d.appendChild(row); box.appendChild(d); });
-        box.appendChild(btn("New hunt", () => edit(m => { m.hunts = m.hunts || []; const name = "New hunt " + (m.hunts.length + 1); m.hunts.push({ id: slug(name) + "-" + Date.now().toString(36), name, clues: [{ title: "", words: "", hint: "", art: "note" }] }); }), "primary"));
-        box.appendChild(el("h4", "", "Scraps"));
-        scraps.forEach((s, i) => { const lv = allLevels(map).find(l => l.id === s.level), d = el("div", "hunt"); d.appendChild(text("It says", s.text, v => edit(() => { s.text = v; }), true)); d.appendChild(el("p", "hint", lv ? "On " + lv.name + ", tile " + s.x + ", " + s.y : "No spot yet.")); const row = el("div", "btn-row"); row.append(btn("Pick on the map", () => pick(scrapOf(s, i), q => q.x !== undefined, (s, q) => { s.level = q.level; s.x = q.x; s.y = q.y; })), btn("Remove", () => edit(m => { m.scraps.splice(i, 1); if (!m.scraps.length) delete m.scraps; }))); d.appendChild(row); box.appendChild(d); });
-        box.appendChild(btn("New scrap", () => edit(m => { m.scraps = m.scraps || []; m.scraps.push({ id: "s" + Date.now().toString(36), text: "", level: null }); })));
+    const hunts = () => fileMap().hunts || [], scraps = () => fileMap().scraps || [];
+    const huntById = id => hunts().find(h => h.id === id) || null, scrapById = id => scraps().find(s => s.id === id) || null;
+    const openHunt = () => huntById(openId) || hunts()[0] || null;
+
+    const field = (label, val, on, big, ph) => { const f = el("label", "field"), i = el(big ? "textarea" : "input"); if (!big) i.type = "text"; else i.rows = 2; i.value = val || ""; if (ph) i.placeholder = ph; i.setAttribute("aria-label", label); i.addEventListener("change", () => on(i.value)); f.append(el("span", "f-label", label), i); return f; };
+    const btn = (t, fn, cls, title) => { const b = el("button", "btn small " + (cls || ""), t); b.type = "button"; if (title) b.title = title; b.addEventListener("click", fn); return b; };
+    const where = o => { const l = levelById(o.level); return l ? l.name + (o.x !== undefined ? ", tile " + o.x + ", " + o.y : ", a spot on the wall or furniture") : null; };
+
+    /* ---------- placing ---------- */
+    /* the next map click says where: its tile if it's floor (needed when a note or the key lies there), else just the point */
+    function pickSpot(what, needTile, apply) {
+        picking = what; fill(); LIVE.wake();
+        api().pickOnce(hit => { picking = null; if (!hit) { fill(); return; } if (needTile && hit.x === undefined) { flash("That's not a floor tile. A note or the key has to lie on the floor."); fill(); return; } edit(m => apply(m, hit)); flash("Placed on " + (where(hit) || "the map") + "."); });
     }
-    window.HallwayHuntsEditor = { fill };
-    /* an undo or redo swaps the whole map: the tab is filled again from the new one, or its next edit went into the old map and was lost (10 Nov scan b, rooms 1) */
-    let mapWas = null; setInterval(() => { if (box && LIVE.map && LIVE.map !== mapWas) { const first = mapWas === null; mapWas = LIVE.map; if (!first) fill(); } }, 300);
+    const spotOf = hit => { const s = { level: hit.level, px: hit.px, py: hit.py }; if (hit.x !== undefined) { s.x = hit.x; s.y = hit.y; } return s; };
+    function setClueSpot(c, hit) { Object.assign(c, { level: hit.level, px: hit.px, py: hit.py }); if (hit.x !== undefined) { c.x = hit.x; c.y = hit.y; } else { delete c.x; delete c.y; if (c.art !== "none") c.art = "none"; } }
+    /* the left panel's tools (editor.js act() calls this) */
+    function placeTool(tool, hit) {
+        if (tool === "hunt_scrap") {
+            if (hit.x === undefined) { flash("A scrap lies on the floor: click a floor tile."); return; }
+            let id = null; edit(m => { m.scraps = m.scraps || []; const s = { id: "s" + Date.now().toString(36), text: "", level: hit.level, x: hit.x, y: hit.y }; m.scraps.push(s); id = s.id; });
+            selKey = "s:" + id; openTab(); fill(); focusCard(); flash("Scrap placed. Write what it says in the Hunts tab."); return;
+        }
+        if (tool === "hunt_clue") {
+            let hid = null, n = 0; edit(m => { m.hunts = m.hunts || []; let h = m.hunts.find(q => q.id === openId); if (!h) { h = newHunt(m); }
+                const c = { title: "", words: "", hint: "", art: hit.x !== undefined ? "note" : "none" }; setClueSpot(c, hit); h.clues.push(c); hid = h.id; n = h.clues.length; });
+            openId = hid; selKey = "c:" + hid + ":" + (n - 1); openTab(); fill(); focusCard(); flash("Clue " + n + " added to " + (huntById(hid) || {}).name + ". Write it in the Hunts tab.");
+        }
+    }
+    function newHunt(m) { const name = "New hunt " + (m.hunts.length + 1), h = { id: slug(name) + "-" + Date.now().toString(36), name, clues: [] }; m.hunts.push(h); return h; }
+    function openTab() { const t = document.querySelector('.tab[data-tab="hunts"]'); if (t && !tabOpen()) t.click(); }
+    function showMe(o) {
+        const l = levelById(o.level); if (!l) { flash("It has no spot yet."); return; }
+        if (!LIVE.map.levels.includes(l)) { flash("That's in the " + (fileMap().gallery && fileMap().gallery.levels.includes(l) ? "Events Gallery" : "other map") + ": switch Map at the top to see it."); return; }
+        if (api().level !== l) api().setFloor(l);
+        const p = o.x !== undefined ? LIVE.mapPoint(o.x + .5, o.y + .5, LIVE.nodeZ(l, o.x, o.y) || 0) : [o.px, o.py]; LIVE.camera(p[0], p[1] - 20); LIVE.wake();
+    }
+    function focusCard() { requestAnimationFrame(() => { const c = box && box.querySelector(".is-picked"); if (c) c.scrollIntoView({ block: "nearest" }); }); }
+
+    /* ---------- the tab ---------- */
+    function fill() {
+        if (!box || !LIVE.map) return; const keep = box.parentElement ? box.parentElement.scrollTop : 0, hs = hunts(), sc = scraps(); box.textContent = "";
+        if (openId && !huntById(openId)) openId = null; if (!openId && hs.length) openId = hs[0].id;
+
+        const intro = el("div", "hx-intro");
+        intro.append(el("p", "", "A hunt is a chain of clues. On the walking page a player picks one from the Hunts list; each clue's card says where to look, and it's solved by clicking the right spot."),
+            el("p", "", "Finishing any hunt gives the key, kept for good. It turns in the lift's B slot to reach the Basement, and opens the Finders' Lounge."),
+            el("p", "", "Scraps are bits of paper on the floor to collect and read again from the Scraps menu. They're just for reading."));
+        box.appendChild(intro);
+        if (!hs.some(h => h.clues.length && h.clues.every(c => c.level))) box.appendChild(el("p", "hx-warn", "No finished hunt on this map yet, so nobody can get the key or reach the Basement. Add a hunt, give every clue a spot, then Publish."));
+        if (picking) box.appendChild(el("p", "hx-picking", "Click the map for " + picking + ". Esc cancels."));
+
+        /* hunts */
+        box.appendChild(el("h4", "", "Hunts (" + hs.length + ")"));
+        hs.forEach((h, hi) => {
+            const open = h.id === openId, card = el("div", "hx-hunt" + (open ? " is-open" : "")), head = el("button", "hx-head"); head.type = "button";
+            const done = h.clues.filter(c => c.level).length;
+            head.append(el("b", "", h.name || "(no name)"), el("span", "", h.clues.length + (h.clues.length === 1 ? " clue" : " clues") + (done < h.clues.length ? ", " + (h.clues.length - done) + " without a spot" : "")));
+            head.addEventListener("click", () => { openId = open ? null : h.id; fill(); LIVE.wake(); }); card.appendChild(head);
+            if (open) {
+                card.appendChild(field("Name", h.name, v => edit(() => { const H = huntById(h.id); if (H) H.name = v; }), false, "What players see in the Hunts list"));
+                h.clues.forEach((c, i) => card.appendChild(clueCard(h, c, i)));
+                if (!h.clues.length) card.appendChild(el("p", "hint", "No clues yet. Add one below, or pick Hunt clue in the left panel and click the map."));
+                const row = el("div", "btn-row"); row.append(
+                    btn("Add a clue", () => pickSpot("clue " + (h.clues.length + 1) + " of " + h.name, false, (m, hit) => { const H = m.hunts.find(q => q.id === h.id); if (!H) return; const c = { title: "", words: "", hint: "", art: hit.x !== undefined ? "note" : "none" }; setClueSpot(c, hit); H.clues.push(c); selKey = "c:" + h.id + ":" + (H.clues.length - 1); }), "primary", "Then click where it's found"),
+                    btn("Try it", () => { if (!h.clues.length) { flash("Add a clue first."); return; } api().setTool("walk"); if (window.HallwayHunts) HallwayHunts.start(h); }, "", "Walk it as a player, from the first clue"),
+                    btn("Remove hunt", () => { if (!confirm("Remove " + (h.name || "this hunt") + " and its " + h.clues.length + " clues?")) return; edit(m => { m.hunts.splice(m.hunts.findIndex(q => q.id === h.id), 1); if (!m.hunts.length) delete m.hunts; }); }, "ghost"));
+                card.appendChild(row);
+            }
+            box.appendChild(card);
+        });
+        box.appendChild(btn("New hunt", () => { let id = null; edit(m => { m.hunts = m.hunts || []; id = newHunt(m).id; }); openId = id; fill(); }, hs.length ? "" : "primary"));
+
+        /* scraps */
+        box.appendChild(el("h4", "", "Scraps (" + sc.length + ")"));
+        box.appendChild(el("p", "hint", "A scrap lies on a floor tile and says a line or two. Pick Scrap in the left panel and click the floor, or add one here."));
+        sc.forEach((s, i) => {
+            const card = el("div", "hx-scrap" + (selKey === "s:" + s.id ? " is-picked" : ""));
+            card.appendChild(field("It says", s.text, v => edit(() => { const S = scrapById(s.id); if (S) S.text = v; }), true));
+            card.appendChild(el("p", "hint", where(s) || "No spot yet."));
+            const row = el("div", "btn-row"); row.append(
+                btn(s.level ? "Move it" : "Pick spot", () => pickSpot("scrap " + (i + 1), true, (m, hit) => { const S = (m.scraps || []).find(q => q.id === s.id); if (S) Object.assign(S, { level: hit.level, x: hit.x, y: hit.y }); selKey = "s:" + s.id; })),
+                btn("Show me", () => showMe(s)), btn("Remove", () => edit(m => { m.scraps.splice(m.scraps.findIndex(q => q.id === s.id), 1); if (!m.scraps.length) delete m.scraps; }), "ghost"));
+            card.appendChild(row); box.appendChild(card);
+        });
+        box.appendChild(btn("New scrap", () => pickSpot("the new scrap", true, (m, hit) => { m.scraps = m.scraps || []; const s = { id: "s" + Date.now().toString(36), text: "", level: hit.level, x: hit.x, y: hit.y }; m.scraps.push(s); selKey = "s:" + s.id; })));
+        if (box.parentElement) box.parentElement.scrollTop = keep;
+    }
+    function clueCard(h, c, i) {
+        const key = "c:" + h.id + ":" + i, last = i === h.clues.length - 1, q = el("div", "hx-clue" + (selKey === key ? " is-picked" : ""));
+        const top = el("div", "hx-clue-top"); top.append(el("span", "hx-num", String(i + 1)), el("b", "", c.title || "Clue " + (i + 1)), el("span", "hint", where(c) || "No spot yet")); q.appendChild(top);
+        const set = fn => edit(m => { const H = (m.hunts || []).find(x => x.id === h.id), C = H && H.clues[i]; if (C) fn(C, H); });
+        q.appendChild(field("Title", c.title, v => set(C => { C.title = v; }), false, "Shown on the clue card"));
+        q.appendChild(field("Words", c.words, v => set(C => { C.words = v; }), true, "Where to look, in a riddle or plainly"));
+        q.appendChild(field("Hint", c.hint, v => set(C => { C.hint = v; }), false, "Optional: costs the player 5 minutes"));
+        const art = el("select", "f-ctl"), opts = [["note", "A note on its tile"], ["none", "Click what's there"]];
+        if (last) opts.splice(1, 0, ["key", "The key on its tile"]);
+        for (const [v, t] of opts) { const o = el("option", "", t); o.value = v; art.appendChild(o); }
+        art.value = c.art === "key" && !last ? "note" : (c.art || "note");
+        art.addEventListener("change", () => { if (art.value !== "none" && c.x === undefined && c.level) { flash("Its spot isn't a floor tile: pick a floor tile first for a note or the key."); art.value = c.art || "none"; return; } set(C => { C.art = art.value; }); });
+        const af = el("label", "field"); af.append(el("span", "f-label", "Found by"), art); q.appendChild(af);
+        q.appendChild(el("p", "hint hx-small", art.value === "none" ? "Nothing is drawn: the player clicks whatever is at the spot (a bookcase, a painting, a torn corner)." : art.value === "key" ? "The key lies there: finding it finishes the hunt and gives the key." : "A folded note lies on the tile: clicking it solves the clue."));
+        const nf = el("label", "field hx-check"), ni = el("input"); ni.type = "checkbox"; ni.checked = !!c.night; ni.addEventListener("change", () => set(C => { C.night = ni.checked; })); nf.append(ni, el("span", "", "Only after dark (the Hallway's own clock)")); q.appendChild(nf);
+        const row = el("div", "btn-row"); row.append(
+            btn(c.level ? "Move spot" : "Pick spot", () => pickSpot("clue " + (i + 1) + " of " + h.name, false, (m, hit) => { const H = m.hunts.find(x => x.id === h.id), C = H && H.clues[i]; if (C) setClueSpot(C, hit); selKey = key; }), c.level ? "" : "primary"),
+            btn("Show me", () => showMe(c)),
+            btn("↑", () => { if (i) set((C, H) => { H.clues.splice(i - 1, 0, H.clues.splice(i, 1)[0]); }); }, "", "Earlier"),
+            btn("↓", () => { if (!last) set((C, H) => { H.clues.splice(i + 1, 0, H.clues.splice(i, 1)[0]); }); }, "", "Later"),
+            btn("Remove", () => set((C, H) => { H.clues.splice(i, 1); }), "ghost"));
+        q.appendChild(row);
+        q.addEventListener("focusin", () => { if (selKey !== key) { selKey = key; LIVE.wake(); } });
+        return q;
+    }
+
+    /* ---------- markers on the map ---------- */
+    /* every clue of every hunt on this floor (the open hunt's numbered and bright, the rest dim) and every scrap */
+    function markers() {
+        const lv = api().level; if (!lv) return []; const out = [];
+        const at = o => o.x !== undefined ? LIVE.mapPoint(o.x + .5, o.y + .5, LIVE.nodeZ(lv, o.x, o.y) || 0) : [o.px, o.py];
+        for (const h of hunts()) h.clues.forEach((c, i) => { if (c.level !== lv.id || (c.x === undefined && c.px === undefined)) return; const p = at(c); out.push({ key: "c:" + h.id + ":" + i, X: p[0], Y: p[1], n: i + 1, mine: h.id === openId, hunt: h, i, tile: c.x !== undefined }); });
+        for (const s of scraps()) { if (s.level !== lv.id || s.x === undefined) continue; const p = at(s); out.push({ key: "s:" + s.id, X: p[0], Y: p[1], scrap: s, tile: true }); }
+        return out;
+    }
+    const showing = () => !!LIVE.map && (tabOpen() || toolOn());
+    LIVE.add({ still: true, over: (c, ox, oy) => {
+        if (!showing()) return; const z = LIVE.zoom, ms = markers();
+        /* the open hunt's path, clue to clue */
+        const path = ms.filter(m => m.mine).sort((a, b) => a.n - b.n); if (path.length > 1) { c.save(); c.strokeStyle = "rgba(255,206,92,.55)"; c.lineWidth = Math.max(1.5, z); c.setLineDash([5 * z, 4 * z]); c.beginPath(); path.forEach((m, k) => { const X = ox + m.X * z, Y = oy + m.Y * z - 14 * z; if (k) c.lineTo(X, Y); else c.moveTo(X, Y); }); c.stroke(); c.restore(); }
+        for (const m of ms) {
+            const X = ox + m.X * z, Y = oy + m.Y * z, on = m.key === selKey; c.save();
+            if (m.tile) { c.beginPath(); c.moveTo(X, Y - 8 * z); c.lineTo(X + 16 * z, Y); c.lineTo(X, Y + 8 * z); c.lineTo(X - 16 * z, Y); c.closePath(); c.lineWidth = Math.max(1, z) * (on ? 2 : 1); c.strokeStyle = m.scrap ? "#c8f0ff" : m.mine ? "#ffce5c" : "rgba(255,206,92,.45)"; c.fillStyle = m.scrap ? "rgba(200,240,255,.18)" : "rgba(255,206,92,.15)"; c.fill(); c.stroke(); }
+            const r = Math.max(7, 6 * z), cy = Y - 16 * z;
+            if (m.scrap) { c.fillStyle = on ? "#ffffff" : "#e8f6ff"; c.strokeStyle = "#1a1a1a"; c.lineWidth = 1.5; c.beginPath(); c.rect(X - r * .8, cy - r, r * 1.6, r * 1.8); c.fill(); c.stroke(); c.fillStyle = "#555"; for (let k = 0; k < 3; k++) c.fillRect(X - r * .5, cy - r * .55 + k * r * .45, r, 1.2); }
+            else { c.beginPath(); c.arc(X, cy, r, 0, Math.PI * 2); c.fillStyle = on ? "#fff3c4" : m.mine ? "#ffce5c" : "rgba(160,160,160,.75)"; c.strokeStyle = "#1a1a1a"; c.lineWidth = 1.5; c.fill(); c.stroke(); c.fillStyle = "#1a1a1a"; c.font = "bold " + Math.round(r * 1.2) + "px sans-serif"; c.textAlign = "center"; c.textBaseline = "middle"; c.fillText(String(m.n), X, cy + .5); }
+            c.restore();
+        }
+    } });
+    /* a marker's card opens when it's clicked (not while placing, and not with a placing tool, whose click places) */
+    const view = document.getElementById("view");
+    if (view) view.addEventListener("pointerdown", e => {
+        if (!showing() || !tabOpen() || toolOn() || picking || e.button !== 0) return; const [px, py] = api().toPx(e.clientX, e.clientY), z = 1;
+        const hit = markers().find(m => Math.hypot(px - m.X, py - (m.Y - 16 * z)) < 10 || (m.tile && Math.abs(px - m.X) / 16 + Math.abs(py - m.Y) / 8 <= 1)); if (!hit) return;
+        e.stopImmediatePropagation(); e.preventDefault(); selKey = hit.key; if (hit.hunt) openId = hit.hunt.id; fill(); focusCard(); LIVE.wake();
+    }, true);
+
+    window.HallwayHuntsEditor = { fill, placeTool };
+    /* an undo or redo swaps the whole map: the tab is filled again from the new one, or its next edit went into the old map and was lost (10 Nov scan b, rooms 1);
+       Esc while picking clears the waiting line */
+    let mapWas = null, toolWas = null; setInterval(() => { if (!box || !LIVE.map) return; if (LIVE.map !== mapWas) { const first = mapWas === null; mapWas = LIVE.map; if (!first) fill(); } const t = toolOn(); if (t !== toolWas) { toolWas = t; LIVE.wake(); } }, 300);
+    document.addEventListener("keydown", e => { if (e.key === "Escape" && picking) { picking = null; setTimeout(fill, 0); } });
     const wait = setInterval(() => { box = document.getElementById("huntsBox"); if (box && LIVE.map) { clearInterval(wait); fill(); } }, 400);
 })();

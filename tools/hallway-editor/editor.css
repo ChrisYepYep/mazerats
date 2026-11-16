@@ -220,7 +220,24 @@ input[type="text"], input[type="search"], input:not([type]) { cursor: text !impo
 @media (max-height: 620px) { #liftPlate { width: 170px; height: 360px; } }
 
 #huntsBox textarea, #huntsBox input[type=text] { width: 100%; box-sizing: border-box; }
-#huntsBox .hunt { border-top: 1px solid rgba(255, 255, 255, .12); padding-top: 8px; margin-top: 8px; }
+/* the Hunts tab, rebuilt 16 Nov 2026 (hunts-editor.js) */
+#huntsBox h4 { margin: 14px 0 6px; }
+#huntsBox .hx-intro p { margin: 0 0 6px; font-size: 12px; line-height: 1.45; opacity: .85; }
+#huntsBox .hx-warn { margin: 8px 0; padding: 7px 9px; border-radius: 6px; font-size: 12px; line-height: 1.4; background: rgba(255, 120, 90, .12); border: 1px solid rgba(255, 120, 90, .45); color: #ffc8b8; }
+#huntsBox .hx-picking { position: sticky; top: 0; z-index: 2; margin: 8px 0; padding: 7px 9px; border-radius: 6px; font-size: 12px; font-weight: 600; background: var(--gold); color: var(--gold-ink); }
+#huntsBox .hx-hunt { border: 1px solid rgba(255, 255, 255, .12); border-radius: 8px; margin: 6px 0; overflow: hidden; }
+#huntsBox .hx-hunt.is-open { border-color: rgba(242, 204, 78, .55); }
+#huntsBox .hx-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; width: 100%; padding: 8px 10px; background: rgba(255, 255, 255, .04); border: 0; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+#huntsBox .hx-head span { font-size: 11px; opacity: .7; }
+#huntsBox .hx-hunt > .field, #huntsBox .hx-hunt > .btn-row, #huntsBox .hx-hunt > .hint { margin-left: 10px; margin-right: 10px; }
+#huntsBox .hx-hunt > .btn-row { margin-bottom: 10px; }
+#huntsBox .hx-clue, #huntsBox .hx-scrap { margin: 8px 10px; padding: 8px; border-radius: 6px; background: rgba(255, 255, 255, .035); border: 1px solid rgba(255, 255, 255, .08); }
+#huntsBox .hx-scrap { margin: 8px 0; }
+#huntsBox .is-picked { border-color: #ffe9a6; box-shadow: 0 0 0 1px #ffe9a6 inset; }
+#huntsBox .hx-clue-top { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; }
+#huntsBox .hx-clue-top .hint { margin-left: auto; font-size: 11px; }
+#huntsBox .hx-num { display: inline-grid; place-items: center; width: 18px; height: 18px; border-radius: 50%; background: #ffce5c; color: #1a1a1a; font-size: 11px; font-weight: 700; flex: none; }
+#huntsBox .hx-check { display: flex; align-items: center; gap: 6px; font-size: 12px; }
 
 .hw-sheet { z-index: 40; }
 .hw-sheet-body { color: #f5ecd8; font: 400 9px/14px 'Volter Goldfish', monospace; min-width: 220px; max-width: 320px; padding: 10px 12px; }
@@ -401,3 +418,4 @@ body.hw-screensaver .hw-clue { visibility: hidden; }
 .modal-box { max-height: calc(100vh - 24px); overflow-y: auto; }
 .tabs { display: grid; grid-template-columns: repeat(4, 1fr); }
 .tabs .tab { flex: none; min-width: 0; height: auto; min-height: 32px; padding: 4px 2px; white-space: normal; line-height: 1.15; }
+#huntsBox .hx-small { font-size: 11px; margin: 2px 0 6px; }
