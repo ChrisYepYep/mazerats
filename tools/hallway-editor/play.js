@@ -118,16 +118,34 @@
         if (r.status === 404 || r.status === 400 || r.ok) throw new Error("No Origins Habbo by that name on " + hotel + ".");
         /* the site asking you to slow down isn't Habbo being down: its own words (15 Nov scan, rooms 9) */
         if (r.status === 429) throw new Error(typeof d.error === "string" && d.error ? d.error : "Too many lookups just now - give it a minute.");
-        throw new Error("Habbo isn't answering just now. Try again in a moment.");
+        const down = new Error(OFFLINE); down.offline = true; throw down;
     }
+    /* ---------- the stored look (16 Nov 2026, his ask) ----------
+       Every visit a signed-in player's linked Habbo answers, its look is kept on the server (netlify/functions/hallway-look.js), frames and
+       all. Only when Habbo can't be reached is that kept look worn, and the server draws it from its copy; with no look kept (a new
+       player), they're told, and walk as the guest. */
+    const LOOK_FN = "/.netlify/functions/hallway-look";
+    const OFFLINE = "Habbo is offline at the moment. You can still explore the Hallway as a guest, and your own Habbo will be back next time.";
+    function saveLook(figure) { try { realFetch(LOOK_FN, { method: "POST", credentials: "same-origin", keepalive: true, headers: { "Content-Type": "application/json" }, body: JSON.stringify({ figure }) }).catch(() => {}); } catch (e) { /* nothing to lose: it's kept next visit */ } }
+    async function storedLook() {
+        try { const r = await realFetch(LOOK_FN, { credentials: "same-origin", headers: { Accept: "application/json" } }); if (!r.ok) return null; const d = await r.json(); return d && d.look && d.look.figure ? d.look : null; } catch (e) { return null; }
+    }
+    /* the linked Habbo, fresh from Habbo; when Habbo is down, the look stored last visit (`stored`), or no look at all (`offline`) */
     async function signedInHabbo() {
+        let d;
         try {
             const r = await realFetch("/.netlify/functions/profiles?me=1", { credentials: "same-origin", headers: { Accept: "application/json" } }); if (!r.ok) return null;
-            const d = await r.json(); if (!d || !d.habbo || d.habboUnverified || !d.habbo.name) return null;
-            return await lookUp(d.habbo.name, d.habbo.hotel || "COM");
+            d = await r.json(); if (!d || !d.habbo || d.habboUnverified || !d.habbo.name) return null;
         } catch (e) { return null; }
+        const name = d.habbo.name, hotel = d.habbo.hotel || "COM";
+        try { const mine = await lookUp(name, hotel); saveLook(mine.figure); return mine; }
+        catch (e) {
+            if (!e.offline) return null;
+            const look = await storedLook();
+            return look ? { name: look.name || name, hotel: look.hotel || hotel, figure: look.figure, stored: true } : { name, hotel, figure: null, offline: true };
+        }
     }
-    function picker(onDone, pre) {
+    function picker(onDone, pre, note) {
         if (document.getElementById("playPicker")) return;
         const opener = document.activeElement;
         const back = document.createElement("div"); back.id = "playPicker"; back.className = "mr-overlay"; back.setAttribute("role", "dialog"); back.setAttribute("aria-label", "Choose your Habbo");
@@ -145,6 +163,7 @@
         const was = pre || remembered(); if (was) { input.value = was.name || ""; if (HOTELS.includes(was.hotel)) sel.value = was.hotel; }
         /* signed in as one Habbo, walking as another: both said (15 Nov scan, live L4: it read "Signed in as" the other one) */
         if (pre) say.textContent = linkedName && !sameHabbo(pre) ? "Signed in as " + linkedName + ". Walking as " + pre.name + "." : "Signed in as " + pre.name + ". Go, or pick someone else.";
+        if (note) say.textContent = note;
         /* under it all, set apart below a rule and quieter than the picker: what the Hallway is, what the username is for, and the fan-site line (9 Nov 2026, his words) */
         const notes = document.createElement("div"); notes.className = "notes";
         for (const [t, cls] of [["Maze Rats Hallway is a single player experience, any Habbos you see around the hallways are non-playable characters designed for ambient game mechanics.", ""], ["Your Habbo Origins username is only used to show your Habbo's look, and is only remembered on this device.", ""], ["Maze Rats is independent and not affiliated with, sponsored, supported, or endorsed by Sulake Oy or its affiliates. Any Habbo trademarks or intellectual property used here are done so in accordance with the Habbo Fan Site Policy.", "legal"]]) { const p = document.createElement("p"); p.textContent = t; if (cls) p.className = cls; notes.appendChild(p); }
@@ -171,7 +190,13 @@
             go.disabled = true; say.textContent = "Looking up...";
             /* an answer arriving after the picker was shut, or a guest chosen, changes nothing (15 Nov scan, rooms 10) */
             try { const f = await lookUp(name, sel.value); if (!back.isConnected) return; keep(f); wear(f.figure); done(); }
-            catch (e) { if (!back.isConnected) return; say.textContent = e.message; go.disabled = false; }
+            catch (e) {
+                if (!back.isConnected) return;
+                /* Habbo down, and this is the look already in hand (the stored one, or the one this device remembers): Go walks as it */
+                const had = was && was.figure && String(was.name || "").toLowerCase() === name.toLowerCase() && (!was.hotel || was.hotel === sel.value) ? was : null;
+                if (e.offline && had) { keep({ name: had.name, hotel: had.hotel || sel.value, figure: had.figure }); wear(had.figure); done(); return; }
+                say.textContent = e.message; go.disabled = false;
+            }
         });
     }
     async function chooseAvatar() {
@@ -187,6 +212,11 @@
             /* Your linked Habbo, unless you chose someone else while signed in as it */
             /* and the splash still shows, your Habbo filled in, so you see what the Hallway is before walking in (9 Nov 2026, his) */
             if (was && was.overLinked === mine.name && !sameHabbo(was)) { wear(was.figure || GUEST); picker(null, was.guest ? null : was); return; }
+            /* Habbo down and no look stored yet: the guest, and they're told why */
+            if (!mine.figure) {
+                if (was && was.figure && sameHabbo(was)) { wear(was.figure); picker(null, { ...mine, figure: was.figure }); return; }      // this device remembers it
+                wear(GUEST); picker(null, mine, OFFLINE); return;
+            }
             wear(mine.figure); picker(null, mine); return;
         }
         if (was && was.figure) { wear(was.figure); letIn(); return; } if (was && was.guest) { letIn(); return; }
@@ -201,10 +231,10 @@
         const box = document.getElementById("playPicker");
         if (box) {
             const input = box.querySelector("#playName"), sel = box.querySelector("select"), say = box.querySelector(".say");
-            if (input && (!input.value.trim() || (was && input.value === was.name))) { input.value = mine.name; if (sel && HOTELS.includes(mine.hotel)) sel.value = mine.hotel; if (say) say.textContent = "Signed in as " + mine.name + ". Go, or pick someone else."; }
+            if (input && (!input.value.trim() || (was && input.value === was.name))) { input.value = mine.name; if (sel && HOTELS.includes(mine.hotel)) sel.value = mine.hotel; if (say) say.textContent = mine.figure ? "Signed in as " + mine.name + ". Go, or pick someone else." : OFFLINE; }
             else return;      // typing someone else: leave it be
         }
-        wear(mine.figure);
+        if (mine.figure) wear(mine.figure);
     }
 
     /* ---------- the controls: the site's own buttons, floating on the hallway ---------- */

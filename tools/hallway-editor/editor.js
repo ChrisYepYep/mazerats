@@ -3920,7 +3920,8 @@ function stepWalk(now) {
 function avatarImg(n) {
     let i = avatarImgs[n];
     if (!i) {
-        const src = window.hallwayAvatarSrc ? window.hallwayAvatarSrc(n) : "art/av/" + n + ".png", local = "art/av/" + n + ".png";
+        /* on the site, a frame Habbo can't give is the guest's, the default Habbo (16 Nov 2026), not art/av's, which is his own figure */
+        const src = window.hallwayAvatarSrc ? window.hallwayAvatarSrc(n) : "art/av/" + n + ".png", local = (window.HALLWAY_PLAY && /^s-\d-(std|wlk|sit)(-crr|-drk)?-\d$/.test(n) ? "art/guest/" : "art/av/") + n + ".png";
         i = avatarImgs[n] = new Image(); i.onload = () => paint();
         /* Habbo not answering: the guest's own frame meanwhile, and that frame asked for again later, so nobody walks unseen */
         i.onerror = () => { if (i.src.endsWith(local)) return; i.src = local; setTimeout(() => { if (avatarImgs[n] !== i) return; const t = new Image(); t.onload = () => { if (avatarImgs[n] === i) { avatarImgs[n] = t; paint(); } }; t.src = src; }, 20000); };

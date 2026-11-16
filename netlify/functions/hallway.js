@@ -31,9 +31,8 @@ const VARY = "query=tile|what|v|av|d|a|h|f";
 const KEEP = { "Cache-Control": "public, max-age=31536000, immutable", "Netlify-CDN-Cache-Control": "public, durable, max-age=31536000, immutable", "Netlify-Vary": VARY };
 const KEEP_WEEK = { "Cache-Control": "public, max-age=604800", "Netlify-CDN-Cache-Control": "public, durable, max-age=604800", "Netlify-Vary": VARY };
 const ASK_EACH_TIME = { "Cache-Control": "public, max-age=0, must-revalidate", "Netlify-CDN-Cache-Control": "no-store", "Netlify-Vary": VARY };
-const FIGURE = /^[a-z]{2}-\d+(-\d+)*(\.[a-z]{2}-\d+(-\d+)*)*$/;
-const USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36";
-const WATER = 1;      // the clear glass, as tools/hallway-editor/fetch-avatar.js
+/* the figure, its frames from Habbo, and the kept copy of a signed-in player's own look (16 Nov 2026): see _hallway-av.js */
+const av = require("./_hallway-av");
 /* Held in (14 Nov 2026, the bug scan): each figure nobody had asked for before missed the edge's copy and was an ask of Habbo, limited
    only by the pictures' budget of 600 a minute, and too many of those could get the site's addresses blocked by Habbo's firewall, which
    habbo.js and habbo-outline.js depend on too. So a network gets AV_PER_NET frames a minute from Habbo on each warm instance (counted
@@ -53,22 +52,24 @@ function avRoom(event) {
 const avReply = b => ({ statusCode: 200, isBase64Encoded: true, headers: { ...SECURITY_HEADERS, "Content-Type": "image/png", ...KEEP_WEEK }, body: b.toString("base64") });
 async function avatarFrame(q, event) {
     const figure = String(q.av || ""), d = String(q.d), a = String(q.a), f = String(q.f || "0"), h = String(q.h || "");
-    if (figure.length > 240 || !FIGURE.test(figure) || !/^[0-7]$/.test(d) || !/^(std|wlk|sit)$/.test(a) || !/^[0-3]$/.test(f) || !/^(|crr|drk)$/.test(h)) return reply(400, { error: "Bad figure" });
-    const action = a === "wlk" ? "wlk" : a === "sit" ? "sit" : "std", item = h ? "," + h + "=" + WATER : "";
-    const url = "https://www.habbo.com/habbo-imaging/avatarimage?" + new URLSearchParams({ figure, size: "s", direction: d, head_direction: d, action: action + item, frame: f, gesture: "sml" });
+    if (!av.okFigure(figure) || !/^[0-7]$/.test(d) || !/^(std|wlk|sit)$/.test(a) || !/^[0-3]$/.test(f) || !/^(|crr|drk)$/.test(h)) return reply(400, { error: "Bad figure" });
+    const url = av.frameUrl(figure, d, a, f, h);
     const kept = avKept.get(url);
     if (kept) { avKept.delete(url); avKept.set(url, kept); return avReply(kept); }    // the newest at the end, so the oldest goes first
     if (!avRoom(event)) return reply(429, { error: "Too many figures just now. Wait a moment and try again.", reason: "rate-limit" }, { "Retry-After": "60" });
     const ctl = new AbortController(), t = setTimeout(() => ctl.abort(), 7000);
-    try {
-        /* As the site's other asks of Habbo: its firewall answers a bare request with an error page. One more try, on a 5xx only. */
-        let r = await fetch(url, { signal: ctl.signal, headers: { "User-Agent": USER_AGENT, Accept: "image/png,image/*" } }); if (r.status >= 500) r = await fetch(url, { signal: ctl.signal, headers: { "User-Agent": USER_AGENT, Accept: "image/png,image/*" } });
-        if (!r.ok) return reply(502, { error: "Habbo isn't answering" });
-        const b = Buffer.from(await r.arrayBuffer()); if (b.length < 8 || b.length > 200000 || b.readUInt32BE(0) !== 0x89504e47) return reply(502, { error: "Habbo isn't answering" });
+    let b = null;
+    try { b = await av.fetchFrame(url, ctl.signal); } catch (e) { b = null; } finally { clearTimeout(t); }
+    if (b) {
         // A small figure is a couple of kilobytes; anything far bigger isn't kept, so the memory stays small.
         if (b.length <= 20000) { avKept.set(url, b); if (avKept.size > AV_KEEP) avKept.delete(avKept.keys().next().value); }
         return avReply(b);
-    } catch (e) { return reply(502, { error: "Habbo isn't answering" }); } finally { clearTimeout(t); }
+    }
+    /* Habbo down (16 Nov 2026): a signed-in player's own look was kept by hallway-look.js, so it's drawn from that copy, and only for a
+       minute: the real one is asked for again as soon as Habbo is back. Anyone else's figure has no copy and gets the 502 as before. */
+    const copy = await av.keptFrame(blobStore(STORE), figure, d, a, f, h);
+    if (copy) return { ...avReply(copy), headers: { ...SECURITY_HEADERS, "Content-Type": "image/png", "Cache-Control": "public, max-age=60", "Netlify-CDN-Cache-Control": "no-store", "Netlify-Vary": VARY, "X-Hallway-Look": "kept" } };
+    return reply(502, { error: "Habbo isn't answering" });
 }
 const sha = t => crypto.createHash("sha1").update(t).digest("hex").slice(0, 20);
 /* The draft is read back straight after a save, so it has to be the newest, not a copy from the edge */
