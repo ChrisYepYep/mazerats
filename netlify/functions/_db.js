@@ -98,9 +98,28 @@ async function getDb() {
             serverSelectionTimeoutMS: SERVER_SELECTION_MS,
             ...(IN_FUNCTION ? { connectTimeoutMS: CONNECT_MS, socketTimeoutMS: SOCKET_MS, waitQueueTimeoutMS: CONNECT_MS } : {})
         });
-        clientPromise = client.connect().catch(err => {
-            clientPromise = null;      // let the next request try again
+        const mine = client.connect().catch(err => {
+            if (clientPromise === mine) clientPromise = null;      // let the next request try again
             throw err;
+        });
+        clientPromise = mine;
+        /* A WEDGED POOL IS LET GO TOO (16 Nov 2026, the Warren's Errors tab:
+           "HTTP 503 from whats-new"). One warm whats-new instance had all
+           MAX_POOL of its connections checked out and none coming back, so
+           every request it was handed waited out waitQueueTimeoutMS and
+           answered 503 (MongoWaitQueueTimeoutError in the function log), the
+           public read and the Warren's alike, for as long as Netlify kept
+           that instance warm. The client is never closed and a pool never
+           gives back a connection it has lost track of, so that was the rest
+           of the instance's life: the same trap as the rejected connect
+           above. Now a checkout that times out drops this client (closed in
+           the background), and the next request makes a new one. The request
+           that timed out still fails; the ones after it don't. */
+        client.on("connectionCheckOutFailed", ev => {
+            if (!ev || ev.reason !== "timeout" || clientPromise !== mine) return;
+            clientPromise = null;
+            console.error("_db: a connection checkout timed out; this client is dropped and the next request reconnects");
+            client.close(true).catch(() => {});
         });
     }
     const client = await clientPromise;
