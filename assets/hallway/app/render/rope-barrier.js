@@ -8,7 +8,8 @@ const rgb = h => [parseInt(h.slice(0, 2), 16), parseInt(h.slice(2, 4), 16), pars
 const paint = o => Object.fromEntries(Object.entries(o).map(([k, v]) => [k, rgb(v)]));
 const G = paint({ K: "000000", W: "eed09c", h: "c49660", l: "ab7a44", d: "6e4524", s: "54321a", L: "8c5c30", M: "ab7a44", N: "eed09c", O: "6e4524", P: "3a2110" });
 const ROPE = paint({ lit: "a8322e", lit2: "8a1f22", mid: "641015", line: "220406" });
-const CARD = paint({ K: "26140a", top: "b08248", face: "8e6030", ink: "2e1a0c", str: "2a0a08" });
+/* outline and strings black (16 Nov 2026, his drawing) */
+const CARD = paint({ K: "000000", top: "b08248", face: "8e6030", ink: "2e1a0c", str: "000000" });
 const SHAFT = ".....KsLsK.....", GLINT = ".....KsMsK.....", HOT = ".....KsNsK.....";
 const POLE = [
     "......KKK......",
@@ -21,11 +22,12 @@ const POLE = [
     ".....KKKKK.....",
     HOT, GLINT, GLINT, SHAFT, SHAFT, SHAFT, SHAFT, SHAFT, SHAFT, SHAFT, SHAFT, SHAFT, SHAFT, GLINT, HOT, GLINT, SHAFT, SHAFT,
     "...KKMsLsMKK...",
-    ".KKMMNsLsMMLKK.",
-    "KNNMMMNLMMMMLLK",
-    "KNMMMMMMMMMMMLK",
-    "KOONMMMMMMMMLPK",
-    ".KOOONNMMMLPPK.",
+    /* the foot's highlights as he redrew them (16 Nov 2026) */
+    ".KKNMMsLsMMLKK.",
+    "KNNMMNsLsMMMLLK",
+    "KNMMMMNMMMMMMLK",
+    "KONNMMMMMMMMLPK",
+    ".KOONNNMMMLPPK.",
     "..KKOOOOPPPKK..",
     "....KKKKKKK...."
 ];
@@ -34,7 +36,11 @@ const ATTACH = FOOT - 6;           // rows up from the floor where the rope clip
 const IN = .36;                    // how far in from the run's ends the poles stand, in tiles
 const END = 7;                     // columns from a pole's centre that its clasp takes
 const CARD_W = 17, CARD_H = 10, CARD_DROP = 3;
-const MIN_FOR_CARD = 3;            // on 2 tiles the clasps and the card leave no rope to see
+const MIN_FOR_CARD = 3;
+/* His clasps (16 Nov 2026, rope-barrier-card-along-x.png made over): the pixels his drawing has that the clasp() below doesn't, as
+   [columns from the pole, rows from its foot, colour or null to rub out], the far pole's and the near one's, worked out on a 4-tile
+   barrier along x and laid over the drawn clasp, so they follow it on other lengths. Along y they're mirrored, as the whole barrier is. */
+const CLASP_FIX = { far: [[2,-25,"3a2110"],[1,-24,"3a2110"],[3,-24,"000000"],[1,-23,"6e4524"],[2,-23,"3a2110"],[3,-23,"c49660"],[4,-23,"c49660"],[2,-22,"c49660"],[3,-22,"6e4524"],[4,-22,"eed09c"],[6,-22,"000000"],[3,-21,"c49660"],[6,-21,"eed09c"],[7,-21,"000000"],[5,-20,"ab7a44"],[6,-20,"ab7a44"],[7,-20,"eed09c"],[8,-20,"000000"],[5,-19,"6e4524"],[5,-18,"6e4524"],[6,-18,"6e4524"],[7,-18,"000000"],[5,-17,"000000"],[6,-17,"000000"],[7,-17,"641015"],[8,-17,"a8322e"],[5,-16,null],[6,-16,"000000"],[7,-16,"641015"],[8,-16,"641015"],[5,-15,null],[6,-15,null]], near: [[-4,-26,"000000"],[-5,-26,"000000"],[-4,-25,"c49660"],[-5,-25,"eed09c"],[-3,-24,"000000"],[-4,-24,"ab7a44"],[-5,-24,"ab7a44"],[-6,-24,"000000"],[-7,-24,"8a1f22"],[-5,-23,"000000"],[-6,-23,"641015"],[-7,-23,"641015"],[-3,-22,"6e4524"],[-4,-22,"6e4524"],[-6,-22,"000000"],[-5,-21,null],[-6,-21,null],[-7,-21,null]] };            // on 2 tiles the clasps and the card leave no rope to see
 
 /* at(fx, fy) gives the screen spot on the floor there. Returns { list: [X, Y, colour, tile of the run], feet: [[X, Y, tile]] }, far pole first, in painting order. */
 function pixels(p, at) {
@@ -51,9 +57,11 @@ function pixels(p, at) {
     if (cords) for (let k = END; k <= wide - END; k++) {
         const X = a[0] + dir * k, y = Math.round(yAt(X)), from = last === null ? y : Math.min(y, last), to = last === null ? y : Math.max(y, last);
         const t = Math.max(0, Math.min(n - 1, Math.floor(IN + (k / wide) * (n - 2 * IN))));
+        /* outlined in black above and below (16 Nov 2026, his drawing) */
+        put(X, from - 2, G.K, t);
         put(X, from - 1, ((k + Math.floor(k / 2)) % 4) < 2 ? ROPE.lit : ROPE.lit2, t);
         for (let q = from; q <= to; q++) put(X, q, ROPE.mid, t);
-        put(X, to + 1, ROPE.line, t);
+        put(X, to + 1, G.K, t);
         last = y;
     }
     /* A clasp: a ring on the pole, a thin hook, and a short sleeve the rope goes into. The far pole's is painted over its shaft; the near pole is painted after its own, so that hook goes round the back. */
@@ -90,6 +98,11 @@ function pixels(p, at) {
         for (const r of [3, 6]) for (let u = 2; u <= 14; u++) put(left + u, yOf(u) + CARD_DROP + r, CARD.ink, t);
     }
     pole(b, n - 1);
+    if (cords) {
+        const fix = new Map(); for (const [F, set, t] of [[a, CLASP_FIX.far, 0], [b, CLASP_FIX.near, n - 1]]) for (const [dx, dy, c] of set) fix.set((F[0] + (along ? -dx : dx)) + "," + (F[1] + dy), c === null ? null : [rgb(c), t]);
+        for (let i = list.length - 1; i >= 0; i--) if (fix.has(list[i][0] + "," + list[i][1])) list.splice(i, 1);
+        for (const [k, v] of fix) if (v) { const [x, y] = k.split(",").map(Number); list.push([x, y, v[0], v[1]]); }
+    }
     return { list, feet: [[a[0], a[1], 0], [b[0], b[1], n - 1]] };
 }
 const api = { pixels, MIN_FOR_CARD };

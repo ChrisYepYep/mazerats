@@ -59,7 +59,7 @@ const ICON = {
     edges: '<svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><rect x="4" y="6" width="16" height="12" stroke-dasharray="3 2"/></svg>'
 };
 const PLANTERS = [["ero_stone", "Stone planter"], ["ero_walnut", "Walnut planter"], ["ero_evergreen", "Evergreen planter"], ["ero_flower", "Flower planter"]];
-const EDGE_STYLES = [["wood", "Dark oak rail"], ["gold", "Gold rail"]];
+const EDGE_STYLES = [["wood", "Dark oak rail"], ["gold", "Bronze rail"], ["silver", "Silver rail"]];      // gold drawn as bronze, silver added (16 Nov 2026, his drawings)
 const WALL_ITEMS = window.WALL_ITEMS || [], WALL_GROUPS = [["painting", "Hallway paintings"], ["custom", "More paintings"], ["window", "Windows"], ["hotel", "The old hotel"], ["leet", "The Leet Show"], ["tell", "Wear and tear"], ["gallery", "Events Gallery: on walls"]];
 const TOOLS = [
     ["Floors", [["floor", "Paint floor", T_ + "floor.png"], ["erase", "Remove floor", ICON.erase], ["rug", "Rug", T_ + "rug.png"], ["smallfloor", "Small squares floor", ICON.smallfloor], ["mark_arrow", "Arrow tile (links to another)", ICON.arrow], ["medal", "Carpet crest", T_ + "crest.png"], ["height", "Floor height", ICON.raise], ["floorlift", "Raise the floor only (walls stay)", ICON.raise], ["steps", "Small steps", T_ + "stair.png"]]],

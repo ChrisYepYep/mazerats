@@ -5383,7 +5383,7 @@ MODULES["edge-items.js"] = { dir: "/site/tools/hallway-editor/render", run: func
 "use strict";
 const rgb = h => [parseInt(h.slice(0, 2), 16), parseInt(h.slice(2, 4), 16), parseInt(h.slice(4, 6), 16)];
 const paint = o => Object.fromEntries(Object.entries(o).map(([k, v]) => [k, rgb(v)]));
-const STYLES = { wood: "Dark oak rail", gold: "Gold rail" };
+const STYLES = { wood: "Dark oak rail", gold: "Bronze rail", silver: "Silver rail" };
 /* posts from the floor up; '.' is see-through, the light falls from the left */
 const LOOK = {
     wood: {
@@ -5396,32 +5396,41 @@ const LOOK = {
             "..KK..", ".KmdK.", ".KhlK.", "..KK.."
         ]
     },
-    /* one slim post on a small round foot, with a true round ball on top */
+    /* Gold is bronze now (16 Nov 2026, his own drawing, railing-gold-post.png): the rope barrier's brass, a round flared foot, a slim
+       shaft and a ball on top, outlined in black; the rail one flat bar, black above and below. Stored as "gold", so every gold railing
+       already laid takes it. 8 across. */
     gold: {
-        c: paint({ K: "2c1c06", h: "e4c47c", l: "c49a48", m: "a0742c", d: "86601f", e: "6a4814" }),
-        post: [
-            ".KKKK.", "KlmmdK",
-            ".KldK.", ".KldK.", ".KldK.", ".KldK.", ".KldK.", ".KldK.", ".KldK.", ".KldK.", ".KldK.", ".KldK.", ".KldK.", ".KldK.", ".KldK.", ".KldK.", ".KldK.", ".KldK.",
-            "..KK..", ".KmdK.", "KlmmdK", "KhlmmK", ".KhhK.", "..KK.."
-        ]
+        c: paint({ K: "000000", b: "6e4524", c: "3a2110", d: "ab7a44", e: "8c5c30", f: "54321a" }), rail: 16, railUp: { x: .5, y: 1 }, bar: { K: "K", lit: "e", side: "b" }, flipX: true,
+        post: ["...KK...", ".KKbcKK.", "KbbddccK", "KddeeddK", "KbebfeeK", ".KKbfKK.", "..KbfK..", "..KbfK..", "..KbfK..", "..KbfK..", "..KbfK..", "..KbfK..", "..KbfK..", "..KbfK..", "..KbfK..", "..KbfK..", "..KbfK..", "..KbfK..", "..KbfK..", "..KbfK..", "..KdfK..", "...KK...", "..KbcK..", ".KebbcK.", ".KdebbK.", "..KddK..", "...KK..."]
+    },
+    /* Silver (16 Nov 2026, his drawing, railing-wood-post.png made over): the same shape as the oak's, a collar half way, a ball on top. */
+    silver: {
+        c: paint({ K: "000000", b: "444444", c: "a0a0a0", d: "b6b6b6", e: "cbcbcb", f: "120a05", g: "6d6d6d", h: "858585" }), rail: 15, bar: { K: "f", lit: "c", side: "g" },
+        post: [".KKKKKK.", "KbcddcbK", "KefcgfdK", ".KfcgfK.", "..fcgf..", "..fcgf..", "..fcgf..", "..fcgf..", "..fcgf..", "..fcgf..", "..fcgf..", "..fcgf..", ".fhhggf.", ".fdchgf.", "..fcgf..", "..fcgf..", "..fcgf..", "..fcgf..", "..fcgf..", "..fKKf..", "..KhbK..", ".KchhbK.", ".KdchhK.", "..KddK..", "...KK..."]
     }
 };
-const T = 16, RAIL = 14;   // the rail's lower line, in rows up from the floor
+const T = 16, RAIL0 = 14;   // the rail's lower line, in rows up from the floor (a look's own `rail` where its posts are taller)
 /* All the pixels of one run: [X, Y, colour, which tile of the run]. at(fx, fy) gives the screen spot on the run's floor; lift(along) how far the floor there has climbed;
    postAt(along), optional, where a post meant for there should stand instead. */
 function pixels(run, at, lift, postAt) {
     const { s, axis, line, a, b, dir } = run, look = LOOK[s] || LOOK.wood, C = look.c, out = new Map(), a0 = a * T, a1 = b * T, put = (x, y, c, t) => out.set(x + "," + y, [x, y, c, t]);
+    const RAIL = look.rail || RAIL0, bar = look.bar;
     /* The floor's own spots are rounded to whole pixels, and rounding them again after adding a slope's climb makes the rail wobble. So: one spot, then the exact line from it. */
     const away = 2 / T, start = axis === "x" ? at(a, line + dir * away) : at(line + dir * away, a), sx = axis === "x" ? 1 : -1;
-    const spot = A => { const along = (A + .5) / T, d = along - a; return [Math.round(start[0] + sx * d * 16), Math.round(start[1] + d * 8 - lift(along))]; };
+    const spot = (A, up) => { const along = (A + .5) / T, d = along - a; return [Math.round(start[0] + sx * d * 16), Math.round(start[1] + d * 8 - lift(along) - (up || 0))]; };
     /* the side facing +y catches more light than the one facing +x */
     const side = axis === "x" ? ["m", "d"] : ["d", "e"];
     let lastY = null;
     for (let A = a0; A < a1; A++) {
-        const [X, Y] = spot(A), g = look.grain && (A * 7) % 23 < 3 ? 1 : 0, glint = look.grain ? (A * 5) % 37 < 2 : (((A % 16) + 16) % 16) < 8;
+        /* railUp: the bar half a row higher, as his bronze is drawn (16 Nov 2026) */
+        const [X, Y] = spot(A, look.railUp && look.railUp[axis]), g = look.grain && (A * 7) % 23 < 3 ? 1 : 0, glint = look.grain ? (A * 5) % 37 < 2 : (((A % 16) + 16) % 16) < 8;
         /* on a steep climb, fill between this column and the last, so the rail never breaks */
         const from = lastY === null ? Y : Math.min(Y, lastY), to = lastY === null ? Y : Math.max(Y, lastY);
         const t = Math.floor(A / T);
+        /* a flat bar (bronze, silver): the same four rows on both sides, no grain or glint */
+        /* ...and it stops at the end post's shaft: along y its first column stood one past it, a nub he rubbed out */
+        if (bar && axis === "y" && A === a0) { lastY = Y; continue; }
+        if (bar) { for (let y = from; y <= to; y++) { put(X, y - RAIL, C[bar.K], t); put(X, y - RAIL - 1, C[bar.side], t); } put(X, Y - RAIL - 1, C[bar.side], t); put(X, Y - RAIL - 2, C[bar.lit], t); put(X, Y - RAIL - 3, C[bar.K], t); lastY = Y; continue; }
         for (let y = from; y <= to; y++) { put(X, y - RAIL, C.K, t); put(X, y - RAIL - 1, C[side[g]], t); }
         put(X, Y - RAIL - 1, C[side[g]], t); put(X, Y - RAIL - 2, glint && look.grain ? C.h : C.l, t); put(X, Y - RAIL - 3, C.K, t);
         lastY = Y;
@@ -5433,7 +5442,10 @@ function pixels(run, at, lift, postAt) {
     const posts = moved.filter(([c, m], i) => m === c || !moved.some(([c2, m2], j) => j !== i && Math.abs(m2 - m) < 8 && (m2 === c2 || j < i))).map(q => q[1]);
     for (const c of posts) {
         const [X, Y] = spot(c);
-        look.post.forEach((row, h) => { for (let i = 0; i < 6; i++) if (row[i] !== ".") put(X + i - 3, Y - h, C[row[i]], Math.floor(c / T)); });
+        /* any width, centred as the 6-wide oak's is (half a pixel left of the spot) */
+        /* flipX: drawn the other way round along x (his bronze run, 16 Nov 2026) */
+        const flip = look.flipX && axis === "x";
+        look.post.forEach((row, h) => { const half = row.length >> 1, n = row.length; for (let i = 0; i < n; i++) { const ch = row[flip ? n - 1 - i : i]; if (ch !== ".") put(X + i - half, Y - h, C[ch], Math.floor(c / T)); } });
     }
     return [...out.values()];
 }
@@ -5464,7 +5476,8 @@ const rgb = h => [parseInt(h.slice(0, 2), 16), parseInt(h.slice(2, 4), 16), pars
 const paint = o => Object.fromEntries(Object.entries(o).map(([k, v]) => [k, rgb(v)]));
 const G = paint({ K: "000000", W: "eed09c", h: "c49660", l: "ab7a44", d: "6e4524", s: "54321a", L: "8c5c30", M: "ab7a44", N: "eed09c", O: "6e4524", P: "3a2110" });
 const ROPE = paint({ lit: "a8322e", lit2: "8a1f22", mid: "641015", line: "220406" });
-const CARD = paint({ K: "26140a", top: "b08248", face: "8e6030", ink: "2e1a0c", str: "2a0a08" });
+/* outline and strings black (16 Nov 2026, his drawing) */
+const CARD = paint({ K: "000000", top: "b08248", face: "8e6030", ink: "2e1a0c", str: "000000" });
 const SHAFT = ".....KsLsK.....", GLINT = ".....KsMsK.....", HOT = ".....KsNsK.....";
 const POLE = [
     "......KKK......",
@@ -5477,11 +5490,12 @@ const POLE = [
     ".....KKKKK.....",
     HOT, GLINT, GLINT, SHAFT, SHAFT, SHAFT, SHAFT, SHAFT, SHAFT, SHAFT, SHAFT, SHAFT, SHAFT, GLINT, HOT, GLINT, SHAFT, SHAFT,
     "...KKMsLsMKK...",
-    ".KKMMNsLsMMLKK.",
-    "KNNMMMNLMMMMLLK",
-    "KNMMMMMMMMMMMLK",
-    "KOONMMMMMMMMLPK",
-    ".KOOONNMMMLPPK.",
+    /* the foot's highlights as he redrew them (16 Nov 2026) */
+    ".KKNMMsLsMMLKK.",
+    "KNNMMNsLsMMMLLK",
+    "KNMMMMNMMMMMMLK",
+    "KONNMMMMMMMMLPK",
+    ".KOONNNMMMLPPK.",
     "..KKOOOOPPPKK..",
     "....KKKKKKK...."
 ];
@@ -5490,7 +5504,11 @@ const ATTACH = FOOT - 6;           // rows up from the floor where the rope clip
 const IN = .36;                    // how far in from the run's ends the poles stand, in tiles
 const END = 7;                     // columns from a pole's centre that its clasp takes
 const CARD_W = 17, CARD_H = 10, CARD_DROP = 3;
-const MIN_FOR_CARD = 3;            // on 2 tiles the clasps and the card leave no rope to see
+const MIN_FOR_CARD = 3;
+/* His clasps (16 Nov 2026, rope-barrier-card-along-x.png made over): the pixels his drawing has that the clasp() below doesn't, as
+   [columns from the pole, rows from its foot, colour or null to rub out], the far pole's and the near one's, worked out on a 4-tile
+   barrier along x and laid over the drawn clasp, so they follow it on other lengths. Along y they're mirrored, as the whole barrier is. */
+const CLASP_FIX = { far: [[2,-25,"3a2110"],[1,-24,"3a2110"],[3,-24,"000000"],[1,-23,"6e4524"],[2,-23,"3a2110"],[3,-23,"c49660"],[4,-23,"c49660"],[2,-22,"c49660"],[3,-22,"6e4524"],[4,-22,"eed09c"],[6,-22,"000000"],[3,-21,"c49660"],[6,-21,"eed09c"],[7,-21,"000000"],[5,-20,"ab7a44"],[6,-20,"ab7a44"],[7,-20,"eed09c"],[8,-20,"000000"],[5,-19,"6e4524"],[5,-18,"6e4524"],[6,-18,"6e4524"],[7,-18,"000000"],[5,-17,"000000"],[6,-17,"000000"],[7,-17,"641015"],[8,-17,"a8322e"],[5,-16,null],[6,-16,"000000"],[7,-16,"641015"],[8,-16,"641015"],[5,-15,null],[6,-15,null]], near: [[-4,-26,"000000"],[-5,-26,"000000"],[-4,-25,"c49660"],[-5,-25,"eed09c"],[-3,-24,"000000"],[-4,-24,"ab7a44"],[-5,-24,"ab7a44"],[-6,-24,"000000"],[-7,-24,"8a1f22"],[-5,-23,"000000"],[-6,-23,"641015"],[-7,-23,"641015"],[-3,-22,"6e4524"],[-4,-22,"6e4524"],[-6,-22,"000000"],[-5,-21,null],[-6,-21,null],[-7,-21,null]] };            // on 2 tiles the clasps and the card leave no rope to see
 
 /* at(fx, fy) gives the screen spot on the floor there. Returns { list: [X, Y, colour, tile of the run], feet: [[X, Y, tile]] }, far pole first, in painting order. */
 function pixels(p, at) {
@@ -5507,9 +5525,11 @@ function pixels(p, at) {
     if (cords) for (let k = END; k <= wide - END; k++) {
         const X = a[0] + dir * k, y = Math.round(yAt(X)), from = last === null ? y : Math.min(y, last), to = last === null ? y : Math.max(y, last);
         const t = Math.max(0, Math.min(n - 1, Math.floor(IN + (k / wide) * (n - 2 * IN))));
+        /* outlined in black above and below (16 Nov 2026, his drawing) */
+        put(X, from - 2, G.K, t);
         put(X, from - 1, ((k + Math.floor(k / 2)) % 4) < 2 ? ROPE.lit : ROPE.lit2, t);
         for (let q = from; q <= to; q++) put(X, q, ROPE.mid, t);
-        put(X, to + 1, ROPE.line, t);
+        put(X, to + 1, G.K, t);
         last = y;
     }
     /* A clasp: a ring on the pole, a thin hook, and a short sleeve the rope goes into. The far pole's is painted over its shaft; the near pole is painted after its own, so that hook goes round the back. */
@@ -5546,6 +5566,11 @@ function pixels(p, at) {
         for (const r of [3, 6]) for (let u = 2; u <= 14; u++) put(left + u, yOf(u) + CARD_DROP + r, CARD.ink, t);
     }
     pole(b, n - 1);
+    if (cords) {
+        const fix = new Map(); for (const [F, set, t] of [[a, CLASP_FIX.far, 0], [b, CLASP_FIX.near, n - 1]]) for (const [dx, dy, c] of set) fix.set((F[0] + (along ? -dx : dx)) + "," + (F[1] + dy), c === null ? null : [rgb(c), t]);
+        for (let i = list.length - 1; i >= 0; i--) if (fix.has(list[i][0] + "," + list[i][1])) list.splice(i, 1);
+        for (const [k, v] of fix) if (v) { const [x, y] = k.split(",").map(Number); list.push([x, y, v[0], v[1]]); }
+    }
     return { list, feet: [[a[0], a[1], 0], [b[0], b[1], n - 1]] };
 }
 const api = { pixels, MIN_FOR_CARD };
