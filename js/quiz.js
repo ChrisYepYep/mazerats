@@ -736,6 +736,9 @@
     function showPlay() {
         showScreen('play');
         el.optWake.checked = state.keepAwake !== false;
+        /* The soundboard's recordings are fetched now, as the quiz opens, so
+           the first press of a cue is prompt. Fetching makes no sound. */
+        if (SOUND && SOUND.preload) { SOUND.preload(); }
         renderQuestion();
         if (state.keepAwake !== false) { requestWakeLock(); }
     }
@@ -788,7 +791,16 @@
 
     /* Right answer found, by a tap or by the host asking to be shown it. */
     function solved(i) {
-        return !!state.shown[i] || (state.picks[i] || []).indexOf(0) !== -1;
+        return !!state.shown[i] || lostAt(i) || (state.picks[i] || []).indexOf(0) !== -1;
+    }
+
+    /* The question was thrown away: a player used Rule Out on the RIGHT
+       answer. It is over for everyone and nobody scores (the host's rule,
+       16 Nov 2026). Counted as solved so that everything which closes when
+       the answer is showing closes here too. */
+    function lostAt(i) {
+        var r = state.rule[i] || {};
+        return Object.keys(r).some(function (pid) { return r[pid] === 0; });
     }
 
     function renderOptions() {
@@ -820,7 +832,8 @@
 
             var picked = picks.indexOf(place) !== -1;
             var status = '';
-            if (place === 0 && done) { btn.classList.add('is-right'); status = 'correct'; }
+            if (place === 0 && lostAt(i)) { btn.classList.add('is-lost'); status = 'the right answer, ruled out'; }
+            else if (place === 0 && done) { btn.classList.add('is-right'); status = 'correct'; }
             else if (picked) { btn.classList.add('is-wrong'); status = 'wrong'; }
             else if (gone.indexOf(place) !== -1) { btn.classList.add('is-gone'); status = 'removed'; }
             else if (locked === place) { btn.classList.add('is-locked'); status = 'locked in'; }
@@ -852,6 +865,7 @@
         var who = ruleWaiting(i);
         if (who) {
             state.rule[i][who] = place;
+            if (place === 0) { delete state.awards[i]; delete state.lock[i]; }
             if (place !== 0 && state.lock[i] === place) { delete state.lock[i]; }
             save();
             renderOptions();
@@ -927,10 +941,11 @@
 
     /* Rule Out. The player names one answer they believe is wrong and the
        host taps it. If it IS wrong it is struck out, like a 50:50 that
-       takes one. If it is the right answer the screen says it cannot be
-       ruled out and leaves it standing — which tells the player what it
-       is. That is the lifeline's gamble and its fun: there is no honest
-       way to answer "is this one wrong?" that hides it. */
+       takes one. If it is the RIGHT answer, it is ruled out all the same
+       and the question is lost: over for everyone, nobody scores. That is
+       the host's rule and the lifeline's gamble. (The first version left
+       the right answer standing and said so, which simply told the player
+       what it was, and made this the strongest lifeline of the three.) */
     function ruleWaiting(i) {
         var r = state.rule[i] || {};
         for (var k = 0; k < state.players.length; k++) {
@@ -970,7 +985,7 @@
                     if (named === null || named === undefined) {
                         lines.push(p.name + ' plays Rule Out. Tap the answer ' + p.name + ' thinks is wrong.');
                     } else if (named === 0) {
-                        lines.push(p.name + ' cannot rule out ' + letterOf(i, named) + '. It stays.');
+                        lines.push(p.name + ' ruled out ' + letterOf(i, named) + ', the right answer. Question lost: nobody scores.');
                     } else {
                         lines.push(p.name + ' ruled out ' + letterOf(i, named) + '. It was wrong.');
                     }
@@ -1056,6 +1071,7 @@
             btn.className = 'qz-award-btn';
             var on = given.indexOf(p.id) !== -1;
             btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+            btn.disabled = lostAt(i);
 
             var name = document.createElement('span');
             name.className = 'qz-award-name';
@@ -1094,6 +1110,7 @@
 
     function toggleAward(playerId) {
         var i = state.idx;
+        if (lostAt(i)) { return; }
         var given = state.awards[i] ? state.awards[i].slice() : [];
         var at = given.indexOf(playerId);
 

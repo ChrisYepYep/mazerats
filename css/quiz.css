@@ -690,6 +690,25 @@ input, button { font-family: inherit; }
     color: #fbe3e4;
 }
 
+/* The right answer, thrown away by a Rule Out: shown for what it was, struck
+   through, in the red of a loss. Nobody scores on this question. */
+.qz-opt.is-lost {
+    background: #3a1418;
+    border-color: var(--danger);
+    border-style: dashed;
+    color: #fbe3e4;
+}
+
+.qz-opt.is-lost .qz-opt-text { text-decoration: line-through; }
+
+.qz-opt.is-lost .qz-opt-letter {
+    background: var(--danger);
+    border-color: transparent;
+    color: var(--on-amber);
+}
+
+.qz-award-btn:disabled { opacity: 0.4; cursor: default; }
+
 /* Taken away by 50:50. Still in its place, so B stays B, but plainly out. */
 .qz-opt.is-gone {
     opacity: 0.28;
