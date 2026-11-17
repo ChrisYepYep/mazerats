@@ -76,6 +76,85 @@
         out.forEach(([x, y, o]) => g.set(x, y, o));
     }
 
+    /* ---------- SOFT SNOW (17 Nov 2026) ----------
+       The owner's pick of the mock-ups: the snow drawn soft, not as one-pixel
+       art, everywhere it lies (windows, rows, tiles, letters, icons, the banks
+       in a picture's corner), its ends tapering as the main window's always
+       have. The shape is snowCap's own; only the drawing differs. The footer's
+       drift stays pixel art (his: it "looks good, so don't amend that") and is
+       what this takes after: long low swells, a lit crest, shade on the slopes
+       that face away from the light, a cool band where it sits.
+
+       Drawn at two or three times the screen's resolution (canvas.__k) with
+       three by three samples a pixel, so its edge is anti-aliased and its
+       shading graded; piece() shows it at its CSS size. */
+    const SOFT = true;
+    const SC = { K: [255, 255, 255], B: [238, 248, 255], S: [196, 226, 246], D: [158, 204, 236], O: [92, 146, 186] };
+    const softK = () => ((window.devicePixelRatio || 1) >= 1.5 ? 3 : 2);
+    const mixc = (a, b, t) => (t <= 0 ? a : t >= 1 ? b : [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t]);
+    const clamp01 = (v) => (v < 0 ? 0 : v > 1 ? 1 : v);
+    /* Paint a soft shape. topAt(x) is the surface of the snow at canvas x (null: none), botAt(x) where it ends below, slopeAt(x) + where the
+       surface runs down to the right (facing away from the light), seAt(x) where it sits on its host (the cool band starts there). */
+    function softPaint(W, H, topAt, botAt, slopeAt, seAt) {
+        const k = softK(), N = 3, cv = document.createElement("canvas"); cv.width = W * k; cv.height = H * k; cv.__k = k;
+        const ctx = cv.getContext("2d"), img = ctx.createImageData(cv.width, cv.height), px = img.data;
+        for (let i = 0; i < cv.width; i++) {
+            /* per sub-column: the surface, the bottom and the slope, once */
+            const cols = []; for (let sx = 0; sx < N; sx++) { const x = (i + (sx + 0.5) / N) / k, t = topAt(x); cols.push(t == null ? null : { t, b: botAt(x), sl: slopeAt(x), se: seAt(x) }); }
+            if (cols.every((c) => !c)) continue;
+            for (let j = 0; j < cv.height; j++) {
+                let cov = 0, rim = 0, r0 = 0, g0 = 0, b0 = 0;
+                for (let sy = 0; sy < N; sy++) { const y = (j + (sy + 0.5) / N) / k;
+                    for (const c of cols) { if (!c) continue;
+                        if (y < c.t) { if (y >= c.t - 0.8) rim++; continue; }
+                        if (y >= c.b) continue;
+                        const d = y - c.t, sh = clamp01((c.sl - 0.04) * 7);
+                        let col = mixc(SC.B, SC.K, clamp01(1 - d / 1.4) * (1 - sh * 0.6));          // the lit crest
+                        col = mixc(col, SC.S, sh * clamp01(1 - (d - 0.6) / (1 + sh * 4)));          // a slope facing away, in shade
+                        col = mixc(col, SC.S, clamp01((y - (c.se - 1.2)) / 2.2) * 0.9);            // where it sits on its host
+                        if (y >= c.se + 1) col = mixc(col, SC.D, 0.55);
+                        cov++; r0 += col[0]; g0 += col[1]; b0 += col[2]; } }
+                if (!cov && !rim) continue;
+                const tot = N * N, a = cov / tot, la = (rim / tot) * 0.7, A = a + la * (1 - a), w = A ? a / A : 0, q = (j * cv.width + i) * 4;
+                const R = cov ? r0 / cov : 0, G = cov ? g0 / cov : 0, B = cov ? b0 / cov : 0;
+                px[q] = R * w + SC.O[0] * (1 - w); px[q + 1] = G * w + SC.O[1] * (1 - w); px[q + 2] = B * w + SC.O[2] * (1 - w); px[q + 3] = Math.round(A * 255);
+            }
+        }
+        ctx.putImageData(img, 0, 0);
+        return cv;
+    }
+    /* snowCap's shape, soft: the depth before rounding, kept from changing faster than 0.6px a column (the footer's "within a pixel of its
+       neighbours"), the surface smoothed over three columns, read between column centres so it slopes rather than steps. Its bottom is each
+       column's own, so on a letter or an icon it still sits exactly on the art. */
+    function softCap(a) {
+        const { W, H, PX, n, hf, edge, o, rnd, TOPROOM } = a;
+        const h = Float32Array.from(hf), e = new Array(W).fill(null);
+        /* on a letter or an icon, never thinner than it can hold a crest and a body: anti-aliased, a one-pixel layer faded into the art */
+        if (o.mode === "text") for (let x = 0; x < W; x++) if (h[x]) h[x] = Math.max(1.8, h[x]);
+        for (let x = 0; x < W; x++) { const v = edge(x); e[x] = v == null || !h[x] ? null : v; if (e[x] == null) h[x] = 0; }
+        /* ...except round something sitting on the edge (a clamp: the peeking rat), where the snow banks up against it as steeply as it likes:
+           held to 0.6 a column it left a dark notch between the rat's side and the drift (17 Nov 2026, his: "the peeking rat is now not aligned quite right") */
+        const free = new Uint8Array(W); for (const c of o.clamp || []) for (let x = Math.max(0, Math.floor(c.x0) + PX - 10); x < Math.min(W, Math.ceil(c.x1) + PX + 10); x++) free[x] = 1;
+        for (let pass = 0; pass < 2; pass++) { for (let x = 1; x < W; x++) if (!free[x] && !free[x - 1] && h[x] && h[x - 1] && h[x] - h[x - 1] > 0.6) h[x] = h[x - 1] + 0.6;
+            for (let x = W - 2; x >= 0; x--) if (!free[x] && !free[x + 1] && h[x] && h[x + 1] && h[x] - h[x + 1] > 0.6) h[x] = h[x + 1] + 0.6; }
+        const t0 = new Float32Array(W).fill(NaN); for (let x = 0; x < W; x++) if (h[x]) t0[x] = e[x] - h[x];
+        const ts = new Float32Array(W).fill(NaN); for (let x = 0; x < W; x++) { if (isNaN(t0[x])) continue; if (free[x]) { ts[x] = t0[x]; continue; } const l = isNaN(t0[x - 1]) ? t0[x] : t0[x - 1], r = isNaN(t0[x + 1]) ? t0[x] : t0[x + 1]; ts[x] = (l + 2 * t0[x] + r) / 4; }
+        const slip = new Float32Array(W); for (let x = 0; x < W; x++) { const u = x - PX; if (o.slipL && u < 3) slip[x] = o.slipL * (1 - u / 3); if (o.slipR && u > n - 4) slip[x] = o.slipR * (1 - (n - 1 - u) / 3); }
+        const col = (x) => Math.floor(x);
+        const topAt = (x) => { const c = col(x); if (c < 0 || c >= W || isNaN(ts[c])) return null; const f = x - c - 0.5, nb = f < 0 ? c - 1 : c + 1;
+            /* at a run's end the surface comes down to meet its host over half a column, so it rounds off */
+            if (nb < 0 || nb >= W || isNaN(ts[nb])) return ts[c] + Math.max(0, Math.abs(f) - 0.1) * h[c] * 1.4; return ts[c] + (ts[nb] - ts[c]) * Math.abs(f); };
+        const botAt = (x) => { const c = col(x); return e[c] + 2 + slip[c]; };
+        const slopeAt = (x) => { const c = col(x), a0 = Math.max(0, c - 3), a1 = Math.min(W - 1, c + 3); let l = c, r = c; while (l > a0 && !isNaN(ts[l - 1])) l--; while (r < a1 && !isNaN(ts[r + 1])) r++; return r > l ? (ts[r] - ts[l]) / (r - l) : 0; };
+        const seAt = (x) => e[col(x)];
+        const cv = softPaint(W, H, topAt, botAt, slopeAt, seAt);
+        /* a glint or two above it, as before */
+        if (o.sparkles !== false) { const ctx = cv.getContext("2d"), k = cv.__k; for (let i = 0, m = Math.max(1, Math.round(n / 170)); i < m; i++) {
+            const x = PX + 10 + Math.floor(rnd() * Math.max(1, n - 20)); if (isNaN(ts[x])) continue; const y = ts[x] - 3 - Math.floor(rnd() * 2); if (y < 1) continue;
+            ctx.fillStyle = "rgba(255,255,255,0.95)"; ctx.fillRect(x * k, y * k, k, k); if (rnd() < 0.5) { ctx.fillStyle = "rgba(205,234,255,0.7)"; ctx.fillRect((x - 1) * k, y * k, k, k); ctx.fillRect((x + 1) * k, y * k, k, k); ctx.fillRect(x * k, (y - 1) * k, k, k); ctx.fillRect(x * k, (y + 1) * k, k, k); } } }
+        return { canvas: cv, ox: PX, oy: TOPROOM };
+    }
+
     // The top edge of a rounded box, column by column (0 on the straight).
     function boxTop(w, r) {
         const p = [];
@@ -153,7 +232,7 @@
             x = e + 1;
         }
 
-        const depth = new Array(W).fill(0);
+        const depth = new Array(W).fill(0), hf = new Float32Array(W);      // hf: the depth before it is rounded, for the soft drawing
         const T = o.mode === "box" ? Math.max(14, (o.radius || 0) * 2.2) : 3.5;
         const raw = new Array(n).fill(null);
         for (let x = 0; x < n; x++) {
@@ -189,7 +268,7 @@
                 if (k < R) ends = Math.sqrt(1 - Math.pow((R - k) / R, 2));
             } else if (o.bare && o.bare.length) ends = Math.min(ends, smooth((runEnds[x] + 1) / 10));
             h = 1 + (h - 1) * ends;
-            depth[x + PX] = Math.max(1, Math.round(h));
+            depth[x + PX] = Math.max(1, Math.round(h)); hf[x + PX] = Math.max(1, h);
         }
         /* A column or two standing a pixel proud of (or sunk below) level
            neighbours is a nub, not a shape: levelled. */
@@ -205,6 +284,7 @@
             if (depth[x - 1] - depth[x] > 2 && depth[x] > 0) depth[x - 1] = depth[x] + 2;
         }
 
+        if (SOFT) return softCap({ W, H, PX, n, hf, edge, o, rnd, TOPROOM });
         const g = Grid(W, H);
         const top = new Array(W).fill(null), bot = new Array(W).fill(null);
         const isSnow = new Set();
@@ -353,6 +433,13 @@
        on it, which drew as a ragged staircase. */
     function paneSnow(w, h, seed, corner) {
         const rnd = prng(seed);
+        if (SOFT) {
+            /* the same bank, soft: its surface the continuous curve, resting on the picture's bottom */
+            const right = corner === "br", lean = 0.75 + rnd() * 0.5, hh = Math.min(h - 0.6, w * 0.4);
+            const bank = (x) => { const u = clamp01(right ? (w - x) / w : x / w); return hh * (0.5 + 0.5 * Math.cos(Math.PI * Math.pow(u, lean))); };
+            const topAt = (x) => { const v = bank(x); return v < 0.35 ? null : h - v; };
+            return softPaint(w, h, topAt, () => h + 1, (x) => (bank(x + 0.5) - bank(x - 0.5)) * -1, () => h + 3);      // white to the picture's edge: the cool band left a small bank only a crest
+        }
         const g = Grid(w, h);
         const right = corner === "br";
         const lean = 0.75 + rnd() * 0.5;
@@ -736,7 +823,10 @@
         const s = document.createElement("span");
         s.className = "xm-piece " + (cls || "");
         s.setAttribute("aria-hidden", "true");
-        s.style.width = canvas.width + "px"; s.style.height = canvas.height + "px";
+        /* a soft piece is drawn at canvas.__k times its CSS size, and shown smoothed at that size */
+        const k = canvas.__k || 1;
+        s.style.width = canvas.width / k + "px"; s.style.height = canvas.height / k + "px";
+        if (k !== 1) { s.style.backgroundSize = canvas.width / k + "px " + canvas.height / k + "px"; s.style.imageRendering = "auto"; }
         s.style.backgroundImage = "url(" + canvas.toDataURL() + ")";
         // Lengths in pixels; z-index is a plain number ("1px" is not a z-index, and is dropped).
         for (const k in place) s.style[k] = typeof place[k] === "number" && k !== "zIndex" ? place[k] + "px" : String(place[k]);
@@ -986,7 +1076,6 @@
         if (spot && spot.offsetWidth && !hosts.has(spot)) host(spot, (el, w) => {
             capBox(el, w, {
                 depth: 2.2, key: "opening-spot", sparkles: true, maxMul: 2.2,
-                bare: [{ at: w * 0.3, w: 40 }, { at: w * 0.78, w: 26 }],
                 drifts: [{ at: w * 0.92, w: 30, h: 2.4 }]
             });
         });
@@ -997,7 +1086,7 @@
                 const r = prng(hash(key));
                 const look = r();
                 const dusting = look < 0.55, drifted = look >= 0.8;
-                const depth = dusting ? 1.3 + r() * 0.8 : 2.1 + r() * 1.1;
+                const depth = dusting ? 2.1 + r() * 0.7 : 2.7 + r() * 1.1;      // (17 Nov) a touch deeper: drawn soft, the old dusting read as a thin line
                 const drifts = [];
                 let tilt = (r() - 0.5) * 0.6;
                 if (drifted) {
@@ -1007,7 +1096,8 @@
                 }
                 const bare = [];
                 if (r() < 0.6) for (let i = 0, m = 1 + Math.floor(r() * 2); i < m; i++) bare.push({ at: w * (0.15 + r() * 0.7), w: 10 + r() * 34 });
-                capBox(el, w, { depth, tilt, bare, drifts, key, maxMul: 2.2, sparkles: r() < 0.2 });
+                /* no bare patches (17 Nov 2026, his: "every tile's snow on top is not full coverage"): it tapers only over the corners, as the main window's does */
+                capBox(el, w, { depth, tilt, drifts, key, maxMul: 2.2, sparkles: r() < 0.2 });
                 // Never on the small buttons, where the icicles' rim read as a white underline.
                 if (r() > 0.75 && !el.matches(".opening-explore button, .opening-now-row")) icicleBox(el, w, { maxLen: 2 + r() * 2.5, gap: 3 + r() * 3.5, key, thinRim: true, side: r() < 0.5 ? -1 : 1 });
                 // A little snow banked in one corner of some cards' pictures.
@@ -1203,6 +1293,12 @@
             const shown = Math.round(gentle + (flakes.length - gentle) * storm);
             ctx.clearRect(0, 0, W, H);
             const back = blow > 0 ? -1 : 1, streak = storm > 0.3;
+            /* THE FLAKES LAND ON THE FOOTER'S DRIFT (17 Nov 2026, the owner's: "snow fall shouldn't appear underneath the snow that grows at the
+               bottom of the page ... snow is falling over the footer bar"): one reaching the drift's surface where it is has landed, and starts
+               again at the top; nothing falls below it, so none crosses the footer. */
+            let gTop = 0, gLeft = 0, gArr = null;
+            if (drift && drift.top && drift.cv.isConnected) { const r = drift.cv.getBoundingClientRect(); if (r.top < H) { gTop = r.top; gLeft = r.left; gArr = drift.top; } }
+            const ground = (x) => { if (!gArr) return Infinity; const i = Math.round(x - gLeft); return i < 0 || i >= gArr.length ? Infinity : gTop + gArr[i]; };
             for (let i = 0; i < flakes.length; i++) {
                 const f = flakes[i];
                 f.y += f.v * (1 + 2.2 * storm) * dt;
@@ -1210,8 +1306,9 @@
                 f.ph += f.f * dt * 2;
                 if (f.y > H + 8) Object.assign(f, make(undefined, i >= gentle));
                 if (f.x > W + 110) f.x -= W + 220; else if (f.x < -110) f.x += W + 220;
-                if (i >= shown) continue;
                 const x = Math.round(f.x + Math.sin(f.ph) * f.sway * (1 - 0.6 * storm)), y = Math.round(f.y);
+                if (y + f.size >= ground(x + f.size / 2)) { Object.assign(f, make(undefined, i >= gentle)); continue; }
+                if (i >= shown) continue;
                 ctx.drawImage(sprites[f.size + ":" + f.a], x, y);
                 // Small flakes streak with the wind in a blizzard: fainter pixels trailing upwind.
                 if (streak && f.size <= 3) {
@@ -1257,14 +1354,16 @@
     // How deep it may grow: up over the main window's bottom edge, or a modest bank where there is none.
     function footerRoom(ft) {
         const top = ft.getBoundingClientRect().top;
-        let bottom = null;
+        let bottom = null, height = 0;
         document.querySelectorAll(".chrome-window").forEach((w) => {
             if (w.closest(".modal") || !w.offsetWidth) return;
-            const b = w.getBoundingClientRect().bottom;
-            if (b <= top + 4 && (bottom == null || b > bottom)) bottom = b;
+            const r = w.getBoundingClientRect(), b = r.bottom;
+            if (b <= top + 4 && (bottom == null || b > bottom)) { bottom = b; height = r.height; }
         });
-        const room = bottom == null ? 60 : Math.round(top - bottom) + DRIFT_OVERLAP;
-        return Math.max(24, Math.min(260, room));
+        /* Its hills climb at least half way up the main window (17 Nov 2026, the owner's: "should continue until at least half way up the
+           main content window"); it used to stop DRIFT_OVERLAP over its bottom edge. */
+        const room = bottom == null ? 60 : Math.round(top - bottom) + Math.max(DRIFT_OVERLAP, Math.round(height / 2));
+        return Math.max(24, Math.min(1400, room));
     }
     // 0..1 along the footer: a few long swells, two to six hundred pixels apart.
     function driftProfile(w, seed) {
@@ -1316,6 +1415,7 @@
             for (let y = Math.max(0, above - 1); y < t; y++) px[y * w + x] = PX.O;
         }
         ctx.putImageData(img, 0, 0);
+        drift.top = top;      // its surface, row by row, for the snowfall to land on
         /* A line of the fansites strip the snow has buried right across is
            re-inked for the snow, as the frozen Fallin' Furni panel is: deep
            blue with a white edge. Until then it keeps its own colour. */
