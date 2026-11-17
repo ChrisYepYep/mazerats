@@ -17,6 +17,11 @@
  * The finished cues are small, so they are committed and the samples need
  * never ship.
  *
+ * (Later the same day the host asked for "more synthy sounds, especially on
+ * the suspense, but not horrible saw sounds", so there is a synthesiser in
+ * here too, beside the orchestra: see "synths" below. It has no sawtooth in
+ * it, on purpose.)
+ *
  * It is a tiny offline sampler: each note picks the nearest recording of its
  * instrument, repitches it by playing it faster or slower, shapes it with an
  * envelope, and adds it to a stereo mix with a send to one shared hall
@@ -37,8 +42,14 @@ const path = require('path');
 
 const ROOT = path.join(__dirname, '..');
 const SAMPLES = path.join(__dirname, 'ariadne-editor', 'samples');
-const OUT = path.join(ROOT, 'assets', 'quiz-audio');
+const OUT = process.env.SOLO ? path.join(require('os').tmpdir(), 'quiz-audio-solo-' + process.env.SOLO) : path.join(ROOT, 'assets', 'quiz-audio');
 const SR = 32000;
+
+/* For checking the balance without ears: SOLO=synth or SOLO=orchestra in the
+   environment renders only that half (the level printed is before the final
+   levelling is meaningful, so compare the two, do not ship them). */
+const SOLO = process.env.SOLO || '';
+if (SOLO) { console.log('SOLO ' + SOLO + ': writing to the scratch folder, not assets'); }
 
 if (!fs.existsSync(path.join(SAMPLES, 'manifest.json'))) {
     console.error('No samples at ' + SAMPLES + '\nMake them first: node tools/ariadne-editor/orchestra.js --fetch');
@@ -146,8 +157,10 @@ function begin(seconds) {
    o: a (attack s), r (release s), pan (-1..1), send (0..1), from/to (a
    level ramp across the note, for crescendos), detune (cents), alt, layer,
    i (which recording, for unpitched), land (true: time the recording so its
-   loudest moment falls on t+dur, and cut it there), keep (do not shorten). */
+   loudest moment falls on t+dur, and cut it there), bend (semitones the
+   note slides by across its length: negative falls). */
 function note(inst, midi, t, dur, vel, o) {
+    if (SOLO === 'synth') { return; }
     o = o || {};
     const s = pick(inst, midi, vel, o);
     const smp = load(s.f);
@@ -178,14 +191,19 @@ function note(inst, midi, t, dur, vel, o) {
     const nAtt = Math.max(1, Math.round(a * SR));
     const total = nHold + nRel;
 
+    const bend = o.bend || 0;
+    let pos = srcStart;
     for (let k = 0; k < total; k++) {
         const out = i0 + k;
+        /* The read position is walked, not multiplied out, so the speed can
+           change under it: that is all a slide is. */
+        const here = pos;
+        pos += bend ? step * Math.pow(2, bend * (k / total) / 12) : step;
         if (out < 0) { continue; }
         if (out >= LEN) { break; }
-        const pos = srcStart + k * step;
-        const p = Math.floor(pos);
+        const p = Math.floor(here);
         if (p + 1 >= smp.x.length) { break; }
-        const f = pos - p;
+        const f = here - p;
         let v = smp.x[p] * (1 - f) + smp.x[p + 1] * f;
 
         let env = k < nAtt ? k / nAtt : 1;
@@ -214,6 +232,191 @@ function sub(hzv, t, dur, vel) {
         const env = Math.min(1, x / 0.03) * Math.pow(1 - k / n, 1.5);
         const v = (Math.sin(2 * Math.PI * hzv * x) + 0.3 * Math.sin(4 * Math.PI * hzv * x) + 0.1 * Math.sin(6 * Math.PI * hzv * x)) * env * vel * 0.16;
         dryL[out] += v; dryR[out] += v; send[out] += v * 0.1;
+    }
+}
+
+/* A tone that slides from one pitch to another: the whine of something big
+   being switched off. A sine with a little second harmonic. */
+function slide(f0, f1, t, dur, vel) {
+    const i0 = Math.round(t * SR), n = Math.round(dur * SR);
+    let ph = 0;
+    for (let k = 0; k < n; k++) {
+        const out = i0 + k;
+        const q = k / n;
+        const fr = f0 * Math.pow(f1 / f0, q);
+        ph += 2 * Math.PI * fr / SR;
+        if (out < 0 || out >= LEN) { continue; }
+        const env = Math.min(1, k / (0.02 * SR)) * Math.pow(1 - q, 0.8);
+        const v = (Math.sin(ph) + 0.25 * Math.sin(2 * ph)) * env * vel * 0.12;
+        dryL[out] += v; dryR[out] += v; send[out] += v * 0.5;
+    }
+}
+
+/* Air rushing out: noise through a low-pass that closes from f0 to f1. */
+function rush(f0, f1, t, dur, vel) {
+    const i0 = Math.round(t * SR), n = Math.round(dur * SR);
+    let seed = 987654321, lp1 = 0, lp2 = 0;
+    for (let k = 0; k < n; k++) {
+        const out = i0 + k;
+        seed = (seed * 1664525 + 1013904223) >>> 0;
+        const w = seed / 4294967296 * 2 - 1;
+        const q = k / n;
+        const fc = f0 * Math.pow(f1 / f0, q);
+        const a = 1 - Math.exp(-2 * Math.PI * fc / SR);
+        lp1 += (w - lp1) * a;
+        lp2 += (lp1 - lp2) * a;
+        if (out < 0 || out >= LEN) { continue; }
+        const env = Math.min(1, k / (0.03 * SR)) * Math.pow(1 - q, 1.2);
+        const v = lp2 * env * vel * 0.5;
+        dryL[out] += v * 0.9; dryR[out] += v; send[out] += v * 0.6;
+    }
+}
+
+/* ------------------------------------------------------------- synths */
+
+/* The synthesiser, asked for by the host after the orchestra went in ("make
+   it more synthy sounds, especially on the suspense, but not horrible saw
+   sounds", 16 Nov 2026). The television quiz this is styled on is, at
+   heart, a synthesiser record with an orchestra on top, and a pulse wants a
+   machine to play it.
+
+   The rule that keeps these from being the saws that were thrown out: NO
+   SAWTOOTH, and nothing bright left unfiltered. Every voice is built from
+   sines and triangles, or from a square with only its first few harmonics,
+   and each goes through a low-pass that is mostly shut. They are warm and
+   round by construction. */
+
+/* A two-pole low-pass (Chamberlin's state-variable filter), one sample at a
+   time. Stable for the cutoffs used here, all far below the sample rate. */
+function lowpass() {
+    let lo = 0, band = 0;
+    return function (x, cutoff, res) {
+        const fq = 2 * Math.sin(Math.PI * Math.min(cutoff, SR * 0.22) / SR);
+        lo += fq * band;
+        const hi = x - lo - res * band;
+        band += fq * hi;
+        return lo;
+    };
+}
+
+/* A square wave with only harmonics 1, 3, 5 and 7: hollow, like a square,
+   without the edge of one. */
+function softSquare(ph) {
+    return Math.sin(ph) + Math.sin(3 * ph) / 3 + Math.sin(5 * ph) / 5 + Math.sin(7 * ph) / 7;
+}
+const tri = ph => (2 / Math.PI) * Math.asin(Math.sin(ph));
+
+function put(out, v, pan, sendAmt) {
+    if (SOLO === 'orchestra') { return; }
+    if (out < 0 || out >= LEN) { return; }
+    dryL[out] += v * Math.cos((pan + 1) * Math.PI / 4) * 1.414;
+    dryR[out] += v * Math.sin((pan + 1) * Math.PI / 4) * 1.414;
+    send[out] += v * sendAmt;
+}
+
+/* Synth bass: the pulse. A soft square and a triangle an octave down,
+   through a filter that opens on the note and closes behind it, so each
+   one goes "dum" and not "bzz". `open` is how far the filter opens (Hz). */
+function synBass(midi, t, dur, vel, open) {
+    const f0 = hz(midi);
+    const i0 = Math.round(t * SR), n = Math.round((dur + 0.12) * SR);
+    const lp = lowpass();
+    const top = open || 700;
+    let ph = 0;
+    for (let k = 0; k < n; k++) {
+        ph += 2 * Math.PI * f0 / SR;
+        const x = k / SR;
+        const cutoff = 110 + top * Math.exp(-x / 0.09);
+        const raw = softSquare(ph) * 0.6 + tri(ph / 2) * 0.9;
+        const amp = Math.min(1, k / (0.004 * SR)) * Math.exp(-x / (dur * 0.9)) * (x > dur ? Math.max(0, 1 - (x - dur) / 0.12) : 1);
+        put(i0 + k, lp(raw, cutoff, 0.55) * amp * vel * 0.2, 0, 0.12);
+    }
+}
+
+/* Synth pad: three voices a few cents apart, each a sine with a little
+   triangle and a soft octave, swelling in slowly. With `pump` (a beat
+   length in seconds) its level dips on every beat and swells back, which is
+   the breathing of a pad ducked under a kick drum: the single most
+   "television thriller" sound there is, and what makes a held chord
+   pulsate. */
+function synPad(notes, t, dur, vel, o) {
+    o = o || {};
+    const i0 = Math.round(t * SR), n = Math.round((dur + 0.5) * SR);
+    const att = o.a !== undefined ? o.a : 0.5;
+    notes.forEach((nn, vi) => {
+        const base = hz(typeof nn === 'string' ? m(nn) : nn);
+        [-7, 0, 6].forEach((cents, di) => {
+            const fr = base * Math.pow(2, cents / 1200);
+            const pan = (di - 1) * 0.6 + (vi % 2 ? 0.1 : -0.1);
+            const lp = lowpass();
+            let ph = vi * 1.3 + di * 2.1;
+            for (let k = 0; k < n; k++) {
+                ph += 2 * Math.PI * fr / SR;
+                const x = k / SR;
+                let amp = Math.min(1, x / att);
+                if (x > dur) { amp *= Math.max(0, 1 - (x - dur) / 0.5); }
+                if (o.from !== undefined) { amp *= o.from + (o.to - o.from) * Math.min(1, x / dur); }
+                if (o.pump) {
+                    const q = (x % o.pump) / o.pump;
+                    amp *= 0.22 + 0.78 * Math.pow(q, 0.6);
+                }
+                const raw = Math.sin(ph) + 0.35 * tri(ph) + 0.2 * Math.sin(2 * ph) + 0.08 * softSquare(ph);
+                const cutoff = (o.dark ? 500 : 900) + (o.open || 0) * Math.min(1, x / dur);
+                put(i0 + k, lp(raw, cutoff, 0.9) * amp * vel * 0.045, pan, 0.55);
+            }
+        });
+    });
+}
+
+/* Synth pluck: a glassy electric-piano note, by frequency modulation (one
+   sine bending another, the bend dying away fast), with two echoes after
+   it. The echoes are what make it a synth and not a glockenspiel. */
+function synPluck(midi, t, vel, o) {
+    o = o || {};
+    const fr = hz(midi);
+    const echo = o.echo || 0;
+    [[0, 1, o.pan || 0], [echo, 0.42, -(o.pan || 0.4)], [echo * 2, 0.2, o.pan || 0.4]].forEach((tap, ti) => {
+        if (ti > 0 && !echo) { return; }
+        const i0 = Math.round((t + tap[0]) * SR), n = Math.round(0.9 * SR);
+        let ph = 0, mp = 0;
+        for (let k = 0; k < n; k++) {
+            const x = k / SR;
+            mp += 2 * Math.PI * fr * 2 / SR;
+            ph += 2 * Math.PI * fr / SR;
+            const index = 1.6 * Math.exp(-x / 0.07);
+            const amp = Math.min(1, k / (0.003 * SR)) * Math.exp(-x / 0.28);
+            put(i0 + k, Math.sin(ph + index * Math.sin(mp)) * amp * vel * tap[1] * 0.15, tap[2], 0.45);
+        }
+    });
+}
+
+/* Synth kick: a sine that drops from a knock to a thud. The pulse you feel. */
+function thump(t, vel) {
+    const i0 = Math.round(t * SR), n = Math.round(0.34 * SR);
+    let ph = 0;
+    for (let k = 0; k < n; k++) {
+        const x = k / SR;
+        const fr = 44 + 110 * Math.exp(-x / 0.035);
+        ph += 2 * Math.PI * fr / SR;
+        const amp = Math.min(1, k / (0.002 * SR)) * Math.exp(-x / 0.13);
+        put(i0 + k, (Math.sin(ph) + 0.2 * Math.sin(2 * ph)) * amp * vel * 0.42, 0, 0.08);
+    }
+}
+
+/* A riser: air building up into a moment, the opposite of rush(). */
+function riser(f0, f1, t, dur, vel) {
+    const i0 = Math.round(t * SR), n = Math.round(dur * SR);
+    let seed = 192837465, lp1 = 0, lp2 = 0;
+    for (let k = 0; k < n; k++) {
+        seed = (seed * 1664525 + 1013904223) >>> 0;
+        const w = seed / 4294967296 * 2 - 1;
+        const q = k / n;
+        const fc = f0 * Math.pow(f1 / f0, q);
+        const a = 1 - Math.exp(-2 * Math.PI * fc / SR);
+        lp1 += (w - lp1) * a;
+        lp2 += (lp1 - lp2) * a;
+        const env = q * q * Math.min(1, (n - k) / (0.02 * SR));
+        put(i0 + k, lp2 * env * vel * 0.45, 0.1, 0.6);
     }
 }
 
@@ -356,6 +559,11 @@ const CUES = {
         brass(['C2', 'C3', 'G3'], h, 0.45, 0.9);
         strings(['C2', 'C3', 'G3', 'Db4'], h, 3.2, 0.75, { a: 0.03, from: 1, to: 0.25 });
         strings(['G5'], h + 0.4, 2.8, 0.3, { from: 0.4, to: 1 });
+        /* The synth's share of the hit: a thump under the drum, a dark pad
+           holding the wrong-note chord, and a tone falling away. */
+        thump(h, 1);
+        synPad(['C2', 'C3', 'G3', 'Db4'], h, 3.2, 1, { a: 0.02, from: 1, to: 0.2, dark: true });
+        slide(220, 45, h, 2.4, 0.6);
     } },
 
     /* Right. Three trumpets up the chord into the whole orchestra in the
@@ -408,9 +616,50 @@ const CUES = {
         strings(['Ab2', 'Eb3', 'C4', 'Eb4', 'G4'], h, 2.6, 0.6, { a: 0.25, from: 0.7, to: 1 });
         glock('G6', h, 0.6);
         glock('D7', h + 0.16, 0.45);
+        /* The same run again on a glassy synth, a beat behind, with echoes,
+           and a pad under the strings. */
+        ['G4', 'Bb4', 'D5', 'G5', 'Bb5', 'D6'].forEach((n2, i) => synPluck(m(n2), 0.3 + i * 0.07, 0.45, { echo: 0.28, pan: i % 2 ? 0.4 : -0.4 }));
+        synPad(['Ab2', 'Eb3', 'C4', 'G4'], h, 2.6, 0.8, { a: 0.3 });
         note('flute', m('G5'), h + 0.1, 2.2, 0.5, { a: 0.2, r: 0.6, pan: -0.2, send: 0.55 });
         piano('Ab1', h, 3, 0.5);
         spic('G5', h + 0.9, 0.3); spic('G5', h + 1.5, 0.3); spic('G5', h + 2.1, 0.3);
+    } },
+
+    /* The lights going down, which is how a question starts (the host,
+       16 Nov 2026: "a powering down kind of effect"). One hit, and then
+       everything in the room falls: the strings and the low brass slide
+       down more than an octave, a drum roll sinks with them, a whine winds
+       down to nothing and the air goes out. What is left at the bottom is
+       the low C the question bed starts on.
+
+       The bed comes in ONE BAR after this starts (js/quiz-audio.js knows
+       the same number), so this is scored to have landed by then and to
+       ring on under the bed's first bar. */
+    'question-in': { len: 5.6, play() {
+        const fall = (60 / 72) * 4;            /* one bar: 3.33 s */
+        bd(0.05, 1);
+        timp('C3', 0.05, 0.9);
+        piano('C1', 0.05, 4, 0.9);
+        piano('C2', 0.05, 4, 0.8, { pan: 0.2 });
+        gong(0.05, 0.35, 4);
+        cym(0.05, 0.5, 2.5);
+
+        /* The orchestra falling. Each desk starts on a note of C minor and
+           ends well over an octave below it, getting quieter as it goes. */
+        strings(['C5', 'G4', 'Eb4', 'C4', 'G3'], 0.05, fall - 0.3, 0.9, { a: 0.02, r: 0.5, bend: -17, from: 1, to: 0.25 });
+        brass(['C4', 'G3', 'C3'], 0.05, fall - 0.5, 0.8, { r: 0.5, bend: -15, from: 1, to: 0.2 });
+        note('timpRoll', m('C3'), 0.05, fall - 0.4, 0.8, { a: 0.02, r: 0.4, bend: -12, from: 1, to: 0.15, send: 0.5 });
+
+        /* The machine winding down, and the air going out of the room. */
+        slide(880, 55, 0.05, fall - 0.2, 0.9);
+        slide(440, 36, 0.05, fall, 0.9);
+        rush(9000, 120, 0.05, fall, 0.9);
+
+        /* The bottom: the note the bed begins on. */
+        sub(hz(m('C1')), fall - 0.6, 2.6, 0.7);
+        strings(['C2', 'C3', 'G3'], fall - 0.8, 2.4, 0.9, { a: 0.6, r: 0.8, from: 0.4, to: 1, gain: 1.6 });
+        synPad(['C2', 'C3', 'G3'], fall - 0.8, 2.4, 0.9, { a: 0.7, dark: true });
+        thump(0.05, 1);
     } },
 
     /* The winner: a full fanfare, and one last stroke. */
@@ -480,7 +729,7 @@ const LOOPS = {
        section holding the chord, a harp-and-bell figure that never settles.
        The fourth bar leans on the dominant, so the phrase asks instead of
        answering and can go round all night. */
-    question: { bar: (60 / 72) * 4, bars: 4, peak: 0.6, play(t, n) {
+    question: { bar: (60 / 72) * 4, bars: 4, peak: 0.5, play(t, n) {
         const beat = 60 / 72;
         const p = n % 4;
         const root = ['C', 'C', 'Ab', 'G'][p];
@@ -501,7 +750,16 @@ const LOOPS = {
         piano(root + '2', t, beat * 2, 0.4, { pan: 0.2 });
         piano(root + '1', t + beat * 2, beat * 2, 0.3);
         for (let b = 0; b < 4; b++) { spic('G5', t + (b + 0.5) * beat, 0.4); }
-        strings(pad, t, beat * 4 - 0.1, 0.8, { a: 0.3, r: 0.5, gain: 1.7 });
+        strings(pad, t, beat * 4 - 0.1, 0.8, { a: 0.3, r: 0.5, gain: 1.4 });
+        /* A synth under the section (the host, after the orchestra went in:
+           "more synthy sounds"): a soft bass on the quavers with the
+           cellos, and a pad breathing once a beat under the held chord. */
+        for (let q = 0; q < 8; q++) {
+            synBass(m(root + '2'), t + q * beat / 2, beat * 0.4, q % 4 === 0 ? 0.8 : 0.5, 380);
+        }
+        synPad(pad.slice(1), t, beat * 4 - 0.08, 0.75, { pump: beat, a: 0.1 });
+        synPluck(m(motif[0]), t + beat * 2, 0.45, { echo: beat * 0.75, pan: 0.4 });
+        synPluck(m(motif[1]), t + beat * 3, 0.38, { echo: beat * 0.75, pan: -0.4 });
         harp(motif[0], t + beat * 2, 0.5);
         harp(motif[1], t + beat * 3, 0.42);
         glock(motif[0].replace(/\d/, d => String(+d + 1)), t + beat * 2, 0.3);
@@ -511,26 +769,53 @@ const LOOPS = {
         }
     } },
 
-    /* The wait, after the answer is in. One heartbeat a second and almost
-       nothing else: basses holding a C, the section shivering up a cluster
-       that tightens in the second bar, and a roll rising into the repeat. */
-    suspense: { bar: 4, bars: 2, peak: 0.62, play(t, n) {
-        const p = n % 2;
-        for (let b = 0; b < 4; b++) {
-            bd(t + b, 0.5);
-            bd(t + b + 0.27, 0.32);
-            sub(hz(m('C1')), t + b, 0.35, 0.8);
-            sub(hz(m('C1')), t + b + 0.27, 0.3, 0.5);
+    /* The wait, after the answer is in. A PULSE, and a synthesiser's pulse
+       (the host, 16 Nov 2026, in two notes: "more of a pulsating suspense",
+       then "more synthy sounds, especially on the suspense"). 104 to the
+       minute, four bars, never resolving.
+
+       The machine: a synth bass on every quaver that never leaves C, its
+       filter opening wider each bar; a kick you feel more than hear on
+       every beat; a pad that ducks under each kick and swells back, so the
+       held chord itself breathes; and a glassy two-note figure rocking a
+       semitone, with echoes.
+       The orchestra, kept under it for size: low strings doubling the bass
+       on the beat, a held section climbing with the pad, and a timpani roll
+       and a riser that throw the fourth bar back to the first. */
+    suspense: { bar: (60 / 104) * 4, bars: 4, peak: 0.68, play(t, n) {
+        const beat = 60 / 104;
+        const p = n % 4;
+        const push = 0.75 + p * 0.08;                 /* each bar leans in harder */
+
+        /* The pulse. */
+        for (let q = 0; q < 8; q++) {
+            const acc = q % 2 === 0 ? 1 : 0.62;
+            synBass(m('C2'), t + q * beat / 2, beat * 0.42, acc * push, 500 + p * 260 + (q % 2 ? 0 : 200));
         }
-        strings(['C2', 'C3'], t, 3.9, 0.6, { a: 0.3 });
-        const cluster = p === 0 ? ['G3', 'Ab3', 'C4', 'G4'] : ['F#3', 'G3', 'B3', 'C4', 'Ab4'];
-        strings(cluster, t, 3.9, p ? 0.75 : 0.6, { a: 0.4, from: 0.3, to: 1 });
-        strings(['G5'], t, 3.9, 0.3, { a: 0.5 });
-        for (let b = 0; b < 4; b++) { spic('C3', t + b + 0.5, 0.3); }
-        piano('C1', t, 3.5, 0.5);
-        if (p === 1) {
-            troll('C3', t + 2.5, 1.5, 0.08, 0.8);
-            swell(t + 4, 1.3, 0.4);
+        for (let b = 0; b < 4; b++) {
+            thump(t + b * beat, b % 2 === 0 ? 1 : 0.8);
+            if (b % 2 === 0) { thump(t + (b + 0.5) * beat, 0.45); }
+            spic('C2', t + b * beat, 0.6 * push, { gain: 1.3 });
+        }
+
+        /* The breathing chord: it climbs a step a bar, and opens as it goes. */
+        const hold = [['C3', 'G3', 'Eb4'], ['C3', 'Ab3', 'Eb4', 'G4'], ['C3', 'Ab3', 'F4', 'Ab4'], ['D3', 'B3', 'F4', 'Ab4', 'B4']][p];
+        synPad(hold, t, beat * 4 - 0.05, 0.9 * push, { pump: beat, a: 0.08, open: 500 + p * 250 });
+        synPad(['C2'], t, beat * 4 - 0.05, 0.8, { pump: beat, a: 0.05, dark: true });
+        strings(hold, t, beat * 4 - 0.08, 0.4 * push, { a: 0.3, r: 0.35, from: 0.5, to: 1 });
+
+        /* The itch: two notes a semitone apart, off the beat, with echoes. */
+        const rock = [['G4', 'Ab4'], ['G4', 'Ab4'], ['Ab4', 'Bb4'], ['B4', 'C5']][p];
+        for (let q = 0; q < 8; q++) {
+            synPluck(m(rock[q % 2]), t + q * beat / 2 + beat / 4, 0.55 * push, { echo: beat * 0.75, pan: q % 2 ? 0.45 : -0.45 });
+        }
+        if (p % 2 === 1) { synPluck(m('G5'), t + beat * 3, 0.5, { echo: beat * 0.75, pan: 0.2 }); }
+
+        if (p === 3) {
+            troll('G2', t + beat * 2, beat * 2, 0.1, 0.7);
+            riser(300, 7000, t + beat * 2, beat * 2, 0.8);
+            thump(t + beat * 3.5, 0.9);
+            thump(t + beat * 3.75, 1);
         }
     } }
 };
@@ -584,7 +869,7 @@ for (const id of todo) {
         begin(CUES[id].len);
         CUES[id].play();
         [L, R] = finish();
-        level(L, R, 0.9);
+        level(L, R, id === 'question-in' ? 0.72 : 0.9);
         /* The last 60 ms to nothing, whatever the hall is still doing. */
         const f = Math.round(0.06 * SR);
         for (let i = 0; i < f; i++) { const g = i / f; L[L.length - 1 - i] *= g; R[R.length - 1 - i] *= g; }
@@ -595,6 +880,7 @@ for (const id of todo) {
         begin(one * 2 + 0.5);
         for (let b = 0; b < lp.bars * 2 + 1; b++) { lp.play(b * lp.bar, b); }
         const [fl, fr] = finish();
+        if (SOLO) { let q = 0; for (let i = n; i < 2 * n; i++) { q += fl[i] * fl[i]; } console.log('  raw rms ' + Math.sqrt(q / n).toFixed(4)); }
         /* Keep the second time round: it has the first's tail under it. */
         L = fl.slice(n, 2 * n); R = fr.slice(n, 2 * n);
         level(L, R, lp.peak);

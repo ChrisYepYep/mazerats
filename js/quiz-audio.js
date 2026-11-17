@@ -48,7 +48,13 @@
         { id: 'winner',   label: 'Winner' }
     ];
     var IS_LOOP = { question: 1, suspense: 1 };
-    var FILES = ['intro', 'question', 'lifeline', 'lock', 'suspense', 'correct', 'wrong', 'winner', 'winner-xmas'];
+
+    /* A loop may have a way in: a recording played once, with the loop
+       itself starting `after` seconds into it. Question's is the lights
+       going down, and its bed comes in exactly one bar later (the same
+       bar tools/quiz-audio-build.js scores the fall to land in). */
+    var LEAD_IN = { question: { file: 'question-in', after: (60 / 72) * 4 } };
+    var FILES = ['intro', 'question-in', 'question', 'lifeline', 'lock', 'suspense', 'correct', 'wrong', 'winner', 'winner-xmas'];
 
     var ctx = null;
     var out = null;             /* master gain */
@@ -185,9 +191,11 @@
             sleigh(t + beat * 3, 0.35, d);
             if (n % 4 === 0) { chime(261.6, t, 0.5, d); }
         } },
-        suspense: { bar: 4, play: function (t, n, d) {
-            if (n % 2 === 0) { chime(130.8, t, 0.6, d); }
-            shakes(t + 3.5, 4, 0.12, 0.3, d);
+        suspense: { bar: (60 / 104) * 4, play: function (t, n, d) {
+            var beat = 60 / 104;
+            if (n % 4 === 0) { chime(130.8, t, 0.6, d); }
+            sleigh(t + beat, 0.3, d);
+            sleigh(t + beat * 3, 0.3, d);
         } }
     };
 
@@ -215,17 +223,29 @@
         var mine = loop = { id: id, src: null, gain: null, timer: 0 };
         var fest = festive;
 
-        fetchCue(id).then(function (buf) {
+        var lead = LEAD_IN[id];
+        Promise.all([fetchCue(id), lead ? fetchCue(lead.file).catch(function () { return null; }) : null]).then(function (got) {
+            var buf = got[0];
+            var leadBuf = got[1];
             if (loop !== mine) { return; }          /* stopped while loading */
             var g = c.createGain();
-            g.gain.setValueAtTime(0.0001, c.currentTime);
-            g.gain.linearRampToValueAtTime(1, c.currentTime + 0.25);
+            /* A bed that starts cold is faded up; one with a lead-in is not,
+               because the lead-in opens on a hit that must not be softened. */
+            g.gain.setValueAtTime(leadBuf ? 1 : 0.0001, c.currentTime);
+            if (!leadBuf) { g.gain.linearRampToValueAtTime(1, c.currentTime + 0.25); }
             g.connect(out);
             var src = c.createBufferSource();
             src.buffer = buf;
             src.loop = true;
             src.connect(g);
             var t0 = c.currentTime + 0.05;
+            if (leadBuf) {
+                var in1 = c.createBufferSource();
+                in1.buffer = leadBuf;
+                in1.connect(g);
+                in1.start(t0);
+                t0 += lead.after;
+            }
             src.start(t0);
             mine.src = src;
             mine.gain = g;
