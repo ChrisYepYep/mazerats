@@ -861,6 +861,21 @@ const BREAKDOWNS = ["browsers", "os", "devices", "pages", "countries", "builds",
    new-group budgets (NEW GROUPS ARE WHAT COST SPACE, above) is dropped and
    counted as dropped here. Throws if the database does; the callers each
    decide what that means. */
+/* A proxied crawler's failed pictures (17 Nov 2026). From 8 Nov one crawler
+   walked every /maze/ and /event/ page and filed every open picture group in
+   the Warren: the console icon, the CDN, FurniIndex icons, the welcome rat.
+   All ~90 samples had the same settings: browser language zh-CN, pixel ratio 1,
+   8 GB, "4g", signed out, while the country went SG, CN, HK, US, MX, UA, IT
+   against a timezone of UTC+8 or 0. It ignores <base href="/"> (its
+   failures read /maze/assets/img/…, which no browser asks for), and it lets
+   SOME pictures load, so error-report.js's no-picture-shown rule (9 Nov)
+   never caught it. Only picture failures are dropped: a real visitor with
+   these settings still files script errors and failed requests. */
+function proxyCrawlerPicture(rep) {
+    return rep.kind === "resource" && rep.tag === "img" && rep.lang === "zh-CN"
+        && rep.dpr === 1 && rep.mem === 8 && rep.net === "4g" && rep.signedIn === false;
+}
+
 async function recordReports(db, reports, meta = {}) {
     if (!Array.isArray(reports) || !reports.length) return 0;
     const col = db.collection(COLLECTION);
@@ -903,6 +918,7 @@ async function recordReports(db, reports, meta = {}) {
            crawler wearing one's user agent (js/error-report.js's rule of 7
            Oct 2026, kept here too for pages on the older script; 10 Oct 2026). */
         if (source === "client" && m.ua.os === "iOS" && typeof rep.dpr === "number" && rep.dpr < 2) continue;
+        if (source === "client" && proxyCrawlerPicture(rep)) continue;
         const admit = () => newGroupAllowed(db, source, source === "function" ? null : net);
         if (source === "client" && net) {
             n = await takeHourly(db, `occ:net:${net}`, n, NET_OCC_PER_HOUR);
@@ -1091,7 +1107,7 @@ module.exports = {
     COLLECTION, META, LIMITS, KEEP_DAYS, DAYS_KEPT, HOURS_KEPT, SAMPLES_KEPT, MAP_KEYS, VISITOR_SET,
     NET_PER_MINUTE, GLOBAL_PER_HOUR, NEW_PER_HOUR, NET_NEW_PER_HOUR, FUNCTION_PER_HOUR, SAMPLE_MAX_BYTES,
     KINDS, STATUSES, BREAKDOWNS, OTHER,
-    withErrorReporting, recordReports, cleanReport, cleanUrl, scrub, cleanStack,
+    withErrorReporting, recordReports, cleanReport, cleanUrl, scrub, cleanStack, proxyCrawlerPicture,
     normaliseMessage, fingerprint, parseUserAgent, countryOf, hashSession, fitSample,
     ensureIndexes, overNetCap, overGlobalCap, newGroupAllowed, limiterKey, countMeta, metaSince, readKey, dayKey, hourKey,
     _setDbForTests,
