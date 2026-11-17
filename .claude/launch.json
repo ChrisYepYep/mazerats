@@ -4,8 +4,93 @@
     {
       "name": "netlify-dev",
       "runtimeExecutable": "netlify",
-      "runtimeArgs": ["dev"],
+      "runtimeArgs": [
+        "dev"
+      ],
       "port": 8888
+    },
+    {
+      "name": "report-capture",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "C:/Users/cjboy/AppData/Local/Temp/claude/C--Users-cjboy-Pictures-Screenshots-Habbo-MazeRatsWebsite/8d5fda95-8e96-4069-a717-888ba57843e5/scratchpad/capture/server.js"
+      ],
+      "port": 8899
+    },
+    {
+      "name": "ariadne-editor",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "tools/ariadne-editor/server.js"
+      ],
+      "port": 8777
+    },
+    {
+      "name": "hallway-editor",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "tools/hallway-editor/server.js"
+      ],
+      "port": 8778
+    },
+    {
+      "name": "ariadne-editor-claude",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "tools/ariadne-editor/server.js"
+      ],
+      "env": {
+        "PORT": "8778"
+      },
+      "port": 8778
+    },
+    {
+      "name": "mock-capture",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "C:/Users/cjboy/AppData/Local/Temp/claude/C--Users-cjboy-Pictures-Screenshots-Habbo-MazeRatsWebsite/4d92e470-ddd6-45b8-84b4-b447c7ebacc0/scratchpad/capture/server.js"
+      ],
+      "port": 8898
+    },
+    {
+      "name": "trailer-save",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "tools/ariadne-editor/trailer/tools/save-server.js"
+      ],
+      "port": 8902
+    },
+    {
+      "name": "static-claude",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "C:/Users/cjboy/AppData/Local/Temp/claude/C--Users-cjboy-Pictures-Screenshots-Habbo-MazeRatsWebsite/4bb89276-502b-4b30-a909-016771a5d697/scratchpad/static/server.js"
+      ],
+      "port": 4001
+    },
+    {
+      "name": "netlify-dev-claude",
+      "runtimeExecutable": "netlify",
+      "runtimeArgs": [
+        "dev",
+        "--port",
+        "8890",
+        "--functions-port",
+        "3998",
+        "--command",
+        "node C:/Users/cjboy/AppData/Local/Temp/claude/C--Users-cjboy-Pictures-Screenshots-Habbo-MazeRatsWebsite/4bb89276-502b-4b30-a909-016771a5d697/scratchpad/static/server.js",
+        "--target-port",
+        "4001"
+      ],
+      "port": 8890
+    },
+    {
+      "name": "ff-audio-preview",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "C:/Users/cjboy/AppData/Local/Temp/claude/C--Users-cjboy-Pictures-Screenshots-Habbo-MazeRatsWebsite/4bb89276-502b-4b30-a909-016771a5d697/scratchpad/ffaudio/server.js"
+      ],
+      "port": 8911
     }
   ]
 }
