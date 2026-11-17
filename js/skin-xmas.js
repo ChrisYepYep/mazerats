@@ -1384,38 +1384,62 @@
         return out;
     }
     const rgba = (c) => (255 << 24) | (c[2] << 16) | (c[1] << 8) | c[0];
-    const PX = { O: rgba(C.O), K: rgba(C.K), B: rgba(C.B), S: rgba(C.S), D: rgba(C.D) };
-    function paintDrift() {
+    const PX = { O: rgba(C.O), K: rgba(C.K), B: rgba(C.B), S: rgba(C.S), D: rgba(C.D), CUT: rgba([214, 236, 250]) };
+    /* Painted whole, or only columns x0..x1 (the shovel repaints just what it
+       dug). The height of each column is the hills' less what has been dug out
+       of it (drift.dug: + dug away, - snow thrown onto it); a column dug right
+       down is left empty, so the footer shows through. */
+    function paintDrift(x0, x1) {
         if (!drift) return;
         const { cv, w, room, profile } = drift;
         const H = cv.height, depth = Math.min(room, footerDepth);
         const ctx = cv.getContext("2d");
-        const img = ctx.createImageData(w, H), px = new Uint32Array(img.data.buffer);
         // Valleys at three fifths of the hills, never thinner than the starting bank.
         const floorH = Math.min(depth, Math.max(FOOTER_START - 2, depth * 0.6));
-        const top = new Int16Array(w);
-        for (let x = 0; x < w; x++) top[x] = H - 2 - Math.round(floorH + (depth - floorH) * profile[x]);
+        const dug = drift.dug;
+        if (!drift.h || drift.h.length !== w) drift.h = new Float32Array(w);
+        if (!drift.top || drift.top.length !== w) drift.top = new Int16Array(w);
+        const h = drift.h, top = drift.top;
         for (let x = 0; x < w; x++) {
-            const t = top[x];
-            // The slope from the smooth curve, not the pixel steps, so the shading runs in a clean band.
-            const slope = -(profile[Math.min(w - 1, x + 4)] - profile[Math.max(0, x - 4)]) / 8 * (depth - floorH);   // + going down to the right
+            const v = floorH + (depth - floorH) * profile[x] - (dug ? dug[x] : 0);
+            h[x] = v < 0.5 ? 0 : v;
+            // An empty column's surface is the footer's top, for the snowfall to land on.
+            top[x] = h[x] ? H - 2 - Math.round(h[x]) : H - 2;
+        }
+        const a = x0 == null ? 0 : Math.max(0, Math.floor(x0) - 1), b = x1 == null ? w - 1 : Math.min(w - 1, Math.ceil(x1) + 1);
+        const iw = b - a + 1;
+        const img = ctx.createImageData(iw, H), px = new Uint32Array(img.data.buffer);
+        const hs = (i) => h[i < 0 ? 0 : i >= w ? w - 1 : i];
+        const solid = (i) => (i >= 0 && i < w && h[i] ? top[i] : Infinity);
+        for (let x = a; x <= b; x++) {
+            const t = top[x], X = x - a;
+            if (!h[x]) {
+                // Dug through: a wall of snow beside it gets its outline down to the footer.
+                const side = Math.min(solid(x - 1), solid(x + 1));
+                if (side !== Infinity) for (let y = Math.max(0, side - 1); y < H; y++) px[y * iw + X] = PX.O;
+                continue;
+            }
+            // The slope from the heights either side, not the pixel steps, so the shading runs in a clean band.
+            const slope = -(hs(x + 4) - hs(x - 4)) / 8;                        // + going down to the right
             const shadeBand = slope > 0.05 ? Math.min(6, 1 + Math.round(slope * 12)) : 0;  // a right-facing slope is in shade
             const litBand = slope < -0.05 ? 2 : 1;
+            const cut = dug && dug[x] > 3;                                     // freshly dug: packed, a touch bluer
             for (let y = Math.max(0, t); y < H; y++) {
                 let c = PX.B;
                 const k = y - t;
                 if (k < litBand) c = PX.K;
                 else if (k < litBand + shadeBand) c = PX.S;
                 if (c === PX.B && ((x * 7 + y * 13) % 23 === 0)) c = PX.K;     // grains of sparkle
+                if (cut && k >= 1 && k < 7) c = k < 3 ? PX.CUT : ((x * 5 + y * 11) % 3 === 0 ? PX.S : c);
                 if (y >= H - 4) c = y >= H - 2 ? PX.D : PX.S;                  // where it sits on the footer
-                px[y * w + x] = c;
+                px[y * iw + X] = c;
             }
             // The outline along the top, filled down a step where the hill turns.
-            const above = Math.min(t, x ? top[x - 1] : t, x < w - 1 ? top[x + 1] : t);
-            for (let y = Math.max(0, above - 1); y < t; y++) px[y * w + x] = PX.O;
+            const above = Math.min(t, solid(x - 1), solid(x + 1));
+            for (let y = Math.max(0, above - 1); y < t; y++) px[y * iw + X] = PX.O;
         }
-        ctx.putImageData(img, 0, 0);
-        drift.top = top;      // its surface, row by row, for the snowfall to land on
+        ctx.putImageData(img, a, 0);
+        if (x0 != null) return;
         /* A line of the fansites strip the snow has buried right across is
            re-inked for the snow, as the frozen Fallin' Furni panel is: deep
            blue with a white edge. Until then it keeps its own colour. */
@@ -1432,6 +1456,345 @@
         if (d === footerDepth) return;
         footerDepth = d;
         paintDrift();
+    }
+
+    /* ---------- DIGGING THE DRIFT OUT ----------
+       The owner's (17 Nov 2026): "some sort of mini-game (or just fun feature)
+       where users can get rid of the snow drift at the bottom of the page";
+       of the ideas, the shovel, from mock-ups (a red snow shovel, "a better
+       quality drawing, and perhaps a bit smaller").
+
+       Over the drift's snow the cursor is a snow shovel, its blade's lip at
+       the pointer. Hold the button and drag: the snow comes away down to the
+       blade, but no more than a layer (STROKE) a pass, so going deeper takes
+       pass after pass and leaves stepped walls; what comes off is thrown back
+       over your shoulder in chunks, which land on the drift as little heaps
+       (or fall away off the page). Dug right down, the footer shows through.
+       Left alone, the snow fills back in, a pixel a second (four in a
+       blizzard), the hole softening as it does.
+
+       Mouse and pen only: a finger dragging the page is scrolling it. And
+       never over a link, button or anything else that takes a click (the
+       footer's links show through the drift), so nothing under the snow is
+       taken away from anyone. */
+    const DIG = { BLADE: 7, STROKE: 26, REFILL: 1, CHUNK: 300 };
+    const dhash = (x, y) => { let n = (x * 374761393 + y * 668265263) | 0; n = Math.imul(n ^ (n >>> 13), 1274126177); return ((n ^ (n >>> 16)) >>> 0) / 4294967296; };
+    const SHV = {
+        wood: { lit: [226, 172, 108], mid: [184, 124, 66], dark: [128, 80, 40], grain: [158, 102, 52], out: [72, 40, 18] },
+        red: { lit: [240, 104, 96], face: [222, 62, 60], mid: [200, 46, 48], dark: [150, 30, 36], rib: [164, 30, 38], spec: [255, 184, 174], out: [92, 16, 24] },
+        steel: { lit: [222, 228, 236], mid: [164, 172, 186], dark: [112, 120, 138], out: [58, 64, 80] },
+        grip: { lit: [124, 126, 144], mid: [60, 60, 72], dark: [32, 32, 40], out: [16, 16, 22] }
+    };
+    /* The shovel as pixel art at 1:1. The handle runs along a whole-pixel
+       direction (a across, b up: (1,1) is 45 degrees, (2,1) flatter) so every
+       edge is a clean staircase; lit from the top left like everything else;
+       each material outlined in its own darkest shade, side neighbours only.
+       flip: mirrored, the blade leading to the right. load: a heap of snow in
+       the scoop, piled highest in the middle so its underside follows the
+       blade, lumpy and round (the owner's: not "a flat bottom"). */
+    function shovelSprite(dir, flip, load) {
+        const [a, b] = dir, L = Math.hypot(a, b), R = 48, S = R * 2 + 1;
+        const px = new Map(), key = (x, y) => x + "," + y;
+        for (let dy = -R; dy <= R; dy++) for (let dx = -R; dx <= R; dx++) {
+            const fx = flip ? -dx : dx;
+            const t = (a * fx - b * dy) / L;          // along the handle, + toward the grip
+            const n = (b * fx + a * dy) / L;          // across it, + toward the shaded side
+            let m = null, c = null;
+            if (t >= 1 && t <= 26 && n >= -1.12 && n < 1.5) {
+                m = "wood"; c = n < -0.75 ? SHV.wood.lit : n > 0.75 ? SHV.wood.dark : SHV.wood.mid;
+                if (c === SHV.wood.mid && (Math.round(t * L) % 7 === 3)) c = SHV.wood.grain;
+            } else if (t >= -2.2 && t < 1 && n >= -2 && n < 2.4) {
+                m = "steel"; c = n < -0.9 ? SHV.steel.lit : n > 1.2 ? SHV.steel.dark : SHV.steel.mid;
+                if (Math.abs(t + 0.6) < 0.5 && Math.abs(n - 0.2) < 0.5) c = SHV.steel.dark;
+                if (Math.abs(t + 0.6) < 0.5 && Math.abs(n + 0.6) < 0.4) c = SHV.steel.lit;
+            } else if (t >= -17.5 && t < -2.2) {
+                const w = Math.min(6.6 + (-2.2 - t) * 0.12, 2.4 + (-2.2 - t) * 1.5), an = Math.abs(n);
+                if (an <= w) {
+                    m = "red";
+                    if (t < -16) { m = "steel"; c = n < -1 ? SHV.steel.lit : n > 2 ? SHV.steel.dark : SHV.steel.mid; }
+                    else if (an > w - 1.1) c = n < 0 || t > -4.2 ? SHV.red.lit : SHV.red.dark;
+                    else if (Math.abs(an - 3.3) < 0.36 && t < -4.5) c = SHV.red.rib;
+                    else if (an - 3.3 > -1.05 && an - 3.3 <= -0.36 && t < -4.5) c = n < 0 ? SHV.red.lit : SHV.red.face;
+                    else if (t > -8.4 && t < -5.6 && n > -5.6 && n < -4.4) c = SHV.red.spec;
+                    else if (t > -6.2 && t < -5 && n > -6 && n < -4) c = SHV.red.lit;
+                    else c = n < -0.8 ? SHV.red.face : SHV.red.mid;
+                }
+            }
+            if (!m && t > 26 && t <= 35.4) {                    // the Y grip: wooden arms, a black crossbar
+                const u0 = t - 26, f = Math.min(4.8, u0 * 0.78), arm = u0 <= 7.6 && Math.abs(Math.abs(n) - f) <= 0.95;
+                const bar = u0 >= 7.2 && Math.abs(n) <= 5.8 - Math.max(0, u0 - 8.8) * 2.6;
+                if (bar) m = "grip";
+                else if (u0 <= 1.6 && Math.abs(n) <= 1.6) { m = "steel"; c = SHV.steel.mid; }
+                else if (arm) { m = "wood"; c = n < 0 ? (Math.abs(n) - f < -0.2 ? SHV.wood.mid : SHV.wood.lit) : (Math.abs(n) - f > 0.2 ? SHV.wood.dark : SHV.wood.mid); }
+            }
+            if (m) px.set(key(dx, dy), [m, c]);
+        }
+        for (const [k, v] of px) if (v[0] === "grip") {
+            const [x, y] = k.split(",").map(Number), ul = px.get(key(x - 1, y - 1)), dr = px.get(key(x + 1, y + 1));
+            v[1] = !ul || ul[0] !== "grip" ? SHV.grip.lit : !dr || dr[0] !== "grip" ? SHV.grip.dark : SHV.grip.mid;
+        }
+        const RANK = { steel: 1, wood: 2, red: 3, grip: 4 }, out = new Map();
+        for (const [k, v] of px) {
+            const [x, y] = k.split(",").map(Number);
+            for (const [ox, oy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+                const kk = key(x + ox, y + oy);
+                if (!px.has(kk) && (!out.has(kk) || RANK[v[0]] > RANK[out.get(kk)])) out.set(kk, v[0]);
+            }
+        }
+        const pix = new Map();
+        for (const [k, m] of out) pix.set(k, SHV[m].out);
+        for (const [k, v] of px) pix.set(k, v[1]);
+        const at = (t, n) => [(flip ? -1 : 1) * (a * t + b * n) / L, (-b * t + a * n) / L];
+        if (load) {
+            const lumps = [];
+            for (let t = -15.2; t <= -4; t += 2.4) for (let n = -5.6; n <= 5.6; n += 2.3) {
+                const j = dhash(Math.round(t * 10), Math.round(n * 10) + 99), tt = t + (j - 0.5) * 1.2, nn = n + (dhash(Math.round(n * 10), Math.round(t * 10)) - 0.5) * 1.2;
+                const w = Math.min(6.6 + (-2.2 - tt) * 0.12, 2.4 + (-2.2 - tt) * 1.5) - 0.6;
+                if (Math.abs(nn) > w + 0.8) continue;
+                const cn = Math.abs(nn) / 6.5, ct = Math.abs(tt + 9.6) / 6.5;
+                const up = Math.max(0, 1 - cn * cn - ct * ct) * 7 + j * 1.5;
+                const r = 1.9 + dhash(Math.round(tt * 7), Math.round(nn * 7)) * 1.5 + up * 0.08;
+                const [x, y] = at(tt, nn); lumps.push([x, y - up, r, up]);
+            }
+            lumps.sort((p, q) => p[3] - q[3]);
+            const heap = new Map();
+            for (const [cx, cy, r, up] of lumps) for (let y = Math.floor(cy - r); y <= Math.ceil(cy + r); y++) for (let x = Math.floor(cx - r); x <= Math.ceil(cx + r); x++) {
+                const lx = (x + 0.5 - cx) / r, ly = (y + 0.5 - cy) / r;
+                if (lx * lx + ly * ly > 1) continue;
+                const l = -lx * 0.5 - ly * 0.85 + (up - 3.5) * 0.06 + (dhash(x, y) - 0.5) * 0.2;
+                heap.set(key(x, y), l > 0.5 ? C.K : l > -0.1 ? C.B : l > -0.65 ? C.S : C.D);
+            }
+            for (const k of heap.keys()) { const [x, y] = k.split(",").map(Number); for (const [ox, oy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { const kk = key(x + ox, y + oy); if (!heap.has(kk)) pix.set(kk, C.O); } }
+            for (const [k, c] of heap) pix.set(k, c);
+        }
+        const cv = document.createElement("canvas"); cv.width = cv.height = S;
+        const g = cv.getContext("2d"), img = g.createImageData(S, S);
+        for (const [k, c] of pix) {
+            const [x, y] = k.split(",").map(Number), X = x + R, Y = y + R;
+            if (X < 0 || Y < 0 || X >= S || Y >= S) continue;
+            const i = (Y * S + X) * 4; img.data[i] = c[0]; img.data[i + 1] = c[1]; img.data[i + 2] = c[2]; img.data[i + 3] = 255;
+        }
+        g.putImageData(img, 0, 0);
+        const tip = at(-17, 0);
+        return { cv, ox: R + tip[0], oy: R + tip[1] };   // where the blade's lip is, in the picture
+    }
+    // A thrown chunk of snow, lumpy, lit from the top left, outlined.
+    function chunkSprite(r, seed) {
+        const S = Math.ceil(r * 2 + 5), m = S / 2, cells = new Map(), key = (x, y) => x + "," + y;
+        const blobs = [[m, m, r]];
+        for (let j = 0; j < 3 && r >= 2; j++) { const an = dhash(seed, j) * 6.28; blobs.push([m + Math.cos(an) * r * 0.6, m + Math.sin(an) * r * 0.5, r * (0.45 + dhash(seed, j + 5) * 0.3)]); }
+        for (const [cx, cy, rr] of blobs) for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) {
+            const lx = (x + 0.5 - cx) / rr, ly = (y + 0.5 - cy) / rr;
+            if (lx * lx + ly * ly > 1 || cells.has(key(x, y))) continue;
+            const l = -(x + 0.5 - m) / r * 0.6 - (y + 0.5 - m) / r * 0.8;
+            cells.set(key(x, y), l > 0.45 ? C.K : l < -0.4 ? C.S : C.B);
+        }
+        const cv = document.createElement("canvas"); cv.width = cv.height = S;
+        const g = cv.getContext("2d"), img = g.createImageData(S, S);
+        const put = (x, y, c) => { if (x < 0 || y < 0 || x >= S || y >= S) return; const i = (y * S + x) * 4; img.data[i] = c[0]; img.data[i + 1] = c[1]; img.data[i + 2] = c[2]; img.data[i + 3] = 255; };
+        for (const k of cells.keys()) { const [x, y] = k.split(",").map(Number); for (const [ox, oy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) if (!cells.has(key(x + ox, y + oy))) put(x + ox, y + oy, C.O); }
+        for (const [k, c] of cells) { const [x, y] = k.split(",").map(Number); put(x, y, c); }
+        g.putImageData(img, 0, 0);
+        return cv;
+    }
+
+    let dig = null;
+    function digger() {
+        if (!matchMedia("(hover: hover) and (pointer: fine)").matches) return null;
+        const cv = document.createElement("canvas");
+        cv.className = "xm-dig"; cv.setAttribute("aria-hidden", "true");
+        document.body.appendChild(cv); added.add(cv);
+        const ctx = cv.getContext("2d");
+        let W = 0, H = 0;
+        const size = () => { W = cv.width = innerWidth; H = cv.height = innerHeight; drawn = true; kick(); };
+        const sp = { rest: shovelSprite([1, 1], false, false), right: shovelSprite([2, 1], true, true), left: shovelSprite([2, 1], false, true) };
+        const chunks = [];
+        for (let i = 0; i < 10; i++) chunks.push(chunkSprite(1.6 + (i % 5) * 0.75, i * 31 + 7));
+        const root = document.documentElement;
+        let px = -1, py = -1, over = false, down = false, dirn = 1, lastX = 0, lastY = 0, cutAt = 0, budget = 0;
+        let raf = 0, lastT = 0, refillAcc = 0, drawn = false, dirty0 = Infinity, dirty1 = -1, stroke = null;
+        const bits = [];   // { x, y, vx, vy, img, r } thrown chunks, and { powder } specks
+        const live = () => drift && drift.cv.isConnected && drift.h && drift.top;
+        const TAKES_CLICKS = "a,button,input,select,textarea,label,summary,[role=button],[role=link],[contenteditable='true'],[contenteditable='']";
+        const busy = (el) => !el || el.nodeType !== 1 || !!el.closest(TAKES_CLICKS) || /\bpointer\b/.test(getComputedStyle(el).cursor);   // the site's own pointer is a picture, with "pointer" as its fallback
+        // Is the pointer in the drift's snow (not above it), over nothing that takes a click?
+        function onSnow(x, y, el) {
+            if (!live()) return false;
+            const r = drift.cv.getBoundingClientRect(), c = Math.round(x - r.left);
+            if (c < 0 || c >= drift.w || y > r.bottom - 2) return false;
+            if (!drift.h[c] || y < r.top + drift.top[c] - 1) return false;
+            return !busy(el);
+        }
+        function show(v) {
+            if (v === over) return;
+            over = v;
+            root.classList.toggle("xm-shovel", v);
+            kick();
+        }
+        function markDirty(c) { if (c < dirty0) dirty0 = c; if (c > dirty1) dirty1 = c; }
+        // One bite of the blade at (x, y): down to its lip, no more than a layer a pass.
+        function cut(x, y) {
+            if (!live()) return;
+            const r = drift.cv.getBoundingClientRect(), Hc = drift.cv.height, w = drift.w;
+            if (!drift.dug || drift.dug.length !== w) drift.dug = new Float32Array(w);
+            if (!stroke || stroke.length !== w) stroke = new Float32Array(w);
+            const c0 = Math.round(x - r.left), lip = Hc - 2 - (y - r.top) - 2;
+            let took = 0, surf = Infinity;
+            for (let c = c0 - DIG.BLADE - 5; c <= c0 + DIG.BLADE + 5; c++) {
+                if (c < 0 || c >= w) continue;
+                const cur = drift.h[c];
+                if (cur <= 0) continue;
+                const e = Math.abs(c - c0), f = e <= DIG.BLADE ? 1 : smooth((DIG.BLADE + 5 - e) / 5);
+                const amt = (cur - Math.max(lip, cur - (DIG.STROKE - stroke[c]))) * f;
+                if (amt <= 0.05) continue;
+                drift.dug[c] += amt; stroke[c] += amt; drift.h[c] = Math.max(0, cur - amt);
+                took += amt; surf = Math.min(surf, r.top + Hc - 2 - cur);
+                markDirty(c);
+            }
+            if (!took) return;
+            cutAt = performance.now();
+            budget += took;
+            // What came off goes back over your shoulder: chunks, and a little powder.
+            while (budget >= DIG.CHUNK) {
+                budget -= DIG.CHUNK;
+                const big = Math.random() < 0.35, img = chunks[Math.floor(Math.random() * (big ? 10 : 5))];
+                bits.push({ x: x - dirn * 6, y: Math.min(y, surf) - 4, vx: -dirn * (70 + Math.random() * 170), vy: -(170 + Math.random() * 230), img, r: img.width / 2 });
+                for (let k = 0; k < 6; k++) bits.push({ powder: true, x: x - dirn * 4, y: Math.min(y, surf) - 3, vx: -dirn * (40 + Math.random() * 160), vy: -(90 + Math.random() * 200), life: 0.5 + Math.random() * 0.5 });
+            }
+        }
+        /* A chunk landing on the drift leaves a little snow where it lands, a
+           low bump, which then slumps: no column ends up more than a pixel
+           above both its neighbours, so heaps spread out rather than
+           stacking into a spire where the throws keep landing. */
+        function land(b, c) {
+            const w = drift.w, d = drift.dug || (drift.dug = new Float32Array(w)), h = drift.h;
+            const R = Math.max(6, Math.round(b.r * 3)), put = DIG.CHUNK * 0.15 / R;
+            for (let k = -R; k <= R; k++) {
+                const cc = c + k; if (cc < 0 || cc >= w) continue;
+                const v = put * Math.cos(k / R * Math.PI / 2) ** 2;
+                d[cc] -= v; h[cc] += v; markDirty(cc);
+            }
+            const lo = Math.max(1, c - R - 12), hi = Math.min(w - 2, c + R + 12);
+            for (let pass = 0; pass < 6; pass++) for (let x = lo; x <= hi; x++) {
+                if (!h[x]) continue;
+                const e = (h[x] - Math.max(h[x - 1], h[x + 1]) - 1) * 0.5;
+                if (e <= 0) continue;
+                d[x] += e; h[x] -= e; d[x - 1] -= e / 2; h[x - 1] += e / 2; d[x + 1] -= e / 2; h[x + 1] += e / 2;
+                markDirty(x - 1); markDirty(x + 1);
+            }
+        }
+        function refill(dt) {
+            const d = drift.dug, w = d.length;
+            refillAcc += dt;
+            if (refillAcc < 0.25) return;
+            const step = refillAcc; refillAcc = 0;
+            let lo = w, hi = -1;
+            for (let x = 0; x < w; x++) if (d[x]) { if (x < lo) lo = x; hi = x; }
+            if (hi < 0) { drift.dug = null; return; }
+            lo = Math.max(0, lo - 3); hi = Math.min(w - 1, hi + 3);
+            const rate = DIG.REFILL * (1 + 3 * storm) * step, mix = Math.min(1, 0.8 * step);
+            const s = d.slice(lo, hi + 1);
+            for (let x = lo; x <= hi; x++) {
+                const i = x - lo, n = (s[Math.max(0, i - 2)] + s[Math.max(0, i - 1)] + s[Math.min(s.length - 1, i + 1)] + s[Math.min(s.length - 1, i + 2)]) / 4;
+                let v = s[i] + (n - s[i]) * mix;               // the hole softens as it fills
+                v = v > 0 ? Math.max(0, v - rate) : Math.min(0, v + rate * 0.5);
+                d[x] = Math.abs(v) < 0.02 ? 0 : v;
+            }
+            markDirty(lo); markDirty(hi);
+        }
+        function frame(now) {
+            raf = 0;
+            const dt = Math.min(0.05, (now - (lastT || now)) / 1000); lastT = now;
+            const ok = live();
+            if (ok && drift.dug && !down) refill(dt);
+            const r = ok ? drift.cv.getBoundingClientRect() : null;
+            for (let i = bits.length - 1; i >= 0; i--) {
+                const b = bits[i];
+                b.vy += (b.powder ? 420 : 640) * dt; b.x += b.vx * dt; b.y += b.vy * dt;
+                if (b.powder) { b.life -= dt; if (b.life <= 0) bits.splice(i, 1); continue; }
+                if (b.y > H + 20 || b.x < -20 || b.x > W + 20) { bits.splice(i, 1); continue; }
+                if (r && b.vy > 0) {
+                    const c = Math.round(b.x - r.left);
+                    if (c >= 0 && c < drift.w && b.y + b.r >= r.top + drift.top[c]) { land(b, c); bits.splice(i, 1); }
+                }
+            }
+            if (ok && dirty1 >= 0) { paintDrift(dirty0, dirty1); dirty0 = Infinity; dirty1 = -1; }
+            if (drawn) { ctx.clearRect(0, 0, W, H); drawn = false; }
+            for (const b of bits) {
+                if (b.powder) { ctx.globalAlpha = Math.min(1, b.life * 2) * 0.9; ctx.fillStyle = "#fff"; ctx.fillRect(Math.round(b.x), Math.round(b.y), 1, 1); ctx.globalAlpha = 1; }
+                else ctx.drawImage(b.img, Math.round(b.x - b.r), Math.round(b.y - b.r));
+                drawn = true;
+            }
+            if (over && px >= 0) {
+                const s = down && now - cutAt < 260 ? (dirn > 0 ? sp.right : sp.left) : sp.rest;
+                const X = Math.round(px - s.ox), Y = Math.round(py - s.oy);
+                ctx.save();
+                if (r) {
+                    // The blade goes into the snow: nothing of it shows below the surface (or the cut it is making).
+                    ctx.beginPath(); ctx.moveTo(X - 1, -1);
+                    for (let x = X; x <= X + s.cv.width; x++) {
+                        const c = Math.round(x - r.left);
+                        const y = c >= 0 && c < drift.w && drift.h[c] ? Math.max(r.top + drift.top[c], py) + 3 : H + 1;
+                        ctx.lineTo(x, y); ctx.lineTo(x + 1, y);
+                    }
+                    ctx.lineTo(X + s.cv.width + 1, -1); ctx.closePath(); ctx.clip();
+                }
+                ctx.drawImage(s.cv, X, Y);
+                ctx.restore();
+                drawn = true;
+            }
+            if (over || bits.length || (ok && drift.dug)) raf = requestAnimationFrame(frame);
+        }
+        function kick() { if (!raf) { lastT = 0; raf = requestAnimationFrame(frame); } }
+        function move(e) {
+            if (e.pointerType === "touch") return;
+            const x = e.clientX, y = e.clientY;
+            if (down) {
+                if (Math.abs(x - lastX) > 0.5) dirn = x > lastX ? 1 : -1;
+                // Bite along the way, so a quick sweep cuts a whole trench, not a row of holes.
+                const n = Math.max(1, Math.ceil(Math.hypot(x - lastX, y - lastY) / 3));
+                for (let i = 1; i <= n; i++) cut(lastX + (x - lastX) * i / n, lastY + (y - lastY) * i / n);
+                lastX = x; lastY = y;
+            } else show(onSnow(x, y, e.target));
+            px = x; py = y;
+            if (over) kick();
+        }
+        function press(e) {
+            if (e.button !== 0 || e.pointerType === "touch" || !over) return;
+            e.preventDefault();                 // no text selected, nothing focused
+            down = true; lastX = px = e.clientX; lastY = py = e.clientY;
+            if (stroke) stroke.fill(0);
+            root.classList.add("xm-digging");
+            cut(px, py); kick();
+        }
+        function release() {
+            if (!down) return;
+            down = false; root.classList.remove("xm-digging");
+            if (stroke) stroke.fill(0);
+            show(px >= 0 && onSnow(px, py, document.elementFromPoint(px, py)));
+            kick();
+        }
+        function leave(e) { if (!e.relatedTarget && !down) show(false); }
+        function scrolled() { if (!down && px >= 0) show(onSnow(px, py, document.elementFromPoint(px, py))); }
+        size();
+        addEventListener("pointermove", move, { passive: true });
+        addEventListener("pointerdown", press);
+        addEventListener("pointerup", release);
+        addEventListener("pointercancel", release);
+        addEventListener("blur", release);
+        document.addEventListener("mouseout", leave);
+        addEventListener("scroll", scrolled, { passive: true });
+        addEventListener("resize", size);
+        return {
+            stop() {
+                cancelAnimationFrame(raf);
+                removeEventListener("pointermove", move); removeEventListener("pointerdown", press);
+                removeEventListener("pointerup", release); removeEventListener("pointercancel", release); removeEventListener("blur", release);
+                document.removeEventListener("mouseout", leave); removeEventListener("scroll", scrolled); removeEventListener("resize", size);
+                root.classList.remove("xm-shovel", "xm-digging");
+                cv.remove(); added.delete(cv);
+            }
+        };
     }
 
     /* ---------- THE SNOWED-IN MAZE (the background) ----------
@@ -2182,6 +2545,7 @@
         mo.observe(document.body, { childList: true, subtree: true, attributes: true, attributeOldValue: true, attributeFilter: ["class", "style", "hidden"] });
         decorateAll();
         snowfall();
+        dig = digger();
         // After the windows are up, so it can tell where they are.
         timers.push(setTimeout(backgroundTrees, 600));
         // A late font or a late list: one more pass once things settle.
@@ -2204,6 +2568,7 @@
         removeEventListener("resize", onResize); clearTimeout(rzTimer);
         cancelAnimationFrame(rafId); rafId = 0;
         if (snow) snow.stop(); snow = null;
+        if (dig) dig.stop(); dig = null;
         if (bgTrees) bgTrees.stop(); bgTrees = null;
         timers.splice(0).forEach((t) => { clearTimeout(t); clearInterval(t); });
         added.forEach((n) => n.remove()); added.clear();

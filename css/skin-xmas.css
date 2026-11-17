@@ -52,6 +52,20 @@ html[data-skin="xmas"] .xm-snowfall {
     pointer-events: none;
     image-rendering: pixelated;
 }
+/* Digging the footer's drift out (js/skin-xmas.js, digger): the shovel and the
+   snow it throws, over the snowfall and under the top bar. Over the snow the
+   cursor IS the shovel; :where keeps this weaker than any rule of the site's,
+   so anything set to show a pointer still does (and isn't dug over). */
+html[data-skin="xmas"] .xm-dig {
+    position: fixed;
+    inset: 0;
+    z-index: 46;
+    pointer-events: none;
+    image-rendering: pixelated;
+}
+html[data-skin="xmas"].xm-shovel { cursor: none; }
+html[data-skin="xmas"].xm-shovel :where(*) { cursor: inherit; }
+html[data-skin="xmas"].xm-digging, html[data-skin="xmas"].xm-digging :where(*) { user-select: none; -webkit-user-select: none; }
 
 
 /* The snowed-in background maze, its snow and its trees (js/skin-xmas.js,
