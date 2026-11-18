@@ -306,8 +306,8 @@
                 this.endedAt = now;
                 this.endedBecause = "complete";
                 this.message = this.speed
-                    ? `Every seat, in order. +${FINISH_BONUS} and +${this.speed} for the clock`
-                    : `Every seat, in order. +${FINISH_BONUS}`;
+                    ? `Every seat, in order. +${FINISH_BONUS} and +${this.speed} for the clock.`
+                    : `Every seat, in order. +${FINISH_BONUS}.`;
                 return this;
             },
 

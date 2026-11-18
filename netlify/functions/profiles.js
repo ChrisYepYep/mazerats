@@ -64,6 +64,38 @@ const SEARCH_LIMIT = 10;
 // How long a search waits on Origins for Habbo heads it has not cached.
 const SEARCH_HABBO_MS = 2500;
 const SCAN_EVERY_MS = 60 * 1000;
+
+/* NEW NAMES ASKED OF ORIGINS, PER NETWORK (scan 18 Nov evening). A search and
+   ?h= ask Origins for any typed name, and they had only the site's general
+   limit, so a script could walk invented names and get the site's Habbo
+   asks rested for everybody. Each network may have ORIGINS_NAMES_PER_MINUTE
+   different names looked up a minute on this warm instance (in memory,
+   nothing kept; a name asked again is free). Past it a search leaves out
+   its Habbo results and ?h= answers 429. A person typing a name in the
+   search box asks a handful. ?h= also counts as a search now (budgetOf in
+   _ratelimit.js). */
+const ORIGINS_NAMES_PER_MINUTE = 30;
+const ORIGINS_NETS_MAX = 5000;
+const originsAsks = new Map();      // network code -> { minute, names: Set }
+function originsAskAllowed(event, name) {
+    const net = event ? require("./_ratelimit").keyOf(event) : null;
+    if (!net) return true;
+    const minute = Math.floor(Date.now() / 60000);
+    let e = originsAsks.get(net);
+    if (!e || e.minute !== minute) {
+        if (originsAsks.size >= ORIGINS_NETS_MAX) {
+            for (const [k, v] of originsAsks) if (v.minute !== minute) originsAsks.delete(k);
+            if (originsAsks.size >= ORIGINS_NETS_MAX) originsAsks.clear();
+        }
+        e = { minute, names: new Set() };
+        originsAsks.set(net, e);
+    }
+    const key = String(name).trim().toLowerCase();
+    if (e.names.has(key)) return true;
+    if (e.names.size >= ORIGINS_NAMES_PER_MINUTE) return false;
+    e.names.add(key);
+    return true;
+}
 // "Early Rat": signed in for the first time within this long of the launch.
 const EARLY_MS = 7 * 24 * 60 * 60 * 1000;
 
@@ -172,8 +204,9 @@ async function habbosNamed(db, name) {
 }
 
 // The search's Habbo results: one per hotel that has the name.
-async function habboResults(db, text, banned) {
+async function habboResults(db, text, banned, event) {
     if (!HABBO_NAME.test(text)) return [];
+    if (!originsAskAllowed(event, text)) return [];
     const found = await habbosNamed(db, text);
     const out = [];
     for (const { hotel, r } of found) {
@@ -184,7 +217,7 @@ async function habboResults(db, text, banned) {
 }
 
 /* ---- search ---- */
-async function search(db, q) {
+async function search(db, q, event) {
     const text = String(q || "").trim();
     if (text.length < SEARCH_MIN) return json(200, { players: [] });
     if (text.length > SEARCH_MAX) return json(400, { error: "Too long" });
@@ -206,7 +239,7 @@ async function search(db, q) {
     // Not shown profiles yet, and not switched on by hand: left out (isPublic).
     const introduced = { $or: [{ profileIntroAt: { $exists: true, $ne: null } }, { id: { $in: publicByChoice } }] };
     // The Habbo with exactly this name, on any hotel, asked alongside.
-    const habbosAsked = habboResults(db, text, banned).catch(e => {
+    const habbosAsked = habboResults(db, text, banned, event).catch(e => {
         console.error("profiles: Habbo search failed", e);
         return [];
     });
@@ -288,7 +321,7 @@ async function search(db, q) {
    What the window shows for a search result that is a Habbo rather than a
    profile (see habboStanding). A Habbo whose player's profile is public
    answers with that profile's public id instead, for the window to open. */
-async function habboView(db, rawName, rawHotel) {
+async function habboView(db, rawName, rawHotel, event) {
     const name = String(rawName || "").trim();
     const hotel = String(rawHotel || "COM").toUpperCase();
     if (!HOTELS.includes(hotel) || !HABBO_NAME.test(name)) return NOT_FOUND();
@@ -301,6 +334,7 @@ async function habboView(db, rawName, rawHotel) {
             return json(200, { pid });
         }
     }
+    if (!originsAskAllowed(event, name)) return json(429, { error: "Too many Habbo lookups just now. Wait a moment and try again.", reason: "rate-limit" });
     const look = await lookupOriginsName(db, hotel, name);
     if (!look) return json(503, { error: "Habbo Origins can't be reached just now." });
     if (!look.found || !look.profile) return NOT_FOUND();
@@ -500,8 +534,8 @@ exports.handler = async (event) => {
     }
 
     try {
-        if (q.q !== undefined) return await search(db, q.q);
-        if (q.h !== undefined) return await habboView(db, q.h, q.hotel);
+        if (q.q !== undefined) return await search(db, q.q, event);
+        if (q.h !== undefined) return await habboView(db, q.h, q.hotel, event);
 
         if (q.me !== undefined) {
             const player = playerFrom(event);

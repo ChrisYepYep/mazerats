@@ -13,8 +13,8 @@
     const today = () => new Date().toISOString().slice(0, 10);
     const prog = () => window.HallwayProgress, ROUND = "hallway-lost-round", CARRY = "hallway-carrying", VISITOR = "hallway-visitor";
     /* the clock and the points: the board's come from the server, on its clock; these are what the page shows meanwhile, worked out the same way */
-    const LIMIT_MS = 15 * 60e3, MIN_SECS = 20, LOSTFN = "/.netlify/functions/hallway-lost";
-    const pointsFor = (secs, hints) => { const s = Math.max(MIN_SECS, secs); if (s * 1000 > LIMIT_MS + 20e3) return 0; return Math.round((100 + 900 * Math.max(0, 1 - Math.min(s * 1000, LIMIT_MS) / LIMIT_MS)) / 10) * 10 + 150 * Math.max(0, 3 - (hints | 0)); };
+    const LIMIT_MS = 15 * 60e3, GRACE_MS = 20e3, MIN_SECS = 20, LOSTFN = "/.netlify/functions/hallway-lost";      // GRACE_MS: the server's GRACE_SECS
+    const pointsFor = (secs, hints) => { const s = Math.max(MIN_SECS, secs); if (s * 1000 > LIMIT_MS + GRACE_MS) return 0; return Math.round((100 + 900 * Math.max(0, 1 - Math.min(s * 1000, LIMIT_MS) / LIMIT_MS)) / 10) * 10 + 150 * Math.max(0, 3 - (hints | 0)); };
     const visitor = () => { try { return localStorage.getItem(VISITOR) || undefined; } catch (e) { return undefined; } };
     /* every search goes through the server on the site, signed in or not; the editor on its own has no server, so it chooses for itself */
     const adminHeader = () => { try { const t = localStorage.getItem("mazerats_admin_token"); return t ? { "x-admin-token": t } : {}; } catch (e) { return {}; } };      // an admin walking it before it opens still saves (10 Nov scan, server finding 7)
@@ -24,7 +24,11 @@
     let carryPts = 0;
     let things = null, imgs = new Map(); const thingImg = f => { let i = imgs.get(f); if (!i) { i = new Image(); let tries = 0; i.onload = () => LIVE.wake(); i.onerror = () => { if (++tries <= 6) setTimeout(() => { i.src = "art/ideas/lost/" + f + "?r=" + tries; }, 1500 * tries); }; i.src = "art/ideas/lost/" + f; imgs.set(f, i); } return i; };
     if (PLAY && window.HallwayProgress) HallwayProgress.load();
-    fetch("art/ideas/lost.json").then(r => r.json()).then(j => { things = j.filter(t => t && t.name && t.name.trim()); restore(); }).catch(() => { things = []; });
+    /* the list of things; asked for again before a search if it didn't come (scan 18 Nov evening: with no list, hustle said nothing was
+       missing while the server had already started the clock) */
+    let thingsAsk = null;
+    const loadThings = () => thingsAsk || (thingsAsk = fetch("art/ideas/lost.json").then(r => r.ok ? r.json() : Promise.reject(new Error(String(r.status)))).then(j => { things = j.filter(t => t && t.name && t.name.trim()); restore(); }).catch(() => { if (!things) things = []; thingsAsk = null; }));
+    loadThings();
     let round = null, carrying = null;
     const KIND_OF = k => k === "sofa" || k === "ghsofa" ? "sofa" : k === "chair" || k === "ghchair" ? "chair" : /table/.test(k) ? "table" : /^ero/.test(k) ? "planter" : null;
     const tilesOf = p => window.FurniParts && FurniParts.tiles ? FurniParts.tiles(p) : [[p.x, p.y]];
@@ -59,6 +63,8 @@
     let myName = null;
     async function newSearch(swap) {
         let pick;
+        /* the server isn't asked until this page knows the things it might name: a start without the list spent the clock, and a swap */
+        if (PLAY && !(things && things.length)) { await loadThings(); if (!(things && things.length)) return "nolist"; }
         if (PLAY) { const r = await lostPost({ act: swap ? "swap" : "start" }); if (!r || r.error) { if (r && r.noSwaps && round) { round.swapsLeft = 0; return "noswaps"; } return r && r.status === 429 ? "busy" : r && (r.error === "offline" || r.status >= 500) ? "offline" : null; } pick = fromServer(r);      // out of reach isn't "nothing missing" (15 Nov scan, live L7)
             /* a thing this page's list doesn't know (the two lists drifted apart): swapped for one it does, on the same clock (10 Nov scan, server finding 21) */
             if (!pick && r.swapsLeft > 0) { const r2 = await lostPost({ act: "swap" }); if (r2 && !r2.error) pick = fromServer(r2); } }
@@ -69,7 +75,9 @@
     function restore() { let polls = 0; const wait = setInterval(() => { if (!LIVE.map) { if (++polls > 600) clearInterval(wait); return; } clearInterval(wait);
         try { if (sessionStorage.getItem(ROUND)) { sessionStorage.removeItem(ROUND); lostPost({ act: "cancel" }); } try { localStorage.removeItem(ROUND); } catch (e) { /* the old shared flag */ } const c = localStorage.getItem(CARRY), t = c && things.find(q => q.k === c); if (t) { setCarry(t); carryPts = +localStorage.getItem(CARRY + "-pts") || 0; try { const m = JSON.parse(localStorage.getItem(CARRY + "-at") || "null"); carryMeta = m && m.k === t.k && m.at && m.t0 ? m : null; } catch (e) { carryMeta = null; } } } catch (e) { /* start afresh */ } tick(); }, 200); }
     /* leaving: the search ends on the server too */
-    addEventListener("pagehide", () => { if (!round || !PLAY) return; try { const b = new Blob([JSON.stringify({ act: "cancel", v: visitor() })], { type: "application/json" }); navigator.sendBeacon(LOSTFN, b); } catch (e) { /* it ends when they next start one */ } });
+    /* not when the page is only being kept for Back and Forward (e.persisted): brought back, it's still mid-search, and so is the server
+       (scan 18 Nov evening). If it's thrown away instead, the next visit's restore() ends the search */
+    addEventListener("pagehide", e => { if (!round || !PLAY || e.persisted) return; try { const b = new Blob([JSON.stringify({ act: "cancel", v: visitor() })], { type: "application/json" }); navigator.sendBeacon(LOSTFN, b); } catch (e) { /* it ends when they next start one */ } });
     function setCarry(t) { carrying = t; window.HallwayCarry.item = t ? thingImg(t.f) : null; try { if (t) localStorage.setItem(CARRY, t.k); else localStorage.removeItem(CARRY); } catch (e) { /* only this visit */ } LIVE.wake(); }
     const wanted = () => round;
 
@@ -182,6 +190,8 @@
             /* the server down or busy (a 5xx, or too many asks) isn't the search ending: the thing is kept, to try again. A 503 had handed it in
                "Not counted" and lost its points, though the search was still open on the server (18 Nov scan) */
             if (r && (r.error === "offline" || r.status >= 500 || r.status === 429)) { deskDown = true; flash("Can't reach Lost Property", "Hold on to it and try the desk again in a moment."); return; }
+            /* signed out, or the Hallway shut for maintenance mid-search, isn't the search ending either: kept, and said why (scan 18 Nov evening) */
+            if (r && (r.status === 401 || r.status === 403)) { deskDown = true; flash("Lost Property can't take it just now", r.status === 401 ? "You've been signed out. Hold on to it, sign in again, then try the desk." : "Hold on to it and try the desk again later."); return; }
             deskDown = false;
             if (r && r.capped) { pts = 0; note = ["Today's limit reached", "Handed in, but this one won't go on the board"]; }
             else if (r && r.error) { pts = 0; note = ["Not counted", "Handed in, but its search had ended"]; }
@@ -222,18 +232,21 @@
     function nice(name) { return String(name || "").split(" ").map(w => PROPER.test(w) ? w.charAt(0).toUpperCase() + w.slice(1).toLowerCase() : w.toLowerCase()).join(" "); }
     const H = "hustle", asking = t => "It's the " + nice(t.thing.name) + ". It's somewhere in the Hallway. Hand it in at the Lost Property desk when you find it.";
     const totalIn = () => { const p = prog(), l = p && p.get().lost; return (l && l.streak) || 0; };
-    async function startSearch() { busy = true; try { const t = await newSearch(false); if (t === "busy") { say(H, "Lots of people asking just now. Try me again in a little while."); return; } if (t === "offline") { say(H, "I can't reach the Lost Property office just now. Try me again in a little while."); return; } if (!t) { say(H, "Actually, I can't think of anything missing right now. Come back in a bit."); return; } say(H, t.resumed ? "You're still looking for one, remember? " + asking(t) : "Thank you! " + asking(t)); chatMenu(); } finally { busy = false; } }
+    async function startSearch() { busy = true; try { const t = await newSearch(false); if (t === "busy") { say(H, "Lots of people asking just now. Try me again in a little while."); return; } if (t === "offline" || t === "nolist") { say(H, "I can't reach the Lost Property office just now. Try me again in a little while."); return; } if (!t) { say(H, "Actually, I can't think of anything missing right now. Come back in a bit."); return; } say(H, t.resumed ? "You're still looking for one, remember? " + asking(t) : "Thank you! " + asking(t)); chatMenu(); } finally { busy = false; } }
     const DOING = { sofa: "I was having a sit-down on one of the sofas before it went.", chair: "I sat down on a chair for a bit, to look at my notes.", table: "I put my things down on a table for a minute.", planter: "I stopped to look at the plants on the way.", steps: "I sat on some small steps to catch my breath." };
     const floorWords = l => l.k === 0 ? "the Ground floor" : l.name;
     async function clue(t) {
-        const r = await lostPost({ act: "hint" }); t.hints = r && typeof r.hints === "number" ? r.hints : (t.hints || 0) + 1; if (t.hints <= 3) window.hwTrack("hallway_lost_clue"); const sp = t.spot;
+        /* on the site a clue is only given once the server has counted it (scan 18 Nov evening: a failed ask still showed it, and the
+           no-clue bonus was kept) */
+        const r = await lostPost({ act: "hint" }); if (PLAY && !(r && typeof r.hints === "number")) return r && r.status === 409 ? "I'm not sure that search is still on. Come and ask me again." : "Sorry, my mind's gone blank. Ask me again in a moment.";
+        t.hints = r && typeof r.hints === "number" ? r.hints : (t.hints || 0) + 1; if (t.hints <= 3) window.hwTrack("hallway_lost_clue"); const sp = t.spot;
         if (t.hints === 1) return "I'm fairly sure I was on " + floorWords(sp.l) + " when I lost it.";
         if (t.hints === 2) return DOING[kindOf(sp)] || "I wandered about a bit, I'll be honest.";
         if (t.hints === 3) { let best = null, bd = 1e9; for (const d of (sp.l.doors || [])) { const nm = d.name || (LIVE.doorName && LIVE.doorName(d)); if (!nm || d.spare) continue; const dx = (d.axis === "x" ? d.at : d.line) - sp.x, dy = (d.axis === "x" ? d.line : d.at) - sp.y, dd = Math.hypot(dx, dy); if (dd < bd) { bd = dd; best = nm; } } return best && bd <= 12 ? "Oh, and I remember walking past the door to " + best + "." : "I didn't go far from where I sat, I'm sure of that."; }
         return "That's honestly all I can remember. It's there somewhere!";
     }
     const NOT_NOW = ["Not right now", () => say(H, "No problem. I'll be sat here.")];
-    function chatMenu() { const list = []; if (round && !carrying) { list.push(["I'm on it", () => say(H, "Good luck. Mind the rats.")]); list.push(["Any idea where it is?", async () => { const t = round; if (t) { busy = true; const w = await clue(t).finally(() => { busy = false; }); say(H, w); chatMenu(); } }]); list.push(["What was it again?", () => { if (round) { say(H, asking(round)); chatMenu(); } }]); if (round.swapsLeft !== 0) list.push(["Ask for a different one", async () => { busy = true; const again = await newSearch(true).finally(() => { busy = false; }); if (again === "noswaps") say(H, "No, that's the last one I can swap. Keep looking for that one, the clock's still going."); else if (again === "offline") say(H, "I can't reach the Lost Property office just now. Keep looking for that one."); else if (again && again !== "busy") say(H, "Fine, forget that one. " + asking(again) + (again.swapsLeft === 0 ? " That's the last swap, mind." : "")); else say(H, "I can't think of another just now. Keep looking for that one."); chatMenu(); }]); } list.push(["Lost Property record", () => { ledger(); chatMenu(); }]); replies(list); }
+    function chatMenu() { const list = []; if (round && !carrying) { list.push(["I'm on it", () => say(H, "Good luck. Mind the rats.")]); list.push(["Any idea where it is?", async () => { const t = round; if (t) { busy = true; const w = await clue(t).finally(() => { busy = false; }); say(H, w); chatMenu(); } }]); list.push(["What was it again?", () => { if (round) { say(H, asking(round)); chatMenu(); } }]); if (round.swapsLeft !== 0) list.push(["Ask for a different one", async () => { busy = true; const again = await newSearch(true).finally(() => { busy = false; }); if (again === "noswaps") say(H, "No, that's the last one I can swap. Keep looking for that one, the clock's still going."); else if (again === "offline" || again === "nolist") say(H, "I can't reach the Lost Property office just now. Keep looking for that one."); else if (again && again !== "busy") say(H, "Fine, forget that one. " + asking(again) + (again.swapsLeft === 0 ? " That's the last swap, mind." : "")); else say(H, "I can't think of another just now. Keep looking for that one."); chatMenu(); }]); } list.push(["Lost Property record", () => { ledger(); chatMenu(); }]); replies(list); }
     let talked = false, busy = false;
     function talk() {
         if (busy) return; talked = true;
@@ -255,18 +268,28 @@
 
     /* ---------- the clock on screen, and what happens when it runs out ---------- */
     const fmt = ms => { const s = Math.max(0, Math.ceil(ms / 1000)); return Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0"); };
-    let hud = null, hudKey = "";
+    let hud = null, hudKey = "", lateWarned = 0;
+    /* what's left of a carried find's search, on the site (null in the editor alone, or for a find carried from before the desk counted it) */
+    const carryLeft = () => PLAY && carrying && carryMeta && carryMeta.t0 ? LIMIT_MS - (Date.now() - carryMeta.t0) : null;
     function tick() {
         const t = round, stage = document.getElementById("stage") || document.body;
         /* out of time: it's gone, a miss, and hustle will have another */
-        if (t && !carrying && t.t0 && Date.now() - t.t0 > LIMIT_MS) { const name = nice(t.thing.name), p = prog(), st = p && p.get(), lost = (st && st.lost) || {}; if (p) p.save({ lost: { ...lost, day: lost.day || today(), shelf: lost.shelf || [], missed: (lost.missed || 0) + 1 } }); round = null; saveRound(); window.hwTrack("hallway_lost_missed"); LIVE.wake(); flash("Time's up", "Too slow: the " + name + " went missing for good. Ask hustle for another."); }
+        /* after the server's 20 seconds' grace too, as it does (scan 18 Nov evening: "Time's up" at 15:00 while it still held the search open, so
+           asking hustle in that gap gave back the same search and a second miss) */
+        if (t && !carrying && t.t0 && Date.now() - t.t0 > LIMIT_MS + GRACE_MS) { const name = nice(t.thing.name), p = prog(), st = p && p.get(), lost = (st && st.lost) || {}; if (p) p.save({ lost: { ...lost, day: lost.day || today(), shelf: lost.shelf || [], missed: (lost.missed || 0) + 1 } }); round = null; saveRound(); window.hwTrack("hallway_lost_missed"); LIVE.wake(); flash("Time's up", "Too slow: the " + name + " went missing for good. Ask hustle for another."); }
         const now = round, show = !!(now || carrying) && !document.body.classList.contains("hw-screensaver");
         if (!show) { if (hud) hud.hidden = true; return; }
         if (!hud) { hud = document.createElement("button"); hud.type = "button"; hud.className = "hw-lost-hud"; hud.setAttribute("aria-label", "Lost Property: open your record"); hud.addEventListener("pointerdown", e => e.stopPropagation()); hud.addEventListener("click", () => ledger()); stage.appendChild(hud); }
         hud.hidden = false; const thing = carrying || now.thing, key = thing.k + (carrying ? "c" : "");
         if (key !== hudKey) { hudKey = key; hud.replaceChildren(); const i = document.createElement("img"); i.src = "art/ideas/lost/" + thing.f; i.alt = ""; const w = document.createElement("span"); w.className = "hw-lost-hud-words"; const a = document.createElement("small"), b = document.createElement("b"); w.append(a, b); hud.append(i, w); }
         const [small, big] = hud.querySelectorAll(".hw-lost-hud-words > *");
-        if (carrying) { small.textContent = "Hand it in at Lost Property"; big.textContent = carryPts ? carryPts + " pts" : nice(thing.name); hud.classList.remove("low", "very-low"); hud.classList.add("got"); return; }
+        /* carrying: the search's clock still runs on the server till it's handed in, so it's shown (scan 18 Nov evening: the points alone, and a
+           slow walk back, or a find carried into the next visit, was handed in "Not counted" with no warning) */
+        if (carrying) { hud.classList.add("got"); const left = carryLeft();
+            if (left === null) { small.textContent = "Hand it in at Lost Property"; big.textContent = carryPts ? carryPts + " pts" : nice(thing.name); hud.classList.remove("low", "very-low", "late"); return; }
+            if (left <= -GRACE_MS) { small.textContent = "Out of time: hand it in anyway"; big.textContent = "0 pts"; /* short: the name, drawn twice the size, ran out of the box */ hud.classList.remove("low", "very-low"); hud.classList.add("late");
+                if (lateWarned !== carryMeta.t0) { lateWarned = carryMeta.t0; flash("Out of time", "The search for the " + nice(thing.name) + " has run out. Hand it in for your shelf, but it won't score."); } return; }
+            small.textContent = fmt(left) + " left to hand in"; big.textContent = carryPts ? carryPts + " pts" : nice(thing.name); hud.classList.remove("late"); hud.classList.toggle("low", left < 120e3); hud.classList.toggle("very-low", left < 30e3); return; }
         hud.classList.remove("got"); const left = LIMIT_MS - (Date.now() - now.t0); small.textContent = "Find the " + nice(thing.name); big.textContent = fmt(left); hud.classList.toggle("low", left < 120e3); hud.classList.toggle("very-low", left < 30e3);
     }
     setInterval(() => { if (!document.hidden) tick(); }, 1000);
@@ -283,7 +306,7 @@
         const pic = el("div", "hw-lp-pic"); if (shown) pic.appendChild(img(shown, 2)); else pic.appendChild(el("span", "hw-lp-q", "?")); now.appendChild(pic);
         const words = el("div", "hw-lp-words"), live = el("div", "hw-lp-live"); now.appendChild(words);
         let timer = 0;
-        if (carrying) words.append(el("small", "", "You've found it"), el("b", "", "The " + nice(carrying.name)), el("p", "", "Hand it in at the Lost Property desk for its " + (carryPts || 0) + " points."));
+        if (carrying) { const left = carryLeft(); words.append(el("small", "", "You've found it"), el("b", "", "The " + nice(carrying.name)), el("p", "", left !== null && left <= -GRACE_MS ? "Its search has run out of time: hand it in at the desk for your shelf, but it won't score." : "Hand it in at the Lost Property desk for its " + (carryPts || 0) + " points" + (left !== null ? ", within " + fmt(left) + "." : "."))); }
         else if (t) { words.append(el("small", "", "Looking for"), el("b", "", "The " + nice(t.thing.name)), live); const upd = () => { const left = LIMIT_MS - (Date.now() - t.t0), secs = Math.round((Date.now() - t.t0) / 1000); live.replaceChildren(el("span", "hw-lp-clock" + (left < 120e3 ? " low" : ""), fmt(left) + " left"), el("span", "", "Clues " + Math.min(3, t.hints || 0) + " of 3"), el("span", "", "Worth " + pointsFor(secs, t.hints) + " points now")); }; upd(); timer = setInterval(upd, 1000); }
         else words.append(el("small", "", "Nothing to find just now"), el("b", "", "Find hustle in the Hallway"), el("p", "", "Each thing has 15 minutes. Find it fast, without clues, for the most points."));
         body.appendChild(now);
@@ -291,20 +314,21 @@
         const stats = el("div", "hw-lp-stats"); for (const [n, v] of [["Points", lost.points || 0], ["Best find", lost.best || 0], ["Brought back", lost.streak || 0], ["Missed", lost.missed || 0]]) { const s = el("div", "hw-lp-stat"); s.append(el("b", "", String(v)), el("small", "", n)); stats.appendChild(s); } body.appendChild(stats);
         /* two tabs: your shelf, and the week's board */
         const tabs = el("div", "hw-lp-tabs"), shelfTab = el("button", "on", "Handed in"), boardTab = el("button", "", "This week's best"), pane = el("div", "hw-lp-pane"); shelfTab.type = boardTab.type = "button"; tabs.setAttribute("role", "tablist"); for (const b of [shelfTab, boardTab]) b.setAttribute("role", "tab"); tabs.append(shelfTab, boardTab); body.append(tabs, pane);
-        const select = on => { for (const b of [shelfTab, boardTab]) { b.classList.toggle("on", b === on); b.setAttribute("aria-selected", String(b === on)); } };
+        let asked = 0;      // the board's answer lands only if its tab is still the one picked (scan 18 Nov evening)
+        const select = on => { asked++; for (const b of [shelfTab, boardTab]) { b.classList.toggle("on", b === on); b.setAttribute("aria-selected", String(b === on)); } };
         const showShelf = () => { select(shelfTab); pane.replaceChildren();
             const all = things || [], have = new Set(lost.shelf || []), count = all.filter(q => have.has(q.k)).length; pane.appendChild(el("p", "hw-lp-count", "Collected " + count + " of " + all.length));
             const shelf = el("div", "hw-lp-shelf"); for (const th of all) { const got = have.has(th.k), slot = el("div", "hw-lp-slot" + (got ? " got" : "")), i = img(th, 1); if (!got) i.alt = "Not found yet"; slot.title = got ? th.name : "Not found yet"; slot.appendChild(i); shelf.appendChild(slot); }
             if (st.key) { const slot = el("div", "hw-lp-slot got key"), i = el("img"); i.src = "art/wall/i_key.png"; i.alt = "The Caretaker's key"; slot.title = "The Caretaker's key"; slot.appendChild(i); shelf.appendChild(slot); }
             pane.appendChild(shelf); };
-        const showBoard = () => { select(boardTab); pane.replaceChildren(el("p", "hw-lp-count", "Loading the board..."));
+        const showBoard = () => { select(boardTab); const mine = asked, still = () => mine === asked && boardTab.classList.contains("on"); pane.replaceChildren(el("p", "hw-lp-count", "Loading the board..."));
             /* the Visitor's token in a header, out of the address and the logs (9 Nov scan, finding 11) */
             fetch(LOSTFN, { credentials: "same-origin", headers: { Accept: "application/json", ...(visitor() ? { "X-Hallway-Visitor": visitor() } : {}) } }).then(r => r.ok ? r.json() : Promise.reject(new Error(String(r.status)))).then(b => {
-                pane.replaceChildren(el("p", "hw-lp-count", "Monday to Sunday: points for everything found this week"));
+                if (!still()) return; pane.replaceChildren(el("p", "hw-lp-count", "Monday to Sunday: points for everything found this week"));
                 if (!b.rows.length) pane.appendChild(el("p", "hw-lp-empty", "Nobody's on the board yet this week. Be the first."));
                 else { const tb = el("table", "hw-lp-board"), hd = el("tr"); for (const h of ["#", "Mazer", "Points", "Found", "Best"]) hd.appendChild(el("th", "", h)); tb.appendChild(hd); for (const r of b.rows) { const tr = el("tr"); for (const v of [r.rank, r.name || "A Mazer", r.points, r.finds, r.best]) tr.appendChild(el("td", "", String(v))); tb.appendChild(tr); } pane.appendChild(tb); }
                 const p = prog(); pane.appendChild(el("p", "hw-lp-you", b.me ? "You: #" + b.me.rank + " with " + b.me.points + " points, as " + b.me.name : "Find something this week to get on the board." + (p && p.signedIn ? "" : " Signed out, you go on it as a Visitor with a number of your own; sign in with a nickname to use your name.")));
-            }).catch(() => pane.replaceChildren(el("p", "hw-lp-empty", "The board couldn't be reached just now."))); };
+            }).catch(() => { if (still()) pane.replaceChildren(el("p", "hw-lp-empty", "The board couldn't be reached just now.")); }); };
         shelfTab.addEventListener("click", showShelf); boardTab.addEventListener("click", showBoard); showShelf();
         const w = openWindow("Lost Property", body); w.back.classList.add("hw-lp-window");
         if (timer) { const stop = setInterval(() => { if (!w.back.isConnected) { clearInterval(timer); clearInterval(stop); } }, 1000); }
@@ -315,9 +339,9 @@
         const stage = document.getElementById("stage") || document.body, back = document.createElement("div"), win = document.createElement("div"), bar = document.createElement("div"), h = document.createElement("h2"), x = document.createElement("button"), xi = document.createElement("img"), frame = document.createElement("div");
         back.className = "mr-overlay hw-sheet"; back.setAttribute("role", "dialog"); back.setAttribute("aria-modal", "true"); back.setAttribute("aria-label", title); win.className = "mr-window"; bar.className = "mr-titlebar"; frame.className = "mr-frame hw-sheet-body"; h.textContent = title; x.className = "mr-close"; x.type = "button"; x.setAttribute("aria-label", "Close"); xi.src = "art/rooms/modal_topclose_x.png"; xi.alt = ""; x.appendChild(xi); bar.append(h, x);
         if (typeof content === "string") frame.innerHTML = content; else frame.appendChild(content); win.append(bar, frame); back.appendChild(win); stage.appendChild(back);
-        const before = document.activeElement, shut = () => { back.remove(); document.removeEventListener("keydown", key, true); if (before && before.focus && before.isConnected) before.focus({ preventScroll: true }); }, key = e => { if (e.key === "Escape") { e.stopImmediatePropagation(); shut(); return; }
+        const before = document.activeElement, shut = () => { back.remove(); document.removeEventListener("keydown", key, true); if (before && before.focus && before.isConnected) before.focus({ preventScroll: true }); }, newest = () => [...document.querySelectorAll(".hw-sheet")].pop() === back, key = e => { if (e.key === "Escape") { if (!newest()) return; e.stopImmediatePropagation(); shut(); return; }      // only the newest window (scan 18 Nov evening: the one underneath went first)
             /* Tab stays inside, as aria-modal says, as the picker's does (15 Nov scan, live L8); only the newest window's, when two are open */
-            if (e.key !== "Tab" || [...document.querySelectorAll(".hw-sheet")].pop() !== back) return;
+            if (e.key !== "Tab" || !newest()) return;
             const all = [...win.querySelectorAll("button, a[href], input, select, textarea, [tabindex]:not([tabindex='-1'])")].filter(q => !q.disabled && q.offsetParent !== null); if (!all.length) return; const i = all.indexOf(document.activeElement);
             if (e.shiftKey && i <= 0) { e.preventDefault(); all[all.length - 1].focus(); } else if (!e.shiftKey && (i === all.length - 1 || i < 0)) { e.preventDefault(); all[0].focus(); } };
         document.addEventListener("keydown", key, true); x.addEventListener("click", shut); back.addEventListener("pointerdown", e => e.stopPropagation()); back.addEventListener("click", e => { if (e.target === back) shut(); }); x.focus();

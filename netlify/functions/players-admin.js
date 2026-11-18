@@ -628,6 +628,17 @@ async function update(event, db, role) {
     if (typeof body.id !== "string" || !ID_SHAPE.test(body.id)) return json(400, { error: "Which player? Send their Discord id." });
 
     const hasNick = Object.prototype.hasOwnProperty.call(body, "nick");
+    /* ONE SINGLE-PURPOSE CHANGE A SAVE (scan 18 Nov evening). Each of these
+       goes on its own, and each guard below listed the others it refused
+       beside it, but not all of them: "unTurnDown + ffBeta" did the first,
+       dropped the second and still said OK. Counted here once, so no pair
+       can slip past. The nickname, lock and prompt reset still go together;
+       any of them beside one of these is refused too. */
+    const SINGLE = ["unTurnDown", "motto", "habboLink", "habboGuess", "ffBeta", "dismissClash", "review"];
+    const singles = SINGLE.filter(k => body[k] !== undefined);
+    if (singles.length > 1 || (singles.length === 1 && (hasNick || body.locked !== undefined || body.resetPrompt !== undefined))) {
+        return json(400, { error: "That change goes on its own. Save one change at a time." });
+    }
     if (body.unTurnDown !== undefined) {
         if (typeof body.unTurnDown !== "string" || !body.unTurnDown || body.unTurnDown.length > 64) {
             return json(400, { error: "unTurnDown is one of their turned-down names, as the list has it." });

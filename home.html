@@ -912,91 +912,6 @@
                  at first, and which put it behind .container, where nothing
                  could be hovered or clicked. -->
             <div class="archive-stack">
-                <!-- One handle, one panel, at every width.
-
-                     This was three separate ribbons stacked down the window's
-                     right edge. At rest each showed 30px and no words — three
-                     blank stubs — and the labels only appeared on hover, which
-                     is an affordance a touch screen does not have. A fourth
-                     would have sat past the window's bottom edge, and keeping
-                     ribbons on a desktop while a phone got a drawer meant two
-                     mental models to maintain.
-
-                     A spine reads down the edge with its label always legible,
-                     and what it opens is one panel that can hold any number of
-                     ways in — with each row carrying its own state, so the menu
-                     is worth opening rather than merely a way to get somewhere.
-
-                     A real button: the daily game has no other route in, so it
-                     has to be reachable by keyboard and to say what it is. -->
-                <!-- One unit: the panel and the spine side by side, with the
-                     panel to the LEFT so it sits hidden behind the window
-                     while only the spine clears its edge. Opening slides the
-                     whole thing right, and the panel comes out from behind
-                     the frame — a card pulled from a slot, which is the
-                     motion the single tab always had, now carrying a panel
-                     rather than a word.
-
-                     The panel is written by js/home.js rather than here
-                     because every row carries a live count. -->
-                <div class="side-drawer" id="side-drawer">
-                    <div class="side-menu" id="side-menu" role="group" aria-label="Ways into the archive"></div>
-                    <button type="button" class="side-spine side-spine--menu" id="side-spine"
-                            aria-expanded="false" aria-controls="side-menu"
-                            aria-label="Menu: more ways into the archive">
-                        <span class="side-spine-label" aria-hidden="true">Menu</span>
-                        <!-- Two marks, one shown at a time, chosen by width.
-
-                             On a desktop the tab is a labelled spine: it says
-                             MENU down its side, so the arrow is the right
-                             mark beside it — it describes the motion, which
-                             is the only thing left to say once the word has
-                             said what it is.
-
-                             On a phone the word is gone (sideways text in a
-                             44px square is unreadable), and a lone arrow
-                             against the window's edge says "something slides
-                             out" without saying what. There the burger goes
-                             instead: the shape every phone has trained people
-                             to find, on the one control that is the only way
-                             to the games.
-
-                             The burger is one empty span — the middle bar IS
-                             the span and its ::before and ::after are the
-                             other two — which is what lets it fold into a
-                             cross when the menu opens, so the control says
-                             how to close itself in the same shape it used to
-                             say how to open.
-
-                             The modal's own Actions tab keeps the arrow at
-                             every width: it is a disclosure, not a menu. -->
-                        <span class="side-spine-arrow" aria-hidden="true">&#9654;&#xFE0E;</span>
-                        <span class="side-spine-burger" aria-hidden="true"></span>
-                    </button>
-                </div>
-
-                <!-- THE SPOTLIGHT (3 Oct 2026, the owner's): the landing
-                     page's event spotlight, on the archive too. A second tab
-                     under MENU, built the same way, and what it pulls out
-                     from behind the window is the spotlight card itself —
-                     the card is the panel. Ships hidden: js/home.js shows it
-                     only while an event is in its spotlight window, the same
-                     rule the landing page uses. On a phone the tab moves onto
-                     the titlebar's left end, the burger's mirror image, and
-                     the card drops from it as the menu's panel does. -->
-                <div class="side-drawer side-drawer--spotlight" id="spotlight-drawer" hidden>
-                    <div class="spotlight-card" id="spotlight-card" role="region" aria-label="Event spotlight"></div>
-                    <button type="button" class="side-spine side-spine--spotlight" id="spotlight-spine"
-                            aria-expanded="false" aria-controls="spotlight-card"
-                            aria-label="Spotlight: the event in the spotlight">
-                        <span class="side-spine-label" aria-hidden="true">Spotlight</span>
-                        <span class="side-spine-arrow" aria-hidden="true">&#9654;&#xFE0E;</span>
-                        <!-- Phones only, in place of the word: see
-                             .side-spine-star in css/style.css. -->
-                        <span class="side-spine-star" aria-hidden="true"></span>
-                    </button>
-                </div>
-
             <div class="chrome-window" id="browse-window" tabindex="-1">
                 <img class="window-peek-rat" src="assets/img/rat_peek-2x.png" srcset="assets/img/rat_peek-2x.png 2x, assets/img/rat_peek.png 3x" alt="" aria-hidden="true">
                 <div class="chrome-titlebar">
@@ -1170,6 +1085,94 @@
                 </div>
                 <img class="window-sleep-rat" src="assets/img/rat_sleep.png" alt="" aria-hidden="true">
             </div>
+                <!-- After the window in the page (scan 18 Nov evening), so Tab
+                     reaches the window's own title, bulb and tabs before these
+                     two side tabs. Where each is drawn is set by its z-index
+                     (the window 1, these 0, or 5 on a phone), not by order. -->
+                <!-- One handle, one panel, at every width.
+
+                     This was three separate ribbons stacked down the window's
+                     right edge. At rest each showed 30px and no words — three
+                     blank stubs — and the labels only appeared on hover, which
+                     is an affordance a touch screen does not have. A fourth
+                     would have sat past the window's bottom edge, and keeping
+                     ribbons on a desktop while a phone got a drawer meant two
+                     mental models to maintain.
+
+                     A spine reads down the edge with its label always legible,
+                     and what it opens is one panel that can hold any number of
+                     ways in — with each row carrying its own state, so the menu
+                     is worth opening rather than merely a way to get somewhere.
+
+                     A real button: the daily game has no other route in, so it
+                     has to be reachable by keyboard and to say what it is. -->
+                <!-- One unit: the panel and the spine side by side, with the
+                     panel to the LEFT so it sits hidden behind the window
+                     while only the spine clears its edge. Opening slides the
+                     whole thing right, and the panel comes out from behind
+                     the frame — a card pulled from a slot, which is the
+                     motion the single tab always had, now carrying a panel
+                     rather than a word.
+
+                     The panel is written by js/home.js rather than here
+                     because every row carries a live count. -->
+                <div class="side-drawer" id="side-drawer">
+                    <div class="side-menu" id="side-menu" role="group" aria-label="Ways into the archive"></div>
+                    <button type="button" class="side-spine side-spine--menu" id="side-spine"
+                            aria-expanded="false" aria-controls="side-menu"
+                            aria-label="Menu: more ways into the archive">
+                        <span class="side-spine-label" aria-hidden="true">Menu</span>
+                        <!-- Two marks, one shown at a time, chosen by width.
+
+                             On a desktop the tab is a labelled spine: it says
+                             MENU down its side, so the arrow is the right
+                             mark beside it — it describes the motion, which
+                             is the only thing left to say once the word has
+                             said what it is.
+
+                             On a phone the word is gone (sideways text in a
+                             44px square is unreadable), and a lone arrow
+                             against the window's edge says "something slides
+                             out" without saying what. There the burger goes
+                             instead: the shape every phone has trained people
+                             to find, on the one control that is the only way
+                             to the games.
+
+                             The burger is one empty span — the middle bar IS
+                             the span and its ::before and ::after are the
+                             other two — which is what lets it fold into a
+                             cross when the menu opens, so the control says
+                             how to close itself in the same shape it used to
+                             say how to open.
+
+                             The modal's own Actions tab keeps the arrow at
+                             every width: it is a disclosure, not a menu. -->
+                        <span class="side-spine-arrow" aria-hidden="true">&#9654;&#xFE0E;</span>
+                        <span class="side-spine-burger" aria-hidden="true"></span>
+                    </button>
+                </div>
+
+                <!-- THE SPOTLIGHT (3 Oct 2026, the owner's): the landing
+                     page's event spotlight, on the archive too. A second tab
+                     under MENU, built the same way, and what it pulls out
+                     from behind the window is the spotlight card itself —
+                     the card is the panel. Ships hidden: js/home.js shows it
+                     only while an event is in its spotlight window, the same
+                     rule the landing page uses. On a phone the tab moves onto
+                     the titlebar's left end, the burger's mirror image, and
+                     the card drops from it as the menu's panel does. -->
+                <div class="side-drawer side-drawer--spotlight" id="spotlight-drawer" hidden>
+                    <div class="spotlight-card" id="spotlight-card" role="region" aria-label="Event spotlight"></div>
+                    <button type="button" class="side-spine side-spine--spotlight" id="spotlight-spine"
+                            aria-expanded="false" aria-controls="spotlight-card"
+                            aria-label="Spotlight: the event in the spotlight">
+                        <span class="side-spine-label" aria-hidden="true">Spotlight</span>
+                        <span class="side-spine-arrow" aria-hidden="true">&#9654;&#xFE0E;</span>
+                        <!-- Phones only, in place of the word: see
+                             .side-spine-star in css/style.css. -->
+                        <span class="side-spine-star" aria-hidden="true"></span>
+                    </button>
+                </div>
             </div><!-- /.archive-stack -->
         </div>
     </main>

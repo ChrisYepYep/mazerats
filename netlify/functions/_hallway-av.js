@@ -41,4 +41,20 @@ async function keptFrame(store, figure, d, a, f, h) {
     return (await read(lookKey(figure, d, a, f, h))) || (h ? await read(lookKey(figure, d, a, f, "")) : null);
 }
 
-module.exports = { FIGURE, USER_AGENT, CORE_FRAMES, okFigure, figureHash, frameName, lookKey, frameUrl, fetchFrame, keptFrame };
+/* A NETWORK'S ASKS OF HABBO'S IMAGING, A MINUTE (14 Nov 2026 in hallway.js; here since the scan of 18 Nov evening, so habbo-outline.js
+   counts by the same rule). Each figure nobody asked for before misses the edge's copy and is an ask of Habbo, and too many of those can get
+   the site's addresses blocked by Habbo's firewall, which habbo.js and habbo-outline.js depend on too. So a network gets IMAGING_PER_NET asks
+   a minute on each warm instance, counted in memory by the rate limit's daily network code (nothing stored). true when there is room. */
+const IMAGING_PER_NET = 120;
+const imagingByNet = new Map();
+function imagingRoom(event) {
+    const key = require("./_ratelimit").keyOf(event);
+    if (!key) return true;
+    const minute = Math.floor(Date.now() / 60000), seen = imagingByNet.get(key), n = seen && seen.minute === minute ? seen.n + 1 : 1;
+    if (n > IMAGING_PER_NET) return false;
+    if (imagingByNet.size >= 5000) { for (const [k, v] of imagingByNet) if (v.minute !== minute) imagingByNet.delete(k); if (imagingByNet.size >= 5000) imagingByNet.clear(); }
+    imagingByNet.set(key, { minute, n });
+    return true;
+}
+
+module.exports = { FIGURE, USER_AGENT, CORE_FRAMES, okFigure, figureHash, frameName, lookKey, frameUrl, fetchFrame, keptFrame, imagingRoom, IMAGING_PER_NET };

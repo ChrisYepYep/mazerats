@@ -207,7 +207,7 @@ async function handle(event) {
             return cachedJson(event, all, { cache: false });
         }
         // spotlightAt too: the editor's version stamp (see PUT), nothing a page reads.
-        all.forEach(r => { delete r.slugAliases; delete r.slugManual; delete r.spotlightAt; });
+        all.forEach(r => { delete r.slugAliases; delete r.slugManual; delete r.slugAt; delete r.spotlightAt; });
         // Keyed at the edge on `full` alone, so a random parameter is not a
         // fresh read of the archive (2 Oct 2026) — see rooms.js.
         const res = cachedJson(event, await packRecords(all));
@@ -390,9 +390,18 @@ async function handle(event) {
         // there. Read before the write because the write is what destroys the
         // answer, and unable to fail the save.
         let previous = null;
+        let readFailed = false;
         try {
             previous = await events.findOne({ id: body.id });
-        } catch (e) { /* the update below reports a missing record on its own */ }
+        } catch (e) { readFailed = true; }
+        /* An event that is not there is 404 (scan 18 Nov evening). The save
+           went on to read previous.article, threw, and answered "couldn't be
+           saved, try again" (503) with a row in Errors every time. */
+        if (!previous) {
+            return readFailed
+                ? json(503, { error: "The event couldn't be saved just now. Try again in a moment." })
+                : json(404, { error: "Event not found" });
+        }
 
         // Somebody else saved it since the form opened — refused rather
         // than written over. See the same check in rooms.js.
@@ -449,10 +458,23 @@ async function handle(event) {
 
         // Its address — see the same step in rooms.js.
         let retired = [];
+        // Its own version, as rooms.js keeps it (THE ADDRESS'S OWN VERSION there).
+        const sentSlugAt = Object.prototype.hasOwnProperty.call(update, "slugAt") ? stamp(update.slugAt) : null;
+        delete update.slugAt;
         if (previous) {
             retired = await loadRetired(db, "event");
             const slugProblem = settleSlug(await events.find({}, { projection: SLUG_FIELDS }).toArray(), "event", previous, update, retired);
             if (slugProblem) return json(400, { error: slugProblem });
+            const aliases = v => JSON.stringify(Array.isArray(v) ? v : []);
+            const moved = String(previous.slug || "") !== String(update.slug || "")
+                || Boolean(previous.slugManual) !== Boolean(update.slugManual)
+                || aliases(previous.slugAliases) !== aliases(update.slugAliases);
+            if (moved) {
+                if (base !== null && sentSlugAt !== null && stamp(previous.slugAt) !== sentSlugAt) {
+                    return json(409, { error: CONFLICT, conflict: true });
+                }
+                update.slugAt = new Date().toISOString();
+            }
         } else {
             // Not settled, so not stored — see the same step in rooms.js.
             delete update.slug;

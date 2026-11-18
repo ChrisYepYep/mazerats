@@ -463,6 +463,15 @@ input, button { font-family: inherit; }
 
 .qz-players button:active { background: var(--danger); color: var(--on-amber); }
 
+/* "Already got Alice", under the box (scan 18 Nov evening). */
+.qz-add-hint {
+    margin: -4px 0 10px;
+    font-size: 13px;
+    color: var(--danger-soft);
+}
+
+.qz-add-hint[hidden] { display: none; }
+
 /* ============================== categories ============================= */
 
 .qz-cats {
@@ -1065,6 +1074,19 @@ input, button { font-family: inherit; }
     color: var(--parchment-dim);
 }
 
+/* The keyboard keys (scan 18 Nov evening), said only where there is a
+   mouse, so a phone never shows keys it does not have. */
+.qz-keys-hint { display: none; }
+
+@media (hover: hover) and (pointer: fine) {
+    .qz-keys-hint {
+        display: block;
+        margin: 6px 0 0;
+        font-size: 12.5px;
+        color: var(--parchment-dim);
+    }
+}
+
 /* --------------------------- setup: Christmas -------------------------- */
 
 .qz-card-xmas { padding-top: 6px; padding-bottom: 6px; }
@@ -1423,6 +1445,86 @@ input, button { font-family: inherit; }
         margin: 0 auto;
         border-radius: 18px 18px 0 0;
     }
+}
+
+/* ===================== a phone on its side (short) ===================== */
+
+/* Scan 18 Nov evening: at 844x390 the question area was a 165px strip,
+   because the header, two rows of soundboard and Back/Next took the rest,
+   and the answers and the players had to be scrolled inside it. On a short,
+   wide screen the bars get thinner, the soundboard goes to one row of eight,
+   and the stage splits in two: question and answers on the left, the
+   players on the right, so the names are beside the answers rather than
+   below them. Everything stays pinned where it was; only the sizes change. */
+@media (max-height: 520px) and (min-width: 600px) {
+    .qz-top { padding-top: calc(var(--safe-top) + 5px); padding-bottom: 5px; }
+    .qz-icon { width: 36px; height: 36px; }
+
+    .qz-play > .qz-sounds { grid-template-columns: repeat(8, 1fr); padding-top: 6px; }
+    .qz-snd { min-height: 34px; }
+
+    .qz-bottom { padding-top: 6px; padding-bottom: calc(var(--safe-bottom) + 6px); }
+    .qz-nav { padding: 9px 0; }
+
+    .qz-stage {
+        max-width: none;
+        display: grid;
+        grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr);
+        /* Five auto rows for the left-hand column, then a flexible one that
+           takes whatever height the players column needs beyond them, so
+           a long list of players never spreads the answers apart. */
+        grid-template-rows: auto auto auto auto auto 1fr;
+        column-gap: 22px;
+        align-content: start;
+        padding: 8px max(16px, env(safe-area-inset-right, 0px)) 16px max(16px, env(safe-area-inset-left, 0px));
+    }
+
+    /* Full width with the stage, not centred on the 572px column the
+       min-width: 640px block lines them up with. */
+    .qz-top, .qz-bottom, .qz-play > .qz-sounds {
+        padding-left: max(12px, env(safe-area-inset-left, 0px));
+        padding-right: max(12px, env(safe-area-inset-right, 0px));
+    }
+
+    .qz-stage > * { grid-column: 1; }
+    .qz-stage > .qz-cat-pill { justify-self: start; margin-bottom: 6px; }
+    .qz-stage > .qz-award { grid-column: 2; grid-row: 1 / -1; align-self: start; }
+
+    .qz-question { font-size: 20px; margin-bottom: 8px; }
+    .qz-opts { gap: 6px; margin-bottom: 10px; }
+    .qz-opt { min-height: 42px; font-size: 16px; padding-top: 5px; padding-bottom: 5px; }
+    .qz-opt-letter { width: 32px; height: 32px; }
+    .qz-reveal-row { margin-bottom: 10px; }
+    .qz-award-btn { min-height: 44px; padding: 8px 10px; }
+    .qz-life { min-width: 44px; padding: 0 6px; }
+}
+
+/* Under 800px the players' half is level with the answers' half, or the
+   three lifelines leave a name two letters wide. */
+@media (max-height: 520px) and (min-width: 600px) and (max-width: 799px) {
+    .qz-stage { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); column-gap: 16px; }
+}
+
+/* Wide enough for Back and Next to sit at either end of the soundboard's
+   row rather than on a row of their own below it: another 50px for the
+   question. The soundboard spans the whole row (its panel is the bar's
+   background) and is padded clear of the two buttons laid over its ends. */
+@media (max-height: 520px) and (min-width: 800px) {
+    .qz-play {
+        display: grid;
+        grid-template-rows: auto minmax(0, 1fr) auto;
+        grid-template-columns: 122px minmax(0, 1fr) 162px;
+    }
+    .qz-play > .qz-top, .qz-play > .qz-stage { grid-column: 1 / -1; }
+    .qz-play > .qz-sounds {
+        grid-row: 3;
+        grid-column: 1 / -1;
+        padding: 6px 168px calc(var(--safe-bottom) + 6px) 128px;
+    }
+    .qz-bottom { display: contents; }
+    .qz-nav { grid-row: 3; z-index: 1; align-self: start; margin-top: 7px; padding: 0; height: 34px; }
+    .qz-nav-prev { grid-column: 1; margin-left: max(12px, env(safe-area-inset-left, 0px)); }
+    .qz-nav-next { grid-column: 3; margin-right: max(12px, env(safe-area-inset-right, 0px)); }
 }
 
 @media (prefers-reduced-motion: reduce) {

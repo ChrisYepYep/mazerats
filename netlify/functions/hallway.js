@@ -18,7 +18,6 @@ const crypto = require("crypto");
 const { blobStore } = require("./_blobs.js");
 const auth = require("./_auth.js");
 const { SECURITY_HEADERS } = require("./_headers");
-const { keyOf } = require("./_ratelimit");
 
 const STORE = "hallway", MAX_MAP = 4 * 1024 * 1024, MAX_TILE = 3 * 1024 * 1024, HASH = /^[a-f0-9]{20}$/, FRESH_MS = 10 * 60e3;
 const reply = (statusCode, body, extra) => ({ statusCode, headers: { ...SECURITY_HEADERS, "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store", ...(extra || {}) }, body: typeof body === "string" ? body : JSON.stringify(body) });
@@ -38,17 +37,10 @@ const av = require("./_hallway-av");
    habbo.js and habbo-outline.js depend on too. So a network gets AV_PER_NET frames a minute from Habbo on each warm instance (counted
    in memory by the rate limit's daily network code, nothing stored), the last AV_KEEP frames are kept here and answered without
    asking again, and a refusal from Habbo (a 403 from its firewall) is never asked twice: only a 5xx is tried again. */
-const AV_PER_NET = 120, AV_KEEP = 300;
-const avByNet = new Map(), avKept = new Map();
-function avRoom(event) {
-    const key = keyOf(event);
-    if (!key) return true;
-    const minute = Math.floor(Date.now() / 60000), seen = avByNet.get(key), n = seen && seen.minute === minute ? seen.n + 1 : 1;
-    if (n > AV_PER_NET) return false;
-    if (avByNet.size >= 5000) { for (const [k, v] of avByNet) if (v.minute !== minute) avByNet.delete(k); if (avByNet.size >= 5000) avByNet.clear(); }
-    avByNet.set(key, { minute, n });
-    return true;
-}
+const AV_KEEP = 300;
+const avKept = new Map();
+// The count itself is _hallway-av.js's imagingRoom now (scan 18 Nov evening), shared with habbo-outline.js; AV_PER_NET is its IMAGING_PER_NET.
+const avRoom = event => av.imagingRoom(event);
 const avReply = b => ({ statusCode: 200, isBase64Encoded: true, headers: { ...SECURITY_HEADERS, "Content-Type": "image/png", ...KEEP_WEEK }, body: b.toString("base64") });
 async function avatarFrame(q, event) {
     const figure = String(q.av || ""), d = String(q.d), a = String(q.a), f = String(q.f || "0"), h = String(q.h || "");

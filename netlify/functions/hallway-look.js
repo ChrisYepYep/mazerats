@@ -16,6 +16,7 @@ const { livePlayerFrom } = require("./_player");
 const { blobStore } = require("./_blobs.js");
 const { SECURITY_HEADERS } = require("./_headers");
 const av = require("./_hallway-av");
+const { writeRefusal } = require("./_bans");
 
 const STORE = "hallway";
 const LOOKS_PER_DAY = 10;
@@ -86,6 +87,16 @@ exports.handler = async (event) => {
     }
 
     if (!sameOrigin(event)) return reply(403, { error: "Not from this site" });
+    /* Bans and the Hallway's switch first (scan 18 Nov evening): a banned
+       account could still save looks, each up to 48 asks of Habbo's imaging.
+       Only while the Hallway is live, or for an admin walking it before then
+       (the page sends its x-admin-token, as Lost Property does), as
+       _hallway-open.js rules for the Hallway's other writes. */
+    const open = await require("./_hallway-open").hallwayOpen(db, event);
+    if (open === null) return reply(503, { error: "Couldn't save just now" });
+    if (!open) return reply(403, { error: "The Hallway isn't open yet" });
+    const refusal = await writeRefusal(db, event, player.id);
+    if (refusal) return refusal;
     let body; try { body = JSON.parse(event.body || "{}"); } catch (e) { return reply(400, { error: "Not JSON" }); }
     const figure = body && body.figure;
     if (!av.okFigure(figure)) return reply(400, { error: "Not a figure" });
@@ -107,3 +118,6 @@ exports.handler = async (event) => {
 };
 
 exports.handler = require("./_errors").withErrorReporting("hallway-look", exports.handler);
+// For player-forget.js: a forgotten player's look takes its frames with it.
+exports.dropFrames = dropFrames;
+exports.STORE = STORE;

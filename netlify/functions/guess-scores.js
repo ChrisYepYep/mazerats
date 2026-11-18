@@ -489,7 +489,23 @@ exports.handler = async (event) => {
             const dealt = deal.rounds[round];
             const guess = typeof body.guess === "string" ? body.guess : "";
             const offered = dealt && speed.optionFor(dealt.options, guess);
-            if (!offered) return privateJson(400, { error: "Bad move" });
+            /* A name that is not one of the room's five is a bad move only in
+               a room the player has been handed (scan 18 Nov evening). Asked
+               of a later room, 400 for a wrong name and 409 for a real
+               option told a script that room's five names before it was
+               dealt. So a room not yet begun answers 409 out-of-order (or
+               no-start) whatever the name, as recordGuess does for a real
+               one. */
+            if (!offered) {
+                let row = null;
+                try { row = await speed.progressFor(db, "guess", day, player.id); } catch (e) { row = null; }
+                if (!row) return privateJson(409, { reason: "no-start" });
+                const key = "r" + round;
+                const handed = (row.moves && row.moves[key]) || (row.marks && row.marks[key]) ||
+                    round === 0 || (row.begun && row.begun[key]);
+                if (!handed || (round > 0 && !(row.marks && row.marks["r" + (round - 1)]))) return privateJson(409, { reason: "out-of-order" });
+                return privateJson(400, { error: "Bad move" });
+            }
 
             let outcome;
             try {

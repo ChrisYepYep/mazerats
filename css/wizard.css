@@ -2368,6 +2368,25 @@ body.is-albus .admin-panel[data-panel="wizard"] .admin-wiz-inline-form [data-cle
     .wiz-controls { gap: 8px; }
     .wiz-controls button { width: 44px; height: 44px; font-size: 20px; }
     .wiz-zoom-label { padding: 10px 8px; }
+
+    /* The room names, zoomed out on a phone, were 11 to 24px tall to a
+       finger ("On Board" 30x11; scan 18 Nov evening). An invisible pad
+       round each makes it at least 36px on screen whatever the zoom: the
+       label is scaled by the map (--wiz-scale) and by its own size
+       (--room-scale), so the pad is divided by both. Never smaller than
+       the label, and not in the Warren's editor, where a press on the map
+       means something else. ::before because the entrance's ::after is
+       its underline. */
+    .wiz-stage:not(.admin-wiz-stage) .wiz-room::before {
+        content: "";
+        position: absolute;
+        left: 50%;
+        top: 50%;
+        width: max(100%, calc(36px / var(--wiz-scale, 1) / var(--room-scale, 1)));
+        height: max(100%, calc(36px / var(--wiz-scale, 1) / var(--room-scale, 1)));
+        transform: translate(-50%, -50%);
+        background: transparent;
+    }
 }
 
 /* THE SEARCH FIELD IS DRAWN AT 16px AND SHRUNK BACK TO 13px.
@@ -2405,4 +2424,11 @@ body.is-albus .admin-panel[data-panel="wizard"] .admin-wiz-inline-form [data-cle
         border-radius: calc(6px / 0.8125);
         margin-bottom: calc(36px - 36px / 0.8125);
     }
+}
+
+/* The Warren's Wizard tab on a phone: its tool buttons were 26px tall, the rest of the Warren's 36-38px
+   since tonight's fixes (scan 18 Nov evening). Bigger to tap only; a computer's toolbar is unchanged. */
+@media (pointer: coarse), (max-width: 900px) {
+    .admin-wiz-toolbar button,
+    .admin-wiz-hold-tools button { min-height: 38px; min-width: 38px; }
 }

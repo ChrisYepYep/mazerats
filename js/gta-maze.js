@@ -94,13 +94,15 @@
         const compact = !!opts.compact;
         const R = compact ? 18 : 20, WL = compact ? 5 : 6, P = R + WL;     // road, block, cell pitch (CSS px)
         let level = Math.max(1, opts.level || 1);
+        // With a mouse a drag on the map only looks around; a finger's drag steers (scan 18 Nov evening).
+        const fingers = !!(window.matchMedia && matchMedia("(pointer: coarse)").matches);
 
         host.innerHTML =
             `<div class="gm-hud"><span class="gm-lv"></span><span class="gm-stars" aria-hidden="true"></span><span class="gm-cash"></span>` +
             `<button type="button" class="gm-x" aria-label="Close Maze Maps">✕</button></div>` +
             `<div class="gm-view"><canvas class="gm-cv" aria-label="Maze Maps: drive the pink blip to the flag" role="img"></canvas>` +
             `<div class="gm-say" hidden></div><div class="gm-card" hidden></div></div>` +
-            `<div class="gm-foot">${compact ? "Hold the pad, or drag on the map" : "Hold arrows / WASD · drag the map to look"}</div>` +
+            `<div class="gm-foot">${compact && fingers ? "Hold the pad, or drag on the map" : compact ? "Arrow keys or the pad · drag the map to look" : "Hold arrows / WASD · drag the map to look"}</div>` +
             (compact ? `<div class="gm-pad" aria-label="Steer"><button type="button" data-dir="up" aria-label="Up">▲</button><button type="button" data-dir="left" aria-label="Left">◀</button><button type="button" data-dir="right" aria-label="Right">▶</button><button type="button" data-dir="down" aria-label="Down">▼</button></div>` : "");
         host.classList.add("gm", compact ? "gm-compact" : "gm-wide");
         const view = host.querySelector(".gm-view"), cv = host.querySelector(".gm-cv"), ctx = cv.getContext("2d");
@@ -362,7 +364,7 @@
             card.hidden = false;
             if (opts.onBusted) opts.onBusted(level);
         }
-        function retry() { if (state === "busted") { newLevel(true); host.focus({ preventScroll: true }); } }
+        function retry() { if (state === "busted") { newLevel(true); if (opts.onRetry) opts.onRetry(level); host.focus({ preventScroll: true }); } }
         function next() { if (state === "passed") { level++; newLevel(false); host.focus({ preventScroll: true }); } }
 
         // ---- input: what is held down right now
@@ -391,7 +393,9 @@
                 return;
             }
             if ((e.key === " " || e.key === "Enter") && state !== "play") {
-                if (a && a.tagName === "BUTTON" && host.contains(a)) return;   // the button's own click does it
+                // Only with the keyboard in the game: Enter on a link elsewhere on the page was taken as Try again (scan 18 Nov evening).
+                if (!a || (a !== host && !host.contains(a))) return;
+                if (a.tagName === "BUTTON" && host.contains(a)) return;   // the button's own click does it
                 e.preventDefault();
                 if (state === "busted") retry(); else next();
             }

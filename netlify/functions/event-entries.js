@@ -181,6 +181,11 @@ const SENDER_BYTES_PER_DAY = 40 * 1024 * 1024;
 const GLOBAL_BYTES_PER_DAY = 400 * 1024 * 1024;
 // Entries one entrant may make for one event: theirs, and a correction.
 const EVENT_ENTRIES = 2;
+/* Signed-out entries one network may make for one event (scan 18 Nov
+   evening). They are counted by Habbo name, so one person could send ten a
+   day for one event by typing a new name each time. Four: a household or a
+   school's shared address with two entrants still has room for both. */
+const NET_EVENT_ENTRIES = 4;
 
 // How long an event with no usable end date runs — js/event-status.js's rule.
 const DEFAULT_EVENT_MS = 3 * 60 * 60 * 1000;
@@ -401,7 +406,8 @@ async function withinByteQuota(db, senderKey, bytes) {
        used to go on counting against the sender's day all the same. */
     if (mine <= SENDER_BYTES_PER_DAY && everyone <= GLOBAL_BYTES_PER_DAY) return refund;
     await refund();
-    return null;
+    // Whose limit it was, so the words are right (scan 18 Nov evening).
+    return { over: senderKey && mine > SENDER_BYTES_PER_DAY ? "mine" : "site" };
 }
 
 // ------------------------------------------------------------------ POST
@@ -542,6 +548,11 @@ async function handlePost(event, db) {
     const EVENT_FULL = ev ? `You've already sent two entries for ${ev.title}: your entry and its correction. That's as many as there can be.` : "";
     const before = await countForEvent();
     if (before >= EVENT_ENTRIES) return json(429, { error: EVENT_FULL, eventFull: true });
+    // See NET_EVENT_ENTRIES.
+    const netForEvent = ev && !player && net ? { eventId: ev.id, from: null, net } : null;
+    const countNetForEvent = () => (netForEvent ? entries.countDocuments(netForEvent) : Promise.resolve(0));
+    const NET_EVENT_FULL = ev ? `That's as many entries for ${ev.title} as can be sent from this network without signing in. Sign in to send yours.` : "";
+    if (await countNetForEvent() >= NET_EVENT_ENTRIES) return json(429, { error: NET_EVENT_FULL, eventFull: true });
     const day = new Date().toISOString().slice(0, 10);
     const key = `${KEY_PREFIX}${day}/${crypto.randomUUID()}.${kind.ext}`;
     const entry = {
@@ -586,12 +597,31 @@ async function handlePost(event, db) {
         if (await countNet(DAY_MS) > NET_DAY_LIMIT) { await takeBack(); return json(429, { error: NET_TOO_MANY_TODAY }); }
         if (await countAll() > GLOBAL_PER_HOUR) { await takeBack(); return json(429, { error: BUSY }); }
         if (await countForEvent() > EVENT_ENTRIES) { await takeBack(); return json(429, { error: EVENT_FULL, eventFull: true }); }
-        const quotaKey = player ? `p:${player.id}` : net;
-        refundBytes = await withinByteQuota(db, quotaKey, buffer.length);
-        if (!refundBytes) {
-            await takeBack();
-            return json(429, { error: TOO_MANY_TODAY });
+        if (await countNetForEvent() > NET_EVENT_ENTRIES) { await takeBack(); return json(429, { error: NET_EVENT_FULL, eventFull: true }); }
+        /* WHICH IS THE CORRECTION, decided now the row is in (scan 18 Nov
+           evening). Two sends at the same moment both counted no entry
+           before their insert, so neither was marked. Of this entrant's rows
+           for the event, the earliest (by time, then id, the same order for
+           every request) is the entry and any other the correction. */
+        if (ev && mineForEvent) {
+            const mineRows = await entries.find(mineForEvent, { projection: { _id: 0, id: 1, createdAt: 1 } })
+                .sort({ createdAt: 1, id: 1 }).limit(EVENT_ENTRIES + 1).toArray();
+            const first = mineRows.length && mineRows[0].id === entry.id;
+            const correction = !first && mineRows.some(r => r.id === entry.id);
+            if (correction !== (entry.correction === true)) {
+                await entries.updateOne({ id: entry.id }, correction ? { $set: { correction: true } } : { $unset: { correction: "" } });
+                if (correction) entry.correction = true; else delete entry.correction;
+            }
         }
+        const quotaKey = player ? `p:${player.id}` : net;
+        const quota = await withinByteQuota(db, quotaKey, buffer.length);
+        if (typeof quota !== "function") {
+            await takeBack();
+            /* The site's whole day being full is not the sender's limit (scan
+               18 Nov evening): it was answered with their own TOO_MANY_TODAY. */
+            return json(429, { error: quota && quota.over === "site" ? "Lots of entries have arrived today, so the site is full up for now. Try again later." : TOO_MANY_TODAY });
+        }
+        refundBytes = quota;
     } catch (e) {
         await takeBack().catch(() => {});
         throw e;

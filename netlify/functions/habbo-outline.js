@@ -37,6 +37,8 @@
 const { decodePng, encodePng } = require("./_png");
 const { SECURITY_HEADERS } = require("./_headers");
 const { askTwice, causeOf } = require("./_habbo-ask");
+// A network's asks of Habbo's imaging, a minute: the Hallway's own count (scan 18 Nov evening).
+const { imagingRoom } = require("./_hallway-av");
 
 // The console screen's text colour (.console-screen in css/style.css), the
 // same in every theme.
@@ -130,6 +132,15 @@ exports.handler = async (event) => {
         // a step, head_direction 3, as the builder cards still draw it).
         figure, direction: "2", head_direction: "2", action: "std", gesture: "sml", ...KINDS[kind]
     });
+    /* Only a fresh outfit reaches here (the edge keeps each picture a month), so
+       each is an ask of Habbo, and nothing limited them per network beyond the
+       pictures' general budget. Counted with the Hallway's figures (imagingRoom
+       in _hallway-av.js). The page falls back to its blank face on a 429. */
+    if (!imagingRoom(event)) {
+        const r = fail(429, "Too many avatars just now. Wait a moment and try again.");
+        r.headers["Retry-After"] = "60";
+        return r;
+    }
     let png;
     try {
         png = outline(await askTwice(IMAGING_HOST, ms => askImaging(params, ms), { timeoutMs: FETCH_TIMEOUT_MS, totalMs: TOTAL_ASK_MS }));

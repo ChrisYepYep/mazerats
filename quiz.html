@@ -80,6 +80,9 @@
                        aria-label="Player name">
                 <button type="submit" class="qz-add-btn" id="qz-add-btn" aria-label="Add player">Add</button>
             </form>
+            <!-- A name already on the list: said here, under the box, with the
+                 typed name left in it (scan 18 Nov evening). -->
+            <p class="qz-add-hint" id="qz-add-hint" role="status" hidden></p>
 
             <ul class="qz-players" id="qz-players"></ul>
             <p class="qz-empty" id="qz-players-empty">No players yet — add at least one to start.</p>
@@ -214,6 +217,8 @@
             <p class="qz-award-label">Players</p>
             <div class="qz-award-grid" id="qz-award-grid"></div>
             <p class="qz-award-hint">Tap a name to give the point, and again to take it back. The three buttons beside it are that player's lifelines.</p>
+            <!-- Only where there is a keyboard and a mouse (css/quiz.css). -->
+            <p class="qz-keys-hint">Keys: A–D pick an answer, Enter reveals, ← → Back and Next.</p>
         </section>
     </div>
 
@@ -252,7 +257,7 @@
 
 <!-- ====================== SCOREBOARD SHEET ======================= -->
 <div class="qz-sheet-backdrop" id="qz-sheet-backdrop" hidden></div>
-<section class="qz-sheet" id="qz-sheet" hidden aria-label="Scoreboard">
+<section class="qz-sheet" id="qz-sheet" hidden role="dialog" aria-modal="true" aria-label="Scoreboard">
     <div class="qz-sheet-grip"></div>
     <div class="qz-sheet-head">
         <h2>Scores</h2>
@@ -263,7 +268,7 @@
 </section>
 
 <!-- ========================= MENU SHEET ========================== -->
-<section class="qz-sheet" id="qz-menu" hidden aria-label="Quiz menu">
+<section class="qz-sheet" id="qz-menu" hidden role="dialog" aria-modal="true" aria-label="Quiz menu">
     <div class="qz-sheet-grip"></div>
     <div class="qz-sheet-head">
         <h2>Quiz</h2>

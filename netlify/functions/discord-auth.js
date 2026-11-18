@@ -56,8 +56,8 @@ const STATE_TTL = 10 * 60;                 // ten minutes to finish a login
    Each attempt now has its own, named by the first 12 hex of its nonce
    (48 bits: two attempts in one ten-minute window never share one), and
    the callback reads the one its state names. The plain `mr_oauth` is
-   still accepted for a sign-in that was under way when this deployed;
-   nothing sets it any more. */
+   no longer read (18 Nov 2026, the bug scan: nothing has set it since 1
+   Oct, and a state lives ten minutes); a stray one is still cleared. */
 const stateCookieName = (nonce) => `${STATE_COOKIE}_${String(nonce || "").slice(0, 12)}`;
 const clearStateCookie = (name) => `${name}=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0`;
 // How many attempts' cookies may stand at once — see `start`.
@@ -66,6 +66,63 @@ const STATE_AUDIENCE = "mazerats-oauth-state";
 const DISCORD_API = "https://discord.com/api/v10";
 // The token exchange and the profile read together — see the callback.
 const DISCORD_TIMEOUT_MS = 5000;
+
+/* ONE USE PER STATE, AND A CAP PER NETWORK (scan 18 Nov evening). The
+   callback is never rate-limited (a refusal there spends Discord's one-use
+   code; see NOT LIMITED AT ALL in _ratelimit.js), and one state with its
+   cookie used to pass the check for its whole ten minutes, so a script
+   could replay it hundreds of times, each a call to Discord's token
+   endpoint with the site's secret, until Discord blocked the site and real
+   sign-ins failed. So a state is spent before Discord is asked: its nonce
+   is written to signin_states (unique by _id, gone after a day by a TTL
+   index), and a second use goes home "expired". A database that cannot be
+   reached falls back on this instance's memory of spent nonces, so a
+   replay is still caught on a warm instance. And this instance counts
+   callbacks per network a minute, in memory only (nothing is kept): far
+   past what any person or office signs in with. */
+const SIGNIN_STATES = "signin_states";
+const SPENT_MAX = 5000;
+const spentNonces = new Map();          // nonce -> ms it was spent
+const CALLBACKS_PER_MINUTE = 30;
+const callbackCounts = new Map();       // network code + minute -> count
+let signinStatesIndexed = false;
+function overCallbackCap(event) {
+    const key = require("./_ratelimit").keyOf(event);
+    if (!key) return false;
+    const minute = Math.floor(Date.now() / 60000);
+    const id = `${key}:${minute}`;
+    if (callbackCounts.size >= SPENT_MAX) {
+        for (const k of callbackCounts.keys()) if (!k.endsWith(`:${minute}`)) callbackCounts.delete(k);
+        if (callbackCounts.size >= SPENT_MAX) callbackCounts.clear();
+    }
+    const n = (callbackCounts.get(id) || 0) + 1;
+    callbackCounts.set(id, n);
+    return n > CALLBACKS_PER_MINUTE;
+}
+// true when this nonce had already been spent.
+async function spendNonce(db, nonce) {
+    const now = Date.now();
+    if (spentNonces.has(nonce)) return true;
+    if (spentNonces.size >= SPENT_MAX) {
+        for (const [k, at] of spentNonces) if (now - at > STATE_TTL * 1000) spentNonces.delete(k);
+        if (spentNonces.size >= SPENT_MAX) spentNonces.clear();
+    }
+    spentNonces.set(nonce, now);
+    if (!db) return false;
+    try {
+        const col = db.collection(SIGNIN_STATES);
+        if (!signinStatesIndexed) {
+            signinStatesIndexed = true;
+            col.createIndex({ at: 1 }, { expireAfterSeconds: 24 * 60 * 60 }).catch(() => { signinStatesIndexed = false; });
+        }
+        await col.insertOne({ _id: String(nonce), at: new Date(now) });
+        return false;
+    } catch (e) {
+        if (e && e.code === 11000) return true;
+        // Can't be written: the memory above is the guard (fails open).
+        return false;
+    }
+}
 
 const json = (statusCode, data, extra) => ({
     statusCode,
@@ -507,9 +564,20 @@ exports.handler = async (event) => {
         if (!q.code || !q.state) return fail("failed");
         if (!claims) return fail("expired");
         const jar = parseCookies(event.headers && (event.headers.cookie || event.headers.Cookie));
-        const cookieNonce = jar[stateCookieName(claims.nonce)] || jar[STATE_COOKIE];
+        const cookieNonce = jar[stateCookieName(claims.nonce)];
         // Both halves, and they must match. Either one alone proves nothing.
         if (!cookieNonce || cookieNonce !== claims.nonce) return fail("failed");
+
+        // See ONE USE PER STATE, AND A CAP PER NETWORK. The database is
+        // opened here now (it was after Discord), and reused below.
+        if (overCallbackCap(event)) return fail("failed");
+        let db = null;
+        try {
+            db = await getDb();
+        } catch (e) {
+            db = null;
+        }
+        if (await spendNonce(db, claims.nonce)) return fail("expired");
 
         /* Both calls to Discord share one deadline, as habbo.js bounds its
            own. Unbounded, a Discord that accepted the connection and then
@@ -579,12 +647,6 @@ exports.handler = async (event) => {
            on a database it cannot reach: the session is still issued, and
            every write that session makes asks the bans again for itself
            (writeRefusal), failing closed. */
-        let db = null;
-        try {
-            db = await getDb();
-        } catch (e) {
-            db = null;
-        }
         const ban = db ? await banFor(db, event, player.id) : null;
         if (ban) {
             const netHash = netHashFor(event);
@@ -681,10 +743,15 @@ exports.handler = async (event) => {
                 if (typeof row.sv === "number") player.sv = row.sv;
             }
         } catch (e) {
-            // The session is still worth issuing — the profile row is a
-            // convenience, and the next sign-in will write it. The nick
-            // claims are left unset, so `me` asks the row once it can.
+            console.warn("discord-auth: could not write the player row at sign-in", e && e.message);
         }
+        /* NO ROW, NO SESSION (scan 18 Nov evening). This used to issue the
+           cookie anyway, but a session with no session version is revoked
+           by sessionRevoked (_player.js) as soon as the row is found missing
+           (a first-time player) or strict: the next page signed them out
+           with no word why. A sign-in whose row could not be written and
+           read back now goes home "failed", which says try again. */
+        if (typeof player.sv !== "number") return fail("failed");
 
         return redirect(`${origin}${safeReturn(claims.to)}`, [
             setCookie(signPlayer(player)),

@@ -21,7 +21,7 @@
               pictures, Habbo avatars and outlines, room figures, the furni
               catalogue, the visit counter — counted in each instance's
               memory alone, never in the database (see checkRateLimit);
-     search   the player search (profiles.js ?q=), which runs as somebody
+     search   the player search (profiles.js ?q=, and ?h=), which runs as somebody
               types: plenty for a person, nothing like enough for a script
               reading the player list;
      write    anything that changes something (POST, PUT, PATCH, DELETE);
@@ -32,7 +32,7 @@
    caps, the daily games' own limits, …) still apply on top of these; this
    is the floor under all of them, not a replacement.
 
-   WHO IS LEFT ALONE: a request carrying a valid Warren token (an admin's
+   WHO IS LEFT ALONE: a request carrying a live owner or admin token (an admin's
    bulk work — scans, uploads, imports — is not a flood), a request Netlify
    gave no address for (nothing to count it by; a shared "unknown" bucket
    would let strangers limit each other), and CORS preflights.
@@ -95,7 +95,7 @@ const MEDIA = new Set([
    any office of tabs asks, and apart from the other budgets, so a busy
    network's reads and saves never cost it a sign-in. The callback is
    still never limited (above: a refusal spends Discord's one-use code),
-   nor is anything carrying a Warren token, and a counter that cannot be
+   nor is anything carrying an owner or admin token, and a counter that cannot be
    reached still lets everything through. */
 const EXEMPT = new Set(["settings", "share", "sitemap"]);
 
@@ -163,7 +163,9 @@ function budgetOf(name, event) {
     if (method !== "GET" && method !== "HEAD") return "write";
     if (MEDIA.has(name)) return "media";
     const q = (event && event.queryStringParameters) || {};
-    if (name === "profiles" && typeof q.q === "string") return "search";
+    /* ?h= too (scan 18 Nov evening): it asks Origins for any name, as a
+       search does; see NEW NAMES ASKED OF ORIGINS in profiles.js. */
+    if (name === "profiles" && (typeof q.q === "string" || typeof q.h === "string")) return "search";
     return "read";
 }
 
@@ -200,10 +202,13 @@ const localCounts = new Map();
 const CAUGHT_MAX = 5000;
 
 /* A live session, not just a good signature. No token asks nothing of the
-   database; a database that can't be asked counts the admin as anyone else. */
+   database; a database that can't be asked counts the admin as anyone else.
+   An owner or admin only (scan 18 Nov evening): a view-only or Atlas
+   account's requests are counted like anybody's. */
 async function isAdmin(event) {
     try {
-        return await require("./_auth").hasLiveSession(event);
+        const role = await require("./_auth").liveSessionRole(event);
+        return role === "owner" || role === "admin";
     } catch (e) {
         return false;
     }

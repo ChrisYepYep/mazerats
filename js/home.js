@@ -230,8 +230,10 @@ document.addEventListener("DOMContentLoaded", () => {
         if (p === "/home") return null;
         return Object.keys(VIEW_PATHS).find(k => VIEW_PATHS[k] === p);
     }
+    // Kept for hideLoader, which brings the window into view on a phone.
+    const viewAtLoad = viewKeyOfPath(location.pathname);
     {
-        const atLoad = viewKeyOfPath(location.pathname);
+        const atLoad = viewAtLoad;
         if (atLoad) {
             showOpening = false;
             showWhatsNew = atLoad === "news";
@@ -787,6 +789,58 @@ document.addEventListener("DOMContentLoaded", () => {
         return true;
     }
 
+    /* BEST MATCH FIRST (scan 18 Nov evening). A search kept the list's own
+       order, A to Z by default, so "lit" put 100% CONFUSED MAZE (a furni
+       name) first and The Little Maze far down. Now, for the plain words
+       typed: a name with a word starting with each of them, then a name
+       containing them, then a builder or host, then the rest (description,
+       tags, furni), each group in the list's own order. */
+    function searchWords() {
+        const raw = query.trim();
+        return raw ? parseSearch(raw).words : [];
+    }
+    function matchTier(n, words) {
+        const name = String(n.name || "").toLowerCase();
+        const nameWords = name.split(/[^a-z0-9À-￿]+/).filter(Boolean);
+        if (words.every(w => nameWords.some(nw => nw.startsWith(w)) || name.startsWith(w))) return 0;
+        if (words.every(w => name.includes(w))) return 1;
+        const by = String(n.owner || "").toLowerCase();
+        if (words.every(w => name.includes(w) || by.includes(w))) return 2;
+        return 3;
+    }
+
+    /* WHY A ROW MATCHED, when it was the furni (scan 18 Nov evening):
+       "throne" listed twenty mazes and nothing on them said why. The pieces
+       whose names hold a typed word (or a furni: filter) that the rest of the
+       record does not, as the catalogue spells them; two at most. */
+    function furniHitNames(n) {
+        const raw = query.trim();
+        if (!raw) return [];
+        const s = parseSearch(raw);
+        const rest = [n.name, n.subtitle, n.owner, descPlain(n.description), descPlain(n.details), ...(n.tags || []), n.difficulty]
+            .filter(Boolean).join(" ").toLowerCase();
+        const terms = s.words.filter(w => !rest.includes(w))
+            .concat(s.keys.filter(k => k.key === "furni").map(k => k.value));
+        if (!terms.length) return [];
+        const furni = n.furni && typeof n.furni === "object" ? n.furni : null;
+        if (!furni) return [];
+        const found = [];
+        for (const key of Object.keys(furni)) {
+            const record = furni[key];
+            const items = Array.isArray(record) ? record : asList(record && record.items);
+            for (const piece of items) {
+                if (!piece || piece.hidden || !piece.name) continue;
+                const label = String(piece.name);
+                const low = label.toLowerCase();
+                if (terms.some(t => low.includes(t)) && !found.includes(label)) {
+                    found.push(label);
+                    if (found.length === 2) return found;
+                }
+            }
+        }
+        return found;
+    }
+
     /* A filter token for the box, quoted when the value has a space in it
        ("very hard", a tag like "FURNI MAZE") so it survives being parsed
        back out.
@@ -1215,6 +1269,13 @@ document.addEventListener("DOMContentLoaded", () => {
         // sort is stable, so this only moves the live entries — everything
         // else keeps the order the sort above just gave it.
         sorted.sort((a, b) => (b.statusKey === "live" ? 1 : 0) - (a.statusKey === "live" ? 1 : 0));
+        // Best match first while searching (see matchTier); stable, so each
+        // group keeps the order above, live events first within it.
+        const words = searchWords();
+        if (words.length) {
+            const tier = new Map(sorted.map(n => [n, matchTier(n, words)]));
+            sorted.sort((a, b) => tier.get(a) - tier.get(b));
+        }
         return sorted;
     }
 
@@ -2773,6 +2834,12 @@ document.addEventListener("DOMContentLoaded", () => {
         return pill("collab", "Collab") + (n.statusKey === "unknown" ? "" : pill(n.statusKey, n.statusLabel));
     }
 
+    // "Has Throne", on a row the search found by its furni (see furniHitNames).
+    function furniHitHtml(n) {
+        const names = furniHitNames(n);
+        return names.length ? `<p class="row-furni-hit">Has ${names.map(escapeHtml).join(", ")}</p>` : "";
+    }
+
     function roomRowHtml(n, isOpenView) {
         // Events always show their date; mazes only do on the Open list.
         const showDate = isOpenView || n.isEvent;
@@ -2787,6 +2854,7 @@ document.addEventListener("DOMContentLoaded", () => {
                     ${ecTitleHtml(n)}
                     <p class="row-creator">${escapeHtml(n.subtitle || "")}${showDate ? rowDateHtml(n) : ""}</p>
                     ${isOpenView ? "" : `<p class="row-desc">${escapeHtml(descPlain(n.description))}</p>`}
+                    ${furniHitHtml(n)}
                     <div class="row-tags">${tagsHtml(n)}</div>
                 </div>
                 <div class="row-side">
@@ -11006,6 +11074,9 @@ document.addEventListener("DOMContentLoaded", () => {
         /* Under the bar, the closed mazes completed, as a tally of their own
            (see CLOSED MAZES in progressFigures): the bar and By difficulty
            are the open mazes only. Closed ones count towards Toughest, not
+           ("walkable", not "open", on the line itself: scan 18 Nov evening.
+           Collab mazes count here but sit in their own tab, so "of 29 open
+           mazes" disagreed with Explore the Archive's "28 Open mazes".)
            towards the badges or Latest; the Badges section says so. */
         const body = `
             ${notes}
@@ -11013,7 +11084,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
             <section class="progress-block">
                 <div class="progress-bignum">
-                    <strong>${done}</strong><span>of ${total} open mazes completed</span>
+                    <strong>${done}</strong><span>of ${total} walkable mazes completed</span>
                 </div>
                 <div class="progress-bar"><span style="width:${pct}%"></span></div>
                 ${closedN ? `<p class="progress-note">+ ${closedN} closed ${closedN === 1 ? "maze" : "mazes"} completed</p>` : ""}
@@ -14180,6 +14251,9 @@ document.addEventListener("DOMContentLoaded", () => {
        held until 3s after the page began, unless the phone's Settings have
        it off. The archive is ready underneath meanwhile. */
     function gtaHold() {
+        // Only the archive's own address waits (scan 18 Nov evening): a game
+        // link (/odd, /guess) sat 3s behind the black Vice loader.
+        if (!/^\/(home\/?)?$/.test(location.pathname)) return 0;
         if (document.documentElement.getAttribute("data-theme") !== "vice") return 0;
         try { const p = JSON.parse(localStorage.getItem("mazerats_gta_prefs") || "null"); if (p && p.loading === false) return 0; } catch (e) { /* default: on */ }
         return Math.max(0, 3000 - performance.now());
@@ -14196,6 +14270,7 @@ document.addEventListener("DOMContentLoaded", () => {
         // see render()'s !dataLoaded branch.
         loaderGone = true;
         if (!dataLoaded) render();
+        scrollViewIntoSight();
         // After the loader's own 300ms fade, so the note arrives on the
         // archive rather than on top of the loading screen.
         if (pendingMissingNote) {
@@ -14203,6 +14278,22 @@ document.addEventListener("DOMContentLoaded", () => {
             pendingMissingNote = null;
             setTimeout(show, 320);
         }
+    }
+
+    /* A pasted /news, /timeline or /furni on a phone (scan 18 Nov evening):
+       the page opened at the top, on the intro, and what was asked for began
+       below the fold — one or two lines of it at 320px. The window is
+       brought up to sit under the header instead. Only when the page is
+       still where it loaded (nobody has scrolled yet), only on a narrow
+       screen (a desktop shows the window on the first screen), and not when
+       a window is already open over the page. */
+    function scrollViewIntoSight() {
+        if (!viewAtLoad || !browseWindow || innerWidth > 860 || scrollY > 4) return;
+        if (document.querySelector(".modal-overlay.open, .lightbox-overlay.open")) return;
+        const header = document.querySelector(".site-header");
+        const under = header && getComputedStyle(header).position === "sticky" ? header.getBoundingClientRect().bottom : 0;
+        const top = browseWindow.getBoundingClientRect().top + scrollY - under - 6;
+        if (top > 0) window.scrollTo({ top, behavior: "auto" });
     }
 
     /* Waits for every thumbnail, counting each as it lands. Resolves on error

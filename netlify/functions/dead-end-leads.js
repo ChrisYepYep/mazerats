@@ -326,7 +326,8 @@ async function withinByteQuota(db, playerId, bytes) {
     const [mine, everyone] = await Promise.all([bump(ids[0], bytes), bump(ids[1], bytes)]);
     if (mine <= PLAYER_BYTES_PER_DAY && everyone <= GLOBAL_BYTES_PER_DAY) return true;
     await Promise.all(ids.map(id => col.updateOne({ _id: id }, { $inc: { bytes: -bytes } }))).catch(() => {});
-    return false;
+    // Whose limit it was, so the words are right (scan 18 Nov evening).
+    return mine > PLAYER_BYTES_PER_DAY ? "mine" : "site";
 }
 
 async function deleteImages(db, keys) {
@@ -446,9 +447,14 @@ async function handleUpload(event, db) {
         return json(429, { error: "That is a lot of screenshots at once. Give it ten minutes." });
     }
     // The day's bytes, after the count so a burst refused there costs none.
-    if (!(await withinByteQuota(db, player.id, buffer.length))) {
+    const quota = await withinByteQuota(db, player.id, buffer.length);
+    if (quota !== true) {
         await uploads.deleteOne({ key });
-        return json(429, { error: "That is as many screenshots as can be taken today. Try again tomorrow." });
+        /* The site's own day being full is not the sender's limit (scan 18
+           Nov evening): it was answered with their "as many as today". */
+        return json(429, { error: quota === "site"
+            ? "Lots of screenshots are arriving today, so the site is full up for now. Try again later."
+            : "That is as many screenshots as can be taken today. Try again tomorrow." });
     }
     try {
         await imagesStore().set(key, buffer, { metadata: { contentType: kind.mime } });

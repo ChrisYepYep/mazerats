@@ -102,7 +102,7 @@ const GROUPS = [
    stamp, written by events.js, and no more a change than updatedAt. */
 const IGNORED = new Set([
     "id", "_id", "createdAt", "updatedAt", "changes", "pastChanges",
-    "slug", "slugAliases", "slugManual", "_slugAuto",
+    "slug", "slugAliases", "slugManual", "_slugAuto", "slugAt",
     "furniRev", "furniPatch",
     "spotlight", "spotlightFrom", "spotlightUntil", "spotlightCaption", "spotlightColour", "spotlightCaptionAt", "spotlightCaptionAtHome", "spotlightAt",
     // Its place in the turns (27 Oct 2026), set from the Warren's Controls.

@@ -126,7 +126,8 @@
        player), they're told, and walk as the guest. */
     const LOOK_FN = "/.netlify/functions/hallway-look";
     const OFFLINE = "Habbo is offline at the moment. You can still explore the Hallway as a guest, and your own Habbo will be back next time.";
-    function saveLook(figure) { try { realFetch(LOOK_FN, { method: "POST", credentials: "same-origin", keepalive: true, headers: { "Content-Type": "application/json" }, body: JSON.stringify({ figure }) }).catch(() => {}); } catch (e) { /* nothing to lose: it's kept next visit */ } }
+    /* An admin walking it before it opens sends their token, as live-lost.js does: the look save now checks the Hallway switch (scan 18 Nov evening). */
+    function saveLook(figure) { try { realFetch(LOOK_FN, { method: "POST", credentials: "same-origin", keepalive: true, headers: Object.assign({ "Content-Type": "application/json" }, (() => { try { const t = localStorage.getItem("mazerats_admin_token"); return t ? { "x-admin-token": t } : {}; } catch (e) { return {}; } })()), body: JSON.stringify({ figure }) }).catch(() => {}); } catch (e) { /* nothing to lose: it's kept next visit */ } }
     async function storedLook() {
         try { const r = await realFetch(LOOK_FN, { credentials: "same-origin", headers: { Accept: "application/json" } }); if (!r.ok) return null; const d = await r.json(); return d && d.look && d.look.figure ? d.look : null; } catch (e) { return null; }
     }
@@ -348,7 +349,11 @@
         const cheatApi = () => (window.HallwayLive && HallwayLive.cheats ? HallwayLive.cheats() : {});
         const cheatBox = document.createElement("div"); cheatBox.id = "playCheats"; cheatBox.setAttribute("aria-live", "polite"); document.body.append(cheatBox);
         const cheatOn = {}; let typed = "";
-        const paintCheats = () => { cheatBox.textContent = ""; for (const w in CHEATS) if (cheatOn[w]) { const s = document.createElement("button"); s.type = "button"; s.className = "mr-btn"; s.textContent = "Cheat Activated: " + CHEATS[w][0]; s.title = "Click to turn this cheat off";
+        /* paused while a Lost Property search is on, found thing carried included, since its points go on the week's board (scan 18 Nov evening);
+           they come back on by themselves once it's handed in or over */
+        const searching = () => !!(window.HallwayLost && (HallwayLost.round || HallwayLost.carrying)); let paused = false;
+        setInterval(() => { const p = searching(); if (p === paused) return; paused = p; for (const w in CHEATS) if (cheatOn[w]) CHEATS[w][1](!p); if (cheatBox.childElementCount || p) paintCheats(); }, 500);
+        const paintCheats = () => { cheatBox.textContent = ""; for (const w in CHEATS) if (cheatOn[w]) { const s = document.createElement("button"); s.type = "button"; s.className = "mr-btn"; s.textContent = (paused ? "Cheat paused for Lost Property: " : "Cheat Activated: ") + CHEATS[w][0]; s.title = "Click to turn this cheat off";
                 /* clicking the plate turns the cheat off (9 Nov 2026, his) */
                 s.addEventListener("click", e => { e.stopPropagation(); cheatOn[w] = false; CHEATS[w][1](false); typed = ""; paintCheats(); }); cheatBox.appendChild(s); }
             const r = bar.getBoundingClientRect(); cheatBox.style.left = (phone.matches ? 10 : Math.round(r.right + 8)) + "px"; cheatBox.hidden = !cheatBox.childElementCount; };
@@ -359,7 +364,7 @@
             typed = (typed + e.key.toLowerCase()).slice(-12);
             /* still on the way to a cheat word past its first letter: the F of "fast" mustn't go full screen */
             if (Object.keys(CHEATS).some(w => { for (let n = 2; n <= w.length; n++) if (typed.endsWith(w.slice(0, n))) return true; return false; })) clearTimeout(fullSoon);
-            for (const w in CHEATS) if (typed.endsWith(w)) { typed = ""; cheatOn[w] = !cheatOn[w]; CHEATS[w][1](cheatOn[w]); paintCheats(); }
+            for (const w in CHEATS) if (typed.endsWith(w)) { typed = ""; cheatOn[w] = !cheatOn[w]; CHEATS[w][1](cheatOn[w] && !paused); paintCheats(); }
         });
     }
     /* Ready once there's something to see, or after a few seconds whatever happens */

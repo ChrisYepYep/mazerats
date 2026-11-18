@@ -264,7 +264,12 @@
             pump();
             mine.timer = setInterval(pump, 150);
         }).catch(function () {
-            if (loop === mine) { loop = null; }
+            /* The loop never started: say so, so the soundboard can unlight
+               its button (scan 18 Nov evening). */
+            if (loop === mine) {
+                loop = null;
+                if (typeof api.onchange === 'function') { try { api.onchange(); } catch (err) {} }
+            }
         });
     }
 
@@ -302,7 +307,9 @@
         playSting(id);
     }
 
-    window.QuizAudio = {
+    /* onchange: set by the page, called when a loop stops by itself. */
+    var api = window.QuizAudio = {
+        onchange: null,
         cues: CUES,
         preload: preload,
         press: press,

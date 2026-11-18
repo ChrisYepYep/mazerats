@@ -48,6 +48,22 @@ function stamp(v) {
     return v ? String(v) : "";
 }
 
+/* THE ADDRESS'S OWN VERSION (scan 18 Nov evening). _changes.js ignores the
+   address fields, so a save that changed only a maze's address did not move
+   updatedAt, and a form opened before it then saved the old address back
+   with no conflict. So `slugAt` is stamped whenever a save moves the
+   address (or whether it follows the name), the /warren form sends back the
+   copy it opened with, and a save that would move the address again from a
+   stale copy is a 409. A form that sends none (from before this) is not
+   checked. events.js keeps the same rule. */
+function addressMoved(before, update) {
+    if (!before) return false;
+    const aliases = v => JSON.stringify(Array.isArray(v) ? v : []);
+    return String(before.slug || "") !== String(update.slug || "")
+        || Boolean(before.slugManual) !== Boolean(update.slugManual)
+        || aliases(before.slugAliases) !== aliases(update.slugAliases);
+}
+
 // The record, but only at the version the editor started from. A record
 // never edited since updatedAt existed has none, and "" matches that.
 function versionFilter(id, base) {
@@ -435,7 +451,7 @@ async function handle(event) {
             return cachedJson(event, all, { cache: false });
         }
         // Old addresses are the share function's business, not the page's.
-        all.forEach(r => { delete r.slugAliases; delete r.slugManual; delete r.furniRev; });
+        all.forEach(r => { delete r.slugAliases; delete r.slugManual; delete r.slugAt; delete r.furniRev; });
         /* Keyed at the edge on `full` alone (2 Oct 2026). The edge keys on
            the whole query string by default, so ?x=<anything> was a cache
            miss every time — the full archive read, packed and gzipped for
@@ -548,6 +564,7 @@ async function handle(event) {
         delete body.pastChanges;
         delete body.updatedAt;
         delete body._baseUpdatedAt;
+        delete body.slugAt;
         /* Nor its id. The id is the server's to choose (idFor, below), and
            settleSlug reads a new record's id off the body to decide which
            record is "this one" — so a create carrying an EXISTING maze's id
@@ -741,10 +758,19 @@ async function handle(event) {
            alias (see _slugs.js). Only when the record exists: a PUT for a
            missing id is answered 404 below. */
         let retired = [];
+        // The form's copy of the address's own version (see addressMoved).
+        const sentSlugAt = Object.prototype.hasOwnProperty.call(update, "slugAt") ? stamp(update.slugAt) : null;
+        delete update.slugAt;
         if (previous) {
             retired = await loadRetired(db, "maze");
             const slugProblem = settleSlug(await rooms.find({}, { projection: SLUG_FIELDS }).toArray(), "maze", previous, update, retired);
             if (slugProblem) return json(400, { error: slugProblem });
+            if (addressMoved(previous, update)) {
+                if (base !== null && sentSlugAt !== null && stamp(previous.slugAt) !== sentSlugAt) {
+                    return json(409, { error: CONFLICT, conflict: true });
+                }
+                update.slugAt = new Date().toISOString();
+            }
         } else {
             /* Not settled, so not stored: a body's own address fields are
                only ever the form echoing the record back, and written raw

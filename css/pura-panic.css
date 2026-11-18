@@ -435,3 +435,36 @@ html[data-game-front="scout"] #rr-overlay { z-index: 92; }
     border-radius: 3px;
 }
 .pura-continue p { margin: 0; }
+
+/* ---- A THUMB'S WORTH ON A PHONE (scan 18 Nov evening) ----
+   The bulb and the close box are 13px of pixel art 4px apart, and reached
+   29 x 34 between them (style.css's coarse block): easy to miss, and easy to
+   turn the lights off aiming for the X. On a touch screen each now answers
+   40 x 40. The frame clips 7px above them and 14px right of the X, so the X
+   reaches 13px left instead, and the bulb stands 15px clear of it (was 4px)
+   to make room - a touch screen's look only. Down they reach 20px, still
+   above the score bar's buttons. Play, Leaderboard and the panels' other
+   buttons go from style.css's 32px to 40px, up and down only (pairs sit
+   side by side). */
+@media (pointer: coarse) {
+    #pura-window.is-touch .pura-light { right: 42px; }
+    #pura-window.is-touch .pura-light::after {
+        content: "";
+        position: absolute;
+        left: -25px;
+        right: -2px;
+        top: -7px;
+        bottom: -20px;
+        background: transparent;
+    }
+    #pura-window.is-touch #pura-close::after {
+        content: "";
+        position: absolute;
+        left: -13px;
+        right: -14px;
+        top: -7px;
+        bottom: -20px;
+        background: transparent;
+    }
+    #pura-window.is-touch .pura-panel .console-btn::after { height: max(100%, 40px); }
+}

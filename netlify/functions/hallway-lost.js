@@ -71,7 +71,7 @@ const THINGS = require("./_hallway-lost-things.json");
 
 const COLLECTION = "hallway_lost";
 const LIMIT_SECS = 15 * 60;
-const GRACE_SECS = 20;          // the page's clock and this one can differ by a few seconds
+const GRACE_SECS = 20;          // the page's clock and this one can differ by a few seconds; sent as `grace` with `left` (scan 18 Nov evening), so the page can keep the same clock while a find is carried
 const MIN_SECS = 20;
 const HANDIN_MIN_SECS = 120;    // the desk takes nothing in a search's first two minutes (15 Nov 2026, the owner's)
 const DAY_CAP = 20;
@@ -336,7 +336,7 @@ async function handler(event) {
         if (act === "start" || act === "swap") {
             const was = await opens.findOne({ playerId: id }, { projection: { _id: 0, k: 1, spot: 1, t0: 1, hints: 1, swaps: 1, cancelled: 1 } });
             const live = was && was.t0 && now - was.t0 <= (LIMIT_SECS + GRACE_SECS) * 1000 ? was : null;
-            const answer = (o, extra) => { const out = { k: o.k, spot: o.spot, left: Math.max(0, LIMIT_SECS * 1000 - (now - o.t0)), limit: LIMIT_SECS, name: who.name, hints: o.hints || 0, swapsLeft: Math.max(0, MAX_SWAPS - (o.swaps || 0)), ...(extra || {}) }; if (who.token) out.v = who.token; return json(200, out); };
+            const answer = (o, extra) => { const out = { k: o.k, spot: o.spot, left: Math.max(0, LIMIT_SECS * 1000 - (now - o.t0)), limit: LIMIT_SECS, grace: GRACE_SECS, name: who.name, hints: o.hints || 0, swapsLeft: Math.max(0, MAX_SWAPS - (o.swaps || 0)), ...(extra || {}) }; if (who.token) out.v = who.token; return json(200, out); };
             if (act === "swap" && (!live || live.cancelled)) return json(409, { error: "No search open" });
             /* a search given up is taken up again on its own clock, the same thing at the same spot (10 Nov scan, server finding 4: start,
                cancel, start re-rolled the thing, the spot and the clock as often as anyone liked) */

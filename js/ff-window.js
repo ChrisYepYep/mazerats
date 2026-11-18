@@ -254,6 +254,7 @@
             frame.style.transform = `scale(${scale})`;
             frame.style.left = Math.round((w - GAME_W * scale) / 2) + "px";
             frame.style.top = Math.round((h - GAME_H * scale) / 2) + "px";
+            shareFit();
             return;
         }
         scale = Math.min(big ? 2 : 1, (window.innerWidth - 16) / FRAME_W, (window.innerHeight - 16) / FRAME_H);
@@ -434,7 +435,23 @@
         }
     }
     // The game's answer to "is it open" arrives after its page has loaded.
+    /* THE GAME IS TOLD ITS SCALE ON A PHONE (scan 18 Nov evening). Scaled
+       from out here, it could not know its buttons came out 15-20px tall
+       (or that Coming Soon was half size upright), so it could not grow
+       their reach as its own page does. html.ff-phone-win and --ff-fit are
+       what its page sets for itself there (body.ff-immersive in
+       css/fallinfurni.css). */
+    function shareFit() {
+        try {
+            const d = iframe && iframe.contentDocument;
+            if (!d || !d.documentElement) return;
+            d.documentElement.classList.toggle("ff-phone-win", phone);
+            if (phone) d.documentElement.style.setProperty("--ff-fit", String(scale));
+        } catch (e) { /* not ours to read */ }
+    }
+
     function watchGame(f) {
+        shareFit();
         try {
             const doc = f.contentDocument;
             const mo = new MutationObserver(syncRotate);

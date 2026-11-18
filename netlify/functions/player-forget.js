@@ -331,6 +331,15 @@ async function forget(db, id) {
        row has gone, finds none to take — the first run's delete is the one
        that counts, and it is made here, not raced against the row. */
     const cacheFilter = await habboCacheFilter(db, id);
+    /* Their Hallway look's 48 frames (scan 18 Nov evening): kept in the
+       "hallway" store by hallway-look.js, and left there for good when the
+       row went. Read off the row before it goes, and dropped after, unless
+       somebody else wears the same look (dropFrames asks). */
+    let lookFigure = null;
+    try {
+        const row = await db.collection("players").findOne({ id }, { projection: { _id: 0, hallwayLook: 1 } });
+        lookFigure = row && row.hallwayLook && typeof row.hallwayLook.figure === "string" ? row.hallwayLook.figure : null;
+    } catch (e) { lookFigure = null; }
     const cacheGone = cacheFilter ? (await db.collection("habbo_cache").deleteMany(cacheFilter)).deletedCount || 0 : 0;
     const done = await Promise.all(PLACES.map(async p => {
         const col = db.collection(p.collection);
@@ -342,6 +351,12 @@ async function forget(db, id) {
     const counts = {};
     PLACES.forEach((p, i) => { counts[p.label] = done[i]; });
     counts.habbo_cache = cacheGone;
+    if (lookFigure) {
+        try {
+            const look = require("./hallway-look");
+            await look.dropFrames(require("./_blobs.js").blobStore(look.STORE), db.collection("players"), lookFigure);
+        } catch (e) { console.error("player-forget: could not drop the Hallway look's frames", e && e.message); }
+    }
     return counts;
 }
 

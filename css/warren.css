@@ -1447,3 +1447,17 @@ body.wr-on #login-modal .admin-form-actions .btn { width: 100%; min-height: 36px
 #wr-app .wr-ui .pf-reasons li + li { margin-top: 3px; }
 #wr-app .wr-ui .pf-dealt { margin-top: 10px; }
 #wr-app .wr-ui .pf-dealt > summary { cursor: pointer; margin-bottom: 6px; }
+/* Thumb-sized on phones (scan 18 Nov evening): the filter tabs, the switches
+   and the buttons were 24 to 30px tall and the checkboxes 13px, hard to hit
+   with a thumb. At least 38px and 20px on a touch screen up to a landscape
+   phone, and on any narrow window. After the rules they lift, and with html
+   in front so they outrank the segmented strip's own 26px. */
+@media (max-width: 560px), (pointer: coarse) and (max-width: 900px) {
+    html :is(#wr-app .wr-ui, #login-modal, .modal-overlay.wr-dialog) :is(.admin-action-pill, .ctl-btn, .btn, .btn-enter-mini) { min-height: 38px; }
+    html :is(#wr-app .wr-ui, #login-modal, .modal-overlay.wr-dialog) .ctl-seg > :is(.btn-enter-mini, .ctl-btn) { min-height: 36px; }
+    html :is(#wr-app .wr-ui, #login-modal, .modal-overlay.wr-dialog) input:is([type="checkbox"], [type="radio"]) { width: 20px; height: 20px; }
+    /* Recolour's bar (style.css .rc-bar .btn, 24px) and the Controls' fold headings (17px). */
+    html #recolour-editor .btn { min-height: 38px; }
+    html #recolour-editor input:is([type="checkbox"], [type="radio"]) { width: 20px; height: 20px; }
+    html #wr-app .wr-ui .ctl-fold-head { min-height: 36px; }
+}

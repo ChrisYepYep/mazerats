@@ -127,6 +127,9 @@
         const key = "c:" + h.id + ":" + i, last = i === h.clues.length - 1, q = el("div", "hx-clue" + (selKey === key ? " is-picked" : ""));
         const top = el("div", "hx-clue-top"); top.append(el("span", "hx-num", String(i + 1)), el("b", "", c.title || "Clue " + (i + 1)), el("span", "hint", where(c) || "No spot yet")); q.appendChild(top);
         const set = fn => edit(m => { const H = (m.hunts || []).find(x => x.id === h.id), C = H && H.clues[i]; if (C) fn(C, H); });
+        /* players' progress is kept by a clue's number (c0, c1...), so moving or removing one in a hunt that may be live moves everyone's
+           progress onto other clues: asked first (scan 18 Nov evening). A hunt with every clue placed is taken to be one that's published */
+        const shifts = what => !(h.clues.length && h.clues.every(q => q.level)) || confirm(what + " changes the clue numbers after it. Players keep their progress by clue number, so if " + (h.name || "this hunt") + " is already published, anyone part-way through it will have their found clues moved onto other clues. Go ahead?");
         q.appendChild(field("Title", c.title, v => set(C => { C.title = v; }), false, "Shown on the clue card", key + ":title"));
         q.appendChild(field("Words", c.words, v => set(C => { C.words = v; }), true, "Where to look, in a riddle or plainly", key + ":words"));
         q.appendChild(field("Hint", c.hint, v => set(C => { C.hint = v; }), false, "Optional: costs the player 5 minutes", key + ":hint"));
@@ -141,9 +144,9 @@
         const row = el("div", "btn-row"); row.append(
             btn(c.level ? "Move spot" : "Pick spot", () => pickSpot("clue " + (i + 1) + " of " + h.name, false, (m, hit) => { const H = m.hunts.find(x => x.id === h.id), C = H && H.clues[i]; if (C) setClueSpot(C, hit); selKey = key; }), c.level ? "" : "primary"),
             btn("Show me", () => showMe(c)),
-            btn("↑", () => { if (i) set((C, H) => { H.clues.splice(i - 1, 0, H.clues.splice(i, 1)[0]); }); }, "", "Earlier"),
-            btn("↓", () => { if (!last) set((C, H) => { H.clues.splice(i + 1, 0, H.clues.splice(i, 1)[0]); }); }, "", "Later"),
-            btn("Remove", () => set((C, H) => { H.clues.splice(i, 1); }), "ghost"));
+            btn("↑", () => { if (i && shifts("Moving this clue earlier")) set((C, H) => { H.clues.splice(i - 1, 0, H.clues.splice(i, 1)[0]); }); }, "", "Earlier"),
+            btn("↓", () => { if (!last && shifts("Moving this clue later")) set((C, H) => { H.clues.splice(i + 1, 0, H.clues.splice(i, 1)[0]); }); }, "", "Later"),
+            btn("Remove", () => { if (last || shifts("Removing this clue")) set((C, H) => { H.clues.splice(i, 1); }); }, "ghost"));
         q.appendChild(row);
         q.addEventListener("focusin", () => { if (selKey !== key) { selKey = key; LIVE.wake(); } });
         return q;

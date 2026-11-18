@@ -550,8 +550,21 @@ async function forgetDay(db, game, day, playerId) {
    only ever written in order, so there is nothing after it anyway). A mark
    stamped before the one it follows (clocks on two servers disagreeing by a
    moment) reads as zero rather than negative. The day's `ms` is the rounds'
-   times added up, so time on an answer screen is not in that either. */
-function dayBonus(clock, right, now) {
+   times added up, so time on an answer screen is not in that either.
+
+   STUDY TIME CARRIES OVER (scan 18 Nov evening), with `opts.carry`, which
+   Odd One Out asks for. Its whole day is handed out at the start (ODD ONE
+   OUT'S DAY LOADS AFTER THE START), and a round's bonus stops at nothing
+   after 37 seconds, so every second spent past that on one round was free:
+   two minutes on round 1 studying rounds 2-5, then 1.2s each, cost 36
+   points and beat honest play. So the whole seconds a round runs past 37
+   (where its own bonus reached nothing) come off the rest of the day's
+   bonus, second for second, as if the day were timed whole. A day with
+   every round inside 37 seconds scores exactly as before. Guess the Maze hands each room out only
+   when it is begun, so it has nothing to study ahead and keeps the old rule. */
+function dayBonus(clock, right, now, opts) {
+    const carry = Boolean(opts && opts.carry);
+    let over = 0;
     const rounds = right.length;
     if (!clock) return { bonus: 0, ms: null, roundSecs: null };
     const roundSecs = new Array(rounds).fill(null);
@@ -565,11 +578,13 @@ function dayBonus(clock, right, now) {
         const ms = Math.max(0, t - (i > 0 && Number.isFinite(asked) ? Math.max(prev, asked) : prev));
         roundSecs[i] = Math.floor(ms / 1000);
         if (right[i]) bonus += roundBonusFor(ms);
+        over += Math.max(0, roundSecs[i] - (ROUND_BONUS_SECONDS + 1));
         played += ms;
         prev = t;
         last = i;
     }
     if (last !== rounds - 1) played += Math.max(0, (now === undefined ? Date.now() : now) - prev);
+    if (carry) bonus = Math.max(0, bonus - over);
     return { bonus, ms: played, roundSecs };
 }
 

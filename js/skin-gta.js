@@ -17,22 +17,31 @@
      PHONE        texts in a pixel phone, bottom right: today's daily games
                   if they have not been played here, the next event. Click
                   it for the big phone, with the day's texts in a list.
-     RADAR        bottom left, a little maze and a waypoint. Only for the
-                  look: it does nothing and does not move.
+     RADAR        bottom left, a little maze and a waypoint. Click (or tap)
+                  it for Maze Maps, the radar maze (js/gta-maze.js): a
+                  window on a computer, a sheet with a pad on a phone.
+     RADIO        the car radio under the header, top left (js/gta-radio.js),
+                  and the phone's Radio app.
      MISSION      "Mission passed!" across the screen when a daily game's day
                   is finished (the mazerats:daily-done event from js/guess.js
                   and js/oddoneout.js), with the day's points as cash.
 
    The extras are the homepage's only (body[data-page="home"]); the other
    pages that wear skins get the sky and the lettering. Nothing at all
-   inside the homepage's game window (html.ff-embed). Reduced motion keeps
-   everything still. stop() takes every node, listener and observer away. */
+   inside the homepage's game window (html.ff-embed), and none of it in the
+   Hallway (html.hallway-open): it slides away with the archive and comes
+   back with it (hallwayWatch, below). Reduced motion keeps everything
+   still. stop() takes every node, listener and observer away. */
 (function () {
     "use strict";
 
     const NAME = "gta";
     const root = document.documentElement;
     const reduced = () => window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches;
+    // A finger rather than a mouse: the words say "tap", not "click" (scan 18 Nov evening).
+    const touch = () => !!(window.matchMedia && matchMedia("(pointer: coarse)").matches);
+    // The Hallway is open over the homepage: none of the skin's pieces are out (the owner's, 18 Nov 2026).
+    const inHallway = () => document.documentElement.classList.contains("hallway-open");
     const store = (() => { try { return window.localStorage; } catch (e) { return null; } })();
     const read = (k) => { try { return store ? store.getItem(k) : null; } catch (e) { return null; } };
     const write = (k, v) => { try { if (store) store.setItem(k, v); } catch (e) { /* private mode */ } };
@@ -279,7 +288,7 @@
             if (!st.played[g.key]) out.push({ id: "daily-" + g.key, from: g.label, text: `Today's ${g.label} just dropped. Don't keep me waiting.`, act: "Play", go: () => { const f = g.open(); if (typeof f === "function") f(); } });
         });
         const nxt = street().top + 1;
-        out.push({ id: "maps-" + nxt, from: "Maze Maps", text: nxt === 1 ? "Cops are out on the streets. Click the radar (or open Maze Maps) and lose them." : `Cops are out on Level ${nxt}. Think you can lose them?`, act: "Drive", go: () => drive() });
+        out.push({ id: "maps-" + nxt, from: "Maze Maps", text: nxt === 1 ? `Cops are out on the streets. ${touch() ? "Tap" : "Click"} the radar (or open Maze Maps) and lose them.` : `Cops are out on Level ${nxt}. Think you can lose them?`, act: "Drive", go: () => drive() });
         const ev = document.querySelector(".header-events-title");
         const when = document.querySelector(".header-events-when");
         const evName = ev && ev.textContent.trim();
@@ -345,8 +354,11 @@
     ].map((a) => Object.assign(a, { icon: `<svg viewBox="0 0 32 32" width="32" height="32">${ICONS[a.id]}</svg>` }));
     let view = "home", phoneGame = null;
     const TITLES = { home: "", messages: "Messages", maps: "Maze Maps", drive: "Maze Maps", radio: "Radio", bank: "Maze Bank", weather: "Vice Weather", settings: "Settings" };
-    // The radar is the way in on a computer; on a phone (or with it switched off) the game plays inside the phone.
-    const radarShown = () => !!(gps && prefs().radar && innerWidth > 900);
+    /* The radar is the way in, on a computer and (since 19 Nov 2026, the owner's) on a phone too, where
+       it is smaller and opens as a sheet across the bottom with the pad. With it switched off in
+       Settings, the game plays inside the phone instead. */
+    const radarShown = () => !!(gps && prefs().radar);
+    const narrow = () => innerWidth <= 900;
     function drawList() { if (isBig()) renderView(); }
     function renderView() {
         if (!phone) return;
@@ -391,7 +403,7 @@
         } else if (view === "bank") {
             const st = standing(), s = street();
             const log = s.log.filter((l) => l.day === utcDay(Date.now())).slice(0, 6);
-            body.innerHTML = `<div class="gx-big-top"><span>Balance</span><b>${money(st.points + s.cash)}</b><span>Only visible in Vice City</span></div>` +
+            body.innerHTML = `<div class="gx-big-top"><span>Balance</span><b>${money(st.points + s.cash)}</b><span>Only seen in Vice City</span></div>` +
                 `<ul class="gx-rows"><li class="gx-row"><span>Maze points <small>daily games</small></span><b>${money(st.points)}</b></li>` +
                 `<li class="gx-row"><span>Street Cash <small>Maze Maps</small></span><b>${money(s.cash)}</b></li>` +
                 `<li class="gx-row gx-sec">Today</li>` +
@@ -404,7 +416,9 @@
                 `<p class="gx-small">${p.sky === "auto" ? "The sky follows your dark-mode bulb. Pick one to fix it; tap it again to go back." : p.sky === "live" ? "Live: sunset by day, night after dark, on your clock." : "Tap it again to follow the bulb."} Rain falls over either: mostly light, with heavy bursts.</p>`;
         } else if (view === "settings") {
             const p = prefs(), row = (k, l) => `<li class="gx-row"><span>${l}</span><button type="button" class="gx-tog${p[k] ? " is-on" : ""}" data-pref="${k}" role="switch" aria-checked="${!!p[k]}" aria-label="${l}"></button></li>`;
-            body.innerHTML = `<ul class="gx-rows">${row("radar", "Radar in the corner")}${row("wasted", "Wasted / Busted screens")}${row("loading", "Loading screen")}${row("buzz", "Phone buzz for new texts")}${row("sfx", "Sound effects")}</ul>` +
+            /* The car radio has its own switch: it was tied to the radar's, so switching the radar off took the
+               radio away too (scan 18 Nov evening). Only where there is a car radio, on a computer. */
+            body.innerHTML = `<ul class="gx-rows">${row("radar", "Radar in the corner")}${narrow() ? "" : row("car", "Car radio under the header")}${row("wasted", "Wasted / Busted screens")}${row("loading", "Loading screen")}${row("buzz", "Phone buzz for new texts")}${row("sfx", "Sound effects")}</ul>` +
                 `<p class="gx-small">Only changes the GTA skin, on this device.</p>`;
         } else if (view === "radio") {
             drawRadioApp(body);
@@ -459,8 +473,12 @@
         clearTimeout(shrinking);
         shrinking = later(done, 200);
     }
+    /* Not over a game's window (it was half tucked behind Fallin' Furni's), not in the Hallway, and not on
+       a window too short for it: on a phone on its side it ran up under the header (scan 18 Nov evening). */
+    const noteBlocked = () => inHallway() || innerWidth < 760 || innerHeight < 600 || !!root.dataset.gameFront ||
+        !!document.querySelector("#ff-overlay.open, #pura-overlay.open, #rr-overlay.open, .modal-overlay.active, .modal-overlay.open, dialog[open]");
     function showNote() {
-        if (!phone || !unread.length || isBig()) return;
+        if (!phone || !unread.length || isBig() || noteBlocked()) return;
         const m = unread[0];   // the welcome first, the way the day began
         const note = phone.querySelector(".gx-phone-note");
         note.innerHTML = `<b>${esc(m.from)}</b><span>${esc(m.text)}</span><em>${unread.length > 1 ? `+${unread.length - 1} more · ` : ""}Tap to read</em>`;
@@ -478,7 +496,7 @@
        THE SKIN'S OWN SETTINGS (the phone's Settings and Weather apps),
        on this device. */
     const PREFS_KEY = "mazerats_gta_prefs";
-    const PREF_DEFAULTS = { radar: true, wasted: true, loading: true, buzz: true, sfx: false, sky: "auto", rain: false, phoneDark: true };
+    const PREF_DEFAULTS = { radar: true, car: true, wasted: true, loading: true, buzz: true, sfx: false, sky: "auto", rain: false, phoneDark: true };
     function prefs() {
         let p = null;
         try { p = JSON.parse(read(PREFS_KEY) || "null"); } catch (e) { p = null; }
@@ -559,7 +577,7 @@
         g.fillStyle = "#ff5fa2"; g.beginPath(); g.arc(mx, my, 3.5, 0, 7); g.fill();
     }
 
-    let gps = null, game = null, gameHost = null, mazeReady = null;
+    let gps = null, game = null, gameHost = null, mazeReady = null, radarCompact = false;
     function loadMaze() {
         if (window.GtaMaze) return Promise.resolve(true);
         if (mazeReady) return mazeReady;
@@ -577,7 +595,10 @@
         return window.GtaMaze.mount(host, {
             compact, level, bank: BANK,
             onPassed: () => { drawStanding(); sfx("cash"); },
-            onBusted: () => { sfx("siren"); bigWord("busted", "Maze Maps · Level " + (game ? game.level : level), "Space to try again"); },
+            onRetry: () => hideBigWord(),
+            /* The big BUSTED word only over the wide radar window: in the phone and the phone sheet the
+               game card says Busted already, and the word landed on top of its Try again (scan 18 Nov). */
+            onBusted: () => { sfx("siren"); if (!compact) bigWord("busted", "Maze Maps · Level " + (game ? game.level : level), matchMedia("(pointer: coarse)").matches ? "Tap Try again" : "Space to try again"); },
             onClose
         });
     }
@@ -587,18 +608,30 @@
         gps.classList.add("is-open");
         gps.setAttribute("aria-expanded", "true");
         gameHost = gps.querySelector(".gx-gps-game");
+        // On a phone the page underneath stays still while you drive.
+        radarCompact = narrow();
+        document.documentElement.classList.toggle("gx-radar-open", radarCompact);
         loadMaze().then((ok) => {
             if (!ok || !gps || !gps.classList.contains("is-open")) { if (!ok) closeRadar(); return; }
-            game = mountGame(gameHost, false, level || nextLevel(), () => closeRadar(true));
+            game = mountGame(gameHost, radarCompact, level || nextLevel(), () => closeRadar(true));
             later(() => game && game.resize(), reduced() ? 0 : 320);
             game.focus();
         });
+    }
+    /* A turn of the phone, or a window dragged across 900px: the open game is fitted to its new
+       size, or remade (same level) when it changes between the phone sheet and the computer window. */
+    function radarResize() {
+        if (!game || !gps || !gps.classList.contains("is-open")) return;
+        if (narrow() === radarCompact) { game.resize(); return; }
+        const lv = game.level;
+        closeRadar(false); openRadar(lv);
     }
     function closeRadar(refocus) {
         if (!gps || !gps.classList.contains("is-open")) return;
         if (game) { game.destroy(); game = null; }
         gps.classList.remove("is-open");
         gps.setAttribute("aria-expanded", "false");
+        document.documentElement.classList.remove("gx-radar-open");
         hideBigWord();
         if (refocus) gps.focus({ preventScroll: true });
     }
@@ -609,7 +642,7 @@
        game is lost (the mazerats:game-over event). Off in Settings. */
     let word = null, wordTimer = 0;
     function bigWord(text, line, hint) {
-        if (!word || !prefs().wasted) return;
+        if (!word || !prefs().wasted || inHallway()) return;
         word.innerHTML = `<div class="gx-word-bar"><b>${esc(text)}</b><p>${esc(line)}${hint ? ` · <span>${esc(hint)}</span>` : ""}</p></div>`;
         word.classList.remove("is-on"); void word.offsetWidth; word.classList.add("is-on");
         clearTimeout(wordTimer);
@@ -687,6 +720,9 @@
         "The radar map grows every level. Drag it to look ahead.",
         "Cops patrol the streets. Get close and they give chase.",
         "Flip the bulb for Vice City after dark."];
+    /* The tips for this screen: no car radio below 900px, where there is none, and no dragging the map to
+       look on a touch screen, where a drag steers (scan 18 Nov evening). */
+    const tipsHere = () => TIPS.filter((t) => !(innerWidth <= 900 && /car radio/.test(t)) && !(touch() && /Drag it to look/.test(t)));
     // Clips a convex polygon to the half-plane n·p >= d.
     function clipPoly(poly, n, d) {
         const out = [];
@@ -798,12 +834,17 @@
     function loadingScreen() {
         const loader = document.getElementById("site-loader");
         if (!loader || loader.dataset.done || !prefs().loading) return;
+        /* Only for the archive itself: a link straight to a game (/odd, /guess, /pura...) or the Hallway wants
+           the game, not GTA's loading art, and the collage's pictures only slowed it (dailies scan 18 Nov
+           evening). js/home.js gtaHold() lets those go without the 3s hold. */
+        if (!/^\/(home\/?)?$/.test(location.pathname)) return;
         const box = make("div", "gx-collage");
         loader.insertBefore(box, loader.firstChild);
         nodes.push(box);
         deal(box);
         const inner = loader.querySelector(".site-loader-inner");
-        if (inner) { const tip = make("span", "gx-load-tip", esc(TIPS[Math.floor(Math.random() * TIPS.length)])); inner.appendChild(tip); nodes.push(tip); }
+        const tips = tipsHere();
+        if (inner) { const tip = make("span", "gx-load-tip", esc(tips[Math.floor(Math.random() * tips.length)])); inner.appendChild(tip); nodes.push(tip); }
     }
 
     /* THE SCREENSAVER (a phone app, the owner's): the collage over the
@@ -813,7 +854,7 @@
     let saver = null, saverTimer = 0;
     function screensaver() {
         if (saver) return;
-        saver = add(make("div", "gx-saver", `<div class="gx-collage"></div><div class="gx-saver-title" aria-hidden="true"><b>Maze<br>Rats</b><i>Vice City</i></div><div class="gx-saver-hint" aria-hidden="true">Click to exit screensaver.</div>`));
+        saver = add(make("div", "gx-saver", `<div class="gx-collage"></div><div class="gx-saver-title" aria-hidden="true"><b>Maze<br>Rats</b><i>Vice City</i></div><div class="gx-saver-hint" aria-hidden="true">${touch() ? "Tap" : "Click"} to exit screensaver.</div>`));
         saver.setAttribute("role", "dialog");
         saver.setAttribute("aria-label", "Screensaver: press any key to leave");
         saver.tabIndex = -1;
@@ -829,17 +870,20 @@
         };
         box.classList.add("is-out");
         requestAnimationFrame(() => { if (!saver) return; saver.classList.add("is-on"); saver.focus({ preventScroll: true }); deal(box, 9).then(() => { if (!saver) return; box.classList.remove("is-out"); saverTimer = later(next, 7000); }); });
-        const end = (e) => { if (e && e.type === "keydown") e.preventDefault(); saverStop(); };
+        // Back on the phone it was opened from, not lost to the page (scan 18 Nov evening).
+        const end = (e) => { if (e && e.type === "keydown") e.preventDefault(); saverStop(true); };
         // A beat before it listens, so the tap that opened it does not close it.
         later(() => { if (!saver) return; ["keydown", "pointerdown"].forEach((t) => saver && listenOnce(t, end)); }, 400);
     }
     const saverOffs = [];
     function listenOnce(type, fn) { const h = (e) => fn(e); document.addEventListener(type, h, true); saverOffs.push(() => document.removeEventListener(type, h, true)); }
-    function saverStop() {
+    function saverStop(refocus) {
         clearTimeout(saverTimer);
         saverOffs.splice(0).forEach((f) => f());
         if (!saver) return;
         const s = saver; saver = null;
+        const btn = refocus && phone && phone.querySelector(".gx-phone-btn");
+        if (btn) btn.focus({ preventScroll: true });
         s.classList.remove("is-on");
         setTimeout(() => s.remove(), reduced() ? 0 : 500);
     }
@@ -897,6 +941,8 @@
     function rainFrame(t) {
         rainRaf = 0;
         if (!rainCv) return;
+        // Put away in the Hallway: no frames at all until it closes (hallwayWatch starts it again).
+        if (inHallway()) { rainLast = 0; return; }
         if (document.hidden) { rainLast = 0; rainRaf = requestAnimationFrame(rainFrame); return; }
         const dt = Math.min(0.05, rainLast ? (t - rainLast) / 1000 : 0.016);
         rainLast = t; rainT += dt;
@@ -951,8 +997,9 @@
     /* ---------------------------------------------------------------
        THE RADIO (js/gta-radio.js, fetched the first time it is wanted):
        the car radio under the header (top left), its station wheel, and the phone's
-       Radio app. Off until a station is picked; the station is remembered
-       and comes back on with the first click on the next visit. */
+       Radio app. Off on every visit until a station is picked (the owner's,
+       19 Nov 2026); the station last played is remembered, and the wheel
+       opens on it. Quiet in the Hallway, and on again as it was after. */
     let radio = null, radioReady = null, carRadio = null;
     function loadRadio() {
         if (window.GtaRadio) return Promise.resolve(true);
@@ -989,7 +1036,9 @@
         drawKnob();
         if (carRadio && radio) {
             const st = radio.current();
-            carRadio.querySelector(".gx-car-lcd").innerHTML = `<span>${esc(st ? st.name : "Radio off")}</span><span class="gx-eq${st && radio.playing() ? " is-on" : ""}" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></span>`;
+            // The level bars only with a station on: off, they were a row of dots beside "Radio off" (scan 18 Nov evening).
+            carRadio.querySelector(".gx-car-lcd").innerHTML = `<span>${esc(st ? st.name : "Radio off")}</span>` +
+                (st ? `<span class="gx-eq${radio.playing() ? " is-on" : ""}" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></span>` : "");
             carRadio.setAttribute("aria-label", st ? `Car radio: ${st.name}. Open the station wheel` : "Car radio: off. Open the station wheel");
         }
         if (isBig() && view === "radio") renderView();
@@ -998,9 +1047,18 @@
         carRadio = add(make("button", "gx-car", `<span class="gx-car-knob" aria-hidden="true"></span><span class="gx-car-lcd"><span>Radio off</span></span>`));
         carRadio.type = "button";
         carRadio.setAttribute("aria-label", "Car radio: open the station wheel");
-        carRadio.hidden = !prefs().radar;
+        carRadio.hidden = !prefs().car;
         listen(carRadio, "click", () => loadRadio().then((ok) => { if (ok && withRadio()) radio.wheel(carRadio); }));
-        listen(carRadio, "wheel", (e) => { e.preventDefault(); loadRadio().then((ok) => { if (ok && withRadio()) radio.step(e.deltaY > 0 ? 1 : -1, true); }); }, { passive: false });
+        /* One station a scroll: a trackpad flick sends dozens of wheel events, which raced through every
+           station, restarting the music each time. A change only after a quarter-second with none (scan 18 Nov evening). */
+        let wheelAt = 0;
+        listen(carRadio, "wheel", (e) => {
+            e.preventDefault();
+            const now = performance.now(), fresh = now - wheelAt > 250;
+            wheelAt = now;
+            if (!fresh || !e.deltaY) return;
+            loadRadio().then((ok) => { if (ok && withRadio()) radio.step(e.deltaY > 0 ? 1 : -1, true); });
+        }, { passive: false });
         /* Every visit starts with the radio off (the owner's, 19 Nov 2026); the
            wheel opens on the station last played. The radio's script loads once
            the page has settled, for the knob's Off badge. */
@@ -1013,31 +1071,43 @@
         return true;
     }
     function radioStop() { if (radio) { radio.destroy(); radio = null; } carRadio = null; knobFor = null; }
+    /* The list is drawn again whenever the radio changes (a station coming on, a song moving on), so the
+       button that had the keyboard is found again and given it back: it was lost to the page after every
+       tap (scan 18 Nov evening). Drawn at once once the radio's script is in, with no "Tuning in" between. */
     function drawRadioApp(body) {
-        body.innerHTML = `<p class="gx-small">Tuning in…</p>`;
-        loadRadio().then((ok) => {
+        const had = document.activeElement && body.contains(document.activeElement) ? document.activeElement : null;
+        const key = had ? (had.dataset.station != null ? `[data-station="${had.dataset.station}"]` : had.dataset.ctl ? `[data-ctl="${had.dataset.ctl}"]` : "") : "";
+        const fill = () => {
             if (view !== "radio" || !isBig()) return;
-            if (!ok || !withRadio()) { body.innerHTML = `<p class="gx-small">The radio couldn't load. Try again in a moment.</p>`; return; }
+            if (!withRadio()) { body.innerHTML = `<p class="gx-small">The radio couldn't load. Try again in a moment.</p>`; return; }
             const st = radio.current(), list = GtaRadio.STATIONS;
             body.innerHTML = `<div class="gx-big-top gx-radio-top" style="--st:${st ? st.bg : "#3a3046"}"><span>${st ? "Now playing" : "Radio"}</span><b>${esc(st ? st.name : "Off")}</b>` +
                 `<span>${esc(st ? (radio.track() || st.genre) : "Pick a station")}</span>` +
-                `<span class="gx-radio-ctl"><button type="button" data-radio="prev" aria-label="Previous station">⏮</button>` +
-                `<button type="button" data-radio="${st && radio.playing() ? "stop" : "play"}" aria-label="${st && radio.playing() ? "Stop" : "Play"}">${st && radio.playing() ? "⏸" : "▶"}</button>` +
-                `<button type="button" data-radio="next" aria-label="Next station">⏭</button></span></div>` +
+                `<span class="gx-radio-ctl"><button type="button" data-radio="prev" data-ctl="prev" aria-label="Previous station">⏮</button>` +
+                `<button type="button" data-radio="${st && radio.playing() ? "stop" : "play"}" data-ctl="play" aria-label="${st && radio.playing() ? "Stop" : "Play"}">${st && radio.playing() ? "⏸" : "▶"}</button>` +
+                `<button type="button" data-radio="next" data-ctl="next" aria-label="Next station">⏭</button></span></div>` +
                 `<ul class="gx-rows">${list.map((s, i) => `<li class="gx-row"><button type="button" class="gx-station${st && st.id === s.id ? " is-on" : ""}" data-station="${i}">` +
                     `<span>${esc(s.name)}</span><small>${esc(s.genre)}</small></button></li>`).join("")}` +
                 `<li class="gx-row"><button type="button" class="gx-station${st ? "" : " is-on"}" data-station="-1"><span>Off</span></button></li></ul>`;
-        });
+            const back = key && body.querySelector(key);
+            if (back) back.focus({ preventScroll: true });
+        };
+        if (window.GtaRadio) { fill(); return; }
+        body.innerHTML = `<p class="gx-small">Tuning in…</p>`;
+        loadRadio().then((ok) => { if (!ok) { if (view === "radio" && isBig()) body.innerHTML = `<p class="gx-small">The radio couldn't load. Try again in a moment.</p>`; return; } fill(); });
     }
+    /* From the phone, quietly: the station's name across the whole screen is for the car radio; here it
+       blacked out the phone too for two seconds on every tap (scan 18 Nov evening). */
     function radioPress(t) {
         if (!withRadio()) return;
-        if (t.dataset.station != null) { const i = Number(t.dataset.station); if (i < 0) radio.off(); else radio.tune(i); }
-        else if (t.dataset.radio === "prev") radio.step(-1);
-        else if (t.dataset.radio === "next") radio.step(1);
-        else if (t.dataset.radio === "stop") radio.off();
-        else if (t.dataset.radio === "play") radio.resumeSaved(true);
+        const had = t.dataset.station != null ? `[data-station="${t.dataset.station}"]` : `[data-ctl="${t.dataset.ctl}"]`;
+        if (t.dataset.station != null) { const i = Number(t.dataset.station); if (i < 0) radio.off(true); else radio.tune(i, true); }
+        else if (t.dataset.radio === "prev") radio.step(-1, false, true);
+        else if (t.dataset.radio === "next") radio.step(1, false, true);
+        else if (t.dataset.radio === "stop") radio.off(true);
+        else if (t.dataset.radio === "play") radio.resumeSaved(true, true);
         renderView();
-        const again = phone && phone.querySelector(t.dataset.station != null ? `[data-station="${t.dataset.station}"]` : `[data-radio]`);
+        const again = phone && phone.querySelector(had);
         if (again) again.focus({ preventScroll: true });
     }
 
@@ -1045,7 +1115,7 @@
        MISSION PASSED */
     let banner = null;
     function mission(detail) {
-        if (!banner || !detail) return;
+        if (!banner || !detail || inHallway()) return;
         const passed = (Number(detail.solved) || 0) > 0;
         const g = GAMES.find((x) => x.key === detail.game);
         banner.innerHTML = `<div class="gx-mission-bar"><h2>${passed ? "Mission passed!" : "Mission failed"}</h2>` +
@@ -1067,7 +1137,7 @@
         sky = add(make("div", "gx-sky"));
         sky.setAttribute("aria-hidden", "true");
         drawSky();
-        listen(window, "resize", () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(() => { drawSky(); rainSize(); }, 250); });
+        listen(window, "resize", () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(() => { drawSky(); rainSize(); radarResize(); }, 250); });
         /* The bulb is the newest word on the sky: a press undoes a sky fixed in
            the phone's Weather app, which otherwise left the bulb doing nothing
            to it (the owner's, 19 Nov 2026). */
@@ -1138,6 +1208,7 @@
                 const k = t.dataset.pref, v = !prefs()[k];
                 setPref(k, v);
                 if (k === "radar" && gps) { gps.hidden = !v; if (!v) closeRadar(false); }
+                if (k === "car" && carRadio) { carRadio.hidden = !v; if (!v && radio) radio.closeWheel(); }
                 if (k === "sfx" && v) sfx("ping");
                 renderView();
                 const again = phone.querySelector(`[data-pref="${k}"]`); if (again) again.focus({ preventScroll: true });
@@ -1148,6 +1219,18 @@
             else if (t.dataset.station != null || t.dataset.radio) radioPress(t);
         });
         listen(document, "keydown", (e) => {
+            /* Tab goes round the big phone while it's open, as in any dialog, not out onto the page behind (scan 18 Nov evening). */
+            if (e.key === "Tab" && isBig() && !phone.classList.contains("is-shrinking")) {
+                const big = phone.querySelector(".gx-big");
+                const all = [...big.querySelectorAll("button, [tabindex]:not([tabindex='-1'])")].filter((b) => !b.disabled && b.offsetParent !== null);
+                if (!all.length) return;
+                const at = all.indexOf(document.activeElement);
+                if (at < 0 || (e.shiftKey && at === 0) || (!e.shiftKey && at === all.length - 1)) {
+                    e.preventDefault();
+                    all[e.shiftKey ? all.length - 1 : 0].focus({ preventScroll: true });
+                }
+                return;
+            }
             if (e.key !== "Escape") return;
             if (isBig()) { e.stopPropagation(); closeBig(true); }
             else if (gps && gps.classList.contains("is-open")) { e.stopPropagation(); closeRadar(true); }
@@ -1166,6 +1249,7 @@
         /* Not the click that just closed it (the game's ✕): that click carries on up to here once the
            game has gone, and it reopened the radar at once (the owner's, 19 Nov 2026). Its button is
            out of the page by then, so a click from outside the radar as it is now is not an open. */
+        listen(document, "click", (e) => { if (e.target === document.body && root.classList.contains("gx-radar-open")) { e.preventDefault(); closeRadar(true); } });
         listen(gps, "click", (e) => { if (!gps.classList.contains("is-open") && gps.contains(e.target)) { e.preventDefault(); openRadar(); } });
         listen(gps, "keydown", (e) => { if ((e.key === "Enter" || e.key === " ") && e.target === gps && !gps.classList.contains("is-open")) { e.preventDefault(); openRadar(); } });
 
@@ -1178,7 +1262,7 @@
             EscapeLayers.register({
                 elements: () => [saver, radio && radio.wheelEl, isBig() ? phone.querySelector(".gx-big") : null, gps && gps.classList.contains("is-open") ? gps : null].filter(Boolean),
                 close: (el) => {
-                    if (el === saver) saverStop();
+                    if (el === saver) saverStop(true);
                     else if (radio && el === radio.wheelEl) radio.closeWheel();
                     else if (gps && el === gps) closeRadar(true);
                     else closeBig(true);
@@ -1211,7 +1295,36 @@
         timers.push(setInterval(() => { drawStanding(); drawPhone(); drawSky(); }, 20000));
         // The newest text pops up in a moment after the page settles.
         // Not on a phone, where it would sit over the archive: there it only buzzes.
-        later(() => { if (innerWidth >= 760 && !document.querySelector(".modal-overlay.active, .modal-overlay.open, dialog[open]")) showNote(); }, 4000);
+        later(showNote, 4000);
+        hallwayWatch();
+    }
+
+    /* THE HALLWAY (the owner's, 18 Nov 2026: "remove all gta skin features, have them do the slide out
+       transitions with the rest of the homepage"). css/skin-gta.css slides the pieces away and hides them
+       while html.hallway-open is on; here, whatever was open is closed on the way in (the big phone, Maze
+       Maps, the wheel, the screensaver, a text or a banner), the pieces are made inert so nothing behind the
+       walk takes a key, and the rain stops drawing. The radio holds itself (js/gta-radio.js). On the way
+       out the rain starts again and the pieces are live once more; what had been closed stays closed. */
+    let hallWatch = null, wasInHall = false;
+    function hallwayWatch() {
+        const apply = () => {
+            const now = inHallway();
+            if (now === wasInHall) return;
+            wasInHall = now;
+            [carRadio, cash, phone, gps, word, banner].forEach((n) => { if (n) n.inert = now; });
+            if (now) {
+                hideNote(); hideBigWord();
+                closeBig(false); closeRadar(false); saverStop();
+                if (radio) radio.closeWheel();
+                if (banner) banner.classList.remove("is-on");
+            } else if (rainCv && !rainRaf && !reduced()) {
+                rainLast = 0;
+                rainRaf = requestAnimationFrame(rainFrame);
+            }
+        };
+        hallWatch = new MutationObserver(apply);
+        hallWatch.observe(root, { attributes: true, attributeFilter: ["class"] });
+        apply();
     }
 
     function stop() {
@@ -1220,6 +1333,7 @@
         timers.forEach((t) => { clearTimeout(t); clearInterval(t); }); timers = [];
         clearTimeout(resizeTimer);
         if (observer) observer.disconnect(); observer = null;
+        if (hallWatch) hallWatch.disconnect(); hallWatch = null; wasInHall = false;
         nodes.forEach((n) => n.remove()); nodes = [];
         if (game) { game.destroy(); game = null; }
         if (phoneGame) { phoneGame.destroy(); phoneGame = null; }

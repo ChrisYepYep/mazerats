@@ -62,7 +62,11 @@
     }
     function finish(h) {
         closePanel(); try { localStorage.removeItem(NOW_KEY); } catch (e) { /* fine */ } current = null; const loc = localOf(h.id), mins = Math.max(1, Math.round((Date.now() - loc.start) / 60000)) + (loc.hints || 0) * 5, st = prog().get().hunts[h.id] || {}, b = el("div", "hw-won");
-        b.appendChild(el("h4", "", h.name)); if (st.place) b.appendChild(el("div", "f", "Your place: " + st.place + (["th", "st", "nd", "rd"][st.place % 100 > 10 && st.place % 100 < 14 ? 0 : st.place % 10] || "th") + " to finish")); b.appendChild(el("div", "f", "Your time: " + mins + " mins" + (loc.hints ? ", " + loc.hints + (loc.hints === 1 ? " hint" : " hints") : "")));
+        /* the place comes with the save's answer, after this opens (scan 18 Nov evening: read at once, a first finish never had it), so it's
+           filled in when it arrives */
+        const placeEl = el("div", "f"), ord = n => n + (["th", "st", "nd", "rd"][n % 100 > 10 && n % 100 < 14 ? 0 : n % 10] || "th"); placeEl.hidden = true;
+        const fill = () => { const s = (prog().get().hunts || {})[h.id] || {}; if (!s.place) return false; placeEl.textContent = "Your place: " + ord(s.place) + " to finish"; placeEl.hidden = false; return true; };
+        b.appendChild(el("h4", "", h.name)); b.appendChild(placeEl); if (!fill() && st && prog().onChange) { const off = prog().onChange(() => { if (fill() || !b.isConnected) off(); }); setTimeout(off, 120000); } b.appendChild(el("div", "f", "Your time: " + mins + " mins" + (loc.hints ? ", " + loc.hints + (loc.hints === 1 ? " hint" : " hints") : "")));
         b.appendChild(el("h5", "", "What you get")); for (const t of ["The badge.", "A Finders' Lounge: a room only finishers can open, with a trophy per hunt.", "His key, on your Lost Property shelf and Mazer Card."]) b.appendChild(el("p", "", t)); win().open("Well found", b);
     }
     LIVE.onClick((px, py) => {

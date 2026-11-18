@@ -585,7 +585,7 @@ const FIXED_PAGES = {
    noindex it was allowed to fetch. /profiles comes here as "profile", and
    /profile?p=<id> is the same generic Profiles card (no per-player card, the
    owner's). tools/check-share-headers.js checks both stay listed. */
-// Scout's Trail and Fallin' Furni are kept out while they are not live: see switchedPage.
+// Scout's Trail, Fallin' Furni and Pura Panic are kept out while they are not live: see switchedPage.
 const NOINDEX_PAGES = new Set(["glyphs", "profile"]);
 
 /* THE GAMES ON A SWITCH OF THEIR OWN (26 Oct 2026, the bug scan; the
@@ -612,7 +612,10 @@ const SWITCHED = {
     // Beta is Coming Soon to everybody but its testers (settings.js, 27 Oct 2026).
     fallinfurni: { field: "fallinFurniState", read: v => (v === "beta" ? "coming-soon" : v || "live") },
     // settings.js's ratState: one of its VALID_RAT_STATES, else DEFAULT_RAT_STATE ("maintenance").
-    scout: { field: "ratRaceState", read: v => (["maintenance", "live", "hidden"].includes(v) ? v : "maintenance") }
+    scout: { field: "ratRaceState", read: v => (["maintenance", "live", "hidden"].includes(v) ? v : "maintenance") },
+    /* Pura Panic too (scan 18 Nov evening): its card could be indexed while the game was in maintenance and left out of the sitemap.
+       settings.js's puraState: "live" only when set so, else maintenance. Its card stays as it is, kept out while not live. */
+    purapanic: { field: "puraPanicState", read: v => (v === "live" ? "live" : "maintenance") }
 };
 const FF_NOT_LIVE = {
     "coming-soon": "Look up before you sit down. Furni will soon be dropping from the ceiling, and you'll sit on every seat in the order it landed. Coming soon to Maze Rats.",

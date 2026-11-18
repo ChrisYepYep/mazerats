@@ -1152,7 +1152,7 @@
                     <li><span class="guess-rules-n" aria-hidden="true">2</span>
                         <p>The three that belong are different rooms, so go on <strong>the building</strong>: the floor, the palette, how densely it is furnished.</p></li>
                     <li><span class="guess-rules-n" aria-hidden="true">3</span>
-                        <p>One pick a round. ${escapeHtml(window.Daily.bonusRule(String(POINTS_EACH), "picking"))}
+                        <p>One pick a round. ${escapeHtml(window.Daily.bonusRule(String(POINTS_EACH), "picking"))} A round left past 37 seconds also eats into the bonus for the rest of the day.
                             Everyone gets the same five, new at midnight, UTC.</p></li>
                 </ol>
 
@@ -1921,6 +1921,27 @@
                 if (e.key === "Escape" && isOpen()) close();
             });
         }
+
+        /* Number keys 1 to 4 pick that picture on the live round (scan 18
+           Nov evening), so a desktop player can play without the mouse.
+           Through the tile's own click, so it is exactly a click: the live
+           sheet is the one not inert, and its delegated handler still
+           checks the round. Only with focus in this window (or nowhere),
+           so a notice in front of it or a field being typed in keeps its
+           keys. */
+        document.addEventListener("keydown", e => {
+            if (!isOpen() || e.ctrlKey || e.metaKey || e.altKey || e.repeat) return;
+            if (!/^[1-4]$/.test(e.key)) return;
+            const t = e.target;
+            if (t !== document.body && !(t && el.overlay.contains(t))) return;
+            if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return;
+            const live = Array.from(el.deck.querySelectorAll(".odd-tile"))
+                .filter(b => !b.closest("[inert]") && b.getClientRects().length);
+            const btn = live[Number(e.key) - 1];
+            if (!btn || btn.disabled) return;
+            e.preventDefault();
+            btn.click();
+        });
 
         /* Another tab playing the same day. `storage` fires in every OTHER
            tab when one saves, so a tab left open on round 2 hears that the

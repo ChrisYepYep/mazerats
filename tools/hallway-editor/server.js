@@ -214,9 +214,11 @@ http.createServer(async (req, res) => {
             publishing = { running: true, at: 0, of: 0, error: null };
             const child = require("child_process").fork(path.join(__dirname, "publish.js"), [], { silent: true });
             let errors = "";
+            /* a launch that fails (node gone, out of memory) is a failed publish, not a crash of the whole editor (scan 18 Nov evening) */
+            child.on("error", e => { publishing = { running: false, at: 0, of: 0, error: "Publish couldn't start: " + String(e && e.message || e) }; });
             child.stdout.on("data", d => { const m = /progress (\d+) of (\d+)/.exec(String(d)); if (m) { publishing.at = +m[1]; publishing.of = +m[2]; } });
             child.stderr.on("data", d => { errors += d; });
-            child.on("exit", code => { publishing = { running: false, at: 0, of: 0, error: code ? (errors.trim().split("\n").pop() || "It stopped.") : null }; });
+            child.on("exit", code => { if (!publishing.running) return; publishing = { running: false, at: 0, of: 0, error: code ? (errors.trim().split("\n").pop() || "It stopped.") : null }; });
             return json(res, 200, publishing);
         }
         /* the Events Gallery's exhibits (12 Nov 2026): the site's public events, as visitors see them (no hidden or admin-only ones), and

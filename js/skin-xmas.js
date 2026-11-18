@@ -1289,7 +1289,14 @@
                 .filter((r) => r.width && r.height && r.bottom > 0 && r.top < H && r.right > 0 && r.left < W);
         }
         let last = performance.now(), id = 0;
+        /* PUT AWAY IN THE HALLWAY: css/hallway.css hides the canvas while html.hallway-open is on, but the
+           loop went on drawing a screen of snow 60 times a second behind the walk, about 12% of a core
+           (scan 18 Nov evening). It stops there, and starts again when the Hallway closes. */
+        const doc = document.documentElement, inHall = () => doc.classList.contains("hallway-open");
+        const hallMo = new MutationObserver(() => { if (!id && !inHall()) { last = performance.now(); id = requestAnimationFrame(frame); } });
+        hallMo.observe(doc, { attributes: true, attributeFilter: ["class"] });
         function frame(now) {
+            if (inHall()) { id = 0; ctx.clearRect(0, 0, W, H); return; }
             id = requestAnimationFrame(frame);
             const began = performance.now();
             const dt = Math.min(0.05, (now - last) / 1000); last = now;
@@ -1336,7 +1343,7 @@
         addEventListener("resize", resize);
         snow = {
             // Its canvas goes too: reduced motion turned on stops the snowfall without the rest of the skin.
-            stop() { cancelAnimationFrame(id); removeEventListener("resize", resize); storm = 0; cv.remove(); added.delete(cv); },
+            stop() { cancelAnimationFrame(id); hallMo.disconnect(); removeEventListener("resize", resize); storm = 0; cv.remove(); added.delete(cv); },
             // For trying it out: a blizzard now.
             blizzard() { next = performance.now() / 1000; start = -1; }
         };
@@ -1670,6 +1677,8 @@
             cutAt = performance.now();
             budget += took;
             // What came off goes back over your shoulder: chunks, and a little powder.
+            // Not with reduced motion: the snow is cleared without the flying chunks (scan 18 Nov evening, open since the morning).
+            if (reduceMq.matches) budget = 0;
             while (budget >= DIG.CHUNK) {
                 budget -= DIG.CHUNK;
                 const big = Math.random() < 0.35, img = chunks[Math.floor(Math.random() * (big ? 10 : 5))];

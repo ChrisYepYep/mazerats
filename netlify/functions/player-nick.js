@@ -222,8 +222,8 @@ const GUEST_RAT = /^guestrat\d*$/;
    left anybody free to be "ChrisYepYep" on every board. So an admin
    account's username is REFUSED as taken (it is somebody's name, not a
    matter of taste for the review), except to the player it plainly
-   belongs to: one whose own Discord name, Discord username or linked Habbo
-   is that name. A player who already holds such a name keeps it (a name
+   belongs to: one whose own Discord username or linked Habbo is that name
+   (not the Discord display name, since 18 Nov: see adminNameRefused). A player who already holds such a name keeps it (a name
    held is never taken), and the Warren can still set one for anybody.
    The usernames are read from the admins collection, kept for five minutes
    a warm instance; the permanent owner is always on the list, so a failed
@@ -246,7 +246,12 @@ async function adminNameKeys(db) {
 async function adminNameRefused(db, key, player, row) {
     if (!(await adminNameKeys(db)).has(key)) return false;
     const habbo = row && row.habbo && typeof row.habbo.name === "string" ? row.habbo.name : "";
-    const own = [player.name, player.username, row && row.name, row && row.username, habbo].map(nameKey);
+    /* Not the Discord DISPLAY name (player.name / row.name): anybody can set
+       that to "ChrisYepYep" on Discord and then take the name here. Only the
+       Discord username (unique on Discord) and a linked Habbo (`habbo` is
+       only ever OriginsBot's, a motto code's or an admin's, never a guess)
+       say a name is theirs (scan 18 Nov evening). */
+    const own = [player.username, row && row.username, habbo].map(nameKey);
     return !own.includes(key);
 }
 

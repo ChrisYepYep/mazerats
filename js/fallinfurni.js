@@ -1887,11 +1887,62 @@
         const restart = document.getElementById("ff-restart");
         if (submit) submit.hidden = !run || practiceFrom !== null;
         if (restart) restart.hidden = !run;
+        quitAsk(false);
         if (!note) return;
         if (!run) { note.textContent = ""; return; }
         note.textContent = run.lives <= 1
             ? "Restarting on your last life ends the run."
             : `Restart costs a life: ${run.lives - 1} left after it.`;
+    }
+
+    /* QUIT ASKS FIRST ON A RUN WITH POINTS (scan 18 Nov evening): it sat
+       right beside Submit & Quit, 16px tall on a phone, and one press threw
+       the run away. The menu's row gives way to "Yes, quit" and "Back", in
+       the menu's own buttons; the note says what is lost. A run with
+       nothing on it still quits on the one press. */
+    let quitAsking = false;
+    function quitAsk(on) {
+        const more = document.querySelector("#ff-paused .ff-paused-more");
+        if (!more) return;
+        let sure = document.getElementById("ff-quit-sure");
+        if (!sure && on) {
+            sure = document.createElement("div");
+            sure.className = "ff-paused-more ff-paused-sure";
+            sure.id = "ff-quit-sure";
+            sure.hidden = true;
+            const yes = document.createElement("button");
+            yes.type = "button";
+            yes.id = "ff-quit-yes";
+            yes.textContent = "Yes, quit";
+            yes.addEventListener("click", () => { quitAsk(false); quitRun(false); });
+            const back = document.createElement("button");
+            back.type = "button";
+            back.id = "ff-quit-back";
+            back.textContent = "Back";
+            back.addEventListener("click", () => {
+                quitAsk(false);
+                pauseMenu();
+                const q = document.getElementById("ff-quit");
+                if (q) q.focus({ preventScroll: true });
+            });
+            sure.append(yes, back);
+            more.after(sure);
+        }
+        quitAsking = Boolean(on);
+        more.hidden = quitAsking;
+        if (sure) sure.hidden = !quitAsking;
+        if (quitAsking) {
+            const note = document.getElementById("ff-paused-note");
+            const pts = run ? run.score() : 0;
+            if (note) note.textContent = `Quit and lose this run's ${pts.toLocaleString("en-GB")} point${pts === 1 ? "" : "s"}? Nothing goes on the board.`;
+            document.getElementById("ff-quit-back").focus({ preventScroll: true });
+        }
+    }
+    function askQuit() {
+        if (!run) return;
+        if (!quitAsking && run.score() > 0) { quitAsk(true); return; }
+        quitAsk(false);
+        quitRun(false);
     }
 
     // Lose this round for a life and play the same level again.
@@ -2045,7 +2096,7 @@
             audioLabels();
         });
         if (submitQuit) submitQuit.addEventListener("click", () => quitRun(true));
-        if (quit) quit.addEventListener("click", () => quitRun(false));
+        if (quit) quit.addEventListener("click", askQuit);
         /* Escape pauses a running round and resumes a paused one (28 Oct
            2026, the owner's: the tips said "Press Escape to pause" while it
            closed the window). It used only to resume; in the homepage's
@@ -4838,6 +4889,10 @@
 
     let refreshFloorSwatches = null, refreshWallSwatches = null;
     function syncPickers() {
+        /* The builder's panel only (scan 18 Nov evening): a player's page
+           has the same pickers, hidden, and they were rebuilt at every level -
+           listeners 373 to 1043 over eight rounds - for nobody to see. */
+        if (!Editor) return;
         const f = document.getElementById("ff-floor-pattern");
         const w = document.getElementById("ff-wall-pattern");
         const l = document.getElementById("ff-layout");
@@ -5743,7 +5798,20 @@
     const byTouch = (() => { try { return window.matchMedia("(pointer: coarse)").matches; } catch (e) { return false; } })();
     const tipForDevice = (t) => t.who === "mouse" ? !byTouch : t.who === "touch" ? byTouch
         : t.who === "window" ? inWindow : t.who === "page" ? !inWindow : true;
-    const tipFits = (t) => t.who !== "signedout" || !(window.Account && Account.current);
+    /* NOT A LINE THE TITLE IS ALREADY SAYING (scan 18 Nov evening): the
+       tagline tip came up under the tagline, and signed out the leaderboard
+       tip came up under the sign-in line with the same sentence. Checked as
+       each tip comes up, since the sign-in line comes and goes (it is hidden
+       while the game is closed, and then the tip is the only place saying it).
+       A signed-out tip is always some form of "sign in", which that line says. */
+    const tipSay = (s) => String(s || "").replace(/\s+/g, " ").trim().toLowerCase().replace(/[.!]+$/, "");
+    const tipOnTitle = (t) => {
+        const who = document.getElementById("ff-title-who");
+        if (t.who === "signedout" && who && who.offsetHeight) return true;
+        const sub = document.querySelector("#ff-title .ff-title-sub");
+        return Boolean(sub && sub.offsetHeight && tipSay(sub.textContent) === tipSay(t.text));
+    };
+    const tipFits = (t) => (t.who !== "signedout" || !(window.Account && Account.current)) && !tipOnTitle(t);
     // undefined until the settings answer: null is the game's own list.
     let savedTips;
     const tipsHere = () => (Array.isArray(savedTips) ? savedTips : DEFAULT_TIPS()).filter(tipForDevice);
@@ -5788,6 +5856,18 @@
         new MutationObserver(() => { if (title.dataset.state === "playing") hide(); }).observe(title, { attributes: true, attributeFilter: ["data-state"] });
         if (window.EscapeLayers) EscapeLayers.register({ elements: () => (isOpen() ? [card] : []), close: hide });
         else document.addEventListener("keydown", (ev) => { if (ev.key === "Escape" && isOpen()) { ev.preventDefault(); ev.stopPropagation(); hide(); } }, true);
+        /* TAB STAYS IN THE CARD (scan 18 Nov evening): only the title behind
+           it was inert, so Tab walked out past Got it into the site's header.
+           It goes round the card's own buttons instead, either way. */
+        document.addEventListener("keydown", (ev) => {
+            if (ev.key !== "Tab" || !isOpen()) return;
+            const stops = [...card.querySelectorAll("button, a[href], input, [tabindex]:not([tabindex='-1'])")].filter(el => !el.disabled && el.offsetParent !== null);
+            if (!stops.length) return;
+            const at = stops.indexOf(document.activeElement);
+            const next = ev.shiftKey ? (at <= 0 ? stops.length - 1 : at - 1) : (at < 0 || at === stops.length - 1 ? 0 : at + 1);
+            ev.preventDefault();
+            stops[next].focus({ preventScroll: true });
+        }, true);
     }
 
     function startTips() {
@@ -8182,8 +8262,8 @@
             walkTo(t.x, t.y);
         });
 
-        refreshFloorSwatches = buildPicker("floors", "ff-floor-pattern", "ff-floor-colours", "floorPattern", "floorColour");
-        refreshWallSwatches = buildPicker("walls", "ff-wall-pattern", "ff-wall-colours", "wallPattern", "wallColour");
+        if (Editor) refreshFloorSwatches = buildPicker("floors", "ff-floor-pattern", "ff-floor-colours", "floorPattern", "floorColour");
+        if (Editor) refreshWallSwatches = buildPicker("walls", "ff-wall-pattern", "ff-wall-colours", "wallPattern", "wallColour");
 
         /* The layout picker. Filled from RoomLayouts rather than from a list
            written out here, so adding a model to the extractor's SHIP list is

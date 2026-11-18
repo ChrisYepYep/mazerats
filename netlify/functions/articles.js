@@ -274,13 +274,17 @@ exports.handler = async (event) => {
         const now = new Date().toISOString();
 
         /* The What's New panel's Hide and Show: wn.hidden alone, with no
-           rev check (it changes nothing an open edit holds). */
+           rev check. It does MOVE rev (scan 18 Nov evening): an editor open
+           in another tab holds wn.hidden too, and its next save put the old
+           value back; now that save is refused as changed while open. This
+           tab's editor takes the new rev from the reply (setHidden in
+           js/admin-articles.js), so its own save is not refused. */
         if (event.httpMethod === "PUT" && typeof body.whatsNewHidden === "boolean" && Object.keys(body).every(k => k === "id" || k === "whatsNewHidden")) {
             const id = typeof body.id === "string" ? body.id : "";
             if (!id) return json(400, { error: "Missing article id" });
             const res = await articles.findOneAndUpdate(
                 { id },
-                { $set: { "wn.hidden": body.whatsNewHidden } },
+                { $set: { "wn.hidden": body.whatsNewHidden }, $inc: { rev: 1 } },
                 { returnDocument: "after", projection: { _id: 0 } }
             );
             const saved = res && (res.value !== undefined ? res.value : res);

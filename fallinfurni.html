@@ -266,6 +266,11 @@
                 if (k.length !== 1) return;
                 if (k === BETA_CODE.charAt(at)) at++;
                 else { at = k === BETA_CODE.charAt(0) ? 1 : 0; if (!at) return; }
+                /* The first letter alone goes on through (scan 18 Nov
+                   evening): every "b" typed on the page was swallowed, and
+                   the site's jump-to-letter list missed it. Held back from
+                   the second letter of the code on, which is before the F. */
+                if (at < 2) return;
                 ev.preventDefault();
                 ev.stopImmediatePropagation();
                 if (at === BETA_CODE.length) { at = 0; askBeta(true); }

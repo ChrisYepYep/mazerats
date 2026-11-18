@@ -475,8 +475,14 @@ function startCountdown(target) {
            block goes at zero: rounded down, the final second showed
            "0 days 00 : 00 : 00" for up to a second first. */
         const secs = Math.ceil(left / 1000);
-        parts.days.textContent = String(Math.floor(secs / 86400));
-        parts.hours.textContent = pad(Math.floor(secs / 3600) % 24);
+        const days = Math.floor(secs / 86400), hours = Math.floor(secs / 3600) % 24;
+        parts.days.textContent = String(days);
+        parts.hours.textContent = pad(hours);
+        // "1 day", not "1 DAYS" (scan 18 Nov evening); "min" and "sec"
+        // read the same either way.
+        const tag = (el, one, many, n) => { const t = el.nextElementSibling; if (t && t.textContent !== (n === 1 ? one : many)) t.textContent = n === 1 ? one : many; };
+        tag(parts.days, "day", "days", days);
+        tag(parts.hours, "hr", "hrs", hours);
         parts.mins.textContent = pad(Math.floor(secs / 60) % 60);
         parts.secs.textContent = pad(secs % 60);
     }

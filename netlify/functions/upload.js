@@ -32,10 +32,15 @@ const SIGNATURES = {
 };
 const sniffImage = buffer => Object.keys(SIGNATURES).find(type => SIGNATURES[type](buffer)) || null;
 
+/* Each part cut to 60 characters (scan 18 Nov evening), as upload-video.js
+   cuts its own: a very long prefix or name made a key the image function and
+   DELETE would not take, so the picture was stored and could be neither
+   shown nor deleted. */
 function slugify(text) {
     return (text || "").toLowerCase().trim()
         .replace(/[^a-z0-9]+/g, "-")
-        .replace(/(^-|-$)/g, "") || "image";
+        .replace(/(^-|-$)/g, "")
+        .slice(0, 60).replace(/-$/, "") || "image";
 }
 
 /* Every uploaded image lives under a top-level folder in the blob store,

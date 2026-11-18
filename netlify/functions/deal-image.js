@@ -153,6 +153,17 @@
    to the largest known, but not cached anywhere, so the next ask evens it
    out properly.
 
+   WHAT THE PADDING DOES NOT HIDE (scan 18 Nov evening, accepted). The
+   comment segments are plain filler that any JPEG reader skips, so a script
+   that downloads the four tiles and strips them gets the real sizes back.
+   The padding stops the size showing in the Network tab and Content-Length,
+   which is the easy way; it is not a guarantee. Hiding it in the picture
+   itself would mean encoding each tile to a matched size, which means a
+   different quality per tile, and pictures are never made softer to save or
+   hide anything (the owner's rule). A script that goes this far is already
+   reading the day's pictures as fast as it likes, and the score is judged
+   by the server either way.
+
    ----------------------------------------------------------------------
    CACHED HARD, AND WHY THAT IS SAFE HERE
 

@@ -265,7 +265,7 @@
         ops.push((ctx, t) => {
             const big = num(done);
             const w = text(ctx, big, PAD, mazesY, t.ink, true);
-            text(ctx, `of ${num(total)} open mazes completed`, PAD + w + 5, mazesY, t.text);
+            text(ctx, `of ${num(total)} walkable mazes completed`, PAD + w + 5, mazesY, t.text);
             const bw = W - PAD * 2;
             box(ctx, PAD, barY, bw, 7, t.ink);
             const fill = total ? Math.round((bw - 4) * Math.min(1, done / total)) : 0;

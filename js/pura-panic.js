@@ -338,10 +338,22 @@
        again. Now, when any of it would be off the screen, it goes back to
        the middle exactly as it opens there (place); a window still wholly
        on screen stays where it was dragged. Also on a reopen. */
+    /* AND BACK TO THE MIDDLE WHEN IT WAS NEVER MOVED (scan 18 Nov evening).
+       A window the player left where it opened was put in the corner by a
+       small browser and stayed there when the browser grew again. Until it
+       is dragged, every resize centres it, as it opened; once dragged, only
+       a window going off the screen is brought back, and is then centred
+       again as it opened. */
+    let dragged = false;
     function clamp() {
         if (!isOpen()) return;
+        if (!dragged) { place(); return; }
         const r = root.getBoundingClientRect();
-        if (r.left < 0 || r.top < 0 || r.left + root.offsetWidth > window.innerWidth || r.top + root.offsetHeight > window.innerHeight) place();
+        if (r.left < 0 || r.top < 0 || r.left + root.offsetWidth > window.innerWidth || r.top + root.offsetHeight > window.innerHeight) {
+            // Back in the middle, as it opened: from here it follows the size again.
+            place();
+            dragged = false;
+        }
     }
 
     // Dragged by its yellow, as the Profiles window is (wireProgressDrag in js/home.js).
@@ -364,6 +376,7 @@
         });
         window.addEventListener("pointermove", e => {
             if (pointer === null || e.pointerId !== pointer) return;
+            dragged = true;
             root.style.left = Math.min(Math.max(0, window.innerWidth - root.offsetWidth), Math.max(0, e.clientX - dx)) + "px";
             root.style.top = Math.min(Math.max(0, window.innerHeight - root.offsetHeight), Math.max(0, e.clientY - dy)) + "px";
         });

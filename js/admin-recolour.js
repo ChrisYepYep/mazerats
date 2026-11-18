@@ -1774,6 +1774,38 @@ window.AdminRecolour = (function () {
     }
 
     // onSignedOut is admin.js's lockOut — see failed().
+    /* DARK AND LIGHT MODE ARE OFF WHILE RECOLOUR IS SHOWN (scan 18 Nov
+       evening). With the home page's bulb on, the Warren follows it, and
+       html[data-dark]'s sheet outranks the preview, so the preview showed
+       grey instead of the colours being edited, and the scan listed the dark
+       sheet's colours too (that sheet is now data-recolour-skip in
+       warren.html). The attributes are taken off while the panel is on
+       screen, held off if the bulb's script puts them back (a theme change,
+       another tab), and the bulb's own state put back when the panel is
+       left. Nothing is written: the bulb's setting is untouched. */
+    let darkHeld = false, darkWatch = null;
+    function holdDarkOff(on) {
+        const d = document.documentElement;
+        const strip = () => {
+            if (d.hasAttribute("data-dark")) d.removeAttribute("data-dark");
+            if (d.hasAttribute("data-light")) d.removeAttribute("data-light");
+        };
+        if (on) {
+            if (darkHeld) return;
+            darkHeld = true;
+            strip();
+            if (typeof MutationObserver !== "undefined") {
+                darkWatch = new MutationObserver(strip);
+                darkWatch.observe(d, { attributes: true, attributeFilter: ["data-dark", "data-light"] });
+            }
+        } else if (darkHeld) {
+            darkHeld = false;
+            if (darkWatch) { darkWatch.disconnect(); darkWatch = null; }
+            // The bulb's script puts back whatever its setting says.
+            if (typeof window.__mrSetDark === "function" && typeof window.__mrDarkOn === "function") window.__mrSetDark(window.__mrDarkOn());
+        }
+    }
+
     async function mount(container, adminToken, onSignedOut) {
         shell = container;
         token = adminToken;
@@ -1788,9 +1820,10 @@ window.AdminRecolour = (function () {
         readSkinSite();
         const panelEl = shell.closest(".admin-panel");
         if (panelEl && typeof MutationObserver !== "undefined") {
-            new MutationObserver(() => { if (!panelEl.hidden) readSkinSite(); })
+            new MutationObserver(() => { if (!panelEl.hidden) readSkinSite(); holdDarkOff(!panelEl.hidden); })
                 .observe(panelEl, { attributes: true, attributeFilter: ["hidden"] });
         }
+        holdDarkOff(!(panelEl && panelEl.hidden));
         try { await refresh(); } catch (e) {
             if (e.status === 401) failed(e);
             else say("Couldn't load saved palettes: " + e.message, "bad");

@@ -64,7 +64,7 @@
         }
         for (const p of l.props || []) {
             if (p.k !== "leetstand" && p.k !== "leetstand2") continue; const pc = LIVE.pieceOf(p); if (!pc) continue;
-            const a = LIVE.mapPoint(p.x + pc.dx, p.y + pc.dx, LIVE.tileZ(l, p.x, p.y));
+            const a = LIVE.mapPoint(p.x + pc.dx, p.y + pc.dy, LIVE.tileZ(l, p.x, p.y));      // dy, not dx twice (scan 18 Nov evening: right only while both were 0)
             /* the stand-in stands on the stand's own tile and is seated on it, so the stand itself doesn't hide its own slip */
             out.push({ f: pc.fp.f, flip: false, x0: Math.round(a[0]) - pc.fp.ox, y0: Math.round(a[1]) - pc.fp.oy, who: { x: p.x, y: p.y, seat: { p, x: p.x, y: p.y, l, dir: 2 } } });
         }

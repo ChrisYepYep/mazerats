@@ -1094,7 +1094,7 @@
             const meta = [utc(d.drawnAt), d.drawnBy ? `by ${d.drawnBy}` : "in this tab", d.onWheel ? `${d.onWheel} on the wheel` : ""];
             if (d.leftOutWinners) meta.push("past winners left out");
             r.appendChild(el("div", "pw-draw-meta", meta.filter(Boolean).join(" · ")));
-            if (d.prize) r.appendChild(el("div", "pw-draw-meta", `Prize: ${d.prize}`));
+            if (d.prize) r.appendChild(el("div", "pw-draw-meta", `Prize: ${String(d.prize).replace(/^prize\s*:\s*/i, "")}`));
             if (!d.kept && d.status === "saved" && d.savedBy) r.appendChild(el("div", "pw-draw-meta", `Saved by ${d.savedBy}, ${utc(d.savedAt)}`));
             if (!d.kept && d.status === "void" && d.voidedBy) r.appendChild(el("div", "pw-draw-meta", `Voided by ${d.voidedBy}, ${utc(d.voidedAt)}`));
             if (d.kept && d.error) r.appendChild(el("div", "pw-draw-error", d.error));

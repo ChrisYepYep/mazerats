@@ -41,6 +41,8 @@ html.hallway-instant body > .site-footer { transition: none !important; }
 html.hallway-open .hw-bats, html.hallway-open .xm-snowfall { display: none; }
 /* nor does the snow bank up along the bottom: in the Hallway it only falls past the windows (8 Nov 2026) */
 html.hallway-open .xm-drift, html.hallway-open .site-footer .xm-piece { display: none; }
+/* the string of lights hangs below the header, over the Hallway's own card: kept to the header while it's open (scan 18 Nov evening) */
+html.hallway-open .site-header .xm-lights, html.hallway-open .site-header .xm-glow { visibility: hidden; }
 
 #hallway-stage {
     position: fixed;
@@ -132,6 +134,9 @@ html.hallway-instant #hallway-stage { transition: none; }
 .hallway-note-body .hallway-note-legal { align-self: stretch; margin-top: 2px; padding-top: 10px; border-top: 1px solid rgba(0, 0, 0, .55); box-shadow: inset 0 1px 0 rgba(255, 220, 160, .12); color: var(--parchment-mid, #c7a679); opacity: .9; text-align: center; }
 /* the notes after the first, in the same quiet brown, without a rule of their own (10 Nov 2026) */
 .hallway-note-body .hallway-note-small { align-self: stretch; margin-top: -4px; color: var(--parchment-mid, #c7a679); opacity: .9; text-align: center; }
+/* Christmas's pale daytime page (html[data-light], theme-frostlight.css) has no --parchment-mid, so the brown fell back to tan on pale blue,
+   about 1.3:1 (scan 18 Nov evening): its own quiet navy there instead */
+html[data-light] .hallway-note-body .hallway-note-legal, html[data-light] .hallway-note-body .hallway-note-small { color: var(--unknown-text, #263c5c); opacity: 1; }
 /* the Hallway's mark (9 Nov 2026): over a closed screen's note, and in place of the wordmark on the loader */
 .hallway-logo { display: block; width: 240px; max-width: 100%; height: auto; margin: -4px auto -6px; pointer-events: none; user-select: none; }
 .hallway-logo-loader { width: 420px; max-width: 86vw; margin: 0 auto 6px; }

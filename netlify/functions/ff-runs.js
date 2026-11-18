@@ -632,6 +632,28 @@ async function report(db, event) {
         return json(503, { error: "The run log couldn't be read just now." });
     }
 
+    /* NO DISCORD NAME FOR A VIEW-ONLY ACCOUNT (scan 18 Nov evening), the
+       rule pura-stats.js and daily-games.js keep. `player` on a run is the
+       session's Discord display name, so a viewer or an Atlas account read
+       Discord names here. Without the "site" scope a run is called by the
+       player's nickname now, or "A player with no nickname"; a nickname that
+       cannot be read hides every name (fails closed). Typed Habbo names are
+       left alone: they are what the player typed into the game. */
+    if (!personal) {
+        const ids = [...new Set(rows.filter(r => r.player && r.playerId).map(r => String(r.playerId)))];
+        let nicks = new Map();
+        if (ids.length) {
+            try {
+                const found = await db.collection("players").find({ id: { $in: ids } }, { projection: { _id: 0, id: 1, nick: 1 } }).toArray();
+                found.forEach(p => { if (typeof p.nick === "string" && p.nick) nicks.set(String(p.id), p.nick); });
+            } catch (e) {
+                console.error("ff-runs: could not read nicknames; hiding every player name", e);
+                nicks = new Map();
+            }
+        }
+        rows = rows.map(r => (r.player ? { ...r, player: (r.playerId && nicks.get(String(r.playerId))) || "A player with no nickname" } : r));
+    }
+
     /* ---- the headline */
     const finished = rows.filter(r => r.outcome !== "abandoned");
     const won = rows.filter(r => r.outcome === "won");

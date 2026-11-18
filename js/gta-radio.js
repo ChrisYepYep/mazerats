@@ -6,11 +6,12 @@
    19 Nov 2026); the engine still knows FFAudio and RatMusic, unused. Each song goes round twice, seamlessly,
    then the station moves on to its next, in a shuffled order.
 
-   Off until a station is picked. The station is remembered on this device
-   (mazerats_gta_radio) and, as a browser plays nothing before a press, it
-   comes back on with the first click of the next visit (js/skin-gta.js).
-   Quiet while a game's window is in front (html[data-game-front]) or the
-   tab is hidden. Switching on the radio never changes the games' own
+   Off on every visit until a station is picked (the owner's, 19 Nov 2026).
+   The station last played is remembered on this device (mazerats_gta_radio),
+   and the wheel opens on it.
+   Quiet while a game's window is in front (html[data-game-front]), while the
+   Hallway is open (html.hallway-open, which has its own music), or while the
+   tab is hidden; it carries on as it was after. Switching on the radio never changes the games' own
    music settings: those are read, worked round and put back as they were.
 
    The station wheel: a ring of station logos over the dimmed page, the
@@ -238,25 +239,26 @@
             if (!quiet) showName();
             changed();
         }
-        function off() {
+        // quiet: no name across the screen (a change from the phone's Radio app, scan 18 Nov evening).
+        function off(quiet) {
             clearTimeout(trackTimer);
             if (station >= 0) write(SAVE, JSON.stringify({ station: STATIONS[station].id, on: false }));
             station = -1; playing = false; kind = null; nowTrack = "";
             silence();
-            showName();
+            if (!quiet) showName();
             changed();
         }
-        function step(dir, showWheel) {
+        function step(dir, showWheel, quiet) {
             const n = STATIONS.length + 1;                     // the stations and OFF
             const at = (station < 0 ? STATIONS.length : station);
             const to = (at + dir + n) % n;
-            if (to === STATIONS.length) off(); else tune(to);
+            if (to === STATIONS.length) off(quiet); else tune(to, quiet);
             if (showWheel && wheelEl) drawWheel(to === STATIONS.length ? -1 : to);
         }
-        function resumeSaved(force) {
+        function resumeSaved(force, quiet) {
             let s = null;
             try { s = JSON.parse(read(SAVE) || "null"); } catch (e) { s = null; }
-            if (!s || (!s.on && !force)) { if (force) tune(0); return; }
+            if (!s || (!s.on && !force)) { if (force) tune(0, quiet); return; }
             const i = STATIONS.findIndex((x) => x.id === s.station);
             if (i >= 0 && station !== i) tune(i, true);
         }
@@ -370,11 +372,11 @@
             else if (e.key === "Tab") { e.preventDefault(); wheelEl.focus({ preventScroll: true }); }
         }
 
-        // ---- quiet behind a game, and while the tab is hidden
+        // ---- quiet behind a game, in the Hallway (the owner's, 18 Nov 2026: its own music plays there), and while the tab is hidden
         const root = document.documentElement;
-        const front = () => { const was = held; held = !!root.dataset.gameFront; if (held !== was && playing) { if (held) pauseEngine(); else if (!document.hidden) resumeEngine(); } };
+        const front = () => { const was = held; held = !!root.dataset.gameFront || root.classList.contains("hallway-open"); if (held !== was && playing) { if (held) pauseEngine(); else if (!document.hidden) resumeEngine(); } };
         const mo = new MutationObserver(front);
-        mo.observe(root, { attributes: true, attributeFilter: ["data-game-front"] });
+        mo.observe(root, { attributes: true, attributeFilter: ["data-game-front", "class"] });
         const vis = () => { if (!playing) return; if (document.hidden) pauseEngine(); else if (!held) resumeEngine(); };
         document.addEventListener("visibilitychange", vis);
         front();

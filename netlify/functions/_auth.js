@@ -36,7 +36,11 @@ const ADMIN_AUDIENCE = "mazerats-admin";
    minted before it. Absent when the account has none, which is what every
    token issued before this existed looks like too. */
 function signAdminToken(username, version) {
-    const payload = { sub: username };
+    /* `sid`, a random id for this sign-in (scan 18 Nov evening): two sign-ins
+       of one account in the same second had the same sub and iat, so they
+       were one session to Log out (sessionKey below), and logging out of one
+       logged out the other. */
+    const payload = { sub: username, sid: require("crypto").randomBytes(9).toString("base64url") };
     if (version !== undefined && version !== null) payload.tv = String(version);
     /* 48 hours, not 12 (2 Nov 2026, the owner's call): a working day plus
        the next one without signing in again mid-task. A password change
@@ -208,7 +212,8 @@ async function roleOf(event) {
    Rows go by themselves once the token would have expired anyway (a TTL index
    on expireAt). */
 const ENDED_SESSIONS = "admin_ended_sessions";
-const sessionKey = payload => `${payload.sub}:${payload.iat}`;
+// A token from before `sid` keeps the key it was logged out under.
+const sessionKey = payload => `${payload.sub}:${payload.iat}${typeof payload.sid === "string" && payload.sid ? `:${payload.sid}` : ""}`;
 async function sessionEnded(db, payload) {
     if (!payload || typeof payload.sub !== "string" || !payload.iat) return false;
     return Boolean(await db.collection(ENDED_SESSIONS).findOne({ _id: sessionKey(payload) }, { projection: { _id: 1 } }));
@@ -239,12 +244,23 @@ async function hasLiveSession(event) {
     const payload = tokenPayload(event);
     if (!payload || typeof payload.sub !== "string" || !payload.sub) return false;
     const key = `${sessionKey(payload)}:${payload.tv === undefined ? "" : payload.tv}`;
+    return (await liveRole(event, key)) !== null;
+}
+/* The role of a live session, remembered the same way. The rate limit's
+   exemption asks for this (scan 18 Nov evening): only an owner or admin's
+   bulk work is exempt, not a view-only or Atlas account. */
+async function liveSessionRole(event) {
+    const payload = tokenPayload(event);
+    if (!payload || typeof payload.sub !== "string" || !payload.sub) return null;
+    return liveRole(event, `${sessionKey(payload)}:${payload.tv === undefined ? "" : payload.tv}`);
+}
+async function liveRole(event, key) {
     const known = liveSessions.get(key);
-    if (known && Date.now() - known.at < LIVE_SESSION_MS) return known.live;
-    const live = (await roleOf(event)) !== null;
+    if (known && Date.now() - known.at < LIVE_SESSION_MS) return known.role;
+    const role = await roleOf(event);
     if (liveSessions.size >= LIVE_SESSIONS_MAX) liveSessions.clear();
-    liveSessions.set(key, { live, at: Date.now() });
-    return live;
+    liveSessions.set(key, { role, at: Date.now() });
+    return role;
 }
 
 async function lookUpRole(event) {
@@ -410,5 +426,5 @@ module.exports = {
     ADMIN_AUDIENCE, signAdminToken, tokenPayload, tokenIsCurrent,
     PERMANENT_OWNER, ROLES, resolveRole, roleOf, isOwner, isOwnerWrite, canWrite,
     forbidden, READ_ONLY, OUT_OF_SCOPE, refuseWrite, WRITE_SCOPES,
-    AUTH_UNAVAILABLE, isAuthUnavailable, sessionEnded, endSession, hasLiveSession
+    AUTH_UNAVAILABLE, isAuthUnavailable, sessionEnded, endSession, hasLiveSession, liveSessionRole
 };

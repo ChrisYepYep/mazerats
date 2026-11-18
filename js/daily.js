@@ -1253,6 +1253,21 @@ window.Daily = (function () {
             if (!busy) paint();
         }
 
+        /* Alive only if the last day played is today or yesterday (UTC),
+           the server's rule (statsFor) and the splash's (liveStreak).
+           With a guard (scan 18 Nov evening): the day just finished
+           (`armed`, or one the list has) is a day played, so a recount
+           that arrives without it cannot read 0 under it. The streak is
+           then at least 1, never more than the figures say beyond that. */
+        function liveOf(s, t) {
+            let n = s.lastDay === t || s.lastDay === dayBefore(t) ? Number(s.streak) || 0 : 0;
+            const f = latest && latest.day;
+            const justDone = f && (f === t || f === dayBefore(t)) &&
+                (armed === f || (Array.isArray(s.recent) && s.recent.some(r => r && r.day === f)));
+            if (justDone && n < 1) n = 1;
+            return n;
+        }
+
         function paint() {
             if (!latest) return;
             const s = latest.stats;
@@ -1261,9 +1276,7 @@ window.Daily = (function () {
             if (armed && armed !== focus) armed = null;
             const list = Array.isArray(s.recent) ? s.recent : null;
             const played = new Map((list || []).filter(r => r && r.day).map(r => [r.day, r]));
-            // Alive only if the last day played is today or yesterday (UTC),
-            // the server's rule (statsFor) and the splash's (liveStreak).
-            const live = s.lastDay === t || s.lastDay === dayBefore(t) ? Number(s.streak) || 0 : 0;
+            const live = liveOf(s, t);
             const pending = armed === focus && played.has(focus);
             const shown = pending ? Math.max(0, live - 1) : live;
             const best = Math.max(Number(s.best) || 0, live);
@@ -1284,9 +1297,16 @@ window.Daily = (function () {
                 const monday = shiftDay(t, -((new Date(t + "T00:00:00Z").getUTCDay() + 6) % 7) - 7 * (STRIP_WEEKS - 1));
                 let cells = `<span class="daily-streak-utc" title="Days run midnight to midnight UTC">UTC</span>` +
                     "MTWTFSS".split("").map(c => `<span class="daily-streak-dow">${c}</span>`).join("");
-                let on = 0, missed = 0;
+                let on = 0, missed = 0, weeks = 0;
                 for (let w = 0; w < STRIP_WEEKS; w++) {
                     const mon = shiftDay(monday, w * 7);
+                    /* A week wholly before the first day that counts is
+                       left out rather than drawn as a dated row of nothing
+                       (scan 18 Nov evening): a new player's card was four
+                       empty weeks and looked broken. The week of today is
+                       never before it, so there is always one row. */
+                    if (shiftDay(mon, 6) < from) continue;
+                    weeks++;
                     cells += `<span class="daily-streak-wk">${dayLabel(mon, { day: "numeric", month: "short" })}</span>`;
                     for (let i = 0; i < 7; i++) {
                         const d = shiftDay(mon, i);
@@ -1305,7 +1325,7 @@ window.Daily = (function () {
                         cells += `<span class="daily-streak-c ${cls}"${title ? ` title="${title}"` : ""}${stamp}></span>`;
                     }
                 }
-                html += `<div class="daily-streak-cal" role="img" aria-label="The last five weeks in UTC days: ${on} played, ${missed} missed">${cells}</div>` +
+                html += `<div class="daily-streak-cal" role="img" aria-label="The last ${weeks === 1 ? "week" : ["", "", "two", "three", "four", "five"][weeks] + " weeks"} in UTC days: ${on} played, ${missed} missed">${cells}</div>` +
                     `<p class="daily-streak-key" aria-hidden="true"><span><i class="l2"></i>fewer</span>` +
                     `<span><i class="l5"></i>all five ${verb}</span><span><i class="is-miss"></i>missed</span></p>`;
             }
@@ -1336,9 +1356,7 @@ window.Daily = (function () {
             cell.className = cell.getAttribute("data-final") + " is-stamping";
             cell.removeAttribute("data-final");
             setTimeout(() => {
-                const s = latest.stats;
-                const t = today();
-                const live = s.lastDay === t || s.lastDay === dayBefore(t) ? Number(s.streak) || 0 : 0;
+                const live = liveOf(latest.stats, today());
                 const n = el.querySelector(".daily-streak-n");
                 if (!n) return;
                 n.textContent = String(live);

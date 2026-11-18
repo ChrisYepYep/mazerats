@@ -1046,6 +1046,36 @@ document.addEventListener("DOMContentLoaded", async () => {
        not once, so changing the setting takes effect without a reload. */
     const reducedMotion = window.matchMedia ? window.matchMedia("(prefers-reduced-motion: reduce)") : null;
 
+    /* THE EVENTS READ AGAIN every five minutes while the tab is in view (scan
+       18 Nov evening). They were read once, so an event added in the Warren
+       never reached a tab already open. A plain GET of its own rather than
+       Api.getEvents, which is memoised for the whole page (the archive's
+       lists share it) and records a failure as the site being degraded; a
+       failed read here just keeps what it had. The slide on screen is
+       matched to its fresh copy by id, because the turn below finds it by
+       identity and would otherwise take it for an event that had ended. */
+    const REREAD_MS = 5 * 60 * 1000;
+    let lastRead = Date.now(), rereading = false;
+    async function rereadEvents() {
+        if (rereading || document.visibilityState !== "visible" || Date.now() - lastRead < REREAD_MS) return;
+        rereading = true;
+        try {
+            const res = await fetch("/.netlify/functions/events", { cache: "no-store" });
+            if (!res.ok) return;
+            let data = await res.json();
+            if (typeof Api._unpack === "function") data = Api._unpack(data);
+            if (!Array.isArray(data)) return;
+            events = data;
+            if (showing && !showing.extra) {
+                const same = events.find(e => e.id === showing.id);
+                if (same) showing = same;
+            }
+        } catch (e) { /* offline or slow: the old list stands until next time */ }
+        finally { lastRead = Date.now(); rereading = false; }
+    }
+    setInterval(rereadEvents, 60 * 1000);
+    document.addEventListener("visibilitychange", rereadEvents);
+
     // Always armed, even for a list of one or none. A single event that
     // ends has to be taken down, and one that goes live later has to appear,
     // and neither happens if the timer only exists when there was already

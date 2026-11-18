@@ -2827,6 +2827,26 @@
             });
         }
 
+        /* Number keys 1 to 5 pick that name on the live round (scan 18 Nov
+           evening), so a desktop player can play without the mouse. Through
+           the name's own click, so it is exactly a click: the live sheet is
+           the one not inert, and a name already tried is disabled. Only
+           with focus in this window (or nowhere), so a notice in front of
+           it or a field being typed in keeps its keys. */
+        document.addEventListener("keydown", e => {
+            if (!isOpen() || e.ctrlKey || e.metaKey || e.altKey || e.repeat) return;
+            if (!/^[1-5]$/.test(e.key)) return;
+            const t = e.target;
+            if (t !== document.body && !(t && el.overlay.contains(t))) return;
+            if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return;
+            const live = Array.from(el.deck.querySelectorAll(".guess-option"))
+                .filter(b => !b.closest("[inert]") && b.getClientRects().length);
+            const btn = live[Number(e.key) - 1];
+            if (!btn || btn.disabled) return;
+            e.preventDefault();
+            btn.click();
+        });
+
         // /guess is a rewrite to this page (see netlify.toml), so a pasted
         // link opens the game rather than dropping someone on the archive
         // wondering what they were sent.

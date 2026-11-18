@@ -29,11 +29,18 @@ html[data-skin="gta"] .hero-title span {
     color: #ffd166;
     text-shadow: 2px 2px 0 #ff7a3d, 4px 4px 0 #ff2e88, 6px 6px 0 #5b1580, 8px 8px 0 #1a0833;
 }
+/* The fellow fansites too: their grey and amber were lost on the orange of the sunset (scan 18 Nov evening). */
 html[data-skin="gta"] .tagline,
 html[data-skin="gta"] .site-footer,
-html[data-skin="gta"] .site-footer a {
+html[data-skin="gta"] .site-footer a,
+html[data-skin="gta"] .fellow-fansites {
     text-shadow: 0 1px 0 #1a0833, 0 0 8px rgba(20, 6, 40, 0.95), 0 0 2px #000;
 }
+html[data-skin="gta"] .fellow-fansites-title,
+html[data-skin="gta"] .fellow-fansites-links a { color: #ffd9ea; }
+html[data-skin="gta"] .fellow-fansites-dot { color: #ffb3d4; }
+html[data-skin="gta"] .fellow-fansites-links a:hover,
+html[data-skin="gta"] .fellow-fansites-links a:focus-visible { color: #fff; }
 
 /* B: the night coast. Neon instead of the sunset's paintwork. */
 html[data-skin="gta"][data-dark] .site-header {
@@ -86,6 +93,7 @@ html[data-skin="gta"] .gx-cash {
     align-items: flex-end;
     pointer-events: auto;
     cursor: default;
+    transition: transform 0.9s cubic-bezier(0.2, 0.7, 0.3, 1);
 }
 html[data-skin="gta"] .gx-cash-n {
     font: 900 30px/1 'Montserrat', sans-serif;
@@ -112,6 +120,7 @@ html[data-skin="gta"] .gx-phone {
     flex-direction: column;
     align-items: flex-end;
     gap: 10px;
+    transition: transform 0.9s cubic-bezier(0.2, 0.7, 0.3, 1);
 }
 html[data-skin="gta"] .gx-phone-btn {
     position: relative;
@@ -343,12 +352,13 @@ html[data-skin="gta"] .gx-text-go {
     padding: 4px 12px;
     border: 0;
     border-radius: 4px;
-    background: #ff5fa2;
+    /* A deeper pink than the phone's: white 11px on #ff5fa2 was 2.8:1 (scan 18 Nov evening). */
+    background: #c2185b;
     color: #fff;
     font: 700 11px 'Roboto', sans-serif;
     cursor: pointer;
 }
-html[data-skin="gta"] .gx-text-go:hover { background: #e2456c; }
+html[data-skin="gta"] .gx-text-go:hover { background: #a3134c; }
 html[data-skin="gta"] .gx-text-none { padding: 30px 10px; text-align: center; color: #9a3b6c; font: italic 13px 'Roboto', sans-serif; }
 html[data-skin="gta"] .gx-big-home {
     position: absolute;
@@ -529,13 +539,13 @@ html[data-skin="gta"] .gx-pill {
     padding: 5px 11px;
     border: 0;
     border-radius: 6px;
-    background: #ff5fa2;
+    background: #c2185b;
     color: #fff;
     font: 700 11px 'Montserrat', sans-serif;
     white-space: nowrap;
     cursor: pointer;
 }
-html[data-skin="gta"] .gx-pill:hover { background: #e2456c; }
+html[data-skin="gta"] .gx-pill:hover { background: #a3134c; }
 html[data-skin="gta"] .gx-pill.gx-ghost { background: #ffe0ec; color: #c2185b; }
 html[data-skin="gta"] .gx-pill.gx-ghost:hover { background: #ffc9de; }
 html[data-skin="gta"] .gx-tog {
@@ -632,7 +642,7 @@ html[data-skin="gta"] .gx-gps {
     background: #35373a;
     box-shadow: 0 0 0 1px #7d2652, 0 6px 16px rgba(0, 0, 0, 0.6);
     cursor: pointer;
-    transition: width 0.3s cubic-bezier(0.2, 0.9, 0.3, 1), height 0.3s cubic-bezier(0.2, 0.9, 0.3, 1), border-radius 0.3s ease, box-shadow 0.2s;
+    transition: width 0.3s cubic-bezier(0.2, 0.9, 0.3, 1), height 0.3s cubic-bezier(0.2, 0.9, 0.3, 1), border-radius 0.3s ease, box-shadow 0.2s, transform 0.9s cubic-bezier(0.2, 0.7, 0.3, 1);
 }
 html[data-skin="gta"] .gx-gps[hidden] { display: none; }
 html[data-skin="gta"] .gx-gps:not(.is-open):hover,
@@ -765,12 +775,12 @@ html[data-skin="gta"] .gm-card button {
     padding: 6px 14px;
     border: 0;
     border-radius: 6px;
-    background: #ff5fa2;
+    background: #c2185b;
     color: #fff;
     font: 700 12px 'Montserrat', sans-serif;
     cursor: pointer;
 }
-html[data-skin="gta"] .gm-card button:hover { background: #e2456c; }
+html[data-skin="gta"] .gm-card button:hover { background: #a3134c; }
 html[data-skin="gta"] .gm button:focus-visible { outline: 2px solid #ffd166; outline-offset: 2px; }
 /* In the phone: the map fills the screen's width, the pad under it. */
 html[data-skin="gta"] .gx-drive { flex: 1 1 auto; display: flex; flex-direction: column; min-height: 0; background: #12061f; }
@@ -819,6 +829,7 @@ html[data-skin="gta"] .gx-car {
     background: linear-gradient(#2b1d3e, #12061f);
     box-shadow: 0 6px 14px rgba(0, 0, 0, 0.6);
     cursor: pointer;
+    transition: transform 0.9s cubic-bezier(0.2, 0.7, 0.3, 1);
 }
 html[data-skin="gta"] .gx-car[hidden] { display: none; }
 html[data-skin="gta"] .gx-car:hover, html[data-skin="gta"] .gx-car:focus-visible { outline: none; border-color: #c9a24e; }
@@ -976,7 +987,8 @@ html[data-skin="gta"] .gx-saver-hint {
     -webkit-background-clip: text;
     background-clip: text;
     color: transparent;
-    opacity: 0.6;
+    /* Brighter than it was (0.6): it read as nothing over a dark deal (scan 18 Nov evening). */
+    opacity: 0.85;
     pointer-events: none;
 }
 html[data-skin="gta"] .gx-saver-title b { display: block; font: italic 900 clamp(48px, 9vw, 92px)/0.82 'Montserrat', sans-serif; letter-spacing: -2px; color: #fff; text-transform: uppercase; text-shadow: 4px 4px 0 #ff2e88, 8px 8px 0 #000; }
@@ -1021,10 +1033,60 @@ html[data-skin="gta"] .gx-mission p b { color: #7dff9a; }
 
 /* ---------------- SMALLER SCREENS ---------------- */
 @media (max-width: 900px) {
-    html[data-skin="gta"] .gx-gps, html[data-skin="gta"] .gx-car { display: none; }
+    html[data-skin="gta"] .gx-car { display: none; }
+    /* The radar on a phone (the owner's, 19 Nov 2026): smaller, in the corner opposite the phone,
+       and a tap opens Maze Maps as a sheet across the bottom with the pad under the map. */
+    html[data-skin="gta"] .gx-gps {
+        left: 12px;
+        bottom: max(12px, env(safe-area-inset-bottom));
+        width: 70px;
+        height: 70px;
+        border-width: 2px;
+    }
+    html[data-skin="gta"] .gx-gps-map { width: 66px !important; height: 66px !important; }
+    html[data-skin="gta"] .gx-gps-tip { display: none; }
+    /* Room at the foot of the page to scroll the last cards and the footer clear of the phone and radar. */
+    html[data-skin="gta"] body { padding-bottom: 256px; }
+    html[data-skin="gta"] .gx-gps.is-open {
+        left: 8px;
+        bottom: max(8px, env(safe-area-inset-bottom));
+        z-index: 10040;
+        width: min(520px, calc(100vw - 16px));
+        height: min(560px, calc(100vh - 16px));
+        height: min(560px, calc(100dvh - 16px));
+        border-radius: 16px;
+        box-shadow: 0 0 0 1px #7d2652, 0 8px 20px rgba(0, 0, 0, 0.6), 0 0 0 100vmax rgba(8, 3, 16, 0.55);
+    }
+    html[data-skin="gta"].gx-radar-open, html[data-skin="gta"].gx-radar-open body { overflow: hidden; overscroll-behavior: none; }
+    /* A catch layer under the sheet: a tap on the dimmed page closes Maze Maps instead of reaching the page. */
+    html[data-skin="gta"].gx-radar-open body::after { content: ""; position: fixed; inset: 0; z-index: 10039; }
+    html[data-skin="gta"] .gx-gps.is-open .gm-hud { height: 40px; flex-basis: 40px; padding: 0 8px 0 12px; font-size: 11px; }
+    html[data-skin="gta"] .gx-gps.is-open .gm-compact .gm-view { flex: 1 1 auto; height: auto; }
+    html[data-skin="gta"] .gx-gps.is-open .gm-compact .gm-x { display: block; width: 32px; height: 32px; font-size: 15px; line-height: 30px; }
+    html[data-skin="gta"] .gx-gps.is-open .gm-pad { background: #12061f; grid-template-columns: repeat(3, 56px); grid-template-rows: repeat(3, 46px); gap: 5px; padding: 8px 0 12px; }
+    html[data-skin="gta"] .gx-gps.is-open .gm-pad button { font-size: 20px; }
+}
+/* A phone on its side: the pad moves to the right of the map, so the map keeps its height. */
+@media (max-width: 900px) and (max-height: 500px) and (orientation: landscape) {
+    html[data-skin="gta"] .gx-gps.is-open { width: min(680px, calc(100vw - 16px)); }
+    html[data-skin="gta"] .gx-gps.is-open .gx-gps-game.gm-compact {
+        display: grid;
+        grid-template-columns: 1fr auto;
+        grid-template-rows: auto 1fr auto;
+    }
+    html[data-skin="gta"] .gx-gps.is-open .gm-compact .gm-hud { grid-column: 1 / -1; }
+    html[data-skin="gta"] .gx-gps.is-open .gm-compact .gm-view { grid-column: 1; grid-row: 2; }
+    html[data-skin="gta"] .gx-gps.is-open .gm-compact .gm-foot { grid-column: 1; grid-row: 3; }
+    html[data-skin="gta"] .gx-gps.is-open .gm-compact .gm-pad { grid-column: 2; grid-row: 2 / 4; align-content: center; padding: 0 12px; }
 }
 @media (max-width: 760px) {
     html[data-skin="gta"] .gx-cash { display: none; }
+}
+/* The smaller phone by height too: on a phone on its side the 136x228 one took over half the screen (scan 18 Nov evening). */
+@media (max-width: 760px), (max-width: 900px) and (max-height: 500px) {
+    html[data-skin="gta"] body { padding-bottom: 164px; }
+}
+@media (max-width: 760px), (max-height: 500px) {
     html[data-skin="gta"] .gx-phone { right: 12px; bottom: 12px; }
     html[data-skin="gta"] .gx-phone-btn { width: 84px; height: 140px; padding: 9px 7px 17px; border-radius: 15px; }
     html[data-skin="gta"] .gx-phone-btn::after { bottom: 7px; width: 18px; height: 4px; margin-left: -9px; }
@@ -1034,6 +1096,98 @@ html[data-skin="gta"] .gx-mission p b { color: #7dff9a; }
     html[data-skin="gta"] .gx-phone-clock b { font-size: 16px; }
     html[data-skin="gta"] .gx-phone-clock small { font-size: 7px; }
     html[data-skin="gta"] .gx-big { width: min(300px, calc(100vw - 24px)); height: min(480px, calc(100vh - 40px)); }
+}
+/* A short big phone (a phone on its side, 300px or so): a small clock and the apps four across,
+   so the whole home screen, the ✕ and the dark switch with it, fits without scrolling (scan 18 Nov evening). */
+@media (max-height: 500px) {
+    html[data-skin="gta"] .gx-home-clock { padding: 10px 0 2px; font-size: 22px; }
+    html[data-skin="gta"] .gx-home-date { margin-bottom: 10px; }
+    html[data-skin="gta"] .gx-apps { grid-template-columns: repeat(4, 1fr); gap: 8px 2px; padding: 0 4px; }
+    html[data-skin="gta"] .gx-app i { width: 46px; height: 46px; border-radius: 13px; }
+    html[data-skin="gta"] .gx-app i svg { width: 28px; height: 28px; }
+    html[data-skin="gta"] .gx-app-badge { right: 4px; }
+    html[data-skin="gta"] .gx-home-foot { margin-bottom: 8px; padding-top: 8px; }
+}
+/* On a short window the big phone reaches the top, where the cash peeked out behind it (scan 18 Nov evening). */
+@media (max-height: 700px) {
+    html[data-skin="gta"]:has(.gx-phone.is-big) .gx-cash { visibility: hidden; }
+}
+/* Fingers: the home bar, the Settings switches and the Radio rows at 40px or more to tap (scan 18 Nov evening).
+   The switches keep their look; a clear edge round each makes the target bigger. */
+@media (pointer: coarse) {
+    html[data-skin="gta"] .gx-big { padding-bottom: 42px; }
+    html[data-skin="gta"] .gx-big::after { bottom: 42px; }
+    html[data-skin="gta"] .gx-big-home { bottom: 1px; width: 120px; height: 40px; margin-left: -60px; background: none; }
+    html[data-skin="gta"] .gx-big-home::after { content: ""; position: absolute; left: 50%; top: 50%; width: 46px; height: 12px; margin: -6px 0 0 -23px; border-radius: 6px; background: #3b2b52; }
+    html[data-skin="gta"] .gx-big-home:hover { background: none; }
+    html[data-skin="gta"] .gx-big-home:active::after { background: #ff5fa2; }
+    html[data-skin="gta"] .gx-tog::before { content: ""; position: absolute; inset: -9px -6px; }
+    html[data-skin="gta"] .gx-station { min-height: 40px; align-items: center; }
+}
+/* The taller home bar's room taken back from above the clock, so the home screen still fits a 480px phone
+   (a short one has its own smaller clock, above). */
+@media (pointer: coarse) and (min-height: 501px) {
+    html[data-skin="gta"] .gx-home-clock { padding-top: 6px; }
+    html[data-skin="gta"] .gx-home-date { margin-bottom: 14px; }
+    html[data-skin="gta"] .gx-apps { row-gap: 12px; }
+    html[data-skin="gta"] .gx-home-foot { margin-bottom: 8px; padding-top: 8px; }
+}
+
+/* ---------------- THE HALLWAY: none of it there ---------------- */
+/* The owner's (18 Nov 2026): "for the hallways, remove all gta skin features, have them do the slide out
+   transitions with the rest of the homepage, the top bar can stay gta skin themed though". While
+   html.hallway-open is on (js/hallway.js), the radar and the phone go down out of the screen and the car
+   radio and the cash up, as the archive does (css/hallway.css: 0.9s, the same curves both ways), and then
+   are hidden, so nothing can be tabbed to or tapped. The full-screen ones are not shown at all. The
+   header's stars stay: the top bar keeps its look. The Hallway's own loader keeps the site's look, not
+   the GTA loading screen it shared a class with. js/skin-gta.js closes what was open and puts the radio,
+   the rain and the pop-ups to rest meanwhile. */
+html[data-skin="gta"].hallway-open .gx-phone,
+html[data-skin="gta"].hallway-open .gx-gps,
+html[data-skin="gta"].hallway-open .gx-car,
+html[data-skin="gta"].hallway-open .gx-cash {
+    visibility: hidden;
+    pointer-events: none;
+    transition: transform 0.9s cubic-bezier(0.6, 0, 0.8, 0.3), visibility 0s linear 0.9s;
+}
+html[data-skin="gta"].hallway-open .gx-phone,
+html[data-skin="gta"].hallway-open .gx-gps { transform: translateY(calc(100% + 60px)); }
+html[data-skin="gta"].hallway-open .gx-car,
+html[data-skin="gta"].hallway-open .gx-cash { transform: translateY(calc(-100% - 140px)); }
+html[data-skin="gta"].hallway-open .gx-rain { visibility: hidden; }
+html[data-skin="gta"].hallway-open .gx-word,
+html[data-skin="gta"].hallway-open .gx-mission,
+html[data-skin="gta"].hallway-open .gx-saver,
+html[data-skin="gta"].hallway-open .gx-wheel,
+html[data-skin="gta"].hallway-open .gx-radio-name { display: none !important; }
+/* Arriving straight at /hallway: nothing to watch go. */
+html[data-skin="gta"].hallway-instant .gx-phone,
+html[data-skin="gta"].hallway-instant .gx-gps,
+html[data-skin="gta"].hallway-instant .gx-car,
+html[data-skin="gta"].hallway-instant .gx-cash { transition: none; }
+/* The Hallway's loader (js/hallway.js .hallway-loader) reuses .site-loader-inner and its bar, which the
+   Vice palette turns into the GTA loading strip (css/style.css): put back the site's own. */
+html[data-theme="vice"] .hallway-loader .site-loader-inner {
+    position: static;
+    height: auto;
+    flex-direction: column;
+    justify-content: normal;
+    gap: 9px;
+    padding: 0;
+    background: none;
+}
+html[data-theme="vice"] .hallway-loader .site-loader-label { color: var(--parchment); min-width: 0; }
+html[data-theme="vice"] .hallway-loader .site-loader-track {
+    position: static;
+    width: 240px;
+    height: 14px;
+    padding: 2px;
+    border: 2px solid var(--chrome-border);
+    background: var(--chrome-row);
+    box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.35);
+}
+html[data-theme="vice"] .hallway-loader .site-loader-fill {
+    background: repeating-linear-gradient(to right, var(--parchment) 0, var(--parchment) 6px, transparent 6px, transparent 8px);
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -1046,4 +1200,7 @@ html[data-skin="gta"] .gx-mission p b { color: #7dff9a; }
     html[data-skin="gta"] .gx-gps, html[data-skin="gta"] .gx-car, html[data-skin="gta"] .gx-saver, .gx-collage, .gx-panw { transition: none; }
     html[data-skin="gta"] .gx-gps.is-open .gx-gps-game, html[data-skin="gta"] .gm-say, html[data-skin="gta"] .gm-card, html[data-skin="gta"] .gx-word.is-on .gx-word-bar b, html[data-skin="gta"] .gx-eq.is-on i { animation: none; }
     html[data-skin="gta"] .gx-word.is-on { animation: gx-word 2.8s steps(1) forwards; }
+    html[data-skin="gta"] .gx-phone, html[data-skin="gta"] .gx-cash,
+    html[data-skin="gta"].hallway-open .gx-phone, html[data-skin="gta"].hallway-open .gx-gps,
+    html[data-skin="gta"].hallway-open .gx-car, html[data-skin="gta"].hallway-open .gx-cash { transition: none; }
 }

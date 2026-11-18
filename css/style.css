@@ -11056,7 +11056,7 @@ html[data-theme="vice"] .site-loader::before {
     box-shadow: 3px 3px 0 #000;
     pointer-events: none;
 }
-html[data-theme="vice"] .site-loader-inner {
+html[data-theme="vice"] .site-loader .site-loader-inner {
     position: absolute;
     left: 0;
     right: 0;
@@ -11069,9 +11069,9 @@ html[data-theme="vice"] .site-loader-inner {
     padding: 0 30px;
     background: #000;
 }
-html[data-theme="vice"] .site-loader-wordmark { display: none; }
-html[data-theme="vice"] .site-loader-label { color: #ffd166; min-width: 9ch; }
-html[data-theme="vice"] .site-loader-track {
+html[data-theme="vice"] .site-loader .site-loader-wordmark { display: none; }
+html[data-theme="vice"] .site-loader .site-loader-label { color: #ffd166; min-width: 9ch; }
+html[data-theme="vice"] .site-loader .site-loader-track {
     position: absolute;
     left: 0;
     right: 0;
@@ -11083,11 +11083,11 @@ html[data-theme="vice"] .site-loader-track {
     background: #1a1a1a;
     box-shadow: none;
 }
-html[data-theme="vice"] .site-loader-fill { background: #ff5fa2; }
+html[data-theme="vice"] .site-loader .site-loader-fill { background: #ff5fa2; }
 @media (max-width: 600px) {
     html[data-theme="vice"] .site-loader::after { right: 18px; bottom: 108px; }
     html[data-theme="vice"] .site-loader::before { right: 18px; bottom: 76px; }
-    html[data-theme="vice"] .site-loader-inner { padding: 0 16px; }
+    html[data-theme="vice"] .site-loader .site-loader-inner { padding: 0 16px; }
 }
 
 /* ==========================================================================
@@ -11457,7 +11457,9 @@ body[data-page="admin"] .site-footer p {
    than a flex row, because js/site.js shows the widget by writing
    display: block onto it; the viewport beside it is already overflow:
    hidden, so it makes room for the float by itself. 88px and 106px. */
-@media (max-width: 360px) {
+/* 480 rather than 360 (scan 18 Nov evening): at 375 and 430 the bar was
+   still about 100px of a 667px screen, the label on a line of its own. */
+@media (max-width: 480px) {
     .site-header { padding: 4px 12px; row-gap: 2px; }
     .brand-group { row-gap: 2px; }
     .header-events-label {
@@ -11470,7 +11472,7 @@ body[data-page="admin"] .site-footer p {
 
 /* On a touch screen the title carries 7px of reach above it (see the
    touch-targets block), so the label comes down to meet its first line. */
-@media (max-width: 360px) and (pointer: coarse) {
+@media (max-width: 480px) and (pointer: coarse) {
     .header-events-label { margin-top: 7px; }
 }
 
@@ -14346,17 +14348,21 @@ body[data-page="admin"] #activity-sessions {
        paint of its own — so the only thing it changes is where a press
        counts.
 
-       Safe to overlap outwards here in a way the fansite row above is not:
-       there is exactly one control on this titlebar, so there is no
-       neighbour for it to steal from. */
+       NOT CENTRED ANY MORE (scan 18 Nov evening). This said the bar had
+       exactly one control, which stopped being true when the dark-mode bulb
+       arrived just left of the handle: the 10px this reached out on its left
+       covered most of the bulb, so only a 16px strip of it worked and a tap
+       on its right half opened the menu. The reach now starts at the
+       handle's own left edge and grows rightwards, into the window's frame
+       and the margin beyond it, where there is nothing to press. */
     .side-spine--menu::after {
         content: "";
         position: absolute;
         top: 50%;
-        left: 50%;
+        left: 0;
         width: 44px;
         height: 44px;
-        transform: translate(-50%, -50%);
+        transform: translateY(-50%);
     }
 
     /* Sideways text in a handle this size would be unreadable, and the
@@ -23817,3 +23823,204 @@ a.modal-share-btn { text-decoration: none; }
 /* Netlify's "Powered by Netlify" pill, which its servers add to every page on the free
    plan: hidden at the owner's request (3 Nov 2026). Its frame id is Netlify's and could change. */
 #nl-badge-frame { display: none !important; }
+
+/* ---------- the 18 Nov evening scan: phones (scan 18 Nov evening) ----------
+
+   Reaches for the small controls the scan measured on a phone, plus a few
+   phone-only layout fixes. Every reach is an invisible box: nothing here
+   changes how a control looks, and none of it applies to a mouse. */
+@media (pointer: coarse) {
+    /* The dark-mode bulb: 26 by 25, of which the menu's reach used to take
+       most (see .side-spine--menu::after). Its own reach now runs 14px
+       left, towards the title (which ends far short of it), and up and down
+       within the grab bar; never right, where the menu handle starts. */
+    .chrome-light::before {
+        content: "";
+        position: absolute;
+        left: -14px;
+        right: 0;
+        top: -8px;
+        bottom: -5px;
+        background: transparent;
+    }
+
+    /* The archive window's name, back to its opening view: one 16px line
+       of text. Up through the window's top border (nothing to press there;
+       the peeking rat takes no presses) and 2px down; never sideways, where
+       the spotlight star and the bulb are. The h2 clips for its ellipsis,
+       which would crop the reach, and "Origins Maze Archive" fits the bar
+       at 320px with room to spare, so it is let out here. */
+    .chrome-titlebar h2:has(> .chrome-title-home) { overflow: visible; }
+    .chrome-title-home { position: relative; }
+    .chrome-title-home::after {
+        content: "";
+        position: absolute;
+        left: 0;
+        right: 0;
+        top: -20px;
+        bottom: -3px;
+        z-index: 1;
+        background: transparent;
+    }
+
+    /* Discord and Sign in: 30px of reach, held to the 30px pitch of the
+       admin's second row of pills (see "controls that keep their size and
+       gain a reach"). Without that row — every visitor but the owner —
+       there is nothing under them, so they get 40. */
+    .site-header:not(.site-header-notice) .header-badge::after,
+    .site-header:not(.site-header-notice) .header-signin::after {
+        height: max(100%, 40px);
+    }
+
+    /* The opening view's "What's New ›", "Leaderboards ›", "All events ›"
+       and "Refresh ›": 9px words. Padding taken back by an equal negative
+       margin, so the row is exactly as tall as it was and the word stays
+       where it was drawn. */
+    .opening-more {
+        padding: 13px 6px;
+        margin: -13px -6px;
+    }
+    /* The Featured Mazes panel's "Refresh" the same way (its auto left
+       margin is what puts it at the row's right end, so that stays). The
+       panel clips 4px above the word, so the reach goes mostly down, to the
+       foot of its row: 31px rather than 24. */
+    .featured-refresh-btn {
+        padding: 4px 6px 16px;
+        margin-top: -4px;
+        margin-bottom: -16px;
+        margin-right: -6px;
+    }
+
+    /* A window's close X in its titlebar (the maze, event, article, guide,
+       glyph and board windows, Guess the Maze's and Odd One Out's, and the
+       pop-ups js/account.js, js/welcome.js and the Mazer Card draw): a 14px
+       X in 26px of padding. 7px more all round; nothing sits to its right,
+       and the title ends well short of it. Not Pura Panic's, whose bulb
+       sits 4px away and which has its own (see #pura-close::after). */
+    .chrome-titlebar > .chrome-close:has(> img):not(#pura-close)::after {
+        content: "";
+        position: absolute;
+        inset: -7px;
+        background: transparent;
+    }
+
+    /* The gallery's arrows: 27px circles. 7px more all round, which is
+       still clear of the picture's own pills. */
+    .modal .gallery-nav::after {
+        content: "";
+        position: absolute;
+        inset: -7px;
+        border-radius: 50%;
+        background: transparent;
+    }
+
+    /* The maze window's tags wrapped 5px apart, so their reaches (under
+       the pills, see "the maze window's filter tags") could only meet in
+       a 5px gap. 10px between rows gives each a reach of 24px or more. */
+    .modal-top-row .room-tags { row-gap: 10px; }
+
+    /* The boards' Today / This week / This month / All time tabs: 18px
+       pills with a 32px reach under them. 36 now; the rows sit 29px apart
+       and the reaches are under the pills (see "Leaderboards' game and
+       period pills"), so only the gap between rows is shared. */
+    .guess-board-range::after { height: 36px; }
+
+    /* A timeline entry: the name was the only thing to press, 12px of text
+       with a 32px reach, three or four to a screen. The whole card opens it
+       now. The card holds nothing else that can be pressed (the medal and
+       the status pills are pictures and words), so nothing is taken from
+       anything. The button is static so its reach is the card's. */
+    .timeline-entry-body { position: relative; }
+    .timeline-entry-body .timeline-open { position: static; }
+    .timeline-entry-body .timeline-open::after {
+        inset: 0;
+        width: auto;
+        height: auto;
+        transform: none;
+        border-radius: 8px;
+    }
+}
+
+/* The room-name pill on a picture: centred text in an inline-flex box, so a
+   name longer than the pill was cut off at BOTH ends rather than ellipsed
+   ("LITTLE MAZE ♣ START HERE" at 320px, losing "The" and "!"). It wraps
+   instead. max-content first, because an absolute box at left: 50% would
+   otherwise wrap at half the picture's width. */
+#gallery-counter {
+    width: max-content;
+    white-space: normal;
+    text-align: center;
+    line-height: 1.3;
+}
+
+/* A room's picture while it loads or if it fails: its alt text was drawn
+   top-left, under the Pause pill. The words stay for screen readers. */
+.modal-gallery-img,
+.old-version-img { color: transparent; }
+
+@media (max-width: 860px) {
+    /* The sleeping rat sat 36px up into the window and covered the bottom-
+       left of whatever card was there (the builder line, the date, the
+       OPEN pill) at 430, 600 and 768px. 15px lower, so it rests on the
+       frame's bottom rim instead. */
+    .window-sleep-rat { bottom: -40px; }
+
+    /* A furni name cut at two lines: the clamp's dots are drawn after the
+       second line, which had been broken to the tile's full width, so on a
+       long name ("Ironstone Deepgrove Bound...") they ran 3px past the
+       tile's edge. 3px each side keeps the line short of them. */
+    .furni-tile-name { padding: 0 3px; }
+}
+
+@media (max-width: 480px) {
+    /* The Mazes/Events tabs: the search panel under them laps their bottom
+       14px, which hid the telescope's legs and the maze icon's base. The
+       label and icon move up 5px and the tab grows 2px. */
+    .chrome-nav-top .chrome-nav-btn { padding: 9px 8px 21px; }
+}
+
+@media (max-width: 359px) {
+    /* A game's board at 320px: the rank, face, result grid, "4 right" and
+       the total with its time left about 35px for the name ("Scan...",
+       "Som..."). The day's time goes (the order line still says ties go to
+       the faster), and the columns sit 5px apart rather than 8. */
+    .guess-board-time { display: none; }
+    .guess-board-row { column-gap: 5px; }
+}
+
+/* A phone on its side: the sticky header was 65px of a 390px screen, and
+   the archive's list could not be seen whole under it. It scrolls away
+   with the page instead. */
+@media (max-height: 500px) {
+    .site-header { position: relative; }
+}
+
+/* The landing countdown on a phone: the handstanding rat reaches 50-55px
+   above MAZE and stood across the seconds, the clock drawn over his head.
+   The clock sits clear of him instead, so he stands in the gap between the
+   clock and the wordmark (scan 18 Nov evening). The button still ends
+   above the fold at 320x568. */
+@media (max-width: 480px) {
+    .welcome-countdown { margin-bottom: 58px; }
+}
+
+/* "Has Throne": the furni a search found a row by (js/home.js,
+   furniHitHtml; scan 18 Nov evening). The description's face and size, in
+   the builder line's amber so it reads as the reason, not the prose. */
+.chrome-list-row .row-furni-hit {
+    font-family: 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace;
+    font-weight: 400;
+    font-size: 0.5625rem;
+    line-height: 19.2px;
+    color: var(--amber-text);
+    margin: 0;
+    overflow-wrap: anywhere;
+}
+
+/* Your Profile's scrolling part stops 8px above the screen's foot (scan 18
+   Nov evening). It ran to the screen's very edge, into the dark bezel the
+   screen's shadow draws there, so at 320x568 the bottom row of badges
+   (Week Streak, Month Streak) showed half-sunk into the rim below the
+   scrollbar's last arrow. */
+.profile-console-screen > .profile-screen-scroll,
+.profile-console-screen > .custom-scrollbar-wrap--console { margin-bottom: 8px; }

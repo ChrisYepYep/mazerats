@@ -1021,7 +1021,8 @@ exports.handler = async (event) => {
            _speed.js. Only rounds judged right when they were played earn
            any. No clock (an untimed day, or one practised first) is no bonus
            rather than a day that fails to record. */
-        const { bonus, ms, roundSecs } = speed.dayBonus(clock, scored.grid.map(g => g > 0), arrived);
+        // Odd One Out's study time carries over (STUDY TIME CARRIES OVER in _speed.js).
+        const { bonus, ms, roundSecs } = speed.dayBonus(clock, scored.grid.map(g => g > 0), arrived, { carry: game === "odd" });
 
         /* A practice run is answered — its points and the bonus it would
            have earned, so the card can say how it went — and not filed:

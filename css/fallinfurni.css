@@ -780,15 +780,15 @@ body.is-editing .ff-title { display: none; }
    as before. That stays inside the stage's edge under the title's row
    and the gap over the pause menu's, so it covers nothing else that can
    be pressed. */
-body.ff-immersive .ff-title-opts button,
-body.ff-immersive .ff-paused-audio button { position: relative; }
+:is(body.ff-immersive, .ff-phone-win > body) .ff-title-opts button,
+:is(body.ff-immersive, .ff-phone-win > body) .ff-paused-audio button { position: relative; }
 body.ff-immersive .ff-title-opts button::after,
 body.ff-immersive .ff-paused-audio button::after {
     content: "";
     position: absolute;
     inset: -12px -3px;
 }
-body.ff-immersive .ff-vol input[type="range"] {
+:is(body.ff-immersive, .ff-phone-win > body) .ff-vol input[type="range"] {
     height: 41px;
     margin: -15px 0;
 }
@@ -1342,7 +1342,7 @@ body.is-editing #ff-canvas { cursor: var(--cursor-pointer); }
    be clipped by .ff-stage's overflow: hidden and gain nothing. Only in the
    immersive layout: at full size the button is already 30px and needs no
    help. */
-body.ff-immersive .ff-pause-btn::before {
+:is(body.ff-immersive, .ff-phone-win > body) .ff-pause-btn::before {
     content: "";
     position: absolute;
     top: -9px;
@@ -3103,4 +3103,74 @@ body.ff-immersive .ff-window {
         clip-path: inset(50%);
         white-space: nowrap;
     }
+}
+
+/* ---- A THUMB'S WORTH ON A PHONE (scan 18 Nov evening).
+
+   Scaled with the room by --ff-fit, every button on the title and the pause
+   menu came to 15-20px of glass (Music 11px, the sign-in link 10px, How to
+   play's X about 8px). Two things, phones only (body.ff-immersive, and html.ff-phone-win
+   in the homepage's phone window, which scales the game from outside and
+   tells it --ff-fit: js/ff-window.js shareFit), and nothing on a desktop
+   changes:
+
+   - Each button answers a touch 40 real pixels tall, centred on what is
+     drawn: an invisible ::after, --ff-tap tall, which is 40px divided by the
+     scale. Nothing drawn moves. Where two rows' areas would meet, the later
+     one is on top; the gaps between rows are what keep that to a few pixels.
+   - The pause menu, which has the whole stage to itself, is drawn back at its
+     own size (zoom by 1 / --ff-fit, at most 2x), and Quit stands apart from
+     Submit & Quit. The title can't do the same while it carries the board,
+     which already fills the stage at full size - except while the game is
+     closed, below. */
+:is(body.ff-immersive, .ff-phone-win > body) { --ff-tap: calc(40px / var(--ff-fit, 1)); }
+:is(body.ff-immersive, .ff-phone-win > body) :is(#ff-title-play, #ff-how-open, .ff-title-who button, .ff-board-tabs button,
+    .ff-how-ok, .ff-select-back, .ff-title-retry, .ff-beta-form button, .ff-standins button,
+    .ff-paused button, .ff-title-opts button) { position: relative; }
+:is(body.ff-immersive, .ff-phone-win > body) :is(#ff-title-play, #ff-how-open, .ff-title-who button, .ff-board-tabs button,
+    .ff-how-ok, .ff-select-back, .ff-title-retry, .ff-beta-form button, .ff-standins button,
+    .ff-paused button, .ff-title-opts button)::after {
+    content: "";
+    position: absolute;
+    inset: auto -3px;
+    top: 50%;
+    height: max(100%, var(--ff-tap));
+    transform: translateY(-50%);
+}
+/* How to play's X is a letter in a corner: square, both ways. */
+:is(body.ff-immersive, .ff-phone-win > body) .ff-how-x::after {
+    content: "";
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: max(100%, var(--ff-tap));
+    height: max(100%, var(--ff-tap));
+    transform: translate(-50%, -50%);
+}
+:is(body.ff-immersive, .ff-phone-win > body) .ff-paused-inner { zoom: min(2, calc(1 / var(--ff-fit, 1))); --ff-tap: 40px; }
+:is(body.ff-immersive, .ff-phone-win > body) #ff-quit { margin-left: 18px; }
+/* Clear of Resume's 40px above it, so neither takes the other's touch. */
+:is(body.ff-immersive, .ff-phone-win > body) .ff-paused-more { margin-top: 18px; }
+
+/* The confirm row Quit puts up on a run with points (quitAsk in the js). */
+.ff-paused-more[hidden] { display: none; }
+
+/* ---- COMING SOON ON A PHONE, AT ITS OWN SIZE (scan 18 Nov evening).
+
+   Upright, a closed game gets no rotate gate (the owner's, 27 Oct) and the
+   whole title was scaled with the room to half size: the tagline and tip
+   about 4px tall, the beta box and Go too small to press. While the game is
+   closed the title has only a few lines on it, so it is drawn back at full
+   size over the room (zoom by 1 / --ff-fit, at most 2.4x - a 320px phone),
+   and its buttons need no more than a plain 40px. */
+:is(body.ff-immersive, .ff-phone-win > body)[data-ff-closed] .ff-title {
+    zoom: min(2.4, calc(1 / var(--ff-fit, 1)));
+    --ff-tap: 40px;
+}
+:is(body.ff-immersive, .ff-phone-win > body)[data-ff-closed] .ff-title-inner { padding: 8px 12px; }
+:is(body.ff-immersive, .ff-phone-win > body)[data-ff-closed] .ff-title-opts { bottom: 8px; }
+/* A 320px phone has 308px for the row: the slider keeps its percentage and
+   lets the word "Volume" go, rather than wrap onto the beta box. */
+@media (max-width: 359px) {
+    :is(body.ff-immersive, .ff-phone-win > body)[data-ff-closed] .ff-vol-name { display: none; }
 }

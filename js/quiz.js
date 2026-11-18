@@ -64,6 +64,7 @@
         addForm: $('qz-add-form'),
         addName: $('qz-add-name'),
         addBtn: $('qz-add-btn'),
+        addHint: $('qz-add-hint'),
         players: $('qz-players'),
         playersEmpty: $('qz-players-empty'),
         playerCount: $('qz-player-count'),
@@ -421,14 +422,38 @@
         return shuffle(picked);
     }
 
+    /* A lost question's awards are kept but not counted (scan 18 Nov
+       evening): a Rule Out on the right answer used to delete them, so
+       taking that Rule Out back restored the question but not the points
+       the host had already given. */
     function scoreOf(playerId) {
         var n = state.adjust[playerId] || 0;
         for (var k in state.awards) {
             if (Object.prototype.hasOwnProperty.call(state.awards, k)) {
+                if (lostAt(k)) { continue; }
                 if (state.awards[k].indexOf(playerId) !== -1) { n++; }
             }
         }
         return n;
+    }
+
+    /* The keyboard's place, kept across a redraw (scan 18 Nov evening).
+       Picking an answer, giving a point or pressing −/+ rebuilds the
+       buttons, and the one with focus went with them, so focus fell to the
+       page and Tab started again from the top. Each rebuilt button carries
+       a data-fk naming what it is (not where it sits: the scoreboard
+       re-sorts), and the same one in the new markup gets focus back. */
+    function focusKey(box) {
+        var a = document.activeElement;
+        return (a && a !== box && box.contains(a) && a.dataset) ? (a.dataset.fk || null) : null;
+    }
+
+    function restoreFocus(box, key, fallback) {
+        if (!key) { return; }
+        var again = box.querySelector('[data-fk="' + key + '"]');
+        var to = (again && !again.disabled) ? again
+            : (box.querySelector('button:not(:disabled)') || fallback || null);
+        if (to && !to.disabled) { to.focus({ preventScroll: true }); }
     }
 
     function standings() {
@@ -565,21 +590,29 @@
 
         /* Two players called "Dave" is a scoreboard nobody can read, so the
            second one is nudged rather than silently accepted. */
-        var clash = draft.players.some(function (p) {
-            return p.name.toLowerCase() === name.toLowerCase();
+        /* The typed name stays in the box and the warning goes under it, in
+           the existing player's own spelling (scan 18 Nov evening): it used
+           to empty the box and say "Already got a alice" in the placeholder. */
+        var clash = null;
+        draft.players.forEach(function (p) {
+            if (!clash && p.name.toLowerCase() === name.toLowerCase()) { clash = p; }
         });
         if (clash) {
-            el.addName.value = '';
-            el.addName.placeholder = 'Already got a ' + name + ' — try another';
+            el.addHint.textContent = 'Already got ' + clash.name + '. Try another name.';
+            el.addHint.hidden = false;
+            el.addName.focus();
+            el.addName.select();
             return;
         }
 
         draft.players.push({ id: 'p' + Date.now() + Math.floor(Math.random() * 1000), name: name });
         el.addName.value = '';
-        el.addName.placeholder = 'Add a player or team…';
+        el.addHint.hidden = true;
         renderPlayers();
         el.addName.focus();
     });
+
+    el.addName.addEventListener('input', function () { el.addHint.hidden = true; });
 
     /* Forgets what this device has asked. Deliberately a confirm and not a
        quiet toggle: it is the one control that can make a question repeat,
@@ -660,9 +693,17 @@
         /* Short of what was asked for. Better to say so up front than to have
            the host discover it when "Question 12 of 12" appears mid-round. */
         if (length && order.length < length) {
-            var go = window.confirm('Only ' + order.length + ' unasked question' +
-                (order.length === 1 ? '' : 's') + ' left in these categories, not ' +
-                length + '.\n\nStart a shorter round of ' + order.length + '?');
+            /* In a Christmas quiz the short side may be the Christmas bank,
+               not the categories, and the message should say which (scan 18
+               Nov evening). The Christmas half wants floor(length / 2). */
+            var xFresh = xmas ? freshCount([XMAS]) : 0;
+            var xShort = xmas && xFresh < Math.floor(length / 2);
+            var why = xShort
+                ? 'Only ' + xFresh + ' unasked Christmas question' + (xFresh === 1 ? '' : 's') +
+                  ' left, so the round can only be ' + order.length + ' long, not ' + length + '.'
+                : 'Only ' + order.length + ' unasked question' +
+                  (order.length === 1 ? '' : 's') + ' left in these categories, not ' + length + '.';
+            var go = window.confirm(why + '\n\nStart a shorter round of ' + order.length + '?');
             if (!go) { return; }
         }
 
@@ -697,6 +738,10 @@
 
     function buildBoards() {
         if (!SOUND) { return; }
+        /* A loop whose file will not load lets go of itself; the board is
+           told, so its button does not stay lit as if playing (scan 18 Nov
+           evening). */
+        SOUND.onchange = paintBoards;
         Array.prototype.forEach.call(boards, function (board) {
             SOUND.cues.forEach(function (cue) {
                 var btn = document.createElement('button');
@@ -749,17 +794,27 @@
         if (state.keepAwake !== false) { requestWakeLock(); }
     }
 
-    function renderQuestion() {
+    function renderQuestion(dir) {
         var total = state.order.length;
         var i = state.idx;
         var item = questionAt(i);
 
         /* A saved quiz whose bank has since been edited can point at a
            question that no longer exists. Skip rather than crash — a host
-           mid-round will never know. */
+           mid-round will never know. In the direction of travel (scan 18
+           Nov evening): Back always skipped forward again, so it could
+           never get past a removed question. Back that runs out of earlier
+           questions turns round and goes forward. */
         if (!item) {
-            if (i + 1 < total) { state.idx = i + 1; save(); renderQuestion(); }
-            else { finish(); }
+            if (dir === -1) {
+                for (var b = i - 1; b >= 0; b--) {
+                    if (questionAt(b)) { state.idx = b; save(); renderQuestion(-1); return; }
+                }
+            }
+            for (var f = i + 1; f < total; f++) {
+                if (questionAt(f)) { state.idx = f; save(); renderQuestion(1); return; }
+            }
+            finish();
             return;
         }
 
@@ -785,7 +840,10 @@
            and forward over the same question is harmless — it is a set. */
         markAsked(state.order[i]);
 
-        el.prev.disabled = i === 0;
+        /* Back is off when every question before this one is gone too. */
+        var earlier = false;
+        for (var e = i - 1; e >= 0 && !earlier; e--) { if (questionAt(e)) { earlier = true; } }
+        el.prev.disabled = !earlier;
         el.next.textContent = (i + 1 === total) ? 'Finish' : 'Next';
 
         renderOptions();
@@ -818,6 +876,7 @@
         var gone = goneAt(i);
         var done = solved(i);
         var locked = state.lock[i];
+        var fk = focusKey(el.opts);
 
         el.opts.innerHTML = '';
 
@@ -825,6 +884,7 @@
             var btn = document.createElement('button');
             btn.type = 'button';
             btn.className = 'qz-opt';
+            btn.dataset.fk = 'o' + place;
 
             var letter = document.createElement('span');
             letter.className = 'qz-opt-letter';
@@ -857,6 +917,9 @@
         el.reveal.hidden = locked === undefined || done;
         el.show.hidden = done;
         renderBanner();
+        /* Once the answer is showing every option is off; Next is where the
+           host is going. */
+        restoreFocus(el.opts, fk, el.next);
     }
 
     function tapOption(place) {
@@ -871,7 +934,9 @@
         var who = ruleWaiting(i);
         if (who) {
             state.rule[i][who] = place;
-            if (place === 0) { delete state.awards[i]; delete state.lock[i]; }
+            /* The question's awards are left alone: scoreOf skips a lost
+               question, so taking the Rule Out back gives them back. */
+            if (place === 0) { delete state.lock[i]; }
             if (place !== 0 && state.lock[i] === place) { delete state.lock[i]; }
             save();
             renderOptions();
@@ -1065,6 +1130,8 @@
         var i = state.idx;
         var given = state.awards[i] || [];
         var done = solved(i);
+        var lost = lostAt(i);
+        var fk = focusKey(el.awardGrid);
 
         el.awardGrid.innerHTML = '';
 
@@ -1075,7 +1142,9 @@
             var btn = document.createElement('button');
             btn.type = 'button';
             btn.className = 'qz-award-btn';
-            var on = given.indexOf(p.id) !== -1;
+            btn.dataset.fk = 'a' + p.id;
+            /* A lost question's points are held, not shown (see scoreOf). */
+            var on = !lost && given.indexOf(p.id) !== -1;
             btn.setAttribute('aria-pressed', on ? 'true' : 'false');
             btn.disabled = lostAt(i);
 
@@ -1099,6 +1168,7 @@
                 var lb = document.createElement('button');
                 lb.type = 'button';
                 lb.className = 'qz-life';
+                lb.dataset.fk = 'l' + p.id + '-' + l.id;
                 lb.textContent = l.label;
                 var usedOn = mine[l.id];
                 var word = 'ready';
@@ -1112,6 +1182,7 @@
 
             el.awardGrid.appendChild(row);
         });
+        restoreFocus(el.awardGrid, fk, el.next);
     }
 
     function toggleAward(playerId) {
@@ -1142,11 +1213,11 @@
     }
 
     el.prev.addEventListener('click', function () {
-        if (state.idx === 0) { return; }
+        if (state.idx === 0 || el.prev.disabled) { return; }
         leaveQuestion();
         state.idx--;
         save();
-        renderQuestion();
+        renderQuestion(-1);
     });
 
     el.next.addEventListener('click', function () {
@@ -1154,7 +1225,7 @@
         if (state.idx + 1 >= state.order.length) { finish(); return; }
         state.idx++;
         save();
-        renderQuestion();
+        renderQuestion(1);
     });
 
     /* ================================================================= end
@@ -1175,6 +1246,10 @@
 
         var lastScore = null;
         var lastRank = 0;
+        /* Nobody scored, nobody won: no trophies (scan 18 Nov evening). A
+           round where every player is on 0 used to give every one of them
+           the cup. */
+        var anyScore = rows.length && rows[0].score > 0;
 
         rows.forEach(function (r, i) {
             /* Equal scores share a rank — two people on 9 are both 2nd, and
@@ -1183,13 +1258,14 @@
             var rank = (r.score === lastScore) ? lastRank : i + 1;
             lastScore = r.score;
             lastRank = rank;
+            var won = rank === 1 && anyScore;
 
             var li = document.createElement('li');
-            if (rank === 1) { li.className = 'is-winner'; }
+            if (won) { li.className = 'is-winner'; }
 
             var n = document.createElement('span');
             n.className = 'qz-rank';
-            n.textContent = rank === 1 ? '\u{1F3C6}' : String(rank);
+            n.textContent = won ? '\u{1F3C6}' : String(rank);
             li.appendChild(n);
 
             var name = document.createElement('span');
@@ -1271,12 +1347,62 @@
     el.menuClose.addEventListener('click', closeSheets);
     el.backdrop.addEventListener('click', closeSheets);
 
+    function openSheetNode() {
+        if (!el.sheet.hidden) { return el.sheet; }
+        if (!el.menu.hidden) { return el.menu; }
+        return null;
+    }
+
+    /* The sheets are dialogs (role="dialog" aria-modal="true" in
+       quiz.html), so Tab goes round inside the open one rather than out to
+       the question under the backdrop (scan 18 Nov evening). */
+    function trapTab(e, sheet) {
+        var list = Array.prototype.filter.call(
+            sheet.querySelectorAll('button, input, [href], [tabindex]:not([tabindex="-1"])'),
+            function (n) { return !n.disabled && n.getClientRects().length; });
+        if (!list.length) { return; }
+        var first = list[0];
+        var last = list[list.length - 1];
+        var at = document.activeElement;
+        if (e.shiftKey && (at === first || !sheet.contains(at))) { e.preventDefault(); last.focus(); }
+        else if (!e.shiftKey && (at === last || !sheet.contains(at))) { e.preventDefault(); first.focus(); }
+    }
+
+    /* Keys for a host on a laptop (scan 18 Nov evening): A to D (or 1 to
+       4) tap that answer, the arrow keys are Back and Next (N is Next too;
+       B is an answer, so Back has no letter), and Enter reveals a locked-in
+       answer. Each goes through the button's own click, so it does exactly
+       what a tap does. Not while typing, not with a sheet open, not with a
+       modifier held, and Enter only when focus is not already on a button
+       (where Enter presses that button). */
+    function playKey(e) {
+        if (e.ctrlKey || e.metaKey || e.altKey) { return; }
+        if (!state || el.play.hidden || openSheetNode()) { return; }
+        var t = e.target;
+        if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) { return; }
+        var k = e.key.length === 1 ? e.key.toLowerCase() : e.key;
+        var row = 'abcd'.indexOf(k);
+        if (row === -1 && k >= '1' && k <= '4') { row = +k - 1; }
+        var hit = null;
+        if (row !== -1 && k.length === 1) { hit = el.opts.children[row] || null; }
+        else if (k === 'ArrowRight' || k === 'n') { hit = el.next; }
+        else if (k === 'ArrowLeft') { hit = el.prev; }
+        else if (k === 'Enter' && !(t && t.closest && t.closest('button'))) { hit = el.reveal.hidden ? null : el.reveal; }
+        if (!hit || hit.disabled) { return; }
+        e.preventDefault();
+        hit.click();
+    }
+
     document.addEventListener('keydown', function (e) {
-        if (e.key === 'Escape') { closeSheets(); }
+        if (e.key === 'Escape') { closeSheets(); return; }
+        var sheet = openSheetNode();
+        if (e.key === 'Tab' && sheet) { trapTab(e, sheet); return; }
+        playKey(e);
     });
 
     function renderBoard() {
         var rows = standings();
+        var fk = focusKey(el.board);
         el.board.innerHTML = '';
 
         var lastScore = null;
@@ -1302,6 +1428,7 @@
             var minus = document.createElement('button');
             minus.type = 'button';
             minus.className = 'qz-adjust';
+            minus.dataset.fk = 'm' + r.id;
             minus.setAttribute('aria-label', 'Take a point from ' + r.name);
             minus.textContent = '−';
             minus.addEventListener('click', function () { adjust(r.id, -1); });
@@ -1315,6 +1442,7 @@
             var plus = document.createElement('button');
             plus.type = 'button';
             plus.className = 'qz-adjust';
+            plus.dataset.fk = 'p' + r.id;
             plus.setAttribute('aria-label', 'Give a point to ' + r.name);
             plus.textContent = '+';
             plus.addEventListener('click', function () { adjust(r.id, 1); });
@@ -1322,6 +1450,7 @@
 
             el.board.appendChild(li);
         });
+        restoreFocus(el.board, fk, el.sheetClose);
     }
 
     /* A manual correction is kept SEPARATE from the per-question awards

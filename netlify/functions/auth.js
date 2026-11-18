@@ -98,7 +98,32 @@ function sameSecret(given, secret) {
 function usernameProblem(username) {
     if (username.length > LOGGED_NAME_MAX) return `Usernames can be at most ${LOGGED_NAME_MAX} characters.`;
     if (/[\u0000-\u001f\u007f-\u009f]/.test(username) || username.includes(String.fromCharCode(0x2028)) || username.includes(String.fromCharCode(0x2029))) return "Usernames can't contain control characters.";
+    // Invisible letters (zero-width spaces and joiners, direction marks) and
+    // spaces other than the plain one (scan 18 Nov evening): see nameSkeleton.
+    if (/[\p{Cf}\p{Co}\p{Cn}]/u.test(username) || /[^\S ]/u.test(username)) return "Usernames can't contain invisible characters or unusual spaces.";
     return null;
+}
+
+/* WHAT A NAME LOOKS LIKE (scan 18 Nov evening). A second account named
+   "ChrisYepYep" with a Cyrillic С, or "Chris YepYep", read exactly like the
+   owner's in every Warren list. So a new name is boiled down to how it
+   looks: compatibility forms folded (NFKC), accents dropped, the common
+   Cyrillic and Greek lookalikes made Latin, 0/1/5 read as o/l/s, I as l, rn
+   as m, and spaces and marks removed; a name whose skeleton matches an
+   existing account's is refused. Only asked at "create": existing accounts
+   are untouched. */
+const CONFUSABLE = {
+    "а": "a", "в": "b", "с": "c", "е": "e", "һ": "h", "і": "i", "ј": "j", "к": "k", "м": "m", "н": "h", "о": "o",
+    "р": "p", "ѕ": "s", "т": "t", "у": "y", "х": "x", "ԁ": "d", "ԛ": "q", "ԝ": "w", "ӏ": "l", "ь": "b",
+    "α": "a", "β": "b", "ε": "e", "η": "n", "ι": "i", "κ": "k", "ν": "v", "ο": "o", "ρ": "p", "τ": "t", "υ": "u", "χ": "x", "ϲ": "c",
+    "0": "o", "1": "l", "5": "s", "|": "l"
+};
+function nameSkeleton(name) {
+    // Capitals that look like other small letters, before lowercasing.
+    let s = String(name).normalize("NFKC").replace(/I/g, "l");
+    s = s.toLowerCase().normalize("NFD").replace(/\p{M}/gu, "");
+    s = [...s].map(c => CONFUSABLE[c] || c).join("");
+    return s.replace(/rn/g, "m").replace(/vv/g, "w").replace(/[^\p{L}\p{N}]/gu, "");
 }
 
 /* Anything off the wire is text or it is nothing. `(body.x || "").trim()`
@@ -866,6 +891,12 @@ async function handlePost(event, body, db, admins) {
         await ensureUsernameIndex(admins);
         // The quick answer for the ordinary case; the index is the real one.
         if (await admins.findOne({ username })) return TAKEN();
+        // See WHAT A NAME LOOKS LIKE. The permanent owner is always compared.
+        const skeleton = nameSkeleton(username);
+        const others = await admins.find({}, { projection: { _id: 0, username: 1 } }).toArray();
+        if ([PERMANENT_OWNER, ...others.map(a => a && a.username)].some(u => typeof u === "string" && nameSkeleton(u) === skeleton)) {
+            return json(409, { error: "That username looks too much like an existing account's. Choose a different one." });
+        }
         const passwordHash = await bcrypt.hash(password, 10);
         try {
             await admins.insertOne({ username, passwordHash, role, tokenVersion: newTokenVersion(), createdAt: new Date().toISOString() });

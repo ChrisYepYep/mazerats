@@ -1441,8 +1441,20 @@ const liveLayers = new Set(), liveClicks = new Set(); let liveFrame = 0;
 const liveOn = () => { for (const l of liveLayers) if (!l.still && (!l.active || l.active())) return true; return false; };
 /* paint() wakes them too, so a layer that's only active while its thing is on screen (the theatre's chase, the tree's glow) starts as soon as
    the camera brings it into view; here paint() may have asked for the next frame already */
-function liveTick() { liveFrame = 0; if (document.hidden || !map || !liveOn()) return; paint(); if (!liveFrame) liveFrame = requestAnimationFrame(liveTick); }
-function wakeLive() { if (!liveFrame && !document.hidden && liveOn()) liveFrame = requestAnimationFrame(liveTick); }
+function liveTick() { liveFrame = 0; if (document.hidden || !map || !liveOn()) return; paintFrame(); if (!liveFrame) liveFrame = onFrame(liveTick); }
+function wakeLive() { if (!liveFrame && !document.hidden && liveOn()) liveFrame = onFrame(liveTick); }
+/* One frame, one paint (scan 18 Nov evening: the walk and the camera each drew the whole map straight away, so a walking frame drew it twice,
+   three times with snow or bulbs on). The things that move every frame (the walk, the camera, the doors, the live layers) run from one
+   requestAnimationFrame, the walk first so the camera follows where it has just stepped, and ask for a paint, drawn once after them all.
+   Outside a frame paintFrame() paints at once, as paint() does. */
+const frameJobs = new Set(), FRAME_FIRST = () => [stepWalk, camLoop]; let frameRaf = 0, framing = false, framePaintDue = false;
+function onFrame(fn) { frameJobs.add(fn); if (!frameRaf) frameRaf = requestAnimationFrame(runFrame); return 1; }
+function runFrame(now) {
+    frameRaf = 0; const first = FRAME_FIRST(), jobs = [...frameJobs].sort((a, b) => (first.indexOf(a) + 1 || 9) - (first.indexOf(b) + 1 || 9)); frameJobs.clear();
+    framing = true; try { for (const f of jobs) { try { f(now); } catch (e) { console.error(e); } } } finally { framing = false; }
+    if (framePaintDue) { framePaintDue = false; paint(); }
+}
+function paintFrame() { if (framing) framePaintDue = true; else paint(); }
 function drawLive(which, ox, oy) {
     if (!liveLayers.size) return; const now = performance.now();
     for (const l of liveLayers) { if (!l[which] || (l.active && !l.active())) continue; ctx.save(); try { l[which](ctx, ox, oy, now); } catch (err) { console.error(err); liveLayers.delete(l); } ctx.restore(); }
@@ -3326,14 +3338,14 @@ function camTick(now) {
     const t = camTarget(), far = Math.hypot(t[0] - cam.x, t[1] - cam.y), smooth = FOLLOW_MS / 1000 + Math.min(.45, far / 1300), om = 2 / smooth, x = om * dt, ex = 1 / (1 + x + .48 * x * x + .235 * x * x * x);
     for (const [k, i] of [["x", 0], ["y", 1]]) { const ch = cam[k] - t[i], tmp = (camVel[i] + om * ch) * dt; camVel[i] = (camVel[i] - om * tmp) * ex; cam[k] = t[i] + (ch + tmp) * ex; }
     const settled = Math.hypot(t[0] - cam.x, t[1] - cam.y) < .5 && Math.hypot(camVel[0], camVel[1]) < 4;
-    if (settled && !walker.walking) { cam.x = t[0]; cam.y = t[1]; camVel = [0, 0]; camRunning = false; paint(); return false; }
-    paint();
+    if (settled && !walker.walking) { cam.x = t[0]; cam.y = t[1]; camVel = [0, 0]; camRunning = false; paintFrame(); return false; }
+    paintFrame();
     return true;
 }
-function camLoop(now) { if (camTick(now)) requestAnimationFrame(camLoop); }
+function camLoop(now) { if (camTick(now)) onFrame(camLoop); }
 function followNow() {
     if (camRunning || !following()) return;
-    camRunning = true; camLast = performance.now(); requestAnimationFrame(camLoop);
+    camRunning = true; camLast = performance.now(); onFrame(camLoop);
 }
 
 /* which floor is under the mouse: lower floors stand in front of higher ones, so they go first */
@@ -3450,13 +3462,13 @@ function doorRun(now) {
         if (st.p !== st.to && !(st.hold && st.p === st.hold)) moving = true;
         if (!st.to && !st.p) { doorStates.delete(d); doorFrames.delete(d); }
     }
-    paint(); if (moving) doorRaf = requestAnimationFrame(doorRun);
+    paintFrame(); if (moving) doorRaf = onFrame(doorRun);
 }
 function setDoor(d, open, ms) {
     const s = doorStates.get(d) || { p: 0, to: 0 };
     if (s.to !== (open ? 1 : 0) && window.LiftSounds) { if (open) LiftSounds.doorOpen(); else LiftSounds.doorShut(); }
     s.to = open ? 1 : 0; s.shutAt = ms ? performance.now() + ms : 0; if (!open) s.autoIn = false; doorStates.set(d, s);
-    if (!doorRaf) { doorLast = performance.now(); doorRaf = requestAnimationFrame(doorRun); }
+    if (!doorRaf) { doorLast = performance.now(); doorRaf = onFrame(doorRun); }
     paint();
 }
 const doorZ = (l, d) => { const f = doorFront(d)[0]; return tileZ(l, f[0], f[1]); };
@@ -3606,7 +3618,7 @@ function bookDoor(l, d) {
     setTimeout(() => {
         const me = walkerStart(), out = d.axis === "x" ? [0, 1] : [1, 0], here = [me.x, me.y]; let path = null;
         for (const k of [3, 2, 4, 1]) { const t = [here[0] + out[0] * k, here[1] + out[1] * k]; path = graphFrom(me.l, me.x, me.y, [l, t[0], t[1]]); if (path) break; }
-        const release = () => { const q = doorStates.get(d); if (!q) return; q.hold = 0; if (!doorRaf) { doorLast = performance.now(); doorRaf = requestAnimationFrame(doorRun); } };
+        const release = () => { const q = doorStates.get(d); if (!q) return; q.hold = 0; if (!doorRaf) { doorLast = performance.now(); doorRaf = onFrame(doorRun); } };
         if (path) followRoute(path, me.here, () => { walker.dir = d.axis === "x" ? 0 : 6; release(); }); else release();
     }, 800 / (d.speed || 1));
 }
@@ -3809,7 +3821,7 @@ function followRoute(path, here, then) {
     const was = walker.walking;
     walker.seat = null; walker.then = then || null;
     walker.pts = (here ? [here] : []).concat(pts.slice(1)); walker.walking = walker.pts.length > 0;
-    if (!was && walker.walking) { walker.last = performance.now(); requestAnimationFrame(stepWalk); }
+    if (!was && walker.walking) { walker.last = performance.now(); onFrame(stepWalk); }
     if (!walker.walking && then) { const t = then; walker.then = null; t(); }
     followNow();
 }
@@ -3820,7 +3832,7 @@ function sitOn(u, then) {     // then: once seated (live-lost.js picks a thing u
     if (walker.seat && !walker.walking && walker.seat.l === u.l && Math.abs(walker.seat.x - u.x) <= 1 && Math.abs(walker.seat.y - u.y) <= 1) {
         walker.seat = null;
         walker.pts = [{ x: u.x, y: u.y, z: z + (SEAT_LIFT[u.p.k] || 7), l: u.l, st: null, seat: { x: u.x, y: u.y, l: u.l, dir: face, p: u.p } }];
-        walker.walking = true; walker.then = then || null; walker.last = performance.now(); requestAnimationFrame(stepWalk);
+        walker.walking = true; walker.then = then || null; walker.last = performance.now(); onFrame(stepWalk);
         return true;
     }
     /* come at it from the front if you can, else from either side, never over its back */
@@ -3832,7 +3844,7 @@ function sitOn(u, then) {     // then: once seated (live-lost.js picks a thing u
             const via = routeToOneOf(u.l, [[q[0] - 1, q[1]], [q[0] + 1, q[1]], [q[0], q[1] - 1], [q[0], q[1] + 1]], s.l, s.x, s.y); if (!via) continue;
             followRoute(via.path, s.here, () => {
                 walker.pts = [{ x: q[0], y: q[1], z: z + (SEAT_LIFT[u.p.k] || 7), l: u.l, st: null }, { x: u.x, y: u.y, z: z + (SEAT_LIFT[u.p.k] || 7), l: u.l, st: null, seat: { x: u.x, y: u.y, l: u.l, dir: face, p: u.p } }];
-                walker.walking = true; walker.then = then || null; walker.last = performance.now(); requestAnimationFrame(stepWalk);
+                walker.walking = true; walker.then = then || null; walker.last = performance.now(); onFrame(stepWalk);
             });
             return true;
         }
@@ -3840,7 +3852,7 @@ function sitOn(u, then) {     // then: once seated (live-lost.js picks a thing u
     }
     followRoute(r.path, s.here, () => {
         walker.pts = [{ x: u.x, y: u.y, z: z + (SEAT_LIFT[u.p.k] || 7), l: u.l, st: null, seat: { x: u.x, y: u.y, l: u.l, dir: face, p: u.p } }];
-        walker.walking = true; walker.then = then || null; walker.last = performance.now(); requestAnimationFrame(stepWalk);
+        walker.walking = true; walker.then = then || null; walker.last = performance.now(); onFrame(stepWalk);
     });
     return true;
 }
@@ -3869,8 +3881,15 @@ function startWalk() {
     /* at Christmas a little higher, so the giant tree's star is in view too (10 Nov scan, live 4); and where the screen is too small for the
        statue and you both (a phone), between the two, or on you (live 3: your Habbo started off the screen) */
     if (window.HALLWAY_PLAY) { for (const lv of map.levels) { const st = (lv.props || []).find(p => p.k === "statue"); if (st) { const a = P(st.x + 1, st.y + 1, tileZ(lv, st.x, st.y) + 40 + (window.hallwayXmas ? 150 : 0)); cam.x = a[0]; cam.y = a[1]; openHeld = true;
-        const you = P(x + .5, y + .5, nodeZ(l, x, y) + 40), hw = canvas.width / zoom / 2, hh = canvas.height / zoom / 2, fits = (cx, cy) => Math.abs(you[0] - cx) < hw * .8 && Math.abs(you[1] - cy) < hh * .8;
-        if (!fits(cam.x, cam.y)) { const mx = (you[0] + cam.x) / 2, my = (you[1] + cam.y) / 2; if (fits(mx, my)) { cam.x = mx; cam.y = my; } else { cam.x = you[0]; cam.y = you[1]; } }
+        /* Your Habbo first, above the walk's bar along the bottom on a phone, then as much of the statue or tree as still fits: the camera goes
+           as near the statue as it can with all of you in view (scan 18 Nov evening: on a phone on its side the tree was framed and only your
+           head showed over the bar) */
+        const bar = document.getElementById("playBar"), cr = canvas.getBoundingClientRect(), br = bar && bar.getBoundingClientRect(), pxPer = cr.height ? canvas.height / cr.height / zoom : 1 / zoom;
+        const barCss = br && br.height && br.top > cr.top + cr.height / 2 ? Math.max(0, cr.bottom - br.top) : matchMedia("(max-width: 700px), (max-height: 520px)").matches ? 64 : 0, barH = barCss * pxPer;
+        const feet = P(x + .5, y + .5, nodeZ(l, x, y)), hw = canvas.width / zoom / 2, hh = canvas.height / zoom / 2, M = 8, HABBO_H = 60;
+        const loX = feet[0] - hw + 28, hiX = feet[0] + hw - 28, loY = feet[1] - hh + barH + M, hiY = feet[1] - HABBO_H + hh - M;      // cam.y that keeps your feet above the bar and your head below the top
+        if (loX <= hiX) cam.x = Math.max(loX, Math.min(hiX, cam.x)); else cam.x = feet[0];
+        if (loY <= hiY) cam.y = Math.max(loY, Math.min(hiY, cam.y)); else cam.y = feet[1] - HABBO_H / 2 + barH / 2;
         break; } } }
     clampCam();
     paint();
@@ -3920,15 +3939,15 @@ function stepWalk(now) {
         if (walker.then) { const t = walker.then; walker.then = null; t(); }
     }
     walker.frame = (walker.frame + dt / WALK_FRAME_MS) % 4;
-    paint();
-    if (walker.walking) requestAnimationFrame(stepWalk);
+    paintFrame();
+    if (walker.walking) onFrame(stepWalk);
 }
-function avatarImg(n) {
+function avatarImg(n, priority) {
     let i = avatarImgs[n];
     if (!i) {
         /* on the site, a frame Habbo can't give is the guest's, the default Habbo (16 Nov 2026), not art/av's, which is his own figure */
         const src = window.hallwayAvatarSrc ? window.hallwayAvatarSrc(n) : "art/av/" + n + ".png", local = (window.HALLWAY_PLAY && /^s-\d-(std|wlk|sit)(-crr|-drk)?-\d$/.test(n) ? "art/guest/" : "art/av/") + n + ".png";
-        i = avatarImgs[n] = new Image(); i.onload = () => paint();
+        i = avatarImgs[n] = new Image(); i.onload = () => paint(); if (priority) i.fetchPriority = priority;      // set before src, or it isn't used
         /* Habbo not answering: the guest's own frame meanwhile, and that frame asked for again later, so nobody walks unseen */
         i.onerror = () => { if (i.src.endsWith(local)) return; i.src = local; setTimeout(() => { if (avatarImgs[n] !== i) return; const t = new Image(); t.onload = () => { if (avatarImgs[n] === i) { avatarImgs[n] = t; paint(); } }; t.src = src; }, 20000); };
         i.src = src;
@@ -3936,7 +3955,11 @@ function avatarImg(n) {
     return i;
 }
 window.hallwayAvatarChanged = () => { avatarWas = { ...avatarImgs }; for (const k in avatarImgs) delete avatarImgs[k]; preloadAvatar(); paint(); if (roomSession && roomSession.repaint) roomSession.repaint(); };      // a room only paints when asked
-function preloadAvatar() { if (window.HALLWAY_PLAY) { for (let d = 0; d < 8; d++) { avatarImg(`s-${d}-std-0`); avatarImg(`s-${d}-sit-0`); for (let f = 0; f < 4; f++) avatarImg(`s-${d}-wlk-${f}`); } return; } for (let d = 0; d < 8; d++) { for (const a of ["std", "std-crr", "std-drk", "sit", "sit-crr", "sit-drk"]) avatarImg(`s-${d}-${a}-0`); for (let f = 0; f < 4; f++) { avatarImg(`s-${d}-wlk-${f}`); avatarImg(`s-${d}-wlk-crr-${f}`); } } }
+/* on the site the 8 standing frames go first, asked for ahead of the floor's pictures, and the sitting and walking ones once they're in (scan 18 Nov
+   evening: all 48 at once, behind the pictures, left nobody at the entrance for the first seconds on a slow line) */
+function preloadAvatar() { if (window.HALLWAY_PLAY) { const stand = []; for (let d = 0; d < 8; d++) stand.push(avatarImg(`s-${d}-std-0`, "high"));
+        let left = stand.filter(i => !i.complete).length, done = false; const rest = () => { if (done) return; done = true; for (let d = 0; d < 8; d++) { avatarImg(`s-${d}-sit-0`); for (let f = 0; f < 4; f++) avatarImg(`s-${d}-wlk-${f}`); } };
+        if (!left) rest(); else { for (const i of stand) if (!i.complete) for (const ev of ["load", "error"]) i.addEventListener(ev, () => { if (--left <= 0) rest(); }, { once: true }); setTimeout(rest, 2500); } return; } for (let d = 0; d < 8; d++) { for (const a of ["std", "std-crr", "std-drk", "sit", "sit-crr", "sit-drk"]) avatarImg(`s-${d}-${a}-0`); for (let f = 0; f < 4; f++) { avatarImg(`s-${d}-wlk-${f}`); avatarImg(`s-${d}-wlk-crr-${f}`); } } }
 
 /* ---------- what stands in front of the Habbo ----------
    The art is one picture, so what's nearer than the Habbo is cut out of the Habbo's own shape, and

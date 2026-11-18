@@ -6271,6 +6271,9 @@ document.addEventListener("DOMContentLoaded", () => {
            netlify/functions/rooms.js. "" for a record that has never been
            edited since the field existed. */
         cfg.formEl._baseUpdatedAt = item.updatedAt || "";
+        // And the address's own version, as this form first saw it (THE
+        // ADDRESS'S OWN VERSION in rooms.js; scan 18 Nov evening).
+        cfg.formEl._baseSlugAt = item.slugAt || "";
         // The stored furni as it was, to tell at save time whether the
         // furni editor changed anything — see submitForm.
         cfg.formEl._furniOriginal = JSON.stringify(item.furni || {});
@@ -7398,6 +7401,8 @@ document.addEventListener("DOMContentLoaded", () => {
         // Which version this edit started from — the server refuses the
         // save if the record has moved on since (see openForm).
         if (editId !== null) payload._baseUpdatedAt = form._baseUpdatedAt || "";
+        // Not the list's copy from `...existing`, which a refresh may have moved on.
+        if (editId !== null) payload.slugAt = form._baseSlugAt || "";
 
         if (key === "events") {
             /* An event's start and end are each a date field and a time

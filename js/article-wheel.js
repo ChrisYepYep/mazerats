@@ -387,7 +387,13 @@
             if (hadFocus) again.focus({ preventScroll: true });
             box.classList.add("is-revealed");
             box.classList.remove("is-playing");
-            live.textContent = `The winner is ${winner}.${snap.prize ? ` Prize: ${snap.prize}.` : ""}`;
+            /* Read as written (scan 18 Nov evening): it came out "The winner
+               is mila.. Prize: Prize: £25 Steam Gift Card!." A name or prize
+               that already ends a sentence gets no second stop, and a prize
+               typed as "Prize: ..." is not labelled twice. */
+            const said = t => /[.!?]$/.test(t) ? t : t + ".";
+            const prize = String(snap.prize || "").trim().replace(/^prize\s*:\s*/i, "");
+            live.textContent = `The winner is ${said(String(winner).trim())}${prize ? ` Prize: ${said(prize)}` : ""}`;
             if (Sound) Sound.fanfare();
             // The fanfare's last bell is gone within four seconds.
             if (reduced()) { mode = "done"; still(); restTimer = setTimeout(() => played(no), 4000); return; }
@@ -607,7 +613,7 @@
                     if (mine !== gen) return;
                     status.textContent = rows.length ? "" : "No winner saved for this event yet. Save one from the wheel's Draw log first.";
                     list.innerHTML = rows.map((d, i) => {
-                        const bits = [when(d.drawnAt), d.onWheel ? `${d.onWheel} on the wheel` : "", d.prize ? `Prize: ${d.prize}` : ""].filter(Boolean).join(" · ");
+                        const bits = [when(d.drawnAt), d.onWheel ? `${d.onWheel} on the wheel` : "", d.prize ? `Prize: ${String(d.prize).replace(/^prize\s*:\s*/i, "")}` : ""].filter(Boolean).join(" · ");
                         return `<label class="awh-pick-row"><input type="radio" name="awh-pick" value="${esc(d.id)}"${i === 0 ? " checked" : ""}><span><b>${esc(d.name)}</b><small>${esc(bits)}</small></span></label>`;
                     }).join("");
                     ok.disabled = !chosen();

@@ -1588,7 +1588,9 @@
            class is changed just after, hence the wait) and on every
            decoration pass (a window opened or closed changes the page). The
            frame loop itself already rests in a hidden tab. */
-        const gameUp = () => root.classList.contains("ff-phone-open") || !!document.querySelector("#ff-overlay.open, #pura-overlay.open, #rr-overlay.open");
+        /* The Hallway too: css/hallway.css hides the bats there, but the loop drew on behind the walk 60 times
+           a second (scan 18 Nov evening). Its class on <html> is watched (hallMo) to hold and let go. */
+        const gameUp = () => root.classList.contains("ff-phone-open") || root.classList.contains("hallway-open") || !!document.querySelector("#ff-overlay.open, #pura-overlay.open, #rr-overlay.open");
         const hold = () => {
             if (held === gameUp()) return;
             held = !held;
@@ -1600,10 +1602,13 @@
         let holdTimer = 0;
         const onGameFront = () => { clearTimeout(holdTimer); holdTimer = setTimeout(hold, 0); };
         document.addEventListener("mazerats:game-front", onGameFront);
+        let inHall = root.classList.contains("hallway-open");
+        const hallMo = new MutationObserver(() => { const now = root.classList.contains("hallway-open"); if (now !== inHall) { inHall = now; onGameFront(); } });
+        hallMo.observe(root, { attributes: true, attributeFilter: ["class"] });
         hold();
         bats = { hold, stop() {
             cancelAnimationFrame(id); removeEventListener("resize", resize);
-            document.removeEventListener("mazerats:game-front", onGameFront); clearTimeout(holdTimer);
+            document.removeEventListener("mazerats:game-front", onGameFront); clearTimeout(holdTimer); hallMo.disconnect();
             root.classList.remove("hw-bats-held");
             if (headWatch) headWatch.disconnect();
             document.removeEventListener("pointerdown", onDown, true);

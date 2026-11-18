@@ -519,7 +519,8 @@
             if (k === "Shift") { if (!e.repeat) shiftAlone = true; return; }
             shiftAlone = false;
             if (k === "Alt") { e.preventDefault(); return; }
-            if (k === " " ) { e.preventDefault(); return; }
+            /* a focused button keeps Space, to press it (scan 18 Nov evening); the hallway's editor still never hears it */
+            if (k === " " ) { if (!(e.target && e.target.closest && e.target.closest("button, [role=button], summary"))) e.preventDefault(); return; }
             if (ctl && (k === "z" || k === "Z")) { e.preventDefault(); if (e.shiftKey) doRedo(); else doUndo(); return; }
             if (ctl && (k === "y" || k === "Y")) { e.preventDefault(); doRedo(); return; }
             if (ctl) return;
