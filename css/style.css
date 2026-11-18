@@ -11014,6 +11014,82 @@ html[data-gate-peek] body > *:not(.site-loader) {
     .site-loader { transition: none; }
 }
 
+/* THE GTA SKIN'S LOADING SCREEN (19 Nov 2026, the owner's: "show the gta
+   loading screen for a minimum of 3 seconds whilst the homepage loads in
+   the background"). Here and not in css/skin-gta.css because it has to be
+   right from the first paint, long before the skin's own sheet and script
+   arrive: the Vice palette is worn from <head> (the skin's paired palette,
+   remembered), so html[data-theme="vice"] is already true. Black, the
+   title bottom right, the bar along the bottom as GTA's tip strip; the
+   collage itself is dealt into it by js/skin-gta.js when it starts, and
+   js/home.js keeps it up for 3s at least. Above everything the skin adds. */
+html[data-theme="vice"] .site-loader {
+    z-index: 10080;
+    background: #000;
+    display: block;
+}
+html[data-theme="vice"] .site-loader::after {
+    content: "MAZE\A RATS";
+    white-space: pre;
+    position: absolute;
+    right: 40px;
+    bottom: 116px;
+    z-index: 3;
+    text-align: right;
+    font: italic 900 clamp(48px, 9vw, 92px)/0.82 'Montserrat', sans-serif;
+    letter-spacing: -2px;
+    color: #fff;
+    text-shadow: 4px 4px 0 #ff2e88, 8px 8px 0 #000;
+    pointer-events: none;
+}
+html[data-theme="vice"] .site-loader::before {
+    content: "VICE CITY";
+    position: absolute;
+    right: 40px;
+    bottom: 80px;
+    z-index: 3;
+    padding: 4px 12px;
+    background: #ff5fa2;
+    font: 900 clamp(13px, 1.6vw, 20px) 'Montserrat', sans-serif;
+    letter-spacing: 4px;
+    color: #fff;
+    box-shadow: 3px 3px 0 #000;
+    pointer-events: none;
+}
+html[data-theme="vice"] .site-loader-inner {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 2;
+    height: 64px;
+    flex-direction: row;
+    justify-content: flex-start;
+    gap: 18px;
+    padding: 0 30px;
+    background: #000;
+}
+html[data-theme="vice"] .site-loader-wordmark { display: none; }
+html[data-theme="vice"] .site-loader-label { color: #ffd166; min-width: 9ch; }
+html[data-theme="vice"] .site-loader-track {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    width: auto;
+    height: 3px;
+    padding: 0;
+    border: 0;
+    background: #1a1a1a;
+    box-shadow: none;
+}
+html[data-theme="vice"] .site-loader-fill { background: #ff5fa2; }
+@media (max-width: 600px) {
+    html[data-theme="vice"] .site-loader::after { right: 18px; bottom: 108px; }
+    html[data-theme="vice"] .site-loader::before { right: 18px; bottom: 76px; }
+    html[data-theme="vice"] .site-loader-inner { padding: 0 16px; }
+}
+
 /* ==========================================================================
    Admin application shell
    ==========================================================================

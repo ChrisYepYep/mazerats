@@ -7156,6 +7156,14 @@
                 ? `${last.name}: ${whyLost(last.why)}, and no lives left.`
                 : "";
         if (quit) document.getElementById("ff-runend-title").textContent = "Run ended";
+        /* Lost (not quit, not won): said to the homepage around this frame,
+           or this page on its own (the GTA skin's WASTED, 19 Nov 2026). */
+        if (!quit && !cleared) {
+            try {
+                const host = window.parent !== window ? window.parent.document : document;
+                host.dispatchEvent(new CustomEvent("mazerats:game-over", { detail: { game: "Fallin' Furni", line: `${won} ${won === 1 ? "level" : "levels"} cleared` } }));
+            } catch (e) { /* another site's frame, or an old browser */ }
+        }
 
         const tbody = document.getElementById("ff-runend-rows");
         tbody.innerHTML = "";

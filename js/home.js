@@ -14174,8 +14174,20 @@ document.addEventListener("DOMContentLoaded", () => {
     const roomsBytesExpected = roomsBytesWas > 1000 ? roomsBytesWas : 830000;
     let roomsBytesGot = 0;
 
+    /* THE GTA SKIN'S LOADING SCREEN STAYS 3s AT LEAST (19 Nov 2026, the
+       owner's). Under the skin's Vice palette this loader is GTA's loading
+       screen (css/style.css), its collage dealt by js/skin-gta.js; it is
+       held until 3s after the page began, unless the phone's Settings have
+       it off. The archive is ready underneath meanwhile. */
+    function gtaHold() {
+        if (document.documentElement.getAttribute("data-theme") !== "vice") return 0;
+        try { const p = JSON.parse(localStorage.getItem("mazerats_gta_prefs") || "null"); if (p && p.loading === false) return 0; } catch (e) { /* default: on */ }
+        return Math.max(0, 3000 - performance.now());
+    }
     function hideLoader() {
         if (!loaderEl || loaderEl.dataset.done) return;
+        const hold = gtaHold();
+        if (hold > 0) { if (!loaderEl.dataset.held) { loaderEl.dataset.held = "1"; setTimeout(hideLoader, hold); } return; }
         loaderEl.dataset.done = "1";
         loadBar.finish();
         loaderEl.classList.add("is-done");

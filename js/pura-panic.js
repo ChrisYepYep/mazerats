@@ -2484,6 +2484,8 @@
         hud();
         nx.clearRect(0, 0, nextCv.width, nextCv.height);
         showPanel("over");
+        // Lost: said to the page (the GTA skin's WASTED, 19 Nov 2026).
+        try { document.dispatchEvent(new CustomEvent("mazerats:game-over", { detail: { game: "Pura Panic", score: g ? g.score : 0 } })); } catch (e) { /* an old browser */ }
         /* This game's, held on to: Play again can start the next while a save
            of this one is still out, and that answer is not the new game's. */
         const game = g, r = run, ms = Math.round(gameMs);
