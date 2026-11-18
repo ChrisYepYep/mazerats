@@ -37,6 +37,9 @@
                                                  which seed, so it can be
                                                  replayed
      node tools/ff-sim.js --react 0              the ceiling: no reaction time
+     node tools/ff-sim.js --powers               a player who fetches the
+                                                 coffee and ice cream (see
+                                                 --powers below)
      node tools/ff-sim.js --levels out.json      read levels from a file
                                                  instead of the site — see
                                                  ff-levels-build.js --json,
@@ -103,6 +106,19 @@ const OUT = opt("out", null);
    natural end and `used` becomes what the round actually asks for. That is
    the number a clock is set from; see tools/ff-levels-build.js. */
 const UNCAPPED = argv.includes("--uncapped");
+/* --powers: A PLAYER WHO USES THE POWER-UPS (18 Nov 2026). The default player
+   never goes near one, so a level built around a brain freeze (level 7's
+   Sheji Tearoom) reads 0% won however the freeze behaves. With this, a
+   landed coffee or ice cream machine is walked to (its front tile, as the
+   page walks) ahead of the next seat, and handed over on arrival: the
+   coffee's quicker steps, the freeze's stopped clock. The Pod is a seat and
+   is left alone; it is a life, not a win.
+
+   Either way the `pwr` column says in how many rounds EVERY power-up the
+   level has came down, and `at` the latest moment one did (p90, seconds
+   into the round): the owner's rule is that a power-up in a level falls in
+   every round, early enough to use. */
+const POWERS = argv.includes("--powers");
 
 /* ---- enough of a browser to load the room's own files. None of them draw
    anything on the paths this uses; they only reach for a canvas when asked
@@ -168,6 +184,12 @@ const WALK_MS = (() => {
     const src = fs.readFileSync(path.join(__dirname, "..", "js", "fallinfurni.js"), "utf8");
     const m = src.match(/WALK_MS\s*=\s*(\d+)/);
     return m ? Number(m[1]) : 380;
+})();
+// A step while the coffee lasts, the page's figure too.
+const POWER_WALK_MS = (() => {
+    const src = fs.readFileSync(path.join(__dirname, "..", "js", "fallinfurni.js"), "utf8");
+    const m = src.match(/POWER_WALK_MS\s*=\s*(\d+)/);
+    return m ? Number(m[1]) : 330;
 })();
 const TICK_MS = 40;
 
@@ -252,10 +274,42 @@ function playRound(level, meta, seed) {
         return Path.findPath(pos, goal, isBlocked, true) || [];
     };
 
+    /* THE POWER-UPS: when each came down (ms into the round, or null), and,
+       with --powers, which have been used and the one being walked to. */
+    const fellAt = new Map();
+    const used = new Set();
+    let coffeeTill = -Infinity;
+    let powerGoal = null;                 // { pu, x, y }
+    const machineTarget = (pu) => {
+        const m = pu.furni;
+        const blocked = game.blocked();
+        const free = (x, y) => Iso.has(x, y) && !blocked.has(Iso.key(x, y)) &&
+            !Furni.tilesOf(m).some(t => t.x === x && t.y === y);
+        const isBlocked = (x, y) => blocked.has(Iso.key(x, y));
+        const front = W.RoomDrop.powerupFront({ x: m.x, y: m.y, facing: pu.facing });
+        const tries = [front];
+        for (const t of Furni.tilesOf(m)) for (const d of Path.DIRS) tries.push({ x: t.x + d.dx, y: t.y + d.dy });
+        for (const g of tries) {
+            if (!free(g.x, g.y)) continue;
+            if (g.x === pos.x && g.y === pos.y) return { x: g.x, y: g.y, route: [] };
+            const r = routeTo(g, isBlocked);
+            if (r.length) return { x: g.x, y: g.y, route: r };
+        }
+        return null;
+    };
+
     const LIMIT = (level.rules.seconds + 30) * 1000;
     while (game.state === "running" && now < LIMIT) {
         if (arriving && now >= stepAt) {
             arriving = false;
+            // Handed over on arriving in front of it, as powerTick does.
+            if (powerGoal && pos.x === powerGoal.x && pos.y === powerGoal.y) {
+                const def = Levels.POWERUPS[powerGoal.pu.kind] || {};
+                used.add(powerGoal.pu.kind);
+                if (powerGoal.pu.kind === "freeze") game.freeze(stepAt, def.ms);
+                if (powerGoal.pu.kind === "coffee") coffeeTill = stepAt + def.ms;
+                powerGoal = null; route = []; target = null;
+            }
             const what = game.arrivedAt(pos, stepAt);
             if (what === "wrong" || what === "decoy") wrongSeats++;
             // A Bobba Doormat (13 Nov 2026): stuck where it stands, as the page holds it.
@@ -263,15 +317,52 @@ function playRound(level, meta, seed) {
             if (game.state !== "running") break;
         }
         game.tick(now, pos);
+        for (const pu of game.round.powerups || []) {
+            if (pu.furni && !fellAt.has(pu)) fellAt.set(pu, now);
+        }
         if (game.state !== "running") break;
 
         const backlog = game.remaining().length;
         if (backlog > peakBacklog) peakBacklog = backlog;
 
+        /* --powers: a landed machine not yet used is gone for first, once
+           noticed (the same reaction time as a seat). Not while a step is
+           in flight; the walk is planned again if the room moved under it. */
+        if (POWERS && !arriving && now >= stepAt) {
+            if (powerGoal && (!route.length || route.some(s => game.blocked().has(Iso.key(s.x, s.y))))) {
+                if (!(pos.x === powerGoal.x && pos.y === powerGoal.y)) {
+                    const t = machineTarget(powerGoal.pu);
+                    if (t && t.route.length) { powerGoal = { pu: powerGoal.pu, x: t.x, y: t.y }; route = t.route; }
+                    else powerGoal = null;
+                }
+            }
+            if (!powerGoal) {
+                const pu = (game.round.powerups || []).find(p => p.furni && !game.inAir(p.furni) &&
+                    !(Levels.POWERUPS[p.kind] || {}).sit && !used.has(p.kind) &&
+                    now >= fellAt.get(p) + (level.rules.dropSpeedMs || 0) + REACT_MS);
+                const t = pu && machineTarget(pu);
+                /* Straight away. Holding the freeze back for a quiet moment
+                   or the last seconds was tried, and won fewer rounds of
+                   level 7 (66% to 73%): the walk lands on the busy end. */
+                if (t) {
+                    powerGoal = { pu, x: t.x, y: t.y };
+                    route = t.route; target = null;
+                    if (!route.length) {      // already standing there
+                        const def = Levels.POWERUPS[pu.kind] || {};
+                        used.add(pu.kind);
+                        if (pu.kind === "freeze") game.freeze(now, def.ms);
+                        if (pu.kind === "coffee") coffeeTill = now + def.ms;
+                        powerGoal = null;
+                    }
+                }
+            }
+        }
+
         let want = game.nextSeat();
         if (want !== lastWant) { lastWant = want; noticedAt = now + REACT_MS; }
         if (want && now < noticedAt) want = null;
-        if (WANDER && !want && !game.nextSeat() && !route.length && !arriving && now >= wanderAt) {
+        if (powerGoal) want = null;
+        if (WANDER && !want && !powerGoal && !game.nextSeat() && !route.length && !arriving && now >= wanderAt) {
             wanderAt = now + WANDER_MS * (0.5 + wanderRand());
             const blocked = game.blocked();
             const isBlocked = (x, y) => blocked.has(Iso.key(x, y));
@@ -306,14 +397,14 @@ function playRound(level, meta, seed) {
 
         // A wander whose way has since been built over (or closed off) is
         // dropped, as the page's repathIfBlocked drops it.
-        if (route.length && !want && !arriving) {
+        if (route.length && !want && !powerGoal && !arriving) {
             const b = game.blocked();
             if (route.some(s => b.has(Iso.key(s.x, s.y)))) route = [];
         }
         if (route.length && now >= stepAt && now >= stuckTill && !arriving) {
             const step = route.shift();
             pos = { x: step.x, y: step.y };
-            stepAt = now + WALK_MS;
+            stepAt = now + (now < coffeeTill ? POWER_WALK_MS : WALK_MS);
             arriving = true;            // settled when the step ends, above
         }
         now += TICK_MS;
@@ -321,7 +412,13 @@ function playRound(level, meta, seed) {
 
     const seats = game.round ? game.round.sequence().length : 0;
     const left = game.remaining().length;
+    // Every power-up the level has: did it come down, and when the last did.
+    const pus = (game.round && game.round.powerups) || [];
+    const allFell = pus.every(p => fellAt.has(p));
     return {
+        powers: pus.length, allFell,
+        missed: pus.filter(p => !fellAt.has(p)).map(p => p.kind),
+        lastFellMs: pus.length && allFell ? Math.max(...pus.map(p => fellAt.get(p))) : null,
         won: game.state === "won",
         why: game.endedBecause || (now >= LIMIT ? "hung" : ""),
         seats, left, stranded, wrongSeats, peakBacklog,
@@ -377,8 +474,8 @@ function leaveOutNoArt(level) {
 
     const list = (levels.levels || levels).slice().sort((a, b) => a.order - b.order);
     console.log(`${list.length} levels, ${ROUNDS} rounds each, ${WALK_MS}ms a step, ${REACT_MS}ms to notice\n`);
-    console.log("  #  name                     won   stranded  seats  backlog  short  spare  used   p90");
-    console.log("  -- ------------------------ ----- --------- ------ -------- ------ ------ ----- -----");
+    console.log("  #  name                     won   stranded  seats  backlog  short  spare  used   p90   pwr   at");
+    console.log("  -- ------------------------ ----- --------- ------ -------- ------ ------ ----- ----- ----- -----");
 
     const rows = [];
     for (const raw of list) {
@@ -405,6 +502,9 @@ function leaveOutNoArt(level) {
         Iso.setLayout(layout);
         let won = 0, stranded = 0, seats = 0, short = 0, spare = 0, used = 0, hung = 0;
         let backlog = 0, worstBacklog = 0;
+        let pwrFell = 0, pwrLevel = false;
+        const fellTimes = [];           // seconds in, the last power-up down, per round
+        const missedKinds = {};
         const times = [];               // seconds used, per round won
         for (let i = 0; i < ROUNDS; i++) {
             const r = playRound(level, meta, (raw.order * 7919) + i);
@@ -415,8 +515,14 @@ function leaveOutNoArt(level) {
             if (r.peakBacklog > worstBacklog) worstBacklog = r.peakBacklog;
             if (r.dropped < r.planned) short++;      // a seat the round meant to drop and could not
             if (r.why === "hung") hung++;
-            if (VERBOSE && (r.stranded || !r.won)) {
-                console.log(`        seed ${i}: ${r.why} seats ${r.seats} left ${r.left} stranded ${r.stranded}`);
+            if (r.powers) {
+                pwrLevel = true;
+                if (r.allFell) { pwrFell++; fellTimes.push(r.lastFellMs / 1000); }
+                for (const k of r.missed) missedKinds[k] = (missedKinds[k] || 0) + 1;
+            }
+            if (VERBOSE && (r.stranded || !r.won || r.missed.length)) {
+                console.log(`        seed ${i}: ${r.why} seats ${r.seats} left ${r.left} stranded ${r.stranded}` +
+                    (r.missed.length ? ` no ${r.missed.join(", ")}` : ""));
             }
         }
         const pct = (n) => `${Math.round((n / ROUNDS) * 100)}%`;
@@ -434,8 +540,11 @@ function leaveOutNoArt(level) {
             stranded: stranded / ROUNDS, backlog: backlog / ROUNDS, seats: seats / ROUNDS,
             allowed: level.rules.seconds,
             p50: at(0.5), p90: at(0.9), worst: times.length ? times[times.length - 1] : 0,
-            spare: won ? spare / won : 0
+            spare: won ? spare / won : 0,
+            powersFell: pwrLevel ? pwrFell / ROUNDS : null
         });
+        fellTimes.sort((a, b) => a - b);
+        const fellP90 = fellTimes.length ? fellTimes[Math.min(fellTimes.length - 1, Math.floor(0.9 * fellTimes.length))] : 0;
         console.log(`  ${String(raw.order).padStart(2)} ${String(raw.name).slice(0, 24).padEnd(24)}` +
             ` ${pct(won).padStart(5)} ${pct(stranded).padStart(9)}` +
             ` ${(seats / ROUNDS).toFixed(1).padStart(6)}` +
@@ -444,6 +553,9 @@ function leaveOutNoArt(level) {
             ` ${won ? (spare / won).toFixed(1) : "-"}`.padStart(7) +
             ` ${won ? Math.round(used / won / 1000) + "s" : "-"}`.padStart(6) +
             ` ${won ? at(0.9).toFixed(0) + "s" : "-"}`.padStart(6) +
+            (pwrLevel ? ` ${(pwrFell === ROUNDS ? "100%" : `${pwrFell}/${ROUNDS}`).padStart(6)}` +
+                ` ${fellTimes.length ? fellP90.toFixed(1) + "s" : "-"}`.padStart(6) : "") +
+            (Object.keys(missedKinds).length ? `  no ${Object.entries(missedKinds).map(([k, n]) => `${k} x${n}`).join(", ")}` : "") +
             (hung ? `  ${hung} hung` : ""));
     }
 
@@ -454,12 +566,14 @@ function leaveOutNoArt(level) {
        one. See the note on the backlog above. */
     const crowded = rows.filter(r => r.backlog > 7);
     const empty = rows.filter(r => r.seats < 1);
+    const unpowered = rows.filter(r => r.powersFell !== null && r.powersFell < 1);
     console.log("");
     if (empty.length) console.log(`NO SEATS AT ALL: ${empty.map(r => r.order).join(", ")}`);
+    if (unpowered.length) console.log(`A POWER-UP DID NOT FALL: ${unpowered.map(r => `${r.order} (${Math.round(r.powersFell * 100)}% of rounds had all)`).join(", ")}`);
     if (bad.length) console.log(`STRANDED SEATS: ${bad.map(r => `${r.order} (${Math.round(r.stranded * 100)}%)`).join(", ")}`);
     if (hard.length) console.log(`A PERFECT PLAYER LOSES: ${hard.map(r => `${r.order} (${Math.round(r.won * 100)}% won)`).join(", ")}`);
     if (crowded.length) console.log(`MORE SEATS THAN ANYONE CAN HOLD: ${crowded.map(r => `${r.order} (${r.backlog.toFixed(1)})`).join(", ")}`);
-    if (!bad.length && !hard.length && !crowded.length && !empty.length) {
+    if (!bad.length && !hard.length && !crowded.length && !empty.length && !unpowered.length) {
         console.log("every level winnable, every seat reachable, nothing over seven deep");
     }
 

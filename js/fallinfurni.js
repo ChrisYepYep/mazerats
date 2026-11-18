@@ -6188,13 +6188,61 @@
                     `${row.levels} ${row.levels === 1 ? "level" : "levels"} · ${asClock(row.ms)}</em>`;
                 list.appendChild(li);
             }
-            box.hidden = !(data.top || []).length;
+            boards.best = (data.top || []).length > 0;
             renderMeet(data.tournament);
         } catch {
             if (mine !== boardSeq) return;
-            box.hidden = true;      // no board is better than a broken one
+            boards.best = false;    // no board is better than a broken one
             renderMeet(null);
         }
+    }
+
+    /* ONE BOARD AT A TIME (18 Nov 2026, the owner's: with Launch Week and
+       Best runs both up, the title overflowed - its heading cut off at the
+       top and the list running under Music/Sound/Volume). With both to show,
+       tabs above them pick one: the tournament while it is live, Best runs
+       once it has finished, and whichever the player picked after that,
+       until the page is reloaded. Each board's own heading steps aside for
+       the tabs (the CSS); with one board there are no tabs. */
+    const boards = { best: false, meet: false, live: false, pick: null };
+    function syncBoards() {
+        const best = document.getElementById("ff-board");
+        const meet = document.getElementById("ff-meet-board");
+        const tabs = document.getElementById("ff-board-tabs");
+        if (!best || !meet) return;
+        const both = boards.best && boards.meet;
+        const view = !both ? null : (boards.pick || (boards.live ? "meet" : "best"));
+        best.hidden = !boards.best || view === "meet";
+        meet.hidden = !boards.meet || view === "best";
+        if (!tabs) return;
+        tabs.hidden = !both;
+        tabs.classList.toggle("is-live", boards.live);
+        for (const [el, tab] of [[best, "ff-tab-best"], [meet, "ff-tab-meet"]]) {
+            if (both) { el.setAttribute("role", "tabpanel"); el.setAttribute("aria-labelledby", tab); }
+            else { el.removeAttribute("role"); el.removeAttribute("aria-labelledby"); }
+        }
+        for (const b of tabs.querySelectorAll("button[data-board]")) {
+            const on = b.dataset.board === view;
+            b.classList.toggle("is-on", on);
+            b.setAttribute("aria-selected", on ? "true" : "false");
+            b.tabIndex = on ? 0 : -1;
+        }
+    }
+    function watchBoardTabs() {
+        const tabs = document.getElementById("ff-board-tabs");
+        if (!tabs) return;
+        const pick = (b) => {
+            if (!b) return;
+            boards.pick = b.dataset.board;
+            syncBoards();
+        };
+        tabs.addEventListener("click", (e) => pick(e.target.closest("button[data-board]")));
+        // The tab pattern's arrow keys: across to the other one, focus with it.
+        tabs.addEventListener("keydown", (e) => {
+            if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+            const other = tabs.querySelector("button[data-board]:not(.is-on)");
+            if (other) { e.preventDefault(); pick(other); other.focus(); }
+        });
     }
 
     /* The tournament board, when the server says there is one.
@@ -6221,14 +6269,24 @@
         const note = document.getElementById("ff-meet-note");
         if (!box || !list) return;
 
-        if (!meet) { box.hidden = true; return; }
-
-        const rows = meet.top || [];
-        if (!meet.running && !rows.length) { box.hidden = true; return; }
+        const rows = (meet && meet.top) || [];
+        if (!meet || (!meet.running && !rows.length)) {
+            boards.meet = false;
+            boards.live = false;
+            syncBoards();
+            return;
+        }
 
         if (name) name.textContent = meet.name || "Tournament";
         if (flag) flag.textContent = meet.running ? "LIVE" : "FINISHED";
         box.classList.toggle("is-live", Boolean(meet.running));
+        // The same on its tab, for when the tabs stand in for the heading.
+        const tabName = document.getElementById("ff-tab-meet-name");
+        const tabFlag = document.getElementById("ff-tab-meet-flag");
+        if (tabName) tabName.textContent = meet.name || "Tournament";
+        if (tabFlag) tabFlag.textContent = meet.running ? "LIVE" : "FINISHED";
+        // Live again or over since the last look: back to the default board.
+        if (boards.meet && boards.live !== Boolean(meet.running)) boards.pick = null;
 
         if (note) {
             note.textContent = meet.running
@@ -6247,7 +6305,9 @@
                 `${row.levels} ${row.levels === 1 ? "level" : "levels"} · ${asClock(row.ms)}</em>`;
             list.appendChild(li);
         }
-        box.hidden = false;
+        boards.meet = true;
+        boards.live = Boolean(meet.running);
+        syncBoards();
     }
 
     /* "Friday 23 October" — en-GB like every other date the site writes
@@ -8436,6 +8496,7 @@
         }
         if (state.name) lookup(state.name, state.hotel);
         watchBoardActivity();
+        watchBoardTabs();
         watchVisibility();
         wirePause();
         watchOrientation();

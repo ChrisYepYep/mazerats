@@ -537,7 +537,8 @@ body.is-editing .ff-title { display: none; }
    tournament's board is up over the best runs: the two boards fill the
    title to its foot. */
 .ff-title[data-select] .ff-tips,
-.ff-title:has(#ff-meet-board:not([hidden])) .ff-tips { display: none; }
+.ff-title:has(#ff-meet-board:not([hidden])) .ff-tips,
+.ff-title:has(#ff-board-tabs:not([hidden])) .ff-tips { display: none; }
 
 /* HOW TO PLAY (15 Nov 2026, the owner's: layout B, the words button). The
    title's top half slides up and out, its tips and options slide down and
@@ -2199,6 +2200,57 @@ main.ff-page { width: 100%; }
    gap under them where the list will be. */
 .ff-board--meet ol:empty { display: none; }
 
+/* ---- ONE BOARD AT A TIME (18 Nov 2026, the owner's). Both boards stacked
+   ran the title past its foot: the heading cut off at the top, the list
+   under Music/Sound/Volume. With both to show, these tabs stand where the
+   boards' headings were and pick one (syncBoards in js/fallinfurni.js); the
+   headings step aside, and the board under them loses its own rule and gap
+   so the pair reads as one heading. The tab's LIVE pill is the meet
+   board's, the same two states. */
+.ff-board-tabs {
+    display: flex;
+    justify-content: center;
+    gap: 6px;
+    max-width: 46ch;
+    margin: 14px auto 6px;
+    border-bottom: 1px solid var(--border);
+}
+.ff-board-tabs[hidden] { display: none; }
+.ff-board-tabs button {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    margin: 0 0 -1px;
+    padding: 3px 8px 5px;
+    background: none;
+    border: 0;
+    border-bottom: 2px solid transparent;
+    border-radius: 0;
+    font-family: "Silkscreen", monospace;
+    font-size: 10.5px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--parchment-dim);
+    opacity: 0.7;
+    cursor: var(--cursor-pointer);
+}
+.ff-board-tabs button.is-on { color: var(--amber-bright); border-bottom-color: var(--amber); opacity: 1; }
+.ff-board-tabs button:hover { color: var(--amber-bright); opacity: 1; }
+.ff-board-tabs button:focus-visible { outline: 2px solid var(--amber-bright); outline-offset: 1px; color: var(--amber-bright); }
+.ff-board-tabs.is-live .ff-meet-flag {
+    border-color: var(--amber);
+    background: var(--amber);
+    color: #241606;
+}
+.ff-board-tabs:not([hidden]) ~ .ff-board { margin-top: 0; border-top: 0; padding-top: 0; }
+.ff-board-tabs:not([hidden]) ~ .ff-board h3 { display: none; }
+/* The two the same height, so the title does not jump as they swap: the
+   all-time list's 134px, which the meet's note (15px and its 7px margin)
+   comes out of. */
+.ff-board-tabs:not([hidden]) ~ .ff-board { min-height: 134px; }
+.ff-board-tabs:not([hidden]) ~ .ff-board--meet ol { max-height: 112px; }
+.ff-title[data-select] .ff-board-tabs { display: none; }
+
 /* ---- between rounds
 
    Same footprint as the title screen and over the same room: the finished
@@ -2713,6 +2765,8 @@ body[data-ff-closed] .ff-title-who,
 body[data-ff-closed] #ff-play-status,
 body[data-ff-closed] .ff-standins,
 body[data-ff-closed] .ff-board,
+body[data-ff-closed] .ff-board-tabs,
+html[data-ff-gate="checking"] .ff-board-tabs,
 html[data-ff-gate="checking"] .ff-title-form,
 html[data-ff-gate="checking"] .ff-title-who,
 html[data-ff-gate="checking"] #ff-play-status,

@@ -637,7 +637,7 @@
        404.html, wizard.html and fallinfurni.html; the path is absolute
        because the 404 page answers at any depth. */
     (function () {
-        var PAIRED = { halloween: "witch", xmas: "frost" };
+        var PAIRED = { halloween: "witch", xmas: "frost", gta: "vice" };
         function skinPalette(site, t) {
             if (!site || typeof site !== "object") return null;
             var mode = site.skin || "auto", i, j, w, s, e, y, years;
@@ -1051,6 +1051,15 @@
                                  hidden unless that endpoint says otherwise,
                                  so the ordinary state of this page is the one
                                  board it has always had. -->
+                            <!-- ONE BOARD AT A TIME (18 Nov 2026, the owner's):
+                                 both stacked ran the title under its options.
+                                 With both to show, these tabs pick one; the
+                                 tournament leads while it is live. See
+                                 syncBoards in js/fallinfurni.js. -->
+                            <div class="ff-board-tabs" id="ff-board-tabs" role="tablist" aria-label="Leaderboards" hidden>
+                                <button type="button" role="tab" id="ff-tab-meet" data-board="meet" aria-controls="ff-meet-board" aria-selected="true"><span id="ff-tab-meet-name">Launch Week</span><span class="ff-meet-flag" id="ff-tab-meet-flag"></span></button>
+                                <button type="button" role="tab" id="ff-tab-best" data-board="best" aria-controls="ff-board" aria-selected="false">Best runs</button>
+                            </div>
                             <div class="ff-board ff-board--meet" id="ff-meet-board" hidden>
                                 <h3><span id="ff-meet-name">Launch Week</span><span class="ff-meet-flag" id="ff-meet-flag"></span></h3>
                                 <p class="ff-meet-note" id="ff-meet-note"></p>

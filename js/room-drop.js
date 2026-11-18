@@ -761,12 +761,27 @@
        power-up's tiles; a free front tile is preferred, then nearness to where
        the builder put it. Returns { x, y, spots } or null. */
     const POWER_MOVE_MS = 800;
-    function powerupElsewhere(others, pu, meta, rot, playerTile, sat, closed, reserved) {
+    /* EVERY POWER-UP FALLS, EVERY ROUND, AND IN TIME TO USE (18 Nov 2026, the
+       owner's: "if they're added to a level, they should always fall!!" -
+       level 7's Sheji Tearoom cannot be won without its ice cream). Two
+       guarantees on top of the moment the builder set:
+
+         POWER_LATEST   the share of the clock by which it falls whatever
+                        `after` says: seats that come off the plan, or land
+                        slowly, no longer hold it back past a third of the
+                        round.
+         POWER_FORCE_MS refused at its own tile AND everywhere else for this
+                        long, it takes the drop rules' last-chance reading
+                        (spotsFor's lastChance: the floor near the player, no
+                        nook rule), as a seat does after SEAT_TRIES. */
+    const POWER_LATEST = 1 / 3;
+    const POWER_FORCE_MS = 2500;
+    function powerupElsewhere(others, pu, meta, rot, playerTile, sat, closed, reserved, lastChance) {
         const own = new Set([key(pu.x, pu.y), key(powerupFront(pu).x, powerupFront(pu).y)]);
         const keep = reserved ? new Set([...reserved].filter(k => !own.has(k))) : null;
         const entry = { className: pu.cls, rotation: rot, role: "power",
             area: { x: 0, y: 0, w: Iso.COLS, h: Iso.ROWS } };
-        const spots = spotsFor(others, entry, meta, playerTile, 0, sat, false, keep, closed);
+        const spots = spotsFor(others, entry, meta, playerTile, 0, sat, Boolean(lastChance), keep, closed);
         if (!spots.length) return null;
         const blocked = wallsOf(others);
         if (closed) for (const k of closed) blocked.add(k);
@@ -921,7 +936,9 @@
                        never fell at all. One seat short of the plan at most,
                        so there is always a seat left to use it on. */
                     const need = Math.min(pu.after || 0, Math.max(0, this.plannedSeats - 1));
-                    if (pu.furni || now < pu.tryAt || seatsDown < need) continue;
+                    // ...and never later than POWER_LATEST of the clock.
+                    const latest = this.started + level.rules.seconds * 1000 * POWER_LATEST;
+                    if (pu.furni || now < pu.tryAt || (seatsDown < need && now < latest)) continue;
                     pu.tryAt = now + 400;
                     if (pu.dueAt === undefined) pu.dueAt = now;
                     const meta = metaFor(pu.cls);
@@ -954,8 +971,13 @@
                            floor so it can be used from the front as ever. */
                         if (!nook) {
                             if (now - pu.dueAt < POWER_MOVE_MS) continue;
-                            const alt = powerupElsewhere(others, pu, meta, rot, playerTile, sat,
+                            let alt = powerupElsewhere(others, pu, meta, rot, playerTile, sat,
                                 this.offLimits, this.reserved);
+                            // Still nowhere after POWER_FORCE_MS: the last-chance reading.
+                            if (!alt && now - pu.dueAt >= POWER_FORCE_MS) {
+                                alt = powerupElsewhere(others, pu, meta, rot, playerTile, sat,
+                                    this.offLimits, this.reserved, true);
+                            }
                             if (!alt) continue;
                             pu.x = alt.x; pu.y = alt.y;
                             // What the round keeps clear follows it.
