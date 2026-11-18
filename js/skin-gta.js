@@ -242,7 +242,7 @@
     function markSeen(id) { const ids = seen(); if (!ids.includes(id)) ids.push(id); write(SEEN_KEY, JSON.stringify({ day: utcDay(Date.now()), ids })); }
     function texts() {
         const st = standing(), out = [];
-        out.push({ id: "hello", from: "Maze Rats", text: "Welcome to launch week. The archive's running on Vice time until the end of the month." });
+        out.push({ id: "hello", from: "Maze Rats", text: "Welcome to Maze Rats. To celebrate the launch of GTA VI, the archive is running from Vice City until the end of the month." });
         GAMES.forEach((g) => {
             if (!st.played[g.key]) out.push({ id: "daily-" + g.key, from: g.label, text: `Today's ${g.label} just dropped. Don't keep me waiting.`, act: "Play", go: () => { const f = g.open(); if (typeof f === "function") f(); } });
         });
