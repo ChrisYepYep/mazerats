@@ -1,7 +1,8 @@
 /* odd-warm: Odd One Out's pictures made ready just after midnight (16 Nov 2026, the owner's).
 
-   Every player now downloads the whole day's twenty pictures behind the loading bar (daily-scores.js
-   dealReply). The first player of the day was the one who paid for them: each picture is cut, encoded
+   Every player now downloads the whole day's twenty pictures behind the loading bar, once their start is
+   on file (the start's reply, daily-scores.js; since 18 Nov the load is after the start, so a cold picture
+   costs round 0's clock beyond the load grace in _speed.js). The first player of the day was the one who paid for them: each picture is cut, encoded
    and padded by deal-image.js on its first request, and only then kept by Netlify's durable cache. This
    wakes a few minutes into the UTC day, deals the day exactly as the first player would (the deal is
    stored, so it is the same deal), and asks for each picture at its public address, so the cut is done

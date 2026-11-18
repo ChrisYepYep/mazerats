@@ -220,7 +220,6 @@ window.QUIZ_QUESTIONS.animals = [
     ["Which group of animals alive today descended from dinosaurs?","Birds","Crocodiles","Lizards","Snakes"],
     ["Roughly how long ago did the dinosaurs die out?","66 million years","6 million years","650 million years","2 million years"],
     ["Which flying reptiles are often wrongly called dinosaurs?","Pterosaurs","Plesiosaurs","Ichthyosaurs","Mosasaurs"],
-    ["The famous fossil hunter Mary Anning made her finds around which English town?","Lyme Regis","Whitby","Brighton","Blackpool"],
     ["Which dinosaur's name means swift thief?","Velociraptor","Spinosaurus","Triceratops","Brachiosaurus"],
     ["The blue whale skeleton hanging in London's Natural History Museum is nicknamed what?","Hope","Dippy","Bluey","Moby"],
     ["The woolly mammoth was a close relative of which living animal?","Elephant","Rhinoceros","Bison","Musk ox"],

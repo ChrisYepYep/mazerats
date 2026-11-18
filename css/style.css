@@ -570,10 +570,14 @@
    or a swipe that reached the end of a window's own list carried on and
    scrolled the archive underneath it. overflow: hidden on body is passed
    up to the viewport, which is what actually scrolls here. */
-body.modal-open { overflow: hidden; }
+/* Not on Fallin' Furni (18 Nov 2026, the bug scan: Pause made the page jump
+   sideways). It has no kept gutter (below), yet it does scroll on a laptop,
+   so hiding its overflow took the scrollbar away and the page widened under
+   the pause window. Its windows cover the game anyway; the page keeps its bar. */
+body.modal-open:not([data-page="fallinfurni"]) { overflow: hidden; }
 /* Set by the focus trap in js/site.js whenever any dialog is open — the
    maze window included, which never set modal-open. */
-html.has-open-dialog body { overflow: hidden; }
+html.has-open-dialog body:not([data-page="fallinfurni"]) { overflow: hidden; }
 
 /* Site-wide scrollbar treatment — every scrolling element (this page
    scroll, .home-results, .modal-overlay, .gallery-strip, .room-desc-box,

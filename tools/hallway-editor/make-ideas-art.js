@@ -28,6 +28,19 @@ function capture(draw, box) {
 }
 const write = (name, art) => fs.writeFileSync(path.join(OUT, name), encodePng(art.w, art.h, Buffer.from(art.rgba)));
 
+/* the globe table lamp's picture, lit, for the palette and the ghost (the map draws its own), from his art/lamps/globe-table-lamp.png */
+function tableLamp() { const FLm = require("./render/floor-lamps.js"), list = FLm.pixels("tableglobe", false).list, xs = list.map(q => q[0]), ys = list.map(q => q[1]), x0 = Math.min(...xs), y0 = Math.min(...ys), w = Math.max(...xs) - x0 + 1, hh = Math.max(...ys) - y0 + 1, rgba = new Uint8ClampedArray(w * hh * 4); for (const [x, y, c] of list) { const q = ((y - y0) * w + x - x0) * 4; rgba[q] = c[0]; rgba[q + 1] = c[1]; rgba[q + 2] = c[2]; rgba[q + 3] = 255; } write("i_tablelamp.png", { w, h: hh, rgba }); return { f: "i_tablelamp.png", ox: -x0, oy: -y0, w, h: hh }; }
+/* --lamp-only (18 Nov 2026): what the editor's server runs when he saves the table lamp. Only i_tablelamp.png and its entry in wall-items.js
+   are redone; every other picture (i_key.png and anything he's replaced by hand) and the Lost Property lists are left alone */
+if (process.argv.includes("--lamp-only")) {
+    /* only its entry's text changes in wall-items.js, so the rest of the file stays byte for byte */
+    const e = tableLamp(), j = '"tablelampArt":' + JSON.stringify(e), was = fs.readFileSync(LIST, "utf8"), re = /"tablelampArt":\{[^}]*\}/;
+    const now = re.test(was) ? was.replace(re, () => j) : was.replace(/F = \{(\}?)/, (m, shut) => "F = {" + j + (shut ? "}" : ","));
+    if (now === was && !re.test(was)) throw new Error("wall-items.js: can't find where the floor pieces start");
+    if (now !== was) fs.writeFileSync(LIST, now);
+    console.log("table lamp only:", e.w + "x" + e.h); process.exit(0);
+}
+
 /* where the piece hangs: h is the height of its middle over the floor, in the wall tool's steps, the picture nudged to make up the difference, so a door still meets the floor */
 const LIFT = 6;
 function hang(art) { const ym = art.ox - (art.w >> 1), real = art.oy + ym / 2 - (art.h >> 1) + LIFT, h = Math.round(real / 4) * 4; return { h, y: Math.round(h - real) - (art.h >> 1) }; }
@@ -142,7 +155,7 @@ floorPiece("mark_tile", (c, a) => { for (let i = -14; i <= 14; i++) { const X = 
   { const sw = add("swag", "Garland", "xmas-swag", XM.swag, { xmas: true, locked: true, keep: true }); /* its rope starts exactly at the tile's edge, so tiles join */ sw.y.layers[0].x = 8 - sw.ax; sw.x.layers[0].x = -8 - (sw.x.w - 1 - sw.ax); } add("wreath", "Wreath", "xmas", XM.wreath, { xmas: true }); add("stockings", "Stockings", "xmas", XM.stockings, { xmas: true }); add("holly", "Holly swag", "xmas", XM.holly, { xmas: true }); add("canes", "Candy canes", "xmas", XM.canes, { xmas: true });
   const g = A5.garland(), def = add("garland", "Christmas garland (old)", "xmas-old", (c, a) => L.put(c, g.s, a[0], a[1]), { keep: true, xmas: true }); def.spots = g.spots.map(q => [q[0] + def.ax - g.s.ox, q[1] + def.ay - g.s.oy]); }
 /* the globe table lamp's picture, lit, for the palette and the ghost: the map draws its own */
-{ const FLm = require("./render/floor-lamps.js"), list = FLm.pixels("tableglobe", false).list, xs = list.map(q => q[0]), ys = list.map(q => q[1]), x0 = Math.min(...xs), y0 = Math.min(...ys), w = Math.max(...xs) - x0 + 1, hh = Math.max(...ys) - y0 + 1, rgba = new Uint8ClampedArray(w * hh * 4); for (const [x, y, c] of list) { const q = ((y - y0) * w + x - x0) * 4; rgba[q] = c[0]; rgba[q + 1] = c[1]; rgba[q + 2] = c[2]; rgba[q + 3] = 255; } write("i_tablelamp.png", { w, h: hh, rgba }); FLOOR.tablelampArt = { f: "i_tablelamp.png", ox: -x0, oy: -y0, w, h: hh }; }
+FLOOR.tablelampArt = tableLamp();
 /* the key, on its own, for Chris to edit: nothing else reads it until the hunts are built */
 write("i_key.png", (() => { const k = A5.key(); return k; })());
 
@@ -194,7 +207,7 @@ add("rathole", "Rat hole", "tell", (c, a) => L.put(c, A5.hole("x"), a[0], a[1]),
   fs.writeFileSync(indexFile, JSON.stringify(index)); console.log("staff lights:", Object.entries(li).map(([k, l]) => k + (l.floor ? " (floor)" : "")).join(", ")); }
 
 /* ---- the list: the i_ entries replace themselves, the rest stay as make-wall-items.js made them ---- */
-let old = []; try { delete require.cache[require.resolve(LIST)]; old = require(LIST).filter(i => !String(i.id).startsWith("i_")); for (const [k, v] of Object.entries(require(LIST).floor || {})) if (String(v.f).startsWith("g_") && !FLOOR[k]) FLOOR[k] = v;      // make-gallery-art.js's pieces stay } catch (e) { throw new Error("wall-items.js: " + e.message); }
+let old = []; try { delete require.cache[require.resolve(LIST)]; old = require(LIST).filter(i => !String(i.id).startsWith("i_")); for (const [k, v] of Object.entries(require(LIST).floor || {})) if (String(v.f).startsWith("g_") && !FLOOR[k]) FLOOR[k] = v; /* make-gallery-art.js's pieces stay */ } catch (e) { throw new Error("wall-items.js: " + e.message); }
 const FL = JSON.stringify(FLOOR);
 fs.writeFileSync(LIST, `/* made by make-wall-items.js and make-ideas-art.js */\n(function () { const L = ${JSON.stringify([...old, ...items])}, F = ${FL}; if (typeof module !== "undefined") { module.exports = L; L.floor = F; } else { window.WALL_ITEMS = L; window.FLOOR_PIECES = F; } })();\n`);
 console.log(items.length, "wall pieces,", Object.keys(FLOOR).length, "floor pieces:", items.map(i => i.id + " " + i.y.w + "x" + i.y.h + " h" + i.h).join(", "));

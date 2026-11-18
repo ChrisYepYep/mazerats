@@ -113,7 +113,6 @@ window.QUIZ_QUESTIONS.nostalgia = [
     ["Which roadside restaurant chain's logo was a cartoon cook called Charlie?","Little Chef","Happy Eater","Wimpy","Harvester"],
     ["The famous 'Tennis Girl' poster was sold by which shop?","Athena","Clinton Cards","WHSmith","Paperchase"],
     ["How many small squares are on each face of a standard Rubik's Cube?","Nine","Eight","Twelve","Sixteen"],
-    ["Cabbage Patch Kids dolls came with what document?","Adoption papers","A passport","A school report","A driving licence"],
     ["What exactly was a Tamagotchi?","A virtual pet","A spinning top","A talking doll","A yo-yo"],
     ["What kind of animal is Sega's Sonic?","A hedgehog","A fox","A hare","A squirrel"],
     ["What is Mario's trade in the Nintendo games?","Plumber","Electrician","Baker","Postman"],
@@ -126,13 +125,11 @@ window.QUIZ_QUESTIONS.nostalgia = [
     ["Cluedo was invented in which country?","England","USA","Germany","France"],
     ["The name of the block-stacking game Jenga comes from a Swahili word meaning what?","Build","Topple","Tower","Wood"],
     ["In English Scrabble, how many points is the letter Q worth?","10","8","12","5"],
-    ["In the game KerPlunk, what falls when you pull out the wrong straw?","Marbles","Coins","Beads","Buttons"],
     ["In Buckaroo, what kind of animal bucks off its load?","A mule","A camel","A goat","A cow"],
     ["How many hippos are there in a game of Hungry Hippos?","Four","Two","Six","Eight"],
     ["Which toy company makes Barbie?","Mattel","Hasbro","Bandai","Tomy"],
     ["What is the name of Barbie's boyfriend?","Ken","Kevin","Kyle","Karl"],
     ["The toy brand name Lego is short for a phrase meaning what?","Play well","Build big","Little bricks","Fit together"],
-    ["Lego comes from which country?","Denmark","Sweden","Norway","Germany"],
     ["Hamleys, London's famous toy shop, is on which street?","Regent Street","Oxford Street","Bond Street","Carnaby Street"],
     ["Which 2016 craze toy hatched out of its own egg?","Hatchimals","Shopkins","Zhu Zhu Pets","Moshi Monsters"],
     ["Scalextric sets are for racing what?","Slot cars","Toy trains","Model boats","Spinning tops"],
@@ -140,6 +137,5 @@ window.QUIZ_QUESTIONS.nostalgia = [
     ["Which construction toy was invented in Liverpool by Frank Hornby?","Meccano","Lego","K'Nex","Stickle Bricks"],
     ["The teddy bear is named after which US President?","Theodore Roosevelt","Franklin Roosevelt","Woodrow Wilson","William Taft"],
     ["Action Man was the British version of which American toy?","GI Joe","Ken","He-Man","Big Jim"],
-    ["Which spring-shaped toy is famous for walking down stairs?","Slinky","Yo-yo","Pogo stick","Jack-in-the-box"],
     ["Which plastic toy, spun around the waist, was a huge craze in the late 1950s?","Hula hoop","Frisbee","Yo-yo","Slinky"]
 ];

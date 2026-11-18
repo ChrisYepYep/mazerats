@@ -47,11 +47,13 @@ const artStamp = () => { let t = 0; for (const f of [LAMP_ART, WALL_ART, BACK_AR
 let artAt = artStamp();
 let publishing = { running: false, at: 0, of: 0, error: null };
 for (const f of [LAMP_ART, WALL_ART, BACK_ART, SCONCE_ART, TABLE_ART]) fs.watchFile(f, { interval: 400 }, () => {
-    /* the table lamp's picture for the palette and the ghost comes from make-ideas-art.js */
-    if (f === TABLE_ART) require("child_process").execFile(process.execPath, [path.join(__dirname, "make-ideas-art.js")], () => {});
     artAt = artStamp();
-    /* and the ghost that follows the mouse when placing one */
-    require("child_process").execFile(process.execPath, [path.join(__dirname, "make-furni-art.js")], () => {});
+    /* the ghost that follows the mouse when placing one */
+    const furni = () => require("child_process").execFile(process.execPath, [path.join(__dirname, "make-furni-art.js")], () => {});
+    /* the table lamp's picture for the palette comes from make-ideas-art.js, lamp only (18 Nov 2026): a full run rewrote every art/wall/i_*.png,
+       i_key.png and anything else he'd replaced by hand, and the Lost Property list */
+    if (f === TABLE_ART) require("child_process").execFile(process.execPath, [path.join(__dirname, "make-ideas-art.js"), "--lamp-only"], err => { if (err) console.error("make-ideas-art --lamp-only: " + err.message); furni(); });
+    else furni();
 });
 
 let names = W.H.names2();

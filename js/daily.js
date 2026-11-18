@@ -670,6 +670,9 @@ window.Daily = (function () {
     // Round 0 as each start's reply handed it out, per "game:day" (see
     // opening below).
     const openings = new Map();
+    // Every round's pictures as a recorded start's reply handed them out
+    // (Odd One Out), per "game:day".
+    const wholeDays = new Map();
     function start(game, day, url) {
         const key = game + ":" + day;
         if (startSent.has(key) || !window.Account) return startsInFlight.get(key) || Promise.resolve();
@@ -682,6 +685,9 @@ window.Daily = (function () {
                round 0's move sends it again otherwise. */
             if (status === 200 && body && body.started) startConfirmed.add(key);
             if (status === 200 && body && body.next) openings.set(key, body.next);
+            // Odd One Out's whole day, which only a recorded start hands out
+            // (18 Nov 2026; see startedRounds below).
+            if (status === 200 && body && body.started && Array.isArray(body.rounds)) wholeDays.set(key, body.rounds);
             /* A refusal (a closed day, say) will be refused again; only a
                server that could not answer is worth another go — and a
                session that lapsed after the page loaded (401, or 403 "sign
@@ -720,7 +726,20 @@ window.Daily = (function () {
             openings.set(key, body.next);
             if (body.started) startConfirmed.add(key);
         }
+        if (status === 200 && body && body.started && Array.isArray(body.rounds)) wholeDays.set(key, body.rounds);
         return openings.get(key) || null;
+    }
+
+    /* THE WHOLE DAY ONCE THE CLOCK IS RUNNING (18 Nov 2026, the bug scan).
+       Odd One Out's deal carries no pictures before the day's start is on
+       file — from 16 Nov it carried all twenty, so the day could be studied
+       before the clock started — and the start's reply carries every round
+       (`rounds`), which the game loads whole behind its bar before round 1
+       (see THE WHOLE DAY'S PICTURES in js/oddoneout.js). Answers that list
+       for a start opening() has had answered, or null (a server from
+       before, which sends only `next`: the game then reads the deal). */
+    function startedRounds(game, day) {
+        return wholeDays.get(game + ":" + day) || null;
     }
 
     /* A room after the first, asked for as the player goes on to it (Guess
@@ -765,6 +784,7 @@ window.Daily = (function () {
     function forgetStarts(game) {
         const prefix = game + ":";
         for (const key of Array.from(openings.keys())) if (key.startsWith(prefix)) openings.delete(key);
+        for (const key of Array.from(wholeDays.keys())) if (key.startsWith(prefix)) wholeDays.delete(key);
         for (const key of Array.from(startSent)) if (key.startsWith(prefix)) startSent.delete(key);
         for (const key of Array.from(startConfirmed)) if (key.startsWith(prefix)) startConfirmed.delete(key);
         for (const key of Array.from(startsInFlight.keys())) if (key.startsWith(prefix)) startsInFlight.delete(key);
@@ -1333,7 +1353,7 @@ window.Daily = (function () {
 
     return {
         today, now, setServerNow, seededRandom, dayBefore, request,
-        claimReset, deal, move, afterPractice, submit, filed, fileable, start, opening, begin, takeRound, mergeRounds,
+        claimReset, deal, move, afterPractice, submit, filed, fileable, start, opening, startedRounds, begin, takeRound, mergeRounds,
         forgetStarts, track, loadingHtml, waiting, fill, progress, finishWaiting,
         clock, scoreCell, rightCell, orderLine, spanLine, boards, ranks, isMine,
         foundCell, foundOrderLine, roomsGrid, rememberFiled, filedTotal,

@@ -507,8 +507,15 @@
         localStats = loadStats();
         // A practice run is not a day played: the real one after the launch
         // cut is what the streak and totals count (30 Sept 2026).
-        if (localStats.lastDay !== state.day && !state.practice) countDay();
+        const fresh = localStats.lastDay !== state.day && !state.practice;
+        if (fresh) countDay();
         submitDay();
+        /* Said once per day finished (18 Nov 2026), for a skin that marks it:
+           the GTA skin's "Mission passed" banner. Nothing else listens. */
+        if (fresh) try {
+            document.dispatchEvent(new CustomEvent("mazerats:daily-done", { detail: {
+                game: "guess", solved: state.results.filter(r => r.won).length, rounds: ROUNDS, points: dayPoints() } }));
+        } catch (e) { /* an old browser: no banner */ }
     }
 
     /* Counted into the device's own record, which is saved; and into the

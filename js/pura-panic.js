@@ -778,8 +778,20 @@
         catch (e) { return Math.floor(Math.random() * 4294967296); }
     }
 
-    async function play() {
+    /* NOT SAVED, SAID AT THE START (18 Nov 2026, the bug scan; the owner's
+       "Fix"). A start the server did not answer (offline, or it could not
+       make a run) used to begin a whole game from a local seed, and only
+       GAME OVER said it hadn't been saved. Now it stops first and says so:
+       Try again asks the server again, Play anyway plays the unsaved game
+       with that start (`unsaved`), and the score bar says "Not saved" all
+       game. Maintenance and the test levels say so on the splash already. */
+    const startFailed = (r) => !!r && !r.token && !r.refused && r.reason !== "test" && r.reason !== "maintenance" && r.reason !== "hidden";
+    let unsaved = null;    // the failed start, kept for Play anyway
+
+    async function play(anyway) {
         if (mode === "dealing") return;
+        const offline = anyway === true && unsaved ? unsaved : null;
+        unsaved = null;
         if (!mayPlayNow()) return;
         if (window.Account && typeof Account.mayPlay === "function" && !Account.mayPlay()) return;
         if (needsName()) { showPanel("who"); return; }
@@ -793,10 +805,18 @@
         showPanel("dealing");
         const startAt = testLevel();
         rowsBase = 0;
-        run = startAt ? { token: null, reason: "test" } : await startRun();
+        run = startAt ? { token: null, reason: "test" } : offline || await startRun();
         // Closed while the server was dealing (close() has already stopped
         // the music): no game starts behind a shut window.
         if (!isOpen() || mode !== "dealing") { if (mode === "dealing") mode = "idle"; return; }
+        if (!offline && startFailed(run)) {
+            unsaved = run; run = null; mode = "idle";
+            if (music()) music().setMuffled(true);
+            showPanel("nostart");
+            // Play's own button went with the Dealing… panel, so the focus is given back here.
+            if (!behind()) { const b = panel.querySelector('[data-go="play"]'); if (b) b.focus({ preventScroll: true }); }
+            return;
+        }
         /* Refused (banned, from 10 Oct 2026 at the start too: pura-scores.js
            gives no run token to a banned network or account): Account's ban
            window is already up over this one; the splash behind it, and the
@@ -879,6 +899,13 @@
         scoreEl.textContent = s.toLocaleString("en-GB");
         const rows = g ? g.bands - rowsBase : 0;
         subEl.textContent = `Level ${g ? g.level : 1} · ${rows} ${rows === 1 ? "row" : "rows"}`;
+        // A game the board will not take says so all game (NOT SAVED, SAID AT THE START).
+        if (g && run && !run.token && (mode === "play" || mode === "paused")) {
+            const tag = document.createElement("span");
+            tag.className = "pura-nosave";
+            tag.textContent = " · Not saved";
+            subEl.appendChild(tag);
+        }
         const who = playingAs();
         const whoEl = root && root.querySelector("#pura-who-line");
         if (whoEl) { whoEl.textContent = who ? "Playing as: " + who : ""; whoEl.title = who; }
@@ -1521,7 +1548,17 @@
         if (which === "loading") html = `<p>Loading…</p>`;
         else if (which === "failed") html = `<p>The furni couldn't be loaded.</p><div class="pura-buttons"><button type="button" class="console-btn" data-go="retry">Try again</button></div>`;
         else if (which === "dealing") html = `<p>Dealing…</p>`;
-        else if (which === "title") {
+        else if (which === "nostart") {
+            // The start the server did not answer (NOT SAVED, SAID AT THE START).
+            html = `<p class="pura-big">NOT SAVED</p>
+                <div class="console-hashline" aria-hidden="true"></div>
+                <p role="alert">The leaderboard can't be reached right now, so this game won't be saved.</p>
+                <div class="pura-buttons">
+                    <button type="button" class="console-btn" data-go="play">Try again</button>
+                    <button type="button" class="console-btn" data-go="playanyway">Play anyway</button>
+                </div>
+                <button type="button" class="pura-text-btn" data-go="cancel">Back</button>`;
+        } else if (which === "title") {
             html = `<p class="pura-big">PURA PANIC</p>
                 <div class="console-hashline" aria-hidden="true"></div>
                 ${mayPlayNow() ? `<p>Turn the Pura modules and slot them in.<br>Fill a line of tiles across the floor to clear it.</p>
@@ -1812,6 +1849,7 @@
         if (btn.tagName === "A") e.preventDefault();
         const go = btn.dataset.go;
         if (go === "play") play();
+        else if (go === "playanyway") play(true);
         else if (go === "who") showPanel("who");
         else if (go === "forget") forgetGuest();
         else if (go === "whonext") chooseName();

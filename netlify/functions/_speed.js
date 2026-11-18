@@ -274,11 +274,42 @@ function movesOf(row, rounds) {
     return Array.from({ length: rounds }, (_, i) => moves[markKey(i)] || null);
 }
 
-/* When round `round` began, in ms: the start for round 0; for the rest, when
-   the player asked for it (begun, see recordBegin) or, for a round with no
-   such stamp, the round before's mark. NaN if it has not. */
+/* ODD ONE OUT'S DAY LOADS AFTER THE START, AND THE LOAD IS NOT ON THE CLOCK
+   UP TO A POINT (18 Nov 2026, the bug scan; the owner's "the whole game
+   loads at the beginning, no load times between rounds").
+
+   From 16 Nov the deal handed a nicknamed player all twenty pictures before
+   any start was on file, so the whole day could be studied at leisure, then
+   started and answered at the 1.2s floor for nearly the full bonus — the
+   very thing FIRST WRITE WINS is for. Now no picture address goes out until
+   the start is written (dealReply and the start's reply in daily-scores.js),
+   the start's reply carries the whole day, and the page loads every picture
+   behind its bar before round 1 shows, so nothing loads between rounds.
+
+   That load is on the player's clock unless something takes it off, and
+   the server cannot see it (the pictures come from the edge). So once round
+   1 is on screen the page says so (action "begin", round 0; recordOddBegin
+   below), and round 0 is timed from when that arrived — but never from
+   later than LOAD_GRACE_MS after the start. A slow line gets up to that
+   much of its download back; a page that holds the "begin" back to study the
+   pictures gains at most that much, and at a point a second that is a few
+   points at most. Nothing the page sends carries a time. */
+const LOAD_GRACE_MS = 6000;
+
+// When round 0 began, in ms: the start, or the "begin" stamp held between
+// the start and LOAD_GRACE_MS after it. Pure.
+function zeroBeganAt(at, begun) {
+    if (!Number.isFinite(at)) return NaN;
+    if (!Number.isFinite(begun)) return at;
+    return Math.min(Math.max(begun, at), at + LOAD_GRACE_MS);
+}
+
+/* When round `round` began, in ms: the start for round 0 (see zeroBeganAt);
+   for the rest, when the player asked for it (begun, see recordBegin) or,
+   for a round with no such stamp, the round before's mark. NaN if it has
+   not. */
 function roundBeganAt(row, round) {
-    if (round === 0) return timeOf(row.at);
+    if (round === 0) return zeroBeganAt(timeOf(row.at), timeOf(row.begun && row.begun.r0));
     const begun = timeOf(row.begun && row.begun[markKey(round)]);
     return Number.isFinite(begun) ? begun : timeOf(row.marks && row.marks[markKey(round - 1)]);
 }
@@ -307,6 +338,22 @@ async function recordBegin(db, day, playerId, round, now) {
     if (!row) return { error: "no-start" };
     if (!(row.marks && row.marks[before])) return { error: "out-of-order" };
     return { begun: true };
+}
+
+/* Odd One Out's round 1 on screen, every picture loaded (see ODD ONE OUT'S
+   DAY LOADS AFTER THE START above). First write wins, and only on a timed
+   row whose round 0 has no pick yet, so a second "begin" (a reload, another
+   tab) or one after the pick changes nothing. Answers { begun: true }, or
+   { error: "no-start" } when there is no start on file. */
+async function recordOddBegin(db, day, playerId, now) {
+    const col = db.collection(COLLECTION);
+    const res = await col.updateOne(
+        { game: "odd", day, playerId, noClock: { $ne: true }, "begun.r0": { $exists: false }, "moves.r0": { $exists: false } },
+        { $set: { "begun.r0": new Date(now) } }
+    );
+    if (res && res.matchedCount) return { begun: true };
+    const row = await col.findOne({ game: "odd", day, playerId });
+    return row ? { begun: true } : { error: "no-start" };
 }
 
 /* The row a move goes on, making an untimed one if a signed-in player's
@@ -509,7 +556,8 @@ function dayBonus(clock, right, now) {
     if (!clock) return { bonus: 0, ms: null, roundSecs: null };
     const roundSecs = new Array(rounds).fill(null);
     const begun = clock.begun || {};
-    let bonus = 0, prev = clock.at, last = null, played = 0;
+    // Round 0 from its "begin", inside the load grace (zeroBeganAt).
+    let bonus = 0, prev = zeroBeganAt(clock.at, begun[markKey(0)]), last = null, played = 0;
     for (let i = 0; i < rounds; i++) {
         const t = clock.marks[markKey(i)];
         if (!Number.isFinite(t)) break;
@@ -679,6 +727,6 @@ async function replayedOn(db, game, day, playerId) {
 module.exports = {
     COLLECTION, ROUND_BONUS_SECONDS, NO_TIME, TOTAL, MAX_START_BODY, MAX_FINISH_BODY, MIN_MOVE_MS,
     totalOf, roundBonusFor, markRound, recordStart, progressFor, clockOf, clockFor, movesOf, lastMarkAt,
-    recordBegin, recordOddPick, recordGuess, forgetDay, dayBonus, normalise, optionFor,
+    recordBegin, recordOddBegin, LOAD_GRACE_MS, zeroBeganAt, recordOddPick, recordGuess, forgetDay, dayBonus, normalise, optionFor,
     beforeCut, isPractice, dropPractice, PRACTISED_COLLECTION, notePractised, practisedOn, REPLAYED, replayedOn
 };

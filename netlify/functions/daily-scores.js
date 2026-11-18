@@ -8,7 +8,13 @@
                                     a signed-in player, their moves so far
    POST {game, day, action: "start"}
                                     starts the signed-in player's clock for
-                                    the day's speed bonus — see _speed.js
+                                    the day's speed bonus — see _speed.js;
+                                    the reply carries the whole day's
+                                    pictures (`rounds`) for Odd One Out
+   POST {game, day, action: "begin", round: 0}
+                                    Odd One Out's round 1 on screen, every
+                                    picture loaded: round 0's clock, within
+                                    LOAD_GRACE_MS of the start (_speed.js)
    POST {game, day, action: "move", round, tile}
                                     one pick, judged against the stored
                                     deal now and recorded
@@ -847,21 +853,48 @@ exports.handler = async (event) => {
         // Anything else with an action is not a request this endpoint takes —
         // including "mark", which a page from before the moves were judged
         // one at a time still sends, and which now means nothing.
+        /* ---------- round 1 on screen ----------
+
+           Sent by Odd One Out (Daily.begin, round 0) once every picture is
+           loaded and round 1 is drawn: round 0 is timed from when this
+           lands, held to LOAD_GRACE_MS after the start (ODD ONE OUT'S DAY
+           LOADS AFTER THE START in _speed.js). Round 0 only; first write
+           wins, so it is safe to send twice and needs no rate limit. */
+        if (body.action === "begin") {
+            if (String(event.body || "").length > speed.MAX_START_BODY) return privateJson(413, { error: "Too large" });
+            if (body.round !== 0) return privateJson(400, { error: "Bad round" });
+            let begun;
+            try {
+                begun = await speed.recordOddBegin(db, day, player.id, arrived);
+            } catch (e) {
+                console.error("daily-scores: could not record a begin", e);
+                return privateJson(503, { begun: false });
+            }
+            if (begun.error) return privateJson(409, { reason: begun.error });
+            return privateJson(200, { begun: true });
+        }
+
         if (body.action !== undefined && body.action !== "start") return json(400, { error: "Unknown action" });
 
         /* The start's reply carries round 0's pictures (`next`), which the
-           deal reply no longer does before the day has started — see ONE
-           ROUND AT A TIME in _deal.js (30 Sept 2026). A deal that cannot be
-           read is no `next`, and the page asks for the deal again. (It was
-           handed to a signed-out start too, unrecorded, until signed-out
-           play went; 10 Oct 2026.) */
-        const openingRound = async () => {
+           deal reply does not before the day has started — see ONE ROUND AT
+           A TIME in _deal.js (30 Sept 2026) — and, for Odd One Out, every
+           round's (`rounds`), so the page can load the whole day before
+           round 1 (THE WHOLE DAY'S PICTURES, ONCE THE CLOCK IS RUNNING, in
+           dealReply). `next` stays for a page from before, which reads only
+           that. A deal that cannot be read is neither, and the page asks
+           for the deal again. (It was handed to a signed-out start too,
+           unrecorded, until signed-out play went; 10 Oct 2026.) */
+        const opening = async () => {
             try {
                 const deal = await deals.dealFor(db, ensureUniqueIndex, game, day);
-                return deals.nextRound(game, deal.rounds, -1, day);
+                return {
+                    next: deals.nextRound(game, deal.rounds, -1, day),
+                    ...(game === "odd" ? { rounds: deals.publicRounds(game, deal.rounds, day, deal.rounds.length) } : {})
+                };
             } catch (e) {
                 console.error("daily-scores: could not read the day's deal for its first round", e);
-                return null;
+                return { next: null };
             }
         };
 
@@ -890,7 +923,7 @@ exports.handler = async (event) => {
                 return json(503, { started: false });
             }
             // Only once the start is on file: round 0 is timed from it.
-            return privateJson(200, { started: true, next: await openingRound() });
+            return privateJson(200, { started: true, ...(await opening()) });
         }
 
         /* ---------- the finished day ----------
@@ -1103,19 +1136,22 @@ async function dealReply(db, event, game, params) {
             filed = Boolean(onFile);
             score = filedScore(onFile);
             reached = deals.reachedOf(game, row, deal.rounds.length, filed);
-            /* THE WHOLE DAY'S PICTURES UP FRONT (16 Nov 2026, the owner's).
-               Odd One Out's rounds used to be handed out one at a time (ONE
-               ROUND AT A TIME in _deal.js), so every round's four pictures
-               were downloaded after the pick before it, on that round's
-               clock: a slow line lost bonus points to its own download (bug
-               scan, 15 Nov). Now a player who may play gets all of the day's
-               pictures with the deal, the page loads them behind a filling
-               bar, and the day's clock starts only once round 1 is on screen
-               (Daily.start, sent then). He accepted the cost: someone reading
-               the network tab can study rounds before reaching them. Which
-               tile is odd still goes nowhere until a pick. A player the daily
-               games refuse (no nickname, banned) keeps the old handout. */
-            if (game === "odd" && reached < deal.rounds.length &&
+            /* THE WHOLE DAY'S PICTURES, ONCE THE CLOCK IS RUNNING (16 Nov
+               2026, the owner's; 18 Nov, the bug scan). Odd One Out's rounds
+               used to be handed out one at a time (ONE ROUND AT A TIME in
+               _deal.js), each downloaded on its own round's clock. From 16
+               Nov the whole day went out here BEFORE any start was on file,
+               so it could be studied at leisure and then played at the 1.2s
+               floor. Now the whole day goes out only once this player's
+               start is on file (`row`): the start's own reply carries it
+               (below), the page loads every picture behind its bar before
+               round 1, and the load is taken off round 0 up to a point (ODD
+               ONE OUT'S DAY LOADS AFTER THE START in _speed.js). Rounds ahead
+               of the one in hand can still be looked at, but on the clock.
+               Which tile is odd still goes nowhere until a pick. A player the
+               daily games refuse (no nickname, banned) keeps the old
+               handout. */
+            if (game === "odd" && row && reached < deal.rounds.length &&
                     !(await writeRefusal(db, event, player.id, { game: true, daily: true }))) {
                 reached = deal.rounds.length;
             }

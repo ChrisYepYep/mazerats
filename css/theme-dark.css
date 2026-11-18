@@ -9,7 +9,7 @@
    completely inert until js/site.js puts that attribute on <html>. The
    classic palette is not defined here and is not affected by anything in it.
 
-   1233 rules, 1970 declarations, hues 222 (surfaces) / 36 (accents).
+   1236 rules, 1974 declarations, hues 222 (surfaces) / 36 (accents).
 */
 :root[data-dark] {
     --bg-black: #050607;
@@ -3873,6 +3873,19 @@ html[data-dark] .wn-flags {
 
 html[data-dark] .wn-line {
     color: var(--parchment);
+}
+
+html[data-dark] .wn-pic {
+    border: 2px solid transparent;
+}
+
+html[data-dark] .wn-pic:has(input:checked) {
+    border-color: var(--amber-text);
+    background: rgba(0, 0, 0, 0.25);
+}
+
+html[data-dark] .wn-pic:has(input:focus-visible) {
+    outline: 2px solid var(--amber-text);
 }
 
 html[data-dark] .wn-override {

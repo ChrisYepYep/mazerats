@@ -280,9 +280,16 @@
             if (window.Daily.noteRecent) window.Daily.noteRecent(s, day(), state.picks.filter(p => p.right).length, dealt().length || ROUNDS);
             return true;
         };
-        if (count(localStats)) saveStats();
+        const fresh = count(localStats);
+        if (fresh) saveStats();
         count(accountStats);
         shownStats();
+        /* Said once per day finished (18 Nov 2026), for a skin that marks it:
+           the GTA skin's "Mission passed" banner. Nothing else listens. */
+        if (fresh) try {
+            document.dispatchEvent(new CustomEvent("mazerats:daily-done", { detail: {
+                game: "odd", solved: state.picks.filter(p => p.right).length, rounds: dealt().length || ROUNDS, points: score() } }));
+        } catch (e) { /* an old browser: no banner */ }
     }
 
     const score = () => state.picks.filter(p => p.right).length * POINTS_EACH;
@@ -322,6 +329,9 @@
         picking = true;
         swappedNote = null;
         setPicking(index, tileIndex, true);
+        // A first pick inside a frame of round 1 appearing goes after its
+        // "begin" (render), or round 0 would be timed from the start.
+        if (index === 0 && zeroBegin) await zeroBegin;
         const reply = await window.Daily.move("odd", forDay, index, { tile: tileIndex });
         picking = false;
         setPicking(index, tileIndex, false);
@@ -379,7 +389,7 @@
         const pick = body.already && Number.isInteger(body.tile)
             ? { tile: body.tile, right: body.right }
             : { tile: tileIndex, right: body.right };
-        /* The next round's pictures were handed out with the deal and are
+        /* The next round's pictures were handed out with the start and are
            loaded already (THE WHOLE DAY'S PICTURES UP FRONT, below); a
            `next` still comes with the verdict, and fills its slot only if
            the deal somehow left it empty. */
@@ -743,31 +753,46 @@
             // Yesterday's round swapped for today's under a pick (see choose).
             const note = swappedNote && sheet.inner.querySelector(".odd-pick-note");
             if (note) { note.textContent = swappedNote; note.hidden = false; announce(swappedNote); swappedNote = null; }
-            /* The first four pictures are on screen now, decoded, so this is
-               when the speed bonus's clock starts — on the server, the first
-               time only (Daily.start), and after the sheet has been painted
-               (16 Nov 2026: it used to start before round 1's pictures had
-               even been asked for). Not once a pick has been made: a clock
-               started then would time only the rounds left. No time is shown
-               anywhere in the game. */
-            if (!state.picks.length && window.Daily.start) {
+            /* Round 1 is on screen now, every picture of the day loaded, so
+               the server is told (Daily.begin, round 0) and round 0 is timed
+               from then — not from the start, which had to come first for
+               the pictures to be handed out at all, and which is held at
+               most LOAD_GRACE_MS behind this (ODD ONE OUT'S DAY LOADS AFTER
+               THE START in netlify/functions/_speed.js; 18 Nov 2026). The
+               start is sent again first, which does nothing when it has
+               landed already. Not once a pick has been made, and once per
+               day this visit: the server keeps the first either way. No
+               time is shown anywhere in the game. */
+            if (!state.picks.length && window.Daily.start && !begunFor.has(day())) {
                 const forDay = day();
+                begunFor.add(forDay);
                 // Each tile's own <img> ready to paint (decode), then a frame;
                 // a tile that will not decode, or 3s, does not hold it.
                 const tiles = Array.from(sheet.inner.querySelectorAll(".odd-tile img"))
                     .map(img => (img.decode ? img.decode().catch(() => {}) : null));
-                Promise.race([Promise.all(tiles), new Promise(r => setTimeout(r, 3000))])
-                    .then(() => afterPaint(() => window.Daily.start("odd", forDay)));
+                zeroBegin = Promise.race([Promise.all(tiles), new Promise(r => setTimeout(r, 3000))])
+                    .then(() => new Promise(r => afterPaint(r)))
+                    .then(() => window.Daily.start("odd", forDay))
+                    // Sent, not awaited: Daily.move waits for it to land.
+                    .then(() => { if (window.Daily.begin) window.Daily.begin("odd", forDay, 0); })
+                    .catch(() => {});
             }
         } else if (sheet) {
             // Not handed out (a deal that came back short): the bar while
             // it is asked for, rather than a line of text.
-            Daily.waiting(el.deck, true, "Dealing the round");
-            if (Daily.progress) Daily.progress(el.deck, 0.1, 0.9);
+            // Round 0 is the whole day's pictures to follow, so the deal
+            // takes only the first part of the bar (holdForPictures).
+            Daily.waiting(el.deck, true, roundNow() === 0 ? "Loading today's pictures" : "Dealing the round");
+            if (Daily.progress) Daily.progress(el.deck, 0.05, roundNow() === 0 ? 0.15 : 0.9);
             fetchRound(roundNow());
         }
         layout();
     }
+
+    // Round 0's "begin" once sent for a day this visit, and the promise that
+    // settles once it has been sent (choose waits for it on round 0).
+    const begunFor = new Set();
+    let zeroBegin = null;
 
     /* Once what was just written has been painted: the next frame, or a
        tenth of a second in a tab the browser is not painting. */
@@ -789,12 +814,21 @@
        scan, 15 Nov).
 
        So every picture from the round in hand to the last is fetched as soon
-       as the deal is in — while the splash is being read — counted byte by
-       byte for the bar, kept as a blob and decoded before anything shows
-       it. Play, with them all in, goes straight to round 1; before then, the
-       bar fills from the bytes still arriving and round 1 comes up when they
-       have. Rounds after that switch with nothing to wait for. The clock
-       starts once round 1 is on screen (render).
+       as the page has them, counted byte by byte for the bar, kept as a blob
+       and decoded before anything shows it. The bar fills from the bytes
+       arriving and round 1 comes up when they have; rounds after that switch
+       with nothing to wait for.
+
+       BUT NOT BEFORE THE CLOCK (18 Nov 2026, the bug scan). Handed out with
+       the deal, all twenty could be studied on the splash, before any start
+       was on file, and then answered at the 1.2s floor. Now the deal has no
+       pictures until the start is on file: "Show me the first four" sends
+       the start (fetchRound, round 0), whose reply carries the whole day,
+       and the bar loads it then. Once round 1 is drawn the server is told
+       (Daily.begin, round 0), and round 0 is timed from that, up to a few
+       seconds after the start, so the download is not on the clock (ODD ONE
+       OUT'S DAY LOADS AFTER THE START in netlify/functions/_speed.js). A
+       day reopened after its start loads during the splash as before.
 
        A picture that fails is tried again twice (2s and 6s) behind the game,
        not under the bar, and then let go: its tile falls back to the plain
@@ -982,7 +1016,17 @@
         const forDay = day();
         const rounds = dealt();
         if (index === 0) {
+            /* The start, and with it the whole day (THE WHOLE DAY'S
+               PICTURES): render then holds round 1 behind the bar until
+               every picture is in. A server or daily.js from before hands
+               out round 0 alone, so the rest is read from the deal, which
+               carries every round once the start is on file. */
             window.Daily.takeRound(rounds, await window.Daily.opening("odd", forDay));
+            if (window.Daily.startedRounds) window.Daily.mergeRounds(rounds, window.Daily.startedRounds("odd", forDay));
+            if (rounds[0] && rounds.some(r => !r)) {
+                const reply = await window.Daily.deal("odd", forDay);
+                if (reply && reply.day === forDay) window.Daily.mergeRounds(rounds, reply.rounds);
+            }
         } else {
             const reply = await window.Daily.deal("odd", forDay);
             if (reply && reply.day === forDay) window.Daily.mergeRounds(rounds, reply.rounds);

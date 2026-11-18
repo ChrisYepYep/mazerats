@@ -92,8 +92,6 @@ window.QUIZ_QUESTIONS.science = [
     ["Which leaf do Brits traditionally rub on a nettle sting?","Dock","Mint","Dandelion","Clover"],
     ["Maple syrup is made from which part of the maple tree?","The sap","The leaves","The seeds","The bark"],
     ["Wine corks come from the bark of which kind of tree?","Oak","Pine","Birch","Beech"],
-    ["Vanilla comes from which kind of flower?","An orchid","A lily","A rose","A tulip"],
-    ["The spice saffron comes from which flower?","Crocus","Tulip","Marigold","Daffodil"],
     ["Chocolate is made from the beans of which plant?","Cacao","Coffee","Carob","Vanilla"],
     ["Which flower is the national emblem of Wales?","Daffodil","Thistle","Rose","Shamrock"],
     ["Which plant, often hung up at Christmas, grows on other trees?","Mistletoe","Holly","Ivy","Poinsettia"],

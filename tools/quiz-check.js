@@ -20,7 +20,9 @@ const fs = require('fs');
 const path = require('path');
 
 const ROOT = path.join(__dirname, '..');
-const JS = path.join(ROOT, 'js');
+/* QUIZ_CHECK_DIR points it at a copy of the banks (an old version, say) to
+   see what the checks would have said about it. */
+const JS = process.env.QUIZ_CHECK_DIR ? path.resolve(process.env.QUIZ_CHECK_DIR) : path.join(ROOT, 'js');
 
 /* The bank files assign into window.QUIZ_QUESTIONS, so give them a window. */
 global.window = {};
@@ -185,6 +187,32 @@ function overlap(a, b) {
     return union ? shared / union : 0;
 }
 
+/* "Corgi" and "The corgi", "12" and "Twelve" are the same answer. Without
+   this the same question with its answer written two ways slipped through. */
+const NUMBER = { one: '1', two: '2', three: '3', four: '4', five: '5', six: '6', seven: '7',
+    eight: '8', nine: '9', ten: '10', eleven: '11', twelve: '12' };
+function answerKey(s) {
+    const w = String(s).toLowerCase().replace(/[^a-z0-9 ]+/g, ' ').split(/\s+/).filter(Boolean);
+    if (w.length > 1 && /^(a|an|the)$/.test(w[0])) { w.shift(); }
+    return w.map(x => NUMBER[x] || x).join('');
+}
+
+/* The words of a question AND its answer, lightly stemmed: the whole fact,
+   whichever way round it is asked. */
+const FACT_STOP = new Set([...STOP, 's', 'famous', 'famously', 'known', 'best', 'originally',
+    'come', 'comes', 'came', 'traditionally', 'kind', 'sort', 'type', 'these', 'those']);
+function factWords(q, a) {
+    return new Set((q + ' ' + a).toLowerCase().replace(/[^a-z0-9 ]+/g, ' ').split(/\s+/)
+        .filter(Boolean).map(w => NUMBER[w] || w).filter(w => !FACT_STOP.has(w))
+        .map(w => w.length > 3 ? w.replace(/ies$/, 'y').replace(/(es|s)$/, '') : w));
+}
+/* Is `phrase` (an answer) sitting in `text` (another question) as whole words? */
+function mentions(text, phrase) {
+    const p = String(phrase).toLowerCase().replace(/[^a-z0-9 ]+/g, ' ').trim().replace(/^(a|an|the) /, '').replace(/\s+/g, ' ');
+    if (p.length < 3) { return false; }
+    return (' ' + String(text).toLowerCase().replace(/[^a-z0-9 ]+/g, ' ').replace(/\s+/g, ' ') + ' ').includes(' ' + p + ' ');
+}
+
 const entries = [];
 CATS.forEach(cat => {
     (BANK[cat.id] || []).forEach((row, i) => {
@@ -192,8 +220,10 @@ CATS.forEach(cat => {
         entries.push({
             at: `[${cat.id}:${i}]`,
             q: row[0],
-            answer: String(row[1]).toLowerCase().replace(/[^a-z0-9]+/g, ''),
-            words: contentWords(row[0])
+            a: row[1],
+            answer: answerKey(row[1]),
+            words: contentWords(row[0]),
+            fact: factWords(row[0], row[1])
         });
     });
 });
@@ -208,6 +238,7 @@ entries.forEach(e => e.words.forEach(w => {
 }));
 
 const judged = new Set();
+const reported = new Set();
 const nearReview = [];
 byWord.forEach(bucket => {
     for (let x = 0; x < bucket.length; x++) {
@@ -220,12 +251,58 @@ byWord.forEach(bucket => {
             judged.add(key);
             const score = overlap(A.words, B.words);
             if (score < SOFT) { continue; }
+            reported.add(key);
             const line = score.toFixed(2) + '  ' + A.at + ' ' + A.q +
                          '\n        ' + B.at + ' ' + B.q;
             if (score >= HARD) {
                 problems.push(`${A.at} same question as ${B.at} in different words: ${A.q}`);
             } else {
                 nearReview.push(line);
+            }
+        }
+    }
+});
+
+/* ----------------------------------------- the same fact from the other side
+ *
+ * The check above needs the same answer, so it cannot see a fact asked both
+ * ways round: "Which song won Eurovision for ABBA?" (Waterloo) and "Which
+ * group won Eurovision with Waterloo?" (ABBA). Asked in one round, the second
+ * is answered by the first. Over 18 Nov's hand count most such pairs sat in
+ * DIFFERENT banks (music and tv, food and science), so this compares every
+ * bank with every other one as well as with itself.
+ *
+ * Two measures, both over the question's words plus its answer's:
+ *  - each question names the other's answer and the facts overlap by more
+ *    than FLIP_HARD: the same fact reversed. A failure.
+ *  - otherwise, the facts overlap by FACT_SOFT or more: printed to be looked
+ *    at. Plenty of these are fair siblings ("ruby wedding" / "diamond
+ *    wedding"), so they are not counted. */
+const FLIP_HARD = 0.5;
+const FACT_SOFT = 0.55;
+
+const byFact = new Map();
+entries.forEach(e => e.fact.forEach(w => {
+    if (!byFact.has(w)) { byFact.set(w, []); }
+    byFact.get(w).push(e);
+}));
+const factJudged = new Set();
+const factReview = [];
+byFact.forEach(bucket => {
+    for (let x = 0; x < bucket.length; x++) {
+        for (let y = x + 1; y < bucket.length; y++) {
+            const A = bucket[x];
+            const B = bucket[y];
+            const key = A.at + B.at;
+            if (factJudged.has(key) || reported.has(key)) { continue; }
+            factJudged.add(key);
+            const score = overlap(A.fact, B.fact);
+            const flipped = mentions(A.q, B.a) && mentions(B.q, A.a);
+            if (flipped && score > FLIP_HARD) {
+                problems.push(`${A.at} same fact as ${B.at}, asked the other way round: ${A.q} / ${B.q}`);
+            } else if (score >= FACT_SOFT || (flipped && score >= 0.4)) {
+                factReview.push(score.toFixed(2) + (flipped ? ' flip ' : '      ') + A.at + ' ' + A.q + ' -> ' + A.a +
+                                '\n             ' + B.at + ' ' + B.q + ' -> ' + B.a);
             }
         }
     }
@@ -246,6 +323,11 @@ if (repeated.length) {
 if (nearReview.length) {
     console.log('\nsame answer and similar wording (review, not a failure)');
     nearReview.sort().reverse().forEach(l => console.log('  ' + l));
+}
+
+if (factReview.length) {
+    console.log('\nsame fact, possibly, in any two banks (review, not a failure)');
+    factReview.sort().reverse().forEach(l => console.log('  ' + l));
 }
 
 if (problems.length) {

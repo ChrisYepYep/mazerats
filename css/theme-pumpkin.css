@@ -9,7 +9,7 @@
    completely inert until js/site.js puts that attribute on <html>. The
    classic palette is not defined here and is not affected by anything in it.
 
-   1228 rules, 1962 declarations, hues 18 (surfaces) / 38 (accents).
+   1231 rules, 1966 declarations, hues 18 (surfaces) / 38 (accents).
 */
 :root[data-theme="pumpkin"] {
     --bg-black: #0a0401;
@@ -3860,6 +3860,19 @@ html[data-theme="pumpkin"]:not([data-theme]) .guess-board-rank {
 
 [data-theme="pumpkin"] .wn-line {
     color: var(--parchment);
+}
+
+[data-theme="pumpkin"] .wn-pic {
+    border: 2px solid transparent;
+}
+
+[data-theme="pumpkin"] .wn-pic:has(input:checked) {
+    border-color: var(--amber-text);
+    background: rgba(0, 0, 0, 0.25);
+}
+
+[data-theme="pumpkin"] .wn-pic:has(input:focus-visible) {
+    outline: 2px solid var(--amber-text);
 }
 
 [data-theme="pumpkin"] .wn-override {

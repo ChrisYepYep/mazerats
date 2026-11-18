@@ -50,7 +50,9 @@ html[data-game-front="scout"] #rr-overlay { z-index: 92; }
    ever pushes the buttons or Next along (the whole name is on hover). */
 .pura-score-row { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
 .pura-who-line { flex: 1 1 auto; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; opacity: 0.85; }
-.pura-sub { margin-top: 3px; white-space: nowrap; }
+.pura-sub { margin-top: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* "· Not saved" after the rows, for a game the board will not take (18 Nov 2026). */
+#pura-window .console-screen .pura-nosave { color: #ffcb00; }
 .pura-box {
     flex: 0 0 auto;
     display: flex;

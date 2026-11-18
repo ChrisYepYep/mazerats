@@ -1356,7 +1356,7 @@
        within a pixel or so of its neighbours, so the silhouette reads as
        rolling hills; the valleys rise with the hills, so it is the same
        landscape getting deeper. One canvas, repainted in place as it grows. */
-    const FOOTER_START = 7, FOOTER_RATE = 0.4, DRIFT_OVERLAP = 22;
+    const FOOTER_START = 7, FOOTER_RATE = 0.4, DRIFT_OVERLAP = 22, TOUCH_DRIFT_MAX = 16;
     let fallen = 0, footerDepth = FOOTER_START, drift = null;
 
     // How deep it may grow: up over the main window's bottom edge, or a modest bank where there is none.
@@ -1370,6 +1370,13 @@
         });
         /* Its hills climb at least half way up the main window (17 Nov 2026, the owner's: "should continue until at least half way up the
            main content window"); it used to stop DRIFT_OVERLAP over its bottom edge. */
+        /* Without a mouse there is no shovel to clear it (18 Nov 2026, the bug scan: on a phone it buried half the archive window in
+           about nineteen minutes; the owner's "Cap lower on touch"). So there it is a soft frosting along the footer, at most
+           TOUCH_DRIFT_MAX deep and never up past the gap below the main window, whatever the time. */
+        if (!matchMedia("(hover: hover) and (pointer: fine)").matches) {
+            const gap = bottom == null ? TOUCH_DRIFT_MAX : Math.round(top - bottom) - 4;
+            return Math.max(FOOTER_START, Math.min(TOUCH_DRIFT_MAX, gap));
+        }
         const room = bottom == null ? 60 : Math.round(top - bottom) + Math.max(DRIFT_OVERLAP, Math.round(height / 2));
         return Math.max(24, Math.min(1400, room));
     }
