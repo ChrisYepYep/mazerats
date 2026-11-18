@@ -15,10 +15,10 @@
                   from this device's own records). One star a day, five max.
      CASH         the same records' all-time points, as dollars, top right.
      PHONE        texts in a pixel phone, bottom right: today's daily games
-                  if they have not been played here, the next event. Closed
-                  texts are not shown again that day.
-     GPS          a radar, bottom left, that presses Surprise me: a waypoint
-                  to a maze at random.
+                  if they have not been played here, the next event. Click
+                  it for the big phone, with the day's texts in a list.
+     RADAR        bottom left, a little maze and a waypoint. Only for the
+                  look: it does nothing and does not move.
      MISSION      "Mission passed!" across the screen when a daily game's day
                   is finished (the mazerats:daily-done event from js/guess.js
                   and js/oddoneout.js), with the day's points as cash.
@@ -233,13 +233,22 @@
 
     /* ---------------------------------------------------------------
        THE PHONE */
-    const SEEN_KEY = "mazerats_gta_texts";        // { day, ids: [...] } closed today
-    let phone = null, inbox = [], showing = null;
+    /* The small phone in the corner buzzes while there are unread texts, with
+       a count; a preview of the newest pops up beside it on a big screen.
+       Clicking either opens the BIG phone: every text of the day in a list,
+       newest first, each with its own button where it leads somewhere.
+       Opening it reads them all. Read is remembered for the day. */
+    const SEEN_KEY = "mazerats_gta_texts";        // { day, ids: [...] } read today
+    let phone = null, inbox = [], unread = [], noteTimer = 0;
     function seen() {
         try { const s = JSON.parse(read(SEEN_KEY) || "null"); if (s && s.day === utcDay(Date.now()) && Array.isArray(s.ids)) return s.ids; } catch (e) { /* none */ }
         return [];
     }
-    function markSeen(id) { const ids = seen(); if (!ids.includes(id)) ids.push(id); write(SEEN_KEY, JSON.stringify({ day: utcDay(Date.now()), ids })); }
+    function markSeen(ids) {
+        const all = seen();
+        ids.forEach((id) => { if (!all.includes(id)) all.push(id); });
+        write(SEEN_KEY, JSON.stringify({ day: utcDay(Date.now()), ids: all }));
+    }
     function texts() {
         const st = standing(), out = [];
         out.push({ id: "hello", from: "Maze Rats", text: "Welcome to Maze Rats. To celebrate the launch of GTA VI, the archive is running from Vice City until the end of the month." });
@@ -250,39 +259,72 @@
         const when = document.querySelector(".header-events-when");
         const evName = ev && ev.textContent.trim();
         if (evName && !/^no upcoming/i.test(evName)) out.push({ id: "event-" + evName.toLowerCase().replace(/[^a-z0-9]+/g, "-").slice(0, 40), from: "Events", text: `Heads up: ${evName}${when && when.textContent.trim() ? ", " + when.textContent.trim() : ""}.` });
-        const closed = seen();
-        return out.filter((m) => !closed.includes(m.id));
+        return out;
     }
+    const clock = () => { const d = new Date(); return String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0"); };
+    const isBig = () => !!(phone && phone.classList.contains("is-big"));
     function drawPhone() {
         if (!phone) return;
         inbox = texts();
+        const read = seen();
+        unread = inbox.filter((m) => !read.includes(m.id));
         const badge = phone.querySelector(".gx-phone-badge");
-        badge.textContent = inbox.length ? String(inbox.length) : "";
-        badge.hidden = !inbox.length;
-        phone.classList.toggle("has-texts", inbox.length > 0);
-        if (showing && !inbox.find((m) => m.id === showing.id)) closeText(false);
+        badge.textContent = unread.length ? String(unread.length) : "";
+        badge.hidden = !unread.length;
+        phone.classList.toggle("has-texts", unread.length > 0);
+        phone.querySelector(".gx-phone-btn").setAttribute("aria-label", unread.length ? `Texts: ${unread.length} new` : "Texts");
+        if (isBig()) drawList();
     }
-    function openText() {
-        if (!phone || !inbox.length) return;
-        showing = inbox[0];
-        const card = phone.querySelector(".gx-phone-msg");
-        card.innerHTML = `<b>${esc(showing.from)}</b><span>${esc(showing.text)}</span>` +
-            `<span class="gx-phone-acts">${showing.go ? `<button type="button" class="gx-phone-go">${esc(showing.act || "Open")}</button>` : ""}` +
-            `<button type="button" class="gx-phone-ok">${inbox.length > 1 ? "Next" : "OK"}</button></span>`;
-        phone.classList.add("is-open");
-        phone.querySelector(".gx-phone-btn").setAttribute("aria-expanded", "true");
+    function drawList() {
+        const list = phone.querySelector(".gx-big-list");
+        phone.querySelector(".gx-big-time").textContent = clock();
+        const read = seen();
+        list.innerHTML = inbox.length ? inbox.slice().reverse().map((m, i) =>
+            `<li class="gx-text${read.includes(m.id) ? "" : " is-new"}">` +
+            `<span class="gx-text-pic" aria-hidden="true">${esc(m.from.charAt(0))}</span>` +
+            `<span class="gx-text-body"><b>${esc(m.from)}</b><span>${esc(m.text)}</span>` +
+            `${m.go ? `<button type="button" class="gx-text-go" data-i="${inbox.length - 1 - i}">${esc(m.act || "Open")}</button>` : ""}</span></li>`).join("")
+            : `<li class="gx-text-none">No texts. It's quiet out there.</li>`;
     }
-    function closeText(mark) {
+    function openBig() {
         if (!phone) return;
-        if (mark && showing) markSeen(showing.id);
-        showing = null;
-        phone.classList.remove("is-open");
-        phone.querySelector(".gx-phone-btn").setAttribute("aria-expanded", "false");
+        hideNote();
         drawPhone();
+        phone.classList.add("is-big");
+        drawList();
+        phone.querySelector(".gx-big").hidden = false;
+        phone.querySelector(".gx-phone-btn").setAttribute("aria-expanded", "true");
+        phone.querySelector(".gx-big-close").focus({ preventScroll: true });
+        // Seen now: the count goes, the dots stay until it is closed.
+        markSeen(inbox.map((m) => m.id));
+        const badge = phone.querySelector(".gx-phone-badge"); badge.hidden = true;
+        phone.classList.remove("has-texts");
+    }
+    function closeBig(refocus) {
+        if (!isBig()) return;
+        phone.classList.remove("is-big");
+        phone.querySelector(".gx-big").hidden = true;
+        phone.querySelector(".gx-phone-btn").setAttribute("aria-expanded", "false");
+        if (refocus) phone.querySelector(".gx-phone-btn").focus({ preventScroll: true });
+        drawPhone();
+    }
+    function showNote() {
+        if (!phone || !unread.length || isBig()) return;
+        const m = unread[0];   // the welcome first, the way the day began
+        const note = phone.querySelector(".gx-phone-note");
+        note.innerHTML = `<b>${esc(m.from)}</b><span>${esc(m.text)}</span><em>${unread.length > 1 ? `+${unread.length - 1} more · ` : ""}Tap to read</em>`;
+        note.hidden = false;
+        clearTimeout(noteTimer);
+        noteTimer = later(hideNote, 12000);
+    }
+    function hideNote() {
+        clearTimeout(noteTimer);
+        const note = phone && phone.querySelector(".gx-phone-note");
+        if (note) note.hidden = true;
     }
 
     /* ---------------------------------------------------------------
-       THE GPS: a little maze with a waypoint, and Surprise me under it. */
+       THE RADAR: a little maze with a waypoint, the same all day. */
     function drawRadar(cv) {
         const N = 9, C = 4, S = N * C + 1;
         cv.width = S; cv.height = S;
@@ -351,22 +393,31 @@
         cash.setAttribute("title", "Your all-time daily game points on this device");
 
         phone = add(make("div", "gx-phone",
-            `<div class="gx-phone-msg" role="status" aria-live="polite"></div>` +
-            `<button type="button" class="gx-phone-btn" aria-label="Texts" aria-expanded="false"><span class="gx-phone-screen"></span><span class="gx-phone-badge" hidden></span></button>`));
+            `<div class="gx-big" role="dialog" aria-label="Texts" hidden>` +
+                `<div class="gx-big-bar"><span class="gx-big-time"></span><span class="gx-big-sig" aria-hidden="true"><i></i><i></i><i></i><i></i></span></div>` +
+                `<div class="gx-big-head"><span>Messages</span><button type="button" class="gx-big-close" aria-label="Close texts">✕</button></div>` +
+                `<ul class="gx-big-list"></ul>` +
+                `<button type="button" class="gx-big-home" aria-label="Close texts"></button>` +
+            `</div>` +
+            `<button type="button" class="gx-phone-note" hidden></button>` +
+            `<button type="button" class="gx-phone-btn" aria-label="Texts" aria-expanded="false">` +
+                `<span class="gx-phone-screen"><span class="gx-phone-env" aria-hidden="true"></span></span><span class="gx-phone-badge" hidden></span></button>`));
         listen(phone, "click", (e) => {
             const t = e.target.closest("button");
             if (!t) return;
-            if (t.classList.contains("gx-phone-btn")) { if (phone.classList.contains("is-open")) closeText(false); else openText(); }
-            else if (t.classList.contains("gx-phone-ok")) { closeText(true); if (inbox.length) later(openText, 220); }
-            else if (t.classList.contains("gx-phone-go")) { const m = showing; closeText(true); if (m && m.go) m.go(); }
+            if (t.classList.contains("gx-phone-btn")) { if (isBig()) closeBig(false); else openBig(); }
+            else if (t.classList.contains("gx-phone-note")) openBig();
+            else if (t.classList.contains("gx-big-close") || t.classList.contains("gx-big-home")) closeBig(true);
+            else if (t.classList.contains("gx-text-go")) { const m = inbox[Number(t.dataset.i)]; closeBig(false); if (m && m.go) m.go(); }
         });
-        listen(document, "keydown", (e) => { if (e.key === "Escape" && phone && phone.classList.contains("is-open") && phone.contains(document.activeElement)) closeText(false); });
+        listen(document, "keydown", (e) => { if (e.key === "Escape" && isBig()) { e.stopPropagation(); closeBig(true); } }, true);
+        // A click anywhere else puts the big phone away.
+        listen(document, "pointerdown", (e) => { if (isBig() && !phone.contains(e.target)) closeBig(false); });
 
-        const gps = add(make("button", "gx-gps", `<canvas class="gx-gps-map" aria-hidden="true"></canvas><span class="gx-gps-sweep" aria-hidden="true"></span><span class="gx-gps-lab">GPS · Surprise me</span>`));
-        gps.type = "button";
-        gps.setAttribute("aria-label", "GPS: open a maze at random");
+        // The radar is only for the look (his call, 18 Nov 2026): still, and it does nothing.
+        const gps = add(make("div", "gx-gps", `<canvas class="gx-gps-map"></canvas>`));
+        gps.setAttribute("aria-hidden", "true");
         drawRadar(gps.querySelector("canvas"));
-        listen(gps, "click", () => { const dice = document.getElementById("opening-dice"); if (dice) dice.click(); });
 
         banner = add(make("div", "gx-mission"));
         banner.setAttribute("aria-live", "polite");
@@ -378,9 +429,9 @@
         listen(window, "storage", (e) => { if (!e.key || /stats|gta_texts/.test(e.key)) { drawStanding(); drawPhone(); } });
         listen(document, "visibilitychange", () => { if (document.visibilityState === "visible") { drawStanding(); drawPhone(); } });
         timers.push(setInterval(() => { drawStanding(); drawPhone(); }, 20000));
-        // The first text buzzes in a moment after the page settles.
-        // Not on a phone, where an open text would sit over the archive: there it only buzzes.
-        later(() => { if (inbox.length && innerWidth >= 760 && !document.querySelector(".modal-overlay.active, .modal-overlay.open, dialog[open]")) openText(); }, 4000);
+        // The newest text pops up in a moment after the page settles.
+        // Not on a phone, where it would sit over the archive: there it only buzzes.
+        later(() => { if (innerWidth >= 760 && !document.querySelector(".modal-overlay.active, .modal-overlay.open, dialog[open]")) showNote(); }, 4000);
     }
 
     function stop() {
@@ -391,7 +442,7 @@
         if (observer) observer.disconnect(); observer = null;
         nodes.forEach((n) => n.remove()); nodes = [];
         sky = wanted = cash = phone = banner = null;
-        painted = ""; shownCash = -1; inbox = []; showing = null;
+        painted = ""; shownCash = -1; inbox = []; unread = []; clearTimeout(noteTimer);
     }
 
     (window.SiteSkins = window.SiteSkins || {})[NAME] = { start, stop };

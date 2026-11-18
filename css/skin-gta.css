@@ -111,34 +111,54 @@ html[data-skin="gta"] .gx-phone {
     display: flex;
     flex-direction: column;
     align-items: flex-end;
-    gap: 8px;
+    gap: 10px;
 }
 html[data-skin="gta"] .gx-phone-btn {
     position: relative;
-    width: 44px;
-    height: 74px;
-    padding: 6px 5px 12px;
+    width: 62px;
+    height: 104px;
+    padding: 9px 7px 17px;
     border: 0;
-    border-radius: 9px;
+    border-radius: 13px;
     background: #0f0a18;
-    box-shadow: 0 0 0 2px #2b1d3e, 0 0 0 4px #ff5fa2, 0 8px 18px rgba(0, 0, 0, 0.6);
+    box-shadow: 0 0 0 2px #2b1d3e, 0 0 0 4px #ff5fa2, 0 0 18px rgba(255, 95, 162, 0.55), 0 8px 18px rgba(0, 0, 0, 0.6);
     cursor: pointer;
 }
+html[data-skin="gta"] .gx-phone-btn:hover { box-shadow: 0 0 0 2px #2b1d3e, 0 0 0 4px #ffd166, 0 0 18px rgba(255, 209, 102, 0.6), 0 8px 18px rgba(0, 0, 0, 0.6); }
 html[data-skin="gta"] .gx-phone-screen {
-    display: block;
+    display: flex;
+    align-items: center;
+    justify-content: center;
     width: 100%;
     height: 100%;
-    border-radius: 4px;
+    border-radius: 5px;
     background: linear-gradient(180deg, #ff8fab, #ffb86b);
+}
+/* A pixel envelope on the screen. */
+html[data-skin="gta"] .gx-phone-env {
+    position: relative;
+    width: 26px;
+    height: 18px;
+    background: #fff;
+    box-shadow: 0 0 0 2px #3a0f52;
+}
+html[data-skin="gta"] .gx-phone-env::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 0;
+    border-left: 13px solid transparent;
+    border-right: 13px solid transparent;
+    border-top: 10px solid #ffc4dd;
 }
 html[data-skin="gta"] .gx-phone-btn::after {      /* the home button */
     content: "";
     position: absolute;
     left: 50%;
-    bottom: 4px;
-    width: 8px;
-    height: 3px;
-    margin-left: -4px;
+    bottom: 6px;
+    width: 12px;
+    height: 4px;
+    margin-left: -6px;
     border-radius: 2px;
     background: #3b2b52;
 }
@@ -152,31 +172,37 @@ html[data-skin="gta"] .gx-phone.has-texts .gx-phone-btn { animation: gx-buzz 3.2
 }
 html[data-skin="gta"] .gx-phone-badge {
     position: absolute;
-    top: -7px;
-    right: -7px;
-    min-width: 18px;
-    height: 18px;
-    padding: 0 4px;
-    border-radius: 9px;
+    top: -9px;
+    right: -9px;
+    min-width: 22px;
+    height: 22px;
+    padding: 0 5px;
+    border-radius: 11px;
     background: #ff2e63;
     color: #fff;
-    font: 700 11px/18px 'Roboto', sans-serif;
+    font: 700 13px/22px 'Roboto', sans-serif;
     box-shadow: 0 0 0 2px #0f0a18;
 }
 html[data-skin="gta"] .gx-phone-badge[hidden] { display: none; }
-html[data-skin="gta"] .gx-phone-msg {
-    display: none;
-    width: 240px;
+/* The preview of the newest text: click it to open the big phone. */
+html[data-skin="gta"] .gx-phone-note {
+    display: block;
+    width: 250px;
     padding: 10px 12px;
+    border: 0;
     border-radius: 12px 12px 2px 12px;
     background: #fff;
     color: #24112f;
+    text-align: left;
     font: 500 13px/1.4 'Roboto', sans-serif;
     box-shadow: 0 0 0 3px #ff5fa2, 0 10px 22px rgba(0, 0, 0, 0.55);
+    cursor: pointer;
+    animation: gx-pop 0.18s ease-out;
 }
-html[data-skin="gta"] .gx-phone.is-open .gx-phone-msg { display: block; animation: gx-pop 0.18s ease-out; }
+html[data-skin="gta"] .gx-phone-note[hidden] { display: none; }
 @keyframes gx-pop { from { transform: translateY(8px); opacity: 0; } }
-html[data-skin="gta"] .gx-phone-msg b {
+html[data-skin="gta"] .gx-phone-note b,
+html[data-skin="gta"] .gx-text-body b {
     display: block;
     margin-bottom: 3px;
     font: 9px/1.2 'Volter Goldfish Bold', 'Volter Goldfish', monospace;
@@ -184,36 +210,149 @@ html[data-skin="gta"] .gx-phone-msg b {
     text-transform: uppercase;
     color: #c2185b;
 }
-html[data-skin="gta"] .gx-phone-acts { display: flex; justify-content: flex-end; gap: 6px; margin-top: 8px; }
-html[data-skin="gta"] .gx-phone-acts button {
-    padding: 4px 10px;
-    border: 2px solid #24112f;
-    border-radius: 4px;
+html[data-skin="gta"] .gx-phone-note span { display: block; }
+html[data-skin="gta"] .gx-phone-note em { display: block; margin-top: 6px; font: italic 600 11px 'Roboto', sans-serif; color: #9a3b6c; }
+
+/* THE BIG PHONE: every text of the day, newest first. */
+html[data-skin="gta"] .gx-big {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    width: 300px;
+    height: min(520px, calc(100vh - 170px));
+    padding: 12px 12px 30px;
+    border-radius: 30px;
+    background: #0f0a18;
+    box-shadow: 0 0 0 3px #2b1d3e, 0 0 0 6px #ff5fa2, 0 0 30px rgba(255, 95, 162, 0.5), 0 18px 40px rgba(0, 0, 0, 0.7);
+    animation: gx-rise 0.2s ease-out;
+}
+html[data-skin="gta"] .gx-big[hidden] { display: none; }
+@keyframes gx-rise { from { transform: translateY(24px) scale(0.96); opacity: 0; } }
+html[data-skin="gta"] .gx-big-bar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 6px 16px 4px;
+    border-radius: 20px 20px 0 0;
+    background: linear-gradient(90deg, #ff8fab, #ffb86b);
+    color: #3a0f52;
+    font: 700 11px 'Roboto', sans-serif;
+}
+html[data-skin="gta"] .gx-big-sig { display: flex; align-items: flex-end; gap: 2px; height: 10px; }
+html[data-skin="gta"] .gx-big-sig i { display: block; width: 3px; background: #3a0f52; }
+html[data-skin="gta"] .gx-big-sig i:nth-child(1) { height: 3px; }
+html[data-skin="gta"] .gx-big-sig i:nth-child(2) { height: 5px; }
+html[data-skin="gta"] .gx-big-sig i:nth-child(3) { height: 7px; }
+html[data-skin="gta"] .gx-big-sig i:nth-child(4) { height: 10px; }
+html[data-skin="gta"] .gx-big-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 14px;
+    border-bottom: 1px solid #f3c6dc;
+    background: #fff4f8;
+    color: #3a0f52;
+    font: 900 18px 'Montserrat', sans-serif;
+}
+html[data-skin="gta"] .gx-big-close {
+    width: 28px;
+    height: 28px;
+    padding: 0;
+    border: 0;
+    border-radius: 50%;
+    background: #ffe0ec;
+    color: #3a0f52;
+    font: 700 14px/28px 'Roboto', sans-serif;
+    cursor: pointer;
+}
+html[data-skin="gta"] .gx-big-close:hover { background: #ff5fa2; color: #fff; }
+html[data-skin="gta"] .gx-big-list {
+    flex: 1 1 auto;
+    margin: 0;
+    padding: 6px 10px;
+    list-style: none;
+    overflow-y: auto;
+    border-radius: 0 0 20px 20px;
+    background: #fff4f8;
+    scrollbar-width: thin;
+}
+html[data-skin="gta"] .gx-text { display: flex; gap: 9px; padding: 9px 2px; border-bottom: 1px solid #f6d6e4; }
+html[data-skin="gta"] .gx-text:last-child { border-bottom: 0; }
+html[data-skin="gta"] .gx-text-pic {
+    flex: 0 0 34px;
+    height: 34px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #ff5fa2, #ffb86b);
+    color: #fff;
+    text-align: center;
+    text-shadow: 1px 1px 0 #7a1a72;
+    font: 900 16px/34px 'Montserrat', sans-serif;
+}
+html[data-skin="gta"] .gx-text-body {
+    position: relative;
+    flex: 1 1 auto;
+    min-width: 0;
+    padding: 8px 10px;
+    border-radius: 2px 12px 12px 12px;
     background: #fff;
     color: #24112f;
+    font: 500 13px/1.4 'Roboto', sans-serif;
+    box-shadow: 0 1px 0 rgba(122, 26, 114, 0.15);
+}
+html[data-skin="gta"] .gx-text-body > span { display: block; }
+html[data-skin="gta"] .gx-text.is-new .gx-text-body::after {      /* unread */
+    content: "";
+    position: absolute;
+    top: 9px;
+    right: 9px;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #ff2e63;
+}
+html[data-skin="gta"] .gx-text-go {
+    margin-top: 8px;
+    padding: 4px 12px;
+    border: 0;
+    border-radius: 4px;
+    background: #ff5fa2;
+    color: #fff;
     font: 700 11px 'Roboto', sans-serif;
     cursor: pointer;
 }
-html[data-skin="gta"] .gx-phone-acts .gx-phone-go { background: #ff5fa2; border-color: #ff5fa2; color: #fff; }
-html[data-skin="gta"] .gx-phone-acts button:focus-visible,
+html[data-skin="gta"] .gx-text-go:hover { background: #e2456c; }
+html[data-skin="gta"] .gx-text-none { padding: 30px 10px; text-align: center; color: #9a3b6c; font: italic 13px 'Roboto', sans-serif; }
+html[data-skin="gta"] .gx-big-home {
+    position: absolute;
+    left: 50%;
+    bottom: 9px;
+    width: 46px;
+    height: 12px;
+    margin-left: -23px;
+    padding: 0;
+    border: 0;
+    border-radius: 6px;
+    background: #3b2b52;
+    cursor: pointer;
+}
+html[data-skin="gta"] .gx-big-home:hover { background: #ff5fa2; }
 html[data-skin="gta"] .gx-phone-btn:focus-visible,
-html[data-skin="gta"] .gx-gps:focus-visible { outline: 2px solid #ffd166; outline-offset: 3px; }
+html[data-skin="gta"] .gx-phone-note:focus-visible,
+html[data-skin="gta"] .gx-big button:focus-visible { outline: 2px solid #ffd166; outline-offset: 3px; }
 
-/* ---------------- THE GPS: bottom left ---------------- */
+/* ---------------- THE RADAR: bottom left, just for the look ---------------- */
 html[data-skin="gta"] .gx-gps {
     position: fixed;
     left: 24px;
-    bottom: 30px;
+    bottom: 24px;
     z-index: 40;
     width: 112px;
     height: 112px;
-    padding: 0;
     border: 4px solid #12061f;
     border-radius: 50%;
-    overflow: visible;
     background: #24453a;
     box-shadow: 0 0 0 2px #ff5fa2, 0 6px 16px rgba(0, 0, 0, 0.6);
-    cursor: pointer;
+    pointer-events: none;
 }
 html[data-skin="gta"] .gx-gps-map {
     position: absolute;
@@ -223,27 +362,6 @@ html[data-skin="gta"] .gx-gps-map {
     border-radius: 50%;
     image-rendering: pixelated;
 }
-html[data-skin="gta"] .gx-gps-sweep {
-    position: absolute;
-    inset: 0;
-    border-radius: 50%;
-    background: conic-gradient(from 0deg, rgba(160, 255, 200, 0.35), rgba(160, 255, 200, 0) 70deg, transparent 360deg);
-    animation: gx-sweep 3s linear infinite;
-}
-@keyframes gx-sweep { to { transform: rotate(360deg); } }
-html[data-skin="gta"] .gx-gps-lab {
-    position: absolute;
-    left: 50%;
-    bottom: -22px;
-    transform: translateX(-50%);
-    white-space: nowrap;
-    font: 9px/1 'Volter Goldfish', monospace;
-    letter-spacing: 1px;
-    text-transform: uppercase;
-    color: #fff;
-    text-shadow: 1px 1px 0 #000, 0 0 4px #000;
-}
-html[data-skin="gta"] .gx-gps:hover { box-shadow: 0 0 0 2px #ffd166, 0 6px 16px rgba(0, 0, 0, 0.6); }
 
 /* ---------------- MISSION PASSED ---------------- */
 html[data-skin="gta"] .gx-mission {
@@ -286,14 +404,14 @@ html[data-skin="gta"] .gx-mission p b { color: #7dff9a; }
 @media (max-width: 760px) {
     html[data-skin="gta"] .gx-cash { display: none; }
     html[data-skin="gta"] .gx-phone { right: 12px; bottom: 12px; }
-    html[data-skin="gta"] .gx-phone-btn { width: 34px; height: 56px; padding: 5px 4px 10px; }
-    html[data-skin="gta"] .gx-phone-msg { width: min(240px, calc(100vw - 24px)); }
+    html[data-skin="gta"] .gx-phone-btn { width: 48px; height: 80px; padding: 7px 5px 13px; border-radius: 10px; }
+    html[data-skin="gta"] .gx-big { width: min(300px, calc(100vw - 24px)); height: min(480px, calc(100vh - 130px)); }
 }
 
 @media (prefers-reduced-motion: reduce) {
     html[data-skin="gta"] .gx-star.is-new,
     html[data-skin="gta"] .gx-phone.has-texts .gx-phone-btn,
-    html[data-skin="gta"] .gx-gps-sweep,
-    html[data-skin="gta"] .gx-phone.is-open .gx-phone-msg { animation: none; }
+    html[data-skin="gta"] .gx-phone-note,
+    html[data-skin="gta"] .gx-big { animation: none; }
     html[data-skin="gta"] .gx-mission.is-on { animation: none; opacity: 1; }
 }
