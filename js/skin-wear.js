@@ -107,6 +107,11 @@
        SiteSkins[<extra>] = { start, stop }, loaded once the skin has started
        and taken off with it. A failed one is left out; the skin stays on. */
     const EXTRAS = { xmas: ["xmas-advent"] };
+    /* An extra worn only while its switch in the settings is on (18 Nov 2026:
+       the advent calendar hidden "for now", xmasAdvent, off unless the
+       Warren's skins card ticks it). */
+    const EXTRA_SWITCH = { "xmas-advent": "xmasAdvent" };
+    const extrasOf = (name) => (EXTRAS[name] || []).filter((x) => !EXTRA_SWITCH[x] || option(EXTRA_SWITCH[x]));
     const RECHECK_MS = 10 * 60 * 1000;
     const passive = !!window.__skinWearPassive;
 
@@ -249,7 +254,7 @@
                2026): the skins draw nothing there and the advent calendar
                starts as nothing, so its sheet and script were two requests
                for no use on every window opened. */
-            if (!document.documentElement.classList.contains("ff-embed")) (EXTRAS[name] || []).forEach((x) => wearExtra(name, x));
+            if (!document.documentElement.classList.contains("ff-embed")) extrasOf(name).forEach((x) => wearExtra(name, x));
         }));
     }
 
@@ -415,12 +420,14 @@
     if (typeof Api !== "undefined" && Api.getSiteSettings) {
         Api.getSiteSettings().then((s) => {
             if (!s || s.fromCache) return;          // an outage: keep what was remembered
-            const was = option("halloweenGoo");
+            const was = option("halloweenGoo"), wasAdvent = option("xmasAdvent");
             site = { skin: s.skin || "auto", skinSchedule: Array.isArray(s.skinSchedule) ? s.skinSchedule : [], theme: s.theme || "classic",
-                halloweenGoo: s.halloweenGoo !== false };
+                halloweenGoo: s.halloweenGoo !== false, xmasAdvent: s.xmasAdvent === true };
             put(localStorage, CACHE_KEY, JSON.stringify(site));
             // The goo switched in the Warren since this browser last looked: worn again, with or without it.
             if (current === "halloween" && was !== option("halloweenGoo")) remove();
+            // Likewise the advent calendar: the Christmas skin worn again, with or without it.
+            if (current === "xmas" && wasAdvent !== option("xmasAdvent")) remove();
             refresh();
         }, () => { /* unreadable: the remembered answer stands */ });
     }
@@ -448,6 +455,8 @@
        carried yet is on. */
     function option(name) {
         if (name === "halloweenGoo") return !(site && site.halloweenGoo === false);
+        // The advent calendar, by contrast, is OFF until the answer says it is on.
+        if (name === "xmasAdvent") return !!(site && site.xmasAdvent === true);
         return undefined;
     }
 

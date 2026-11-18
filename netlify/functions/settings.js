@@ -198,6 +198,11 @@ const scheduleOf = (doc) => (doc && Array.isArray(doc.skinSchedule)) ? doc.skinS
    never heard of it wears the skin as it was. js/skin-halloween.js reads it
    through SkinWear.option; the Warren's skins card sets it. */
 const gooOf = (doc) => !(doc && doc.halloweenGoo === false);
+/* The Christmas skin's advent calendar (18 Nov 2026, the owner's: "needs to be
+   removed from the christmas skin, just hidden for now incase i want to add it
+   back"). OFF unless switched on, so it stays hidden until the Warren's skins
+   card ticks it. js/skin-wear.js loads the calendar only when it is on. */
+const adventOf = (doc) => !!(doc && doc.xmasAdvent === true);
 
 /* Which furni falls past Fallin' Furni's title screen. A site-wide choice
    rather than a per-level one — the title screen is not a level — so it
@@ -411,6 +416,7 @@ function settingsReply(event, doc) {
         // When the dates were last saved: the Warren's card sends it back as skinScheduleBase.
         skinScheduleAt: skinStampOf(doc),
         halloweenGoo: gooOf(doc),
+        xmasAdvent: adventOf(doc),
         // The homepage menu's order and hidden rows (30 Oct 2026; null is as written).
         menuLayout: menuLayoutOf(doc),
         // When it was last saved (31 Oct 2026): the Warren's card sends it back as menuLayoutBase.
@@ -621,6 +627,10 @@ async function write(event, settings, db) {
             if (typeof body.halloweenGoo !== "boolean") return json(400, { error: "halloweenGoo must be true or false" });
             update.halloweenGoo = body.halloweenGoo;
         }
+        if (body.xmasAdvent !== undefined) {
+            if (typeof body.xmasAdvent !== "boolean") return json(400, { error: "xmasAdvent must be true or false" });
+            update.xmasAdvent = body.xmasAdvent;
+        }
         /* THE MENU SAVED OVER AN OLDER COPY (31 Oct 2026, the bug scan): the
            Warren's card sends the whole layout, so two admins, or two tabs,
            undid each other without a word. Each save is stamped
@@ -718,6 +728,7 @@ async function write(event, settings, db) {
             skinSchedule: scheduleOf(doc),
             skinScheduleAt: skinStampOf(doc),
             halloweenGoo: gooOf(doc),
+            xmasAdvent: adventOf(doc),
             menuLayout: menuLayoutOf(doc),
             menuLayoutAt: menuStampOf(doc)
         });

@@ -321,6 +321,7 @@
             });
             // Under the palette: the skin's own switch, saved at once (gooLine).
             if (s.name === "halloween") range.append(gooLine(line));
+            if (s.name === "xmas") range.append(adventLine(line));
             return el("div", { className: "sk-row", dataset: { skin: s.name } }, [name, range, ...kept]);
         }));
 
@@ -354,6 +355,26 @@
             if (ok) { note.classList.remove("is-bad"); note.textContent = want ? "Goo on" : "No goo anywhere"; }
         });
         return line("Goo", [el("label", { className: "sk-radio" }, [tick, "Goo, slime and drips"]), note]);
+    }
+
+    /* THE ADVENT CALENDAR (18 Nov 2026, the owner's: "removed from the
+       christmas skin, just hidden for now incase i want to add it back").
+       One tick, saved at once like the goo: off, the Christmas skin has no
+       Advent button in the top bar and no calendar (xmasAdvent in
+       netlify/functions/settings.js, off until ticked). Doors already opened
+       are kept on their accounts, so ticking it again carries on where it was. */
+    function adventLine(line) {
+        const tick = el("input", { type: "checkbox", checked: site.xmasAdvent === true, disabled: !editable() });
+        const note = el("span", { className: "sk-len" });
+        tick.addEventListener("change", async () => {
+            const want = tick.checked;
+            tick.disabled = true;
+            const ok = await save({ xmasAdvent: want }, "", (m, bad) => { note.textContent = m; note.classList.toggle("is-bad", Boolean(bad)); });
+            tick.checked = site.xmasAdvent === true;
+            tick.disabled = !editable();
+            if (ok) { note.classList.remove("is-bad"); note.textContent = want ? "Calendar shown" : "Calendar hidden"; }
+        });
+        return line("Advent", [el("label", { className: "sk-radio" }, [tick, "Advent calendar"]), note]);
     }
 
     // Two skins on at once: the first in the list wins (skin-wear.js takes
@@ -415,7 +436,7 @@
 
     // ---------------- reading and saving ----------------
     function take(s) {
-        site = { skin: s.skin || "auto", skinSchedule: Array.isArray(s.skinSchedule) ? s.skinSchedule : [], halloweenGoo: s.halloweenGoo !== false };
+        site = { skin: s.skin || "auto", skinSchedule: Array.isArray(s.skinSchedule) ? s.skinSchedule : [], halloweenGoo: s.halloweenGoo !== false, xmasAdvent: s.xmasAdvent === true };
         siteAt = typeof s.skinScheduleAt === "string" ? s.skinScheduleAt : "";
     }
     /* The rows, from the dates as saved. rowsAt moves only here: pressing the
