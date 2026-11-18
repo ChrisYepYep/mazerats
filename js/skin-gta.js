@@ -356,13 +356,17 @@
         head.hidden = view === "home";
         head.querySelector(".gx-big-title").textContent = TITLES[view] || "";
         body.className = "gx-big-body v-" + view;
+        // The phone's own dark mode, on unless switched off (the owner's, 19 Nov 2026).
+        phone.querySelector(".gx-big").classList.toggle("is-dark", !!prefs().phoneDark);
         const read = seen();
         if (view === "home") {
             const d = new Date();
             body.innerHTML = `<div class="gx-home-clock">${esc(clock())}</div><div class="gx-home-date">${esc(d.toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long" }))}</div>` +
                 `<div class="gx-apps">${APPS.map((a) => `<button type="button" class="gx-app ${a.cls}" data-app="${a.id}"><i aria-hidden="true">${a.icon}</i><span>${a.label}</span>` +
                     `${a.id === "messages" && unread.length ? `<b class="gx-app-badge">${unread.length}</b>` : ""}</button>`).join("")}</div>` +
-                `<button type="button" class="gx-big-shut" aria-label="Close phone">✕</button>`;
+                `<div class="gx-home-foot"><button type="button" class="gx-big-shut" aria-label="Close phone">✕</button>` +
+                `<button type="button" class="gx-dk${prefs().phoneDark ? " is-on" : ""}" data-dark="1" role="switch" aria-checked="${!!prefs().phoneDark}" aria-label="Dark mode"><i aria-hidden="true">` +
+                `<svg viewBox="0 0 20 20"><path d="M10 2.5a5.5 5.5 0 0 0-3.3 9.9c.6.5.9 1.1.9 1.8v.3h4.8v-.3c0-.7.3-1.3.9-1.8A5.5 5.5 0 0 0 10 2.5z" fill="currentColor"/><rect x="7.6" y="15.3" width="4.8" height="1.4" rx=".7" fill="currentColor"/><rect x="8.2" y="17.3" width="3.6" height="1.3" rx=".65" fill="currentColor"/></svg></i></button></div>`;
         } else if (view === "messages") {
             body.innerHTML = `<ul class="gx-big-list">${inbox.length ? inbox.slice().reverse().map((m, i) =>
                 `<li class="gx-text${read.includes(m.id) ? "" : " is-new"}">` +
@@ -474,7 +478,7 @@
        THE SKIN'S OWN SETTINGS (the phone's Settings and Weather apps),
        on this device. */
     const PREFS_KEY = "mazerats_gta_prefs";
-    const PREF_DEFAULTS = { radar: true, wasted: true, loading: true, buzz: true, sfx: false, sky: "auto", rain: false };
+    const PREF_DEFAULTS = { radar: true, wasted: true, loading: true, buzz: true, sfx: false, sky: "auto", rain: false, phoneDark: true };
     function prefs() {
         let p = null;
         try { p = JSON.parse(read(PREFS_KEY) || "null"); } catch (e) { p = null; }
@@ -809,7 +813,7 @@
     let saver = null, saverTimer = 0;
     function screensaver() {
         if (saver) return;
-        saver = add(make("div", "gx-saver", `<div class="gx-collage"></div><div class="gx-saver-title" aria-hidden="true"><b>Maze<br>Rats</b><i>Vice City</i></div>`));
+        saver = add(make("div", "gx-saver", `<div class="gx-collage"></div><div class="gx-saver-title" aria-hidden="true"><b>Maze<br>Rats</b><i>Vice City</i></div><div class="gx-saver-hint" aria-hidden="true">Click to exit screensaver.</div>`));
         saver.setAttribute("role", "dialog");
         saver.setAttribute("aria-label", "Screensaver: press any key to leave");
         saver.tabIndex = -1;
@@ -1096,7 +1100,7 @@
         phone = add(make("div", "gx-phone",
             `<div class="gx-big" role="dialog" aria-label="Phone" hidden>` +
                 `<div class="gx-big-bar"><span class="gx-big-time"></span><span class="gx-big-sig" aria-hidden="true"><i></i><i></i><i></i><i></i></span></div>` +
-                `<div class="gx-big-head"><button type="button" class="gx-big-back">‹ Home</button><span class="gx-big-title"></span><button type="button" class="gx-big-close" aria-label="Close phone">✕</button></div>` +
+                `<div class="gx-big-head"><button type="button" class="gx-big-back" aria-label="Back to the home screen"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M13 4 7 10l6 6" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg></button><span class="gx-big-title"></span></div>` +
                 `<div class="gx-big-body"></div>` +
                 `<button type="button" class="gx-big-home" aria-label="Home screen"></button>` +
             `</div>` +
@@ -1139,6 +1143,7 @@
                 const again = phone.querySelector(`[data-pref="${k}"]`); if (again) again.focus({ preventScroll: true });
             }
             else if (t.dataset.sky) { const k = t.dataset.sky; setPref("sky", prefs().sky === k ? "auto" : k); drawSky(); renderView(); }
+            else if (t.dataset.dark) { setPref("phoneDark", !prefs().phoneDark); renderView(); const again = phone.querySelector(".gx-dk"); if (again) again.focus({ preventScroll: true }); }
             else if (t.dataset.rain) { setPref("rain", !prefs().rain); weather(); renderView(); }
             else if (t.dataset.station != null || t.dataset.radio) radioPress(t);
         });

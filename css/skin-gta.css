@@ -136,8 +136,28 @@ html[data-skin="gta"] .gx-phone-screen {
     border-radius: 10px;
     background: linear-gradient(180deg, #ff8fab, #ffb86b);
 }
-/* The lock screen: time and date up top, MR in the middle. */
-html[data-skin="gta"] .gx-phone-screen { position: relative; }
+/* The lock screen: time and date up top, MR in the middle. Dimmed, as a
+   phone's is when it isn't fully awake; a hover wakes it a little
+   (the owner's, 19 Nov 2026). */
+html[data-skin="gta"] .gx-phone-screen { position: relative; filter: brightness(0.6) saturate(1.25); transition: filter 0.25s; }
+html[data-skin="gta"] .gx-phone-btn:hover .gx-phone-screen,
+html[data-skin="gta"] .gx-phone-btn:focus-visible .gx-phone-screen { filter: brightness(0.8) saturate(1.1); }
+/* Glass over both phones' screens: smooth diagonal reflections. */
+html[data-skin="gta"] .gx-phone-btn::before,
+html[data-skin="gta"] .gx-big::after {
+    content: "";
+    position: absolute;
+    z-index: 3;
+    border-radius: 10px;
+    pointer-events: none;
+    background:
+        linear-gradient(118deg,
+            rgba(255, 255, 255, 0.13) 0%, rgba(255, 255, 255, 0.05) 22%, rgba(255, 255, 255, 0) 34%,
+            rgba(255, 255, 255, 0) 52%, rgba(255, 255, 255, 0.09) 57%, rgba(255, 255, 255, 0.12) 62%, rgba(255, 255, 255, 0.05) 66%, rgba(255, 255, 255, 0) 71%,
+            rgba(255, 255, 255, 0) 74%, rgba(255, 255, 255, 0.06) 76.5%, rgba(255, 255, 255, 0) 79%);
+}
+html[data-skin="gta"] .gx-phone-btn::before { inset: 14px 11px 26px; }
+html[data-skin="gta"] .gx-big::after { inset: 12px 12px 30px; border-radius: 20px; }
 html[data-skin="gta"] .gx-phone-clock {
     position: absolute;
     left: 0;
@@ -274,18 +294,6 @@ html[data-skin="gta"] .gx-big-head {
     color: #3a0f52;
     font: 900 18px 'Montserrat', sans-serif;
 }
-html[data-skin="gta"] .gx-big-close {
-    width: 28px;
-    height: 28px;
-    padding: 0;
-    border: 0;
-    border-radius: 50%;
-    background: #ffe0ec;
-    color: #3a0f52;
-    font: 700 14px/28px 'Roboto', sans-serif;
-    cursor: pointer;
-}
-html[data-skin="gta"] .gx-big-close:hover { background: #ff5fa2; color: #fff; }
 html[data-skin="gta"] .gx-big-list {
     flex: 1 1 auto;
     margin: 0;
@@ -362,18 +370,23 @@ html[data-skin="gta"] .gx-big button:focus-visible { outline: 2px solid #ffd166;
 
 /* THE PHONE'S APPS (19 Nov 2026): a home screen and six apps in the big phone. */
 html[data-skin="gta"] .gx-big-head[hidden] { display: none; }
-html[data-skin="gta"] .gx-big-head { gap: 8px; }
-html[data-skin="gta"] .gx-big-title { flex: 1; text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* Back arrow, the app's name centred on the screen, and an empty column
+   the arrow's width to balance it (the owner's, 19 Nov 2026). */
+html[data-skin="gta"] .gx-big-head { display: grid; grid-template-columns: 32px 1fr 32px; gap: 6px; }
+html[data-skin="gta"] .gx-big-title { grid-column: 2; min-width: 0; text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 html[data-skin="gta"] .gx-big-back {
-    padding: 4px 6px;
+    display: grid;
+    place-items: center;
+    width: 32px;
+    height: 32px;
+    padding: 0;
     border: 0;
-    border-radius: 6px;
+    border-radius: 50%;
     background: none;
     color: #c2185b;
-    font: 700 13px 'Roboto', sans-serif;
     cursor: pointer;
-    white-space: nowrap;
 }
+html[data-skin="gta"] .gx-big-back svg { display: block; width: 20px; height: 20px; }
 html[data-skin="gta"] .gx-big-back:hover { background: #ffe0ec; }
 html[data-skin="gta"] .gx-big-body {
     position: relative;
@@ -441,9 +454,40 @@ html[data-skin="gta"] .gx-app-badge {
     font: 700 11px/20px 'Roboto', sans-serif;
     box-shadow: 0 0 0 2px #fff;
 }
+/* The ✕ and the dark-mode switch, side by side, centred as a pair. */
+html[data-skin="gta"] .gx-home-foot { display: flex; align-items: center; justify-content: center; gap: 14px; margin: auto 0 14px; padding-top: 14px; }
+html[data-skin="gta"] .gx-dk {
+    position: relative;
+    width: 56px;
+    height: 32px;
+    padding: 0;
+    border: 0;
+    border-radius: 16px;
+    background: rgba(18, 6, 31, 0.45);
+    cursor: pointer;
+    transition: background 0.2s;
+}
+html[data-skin="gta"] .gx-dk i {
+    position: absolute;
+    left: 3px;
+    top: 3px;
+    display: grid;
+    place-items: center;
+    width: 26px;
+    height: 26px;
+    border-radius: 50%;
+    background: #fff;
+    color: #9a8aa8;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.35);
+    transition: transform 0.2s cubic-bezier(0.3, 0.9, 0.3, 1.15), color 0.2s;
+}
+html[data-skin="gta"] .gx-dk svg { display: block; width: 16px; height: 16px; }
+html[data-skin="gta"] .gx-dk.is-on { background: #12061f; box-shadow: inset 0 0 0 1px rgba(255, 95, 162, 0.5); }
+html[data-skin="gta"] .gx-dk.is-on i { transform: translateX(24px); color: #ff5fa2; }
+html[data-skin="gta"] .gx-dk:hover { background: rgba(18, 6, 31, 0.7); }
+html[data-skin="gta"] .gx-dk.is-on:hover { background: #000; }
 html[data-skin="gta"] .gx-big-shut {
-    align-self: center;
-    margin: auto 0 14px;
+    flex: 0 0 auto;
     width: 34px;
     height: 34px;
     border: 0;
@@ -543,6 +587,33 @@ html[data-skin="gta"] .gx-station {
 html[data-skin="gta"] .gx-station small { color: #9a6a8a; font-size: 11px; }
 html[data-skin="gta"] .gx-station.is-on span::before { content: "● "; color: #c2185b; }
 html[data-skin="gta"] .gx-station:hover span { color: #c2185b; }
+/* THE PHONE IN DARK MODE (its own switch, on by default; the home screen keeps its wallpaper). */
+html[data-skin="gta"] .gx-big.is-dark .gx-big-head { background: #1b0f2a; border-bottom-color: #33204a; color: #fff; }
+html[data-skin="gta"] .gx-big.is-dark .gx-big-back { color: #ff7ab8; }
+html[data-skin="gta"] .gx-big.is-dark .gx-big-back:hover { background: #2c1a3d; }
+html[data-skin="gta"] .gx-big.is-dark .gx-big-body:not(.v-home):not(.v-drive),
+html[data-skin="gta"] .gx-big.is-dark .gx-big-list { background: #140a20; color: #f1e4f4; }
+html[data-skin="gta"] .gx-big.is-dark .gx-text { border-bottom-color: #2c1a3d; }
+html[data-skin="gta"] .gx-big.is-dark .gx-text-body { background: #24153a; color: #f1e4f4; box-shadow: none; }
+html[data-skin="gta"] .gx-big.is-dark .gx-text-body b { color: #ff9ccc; }
+html[data-skin="gta"] .gx-big.is-dark .gx-text-none { color: #ff9ccc; }
+html[data-skin="gta"] .gx-big.is-dark .gx-row { border-bottom-color: #2c1a3d; }
+html[data-skin="gta"] .gx-big.is-dark .gx-row small,
+html[data-skin="gta"] .gx-big.is-dark .gx-dim,
+html[data-skin="gta"] .gx-big.is-dark .gx-station small { color: #b49cc4; }
+html[data-skin="gta"] .gx-big.is-dark .gx-small { color: #b49cc4; }
+html[data-skin="gta"] .gx-big.is-dark .gx-row.is-next,
+html[data-skin="gta"] .gx-big.is-dark .gx-row.gx-sec { background: #20122f; }
+html[data-skin="gta"] .gx-big.is-dark .gx-row.gx-sec { color: #ff9ccc; }
+html[data-skin="gta"] .gx-big.is-dark .gx-g { color: #7dff9a; }
+html[data-skin="gta"] .gx-big.is-dark .gx-station { color: #f1e4f4; }
+html[data-skin="gta"] .gx-big.is-dark .gx-station.is-on span::before,
+html[data-skin="gta"] .gx-big.is-dark .gx-station:hover span { color: #ff7ab8; }
+html[data-skin="gta"] .gx-big.is-dark .gx-pill.gx-ghost { background: #33204a; color: #ffc4dd; }
+html[data-skin="gta"] .gx-big.is-dark .gx-pill.gx-ghost:hover { background: #452c62; }
+html[data-skin="gta"] .gx-big.is-dark .gx-tog { background: #4a3560; }
+html[data-skin="gta"] .gx-big.is-dark .gx-tog.is-on { background: #ff5fa2; }
+html[data-skin="gta"] .gx-big.is-dark .gx-wx-t.is-on { box-shadow: 0 0 0 3px #ff5fa2, 0 0 0 5px #140a20, 0 0 0 7px #ff5fa2; }
 html[data-skin="gta"] .gx-cash { border: 0; padding: 0; background: none; font: inherit; text-align: right; }
 html[data-skin="gta"] .gx-cash:hover .gx-cash-lab, html[data-skin="gta"] .gx-cash:focus-visible .gx-cash-lab { color: #ffd166; }
 html[data-skin="gta"] .gx-cash:focus-visible { outline: 2px solid #ffd166; outline-offset: 4px; }
@@ -890,6 +961,24 @@ html[data-skin="gta"] .gx-saver.is-on { opacity: 1; }
 html[data-skin="gta"] .gx-saver .gx-collage { inset: 11vh 12vw; }
 @media (max-width: 600px) { html[data-skin="gta"] .gx-saver .gx-collage { inset: 16vh 6vw; } }
 html[data-skin="gta"] .gx-saver-title { position: absolute; right: 40px; bottom: 36px; z-index: 3; text-align: right; pointer-events: none; }
+/* Faint, small, bottom centre (the owner's, 19 Nov 2026). */
+/* Its foot level with the foot of the VICE CITY block; pink into orange. */
+html[data-skin="gta"] .gx-saver-hint {
+    position: absolute;
+    left: 50%;
+    bottom: 36px;
+    z-index: 3;
+    width: max-content;
+    transform: translateX(-50%);
+    font: 600 11px/1 'Roboto', sans-serif;
+    letter-spacing: 0.5px;
+    background: linear-gradient(90deg, #ff5fa2, #ffb86b);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    opacity: 0.6;
+    pointer-events: none;
+}
 html[data-skin="gta"] .gx-saver-title b { display: block; font: italic 900 clamp(48px, 9vw, 92px)/0.82 'Montserrat', sans-serif; letter-spacing: -2px; color: #fff; text-transform: uppercase; text-shadow: 4px 4px 0 #ff2e88, 8px 8px 0 #000; }
 html[data-skin="gta"] .gx-saver-title i { display: inline-block; margin-top: 12px; padding: 4px 12px; background: #ff5fa2; font: normal 900 clamp(13px, 1.6vw, 20px) 'Montserrat', sans-serif; letter-spacing: 4px; color: #fff; text-transform: uppercase; box-shadow: 3px 3px 0 #000; }
 
@@ -940,6 +1029,7 @@ html[data-skin="gta"] .gx-mission p b { color: #7dff9a; }
     html[data-skin="gta"] .gx-phone-btn { width: 84px; height: 140px; padding: 9px 7px 17px; border-radius: 15px; }
     html[data-skin="gta"] .gx-phone-btn::after { bottom: 7px; width: 18px; height: 4px; margin-left: -9px; }
     html[data-skin="gta"] .gx-phone-mr { margin-top: 14px; font-size: 16px; }
+    html[data-skin="gta"] .gx-phone-btn::before { inset: 9px 7px 17px; }
     html[data-skin="gta"] .gx-phone-clock { top: 9px; gap: 2px; }
     html[data-skin="gta"] .gx-phone-clock b { font-size: 16px; }
     html[data-skin="gta"] .gx-phone-clock small { font-size: 7px; }
