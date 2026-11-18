@@ -419,6 +419,7 @@ html[data-skin="gta"] .gx-app i {
     box-shadow: 0 3px 0 rgba(0, 0, 0, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.4);
     transition: transform 0.12s;
 }
+html[data-skin="gta"] .gx-app i svg { display: block; width: 32px; height: 32px; filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.25)); }
 html[data-skin="gta"] .gx-app:hover i { transform: translateY(-2px); }
 html[data-skin="gta"] .a-msg i { background: linear-gradient(135deg, #7dff9a, #13a050); color: #fff; }
 html[data-skin="gta"] .a-maps i { background: #35373a; color: #c9cbcd; box-shadow: 0 0 0 1px #7d2652, 0 3px 0 rgba(0, 0, 0, 0.3); }

@@ -304,15 +304,45 @@
        page can't, plus the screensaver). The big phone opens on its home
        screen, Messages wearing a red dot with the count of new texts. ‹ Home goes
        back to it; ✕ (or Esc, or a click outside) shrinks the phone. */
+    /* The icons are drawn, not typed (the owner's, 19 Nov 2026: "perfectly
+       centered"): a font's glyphs sit off its own baseline, so each is a 32px
+       drawing centred on a 32px square. */
+    const gear = (() => {
+        let d = "";
+        for (let k = 0; k < 8; k++) {
+            const a = k * Math.PI / 4, w = 0.2;
+            for (const [r, t] of [[10.5, a - 0.32], [14, a - w], [14, a + w], [10.5, a + 0.32]]) d += (d ? "L" : "M") + (16 + Math.cos(t) * r).toFixed(2) + " " + (16 + Math.sin(t) * r).toFixed(2);
+        }
+        return d + "Z";
+    })();
+    const ICONS = {
+        messages: `<rect x="4" y="8" width="24" height="17" rx="3" fill="#fff"/><path d="M5.5 10 16 18 26.5 10" fill="none" stroke="#13a050" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round"/>`,
+        // A folded paper map, a route winding across it to a pin.
+        maps: `<path d="M3.5 8.5 11.5 5.5V24.5L3.5 27.5Z" fill="#f2ecd9"/><path d="M11.5 5.5 20.5 8.5V27.5L11.5 24.5Z" fill="#d6cdb3"/><path d="M20.5 8.5 28.5 5.5V24.5L20.5 27.5Z" fill="#f2ecd9"/>` +
+            `<path d="M6.5 23V17H10V12.5H15V19.5H18.5V14H23" fill="none" stroke="#ff5fa2" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>` +
+            `<path d="M23.5 3a4.8 4.8 0 0 1 4.8 4.8c0 3.6-4.8 8.2-4.8 8.2s-4.8-4.6-4.8-8.2A4.8 4.8 0 0 1 23.5 3z" fill="#e2185b" stroke="#35373a" stroke-width="1.4"/><circle cx="23.5" cy="7.8" r="1.8" fill="#fff"/>`,
+        radio: `<path d="M11.5 23V10.5L25 7.5V20" fill="none" stroke="#fff" stroke-width="2.4"/><path d="M11.5 10.5 25 7.5V11.5L11.5 14.5Z" fill="#fff"/>` +
+            `<ellipse cx="8.4" cy="23" rx="4" ry="3.1" transform="rotate(-20 8.4 23)" fill="#fff"/><ellipse cx="21.9" cy="20" rx="4" ry="3.1" transform="rotate(-20 21.9 20)" fill="#fff"/>`,
+        bank: `<path d="M16 3.5 28.5 10.5H3.5Z" fill="#7dff9a"/><rect x="5" y="11.5" width="22" height="2" fill="#7dff9a"/>` +
+            `<g fill="#7dff9a"><rect x="6.5" y="14.5" width="3" height="9"/><rect x="12" y="14.5" width="3" height="9"/><rect x="17" y="14.5" width="3" height="9"/><rect x="22.5" y="14.5" width="3" height="9"/></g>` +
+            `<rect x="3.5" y="24.5" width="25" height="3.5" rx="1" fill="#7dff9a"/>`,
+        weather: `<g stroke="#ffe27a" stroke-width="2.2" stroke-linecap="round">${[0, 1, 2, 3, 4, 5, 6, 7].map((k) => { const a = k * Math.PI / 4; return `<line x1="${(20 + Math.cos(a) * 8.5).toFixed(1)}" y1="${(11 + Math.sin(a) * 8.5).toFixed(1)}" x2="${(20 + Math.cos(a) * 11).toFixed(1)}" y2="${(11 + Math.sin(a) * 11).toFixed(1)}"/>`; }).join("")}</g>` +
+            `<circle cx="20" cy="11" r="6" fill="#ffe27a"/>` +
+            `<path d="M8.5 27h14a5 5 0 0 0 .3-10 7 7 0 0 0-13.3 1.6A4.3 4.3 0 0 0 8.5 27z" fill="#fff"/>`,
+        screensaver: `<rect x="3.5" y="5" width="25" height="17.5" rx="2.2" fill="#12061f" stroke="#fff" stroke-width="2"/>` +
+            `<path d="M6 7.5H13L10.5 20H6Z" fill="#ff5fa2"/><path d="M14.5 7.5H21L18.5 20H12Z" fill="#ffd166"/><path d="M22.5 7.5H26V20H20Z" fill="#2ee6ff"/>` +
+            `<rect x="13.5" y="22.5" width="5" height="3" fill="#fff"/><rect x="9.5" y="25.5" width="13" height="2.5" rx="1.2" fill="#fff"/>`,
+        settings: `<path d="${gear}M20.2 16a4.2 4.2 0 1 0-8.4 0a4.2 4.2 0 1 0 8.4 0Z" fill="#fff" fill-rule="evenodd"/>`
+    };
     const APPS = [
-        { id: "messages", label: "Messages", icon: "✉", cls: "a-msg" },
-        { id: "maps", label: "Maze Maps", icon: "⌖", cls: "a-maps" },
-        { id: "radio", label: "Radio", icon: "♫", cls: "a-radio" },
-        { id: "bank", label: "Bank", icon: "$", cls: "a-bank" },
-        { id: "weather", label: "Weather", icon: "☀", cls: "a-wx" },
-        { id: "screensaver", label: "Screensaver", icon: "▦", cls: "a-ss" },
-        { id: "settings", label: "Settings", icon: "⚙", cls: "a-set" }
-    ];
+        { id: "messages", label: "Messages", cls: "a-msg" },
+        { id: "maps", label: "Maze Maps", cls: "a-maps" },
+        { id: "radio", label: "Radio", cls: "a-radio" },
+        { id: "bank", label: "Bank", cls: "a-bank" },
+        { id: "weather", label: "Weather", cls: "a-wx" },
+        { id: "screensaver", label: "Screensaver", cls: "a-ss" },
+        { id: "settings", label: "Settings", cls: "a-set" }
+    ].map((a) => Object.assign(a, { icon: `<svg viewBox="0 0 32 32" width="32" height="32">${ICONS[a.id]}</svg>` }));
     let view = "home", phoneGame = null;
     const TITLES = { home: "", messages: "Messages", maps: "Maze Maps", drive: "Maze Maps", radio: "Radio", bank: "Maze Bank", weather: "Vice Weather", settings: "Settings" };
     // The radar is the way in on a computer; on a phone (or with it switched off) the game plays inside the phone.
