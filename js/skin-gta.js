@@ -932,7 +932,27 @@
         });
         return radioReady;
     }
+    /* The knob wears the station's badge (the owner's, 19 Nov 2026): too
+       small at 28px to read, so the face is blurred to a wash of the logo's
+       own colours, and only the chrome rim stays sharp. */
+    let knobFor = null;
+    function drawKnob() {
+        const knob = carRadio && carRadio.querySelector(".gx-car-knob");
+        if (!knob || !window.GtaRadio) return;
+        const st = radio ? radio.current() : null, i = st ? GtaRadio.STATIONS.indexOf(st) : -1;
+        if (knobFor === i) return;
+        knobFor = i;
+        knob.innerHTML = `<svg viewBox="-54 -54 108 108" width="100%" height="100%" aria-hidden="true"><defs>${GtaRadio.LOGO.defs}` +
+            `<filter id="gk-blur" x="-20%" y="-20%" width="140%" height="140%"><feGaussianBlur stdDeviation="9"/><feColorMatrix type="saturate" values="1.45"/></filter>` +
+            `<clipPath id="gk-face"><circle r="48.5"/></clipPath></defs>` +
+            `<g clip-path="url(#gk-face)"><g filter="url(#gk-blur)" transform="scale(1.32)">${GtaRadio.LOGO.svg(i)}</g></g>` +
+            `<path d="M0 -54A54 54 0 1 1 0 54A54 54 0 1 1 0 -54ZM0 -48A48 48 0 1 0 0 48A48 48 0 1 0 0 -48Z" fill="url(#lg-chrome)" fill-rule="evenodd"/>` +
+            `<circle r="53.4" fill="none" stroke="#0c0614" stroke-width="1.2"/><circle r="48" fill="none" stroke="#000" stroke-opacity=".55" stroke-width="1.5"/>` +
+            `<path d="M-40 -14 A42 42 0 0 1 40 -14 C22 -24 -22 -24 -40 -14Z" fill="#fff" fill-opacity=".22"/></svg>`;
+        knob.classList.add("has-logo");
+    }
     function radioUi() {
+        drawKnob();
         if (carRadio && radio) {
             const st = radio.current();
             carRadio.querySelector(".gx-car-lcd").innerHTML = `<span>${esc(st ? st.name : "Radio off")}</span><span class="gx-eq${st && radio.playing() ? " is-on" : ""}" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></span>`;
@@ -953,6 +973,10 @@
             document.addEventListener("pointerdown", wake, true); document.addEventListener("keydown", wake, true);
             offs.push(() => { document.removeEventListener("pointerdown", wake, true); document.removeEventListener("keydown", wake, true); });
             loadRadio().then((ok) => { if (ok) { withRadio(); radioUi(); } });
+        } else {
+            // No station yet: the radio's script, once the page has settled, for the knob's Off badge.
+            const t = setTimeout(() => loadRadio().then((ok) => { if (ok && on) drawKnob(); }), 2500);
+            offs.push(() => clearTimeout(t));
         }
     }
     function withRadio() {
@@ -960,7 +984,7 @@
         if (!radio) radio = GtaRadio.create({ onChange: radioUi, reduced });
         return true;
     }
-    function radioStop() { if (radio) { radio.destroy(); radio = null; } carRadio = null; }
+    function radioStop() { if (radio) { radio.destroy(); radio = null; } carRadio = null; knobFor = null; }
     function drawRadioApp(body) {
         body.innerHTML = `<p class="gx-small">Tuning in…</p>`;
         loadRadio().then((ok) => {
@@ -1016,7 +1040,18 @@
         sky.setAttribute("aria-hidden", "true");
         drawSky();
         listen(window, "resize", () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(() => { drawSky(); rainSize(); }, 250); });
-        observer = new MutationObserver(drawSky);
+        /* The bulb is the newest word on the sky: a press undoes a sky fixed in
+           the phone's Weather app, which otherwise left the bulb doing nothing
+           to it (the owner's, 19 Nov 2026). */
+        let wasDark = root.hasAttribute("data-dark");
+        observer = new MutationObserver(() => {
+            const dark = root.hasAttribute("data-dark");
+            if (dark !== wasDark) {
+                wasDark = dark;
+                if (prefs().sky !== "auto") { setPref("sky", "auto"); if (view === "weather") renderView(); }
+            }
+            drawSky();
+        });
         observer.observe(root, { attributes: true, attributeFilter: ["data-dark"] });
 
         if (!document.body || document.body.getAttribute("data-page") !== "home") return;
@@ -1043,7 +1078,17 @@
             `</div>` +
             `<button type="button" class="gx-phone-note" hidden></button>` +
             `<button type="button" class="gx-phone-btn" aria-label="Phone" aria-expanded="false">` +
-                `<span class="gx-phone-screen"><span class="gx-phone-mr" aria-hidden="true">MR</span></span><span class="gx-phone-badge" hidden></span></button>`));
+                `<span class="gx-phone-screen"><span class="gx-phone-clock" aria-hidden="true"><b></b><small></small></span><span class="gx-phone-mr" aria-hidden="true">MR</span></span><span class="gx-phone-badge" hidden></span></button>`));
+        // The lock screen: the time and date over the MR (the owner's, 19 Nov 2026).
+        const tickLock = () => {
+            if (!phone) return;
+            const c = phone.querySelector(".gx-phone-clock");
+            c.querySelector("b").textContent = clock();
+            c.querySelector("small").textContent = new Date().toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" });
+        };
+        tickLock();
+        const lockTimer = setInterval(tickLock, 15000);
+        offs.push(() => clearInterval(lockTimer));
         listen(phone, "click", (e) => {
             const t = e.target.closest("button");
             if (!t || !phone.contains(t)) return;
