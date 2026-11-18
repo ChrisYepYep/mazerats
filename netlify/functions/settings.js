@@ -121,7 +121,7 @@ const hallwayState = (doc) => (doc && VALID_HALLWAY_STATES.includes(doc.hallwayS
 
    Defaults to classic, so a database that has never heard of this setting
    renders exactly the site it rendered before it existed. */
-const VALID_THEMES = ["classic", "purple", "pumpkin", "witch", "crimson", "frost"];
+const VALID_THEMES = ["classic", "purple", "pumpkin", "witch", "crimson", "frost", "vice"];
 const DEFAULT_THEME = "classic";
 
 /* THE SEASONAL SKIN (25 Oct 2026): decorations worn over whichever palette
@@ -148,7 +148,7 @@ const DEFAULT_THEME = "classic";
    three years out of four without one, js/skin-wear.js reads it as 1 March,
    so "29 Feb to 1 Mar" became a window from 1 March to 1 March of the next
    year — the skin on for a whole year. */
-const VALID_SKINS = ["xmas", "halloween"];
+const VALID_SKINS = ["xmas", "halloween", "gta"];
 const SKIN_MODES = ["auto", "off"].concat(VALID_SKINS);
 const DEFAULT_SKIN = "auto";
 const MAX_SKIN_WINDOWS = 20;

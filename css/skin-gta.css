@@ -1,0 +1,299 @@
+/* The GTA VI launch skin (18 Nov 2026). Worn with the Vice palette; the
+   dark-mode bulb turns the sunset (A) into the night coast (B). The pieces
+   are made by js/skin-gta.js. Every rule is under html[data-skin="gta"]. */
+
+/* ---------------- THE SKY ---------------- */
+html[data-skin="gta"] body {
+    background: #140a33;
+}
+html[data-skin="gta"][data-dark] body { background: #05040f; }
+html[data-skin="gta"] .gx-sky {
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+    background-repeat: no-repeat;
+    background-position: center bottom;
+    image-rendering: pixelated;
+}
+
+/* ---------------- THE LETTERING ---------------- */
+html[data-skin="gta"] .site-header {
+    background: linear-gradient(90deg, rgba(20, 6, 40, 0.94), rgba(60, 10, 70, 0.9) 50%, rgba(20, 6, 40, 0.94));
+    border-bottom: 2px solid #ff5fa2;
+    box-shadow: 0 2px 0 #ffb36b, 0 6px 18px rgba(255, 95, 162, 0.35);
+}
+html[data-skin="gta"] .brand-text { color: #fff; text-shadow: 2px 2px 0 #ff2e88, 4px 4px 0 #2a0b45; }
+html[data-skin="gta"] .brand-tagline { color: #ffc4dd; }
+html[data-skin="gta"] .hero-title span {
+    color: #ffd166;
+    text-shadow: 2px 2px 0 #ff7a3d, 4px 4px 0 #ff2e88, 6px 6px 0 #5b1580, 8px 8px 0 #1a0833;
+}
+html[data-skin="gta"] .tagline,
+html[data-skin="gta"] .site-footer,
+html[data-skin="gta"] .site-footer a {
+    text-shadow: 0 1px 0 #1a0833, 0 0 8px rgba(20, 6, 40, 0.95), 0 0 2px #000;
+}
+
+/* B: the night coast. Neon instead of the sunset's paintwork. */
+html[data-skin="gta"][data-dark] .site-header {
+    background: rgba(5, 4, 15, 0.92);
+    border-bottom: 1px solid #2ee6ff;
+    box-shadow: 0 0 12px rgba(46, 230, 255, 0.55), 0 1px 0 #ff3fa4;
+}
+html[data-skin="gta"][data-dark] .brand-text { text-shadow: 0 0 4px #ff3fa4, 0 0 12px #ff3fa4, 0 0 24px #ff3fa4; }
+html[data-skin="gta"][data-dark] .brand-tagline { color: #9ff3ff; text-shadow: 0 0 6px #2ee6ff; }
+html[data-skin="gta"][data-dark] .hero-title span { color: #fff; text-shadow: 0 0 3px #fff, 0 0 8px #ff3fa4, 0 0 18px #ff3fa4, 0 0 36px #ff3fa4; }
+html[data-skin="gta"][data-dark] .hero-title span + span { text-shadow: 0 0 3px #fff, 0 0 8px #2ee6ff, 0 0 18px #2ee6ff, 0 0 36px #2ee6ff; }
+
+/* ---------------- WANTED: the streak, in the header ---------------- */
+html[data-skin="gta"] .gx-wanted {
+    display: inline-flex;
+    flex-direction: column;
+    align-items: flex-start;
+    justify-content: center;
+    gap: 1px;
+    margin-left: 6px;
+    cursor: help;
+}
+html[data-skin="gta"] .gx-wanted-lab {
+    font: 9px/1 'Volter Goldfish', monospace;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    color: #ffc4dd;
+}
+html[data-skin="gta"] .gx-stars { display: flex; gap: 2px; }
+html[data-skin="gta"] .gx-star {
+    display: block;
+    width: 15px;
+    height: 15px;
+    background: #4a2a5e;
+    clip-path: polygon(50% 0, 61% 35%, 98% 35%, 68% 57%, 79% 91%, 50% 70%, 21% 91%, 32% 57%, 2% 35%, 39% 35%);
+}
+html[data-skin="gta"] .gx-star.is-on { background: #fff; }
+html[data-skin="gta"] .gx-star.is-new { background: #ffd166; animation: gx-flash 1.1s steps(2, jump-none) infinite; }
+@keyframes gx-flash { 50% { background: #fff; } }
+html[data-skin="gta"][data-dark] .gx-star.is-on { background: #fff; filter: drop-shadow(0 0 3px #2ee6ff); }
+
+/* ---------------- CASH: the points, top right ---------------- */
+html[data-skin="gta"] .gx-cash {
+    position: absolute;
+    top: 62px;
+    right: 26px;
+    z-index: 5;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    pointer-events: auto;
+    cursor: default;
+}
+html[data-skin="gta"] .gx-cash-n {
+    font: 900 30px/1 'Montserrat', sans-serif;
+    color: #7dff9a;
+    text-shadow: 2px 2px 0 #000, -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000;
+    font-variant-numeric: tabular-nums;
+}
+html[data-skin="gta"] .gx-cash-lab {
+    margin-top: 3px;
+    font: 9px/1 'Volter Goldfish', monospace;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    color: #fff;
+    text-shadow: 1px 1px 0 #000;
+}
+
+/* ---------------- THE PHONE: bottom right ---------------- */
+html[data-skin="gta"] .gx-phone {
+    position: fixed;
+    right: 22px;
+    bottom: 22px;
+    z-index: 40;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 8px;
+}
+html[data-skin="gta"] .gx-phone-btn {
+    position: relative;
+    width: 44px;
+    height: 74px;
+    padding: 6px 5px 12px;
+    border: 0;
+    border-radius: 9px;
+    background: #0f0a18;
+    box-shadow: 0 0 0 2px #2b1d3e, 0 0 0 4px #ff5fa2, 0 8px 18px rgba(0, 0, 0, 0.6);
+    cursor: pointer;
+}
+html[data-skin="gta"] .gx-phone-screen {
+    display: block;
+    width: 100%;
+    height: 100%;
+    border-radius: 4px;
+    background: linear-gradient(180deg, #ff8fab, #ffb86b);
+}
+html[data-skin="gta"] .gx-phone-btn::after {      /* the home button */
+    content: "";
+    position: absolute;
+    left: 50%;
+    bottom: 4px;
+    width: 8px;
+    height: 3px;
+    margin-left: -4px;
+    border-radius: 2px;
+    background: #3b2b52;
+}
+html[data-skin="gta"] .gx-phone.has-texts .gx-phone-btn { animation: gx-buzz 3.2s steps(1) infinite; }
+@keyframes gx-buzz {
+    0%, 86%, 100% { transform: none; }
+    88% { transform: translateX(-2px) rotate(-3deg); }
+    90% { transform: translateX(2px) rotate(3deg); }
+    92% { transform: translateX(-2px) rotate(-3deg); }
+    94% { transform: translateX(2px) rotate(3deg); }
+}
+html[data-skin="gta"] .gx-phone-badge {
+    position: absolute;
+    top: -7px;
+    right: -7px;
+    min-width: 18px;
+    height: 18px;
+    padding: 0 4px;
+    border-radius: 9px;
+    background: #ff2e63;
+    color: #fff;
+    font: 700 11px/18px 'Roboto', sans-serif;
+    box-shadow: 0 0 0 2px #0f0a18;
+}
+html[data-skin="gta"] .gx-phone-badge[hidden] { display: none; }
+html[data-skin="gta"] .gx-phone-msg {
+    display: none;
+    width: 240px;
+    padding: 10px 12px;
+    border-radius: 12px 12px 2px 12px;
+    background: #fff;
+    color: #24112f;
+    font: 500 13px/1.4 'Roboto', sans-serif;
+    box-shadow: 0 0 0 3px #ff5fa2, 0 10px 22px rgba(0, 0, 0, 0.55);
+}
+html[data-skin="gta"] .gx-phone.is-open .gx-phone-msg { display: block; animation: gx-pop 0.18s ease-out; }
+@keyframes gx-pop { from { transform: translateY(8px); opacity: 0; } }
+html[data-skin="gta"] .gx-phone-msg b {
+    display: block;
+    margin-bottom: 3px;
+    font: 9px/1.2 'Volter Goldfish Bold', 'Volter Goldfish', monospace;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+    color: #c2185b;
+}
+html[data-skin="gta"] .gx-phone-acts { display: flex; justify-content: flex-end; gap: 6px; margin-top: 8px; }
+html[data-skin="gta"] .gx-phone-acts button {
+    padding: 4px 10px;
+    border: 2px solid #24112f;
+    border-radius: 4px;
+    background: #fff;
+    color: #24112f;
+    font: 700 11px 'Roboto', sans-serif;
+    cursor: pointer;
+}
+html[data-skin="gta"] .gx-phone-acts .gx-phone-go { background: #ff5fa2; border-color: #ff5fa2; color: #fff; }
+html[data-skin="gta"] .gx-phone-acts button:focus-visible,
+html[data-skin="gta"] .gx-phone-btn:focus-visible,
+html[data-skin="gta"] .gx-gps:focus-visible { outline: 2px solid #ffd166; outline-offset: 3px; }
+
+/* ---------------- THE GPS: bottom left ---------------- */
+html[data-skin="gta"] .gx-gps {
+    position: fixed;
+    left: 24px;
+    bottom: 30px;
+    z-index: 40;
+    width: 112px;
+    height: 112px;
+    padding: 0;
+    border: 4px solid #12061f;
+    border-radius: 50%;
+    overflow: visible;
+    background: #24453a;
+    box-shadow: 0 0 0 2px #ff5fa2, 0 6px 16px rgba(0, 0, 0, 0.6);
+    cursor: pointer;
+}
+html[data-skin="gta"] .gx-gps-map {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    border-radius: 50%;
+    image-rendering: pixelated;
+}
+html[data-skin="gta"] .gx-gps-sweep {
+    position: absolute;
+    inset: 0;
+    border-radius: 50%;
+    background: conic-gradient(from 0deg, rgba(160, 255, 200, 0.35), rgba(160, 255, 200, 0) 70deg, transparent 360deg);
+    animation: gx-sweep 3s linear infinite;
+}
+@keyframes gx-sweep { to { transform: rotate(360deg); } }
+html[data-skin="gta"] .gx-gps-lab {
+    position: absolute;
+    left: 50%;
+    bottom: -22px;
+    transform: translateX(-50%);
+    white-space: nowrap;
+    font: 9px/1 'Volter Goldfish', monospace;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    color: #fff;
+    text-shadow: 1px 1px 0 #000, 0 0 4px #000;
+}
+html[data-skin="gta"] .gx-gps:hover { box-shadow: 0 0 0 2px #ffd166, 0 6px 16px rgba(0, 0, 0, 0.6); }
+
+/* ---------------- MISSION PASSED ---------------- */
+html[data-skin="gta"] .gx-mission {
+    position: fixed;
+    left: 0;
+    right: 0;
+    top: 38%;
+    z-index: 10050;
+    text-align: center;
+    pointer-events: none;
+    visibility: hidden;
+    opacity: 0;
+}
+html[data-skin="gta"] .gx-mission.is-on { visibility: visible; animation: gx-mission 3.8s ease-out forwards; }
+@keyframes gx-mission {
+    0% { opacity: 0; transform: scale(1.25); }
+    8% { opacity: 1; transform: scale(1); }
+    85% { opacity: 1; }
+    100% { opacity: 0; }
+}
+html[data-skin="gta"] .gx-mission-bar {
+    padding: 16px 12px 14px;
+    background: linear-gradient(90deg, transparent, rgba(10, 4, 20, 0.85) 15%, rgba(10, 4, 20, 0.85) 85%, transparent);
+}
+html[data-skin="gta"] .gx-mission h2 {
+    margin: 0;
+    font: 900 clamp(34px, 7vw, 64px)/1 'Montserrat', sans-serif;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: #ffd166;
+    text-shadow: 3px 3px 0 #000, -2px -2px 0 #000, 2px -2px 0 #000, -2px 2px 0 #000, 0 0 24px rgba(255, 177, 74, 0.6);
+}
+html[data-skin="gta"] .gx-mission p { margin: 6px 0 0; font: 700 clamp(16px, 3vw, 24px) 'Montserrat', sans-serif; color: #fff; text-shadow: 2px 2px 0 #000; }
+html[data-skin="gta"] .gx-mission p b { color: #7dff9a; }
+
+/* ---------------- SMALLER SCREENS ---------------- */
+@media (max-width: 900px) {
+    html[data-skin="gta"] .gx-gps { display: none; }
+}
+@media (max-width: 760px) {
+    html[data-skin="gta"] .gx-cash { display: none; }
+    html[data-skin="gta"] .gx-phone { right: 12px; bottom: 12px; }
+    html[data-skin="gta"] .gx-phone-btn { width: 34px; height: 56px; padding: 5px 4px 10px; }
+    html[data-skin="gta"] .gx-phone-msg { width: min(240px, calc(100vw - 24px)); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    html[data-skin="gta"] .gx-star.is-new,
+    html[data-skin="gta"] .gx-phone.has-texts .gx-phone-btn,
+    html[data-skin="gta"] .gx-gps-sweep,
+    html[data-skin="gta"] .gx-phone.is-open .gx-phone-msg { animation: none; }
+    html[data-skin="gta"] .gx-mission.is-on { animation: none; opacity: 1; }
+}

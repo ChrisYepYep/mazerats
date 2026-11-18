@@ -214,6 +214,18 @@ const THEMES = {
                loudHue: 192, loudSat: 0.42, loudLight: 1.18, activeBright: 1.08,
                glintHue: 186, glintSat: 0.55, glintFrom: 0.10, frameRim: 0.45,
                neon: [150, 222, 255], label: 'Frost' },
+    /* VICE, the GTA VI launch skin's palette (18 Nov 2026; the owner's pick,
+       mock-up A "Sunset Strip"). A sunset over the sea: the browns become a
+       deep magenta-violet dusk, the light end goes hot pink, and the one
+       loud object, the selected tab, is the orange of the sun on the water.
+       The furniture's lit edges glint gold. */
+    vice:    { surfaceHue: 288, accentHue: 330,
+               sat: 1.60, satMax: 0.80, fadeSat: 0.85, fadeSatMax: 0.52,
+               gamma: 1.45, bone: 0.22, lift: 0.05, keep: 0.62, chromeSat: 0.82,
+               loudHue: 24, loudSat: 0.62, loudLight: 1.12, activeBright: 1.06,
+               glintHue: 44, glintSat: 0.55, glintFrom: 0.10,
+               neon: [255, 95, 162], label: 'Vice' },
+
     /* DARK MODE (30 Oct 2026, the owner's: "a nice sleek dark vibe, with
        some subtle glows ... readable but without it being a blinding
        white"). Not a palette the site wears but one a visitor switches on,

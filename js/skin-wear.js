@@ -98,9 +98,9 @@
     const TOKEN_KEY = "mazerats_admin_token";
     const VERIFIED_KEY = "mazerats_skin_preview_verified";  // sessionStorage: { tail, at }
     const REFUSED_KEY = "mazerats_skin_preview_refused";    // localStorage: the refused token's tail
-    const SKINS = ["xmas", "halloween"];
+    const SKINS = ["xmas", "halloween", "gta"];
     // The palette a skin brings when nothing else says: Witching Hour (the Halloween one Chris signed off), and Frost for Christmas.
-    const PAIRED = { halloween: "witch", xmas: "frost" };
+    const PAIRED = { halloween: "witch", xmas: "frost", gta: "vice" };
     /* Things worn WITH a skin, in files of their own (26 Oct 2026): the
        advent calendar beside the Christmas skin. Each is a pair like a skin's,
        css/skin-<extra>.css and js/skin-<extra>.js registering

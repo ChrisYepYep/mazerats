@@ -60,12 +60,15 @@
           dates: [["12-01", "1 Dec"], ["12-12", "12 Dec"], ["12-24", "24 Dec"], ["12-25", "25 Dec"]] },
         // Nothing in the Halloween skin goes by the calendar yet; the night itself is here for when something does.
         { name: "halloween", label: "Halloween", on: "10-24T00:00", off: "11-01T00:00", dot: "#9cff5c", palette: "Witching Hour",
-          dates: [["10-31", "31 Oct"]] }
+          dates: [["10-31", "31 Oct"]] },
+        // GTA VI launch week (18 Nov 2026): the game is out on 19 Nov.
+        { name: "gta", label: "GTA VI launch", on: "11-19T00:00", off: "12-01T00:00", dot: "#ff5fa2", palette: "Vice",
+          dates: [["11-19", "19 Nov"]] }
     ];
     const skinOf = (name) => SKINS.find((s) => s.name === name);
     const labelOf = (name) => name === "none" ? "the normal site, with no skin," : (skinOf(name) || { label: name }).label;
     // The palettes a window can wear (VALID_THEMES in netlify/functions/settings.js).
-    const THEMES = [["", "Site's own"], ["classic", "Classic"], ["purple", "Purple"], ["pumpkin", "Pumpkin"], ["witch", "Witching Hour"], ["crimson", "Crimson"], ["frost", "Frost"]];
+    const THEMES = [["", "Site's own"], ["classic", "Classic"], ["purple", "Purple"], ["pumpkin", "Pumpkin"], ["witch", "Witching Hour"], ["crimson", "Crimson"], ["frost", "Frost"], ["vice", "Vice"]];
     const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
     // February stops at the 28th: a yearly window is saved under this year's date, and most years have no 29th.
     const DAYS_IN = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
