@@ -9,7 +9,7 @@
    completely inert until js/site.js puts that attribute on <html>. The
    classic palette is not defined here and is not affected by anything in it.
 
-   1231 rules, 1966 declarations, hues 208 (surfaces) / 216 (accents).
+   1227 rules, 1962 declarations, hues 208 (surfaces) / 216 (accents).
 */
 :root[data-light] {
     --bg-black: #5f91bd;
@@ -666,24 +666,6 @@ html[data-light] .chrome-list-row .ec-title .ec-title-name {
 
 html[data-light] #featured-frame-list .chrome-list-row .ec-title .ec-title-name,
 html[data-light] .opening-featured .chrome-list-row .ec-title .ec-title-name {
-    color: #0d1a2d;
-}
-
-html[data-light][data-skin][data-skin] .modal.is-ec::before {
-    background-image: url('../assets/img/frostlight/ec/jade-bow.png?v=8255b044');
-}
-
-html[data-light][data-skin][data-skin] .ec-title-s1 {
-    border-image-source: url('../assets/img/frostlight/ec/ec-name-player-s1.png?v=a6535886');
-}
-
-html[data-light][data-skin][data-skin] .ec-title-s2 {
-    border-image-source: url('../assets/img/frostlight/ec/ec-name-player-s2.png?v=0128b5b5');
-}
-
-html[data-light][data-skin][data-skin] .chrome-list-row .ec-title .ec-title-name,
-html[data-light][data-skin][data-skin] #featured-frame-list .chrome-list-row .ec-title .ec-title-name,
-html[data-light][data-skin][data-skin] .opening-featured .chrome-list-row .ec-title .ec-title-name {
     color: #0d1a2d;
 }
 
@@ -6138,6 +6120,24 @@ html[data-light] .wn-verb.is-article {
    scale, the admin notice and the danger label mean what they mean
    BECAUSE of their colour, so a palette that re-tinted them would be
    deleting the content. See the note in buildCss. */
+html[data-light][data-skin][data-skin] .modal.is-ec::before {
+    background-image: url('../assets/img/ec/jade-bow.png');
+}
+
+html[data-light][data-skin][data-skin] .ec-title-s1 {
+    border-image-source: url('../assets/img/ec/ec-name-player-s1.png');
+}
+
+html[data-light][data-skin][data-skin] .ec-title-s2 {
+    border-image-source: url('../assets/img/ec/ec-name-player-s2.png');
+}
+
+html[data-light][data-skin][data-skin] .chrome-list-row .ec-title .ec-title-name,
+html[data-light][data-skin][data-skin] #featured-frame-list .chrome-list-row .ec-title .ec-title-name,
+html[data-light][data-skin][data-skin] .opening-featured .chrome-list-row .ec-title .ec-title-name {
+    color: #fff8ec;
+}
+
 html[data-light] .difficulty-easy {
     color: #63c07f;
     border-color: #63c07f;

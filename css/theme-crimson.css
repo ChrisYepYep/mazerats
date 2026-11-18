@@ -9,7 +9,7 @@
    completely inert until js/site.js puts that attribute on <html>. The
    classic palette is not defined here and is not affected by anything in it.
 
-   1231 rules, 1966 declarations, hues 350 (surfaces) / 212 (accents).
+   1227 rules, 1962 declarations, hues 350 (surfaces) / 212 (accents).
 */
 :root[data-theme="crimson"] {
     --bg-black: #080506;
@@ -666,24 +666,6 @@ html[data-theme="crimson"]:not([data-theme]):not([data-dark]) .chrome-nav-top .c
 
 [data-theme="crimson"] #featured-frame-list .chrome-list-row .ec-title .ec-title-name,
 [data-theme="crimson"] .opening-featured .chrome-list-row .ec-title .ec-title-name {
-    color: #ffffff;
-}
-
-html[data-theme="crimson"][data-skin][data-skin] .modal.is-ec::before {
-    background-image: url('../assets/img/crimson/ec/jade-bow.png?v=b8181c82');
-}
-
-html[data-theme="crimson"][data-skin][data-skin] .ec-title-s1 {
-    border-image-source: url('../assets/img/crimson/ec/ec-name-player-s1.png?v=7d66b85a');
-}
-
-html[data-theme="crimson"][data-skin][data-skin] .ec-title-s2 {
-    border-image-source: url('../assets/img/crimson/ec/ec-name-player-s2.png?v=ea231dac');
-}
-
-html[data-theme="crimson"][data-skin][data-skin] .chrome-list-row .ec-title .ec-title-name,
-html[data-theme="crimson"][data-skin][data-skin] #featured-frame-list .chrome-list-row .ec-title .ec-title-name,
-html[data-theme="crimson"][data-skin][data-skin] .opening-featured .chrome-list-row .ec-title .ec-title-name {
     color: #ffffff;
 }
 
@@ -6138,6 +6120,24 @@ html[data-theme="crimson"][data-light] .chrome-light {
    scale, the admin notice and the danger label mean what they mean
    BECAUSE of their colour, so a palette that re-tinted them would be
    deleting the content. See the note in buildCss. */
+html[data-theme="crimson"][data-skin][data-skin] .modal.is-ec::before {
+    background-image: url('../assets/img/ec/jade-bow.png');
+}
+
+html[data-theme="crimson"][data-skin][data-skin] .ec-title-s1 {
+    border-image-source: url('../assets/img/ec/ec-name-player-s1.png');
+}
+
+html[data-theme="crimson"][data-skin][data-skin] .ec-title-s2 {
+    border-image-source: url('../assets/img/ec/ec-name-player-s2.png');
+}
+
+html[data-theme="crimson"][data-skin][data-skin] .chrome-list-row .ec-title .ec-title-name,
+html[data-theme="crimson"][data-skin][data-skin] #featured-frame-list .chrome-list-row .ec-title .ec-title-name,
+html[data-theme="crimson"][data-skin][data-skin] .opening-featured .chrome-list-row .ec-title .ec-title-name {
+    color: #fff8ec;
+}
+
 [data-theme="crimson"] .difficulty-easy {
     color: #63c07f;
     border-color: #63c07f;

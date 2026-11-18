@@ -222,8 +222,8 @@ const THEMES = {
     vice:    { surfaceHue: 288, accentHue: 330,
                sat: 1.60, satMax: 0.80, fadeSat: 0.85, fadeSatMax: 0.52,
                gamma: 1.45, bone: 0.22, lift: 0.05, keep: 0.62, chromeSat: 0.82,
-               loudHue: 24, loudSat: 0.62, loudLight: 1.12, activeBright: 1.06,
-               glintHue: 44, glintSat: 0.55, glintFrom: 0.10,
+               loudHue: 326, loudSat: 0.62, loudLight: 1.12, activeBright: 1.06,
+               glintHue: 318, glintSat: 0.55, glintFrom: 0.10,
                neon: [255, 95, 162], label: 'Vice' },
 
     /* DARK MODE (30 Oct 2026, the owner's: "a nice sleek dark vibe, with
@@ -490,7 +490,13 @@ const KEEP_SELECTORS = [
     /\.admin-notice/,             // a warning, in warning gold
     /admin-pill-danger/,          // and a destructive button's label
     /\.guess-board-cell/,         // a board's grid: the share grid's green, yellow, orange, red
-    /\.guess-board-found/         // and its misses, in that orange (16 Nov 2026)
+    /\.guess-board-found/,        // and its misses, in that orange (16 Nov 2026)
+    /* What style.css holds the same under EVERY skin (html[data-skin][data-skin]:
+       the EC name plates, their ink and the jade bow). Recoloured here, the
+       theme's copy outranked the very rule that exists to stop it, so the
+       plates wore Frost at Christmas and Vice with the GTA skin (18 Nov 2026,
+       the owner's: "EC name plates shouldn't be recoloured"). */
+    /^\s*html\[data-skin\]\[data-skin\]/
 ];
 
 // Inside :root, where a whole-rule skip would take the entire palette with it.

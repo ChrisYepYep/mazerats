@@ -9,7 +9,7 @@
    completely inert until js/site.js puts that attribute on <html>. The
    classic palette is not defined here and is not affected by anything in it.
 
-   1231 rules, 1966 declarations, hues 272 (surfaces) / 272 (accents).
+   1227 rules, 1962 declarations, hues 272 (surfaces) / 272 (accents).
 */
 :root[data-theme="purple"] {
     --bg-black: #020104;
@@ -666,24 +666,6 @@ html[data-theme="purple"]:not([data-theme]):not([data-dark]) .chrome-nav-top .ch
 
 [data-theme="purple"] #featured-frame-list .chrome-list-row .ec-title .ec-title-name,
 [data-theme="purple"] .opening-featured .chrome-list-row .ec-title .ec-title-name {
-    color: #f8f5fa;
-}
-
-html[data-theme="purple"][data-skin][data-skin] .modal.is-ec::before {
-    background-image: url('../assets/img/purple/ec/jade-bow.png?v=99a6397c');
-}
-
-html[data-theme="purple"][data-skin][data-skin] .ec-title-s1 {
-    border-image-source: url('../assets/img/purple/ec/ec-name-player-s1.png?v=e939a6a8');
-}
-
-html[data-theme="purple"][data-skin][data-skin] .ec-title-s2 {
-    border-image-source: url('../assets/img/purple/ec/ec-name-player-s2.png?v=388dec34');
-}
-
-html[data-theme="purple"][data-skin][data-skin] .chrome-list-row .ec-title .ec-title-name,
-html[data-theme="purple"][data-skin][data-skin] #featured-frame-list .chrome-list-row .ec-title .ec-title-name,
-html[data-theme="purple"][data-skin][data-skin] .opening-featured .chrome-list-row .ec-title .ec-title-name {
     color: #f8f5fa;
 }
 
@@ -6138,6 +6120,24 @@ html[data-theme="purple"][data-light] .chrome-light {
    scale, the admin notice and the danger label mean what they mean
    BECAUSE of their colour, so a palette that re-tinted them would be
    deleting the content. See the note in buildCss. */
+html[data-theme="purple"][data-skin][data-skin] .modal.is-ec::before {
+    background-image: url('../assets/img/ec/jade-bow.png');
+}
+
+html[data-theme="purple"][data-skin][data-skin] .ec-title-s1 {
+    border-image-source: url('../assets/img/ec/ec-name-player-s1.png');
+}
+
+html[data-theme="purple"][data-skin][data-skin] .ec-title-s2 {
+    border-image-source: url('../assets/img/ec/ec-name-player-s2.png');
+}
+
+html[data-theme="purple"][data-skin][data-skin] .chrome-list-row .ec-title .ec-title-name,
+html[data-theme="purple"][data-skin][data-skin] #featured-frame-list .chrome-list-row .ec-title .ec-title-name,
+html[data-theme="purple"][data-skin][data-skin] .opening-featured .chrome-list-row .ec-title .ec-title-name {
+    color: #fff8ec;
+}
+
 [data-theme="purple"] .difficulty-easy {
     color: #63c07f;
     border-color: #63c07f;

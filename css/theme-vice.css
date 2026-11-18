@@ -9,7 +9,7 @@
    completely inert until js/site.js puts that attribute on <html>. The
    classic palette is not defined here and is not affected by anything in it.
 
-   1231 rules, 1966 declarations, hues 288 (surfaces) / 330 (accents).
+   1227 rules, 1962 declarations, hues 288 (surfaces) / 330 (accents).
 */
 :root[data-theme="vice"] {
     --bg-black: #080209;
@@ -47,7 +47,7 @@ html[data-theme="vice"]::-webkit-scrollbar-button {
 }
 
 [data-theme="vice"] .custom-scrollbar-track-segment {
-    background-image: url('../assets/img/vice/scrollbar_track_inactive.png?v=95722632');
+    background-image: url('../assets/img/vice/scrollbar_track_inactive.png?v=e1697765');
 }
 
 [data-theme="vice"] .custom-scrollbar-track-segment.is-active {
@@ -55,7 +55,7 @@ html[data-theme="vice"]::-webkit-scrollbar-button {
 }
 
 [data-theme="vice"] .custom-scrollbar-thumb {
-    background-image: url('../assets/img/vice/scrollbar_thumb_inactive.png?v=37abff70');
+    background-image: url('../assets/img/vice/scrollbar_thumb_inactive.png?v=1d898875');
 }
 
 [data-theme="vice"] .custom-scrollbar-thumb:hover,
@@ -69,7 +69,7 @@ html[data-theme="vice"]::-webkit-scrollbar-button {
 }
 
 [data-theme="vice"] .custom-scrollbar-arrow-up {
-    background-image: url('../assets/img/vice/scrollbar_arrow_up_inactive.png?v=1002372c');
+    background-image: url('../assets/img/vice/scrollbar_arrow_up_inactive.png?v=5e13b1bb');
 }
 
 [data-theme="vice"] .custom-scrollbar-arrow-up:hover {
@@ -77,7 +77,7 @@ html[data-theme="vice"]::-webkit-scrollbar-button {
 }
 
 [data-theme="vice"] .custom-scrollbar-arrow-down {
-    background-image: url('../assets/img/vice/scrollbar_arrow_down_inactive.png?v=f4a446ab');
+    background-image: url('../assets/img/vice/scrollbar_arrow_down_inactive.png?v=b4d9ac79');
 }
 
 [data-theme="vice"] .custom-scrollbar-arrow-down:hover {
@@ -86,16 +86,16 @@ html[data-theme="vice"]::-webkit-scrollbar-button {
 
 [data-theme="vice"] .custom-scrollbar-arrow-up.is-disabled,
 [data-theme="vice"] .custom-scrollbar-arrow-up.is-disabled:hover {
-    background-image: url('../assets/img/vice/scrollbar_arrow_up_disabled.png?v=ee57e2ad');
+    background-image: url('../assets/img/vice/scrollbar_arrow_up_disabled.png?v=eeb4ac52');
 }
 
 [data-theme="vice"] .custom-scrollbar-arrow-down.is-disabled,
 [data-theme="vice"] .custom-scrollbar-arrow-down.is-disabled:hover {
-    background-image: url('../assets/img/vice/scrollbar_arrow_down_disabled.png?v=4fc74fba');
+    background-image: url('../assets/img/vice/scrollbar_arrow_down_disabled.png?v=4434f63c');
 }
 
 [data-theme="vice"] .custom-scrollbar--horizontal .custom-scrollbar-track-segment {
-    background-image: url('../assets/img/vice/scrollbar_h_track_inactive.png?v=8aef3559');
+    background-image: url('../assets/img/vice/scrollbar_h_track_inactive.png?v=2d8e0001');
 }
 
 [data-theme="vice"] .custom-scrollbar--horizontal .custom-scrollbar-track-segment.is-active {
@@ -103,7 +103,7 @@ html[data-theme="vice"]::-webkit-scrollbar-button {
 }
 
 [data-theme="vice"] .custom-scrollbar--horizontal .custom-scrollbar-thumb {
-    background-image: url('../assets/img/vice/scrollbar_h_thumb_inactive.png?v=e5d735b7');
+    background-image: url('../assets/img/vice/scrollbar_h_thumb_inactive.png?v=a47ca569');
 }
 
 [data-theme="vice"] .custom-scrollbar--horizontal .custom-scrollbar-thumb:hover,
@@ -112,7 +112,7 @@ html[data-theme="vice"]::-webkit-scrollbar-button {
 }
 
 [data-theme="vice"] .custom-scrollbar--horizontal .custom-scrollbar-arrow-up {
-    background-image: url('../assets/img/vice/scrollbar_h_arrow_left_inactive.png?v=bcb3e3b2');
+    background-image: url('../assets/img/vice/scrollbar_h_arrow_left_inactive.png?v=64156e90');
 }
 
 [data-theme="vice"] .custom-scrollbar--horizontal .custom-scrollbar-arrow-up:hover {
@@ -120,7 +120,7 @@ html[data-theme="vice"]::-webkit-scrollbar-button {
 }
 
 [data-theme="vice"] .custom-scrollbar--horizontal .custom-scrollbar-arrow-down {
-    background-image: url('../assets/img/vice/scrollbar_h_arrow_right_inactive.png?v=0db1eb60');
+    background-image: url('../assets/img/vice/scrollbar_h_arrow_right_inactive.png?v=77a0ac87');
 }
 
 [data-theme="vice"] .custom-scrollbar--horizontal .custom-scrollbar-arrow-down:hover {
@@ -129,12 +129,12 @@ html[data-theme="vice"]::-webkit-scrollbar-button {
 
 [data-theme="vice"] .custom-scrollbar--horizontal .custom-scrollbar-arrow-up.is-disabled,
 [data-theme="vice"] .custom-scrollbar--horizontal .custom-scrollbar-arrow-up.is-disabled:hover {
-    background-image: url('../assets/img/vice/scrollbar_h_arrow_left_disabled.png?v=4c72d1bc');
+    background-image: url('../assets/img/vice/scrollbar_h_arrow_left_disabled.png?v=34630099');
 }
 
 [data-theme="vice"] .custom-scrollbar--horizontal .custom-scrollbar-arrow-down.is-disabled,
 [data-theme="vice"] .custom-scrollbar--horizontal .custom-scrollbar-arrow-down.is-disabled:hover {
-    background-image: url('../assets/img/vice/scrollbar_h_arrow_right_disabled.png?v=cfeaf117');
+    background-image: url('../assets/img/vice/scrollbar_h_arrow_right_disabled.png?v=a6444f95');
 }
 
 [data-theme="vice"] .visually-hidden {
@@ -392,7 +392,7 @@ html[data-theme="vice"]::-webkit-scrollbar-button {
 }
 
 [data-theme="vice"] .btn-enter {
-    border-image-source: url('../assets/img/vice/window_frame.png?v=bd6d3f59');
+    border-image-source: url('../assets/img/vice/window_frame.png?v=08a758ed');
     background-image: url('../assets/img/vice/title_pattern.png?v=e71035a6');
     background-color: var(--chrome-fill);
     box-shadow: 0 8px 20px rgba(0, 0, 0, 0.5);
@@ -443,7 +443,7 @@ html[data-theme="vice"]::-webkit-scrollbar-button {
 
 [data-theme="vice"] .chrome-window {
     border-color: var(--chrome-fill);
-    border-image-source: url('../assets/img/vice/window_frame.png?v=bd6d3f59');
+    border-image-source: url('../assets/img/vice/window_frame.png?v=08a758ed');
     box-shadow: 0 16px 44px rgba(0, 0, 0, 0.6);
 }
 
@@ -536,14 +536,14 @@ html[data-theme="vice"]::-webkit-scrollbar-button {
 }
 
 [data-theme="vice"] .chrome-nav-top .chrome-nav-btn.active {
-    color: #0c0603;
+    color: #0c0308;
     text-shadow: 1px 1px 0 rgba(255, 255, 255, 0.5);
 }
 
 [data-theme="vice"] .chrome-nav-top .chrome-nav-btn.active::before {
     border-image-source: none;
     border: 1px solid #000;
-    background: linear-gradient(#edc9b2, #edc9b2) content-box, #fefdfc padding-box;
+    background: linear-gradient(#edb2d3, #edb2d3) content-box, #fefcfd padding-box;
     filter: none;
 }
 
@@ -666,24 +666,6 @@ html[data-theme="vice"]:not([data-theme]):not([data-dark]) .chrome-nav-top .chro
 
 [data-theme="vice"] #featured-frame-list .chrome-list-row .ec-title .ec-title-name,
 [data-theme="vice"] .opening-featured .chrome-list-row .ec-title .ec-title-name {
-    color: #ffffff;
-}
-
-html[data-theme="vice"][data-skin][data-skin] .modal.is-ec::before {
-    background-image: url('../assets/img/vice/ec/jade-bow.png?v=dbabbe1e');
-}
-
-html[data-theme="vice"][data-skin][data-skin] .ec-title-s1 {
-    border-image-source: url('../assets/img/vice/ec/ec-name-player-s1.png?v=2319406e');
-}
-
-html[data-theme="vice"][data-skin][data-skin] .ec-title-s2 {
-    border-image-source: url('../assets/img/vice/ec/ec-name-player-s2.png?v=0b984807');
-}
-
-html[data-theme="vice"][data-skin][data-skin] .chrome-list-row .ec-title .ec-title-name,
-html[data-theme="vice"][data-skin][data-skin] #featured-frame-list .chrome-list-row .ec-title .ec-title-name,
-html[data-theme="vice"][data-skin][data-skin] .opening-featured .chrome-list-row .ec-title .ec-title-name {
     color: #ffffff;
 }
 
@@ -907,7 +889,7 @@ html[data-theme="vice"][data-skin][data-skin] .opening-featured .chrome-list-row
 }
 
 [data-theme="vice"] .modal {
-    border-image-source: url('../assets/img/vice/window_frame.png?v=bd6d3f59');
+    border-image-source: url('../assets/img/vice/window_frame.png?v=08a758ed');
     box-shadow: 0 22px 55px rgba(0, 0, 0, 0.85);
 }
 
@@ -1511,7 +1493,7 @@ html[data-theme="vice"]:not([data-theme]) .room-links-refs-text a:focus-visible 
 }
 
 [data-theme="vice"] .btn-enter-mini {
-    border-image-source: url('../assets/img/vice/window_frame.png?v=bd6d3f59');
+    border-image-source: url('../assets/img/vice/window_frame.png?v=08a758ed');
     background-image: url('../assets/img/vice/title_pattern.png?v=e71035a6');
     background-color: var(--chrome-fill);
     color: #ffffff;
@@ -6138,6 +6120,24 @@ html[data-theme="vice"][data-light] .chrome-light {
    scale, the admin notice and the danger label mean what they mean
    BECAUSE of their colour, so a palette that re-tinted them would be
    deleting the content. See the note in buildCss. */
+html[data-theme="vice"][data-skin][data-skin] .modal.is-ec::before {
+    background-image: url('../assets/img/ec/jade-bow.png');
+}
+
+html[data-theme="vice"][data-skin][data-skin] .ec-title-s1 {
+    border-image-source: url('../assets/img/ec/ec-name-player-s1.png');
+}
+
+html[data-theme="vice"][data-skin][data-skin] .ec-title-s2 {
+    border-image-source: url('../assets/img/ec/ec-name-player-s2.png');
+}
+
+html[data-theme="vice"][data-skin][data-skin] .chrome-list-row .ec-title .ec-title-name,
+html[data-theme="vice"][data-skin][data-skin] #featured-frame-list .chrome-list-row .ec-title .ec-title-name,
+html[data-theme="vice"][data-skin][data-skin] .opening-featured .chrome-list-row .ec-title .ec-title-name {
+    color: #fff8ec;
+}
+
 [data-theme="vice"] .difficulty-easy {
     color: #63c07f;
     border-color: #63c07f;
