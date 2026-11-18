@@ -1205,6 +1205,14 @@
        nothing is created or thrown away. */
     let snow = null;
     let storm = 0;                       // how much of a blizzard it is right now, 0..1
+    /* The width the fixed, inset:0 canvases (the snowfall, the shovel's) are
+       SHOWN at: the window less its scrollbar (18 Nov 2026, the bug scan).
+       innerWidth counts a desktop's scrollbar too, so they were drawn 10 to
+       17px wider than shown and squeezed to fit: the pixel flakes lost a
+       column here and there, and the shovel was drawn up to that far left of
+       the pointer towards the right of the screen. The Halloween bats size by
+       the same. */
+    const viewW = () => document.documentElement.clientWidth || innerWidth;
     function snowfall() {
         if (reduceMq.matches) return;
         const cv = document.createElement("canvas");
@@ -1237,8 +1245,8 @@
         function resize() {
             /* A phone's address bar showing or hiding on scroll changes only the
                height: the snow already falling carries on rather than starting over. */
-            const wider = innerWidth !== W;
-            W = cv.width = innerWidth; H = cv.height = innerHeight;
+            const wider = viewW() !== W;
+            W = cv.width = viewW(); H = cv.height = innerHeight;
             gentle = Math.round(W * H / 7000);
             if (wider) flakes = Array.from({ length: gentle * 10 }, (_, i) => make(rnd() * H, i >= gentle));
         }
@@ -1606,7 +1614,7 @@
         document.body.appendChild(cv); added.add(cv);
         const ctx = cv.getContext("2d");
         let W = 0, H = 0;
-        const size = () => { W = cv.width = innerWidth; H = cv.height = innerHeight; drawn = true; kick(); };
+        const size = () => { W = cv.width = viewW(); H = cv.height = innerHeight; drawn = true; kick(); };
         const sp = { rest: shovelSprite([1, 1], false, false), right: shovelSprite([2, 1], true, true), left: shovelSprite([2, 1], false, true) };
         const chunks = [];
         for (let i = 0; i < 10; i++) chunks.push(chunkSprite(1.6 + (i % 5) * 0.75, i * 31 + 7));
@@ -2574,8 +2582,10 @@
         added.forEach((n) => n.remove()); added.clear();
         hosts.forEach((rec, el) => { delete el.__xmPaint; }); hosts.clear();
         document.querySelectorAll(".chrome-nav-icon").forEach((im) => { delete im.__xm; delete im.__xmAt; delete im.__xmCap; });
-        madeRelative.forEach((el) => { el.style.position = ""; }); madeRelative.clear();
-        lifted.forEach((v, el) => { el.style.translate = v.was; }); lifted.clear();
+        // And no empty style="" left where there was none (18 Nov 2026, the bug scan).
+        const tidy = (el) => { if (el.getAttribute("style") === "") el.removeAttribute("style"); };
+        madeRelative.forEach((el) => { el.style.position = ""; tidy(el); }); madeRelative.clear();
+        lifted.forEach((v, el) => { el.style.translate = v.was; tidy(el); }); lifted.clear();
         standIns.forEach((v) => v.stop()); standIns.clear();
         tellTicker();
     }

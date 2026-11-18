@@ -681,7 +681,8 @@
             if (onDeepEntry() && !pendingBack && pendingPush === null) history.back();
             else { setAddress(null); show(null, { focus: true, toList: true }); }
         } else if (what === "retry") { load(); draw({ focus: true }); }
-        else if (what === "retry-article") { retriedFor = null; load(true); draw({ focus: true }); }
+        // Not resetting retriedFor: draw() would then fire a second fresh load.
+        else if (what === "retry-article") { load(true); draw({ focus: true }); }
     });
 
     // The strip's pictures are buttons: Enter and Space too.

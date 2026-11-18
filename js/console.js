@@ -65,7 +65,8 @@ document.addEventListener("DOMContentLoaded", () => {
 
     function clearPrivacyHash() {
         if (location.hash === "#privacy") {
-            history.replaceState(null, "", location.pathname + location.search);
+            // Keeping the state: home.js marks its windows and views in it.
+            history.replaceState(history.state, "", location.pathname + location.search);
         }
     }
 

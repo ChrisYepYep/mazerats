@@ -135,6 +135,8 @@ html.hallway-instant #hallway-stage { transition: none; }
 /* the Hallway's mark (9 Nov 2026): over a closed screen's note, and in place of the wordmark on the loader */
 .hallway-logo { display: block; width: 240px; max-width: 100%; height: auto; margin: -4px auto -6px; pointer-events: none; user-select: none; }
 .hallway-logo-loader { width: 420px; max-width: 86vw; margin: 0 auto 6px; }
+/* a phone on its side: the mark at a size that leaves the label and the bar in view (18 Nov scan: the bar sat on the screen's bottom edge) */
+@media (max-height: 500px) { .hallway-logo-loader { width: auto; height: 40vh; } }
 /* the note itself a sentence to a line (9 Nov 2026, his) */
 .hallway-note-body .hallway-note-words { white-space: pre-line; }
 
@@ -179,7 +181,8 @@ html.hallway-instant #hallway-stage { transition: none; }
         display: block;
         position: absolute;
         left: 50%;
-        bottom: 8px;
+        /* above the walk's bar along the bottom (58px and the safe area), not over its buttons (18 Nov scan) */
+        bottom: calc(66px + env(safe-area-inset-bottom, 0px));
         transform: translateX(-50%);
         z-index: 3;
         animation: hallway-turn-away 0.6s ease 6s forwards;

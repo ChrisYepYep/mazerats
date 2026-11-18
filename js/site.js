@@ -1227,7 +1227,7 @@ function pointGatedLinksHome(root) {
        behind the same gate, and they are what the ticker, js/guess.js and
        the share pages link to now. Matching only the "home" spellings missed
        every one of them — the same bug, one rename later. */
-    const ARCHIVE = /^(?:\/)?(?:home(?:\.html)?|(?:maze|event|guides)\/[^?#]*)(?:[#?].*)?$/;
+    const ARCHIVE = /^(?:\/)?(?:home(?:\.html)?|(?:maze|event|guides|article)\/[^?#]*)(?:[#?].*)?$/;
     let changed = false;
     (root || document).querySelectorAll("a[href]").forEach(a => {
         const href = a.getAttribute("href") || "";

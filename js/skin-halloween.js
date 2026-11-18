@@ -1880,7 +1880,8 @@
         added.forEach((n) => n.remove()); added.clear();
         hosts.clear();
         document.querySelectorAll("*").forEach((el) => { if (el.__hwWeb) delete el.__hwWeb; });
-        restore.forEach((r, el) => { for (const k in r) el.style[k] = r[k]; }); restore.clear();
+        // No empty style="" left where there was none (18 Nov 2026, the bug scan).
+        restore.forEach((r, el) => { for (const k in r) el.style[k] = r[k]; if (el.getAttribute("style") === "") el.removeAttribute("style"); }); restore.clear();
     }
 
     (window.SiteSkins = window.SiteSkins || {}).halloween = {

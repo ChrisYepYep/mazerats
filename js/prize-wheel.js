@@ -598,7 +598,9 @@
         if (!row || !who || who.name.toLowerCase() !== String(row.name).toLowerCase()) {
             mode = "idle";
             ui.spinBtn.disabled = false;
-            confirmInStage("The server's draw didn't match the wheel on screen. Close and reopen the wheel, then spin again.", "OK", "Close");
+            // "Close" closes the wheel, as the sentence asks (18 Nov 2026).
+            confirmInStage("The server's draw didn't match the wheel on screen. Close and reopen the wheel, then spin again.", "OK", "Close")
+                .then(ok => { if (!ok && at === openNo) close(); });
             return;
         }
         draw = Object.assign(d, { name: row.name, entryIds: Array.isArray(row.entryIds) ? row.entryIds.slice() : [], logged: true, drawnAt: row.drawnAt || d.drawnAt });
@@ -1467,6 +1469,7 @@
         ui.fullBtn.textContent = "";
         ui.fullBtn.appendChild(svgIcon(full ? ICONS.unfull : ICONS.full));
         ui.fullBtn.title = full ? "Leave fullscreen (F)" : "Fullscreen (F)";
+        ui.fullBtn.setAttribute("aria-label", ui.fullBtn.title);
         setTimeout(layout, 50);
     }
 

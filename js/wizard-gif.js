@@ -84,6 +84,12 @@ window.WizardGif = (function () {
        Outside a recording there is no cache and every read is live, which is
        what the preview and any one-off render want. */
     let styleCache = null;
+
+    // A computed opacity as a number; only something unreadable counts as 1.
+    const cssOpacity = value => {
+        const n = parseFloat(value);
+        return Number.isFinite(n) ? n : 1;
+    };
     /* The blob URLs made for pen-stroke SVGs during a recording (see the
        trails in renderStill). Each has to outlive its image for as long as
        the image is being stamped, so they are revoked together when the
@@ -114,7 +120,9 @@ window.WizardGif = (function () {
             top: el.offsetTop,
             w: el.offsetWidth,
             h: el.offsetHeight,
-            opacity: Number(style.opacity) || 1,
+            // A real 0 stays 0 (18 Nov 2026, the bug scan: `|| 1` drew a
+            // faded-out element at full strength).
+            opacity: cssOpacity(style.opacity),
             matrix: style.transform && style.transform !== "none"
                 ? new DOMMatrixReadOnly(style.transform) : null,
             background: urlIn(style.backgroundImage),
@@ -302,7 +310,7 @@ window.WizardGif = (function () {
 
     function publicAlpha(el, atZoom) {
         const record = recordFor(el);
-        if (!record) return Number(getComputedStyle(el).opacity) || 1;
+        if (!record) return cssOpacity(getComputedStyle(el).opacity);
         if (record.hidden) return 0;
         if (offMap) {
             const kind = el.dataset.kind;

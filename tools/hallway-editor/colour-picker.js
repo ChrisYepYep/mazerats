@@ -17,6 +17,8 @@
     const el = (tag, cls, parent, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text !== undefined) e.textContent = text; if (parent) parent.appendChild(e); return e; };
     /* follow a drag anywhere on screen, starting from the press */
     const dragging = (node, fn) => node.addEventListener("pointerdown", e => {
+        /* a button inside it (the title's ×) gets its own click: capturing the pointer here sent the click to the title bar instead (18 Nov scan) */
+        if (e.target !== node && e.target.closest && e.target.closest("button")) return;
         e.preventDefault(); e.stopPropagation(); node.setPointerCapture && node.setPointerCapture(e.pointerId); fn(e);
         const mv = q => fn(q), up = () => { node.removeEventListener("pointermove", mv); node.removeEventListener("pointerup", up); node.removeEventListener("pointercancel", up); };
         node.addEventListener("pointermove", mv); node.addEventListener("pointerup", up); node.addEventListener("pointercancel", up);

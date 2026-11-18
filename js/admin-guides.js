@@ -182,7 +182,10 @@
                 if (b) b.addEventListener("click", load);
                 return;
             }
-            listEl.innerHTML = `<p class="admin-empty">Couldn't load the guides: ${esc(err.message)}</p>`;
+            // With a way to try again (18 Nov 2026, the scan): the list is read once a page.
+            listEl.innerHTML = `<p class="admin-empty">Couldn't load the guides: ${esc(err.message)} <button type="button" class="ctl-btn" data-g-retry>Try again</button></p>`;
+            const again = listEl.querySelector("[data-g-retry]");
+            if (again) again.addEventListener("click", load);
         }
     }
 
@@ -242,9 +245,9 @@
                     <p class="row-creator">/guides/${esc(g.slug || g.id)}</p>
                 </div>
                 <div class="admin-row-actions">
-                    <button type="button" class="btn admin-edit-btn" data-g-edit>Edit</button>
-                    ${g.status === "published" ? `<a class="btn" href="/guides/${esc(encodeURIComponent(g.slug || g.id))}?fresh=1" target="_blank" rel="noopener">View</a>` : ""}
-                    <button type="button" class="btn admin-delete-btn" data-g-delete>Delete</button>
+                    <button type="button" class="btn admin-edit-btn" data-g-edit aria-label="Edit ${esc(g.title || "this guide")}">Edit</button>
+                    ${g.status === "published" ? `<a class="btn" href="/guides/${esc(encodeURIComponent(g.slug || g.id))}?fresh=1" target="_blank" rel="noopener" aria-label="View ${esc(g.title || "this guide")} on the site">View</a>` : ""}
+                    <button type="button" class="btn admin-delete-btn" data-g-delete aria-label="Delete ${esc(g.title || "this guide")}">Delete</button>
                 </div>
             </div>`).join("");
     }

@@ -717,7 +717,10 @@ const Api = {
     // the copy held by getSiteSettings above is now the old one, and the
     // admin panel reads it back immediately after writing.
     updateSiteSettings(token, updates) {
+        // And again once it lands: a read made while the write was in flight
+        // kept the old settings as the page's answer.
         const done = this._write("/.netlify/functions/settings", "PUT", token, updates);
+        done.then(() => this.forgetSiteSettings(), () => this.forgetSiteSettings());
         this.forgetSiteSettings();
         return done;
     },

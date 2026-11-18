@@ -2369,7 +2369,10 @@ main.ff-page { width: 100%; }
 /* The round the run ended on. Marked rather than explained: the row itself
    says which level and how far you got. */
 .ff-runend-table tr.is-lost td { color: var(--danger); }
-.ff-runend-table tr.is-lost td:first-child { color: var(--danger); }
+/* The level's name is the row's th (scope="row") now, not a td, so it is
+   named here too or it stayed parchment beside a red row (18 Nov 2026). */
+.ff-runend-table tr.is-lost td:first-child,
+.ff-runend-table tr.is-lost th[scope="row"] { color: var(--danger); }
 
 .ff-runend-table tfoot th,
 .ff-runend-table tfoot td {

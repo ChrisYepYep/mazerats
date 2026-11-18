@@ -263,7 +263,7 @@
         const labels = { new: "New", accepted: "Accepted", rejected: "Rejected", all: "All" };
         leadTabs.innerHTML = Object.keys(labels).map(k => {
             const n = k === "all" ? (counts.new + counts.accepted + counts.rejected) : counts[k];
-            return `<button type="button" class="btn-enter-mini${k === leadStatus ? " active" : ""}" data-status="${k}">${labels[k]}${n ? ` (${n})` : ""}</button>`;
+            return `<button type="button" class="btn-enter-mini${k === leadStatus ? " active" : ""}" data-status="${k}" aria-pressed="${k === leadStatus}">${labels[k]}${n ? ` (${n})` : ""}</button>`;
         }).join("");
         if (navCount) {
             navCount.textContent = counts.new ? String(counts.new) : "";
@@ -770,7 +770,7 @@
 
         recordsEl.innerHTML = "";
         if (!shown.length) {
-            recordsEl.innerHTML = `<p class="admin-empty">${q ? "No record by that name." : mode === "marked" ? "Nothing is marked as missing anything yet. Find a maze above, or look under \"Suggestions\"." : "Nothing to suggest."}</p>`;
+            recordsEl.innerHTML = `<p class="admin-empty">${q ? "No record by that name." : mode === "marked" ? "Nothing is marked as missing anything yet. Find a maze above, or look under \"Suggestions\"." : mode === "suggested" ? "Nothing to suggest." : "No mazes or events to show."}</p>`;
             return;
         }
         shown.forEach(rec => recordsEl.appendChild(recordRow(rec)));
@@ -891,7 +891,11 @@
             editorDraft = editorBase = null;
             renderRecords();
         });
-        form.querySelector('[data-f="save"]').addEventListener("click", async () => {
+        const saveBtn = form.querySelector('[data-f="save"]');
+        saveBtn.addEventListener("click", async () => {
+            // One save at a time (18 Nov 2026, the scan): a double press sent a
+            // second PUT, whose 409 said the record had changed while open.
+            if (saveBtn.disabled) return;
             const status = form.querySelector('[data-f="status"]');
             const body = {
                 type: rec.type,
@@ -916,9 +920,11 @@
             }
             status.textContent = "Saving…";
             status.classList.remove("is-bad");
+            saveBtn.disabled = true;
             try {
                 await call(FLAGS_URL, "PUT", body);
             } catch (err) {
+                saveBtn.disabled = false;
                 /* Changed underneath (3 Oct 2026) — see reconcileEditor. The
                    flag is read again, the editor rebuilt on it with the
                    refusal said in it, and nothing is saved. */
@@ -959,6 +965,7 @@
                     status.classList.remove("is-bad");
                 }
             }
+            saveBtn.disabled = false;
         });
         return form;
     }

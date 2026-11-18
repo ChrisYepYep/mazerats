@@ -868,7 +868,8 @@ let version = null, artTimer = 0, versionSeq = 0, lastReport = null, lastVersion
 const LIGHTS_UP = k => k === "lamp" || k === "tablelamp" || k === "rarecase" || k === "statue" || k === "xmastree" || /^xmasfir/.test(k);
 function dirtyRegion(oldText, newText) {
     let a, b; try { a = JSON.parse(oldText); b = JSON.parse(newText); } catch (e) { return null; }
-    const rest = m => JSON.stringify({ ...m.map, levels: undefined, rooms: undefined, lostSpots: undefined, hustle: undefined }) + JSON.stringify([m.liftOpen, m.cut]);      // the Lost Property spots and his seat are drawn live, not in the pictures
+    /* the hunts, scraps, Leet Show times and Basement odds aren't in the pictures either (18 Nov scan: a word typed in a clue had every square redrawn) */
+    const rest = m => JSON.stringify({ ...m.map, levels: undefined, rooms: undefined, lostSpots: undefined, hustle: undefined, hunts: undefined, scraps: undefined, leetShow: undefined, scareOdds: undefined }) + JSON.stringify([m.liftOpen, m.cut]);      // the Lost Property spots and his seat are drawn live, not in the pictures
     if (rest(a) !== rest(b) || a.map.levels.length !== b.map.levels.length) return null;
     const LISTS = ["props", "wallItems", "garlands", "medals"], boxes = [];
     for (let i = 0; i < a.map.levels.length; i++) {
@@ -1686,7 +1687,7 @@ function modClick(e, px, py) {
     const ctrl = e.ctrlKey || e.metaKey;
     if (carry) {
         if (e.shiftKey) { if (shiftTurned) shiftTurned = false; else turnHeld(); }
-        else if (ctrl && !(carry.p && RAISE(carry.p.k))) { carry = null; flash("Thrown away. Ctrl+Z brings it back."); paint(); }      // a raised kind carried with Ctrl held is being lifted, not thrown
+        else if (ctrl && !(carry.p && RAISE(carry.p.k))) { carry = null; rememberDraft(); flash("Thrown away. Ctrl+Z brings it back."); paint(); }      // the recovery copy still had it put back (18 Nov scan)      // a raised kind carried with Ctrl held is being lifted, not thrown
         else putDown();
         return true;
     }
@@ -4201,8 +4202,10 @@ function runChecks(only) {
     { const rp = window.RoomsEditor && RoomsEditor.allProblems && mapNow === "hallway" ? RoomsEditor.allProblems(root) : [];
       if (rp.length) card(`${rp.length} room layout${rp.length === 1 ? " has" : "s have"} problems: ${rp.slice(0, 3).map(p => p.name + " (" + p.msgs[0].replace(/\.$/, "").toLowerCase() + ")").join("; ")}${rp.length > 3 ? ", and more" : ""}. Open Rooms.`, "err", () => { if ($("roomsBtn")) $("roomsBtn").click(); }); }
     /* a hunt nobody can finish (10 Nov scan b, rooms 9): no clues, or a clue with no spot picked */
-    for (const h of (map.hunts || [])) {
-        const clues = h.clues || [], bad = clues.findIndex(c => !c.level || !byId(c.level) || ((c.art || "note") === "none" ? c.px === undefined || c.py === undefined : c.x === undefined || c.y === undefined));
+    /* the hunts are the file's, and a clue may be in the Events Gallery (hunts-editor.js): its floor is looked for on both maps (18 Nov scan) */
+    const huntFloor = id => [...((root && root.levels) || []), ...((root && root.gallery && root.gallery.levels) || [])].some(l => l.id === id);
+    for (const h of ((mapNow === "hallway" && root && root.hunts) || [])) {
+        const clues = h.clues || [], bad = clues.findIndex(c => !c.level || !huntFloor(c.level) || ((c.art || "note") === "none" ? c.px === undefined || c.py === undefined : c.x === undefined || c.y === undefined));
         if (!clues.length) card(`The hunt "${h.name || "?"}" has no clues, so it can't be finished.`, "err");
         else if (bad >= 0) card(`Clue ${bad + 1} of the hunt "${h.name || "?"}" has no spot picked, so the hunt can't be finished. It's in the Hunts tab.`, "err");
     }
@@ -4446,6 +4449,8 @@ function buildUI() {
     $("help").addEventListener("click", () => { keysBox.hidden = false; $("keysClose").focus(); });
     $("keysClose").addEventListener("click", closeKeys);
     keysBox.addEventListener("click", e => { if (e.target === keysBox) closeKeys(); });
+    /* the focus stays in the box while it's open, so Esc still closes it (18 Nov scan: Tab took the focus to the page behind, and Esc there did nothing) */
+    keysBox.addEventListener("keydown", e => { if (e.key === "Tab") { e.preventDefault(); $("keysClose").focus(); } else if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); closeKeys(); } });
     $("addLevel").addEventListener("click", () => {
         snapshot();
         const k = Math.max(...map.levels.map(l => l.k)) + 1;
@@ -4471,6 +4476,11 @@ function buildUI() {
         /* its tunnels and Theatredrome go too, and a tunnel that led to one of them leads nowhere now (10 Nov scan b, editor 3) */
         if (map.tunnels) { const ids = new Set(map.tunnels.filter(q => q.level === gone.id).map(q => q.id)); map.tunnels = map.tunnels.filter(q => q.level !== gone.id); for (const id of ids) unlinkTunnel(id); if (!map.tunnels.length) delete map.tunnels; }
         if (map.theatres) { map.theatres = map.theatres.filter(q => q.level !== gone.id); if (!map.theatres.length) delete map.theatres; }
+        /* its Lost Property spots, the hustler's seat and its scraps go too (18 Nov scan): left behind, the server could hide a thing on a floor
+           that isn't there, and the Lost Property and Hunts tabs listed spots on "?". A hunt clue there shows on the Problems tab to move */
+        if (map.lostSpots) map.lostSpots = map.lostSpots.filter(s => s.level !== gone.id);
+        if (map.hustle && map.hustle.level === gone.id) delete map.hustle;
+        if (root.scraps) { root.scraps = root.scraps.filter(s => s.level !== gone.id); if (!root.scraps.length) delete root.scraps; }
         level = map.levels.find(l => l.k === gone.k + (gone.k < 0 ? 1 : -1)) || map.levels.find(l => l.k === 0) || map.levels[0];
         select(null); buildLevels(); changed(); flash(gone.name + " deleted. Undo brings it back.");
     });

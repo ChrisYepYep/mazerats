@@ -3538,6 +3538,10 @@ window.AdminWizard = (function () {
 
         els.stage.addEventListener("pointermove", onPointerMove);
         window.addEventListener("pointerup", onPointerUp);
+        /* A drag the browser calls off (a touch turned into a scroll, a pen
+           lifted out of range; 18 Nov 2026, the scan) ends as a release does:
+           with no pointerup it stayed on, and the next hover moved the room. */
+        window.addEventListener("pointercancel", onPointerUp);
         els.stage.addEventListener("click", onMapClick);
         els.stage.addEventListener("dblclick", onMapDoubleClick);
         document.addEventListener("keydown", e => {

@@ -471,10 +471,21 @@ function validPoints(points) {
             && Number.isFinite(Number(p[0])) && Number.isFinite(Number(p[1])));
 }
 
+/* The words a visitor reads (18 Nov 2026, the bug scan): text, a number
+   written as text, or null to clear it. An object or a list sent in one was
+   stored as it came and drawn on the public map as "[object Object]". */
+const TEXT_FIELDS = new Set(["title", "intro", "credit", "name", "note", "fullName", "description", "hint", "message", "notes"]);
+
 function pick(kind, body) {
     const out = {};
     for (const field of FIELDS[kind] || []) {
-        if (body[field] !== undefined) out[field] = body[field];
+        if (body[field] === undefined) continue;
+        if (TEXT_FIELDS.has(field) && body[field] !== null && typeof body[field] !== "string") {
+            if (typeof body[field] !== "number" || !Number.isFinite(body[field])) continue;
+            out[field] = String(body[field]);
+            continue;
+        }
+        out[field] = body[field];
     }
     if (out.points !== undefined && !validPoints(out.points)) delete out.points;
     tidyNumbers(out);

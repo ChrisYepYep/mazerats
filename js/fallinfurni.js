@@ -1854,6 +1854,14 @@
         freezeChanged();
         syncPause();
         syncBobbaPop(gameNow());
+        /* The Pod's "+1" goes too (18 Nov 2026): it sits a layer above the
+           cover (z-index 4 to its 3), so pausing within its second and a half
+           left the heart over the pause menu, as "Oh Bobba!" once was. */
+        if (paused) {
+            clearTimeout(lifePopTimer);
+            const pop = document.getElementById("ff-lifepop");
+            if (pop) pop.hidden = true;
+        }
         // The tune from the next room while the room is covered.
         Sound.muffle(paused);
         /* Coming back, the round has to be REDRAWN before the next frame:
@@ -3529,6 +3537,16 @@
     let splashFurni = [];
     let splashPick = null;
 
+    /* A builder's sentence for a write that failed (18 Nov 2026). fetch's own
+       network failure is a TypeError saying "Failed to fetch", which is
+       browser talk and has no full stop to end the sentence it lands in;
+       that one is said as `offline`. Anything else is the server's own
+       words, closed with a full stop if it has none. */
+    function offlineSay(e, offline) {
+        if (!e || e instanceof TypeError || !e.message) return offline;
+        return /[.!?]$/.test(e.message) ? e.message : e.message + ".";
+    }
+
     const splashDrawable = (className) =>
         !!(window.FurniLibrary && window.FurniLibrary[className]) ||
         !!(Lobby && Lobby.IMAGE_ONLY && Lobby.IMAGE_ONLY[className]);
@@ -3574,7 +3592,7 @@
             if (typeof Api !== "undefined") Api.forgetSiteSettings();
             status("Splash furni saved.", "good");
         } catch (e) {
-            status(`Couldn't save the splash furni: ${e.message}`, "bad");
+            status(`Couldn't save the splash furni. ${offlineSay(e, "The server didn't answer.")}`, "bad");
         }
         renderSplash();
     }
@@ -3660,7 +3678,7 @@
             if (done) done();
             status(list === null ? "Tips back to the game's own." : "Tips saved.", "good");
         } catch (e) {
-            status(`Couldn't save the tips: ${e.message}`, "bad");
+            status(`Couldn't save the tips. ${offlineSay(e, "The server didn't answer.")}`, "bad");
         } finally {
             tipsBusy = false;
             renderTips();
@@ -3940,7 +3958,7 @@
                 await refreshLevelList().catch(() => {});
                 status(e.message || "The new order was only partly saved.", "bad");
             } else {
-                status(`${e.message || "Couldn't save the new order."} The list is back as it was.`, "bad");
+                status(`${offlineSay(e, "Couldn't save the new order.")} The list is back as it was.`, "bad");
             }
         }
         reorderBusy = false;
@@ -4591,9 +4609,12 @@
                 /* "Unauthorized" on its own tells a builder nothing they can
                    act on. The one cause worth naming is the common one: the
                    admin session has lapsed, and signing in again fixes it. */
+                /* A request that never got an answer throws the browser's own
+                   "Failed to fetch", which read as "Failed to fetch Your work
+                   is safe…" (18 Nov 2026): said as the server not answering. */
                 const why = /unauthor/i.test(e.message || "")
                     ? "Not signed in as admin. Sign in on the admin page, then Save again."
-                    : (e.message || "Couldn't reach the server.");
+                    : offlineSay(e, "Couldn't reach the server.");
                 status(`${why} Your work is safe in this browser meanwhile.`, "bad");
             }
         }
@@ -4634,7 +4655,7 @@
                 document.getElementById("ff-level-list").value = saved.id;
             } catch (e) {
                 Editor.save();
-                status(`${e.message || "Couldn't merge with the server's copy."} ${kept}`, "bad");
+                status(`${offlineSay(e, "Couldn't merge with the server's copy.")} ${kept}`, "bad");
             }
         }
         document.getElementById("ff-save").addEventListener("click", () => toServer());
@@ -4664,7 +4685,7 @@
             // The unsaved draft's line goes with the draft.
             for (const o of [...ev.target.options]) if (!o.value) o.remove();
             try { await Editor.loadServer(id); sayWithArt("Loaded."); }
-            catch (e) { status(e.message || "Couldn't load.", "bad"); }
+            catch (e) { status(offlineSay(e, "Couldn't load it: the server didn't answer."), "bad"); }
         });
 
         /* SCRAP THE WORK, not the level.
@@ -4695,7 +4716,7 @@
                 await Editor.loadServer(L.id);
                 sayWithArt("Back to the last saved version.");
             } catch (e) {
-                status(e.message || "Couldn't reload the saved version.", "bad");
+                status(offlineSay(e, "Couldn't reload the saved version."), "bad");
             }
         });
 
@@ -4713,7 +4734,7 @@
                 setMode("room");
                 await refreshLevelList();
                 status("Level deleted.", "good");
-            } catch (e) { status(e.message || "Couldn't delete.", "bad"); }
+            } catch (e) { status(offlineSay(e, "Couldn't delete: the server didn't answer."), "bad"); }
         });
         document.getElementById("ff-export").addEventListener("click", async () => {
             try {
@@ -6001,7 +6022,10 @@
     function furniFailed() {
         published = null;
         furniLoaded = null;
-        titleState("unreachable", "Couldn't load the furni.");
+        /* Said once, by the status line just under the name box (18 Nov
+           2026): the title's own note said the first half of the same
+           sentence again two lines further down. */
+        titleState("unreachable", "");
         status("Couldn't load the furni. Check your connection and press Try again.", "error");
     }
 
@@ -6031,7 +6055,8 @@
            says what actually happened and offers the Retry that fixes it. */
         if (published === null) {
             Boot.end();
-            titleState("unreachable", "Couldn't reach the levels.");
+            // Once, in the status line below (see furniFailed).
+            titleState("unreachable", "");
             status("Couldn't reach the levels. Check your connection and press Try again.", "error");
             return;
         }
@@ -8277,6 +8302,19 @@
 
         const selectBack = document.getElementById("ff-select-back");
         if (selectBack) selectBack.addEventListener("click", closeSelector);
+        /* ESCAPE IS BACK on the level select (18 Nov 2026), as it shuts How
+           to play: in the homepage's window it went on to the window and
+           closed the whole game instead. */
+        if (window.EscapeLayers) {
+            const selectPanel = document.getElementById("ff-select");
+            EscapeLayers.register({
+                elements: () => (selectPanel && !selectPanel.hidden ? [selectPanel] : []),
+                close: () => {
+                    closeSelector();
+                    if (nameInput && !behindGame) nameInput.focus({ preventScroll: true });
+                }
+            });
+        }
         /* The code opens the selector AS IT IS TYPED (25 Oct 2026, the
            owner's: typing it "doesn't bring it up" — it waited for Play,
            which nothing said). Play still works too; see the submit handler. */

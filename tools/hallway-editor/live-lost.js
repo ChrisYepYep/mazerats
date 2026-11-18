@@ -161,7 +161,7 @@
     /* handing it in: the bell, the book, the points banked */
     /* the desk shut (15 Nov 2026, the owner's words): once per visit to the desk, or again when it's clicked */
     const HANDIN_MIN_MS = 120e3;
-    let shutNote = null, shutShown = false, handing = false;
+    let shutNote = null, shutShown = false, handing = false, deskDown = false;
     function deskClosed(wait) {
         if (shutNote && shutNote.isConnected) return; shutShown = true;
         shutNote = flash("The Lost Property desk is currently closed.", "Come back in " + fmt(wait) + ".", "is-note");
@@ -174,10 +174,15 @@
         if (PLAY && carryMeta) {
             const wait = HANDIN_MIN_MS - (Date.now() - carryMeta.t0);
             if (wait > 0) { if (clicked || !shutShown) deskClosed(wait); return; }
+            /* standing at the desk after a failed try: not asked again every 300ms, only on a click or the next visit to the desk (18 Nov scan) */
+            if (deskDown && !clicked) return;
             handing = true; const r = await lostPost({ act: "found", k: carryMeta.k, at: carryMeta.at }).finally(() => { handing = false; });
             if (!carrying) return;
-            if (r && r.closed) { deskClosed(r.wait || 1000); return; }
-            if (r && r.error === "offline") { flash("Can't reach Lost Property", "Hold on to it and try the desk again in a moment."); return; }
+            if (r && r.closed) { deskDown = true; deskClosed(r.wait || 1000); return; }
+            /* the server down or busy (a 5xx, or too many asks) isn't the search ending: the thing is kept, to try again. A 503 had handed it in
+               "Not counted" and lost its points, though the search was still open on the server (18 Nov scan) */
+            if (r && (r.error === "offline" || r.status >= 500 || r.status === 429)) { deskDown = true; flash("Can't reach Lost Property", "Hold on to it and try the desk again in a moment."); return; }
+            deskDown = false;
             if (r && r.capped) { pts = 0; note = ["Today's limit reached", "Handed in, but this one won't go on the board"]; }
             else if (r && r.error) { pts = 0; note = ["Not counted", "Handed in, but its search had ended"]; }
             else if (r && r.late) { pts = 0; note = ["Not counted", "Handed in, but its search had run out of time"]; }
@@ -244,7 +249,7 @@
         if (near && !talked && !busy) talk();
         if (!near && w.walking && (repliesBox || bubbles.some(q => q.chat))) { closeReplies(); dropChat(); }
         if (!near && !w.walking) { const s = hustleSeat(); if (!s || Math.abs(s.x - w.x) + Math.abs(s.y - w.y) > 3 || s.l !== w.l) talked = false; }
-        if (w.walking) shutShown = false;      // the closed desk speaks again on the next visit
+        if (w.walking) { shutShown = false; deskDown = false; }      // the closed desk speaks again on the next visit, and a failed hand-in is tried again
         if (carrying && !w.walking) { const d = desks(w.l).find(standingAt); if (d) handIn(d); }
     }, 300);
 

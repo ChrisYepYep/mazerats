@@ -28,9 +28,9 @@
          Screen" saves a blurred screenshot of the page instead — which makes
          the web-app meta tags above a half-promise. Pixel art, scaled
          nearest-neighbour, to match the rest of the site. -->
-    <link rel="apple-touch-icon" href="assets/img/quiz-icon.png">
+    <link rel="apple-touch-icon" href="/assets/img/quiz-icon.png">
 
-    <link rel="stylesheet" href="css/quiz.css">
+    <link rel="stylesheet" href="/css/quiz.css">
     <!-- Always dark (16 Nov 2026, the owner's call). This page used to follow
          the site's dark-mode bulb; it now wears the homepage's dark palette
          whatever that switch says, so the bulb's sheets and its head script
@@ -289,20 +289,23 @@
 <!-- Order matters only for the first line: quiz-questions.js declares the
      categories and creates the object the banks assign into. The banks
      themselves are independent and could be listed in any order. -->
-<script src="js/quiz-questions.js"></script>
-<script src="js/quiz-bank-movies.js"></script>
-<script src="js/quiz-bank-tv.js"></script>
-<script src="js/quiz-bank-music.js"></script>
-<script src="js/quiz-bank-food.js"></script>
-<script src="js/quiz-bank-animals.js"></script>
-<script src="js/quiz-bank-geography.js"></script>
-<script src="js/quiz-bank-science.js"></script>
-<script src="js/quiz-bank-general.js"></script>
-<script src="js/quiz-bank-pop.js"></script>
-<script src="js/quiz-bank-nostalgia.js"></script>
-<script src="js/quiz-bank-xmas.js"></script>
-<script src="js/quiz-audio.js"></script>
-<script src="js/quiz.js"></script>
+<!-- Root-relative (/js/...), like every other page (18 Nov 2026 scan): with
+     bare js/... a visit to /quiz/ (a trailing slash) asked for
+     /quiz/js/quiz.js, got the 404 page, and showed a dead, unstyled page. -->
+<script src="/js/quiz-questions.js"></script>
+<script src="/js/quiz-bank-movies.js"></script>
+<script src="/js/quiz-bank-tv.js"></script>
+<script src="/js/quiz-bank-music.js"></script>
+<script src="/js/quiz-bank-food.js"></script>
+<script src="/js/quiz-bank-animals.js"></script>
+<script src="/js/quiz-bank-geography.js"></script>
+<script src="/js/quiz-bank-science.js"></script>
+<script src="/js/quiz-bank-general.js"></script>
+<script src="/js/quiz-bank-pop.js"></script>
+<script src="/js/quiz-bank-nostalgia.js"></script>
+<script src="/js/quiz-bank-xmas.js"></script>
+<script src="/js/quiz-audio.js"></script>
+<script src="/js/quiz.js"></script>
     <script src="/js/presence-live.js?v=2" defer></script>
 </body>
 </html>

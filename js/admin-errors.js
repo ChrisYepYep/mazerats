@@ -1035,7 +1035,7 @@
             <details class="se-sample" data-key="${escapeHtml(key)}"${openSamples.has(key) ? " open" : ""}>
                 <summary>
                     <span class="se-sample-when" title="${escapeHtml(timeTitle(when))}">${escapeHtml(fmtUtcFull(when))}</span>
-                    <span class="admin-hint">${escapeHtml(ago(when))}</span>
+                    <span class="admin-hint"${has(when) ? ` data-ago="${escapeHtml(when)}"` : ""}>${escapeHtml(ago(when))}</span>
                     <span class="se-mono se-sample-page">${escapeHtml(dash(s.page))}</span>
                     <span class="admin-hint">${escapeHtml(who)}${has(s.country) ? " · " + escapeHtml(s.country) : ""}${repeatsOf(s) > 1 ? ` · repeated ${escapeHtml(num(repeatsOf(s)))}×` : ""}</span>
                 </summary>

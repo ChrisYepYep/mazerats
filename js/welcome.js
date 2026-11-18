@@ -1881,7 +1881,7 @@ document.addEventListener("DOMContentLoaded", () => {
         // Drop the hash without a history entry or a re-fired hashchange,
         // same as closeEventModal above.
         if (location.hash === "#privacy") {
-            history.replaceState(null, "", location.pathname + location.search);
+            history.replaceState(history.state, "", location.pathname + location.search);
         }
     }
 
@@ -1901,7 +1901,8 @@ document.addEventListener("DOMContentLoaded", () => {
         if (!link) return;
         e.preventDefault();
         if (location.hash !== "#privacy") {
-            history.replaceState(null, "", location.pathname + location.search + "#privacy");
+            // Keeping the state: it carries welcomeEventDepth.
+            history.replaceState(history.state, "", location.pathname + location.search + "#privacy");
         }
         openPrivacyModal();
     }, true);

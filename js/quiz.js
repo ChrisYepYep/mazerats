@@ -625,6 +625,10 @@
     });
 
     el.start.addEventListener('click', function () {
+        /* A saved quiz is still offered above (Resume). Starting a new one
+           writes over it, scores and all, so ask first (18 Nov 2026 scan:
+           it used to go without a word). */
+        if (!el.resume.hidden && !window.confirm('Start a new quiz? The quiz in progress and its scores will be lost.')) { return; }
         startQuiz(draft.players.slice(), draft.cats.slice(), draft.length, draft.xmas);
     });
 
@@ -675,6 +679,8 @@
         }
 
         save();
+        /* The saved quiz the resume card offered has just been written over. */
+        el.resume.hidden = true;
         showPlay();
     }
 
@@ -1231,16 +1237,28 @@
     /* ============================================================== sheets
        ============================================================== */
 
+    /* The keyboard goes into a sheet as it opens and back to the button that
+       opened it as it shuts (18 Nov 2026 scan): it used to stay behind the
+       backdrop, tabbing through the question under it. */
+    var sheetOpener = null;
+
     function openSheet(node) {
         closeSheets();
+        sheetOpener = document.activeElement;
         el.backdrop.hidden = false;
         node.hidden = false;
+        var done = node.querySelector('.qz-sheet-head .qz-mini');
+        if (done) { done.focus({ preventScroll: true }); }
     }
 
     function closeSheets() {
+        var was = !el.sheet.hidden || !el.menu.hidden;
         el.backdrop.hidden = true;
         el.sheet.hidden = true;
         el.menu.hidden = true;
+        var back = sheetOpener;
+        sheetOpener = null;
+        if (was && back && back.isConnected && !back.closest('[hidden]')) { back.focus({ preventScroll: true }); }
     }
 
     el.scoreBtn.addEventListener('click', function () {

@@ -50,6 +50,7 @@
     let pollUntil = 0;
     let pollTimer = 0;
     let lastError = "";
+    let expired = false;   // the last read was refused: read again when the card is next shown
 
     function rate(k, v) {
         if (typeof v !== "number") return "";
@@ -229,11 +230,13 @@
             const j = await res.json().catch(() => null);
             if (res.status === 401) {
                 // The sign-in box comes up, as every other panel's does; the card reads again when it is next shown.
+                expired = true;
                 say("Your session has expired. Sign in again to see the speed checks.", true);
                 if (typeof window.AdminLockOut === "function") window.AdminLockOut();
                 return;
             }
             if (!res.ok || !j || !Array.isArray(j.pages)) throw new Error((j && j.error) || "speed-checks " + res.status);
+            expired = false;
             const had = data && data.request;
             data = j;
             if (data.request) {
@@ -305,14 +308,15 @@
         // Read when the Controls are first shown, as the menu card is (js/admin-menu.js).
         const panel = card.closest(".admin-panel");
         if (!panel || !panel.hidden) load();
-        else {
-            // Kept on until it has the numbers: signing back in shows the panel again.
-            const seen = new MutationObserver(() => {
+        /* Kept on until it has the numbers: signing back in shows the panel
+           again. And read again after a refused read (18 Nov 2026, the scan):
+           with numbers already in, the watch had stopped, and "Your session
+           has expired" stayed on the card after signing back in. */
+        if (panel) {
+            new MutationObserver(() => {
                 if (panel.hidden) return;
-                if (data) seen.disconnect();
-                else load();
-            });
-            seen.observe(panel, { attributes: true, attributeFilter: ["hidden"] });
+                if (!data || expired) load();
+            }).observe(panel, { attributes: true, attributeFilter: ["hidden"] });
         }
     });
 })();

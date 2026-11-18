@@ -1394,7 +1394,14 @@
             }
         }
         setBusy(false);
-        if (failed && sessionGone(failed.err)) { modSay(ref, "Not banned: your session had expired. Sign in, then try again.", true); return; }
+        /* The session ran out between the two bans of a "Both" (18 Nov 2026,
+           the scan): the account ban had landed, and this said it had not. */
+        if (failed && sessionGone(failed.err)) {
+            modSay(ref, done.length
+                ? "Their account is banned, but not their network: your session had expired. Sign in, then ban their network."
+                : "Not banned: your session had expired. Sign in, then try again.", true);
+            return;
+        }
         let text;
         let bad = false;
         if (!failed) {
@@ -1871,7 +1878,8 @@
             if (!forgets.has(ref)) return;
             forgets.set(ref, { state: "shown", data });
         } catch (err) {
-            if (sessionGone(err)) { forgets.delete(ref); return; }
+            // Redrawn, so "Counting…" is not left up with no button after signing back in.
+            if (sessionGone(err)) { forgets.delete(ref); render(); return; }
             if (!forgets.has(ref)) return;
             forgets.set(ref, { state: "idle", error: forgetErrorText(err) });
         }
@@ -1907,6 +1915,9 @@
             if (has(counts.all)) setBadge(counts);
             if (p.nick && has(counts.nick)) counts.nick = Math.max(0, counts.nick - 1);
             if (p.nickLocked && has(counts.locked)) counts.locked = Math.max(0, counts.locked - 1);
+            // The Beta testers and Banned tabs too (18 Nov 2026, the scan).
+            if (p.ffBeta && has(counts.beta)) counts.beta = Math.max(0, counts.beta - 1);
+            if (Kit && Kit.chip(p.ban, nowMs()) && has(counts.banned)) counts.banned = Math.max(0, counts.banned - 1);
             openRef = null;
             setBusy(false);
             render();
@@ -2021,7 +2032,8 @@
             const data = await Api.forgetPlayerPreview(token(), q);
             if (gen !== lookGen) return;
             lookResult(lookPreviewHtml(q, data));
-            if (data && data.player && data.player.id) lookShown = { player: data.player, counts: data.counts || {} };
+            // With what stays (`kept`, its bans): the confirm says so, as a row's own Forget does.
+            if (data && data.player && data.player.id) lookShown = { player: data.player, counts: data.counts || {}, kept: data.kept };
         } catch (err) {
             if (gen !== lookGen) return;
             lookResult("");

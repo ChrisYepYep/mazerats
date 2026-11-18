@@ -230,8 +230,8 @@
                 canvas.width = canvas.height = px;
                 parts = { rim: WD.drawRim(px), gloss: WD.drawGloss(px), disk: WD.drawDisk(px, snap.names, { colours: snap.colours }) };
             }
-            const sw = stage.clientWidth, sh = stage.clientHeight, cw = Math.round(sw * dpr);
-            if (conf.width !== cw) { conf.width = cw; conf.height = Math.round(sh * dpr); }
+            const sw = stage.clientWidth, sh = stage.clientHeight, cw = Math.round(sw * dpr), ch = Math.round(sh * dpr);
+            if (conf.width !== cw || conf.height !== ch) { conf.width = cw; conf.height = ch; }
             return true;
         }
         function frame(t) {

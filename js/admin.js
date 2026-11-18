@@ -9190,9 +9190,10 @@ document.addEventListener("DOMContentLoaded", () => {
     if (landingUsers) { setInterval(readUsers, 15000); document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") readUsers(); }); setTimeout(readUsers, 1500); }
     async function readPresence() {
         if (!adminToken || document.visibilityState === "hidden") return;
+        const tokenUsed = adminToken;   // see lockOutFor
         try {
             const sentAt = Date.now();
-            const r = await Api.getPresence(adminToken);
+            const r = await Api.getPresence(tokenUsed);
             if (!r) return;
             const serverAt = Date.parse(r.now);
             if (Number.isFinite(serverAt)) presenceSkew = serverAt - (sentAt + Date.now()) / 2;
@@ -9220,7 +9221,8 @@ document.addEventListener("DOMContentLoaded", () => {
             }
             sayPresence();
         } catch (err) {
-            if (err && err.status === 401) { lockOut(); return; }
+            // Only for the token it was sent with (18 Nov 2026, the scan), as readUsers does.
+            if (err && err.status === 401) { lockOutFor(tokenUsed); return; }
             /* the next read tries again */
         }
     }

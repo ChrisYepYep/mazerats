@@ -854,7 +854,17 @@ body.wr-on > .site-footer { display: none !important; }
 @media (max-width: 560px) {
     #wr-app .wr-ui .spot-order-row { flex-wrap: wrap; }
     #wr-app .wr-ui .spot-order-when { order: 3; flex-basis: 100%; padding-left: calc(1.4em + 10px); }
+    /* A row whose buttons sit straight in it, with no .row-side (What's New,
+       Guides, Articles, Messages…; 18 Nov 2026, the scan): on a phone the
+       buttons kept their line beside the words and squeezed the title to a
+       word a line. They go to a line of their own under it, held right, as
+       a maze row's do (style.css, .admin-row .row-side). */
+    #wr-app .wr-ui .admin-row { flex-wrap: wrap; }
+    #wr-app .wr-ui .admin-row > .admin-row-actions { flex: 1 0 100%; flex-wrap: wrap; justify-content: flex-end; margin-top: 6px; }
 }
+/* A name with no spaces in it (a long Habbo name, a pasted address) breaks
+   rather than running out past its row. */
+:is(#wr-app .wr-ui, #login-modal, .modal-overlay.wr-dialog) .chrome-list-row h3 { overflow-wrap: anywhere; }
 
 /* ---- THE CONTROLS' LARGE CARDS, FOLDED (30 Oct 2026; js/admin-ctl-folds.js):
    a title bar that opens and shuts the rest of the card, shut to start. The

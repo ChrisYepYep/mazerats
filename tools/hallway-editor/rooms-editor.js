@@ -14,6 +14,8 @@
     /* the rooms behind doors you link by hand: never a maze's (10 Nov scan, rooms 11) */
     const SPECIAL = { "6x14": "Staff corridor (6 x 14)", "4x8": "Passage (4 x 8)", "8x6": "Finders' Lounge (8 x 6)" };
     const sizeName = s => SPECIAL[s] || s.replace("x", " x ");
+    /* a maze as its door names it: the archive's name without its glyphs and decoration (furni-parts.js mazeName) */
+    const mazeLabel = m => { const raw = String((m && m.name) || "").trim(), P0 = window.FurniParts; return (P0 && P0.mazeName && P0.mazeName(raw)) || raw; };
     const MAZE_SIZES = () => SIZES().filter(s => !SPECIAL[s]);
     const R_ = "art/rooms/", H_ = "art/hall/hh_room_hallway/", T_ = "art/thumbs/";
     const hall = (p, extra) => ({ k: "hall", p, ...(extra || {}) });
@@ -300,7 +302,7 @@
                 s.addEventListener("change", set); l.addEventListener("change", set);
                 /* the maze's room, with its own pictures, on the stage (10 Nov scan, rooms 20) */
                 show.addEventListener("click", () => { const b = V.roomFor(api.map(), m); size = b.size; n = b.layout; seeSel.value = m.slug; preview = V.mazeFacts(m); sel = null; carry = null; userZoom = null; pan = { x: 0, y: 0 }; sync(); });
-                row.append(el("span", "", String(m.name).trim()), s, l, show); list.appendChild(row);
+                const nm = el("span", "", mazeLabel(m)); nm.title = String(m.name).trim(); row.append(nm, s, l, show); list.appendChild(row);
             }
             right.appendChild(list);
         }
@@ -553,8 +555,9 @@
         V.onArt = paintSoon;
         say(""); syncUndo();
         V.load().then(() => { buildPalette(); sync(); return V.mazes(); }).then(list => {
-            mazes = [...list].sort((a, b) => String(a.name).localeCompare(String(b.name))); mazesState = mazes.length ? "ready" : "failed";
-            for (const m of mazes) { const o = el("option", "", String(m.name).trim()); o.value = m.slug; seeSel.appendChild(o); }
+            /* by the name on its door, A to Z (18 Nov scan: the archive's own, "[ ª ] A Horrible Maze [ ª ]", sorted the decorated ones first) */
+            mazes = [...list].sort((a, b) => mazeLabel(a).toLowerCase().localeCompare(mazeLabel(b).toLowerCase())); mazesState = mazes.length ? "ready" : "failed";
+            for (const m of mazes) { const o = el("option", "", mazeLabel(m)); o.value = m.slug; seeSel.appendChild(o); }
             if (tab === "mazes") panel();
         });
         window.__rooms = { get sel() { return sel; }, get tool() { return tool; }, layout, get carry() { return carry; }, get placeZ() { return placeZ; }, get view() { return view; }, get zoom() { return zoom; }, roomNow, pick, GROUPS, get size() { return size; }, get n() { return n; } };

@@ -247,13 +247,13 @@
                     ${e.article
                         // An article's entry: its What's New fields are edited in the article (2 Nov 2026).
                         ? `<button type="button" class="btn admin-edit-btn" data-wn="edit-article" aria-label="Edit the article ${esc(e.name || "")}">Edit</button>
-                           <button type="button" class="btn admin-edit-btn" data-wn="toggle-article">${e.hidden ? "Show" : "Hide"}</button>`
+                           <button type="button" class="btn admin-edit-btn" data-wn="toggle-article" aria-label="${e.hidden ? "Show" : "Hide"} ${esc(e.name || "(untitled)")}">${e.hidden ? "Show" : "Hide"}</button>`
                     : e.post
-                        ? `<button type="button" class="btn admin-edit-btn" data-wn="edit-post">Edit</button>
-                           <button type="button" class="btn admin-edit-btn" data-wn="toggle-post">${e.hidden ? "Show" : "Hide"}</button>
-                           <button type="button" class="btn admin-delete-btn" data-wn="delete-post">Delete</button>`
-                        : `<button type="button" class="btn admin-edit-btn" data-wn="amend">${openOverride === e.target ? "Close" : "Amend"}</button>
-                           <button type="button" class="btn admin-edit-btn" data-wn="toggle-hide">${e.hidden ? "Show" : "Hide"}</button>`}
+                        ? `<button type="button" class="btn admin-edit-btn" data-wn="edit-post" aria-label="Edit ${esc(e.name || "(untitled)")}">Edit</button>
+                           <button type="button" class="btn admin-edit-btn" data-wn="toggle-post" aria-label="${e.hidden ? "Show" : "Hide"} ${esc(e.name || "(untitled)")}">${e.hidden ? "Show" : "Hide"}</button>
+                           <button type="button" class="btn admin-delete-btn" data-wn="delete-post" aria-label="Delete ${esc(e.name || "(untitled)")}">Delete</button>`
+                        : `<button type="button" class="btn admin-edit-btn" data-wn="amend" aria-label="${openOverride === e.target ? "Close" : "Amend"} ${esc(e.name || "(untitled)")}">${openOverride === e.target ? "Close" : "Amend"}</button>
+                           <button type="button" class="btn admin-edit-btn" data-wn="toggle-hide" aria-label="${e.hidden ? "Show" : "Hide"} ${esc(e.name || "(untitled)")}">${e.hidden ? "Show" : "Hide"}</button>`}
                     ${e.hidden ? "" : posting === key
                         // Going now (30 Oct 2026, the bug scan): Discord can take seconds to answer.
                         ? `<button type="button" class="btn admin-edit-btn" data-wn="discord" disabled aria-label="Posting ${esc(e.name || "(untitled)")} to Discord">Posting…</button>`
@@ -836,7 +836,12 @@
             if (!p) return;
             if (act === "edit-post") { openPost(p); return; }
             const what = p.kind === "news" ? `the news post "${esc(p.title)}"` : "this note";
+            // One delete per post at a time (18 Nov 2026, the scan), as Articles and Guides do:
+            // a second press while the first was out asked again and then said "not found".
+            if (postDeletesOut.has(p.id)) return;
             if (!await ask(`Delete ${what}? It comes off What's New at once.`, { danger: true })) return;
+            if (postDeletesOut.has(p.id)) return;
+            postDeletesOut.add(p.id);
             try {
                 await call(`${URL_}?id=${encodeURIComponent(p.id)}`, "DELETE");
                 posts = posts.filter(x => x.id !== p.id);
@@ -844,9 +849,12 @@
                 render();
             } catch (err) {
                 if (!sessionGone(err)) await tell(err.message || "That couldn't be deleted.");
+            } finally {
+                postDeletesOut.delete(p.id);
             }
         }
     });
+    const postDeletesOut = new Set();
 
     formEl.addEventListener("click", e => {
         const btn = e.target.closest("[data-wn]");

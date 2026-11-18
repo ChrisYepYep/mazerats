@@ -168,7 +168,7 @@ http.createServer(async (req, res) => {
     /* This page and nothing else: any website could otherwise write to it while it's running */
     const hostOk = /^(localhost|127\.0\.0\.1):\d+$/.test(req.headers.host || ""), origin = req.headers.origin;
     if (!hostOk || (origin && !/^http:\/\/(localhost|127\.0\.0\.1):\d+$/.test(origin)) || (req.method === "POST" && url.pathname === "/api/map" && !/^application\/json/.test(req.headers["content-type"] || ""))) { res.writeHead(403); return res.end("Not from here"); }
-    if (req.method === "POST" && origin && new URL(origin).host !== req.headers.host) { res.writeHead(403); return res.end("Not from here"); }
+    if (req.method !== "GET" && req.method !== "HEAD" && origin && new URL(origin).host !== req.headers.host) { res.writeHead(403); return res.end("Not from here"); }      // any write, not only a POST, from this page alone (18 Nov scan)
     try {
         if (url.pathname === "/api/map" && req.method === "GET") {
             let text; try { text = fs.readFileSync(MAP); } catch (e) { return json(res, 500, { error: "The map file couldn't be read." }); }
@@ -205,6 +205,8 @@ http.createServer(async (req, res) => {
         /* Publish: its own process, since it draws the whole map four times over */
         if (url.pathname === "/api/publish") {
             if (req.method === "GET") return json(res, 200, publishing);
+            /* only a POST starts one (18 Nov scan): a HEAD, which a web page can send here without saying where it's from, started a publish too */
+            if (req.method !== "POST") { res.writeHead(405, { Allow: "GET, POST" }); return res.end(); }
             if (TEST_MAP && req.method === "POST") return json(res, 403, { error: "This is a test editor (HALLWAY_MAP): it doesn't publish." });
             if (publishing.running) return json(res, 409, { error: "Already publishing." });
             publishing = { running: true, at: 0, of: 0, error: null };

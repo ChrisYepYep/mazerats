@@ -1850,6 +1850,36 @@ window.WizardMap = function WizardMap(options) {
         }
     });
 
+    /* THE STAGE NEVER SCROLLS, AND TAB BRINGS ITS ROOM INTO VIEW (18 Nov
+       2026, the bug scan). Tabbing to a room outside the frame let the
+       browser scroll the overflow:hidden stage itself to show it — 234px
+       across and 414px down at the opening view — which slid the map out
+       from under its own pan and zoom arithmetic and carried the zoom
+       buttons, which sit inside the stage, up into the middle of the map,
+       where they stayed. The scroll is put straight back, and a room the
+       keyboard lands on outside the frame is flown to instead, the way a
+       search result is. Asked again after the scroll is undone, since the
+       browser may scroll before focusin is heard. */
+    function showFocusedRoom() {
+        const el = document.activeElement && document.activeElement.closest
+            ? document.activeElement.closest(".wiz-room") : null;
+        if (!el || !roomsEl.contains(el)) return;
+        const box = stage.getBoundingClientRect();
+        const r = el.getBoundingClientRect();
+        const pad = 24;
+        if (r.left >= box.left + pad && r.right <= box.right - pad
+            && r.top >= box.top + pad && r.bottom <= box.bottom - pad) return;
+        const room = rooms.find(item => item.id === el.dataset.id);
+        if (room) flyTo(room.x, room.y);
+    }
+    stage.addEventListener("scroll", () => {
+        if (!stage.scrollLeft && !stage.scrollTop) return;
+        stage.scrollLeft = 0;
+        stage.scrollTop = 0;
+        showFocusedRoom();
+    });
+    stage.addEventListener("focusin", showFocusedRoom);
+
     let resizeTimer = null;
     window.addEventListener("resize", () => {
         clearTimeout(resizeTimer);

@@ -484,7 +484,8 @@
         who.className = "de-lead-who";
         if (entry.from) {
             const handle = entry.from.username && entry.from.name ? ` @${entry.from.username}` : "";
-            who.textContent = `Discord: ${entry.from.name || entry.from.username || "an account"}${handle} (signed in)`;
+            // The nickname last: a view-only account is sent nothing else (event-entries.js).
+            who.textContent = `Discord: ${entry.from.name || entry.from.username || entry.from.nick || "an account"}${handle} (signed in)`;
         } else {
             who.textContent = "Not signed in";
         }

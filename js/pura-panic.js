@@ -1570,7 +1570,11 @@
                 </div>
                 <p class="pura-beta-note">Don't want to wait? <a href="#" data-go="signin">Sign in with Discord</a> and you can play straight away.</p>`;
         } else if (which === "paused") {
-            html = leaving ? `<div class="pura-leave" role="alert">
+            /* The leave prompt only for a game the board can take (18 Nov 2026,
+               the bug scan): a test level, a game shut for maintenance or one
+               whose start the server never answered urged "Submit score" for a
+               score that could not be saved. Those get the plain pause. */
+            html = leaving && run && run.token && !testLevel() ? `<div class="pura-leave" role="alert">
                     <span class="pura-bang" aria-hidden="true">!</span>
                     <p>Submit your progress to the scoreboard before you leave by pressing Submit score!</p>
                 </div>
@@ -1589,7 +1593,7 @@
             // Already saved to the account on the way, it can only be that account's (pura-scores.js, ONE GAME, ONE NAME, ONCE).
             html = `<p class="pura-big">GAME OVER</p>
                 <div class="console-hashline" aria-hidden="true"></div>
-                <p>${num(g && g.score)} ${g && g.score === 1 ? "point" : "points"} ·${num(g && g.bands - rowsBase)} ${g && g.bands - rowsBase === 1 ? "row" : "rows"} · level ${g ? g.level : 1}</p>
+                <p>${num(g && g.score)} ${g && g.score === 1 ? "point" : "points"} · ${num(g && g.bands - rowsBase)} ${g && g.bands - rowsBase === 1 ? "row" : "rows"} · level ${g ? g.level : 1}</p>
                 <p class="pura-note">${result.filed ? "You started this game signed in, and it's already on the board under your account. Sign in to save the rest of it." : "You started this game signed in. Sign in to save it to your account, or save it as a guest."}</p>
                 <div class="pura-buttons">
                     <button type="button" class="console-btn" data-go="runsignin">Sign in</button>
@@ -1600,7 +1604,7 @@
             // Ended from the leave prompt's Submit Score (LEAVING).
             html = `<p class="pura-big">${!result ? "SUBMITTING…" : result.state === "recorded" ? "You joined the leaderboard!" : "You're on the leaderboard!"}</p>
                 <div class="console-hashline" aria-hidden="true"></div>
-                <p>${num(g && g.score)} ${g && g.score === 1 ? "point" : "points"} ·${num(g && g.bands - rowsBase)} ${g && g.bands - rowsBase === 1 ? "row" : "rows"} · level ${g ? g.level : 1}</p>
+                <p>${num(g && g.score)} ${g && g.score === 1 ? "point" : "points"} · ${num(g && g.bands - rowsBase)} ${g && g.bands - rowsBase === 1 ? "row" : "rows"} · level ${g ? g.level : 1}</p>
                 ${result ? `<div class="pura-note" id="pura-note">${overNote()}</div>` : ""}
                 <div class="pura-buttons">
                     <button type="button" class="console-btn" data-go="play">Play again</button>
@@ -1610,7 +1614,7 @@
         } else if (which === "over") {
             html = `<p class="pura-big">GAME OVER</p>
                 <div class="console-hashline" aria-hidden="true"></div>
-                <p>${num(g && g.score)} ${g && g.score === 1 ? "point" : "points"} ·${num(g && g.bands - rowsBase)} ${g && g.bands - rowsBase === 1 ? "row" : "rows"} · level ${g ? g.level : 1}</p>
+                <p>${num(g && g.score)} ${g && g.score === 1 ? "point" : "points"} · ${num(g && g.bands - rowsBase)} ${g && g.bands - rowsBase === 1 ? "row" : "rows"} · level ${g ? g.level : 1}</p>
                 ${dealEnd === "full" && g ? `<p>That's all ${num(g.log.length)} pieces a game can have. What a game!</p>` : ""}
                 <div class="pura-note" id="pura-note">${overNote()}</div>
                 <div class="pura-buttons">

@@ -962,6 +962,10 @@ input, button { font-family: inherit; }
 
 .qz-award-grid {
     display: grid;
+    /* minmax(0, 1fr), not the implicit auto column: an auto column grows to
+       a long name's full width, and on a phone that pushed Host and Rule out
+       off the right edge (18 Nov 2026 scan). Now the name ellipsises. */
+    grid-template-columns: minmax(0, 1fr);
     gap: 8px;
 }
 
@@ -1388,7 +1392,7 @@ input, button { font-family: inherit; }
 @media (min-width: 640px) {
     .qz-cats { grid-template-columns: 1fr 1fr 1fr; }
 
-    .qz-hero h1 { font-size: 36px; }
+    .qz-hero h1, .qz-hero h2 { font-size: 36px; }
 
     .qz-stage {
         max-width: 620px;
@@ -1423,6 +1427,8 @@ input, button { font-family: inherit; }
 
 @media (prefers-reduced-motion: reduce) {
     * { transition: none !important; }
+    /* The locked-in answer's pulse too; its amber colour still says it. */
+    .qz-opt.is-locked { animation: none; }
 }
 
 /* Netlify's "Powered by Netlify" pill, which its servers add to every page on the free

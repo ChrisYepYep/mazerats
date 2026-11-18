@@ -189,9 +189,23 @@ pages.forEach((html, i) => {
     const markup = html.replace(/<!--[\s\S]*?-->|<(script|style|textarea|title)\b[^>]*>[\s\S]*?<\/\1\s*>/gi, "");
     if (/<[a-z][^<>]*?\son[a-z]{3,}\s*=/i.test(markup) || JS_URL.test(markup)) problems.push(`${pageNames[i]} has a handler in its markup (on...=) or a javascript: address, which the Content-Security-Policy would block`);
 });
-for (const name of fs.readdirSync(path.join(OUT, "js")).filter(n => /\.js$/i.test(n))) {
-    const js = fs.readFileSync(path.join(OUT, "js", name), "utf8");
-    if (/<[a-z][^<>\n]*?\son[a-z]{3,}=["'\\$]/i.test(js) || JS_URL.test(js)) problems.push(`js/${name} builds a handler in markup (on...=) or a javascript: address, which the Content-Security-Policy would block`);
+/* ...and the Hallway's own scripts and its two pages (18 Nov 2026, the bug scan): they sit under the same site-wide policy, so a
+   handler built in their markup is blocked just as one in js/ is, and only js/ was read. */
+const jsFiles = fs.readdirSync(path.join(OUT, "js")).filter(n => /\.js$/i.test(n)).map(n => "js/" + n);
+const HW_APP = path.join(OUT, "assets", "hallway", "app");
+if (fs.existsSync(HW_APP)) {
+    for (const rel of fs.readdirSync(HW_APP, { recursive: true }).map(n => String(n).split(path.sep).join("/"))) {
+        if (rel.startsWith("art/")) continue;
+        if (/\.js$/i.test(rel)) jsFiles.push("assets/hallway/app/" + rel);
+        else if (/\.html$/i.test(rel)) {
+            const markup = fs.readFileSync(path.join(HW_APP, rel), "utf8").replace(/<!--[\s\S]*?-->|<(script|style|textarea|title)\b[^>]*>[\s\S]*?<\/\1\s*>/gi, "");
+            if (/<[a-z][^<>]*?\son[a-z]{3,}\s*=/i.test(markup) || JS_URL.test(markup)) problems.push(`assets/hallway/app/${rel} has a handler in its markup (on...=) or a javascript: address, which the Content-Security-Policy would block`);
+        }
+    }
+}
+for (const name of jsFiles) {
+    const js = fs.readFileSync(path.join(OUT, name), "utf8");
+    if (/<[a-z][^<>\n]*?\son[a-z]{3,}=["'\\$]/i.test(js) || JS_URL.test(js)) problems.push(`${name} builds a handler in markup (on...=) or a javascript: address, which the Content-Security-Policy would block`);
 }
 if (problems.length) {
     console.error("build-dist:\n  " + problems.join("\n  "));

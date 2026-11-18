@@ -793,8 +793,15 @@
     function renderButton() {
         const host = document.getElementById("account-slot");
         if (!host) return;
+        // Focus back on the new button if the old one had it, rather than
+        // dropped on <body> by every announcement (18 Nov 2026).
+        const hadFocus = host.contains(document.activeElement);
         drawButton(host);
         if (signInNote) host.appendChild(signInNote);
+        if (hadFocus && !host.contains(document.activeElement)) {
+            const b = host.querySelector("button, a[href]");
+            if (b) b.focus({ preventScroll: true });
+        }
     }
 
     function drawButton(host) {
@@ -1237,6 +1244,7 @@
                 return;
             }
             busy = true;
+            let closing = false;
             saveBtn.disabled = skipBtn.disabled = true;
             say("Saving…");
             try {
@@ -1246,11 +1254,14 @@
                 say(e.message, true);
                 // Signed out underneath it, or the admins locked the
                 // nickname meanwhile: nothing left to save for.
-                if (e.status === 401 || e.status === 403) setTimeout(finish, 2500);
+                // Busy until it closes, so Save can't send another doomed try.
+                if (e.status === 401 || e.status === 403) { closing = true; setTimeout(finish, 2500); }
                 else input.focus();
             } finally {
-                busy = false;
-                saveBtn.disabled = skipBtn.disabled = false;
+                if (!closing) {
+                    busy = false;
+                    saveBtn.disabled = skipBtn.disabled = false;
+                }
             }
         }
         nickPromptShowing = overlay;

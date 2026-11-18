@@ -902,11 +902,18 @@ window.AdminRecolour = (function () {
     /* ------------------------------------------------------------- saving */
 
     async function api(method, body, q) {
-        const r = await fetch(API + (q || ""), {
+        /* With Api's timeout where it is loaded (18 Nov 2026, the scan): a
+           bare fetch that never answered kept Save, Save as new and Delete
+           greyed until the tab was reloaded. */
+        const opts = {
             method,
             headers: { "Content-Type": "application/json", "x-admin-token": currentToken() },
             body: body ? JSON.stringify(body) : undefined
-        });
+        };
+        const timed = typeof Api !== "undefined" && Api && typeof Api._timedFetch === "function";
+        const r = timed
+            ? await Api._timedFetch(API + (q || ""), opts, method === "GET" ? Api._TIMEOUT_READ : Api._TIMEOUT_WRITE)
+            : await fetch(API + (q || ""), opts);
         const data = await r.json().catch(() => ({}));
         if (!r.ok) {
             const err = new Error(data.error || ("Save failed (" + r.status + ")"));
@@ -1383,7 +1390,8 @@ window.AdminRecolour = (function () {
                check would refuse the save, which is right but late. The
                plain list read is not edge-cached (only ?id= is), so this is
                the current row. */
-            try { await refresh(); } catch (e) { if (e.status === 401) { failed(e); return; } }
+            // Redrawn on a 401, so the Load menu goes back to the palette still being edited.
+            try { await refresh(); } catch (e) { if (e.status === 401) { render(); failed(e); return; } }
             if (seq !== state.loading) return;
             const p = state.saved.find(x => x.id === id);
             if (!p) { render(); say("That palette is not there any more — deleted since the list was loaded?", "bad"); return; }
@@ -1683,7 +1691,10 @@ window.AdminRecolour = (function () {
             const f = inp.files && inp.files[0];
             if (!f) return;
             const rd = new FileReader();
-            rd.onload = () => {
+            rd.onload = async () => {
+                /* Asked first, as Load asks (18 Nov 2026, the scan): an import
+                   replaced unsaved edits without a word. */
+                if (state.dirty && !await ask("Discard your unsaved changes to " + esc(describe()) + " and import this file instead? Anything you have added or edited since opening it will be lost.", { danger: true })) { render(); return; }
                 try {
                     const d = JSON.parse(rd.result);
                     const p = (d && d.palette) || d;
@@ -1704,6 +1715,8 @@ window.AdminRecolour = (function () {
                     // An import is a new palette, whatever was loaded before it.
                     state.origin = null;
                     state.loadedAt = null;
+                    // Undo starts again: the steps before it were the last palette's.
+                    state.history = [];
                     state.dirty = true;
                     if (state.live) applyLive();
                     render();

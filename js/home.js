@@ -2571,7 +2571,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 <strong>Your Profile</strong>, under &ldquo;To do&rdquo;, until you complete it.</p>
             <div class="saved-note-actions">
                 <button type="button" class="saved-note-go">Take me there</button>
-                <button type="button" class="saved-note-close" aria-label="Dismiss">Got it</button>
+                <button type="button" class="saved-note-close">Got it</button>
             </div>`;
         document.body.appendChild(note);
         // Now it has been shown, and only now does it count as told.
@@ -3830,7 +3830,9 @@ document.addEventListener("DOMContentLoaded", () => {
        event that had ended by the day it was added; a maze that was closed,
        or had opened more than a month before. */
     function openingIsOld(n) {
-        const raw = n && n._raw;
+        // By id when the copy has no _raw (an "Added" entry from
+        // earlierEntries is an Object.assign copy), as applyFilterChip does.
+        const raw = n && (n._raw || (n.id && (n.isEvent ? EVENTS : ROOMS).find(r => r && r.id === n.id)));
         const addedAt = Date.parse(n && n.activityAt);
         if (!raw || isNaN(addedAt) || n.isGuide) return false;
         if (n.isEvent) {
@@ -7503,7 +7505,10 @@ document.addEventListener("DOMContentLoaded", () => {
        render() when the furni listing stopped going through it. */
     function wireFurniChip() {
         const clear = document.getElementById("furni-filter-clear");
-        if (clear) clear.addEventListener("click", () => { leaveFurniFilter(); render(); });
+        // Out of the furni browser too unless the filter came from it, as
+        // clearFilterBtn does: "Also in N other mazes" asked from a maze
+        // opened in the browser left showFurni on behind the chip.
+        if (clear) clear.addEventListener("click", () => { if (!leaveFurniFilter()) showFurni = false; render(); });
 
         const back = document.getElementById("furni-filter-back");
         if (back) back.addEventListener("click", () => {
@@ -8377,7 +8382,8 @@ document.addEventListener("DOMContentLoaded", () => {
         // From the active room rather than modalGalleryImg.src, which still
         // holds the previous picture while a slide's preload is in flight.
         lightboxImg.src = g.image ? imgCdn(g.image, 900, null, 78) : modalGalleryImg.src;
-        lightboxImg.alt = modalGalleryImg.alt;
+        // And its alt from the same room, for the same reason.
+        lightboxImg.alt = g.image ? `${modalName.textContent}: ${displayLabel(g)}` : modalGalleryImg.alt;
         /* Keyed on whether there IS a position, as showGalleryImage does,
            not on kind === "room": bonus and run-through rooms are rooms with
            no number, and they captioned as "Bonus Room — " with a dash
@@ -11350,10 +11356,15 @@ document.addEventListener("DOMContentLoaded", () => {
                 : d.profileAct ? `[data-profile-act="${CSS.escape(d.profileAct)}"]`
                 : active.matches(".profile-completed > summary") ? ".profile-completed > summary" : null;
         }
+        // Which of the matches it was (18 Nov 2026): one maze can be the
+        // Favourite card, the Latest link and a Completed row at once, and
+        // the first match threw focus up the window.
+        const scope0 = document.getElementById("progress-window");
+        const againIdx = again && scope0 ? Math.max(0, [...scope0.querySelectorAll(again)].indexOf(active)) : 0;
         renderProgress();
         if (hadFocus) {
             const scope = document.getElementById("progress-window");
-            const target = again && scope ? scope.querySelector(again) : null;
+            const target = again && scope ? (scope.querySelectorAll(again)[againIdx] || scope.querySelector(again)) : null;
             if (target) target.focus({ preventScroll: true });
             else if (scope) scope.focus({ preventScroll: true });
         }
@@ -12223,7 +12234,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 return `<li>${escapeHtml(p ? p.ask : key)}</li>`;
             }).join("")}</ul>
             ${flag && flag.note ? `<p class="incomplete-note">${escapeHtml(flag.note)}</p>` : ""}
-            ${trailLine(n).replace("deadend-trail", "incomplete-trail")}
+            ${trailLine(n)}
             <button type="button" class="incomplete-help" data-lead>I can help</button>`;
     }
 

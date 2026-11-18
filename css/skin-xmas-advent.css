@@ -69,6 +69,17 @@
 .xa-overlay .xa-window .status-badge,
 .xa-overlay .xa-window .tag { background: rgba(14, 9, 4, 0.88); }
 .xa-overlay .xa-window .tag { border-color: var(--chrome-highlight); color: var(--parchment-dim); }
+/* LIGHT MODE TOO (18 Nov 2026, the bug scan). Frost's light mode sets the
+   overlay, the pills' words and the plain tags outright under
+   html[data-light], one element more than the rules above, so in light mode
+   the window sat on a pale blue wash and "Locked", "Opened" and "Christmas"
+   were navy on this window's near-black pills (1.7:1). Scoped by the skin,
+   which is always on while this window is, they are this window's again. */
+html[data-skin="xmas"] .modal-overlay.xa-overlay { background: rgba(10, 6, 3, 0.86); }
+html[data-skin="xmas"] .xa-overlay .xa-window .tag:not([class*="difficulty-"]) { color: var(--parchment-dim); }
+html[data-skin="xmas"] .xa-overlay .xa-window .status-open { color: #6f8f4f; }
+html[data-skin="xmas"] .xa-overlay .xa-window .status-unknown { color: var(--unknown-text); }
+html[data-skin="xmas"] .xa-overlay .xa-window .status-collab { color: var(--amber-bright); }
 .modal.xa-window { max-width: 640px; }
 /* Room inside the frame, so today's ring and the tiles' drop never touch its edge. */
 .xa-frame { padding: 12px 14px 14px; }
@@ -242,5 +253,5 @@
 
 @media (prefers-reduced-motion: reduce) {
     .xa-tile-door, .xa-tile-corner, .xa-pic { transition: none; }
-    .xa-tile.is-today, .xa-open-btn.has-ready .xa-open-flame { animation: none; }
+    .xa-tile.is-today, .xa-tile.is-shaking, .xa-open-btn.has-ready .xa-open-flame { animation: none; }
 }

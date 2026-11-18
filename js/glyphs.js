@@ -247,6 +247,9 @@
             copyByHand(btn);
             return;
         }
+        // A copy that worked clears an earlier copy-it-yourself box.
+        const handBox = document.getElementById("glyphs-copy-box");
+        if (handBox) handBox.remove();
         const code = btn.querySelector(".glyphs-alt");
         btn.classList.add("is-copied");
         if (code) code.textContent = "Copied!";

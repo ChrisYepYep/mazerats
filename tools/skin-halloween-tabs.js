@@ -107,7 +107,8 @@ for (const [theme, dir] of Object.entries(THEMES).filter(([t]) => t === "witch")
     for (const name of ["profile", "contact", "people", "privacy"]) {
         for (const state of ["inactive", "active"]) {
             const p = read(dir, name, state);
-            if (muted) for (let y = 0; y < p.height; y++) for (let x = 0; x < p.width; x++) setPix(p, x, y, muteRgb(pix(p, x, y)));
+            // Clear pixels left clear, as for the frame art below (18 Nov 2026, the bug scan: Profile's corner pixel came out black).
+            if (muted) for (let y = 0; y < p.height; y++) for (let x = 0; x < p.width; x++) if (p.data[(y * p.width + x) * 4 + 3]) setPix(p, x, y, muteRgb(pix(p, x, y)));
             const fill = pix(p, X0 + 25, Y0 + 19);
             const grid = ICONS[name];
             if (grid) grid.forEach((row, y) => [...row].forEach((c, x) => {

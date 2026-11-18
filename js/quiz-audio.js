@@ -34,7 +34,7 @@
     'use strict';
 
     var AC = window.AudioContext || window.webkitAudioContext;
-    var BASE = 'assets/quiz-audio/';
+    var BASE = '/assets/quiz-audio/';   /* root-relative, so /quiz/ finds them too */
 
     /* The soundboard, in the order the buttons sit. */
     var CUES = [
