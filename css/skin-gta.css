@@ -115,52 +115,45 @@ html[data-skin="gta"] .gx-phone {
 }
 html[data-skin="gta"] .gx-phone-btn {
     position: relative;
-    width: 62px;
-    height: 104px;
-    padding: 9px 7px 17px;
+    /* Near half the big phone (the owner's, 19 Nov 2026), and no outline: lit from the
+       top left, a low-light and a shadow on the right and bottom. */
+    width: 136px;
+    height: 228px;
+    padding: 14px 11px 26px;
     border: 0;
-    border-radius: 13px;
-    background: #0f0a18;
-    box-shadow: 0 0 0 2px #2b1d3e, 0 0 0 4px #ff5fa2, 0 0 18px rgba(255, 95, 162, 0.55), 0 8px 18px rgba(0, 0, 0, 0.6);
+    border-radius: 22px;
+    background: #1a1226;
+    box-shadow: inset 1px 1px 0 rgba(255, 255, 255, 0.36), inset -1px -1px 0 rgba(0, 0, 0, 0.75), 5px 7px 16px rgba(0, 0, 0, 0.6);
     cursor: pointer;
 }
-html[data-skin="gta"] .gx-phone-btn:hover { box-shadow: 0 0 0 2px #2b1d3e, 0 0 0 4px #ffd166, 0 0 18px rgba(255, 209, 102, 0.6), 0 8px 18px rgba(0, 0, 0, 0.6); }
+html[data-skin="gta"] .gx-phone-btn:hover { background: #221830; box-shadow: inset 1px 1px 0 rgba(255, 255, 255, 0.4), inset -1px -1px 0 rgba(0, 0, 0, 0.75), 6px 9px 20px rgba(0, 0, 0, 0.65); }
 html[data-skin="gta"] .gx-phone-screen {
     display: flex;
     align-items: center;
     justify-content: center;
     width: 100%;
     height: 100%;
-    border-radius: 5px;
+    border-radius: 10px;
     background: linear-gradient(180deg, #ff8fab, #ffb86b);
 }
-/* A pixel envelope on the screen. */
-html[data-skin="gta"] .gx-phone-env {
-    position: relative;
-    width: 26px;
-    height: 18px;
-    background: #fff;
-    box-shadow: 0 0 0 2px #3a0f52;
-}
-html[data-skin="gta"] .gx-phone-env::before {
-    content: "";
-    position: absolute;
-    left: 0;
-    top: 0;
-    border-left: 13px solid transparent;
-    border-right: 13px solid transparent;
-    border-top: 10px solid #ffc4dd;
+/* MR, for Maze Rats, faint on the screen. */
+html[data-skin="gta"] .gx-phone-mr {
+    font: italic 900 34px/1 Montserrat, sans-serif;
+    letter-spacing: -1px;
+    color: rgba(255, 255, 255, 0.5);
+    text-shadow: 0 1px 2px rgba(122, 26, 82, 0.35);
 }
 html[data-skin="gta"] .gx-phone-btn::after {      /* the home button */
     content: "";
     position: absolute;
     left: 50%;
-    bottom: 6px;
-    width: 12px;
-    height: 4px;
-    margin-left: -6px;
-    border-radius: 2px;
+    bottom: 10px;
+    width: 26px;
+    height: 6px;
+    margin-left: -13px;
+    border-radius: 3px;
     background: #3b2b52;
+    box-shadow: inset 0 1px 0 rgba(0, 0, 0, 0.5), 0 1px 0 rgba(255, 255, 255, 0.12);
 }
 html[data-skin="gta"] .gx-phone.has-texts .gx-phone-btn { animation: gx-buzz 3.2s steps(1) infinite; }
 @keyframes gx-buzz {
@@ -195,7 +188,7 @@ html[data-skin="gta"] .gx-phone-note {
     color: #24112f;
     text-align: left;
     font: 500 13px/1.4 'Roboto', sans-serif;
-    box-shadow: 0 0 0 3px #ff5fa2, 0 10px 22px rgba(0, 0, 0, 0.55);
+    box-shadow: 0 0 0 1px #7d2652, 0 10px 22px rgba(0, 0, 0, 0.55);
     cursor: pointer;
     animation: gx-pop 0.18s ease-out;
 }
@@ -222,8 +215,8 @@ html[data-skin="gta"] .gx-big {
     height: min(520px, calc(100vh - 90px));
     padding: 12px 12px 30px;
     border-radius: 30px;
-    background: #0f0a18;
-    box-shadow: 0 0 0 3px #2b1d3e, 0 0 0 6px #ff5fa2, 0 0 30px rgba(255, 95, 162, 0.5), 0 18px 40px rgba(0, 0, 0, 0.7);
+    background: #1a1226;
+    box-shadow: inset 1px 1px 0 rgba(255, 255, 255, 0.36), inset -1px -1px 0 rgba(0, 0, 0, 0.75), 8px 12px 28px rgba(0, 0, 0, 0.65);
     /* Grown out of the small phone: from its size, at its corner. */
     transform-origin: 100% 100%;
     animation: gx-grow 0.22s cubic-bezier(0.2, 0.9, 0.3, 1.05);
@@ -232,8 +225,8 @@ html[data-skin="gta"] .gx-big[hidden] { display: none; }
 /* While big, the small phone has become it. */
 html[data-skin="gta"] .gx-phone.is-big .gx-phone-btn { display: none; }
 html[data-skin="gta"] .gx-phone.is-shrinking .gx-big { animation: gx-shrink 0.2s ease-in forwards; }
-@keyframes gx-grow { from { transform: scale(0.2, 0.2); } }
-@keyframes gx-shrink { to { transform: scale(0.2, 0.2); } }
+@keyframes gx-grow { from { transform: scale(0.45, 0.44); } }
+@keyframes gx-shrink { to { transform: scale(0.45, 0.44); } }
 html[data-skin="gta"] .gx-big > * { animation: gx-fade 0.22s ease-out; }
 html[data-skin="gta"] .gx-phone.is-shrinking .gx-big > * { opacity: 0; transition: opacity 0.1s; }
 @keyframes gx-fade { from { opacity: 0; } 50% { opacity: 0; } }
@@ -410,7 +403,7 @@ html[data-skin="gta"] .gx-app i {
 }
 html[data-skin="gta"] .gx-app:hover i { transform: translateY(-2px); }
 html[data-skin="gta"] .a-msg i { background: linear-gradient(135deg, #7dff9a, #13a050); color: #fff; }
-html[data-skin="gta"] .a-maps i { background: #35373a; color: #c9cbcd; box-shadow: 0 0 0 2px #ff5fa2, 0 3px 0 rgba(0, 0, 0, 0.3); }
+html[data-skin="gta"] .a-maps i { background: #35373a; color: #c9cbcd; box-shadow: 0 0 0 1px #7d2652, 0 3px 0 rgba(0, 0, 0, 0.3); }
 html[data-skin="gta"] .a-radio i { background: linear-gradient(135deg, #ff2e88, #7a2cff); color: #fff; }
 html[data-skin="gta"] .a-bank i { background: linear-gradient(135deg, #2e1d12, #13a050); color: #7dff9a; }
 html[data-skin="gta"] .a-wx i { background: linear-gradient(135deg, #ffb86b, #ff5fa2); color: #fff; }
@@ -544,10 +537,10 @@ html[data-skin="gta"] .gx-gps {
     box-sizing: border-box;
     width: 112px;
     height: 112px;
-    border: 4px solid #12061f;
+    border: 3px solid #12061f;
     border-radius: 50%;
     background: #35373a;
-    box-shadow: 0 0 0 2px #ff5fa2, 0 6px 16px rgba(0, 0, 0, 0.6);
+    box-shadow: 0 0 0 1px #7d2652, 0 6px 16px rgba(0, 0, 0, 0.6);
     cursor: pointer;
     transition: width 0.3s cubic-bezier(0.2, 0.9, 0.3, 1), height 0.3s cubic-bezier(0.2, 0.9, 0.3, 1), border-radius 0.3s ease, box-shadow 0.2s;
 }
@@ -555,7 +548,7 @@ html[data-skin="gta"] .gx-gps[hidden] { display: none; }
 html[data-skin="gta"] .gx-gps:not(.is-open):hover,
 html[data-skin="gta"] .gx-gps:not(.is-open):focus-visible {
     outline: none;
-    box-shadow: 0 0 0 2px #ff5fa2, 0 0 0 6px rgba(255, 209, 102, 0.9), 0 0 24px rgba(255, 209, 102, 0.7), 0 6px 16px rgba(0, 0, 0, 0.6);
+    box-shadow: 0 0 0 1px #7d2652, 0 0 0 3px rgba(255, 209, 102, 0.75), 0 6px 16px rgba(0, 0, 0, 0.6);
 }
 html[data-skin="gta"] .gx-gps-map {
     position: absolute;
@@ -570,7 +563,7 @@ html[data-skin="gta"] .gx-gps-tip {
     bottom: 62px;
     width: 210px;
     padding: 8px 12px;
-    border: 3px solid #ff5fa2;
+    border: 1px solid #7d2652;
     border-radius: 10px;
     background: #fff;
     color: #2b1d3e;
@@ -591,7 +584,7 @@ html[data-skin="gta"] .gx-gps.is-open {
     height: 266px;
     border-radius: 12px;
     cursor: default;
-    box-shadow: 0 0 0 2px #ff5fa2, 0 0 22px rgba(255, 95, 162, 0.45), 0 8px 20px rgba(0, 0, 0, 0.6);
+    box-shadow: 0 0 0 1px #7d2652, 0 8px 20px rgba(0, 0, 0, 0.6);
     overflow: hidden;
 }
 html[data-skin="gta"] .gx-gps.is-open .gx-gps-map { opacity: 0; }
@@ -607,7 +600,7 @@ html[data-skin="gta"] .gm-hud {
     flex: 0 0 26px;
     padding: 0 6px 0 8px;
     background: #12061f;
-    border-bottom: 2px solid #ff5fa2;
+    border-bottom: 1px solid #7d2652;
     font: 10px/1 'Volter Goldfish', monospace;
     letter-spacing: 1px;
     text-transform: uppercase;
@@ -619,7 +612,7 @@ html[data-skin="gta"] .gm-x {
     width: 18px;
     height: 18px;
     padding: 0;
-    border: 1px solid #ff5fa2;
+    border: 1px solid #7d2652;
     border-radius: 50%;
     background: #12061f;
     color: #ffc4dd;
@@ -703,7 +696,7 @@ html[data-skin="gta"] .gm-pad {
     touch-action: none;
 }
 html[data-skin="gta"] .gm-pad button {
-    border: 2px solid #ff5fa2;
+    border: 1px solid #7d2652;
     border-radius: 10px;
     background: rgba(18, 6, 31, 0.9);
     color: #ffc4dd;
@@ -731,14 +724,14 @@ html[data-skin="gta"] .gx-car {
     width: 150px;
     height: 46px;
     padding: 0 8px;
-    border: 2px solid #ff5fa2;
+    border: 1px solid #7d2652;
     border-radius: 10px;
     background: linear-gradient(#2b1d3e, #12061f);
     box-shadow: 0 6px 14px rgba(0, 0, 0, 0.6);
     cursor: pointer;
 }
 html[data-skin="gta"] .gx-car[hidden] { display: none; }
-html[data-skin="gta"] .gx-car:hover, html[data-skin="gta"] .gx-car:focus-visible { outline: none; border-color: #ffd166; }
+html[data-skin="gta"] .gx-car:hover, html[data-skin="gta"] .gx-car:focus-visible { outline: none; border-color: #c9a24e; }
 html[data-skin="gta"] .gx-car-knob {
     flex: 0 0 28px;
     height: 28px;
@@ -923,7 +916,9 @@ html[data-skin="gta"] .gx-mission p b { color: #7dff9a; }
 @media (max-width: 760px) {
     html[data-skin="gta"] .gx-cash { display: none; }
     html[data-skin="gta"] .gx-phone { right: 12px; bottom: 12px; }
-    html[data-skin="gta"] .gx-phone-btn { width: 48px; height: 80px; padding: 7px 5px 13px; border-radius: 10px; }
+    html[data-skin="gta"] .gx-phone-btn { width: 84px; height: 140px; padding: 9px 7px 17px; border-radius: 15px; }
+    html[data-skin="gta"] .gx-phone-btn::after { bottom: 7px; width: 18px; height: 4px; margin-left: -9px; }
+    html[data-skin="gta"] .gx-phone-mr { font-size: 22px; }
     html[data-skin="gta"] .gx-big { width: min(300px, calc(100vw - 24px)); height: min(480px, calc(100vh - 40px)); }
 }
 

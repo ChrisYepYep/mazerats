@@ -1043,7 +1043,7 @@
             `</div>` +
             `<button type="button" class="gx-phone-note" hidden></button>` +
             `<button type="button" class="gx-phone-btn" aria-label="Phone" aria-expanded="false">` +
-                `<span class="gx-phone-screen"><span class="gx-phone-env" aria-hidden="true"></span></span><span class="gx-phone-badge" hidden></span></button>`));
+                `<span class="gx-phone-screen"><span class="gx-phone-mr" aria-hidden="true">MR</span></span><span class="gx-phone-badge" hidden></span></button>`));
         listen(phone, "click", (e) => {
             const t = e.target.closest("button");
             if (!t || !phone.contains(t)) return;
