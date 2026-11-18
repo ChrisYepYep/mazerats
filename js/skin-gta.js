@@ -1078,7 +1078,7 @@
             `</div>` +
             `<button type="button" class="gx-phone-note" hidden></button>` +
             `<button type="button" class="gx-phone-btn" aria-label="Phone" aria-expanded="false">` +
-                `<span class="gx-phone-screen"><span class="gx-phone-clock" aria-hidden="true"><b></b><small></small></span><span class="gx-phone-mr" aria-hidden="true">MR</span></span><span class="gx-phone-badge" hidden></span></button>`));
+                `<span class="gx-phone-screen"><span class="gx-phone-clock" aria-hidden="true"><b></b><small></small></span><span class="gx-phone-mr" aria-hidden="true">MAZE<br>RATS</span></span><span class="gx-phone-badge" hidden></span></button>`));
         // The lock screen: the time and date over the MR (the owner's, 19 Nov 2026).
         const tickLock = () => {
             if (!phone) return;
