@@ -332,7 +332,10 @@
             wheelEl.tabIndex = -1;
             wheelEl.innerHTML = `<svg class="gx-wh-svg" viewBox="-330 -330 660 660" xmlns="${NS}"></svg>`;
             document.body.appendChild(wheelEl);
-            drawWheel(station);
+            // Off, it opens on the station last played, ready to tune in again.
+            let last = -1;
+            if (station < 0) { try { const s = JSON.parse(read(SAVE) || "null"); last = s ? STATIONS.findIndex((x) => x.id === s.station) : -1; } catch (e) { last = -1; } }
+            drawWheel(station >= 0 ? station : last);
             requestAnimationFrame(() => { if (wheelEl) { wheelEl.classList.add("is-on"); wheelEl.focus({ preventScroll: true }); } });
             wheelEl.addEventListener("pointermove", onHover);
             wheelEl.addEventListener("click", onPick);

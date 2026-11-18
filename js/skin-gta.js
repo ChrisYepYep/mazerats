@@ -997,17 +997,11 @@
         carRadio.hidden = !prefs().radar;
         listen(carRadio, "click", () => loadRadio().then((ok) => { if (ok && withRadio()) radio.wheel(carRadio); }));
         listen(carRadio, "wheel", (e) => { e.preventDefault(); loadRadio().then((ok) => { if (ok && withRadio()) radio.step(e.deltaY > 0 ? 1 : -1, true); }); }, { passive: false });
-        // A station picked on an earlier visit: back on at the first press anywhere (a browser plays nothing before one).
-        if (window.GtaRadio || read("mazerats_gta_radio")) {
-            const wake = () => { document.removeEventListener("pointerdown", wake, true); document.removeEventListener("keydown", wake, true); if (!on) return; loadRadio().then((ok) => { if (ok && withRadio()) radio.resumeSaved(); }); };
-            document.addEventListener("pointerdown", wake, true); document.addEventListener("keydown", wake, true);
-            offs.push(() => { document.removeEventListener("pointerdown", wake, true); document.removeEventListener("keydown", wake, true); });
-            loadRadio().then((ok) => { if (ok) { withRadio(); radioUi(); } });
-        } else {
-            // No station yet: the radio's script, once the page has settled, for the knob's Off badge.
-            const t = setTimeout(() => loadRadio().then((ok) => { if (ok && on) drawKnob(); }), 2500);
-            offs.push(() => clearTimeout(t));
-        }
+        /* Every visit starts with the radio off (the owner's, 19 Nov 2026); the
+           wheel opens on the station last played. The radio's script loads once
+           the page has settled, for the knob's Off badge. */
+        const t = setTimeout(() => loadRadio().then((ok) => { if (ok && on) drawKnob(); }), 2500);
+        offs.push(() => clearTimeout(t));
     }
     function withRadio() {
         if (!window.GtaRadio) return false;
