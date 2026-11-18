@@ -185,8 +185,26 @@
         if (!s || typeof s !== "object" || (s.who || "") !== who()) return null;
         return s;
     }
+    /* NO WRONG FIRST PAINT (the owner's, 18 Nov 2026: "streak wanted stars
+       and maze points cash don't all load in properly at first"). A
+       signed-in player's records are stamped with their account, and the
+       account is not known until `me` answers, a moment after the page
+       paints: read before then, every record looked like someone else's and
+       the header showed no stars and $0 until the next look. So the last
+       figures shown are kept (STAND_KEY) and shown straight away while the
+       account is still being asked, then replaced the moment it answers
+       (Account.onChange, below). */
+    const STAND_KEY = "mazerats_gta_standing";
+    const accountPending = () => !!(window.Account && !Account.known);
     function standing() {
         const today = utcDay(Date.now()), yesterday = utcDay(Date.now() - 864e5);
+        if (accountPending()) {
+            try {
+                const c = JSON.parse(read(STAND_KEY) || "null");
+                // Yesterday's figures still stand today: a streak is alive until a day is missed.
+                if (c && (c.day === today || c.day === yesterday)) return { streak: c.streak || 0, points: c.points || 0, played: c.day === today ? c.played || {} : {} };
+            } catch (e) { /* worked out below */ }
+        }
         let streak = 0, points = 0; const played = {};
         GAMES.forEach((g) => {
             const s = record(g);
@@ -196,6 +214,7 @@
             points += Number(s.points) || 0;
             played[g.key] = s.lastDay === today;
         });
+        if (!accountPending()) write(STAND_KEY, JSON.stringify({ day: today, streak, points, played }));
         return { streak, points, played };
     }
 
@@ -300,13 +319,25 @@
         const badge = phone.querySelector(".gx-phone-badge"); badge.hidden = true;
         phone.classList.remove("has-texts");
     }
+    /* The small phone GROWS into the big one and shrinks back into its
+       corner (the owner's, 18 Nov 2026): the big phone sits exactly where the
+       small one was, scaled up from its bottom-right corner, and the small
+       one is hidden meanwhile (css: .gx-phone.is-big). */
+    let shrinking = 0;
     function closeBig(refocus) {
-        if (!isBig()) return;
-        phone.classList.remove("is-big");
-        phone.querySelector(".gx-big").hidden = true;
-        phone.querySelector(".gx-phone-btn").setAttribute("aria-expanded", "false");
-        if (refocus) phone.querySelector(".gx-phone-btn").focus({ preventScroll: true });
-        drawPhone();
+        if (!isBig() || phone.classList.contains("is-shrinking")) return;
+        const done = () => {
+            if (!phone) return;
+            phone.classList.remove("is-big", "is-shrinking");
+            phone.querySelector(".gx-big").hidden = true;
+            phone.querySelector(".gx-phone-btn").setAttribute("aria-expanded", "false");
+            if (refocus) phone.querySelector(".gx-phone-btn").focus({ preventScroll: true });
+            drawPhone();
+        };
+        if (reduced()) { done(); return; }
+        phone.classList.add("is-shrinking");
+        clearTimeout(shrinking);
+        shrinking = later(done, 200);
     }
     function showNote() {
         if (!phone || !unread.length || isBig()) return;
@@ -428,6 +459,8 @@
         // Records and the sign-in change under us: another tab, a game, the account arriving.
         listen(window, "storage", (e) => { if (!e.key || /stats|gta_texts/.test(e.key)) { drawStanding(); drawPhone(); } });
         listen(document, "visibilitychange", () => { if (document.visibilityState === "visible") { drawStanding(); drawPhone(); } });
+        // The account answering (or changing): its own records, at once.
+        if (window.Account && typeof Account.onChange === "function") offs.push(Account.onChange(() => { if (on) { drawStanding(); drawPhone(); } }));
         timers.push(setInterval(() => { drawStanding(); drawPhone(); }, 20000));
         // The newest text pops up in a moment after the page settles.
         // Not on a phone, where it would sit over the archive: there it only buzzes.
