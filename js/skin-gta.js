@@ -285,14 +285,22 @@
             shownCash = total;
         }
     }
-    /* Phones (760px and under): the cash goes into the top bar, after the Wanted stars, and
-       back under the bar on a wider window (css/skin-gta.css, .gx-cash.is-inbar; 19 Nov 2026). */
+    /* Phones (760px and under): the cash goes into the hero, top right, level with the
+       MAZE RATS title, and back to its own place on a wider window (css/skin-gta.css,
+       .gx-cash.is-inhero; 19 Nov 2026). */
     function placeCash() {
         if (!cash) return;
-        const bar = innerWidth <= 760 && wanted && wanted.parentNode ? wanted.parentNode : null;
-        if (bar && cash.previousElementSibling !== wanted) wanted.after(cash);
-        else if (!bar && cash.parentNode !== document.body) document.body.appendChild(cash);
-        cash.classList.toggle("is-inbar", !!bar);
+        const hero = innerWidth <= 760 ? document.querySelector("main .hero") : null;
+        const title = hero && hero.querySelector(".hero-title");
+        if (hero && title) {
+            if (cash.parentNode !== hero) hero.prepend(cash);
+            cash.classList.add("is-inhero");
+            cash.style.top = Math.round(title.getBoundingClientRect().top - hero.getBoundingClientRect().top) + "px";
+        } else {
+            if (cash.parentNode !== document.body) document.body.appendChild(cash);
+            cash.classList.remove("is-inhero");
+            cash.style.top = "";
+        }
     }
     function money(n) { return "$" + Math.round(n).toLocaleString("en-US"); }
     function countTo(el, from, to) {
@@ -1243,6 +1251,8 @@
         cash.setAttribute("title", "Maze Points from the daily games, plus Street Cash from Maze Maps. Click for the Bank.");
         listen(cash, "click", () => { if (isBig() && view === "bank") closeBig(true); else openBig("bank"); });
         placeCash();
+        // The title's place can move a little once its font arrives.
+        if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => { if (on) placeCash(); });
 
         phone = add(make("div", "gx-phone",
             `<div class="gx-big" role="dialog" aria-label="Phone" hidden>` +

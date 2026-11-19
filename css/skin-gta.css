@@ -1079,23 +1079,20 @@ html[data-skin="gta"] .gx-mission p b { color: #7dff9a; }
     html[data-skin="gta"] .gx-gps.is-open .gm-compact .gm-foot { grid-column: 1; grid-row: 3; }
     html[data-skin="gta"] .gx-gps.is-open .gm-compact .gm-pad { grid-column: 2; grid-row: 2 / 4; align-content: center; padding: 0 12px; }
 }
-/* Phones (760px and under): the cash in the top bar itself, right after the Wanted stars and pushed to the
-   right (the owner's, 19 Nov 2026: "on mobile the money doesnt appear in the top right"). Under the bar it
-   was hidden: the bar is sticky, blurred and on top there, and its height changes with what is in it, so
-   js/skin-gta.js (placeCash) moves the button into the bar's .brand-group and it flows with the bar.
-   A tap opens the Bank, as on a computer. */
-html[data-skin="gta"] .gx-cash.is-inbar {
-    position: relative;
-    top: auto;
-    right: auto;
-    z-index: auto;
-    margin-left: auto;
-    padding: 2px 0;
-    min-height: 32px;
-    justify-content: center;
+/* Phones (760px and under): the cash top right under the top bar, level with the big MAZE RATS title (the
+   owner's, 19 Nov 2026: "top right under the top bar, in line with the MAZE RATS title text, not in the top
+   bar"). At a fixed place under the bar it was hidden: the bar is sticky, blurred and on top, and its height
+   changes with what is in it. So js/skin-gta.js (placeCash) puts the button in the hero, which sits under
+   the bar whatever its height, sets its top to the title's, and this pulls it out to the screen's right edge
+   (the hero is centred, so half of what it is short of the screen, plus 12px). A tap opens the Bank. */
+html[data-skin="gta"] .hero:has(> .gx-cash) { position: relative; }
+html[data-skin="gta"] .gx-cash.is-inhero {
+    right: calc((100% - 100vw) / 2 + 12px);
+    min-height: 40px;
+    justify-content: flex-start;
 }
-html[data-skin="gta"] .gx-cash.is-inbar .gx-cash-n { font-size: 19px; }
-html[data-skin="gta"] .gx-cash.is-inbar .gx-cash-lab { margin-top: 2px; font-size: 7px; }
+html[data-skin="gta"] .gx-cash.is-inhero .gx-cash-n { font-size: 22px; }
+html[data-skin="gta"] .gx-cash.is-inhero .gx-cash-lab { margin-top: 3px; font-size: 8px; }
 /* The smaller phone by height too: on a phone on its side the 136x228 one took over half the screen (scan 18 Nov evening). */
 @media (max-width: 760px), (max-width: 900px) and (max-height: 500px) {
     html[data-skin="gta"] body { padding-bottom: 164px; }
