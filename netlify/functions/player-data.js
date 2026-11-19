@@ -210,6 +210,59 @@ function cleanProfile(p) {
     return Object.keys(out).length ? out : null;
 }
 
+/* THE GTA SKIN'S STREET CASH (19 Nov 2026; the owner's: "make it so
+   signed in players have these things saved to their account across
+   devices"). What the skin's radar maze (js/gta-maze.js) has paid, kept
+   by js/skin-gta.js. Only ever shown in that skin, never on a board, so it
+   is checked for shape and size, not for honesty.
+
+   It MERGES rather than overwrites, so two devices both keep what they
+   won: each level's best pay is the higher one, its best time the lower,
+   and the cash is the sum of the best pays (the skin only ever pays the
+   difference over a level's best, so that sum is exactly its total). */
+const GTA_LEVELS = 200, GTA_PAY_MAX = 1e7;
+function cleanGta(g) {
+    if (!g || typeof g !== "object" || Array.isArray(g)) return null;
+    const best = {}, times = {};
+    for (const [k, v] of Object.entries(g.best && typeof g.best === "object" ? g.best : {})) {
+        const lv = Number(k), n = Math.round(Number(v));
+        if (Number.isInteger(lv) && lv >= 1 && lv <= GTA_LEVELS && n > 0 && n <= GTA_PAY_MAX) best[lv] = n;
+    }
+    for (const [k, v] of Object.entries(g.times && typeof g.times === "object" ? g.times : {})) {
+        const lv = Number(k), t = Math.round(Number(v) * 10) / 10;
+        if (Number.isInteger(lv) && lv >= 1 && lv <= GTA_LEVELS && t > 0 && t < 36000) times[lv] = t;
+    }
+    const day = typeof g.day === "string" && /^\d{4}-\d{2}-\d{2}$/.test(g.day) ? g.day : "";
+    const busts = Math.max(0, Math.min(9999, Math.round(Number(g.busts) || 0)));
+    const log = (Array.isArray(g.log) ? g.log : []).slice(0, 30).map(e => ({
+        day: e && typeof e.day === "string" && /^\d{4}-\d{2}-\d{2}$/.test(e.day) ? e.day : "",
+        what: e && typeof e.what === "string" ? e.what.slice(0, 60) : "",
+        amt: Math.max(0, Math.min(GTA_PAY_MAX, Math.round(Number(e && e.amt) || 0)))
+    })).filter(e => e.day && e.what && e.amt);
+    return { best, times, day, busts, log };
+}
+function mergeGta(held, incoming) {
+    const h = cleanGta(held) || { best: {}, times: {}, day: "", busts: 0, log: [] };
+    const best = { ...h.best }, times = { ...h.times };
+    for (const [k, v] of Object.entries(incoming.best)) best[k] = Math.max(best[k] || 0, v);
+    for (const [k, v] of Object.entries(incoming.times)) times[k] = Math.min(times[k] || Infinity, v);
+    // Today's busts: the higher count for the same day, the later day's otherwise.
+    const day = incoming.day > h.day ? incoming.day : h.day;
+    const busts = incoming.day === h.day ? Math.max(incoming.busts, h.busts) : (incoming.day > h.day ? incoming.busts : h.busts);
+    // Both devices' pay slips, the same slip once, newest day first.
+    const seen = new Set(), log = [];
+    [...incoming.log, ...h.log].forEach(e => { const key = e.day + "|" + e.what + "|" + e.amt; if (!seen.has(key)) { seen.add(key); log.push(e); } });
+    log.sort((a, b) => (a.day < b.day ? 1 : a.day > b.day ? -1 : 0));
+    return { best, times, day, busts, log: log.slice(0, 30) };
+}
+// As the page wants it: the cash and furthest level worked out from the bests.
+const gtaOf = doc => {
+    const g = cleanGta(doc && doc.gta);
+    if (!g) return null;
+    const levels = Object.keys(g.best).map(Number);
+    return { ...g, cash: levels.reduce((n, lv) => n + g.best[lv], 0), top: levels.length ? Math.max(...levels) : 0 };
+};
+
 // As stored, with every field present, for the page.
 const profileOf = doc => {
     const p = (doc && doc.profile) || {};
@@ -403,7 +456,7 @@ exports.handler = async (event) => {
         }
         try {
             const [doc, stats, oddStats] = await Promise.all([
-                col.findOne({ playerId: player.id }, { projection: { _id: 0, walked: 1, saved: 1, guess: 1, profile: 1 } }),
+                col.findOne({ playerId: player.id }, { projection: { _id: 0, walked: 1, saved: 1, guess: 1, profile: 1, gta: 1 } }),
                 statsFor(db, player.id),
                 oddStatsFor(db, player.id)
             ]);
@@ -412,6 +465,7 @@ exports.handler = async (event) => {
                 saved: (doc && doc.saved) || [],
                 guess: liveGuess(doc && doc.guess),
                 profile: profileOf(doc),
+                gta: gtaOf(doc),
                 stats,
                 oddStats
             });
@@ -452,6 +506,11 @@ exports.handler = async (event) => {
         if (body.profile !== undefined) {
             profile = cleanProfile(body.profile);
             if (profile === null) return json(400, { error: "Bad profile" });
+        }
+        let gta = null;
+        if (body.gta !== undefined) {
+            gta = cleanGta(body.gta);
+            if (gta === null) return json(400, { error: "Bad street cash" });
         }
         if (body.guess !== undefined) {
             // null is a legitimate value: it is how the client says "the day
@@ -529,8 +588,8 @@ exports.handler = async (event) => {
                device re-sending its whole list is the normal case, not the
                exception, so without this every sync would append the same ids
                again and fill the cap with copies. */
-            const current = (Object.keys(add).length || "guess" in set || profile)
-                ? (await col.findOne({ playerId: player.id }, { projection: { _id: 0, walked: 1, saved: 1, guess: 1, profile: 1 } }) || {})
+            const current = (Object.keys(add).length || "guess" in set || profile || gta)
+                ? (await col.findOne({ playerId: player.id }, { projection: { _id: 0, walked: 1, saved: 1, guess: 1, profile: 1, gta: 1 } }) || {})
                 : {};
 
             /* The profile's choices, each its own field so a save of one
@@ -573,6 +632,8 @@ exports.handler = async (event) => {
                 if (stale) delete set.guess;
             }
 
+            if (gta) set.gta = mergeGta(current.gta, gta);
+
             if (Object.keys(add).length) {
                 const only = (incoming, held) => {
                     const have = new Set(held || []);
@@ -589,7 +650,7 @@ exports.handler = async (event) => {
             await col.updateOne({ playerId: player.id }, update, { upsert: true });
 
             const [doc, stats, oddStats] = await Promise.all([
-                col.findOne({ playerId: player.id }, { projection: { _id: 0, walked: 1, saved: 1, guess: 1, profile: 1 } }),
+                col.findOne({ playerId: player.id }, { projection: { _id: 0, walked: 1, saved: 1, guess: 1, profile: 1, gta: 1 } }),
                 statsFor(db, player.id),
                 oddStatsFor(db, player.id)
             ]);
@@ -598,6 +659,7 @@ exports.handler = async (event) => {
                 saved: (doc && doc.saved) || [],
                 guess: liveGuess(doc && doc.guess),
                 profile: profileOf(doc),
+                gta: gtaOf(doc),
                 stats,
                 oddStats
             });

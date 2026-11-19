@@ -206,26 +206,62 @@
        account is still being asked, then replaced the moment it answers
        (Account.onChange, below). */
     const STAND_KEY = "mazerats_gta_standing";
-    const accountPending = () => !!(window.Account && !Account.known);
+    /* THE ACCOUNT'S OWN FIGURES (the owner's, 19 Nov 2026: "stars dont seem
+       accurate, likely because its browser saved, make it so signed in
+       players have these things saved to their account across devices").
+       This device's records only know the days played on it, so a player
+       who plays on their phone and their computer saw a different streak and
+       total on each. Signed in, the server's figures (player-data.js: stats
+       and oddStats, counted from the score rows, the same ones the games'
+       own cards show) are used, and the device's only where they are ahead
+       (a day just finished, its save still on the way). The same answer
+       carries the Street Cash (STREET CASH, below). Asked again at most
+       once a minute, when the page comes back into view. */
+    let acct = null, acctAt = 0, acctAsking = false, storedHooked = false;
+    const accountData = () => (acct && who() && acct.who === who() ? acct.data : null);
+    function takeAccount(w, d) {
+        if (!d || typeof d !== "object") return;
+        acct = { who: w, data: d };
+        adoptStreet(d.gta);
+        if (on) { drawStanding(); drawPhone(); }
+    }
+    function pullAccount(force) {
+        if (!window.Account || !Account.current || typeof Account.fetchState !== "function" || !who()) { acct = null; return; }
+        if (acctAsking || (!force && accountData() && Date.now() - acctAt < 60000)) return;
+        acctAt = Date.now(); acctAsking = true;
+        const asked = who();
+        Account.fetchState().then((d) => { if (who() === asked) takeAccount(asked, d); })
+            .catch(() => { /* the device's own records stand */ })
+            .then(() => { acctAsking = false; if (on) drawStanding(); });
+    }
+    // Signed in and the account's answer still on its way: the last figures stand meanwhile.
+    const accountPending = () => !!(window.Account && (!Account.known || (who() && !accountData() && acctAsking)));
     function standing() {
         const today = utcDay(Date.now()), yesterday = utcDay(Date.now() - 864e5);
         if (accountPending()) {
             try {
                 const c = JSON.parse(read(STAND_KEY) || "null");
                 // Yesterday's figures still stand today: a streak is alive until a day is missed.
-                if (c && (c.day === today || c.day === yesterday)) return { streak: c.streak || 0, points: c.points || 0, played: c.day === today ? c.played || {} : {} };
+                // Only this player's (or, before the sign-in is known, the last one shown here).
+                if (c && (c.day === today || c.day === yesterday) && (!Account.known || (c.who || "") === who())) return { streak: c.streak || 0, points: c.points || 0, played: c.day === today ? c.played || {} : {} };
             } catch (e) { /* worked out below */ }
         }
+        const remote = accountData();
         let streak = 0, points = 0; const played = {};
         GAMES.forEach((g) => {
-            const s = record(g);
-            if (!s) return;
-            const live = s.lastDay === today || s.lastDay === yesterday ? Number(s.streak) || 0 : 0;
-            streak = Math.max(streak, live);
-            points += Number(s.points) || 0;
-            played[g.key] = s.lastDay === today;
+            const r = remote && remote[g.key === "guess" ? "stats" : "oddStats"];
+            let pts = 0;
+            [record(g), r && typeof r === "object" ? r : null].forEach((s) => {
+                if (!s) return;
+                const live = s.lastDay === today || s.lastDay === yesterday ? Number(s.streak) || 0 : 0;
+                streak = Math.max(streak, live);
+                pts = Math.max(pts, Number(s.points) || 0);
+                if (s.lastDay === today) played[g.key] = true;
+            });
+            points += pts;
+            if (!played[g.key]) played[g.key] = false;
         });
-        if (!accountPending()) write(STAND_KEY, JSON.stringify({ day: today, streak, points, played }));
+        if (!accountPending()) write(STAND_KEY, JSON.stringify({ day: today, streak, points, played, who: who() }));
         return { streak, points, played };
     }
 
@@ -248,6 +284,15 @@
             countTo(cash.querySelector(".gx-cash-n"), shownCash < 0 ? total : shownCash, total);
             shownCash = total;
         }
+    }
+    /* Phones (760px and under): the cash goes into the top bar, after the Wanted stars, and
+       back under the bar on a wider window (css/skin-gta.css, .gx-cash.is-inbar; 19 Nov 2026). */
+    function placeCash() {
+        if (!cash) return;
+        const bar = innerWidth <= 760 && wanted && wanted.parentNode ? wanted.parentNode : null;
+        if (bar && cash.previousElementSibling !== wanted) wanted.after(cash);
+        else if (!bar && cash.parentNode !== document.body) document.body.appendChild(cash);
+        cash.classList.toggle("is-inbar", !!bar);
     }
     function money(n) { return "$" + Math.round(n).toLocaleString("en-US"); }
     function countTo(el, from, to) {
@@ -509,7 +554,10 @@
        "points can be large, but must be locked to the gta skin"). Kept
        here, on this device, per player (signed in, or the guest); shown
        nowhere but in this skin, where the cash top right is Maze Points
-       and Street Cash together and the phone's Bank splits them. */
+       and Street Cash together and the phone's Bank splits them.
+       Signed in, it is kept on the account too (19 Nov 2026; `gta` in
+       player-data.js), which merges every device's: each level's best pay
+       and best time, and the cash as the sum of the best pays. */
     const STREET_KEY = "mazerats_gta_street";
     function streetAll() { try { const s = JSON.parse(read(STREET_KEY) || "null"); return s && typeof s === "object" ? s : {}; } catch (e) { return {}; } }
     function street() {
@@ -518,7 +566,35 @@
         if (s.day !== utcDay(Date.now())) { s.day = utcDay(Date.now()); s.busts = 0; }
         return s;
     }
-    function saveStreet(s) { const all = streetAll(); all[who() || "guest"] = s; write(STREET_KEY, JSON.stringify(all)); }
+    function saveStreet(s) {
+        const all = streetAll(); all[who() || "guest"] = s; write(STREET_KEY, JSON.stringify(all));
+        if (who() && window.Account && typeof Account.saveState === "function") {
+            Account.saveState({ gta: { best: s.best, times: s.times, day: s.day, busts: s.busts, log: s.log } });
+        }
+    }
+    /* The account's copy, merged into this device's. Anything this device
+       has that the account lacks (won here before it was kept there, or a
+       save that never arrived) is sent up. */
+    function adoptStreet(g) {
+        if (!who()) return;
+        const s = street(), r = g && typeof g === "object" ? g : {};
+        Object.entries(r.best || {}).forEach(([lv, v]) => { s.best[lv] = Math.max(Number(s.best[lv]) || 0, Number(v) || 0); });
+        Object.entries(r.times || {}).forEach(([lv, t]) => { s.times[lv] = Math.min(Number(s.times[lv]) || Infinity, Number(t) || Infinity); });
+        if (r.day === s.day) s.busts = Math.max(s.busts, Number(r.busts) || 0);
+        const seen = new Set(), log = [];
+        [...(Array.isArray(r.log) ? r.log : []), ...s.log].forEach((e) => { const k = e && e.day + "|" + e.what + "|" + e.amt; if (e && !seen.has(k)) { seen.add(k); log.push(e); } });
+        s.log = log.sort((a, b) => (a.day < b.day ? 1 : a.day > b.day ? -1 : 0)).slice(0, 30);
+        const levels = Object.keys(s.best).map(Number).filter((n) => n > 0);
+        s.cash = levels.reduce((n, lv) => n + (Number(s.best[lv]) || 0), 0);
+        s.top = Math.max(Number(s.top) || 0, levels.length ? Math.max(...levels) : 0, Number(r.top) || 0);
+        const all = streetAll(); all[who()] = s; write(STREET_KEY, JSON.stringify(all));
+        // This device knew something the account did not (a better pay or time on a level the
+        // server keeps): send it up. Only then, so the save's own answer cannot start another.
+        const rb = r.best || {}, rt = r.times || {};
+        const ahead = Object.keys(s.best).some((lv) => lv >= 1 && lv <= 200 && (Number(s.best[lv]) || 0) > (Number(rb[lv]) || 0)) ||
+            Object.keys(s.times).some((lv) => lv >= 1 && lv <= 200 && Number(s.times[lv]) > 0 && Number(s.times[lv]) < (Number(rt[lv]) || Infinity));
+        if (ahead && window.Account && typeof Account.saveState === "function") Account.saveState({ gta: { best: s.best, times: s.times, day: s.day, busts: s.busts, log: s.log } });
+    }
     const roundTo = (n, k) => Math.round(n / k) * k;
     const BANK = {
         street: () => street().cash,
@@ -1137,7 +1213,7 @@
         sky = add(make("div", "gx-sky"));
         sky.setAttribute("aria-hidden", "true");
         drawSky();
-        listen(window, "resize", () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(() => { drawSky(); rainSize(); radarResize(); }, 250); });
+        listen(window, "resize", () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(() => { drawSky(); rainSize(); radarResize(); placeCash(); }, 250); });
         /* The bulb is the newest word on the sky: a press undoes a sky fixed in
            the phone's Weather app, which otherwise left the bulb doing nothing
            to it (the owner's, 19 Nov 2026). */
@@ -1166,6 +1242,7 @@
         cash.type = "button";
         cash.setAttribute("title", "Maze Points from the daily games, plus Street Cash from Maze Maps. Click for the Bank.");
         listen(cash, "click", () => { if (isBig() && view === "bank") closeBig(true); else openBig("bank"); });
+        placeCash();
 
         phone = add(make("div", "gx-phone",
             `<div class="gx-big" role="dialog" aria-label="Phone" hidden>` +
@@ -1289,9 +1366,15 @@
         drawPhone();
         // Records and the sign-in change under us: another tab, a game, the account arriving.
         listen(window, "storage", (e) => { if (!e.key || /stats|gta_texts/.test(e.key)) { drawStanding(); drawPhone(); } });
-        listen(document, "visibilitychange", () => { if (document.visibilityState === "visible") { drawStanding(); drawPhone(); } });
-        // The account answering (or changing): its own records, at once.
-        if (window.Account && typeof Account.onChange === "function") offs.push(Account.onChange(() => { if (on) { drawStanding(); drawPhone(); } }));
+        listen(document, "visibilitychange", () => { if (document.visibilityState === "visible") { pullAccount(false); drawStanding(); drawPhone(); } });
+        // The account answering (or changing): its own records, at once, then its saved figures.
+        if (window.Account && typeof Account.onChange === "function") offs.push(Account.onChange(() => { if (on) { acct = null; pullAccount(true); drawStanding(); drawPhone(); } }));
+        // Every save the account takes answers with the merged figures (a game finished, the radar paid).
+        if (!storedHooked && window.Account && typeof Account.onStored === "function") {
+            storedHooked = true;
+            Account.onStored((d) => { if (on && who()) takeAccount(who(), d); });
+        }
+        pullAccount(true);
         timers.push(setInterval(() => { drawStanding(); drawPhone(); drawSky(); }, 20000));
         // The newest text pops up in a moment after the page settles.
         // Not on a phone, where it would sit over the archive: there it only buzzes.
