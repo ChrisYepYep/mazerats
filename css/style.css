@@ -14499,10 +14499,11 @@ body[data-page="admin"] #activity-sessions {
 }
 /* Also .side-menu-state, so each palette's ink for those lines is its ink. */
 .style-menu-note {
-    margin: 9px 7px 1px;
+    margin: 1px 7px 6px;
     font-size: 0.58rem;
     line-height: 1.35;
 }
+.style-menu-note + .side-menu-item { margin-top: 0; }
 @media (prefers-reduced-motion: reduce) {
     .side-drawer--style,
     .archive-stack:has(> #side-drawer.is-open) > .side-drawer--style,

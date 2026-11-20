@@ -42,49 +42,22 @@
     }
     menu.setAttribute("inert", "");
 
-    /* The next moment a seasonal window starts (within the next 60 days):
-       { skin, when: "1 Dec" }, or null. Walked edge by edge through the
-       schedule, since an edge may also be a window ending. */
-    function nextTakeover(site) {
-        if (!site || ((site.skin || "auto") !== "auto")) return null;
-        const limit = Date.now() + 60 * 864e5;
-        let t = Date.now();
-        for (let i = 0; i < 12; i++) {
-            const edge = SkinWear.nextChange(site, t);
-            if (edge == null || edge > limit) return null;
-            const r = SkinWear.resolve(site, edge);
-            if (r.why === "schedule" && r.since === edge && r.skin) {
-                return { skin: r.skin, when: new Date(edge).toLocaleDateString("en-GB", { day: "numeric", month: "short" }) };
-            }
-            t = edge;
-        }
-        return null;
-    }
-
     let drawn = "";
     function draw() {
         // An admin previewing a skin sees the preview, not their own pick: the tab steps aside.
         const list = SkinWear.previewing && SkinWear.previewing() ? [] : SkinWear.offered();
         const on = SkinWear.wearing();
-        const site = SkinWear.site ? SkinWear.site() : null;
-        /* THE NOTE (20 Nov 2026, the owner's: "make it clearer to users"): what
-           happens next, as a date, not as a rule. A seasonal look starting
-           replaces whatever was picked, so say which one and when; with none
-           coming, there is nothing to warn of and no note. */
-        const next = nextTakeover(site);
-        const note = next
-            ? `On ${next.when}, the site switches to ${label(next.skin)}. You can change it back here.`
-            : "";
-        const key = JSON.stringify([list, on, note]);
+        const key = JSON.stringify([list, on]);
         if (key === drawn) return;
         drawn = key;
         drawer.hidden = list.length < 2;
         if (drawer.hidden) { if (isOpen()) setOpen(false); return; }
-        menu.innerHTML = list.map((n) => `
+        // One plain line over the rows (20 Nov 2026, the owner's words; it replaced a note under them).
+        menu.innerHTML = `<p class="side-menu-state style-menu-note">Select an archive skin.</p>` + list.map((n) => `
             <button type="button" class="side-menu-item${n === on ? " is-on" : ""}" data-pick="${esc(n)}" aria-pressed="${n === on}">
                 <span class="side-menu-name"><span>${esc(label(n))}</span></span>
                 <span class="side-menu-state">${esc(BLURB[n] || "")}</span>
-            </button>`).join("") + (note ? `<p class="side-menu-state style-menu-note">${esc(note)}</p>` : "");
+            </button>`).join("");
         place();
     }
 
