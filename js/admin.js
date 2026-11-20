@@ -1380,7 +1380,9 @@ document.addEventListener("DOMContentLoaded", () => {
         // The archive's opening view (30 Oct 2026; js/home.js renderOpening).
         "opening": "Used the opening view",
         // The bulb in the archive window (30 Oct 2026).
-        "dark": "Switched dark mode"
+        "dark": "Switched dark mode",
+        // The homepage's Style tab (20 Nov 2026; js/style-tab.js).
+        "style": "Picked a style"
     };
     const PAGE_NAMES = {
         home: "The archive", welcome: "Landing page", wizard: "Atlas", legal: "Privacy & terms",
@@ -1401,6 +1403,7 @@ document.addEventListener("DOMContentLoaded", () => {
             collab: "Collabs", timeline: "Timeline", furni: "Furni", missing: "Missing Pieces"
         },
         "dark": { on: "Turned it on", off: "Turned it off" },
+        "style": { classic: "Classic", gta: "Vice City", halloween: "Halloween", xmas: "Christmas" },
         // The bat game's score, as the band js/skin-halloween.js sends (never the score itself).
         "bat-end": { "0-99": "Under 100", "100-499": "100–499", "500-999": "500–999", "1000-2499": "1,000–2,499", "2500+": "2,500 or more" },
         // Whether the Advent button found them signed in (js/skin-xmas-advent.js).

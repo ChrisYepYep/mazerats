@@ -325,6 +325,7 @@
             // Under the palette: the skin's own switch, saved at once (gooLine).
             if (s.name === "halloween") range.append(gooLine(line));
             if (s.name === "xmas") range.append(adventLine(line));
+            range.append(pickLine(line, s));
             return el("div", { className: "sk-row", dataset: { skin: s.name } }, [name, range, ...kept]);
         }));
 
@@ -378,6 +379,49 @@
             if (ok) { note.classList.remove("is-bad"); note.textContent = want ? "Calendar shown" : "Calendar hidden"; }
         });
         return line("Advent", [el("label", { className: "sk-radio" }, [tick, "Advent calendar"]), note]);
+    }
+
+    /* THE STYLE TAB'S SWITCHES (20 Nov 2026, the owner's: "an option for
+       whether skins can be used manually by users, with a toggle of whether
+       they can use it outside of it's set dates, too"). Per skin, saved at
+       once like the goo: "Visitors can pick it" puts it in the homepage's
+       Style tab; "Outside its dates too" keeps it there all year, else only
+       while its dates are on. (skinPicks in netlify/functions/settings.js;
+       the defaults, until saved, are SkinWear.PICK_DEFAULTS.) Its row's
+       dates still take over every visitor's pick when they start. */
+    function pickLine(line, s) {
+        const now = () => {
+            const saved = site.skinPicks && site.skinPicks[s.name];
+            const d = (window.SkinWear && SkinWear.PICK_DEFAULTS && SkinWear.PICK_DEFAULTS[s.name]) || { users: false, anyDate: false };
+            return saved && typeof saved === "object" ? saved : d;
+        };
+        const users = el("input", { type: "checkbox", checked: now().users === true, disabled: !editable() });
+        const any = el("input", { type: "checkbox", checked: now().anyDate === true, disabled: !editable() || now().users !== true });
+        const note = el("span", { className: "sk-len" });
+        const sync = () => {
+            const p = now();
+            users.checked = p.users === true;
+            any.checked = p.anyDate === true;
+            users.disabled = !editable();
+            any.disabled = !editable() || p.users !== true;
+            anyLabel.classList.toggle("is-off", p.users !== true);
+        };
+        const send = async (field, box) => {
+            const want = box.checked;
+            users.disabled = any.disabled = true;
+            const ok = await save({ skinPicks: { [s.name]: { [field]: want } } }, "", (m, bad) => { note.textContent = m; note.classList.toggle("is-bad", Boolean(bad)); });
+            sync();
+            if (ok) {
+                const p = now();
+                note.classList.remove("is-bad");
+                note.textContent = !p.users ? "Not in the Style tab" : p.anyDate ? "In the Style tab all year" : "In the Style tab while its dates are on";
+            }
+        };
+        users.addEventListener("change", () => send("users", users));
+        any.addEventListener("change", () => send("anyDate", any));
+        const anyLabel = el("label", { className: "sk-radio" }, [any, "Outside its dates too"]);
+        sync();
+        return line("Visitors", [el("label", { className: "sk-radio" }, [users, "Can pick it on the Style tab"]), anyLabel, note]);
     }
 
     // Two skins on at once: the first in the list wins (skin-wear.js takes
@@ -439,7 +483,8 @@
 
     // ---------------- reading and saving ----------------
     function take(s) {
-        site = { skin: s.skin || "auto", skinSchedule: Array.isArray(s.skinSchedule) ? s.skinSchedule : [], halloweenGoo: s.halloweenGoo !== false, xmasAdvent: s.xmasAdvent === true };
+        site = { skin: s.skin || "auto", skinSchedule: Array.isArray(s.skinSchedule) ? s.skinSchedule : [], halloweenGoo: s.halloweenGoo !== false, xmasAdvent: s.xmasAdvent === true,
+            skinPicks: s.skinPicks && typeof s.skinPicks === "object" ? s.skinPicks : null };
         siteAt = typeof s.skinScheduleAt === "string" ? s.skinScheduleAt : "";
     }
     /* The rows, from the dates as saved. rowsAt moves only here: pressing the

@@ -203,6 +203,46 @@ const gooOf = (doc) => !(doc && doc.halloweenGoo === false);
    back"). OFF unless switched on, so it stays hidden until the Warren's skins
    card ticks it. js/skin-wear.js loads the calendar only when it is on. */
 const adventOf = (doc) => !!(doc && doc.xmasAdvent === true);
+/* THE STYLE TAB (20 Nov 2026, the owner's): visitors pick a skin for
+   themselves on the homepage. Per skin, two switches:
+       users    it is in the visitors' list at all
+       anyDate  outside its own dates too (off: only while its dates are on)
+   Vice City is pickable all year; Halloween and Christmas only while their
+   dates are on. A skin the database has never been told about takes these
+   defaults, and Classic (no skin) is always in the list while any skin is.
+   js/skin-wear.js decides what is worn (a window that starts after a pick
+   overrides it); the Warren's skins card sets these. */
+const SKIN_PICK_DEFAULTS = {
+    gta: { users: true, anyDate: true },
+    halloween: { users: true, anyDate: false },
+    xmas: { users: true, anyDate: false }
+};
+function skinPicksOf(doc) {
+    const saved = (doc && doc.skinPicks && typeof doc.skinPicks === "object") ? doc.skinPicks : {};
+    const out = {};
+    for (const s of VALID_SKINS) {
+        const d = SKIN_PICK_DEFAULTS[s] || { users: false, anyDate: false };
+        const v = saved[s] && typeof saved[s] === "object" ? saved[s] : {};
+        out[s] = {
+            users: typeof v.users === "boolean" ? v.users : d.users,
+            anyDate: typeof v.anyDate === "boolean" ? v.anyDate : d.anyDate
+        };
+    }
+    return out;
+}
+// A save names one skin's switches or more, each a boolean; the rest stay as stored.
+function cleanSkinPicks(body) {
+    if (!body || typeof body !== "object" || Array.isArray(body)) return null;
+    const out = {};
+    for (const [s, v] of Object.entries(body)) {
+        if (!VALID_SKINS.includes(s) || !v || typeof v !== "object") return null;
+        for (const [k, b] of Object.entries(v)) {
+            if ((k !== "users" && k !== "anyDate") || typeof b !== "boolean") return null;
+            out["skinPicks." + s + "." + k] = b;
+        }
+    }
+    return Object.keys(out).length ? out : null;
+}
 
 /* Which furni falls past Fallin' Furni's title screen. A site-wide choice
    rather than a per-level one — the title screen is not a level — so it
@@ -417,6 +457,8 @@ function settingsReply(event, doc) {
         skinScheduleAt: skinStampOf(doc),
         halloweenGoo: gooOf(doc),
         xmasAdvent: adventOf(doc),
+        // Which skins visitors may pick on the homepage's Style tab (20 Nov 2026).
+        skinPicks: skinPicksOf(doc),
         // The homepage menu's order and hidden rows (30 Oct 2026; null is as written).
         menuLayout: menuLayoutOf(doc),
         // When it was last saved (31 Oct 2026): the Warren's card sends it back as menuLayoutBase.
@@ -631,6 +673,11 @@ async function write(event, settings, db) {
             if (typeof body.xmasAdvent !== "boolean") return json(400, { error: "xmasAdvent must be true or false" });
             update.xmasAdvent = body.xmasAdvent;
         }
+        if (body.skinPicks !== undefined) {
+            const picks = cleanSkinPicks(body.skinPicks);
+            if (!picks) return json(400, { error: "skinPicks must be { <skin>: { users?: true|false, anyDate?: true|false } }" });
+            Object.assign(update, picks);
+        }
         /* THE MENU SAVED OVER AN OLDER COPY (31 Oct 2026, the bug scan): the
            Warren's card sends the whole layout, so two admins, or two tabs,
            undid each other without a word. Each save is stamped
@@ -729,6 +776,7 @@ async function write(event, settings, db) {
             skinScheduleAt: skinStampOf(doc),
             halloweenGoo: gooOf(doc),
             xmasAdvent: adventOf(doc),
+            skinPicks: skinPicksOf(doc),
             menuLayout: menuLayoutOf(doc),
             menuLayoutAt: menuStampOf(doc)
         });

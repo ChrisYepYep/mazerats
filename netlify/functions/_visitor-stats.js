@@ -45,7 +45,9 @@ const LABELLED = [
     // Dark mode switched "on" or "off" (30 Oct 2026).
     "dark",
     // Which article was opened, or "list" (2 Nov 2026).
-    "article-open"
+    "article-open",
+    // The look picked on the Style tab (20 Nov 2026).
+    "style"
 ];
 
 // A flag per visit: did anything of this name happen in it?

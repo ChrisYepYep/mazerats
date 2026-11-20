@@ -242,6 +242,9 @@ html[data-skin="gta"] .gx-phone-note {
     animation: gx-pop 0.18s ease-out;
 }
 html[data-skin="gta"] .gx-phone-note[hidden] { display: none; }
+/* Out of the way while a tab's panel is out beside the archive window (20 Nov
+   2026): at desktop widths the text sat over the Style tab's rows. */
+html[data-skin="gta"]:has(.archive-stack > .side-drawer.is-open) .gx-phone-note { visibility: hidden; }
 @keyframes gx-pop { from { transform: translateY(8px); opacity: 0; } }
 html[data-skin="gta"] .gx-phone-note b,
 html[data-skin="gta"] .gx-text-body b {

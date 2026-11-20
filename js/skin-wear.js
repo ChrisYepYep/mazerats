@@ -148,9 +148,66 @@
         if (SKINS.includes(mode)) return { skin: mode, why: "override", theme: pairedTheme(site, mode) };
         for (const w of (site && Array.isArray(site.skinSchedule) ? site.skinSchedule : [])) {
             if (!w || !SKINS.includes(w.skin)) continue;
-            for (const [s, e] of spans(w, t)) if (s <= t && t < e) return { skin: w.skin, why: "schedule", until: e, theme: themeOf(w) };
+            for (const [s, e] of spans(w, t)) if (s <= t && t < e) return { skin: w.skin, why: "schedule", since: s, until: e, theme: themeOf(w) };
         }
         return { skin: null, why: "none" };
+    }
+
+    /* ---------- the visitors' own pick (the Style tab, 20 Nov 2026) ----------
+       The owner's: "a function for users on the home page that allows them
+       to change the skin of the website", and "when a skin takes over the
+       site at a set date/time, it should override all users saved preference
+       of skin". So a pick is { skin, at }: "classic" (no skin) or a skin's
+       name, and the moment it was made. It is worn while
+         - the site is following its dates (an override in the Warren, a
+           skin forced on for everybody, beats it; "off" does not),
+         - that skin may be picked now (skinPicks in the settings: users, and
+           anyDate or its own dates on now), and
+         - no scheduled window has started since it was made. One that has
+           is the takeover: the pick is dropped, and the visitor picks again
+           if they still want theirs.
+       Kept in PICK_KEY, and on the account when signed in (player-data's
+       style, the later pick winning), so it follows them between devices. */
+    const PICKS = ["classic"].concat(SKINS);
+    const LABELS = { classic: "Classic", gta: "Vice City", halloween: "Halloween", xmas: "Christmas" };
+    // The order the Style tab lists them in.
+    const PICK_ORDER = ["classic", "gta", "halloween", "xmas"];
+    const PICK_DEFAULTS = { gta: { users: true, anyDate: true }, halloween: { users: true, anyDate: false }, xmas: { users: true, anyDate: false } };
+    function picksOf(site, skin) {
+        const saved = site && site.skinPicks && site.skinPicks[skin];
+        return saved && typeof saved === "object" ? saved : (PICK_DEFAULTS[skin] || { users: false, anyDate: false });
+    }
+    // Whether one of the skin's own windows holds the moment, whichever skin the site is wearing.
+    function inItsDates(site, skin, t) {
+        for (const w of (site && Array.isArray(site.skinSchedule) ? site.skinSchedule : [])) {
+            if (!w || w.skin !== skin) continue;
+            for (const [s, e] of spans(w, t)) if (s <= t && t < e) return true;
+        }
+        return false;
+    }
+    function pickable(site, skin, t) {
+        if (!SKINS.includes(skin)) return false;
+        const p = picksOf(site, skin);
+        return p.users === true && (p.anyDate === true || inItsDates(site, skin, t == null ? Date.now() : +t));
+    }
+    /* What the Style tab offers at t: Classic and every skin that may be
+       picked now, or nothing while the Warren forces a skin on everybody,
+       or when there is no skin to offer beside Classic. */
+    function choices(site, t) {
+        t = t == null ? Date.now() : +t;
+        if (SKINS.includes((site && site.skin) || "auto")) return [];
+        const skins = PICK_ORDER.filter((s) => s !== "classic" && pickable(site, s, t));
+        return skins.length ? ["classic"].concat(skins) : [];
+    }
+    /* A stored pick, if it stands at t: null when it is stale (a window began
+       after it), not allowed now, or the Warren is forcing a skin. */
+    function pickStands(site, pick, t) {
+        if (!pick || !PICKS.includes(pick.skin) || !(pick.at > 0)) return false;
+        t = t == null ? Date.now() : +t;
+        const pub = resolve(site, t);
+        if (pub.why === "override") return false;
+        if (pub.why === "schedule" && pub.since > pick.at) return false;
+        return pick.skin === "classic" ? choices(site, t).length > 0 : pickable(site, pick.skin, t);
     }
     // A window's palette: its own if it names one (null meaning the site's), else its skin's default.
     const themeOf = (w) => ("theme" in w ? (w.theme || null) : (PAIRED[w.skin] || null));
@@ -170,7 +227,7 @@
         return best;
     }
 
-    window.SkinWear = { resolve, nextChange, spans, pairedTheme, SKINS, PAIRED };
+    window.SkinWear = { resolve, nextChange, spans, pairedTheme, SKINS, PAIRED, choices, pickable, pickStands, picksOf, LABELS, PICK_DEFAULTS };
     if (passive) return;
 
     // ---------- the preview ----------
@@ -296,19 +353,48 @@
         current = null;
     }
 
+    // ---------- the visitor's pick, kept ----------
+    const PICK_KEY = "mazerats_skin_pick";                  // { skin: "classic" | <skin>, at: ms }
+    function storedPick() {
+        try {
+            const v = JSON.parse(get(localStorage, PICK_KEY) || "null");
+            return v && PICKS.includes(v.skin) && Number(v.at) > 0 ? { skin: v.skin, at: Number(v.at) } : null;
+        } catch (e) { return null; }
+    }
+    /* The pick worn now, or null. A pick a window has started since is the
+       takeover: dropped for good here (and on the account, by the same rule,
+       wherever it is read), so the visitor sees the new skin and picks again. */
+    function pickNow() {
+        const pick = storedPick();
+        if (!pick) return null;
+        const pub = resolve(site, Date.now());
+        if (pub.why === "schedule" && pub.since > pick.at) { put(localStorage, PICK_KEY, null); return null; }
+        return pickStands(site, pick, Date.now()) ? pick : null;
+    }
+
     let boundary = 0;
     function refresh() {
         const p = preview();
         const pub = resolve(site, Date.now());
-        const want = p === NO_SKIN ? null : p || pub.skin;
+        // A preview beats the visitor's own pick; the pick beats the dates.
+        const mine = p ? null : pickNow();
+        const own = mine ? (mine.skin === "classic" ? null : mine.skin) : undefined;
+        const want = p === NO_SKIN ? null : p || (mine ? own : pub.skin);
         const was = source;
-        source = p ? "preview" : pub.skin ? "site" : null;
+        source = p ? "preview" : mine ? (own ? "pick" : null) : pub.skin ? "site" : null;
         // A change of pretend date or of source restarts the skin, so its calendar things re-read.
-        if (want && want === current && was !== source) remove();
+        // (Only into or out of a preview: picking the skin already worn by its dates is no change.)
+        if (want && want === current && (was === "preview") !== (source === "preview")) remove();
         if (want) apply(want); else remove();
         unstick();
         if (p === NO_SKIN) wearTheme(null, null, true);
+        else if (mine) {
+            const next = nextChange(site, Date.now());
+            wearTheme(own ? pairedTheme(site, own) : null, Math.min(next == null ? Infinity : next, Date.now() + 30 * 864e5), false, true);
+        }
         else wearTheme(p ? pairedTheme(site, p) : pub.theme, p ? null : pub.until);
+        // The Style tab (js/style-tab.js) redraws from this.
+        try { document.dispatchEvent(new CustomEvent("mazerats:skin-changed", { detail: { skin: current, source } })); } catch (e) { /* an old browser */ }
         // Wake at the schedule's next boundary. setTimeout holds about 24 days; a longer wait re-arms.
         clearTimeout(boundary);
         const next = nextChange(site, Date.now());
@@ -366,12 +452,17 @@
        SKIN_THEME_KEY as a skin's would be, so the pages' <head> paints it
        first rather than the visitors' skin palette from the settings, and
        nothing changes colour once this runs. */
-    function wearTheme(paired, until, hold) {
+    /* `pick` (the visitor's own, from the Style tab): remembered with
+       pick: true, which home.html's gate lets stand as it does a preview,
+       and only until the dates next change, when a window starting may take
+       it over; Classic picked is the site's own palette held (as `hold`). */
+    function wearTheme(paired, until, hold, pick) {
         const was = window.__mrSkinPalette;
+        const mark = pick ? { pick: true } : {};
         if (paired && /^[a-z]+$/.test(paired)) {
             window.__mrSkinPalette = paired;   // Api.applyTheme leaves the page alone meanwhile
             setPalette(paired);
-            put(localStorage, SKIN_THEME_KEY, JSON.stringify({ theme: paired, until: until || Date.now() + 864e5 }));
+            put(localStorage, SKIN_THEME_KEY, JSON.stringify({ theme: paired, until: until || Date.now() + 864e5, ...mark }));
             told(was);
             return;
         }
@@ -380,7 +471,7 @@
         // Back to the site's own: the settings' answer if known, else what this browser remembers.
         const own = (site && site.theme) || get(localStorage, "mazerats_theme") || "classic";
         if (/^[a-z]+$/.test(own)) setPalette(own);
-        if (hold && /^[a-z]+$/.test(own)) put(localStorage, SKIN_THEME_KEY, JSON.stringify({ theme: own, until: Date.now() + 864e5 }));
+        if ((hold || pick) && /^[a-z]+$/.test(own)) put(localStorage, SKIN_THEME_KEY, JSON.stringify({ theme: own, until: until || Date.now() + 864e5, ...mark }));
         told(was);
     }
     /* A browser left remembering a paired palette by the old code (Witching
@@ -422,7 +513,8 @@
             if (!s || s.fromCache) return;          // an outage: keep what was remembered
             const was = option("halloweenGoo"), wasAdvent = option("xmasAdvent");
             site = { skin: s.skin || "auto", skinSchedule: Array.isArray(s.skinSchedule) ? s.skinSchedule : [], theme: s.theme || "classic",
-                halloweenGoo: s.halloweenGoo !== false, xmasAdvent: s.xmasAdvent === true };
+                halloweenGoo: s.halloweenGoo !== false, xmasAdvent: s.xmasAdvent === true,
+                skinPicks: s.skinPicks && typeof s.skinPicks === "object" ? s.skinPicks : null };
             put(localStorage, CACHE_KEY, JSON.stringify(site));
             // The goo switched in the Warren since this browser last looked: worn again, with or without it.
             if (current === "halloween" && was !== option("halloweenGoo")) remove();
@@ -432,8 +524,54 @@
         }, () => { /* unreadable: the remembered answer stands */ });
     }
 
+    /* THE PICK, MADE (the Style tab calls this). Kept here and on the
+       account, and worn at once. */
+    function setPick(name) {
+        if (!PICKS.includes(name)) return false;
+        const pick = { skin: name, at: Date.now() };
+        put(localStorage, PICK_KEY, JSON.stringify(pick));
+        if (window.Account && Account.current && typeof Account.saveState === "function") Account.saveState({ style: pick });
+        refresh();
+        return true;
+    }
+    /* What is being worn as the Style tab sees it: the pick if one stands,
+       else what the site is wearing by its dates ("classic" for none). */
+    function wearing() {
+        const mine = pickNow();
+        if (mine) return mine.skin;
+        return resolve(site, Date.now()).skin || "classic";
+    }
+
+    /* THE ACCOUNT'S PICK. Signed in, the later of this device's pick and the
+       account's wins: the account's is taken here, or this one sent there.
+       Asked once the account is known, and again on signing in. */
+    function takeAccount(d) {
+        const theirs = d && d.style && PICKS.includes(d.style.skin) && Number(d.style.at) > 0 ? { skin: d.style.skin, at: Number(d.style.at) } : null;
+        const mine = storedPick();
+        if (theirs && (!mine || theirs.at > mine.at)) { put(localStorage, PICK_KEY, JSON.stringify(theirs)); refresh(); }
+        else if (mine && (!theirs || mine.at > theirs.at) && Account.current && typeof Account.saveState === "function") Account.saveState({ style: mine });
+    }
+    let accountHooked = false;
+    function hookAccount() {
+        if (accountHooked || !window.Account || typeof Account.onChange !== "function") return;
+        accountHooked = true;
+        const pull = () => {
+            if (!Account.current || typeof Account.fetchState !== "function") return;
+            // Someone else on the page may have asked already.
+            if (Account.stored) takeAccount(Account.stored);
+            else Account.fetchState().then(takeAccount, () => { /* a blip: the device's own pick stands */ });
+        };
+        Account.onChange(pull);
+        if (typeof Account.onStored === "function") Account.onStored(takeAccount);
+        if (Account.known) pull();
+    }
+    hookAccount();
+    if (!accountHooked) document.addEventListener("DOMContentLoaded", hookAccount, { once: true });
+
     // Another tab (the Warren) switched the preview or the date: follow along without a reload.
     addEventListener("storage", (e) => {
+        // The visitor picked in another tab: worn here too.
+        if (e.key === PICK_KEY) { refresh(); return; }
         if (e.key !== PREVIEW_KEY && e.key !== TOKEN_KEY && e.key !== DATE_KEY) return;
         if (e.key === DATE_KEY && source === "preview") { remove(); source = null; }
         refused = false;
@@ -460,5 +598,6 @@
         return undefined;
     }
 
-    Object.assign(window.SkinWear, { apply, remove, today, option, current: () => current, source: () => source });
+    Object.assign(window.SkinWear, { apply, remove, today, option, current: () => current, source: () => source,
+        setPick, wearing, site: () => site, offered: () => choices(site, Date.now()), previewing: () => !!preview() });
 })();

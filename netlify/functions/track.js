@@ -145,7 +145,10 @@ const EVENT_NAMES = new Set([
     "opening",
     /* Dark mode switched on or off from the bulb in the archive window
        (30 Oct 2026), labelled "on" or "off". */
-    "dark"
+    "dark",
+    /* A look picked on the homepage's Style tab (20 Nov 2026), labelled
+       with the pick: "classic", "gta", "halloween" or "xmas". */
+    "style"
 ]);
 
 function limiterKey(event) {

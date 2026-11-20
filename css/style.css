@@ -14459,6 +14459,91 @@ body[data-page="admin"] #activity-sessions {
     .side-drawer--spotlight.is-open .spotlight-card { display: block; }
 }
 
+/* --- the style tab (20 Nov 2026) ----------------------------------------
+
+   A third drawer, under SPOTLIGHT (or under MENU while there is no
+   spotlight): the visitor picks the site's look for themselves, Classic or
+   a skin (js/style-tab.js; which skins, and when, is js/skin-wear.js's
+   choices()). The same object as the other two: a spine, and a panel that
+   is the menu's own card with its own rows, so every palette and dark mode
+   already dress it. js/style-tab.js sets --style-top to just under the
+   spotlight's tab while that tab is showing. */
+.side-drawer--style {
+    top: var(--style-top, var(--spot-top));
+    transition: transform 0.34s cubic-bezier(0.22, 1, 0.36, 1), visibility 0s;
+}
+@media (min-width: 901px) {
+    /* Home behind the window while either drawer above is out, as the
+       spotlight's tab does for the menu: their panels pass over this tab. */
+    .archive-stack:has(> #side-drawer.is-open) > .side-drawer--style,
+    .archive-stack:has(> #spotlight-drawer.is-open) > .side-drawer--style {
+        transform: translateX(calc(-1 * var(--spine-w)));
+        visibility: hidden;
+        transition: transform 0.34s cubic-bezier(0.22, 1, 0.36, 1), visibility 0s linear 0.34s;
+    }
+}
+/* The phone's mark, off above 900px: a disc half inked, "light and dark",
+   the usual sign for how a thing looks. currentColor, so it follows hover. */
+.side-spine-swatch {
+    display: none;
+    box-sizing: border-box;
+    width: 12px;
+    height: 12px;
+    border: 2px solid currentColor;
+    border-radius: 50%;
+    background: linear-gradient(90deg, currentColor 50%, transparent 50%);
+}
+.style-menu .side-menu-item[aria-pressed="true"] .side-menu-name::after {
+    content: "\2713";
+    font-family: 'Silkscreen', monospace;
+}
+/* Also .side-menu-state, so each palette's ink for those lines is its ink. */
+.style-menu-note {
+    margin: 9px 7px 1px;
+    font-size: 0.58rem;
+    line-height: 1.35;
+}
+@media (prefers-reduced-motion: reduce) {
+    .side-drawer--style,
+    .archive-stack:has(> #side-drawer.is-open) > .side-drawer--style,
+    .archive-stack:has(> #spotlight-drawer.is-open) > .side-drawer--style { transition: none; }
+}
+@media (max-width: 900px) {
+    /* On the titlebar's left end, beside the spotlight's star (or in its
+       place when there is no spotlight), and its panel drops from it. */
+    .side-drawer--style {
+        top: var(--spine-top);
+        left: 14px;
+        right: auto;
+    }
+    .archive-stack:has(> #spotlight-drawer:not([hidden])) > .side-drawer--style {
+        left: calc(14px + var(--spine-w) + 12px);
+    }
+    .side-drawer--style.is-open { transform: none; }
+    .side-spine--style {
+        height: var(--spine-w);
+        border-radius: 5px;
+        position: relative;
+    }
+    .side-spine--style .side-spine-arrow { display: none; }
+    .side-spine--style .side-spine-swatch { display: block; }
+    /* The 44px reach, grown rightwards from its own left edge so it never
+       covers the star beside it. */
+    .side-spine--style::after {
+        content: "";
+        position: absolute;
+        top: 50%;
+        left: 0;
+        width: 44px;
+        height: 44px;
+        transform: translateY(-50%);
+    }
+    .side-drawer--style .style-menu {
+        left: 0;
+        right: auto;
+    }
+}
+
 /* ---------- the game window ---------- */
 
 /* max-width as well as width, and this is not belt-and-braces: .modal caps

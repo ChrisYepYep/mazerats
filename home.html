@@ -489,7 +489,11 @@
                         var pv = localStorage.getItem("mazerats_skin_preview"), tk = localStorage.getItem("mazerats_admin_token");
                         // "none" too: the normal site previewed (27 Oct 2026; see NO_SKIN in js/skin-wear.js).
                         var previewing = !!(pv && tk && (Object.prototype.hasOwnProperty.call(SKIN_PAIRED, pv) || pv === "none") && localStorage.getItem("mazerats_skin_preview_refused") !== tk.slice(-12));
-                        if (previewing || skinPaletteAt(settings, Date.now()) === worn.theme) {
+                        /* The visitor's own pick on the Style tab (20 Nov 2026):
+                           remembered with `pick`, and only until the dates'
+                           next change (when a takeover may drop it), so it
+                           stands here as a preview does. */
+                        if (previewing || worn.pick === true || skinPaletteAt(settings, Date.now()) === worn.theme) {
                             localStorage.setItem("mazerats_theme", wanted);
                             return settings.landingState;
                         }
@@ -506,7 +510,8 @@
                        palette is still the one remembered. */
                     var shown = wanted;
                     if (Object.prototype.toString.call(settings.skinSchedule) === "[object Array]") {
-                        localStorage.setItem("mazerats_skin_cache", JSON.stringify({ skin: settings.skin || "auto", skinSchedule: settings.skinSchedule, theme: settings.theme || "classic" }));
+                        localStorage.setItem("mazerats_skin_cache", JSON.stringify({ skin: settings.skin || "auto", skinSchedule: settings.skinSchedule, theme: settings.theme || "classic",
+                            skinPicks: settings.skinPicks && typeof settings.skinPicks === "object" ? settings.skinPicks : null }));
                         var paired = skinPaletteAt(settings, Date.now());
                         if (paired && /^[a-z]+$/.test(paired)) shown = paired;
                     }
@@ -1171,6 +1176,23 @@
                         <!-- Phones only, in place of the word: see
                              .side-spine-star in css/style.css. -->
                         <span class="side-spine-star" aria-hidden="true"></span>
+                    </button>
+                </div>
+
+                <!-- THE STYLE TAB (20 Nov 2026, the owner's): visitors pick the
+                     site's look for themselves, Classic or a skin. A third tab,
+                     under SPOTLIGHT (or MENU when there is no spotlight), built
+                     the same way; the rows are written by js/style-tab.js,
+                     which shows the tab only while there is a choice to make.
+                     On a phone it sits beside the star on the titlebar. -->
+                <div class="side-drawer side-drawer--style" id="style-drawer" hidden>
+                    <div class="side-menu style-menu" id="style-menu" role="group" aria-label="How the site looks"></div>
+                    <button type="button" class="side-spine side-spine--style" id="style-spine"
+                            aria-expanded="false" aria-controls="style-menu"
+                            aria-label="Style: change how the site looks">
+                        <span class="side-spine-label" aria-hidden="true">Style</span>
+                        <span class="side-spine-arrow" aria-hidden="true">&#9654;&#xFE0E;</span>
+                        <span class="side-spine-swatch" aria-hidden="true"></span>
                     </button>
                 </div>
             </div><!-- /.archive-stack -->
@@ -2067,6 +2089,7 @@
          and guides.js below renders the Guides window with it too. -->
     <script src="js/guide-text.js?v=3"></script>
     <script src="js/home.js?v=11"></script>
+    <script src="js/style-tab.js?v=1"></script>
     <script src="js/custom-scrollbar.js?v=4"></script>
     <script src="js/letter-jump.js?v=2"></script>
     <script src="js/console.js?v=12"></script>

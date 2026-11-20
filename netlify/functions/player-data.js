@@ -255,6 +255,19 @@ function mergeGta(held, incoming) {
     log.sort((a, b) => (a.day < b.day ? 1 : a.day > b.day ? -1 : 0));
     return { best, times, day, busts, log: log.slice(0, 30) };
 }
+/* THE STYLE TAB'S PICK (20 Nov 2026, the owner's): the skin a player chose
+   for themselves on the homepage, "classic" for none, and when (ms). It
+   follows them between devices; the later pick wins, so an older device
+   syncing late never undoes a newer choice. What may be worn, and when a
+   scheduled skin overrides it, is js/skin-wear.js's to decide. */
+const STYLE_PICKS = ["classic", "gta", "halloween", "xmas"];
+function cleanStyle(s) {
+    if (!s || typeof s !== "object" || Array.isArray(s)) return null;
+    const at = Math.round(Number(s.at));
+    if (!STYLE_PICKS.includes(s.skin) || !Number.isFinite(at) || at < 1.7e12 || at > Date.now() + 864e5) return null;
+    return { skin: s.skin, at };
+}
+const styleOf = doc => cleanStyle(doc && doc.style);
 // As the page wants it: the cash and furthest level worked out from the bests.
 const gtaOf = doc => {
     const g = cleanGta(doc && doc.gta);
@@ -456,7 +469,7 @@ exports.handler = async (event) => {
         }
         try {
             const [doc, stats, oddStats] = await Promise.all([
-                col.findOne({ playerId: player.id }, { projection: { _id: 0, walked: 1, saved: 1, guess: 1, profile: 1, gta: 1 } }),
+                col.findOne({ playerId: player.id }, { projection: { _id: 0, walked: 1, saved: 1, guess: 1, profile: 1, gta: 1, style: 1 } }),
                 statsFor(db, player.id),
                 oddStatsFor(db, player.id)
             ]);
@@ -466,6 +479,7 @@ exports.handler = async (event) => {
                 guess: liveGuess(doc && doc.guess),
                 profile: profileOf(doc),
                 gta: gtaOf(doc),
+                style: styleOf(doc),
                 stats,
                 oddStats
             });
@@ -506,6 +520,11 @@ exports.handler = async (event) => {
         if (body.profile !== undefined) {
             profile = cleanProfile(body.profile);
             if (profile === null) return json(400, { error: "Bad profile" });
+        }
+        let style = null;
+        if (body.style !== undefined) {
+            style = cleanStyle(body.style);
+            if (style === null) return json(400, { error: "Bad style pick" });
         }
         let gta = null;
         if (body.gta !== undefined) {
@@ -588,8 +607,8 @@ exports.handler = async (event) => {
                device re-sending its whole list is the normal case, not the
                exception, so without this every sync would append the same ids
                again and fill the cap with copies. */
-            const current = (Object.keys(add).length || "guess" in set || profile || gta)
-                ? (await col.findOne({ playerId: player.id }, { projection: { _id: 0, walked: 1, saved: 1, guess: 1, profile: 1, gta: 1 } }) || {})
+            const current = (Object.keys(add).length || "guess" in set || profile || gta || style)
+                ? (await col.findOne({ playerId: player.id }, { projection: { _id: 0, walked: 1, saved: 1, guess: 1, profile: 1, gta: 1, style: 1 } }) || {})
                 : {};
 
             /* The profile's choices, each its own field so a save of one
@@ -633,6 +652,8 @@ exports.handler = async (event) => {
             }
 
             if (gta) set.gta = mergeGta(current.gta, gta);
+            // The later pick wins (see cleanStyle).
+            if (style) { const held = styleOf(current); if (!held || style.at >= held.at) set.style = style; }
 
             if (Object.keys(add).length) {
                 const only = (incoming, held) => {
@@ -650,7 +671,7 @@ exports.handler = async (event) => {
             await col.updateOne({ playerId: player.id }, update, { upsert: true });
 
             const [doc, stats, oddStats] = await Promise.all([
-                col.findOne({ playerId: player.id }, { projection: { _id: 0, walked: 1, saved: 1, guess: 1, profile: 1, gta: 1 } }),
+                col.findOne({ playerId: player.id }, { projection: { _id: 0, walked: 1, saved: 1, guess: 1, profile: 1, gta: 1, style: 1 } }),
                 statsFor(db, player.id),
                 oddStatsFor(db, player.id)
             ]);
@@ -660,6 +681,7 @@ exports.handler = async (event) => {
                 guess: liveGuess(doc && doc.guess),
                 profile: profileOf(doc),
                 gta: gtaOf(doc),
+                style: styleOf(doc),
                 stats,
                 oddStats
             });
