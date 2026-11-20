@@ -280,11 +280,39 @@
         if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", go, { once: true }); else go();
     }
 
-    function apply(name) {
-        if (!SKINS.includes(name) || current === name) return;
+    /* THE TOP BAR ONLY (20 Nov 2026, the owner's: "if a user overrides a
+       seasonal or event skin with the Classic skin, the top bar stays as the
+       seasonal or event skin"). mode "bar" wears the skin on the top bar
+       alone: html[data-skin-bar] in place of html[data-skin] (each skin's
+       sheet has a short "top bar only" block for it), the bar given the
+       skin's palette by its own data-theme (the palettes' rules are written
+       [data-theme="x"] .thing, so they reach into it and no further), and
+       the skin started with { bar: true }, so it draws its bar pieces only
+       (Christmas: the lights, holly and countdown; Vice City: the neon tubes;
+       Halloween: the ghost). Everything else is Classic. */
+    let currentMode = "full";
+    function apply(name, mode) {
+        mode = mode === "bar" ? "bar" : "full";
+        if (!SKINS.includes(name) || (current === name && currentMode === mode)) return;
         if (current) remove();
         current = name;
-        document.documentElement.setAttribute("data-skin", name);
+        currentMode = mode;
+        if (mode === "bar") {
+            document.documentElement.setAttribute("data-skin-bar", name);
+            const bar = document.querySelector(".site-header");
+            const pal = pairedTheme(site, name);
+            if (bar && pal && /^[a-z]+$/.test(pal)) {
+                bar.setAttribute("data-theme", pal); bar.__mrBarTheme = true;
+                /* The palette's own sheet, which the page (in Classic) has not
+                   loaded: every rule in it is [data-theme="x"] …, so with only
+                   the bar carrying the attribute it reaches the bar and nothing
+                   else. Before the dark layer, as the page's own palette sits. */
+                const pl = document.createElement("link");
+                pl.rel = "stylesheet"; pl.id = "skin-bar-theme"; pl.href = "/css/theme-" + pal + ".css";
+                const layer = document.getElementById("dark-css");
+                if (layer && layer.parentNode === document.head) document.head.insertBefore(pl, layer); else document.head.appendChild(pl);
+            }
+        } else document.documentElement.setAttribute("data-skin", name);
         // Absolute, for the same reason as the theme's: the 404 page answers at any depth.
         const link = document.createElement("link");
         link.rel = "stylesheet"; link.id = "skin-css"; link.href = "/css/skin-" + name + ".css?v=1";
@@ -303,10 +331,11 @@
             s.onerror = () => { remove(); ok(); };
             document.head.appendChild(s);
         })]).then(([sheet]) => whenReady(() => {
-            if (current !== name) return;
+            if (current !== name || currentMode !== mode) return;
             if (!sheet) { remove(); return; }
             const skin = window.SiteSkins && window.SiteSkins[name];
-            if (skin) try { skin.start(); } catch (e) { remove(); setTimeout(() => { throw e; }); return; }   // off, and still reported
+            if (skin) try { skin.start({ bar: mode === "bar" }); } catch (e) { remove(); setTimeout(() => { throw e; }); return; }   // off, and still reported
+            if (mode === "bar") return;   // no extras (the advent calendar) on the bar alone
             /* Not inside the homepage's game window (html.ff-embed, 27 Oct
                2026): the skins draw nothing there and the advent calendar
                starts as nothing, so its sheet and script were two requests
@@ -348,6 +377,11 @@
         // A skin that throws on the way out is still taken off.
         if (skin) try { skin.stop(); } catch (e) { setTimeout(() => { throw e; }); }   // reported, and the rest below still runs
         document.documentElement.removeAttribute("data-skin");
+        document.documentElement.removeAttribute("data-skin-bar");
+        const bar = document.querySelector(".site-header");
+        if (bar && bar.__mrBarTheme) { bar.removeAttribute("data-theme"); delete bar.__mrBarTheme; }
+        const barSheet = document.getElementById("skin-bar-theme"); if (barSheet) barSheet.remove();
+        currentMode = "full";
         const link = document.getElementById("skin-css"); if (link) link.remove();
         const s = document.getElementById("skin-js"); if (s) s.remove();
         current = null;
@@ -385,7 +419,10 @@
         // A change of pretend date or of source restarts the skin, so its calendar things re-read.
         // (Only into or out of a preview: picking the skin already worn by its dates is no change.)
         if (want && want === current && (was === "preview") !== (source === "preview")) remove();
-        if (want) apply(want); else remove();
+        /* Classic picked while a seasonal window is on: that skin on the top
+           bar alone (see apply's "bar" mode). Another skin picked wears whole. */
+        const barOnly = !p && mine && !own && pub.why === "schedule" && pub.skin ? pub.skin : null;
+        if (want) apply(want); else if (barOnly) apply(barOnly, "bar"); else remove();
         unstick();
         if (p === NO_SKIN) wearTheme(null, null, true);
         else if (mine) {
@@ -599,5 +636,5 @@
     }
 
     Object.assign(window.SkinWear, { apply, remove, today, option, current: () => current, source: () => source,
-        setPick, wearing, site: () => site, offered: () => choices(site, Date.now()), previewing: () => !!preview() });
+        setPick, wearing, site: () => site, mode: () => (current ? currentMode : null), offered: () => choices(site, Date.now()), previewing: () => !!preview() });
 })();

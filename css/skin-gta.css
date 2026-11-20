@@ -37,6 +37,34 @@ html[data-skin="gta"] .gx-neon {
    Hallway and over its coming-soon screen, as the Christmas lights are (20 Nov 2026, the scan). */
 html[data-skin="gta"] .gx-neon.is-away { opacity: 0; }
 html[data-skin="gta"].hallway-open .gx-neon { visibility: hidden; }
+/* THE TOP BAR ONLY (20 Nov 2026, the owner's): Classic picked on the Style tab while Vice City is on keeps
+   this bar and its neon tubes, and nothing else (js/skin-wear.js's "bar" mode; the bar wears the Vice
+   palette through its own data-theme). The same rules as the full skin's bar, for html[data-skin-bar]. */
+html[data-skin-bar="gta"] .site-header {
+    background: linear-gradient(90deg, rgba(20, 6, 40, 0.94), rgba(60, 10, 70, 0.9) 50%, rgba(20, 6, 40, 0.94));
+    border-bottom: 2px solid #ff5fa2;
+    box-shadow: 0 2px 0 #ffb36b, 0 6px 18px rgba(255, 95, 162, 0.35);
+}
+html[data-skin-bar="gta"] .gx-neon {
+    position: absolute;
+    left: 0;
+    top: calc(100% - 1px);
+    z-index: -1;
+    pointer-events: none;
+    transition: opacity 0.35s ease;
+}
+html[data-skin-bar="gta"] .gx-neon.is-away { opacity: 0; }
+html[data-skin-bar="gta"].hallway-open .gx-neon { visibility: hidden; }
+html[data-skin-bar="gta"] .site-header .brand-text { color: #fff; text-shadow: 2px 2px 0 #ff2e88, 4px 4px 0 #2a0b45; }
+html[data-skin-bar="gta"] .site-header .brand-tagline { color: #ffc4dd; }
+html[data-skin-bar="gta"][data-dark] .site-header {
+    background: rgba(5, 4, 15, 0.92);
+    border-bottom: 1px solid #2ee6ff;
+    box-shadow: 0 0 12px rgba(46, 230, 255, 0.55), 0 1px 0 #ff3fa4;
+}
+html[data-skin-bar="gta"][data-dark] .site-header .brand-text { color: #fff; text-shadow: 0 0 4px #ff3fa4, 0 0 12px #ff3fa4, 0 0 24px #ff3fa4; }
+html[data-skin-bar="gta"][data-dark] .site-header .brand-tagline { color: #9ff3ff; text-shadow: 0 0 6px #2ee6ff; }
+
 html[data-skin="gta"] .brand-text { color: #fff; text-shadow: 2px 2px 0 #ff2e88, 4px 4px 0 #2a0b45; }
 html[data-skin="gta"] .brand-tagline { color: #ffc4dd; }
 html[data-skin="gta"] .hero-title span {

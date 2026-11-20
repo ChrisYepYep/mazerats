@@ -2530,7 +2530,7 @@
             const hd = document.querySelector(".site-header");
             if (hd && hd.__xmPaint) hd.__xmPaint(null);
         } else {
-            if (!snow) snowfall();
+            if (!snow && !barOnly) snowfall();
             lightsClock();
         }
     }
@@ -2542,11 +2542,30 @@
        slide was whatever came before this skin had started. */
     const tellTicker = () => { try { document.dispatchEvent(new CustomEvent("mazerats:ticker-extras")); } catch (e) { /* the next turn shows it */ } };
 
-    function start() {
+    /* THE TOP BAR ONLY (20 Nov 2026, the owner's: Classic picked on the Style
+       tab while Christmas is on keeps the Christmas top bar, "with it's
+       festoon lights"). js/skin-wear.js sets html[data-skin-bar="xmas"] and
+       starts this with { bar: true }: the lights and their glow, the holly
+       on the logo and the countdown slide, and nothing else. */
+    let barOnly = false;
+    function start(opts) {
         if (on) return;
         on = true;
+        barOnly = !!(opts && opts.bar);
         tellTicker();
         if (embedded()) return;
+        if (barOnly) {
+            reduceMq.addEventListener("change", onMotion);
+            ro = new ResizeObserver((entries) => {
+                entries.forEach((e) => resized.add(e.target));
+                clearTimeout(roTimer);
+                roTimer = setTimeout(() => { const els = [...resized]; resized.clear(); els.forEach((el) => redraw(el)); }, 120);
+            });
+            decorateHeader();
+            // A late font moves the logo: the holly is placed once more when things settle.
+            timers.push(setTimeout(() => { const hd = document.querySelector(".site-header"); if (on && hd) { const rec = hosts.get(hd); if (rec) { rec.width = -1; redraw(hd); } } }, 1500));
+            return;
+        }
         reduceMq.addEventListener("change", onMotion);
         addEventListener("resize", onResize);
         /* Every host that changed size in the 120ms is redrawn (26 Oct 2026):
@@ -2594,6 +2613,7 @@
     function stop() {
         if (!on) return;
         on = false;
+        barOnly = false;
         fallen = 0; footerDepth = FOOTER_START; drift = null;
         document.querySelectorAll(".xm-snowed").forEach((p) => p.classList.remove("xm-snowed"));
         if (mo) mo.disconnect(); if (ro) ro.disconnect();

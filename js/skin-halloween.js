@@ -1781,8 +1781,7 @@
             clearTimeout(rafId); rafId = 0;
             tickers.forEach((p) => p(null)); tickers.clear();
         } else {
-            decorateBats();
-            runDrips();
+            if (!barOnly) { decorateBats(); runDrips(); }
             document.querySelectorAll(".hw-ghost").forEach((cv) => { if (cv.__hwPaint) tickers.add(cv.__hwPaint); });
             swing();
         }
@@ -1811,13 +1810,29 @@
         if (bats) bats.hold();
     }
 
-    function start() {
+    /* THE TOP BAR ONLY (20 Nov 2026, the owner's: Classic picked on the Style
+       tab while a seasonal skin is on keeps that skin's top bar).
+       js/skin-wear.js sets html[data-skin-bar="halloween"] and starts this
+       with { bar: true }: the Witching Hour bar and the ghost hanging from it. */
+    let barOnly = false;
+    function start(opts) {
         if (on) return;
         on = true;
+        barOnly = !!(opts && opts.bar);
         /* Inside the homepage's Fallin' Furni window (html.ff-embed) the page
            around it already wears the skin: here it is the attribute and the
            palette only, as Christmas does, with no goo or drips under the game. */
         if (EMBED) return;
+        if (barOnly) {
+            ro = new ResizeObserver((entries) => {
+                entries.forEach((e) => resized.add(e.target));
+                clearTimeout(roTimer);
+                roTimer = setTimeout(() => { const els = [...resized]; resized.clear(); els.forEach((el) => redraw(el)); }, 120);
+            });
+            reduceMq.addEventListener("change", onMotion);
+            decorateHeader();
+            return;
+        }
         /* Every host that changed size in the 120ms is redrawn (26 Oct 2026):
            each callback used to replace the last one's list, so a row that
            resized a moment before a window did kept goo drawn for its old
@@ -1868,6 +1883,7 @@
     function stop() {
         if (!on) return;
         on = false;
+        barOnly = false;
         if (mo) mo.disconnect(); if (ro) ro.disconnect();
         mo = ro = null;
         removeEventListener("resize", onResize); clearTimeout(rzTimer);

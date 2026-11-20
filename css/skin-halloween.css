@@ -5,6 +5,21 @@
    removing it. Loaded only while the skin is on (js/skin-wear.js). Nothing
    here changes a box's size or place: pieces, animations and pictures only. */
 
+/* THE TOP BAR ONLY (20 Nov 2026, the owner's): Classic picked on the Style
+   tab while Halloween is on keeps the Witching Hour top bar (its own
+   data-theme="witch", js/skin-wear.js) and the ghost hanging from it. */
+html[data-skin-bar="halloween"] .site-header {
+    background: linear-gradient(180deg, rgba(5, 2, 7, 0.97), rgba(5, 2, 7, 0.9));
+    box-shadow: 0 4px 0 -2px var(--chrome-fill);
+}
+html[data-skin-bar="halloween"] .hw-piece {
+    position: absolute;
+    pointer-events: none;
+    background-repeat: no-repeat;
+    image-rendering: pixelated;
+    z-index: 2;
+}
+
 html[data-skin="halloween"] .hw-piece {
     position: absolute;
     pointer-events: none;

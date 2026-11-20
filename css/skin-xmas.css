@@ -15,6 +15,30 @@
    hidden, so nothing can be scrolled to either. */
 html[data-skin="xmas"] { overflow-x: clip; }
 
+/* THE TOP BAR ONLY (20 Nov 2026, the owner's): Classic picked on the Style tab
+   while Christmas is on keeps the Christmas top bar — the Frost bar (through
+   its own data-theme="frost", js/skin-wear.js), the lights and their glow, the
+   holly and the countdown — and everything else is Classic. */
+html[data-skin-bar="xmas"] { overflow-x: clip; }
+html[data-skin-bar="xmas"] .site-header {
+    background: linear-gradient(180deg, rgba(2, 6, 12, 0.97), rgba(2, 6, 12, 0.9));
+    box-shadow: 0 4px 0 -2px var(--chrome-fill);
+}
+html[data-skin-bar="xmas"] .xm-piece {
+    position: absolute;
+    pointer-events: none;
+    background-repeat: no-repeat;
+    image-rendering: pixelated;
+    z-index: 2;
+}
+html[data-skin-bar="xmas"] .xm-lights { z-index: 1; }
+html[data-skin-bar="xmas"] .xm-glow {
+    image-rendering: auto;
+    -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 16px);
+    mask-image: linear-gradient(to bottom, transparent 0, #000 16px);
+}
+html[data-skin-bar="xmas"] .header-events-extra { color: #ffd24a; }
+
 html[data-skin="xmas"] .xm-piece {
     position: absolute;
     pointer-events: none;

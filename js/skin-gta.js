@@ -1453,10 +1453,21 @@
 
     /* ---------------------------------------------------------------
        START AND STOP */
-    function start() {
+    function start(opts) {
         if (on) return;
         on = true;
         if (root.classList.contains("ff-embed")) return;
+        /* THE TOP BAR ONLY (20 Nov 2026, the owner's: Classic picked on the Style tab while Vice City is
+           on keeps the Vice City top bar "with the neon tubes, but everything else can go to Classic"; no
+           wanted stars). js/skin-wear.js sets html[data-skin-bar="gta"] for it; here only the tubes. */
+        if (opts && opts.bar) {
+            neonMode = skyMode();
+            neonStart();
+            listen(window, "resize", () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(neonSize, 250); });
+            observer = new MutationObserver(() => { neonMode = skyMode(); neonDraw(reduced() ? null : performance.now() / 1000); });
+            observer.observe(root, { attributes: true, attributeFilter: ["data-dark"] });
+            return;
+        }
         sky = add(make("div", "gx-sky"));
         sky.setAttribute("aria-hidden", "true");
         drawSky();
