@@ -24,8 +24,9 @@
     if (!drawer || !spine || !menu || !window.SkinWear || !SkinWear.setPick) return;
 
     const BLURB = {
-        classic: "The archive as it always looks",
-        gta: "Sunset coast, radar and radio",
+        // The owner's words (20 Nov 2026).
+        classic: "The archive's OG colours",
+        gta: "Neon sunset vibes",
         halloween: "Bats, a ghost and goo",
         xmas: "Snow, lights and hats"
     };
@@ -41,17 +42,39 @@
     }
     menu.setAttribute("inert", "");
 
+    /* The next moment a seasonal window starts (within the next 60 days):
+       { skin, when: "1 Dec" }, or null. Walked edge by edge through the
+       schedule, since an edge may also be a window ending. */
+    function nextTakeover(site) {
+        if (!site || ((site.skin || "auto") !== "auto")) return null;
+        const limit = Date.now() + 60 * 864e5;
+        let t = Date.now();
+        for (let i = 0; i < 12; i++) {
+            const edge = SkinWear.nextChange(site, t);
+            if (edge == null || edge > limit) return null;
+            const r = SkinWear.resolve(site, edge);
+            if (r.why === "schedule" && r.since === edge && r.skin) {
+                return { skin: r.skin, when: new Date(edge).toLocaleDateString("en-GB", { day: "numeric", month: "short" }) };
+            }
+            t = edge;
+        }
+        return null;
+    }
+
     let drawn = "";
     function draw() {
         // An admin previewing a skin sees the preview, not their own pick: the tab steps aside.
         const list = SkinWear.previewing && SkinWear.previewing() ? [] : SkinWear.offered();
         const on = SkinWear.wearing();
         const site = SkinWear.site ? SkinWear.site() : null;
-        const pub = SkinWear.resolve(site, Date.now());
-        // A note only while the dates are wearing a skin: say what picking does then.
-        const note = pub.why === "schedule" && pub.skin
-            ? label(pub.skin) + " is on for everyone by its dates. Your pick lasts until the next seasonal look starts."
-            : "A seasonal look takes over when it starts. Pick again here any time.";
+        /* THE NOTE (20 Nov 2026, the owner's: "make it clearer to users"): what
+           happens next, as a date, not as a rule. A seasonal look starting
+           replaces whatever was picked, so say which one and when; with none
+           coming, there is nothing to warn of and no note. */
+        const next = nextTakeover(site);
+        const note = next
+            ? `On ${next.when}, the site switches to ${label(next.skin)}. You can change it back here.`
+            : "";
         const key = JSON.stringify([list, on, note]);
         if (key === drawn) return;
         drawn = key;
@@ -61,7 +84,7 @@
             <button type="button" class="side-menu-item${n === on ? " is-on" : ""}" data-pick="${esc(n)}" aria-pressed="${n === on}">
                 <span class="side-menu-name"><span>${esc(label(n))}</span></span>
                 <span class="side-menu-state">${esc(BLURB[n] || "")}</span>
-            </button>`).join("") + `<p class="side-menu-state style-menu-note">${esc(note)}</p>`;
+            </button>`).join("") + (note ? `<p class="side-menu-state style-menu-note">${esc(note)}</p>` : "");
         place();
     }
 
