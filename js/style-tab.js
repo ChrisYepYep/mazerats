@@ -78,7 +78,17 @@
     // The spine's word is drawn in a web font: measured again once it has loaded.
     if (document.fonts && document.fonts.ready) document.fonts.ready.then(place, () => {});
 
-    spine.addEventListener("click", () => setOpen(!isOpen()));
+    /* 20 Nov 2026, the scan: opening moves focus to the first look, as MENU
+       does. The rows come before the spine in the page, so without this Tab
+       from the spine went out to the footer. */
+    spine.addEventListener("click", () => {
+        const open = !isOpen();
+        setOpen(open);
+        if (open) {
+            const first = menu.querySelector("[data-pick]");
+            if (first) first.focus({ preventScroll: true });
+        }
+    });
     menu.addEventListener("click", (e) => {
         const b = e.target.closest("[data-pick]");
         if (!b) return;
@@ -86,14 +96,34 @@
         if (n === SkinWear.wearing()) return;
         if (SkinWear.setPick(n) && window.Track && typeof Track.event === "function") Track.event("style", n);
         draw();
+        // 20 Nov 2026, the scan: draw() rebuilds the rows, which dropped focus to the body; back onto the one picked.
+        const again = Array.from(menu.querySelectorAll("[data-pick]")).find((x) => x.dataset.pick === n);
+        if (again) again.focus({ preventScroll: true });
     });
-    // A press anywhere else closes it, as the menu and the spotlight do; Escape too, back to the spine.
+    // A press anywhere else closes it, as the menu and the spotlight do.
     document.addEventListener("pointerdown", (e) => {
         if (isOpen() && !drawer.contains(e.target)) setOpen(false);
     });
-    document.addEventListener("keydown", (e) => {
-        if (e.key === "Escape" && isOpen()) { setOpen(false); spine.focus({ preventScroll: true }); }
+    /* 20 Nov 2026, the scan: a keyboard user could open a maze (Enter on a
+       row) with this still out, and it stayed open behind the window. Focus
+       or a click landing anywhere outside it closes it now, as MENU's click
+       rule does. */
+    document.addEventListener("click", (e) => {
+        // Not the pick itself: draw() has already taken that row out of the page.
+        if (isOpen() && e.target.isConnected && !drawer.contains(e.target)) setOpen(false);
     });
+    document.addEventListener("focusin", (e) => {
+        if (isOpen() && !drawer.contains(e.target)) setOpen(false);
+    });
+    // Escape through the shared front-most-layer rule (js/site.js), back to the spine.
+    const shut = () => { setOpen(false); spine.focus({ preventScroll: true }); };
+    if (window.EscapeLayers && EscapeLayers.register) {
+        EscapeLayers.register({ elements: () => (isOpen() ? [drawer] : []), close: shut });
+    } else {
+        document.addEventListener("keydown", (e) => {
+            if (e.key === "Escape" && isOpen()) shut();
+        });
+    }
 
     document.addEventListener("mazerats:skin-changed", draw);
     draw();

@@ -9,7 +9,7 @@
    completely inert until js/site.js puts that attribute on <html>. The
    classic palette is not defined here and is not affected by anything in it.
 
-   1227 rules, 1962 declarations, hues 350 (surfaces) / 212 (accents).
+   1236 rules, 1973 declarations, hues 350 (surfaces) / 212 (accents).
 */
 :root[data-theme="crimson"] {
     --bg-black: #080506;
@@ -953,6 +953,19 @@ html[data-theme="crimson"]:not([data-theme]):not([data-dark]) .chrome-nav-top .c
 
 [data-theme="crimson"] .gallery-photo-more:focus-visible {
     outline: 2px solid var(--amber-bright);
+}
+
+@media (pointer: coarse) and (max-width: 640px) {
+    [data-theme="crimson"] .gallery-photo-fan {
+        border: 0;
+        background: transparent;
+    }
+}
+
+@media (pointer: coarse) and (max-width: 640px) {
+    [data-theme="crimson"] .gallery-photo-fan:focus-visible {
+        outline: 2px solid var(--amber-bright);
+    }
 }
 
 [data-theme="crimson"] .photo-frame {
@@ -3131,6 +3144,11 @@ html[data-theme="crimson"]:not([data-theme]) .modal-article-source a:hover {
     }
 }
 
+[data-theme="crimson"] .side-spine-swatch {
+    border: 2px solid currentColor;
+    background: linear-gradient(90deg, currentColor 50%, transparent 50%);
+}
+
 [data-theme="crimson"] .guess-deck {
     background: var(--bg-black);
 }
@@ -4067,7 +4085,7 @@ html[data-theme="crimson"]:not([data-theme]) .guess-board-rank {
 [data-theme="crimson"] .progress-head-sm,
 [data-theme="crimson"] .profile-completed > summary,
 [data-theme="crimson"] .progress-bignum strong {
-    text-shadow: 2px 2px 0 rgba(0, 0, 0, 0.45);
+    text-shadow: 2px 2px 0 var(--pc-shadow, rgba(0, 0, 0, 0.45));
 }
 
 [data-theme="crimson"] .progress-head-sm,
@@ -5981,11 +5999,11 @@ html[data-theme="crimson"]:not([data-theme]) .guess-board-rank {
 }
 
 [data-theme="crimson"] .opening-stats {
-    color: var(--amber-text);
+    color: var(--parchment-dim);
 }
 
 [data-theme="crimson"] .opening-stats b {
-    color: var(--amber-bright);
+    color: var(--parchment);
 }
 
 [data-theme="crimson"] .opening-x-n {
@@ -6114,6 +6132,39 @@ html[data-theme="crimson"][data-light] .chrome-light {
     border-color: #a8708a;
 }
 
+@media (pointer: coarse) {
+    [data-theme="crimson"] .chrome-light::before {
+        background: transparent;
+    }
+}
+
+@media (pointer: coarse) {
+    [data-theme="crimson"] .chrome-title-home::after {
+        background: transparent;
+    }
+}
+
+@media (pointer: coarse) {
+    [data-theme="crimson"] .chrome-titlebar > .chrome-close:has(> img):not(#pura-close)::after {
+        background: transparent;
+    }
+}
+
+@media (pointer: coarse) {
+    [data-theme="crimson"] .modal .gallery-nav::after {
+        background: transparent;
+    }
+}
+
+[data-theme="crimson"] .modal-gallery-img,
+[data-theme="crimson"] .old-version-img {
+    color: transparent;
+}
+
+[data-theme="crimson"] .chrome-list-row .row-furni-hit {
+    color: var(--amber-text);
+}
+
 /* ------------------------------------------- COLOUR THAT IS INFORMATION
 
    Not recoloured, and re-stated here so it still wins. The difficulty
@@ -6208,7 +6259,7 @@ html[data-theme="crimson"][data-skin][data-skin] .opening-featured .chrome-list-
 [data-theme="crimson"] .opening-featured .chrome-list-row[data-difficulty="extreme"] .row-date,
 [data-theme="crimson"] #featured-frame-list .chrome-list-row[data-difficulty="extreme"] .chrome-go,
 [data-theme="crimson"] .opening-featured .chrome-list-row[data-difficulty="extreme"] .chrome-go {
-    color: #d47979;
+    color: #eba3a3;
 }
 
 [data-theme="crimson"] #featured-frame-list .chrome-list-row[data-difficulty="impossible"] h3,
@@ -6254,6 +6305,98 @@ html[data-theme="crimson"][data-skin][data-skin] .opening-featured .chrome-list-
     border-color: var(--danger);
     color: #fff0ec;
     box-shadow: 0 0 8px rgba(161, 70, 47, 0.65);
+}
+
+html[data-theme="crimson"][data-theme="vice"] .site-loader {
+    z-index: 10080;
+    background: #000;
+    display: block;
+}
+
+html[data-theme="crimson"][data-theme="vice"] .site-loader .site-loader-inner .site-loader-wordmark {
+    display: block;
+    position: absolute;
+    right: 40px;
+    bottom: 116px;
+    z-index: 3;
+    margin: 0;
+    text-align: right;
+    font: normal 900 clamp(48px, 9vw, 92px)/0.82 'Montserrat', sans-serif;
+    letter-spacing: -2px;
+    color: #fff;
+    text-shadow: 5px 4px 0 #ff2e88, 10px 8px 0 #000;
+    pointer-events: none;
+}
+
+html[data-theme="crimson"][data-theme="vice"] .site-loader .site-loader-wordmark span {
+    font-size: 1em;
+    transform: skewX(-14deg);
+    transform-origin: 50% 85%;
+}
+
+html[data-theme="crimson"][data-theme="vice"] .site-loader::before {
+    content: "VICE CITY";
+    position: absolute;
+    right: 40px;
+    bottom: 80px;
+    z-index: 3;
+    padding: 4px 12px;
+    background: #ff5fa2;
+    font: 900 clamp(13px, 1.6vw, 20px) 'Montserrat', sans-serif;
+    letter-spacing: 4px;
+    color: #fff;
+    box-shadow: 3px 3px 0 #000;
+    pointer-events: none;
+}
+
+html[data-theme="crimson"][data-theme="vice"] .site-loader .site-loader-inner {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 2;
+    height: 64px;
+    flex-direction: row;
+    justify-content: flex-start;
+    gap: 18px;
+    padding: 0 30px;
+    background: #000;
+}
+
+html[data-theme="crimson"][data-theme="vice"] .site-loader .site-loader-label {
+    color: #ffd166;
+    min-width: 9ch;
+}
+
+html[data-theme="crimson"][data-theme="vice"] .site-loader .site-loader-track {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    width: auto;
+    height: 3px;
+    padding: 0;
+    border: 0;
+    background: #1a1a1a;
+    box-shadow: none;
+}
+
+html[data-theme="crimson"][data-theme="vice"] .site-loader .site-loader-fill {
+    background: #ff5fa2;
+}
+
+html[data-theme="crimson"][data-theme="vice"] .site-loader::after {
+    right: 18px;
+    bottom: 108px;
+}
+
+html[data-theme="crimson"][data-theme="vice"] .site-loader::before {
+    right: 18px;
+    bottom: 76px;
+}
+
+html[data-theme="crimson"][data-theme="vice"] .site-loader .site-loader-inner {
+    padding: 0 16px;
 }
 
 [data-theme="crimson"] .guess-board-cell {

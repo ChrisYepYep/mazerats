@@ -9,7 +9,7 @@
    completely inert until js/site.js puts that attribute on <html>. The
    classic palette is not defined here and is not affected by anything in it.
 
-   1232 rules, 1970 declarations, hues 222 (surfaces) / 36 (accents).
+   1241 rules, 1981 declarations, hues 222 (surfaces) / 36 (accents).
 */
 :root[data-dark] {
     --bg-black: #050607;
@@ -953,6 +953,19 @@ html[data-dark] .gallery-photo-more:focus-visible {
 
 html[data-dark] .gallery-photo-more:focus-visible {
     outline: 2px solid var(--amber-bright);
+}
+
+@media (pointer: coarse) and (max-width: 640px) {
+    html[data-dark] .gallery-photo-fan {
+        border: 0;
+        background: transparent;
+    }
+}
+
+@media (pointer: coarse) and (max-width: 640px) {
+    html[data-dark] .gallery-photo-fan:focus-visible {
+        outline: 2px solid var(--amber-bright);
+    }
 }
 
 html[data-dark] .photo-frame {
@@ -3144,6 +3157,11 @@ html[data-dark] .spotlight-frame:has(.welcome-promo-slide:focus-visible) {
     }
 }
 
+html[data-dark] .side-spine-swatch {
+    border: 2px solid currentColor;
+    background: linear-gradient(90deg, currentColor 50%, transparent 50%);
+}
+
 html[data-dark] .guess-deck {
     background: var(--bg-black);
 }
@@ -4086,7 +4104,7 @@ html[data-dark] .profile-who h3,
 html[data-dark] .progress-head-sm,
 html[data-dark] .profile-completed > summary,
 html[data-dark] .progress-bignum strong {
-    text-shadow: 2px 2px 0 rgba(0, 0, 0, 0.45);
+    text-shadow: 2px 2px 0 var(--pc-shadow, rgba(0, 0, 0, 0.45));
 }
 
 html[data-dark] .progress-head-sm,
@@ -6004,11 +6022,11 @@ html[data-dark] #featured-grid .opening-game-art.is-pura {
 }
 
 html[data-dark] .opening-stats {
-    color: var(--amber-text);
+    color: var(--parchment-dim);
 }
 
 html[data-dark] .opening-stats b {
-    color: var(--amber-bright);
+    color: var(--parchment);
 }
 
 html[data-dark] .opening-x-n {
@@ -6137,6 +6155,39 @@ html[data-dark] .wn-verb.is-article {
     border-color: #a8708a;
 }
 
+@media (pointer: coarse) {
+    html[data-dark] .chrome-light::before {
+        background: transparent;
+    }
+}
+
+@media (pointer: coarse) {
+    html[data-dark] .chrome-title-home::after {
+        background: transparent;
+    }
+}
+
+@media (pointer: coarse) {
+    html[data-dark] .chrome-titlebar > .chrome-close:has(> img):not(#pura-close)::after {
+        background: transparent;
+    }
+}
+
+@media (pointer: coarse) {
+    html[data-dark] .modal .gallery-nav::after {
+        background: transparent;
+    }
+}
+
+html[data-dark] .modal-gallery-img,
+html[data-dark] .old-version-img {
+    color: transparent;
+}
+
+html[data-dark] .chrome-list-row .row-furni-hit {
+    color: var(--amber-text);
+}
+
 /* ------------------------------------------- COLOUR THAT IS INFORMATION
 
    Not recoloured, and re-stated here so it still wins. The difficulty
@@ -6231,7 +6282,7 @@ html[data-dark] #featured-frame-list .chrome-list-row[data-difficulty="extreme"]
 html[data-dark] .opening-featured .chrome-list-row[data-difficulty="extreme"] .row-date,
 html[data-dark] #featured-frame-list .chrome-list-row[data-difficulty="extreme"] .chrome-go,
 html[data-dark] .opening-featured .chrome-list-row[data-difficulty="extreme"] .chrome-go {
-    color: #d47979;
+    color: #eba3a3;
 }
 
 html[data-dark] #featured-frame-list .chrome-list-row[data-difficulty="impossible"] h3,
@@ -6277,6 +6328,98 @@ html[data-dark] .admin-action-pill.admin-pill-danger:hover:not(:disabled) {
     border-color: var(--danger);
     color: #fff0ec;
     box-shadow: 0 0 8px rgba(161, 70, 47, 0.65);
+}
+
+html[data-dark][data-theme="vice"] .site-loader {
+    z-index: 10080;
+    background: #000;
+    display: block;
+}
+
+html[data-dark][data-theme="vice"] .site-loader .site-loader-inner .site-loader-wordmark {
+    display: block;
+    position: absolute;
+    right: 40px;
+    bottom: 116px;
+    z-index: 3;
+    margin: 0;
+    text-align: right;
+    font: normal 900 clamp(48px, 9vw, 92px)/0.82 'Montserrat', sans-serif;
+    letter-spacing: -2px;
+    color: #fff;
+    text-shadow: 5px 4px 0 #ff2e88, 10px 8px 0 #000;
+    pointer-events: none;
+}
+
+html[data-dark][data-theme="vice"] .site-loader .site-loader-wordmark span {
+    font-size: 1em;
+    transform: skewX(-14deg);
+    transform-origin: 50% 85%;
+}
+
+html[data-dark][data-theme="vice"] .site-loader::before {
+    content: "VICE CITY";
+    position: absolute;
+    right: 40px;
+    bottom: 80px;
+    z-index: 3;
+    padding: 4px 12px;
+    background: #ff5fa2;
+    font: 900 clamp(13px, 1.6vw, 20px) 'Montserrat', sans-serif;
+    letter-spacing: 4px;
+    color: #fff;
+    box-shadow: 3px 3px 0 #000;
+    pointer-events: none;
+}
+
+html[data-dark][data-theme="vice"] .site-loader .site-loader-inner {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 2;
+    height: 64px;
+    flex-direction: row;
+    justify-content: flex-start;
+    gap: 18px;
+    padding: 0 30px;
+    background: #000;
+}
+
+html[data-dark][data-theme="vice"] .site-loader .site-loader-label {
+    color: #ffd166;
+    min-width: 9ch;
+}
+
+html[data-dark][data-theme="vice"] .site-loader .site-loader-track {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    width: auto;
+    height: 3px;
+    padding: 0;
+    border: 0;
+    background: #1a1a1a;
+    box-shadow: none;
+}
+
+html[data-dark][data-theme="vice"] .site-loader .site-loader-fill {
+    background: #ff5fa2;
+}
+
+html[data-dark][data-theme="vice"] .site-loader::after {
+    right: 18px;
+    bottom: 108px;
+}
+
+html[data-dark][data-theme="vice"] .site-loader::before {
+    right: 18px;
+    bottom: 76px;
+}
+
+html[data-dark][data-theme="vice"] .site-loader .site-loader-inner {
+    padding: 0 16px;
 }
 
 html[data-dark] .guess-board-cell {

@@ -496,7 +496,11 @@ const KEEP_SELECTORS = [
        theme's copy outranked the very rule that exists to stop it, so the
        plates wore Frost at Christmas and Vice with the GTA skin (18 Nov 2026,
        the owner's: "EC name plates shouldn't be recoloured"). */
-    /^\s*html\[data-skin\]\[data-skin\]/
+    /^\s*html\[data-skin\]\[data-skin\]/,
+    /* The Vice City loading screen (20 Nov 2026, the scan): its own black,
+       white title and pink, drawn before any skin sheet arrives. Recoloured by
+       the dark layer, the title went grey and the label beige at night. */
+    /^\s*html\[data-theme="vice"\] \.site-loader/
 ];
 
 // Inside :root, where a whole-rule skip would take the entire palette with it.

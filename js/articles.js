@@ -599,6 +599,8 @@
         }
         if (onArticlesPath()) {
             if (!isOpen()) open(idFromAddress(), { fromAddress: true, owned: isOurEntry() });
+            // Back from a room window opened over the article (openRecord): it is still drawn, so left as it was.
+            else if (view.id && drawn && !reader.hidden && byKey(idFromAddress()) === drawn) return;
             else show(idFromAddress(), { focus: true, toList: true });
         } else if (isOpen()) {
             close({ fromHistory: true });
@@ -609,6 +611,13 @@
 
     // A maze or an event: this window closes and the room window takes its entry (see the header).
     function openRecord(kind, id) {
+        /* 20 Nov 2026, the scan: closing the event window landed on the
+           archive, not back on the article. Now the room window opens ON TOP
+           of this one (it is later in the page at the same z-index), as a
+           click from the archive would: it pushes its own entry, so its X or
+           one Back comes back to the article, still open underneath. Only
+           when the archive can't open it here is the old hand-off used. */
+        if (window.ArchiveRecords && window.ArchiveRecords.open(kind, id)) return;
         close({ handOff: true, keepFocus: true, then: () => {
             if (!(window.ArchiveRecords && window.ArchiveRecords.open(kind, id, { fromGuides: true }))) {
                 const to = window.RecordAddress.of(kind, { id });

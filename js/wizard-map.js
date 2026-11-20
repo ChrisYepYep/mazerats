@@ -1320,7 +1320,7 @@ window.WizardMap = function WizardMap(options) {
             + " L " + right.reverse().map(p => `${p[0].toFixed(1)} ${p[1].toFixed(1)}`).join(" L ") + " Z";
 
         const svg = document.createElementNS(SVG_NS, "svg");
-        svg.setAttribute("class", "wiz-arc");
+        svg.setAttribute("class", "wiz-arc"); svg.setAttribute("aria-hidden", "true"); svg.setAttribute("focusable", "false");   // decoration (20 Nov 2026, the scan)
         svg.setAttribute("viewBox", `0 0 ${map.width} ${map.height}`);
         svg.setAttribute("preserveAspectRatio", "none");
         const shape = document.createElementNS(SVG_NS, "path");
@@ -1370,7 +1370,7 @@ window.WizardMap = function WizardMap(options) {
         const shaft = line.slice(0, -1).concat([[stopX, stopY]]);
 
         const svg = document.createElementNS(SVG_NS, "svg");
-        svg.setAttribute("class", "wiz-arc wiz-arrow");
+        svg.setAttribute("class", "wiz-arc wiz-arrow"); svg.setAttribute("aria-hidden", "true"); svg.setAttribute("focusable", "false");   // decoration (20 Nov 2026, the scan)
         svg.setAttribute("viewBox", `0 0 ${map.width} ${map.height}`);
         svg.setAttribute("preserveAspectRatio", "none");
 

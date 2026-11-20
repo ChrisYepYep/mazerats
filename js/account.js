@@ -196,7 +196,7 @@
                    device's own cookie is now revoked and the header follows. */
                 if (everywhere && e && e.name === "AbortError") {
                     notice({
-                        title: "Couldn't Confirm",
+                        title: "Couldn't confirm",
                         html: `<p class="notice-lines">Couldn't confirm. If you're still signed in on another device, try again.</p>`
                     });
                     try { Account.refresh(); } catch (e2) { /* the notice stands */ }
@@ -808,7 +808,7 @@
         const me = Account.current;
 
         if (!me) {
-            host.innerHTML = `<button type="button" class="header-signin" id="account-signin">Sign in</button>`;
+            host.innerHTML = `<button type="button" class="header-signin" id="account-signin" aria-label="Sign in with Discord" title="Sign in with Discord">Sign in</button>`;
             const btn = document.getElementById("account-signin");
             if (btn) btn.addEventListener("click", () => Account.signIn());
             return;

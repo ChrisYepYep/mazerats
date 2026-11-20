@@ -946,6 +946,17 @@ document.addEventListener("DOMContentLoaded", () => {
         const s = String(text == null ? "" : text);
         return typeof GuideText !== "undefined" ? GuideText.plain(s) : s;
     }
+    /* The bar's wrapper (js/custom-scrollbar.js) follows its target's display
+       on the next frame. A window opened from a link was drawn for a frame
+       or more with the photo strip's wrapper still display:none, and then
+       jumped 130px as it came in (20 Nov 2026, the scan: a layout shift of
+       0.11). Set in the same frame here; the bar's own refresh agrees. */
+    function showScrollWrapNow(el) {
+        const wrap = el && el.parentElement;
+        if (!wrap || !wrap.classList.contains("custom-scrollbar-wrap")) return;
+        wrap.style.display = getComputedStyle(el).display === "none" ? "none" : "";
+    }
+
     function showDesc(el, text) {
         const s = String(text == null ? "" : text);
         if (typeof GuideText !== "undefined") el.innerHTML = GuideText.render(s);
@@ -3762,7 +3773,8 @@ document.addEventListener("DOMContentLoaded", () => {
             }
             return "On now";
         }
-        if (isNaN(start)) return "Date to be confirmed";
+        // "Date TBC", as the header and the rows say it (20 Nov 2026, the scan).
+        if (isNaN(start)) return "Date TBC";
         const day = start.toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short", timeZone: "UTC" });
         const time = start.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", hour12: false, timeZone: "UTC" });
         return `Starts ${day}, ${time} UTC`;
@@ -3882,8 +3894,11 @@ document.addEventListener("DOMContentLoaded", () => {
     function openingCardWhen(n) {
         const at = new Date(n.activityAt);
         const day = logDayLabel(localDayKey(n.activityAt));
+        /* The year only when it isn't this one (20 Nov 2026, the scan: at
+           1280 "Added 28 Oct / 2026" left the year alone on a third line). */
+        const thisYear = !isNaN(at) && at.getUTCFullYear() === new Date().getUTCFullYear();
         const added = "Added " + (/^(Today|Yesterday)$/.test(day) ? day.toLowerCase()
-            : isNaN(at) ? day : at.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" }));
+            : isNaN(at) ? day : at.toLocaleDateString("en-GB", Object.assign({ day: "numeric", month: "short", timeZone: "UTC" }, thisYear ? {} : { year: "numeric" })));
         if (n.isGuide) return ["Guide", added];
         if (n.isEvent) {
             const start = n.dateValue ? formatUtcParts(n.dateValue) : null;
@@ -3947,9 +3962,13 @@ document.addEventListener("DOMContentLoaded", () => {
                 emptyEl.style.display = "block";
                 return;
             }
-            const m = rows.items.filter(n => !n.isEvent).length, e = rows.items.length - m;
+            /* 20 Nov 2026, the scan: "maze" found 40 while the menu says 39 in
+               all; the Hallway was counted as a maze here only. Said on its own. */
+            const hall = rows.items.filter(n => !n.isEvent && isHallway(n._raw || n)).length;
+            const m = rows.items.filter(n => !n.isEvent).length - hall, e = rows.items.length - m - hall;
             const parts = [arts.length ? `${arts.length} ${arts.length === 1 ? "article" : "articles"}` : "",
-                m ? `${m} ${m === 1 ? "maze" : "mazes"}` : "", e ? `${e} ${e === 1 ? "event" : "events"}` : ""].filter(Boolean);
+                m ? `${m} ${m === 1 ? "maze" : "mazes"}` : "", e ? `${e} ${e === 1 ? "event" : "events"}` : "",
+                hall ? "the Hallway" : ""].filter(Boolean);
             const said = parts.length > 1 ? parts.slice(0, -1).join(", ") + " and " + parts[parts.length - 1] : parts[0];
             // In the archive's own row, so they read as more of what was found.
             grid.innerHTML = `<p class="opening-found">${escapeHtml(said)} found</p>${arts.map(n => `
@@ -4172,6 +4191,33 @@ document.addEventListener("DOMContentLoaded", () => {
                 openingPicks = fresh.length ? fresh : pickFeatured(pool, 2);
                 renderInPlace();
             }
+            /* 20 Nov 2026, the scan. (1) The mazes list kept the scroll of
+               whatever was in the panel before, so "28 Open mazes" opened a
+               third of the way down and "4 Collabs" at the very bottom: a
+               list opened from here starts at its top. (2) render() took
+               the pressed button away and focus fell to the page's top; it
+               goes to the thing that now shows that list (its tab, or the
+               view's own button), or to the new Refresh. A window that took
+               focus itself (Leaderboards, Missing Pieces) keeps it. */
+            if (go !== "refresh" && go !== "boards" && go !== "missing") {
+                const results = document.querySelector(".home-results");
+                if (results) results.scrollTop = 0;
+            }
+            const lost = !document.activeElement || document.activeElement === document.body || !document.activeElement.isConnected;
+            if (!lost) return;
+            const target = go === "refresh" ? grid.querySelector('[data-go="refresh"]')
+                : go === "timeline" ? timelineBtn
+                : go === "furni" ? furniBtn
+                : go === "whatsnew" ? whatsNewBtn
+                : (go === "open" || go === "archived" || go === "collab") ? Array.from(topNavBtns).find(t => t.dataset.top === "mazes")
+                : go === "events" ? Array.from(topNavBtns).find(t => t.dataset.top === "events")
+                : null;
+            if (target && target.offsetParent !== null) { target.focus({ preventScroll: true }); return; }
+            // A view whose own button isn't on show: the first thing in the new list.
+            const results = document.querySelector(".home-results");
+            const first = results && Array.from(results.querySelectorAll('button, a[href], [tabindex="0"]'))
+                .find(x => x.offsetParent !== null && !x.disabled);
+            if (first) first.focus({ preventScroll: true });
         }));
     }
 
@@ -5776,6 +5822,9 @@ document.addEventListener("DOMContentLoaded", () => {
     // exactly that long, then hands back to the default display:none.
     function expandPhotoStrip(strip) {
         if (!strip || !strip.classList.contains("has-overflow")) return;
+        // Not while the fan is one button (a phone, 20 Nov 2026): its icons can't be told apart by a finger anyway.
+        const fan = strip.querySelector(".gallery-photo-fan");
+        if (fan && getComputedStyle(fan).display !== "none") return;
         clearTimeout(strip._collapseTimer);
         strip.classList.remove("is-closing");
         strip.classList.add("is-open");
@@ -5889,6 +5938,26 @@ document.addEventListener("DOMContentLoaded", () => {
                 if (!strip.contains(e.relatedTarget)) collapsePhotoStrip(strip);
             });
         }
+
+        /* 20 Nov 2026, the scan: on a phone the fan was five 14px slivers and
+           an 18px "+24", far too small to aim at. Under a touch screen's
+           finger (css: pointer coarse, 640px and under) the whole fan is one
+           button over the icons, and each tap opens the next of its
+           pictures, the first one first. Hidden everywhere else. */
+        const fan = document.createElement("button");
+        fan.type = "button";
+        fan.className = "gallery-photo-fan";
+        fan.style.zIndex = String(related.length + 2);
+        const fanLabel = () => `Related pictures (${related.length}): open the next one`;
+        fan.setAttribute("aria-label", fanLabel());
+        fan.dataset.track = "photo-open";
+        fan.dataset.trackLabel = "fan";
+        fan.addEventListener("click", () => {
+            const next = related.find(r => !openPhotoFrames.some(f => f.dataset.image === r.image))
+                || related[0];
+            openPhotoFrame(next);
+        });
+        strip.appendChild(fan);
 
         // Appended to the meta row, which openModal fills in above this —
         // rebuilding that row wipes anything already inside it, so this has
@@ -7457,9 +7526,15 @@ document.addEventListener("DOMContentLoaded", () => {
         });
         /* Grouped by maze, and within a maze in the order the gallery is
            actually laid out — so the rooms read the way they are walked
-           rather than alphabetically by whatever the picture was called. */
+           rather than alphabetically by whatever the picture was called.
+           20 Nov 2026, the scan: the mazes themselves come most pictures
+           first, as the sort chip says (sortChipState), A to Z on a tie;
+           they were A to Z only, which buried The Little Maze's 44. */
+        const count = new Map();
+        out.forEach(e => count.set(e.room, (count.get(e.room) || 0) + 1));
         return out.sort((a, b) =>
-            compareNames(a.room.name, b.room.name)
+            (count.get(b.room) - count.get(a.room))
+            || compareNames(a.room.name, b.room.name)
             || galleryOrderOf(a.room, a.image) - galleryOrderOf(b.room, b.image));
     }
 
@@ -8430,6 +8505,11 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     }
 
+    // The held height goes once the picture is in (or failed): see .is-pending in openModal.
+    const picturePending = () => modalThumb.classList.remove("is-pending");
+    modalGalleryImg.addEventListener("load", picturePending);
+    modalGalleryImg.addEventListener("error", picturePending);
+
     modalGalleryImg.addEventListener("keydown", e => {
         if (e.key !== "Enter" && e.key !== " ") return;
         if (!activeGallery) return;
@@ -8999,6 +9079,9 @@ document.addEventListener("DOMContentLoaded", () => {
                 // iOS Safari ignores select() on a read-only field and
                 // selects nothing; an explicit range is what it honours.
                 try { field.setSelectionRange(0, url.length); } catch (err) { /* not a text field */ }
+                // 20 Nov 2026, the scan: a narrow field showed only "https://mazerats.net";
+                // the end is the part that says which maze, so that is what shows.
+                field.scrollLeft = field.scrollWidth;
                 say("Copy this", "Couldn't copy automatically. The link is selected, ready to copy.");
                 clearTimeout(fieldTimer);
                 fieldTimer = setTimeout(dropField, 8000);
@@ -9346,6 +9429,15 @@ document.addEventListener("DOMContentLoaded", () => {
             modalLinks.innerHTML = "";
             modalLinksWrap.style.display = "none";
         }
+        /* Nothing to read (20 Nov 2026, the scan: A Functional Maze, the
+           Hallway): the box is the column's stretch, so empty it still stood
+           as a bare band over the photo strip. Hidden then (css .is-empty). */
+        const descBoxEl = document.getElementById("room-desc-box");
+        if (descBoxEl) {
+            descBoxEl.classList.toggle("is-empty",
+                !modalDesc.textContent.trim() && !modalDesc.querySelector("img, video, iframe") && modalArticle.hidden && !n.linksReferences);
+            showScrollWrapNow(descBoxEl);
+        }
         modalTags.innerHTML = modalFilterChipsHtml(n);
         renderModalDeadEnd(n);
 
@@ -9434,6 +9526,7 @@ document.addEventListener("DOMContentLoaded", () => {
             galleryNext.style.display = "flex";
             galleryCounter.style.display = "inline-flex";
             galleryStrip.style.display = "flex";
+            showScrollWrapNow(galleryStrip);
             /* A room added without a screenshot yet gets a small "?"
                placeholder here instead of a broken <img> — see
                .gallery-strip-missing and showGalleryImage's own handling of
@@ -9508,6 +9601,7 @@ document.addEventListener("DOMContentLoaded", () => {
             galleryPosition.style.display = "none";
             galleryBonusTab.style.display = "none";
             galleryStrip.style.display = "none";
+            showScrollWrapNow(galleryStrip);
             galleryStrip.innerHTML = "";
             // A gallery-less event puts its single thumbnail in the
             // viewport's own <img> rather than painting it as a background
@@ -9551,6 +9645,11 @@ document.addEventListener("DOMContentLoaded", () => {
         // reopening the modal never starts mid-way through a previous view.
         resetOldVersionInstant();
 
+        /* An event's picture panel is the picture's own height (fit-content),
+           so until a picture not yet in the cache arrived the panel was a
+           sliver, and the window jumped 160px a second in (20 Nov 2026, the
+           scan). It holds its full height (.is-pending, css) until then. */
+        modalThumb.classList.toggle("is-pending", !!n.isEvent && !!modalGalleryImg.getAttribute("src") && !modalGalleryImg.complete);
         const wasOpen = modalOverlay.classList.contains("open");
         modalOverlay.classList.add("open");
         /* A fresh open starts at the top. The reset above can't do it while
@@ -11059,8 +11158,9 @@ document.addEventListener("DOMContentLoaded", () => {
             hlRows.push(`<div class="profile-hl"><dt>Toughest</dt><dd><button type="button" class="profile-link" data-open-maze="${escapeHtml(hl.hardest.id)}">${escapeHtml(hl.hardest.name || hl.hardest.id)}</button> <span class="profile-dim">${escapeHtml(capitalise(prettyDifficulty(String(hl.hardest.difficulty).toLowerCase())))}</span></dd></div>`);
         }
         if (hl.recent.length) {
-            hlRows.push(`<div class="profile-hl"><dt>Latest</dt><dd>${hl.recent.map(r =>
-                `<button type="button" class="profile-link" data-open-maze="${escapeHtml(r.id)}">${escapeHtml(r.name || r.id)}</button>`).join('<span class="profile-dim">, </span>')}</dd></div>`);
+            // Each comma kept with the name before it (20 Nov 2026, the scan: ", The Little Maze" wrapped alone).
+            hlRows.push(`<div class="profile-hl"><dt>Latest</dt><dd>${hl.recent.map((r, i, all) =>
+                `<span class="profile-keep"><button type="button" class="profile-link" data-open-maze="${escapeHtml(r.id)}">${escapeHtml(r.name || r.id)}</button>${i < all.length - 1 ? '<span class="profile-dim">,</span>' : ""}</span>`).join(" ")}</dd></div>`);
         }
 
         // ---- every completed maze, by name ----
@@ -14262,6 +14362,18 @@ document.addEventListener("DOMContentLoaded", () => {
         if (!loaderEl || loaderEl.dataset.done) return;
         const hold = gtaHold();
         if (hold > 0) { if (!loaderEl.dataset.held) { loaderEl.dataset.held = "1"; setTimeout(hideLoader, hold); } return; }
+        /* 20 Nov 2026, the scan: with the gate's settings check slow, the
+           archive landed first and this took the loader away while the page
+           was still held hidden (data-gate-peek shows only the loader), so a
+           returning visitor stared at a bare background for 6 to 18s. It
+           stays up until the gate has let the page in (home.html's reveal()). */
+        if (document.documentElement.hasAttribute("data-gate-peek") && !window.__mrRevealed) {
+            if (!loaderEl.dataset.gateWait) {
+                loaderEl.dataset.gateWait = "1";
+                document.addEventListener("mazerats:revealed", hideLoader, { once: true });
+            }
+            return;
+        }
         loaderEl.dataset.done = "1";
         loadBar.finish();
         loaderEl.classList.add("is-done");

@@ -33,7 +33,8 @@ const PRIVACY_SECTIONS = [
         heading: "The short version.",
         points: [
             "We don't sell or share your data, and there are no adverts.",
-            "You can read the archive and play Fallin' Furni and Pura Panic without an account.",
+            // 20 Nov 2026, the scan: Fallin' Furni is still Coming Soon, so it isn't playable today.
+            "You can read the archive and play Pura Panic without an account, and Fallin' Furni will be the same when it opens.",
             "Signing in with Discord is optional. We only ask Discord for your basic profile.",
             "We count how the site is used without following you around, and nothing here tracks you on other websites.",
             "We don't keep mailing lists, build profiles of you or use your data for marketing.",
@@ -259,3 +260,16 @@ function renderPrivacyDocument(container) {
         container.appendChild(sec);
     });
 }
+
+/* 20 Nov 2026, the scan: privacy.html filled the policy from a script at the
+   end of the body, after the first paint, so the footer and the sections
+   under it jumped (a layout shift of 0.2 on every desktop load). That page
+   now loads this file straight after its empty #legal-body with
+   data-render="legal-body", and the policy is drawn before anything below
+   it exists. The console and the landing page load it without the
+   attribute and render it themselves, as before. */
+(function () {
+    const s = document.currentScript;
+    const id = s && s.getAttribute("data-render");
+    if (id) renderPrivacyDocument(document.getElementById(id));
+})();

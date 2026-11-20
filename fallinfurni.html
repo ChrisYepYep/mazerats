@@ -626,7 +626,7 @@
          and a colour scheme is not worth a blank page. -->
     <link rel="stylesheet" href="css/style.css?v=13">
     <link rel="stylesheet" href="css/maintenance-warn.css?v=1">
-    <link id="theme-css" rel="stylesheet">
+    <link id="theme-css" rel="stylesheet" blocking="render">
     <script>
     /* THE FIRST PAINT'S PALETTE. The site's own (mazerats_theme), unless a
        seasonal skin's palette is remembered for now (mazerats_skin_theme,
@@ -713,8 +713,8 @@
          set light mode's navy inks over a stage that is dark however the site
          is lit: the title, the tagline and COMING SOON went navy on near-black.
          So the game stays in Frost's own colours; only the editor takes it. -->
-    <link id="dark-css" rel="stylesheet">
-    <link id="light-css" rel="stylesheet">
+    <link id="dark-css" rel="stylesheet" blocking="render">
+    <link id="light-css" rel="stylesheet" blocking="render">
     <script>(function(){var d=document.documentElement,dk=document.getElementById("dark-css"),lt=document.getElementById("light-css"),want=false;function sheet(l,h){if(!l.getAttribute("href"))l.href=h;}function apply(){var frost=d.getAttribute("data-theme")==="frost",light=want&&frost&&/[?&]edit/.test(location.search),dark=want&&!frost;if(dark){sheet(dk,"/css/theme-dark.css");if(!d.hasAttribute("data-dark"))d.setAttribute("data-dark","");}else if(d.hasAttribute("data-dark"))d.removeAttribute("data-dark");if(light){sheet(lt,"/css/theme-frostlight.css");if(!d.hasAttribute("data-light"))d.setAttribute("data-light","");}else if(d.hasAttribute("data-light"))d.removeAttribute("data-light");}window.__mrDarkOn=function(){return want;};window.__mrDarkIsLight=function(){return d.getAttribute("data-theme")==="frost";};window.__mrSetDark=function(v){want=!!v;apply();try{localStorage.setItem("mazerats_dark",want?"1":"0");}catch(e){}};try{want=localStorage.getItem("mazerats_dark")==="1";}catch(e){}apply();try{new MutationObserver(apply).observe(d,{attributes:true,attributeFilter:["data-theme"]});}catch(e){}addEventListener("storage",function(e){if(e.key==="mazerats_dark"||e.key===null){want=e.newValue==="1";apply();}});})();</script>
 </head>
 <body data-page="fallinfurni">
@@ -1811,7 +1811,7 @@
          the console reads PrivacyContent for its privacy page. -->
     <script src="js/api.js?v=5"></script>
     <script src="js/event-status.js?v=2"></script>
-    <script src="js/privacy-content.js?v=9"></script>
+    <script src="js/privacy-content.js?v=10"></script>
     <script src="js/palette-wear.js?v=2"></script>
     <script src="js/skin-wear.js?v=1"></script>
     <script src="js/site.js?v=4"></script>
