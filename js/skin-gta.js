@@ -104,27 +104,72 @@
                 if (x * x + y * y <= r * r && (x - r * 0.45) ** 2 + (y + r * 0.2) ** 2 > r * r * 0.7) px(mx + x, my + y, "#f4e9ff");
             }
         }
-        // The skyline: taller towards the edges, low behind the window.
+        /* The skyline: taller towards the edges, low behind the window. THE SAME
+           TOWERS BY DAY AND NIGHT (20 Nov 2026, the owner's: "the buildings
+           change"): they have a random stream of their own, and every window
+           takes its draws whether lit or not, so the night's extra stars and
+           extra lit windows no longer reshuffle the city. The night lights a
+           window wherever the day does, and more besides. */
+        let cs = 31; const crnd = () => (cs = (cs * 16807) % 2147483647) / 2147483647;
+        const lit = [];
         for (let x = 0; x < W;) {
-            const bw = 4 + Math.floor(rnd() * 9), dc = Math.abs(x - W / 2) / (W / 2);
-            const bh = Math.floor(5 + rnd() * 17 * (0.3 + dc));
+            const bw = 4 + Math.floor(crnd() * 9), dc = Math.abs(x - W / 2) / (W / 2);
+            const bh = Math.floor(5 + crnd() * 17 * (0.3 + dc));
             rect(x, HZ - bh, bw, bh, P.city);
-            if (rnd() < 0.25) rect(x + (bw >> 1), HZ - bh - 4, 1, 4, P.city);
+            if (crnd() < 0.25) rect(x + (bw >> 1), HZ - bh - 4, 1, 4, P.city);
             for (let wy = HZ - bh + 2; wy < HZ - 1; wy += 3) for (let wx = x + 1; wx < x + bw - 1; wx += 2) {
-                if (rnd() < (mode === "night" ? 0.42 : 0.22)) px(wx, wy, P.win[Math.floor(rnd() * P.win.length)]);
+                const on = crnd(), pick = crnd();
+                if (on < (mode === "night" ? 0.42 : 0.22)) { const c = P.win[Math.floor(pick * P.win.length)]; px(wx, wy, c); lit.push([wx, wy, c]); }
             }
-            x += bw + (rnd() < 0.3 ? 1 : 0);
+            x += bw + (crnd() < 0.3 ? 1 : 0);
         }
-        // The sea, and the light on it.
+        /* The sea, and the light on it. The sun's glint at half strength (20
+           Nov 2026, the owner's: "a bit darker, so it's more subtle"). */
         for (let y = HZ; y < H; y++) {
             for (let x = 0; x < W; x++) px(x, y, band(P.sea, y, HZ, H, x));
             const k = y - HZ, cx = P.sun ? SX : W * 0.8, half = (P.sun ? SR : 12) * (1 - k / (H - HZ) * 0.6);
             if (k % 2 === 0) for (let s = 0; s < 3; s++) {
                 const len = Math.floor(half * (0.3 + rnd() * 0.8)), x0 = Math.floor(cx - len / 2 + (rnd() - 0.5) * half);
-                rect(x0, y, len, 1, mode === "night" ? "#6b4aa8" : P.sun[Math.min(P.sun.length - 1, 1 + (k >> 3))], 0.85);
+                rect(x0, y, len, 1, mode === "night" ? "#6b4aa8" : P.sun[Math.min(P.sun.length - 1, 1 + (k >> 3))], mode === "night" ? 0.85 : 0.42);
             }
-            if (mode === "night" && k % 3 === 0) for (let s = 0; s < Math.round(W / 50); s++) {
-                rect(Math.floor(rnd() * W), y, 2 + Math.floor(rnd() * 4), 1, P.win[Math.floor(rnd() * P.win.length)], 0.5);
+        }
+        /* The city's lights on the water at night: a soft streak straight under
+           each lit window, where its mirror image falls, stretched down the
+           ripples and fading, then blurred and laid on faintly (20 Nov 2026,
+           the owner's: "more subtle and blurry"). Built in a light buffer of
+           its own, so the blur never smears the sea itself. */
+        if (mode === "night" && lit.length) {
+            const SH = H - HZ, acc = new Float32Array(W * SH * 3);
+            const addL = (x, y, v, k) => { if (x < 0 || x >= W || y < 0 || y >= SH) return; const i = (y * W + x) * 3; acc[i] += v[0] * k; acc[i + 1] += v[1] * k; acc[i + 2] += v[2] * k; };
+            for (const [wx, wy, c] of lit) {
+                const v = hex(c), m = HZ - wy, len = 3 + Math.round(m * 0.6);
+                for (let j = 0; j < len; j++) {
+                    const y = m + j - 1;
+                    if ((y + wx) % 3 === 2) continue;                                  // broken by the ripples
+                    const k = (1 - j / len) * 0.9;
+                    const jig = Math.round(Math.sin((y + wx * 3) * 1.7) * 0.8);
+                    addL(wx + jig, y, v, k);
+                }
+            }
+            // Box blur, twice across and once down: wide and soft, as lights on water are.
+            const blur = (src, rx, ry) => {
+                const out = new Float32Array(src.length);
+                for (let y = 0; y < SH; y++) for (let x = 0; x < W; x++) {
+                    let r = 0, gg = 0, b = 0, n = 0;
+                    for (let dy = -ry; dy <= ry; dy++) for (let dx = -rx; dx <= rx; dx++) {
+                        const X = x + dx, Y = y + dy;
+                        if (X < 0 || X >= W || Y < 0 || Y >= SH) continue;
+                        const i = (Y * W + X) * 3; r += src[i]; gg += src[i + 1]; b += src[i + 2]; n++;
+                    }
+                    const o = (y * W + x) * 3; out[o] = r / n; out[o + 1] = gg / n; out[o + 2] = b / n;
+                }
+                return out;
+            };
+            const soft = blur(blur(acc, 1, 0), 1, 1);
+            for (let y = 0; y < SH; y++) for (let x = 0; x < W; x++) {
+                const i = (y * W + x) * 3, p = ((HZ + y) * W + x) * 4;
+                const a = 0.55 * (1 - y / SH * 0.5);
+                d[p] = Math.min(255, d[p] + soft[i] * a); d[p + 1] = Math.min(255, d[p + 1] + soft[i + 1] * a); d[p + 2] = Math.min(255, d[p + 2] + soft[i + 2] * a);
             }
         }
         // Palms.
@@ -166,11 +211,15 @@
     }
 
     let sky = null, painted = "", resizeTimer = 0;
+    // The phone's Weather app can fix it; otherwise the dark-mode bulb decides.
+    function skyMode() {
+        const pick = prefs().sky, hr = new Date().getHours();
+        return pick === "sunset" || pick === "night" ? pick : pick === "live" ? (hr >= 7 && hr < 19 ? "sunset" : "night") : root.hasAttribute("data-dark") ? "night" : "sunset";
+    }
     function drawSky() {
         if (!sky) return;
-        // The phone's Weather app can fix it; otherwise the dark-mode bulb decides.
-        const pick = prefs().sky, hr = new Date().getHours();
-        const mode = pick === "sunset" || pick === "night" ? pick : pick === "live" ? (hr >= 7 && hr < 19 ? "sunset" : "night") : root.hasAttribute("data-dark") ? "night" : "sunset";
+        const mode = skyMode();
+        neonMode = mode;
         const w = innerWidth, h = Math.max(innerHeight, 320);
         // A page laid out at no width (a hidden pane or frame) has no sky to paint yet: the resize repaints it.
         if (!(w > 0)) return;
@@ -181,6 +230,113 @@
         const s = paintSky(mode, w, h);
         sky.style.backgroundImage = "url(" + s.url + ")";
         sky.style.backgroundSize = s.w + "px " + s.h + "px";
+    }
+
+    /* ---------------------------------------------------------------
+       THE NEON (20 Nov 2026, the owner's: "neon festoon lights or something
+       hanging from the top bar - subtle animation similar to christmas
+       skin's lights"; he picked tube swags over bulbs). Glass tubes in the
+       Vice colours, each draped between two clips under the bar, with dark
+       electrode caps at the ends. Drawn smooth at the screen's own density,
+       not as pixels: neon is light, and a glow in steps reads as paint. Each
+       tube breathes on its own slow cycle (between about half and full), a
+       swell rolls along the row every eleven seconds, and once in a long
+       while one tube sputters, as old neon does. Softer at sunset than at
+       night. Still, at full, for reduced motion. */
+    const NEON = ["#ff3fa4", "#2ee6ff", "#ffd45c", "#b44dff", "#ff7a3d"];
+    const NEON_H = 42;
+    let neonCv = null, neonTubes = [], neonW = 0, neonRaf = 0, neonMode = "sunset", neonSputter = null;
+    function neonLayout(w) {
+        let s = 97; const r = () => (s = (s * 16807) % 2147483647) / 2147483647;
+        const tubes = [];
+        let x = 8 + Math.floor(r() * 30), ci = 0;
+        while (x < w - 40) {
+            const span = Math.min(w - 8 - x, 130 + Math.floor(r() * 80));
+            if (span < 60) break;
+            tubes.push({ x0: x, x1: x + span, sag: 7 + r() * 6, c: NEON[ci % NEON.length], phase: r(), period: 4 + r() * 3 });
+            ci++;
+            x += span + 10 + Math.floor(r() * 26);
+        }
+        return tubes;
+    }
+    function neonLevel(t, i, now) {
+        if (now == null) return 0.9;
+        const own = 0.5 + 0.5 * Math.sin((now / t.period + t.phase) * Math.PI * 2);
+        const swell = 0.5 + 0.5 * Math.sin((now / 11 - t.x0 / 420) * Math.PI * 2);
+        let L = 0.5 + 0.5 * (0.6 * own + 0.4 * swell);
+        // The sputter: a few quick drops over half a second.
+        if (neonSputter && neonSputter.i === i && now >= neonSputter.at && now < neonSputter.at + 0.55) {
+            const k = Math.floor((now - neonSputter.at) * 22);
+            if (k % 3 !== 2) L *= 0.25;
+        }
+        return L;
+    }
+    function neonDraw(now) {
+        if (!neonCv) return;
+        const ctx = neonCv.getContext("2d"), dpr = neonCv.width / Math.max(1, neonW);
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        ctx.clearRect(0, 0, neonW, NEON_H);
+        // Pick the next sputter now and then, never two at once.
+        if (now != null && neonTubes.length && (!neonSputter || now > neonSputter.at + 1)) {
+            neonSputter = { i: Math.floor(Math.random() * neonTubes.length), at: now + 22 + Math.random() * 20 };
+        }
+        const night = neonMode === "night", strength = night ? 1 : 0.72;
+        const path = (t, inset) => {
+            const a = t.x0 + inset, b = t.x1 - inset, top = 4;
+            ctx.beginPath();
+            ctx.moveTo(a, top);
+            ctx.quadraticCurveTo((a + b) / 2, top + t.sag * 2, b, top);
+        };
+        neonTubes.forEach((t, i) => {
+            const L = neonLevel(t, i, now) * strength;
+            ctx.lineCap = "round";
+            // The glow: wide, faint, blurred.
+            ctx.save();
+            ctx.shadowColor = t.c; ctx.shadowBlur = 14 * L;
+            ctx.globalAlpha = 0.28 * L; ctx.strokeStyle = t.c; ctx.lineWidth = 7;
+            path(t, 4); ctx.stroke();
+            ctx.restore();
+            // The tube: its colour, then a hot thin core.
+            ctx.globalAlpha = 0.55 + 0.45 * L; ctx.strokeStyle = t.c; ctx.lineWidth = 2.6;
+            path(t, 4); ctx.stroke();
+            ctx.globalAlpha = 0.35 + 0.5 * L; ctx.strokeStyle = "#fff4fb"; ctx.lineWidth = 0.9;
+            path(t, 5); ctx.stroke();
+            ctx.globalAlpha = 1;
+            // Electrode caps and the clips that hold them up.
+            for (const x of [t.x0 + 3, t.x1 - 3]) {
+                ctx.fillStyle = "#1b0f26"; ctx.fillRect(x - 2.5, 2, 5, 5);
+                ctx.fillStyle = "#4a3360"; ctx.fillRect(x - 2.5, 2, 5, 1);
+                ctx.fillStyle = "#0e0716"; ctx.fillRect(x - 0.5, 0, 1, 2);
+            }
+        });
+    }
+    function neonSize() {
+        if (!neonCv) return;
+        const hd = neonCv.parentNode, w = hd ? hd.clientWidth : innerWidth;
+        if (w === neonW) return;
+        neonW = w;
+        const dpr = Math.min(2, window.devicePixelRatio || 1);
+        neonCv.width = Math.round(w * dpr); neonCv.height = Math.round(NEON_H * dpr);
+        neonCv.style.width = w + "px"; neonCv.style.height = NEON_H + "px";
+        neonTubes = neonLayout(w);
+        neonDraw(reduced() ? null : performance.now() / 1000);
+    }
+    function neonStart() {
+        const hd = document.querySelector(".site-header");
+        if (!hd) return;
+        neonCv = add(make("canvas", "gx-neon"), hd);
+        neonCv.setAttribute("aria-hidden", "true");
+        neonSize();
+        // Twelve frames a second is plenty for a breath; nothing is drawn while the page is hidden.
+        let last = 0;
+        const tick = (ms) => {
+            neonRaf = requestAnimationFrame(tick);
+            if (ms - last < 83) return;
+            last = ms;
+            neonDraw(performance.now() / 1000);
+        };
+        if (!reduced()) neonRaf = requestAnimationFrame(tick);
+        offs.push(() => { cancelAnimationFrame(neonRaf); neonRaf = 0; neonCv = null; neonW = 0; });
     }
 
     /* ---------------------------------------------------------------
@@ -1223,7 +1379,8 @@
         sky = add(make("div", "gx-sky"));
         sky.setAttribute("aria-hidden", "true");
         drawSky();
-        listen(window, "resize", () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(() => { drawSky(); rainSize(); radarResize(); placeCash(); }, 250); });
+        neonStart();
+        listen(window, "resize", () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(() => { drawSky(); rainSize(); radarResize(); placeCash(); neonSize(); }, 250); });
         /* The bulb is the newest word on the sky: a press undoes a sky fixed in
            the phone's Weather app, which otherwise left the bulb doing nothing
            to it (the owner's, 19 Nov 2026). */

@@ -23,6 +23,15 @@ html[data-skin="gta"] .site-header {
     border-bottom: 2px solid #ff5fa2;
     box-shadow: 0 2px 0 #ffb36b, 0 6px 18px rgba(255, 95, 162, 0.35);
 }
+/* The neon swags under the bar (20 Nov 2026; js/skin-gta.js neonStart). Behind the header's own
+   contents, over the page, and never in the way of a click. */
+html[data-skin="gta"] .gx-neon {
+    position: absolute;
+    left: 0;
+    top: calc(100% - 1px);
+    z-index: -1;
+    pointer-events: none;
+}
 html[data-skin="gta"] .brand-text { color: #fff; text-shadow: 2px 2px 0 #ff2e88, 4px 4px 0 #2a0b45; }
 html[data-skin="gta"] .brand-tagline { color: #ffc4dd; }
 html[data-skin="gta"] .hero-title span {
