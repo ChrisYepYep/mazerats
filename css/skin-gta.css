@@ -1014,14 +1014,14 @@ html[data-skin="gta"] .gx-word-bar p span { color: #ffd166; }
 .gx-glow { position: absolute; inset: 0; animation: gx-glow-turn 10s linear infinite, gx-glow-pulse 5s ease-in-out infinite; will-change: transform, opacity; }
 /* 13px and a touch larger than the picture (was 9px): a bigger glow, the owner's, 20 Nov 2026. */
 .gx-glow-o { position: absolute; inset: 0; filter: blur(13px); animation: gx-glow-back 10s linear infinite; will-change: transform; }
-.gx-glow-o > i { position: absolute; inset: 0; background: var(--glow); }
+.gx-glow-o > canvas { position: absolute; left: 0; top: 0; width: 100%; height: 100%; }
 .gx-glow.is-ccw { animation-direction: reverse, normal; }
 .gx-glow.is-ccw .gx-glow-o { animation-direction: reverse; }
 @keyframes gx-glow-turn { to { transform: rotate(360deg); } }
 @keyframes gx-glow-back { from { transform: translateX(10px) rotate(0deg) scale(1.03); } to { transform: translateX(10px) rotate(-360deg) scale(1.03); } }
 @keyframes gx-glow-pulse { 0%, 100% { opacity: 0.32; } 50% { opacity: 0.62; } }
-.gx-pan { position: absolute; inset: 0; background-color: #0a0a0a; background-repeat: no-repeat; image-rendering: pixelated; filter: saturate(1.25) contrast(1.08); }
-.gx-pan > i { position: absolute; inset: 0; mix-blend-mode: color; }
+/* A canvas with the picture already cut, cropped and tinted into it (js/skin-gta.js, deal): no clip-path. */
+.gx-pan { position: absolute; left: 0; top: 0; width: 100%; height: 100%; display: block; filter: saturate(1.25) contrast(1.08); }
 .gx-load-tip { font: 600 15px/1.3 'Roboto', sans-serif; color: #fff; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 @media (max-width: 600px) { .gx-load-tip { display: none; } }
 html[data-skin="gta"] .gx-saver {

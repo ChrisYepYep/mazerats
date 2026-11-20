@@ -1046,6 +1046,23 @@
             return dark / (d.length / 4) > 0.45;
         } catch (e) { return false; }
     }
+    // A canvas filling its panel, drawn at `res` pixels to the CSS pixel.
+    function canvasFor(cls, w, h, res) {
+        const c = document.createElement("canvas");
+        if (cls) c.className = cls;
+        c.width = Math.max(1, Math.round(w * res)); c.height = Math.max(1, Math.round(h * res));
+        return c;
+    }
+    // One of TINTS ("linear-gradient(135deg,#a,#b)") as a canvas gradient over w x h, laid as CSS lays it.
+    function tintFill(g, css, w, h) {
+        const m = /(\d+)deg\s*,\s*(#[0-9a-f]+)\s*,\s*(#[0-9a-f]+)/i.exec(css);
+        if (!m) return "#ff2e88";
+        const a = (+m[1] * Math.PI) / 180, dx = Math.sin(a), dy = -Math.cos(a);
+        const half = (Math.abs(w * dx) + Math.abs(h * dy)) / 2;
+        const gr = g.createLinearGradient(w / 2 - dx * half, h / 2 - dy * half, w / 2 + dx * half, h / 2 + dy * half);
+        gr.addColorStop(0, m[2]); gr.addColorStop(1, m[3]);
+        return gr;
+    }
     const GLOWS = ["#ff2e88", "#ffb14a", "#2ee6ff", "#ff5fa2", "#7a2cff", "#ffd166"];
     /* opts.fade: the collage's fade in and out, in seconds (0.9 unless said).
        opts.stagger: below.
@@ -1072,14 +1089,23 @@
             const holder = make("div", "gx-panw");
             Object.assign(holder.style, { left: x0 + "px", top: y0 + "px", width: w + "px", height: h + "px" });
             holder.style.setProperty("--glow", GLOWS[k]);   // (a custom property is only set this way)
-            const pan = make("div", "gx-pan", `<i style="background:${TINTS[k]}"></i>`);
-            const cut = "polygon(" + p.map(([x, y]) => (x - x0).toFixed(1) + "px " + (y - y0).toFixed(1) + "px").join(",") + ")";
-            pan.style.clipPath = cut;
+            /* DRAWN, NOT CLIPPED (20 Nov 2026, the owner's bug: "some images load uncropped initially, the
+               crop then pops in later"). The picture was a CSS background on a div cut by clip-path, under a
+               filter, and once the glows were moving the browser gave each panel a layer of its own: a
+               clip-path there is a separate mask, drawn on its own schedule, and a frame or more could go up
+               with the picture whole before its cut arrived. Now the cut, the crop and the tint are all drawn
+               into one canvas, so the pixels are already cut before anything is on screen. */
+            const local = p.map(([x, y]) => [x - x0, y - y0]);
+            const trace = (g) => { g.beginPath(); local.forEach(([x, y], n) => (n ? g.lineTo(x, y) : g.moveTo(x, y))); g.closePath(); };
+            const pan = canvasFor("gx-pan", w, h, Math.min(2, window.devicePixelRatio || 1));
             if (opts.glow) {
                 holder.classList.add("is-glow");
                 // Each its own phase and way round, so the lights are never in step.
-                const glow = make("div", "gx-glow", `<div class="gx-glow-o"><i></i></div>`);
-                glow.firstChild.firstChild.style.clipPath = cut;
+                const glow = make("div", "gx-glow", `<div class="gx-glow-o"></div>`);
+                // The light's shape, at half size: it is blurred anyway.
+                const gc = canvasFor("", w, h, 0.5), gg = gc.getContext("2d");
+                gg.scale(0.5, 0.5); trace(gg); gg.fillStyle = GLOWS[k]; gg.fill();
+                glow.firstChild.appendChild(gc);
                 const d1 = -(Math.random() * 10).toFixed(2), d2 = -(Math.random() * 5).toFixed(2);
                 glow.style.animationDelay = `${d1}s, ${d2}s`;
                 glow.firstChild.style.animationDelay = `${d1}s`;
@@ -1092,7 +1118,20 @@
                a room) is passed over for another, up to four tries. Only
                this site's own pictures can be looked into; another site's
                are taken as they come. */
-            let tries = 0, url = "";
+            let tries = 0, url = "", crop = null;
+            // The panel, in one go: black, the picture at its crop (pixels kept square), the tint over it, all inside the cut.
+            const paint = (img) => {
+                const g = pan.getContext("2d"), s = pan.width / w;
+                g.setTransform(s, 0, 0, s, 0, 0);
+                g.clearRect(0, 0, w, h);
+                g.save();
+                trace(g); g.clip();
+                g.fillStyle = "#0a0a0a"; g.fillRect(0, 0, w, h);
+                if (img && crop) { g.imageSmoothingEnabled = false; g.drawImage(img, -crop[2], -crop[3], crop[0], crop[1]); }
+                g.globalCompositeOperation = "color";
+                g.fillStyle = tintFill(g, TINTS[k], w, h); g.fillRect(0, 0, w, h);
+                g.restore();
+            };
             const next = () => {
                 url = pics.splice(Math.floor(Math.random() * pics.length), 1)[0] || TLM[(i + tries * 5) % TLM.length];
                 tries++;
@@ -1105,12 +1144,12 @@
                         const scale = Math.max(w / (iw * 0.5), h / (ih * 0.5)) * (1 + Math.random() * 0.25), bw = iw * scale, bh = ih * scale;
                         const fx = 0.4 + Math.random() * 0.2, fy = 0.4 + Math.random() * 0.2, ox = (bw - w) * fx, oy = (bh - h) * fy;
                         if (tries < 4 && mostlyBlack(img, ox / scale, oy / scale, w / scale, h / scale)) { next(); return; }
-                        Object.assign(pan.style, { backgroundImage: `url("${url.replace(/"/g, "%22")}")`, backgroundSize: `${bw}px ${bh}px`, backgroundPosition: `${-ox}px ${-oy}px` });
+                        crop = [bw, bh, ox, oy];
                     }
-                    /* Shown only once the picture is decoded, so it is never put up a frame or two before its own
-                       crop (the owner's bug, 20 Nov 2026); and, when staggered, not before its turn. */
-                    const shown = ok && img.decode ? img.decode().catch(() => {}) : Promise.resolve();
-                    shown.then(() => {
+                    // Decoded first, so drawing it doesn't stall a frame; drawn whole, then shown (when staggered, on its turn).
+                    const ready = ok && img.decode ? img.decode().catch(() => {}) : Promise.resolve();
+                    ready.then(() => {
+                        paint(ok ? img : null);
                         const wait = opts.stagger ? Math.max(0, t0 + order[i] * 420 + 300 - performance.now()) : 0;
                         setTimeout(() => { holder.classList.add("is-in"); done(); }, wait);
                     });
