@@ -1047,13 +1047,25 @@
         } catch (e) { return false; }
     }
     const GLOWS = ["#ff2e88", "#ffb14a", "#2ee6ff", "#ff5fa2", "#7a2cff", "#ffd166"];
-    function deal(box, driftSecs) {
+    /* opts.fade: the collage's fade in and out, in seconds (0.9 unless said).
+       opts.stagger: below.
+       opts.glow: each panel's light is a blurred copy of its cut behind it
+       that slowly circles round and breathes (the screensaver's, the owner's,
+       20 Nov 2026), in place of the still drop shadow. Moved by transforms and
+       opacity only, so the blur is drawn once and never again. */
+    function deal(box, driftSecs, opts) {
+        opts = opts || {};
+        const fade = opts.fade || 0.9;
         const W = box.clientWidth || innerWidth, H = box.clientHeight || innerHeight;
         const pics = pool().slice(), polys = layout(W, H), tint = Math.floor(Math.random() * TINTS.length);
         const way = Math.random() < 0.5 ? -1 : 1, secs = driftSecs || 14, travel = Math.round(Math.min(48, W * 0.035));
         // Back to the start of this deal's drift, at once; then off it goes once the pictures are in.
-        box.style.transition = "opacity 0.9s ease";
+        box.style.transition = `opacity ${fade}s ease`;
         box.style.transform = `translate3d(${-way * travel / 2}px, 0, 0)`;
+        /* opts.stagger: the panels pop in one at a time, in a random order,
+           like the loading screen's as their pictures arrive (the
+           screensaver's, on some collages; the owner's, 20 Nov 2026). */
+        const t0 = performance.now(), order = polys.map((_, i) => i).sort(() => Math.random() - 0.5);
         return Promise.all(polys.map((p, i) => new Promise((done) => {
             const [x0, y0, x1, y1] = bbox(p), w = x1 - x0, h = y1 - y0;
             const k = (tint + i) % TINTS.length;
@@ -1061,7 +1073,19 @@
             Object.assign(holder.style, { left: x0 + "px", top: y0 + "px", width: w + "px", height: h + "px" });
             holder.style.setProperty("--glow", GLOWS[k]);   // (a custom property is only set this way)
             const pan = make("div", "gx-pan", `<i style="background:${TINTS[k]}"></i>`);
-            pan.style.clipPath = "polygon(" + p.map(([x, y]) => (x - x0).toFixed(1) + "px " + (y - y0).toFixed(1) + "px").join(",") + ")";
+            const cut = "polygon(" + p.map(([x, y]) => (x - x0).toFixed(1) + "px " + (y - y0).toFixed(1) + "px").join(",") + ")";
+            pan.style.clipPath = cut;
+            if (opts.glow) {
+                holder.classList.add("is-glow");
+                // Each its own phase and way round, so the lights are never in step.
+                const glow = make("div", "gx-glow", `<div class="gx-glow-o"><i></i></div>`);
+                glow.firstChild.firstChild.style.clipPath = cut;
+                const d1 = -(Math.random() * 10).toFixed(2), d2 = -(Math.random() * 5).toFixed(2);
+                glow.style.animationDelay = `${d1}s, ${d2}s`;
+                glow.firstChild.style.animationDelay = `${d1}s`;
+                if (i % 2) glow.classList.add("is-ccw");
+                holder.appendChild(glow);
+            }
             holder.appendChild(pan);
             box.appendChild(holder);
             /* A picture whose crop would be mostly black (an empty corner of
@@ -1083,8 +1107,13 @@
                         if (tries < 4 && mostlyBlack(img, ox / scale, oy / scale, w / scale, h / scale)) { next(); return; }
                         Object.assign(pan.style, { backgroundImage: `url("${url.replace(/"/g, "%22")}")`, backgroundSize: `${bw}px ${bh}px`, backgroundPosition: `${-ox}px ${-oy}px` });
                     }
-                    holder.classList.add("is-in");
-                    done();
+                    /* Shown only once the picture is decoded, so it is never put up a frame or two before its own
+                       crop (the owner's bug, 20 Nov 2026); and, when staggered, not before its turn. */
+                    const shown = ok && img.decode ? img.decode().catch(() => {}) : Promise.resolve();
+                    shown.then(() => {
+                        const wait = opts.stagger ? Math.max(0, t0 + order[i] * 420 + 300 - performance.now()) : 0;
+                        setTimeout(() => { holder.classList.add("is-in"); done(); }, wait);
+                    });
                 };
                 img.onload = () => fin(img.naturalWidth > 0);
                 img.onerror = () => fin(false);
@@ -1095,7 +1124,7 @@
         }))).then(() => {
             if (reduced() || !box.isConnected) return;
             void box.offsetWidth;
-            box.style.transition = `opacity 0.9s ease, transform ${secs}s linear`;
+            box.style.transition = `opacity ${fade}s ease, transform ${secs}s linear`;
             box.style.transform = `translate3d(${way * travel / 2}px, 0, 0)`;
         });
     }
@@ -1131,18 +1160,36 @@
         saver.setAttribute("role", "dialog");
         saver.setAttribute("aria-label", "Screensaver: press any key to leave");
         saver.tabIndex = -1;
-        const box = saver.querySelector(".gx-collage");
+        const box = saver.querySelector(".gx-collage"), title = saver.querySelector(".gx-saver-title");
+        /* Each collage stays 10s and fades over 1.3s (the owner's, 20 Nov 2026; was 7s and 0.9s).
+           The drift is stretched to match, so it is still moving as it fades. */
+        const HOLD = 10000, FADE = 1.3, DRIFT = 13;
+        /* THE TITLE COMES AND GOES, on one line under the pictures, where the
+           exit hint was (the owner's, 20 Nov 2026): first once the hint has
+           faded (at once on a phone, whose hint is at the top), then up for
+           25-35s and away for 45-60s, whatever the collages are doing. */
+        const me = saver;
+        const titleIn = () => { if (saver !== me) return; title.classList.add("is-in"); later(titleOut, 25000 + Math.random() * 10000); };
+        const titleOut = () => { if (saver !== me) return; title.classList.remove("is-in"); later(titleIn, 45000 + Math.random() * 15000); };
+        later(titleIn, matchMedia("(max-width: 600px)").matches ? 3000 : 25000);
+        /* Some collages pop in a panel at a time, like the loading screen
+           (the owner's, 20 Nov 2026): about one in three, never two running. */
+        let staggered = false;
+        const shown = () => { if (!saver) return; box.classList.remove("is-out"); saverTimer = later(next, HOLD); };
         const next = () => {
             if (!saver) return;
             box.classList.add("is-out");
             saverTimer = later(() => {
                 if (!saver) return;
                 box.innerHTML = "";
-                deal(box, 9).then(() => { if (!saver) return; box.classList.remove("is-out"); saverTimer = later(next, 7000); });
-            }, reduced() ? 0 : 900);
+                staggered = !staggered && !reduced() && Math.random() < 0.35;
+                // Staggered, the empty collage is up at once and its panels arrive in it.
+                if (staggered) box.classList.remove("is-out");
+                deal(box, DRIFT, { fade: FADE, glow: true, stagger: staggered }).then(shown);
+            }, reduced() ? 0 : FADE * 1000);
         };
         box.classList.add("is-out");
-        requestAnimationFrame(() => { if (!saver) return; saver.classList.add("is-on"); saver.focus({ preventScroll: true }); deal(box, 9).then(() => { if (!saver) return; box.classList.remove("is-out"); saverTimer = later(next, 7000); }); });
+        requestAnimationFrame(() => { if (!saver) return; saver.classList.add("is-on"); saver.focus({ preventScroll: true }); deal(box, DRIFT, { fade: FADE, glow: true }).then(shown); });
         // Back on the phone it was opened from, not lost to the page (scan 18 Nov evening).
         const end = (e) => { if (e && e.type === "keydown") e.preventDefault(); saverStop(true); };
         // A beat before it listens, so the tap that opened it does not close it.

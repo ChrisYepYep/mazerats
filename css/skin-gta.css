@@ -1006,6 +1006,20 @@ html[data-skin="gta"] .gx-word-bar p span { color: #ffd166; }
 /* Each panel lit from behind in its own colour: the glow follows its cut. */
 .gx-panw { position: absolute; opacity: 0; transition: opacity 0.45s ease; filter: drop-shadow(0 0 12px color-mix(in srgb, var(--glow) 38%, transparent)) drop-shadow(0 8px 20px color-mix(in srgb, var(--glow) 20%, transparent)); }
 .gx-panw.is-in { opacity: 1; }
+/* The screensaver's moving light (js/skin-gta.js, deal opts.glow): a blurred
+   copy of the cut, nudged 10px off-centre and swung round the picture every
+   10s, brightening and dimming over 5s. The outer turns, the inner turns back
+   the same, so the shape stays upright and only its offset goes round. */
+.gx-panw.is-glow { filter: none; }
+.gx-glow { position: absolute; inset: 0; animation: gx-glow-turn 10s linear infinite, gx-glow-pulse 5s ease-in-out infinite; will-change: transform, opacity; }
+/* 13px and a touch larger than the picture (was 9px): a bigger glow, the owner's, 20 Nov 2026. */
+.gx-glow-o { position: absolute; inset: 0; filter: blur(13px); animation: gx-glow-back 10s linear infinite; will-change: transform; }
+.gx-glow-o > i { position: absolute; inset: 0; background: var(--glow); }
+.gx-glow.is-ccw { animation-direction: reverse, normal; }
+.gx-glow.is-ccw .gx-glow-o { animation-direction: reverse; }
+@keyframes gx-glow-turn { to { transform: rotate(360deg); } }
+@keyframes gx-glow-back { from { transform: translateX(10px) rotate(0deg) scale(1.03); } to { transform: translateX(10px) rotate(-360deg) scale(1.03); } }
+@keyframes gx-glow-pulse { 0%, 100% { opacity: 0.32; } 50% { opacity: 0.62; } }
 .gx-pan { position: absolute; inset: 0; background-color: #0a0a0a; background-repeat: no-repeat; image-rendering: pixelated; filter: saturate(1.25) contrast(1.08); }
 .gx-pan > i { position: absolute; inset: 0; mix-blend-mode: color; }
 .gx-load-tip { font: 600 15px/1.3 'Roboto', sans-serif; color: #fff; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -1022,7 +1036,9 @@ html[data-skin="gta"] .gx-saver {
 html[data-skin="gta"] .gx-saver.is-on { opacity: 1; }
 html[data-skin="gta"] .gx-saver .gx-collage { inset: 11vh 12vw; }
 @media (max-width: 600px) { html[data-skin="gta"] .gx-saver .gx-collage { inset: 16vh 6vw; } }
-html[data-skin="gta"] .gx-saver-title { position: absolute; right: 40px; bottom: 36px; z-index: 3; text-align: right; pointer-events: none; }
+/* One line, centred in the black under the pictures, where the exit hint sits (the owner's, 20 Nov 2026). */
+html[data-skin="gta"] .gx-saver-title { position: absolute; left: 50%; bottom: 5.5vh; z-index: 3; display: flex; align-items: center; gap: clamp(10px, 1.2vw, 16px); width: max-content; transform: translate(-50%, 50%); pointer-events: none; }
+@media (max-width: 600px) { html[data-skin="gta"] .gx-saver-title { bottom: 8vh; } }
 /* Faint, small, bottom centre (the owner's, 19 Nov 2026). */
 /* Its foot level with the foot of the VICE CITY block; pink into orange. */
 html[data-skin="gta"] .gx-saver-hint {
@@ -1042,10 +1058,32 @@ html[data-skin="gta"] .gx-saver-hint {
     opacity: 0.85;
     pointer-events: none;
 }
-html[data-skin="gta"] .gx-saver-title b { display: block; font: normal 900 clamp(48px, 9vw, 92px)/0.82 'Montserrat', sans-serif; letter-spacing: -2px; color: #fff; text-transform: uppercase; text-shadow: 5px 4px 0 #ff2e88, 10px 8px 0 #000; }
+html[data-skin="gta"] .gx-saver-title b { display: flex; gap: 0.28em; font: normal 900 clamp(22px, 2.8vw, 34px)/1 'Montserrat', sans-serif; letter-spacing: -1px; color: #fff; text-transform: uppercase; text-shadow: 2px 2px 0 #ff2e88, 4px 4px 0 #000; }
+/* Leaned a word at a time, not italic (20 Nov 2026): see the loading screen's title in css/style.css. */
 html[data-skin="gta"] .gx-saver-title b span { display: block; transform: skewX(-14deg); transform-origin: 50% 85%; }
-/* Leaned a line at a time, not italic (20 Nov 2026): see the loading screen's title in css/style.css. The shadow was cut off on the right of the E and S. */
-html[data-skin="gta"] .gx-saver-title i { display: inline-block; margin-top: 12px; padding: 4px 12px; background: #ff5fa2; font: normal 900 clamp(13px, 1.6vw, 20px) 'Montserrat', sans-serif; letter-spacing: 4px; color: #fff; text-transform: uppercase; box-shadow: 3px 3px 0 #000; }
+html[data-skin="gta"] .gx-saver-title i { display: block; padding: 3px 9px; background: #ff5fa2; font: normal 900 clamp(10px, 1.1vw, 13px)/1.2 'Montserrat', sans-serif; letter-spacing: 3px; color: #fff; text-transform: uppercase; box-shadow: 2px 2px 0 #000; }
+/* THE TITLE COMES AND GOES (20 Nov 2026, the owner's; js/skin-gta.js):
+   it pops up from below a word at a time with a small overshoot, MAZE,
+   RATS, then VICE CITY, and sinks away together. */
+html[data-skin="gta"] .gx-saver-title b span,
+html[data-skin="gta"] .gx-saver-title i {
+    opacity: 0;
+    transition: opacity 0.8s ease-in, transform 0.9s cubic-bezier(0.5, 0, 0.9, 0.4);
+}
+html[data-skin="gta"] .gx-saver-title b span { transform: translateY(26px) skewX(-14deg); }
+html[data-skin="gta"] .gx-saver-title i { transform: translateY(26px); }
+html[data-skin="gta"] .gx-saver-title.is-in b span,
+html[data-skin="gta"] .gx-saver-title.is-in i {
+    opacity: 1;
+    transition: opacity 0.3s ease-out, transform 0.6s cubic-bezier(0.2, 0.9, 0.3, 1.3);
+}
+html[data-skin="gta"] .gx-saver-title.is-in b span { transform: translateY(0) skewX(-14deg); }
+html[data-skin="gta"] .gx-saver-title.is-in i { transform: translateY(0); }
+html[data-skin="gta"] .gx-saver-title.is-in b span:nth-child(2) { transition-delay: 0.09s; }
+html[data-skin="gta"] .gx-saver-title.is-in i { transition-delay: 0.22s; }
+/* The hint fades away slowly 20s in (the owner's, 20 Nov 2026). */
+html[data-skin="gta"] .gx-saver.is-on .gx-saver-hint { animation: gx-hint-out 4s ease 20s forwards; }
+@keyframes gx-hint-out { to { opacity: 0; } }
 
 /* On a phone the VICE CITY block is as wide as the screen, and the hint at its foot was under it and cut
    off (20 Nov 2026, the scan): there it goes to the top, over the black above the collage. */
@@ -1381,6 +1419,10 @@ html[data-theme="vice"] .hallway-loader .site-loader-fill {
     html[data-skin="gta"] .gx-big > * { animation: none; }
     html[data-skin="gta"] .gx-mission.is-on { animation: none; opacity: 1; }
     html[data-skin="gta"] .gx-gps, html[data-skin="gta"] .gx-car, html[data-skin="gta"] .gx-saver, .gx-collage, .gx-panw { transition: none; }
+    .gx-glow, .gx-glow-o { animation: none; }
+    .gx-glow { opacity: 0.45; }
+    html[data-skin="gta"] .gx-saver-title, html[data-skin="gta"] .gx-saver-title b span, html[data-skin="gta"] .gx-saver-title i { transition: opacity 0.3s ease; transform: none; }
+    html[data-skin="gta"] .gx-saver-title b span { transform: skewX(-14deg); }
     html[data-skin="gta"] .gx-gps.is-open .gx-gps-game, html[data-skin="gta"] .gm-say, html[data-skin="gta"] .gm-card, html[data-skin="gta"] .gx-word.is-on .gx-word-bar b, html[data-skin="gta"] .gx-eq.is-on i { animation: none; }
     html[data-skin="gta"] .gx-word.is-on { animation: gx-word 2.8s steps(1) forwards; }
     html[data-skin="gta"] .gx-phone, html[data-skin="gta"] .gx-cash,
