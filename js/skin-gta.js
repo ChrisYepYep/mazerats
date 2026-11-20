@@ -940,7 +940,7 @@
     let saver = null, saverTimer = 0;
     function screensaver() {
         if (saver) return;
-        saver = add(make("div", "gx-saver", `<div class="gx-collage"></div><div class="gx-saver-title" aria-hidden="true"><b>Maze<br>Rats</b><i>Vice City</i></div><div class="gx-saver-hint" aria-hidden="true">${touch() ? "Tap" : "Click"} to exit screensaver.</div>`));
+        saver = add(make("div", "gx-saver", `<div class="gx-collage"></div><div class="gx-saver-title" aria-hidden="true"><b><span>Maze</span><span>Rats</span></b><i>Vice City</i></div><div class="gx-saver-hint" aria-hidden="true">${touch() ? "Tap" : "Click"} to exit screensaver.</div>`));
         saver.setAttribute("role", "dialog");
         saver.setAttribute("aria-label", "Screensaver: press any key to leave");
         saver.tabIndex = -1;

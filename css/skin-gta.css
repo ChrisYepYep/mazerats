@@ -908,7 +908,7 @@ html[data-skin="gta"] .gx-radio-name {
 }
 html[data-skin="gta"] .gx-radio-name.is-on { animation: gx-name 2.2s ease-out forwards; }
 @keyframes gx-name { 0% { opacity: 0; transform: translateY(-6px); } 10% { opacity: 1; transform: none; } 75% { opacity: 1; } 100% { opacity: 0; } }
-html[data-skin="gta"] .gx-radio-name b { display: block; font: italic 900 46px/1 'Montserrat', sans-serif; color: #fff; text-transform: uppercase; text-shadow: 3px 3px 0 #ff2e88, 5px 5px 0 #000; }
+html[data-skin="gta"] .gx-radio-name b { display: block; font: normal 900 46px/1 'Montserrat', sans-serif; transform: skewX(-14deg); color: #fff; text-transform: uppercase; text-shadow: 4px 3px 0 #ff2e88, 6px 5px 0 #000; }
 html[data-skin="gta"] .gx-radio-name span { display: block; margin-top: 8px; font: 700 18px 'Montserrat', sans-serif; letter-spacing: 3px; text-transform: uppercase; color: #ffd166; text-shadow: 2px 2px 0 #000; }
 
 /* ---------------- WASTED / BUSTED ---------------- */
@@ -993,7 +993,9 @@ html[data-skin="gta"] .gx-saver-hint {
     opacity: 0.85;
     pointer-events: none;
 }
-html[data-skin="gta"] .gx-saver-title b { display: block; font: italic 900 clamp(48px, 9vw, 92px)/0.82 'Montserrat', sans-serif; letter-spacing: -2px; color: #fff; text-transform: uppercase; text-shadow: 4px 4px 0 #ff2e88, 8px 8px 0 #000; }
+html[data-skin="gta"] .gx-saver-title b { display: block; font: normal 900 clamp(48px, 9vw, 92px)/0.82 'Montserrat', sans-serif; letter-spacing: -2px; color: #fff; text-transform: uppercase; text-shadow: 5px 4px 0 #ff2e88, 10px 8px 0 #000; }
+html[data-skin="gta"] .gx-saver-title b span { display: block; transform: skewX(-14deg); transform-origin: 50% 85%; }
+/* Leaned a line at a time, not italic (20 Nov 2026): see the loading screen's title in css/style.css. The shadow was cut off on the right of the E and S. */
 html[data-skin="gta"] .gx-saver-title i { display: inline-block; margin-top: 12px; padding: 4px 12px; background: #ff5fa2; font: normal 900 clamp(13px, 1.6vw, 20px) 'Montserrat', sans-serif; letter-spacing: 4px; color: #fff; text-transform: uppercase; box-shadow: 3px 3px 0 #000; }
 
 /* ---------------- RAIN, over the sky and under the page ---------------- */

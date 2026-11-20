@@ -11028,19 +11028,33 @@ html[data-theme="vice"] .site-loader {
     background: #000;
     display: block;
 }
-html[data-theme="vice"] .site-loader::after {
-    content: "MAZE\A RATS";
-    white-space: pre;
+/* The title is the loader's own wordmark (MAZE / RATS), placed over the
+   collage. LEANED, NOT ITALIC (20 Nov 2026, the owner's: the black shadow
+   was cut off on the right of the E and S). The site has no Montserrat
+   italic, so the browser slanted the upright face itself but measured the
+   letters and their shadows as if upright, and the shadow past that measure
+   was trimmed in a straight line. Each line is skewed instead, so the
+   letters are upright where they are measured and nothing is lost; a line
+   each so the two stay lined up on the right as the italic did. The
+   shadows' x is a step more so they still sit 4px and 8px across. */
+html[data-theme="vice"] .site-loader .site-loader-inner .site-loader-wordmark {
+    display: block;
     position: absolute;
     right: 40px;
     bottom: 116px;
     z-index: 3;
+    margin: 0;
     text-align: right;
-    font: italic 900 clamp(48px, 9vw, 92px)/0.82 'Montserrat', sans-serif;
+    font: normal 900 clamp(48px, 9vw, 92px)/0.82 'Montserrat', sans-serif;
     letter-spacing: -2px;
     color: #fff;
-    text-shadow: 4px 4px 0 #ff2e88, 8px 8px 0 #000;
+    text-shadow: 5px 4px 0 #ff2e88, 10px 8px 0 #000;
     pointer-events: none;
+}
+html[data-theme="vice"] .site-loader .site-loader-wordmark span {
+    font-size: 1em;
+    transform: skewX(-14deg);
+    transform-origin: 50% 85%;
 }
 html[data-theme="vice"] .site-loader::before {
     content: "VICE CITY";
@@ -11069,7 +11083,6 @@ html[data-theme="vice"] .site-loader .site-loader-inner {
     padding: 0 30px;
     background: #000;
 }
-html[data-theme="vice"] .site-loader .site-loader-wordmark { display: none; }
 html[data-theme="vice"] .site-loader .site-loader-label { color: #ffd166; min-width: 9ch; }
 html[data-theme="vice"] .site-loader .site-loader-track {
     position: absolute;
