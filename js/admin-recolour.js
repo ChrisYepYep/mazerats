@@ -1127,7 +1127,9 @@ window.AdminRecolour = (function () {
     const THEME_FALLBACK = [
         { id: "classic", label: "Classic" }, { id: "purple", label: "Purple" },
         { id: "pumpkin", label: "Pumpkin" }, { id: "witch", label: "Witching Hour" },
-        { id: "crimson", label: "Crimson" }, { id: "frost", label: "Frost" }
+        { id: "crimson", label: "Crimson" }, { id: "frost", label: "Frost" },
+        // 20 Nov 2026, the scan: Vice City's palette, beside Christmas's Frost.
+        { id: "vice", label: "Vice" }
     ];
     function builtInThemes() {
         const seen = new Set();
@@ -1508,7 +1510,10 @@ window.AdminRecolour = (function () {
            from the one this page is wearing now — the preview is not what
            the site shows, and saving would move it onto this one. */
         const now = baseThemeNow();
-        const nameOf = (id) => (builtInThemes().find(t => t.id === id) || { label: id }).label;
+        // The fallback list's name before the raw id (20 Nov 2026, the scan:
+        // "wears vice").
+        const nameOf = (id) => (builtInThemes().find(t => t.id === id) ||
+            THEME_FALLBACK.find(t => t.id === id) || { label: id }).label;
         const saved = o && o.kind === "saved" ? state.saved.find(x => x.id === o.id) : null;
         const madeOver = saved ? (saved.baseTheme || "classic") : null;
         /* Not while a skin brings its own palette (26 Oct 2026): through a
@@ -1542,7 +1547,8 @@ window.AdminRecolour = (function () {
        is mounted and each time it is shown again, so a schedule changed in
        Controls meanwhile is caught. Null when no skin is on, or before
        either has arrived (the line is then as it always was). */
-    const SKIN_LABELS = { halloween: "Halloween", xmas: "Christmas" };
+    // Vice City added 20 Nov 2026 (the scan: "the gta skin").
+    const SKIN_LABELS = { halloween: "Halloween", xmas: "Christmas", gta: "Vice City" };
     let skinSite = null;
     function skinNow() {
         const W = window.SkinWear;

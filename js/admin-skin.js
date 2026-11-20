@@ -62,7 +62,8 @@
         { name: "halloween", label: "Halloween", on: "10-24T00:00", off: "11-01T00:00", dot: "#9cff5c", palette: "Witching Hour",
           dates: [["10-31", "31 Oct"]] },
         // GTA VI launch week (18 Nov 2026): the game is out on 19 Nov.
-        { name: "gta", label: "GTA VI launch", on: "11-19T00:00", off: "12-01T00:00", dot: "#ff5fa2", palette: "Vice",
+        // Called Vice City here as on the Style tab and in Activity (20 Nov 2026, the scan).
+        { name: "gta", label: "Vice City", on: "11-19T00:00", off: "12-01T00:00", dot: "#ff5fa2", palette: "Vice",
           dates: [["11-19", "19 Nov"]] }
     ];
     const skinOf = (name) => SKINS.find((s) => s.name === name);
@@ -168,7 +169,9 @@
     // ---------------- 1. what visitors see ----------------
     const MODE_HINTS = {
         auto: "Each skin comes on and goes off by itself, at the moments set below.",
-        off: "No skin for anybody, whatever the dates below say. Your preview still works for you."
+        // Picks stay on under No skin, by design (js/skin-wear.js); the line says
+        // so (20 Nov 2026, the scan: it read as no skin for anybody at all).
+        off: "No skin for anybody by its dates, whatever the dates below say, but visitors who picked a skin on the Style tab keep wearing it. Your preview still works for you."
     };
     function paintModes() {
         const box = $("skin-site-modes");
@@ -204,7 +207,7 @@
         out.classList.toggle("is-on", Boolean(r.skin));
         const head = el("strong", { textContent: r.skin ? "Visitors see " + labelOf(r.skin) : "Visitors see no skin" });
         let rest = "";
-        if (r.why === "off") rest = ", because it is switched off.";
+        if (r.why === "off") rest = ", because it is switched off (anyone who picked a skin on the Style tab still wears it).";
         else if (r.why === "override") rest = ", switched on by hand.";
         else if (r.why === "schedule") rest = ", by its dates, until " + fmt(r.until) + ".";
         else {
@@ -421,7 +424,9 @@
         any.addEventListener("change", () => send("anyDate", any));
         const anyLabel = el("label", { className: "sk-radio" }, [any, "Outside its dates too"]);
         sync();
-        return line("Visitors", [el("label", { className: "sk-radio" }, [users, "Can pick it on the Style tab"]), anyLabel, note]);
+        // In one box beside the lead (20 Nov 2026, the scan), so on a phone the
+        // second switch wraps under the first, not under "Visitors".
+        return line("Visitors", [el("span", { className: "sk-opts" }, [el("label", { className: "sk-radio" }, [users, "Can pick it on the Style tab"]), anyLabel, note])]);
     }
 
     // Two skins on at once: the first in the list wins (skin-wear.js takes

@@ -467,4 +467,29 @@ html[data-game-front="scout"] #rr-overlay { z-index: 92; }
         background: transparent;
     }
     #pura-window.is-touch .pura-panel .console-btn::after { height: max(100%, 40px); }
+    /* "Who's playing?" (20 Nov 2026, the scan): "Play as a guest" reached
+       17px and the "sign in with Discord" link 10px. Each now answers 40px
+       tall: the guest button from 7px above it (the name box ends 8px up)
+       down to just short of Next and Back's reach; the link, which has
+       nothing below it, centred on its line. */
+    #pura-window.is-touch .pura-text-btn[data-go="asguest"] { position: relative; }
+    #pura-window.is-touch .pura-text-btn[data-go="asguest"]::after {
+        content: "";
+        position: absolute;
+        left: 0;
+        right: 0;
+        top: -7px;
+        height: 40px;
+        background: transparent;
+    }
+    #pura-window.is-touch .pura-beta-note a[data-go="signin"] { position: relative; }
+    #pura-window.is-touch .pura-beta-note a[data-go="signin"]::after {
+        content: "";
+        position: absolute;
+        left: 0;
+        right: 0;
+        top: calc(50% - 20px);
+        height: 40px;
+        background: transparent;
+    }
 }

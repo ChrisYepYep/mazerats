@@ -261,10 +261,18 @@ function mergeGta(held, incoming) {
    syncing late never undoes a newer choice. What may be worn, and when a
    scheduled skin overrides it, is js/skin-wear.js's to decide. */
 const STYLE_PICKS = ["classic", "gta", "halloween", "xmas"];
+/* NO PICKS FROM THE FUTURE (20 Nov 2026, the scan). A device whose clock
+   ran fast saved a pick dated up to a day ahead, which then beat every
+   newer pick from the player's other devices (the later pick wins) and
+   outlived a skin's takeover. A pick may now be at most STYLE_GRACE_MS
+   ahead of this server's clock: a later one is refused (400), and one
+   already stored that is still ahead reads as no pick, so the next real
+   pick replaces it. */
+const STYLE_GRACE_MS = 5 * 60 * 1000;
 function cleanStyle(s) {
     if (!s || typeof s !== "object" || Array.isArray(s)) return null;
     const at = Math.round(Number(s.at));
-    if (!STYLE_PICKS.includes(s.skin) || !Number.isFinite(at) || at < 1.7e12 || at > Date.now() + 864e5) return null;
+    if (!STYLE_PICKS.includes(s.skin) || !Number.isFinite(at) || at < 1.7e12 || at > Date.now() + STYLE_GRACE_MS) return null;
     return { skin: s.skin, at };
 }
 const styleOf = doc => cleanStyle(doc && doc.style);

@@ -5534,12 +5534,27 @@
        "No game art for ..." so a level is not built with one
        (js/room-editor.js). In place, on the levels as fetched, before
        anything is built from them. */
+    /* NEAR TWINS FOR DECOR WITH NO ART (20 Nov 2026, the scan). Two
+       published levels carried a decoration the client cannot draw, which
+       quietly went missing from the room: Level 4's Club sofa (between two
+       cabin tables, among armas dividers) and the Golden Gothic Chapel's
+       Old Christmas Tree. Each is drawn as the nearest piece the client
+       DOES have, same footprint and the same sit/no-sit: the Pirate's
+       Bench (cabin_bench_armas, 2x1, sittable, the room's own armas set)
+       and Christmas Tree 1 (tree3, 1x1). Decor only - a seat in a drop zone
+       with no art is still left out, as below. The stored levels still name
+       the originals; swapping them in the level editor makes this a no-op. */
+    const DECOR_TWIN = { club_sofa: "cabin_bench_armas", tree2: "tree3" };
     function leaveOutNoArt(levels) {
         const has = (c) => Boolean(c && Furni.librarySprite(c, 0, 0));
         const gone = new Set();
         const keep = (c) => { if (has(c)) return true; if (c) gone.add(c); return false; };
         const POW = (Levels.POWERUPS || {});
         for (const lv of levels) {
+            if (Array.isArray(lv.decor)) for (const d of lv.decor) {
+                const twin = d && !has(d.className) && DECOR_TWIN[d.className];
+                if (twin && has(twin)) d.className = twin;
+            }
             if (Array.isArray(lv.decor)) lv.decor = lv.decor.filter(d => keep(d.className));
             for (const z of lv.zones || []) if (Array.isArray(z.items)) z.items = z.items.filter(i => keep(i.className));
             if (Array.isArray(lv.powerups)) {
@@ -7284,6 +7299,18 @@
             tbody.appendChild(tr);
         }
 
+        /* "BANKED", NOT "TOTAL", WHEN A TRY WAS REPLAYED (20 Nov 2026, the
+           scan). Three lost tries at Level 1 showed three 20.0s rows over a
+           "Total 0/7 20.0s", which read as wrong: the sum is of the rounds
+           kept, so the row says so whenever a retried row sits above it. */
+        const totalCell = document.getElementById("ff-runend-seats");
+        const totalLabel = totalCell && totalCell.previousElementSibling;
+        if (totalLabel) {
+            const anyRetried = rows.some(r => r.retried);
+            totalLabel.textContent = anyRetried ? "Banked" : "Total";
+            if (anyRetried) totalLabel.title = "The tries that were kept: a level played again counts once, its last try";
+            else totalLabel.removeAttribute("title");
+        }
         document.getElementById("ff-runend-seats").textContent = `${seats}/${seatsOf}`;
         document.getElementById("ff-runend-time").textContent = `${seconds.toFixed(1)}s`;
         document.getElementById("ff-runend-streak").textContent = streak > 1 ? String(streak) : "-";

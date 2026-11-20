@@ -1568,6 +1568,13 @@ document.addEventListener("DOMContentLoaded", () => {
                 actCard("Console pages", actBars(actLabels(v, "console-open"), "The Console hasn't been opened yet.")) +
                 actCard("Profiles", actBars(actLabels(v, "profile-open", LABEL_NAMES["profile-open"]), "No profiles opened yet.")) +
                 actCard("Archive tabs", actBars(actLabels(v, "tab"), "No tabs switched yet.")) +
+                // Which look and which way the bulb (20 Nov 2026, the owner's
+                // approval of the scan's cards): only "Picked a style" and
+                // "Switched dark mode" were counted before.
+                actCard("Styles picked", actBars(actLabels(v, "style", LABEL_NAMES.style), "No styles picked yet.") +
+                    '<p class="admin-hint act-note">Visits where someone chose that look on the Style tab.</p>') +
+                actCard("Dark mode", actBars(actLabels(v, "dark", LABEL_NAMES.dark), "Nobody has pressed the bulb yet.") +
+                    '<p class="admin-hint act-note">Visits where someone pressed the dark-mode bulb.</p>') +
             '</div>';
 
         /* ---- Games */

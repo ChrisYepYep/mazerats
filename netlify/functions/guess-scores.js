@@ -488,24 +488,28 @@ exports.handler = async (event) => {
             }
             const dealt = deal.rounds[round];
             const guess = typeof body.guess === "string" ? body.guess : "";
-            const offered = dealt && speed.optionFor(dealt.options, guess);
             /* A name that is not one of the room's five is a bad move only in
                a room the player has been handed (scan 18 Nov evening). Asked
                of a later room, 400 for a wrong name and 409 for a real
                option told a script that room's five names before it was
                dealt. So a room not yet begun answers 409 out-of-order (or
-               no-start) whatever the name, as recordGuess does for a real
-               one. */
-            if (!offered) {
-                let row = null;
-                try { row = await speed.progressFor(db, "guess", day, player.id); } catch (e) { row = null; }
-                if (!row) return privateJson(409, { reason: "no-start" });
-                const key = "r" + round;
-                const handed = (row.moves && row.moves[key]) || (row.marks && row.marks[key]) ||
-                    round === 0 || (row.begun && row.begun[key]);
-                if (!handed || (round > 0 && !(row.marks && row.marks["r" + (round - 1)]))) return privateJson(409, { reason: "out-of-order" });
-                return privateJson(400, { error: "Bad move" });
-            }
+               no-start) whatever the name.
+               20 Nov 2026, the scan: and that check now comes BEFORE the
+               option lookup, for every name. Left to recordGuess, a real
+               option for an un-begun room met the gate's 429 too-fast for
+               1.2s after the room before ended (its start falls back to
+               that mark) while other names got 409, so the five still
+               showed; after 1.2s a real option was even recorded for a
+               room never handed out. */
+            let handRow = null;
+            try { handRow = await speed.progressFor(db, "guess", day, player.id); } catch (e) { handRow = null; }
+            if (!handRow) return privateJson(409, { reason: "no-start" });
+            const handKey = "r" + round;
+            const handed = (handRow.moves && handRow.moves[handKey]) || (handRow.marks && handRow.marks[handKey]) ||
+                round === 0 || (handRow.begun && handRow.begun[handKey]);
+            if (!handed || (round > 0 && !(handRow.marks && handRow.marks["r" + (round - 1)]))) return privateJson(409, { reason: "out-of-order" });
+            const offered = dealt && speed.optionFor(dealt.options, guess);
+            if (!offered) return privateJson(400, { error: "Bad move" });
 
             let outcome;
             try {

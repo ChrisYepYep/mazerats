@@ -21,6 +21,7 @@ const { askTwice, causeOf } = require("./_habbo-ask");
    server-side cache below already holds a profile for, so it cannot make
    "online" any staler than it was. Failures are not cached: a 503 is
    Origins having a bad minute, and should not outlast it. */
+/* "No such Habbo" answers 200 with null (20 Nov 2026, the scan): js/api.js reads null as no profile, and a 404 put an error in every visitor's console. */
 const CACHEABLE = { 200: "public, max-age=300", 404: "public, max-age=300" };
 
 /* Netlify-Vary (2 Oct 2026): keyed on `name` alone, so `&x=<random>` on a
@@ -260,7 +261,7 @@ exports.handler = async (event) => {
     if (!name) return json(400, { error: "Missing name" });
     if (name.length > 60) return json(400, { error: "Name is too long" });
     // Before the database is so much as connected to — see notCredited.
-    if (recentlyNotCredited(name.toLowerCase())) return json(404, { error: "Not credited in this archive" });
+    if (recentlyNotCredited(name.toLowerCase())) return json(200, null);
 
     let db;
     try {
@@ -280,7 +281,7 @@ exports.handler = async (event) => {
     const isFresh = (c) => c && (Date.now() - new Date(c.fetchedAt).getTime()) < CACHE_TTL_MS;
     const cachedAnswer = (c) => c.found
         ? json(200, { ...c.profile, cachedAt: c.fetchedAt, stale: false })
-        : json(404, { error: "No Origins profile for that name" });
+        : json(200, null);
 
     let hotelCode, cached;
     try {
@@ -308,7 +309,7 @@ exports.handler = async (event) => {
         hotelCode = await archivedCreditHotel(db, name);
         if (hotelCode === null) {
             rememberNotCredited(lower);
-            return json(404, { error: "Not credited in this archive" });
+            return json(200, null);
         }
         cached = await cache.findOne({ key: `${ORIGINS_HOSTS[hotelCode] || DEFAULT_HOST}:${lower}` }, { projection: { _id: 0 } });
     } catch (e) {
@@ -332,7 +333,7 @@ exports.handler = async (event) => {
             return json(200, { ...cached.profile, cachedAt: cached.fetchedAt, stale: true });
         }
         // Origins said it had nobody by this name, last time it could say.
-        if (cached) return json(404, { error: "No Origins profile for that name" });
+        if (cached) return json(200, null);
         const cause = causeOf(e);
         console.warn("habbo.js: lookup failed for", name, "on", host, "-", cause);
         return json(503, { error: "Origins profile lookup is unavailable right now", cause });
@@ -350,7 +351,7 @@ exports.handler = async (event) => {
         { upsert: true }
     ).catch(e => console.warn("habbo.js: could not cache", key, "-", e.message));
 
-    if (!result.found) return json(404, { error: "No Origins profile for that name" });
+    if (!result.found) return json(200, null);
     return json(200, { ...result.profile, cachedAt: fetchedAt, stale: false });
 };
 

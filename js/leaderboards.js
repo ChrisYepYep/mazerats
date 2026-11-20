@@ -174,8 +174,10 @@
     // Out of the daily games in GAMES (the ones with a play button), so it
     // follows the list rather than a number that goes stale beside it.
     const DAILY_COUNT = GAMES.filter(g => g.play && !g.ff).length;
+    // `is-count` (20 Nov 2026, the scan): style.css drops this pill under
+    // 360px wide, where it and "10 right" left the name six letters.
     function gamesPill(n) {
-        return n ? `<span class="guess-board-games" title="${n} of ${DAILY_COUNT} games played">${n}<span aria-hidden="true">/${DAILY_COUNT}</span></span>` : "<span></span>";
+        return n ? `<span class="guess-board-games is-count" title="${n} of ${DAILY_COUNT} games played">${n}<span aria-hidden="true">/${DAILY_COUNT}</span></span>` : "<span></span>";
     }
 
     function daysPill(n) {

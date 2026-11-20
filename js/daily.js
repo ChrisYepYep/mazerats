@@ -425,9 +425,11 @@ window.Daily = (function () {
 
     /* The rule both splashes add, in the site's plain words, from the real
        numbers. `each` is what a right answer scores ("10", or Guess the
-       Maze's "10 on the first view"). */
+       Maze's "10 on the first view").
+       20 Nov 2026, the scan: "when you're signed in" dropped; nobody can
+       play signed out since 10 Oct. */
     function bonusRule(each, verb) {
-        return `Right answers score ${each}, plus a speed bonus of up to ${SPEED_BONUS_MAX} for ${verb} quickly when you're signed in.`;
+        return `Right answers score ${each}, plus a speed bonus of up to ${SPEED_BONUS_MAX} for ${verb} quickly.`;
     }
 
     /* ---------- the result as it is pasted ----------

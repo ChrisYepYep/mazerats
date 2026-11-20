@@ -72,6 +72,29 @@
     #rr-light::after { left: 0; }
     #rr-close::after { left: -2px; }
 }
+/* A THUMB'S WORTH, AS PURA PANIC'S (20 Nov 2026, the scan: the three
+   reached 24 x 25 and the bulb 15 x 35 on a phone). Each of the five now
+   answers a 40px-tall column --rr-reach wide, side by side and never
+   overlapping, from the X's at the frame's right edge leftwards: 40px wide
+   wherever the bar has the room, down to about 33 on a 320 phone, where
+   the five would otherwise run into the title. Down they reach 20px, over
+   the picture's top edge, where a touch does nothing. Drawn the same. */
+@media (pointer: coarse) {
+    #rr-window { --rr-reach: clamp(30px, calc((100vw - 156px) / 5), 40px); }
+    #rr-window .rr-bar-btns {
+        right: calc(40px + var(--rr-reach) + (var(--rr-reach) - 13px) / 2);
+        gap: calc(var(--rr-reach) - 13px);
+    }
+    #rr-window .rr-bar-btn::after { left: calc((13px - var(--rr-reach)) / 2); top: -7px; width: var(--rr-reach); height: 40px; }
+    #rr-window #rr-light { right: calc(40px + (var(--rr-reach) - 13px) / 2); }
+    #rr-window #rr-light::after { left: calc((13px - var(--rr-reach)) / 2); right: auto; width: var(--rr-reach); top: -7px; bottom: auto; height: 40px; }
+    #rr-window #rr-close::after { left: -13px; right: -14px; top: -7px; bottom: auto; height: 40px; }
+}
+/* On a phone the title gives up the middle for them: it starts just after
+   the BETA pill instead. */
+@media (pointer: coarse) and (max-width: 560px) {
+    #rr-window .console-top-pattern::before { flex: 0 0 48px; }
+}
 .rr-corner {
     position: absolute;
     top: 6px;

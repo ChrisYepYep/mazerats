@@ -54,7 +54,7 @@
          Wrapped in try/catch: localStorage throws outright in some privacy modes,
          and a colour scheme is not worth a blank page. -->
     <link rel="stylesheet" href="css/style.css?v=13">
-    <link id="theme-css" rel="stylesheet">
+    <link id="theme-css" rel="stylesheet" blocking="render">
     <script>(function(){try{var t=localStorage.getItem("mazerats_theme");if(!t||t==="classic"||!/^[a-z]+$/.test(t))return;document.documentElement.setAttribute("data-theme",t);document.getElementById("theme-css").href="css/theme-"+t+".css";}catch(e){}})();</script>
     <!-- The atlas panel's map, and the editor around it: css/wizard.css,
          shared with wizard.html rather than duplicated, so the editor's
@@ -81,8 +81,8 @@
          bug scan): the storage event, so every tab follows without a reload. -->
     <!-- data-recolour-skip (scan 18 Nov evening): the dark and light layers
          are not the site's own colours, so Recolour does not list them. -->
-    <link id="dark-css" rel="stylesheet" data-recolour-skip>
-    <link id="light-css" rel="stylesheet" data-recolour-skip>
+    <link id="dark-css" rel="stylesheet" blocking="render" data-recolour-skip>
+    <link id="light-css" rel="stylesheet" blocking="render" data-recolour-skip>
     <script>(function(){var d=document.documentElement,dk=document.getElementById("dark-css"),lt=document.getElementById("light-css"),want=false;function sheet(l,h){if(!l.getAttribute("href"))l.href=h;}function apply(){var light=want&&d.getAttribute("data-theme")==="frost",dark=want&&!light;if(dark){sheet(dk,"/css/theme-dark.css");if(!d.hasAttribute("data-dark"))d.setAttribute("data-dark","");}else if(d.hasAttribute("data-dark"))d.removeAttribute("data-dark");if(light){sheet(lt,"/css/theme-frostlight.css");if(!d.hasAttribute("data-light"))d.setAttribute("data-light","");}else if(d.hasAttribute("data-light"))d.removeAttribute("data-light");}window.__mrDarkOn=function(){return want;};window.__mrDarkIsLight=function(){return d.getAttribute("data-theme")==="frost";};window.__mrSetDark=function(v){want=!!v;apply();try{localStorage.setItem("mazerats_dark",want?"1":"0");}catch(e){}};try{want=localStorage.getItem("mazerats_dark")==="1";}catch(e){}apply();try{new MutationObserver(apply).observe(d,{attributes:true,attributeFilter:["data-theme"]});}catch(e){}addEventListener("storage",function(e){if(e.key==="mazerats_dark"||e.key===null){want=e.newValue==="1";apply();}});})();</script>
 </head>
 <body data-page="admin" class="wr-on">
@@ -589,6 +589,8 @@
                                         <button type="button" class="btn-enter-mini theme-btn" data-theme-state="crimson"><i class="theme-dot" style="background:linear-gradient(135deg,#3c4249 0%,#ff5c60 100%)"></i>Crimson</button>
                                         <!-- Frost (25 Oct 2026): the Christmas skin's own palette, which it wears by default; it can be switched on by itself too. -->
                                         <button type="button" class="btn-enter-mini theme-btn" data-theme-state="frost"><i class="theme-dot" style="background:linear-gradient(135deg,#0d1a33 0%,#96deff 100%)"></i>Frost</button>
+                                        <!-- Vice (20 Nov 2026, the scan): the Vice City skin's own palette, as Frost is Christmas's; it can be switched on by itself too. -->
+                                        <button type="button" class="btn-enter-mini theme-btn" data-theme-state="vice"><i class="theme-dot" style="background:linear-gradient(135deg,#26052e 0%,#ff5fa2 100%)"></i>Vice</button>
                                     </div>
                                     <!-- The palettes saved in Recolour (28 Sept 2026).
                                          Pressing one puts it live, worn over the
