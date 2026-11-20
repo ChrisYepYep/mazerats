@@ -59,7 +59,10 @@
                 /* the server didn't move at all three times running (a hunt taken off the map, say): leave it for the next visit */
                 const moved = ids.some(id => r.hunts && r.hunts[id] && ((r.hunts[id].found || []).length > b[id].n || r.hunts[id].done));
                 idle = moved ? 0 : idle + 1; if (idle < 3) catchUp(r);
-                if (!Object.keys(behind(r)).length) { try { localStorage.removeItem(KEY); } catch (e) { /* fine */ } }
+                /* only the hunts that have caught up leave the browser's copy, not the whole of it (scan 18 Nov evening: that threw away a copy
+                   kept from an earlier failed save too) */
+                const still = behind(r), caught = ids.filter(id => !still[id]);
+                if (caught.length) { try { const had = JSON.parse(localStorage.getItem(KEY) || "null"); if (had && typeof had === "object") { const hs = { ...(had.hunts || {}) }; for (const id of caught) delete hs[id]; const rest = { ...had, hunts: hs }; if (!Object.keys(hs).length) delete rest.hunts; if (Object.keys(rest).length) localStorage.setItem(KEY, JSON.stringify(rest)); else localStorage.removeItem(KEY); } } catch (e) { /* fine */ } }
             }).catch(() => { /* kept in the browser for next time */ });
         }, CATCH_UP_MS);
     }

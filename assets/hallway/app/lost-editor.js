@@ -129,7 +129,7 @@
         if (!tabOpen() || !sel() || /INPUT|TEXTAREA|SELECT/.test((e.target && e.target.tagName) || "") || e.ctrlKey || e.metaKey || e.altKey) return;
         if (e.key === "ArrowRight" || e.key === "ArrowDown") { e.preventDefault(); e.stopImmediatePropagation(); step(1); }
         else if (e.key === "ArrowLeft" || e.key === "ArrowUp") { e.preventDefault(); e.stopImmediatePropagation(); step(-1); }
-        else if (e.key === " " && things()[at]) { e.preventDefault(); e.stopImmediatePropagation(); toggle(things()[at]); }
+        else if (e.key === " " && things()[at] && !(e.target && e.target.closest && e.target.closest("button, [role=button], summary, a[href]"))) { e.preventDefault(); e.stopImmediatePropagation(); toggle(things()[at]); }      // a focused button keeps Space, to press it (scan 18 Nov evening)
     }, true);
     /* ---------- the markers: this floor's, or every floor's with Show all floors. Click one to pick its spot; drag it to move the spot ---------- */
     let showAll = false, drag = null;

@@ -3890,6 +3890,17 @@ function startWalk() {
         const loX = feet[0] - hw + 28, hiX = feet[0] + hw - 28, loY = feet[1] - hh + barH + M, hiY = feet[1] - HABBO_H + hh - M;      // cam.y that keeps your feet above the bar and your head below the top
         if (loX <= hiX) cam.x = Math.max(loX, Math.min(hiX, cam.x)); else cam.x = feet[0];
         if (loY <= hiY) cam.y = Math.max(loY, Math.min(hiY, cam.y)); else cam.y = feet[1] - HABBO_H / 2 + barH / 2;
+        /* 20 Nov 2026, the scan: where the bar is the wooden card in the top corner (1024x768, a tablet) your Habbo could stop right behind
+           it, and nobody was to be seen. Then the camera moves the least it can, so you stand to the card's right or below it, still on screen */
+        if (br && br.height && !(br.top > cr.top + cr.height / 2)) {
+            const cL = (br.left - cr.left) * pxPer, cR = (br.right - cr.left) * pxPer, cT = (br.top - cr.top) * pxPer, cB = (br.bottom - cr.top) * pxPer, HW = 16;
+            const sx = feet[0] - cam.x + hw, sy = feet[1] - cam.y + hh;      // your feet on the screen, in the map's pixels
+            if (sx + HW > cL && sx - HW < cR && sy > cT && sy - HABBO_H < cB) {
+                const right = feet[0] + hw - cR - HW - M, below = feet[1] + hh - HABBO_H - cB - M;      // the cam.x / cam.y that just clear it
+                const opts = []; if (right >= loX) opts.push(["x", right, cam.x - right]); if (below >= loY) opts.push(["y", below, cam.y - below]);
+                opts.sort((a, b) => a[2] - b[2]); if (opts[0]) cam[opts[0][0]] = opts[0][1];
+            }
+        }
         break; } } }
     clampCam();
     paint();

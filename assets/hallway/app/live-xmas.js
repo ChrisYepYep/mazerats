@@ -29,7 +29,11 @@
     }
     /* read back each frame (cut and tinted), so kept where reading is cheap (9 Nov scan, page finding 4) */
     const snowCv = document.createElement("canvas"), sg = snowCv.getContext("2d", { willReadFrequently: true });
-    LIVE.add({ active: () => !!window.hallwayXmas && !reducedX.matches && windows().length > 0,
+    /* a still layer woken 20 times a second, as the dust and the theatre's bulbs are: as an every-frame layer it had the whole map repainted
+       every frame for as long as a window was anywhere near the screen, all through Christmas (18 Nov scan: 200 repaints a second here) */
+    const snowOn = () => !!window.hallwayXmas && !reducedX.matches && windows().length > 0;
+    setInterval(() => { if (!document.hidden && snowOn()) LIVE.wake(); }, 50);
+    LIVE.add({ still: true, active: snowOn,
         under(c, ox, oy, now) { const t = now / 1000;
             for (const { q, z, l } of windows()) {
                 const V = viewOf(q, z), [bx0, by0, bx1, by1] = V.box, w = bx1 - bx0, h = by1 - by0; if (w <= 0 || h <= 0) continue;

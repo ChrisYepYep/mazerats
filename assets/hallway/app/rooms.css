@@ -100,7 +100,16 @@
 .re-grid .re-tool { display: flex; flex-direction: column; align-items: center; gap: 3px; min-width: 0; padding: 4px 2px; font-size: 10px; line-height: 1.15; text-align: center; }
 .re-grid .re-tool img { width: 44px; height: 40px; object-fit: contain; image-rendering: pixelated; }
 .re-tool.wide { width: 100%; }
-.re-actions { display: flex; gap: 6px; margin-top: 10px; }
+.re-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+/* (18 Nov scan) the longest maze name set the Show with list's width, which pushed Save and Done off the bar's right end at 1280 wide;
+   and with Rotate, Shorter and Longer, Delete was cut off at the panel's edge */
+.re-host { grid-template-rows: auto 1fr; }
+.re-bar { min-height: 48px; flex-wrap: wrap; row-gap: 6px; padding-top: 7px; padding-bottom: 7px; }
+.re-bar .re-lab select { max-width: 190px; text-overflow: ellipsis; }
+/* the maze's name had its own column, squeezed to one letter beside the two lists: it gets its own line above them */
+.re-maze { grid-template-columns: 1fr 1fr auto; row-gap: 2px; padding-bottom: 4px; border-bottom: 1px solid #24262c; }
+.re-maze > span { grid-column: 1 / -1; }
+.re-maze select { width: 100%; min-width: 0; }
 .re-tip { position: absolute; left: 50%; top: 10px; transform: translateX(-50%); padding: 4px 10px; color: #1a1205; background: #f2be70; font-size: 12px; pointer-events: none; }
 .re-tip[hidden] { display: none; }
 

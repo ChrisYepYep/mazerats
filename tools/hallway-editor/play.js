@@ -155,7 +155,7 @@
         const frame = document.createElement("div"); frame.className = "mr-frame";
         const form = document.createElement("form"); form.autocomplete = "off";
         const row = document.createElement("div"); row.className = "row";
-        const input = document.createElement("input"); input.id = "playName"; input.type = "text"; input.maxLength = 32; input.placeholder = "Habbo Origins Username"; if (matchMedia("(pointer: coarse)").matches) input.placeholder = "Origins username"; /* fits a phone's box (10 Nov scan, live 16) */ input.setAttribute("aria-label", "Habbo Origins Username"); input.spellcheck = false;
+        const input = document.createElement("input"); input.id = "playName"; input.type = "text"; input.maxLength = 32; input.placeholder = "Habbo Origins Username"; if (matchMedia("(pointer: coarse), (max-width: 419px)").matches) input.placeholder = "Username"; /* fits a phone's or tablet's box: "Origins username" (10 Nov scan, live 16) was still cut to "Origins userr" there, the box being at most 148px (20 Nov 2026, the scan) */ input.setAttribute("aria-label", "Habbo Origins Username"); input.spellcheck = false;
         const sel = document.createElement("select"); sel.setAttribute("aria-label", "Origins hotel"); sel.title = "Origins hotel"; for (const h of HOTELS) { const o = document.createElement("option"); o.value = o.textContent = h; sel.appendChild(o); }
         const go = document.createElement("button"); go.type = "submit"; go.className = "mr-btn"; go.textContent = "Go";
         row.append(input, sel, go);

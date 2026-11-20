@@ -138,7 +138,9 @@ body.hw-screensaver #playBar, body.hw-screensaver .play-menu { opacity: 0; point
 @media (max-width: 700px), (pointer: coarse) {
     .hw-sheet { align-items: flex-end !important; }
     .hw-sheet .mr-window { width: 100%; max-width: none; margin: 0; border-radius: 12px 12px 0 0; }
-    .hw-sheet-body { max-width: none; max-height: 56vh; overflow-y: auto; font-size: 9px; }
+    /* .mr-frame.hw-sheet-body (20 Nov 2026, the scan): rooms.css comes after this file, and its .mr-frame { overflow: hidden } won, so
+       Lost Property, Hunts, Scraps and clue windows were cut off at the tabs on a phone with no way to scroll */
+    .mr-frame.hw-sheet-body { max-width: none; max-height: 56vh; overflow-y: auto; overscroll-behavior: contain; font-size: 9px; }
     .hw-sheet .mr-close, .hw-clue .mr-close { min-width: 38px; min-height: 38px; }
     .hw-clue { left: 0; right: 0; top: auto; bottom: 0; width: 100%; }
     .hunts .h { min-height: 44px; align-items: center; }

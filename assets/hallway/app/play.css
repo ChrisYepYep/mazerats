@@ -138,7 +138,9 @@ body.hw-screensaver #playBar, body.hw-screensaver .play-menu { opacity: 0; point
 @media (max-width: 700px), (pointer: coarse) {
     .hw-sheet { align-items: flex-end !important; }
     .hw-sheet .mr-window { width: 100%; max-width: none; margin: 0; border-radius: 12px 12px 0 0; }
-    .hw-sheet-body { max-width: none; max-height: 56vh; overflow-y: auto; font-size: 9px; }
+    /* .mr-frame.hw-sheet-body (20 Nov 2026, the scan): rooms.css comes after this file, and its .mr-frame { overflow: hidden } won, so
+       Lost Property, Hunts, Scraps and clue windows were cut off at the tabs on a phone with no way to scroll */
+    .mr-frame.hw-sheet-body { max-width: none; max-height: 56vh; overflow-y: auto; overscroll-behavior: contain; font-size: 9px; }
     .hw-sheet .mr-close, .hw-clue .mr-close { min-width: 38px; min-height: 38px; }
     .hw-clue { left: 0; right: 0; top: auto; bottom: 0; width: 100%; }
     .hunts .h { min-height: 44px; align-items: center; }
@@ -198,6 +200,9 @@ body.hw-screensaver .hw-bubble, body.hw-screensaver .hw-replies { visibility: hi
 .hw-lost-hud.low .hw-lost-hud-words b { color: #ff8a5c; }
 .hw-lost-hud.very-low { animation: hw-lost-pulse 1s ease-in-out infinite; }
 .hw-lost-hud.got .hw-lost-hud-words b { color: #9fe08a; }
+/* carrying with the clock running low, or run out (scan 18 Nov evening) */
+.hw-lost-hud.got.low .hw-lost-hud-words b { color: #ff8a5c; }
+.hw-lost-hud.got.late .hw-lost-hud-words b { color: #c9b89a; }
 @keyframes hw-lost-pulse { 50% { box-shadow: inset 0 1px 0 #60462b, 0 0 0 2px #c8452c, 0 3px 10px rgba(0, 0, 0, .5); } }
 body.hw-screensaver .hw-lost-hud, body.hw-screensaver .hw-lost-flash { visibility: hidden; }
 .hw-lost-flash { position: absolute; left: 50%; top: 32%; z-index: 30; transform: translate(-50%, -50%); display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 14px 26px 12px; color: #f5ecd8; background: rgba(26, 18, 10, .92); border: 1px solid #000; border-radius: 8px; box-shadow: inset 0 1px 0 #60462b, 0 6px 24px rgba(0, 0, 0, .6); pointer-events: none; text-align: center; animation: hw-lost-in .35s cubic-bezier(.2, 1.4, .4, 1); transition: opacity .5s; font: 400 9px/14px 'Volter Goldfish', monospace; }
@@ -247,8 +252,13 @@ body.hw-screensaver .hw-lost-hud, body.hw-screensaver .hw-lost-flash { visibilit
 @media (max-width: 700px) {
     .hw-lp-window .hw-sheet-body { width: auto; }
     .hw-lp-stats { grid-template-columns: repeat(2, 1fr); }
-    .hw-lost-hud { top: auto; bottom: 10px; right: 10px; }
+    /* above the bar along the bottom (58px and the safe area), not under it where it couldn't be seen (18 Nov scan) */
+    .hw-lost-hud { top: auto; bottom: calc(68px + env(safe-area-inset-bottom, 0px)); right: 10px; }
+    /* the thing's name at twice the size, laid out at that size so it wraps inside the window: scaled after layout it ran off the right (18 Nov scan) */
+    .hw-lp-words > b { transform: none; zoom: 2; margin: 2px 0 3px; }
 }
+/* a hunt's clue card, a bottom sheet on a phone, sits on the bar rather than under it (18 Nov scan) */
+@media (max-width: 700px), (pointer: coarse) and (max-height: 520px) { .hw-clue { bottom: calc(58px + env(safe-area-inset-bottom, 0px)); } }
 /* the hunt's clue card goes with the rest while the screensaver runs */
 body.hw-screensaver .hw-clue { visibility: hidden; }
 /* a long column of answers on a short screen scrolls rather than running off the bottom */

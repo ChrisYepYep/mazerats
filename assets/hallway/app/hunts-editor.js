@@ -26,12 +26,16 @@
     const toolOn = () => { const t = api().tool; return t === "hunt_clue" || t === "hunt_scrap"; };
     let box = null, openId = null, selKey = null, picking = null;      // the hunt whose card is open; the marker last picked ("c:<hunt>:<i>" or "s:<id>"); what Pick spot is waiting to place
 
-    const edit = fn => { const a = api(); a.snapshot(); fn(fileMap()); a.changed(); fill(); };
+    /* the tab is filled again a moment after an edit, once the focus has gone where the Tab key or the click was taking it, and fill() puts it
+       back there (18 Nov scan: filling at once, inside the box's change, threw the focus away, so every next field had to be clicked twice) */
+    let fillTimer = 0;
+    const fillSoon = () => { clearTimeout(fillTimer); fillTimer = setTimeout(fill, 0); };
+    const edit = fn => { const a = api(); a.snapshot(); fn(fileMap()); a.changed(); fillSoon(); };
     const hunts = () => fileMap().hunts || [], scraps = () => fileMap().scraps || [];
     const huntById = id => hunts().find(h => h.id === id) || null, scrapById = id => scraps().find(s => s.id === id) || null;
     const openHunt = () => huntById(openId) || hunts()[0] || null;
 
-    const field = (label, val, on, big, ph) => { const f = el("label", "field"), i = el(big ? "textarea" : "input"); if (!big) i.type = "text"; else i.rows = 2; i.value = val || ""; if (ph) i.placeholder = ph; i.setAttribute("aria-label", label); i.addEventListener("change", () => on(i.value)); f.append(el("span", "f-label", label), i); return f; };
+    const field = (label, val, on, big, ph, k) => { const f = el("label", "field"), i = el(big ? "textarea" : "input"); if (!big) i.type = "text"; else i.rows = 2; i.value = val || ""; if (ph) i.placeholder = ph; if (k) i.dataset.k = k; i.setAttribute("aria-label", label); i.addEventListener("change", () => on(i.value)); f.append(el("span", "f-label", label), i); return f; };
     const btn = (t, fn, cls, title) => { const b = el("button", "btn small " + (cls || ""), t); b.type = "button"; if (title) b.title = title; b.addEventListener("click", fn); return b; };
     const where = o => { const l = levelById(o.level); return l ? l.name + (o.x !== undefined ? ", tile " + o.x + ", " + o.y : ", a spot on the wall or furniture") : null; };
 
@@ -68,7 +72,10 @@
 
     /* ---------- the tab ---------- */
     function fill() {
-        if (!box || !LIVE.map) return; const keep = box.parentElement ? box.parentElement.scrollTop : 0, hs = hunts(), sc = scraps(); box.textContent = "";
+        if (!box || !LIVE.map) return; clearTimeout(fillTimer); const keep = box.parentElement ? box.parentElement.scrollTop : 0, hs = hunts(), sc = scraps();
+        /* the box being typed in, and where in it, to put back after (18 Nov scan) */
+        const FOC = "input, textarea, select, button", was = document.activeElement, inBox = !!was && was !== box && box.contains(was), focusK = inBox && was.dataset ? was.dataset.k : null, focusAll = box.querySelectorAll(FOC).length, focusAt = inBox ? [...box.querySelectorAll(FOC)].indexOf(was) : -1, caret = focusK && typeof was.selectionStart === "number" ? [was.selectionStart, was.selectionEnd] : null;
+        box.textContent = "";
         if (openId && !huntById(openId)) openId = null; if (!openId && hs.length) openId = hs[0].id;
 
         const intro = el("div", "hx-intro");
@@ -87,13 +94,13 @@
             head.append(el("b", "", h.name || "(no name)"), el("span", "", h.clues.length + (h.clues.length === 1 ? " clue" : " clues") + (done < h.clues.length ? ", " + (h.clues.length - done) + " without a spot" : "")));
             head.addEventListener("click", () => { openId = open ? null : h.id; fill(); LIVE.wake(); }); card.appendChild(head);
             if (open) {
-                card.appendChild(field("Name", h.name, v => edit(() => { const H = huntById(h.id); if (H) H.name = v; }), false, "What players see in the Hunts list"));
+                card.appendChild(field("Name", h.name, v => edit(() => { const H = huntById(h.id); if (H) H.name = v; }), false, "What players see in the Hunts list", "h:" + h.id + ":name"));
                 h.clues.forEach((c, i) => card.appendChild(clueCard(h, c, i)));
                 if (!h.clues.length) card.appendChild(el("p", "hint", "No clues yet. Add one below, or pick Hunt clue in the left panel and click the map."));
                 const row = el("div", "btn-row"); row.append(
                     btn("Add a clue", () => pickSpot("clue " + (h.clues.length + 1) + " of " + h.name, false, (m, hit) => { const H = m.hunts.find(q => q.id === h.id); if (!H) return; const c = { title: "", words: "", hint: "", art: hit.x !== undefined ? "note" : "none" }; setClueSpot(c, hit); H.clues.push(c); selKey = "c:" + h.id + ":" + (H.clues.length - 1); }), "primary", "Then click where it's found"),
                     btn("Try it", () => { if (!h.clues.length) { flash("Add a clue first."); return; } api().setTool("walk"); if (window.HallwayHunts) HallwayHunts.start(h); }, "", "Walk it as a player, from the first clue"),
-                    btn("Remove hunt", () => { if (!confirm("Remove " + (h.name || "this hunt") + " and its " + h.clues.length + " clues?")) return; edit(m => { m.hunts.splice(m.hunts.findIndex(q => q.id === h.id), 1); if (!m.hunts.length) delete m.hunts; }); }, "ghost"));
+                    btn("Remove hunt", () => { if (!confirm("Remove " + (h.name || "this hunt") + " and its " + h.clues.length + " clues?")) return; edit(m => { const at = (m.hunts || []).findIndex(q => q.id === h.id); if (at < 0) return; m.hunts.splice(at, 1); if (!m.hunts.length) delete m.hunts; }); }, "ghost"));      // not found (an Undo just now): nothing goes, rather than the last hunt (18 Nov scan)
                 card.appendChild(row);
             }
             box.appendChild(card);
@@ -105,37 +112,41 @@
         box.appendChild(el("p", "hint", "A scrap lies on a floor tile and says a line or two. Pick Scrap in the left panel and click the floor, or add one here."));
         sc.forEach((s, i) => {
             const card = el("div", "hx-scrap" + (selKey === "s:" + s.id ? " is-picked" : ""));
-            card.appendChild(field("It says", s.text, v => edit(() => { const S = scrapById(s.id); if (S) S.text = v; }), true));
+            card.appendChild(field("It says", s.text, v => edit(() => { const S = scrapById(s.id); if (S) S.text = v; }), true, undefined, "s:" + s.id + ":text"));
             card.appendChild(el("p", "hint", where(s) || "No spot yet."));
             const row = el("div", "btn-row"); row.append(
                 btn(s.level ? "Move it" : "Pick spot", () => pickSpot("scrap " + (i + 1), true, (m, hit) => { const S = (m.scraps || []).find(q => q.id === s.id); if (S) Object.assign(S, { level: hit.level, x: hit.x, y: hit.y }); selKey = "s:" + s.id; })),
-                btn("Show me", () => showMe(s)), btn("Remove", () => edit(m => { m.scraps.splice(m.scraps.findIndex(q => q.id === s.id), 1); if (!m.scraps.length) delete m.scraps; }), "ghost"));
+                btn("Show me", () => showMe(s)), btn("Remove", () => edit(m => { const at = (m.scraps || []).findIndex(q => q.id === s.id); if (at < 0) return; m.scraps.splice(at, 1); if (!m.scraps.length) delete m.scraps; }), "ghost"));
             card.appendChild(row); box.appendChild(card);
         });
         box.appendChild(btn("New scrap", () => pickSpot("the new scrap", true, (m, hit) => { m.scraps = m.scraps || []; const s = { id: "s" + Date.now().toString(36), text: "", level: hit.level, x: hit.x, y: hit.y }; m.scraps.push(s); selKey = "s:" + s.id; })));
         if (box.parentElement) box.parentElement.scrollTop = keep;
+        if (focusK || focusAt >= 0) { const again = (focusK && [...box.querySelectorAll("[data-k]")].find(e => e.dataset.k === focusK)) || (!focusK && box.querySelectorAll(FOC).length === focusAll && box.querySelectorAll(FOC)[focusAt]); /* by its place in the tab only while nothing came or went */ if (again) { again.focus({ preventScroll: true }); if (caret) try { again.setSelectionRange(caret[0], caret[1]); } catch (e) { /* not a text box */ } } }
     }
     function clueCard(h, c, i) {
         const key = "c:" + h.id + ":" + i, last = i === h.clues.length - 1, q = el("div", "hx-clue" + (selKey === key ? " is-picked" : ""));
         const top = el("div", "hx-clue-top"); top.append(el("span", "hx-num", String(i + 1)), el("b", "", c.title || "Clue " + (i + 1)), el("span", "hint", where(c) || "No spot yet")); q.appendChild(top);
         const set = fn => edit(m => { const H = (m.hunts || []).find(x => x.id === h.id), C = H && H.clues[i]; if (C) fn(C, H); });
-        q.appendChild(field("Title", c.title, v => set(C => { C.title = v; }), false, "Shown on the clue card"));
-        q.appendChild(field("Words", c.words, v => set(C => { C.words = v; }), true, "Where to look, in a riddle or plainly"));
-        q.appendChild(field("Hint", c.hint, v => set(C => { C.hint = v; }), false, "Optional: costs the player 5 minutes"));
-        const art = el("select", "f-ctl"), opts = [["note", "A note on its tile"], ["none", "Click what's there"]];
+        /* players' progress is kept by a clue's number (c0, c1...), so moving or removing one in a hunt that may be live moves everyone's
+           progress onto other clues: asked first (scan 18 Nov evening). A hunt with every clue placed is taken to be one that's published */
+        const shifts = what => !(h.clues.length && h.clues.every(q => q.level)) || confirm(what + " changes the clue numbers after it. Players keep their progress by clue number, so if " + (h.name || "this hunt") + " is already published, anyone part-way through it will have their found clues moved onto other clues. Go ahead?");
+        q.appendChild(field("Title", c.title, v => set(C => { C.title = v; }), false, "Shown on the clue card", key + ":title"));
+        q.appendChild(field("Words", c.words, v => set(C => { C.words = v; }), true, "Where to look, in a riddle or plainly", key + ":words"));
+        q.appendChild(field("Hint", c.hint, v => set(C => { C.hint = v; }), false, "Optional: costs the player 5 minutes", key + ":hint"));
+        const art = el("select", "f-ctl"); art.dataset.k = key + ":art"; const opts = [["note", "A note on its tile"], ["none", "Click what's there"]];
         if (last) opts.splice(1, 0, ["key", "The key on its tile"]);
         for (const [v, t] of opts) { const o = el("option", "", t); o.value = v; art.appendChild(o); }
         art.value = c.art === "key" && !last ? "note" : (c.art || "note");
         art.addEventListener("change", () => { if (art.value !== "none" && c.x === undefined && c.level) { flash("Its spot isn't a floor tile: pick a floor tile first for a note or the key."); art.value = c.art || "none"; return; } set(C => { C.art = art.value; }); });
         const af = el("label", "field"); af.append(el("span", "f-label", "Found by"), art); q.appendChild(af);
         q.appendChild(el("p", "hint hx-small", art.value === "none" ? "Nothing is drawn: the player clicks whatever is at the spot (a bookcase, a painting, a torn corner)." : art.value === "key" ? "The key lies there: finding it finishes the hunt and gives the key." : "A folded note lies on the tile: clicking it solves the clue."));
-        const nf = el("label", "field hx-check"), ni = el("input"); ni.type = "checkbox"; ni.checked = !!c.night; ni.addEventListener("change", () => set(C => { C.night = ni.checked; })); nf.append(ni, el("span", "", "Only after dark (the Hallway's own clock)")); q.appendChild(nf);
+        const nf = el("label", "field hx-check"), ni = el("input"); ni.type = "checkbox"; ni.dataset.k = key + ":night"; ni.checked = !!c.night; ni.addEventListener("change", () => set(C => { C.night = ni.checked; })); nf.append(ni, el("span", "", "Only after dark (the Hallway's own clock)")); q.appendChild(nf);
         const row = el("div", "btn-row"); row.append(
             btn(c.level ? "Move spot" : "Pick spot", () => pickSpot("clue " + (i + 1) + " of " + h.name, false, (m, hit) => { const H = m.hunts.find(x => x.id === h.id), C = H && H.clues[i]; if (C) setClueSpot(C, hit); selKey = key; }), c.level ? "" : "primary"),
             btn("Show me", () => showMe(c)),
-            btn("↑", () => { if (i) set((C, H) => { H.clues.splice(i - 1, 0, H.clues.splice(i, 1)[0]); }); }, "", "Earlier"),
-            btn("↓", () => { if (!last) set((C, H) => { H.clues.splice(i + 1, 0, H.clues.splice(i, 1)[0]); }); }, "", "Later"),
-            btn("Remove", () => set((C, H) => { H.clues.splice(i, 1); }), "ghost"));
+            btn("↑", () => { if (i && shifts("Moving this clue earlier")) set((C, H) => { H.clues.splice(i - 1, 0, H.clues.splice(i, 1)[0]); }); }, "", "Earlier"),
+            btn("↓", () => { if (!last && shifts("Moving this clue later")) set((C, H) => { H.clues.splice(i + 1, 0, H.clues.splice(i, 1)[0]); }); }, "", "Later"),
+            btn("Remove", () => { if (last || shifts("Removing this clue")) set((C, H) => { H.clues.splice(i, 1); }); }, "ghost"));
         q.appendChild(row);
         q.addEventListener("focusin", () => { if (selKey !== key) { selKey = key; LIVE.wake(); } });
         return q;

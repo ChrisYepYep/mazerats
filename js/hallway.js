@@ -168,10 +168,19 @@
             if (after) after.after(pill); else if (group) group.appendChild(pill);
         }
         f.title = "The Hallway"; f.src = PLAY; f.allow = "autoplay; fullscreen";
-        f.addEventListener("load", () => { f._alive(); try { f.contentWindow.focus(); } catch (e) { /* it asks for the keyboard itself on a click */ } });
+        f.addEventListener("load", () => { f._alive(); try { f.contentWindow.focus(); } catch (e) { /* it asks for the keyboard itself on a click */ } watchCover(f); });
         f.dataset.creep = String(creep);
         stage.appendChild(f);
         const turn = document.createElement("div"); turn.className = "hallway-turn"; turn.textContent = "Turn your phone sideways for more room"; stage.appendChild(turn);
+        /* 20 Nov 2026, the scan: the strip sat over an open Menu drawer and hid its last row. It steps out of the way while a drawer or
+           window is open in the walk (the page in the frame is ours, so it's watched from here) */
+        const watchCover = fr => { try {
+            const d = fr.contentDocument; if (!d || !d.body) return;
+            const covered = () => turn.classList.toggle("is-covered", !!d.querySelector(".play-menu.is-open, .mr-overlay:not([hidden]), .hw-clue:not([hidden])"));
+            let due = false; new MutationObserver(() => { if (due) return; due = true; Promise.resolve().then(() => { due = false; if (turn.isConnected) covered(); }); })
+                .observe(d.body, { subtree: true, childList: true, attributes: true, attributeFilter: ["class", "hidden"] });
+            covered();
+        } catch (e) { /* not ours to look into: the strip just fades as before */ } };
         /* Never stuck: 30 seconds with no sign of life, three minutes in all without "ready", or the page saying it couldn't
            start, gets a note with a way back. The 30 seconds used to count from the start, which on a slow line killed it
            while it was still arriving, every time (9 Nov scan, finding 1) */

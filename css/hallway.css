@@ -201,6 +201,8 @@ html[data-light] .hallway-note-body .hallway-note-legal, html[data-light] .hallw
     }
     .hallway-pill { top: 34px; }
     @keyframes hallway-turn-away { to { opacity: 0; visibility: hidden; } }
+    /* out of the way while a drawer or window is open in the walk (20 Nov 2026, the scan: it covered the Menu's last row); js/hallway.js */
+    .hallway-turn.is-covered { visibility: hidden; }
 }
 
 /* Full screen (F11, or the hallway asking for it): the footer slides away too and the hallway takes its room (8 Nov 2026, his) */
