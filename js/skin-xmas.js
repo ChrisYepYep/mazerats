@@ -2149,6 +2149,17 @@
                 if (getComputedStyle(e).display === "none") return;
                 out.push(r);
             });
+            /* 20 Nov 2026, the scan: the trees are fixed to the window, the footer is not. Drawn at the top of
+               a page, the trees took the bottom of the screen, and scrolled to the bottom the footer's links
+               (the fellow fansites, the disclaimer) came up over them, hard to read in light mode. So the
+               footer is kept clear where it will be once the page is scrolled all the way down too. */
+            const rest = Math.max(0, document.documentElement.scrollHeight - H - scrollY);
+            if (rest > 0) document.querySelectorAll(".site-footer, .fellow-fansites").forEach((e) => {
+                const r = e.getBoundingClientRect();
+                if (!r.width || !r.height || getComputedStyle(e).display === "none") return;
+                const top = Math.max(0, r.top - rest), bottom = Math.min(H, r.bottom - rest);
+                if (bottom > top) out.push({ left: 0, right: W, top, bottom });
+            });
             return out;
         }
         const clearOf = (boxes, x0, y0, x1, y1) => !boxes.some((r) => x0 < r.right + 6 && x1 > r.left - 6 && y0 < r.bottom + 6 && y1 > r.top - 6);

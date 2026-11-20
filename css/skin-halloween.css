@@ -294,3 +294,7 @@ html[data-skin="halloween"] .hw-share-signin:focus-visible { color: #c4f592; tex
    #e8563f measured 3.6:1 there at 9.6px. A lighter coral of the same red,
    5.3:1; its pulse ring keeps the old red. */
 html[data-skin="halloween"] .status-live { color: #ff8a70; }
+
+/* THE HALLWAY (20 Nov 2026, the scan): the ghost on its thread hangs from the top bar down over the walk,
+   in front of the visitor's Habbo. Put away while the Hallway is open, as the bats are (css/hallway.css). */
+html.hallway-open .hw-ghost { display: none; }

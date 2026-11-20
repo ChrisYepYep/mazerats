@@ -329,7 +329,8 @@
             raf = 0;
             const dt = Math.min(0.05, last ? (t - last) / 1000 : 0);
             last = t;
-            if (state === "play") {
+            if (state === "play" && paused) { /* held: nothing moves, the clock stands */ }
+            else if (state === "play") {
                 clock += dt;
                 movePlayer(dt);
                 if (state === "play") {
@@ -380,22 +381,52 @@
             const id = e.code || e.key;
             held = held.filter((h) => h.id !== id && !(h.key && h.key.toLowerCase() === String(e.key).toLowerCase()));
         }
-        function onBlur() { held = []; padDir = null; touchDir = null; }
+        /* PAUSED WHILE AWAY (20 Nov 2026, the scan): switching to another window left the cops roaming, and
+           they could bust you while you were gone. The window losing the focus holds the game (the clock,
+           the cops, you) with "Paused" across it, until the first key or touch in the game. */
+        let paused = false;
+        function pause() {
+            if (state !== "play" || paused) return;
+            paused = true;
+            clearTimeout(sayTimer); say.textContent = "Paused"; say.hidden = false;
+        }
+        function resume() {
+            if (!paused) return;
+            paused = false; last = 0;
+            say.hidden = true;
+        }
+        function onBlur() { held = []; padDir = null; touchDir = null; pause(); }
+        /* THE KEYS ARE THE GAME'S ONLY WHILE IT HAS THEM (20 Nov 2026, the scan): the arrows and W/A/S/D were
+           taken from the whole page while the radar was open, even after a click elsewhere, so the page could
+           not be scrolled with them. Now only while the focus is in the game or the last click or touch was. */
+        let pointerIn = true;
+        function onDocDown(e) { pointerIn = host.contains(e.target); }
+        const engaged = (a) => pointerIn || (a && (a === host || host.contains(a)));
         function onKey(e) {
             if (e.defaultPrevented || e.ctrlKey || e.metaKey || e.altKey) return;
             const a = document.activeElement;
             if (a && a !== host && !host.contains(a) && (/^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName) || a.isContentEditable)) return;
             const d = keyDir(e);
             if (d) {
+                if (!engaged(a)) return;
                 e.preventDefault();
+                resume();
                 const id = e.code || e.key;
                 if (!held.some((h) => h.id === id)) held.push({ id, key: e.key, dir: d });
                 return;
             }
+            if (e.key === " " && paused && engaged(a)) { e.preventDefault(); resume(); return; }
             if ((e.key === " " || e.key === "Enter") && state !== "play") {
-                // Only with the keyboard in the game: Enter on a link elsewhere on the page was taken as Try again (scan 18 Nov evening).
-                if (!a || (a !== host && !host.contains(a))) return;
-                if (a.tagName === "BUTTON" && host.contains(a)) return;   // the button's own click does it
+                const inGame = a && (a === host || host.contains(a));
+                if (inGame && a.tagName === "BUTTON") return;   // the button's own click does it
+                /* Space tries again wherever the focus is (20 Nov 2026, the scan: "Space to try again", but after
+                   a click on the page Space scrolled it and the game stayed busted), unless the focus is on a
+                   control of the page's own, which Space presses. Enter only with the keyboard in the game: Enter
+                   on a link elsewhere was taken as Try again (scan 18 Nov evening). */
+                if (!inGame) {
+                    if (e.key !== " ") return;
+                    if (a && a !== document.body && a.closest("a[href], button, [role='button'], [role='switch'], [role='tab'], summary, label, [tabindex]:not([tabindex='-1'])")) return;
+                }
                 e.preventDefault();
                 if (state === "busted") retry(); else next();
             }
@@ -404,6 +435,7 @@
         let drag = null;
         function onDown(e) {
             if (e.button != null && e.button !== 0) return;
+            resume();
             drag = { x: e.clientX, y: e.clientY, cx: camX, cy: camY, moved: false, id: e.pointerId, touch: e.pointerType === "touch" };
             try { cv.setPointerCapture(e.pointerId); } catch (err) { /* fine */ }
         }
@@ -437,17 +469,19 @@
             const b = e.target.closest("[data-dir]");
             if (!b) return;
             e.preventDefault();
+            resume();
             padDir = b.dataset.dir;
             try { b.setPointerCapture(e.pointerId); } catch (err) { /* fine */ }
         }
         function onPadUp() { padDir = null; }
-        function onVis() { last = 0; }
+        function onVis() { last = 0; if (document.hidden) pause(); }
 
         let alive = true;
         const ro = window.ResizeObserver ? new ResizeObserver(() => { size(); camera(0, true); if (!raf && alive) draw(); }) : null;
         host.tabIndex = -1;
         document.addEventListener("keydown", onKey, true);
         document.addEventListener("keyup", onKeyUp, true);
+        document.addEventListener("pointerdown", onDocDown, true);
         window.addEventListener("blur", onBlur);
         cv.addEventListener("pointerdown", onDown);
         cv.addEventListener("pointermove", onMove);
@@ -472,6 +506,7 @@
                 clearTimeout(sayTimer);
                 document.removeEventListener("keydown", onKey, true);
                 document.removeEventListener("keyup", onKeyUp, true);
+                document.removeEventListener("pointerdown", onDocDown, true);
                 window.removeEventListener("blur", onBlur);
                 document.removeEventListener("visibilitychange", onVis);
                 if (ro) ro.disconnect();
@@ -484,7 +519,8 @@
             // For testing on the dev server only.
             _t: location.hostname === "localhost" ? { get me() { return me; }, get cops() { return cops; }, get exit() { return exit; } } : undefined,
             get level() { return level; },
-            get state() { return state; }
+            get state() { return state; },
+            get paused() { return paused; }
         };
     }
 

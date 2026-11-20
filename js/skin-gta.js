@@ -323,11 +323,18 @@
         neonTubes = neonLayout(w);
         neonDraw(reduced() ? null : performance.now() / 1000);
     }
+    /* 20 Nov 2026, the scan: the tubes hang below the bar, over the page. Not on the Atlas, whose title sits
+       right under its short bar (they ran across "The Sorcerer's Atlas" and the Find a room box); and once
+       the page is scrolled they fade away, so they never draw over what passes under the bar (the Menu's
+       rows, a card's title). Back as the page returns to its top. Gone in the Hallway (css). */
     function neonStart() {
         const hd = document.querySelector(".site-header");
-        if (!hd) return;
+        if (!hd || (document.body && document.body.getAttribute("data-page") === "wizard")) return;
         neonCv = add(make("canvas", "gx-neon"), hd);
         neonCv.setAttribute("aria-hidden", "true");
+        const away = () => { if (neonCv) neonCv.classList.toggle("is-away", (window.scrollY || 0) > 4); };
+        listen(window, "scroll", away, { passive: true });
+        away();
         neonSize();
         // Twelve frames a second is plenty for a breath; nothing is drawn while the page is hidden.
         let last = 0;
@@ -335,6 +342,9 @@
             neonRaf = requestAnimationFrame(tick);
             if (ms - last < 83) return;
             last = ms;
+            // Faded away or in the Hallway: nothing to see, nothing drawn (the fade itself keeps the last frame).
+            if (neonCv && neonCv.classList.contains("is-away") && getComputedStyle(neonCv).opacity === "0") return;
+            if (inHallway()) return;
             neonDraw(performance.now() / 1000);
         };
         if (!reduced()) neonRaf = requestAnimationFrame(tick);
@@ -448,6 +458,8 @@
     /* Phones (760px and under): the cash goes into the hero, top right, level with the
        MAZE RATS title, and back to its own place on a wider window (css/skin-gta.css,
        .gx-cash.is-inhero; 19 Nov 2026). */
+    /* The WANTED stars go with it (20 Nov 2026, the scan): in the top bar on a phone they took a third row,
+       115px of bar against Classic's 88. In the hero they sit level with the title, just left of the cash. */
     function placeCash() {
         if (!cash) return;
         const hero = innerWidth <= 760 ? document.querySelector("main .hero") : null;
@@ -455,22 +467,35 @@
         if (hero && title) {
             if (cash.parentNode !== hero) hero.prepend(cash);
             cash.classList.add("is-inhero");
-            cash.style.top = Math.round(title.getBoundingClientRect().top - hero.getBoundingClientRect().top) + "px";
+            const top = Math.round(title.getBoundingClientRect().top - hero.getBoundingClientRect().top);
+            cash.style.top = top + "px";
+            if (wanted) {
+                if (wanted.parentNode !== hero) hero.prepend(wanted);
+                wanted.classList.add("is-inhero");
+                wanted.style.top = top + "px";
+                fitWanted();
+            }
         } else {
             if (cash.parentNode !== document.body) document.body.appendChild(cash);
             cash.classList.remove("is-inhero");
             cash.style.top = "";
+            const brand = document.querySelector(".site-header .brand-group");
+            if (wanted && brand && wanted.parentNode !== brand) brand.appendChild(wanted);
+            if (wanted) { wanted.classList.remove("is-inhero"); wanted.style.top = ""; }
         }
     }
     function money(n) { return "$" + Math.round(n).toLocaleString("en-US"); }
+    // The stars beside the cash in the hero keep clear of it as its figure grows.
+    const fitWanted = () => { if (wanted && cash && wanted.classList.contains("is-inhero")) wanted.style.setProperty("--gx-cash-w", Math.ceil(cash.getBoundingClientRect().width) + "px"); };
     function countTo(el, from, to) {
         if (!el) return;
-        if (reduced() || from === to) { el.textContent = money(to); return; }
+        if (reduced() || from === to) { el.textContent = money(to); fitWanted(); return; }
         const t0 = performance.now(), dur = 900;
         const step = (t) => {
             if (!on) return;
             const k = Math.min(1, (t - t0) / dur);
             el.textContent = money(from + (to - from) * (1 - Math.pow(1 - k, 3)));
+            fitWanted();
             if (k < 1) requestAnimationFrame(step);
         };
         requestAnimationFrame(step);
@@ -521,6 +546,7 @@
         phone.classList.toggle("has-texts", unread.length > 0 && prefs().buzz);
         phone.querySelector(".gx-phone-btn").setAttribute("aria-label", unread.length ? `Texts: ${unread.length} new` : "Texts");
         if (isBig()) drawList();
+        syncEdge();
     }
     /* THE APPS (the owner's, 19 Nov 2026: six that each do something the
        page can't, plus the screensaver). The big phone opens on its home
@@ -603,6 +629,7 @@
             unread = [];
             const badge = phone.querySelector(".gx-phone-badge"); badge.hidden = true;
             phone.classList.remove("has-texts");
+            syncEdge();
         } else if (view === "maps") {
             const s = street(), nxt = s.top + 1, lv = window.GtaMaze ? GtaMaze.copsOf(nxt) : (nxt >= 2 ? 2 : 1);
             const rows = [];
@@ -688,13 +715,15 @@
     }
     /* Not over a game's window (it was half tucked behind Fallin' Furni's), not in the Hallway, and not on
        a window too short for it: on a phone on its side it ran up under the header (scan 18 Nov evening). */
-    const noteBlocked = () => inHallway() || innerWidth < 760 || innerHeight < 600 || !!root.dataset.gameFront ||
+    /* And only where there is clear room beside the archive window (20 Nov 2026, the scan): from 760 to
+       1000 wide it sat over Surprise me, What's New, the fansites or the Privacy link for its 12 seconds. */
+    const noteBlocked = () => inHallway() || innerWidth < 1100 || innerHeight < 600 || !!root.dataset.gameFront ||
         !!document.querySelector("#ff-overlay.open, #pura-overlay.open, #rr-overlay.open, .modal-overlay.active, .modal-overlay.open, dialog[open]");
     function showNote() {
         if (!phone || !unread.length || isBig() || noteBlocked()) return;
         const m = unread[0];   // the welcome first, the way the day began
         const note = phone.querySelector(".gx-phone-note");
-        note.innerHTML = `<b>${esc(m.from)}</b><span>${esc(m.text)}</span><em>${unread.length > 1 ? `+${unread.length - 1} more · ` : ""}Tap to read</em>`;
+        note.innerHTML = `<b>${esc(m.from)}</b><span>${esc(m.text)}</span><em>${unread.length > 1 ? `+${unread.length - 1} more · ` : ""}${touch() ? "Tap" : "Click"} to read</em>`;
         note.hidden = false;
         clearTimeout(noteTimer);
         noteTimer = later(hideNote, 12000);
@@ -1373,6 +1402,56 @@
     }
 
     /* ---------------------------------------------------------------
+       THE EDGE TAB (20 Nov 2026, the owner's pick from the scan's mock-ups).
+       On phones and tablets (900px and under) the small phone and the radar
+       floated over the archive all the time: card text, the timeline, the
+       events list and the open Menu's rows were under them, and a tap there
+       opened the phone. There they are tucked away, and a slim neon tab on
+       the right edge, a little below the middle, stands in for them: a phone,
+       a radar and the red count of unread texts. A tap dims the page and
+       brings both back in their usual places, and the tab becomes ×; the ×,
+       a tap on the dimmed page or Escape tucks them away again. The big
+       phone and Maze Maps, once opened, show whether tucked or not. Wider
+       than 900px nothing changes. Hidden where the pieces are (the Hallway,
+       a game's window in front): css/skin-gta.css. */
+    let edge = null, edgeDim = null;
+    const edgeOpen = () => root.classList.contains("gx-edge-open");
+    function setEdge(open, refocus) {
+        if (!edge || open === edgeOpen()) return;
+        root.classList.toggle("gx-edge-open", open);
+        edge.setAttribute("aria-expanded", String(open));
+        syncEdge();
+        if (open) { hideNote(); return; }
+        closeBig(false); closeRadar(false);
+        if (refocus) edge.focus({ preventScroll: true });
+    }
+    function syncEdge() {
+        if (!edge) return;
+        const b = edge.querySelector(".gx-edge-badge");
+        b.textContent = unread.length ? String(unread.length) : "";
+        b.hidden = !unread.length || edgeOpen();
+        edge.classList.toggle("no-radar", !radarShown());
+        edge.setAttribute("aria-label", edgeOpen() ? "Put the phone and radar away"
+            : `Show the phone${radarShown() ? " and radar" : ""}${unread.length ? `: ${unread.length} new text${unread.length > 1 ? "s" : ""}` : ""}`);
+    }
+    function edgeBoot() {
+        edgeDim = add(make("div", "gx-edge-dim"));
+        edgeDim.setAttribute("aria-hidden", "true");
+        edge = make("button", "gx-edge",
+            `<span class="gx-edge-ph" aria-hidden="true"></span><span class="gx-edge-rd" aria-hidden="true"></span>` +
+            `<span class="gx-edge-x" aria-hidden="true">✕</span><span class="gx-edge-badge" aria-hidden="true" hidden></span>`);
+        edge.type = "button";
+        edge.setAttribute("aria-expanded", "false");
+        // Just before the phone, so Tab goes from the tab to the phone and the radar it brought out.
+        document.body.insertBefore(edge, phone && phone.parentNode === document.body ? phone : null);
+        nodes.push(edge);
+        listen(edge, "click", () => setEdge(!edgeOpen(), false));
+        listen(edgeDim, "click", () => setEdge(false, true));
+        offs.push(() => { root.classList.remove("gx-edge-open"); edge = edgeDim = null; });
+        syncEdge();
+    }
+
+    /* ---------------------------------------------------------------
        START AND STOP */
     function start() {
         if (on) return;
@@ -1382,16 +1461,37 @@
         sky.setAttribute("aria-hidden", "true");
         drawSky();
         neonStart();
-        listen(window, "resize", () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(() => { drawSky(); rainSize(); radarResize(); placeCash(); neonSize(); }, 250); });
+        listen(window, "resize", () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(() => { drawSky(); rainSize(); radarResize(); placeCash(); neonSize(); if (!narrow()) setEdge(false, false); }, 250); });
         /* The bulb is the newest word on the sky: a press undoes a sky fixed in
            the phone's Weather app, which otherwise left the bulb doing nothing
            to it (the owner's, 19 Nov 2026). */
-        let wasDark = root.hasAttribute("data-dark");
+        /* THE WINDOW AND THE SKY TOGETHER (20 Nov 2026, the scan: for about a fifth of a second after the
+           bulb the archive window kept the night's colours under the sunset sky, and the reverse). The first
+           press fetches the dark stylesheet (theme-dark.css), and the window waits for it while the sky did
+           not: the sky now waits for it too. And the window's own colour fades (0.12s on its buttons and
+           rows) are skipped for the switch (css: html.gx-theming), so both change in the same frame. */
+        let wasDark = root.hasAttribute("data-dark"), themingT = 0, sheetWait = null;
+        const theming = () => {
+            root.classList.add("gx-theming");
+            clearTimeout(themingT);
+            themingT = setTimeout(() => root.classList.remove("gx-theming"), 400);
+        };
+        offs.push(() => { clearTimeout(themingT); root.classList.remove("gx-theming"); if (sheetWait) sheetWait(); });
         observer = new MutationObserver(() => {
             const dark = root.hasAttribute("data-dark");
             if (dark !== wasDark) {
                 wasDark = dark;
+                theming();
                 if (prefs().sky !== "auto") { setPref("sky", "auto"); if (view === "weather") renderView(); }
+                const link = document.getElementById("dark-css");
+                if (dark && link && link.getAttribute("href") && !link.sheet) {
+                    if (sheetWait) sheetWait();
+                    const go = () => { if (sheetWait) sheetWait(); if (on) { theming(); drawSky(); } };
+                    const t = setTimeout(go, 1500);
+                    link.addEventListener("load", go); link.addEventListener("error", go);
+                    sheetWait = () => { clearTimeout(t); link.removeEventListener("load", go); link.removeEventListener("error", go); sheetWait = null; };
+                    return;
+                }
             }
             drawSky();
         });
@@ -1455,7 +1555,7 @@
             else if (t.dataset.pref) {
                 const k = t.dataset.pref, v = !prefs()[k];
                 setPref(k, v);
-                if (k === "radar" && gps) { gps.hidden = !v; if (!v) closeRadar(false); }
+                if (k === "radar" && gps) { gps.hidden = !v; if (!v) closeRadar(false); syncEdge(); }
                 if (k === "car" && carRadio) { carRadio.hidden = !v; if (!v && radio) radio.closeWheel(); }
                 if (k === "sfx" && v) sfx("ping");
                 renderView();
@@ -1482,6 +1582,7 @@
             if (e.key !== "Escape") return;
             if (isBig()) { e.stopPropagation(); closeBig(true); }
             else if (gps && gps.classList.contains("is-open")) { e.stopPropagation(); closeRadar(true); }
+            else if (edgeOpen()) { e.stopPropagation(); setEdge(false, true); }
         }, true);
         // A click anywhere else puts the big phone away.
         listen(document, "pointerdown", (e) => { if (isBig() && !phone.contains(e.target) && !(cash && cash.contains(e.target))) closeBig(false); });
@@ -1500,6 +1601,7 @@
         listen(document, "click", (e) => { if (e.target === document.body && root.classList.contains("gx-radar-open")) { e.preventDefault(); closeRadar(true); } });
         listen(gps, "click", (e) => { if (!gps.classList.contains("is-open") && gps.contains(e.target)) { e.preventDefault(); openRadar(); } });
         listen(gps, "keydown", (e) => { if ((e.key === "Enter" || e.key === " ") && e.target === gps && !gps.classList.contains("is-open")) { e.preventDefault(); openRadar(); } });
+        edgeBoot();
 
         /* ESCAPE closes the front one of the skin's windows, through the
            site's one Escape listener (js/site.js EscapeLayers), which
@@ -1508,11 +1610,12 @@
         if (window.EscapeLayers && !window.__gtaEscape) {
             window.__gtaEscape = true;
             EscapeLayers.register({
-                elements: () => [saver, radio && radio.wheelEl, isBig() ? phone.querySelector(".gx-big") : null, gps && gps.classList.contains("is-open") ? gps : null].filter(Boolean),
+                elements: () => [saver, radio && radio.wheelEl, isBig() ? phone.querySelector(".gx-big") : null, gps && gps.classList.contains("is-open") ? gps : null, edgeOpen() ? edgeDim : null].filter(Boolean),
                 close: (el) => {
                     if (el === saver) saverStop(true);
                     else if (radio && el === radio.wheelEl) radio.closeWheel();
                     else if (gps && el === gps) closeRadar(true);
+                    else if (edgeDim && el === edgeDim) setEdge(false, true);
                     else closeBig(true);
                 }
             });
@@ -1565,8 +1668,9 @@
             const now = inHallway();
             if (now === wasInHall) return;
             wasInHall = now;
-            [carRadio, cash, phone, gps, word, banner].forEach((n) => { if (n) n.inert = now; });
+            [carRadio, cash, phone, gps, word, banner, edge].forEach((n) => { if (n) n.inert = now; });
             if (now) {
+                setEdge(false, false);
                 hideNote(); hideBigWord();
                 closeBig(false); closeRadar(false); saverStop();
                 if (radio) radio.closeWheel();
