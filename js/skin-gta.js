@@ -172,6 +172,8 @@
         const pick = prefs().sky, hr = new Date().getHours();
         const mode = pick === "sunset" || pick === "night" ? pick : pick === "live" ? (hr >= 7 && hr < 19 ? "sunset" : "night") : root.hasAttribute("data-dark") ? "night" : "sunset";
         const w = innerWidth, h = Math.max(innerHeight, 320);
+        // A page laid out at no width (a hidden pane or frame) has no sky to paint yet: the resize repaints it.
+        if (!(w > 0)) return;
         // Only when something it depends on changed: the mode, or the size by more than a little.
         const key = mode + ":" + Math.round(w / 40) + ":" + Math.round(h / 40);
         if (key === painted) return;
