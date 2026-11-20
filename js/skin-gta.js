@@ -253,7 +253,9 @@
         while (x < w - 40) {
             const span = Math.min(w - 8 - x, 130 + Math.floor(r() * 80));
             if (span < 60) break;
-            tubes.push({ x0: x, x1: x + span, sag: 7 + r() * 6, c: NEON[ci % NEON.length], phase: r(), period: 4 + r() * 3 });
+            // About one in three hangs lower (the owner's, 20 Nov 2026: "so it's less consistent").
+            const low = r() < 0.34;
+            tubes.push({ x0: x, x1: x + span, sag: low ? 15 + r() * 6 : 7 + r() * 6, c: NEON[ci % NEON.length], phase: r(), period: 4 + r() * 3 });
             ci++;
             x += span + 10 + Math.floor(r() * 26);
         }
