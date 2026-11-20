@@ -3081,10 +3081,41 @@ document.addEventListener("DOMContentLoaded", () => {
     function applyWhatsNewOverride(x) {
         const o = whatsNewHand.overrides.get(recordKey(x.n));
         if (!o) return;
+        /* AN OVERRIDE BELONGS TO THE DAY IT WAS WRITTEN FOR (20 Nov 2026, the
+           owner's: Doors of Mystery's new entrance picture came up under its
+           13 Nov line, "Room Added: Glukko Arms"). It is kept per record, so
+           the record's next day of edits took its text, label and day over.
+           Now, when the record has been edited on a later day than the one
+           the override was saved about, the newest entry is the automatic
+           one, and the override goes to the earlier day's entry it was
+           written for (earlierEntries). "Hidden" still hides the whole record. */
+        const ovDay = overrideDayOf(x.n, o);
+        if (ovDay && x.n.updatedAt && localDayKey(x.n.updatedAt) > ovDay) {
+            x.n.pastOverride = { o, day: ovDay };
+            if (o.hidden) x.n.override = { hidden: true };
+            return;
+        }
         x.n.override = o;
         if (o.day) { x.at = o.day; x.n.activityAt = o.day; }
         if (o.activity === "added" || o.activity === "updated") x.n.activity = o.activity;
         if (o.text) x.n.customChange = o.text;
+    }
+
+    /* The local day of the entry an override was saved about: the record's
+       latest day of activity (arrival or a kept day of edits) at or before
+       the moment the override was saved. "" when that can't be told (an
+       override saved before overrides were stamped), which keeps the old
+       behaviour. */
+    function overrideDayOf(n, o) {
+        const saved = Date.parse(o && o.updatedAt);
+        if (!Number.isFinite(saved)) return "";
+        const raw = (n.isEvent ? EVENTS : ROOMS).find(r => r.id === n.id);
+        const stamps = [n.archivedAt, n.updatedAt]
+            .concat(raw && Array.isArray(raw.pastChanges) ? raw.pastChanges.map(p => p && p.at) : [])
+            .filter(s => typeof s === "string" && s && Date.parse(s) <= saved + 60000);
+        if (!stamps.length) return "";
+        stamps.sort((a, b) => Date.parse(b) - Date.parse(a));
+        return localDayKey(stamps[0]);
     }
 
     // A post's chosen label, if it has one (see logBadgeClass).
@@ -3250,13 +3281,25 @@ document.addEventListener("DOMContentLoaded", () => {
             const rank = k => { const i = Object.keys(CHANGE_WORDS).indexOf(k); return i < 0 ? Infinity : i; };
             n.changes = [...keys].filter(k => typeof k === "string").sort((a, b) => (rank(a) - rank(b)) || 0);
         }
-        const entry = (at, activity, changes) => ({
-            n: Object.assign({}, n, {
-                activityAt: at, activity, changes, updatedAt: activity === "updated" ? at : "",
-                override: null, customChange: "", logKey: recordKey(n) + "@" + localDayKey(at)
-            }),
-            at, own: x.own
-        });
+        const entry = (at, activity, changes) => {
+            const e = {
+                n: Object.assign({}, n, {
+                    activityAt: at, activity, changes, updatedAt: activity === "updated" ? at : "",
+                    override: null, pastOverride: null, customChange: "", logKey: recordKey(n) + "@" + localDayKey(at)
+                }),
+                at, own: x.own
+            };
+            // The Warren's override, on the day it was written for (see applyWhatsNewOverride).
+            const past = n.pastOverride;
+            if (past && localDayKey(at) === past.day) {
+                const o = past.o;
+                e.n.override = o;
+                if (o.day) { e.at = o.day; e.n.activityAt = o.day; }
+                if (o.activity === "added" || o.activity === "updated") e.n.activity = o.activity;
+                if (o.text) e.n.customChange = o.text;
+            }
+            return e;
+        };
         const out = [...byDay.values()].map(d => entry(d.at, "updated", d.changes));
         /* Added only on a real arrival stamp: a record from before createdAt
            sits on the backfill date, the archive's starting state rather
