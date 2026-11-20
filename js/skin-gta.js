@@ -1195,9 +1195,9 @@
     let saver = null, saverTimer = 0;
     function screensaver() {
         if (saver) return;
-        saver = add(make("div", "gx-saver", `<div class="gx-collage"></div><div class="gx-saver-title" aria-hidden="true"><b><span>Maze</span><span>Rats</span></b><i>Vice City</i></div><div class="gx-saver-hint" aria-hidden="true">${touch() ? "Tap" : "Click"} to exit screensaver.</div>`));
+        saver = add(make("div", "gx-saver", `<div class="gx-collage"></div><div class="gx-saver-title" aria-hidden="true"><b><span>Maze</span><span>Rats</span></b><i>Vice City</i></div><div class="gx-saver-hint" aria-hidden="true">${touch() ? "Tap" : "Click"} to exit screensaver</div>`));
         saver.setAttribute("role", "dialog");
-        saver.setAttribute("aria-label", "Screensaver: press any key to leave");
+        saver.setAttribute("aria-label", "Screensaver: click or tap to leave");
         saver.tabIndex = -1;
         const box = saver.querySelector(".gx-collage"), title = saver.querySelector(".gx-saver-title");
         /* Each collage stays 10s and fades over 1.3s (the owner's, 20 Nov 2026; was 7s and 0.9s).
@@ -1229,10 +1229,28 @@
         };
         box.classList.add("is-out");
         requestAnimationFrame(() => { if (!saver) return; saver.classList.add("is-on"); saver.focus({ preventScroll: true }); deal(box, DRIFT, { fade: FADE, glow: true }).then(shown); });
+        // The page's scrollbar goes while it is up, full screen or not (the owner's, 20 Nov 2026).
+        document.documentElement.classList.add("gx-saving");
+        /* THE EXIT HINT (the owner's, 20 Nov 2026): up for the first 20s, then
+           it fades; moving the mouse brings it back for 5s from the last move. */
+        const hint = saver.querySelector(".gx-saver-hint");
+        let hintT = later(() => hint.classList.add("is-gone"), 20000), woken = false;
+        const wake = (e) => {
+            if (e.pointerType === "touch" || !hint.classList.contains("is-gone") && !woken) return;
+            woken = true;
+            hint.classList.remove("is-gone");
+            clearTimeout(hintT);
+            hintT = later(() => hint.classList.add("is-gone"), 5000);
+        };
+        /* ONLY A CLICK OR A TAP ENDS IT (the owner's, 20 Nov 2026: keys used
+           to as well). Keys that would scroll the page hidden behind it are
+           held; anything else (the browser's own shortcuts) goes by. */
+        const SCROLLERS = [" ", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "PageUp", "PageDown", "Home", "End"];
+        listenOnce("keydown", (e) => { if (SCROLLERS.includes(e.key)) e.preventDefault(); });
         // Back on the phone it was opened from, not lost to the page (scan 18 Nov evening).
-        const end = (e) => { if (e && e.type === "keydown") e.preventDefault(); saverStop(true); };
+        const end = () => saverStop(true);
         // A beat before it listens, so the tap that opened it does not close it.
-        later(() => { if (!saver) return; ["keydown", "pointerdown"].forEach((t) => saver && listenOnce(t, end)); }, 400);
+        later(() => { if (!saver) return; listenOnce("pointerdown", end); listenOnce("pointermove", wake); }, 400);
     }
     const saverOffs = [];
     function listenOnce(type, fn) { const h = (e) => fn(e); document.addEventListener(type, h, true); saverOffs.push(() => document.removeEventListener(type, h, true)); }
@@ -1241,6 +1259,7 @@
         saverOffs.splice(0).forEach((f) => f());
         if (!saver) return;
         const s = saver; saver = null;
+        document.documentElement.classList.remove("gx-saving");
         const btn = refocus && phone && phone.querySelector(".gx-phone-btn");
         if (btn) btn.focus({ preventScroll: true });
         s.classList.remove("is-on");
@@ -1709,7 +1728,8 @@
             EscapeLayers.register({
                 elements: () => [saver, radio && radio.wheelEl, isBig() ? phone.querySelector(".gx-big") : null, gps && gps.classList.contains("is-open") ? gps : null, edgeOpen() ? edgeDim : null].filter(Boolean),
                 close: (el) => {
-                    if (el === saver) saverStop(true);
+                    // The screensaver stays in front and takes the press, but only a click or tap ends it (the owner's, 20 Nov 2026).
+                    if (el === saver) return;
                     else if (radio && el === radio.wheelEl) radio.closeWheel();
                     else if (gps && el === gps) closeRadar(true);
                     else if (edgeDim && el === edgeDim) setEdge(false, true);

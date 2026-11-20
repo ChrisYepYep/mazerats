@@ -1037,14 +1037,16 @@ html[data-skin="gta"] .gx-saver.is-on { opacity: 1; }
 html[data-skin="gta"] .gx-saver .gx-collage { inset: 11vh 12vw; }
 @media (max-width: 600px) { html[data-skin="gta"] .gx-saver .gx-collage { inset: 16vh 6vw; } }
 /* One line, centred in the black under the pictures, where the exit hint sits (the owner's, 20 Nov 2026). */
-html[data-skin="gta"] .gx-saver-title { position: absolute; left: 50%; bottom: 5.5vh; z-index: 3; display: flex; align-items: center; gap: clamp(10px, 1.2vw, 16px); width: max-content; transform: translate(-50%, 50%); pointer-events: none; }
+html[data-skin="gta"] .gx-saver-title { position: absolute; left: 50%; bottom: 6.5vh; z-index: 3; display: flex; align-items: center; gap: clamp(10px, 1.2vw, 16px); width: max-content; transform: translate(-50%, 50%); pointer-events: none; }
 @media (max-width: 600px) { html[data-skin="gta"] .gx-saver-title { bottom: 8vh; } }
-/* Faint, small, bottom centre (the owner's, 19 Nov 2026). */
-/* Its foot level with the foot of the VICE CITY block; pink into orange. */
+/* Faint, small, bottom centre (the owner's, 19 Nov 2026), pink into orange; under the title, on its own
+   line at the foot of the screen (20 Nov 2026), on a phone too. */
 html[data-skin="gta"] .gx-saver-hint {
     position: absolute;
     left: 50%;
-    bottom: 36px;
+    /* Tucked just under the title (the owner's, 20 Nov 2026): the title's centre, less half its height
+       (its font size), less 16px (12px on a phone). */
+    bottom: max(8px, env(safe-area-inset-bottom), calc(6.5vh - clamp(11px, 1.4vw, 17px) - 16px));
     z-index: 3;
     width: max-content;
     transform: translateX(-50%);
@@ -1056,6 +1058,7 @@ html[data-skin="gta"] .gx-saver-hint {
     color: transparent;
     /* Brighter than it was (0.6): it read as nothing over a dark deal (scan 18 Nov evening). */
     opacity: 0.85;
+    transition: opacity 0.6s ease-out;
     pointer-events: none;
 }
 html[data-skin="gta"] .gx-saver-title b { display: flex; gap: 0.28em; font: normal 900 clamp(22px, 2.8vw, 34px)/1 'Montserrat', sans-serif; letter-spacing: -1px; color: #fff; text-transform: uppercase; text-shadow: 2px 2px 0 #ff2e88, 4px 4px 0 #000; }
@@ -1081,15 +1084,17 @@ html[data-skin="gta"] .gx-saver-title.is-in b span { transform: translateY(0) sk
 html[data-skin="gta"] .gx-saver-title.is-in i { transform: translateY(0); }
 html[data-skin="gta"] .gx-saver-title.is-in b span:nth-child(2) { transition-delay: 0.09s; }
 html[data-skin="gta"] .gx-saver-title.is-in i { transition-delay: 0.22s; }
-/* The hint fades away slowly 20s in (the owner's, 20 Nov 2026). */
-html[data-skin="gta"] .gx-saver.is-on .gx-saver-hint { animation: gx-hint-out 4s ease 20s forwards; }
-@keyframes gx-hint-out { to { opacity: 0; } }
+/* The hint fades away 20s in, and comes back for 5s when the mouse moves (js/skin-gta.js; the owner's, 20 Nov 2026). */
+html[data-skin="gta"] .gx-saver-hint.is-gone { opacity: 0; transition: opacity 2.5s ease-in; }
+/* No page scrollbar beside it while it is up (the owner's, 20 Nov 2026), and no gutter either: the site
+   keeps the scrollbar's 10px (css/style.css, scrollbar-gutter: stable), and the screensaver, being fixed,
+   stopped short of it, leaving that strip down the right edge. The page behind widens, under it. */
+html.gx-saving { scrollbar-gutter: auto !important; }
+html.gx-saving, html.gx-saving body { overflow: hidden !important; }
 
-/* On a phone the VICE CITY block is as wide as the screen, and the hint at its foot was under it and cut
-   off (20 Nov 2026, the scan): there it goes to the top, over the black above the collage. */
-@media (max-width: 600px) {
-    html[data-skin="gta"] .gx-saver-hint { top: max(5vh, 18px, env(safe-area-inset-top)); bottom: auto; }
-}
+@media (max-width: 600px) { html[data-skin="gta"] .gx-saver-hint { bottom: max(8px, env(safe-area-inset-bottom), calc(8vh - 11px - 12px)); } }
+/* (The hint went to the top on a phone while the title was a big block there; the one-line title leaves
+   room under it, so it is at the foot everywhere now, 20 Nov 2026.) */
 
 /* ---------------- RAIN, over the sky and under the page ---------------- */
 html[data-skin="gta"] .gx-rain { position: fixed; inset: 0; z-index: -1; pointer-events: none; }
