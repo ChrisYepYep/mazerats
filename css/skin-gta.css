@@ -1196,13 +1196,19 @@ html[data-skin="gta"] .gx-cash.is-inhero {
 html[data-skin="gta"] .gx-cash.is-inhero .gx-cash-n { font-size: 22px; }
 html[data-skin="gta"] .gx-cash.is-inhero .gx-cash-lab { margin-top: 3px; font-size: 8px; }
 /* Computers (20 Nov 2026, the scan): scrolled to the bottom, the radar sat over the start of the footer's
-   disclaimer and the phone over its end. Room at the foot of the archive page, the phone's height, so the
-   footer scrolls clear of both; only where they are (the homepage, the phone built). */
+   disclaimer and the phone over its end. Only where they are (the homepage, the phone built).
+   (24 Nov 2026, the owner's: the fix then was 250px of room under the footer, which left the footer
+   floating with a band of bare page beneath it. Now the footer stays at the foot of the page and its
+   text, and the fansites strip's, keep in from both sides instead: the phone's width from the right
+   (22 + 136 + 16), the same on the left so the lines stay centred, which clears the radar (24 + 112).) */
 @media (min-width: 901px) {
-    html[data-skin="gta"] body[data-page="home"]:has(> .gx-phone) { padding-bottom: 250px; }
+    html[data-skin="gta"] body[data-page="home"]:has(> .gx-phone) > .site-footer,
+    html[data-skin="gta"] body[data-page="home"]:has(> .gx-phone) > .fellow-fansites { padding-left: 174px; padding-right: 174px; }
 }
+/* A short screen: the smaller phone (12 + 84 + 16), so the radar (24 + 112 + 16) sets it. */
 @media (min-width: 901px) and (max-height: 500px) {
-    html[data-skin="gta"] body[data-page="home"]:has(> .gx-phone) { padding-bottom: 162px; }
+    html[data-skin="gta"] body[data-page="home"]:has(> .gx-phone) > .site-footer,
+    html[data-skin="gta"] body[data-page="home"]:has(> .gx-phone) > .fellow-fansites { padding-left: 152px; padding-right: 152px; }
 }
 /* The smaller phone by height too: on a phone on its side the 136x228 one took over half the screen (scan 18 Nov evening). */
 @media (max-width: 760px), (max-height: 500px) {
