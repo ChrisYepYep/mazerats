@@ -98,6 +98,9 @@ const UNAVAILABLE = () => json(503, { error: "The database is unavailable just n
    is no reason to accept anything that could not be an id. */
 const ID_SHAPE = /^[A-Za-z0-9_-]{1,64}$/;
 const SNOWFLAKE = /^\d{5,25}$/;
+// A Guest Rat of the games (_guest.js; 25 Nov 2026), removed from the Warren's
+// Daily page by its board key: the same PLACES, most of which hold none.
+const { isGuestId } = require("./_guest");
 const QUERY_MAX = 64;
 const MATCHES_MAX = 20;
 
@@ -288,7 +291,7 @@ async function preview(db, q) {
     const players = db.collection("players");
 
     // An id first, when it looks like one.
-    if (SNOWFLAKE.test(q)) {
+    if (SNOWFLAKE.test(q) || isGuestId(q)) {
         const row = await players.findOne({ id: q });
         const counts = await countAll(db, q);
         if (row || total(counts)) {
@@ -386,7 +389,7 @@ exports.handler = async (event) => {
             return json(400, { error: "Invalid request body" });
         }
         if (!body || typeof body !== "object" || Array.isArray(body)) return json(400, { error: "Invalid request body" });
-        if (typeof body.id !== "string" || !ID_SHAPE.test(body.id)) return json(400, { error: "Which player? Send their Discord id." });
+        if (typeof body.id !== "string" || !(ID_SHAPE.test(body.id) || isGuestId(body.id))) return json(400, { error: "Which player? Send their Discord id." });
         // Exactly true: a forget is never the default of anything.
         if (body.confirm !== true) return json(400, { error: "A forget has to be confirmed." });
     } else {

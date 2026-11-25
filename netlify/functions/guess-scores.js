@@ -50,7 +50,9 @@
    and a second is answered with the first's score — so nothing can be
    compounded, or used to check answers. */
 const { getDb, ensureUniqueIndex } = require("./_db");
-const { playerFrom, livePlayerFrom, publicName } = require("./_player");
+const { publicName } = require("./_player");
+// The account or the Guest Rat playing (25 Nov 2026; _guest.js).
+const { dailyPlayerFrom, liveDailyPlayerFrom } = require("./_guest");
 const { SECURITY_HEADERS } = require("./_headers");
 const { cachedJson, BOARD_CDN_CACHE } = require("./_cache");
 /* dayIsOpen and rangeBounds are rules about the clock and the calendar
@@ -61,7 +63,7 @@ const { dayIsOpen, dayClosesAt, rangeBounds } = require("./_daily");
    the two games and the combined board cut at the same place. See launchCut
    and isRealDay there. */
 const { launchCut, afterLaunch, fromLaunch, isRealDay, boardDay, filedScore,
-    practiceOf, practiceReply, pastPractice, boardReply, freshFor, plainBoard, nonCanonical, nickedOnly } = require("./daily-scores");
+    practiceOf, practiceReply, pastPractice, boardReply, freshFor, plainBoard, nonCanonical, nickedOnly, playersThisWeek } = require("./daily-scores");
 const speed = require("./_speed");
 const deals = require("./_deal");
 // No raw Discord id or nicknamed avatar on a public board (29 Sept 2026).
@@ -401,6 +403,8 @@ exports.handler = async (event) => {
                 date: day,
                 weekFrom: fromLaunch(week.from, launch),
                 monthFrom: fromLaunch(month.from, launch),
+                playersWeek: await playersThisWeek(db, [[COLLECTION,
+                    { day: { $gte: fromLaunch(week.from, launch), $lte: week.to }, ...afterLaunch(launch) }]], only),
                 day: bDay,
                 week: bWeek,
                 month: bMonth,
@@ -418,7 +422,7 @@ exports.handler = async (event) => {
            database read can take a second or two, and that is the server's
            time, not the player's. */
         const arrived = Date.now();
-        const player = playerFrom(event);
+        const player = dailyPlayerFrom(event);
 
         // Refused before the parse — see MAX_FINISH_BODY in _speed.js.
         if (String(event.body || "").length > speed.MAX_FINISH_BODY) return privateJson(413, { error: "Too large" });
@@ -450,7 +454,8 @@ exports.handler = async (event) => {
            nickname the admins have rejected, until they choose another. */
         // And signed in with a nickname, or not at all (4 Oct 2026, the owner's;
         // see THE DAILY GAMES ARE FOR PLAYERS WITH A NICKNAME in _bans.js).
-        // So past this line there is always a `player` (10 Oct 2026).
+        // Or a Guest Rat (25 Nov 2026; _guest.js). So past this line there is
+        // always a `player` (10 Oct 2026).
         const refusal = await writeRefusal(db, event, player ? player.id : null, { game: true, daily: true });
         if (refusal) return refusal;
 
@@ -765,7 +770,7 @@ async function dealReply(db, event, params) {
         return privateJson(503, { error: "The day couldn't be dealt just now" });
     }
     // Not a session ended everywhere (4 Oct 2026, the bug scan): see livePlayerFrom.
-    const player = await livePlayerFrom(db, event);
+    const player = await liveDailyPlayerFrom(db, event);
     const practice = await practiceOf(db, day, Date.now());
     let progress = null, filed = false, score = null, practiceOver = false;
     // Only the rooms this player has reached, and none signed out or

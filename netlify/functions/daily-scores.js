@@ -22,8 +22,9 @@
                                     day, scored from the moves recorded
 
    Every POST is a signed-in player's with a nickname (THE DAILY GAMES ARE
-   FOR PLAYERS WITH A NICKNAME in _bans.js); anybody else is refused 403
-   before anything is judged. The signed-out half that used to sit beside
+   FOR PLAYERS WITH A NICKNAME in _bans.js) or a Guest Rat's (_guest.js;
+   25 Nov 2026), whose picks are recorded and judged exactly as an
+   account's; anybody else is refused 403 before anything is judged. The signed-out half that used to sit beside
    each of these — verdicts answered unrecorded, an opening round handed
    out, a finished day filed from the page's own picks (scoreClaim) — was
    unreachable behind that refusal and was taken out (10 Oct 2026).
@@ -76,7 +77,9 @@
    compounding. A leaderboard here is a thing to enjoy, not a thing to
    defend. */
 const { getDb, ensureUniqueIndex } = require("./_db");
-const { playerFrom, livePlayerFrom, publicName } = require("./_player");
+const { publicName } = require("./_player");
+// The account or the Guest Rat playing (25 Nov 2026; _guest.js).
+const { dailyPlayerFrom, liveDailyPlayerFrom } = require("./_guest");
 const { today, dayIsOpen, dayClosesAt, rangeBounds } = require("./_daily");
 const { SECURITY_HEADERS } = require("./_headers");
 const { cachedJson, BOARD_CDN_CACHE } = require("./_cache");
@@ -169,7 +172,7 @@ function boardReply(res, fresh) {
 // Whether a `mine` read is the refresh after this caller's own submit: a
 // day filed, by them, in `collection` matching `match`, a moment ago.
 async function freshFor(db, event, collection, match) {
-    const player = playerFrom(event);
+    const player = dailyPlayerFrom(event);
     if (!player) return false;
     const row = await db.collection(collection).findOne({ ...match, playerId: player.id }, { projection: { _id: 0, at: 1 } });
     const at = row ? Date.parse(row.at) : NaN;
@@ -219,7 +222,8 @@ async function nickedOnly(db) {
     if (nickedMemo && Date.now() - nickedAt < NICKED_TTL_MS) return nickedMemo;
     try {
         const ids = await db.collection("players").distinct("id", { nick: { $type: "string", $ne: "" } });
-        nickedMemo = { playerId: { $in: ids.map(String) } };
+        // And the Guest Rats, who have no account to be nicknamed (25 Nov 2026).
+        nickedMemo = { playerId: { $in: [...ids.map(String), /^guestrat:/] } };
         nickedAt = Date.now();
         return nickedMemo;
     } catch (e) {
@@ -428,6 +432,24 @@ async function board(col, game, from, to, cut, only = {}) {
     }));
 }
 
+/* HOW MANY PLAYED THIS WEEK (25 Nov 2026, the owner's): real players with a
+   finished day since Monday, counted under the boards' own rules (nicknamed
+   or a guest, from launch, not banned), for the line under a board. Null,
+   and no line, below WEEK_SHOWN — a small true number does nobody any good —
+   or when it cannot be read: it never costs a board. */
+const WEEK_SHOWN = 5;
+async function playersThisWeek(db, sources, only) {
+    try {
+        const lists = await Promise.all(sources.map(([c, match]) => db.collection(c).distinct("playerId", { ...match, ...only })));
+        const ids = [...new Set(lists.flat().map(String))];
+        const [kept] = await withoutBanned(db, [ids.map(id => ({ id }))]);
+        return kept.length >= WEEK_SHOWN ? kept.length : null;
+    } catch (e) {
+        console.error("daily-scores: could not count the week's players", e);
+        return null;
+    }
+}
+
 /* One day's own board, a row per player: rounds right first, then the
    total, then the faster time (an untimed day after every timed one —
    NO_TIME in _speed.js), then who submitted first, then the id. As
@@ -593,6 +615,10 @@ async function combinedBoards(db, event, params) {
             weekFrom: fromLaunch(week.from, launch),
             monthFrom: fromLaunch(month.from, launch),
             combined: true,
+            playersWeek: await playersThisWeek(db, [
+                [COLLECTION, liveGames({ day: { $gte: fromLaunch(week.from, launch), $lte: week.to }, ...afterLaunch(launch) })],
+                ["guess_scores", { day: { $gte: fromLaunch(week.from, launch), $lte: week.to }, ...afterLaunch(launch) }]
+            ], only),
             day: bDay,
             week: bWeek,
             month: bMonth,
@@ -678,7 +704,7 @@ exports.handler = async (event) => {
         // 502 page rather than JSON the results panel knows how to read.
         // rangeBounds too, which can throw on a day it cannot read.
         let week, month, all, launch;
-        let todayRows, weekRows, monthRows, allRows;
+        let todayRows, weekRows, monthRows, allRows, playersWeek = null;
         try {
             week = rangeBounds("week", day);
             month = rangeBounds("month", day);
@@ -712,6 +738,8 @@ exports.handler = async (event) => {
                 })),
                 weekRows, monthRows, allRows
             ])));
+            playersWeek = await playersThisWeek(db, [[COLLECTION,
+                { game, day: { $gte: fromLaunch(week.from, launch), $lte: week.to }, ...afterLaunch(launch) }]], only);
         } catch (e) {
             console.error("daily-scores: board read failed", e);
             return json(500, { error: "Couldn't read the scores" });
@@ -728,6 +756,7 @@ exports.handler = async (event) => {
             date: day,
             weekFrom: fromLaunch(week.from, launch),
             monthFrom: fromLaunch(month.from, launch),
+            playersWeek,
             // Shaped and made public above, inside the try.
             day: todayRows,
             week: weekRows,
@@ -740,7 +769,7 @@ exports.handler = async (event) => {
         // Before anything slow: the time taken is the player's, not the
         // time this function spends reading the day.
         const arrived = Date.now();
-        const player = playerFrom(event);
+        const player = dailyPlayerFrom(event);
 
         // Nothing this endpoint takes is anywhere near this (MAX_FINISH_BODY
         // in _speed.js); refused before the parse.
@@ -774,8 +803,8 @@ exports.handler = async (event) => {
            request costs one memoised lookup. */
         // And signed in with a nickname, or not at all (4 Oct 2026, the owner's;
         // see THE DAILY GAMES ARE FOR PLAYERS WITH A NICKNAME in _bans.js).
-        // So past this line there is always a `player` (10 Oct 2026: the
-        // signed-out branches below it are gone).
+        // Or a Guest Rat (25 Nov 2026). So past this line there is always a
+        // `player` (10 Oct 2026: the signed-out branches below it are gone).
         const refusal = await writeRefusal(db, event, player ? player.id : null, { game: true, daily: true });
         if (refusal) return refusal;
 
@@ -1115,7 +1144,7 @@ async function dealReply(db, event, game, params) {
         return privateJson(503, { error: "The day couldn't be dealt just now" });
     }
     // Not a session ended everywhere (4 Oct 2026, the bug scan): see livePlayerFrom.
-    const player = await livePlayerFrom(db, event);
+    const player = await liveDailyPlayerFrom(db, event);
     const practice = await practiceOf(db, day, Date.now());
     let progress = null, filed = false, score = null, practiceOver = false;
     // How many rounds' pictures go out: none before the day has started,
@@ -1213,3 +1242,4 @@ module.exports.scoreRecorded = scoreRecorded;
 exports.handler = require("./_errors").withErrorReporting("daily-scores", exports.handler);
 module.exports.nonCanonical = nonCanonical;
 module.exports.nickedOnly = nickedOnly;
+module.exports.playersThisWeek = playersThisWeek;

@@ -292,7 +292,7 @@ async function figuresFor(db, id) {
     const puraIds = puraMine ? (await db.collection("pura_scores").distinct("playerId")).map(String).filter(k => !k.startsWith("guest")) : [];
     const nicked = await nickedAmong(db, [...boardIds, ...ffIds, ...puraIds]);
     const offBoard = new Set(banned);
-    [...boardIds, ...ffIds, ...puraIds].forEach(k => { if (!nicked || !nicked.has(k)) offBoard.add(k); });
+    [...boardIds, ...ffIds, ...puraIds].forEach(k => { if (!(/^guestrat:/.test(k) || (nicked && nicked.has(k)))) offBoard.add(k); });   // a Guest Rat stands on the board as it is (25 Nov 2026)
     // A failed read (nicked null) counts everyone else out, which would
     // put this player first of one: no place at all instead.
     const listed = !!nicked && !!(profile && typeof profile.nick === "string" && profile.nick);

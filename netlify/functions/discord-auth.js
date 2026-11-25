@@ -43,6 +43,8 @@ const { SECURITY_HEADERS } = require("./_headers");
 const { publicIdOf } = require("./_publicid");
 // Bans on `me` and at sign-in, and the network code (29 Sept 2026).
 const { banFor, netHashFor } = require("./_bans");
+// Guest Rats, and their days moving to an account (25 Nov 2026).
+const { guestFrom, guestView, clearGuestCookie, claimGuestDays } = require("./_guest");
 // The Habbo name as the nickname, from OriginsBot (3 Oct 2026).
 const originsBot = require("./_originsbot");
 
@@ -353,12 +355,14 @@ async function meReply(event) {
             ? db.collection("players").findOne({ id: player.id }, { projection: { _id: 0 } }).catch(() => undefined)
             : null
     ]) : [null, undefined];
-    if (!player) return json(200, { player: null, ban: banView(banned, null) });
+    // Signed out, the Guest Rat this browser plays the dailies as, if any.
+    const guest = guestFrom(event);
+    if (!player) return json(200, { player: null, ban: banView(banned, null), guest: guest ? guestView(guest.n) : null });
     /* Revoked — forgotten from the Warren, or its session version changed
        (see SESSION VERSIONS in _player.js): answered as signed out, and the
        cookie is cleared so the page stops sending it. */
     if (sessionRevoked(player, row)) {
-        return json(200, { player: null, ban: banView(banned, null) }, { "Set-Cookie": clearCookie() });
+        return json(200, { player: null, ban: banView(banned, null), guest: guest ? guestView(guest.n) : null }, { "Set-Cookie": clearCookie() });
     }
     const ban = banView(banned, player);
     /* THE HABBO NAME (3 Oct 2026; see _originsbot.js): once a week per
@@ -753,8 +757,15 @@ exports.handler = async (event) => {
            read back now goes home "failed", which says try again. */
         if (typeof player.sv !== "number") return fail("failed");
 
+        /* What this browser played as a guest comes with it, to an account
+           with no daily games of its own (claimGuestDays in _guest.js). The
+           cookie goes with the days; one whose days stayed keeps its number
+           for the next time they are signed out. */
+        const guestMoved = db ? await claimGuestDays(db, guestFrom(event), player) : false;
+
         return redirect(`${origin}${safeReturn(claims.to)}`, [
             setCookie(signPlayer(player)),
+            ...(guestMoved ? [clearGuestCookie()] : []),
             ...spent()
         ]);
     }

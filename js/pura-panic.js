@@ -1906,7 +1906,7 @@
         if (guestRun(r) && guest) out.asGuest = true;
         if ((!me() || guestRun(r)) && guest) {
             if (guest.kind === "habbo") out.habboToken = guest.token;
-            else if (rat && rat.token) out.rat = rat.token;
+            else if (ratNow()) out.rat = rat.token;
             else out.guest = true;
         }
         return out;
@@ -1989,6 +1989,17 @@
         if (!guest) return "";
         if (guest.kind === "habbo") return guest.name;
         return rat ? "Guest Rat " + rat.n : "Guest Rat";
+    }
+
+    /* This browser's Guest Rat, numbered by the daily games since this page
+       loaded if it was (25 Nov 2026; Account.playAsGuest keeps it here), so
+       one browser is one rat whichever it plays first. */
+    function ratNow() {
+        if (!rat) {
+            const r = load(RAT_KEY);
+            if (r && Number.isInteger(r.n) && typeof r.token === "string") rat = r;
+        }
+        return rat && rat.token ? rat : null;
     }
 
     function guestLine() {

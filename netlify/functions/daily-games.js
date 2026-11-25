@@ -35,7 +35,8 @@
 const crypto = require("crypto");
 const { getDb, ensureUniqueIndex } = require("./_db");
 const { hasAccount, canWrite, refuseWrite, roleOf, WRITE_SCOPES, usernameFromToken, UNAUTHORIZED, AUTH_UNAVAILABLE, isAuthUnavailable } = require("./_auth");
-const { livePlayerFrom } = require("./_player");
+// The account or the Guest Rat playing (25 Nov 2026; _guest.js).
+const { liveDailyPlayerFrom } = require("./_guest");
 const { nickedAmong } = require("./_publicid");
 const { SECURITY_HEADERS } = require("./_headers");
 // Points here are totals, the day's score plus its speed bonus, as every
@@ -162,10 +163,10 @@ async function route(event, db, scores, resets) {
     if (params.mine === "1") {
         // Not a session ended everywhere (4 Oct 2026, the bug scan): it
         // could list this account's reset tickets and spend them.
-        const player = await livePlayerFrom(db, event);
+        const player = await liveDailyPlayerFrom(db, event);
         /* A claim (POST) with nobody to claim for is refused, never "fine"
            (4 Oct 2026, the quick scan): the page clears its stored day on a
-           200, so a database blip that made livePlayerFrom answer null let
+           200, so a database blip that made it answer null let
            it spend a ticket the server never deleted. A read just finds
            nothing. */
         if (!player) return event.httpMethod === "POST" ? json(401, { error: "Not signed in" }) : json(200, { games: [] });

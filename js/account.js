@@ -54,6 +54,8 @@
     // Counts this page's completed sign-outs (Account.signOut), so a `me`
     // sent before one can tell it is out of date when it lands (1 Oct 2026).
     let signOutGen = 0;
+    // Whether an account has been signed in on this page (see playAsGuest).
+    let hadAccount = false;
     window.addEventListener("online", () => {
         if (Account.unsure) Account.refresh();
     });
@@ -63,6 +65,51 @@
         // it without awaiting — null until `ready` resolves, which is the
         // honest answer at that point (nobody is known to be signed in yet).
         current: null,
+
+        /* The Guest Rat this browser plays the daily games as while signed
+           out — { n, name, publicId } — or null (25 Nov 2026;
+           netlify/functions/_guest.js), from the same `me` answer. */
+        guest: null,
+
+        // Who is playing a daily game here: the account, else the guest.
+        playing() {
+            return Account.current || Account.guest || null;
+        },
+
+        /* Becomes a Guest Rat: the number this browser already has, in
+           Pura Panic or from before, or a new one. The number is kept in
+           Pura's own storage too, so it is the same rat there. Resolves
+           { ok } or { ok: false, error }; a ban shows its own window. */
+        async playAsGuest() {
+            const RAT_KEY = "mazerats_pura_rat";
+            let rat = null;
+            try { rat = JSON.parse(localStorage.getItem(RAT_KEY) || "null"); } catch (e) { rat = null; }
+            try {
+                const res = await timedFetch("/.netlify/functions/daily-guest", {
+                    method: "POST",
+                    credentials: "same-origin",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify(rat && typeof rat.token === "string" ? { rat: rat.token } : {})
+                });
+                const body = await res.json().catch(() => ({}));
+                if (!res.ok || !body.guest) {
+                    if (Account.writeRefused(res.status, body, "play")) return { ok: false, shown: true };
+                    return { ok: false, error: body.error || "That didn't work. Try again in a minute." };
+                }
+                Account.guest = body.guest;
+                if (body.rat && (!rat || rat.n !== body.rat.n)) {
+                    try { localStorage.setItem(RAT_KEY, JSON.stringify(body.rat)); } catch (e) { /* the cookie has it */ }
+                }
+                /* A game this page has already dealt to an account keeps that
+                   account's starts and figures in memory, so a guest who was
+                   signed in a moment ago starts on a fresh page. */
+                if (hadAccount) { location.reload(); return { ok: false, shown: true }; }
+                announce();
+                return { ok: true };
+            } catch (e) {
+                return { ok: false, error: "That didn't work. Check your connection and try again." };
+            }
+        },
 
         // This visitor's ban — { level: "soft" | "full", until, reason } —
         // or null, from the same `me` answer (29 Sept 2026; see BANS).
@@ -93,6 +140,8 @@
                    carries no cookie (or whatever a sign-in since has set). */
                 if (gen !== signOutGen && data && data.player) return Account.refresh();
                 Account.current = data && data.player ? data.player : null;
+                if (Account.current) hadAccount = true;
+                Account.guest = data && data.guest && data.guest.publicId ? data.guest : null;
                 Account.unsure = false;
                 // Answered: the next failure, however much later, gets its
                 // own retry (5 Oct 2026, the bug scan — only the visit's
@@ -1601,16 +1650,51 @@
        owner's; the server's side is in netlify/functions/_bans.js): signed
        in with Discord, and a nickname chosen — the name the boards show. One
        window for each missing step, offering it. */
-    function showSignInToPlay() {
+    /* Or as a guest (25 Nov 2026, the owner's): offered only where there is
+       a game to go back into (`again`), so not over one a lapsed sign-in has
+       stopped part-way. The streak's limits are said here, before the
+       choice, and again on the results (Account.guestNoteHtml). */
+    function showSignInToPlay(again) {
+        const guest = typeof again === "function";
         return notice({
-            title: "Sign in to play",
-            html: `<p class="notice-head">Sign in with Discord to play the daily games.</p><p>Then choose a nickname. It's the name the leaderboards show for you.</p>`,
+            title: guest ? "Play the daily games" : "Sign in to play",
+            html: guest
+                ? `<p class="notice-head">Sign in with Discord, or play as a guest.</p><p>As a guest you're a numbered Guest Rat on the leaderboards. Your streak is kept in this browser only: it won't follow you to another device, and clearing your browser's data loses it.</p><p>Sign in later and it moves to your account, if that account hasn't played the daily games yet.</p>`
+                : `<p class="notice-head">Sign in with Discord to play the daily games.</p><p>Then choose a nickname. It's the name the leaderboards show for you.</p>`,
             actions: [
                 { label: "Sign in with Discord", value: "signin", lead: true },
+                ...(guest ? [{ label: "Play as a guest", value: "guest" }] : []),
                 { label: "Not now", value: null }
             ]
-        }).then(v => { if (v === "signin") Account.signIn(); });
+        }).then(v => {
+            if (v === "signin") { Account.signIn(); return; }
+            if (v !== "guest") return;
+            Account.playAsGuest().then(r => {
+                if (r.ok) { again(); return; }
+                if (r.shown) return;
+                notice({
+                    title: "Play as a guest",
+                    html: `<p class="notice-head">${escapeHtml(r.error)}</p>`,
+                    actions: [{ label: "OK", value: null, lead: true }]
+                });
+            });
+        });
     }
+
+    /* The line under a guest's results and boards: who they are, and what
+       their streak will and will not survive. Empty for anyone else. */
+    Account.guestNoteHtml = () => {
+        const g = Account.guest;
+        if (Account.current || !g) return "";
+        return `<div class="guess-board-note nick-hint">
+                    <span>You're playing as <strong>${escapeHtml(g.name)}</strong>. Your streak is kept in this browser only and won't follow you to another device.</span>
+                    <button type="button" class="guess-btn nick-hint-btn" data-guest-signin>Sign in to keep it</button>
+                </div>`;
+    };
+    document.addEventListener("click", e => {
+        const btn = e.target && e.target.closest ? e.target.closest("[data-guest-signin]") : null;
+        if (btn) Account.signIn();
+    });
     function showNickToPlay() {
         return notice({
             title: "Choose a nickname",
@@ -1626,7 +1710,8 @@
        everyone but a handful. Otherwise the right window is shown and it
        answers false, and the caller does nothing more. */
     /* opts.daily: a daily game (Guess the Maze, Odd One Out), which also
-       needs a player signed in with a nickname (see THE DAILY GAMES above).
+       needs a player signed in with a nickname (see THE DAILY GAMES above)
+       or a Guest Rat; opts.again reopens it once somebody has become one.
        Not Fallin' Furni, whose Play asks with no options. While the "who am
        I" answer is unsure (it failed), nobody is turned away here: the
        server still refuses a signed-out move, and writeRefused says so. */
@@ -1635,7 +1720,7 @@
         const me = Account.current;
         if (me && me.nickRejected === true) { showNickRequired(); return false; }
         if (opts && opts.daily) {
-            if (!me && !Account.unsure) { showSignInToPlay(); return false; }
+            if (!me && !Account.guest && !Account.unsure) { showSignInToPlay(opts.again); return false; }
             if (me && !me.nick) { showNickToPlay(); return false; }
         }
         return true;

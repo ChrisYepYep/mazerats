@@ -58,7 +58,9 @@
        "3 of 5" (OddOneOutStatus), adopted over their own by saveState as
        "further on", and banked into one record for both. "" when nobody
        is signed in, or `me` gave no public id, which matches nothing. */
-    const whoNow = () => (window.Account && Account.current && Account.current.publicId ? String(Account.current.publicId) : "");
+    // The account, else this browser's Guest Rat (25 Nov 2026), else null.
+    const whoPlays = () => (window.Account ? Account.current || Account.guest || null : null);
+    const whoNow = () => { const p = whoPlays(); return p && p.publicId ? String(p.publicId) : ""; };
     const ours = s => Boolean(s && s.who && s.who === whoNow());
 
     /* THE DAY BEING PLAYED, which is not always today.
@@ -222,7 +224,7 @@
     // The account's figures once they have been read; this browser's own
     // count for the same account otherwise.
     function shownStats() {
-        stats = accountStats && signedIn() ? accountStats : localStats;
+        stats = accountStats && window.Account && Account.current ? accountStats : localStats;
         return stats;
     }
 
@@ -296,7 +298,8 @@
     const roundNow = () => state.picks.length;
     const finished = () => state.done || roundNow() >= dealt().length;
 
-    const signedIn = () => Boolean(window.Account && Account.current);
+    // An account or a Guest Rat: somebody whose picks are recorded.
+    const signedIn = () => Boolean(whoPlays());
 
     /* A pick, sent to be judged. The page does not know which tile is the
        imposter any more (see the note at the top), so a pick is a question
@@ -1534,13 +1537,13 @@
                             return;
                         }
                         const still = document.getElementById("odd-boards");
-                        window.Daily.boards(still, "odd", { day: forDay, fresh: res.ok, practice: !!(state && state.practice) });
+                        window.Daily.boards(still, "odd", { close, day: forDay, fresh: res.ok, practice: !!(state && state.practice) });
                         // Not on the board, and worth sending again (M3).
                         if (res.retry && state && state.day === forDay && !state.posted && still) sayUnfiled(forDay);
                     });
             }
         } else {
-            window.Daily.boards(host, "odd", { day: forDay, practice: !!state.practice });
+            window.Daily.boards(host, "odd", { close, day: forDay, practice: !!state.practice });
         }
     }
 
@@ -1570,7 +1573,7 @@
             try { await Account.ready(); } catch (e) { /* signed out */ }
         }
         // A daily game: signed in with a nickname (4 Oct 2026, the owner's).
-        if (!retrying && window.Account && typeof Account.mayPlay === "function" && !Account.mayPlay({ daily: true })) {
+        if (!retrying && window.Account && typeof Account.mayPlay === "function" && !Account.mayPlay({ daily: true, again: () => open() })) {
             el.overlay.classList.remove("open");
             if (!document.querySelector(".modal-overlay.open")) document.body.classList.remove("modal-open");
             if (atOwnAddress()) history.replaceState({}, "", "/home");

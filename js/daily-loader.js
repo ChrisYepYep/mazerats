@@ -75,7 +75,7 @@
                would open onto rounds it has no pictures for.
                v=5 (2 Nov 2026): the streak strip, which needs daily.js's
                Daily.streakStrip; both games and daily.js moved together. */
-            src: "js/guess.js?v=9",
+            src: "js/guess.js?v=10",
             open: "openGuessGame",
             overlay: "guess-overlay",
             win: "guess-window",
@@ -86,7 +86,7 @@
             body: "guess-deck"
         },
         odd: {
-            src: "js/oddoneout.js?v=7",
+            src: "js/oddoneout.js?v=8",
             open: "openOddOneOut",
             overlay: "odd-overlay",
             win: "odd-window",
@@ -272,7 +272,7 @@
                window first only for the game file to shut it again and leave
                focus nowhere. mayPlay shows the notice itself. Not known yet,
                the game's own open() waits and asks (29 Sept 2026). */
-            if (window.Account && Account.known && typeof Account.mayPlay === "function" && !Account.mayPlay({ daily: true })) return;
+            if (window.Account && Account.known && typeof Account.mayPlay === "function" && !Account.mayPlay({ daily: true, again: () => window[GAMES[name].open]() })) return;
 
             const overlay = openShell(name);
             /* A failure left from an earlier try goes first (5 Oct 2026, the

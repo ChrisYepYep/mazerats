@@ -206,7 +206,9 @@
         if (!data || typeof data.then === "function") return `<p class="guess-board-note">Fetching the scores…</p>`;
         if (data === "failed") return `<p class="guess-board-note">This board couldn't be reached just now. Try again in a moment.</p>`;
 
-        const who = me();
+        // A Guest Rat finds their own row on the daily boards too (25 Nov
+        // 2026); Pura Panic's and Fallin' Furni's answer by account.
+        const who = me() || (!g.pura && !g.ff && window.Account && Account.guest) || null;
         let list, isMe, extra, empty;
         if (g.pura) {
             // Its rows carry a score where the others carry points.
@@ -269,10 +271,10 @@
                (proved by motto) or as a Guest Rat (pura-scores.js), so
                "sign in" is not the only way on. */
             foot = `<div class="guess-board-note guess-board-invite">
-                        ${g.pura ? "Play as your Habbo or a Guest Rat, or sign in, to get on this board." : "Sign in and choose a nickname to get on the boards."}
+                        ${g.pura ? "Play as your Habbo or a Guest Rat, or sign in, to get on this board." : g.ff ? "Sign in and choose a nickname to get on the boards." : "Play as a guest, or sign in and choose a nickname, to get on the boards."}
                         <button type="button" class="guess-btn" data-boards-signin>Sign in with Discord</button>
                     </div>`;
-        } else if (!who.nick) {
+        } else if (me() && !who.nick) {
             // The boards are nickname holders only (4 Oct 2026), and that,
             // not a lack of points, is why they are not on it (5 Oct 2026,
             // the bug scan: they were told they had not played).
@@ -285,13 +287,16 @@
                 : "You're not on this board yet."}</p>`;
         }
 
+        // Who a guest is, and what their streak is kept in.
+        if (!me() && who && Account.guestNoteHtml) foot += Account.guestNoteHtml();
+
         const play = g.play && typeof g.play() === "function"
             ? `<button type="button" class="guess-btn boards-play" data-boards-play>Play ${esc(g.label)}</button>` : "";
 
         return `
             <p class="guess-board-span">${esc(spanLine(g, data))}${g.ff || g.pura ? "" : g.key === "guess"
                 ? ` Most rooms found first, then room points (10, 6 or 3 a room), then the total with speed${range === "day" ? ", then the faster time" : ""}.`
-                : ` Most rounds right first, then points${range === "day" && g.key !== "all" ? ", then the faster time" : ""}.`}</p>
+                : ` Most rounds right first, then points${range === "day" && g.key !== "all" ? ", then the faster time" : ""}.`}${Number.isInteger(data.playersWeek) ? ` ${data.playersWeek} people have played this week.` : ""}</p>
             <ol class="guess-board-list">${rowsHtml(list, isMe, empty, extra)}</ol>
             ${foot}
             ${play}`;
@@ -346,8 +351,10 @@
         }
     });
 
-    function open(which) {
+    // `span`: "day", "week", "month" or "allTime"; as it was left without one.
+    function open(which, span) {
         if (which && GAMES.some(g => g.key === which)) game = which;
+        if (span && RANGES.some(r => r.key === span)) range = span;
         if (window.Track && typeof Track.event === "function") Track.event("boards-open", game);
         if (!overlay.classList.contains("open")) triggerEl = document.activeElement;
         // A board a few minutes old is still worth a fresh look on reopening.

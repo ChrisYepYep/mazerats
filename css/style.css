@@ -21820,6 +21820,10 @@ body.is-viewer .admin-panel[data-panel="errors"] .se-write { display: none !impo
 }
 .nick-hint-btn { padding: 4px 10px; }
 
+/* The other daily game, or the week's scores, under a finished day's board
+   (Daily.nextUp in js/daily.js; 25 Nov 2026). */
+.daily-next { flex: 0 0 auto; display: flex; justify-content: center; }
+
 /* ---- "Choose a nickname?", the one-time window after a first sign-in ---- */
 /* Over the console (200), as "Sign out?" is, and for the same reasons. */
 .modal-overlay.nick-overlay { z-index: 260; }

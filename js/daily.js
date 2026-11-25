@@ -115,7 +115,7 @@ window.Daily = (function () {
            run and a database connection on every open of either game by
            every signed-out visitor — most of launch day's opens. Asked
            whenever the sign-in is unknown or unsure, as before. */
-        if (window.Account && Account.known && !Account.unsure && !Account.current) return false;
+        if (window.Account && Account.known && !Account.unsure && !player()) return false;
         try {
             const { res, body } = await fetchWithTimeout("/.netlify/functions/daily-games?mine=1", { credentials: "same-origin" }, true);
             if (!res.ok) return false;
@@ -549,7 +549,10 @@ window.Daily = (function () {
        reads them back for the menu: the total, or null when there is none to
        say (not filed yet, a practice run, another account's day). */
     const FILED_KEY = "mazerats_daily_filed_v1";
-    const whoKey = () => (window.Account && Account.current ? String(Account.current.publicId || Account.current.id || "") : "");
+    /* Who is playing: the account, else this browser's Guest Rat (25 Nov
+       2026; Account.playing in js/account.js), else null. */
+    const player = () => (window.Account ? Account.current || Account.guest || null : null);
+    const whoKey = () => { const p = player(); return p ? String(p.publicId || p.id || "") : ""; };
     function readFiled() {
         try { const v = JSON.parse(localStorage.getItem(FILED_KEY) || "null"); return v && typeof v === "object" ? v : {}; } catch (e) { return {}; }
     }
@@ -681,7 +684,7 @@ window.Daily = (function () {
         startSent.add(key);
         const job = (async () => {
             try { await Account.ready(); } catch (e) { startSent.delete(key); return; }
-            if (!Account.current) { startSent.delete(key); return; }
+            if (!player()) { startSent.delete(key); return; }
             const { status, body } = await post(url || SCORES_URL, { game, day, action: "start" });
             /* Only a start the server says it RECORDED (30 Sept 2026), so
                round 0's move sends it again otherwise. */
@@ -876,6 +879,11 @@ window.Daily = (function () {
         return "Every day since the game began.";
     }
 
+    /* Real players with a finished day since Monday (25 Nov 2026, the
+       owner's), when the server says there are enough to be worth saying
+       (playersThisWeek in netlify/functions/daily-scores.js). */
+    const weekLine = data => (data && Number.isInteger(data.playersWeek) ? ` ${data.playersWeek} people have played this week.` : "");
+
     const RANGES = [
         { key: "day", label: "Today", empty: "Nobody has finished today yet." },
         { key: "week", label: "This week", empty: "No scores this week yet." },
@@ -1000,6 +1008,62 @@ window.Daily = (function () {
         return fresh ? `${base}&mine=1` : base;
     }
 
+    /* WHAT NEXT, under the board on a finished day (25 Nov 2026, the
+       owner's): the other daily game if it has not been played today, else
+       the week's scores across both. "Played" is this browser's word first
+       (the status the side menu reads), then the server's, since the other
+       game may have been finished on another device; asked once a day a
+       game, and an answer that cannot be had leaves the offer to play, which
+       opens that game's own results if it was done after all.
+
+       Answers an element to put under the board. `close` shuts the game
+       it is in, so the other opens in its place; the Leaderboards window
+       opens over it, and closing that comes back to the card. */
+    const OTHER = {
+        odd: { game: "guess", label: "Play Guess the Maze", status: "GuessStatus", open: "openGuessGame", url: "/.netlify/functions/guess-scores" },
+        guess: { game: "odd", label: "Play Odd One Out", status: "OddOneOutStatus", open: "openOddOneOut", url: "" }
+    };
+    const playedAsked = new Map();   // "who:game:day" -> promise of true/false
+    function playedToday(o) {
+        try {
+            const s = typeof window[o.status] === "function" ? window[o.status]() : null;
+            if (s && s.finished) return Promise.resolve(true);
+        } catch (e) { /* the server is asked instead */ }
+        if (!player()) return Promise.resolve(false);
+        const key = whoKey() + ":" + o.game + ":" + today();
+        if (!playedAsked.has(key)) {
+            playedAsked.set(key, deal(o.game, undefined, o.url || undefined).then(d => {
+                // Only a yes is worth keeping: a no is true until they play.
+                if (!d || !d.filed) playedAsked.delete(key);
+                return Boolean(d && d.filed);
+            }));
+        }
+        return playedAsked.get(key);
+    }
+    function nextUp(game, close) {
+        const o = OTHER[game];
+        const el = document.createElement("div");
+        el.className = "daily-next";
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "guess-btn";
+        btn.hidden = true;
+        el.appendChild(btn);
+        let done = false;
+        btn.addEventListener("click", () => {
+            if (done) { if (window.Leaderboards) window.Leaderboards.open("all", "week"); return; }
+            if (typeof close === "function") close();
+            if (typeof window[o.open] === "function") window[o.open]();
+        });
+        const refresh = () => playedToday(o).catch(() => false).then(played => {
+            done = played;
+            btn.textContent = done ? "This Week's Leaderboard" : o.label;
+            btn.hidden = false;
+        });
+        refresh();
+        return { el, refresh };
+    }
+
     /* Draws the board into a host element and keeps it there: one fetch
        brings all four spans, so the tabs are a redraw rather than a round
        trip. Never throws — a board that will not load is a disappointment,
@@ -1016,6 +1080,7 @@ window.Daily = (function () {
            Leaderboards window now (js/leaderboards.js, "All dailies"). */
         host.innerHTML = `<div class="guess-boards-own"></div>`;
         const panel = host.querySelector(".guess-boards-own");
+        if (typeof o.close === "function") host.appendChild(nextUp(game, o.close).el);
         /* The day the board is FOR is the day that was played, which the
            game passes in — not today(), which a round finished a minute past
            midnight has already moved on from. */
@@ -1023,7 +1088,7 @@ window.Daily = (function () {
 
         // The whole account, not its id: rows() matches on the public id
         // first (see isMine).
-        const me = () => (window.Account && Account.current ? Account.current : null);
+        const me = player;
 
         function draw() {
             if (!data) {
@@ -1045,7 +1110,11 @@ window.Daily = (function () {
                signed-out "Your N points are saved on this device. Sign in
                with Discord to be listed" went with signed-out play (10 Oct
                2026): nobody signed out finishes a day now. */
-            const invite = o.practice || !me() ? "" : (o.listed !== false && window.Account && Account.nickHintHtml ? Account.nickHintHtml() : "");
+            // A Guest Rat is told who they are and what their streak is
+            // kept in instead (25 Nov 2026; Account.guestNoteHtml).
+            const invite = o.practice || !me() ? "" : !Account.current
+                ? (Account.guestNoteHtml ? Account.guestNoteHtml() : "")
+                : (o.listed !== false && Account.nickHintHtml ? Account.nickHintHtml() : "");
             const spec = RANGES.find(r => r.key === range) || RANGES[0];
             const focused = panel.contains(document.activeElement) ? document.activeElement : null;
             const hadRange = focused && focused.dataset ? focused.dataset.range : null;
@@ -1057,7 +1126,7 @@ window.Daily = (function () {
                 ${invite}
                 <div class="guess-board">
                     <div class="guess-board-ranges" role="group" aria-label="Which span the board covers">${tabs}</div>
-                    <p class="guess-board-span">${escapeHtml(spanLine(range, data))} ${orderLine(range)}</p>
+                    <p class="guess-board-span">${escapeHtml(spanLine(range, data))} ${orderLine(range)}${weekLine(data)}</p>
                     <ol class="guess-board-list">${rows(data[range], me(), spec.empty)}</ol>
                 </div>`;
 
@@ -1375,7 +1444,7 @@ window.Daily = (function () {
         today, now, setServerNow, seededRandom, dayBefore, request,
         claimReset, deal, move, afterPractice, submit, filed, fileable, start, opening, startedRounds, begin, takeRound, mergeRounds,
         forgetStarts, track, loadingHtml, waiting, fill, progress, finishWaiting,
-        clock, scoreCell, rightCell, orderLine, spanLine, boards, ranks, isMine,
+        clock, scoreCell, rightCell, orderLine, spanLine, weekLine, player, nextUp, boards, ranks, isMine,
         foundCell, foundOrderLine, roomsGrid, rememberFiled, filedTotal,
         SPEED_BONUS_MAX, bonusLine, practiceLine, bonusRule,
         shareDate, dayTotal, shareScore, shareText, shareFallback,

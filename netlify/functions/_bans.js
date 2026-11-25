@@ -327,7 +327,8 @@ function bannedReply(ban) {
 const NICK_REQUIRED_MESSAGE = "Set a new nickname to play.";
 const nickRequiredReply = () => reply(403, { error: NICK_REQUIRED_MESSAGE, nickRequired: true });
 /* THE DAILY GAMES ARE FOR PLAYERS WITH A NICKNAME (4 Oct 2026, the
-   owner's): signed in with Discord, and a nickname chosen. Their own two
+   owner's): signed in with Discord, and a nickname chosen — or, since
+   25 Nov 2026, for a Guest Rat (_guest.js). Their own two
    refusals, so the page can say which step is missing. */
 const SIGN_IN_TO_PLAY_MESSAGE = "Sign in with Discord to play.";
 const NICK_TO_PLAY_MESSAGE = "Choose a nickname to play.";
@@ -358,6 +359,7 @@ function revokedReply() {
    players row, not memoised: it has to see the new nickname the moment it
    is saved. A ban is checked first, so a banned player is told about the
    ban rather than about their nickname. */
+const isGuest = id => require("./_guest").isGuestId(id);
 async function writeRefusal(db, event, playerId, { game = false, daily = false } = {}) {
     let ban;
     try {
@@ -369,6 +371,11 @@ async function writeRefusal(db, event, playerId, { game = false, daily = false }
     if (ban) return bannedReply(ban);
     // A daily game, signed out: not any more (see THE DAILY GAMES above).
     if (daily && !playerId) return signInToPlayReply();
+    /* A GUEST RAT (25 Nov 2026; _guest.js) plays with neither an account nor
+       a nickname: the bans above are all there is to ask of one. Its id comes
+       from its signed cookie, so nobody is refused or let through by naming
+       one. */
+    if (isGuest(playerId)) return null;
     const { playerFrom, sessionRevoked } = require("./_player");
     const who = playerId ? playerFrom(event) : null;
     const mine = who && String(who.id) === String(playerId) ? who : null;
@@ -459,7 +466,9 @@ async function withoutBanned(db, lists, idOf = (r) => r && r.id) {
     const [banned, nicked] = await Promise.all([bannedAmong(db, ids), nickedAmong(db, ids)]);
     return lists.map(list => (list || []).filter(r => {
         const id = String(idOf(r));
-        return !banned.has(id) && !!nicked && nicked.has(id);
+        // A Guest Rat's row has no nickname to ask for: "Guest Rat N" is all
+        // it says (25 Nov 2026; _guest.js).
+        return !banned.has(id) && (isGuest(id) || (!!nicked && nicked.has(id)));
     }));
 }
 

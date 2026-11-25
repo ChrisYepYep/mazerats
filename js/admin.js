@@ -10654,6 +10654,58 @@ document.addEventListener("DOMContentLoaded", () => {
             });
             dailyDetailEl.appendChild(list);
         }
+        if (currentUserRole === "owner" && /^guestrat:[0-9]+$/.test(String(dailyDetail.id))) renderGuestRemoval(player);
+    }
+
+    /* A GUEST RAT'S SCORES, REMOVED (25 Nov 2026, the owner's; the privacy
+       page offers it). Guests have no row on the Players page, where an
+       account is forgotten, so it is here; the same player-forget.js does
+       it, owner only there too. The count comes first, then the question. */
+    function renderGuestRemoval(player) {
+        const id = String(dailyDetail.id);
+        const who = player ? player.name : "Guest Rat " + id.slice(id.indexOf(":") + 1);
+        const card = document.createElement("div");
+        card.className = "admin-daily-game";
+        const title = document.createElement("h4");
+        title.className = "admin-daily-game-name";
+        title.textContent = "Remove this guest";
+        const hint = document.createElement("p");
+        hint.className = "admin-hint";
+        hint.textContent = "Deletes every score and game record kept under this number, Pura Panic's included. Owner only.";
+        const actions = document.createElement("div");
+        actions.className = "admin-daily-actions";
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "admin-action-pill admin-pill-danger";
+        btn.textContent = "Remove this guest";
+        btn.addEventListener("click", async () => {
+            const used = adminToken;   // see lockOutFor
+            btn.disabled = true;
+            try {
+                const found = await Api.forgetPlayerPreview(used, id);
+                const c = (found && found.counts) || {};
+                const n = k => Number(c[k]) || 0;
+                const said = [[n("guess_scores"), "Guess the Maze"], [n("daily_scores"), "Odd One Out"], [n("pura_scores"), "Pura Panic"]]
+                    .filter(([k]) => k).map(([k, label]) => label + " scores (" + k + ")");
+                if (!await showConfirmDialog(escapeHtml("Remove " + who + "?") + "<br><br>" +
+                    escapeHtml((said.length ? said.join(", ") : "No scores") + " and their other game records are deleted. It can't be undone. They can still play again under the same number."), { danger: true })) { btn.disabled = false; return; }
+                if (used !== adminToken) return;
+                await Api.forgetPlayer(used, id);
+                if (used !== adminToken) return;
+                await sayProblem(who + " has been removed. The leaderboards catch up within a minute.", "Removed");
+            } catch (err) {
+                if (err && err.status === 401) { lockOutFor(used); return; }
+                if (used !== adminToken) return;
+                await sayProblem(err && err.status === 404 ? "Nothing is stored for them any more." : (err && err.message) || "Couldn't remove them. Try again.");
+                if (!err || err.status !== 404) { btn.disabled = false; return; }
+            }
+            if (used !== adminToken) return;
+            if (dailyPicked === id) dailyPicked = null;
+            loadDaily(dailyPicked);
+        });
+        actions.appendChild(btn);
+        card.append(title, hint, actions);
+        dailyDetailEl.appendChild(card);
     }
 
     if (dailySearchEl) {

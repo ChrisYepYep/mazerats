@@ -331,8 +331,13 @@
        adopted it over their own as "further on". "" when nobody is signed
        in, or `me` gave no public id, which matches nothing. As in
        js/oddoneout.js. */
+    // The account, else this browser's Guest Rat (25 Nov 2026), else null.
+    function whoPlays() {
+        return window.Account ? Account.current || Account.guest || null : null;
+    }
     function whoNow() {
-        return window.Account && Account.current && Account.current.publicId ? String(Account.current.publicId) : "";
+        const p = whoPlays();
+        return p && p.publicId ? String(p.publicId) : "";
     }
     const ours = s => Boolean(s && s.who && s.who === whoNow());
 
@@ -850,7 +855,8 @@
         return state.results[state.round];
     }
 
-    const signedIn = () => Boolean(window.Account && Account.current);
+    // An account or a Guest Rat: somebody whose guesses are recorded.
+    const signedIn = () => Boolean(whoPlays());
 
     /* A guess, sent to be judged. The page no longer knows which of the
        five names is right, so every guess is a question to the server, and
@@ -1679,6 +1685,7 @@
         }
         if (boards && !force && !boardsStale) return;
         boardsStale = false;
+        if (nextUp) nextUp.refresh();
         const quiet = Boolean(boards && !force);
         boardsState = "loading";
         if (!quiet) renderBoards();
@@ -1754,7 +1761,7 @@
        five recorded rooms and no row. */
     function submitIfOwed() {
         if (!state || !state.done || state.posted || postedDay === state.day) return;
-        if (!window.Account || !Account.current) return;
+        if (!whoPlays()) return;
         if (!(Daily.fileable ? Daily.fileable(state.day) : dayStillOpen(state.day))) return;
         submitDay();
     }
@@ -1769,7 +1776,7 @@
        scoreClaim in netlify/functions/guess-scores.js — until 10 Oct
        2026.) */
     async function submitDay() {
-        if (!window.Account || !Account.current || !state) return;
+        if (!whoPlays() || !state) return;
         const forDay = state.day;
         if (postedDay === forDay) return;
         postedDay = forDay;
@@ -1942,6 +1949,7 @@
        Leaderboards window now (js/leaderboards.js, "All dailies"). */
     let boardsHost = null;
     let boardPanel = null;
+    let nextUp = null;
     function boardsElement() {
         if (boardsHost) return boardsHost;
         boardsHost = document.createElement("div");
@@ -1949,6 +1957,11 @@
         boardsHost.id = "guess-boards";
         boardsHost.innerHTML = `<div class="guess-boards-own"></div>`;
         boardPanel = boardsHost.querySelector(".guess-boards-own");
+        // The other daily, or the week's scores (Daily.nextUp; 25 Nov 2026).
+        if (window.Daily && Daily.nextUp) {
+            nextUp = Daily.nextUp("guess", close);
+            boardsHost.appendChild(nextUp.el);
+        }
         return boardsHost;
     }
 
@@ -1963,7 +1976,7 @@
         if (!host) return;
 
         // The whole account, not its id — see isMine.
-        const me = window.Account && Account.current ? Account.current : null;
+        const me = whoPlays();
 
         if (boardsState === "loading" || boardsState === "idle") {
             host.innerHTML = `<p class="guess-board-note">Fetching the scores…</p>`;
@@ -1982,7 +1995,10 @@
            in with Discord to be listed"; nobody signed out finishes a day
            now, and that went (10 Oct 2026). */
         // Nothing for a practice run, which goes on no board (30 Sept 2026).
-        const invite = state && state.practice || !me ? "" : (window.Account && Account.nickHintHtml ? Account.nickHintHtml() : "");
+        // A Guest Rat's line instead (25 Nov 2026; Account.guestNoteHtml).
+        const invite = state && state.practice || !me ? "" : !Account.current
+            ? (Account.guestNoteHtml ? Account.guestNoteHtml() : "")
+            : (Account.nickHintHtml ? Account.nickHintHtml() : "");
 
         const range = BOARD_RANGES.find(r => r.key === boardRange) || BOARD_RANGES[0];
         const list = boards[range.key];
@@ -2005,7 +2021,7 @@
             ${invite}
             <div class="guess-board">
                 <div class="guess-board-ranges" role="group" aria-label="Which span the board covers">${tabs}</div>
-                <p class="guess-board-span">${escapeHtml(span)}${window.Daily && Daily.foundOrderLine ? " " + Daily.foundOrderLine(boardRange) : ""}</p>
+                <p class="guess-board-span">${escapeHtml(span)}${window.Daily && Daily.foundOrderLine ? " " + Daily.foundOrderLine(boardRange) : ""}${window.Daily && Daily.weekLine ? Daily.weekLine(boards) : ""}</p>
                 <ol class="guess-board-list">${boardRows(list, me, range.empty)}</ol>
             </div>`;
 
@@ -2368,6 +2384,9 @@
                 saveState(recordSettled());
             }
         }
+        /* A Guest Rat's figures are this browser's own, so a day the server
+           says is finished (the last answer lost on its way) is counted here. */
+        else if (signedIn() && state.done && !state.practice && localStats.lastDay !== state.day) countDay();
 
         /* Placed with the animation switched off, so opening the window
            shows the deck already stacked rather than seven sheets flying
@@ -2414,7 +2433,7 @@
             return;
         }
         // A daily game: signed in with a nickname (4 Oct 2026, the owner's).
-        if (window.Account && typeof Account.mayPlay === "function" && !Account.mayPlay({ daily: true })) {
+        if (window.Account && typeof Account.mayPlay === "function" && !Account.mayPlay({ daily: true, again: () => open() })) {
             el.overlay.classList.remove("open");
             if (!document.querySelector(".modal-overlay.open")) document.body.classList.remove("modal-open");
             // A pasted /guess should not leave the address bar on a game

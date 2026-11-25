@@ -45,7 +45,7 @@ const PRIVACY_SECTIONS = [
     {
         heading: "Signing in with Discord.",
         points: [
-            "You need to sign in to play the daily games, send pictures through Add Maze Info, appear on the leaderboards (apart from Pura Panic's) and have a profile people can find.",
+            "You need to sign in to send pictures through Add Maze Info, appear on the leaderboards under a name of your own (Pura Panic aside) and have a profile people can find. The daily games can be played as a guest instead: see \"Playing the daily games as a guest\".",
             "We only ask Discord for the \"identify\" permission. That gives us your user ID, username, display name and avatar. We can't see your email, servers or friends.",
             "We keep those details, plus the dates you first and last signed in.",
             "The token Discord gives us is used once to read your profile and then thrown away, so we can't do anything on Discord as you.",
@@ -79,7 +79,7 @@ const PRIVACY_SECTIONS = [
     {
         heading: "What other people can see.",
         points: [
-            "Leaderboards show your nickname, your scores and the head of your linked Habbo (or a plain disc). The daily games also show your result grid, which gives nothing about the maze away. Without a nickname you're not on the boards at all.",
+            "Leaderboards show your nickname, your scores and the head of your linked Habbo (or a plain disc). The daily games also show your result grid, which gives nothing about the maze away. Signed in without a nickname, you're not on the boards at all. Guests are shown by their Guest Rat number.",
             "Your Discord avatar, username and ID are never shown anywhere. Each leaderboard row carries a scrambled stand-in for your account so the page can find your own row.",
             "Your profile stays hidden until the site has shown you what a profile is, or you choose to show it. After that anyone can find it by your nickname or your linked Habbo. Before then, a search for your linked Habbo only shows the Habbo, the month you joined and that your profile isn't active yet.",
             "A profile shows your name, the month you joined, the mazes you've completed and what they add up to, your badges, favourite maze and featured badge, daily game streaks and points, your best Fallin' Furni run and Pura Panic game, and how many of your Add Maze Info sends were accepted.",
@@ -113,6 +113,19 @@ const PRIVACY_SECTIONS = [
             "Signed out, you can play as your Habbo. We check with Habbo Origins that it exists, and you prove it's yours with a short code in your motto. We only keep a scrambled copy of the code, and delete it within the hour. Or you can play as a numbered Guest Rat.",
             "Your browser keeps a token so you can play as that Habbo or Guest Rat again. \"Not you?\" on the first screen makes it forget them.",
             "To stop a score counting twice, we keep a short note for each game sent (for four hours) and each game continued (for just over a day). For just over a day we also keep a scrambled code for the name each game was saved under, so it can't be saved under another."
+        ]
+    },
+    /* _guest.js, daily-guest.js. */
+    {
+        heading: "Playing the daily games as a guest.",
+        points: [
+            "You don't have to sign in. Choose \"Play as a guest\" and you're given a Guest Rat number, the same one in Pura Panic and the daily games. It's the name the leaderboards show for you.",
+            "Your browser keeps the number in a cookie (for up to 400 days) and in its storage. It's only used to know which Guest Rat you are.",
+            "We keep each day you play like any other player's: your picks, when you made them, your score and your result grid, under your Guest Rat number. No name, account or IP address is kept with it.",
+            "Your streak and totals are kept in your browser only. They don't follow you to another device, and clearing your browser's data loses them and the number.",
+            "Sign in and the days you played as a guest move to your account, if it hasn't played the daily games before. Otherwise they stay with your Guest Rat number.",
+            "To stop one network making endless guests, we count new Guest Rats by the scrambled network code described above. That count is deleted after two days.",
+            "Scores stay on the leaderboards until you ask us to remove them. Tell us your Guest Rat number."
         ]
     },
     /* contact.js, dead-end-leads.js, event-entries.js. */
@@ -157,7 +170,7 @@ const PRIVACY_SECTIONS = [
             "The Halloween bat game's best score, which never leaves your device. In December, signed in, a copy of which advent doors you've opened, so the button can show when one is waiting.",
             "An offline copy: once you've used the archive, your browser keeps its pages, scripts, stylesheets, the public maze and event lists, and the pictures you've seen, so it still opens with no connection. Nothing about your account goes in it.",
             "If a site-wide block applies to you, when it ends and why.",
-            "Cookies: one for ten minutes while you approve Discord sign-in, then a session cookie for 30 days that the page's scripts can't read. Admins also have a session token and their own panel settings.",
+            "Cookies: one for ten minutes while you approve Discord sign-in, then a session cookie for 30 days that the page's scripts can't read. Playing the daily games as a guest sets one for up to 400 days, which they can't read either. Admins also have a session token and their own panel settings.",
             "None of it follows you to other websites, and clearing your browser data removes all of it."
         ]
     },

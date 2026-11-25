@@ -398,32 +398,8 @@ async function verifyHabbo(db, body) {
 }
 
 // A Guest Rat's number, handed back signed so it cannot be borrowed.
-const RAT_AUDIENCE = "mazerats-pura-guestrat";
-function signRat(n) {
-    if (!process.env.SESSION_SECRET) return null;
-    return jwt.sign({ n }, process.env.SESSION_SECRET, { audience: RAT_AUDIENCE, algorithm: "HS256" });
-}
-function readRat(token) {
-    if (!token || typeof token !== "string" || !process.env.SESSION_SECRET) return null;
-    try {
-        const c = jwt.verify(token, process.env.SESSION_SECRET, { audience: RAT_AUDIENCE, algorithms: ["HS256"] });
-        return c && Number.isInteger(c.n) && c.n > 0 ? c.n : null;
-    } catch (e) {
-        return null;
-    }
-}
-async function nextRat(db) {
-    const bump = () => db.collection("counters").findOneAndUpdate(
-        { _id: "pura_guest_rat" }, { $inc: { n: 1 } }, { upsert: true, returnDocument: "after" });
-    /* Two first-ever bumps racing can have the second's upsert refused with
-       E11000; by then the counter exists, so the same bump again is an
-       ordinary update (26 Oct 2026; bump in track.js does the same). */
-    let r;
-    try { r = await bump(); }
-    catch (e) { if (!(e && e.code === 11000)) throw e; r = await bump(); }
-    const doc = r && r.ok !== undefined && r.value !== undefined ? r.value : r;
-    return doc && Number.isInteger(doc.n) ? doc.n : null;
-}
+// Shared with the daily games since 25 Nov 2026 (_guest.js).
+const { signRat, readRat, nextRat } = require("./_guest");
 /* ONE GAME, ONE GUEST RAT (10 Oct 2026). A number was given to every
    unnamed submission, and a game sends several (A SAVE ON THE WAY): two
    saves racing, or a save whose answer never reached a closing tab and
